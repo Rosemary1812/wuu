@@ -110,7 +110,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 				Name:        tool.Name,
 				Description: tool.Description,
 				Strict:      false,
-				Parameters:  tool.InputSchema,
+				Parameters:  responsesToolParameters(tool.InputSchema),
 			})
 		}
 	}
@@ -188,6 +188,22 @@ func responsePromptCacheKey(hint *providers.CacheHint) string {
 		return ""
 	}
 	return strings.TrimSpace(hint.PromptCacheKey)
+}
+
+func responsesToolParameters(schema map[string]any) map[string]any {
+	if schema == nil {
+		return nil
+	}
+	out := make(map[string]any, len(schema)+1)
+	for k, v := range schema {
+		out[k] = v
+	}
+	if typ, ok := out["type"].(string); ok && typ == "object" {
+		if _, exists := out["properties"]; !exists {
+			out["properties"] = map[string]any{}
+		}
+	}
+	return out
 }
 
 func (c *Client) doSingleResponsesRequest(

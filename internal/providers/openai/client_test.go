@@ -947,6 +947,13 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 		if tool["strict"] != false {
 			t.Fatalf("expected strict=false like Codex Responses tools, got %#v", tool["strict"])
 		}
+		parameters, ok := tool["parameters"].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected parameters payload: %#v", tool["parameters"])
+		}
+		if properties, ok := parameters["properties"].(map[string]any); !ok || len(properties) != 0 {
+			t.Fatalf("expected empty object properties for responses schema, got %#v", parameters["properties"])
+		}
 		if _, exists := tool["function"]; exists {
 			t.Fatalf("responses tool must not use chat-completions function wrapper: %#v", tool)
 		}
