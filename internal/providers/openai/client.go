@@ -18,6 +18,11 @@ import (
 
 const defaultTimeout = 120 * time.Second
 
+const (
+	wireAPIChat      = "chat"
+	wireAPIResponses = "responses"
+)
+
 func streamTransportConfig(cfg *providers.StreamTransportConfig) providers.StreamTransportConfig {
 	return providers.ResolveStreamTransportConfig(cfg)
 }
@@ -34,9 +39,21 @@ func newStreamingHTTPClient(base *http.Client, cfg providers.StreamTransportConf
 	return providers.BuildStreamingHTTPClient(base, cfg)
 }
 
-// ClientConfig configures an OpenAI-compatible chat completions endpoint.
+func normalizeWireAPI(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", wireAPIChat:
+		return wireAPIChat, nil
+	case wireAPIResponses:
+		return wireAPIResponses, nil
+	default:
+		return "", fmt.Errorf("unsupported OpenAI wire API %q", value)
+	}
+}
+
+// ClientConfig configures an OpenAI-compatible endpoint.
 type ClientConfig struct {
 	BaseURL      string
+	WireAPI      string
 	APIKey       string
 	Headers      map[string]string
 	HTTPClient   *http.Client
@@ -47,6 +64,7 @@ type ClientConfig struct {
 // Client sends tool-enabled chat requests to OpenAI-compatible APIs.
 type Client struct {
 	baseURL              string
+	wireAPI              string
 	apiKey               string
 	headers              map[string]string
 	httpClient           *http.Client
@@ -73,9 +91,14 @@ func New(cfg ClientConfig) (*Client, error) {
 		rc = *cfg.RetryConfig
 	}
 	rc = providers.NormalizeRetryConfig(rc)
+	wireAPI, err := normalizeWireAPI(cfg.WireAPI)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Client{
 		baseURL:              strings.TrimRight(cfg.BaseURL, "/"),
+		wireAPI:              wireAPI,
 		apiKey:               cfg.APIKey,
 		headers:              cloneHeaders(cfg.Headers),
 		httpClient:           hc,
@@ -87,6 +110,9 @@ func New(cfg ClientConfig) (*Client, error) {
 
 // Chat performs one chat-completions round.
 func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	if c.wireAPI == wireAPIResponses {
+		return c.responsesChat(ctx, req)
+	}
 	if strings.TrimSpace(req.Model) == "" {
 		return providers.ChatResponse{}, errors.New("model is required")
 	}
@@ -203,6 +229,9 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 
 // StreamChat opens an SSE stream and returns a channel of streaming events.
 func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	if c.wireAPI == wireAPIResponses {
+		return c.responsesStreamChat(ctx, req)
+	}
 	if strings.TrimSpace(req.Model) == "" {
 		return nil, errors.New("model is required")
 	}

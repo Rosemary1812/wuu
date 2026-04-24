@@ -82,6 +82,7 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 	case "openai", "openai-compatible", "codex":
 		client, newErr := openai.New(openai.ClientConfig{
 			BaseURL:      provider.BaseURL,
+			WireAPI:      provider.WireAPI,
 			APIKey:       apiKey,
 			Headers:      provider.Headers,
 			RetryConfig:  retry,

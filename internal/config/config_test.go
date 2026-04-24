@@ -106,6 +106,70 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	}
 }
 
+func TestConfig_ProviderWireAPI(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com",
+      "wire_api": "responses",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if cfg.Providers["main"].WireAPI != "responses" {
+		t.Fatalf("expected wire_api responses, got %q", cfg.Providers["main"].WireAPI)
+	}
+}
+
+func TestConfig_RejectsUnknownWireAPI(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com",
+      "wire_api": "legacy",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, _, err := LoadFrom(workdir, "")
+	if err == nil {
+		t.Fatal("expected unknown wire_api validation error")
+	}
+	if !strings.Contains(err.Error(), "wire_api") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 	prompt := Default().Agent.SystemPrompt
 	if !strings.Contains(prompt, "wuu") {

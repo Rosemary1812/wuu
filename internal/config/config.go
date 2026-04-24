@@ -75,6 +75,7 @@ type MemoryConfig struct {
 type ProviderConfig struct {
 	Type         string            `json:"type"`
 	BaseURL      string            `json:"base_url"`
+	WireAPI      string            `json:"wire_api,omitempty"`
 	APIKey       string            `json:"api_key,omitempty"`
 	APIKeyEnv    string            `json:"api_key_env,omitempty"`
 	AuthToken    string            `json:"auth_token,omitempty"`
@@ -215,6 +216,11 @@ func (c Config) Validate() error {
 		}
 		if provider.Model == "" {
 			return fmt.Errorf("providers.%s.model is required", name)
+		}
+		switch provider.WireAPI {
+		case "", "chat", "responses":
+		default:
+			return fmt.Errorf("providers.%s.wire_api must be \"chat\" or \"responses\"", name)
 		}
 		if provider.StreamConnectTimeoutMS < 0 {
 			return fmt.Errorf("providers.%s.stream_connect_timeout_ms cannot be negative", name)

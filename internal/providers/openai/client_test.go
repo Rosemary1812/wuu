@@ -916,6 +916,234 @@ func TestStreamChat_RejectsInvalidMessageSequenceBeforeRequest(t *testing.T) {
 	}
 }
 
+func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if _, exists := body["messages"]; exists {
+			t.Fatalf("responses payload must not include chat messages: %#v", body["messages"])
+		}
+		if body["model"] != "gpt-test" {
+			t.Fatalf("unexpected model: %#v", body["model"])
+		}
+		if body["max_output_tokens"] != float64(123) {
+			t.Fatalf("expected max_output_tokens=123, got %#v", body["max_output_tokens"])
+		}
+
+		tools, ok := body["tools"].([]any)
+		if !ok || len(tools) != 1 {
+			t.Fatalf("unexpected tools payload: %#v", body["tools"])
+		}
+		tool, ok := tools[0].(map[string]any)
+		if !ok || tool["type"] != "function" || tool["name"] != "read_file" {
+			t.Fatalf("unexpected responses tool: %#v", tools[0])
+		}
+		if _, exists := tool["function"]; exists {
+			t.Fatalf("responses tool must not use chat-completions function wrapper: %#v", tool)
+		}
+
+		input, ok := body["input"].([]any)
+		if !ok || len(input) != 3 {
+			t.Fatalf("unexpected input payload: %#v", body["input"])
+		}
+		callItem := input[1].(map[string]any)
+		if callItem["type"] != "function_call" || callItem["call_id"] != "call_1" || callItem["name"] != "read_file" {
+			t.Fatalf("unexpected function_call input: %#v", callItem)
+		}
+		outputItem := input[2].(map[string]any)
+		if outputItem["type"] != "function_call_output" || outputItem["call_id"] != "call_1" || outputItem["output"] != "file contents" {
+			t.Fatalf("unexpected function_call_output input: %#v", outputItem)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "status": "completed",
+  "output": [
+    {
+      "type": "function_call",
+      "call_id": "call_2",
+      "name": "read_file",
+      "arguments": "{\"path\":\"README.md\"}"
+    }
+  ],
+  "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {"cached_tokens": 3},
+    "output_tokens": 4
+  }
+}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := client.Chat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		MaxTokens: 123,
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "read README"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
+			{Role: "tool", ToolCallID: "call_1", Content: "file contents"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "read_file", Description: "read file", InputSchema: map[string]any{"type": "object"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "call_2" || resp.ToolCalls[0].Name != "read_file" {
+		t.Fatalf("unexpected tool calls: %+v", resp.ToolCalls)
+	}
+	if resp.ToolCalls[0].Arguments != `{"path":"README.md"}` {
+		t.Fatalf("unexpected tool args: %q", resp.ToolCalls[0].Arguments)
+	}
+	if resp.StopReason != "tool_calls" {
+		t.Fatalf("expected tool_calls stop reason, got %q", resp.StopReason)
+	}
+	wantUsage := &providers.TokenUsage{InputTokens: 7, OutputTokens: 4, CacheReadTokens: 3}
+	if !reflect.DeepEqual(resp.Usage, wantUsage) {
+		t.Fatalf("got usage %+v, want %+v", resp.Usage, wantUsage)
+	}
+}
+
+func TestResponsesChat_ParsesMessageContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "status": "completed",
+  "output": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {"type": "output_text", "text": "hello"},
+        {"type": "output_text", "text": "world"}
+      ]
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Content != "hello\nworld" {
+		t.Fatalf("unexpected content: %q", resp.Content)
+	}
+}
+
+func TestResponsesStreamChat_SSE(t *testing.T) {
+	ssePayload := "event: response.output_text.delta\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n" +
+		"event: response.output_item.added\n" +
+		"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"status\":\"in_progress\",\"arguments\":\"\",\"call_id\":\"call_1\",\"name\":\"read_file\"},\"output_index\":0}\n\n" +
+		"event: response.function_call_arguments.delta\n" +
+		"data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"path\\\":\",\"item_id\":\"fc_1\",\"output_index\":0}\n\n" +
+		"event: response.function_call_arguments.delta\n" +
+		"data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"\\\"README.md\\\"}\",\"item_id\":\"fc_1\",\"output_index\":0}\n\n" +
+		"event: response.function_call_arguments.done\n" +
+		"data: {\"type\":\"response.function_call_arguments.done\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"item_id\":\"fc_1\",\"output_index\":0}\n\n" +
+		"event: response.output_item.done\n" +
+		"data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"status\":\"completed\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"call_id\":\"call_1\",\"name\":\"read_file\"},\"output_index\":0}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ssePayload))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Tools: []providers.ToolDefinition{
+			{Name: "read_file", Description: "read file", InputSchema: map[string]any{"type": "object"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var events []providers.StreamEvent
+	for ev := range ch {
+		events = append(events, ev)
+	}
+
+	var content string
+	var toolStarts, toolEnds int
+	var endToolCall *providers.ToolCall
+	var done *providers.StreamEvent
+	for i := range events {
+		ev := events[i]
+		switch ev.Type {
+		case providers.EventContentDelta:
+			content += ev.Content
+		case providers.EventToolUseStart:
+			toolStarts++
+			if ev.ToolCall == nil || ev.ToolCall.ID != "call_1" || ev.ToolCall.Name != "read_file" {
+				t.Fatalf("unexpected tool start: %+v", ev.ToolCall)
+			}
+		case providers.EventToolUseEnd:
+			toolEnds++
+			endToolCall = ev.ToolCall
+		case providers.EventDone:
+			done = &events[i]
+		}
+	}
+	if content != "Hello" {
+		t.Fatalf("unexpected content: %q", content)
+	}
+	if toolStarts != 1 || toolEnds != 1 {
+		t.Fatalf("expected one tool start/end, got starts=%d ends=%d events=%+v", toolStarts, toolEnds, events)
+	}
+	if endToolCall == nil || endToolCall.Arguments != `{"path":"README.md"}` {
+		t.Fatalf("unexpected tool end: %+v", endToolCall)
+	}
+	if done == nil || done.StopReason != "tool_calls" {
+		t.Fatalf("unexpected done event: %+v", done)
+	}
+	if done.Usage == nil || done.Usage.InputTokens != 5 || done.Usage.OutputTokens != 2 {
+		t.Fatalf("unexpected usage: %+v", done.Usage)
+	}
+}
+
+func TestNew_RejectsUnknownWireAPI(t *testing.T) {
+	_, err := New(ClientConfig{BaseURL: "https://example.com", WireAPI: "legacy", APIKey: "test-key"})
+	if err == nil {
+		t.Fatal("expected unknown wire API error")
+	}
+}
+
 func TestChunkUsage_AsTokenUsage_Cached(t *testing.T) {
 	// gpt-4o reports cached_tokens as a SUBSET of prompt_tokens. The
 	// helper has to split it out so wuu's auto-compact accounts for
