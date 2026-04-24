@@ -944,6 +944,9 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 		if !ok || tool["type"] != "function" || tool["name"] != "read_file" {
 			t.Fatalf("unexpected responses tool: %#v", tools[0])
 		}
+		if tool["strict"] != false {
+			t.Fatalf("expected strict=false like Codex Responses tools, got %#v", tool["strict"])
+		}
 		if _, exists := tool["function"]; exists {
 			t.Fatalf("responses tool must not use chat-completions function wrapper: %#v", tool)
 		}

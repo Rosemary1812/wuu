@@ -109,6 +109,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 				Type:        "function",
 				Name:        tool.Name,
 				Description: tool.Description,
+				Strict:      false,
 				Parameters:  tool.InputSchema,
 			})
 		}
@@ -562,6 +563,7 @@ type responsesToolDefinition struct {
 	Type        string         `json:"type"`
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
+	Strict      bool           `json:"strict"`
 	Parameters  map[string]any `json:"parameters"`
 }
 
