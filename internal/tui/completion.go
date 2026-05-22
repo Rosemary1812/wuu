@@ -70,7 +70,7 @@ func (m *Model) updateCompletion() {
 	// Filter matching commands.
 	var matches []command
 	for _, cmd := range commandRegistry {
-		if cmd.Hidden {
+		if !cmd.isVisibleInPopup() {
 			continue
 		}
 		if strings.HasPrefix(cmd.Name, partial) {

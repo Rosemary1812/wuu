@@ -40,7 +40,7 @@ func TestCmdHelp_EmitsGroupHeadersInDeclaredOrder(t *testing.T) {
 func TestCmdHelp_ListsAllVisibleCommands(t *testing.T) {
 	out := cmdHelp("", nil)
 	for _, cmd := range commandRegistry {
-		if cmd.Hidden {
+		if !cmd.isVisible() {
 			continue
 		}
 		needle := "/" + cmd.Name
@@ -60,8 +60,8 @@ func TestCmdHelp_HiddenCommandsOmitted(t *testing.T) {
 		Name:        "secret-debug-cmd",
 		Group:       "App",
 		Description: "should never appear",
-		Hidden:      true,
-		Type:        cmdTypeLocal,
+		Visible:     false,
+		Kind:        slashCommandKindLocal,
 		Execute:     func(string, *Model) string { return "" },
 	})
 	out := cmdHelp("", nil)
@@ -77,7 +77,8 @@ func TestCmdHelp_UngroupedCommandFallsIntoOtherBucket(t *testing.T) {
 	commandRegistry = append(commandRegistry, command{
 		Name:        "loose-end",
 		Description: "no group set on purpose",
-		Type:        cmdTypeLocal,
+		Visible:     true,
+		Kind:        slashCommandKindLocal,
 		Execute:     func(string, *Model) string { return "" },
 	})
 	out := cmdHelp("", nil)

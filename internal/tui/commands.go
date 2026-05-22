@@ -27,24 +27,41 @@ import (
 // Command registry types
 // ---------------------------------------------------------------------------
 
-type commandType string
+type slashCommandArgMode string
 
 const (
-	cmdTypeLocal  commandType = "local"
-	cmdTypePrompt commandType = "prompt"
+	slashArgNone        slashCommandArgMode = "none"
+	slashArgOptional    slashCommandArgMode = "optional"
+	slashArgRequired    slashCommandArgMode = "required"
+	slashArgPassthrough slashCommandArgMode = "passthrough"
 )
 
-type command struct {
-	Name        string
-	Group       string // one of commandGroupOrder; "Other" falls to the tail
-	Aliases     []string
-	Description string
-	ArgHint     string
-	InlineArgs  bool
-	Hidden      bool
-	Type        commandType
-	Execute     func(args string, m *Model) string
+type slashCommandKind string
+
+const (
+	slashCommandKindLocal      slashCommandKind = "local"
+	slashCommandKindPrompt     slashCommandKind = "prompt"
+	slashCommandKindReport     slashCommandKind = "report"
+	slashCommandKindConfig     slashCommandKind = "config"
+	slashCommandKindSession    slashCommandKind = "session"
+	slashCommandKindBackground slashCommandKind = "background"
+)
+
+type SlashCommandSpec struct {
+	Name                string
+	Group               string // one of commandGroupOrder; "Other" falls to the tail
+	Aliases             []string
+	Description         string
+	ArgHint             string
+	ArgMode             slashCommandArgMode
+	AvailableDuringTask bool
+	Visible             bool
+	HiddenFromPopup     bool
+	Kind                slashCommandKind
+	Execute             func(args string, m *Model) string
 }
+
+type command = SlashCommandSpec
 
 // commandGroupOrder dictates /help's section ordering. Commands that
 // don't match any entry here land in an "Other" bucket rendered last,
@@ -63,69 +80,83 @@ var commandGroupOrder = []string{
 	"App",
 }
 
-func (c command) completionEnterBehavior() slashCompletionEnterBehavior {
-	if c.ArgHint != "" || c.InlineArgs {
+func (c SlashCommandSpec) completionEnterBehavior() slashCompletionEnterBehavior {
+	if c.ArgMode != slashArgNone {
 		return slashCompletionInsertOnly
 	}
-	switch c.Name {
-	case "help", "clear", "status", "context", "compact", "fork", "new", "diff", "copy", "skills", "memory", "workers", "processes", "cleanup-worktrees", "insight", "exit", "coordinator", "normal":
-		return slashCompletionExecute
-	default:
-		return slashCompletionInsertOnly
-	}
+	return slashCompletionExecute
 }
 
-var commandRegistry []command
+func (c SlashCommandSpec) isVisible() bool {
+	return c.Visible
+}
+
+func (c SlashCommandSpec) isVisibleInPopup() bool {
+	return c.isVisible() && !c.HiddenFromPopup
+}
+
+func commandSpec(spec SlashCommandSpec) SlashCommandSpec {
+	if spec.ArgMode == "" {
+		spec.ArgMode = slashArgNone
+	}
+	if spec.Kind == "" {
+		spec.Kind = slashCommandKindLocal
+	}
+	spec.Visible = true
+	return spec
+}
+
+var commandRegistry []SlashCommandSpec
 
 func init() {
-	commandRegistry = []command{
+	commandRegistry = []SlashCommandSpec{
 		// ── App ────────────────────────────────────────────────────
-		{Name: "help", Group: "App", Description: "Show available commands", Type: cmdTypeLocal, Execute: cmdHelp},
-		{Name: "exit", Group: "App", Aliases: []string{"quit"}, Description: "Exit wuu", Type: cmdTypeLocal, Execute: cmdExit},
+		commandSpec(SlashCommandSpec{Name: "help", Group: "App", Description: "Show available commands", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdHelp}),
+		commandSpec(SlashCommandSpec{Name: "exit", Group: "App", Aliases: []string{"quit"}, Description: "Exit wuu", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdExit}),
 
 		// ── Session ────────────────────────────────────────────────
-		{Name: "clear", Group: "Session", Description: "Clear screen", Type: cmdTypeLocal, Execute: cmdClear},
-		{Name: "new", Group: "Session", Description: "Start new conversation", Type: cmdTypeLocal, Execute: cmdNew},
-		{Name: "resume", Group: "Session", Description: "Resume previous session", ArgHint: "[session-id]", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdResume},
-		{Name: "fork", Group: "Session", Description: "Fork current session", Type: cmdTypeLocal, Execute: cmdFork},
-		{Name: "queue", Group: "Session", Description: "List or manage queued messages", ArgHint: "[rm <n> | clear]", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdQueue},
+		commandSpec(SlashCommandSpec{Name: "clear", Group: "Session", Description: "Clear screen", AvailableDuringTask: false, Kind: slashCommandKindSession, Execute: cmdClear}),
+		commandSpec(SlashCommandSpec{Name: "new", Group: "Session", Description: "Start new conversation", AvailableDuringTask: false, Kind: slashCommandKindSession, Execute: cmdNew}),
+		commandSpec(SlashCommandSpec{Name: "resume", Group: "Session", Description: "Resume previous session", ArgHint: "[session-id]", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindSession, Execute: cmdResume}),
+		commandSpec(SlashCommandSpec{Name: "fork", Group: "Session", Description: "Fork current session", AvailableDuringTask: false, Kind: slashCommandKindSession, Execute: cmdFork}),
+		commandSpec(SlashCommandSpec{Name: "queue", Group: "Session", Description: "List or manage queued messages", ArgHint: "[rm <n> | clear]", ArgMode: slashArgOptional, AvailableDuringTask: true, Kind: slashCommandKindSession, Execute: cmdQueue}),
 
 		// ── Context ────────────────────────────────────────────────
-		{Name: "compact", Group: "Context", Description: "Compress conversation context", Type: cmdTypeLocal, Execute: cmdCompact},
-		{Name: "context", Group: "Context", Description: "Show context window usage breakdown", Type: cmdTypeLocal, Execute: cmdContext},
+		commandSpec(SlashCommandSpec{Name: "compact", Group: "Context", Description: "Compress conversation context", AvailableDuringTask: false, Kind: slashCommandKindSession, Execute: cmdCompact}),
+		commandSpec(SlashCommandSpec{Name: "context", Group: "Context", Description: "Show context window usage breakdown", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdContext}),
 
 		// ── Info ───────────────────────────────────────────────────
-		{Name: "status", Group: "Info", Description: "Show session config and token usage", Type: cmdTypeLocal, Execute: cmdStatus},
-		{Name: "skills", Group: "Info", Description: "List available skills", Type: cmdTypeLocal, Execute: cmdSkills},
-		{Name: "memory", Group: "Info", Description: "Show loaded memory files (CLAUDE.md / AGENTS.md)", Type: cmdTypeLocal, Execute: cmdMemory},
-		{Name: "insight", Group: "Info", Description: "Session stats and diagnostics", Type: cmdTypeLocal, Execute: cmdInsight},
+		commandSpec(SlashCommandSpec{Name: "status", Group: "Info", Description: "Show session config and token usage", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdStatus}),
+		commandSpec(SlashCommandSpec{Name: "skills", Group: "Info", Description: "List available skills", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdSkills}),
+		commandSpec(SlashCommandSpec{Name: "memory", Group: "Info", Description: "Show loaded memory files (CLAUDE.md / AGENTS.md)", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdMemory}),
+		commandSpec(SlashCommandSpec{Name: "insight", Group: "Info", Description: "Session stats and diagnostics", AvailableDuringTask: false, Kind: slashCommandKindReport, Execute: cmdInsight}),
 
 		// ── Config ─────────────────────────────────────────────────
-		{Name: "model", Group: "Config", Description: "Switch model/provider", ArgHint: "<model-name>", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdModelSwitch},
-		{Name: "effort", Group: "Config", Description: "Set reasoning effort level", ArgHint: "[low|medium|high|max]", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdEffort},
+		commandSpec(SlashCommandSpec{Name: "model", Group: "Config", Description: "Switch model/provider", ArgHint: "<model-name>", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdModelSwitch}),
+		commandSpec(SlashCommandSpec{Name: "effort", Group: "Config", Description: "Set reasoning effort level", ArgHint: "[low|medium|high|max]", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdEffort}),
 
 		// ── Output ─────────────────────────────────────────────────
-		{Name: "diff", Group: "Output", Description: "Show git diff", Type: cmdTypeLocal, Execute: cmdDiff},
-		{Name: "copy", Group: "Output", Description: "Copy last output to clipboard", Type: cmdTypeLocal, Execute: cmdCopy},
+		commandSpec(SlashCommandSpec{Name: "diff", Group: "Output", Description: "Show git diff", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdDiff}),
+		commandSpec(SlashCommandSpec{Name: "copy", Group: "Output", Description: "Copy last output to clipboard", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdCopy}),
 
 		// ── Worktree ───────────────────────────────────────────────
-		{Name: "worktree", Group: "Worktree", Description: "Create/switch git worktree", ArgHint: "<name>", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdWorktree},
-		{Name: "cleanup-worktrees", Group: "Worktree", Description: "Remove all sub-agent worktrees for this session", Type: cmdTypeLocal, Execute: cmdCleanupWorktrees},
+		commandSpec(SlashCommandSpec{Name: "worktree", Group: "Worktree", Description: "Create/switch git worktree", ArgHint: "<name>", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindSession, Execute: cmdWorktree}),
+		commandSpec(SlashCommandSpec{Name: "cleanup-worktrees", Group: "Worktree", Description: "Remove all sub-agent worktrees for this session", AvailableDuringTask: false, Kind: slashCommandKindSession, Execute: cmdCleanupWorktrees}),
 
 		// ── Processes ──────────────────────────────────────────────
-		{Name: "workers", Group: "Processes", Description: "List active and recent sub-agents", Type: cmdTypeLocal, Execute: cmdWorkers},
-		{Name: "processes", Group: "Processes", Description: "List managed background processes", Type: cmdTypeLocal, Execute: cmdProcesses},
-		{Name: "stop-process", Group: "Processes", Description: "Stop a managed background process", ArgHint: "<id-or-substring>", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdStopProcess},
-		{Name: "logs", Group: "Processes", Description: "Show recent output from a managed background process", ArgHint: "<id-or-substring>", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdLogs},
+		commandSpec(SlashCommandSpec{Name: "workers", Group: "Processes", Description: "List active and recent sub-agents", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdWorkers}),
+		commandSpec(SlashCommandSpec{Name: "processes", Group: "Processes", Description: "List managed background processes", AvailableDuringTask: true, Kind: slashCommandKindBackground, Execute: cmdProcesses}),
+		commandSpec(SlashCommandSpec{Name: "stop-process", Group: "Processes", Description: "Stop a managed background process", ArgHint: "<id-or-substring>", ArgMode: slashArgRequired, AvailableDuringTask: true, Kind: slashCommandKindBackground, Execute: cmdStopProcess}),
+		commandSpec(SlashCommandSpec{Name: "logs", Group: "Processes", Description: "Show recent output from a managed background process", ArgHint: "<id-or-substring>", ArgMode: slashArgRequired, AvailableDuringTask: true, Kind: slashCommandKindBackground, Execute: cmdLogs}),
 
 		// ── Scheduling ─────────────────────────────────────────────
-		{Name: "loop", Group: "Scheduling", Description: "Create a session-only recurring task", ArgHint: "<interval> <prompt>", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdLoop},
-		{Name: "unloop", Group: "Scheduling", Description: "Cancel a scheduled task by id", ArgHint: "<task-id>", InlineArgs: true, Type: cmdTypeLocal, Execute: cmdUnloop},
-		{Name: "tasks", Group: "Scheduling", Description: "List scheduled tasks", Type: cmdTypeLocal, Execute: cmdTasks},
+		commandSpec(SlashCommandSpec{Name: "loop", Group: "Scheduling", Description: "Create a session-only recurring task", ArgHint: "<interval> <prompt>", ArgMode: slashArgRequired, AvailableDuringTask: true, Kind: slashCommandKindBackground, Execute: cmdLoop}),
+		commandSpec(SlashCommandSpec{Name: "unloop", Group: "Scheduling", Description: "Cancel a scheduled task by id", ArgHint: "<task-id>", ArgMode: slashArgRequired, AvailableDuringTask: true, Kind: slashCommandKindBackground, Execute: cmdUnloop}),
+		commandSpec(SlashCommandSpec{Name: "tasks", Group: "Scheduling", Description: "List scheduled tasks", AvailableDuringTask: true, Kind: slashCommandKindBackground, Execute: cmdTasks}),
 
 		// ── Mode ───────────────────────────────────────────────────
-		{Name: "coordinator", Group: "Mode", Aliases: []string{"coord"}, Description: "Switch to coordinator mode (disable write tools)", Type: cmdTypeLocal, Execute: cmdCoordinator},
-		{Name: "normal", Group: "Mode", Description: "Return to normal mode (enable write tools)", Type: cmdTypeLocal, Execute: cmdNormal},
+		commandSpec(SlashCommandSpec{Name: "coordinator", Group: "Mode", Aliases: []string{"coord"}, Description: "Switch to coordinator mode (disable write tools)", AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdCoordinator}),
+		commandSpec(SlashCommandSpec{Name: "normal", Group: "Mode", Description: "Return to normal mode (enable write tools)", AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdNormal}),
 	}
 }
 
@@ -176,10 +207,11 @@ func (m *Model) handleSlash(input string) (string, bool) {
 		args = parts[1]
 	}
 
-	for _, cmd := range commandRegistry {
-		if cmd.Name == name || containsAlias(cmd.Aliases, name) {
-			return cmd.Execute(args, m), true
+	if cmd, ok := findCommandSpec(name); ok {
+		if m != nil && m.isSlashCommandTaskRunning() && !cmd.AvailableDuringTask {
+			return fmt.Sprintf("'/%s' is disabled while a task is in progress.", cmd.Name), true
 		}
+		return cmd.Execute(args, m), true
 	}
 
 	return fmt.Sprintf("unknown command: /%s (type /help for available commands)", name), true
@@ -200,10 +232,8 @@ func (m *Model) expandSkillShorthand(input string) (string, bool) {
 	if name == "" {
 		return "", false
 	}
-	for _, cmd := range commandRegistry {
-		if cmd.Name == name || containsAlias(cmd.Aliases, name) {
-			return "", false
-		}
+	if _, ok := findCommandSpec(name); ok {
+		return "", false
 	}
 	skill, ok := skills.Find(m.skills, name)
 	if !ok {
@@ -239,6 +269,23 @@ func containsAlias(aliases []string, name string) bool {
 	return false
 }
 
+func findCommandSpec(name string) (*SlashCommandSpec, bool) {
+	for i := range commandRegistry {
+		cmd := &commandRegistry[i]
+		if !cmd.isVisible() {
+			continue
+		}
+		if cmd.Name == name || containsAlias(cmd.Aliases, name) {
+			return cmd, true
+		}
+	}
+	return nil, false
+}
+
+func (m *Model) isSlashCommandTaskRunning() bool {
+	return m.streaming || m.pendingRequest || m.insightRunning
+}
+
 // ---------------------------------------------------------------------------
 // Command implementations
 // ---------------------------------------------------------------------------
@@ -249,7 +296,7 @@ func cmdHelp(_ string, _ *Model) string {
 	// of silently hiding them.
 	byGroup := make(map[string][]command)
 	for _, cmd := range commandRegistry {
-		if cmd.Hidden {
+		if !cmd.isVisible() {
 			continue
 		}
 		g := cmd.Group

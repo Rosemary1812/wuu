@@ -129,6 +129,39 @@ func TestHandleSlashNewClearsChatHistoryWithoutSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestHandleSlashRespectsTaskAvailability(t *testing.T) {
+	m := NewModel(Config{
+		Provider:   "test",
+		Model:      "test-model",
+		ConfigPath: "/tmp/.wuu.json",
+		StreamRunner: &agent.StreamRunner{
+			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
+			Model:  "test-model",
+		},
+	})
+	m.pendingRequest = true
+	m.entries = []transcriptEntry{{Role: "USER", Content: "keep visible history"}}
+
+	msg, handled := m.handleSlash("/new")
+	if !handled {
+		t.Fatal("expected /new to be handled")
+	}
+	if !strings.Contains(msg, "disabled while a task is in progress") {
+		t.Fatalf("expected task availability message, got %q", msg)
+	}
+	if len(m.entries) != 1 {
+		t.Fatalf("expected disabled /new not to clear entries, got %d", len(m.entries))
+	}
+
+	msg, handled = m.handleSlash("/status")
+	if !handled {
+		t.Fatal("expected /status to be handled")
+	}
+	if !strings.Contains(msg, "provider: test") {
+		t.Fatalf("expected /status to run during task, got %q", msg)
+	}
+}
+
 func TestCmdLoopStoresSessionOnlyTask(t *testing.T) {
 	root := t.TempDir()
 	m := NewModel(Config{
