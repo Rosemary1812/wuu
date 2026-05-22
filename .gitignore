@@ -1,5 +1,11 @@
 # Build artifacts
 wuu
+bin/
+dist/
+node_modules/
+desktop/dist/
+desktop/node_modules/
+desktop/out/
 
 # Local runtime config
 .wuu.json
