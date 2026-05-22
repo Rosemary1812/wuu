@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 var errShutdown = errors.New("app-server shutdown requested")
@@ -48,14 +50,24 @@ type Server struct {
 
 	mu      sync.Mutex
 	threads map[string]*threadState
+
+	pendingMu       sync.Mutex
+	nextServerReqID int64
+	pendingRequests map[string]chan clientResponse
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
-	return &Server{
-		rt:      rt,
-		out:     out,
-		threads: make(map[string]*threadState),
+	s := &Server{
+		rt:              rt,
+		out:             out,
+		threads:         make(map[string]*threadState),
+		pendingRequests: make(map[string]chan clientResponse),
 	}
+	if rt != nil && rt.Toolkit != nil {
+		rt.Toolkit.SetAskUserBridge(s)
+		rt.AskBridge = s
+	}
+	return s
 }
 
 func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Writer) error {
@@ -88,6 +100,9 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return s.writeResponse(nil, nil, fmt.Errorf("parse request: %w", err))
 	}
+	if strings.TrimSpace(req.Method) == "" {
+		return s.handleClientResponse(raw)
+	}
 	switch req.Method {
 	case MethodInitialize:
 		return s.handleInitialize(req)
@@ -111,6 +126,28 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 	default:
 		return s.writeResponse(req.ID, nil, fmt.Errorf("unknown method %q", req.Method))
 	}
+}
+
+func (s *Server) handleClientResponse(raw []byte) error {
+	var resp ClientResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return s.writeResponse(nil, nil, fmt.Errorf("parse response: %w", err))
+	}
+	key := requestIDKey(resp.ID)
+	if key == "" {
+		return s.writeResponse(nil, nil, errors.New("response id is required"))
+	}
+	s.pendingMu.Lock()
+	ch := s.pendingRequests[key]
+	if ch != nil {
+		delete(s.pendingRequests, key)
+	}
+	s.pendingMu.Unlock()
+	if ch == nil {
+		return nil
+	}
+	ch <- clientResponse{result: resp.Result, err: resp.Error}
+	return nil
 }
 
 func (s *Server) handleInitialize(req Request) error {
@@ -377,6 +414,70 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult) 
 		return err
 	}
 	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))
+}
+
+func (s *Server) AskUser(ctx context.Context, req tools.AskUserRequest) (tools.AskUserResponse, error) {
+	if err := req.Validate(); err != nil {
+		return tools.AskUserResponse{}, err
+	}
+	result, err := s.requestClient(ctx, MethodToolRequestUserInput, ToolRequestUserInputParams{
+		Questions: req.Questions,
+	})
+	if err != nil {
+		return tools.AskUserResponse{}, err
+	}
+	var resp tools.AskUserResponse
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return tools.AskUserResponse{}, fmt.Errorf("decode ask_user response: %w", err)
+	}
+	return resp, nil
+}
+
+type clientResponse struct {
+	result json.RawMessage
+	err    *ResponseError
+}
+
+func (s *Server) requestClient(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	id := s.nextServerRequestID()
+	rawID := json.RawMessage(strconv.Quote(id))
+	key := requestIDKey(rawID)
+	ch := make(chan clientResponse, 1)
+
+	s.pendingMu.Lock()
+	s.pendingRequests[key] = ch
+	s.pendingMu.Unlock()
+
+	if err := s.writeJSON(ServerRequest{ID: rawID, Method: method, Params: params}); err != nil {
+		s.pendingMu.Lock()
+		delete(s.pendingRequests, key)
+		s.pendingMu.Unlock()
+		return nil, err
+	}
+
+	select {
+	case resp := <-ch:
+		if resp.err != nil {
+			return nil, errors.New(resp.err.Message)
+		}
+		return resp.result, nil
+	case <-ctx.Done():
+		s.pendingMu.Lock()
+		delete(s.pendingRequests, key)
+		s.pendingMu.Unlock()
+		return nil, ctx.Err()
+	}
+}
+
+func (s *Server) nextServerRequestID() string {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	s.nextServerReqID++
+	return fmt.Sprintf("server-%d", s.nextServerReqID)
+}
+
+func requestIDKey(raw json.RawMessage) string {
+	return strings.TrimSpace(string(raw))
 }
 
 func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {

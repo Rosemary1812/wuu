@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 type fakeClient struct {
@@ -223,6 +224,60 @@ func TestServerTurnItemsIncludeReasoningAndAgentMessage(t *testing.T) {
 	}
 }
 
+func TestServerAskUserUsesClientResponse(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	done := make(chan tools.AskUserResponse, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := srv.AskUser(ctx, tools.AskUserRequest{
+			Questions: []tools.AskUserQuestion{{
+				Question: "Continue?",
+				Header:   "Continue",
+				Options: []tools.AskUserOption{
+					{Label: "Yes", Description: "Continue the turn."},
+					{Label: "No", Description: "Stop now."},
+				},
+			}},
+		})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		done <- resp
+	}()
+
+	msgs := waitForMethod(t, out, MethodToolRequestUserInput)
+	request := requestByMethod(t, msgs, MethodToolRequestUserInput)
+	raw, err := json.Marshal(map[string]any{
+		"id": request["id"],
+		"result": tools.AskUserResponse{
+			Answers: map[string]string{"Continue?": "Yes"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal client response: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("client response: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("AskUser returned error: %v", err)
+	case resp := <-done:
+		if resp.Answers["Continue?"] != "Yes" {
+			t.Fatalf("unexpected AskUser response: %+v", resp)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for AskUser")
+	}
+}
+
 func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
@@ -343,6 +398,17 @@ func notificationByMethod(t *testing.T, msgs []map[string]any, method string) ma
 		}
 	}
 	t.Fatalf("notification %s not found in %+v", method, msgs)
+	return nil
+}
+
+func requestByMethod(t *testing.T, msgs []map[string]any, method string) map[string]any {
+	t.Helper()
+	for _, msg := range msgs {
+		if msg["method"] == method && msg["id"] != nil {
+			return msg
+		}
+	}
+	t.Fatalf("request %s not found in %+v", method, msgs)
 	return nil
 }
 

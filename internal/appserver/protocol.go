@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 const (
@@ -18,6 +19,8 @@ const (
 	MethodTurnStart     = "turn/start"
 	MethodTurnInterrupt = "turn/interrupt"
 	MethodShutdown      = "shutdown"
+
+	MethodToolRequestUserInput = "item/tool/requestUserInput"
 
 	NotificationThreadStarted = "thread/started"
 	NotificationThreadResumed = "thread/resumed"
@@ -38,6 +41,18 @@ type Request struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params,omitempty"`
+}
+
+type ServerRequest struct {
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params any             `json:"params,omitempty"`
+}
+
+type ClientResponse struct {
+	ID     json.RawMessage `json:"id,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *ResponseError  `json:"error,omitempty"`
 }
 
 type Response struct {
@@ -258,6 +273,10 @@ type ToolCallOutputNotification struct {
 	TurnID   string `json:"turn_id"`
 	ItemID   string `json:"item_id"`
 	Delta    string `json:"delta"`
+}
+
+type ToolRequestUserInputParams struct {
+	Questions []tools.AskUserQuestion `json:"questions"`
 }
 
 type StreamEventPayload struct {
