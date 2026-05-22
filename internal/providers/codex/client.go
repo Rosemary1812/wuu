@@ -82,6 +82,7 @@ func New(cfg ClientConfig) (*Client, error) {
 
 // Chat performs one non-streaming Responses API call.
 func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	req = codexRequest(req)
 	client, creds, err := c.openAIClient(ctx, false)
 	if err != nil {
 		return providers.ChatResponse{}, err
@@ -99,6 +100,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 
 // StreamChat opens a streaming Responses API call.
 func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	req = codexRequest(req)
 	client, creds, err := c.openAIClient(ctx, false)
 	if err != nil {
 		return nil, err
@@ -112,6 +114,11 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 		return nil, fmt.Errorf("refresh Codex OAuth credentials after auth failure: %w", refreshErr)
 	}
 	return client.StreamChat(ctx, req)
+}
+
+func codexRequest(req providers.ChatRequest) providers.ChatRequest {
+	req.Temperature = 0
+	return req
 }
 
 func (c *Client) openAIClient(ctx context.Context, forceRefresh bool) (*openai.Client, credentials, error) {
@@ -128,14 +135,16 @@ func (c *Client) openAIClient(ctx context.Context, forceRefresh bool) (*openai.C
 			headers[k] = v
 		}
 	}
+	store := false
 	client, err := openai.New(openai.ClientConfig{
-		BaseURL:      c.baseURL,
-		WireAPI:      "responses",
-		APIKey:       creds.accessToken,
-		Headers:      headers,
-		HTTPClient:   c.httpClient,
-		RetryConfig:  c.retryConfig,
-		StreamConfig: c.streamConfig,
+		BaseURL:        c.baseURL,
+		WireAPI:        "responses",
+		APIKey:         creds.accessToken,
+		Headers:        headers,
+		HTTPClient:     c.httpClient,
+		RetryConfig:    c.retryConfig,
+		StreamConfig:   c.streamConfig,
+		ResponsesStore: &store,
 	})
 	if err != nil {
 		return nil, credentials{}, err

@@ -265,7 +265,7 @@ func Default() Config {
 				Type:    "openai-codex",
 				BaseURL: "https://chatgpt.com/backend-api/codex",
 				WireAPI: "responses",
-				Model:   "gpt-5-codex",
+				Model:   "gpt-5.5",
 			},
 			"anthropic": {
 				Type:      "anthropic",

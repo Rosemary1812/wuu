@@ -932,6 +932,9 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 		if body["model"] != "gpt-test" {
 			t.Fatalf("unexpected model: %#v", body["model"])
 		}
+		if body["instructions"] != "sys" {
+			t.Fatalf("unexpected instructions: %#v", body["instructions"])
+		}
 		if body["max_output_tokens"] != float64(123) {
 			t.Fatalf("expected max_output_tokens=123, got %#v", body["max_output_tokens"])
 		}
@@ -1000,6 +1003,7 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 		Model:     "gpt-test",
 		MaxTokens: 123,
 		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "sys"},
 			{Role: "user", Content: "read README"},
 			{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
 			{Role: "tool", ToolCallID: "call_1", Content: "file contents"},

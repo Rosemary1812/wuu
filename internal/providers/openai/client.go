@@ -52,13 +52,14 @@ func normalizeWireAPI(value string) (string, error) {
 
 // ClientConfig configures an OpenAI-compatible endpoint.
 type ClientConfig struct {
-	BaseURL      string
-	WireAPI      string
-	APIKey       string
-	Headers      map[string]string
-	HTTPClient   *http.Client
-	RetryConfig  *providers.RetryConfig
-	StreamConfig *providers.StreamTransportConfig
+	BaseURL        string
+	WireAPI        string
+	APIKey         string
+	Headers        map[string]string
+	HTTPClient     *http.Client
+	RetryConfig    *providers.RetryConfig
+	StreamConfig   *providers.StreamTransportConfig
+	ResponsesStore *bool
 }
 
 // Client sends tool-enabled chat requests to OpenAI-compatible APIs.
@@ -71,6 +72,7 @@ type Client struct {
 	retryConfig          providers.RetryConfig
 	promptCacheKeyFormat promptCacheKeyFormat
 	streamConfig         providers.StreamTransportConfig
+	responsesStore       *bool
 }
 
 // New creates an OpenAI-compatible client.
@@ -105,6 +107,7 @@ func New(cfg ClientConfig) (*Client, error) {
 		retryConfig:          rc,
 		promptCacheKeyFormat: detectPromptCacheKeyFormat(cfg.BaseURL, cfg.Headers),
 		streamConfig:         streamTransportConfig(cfg.StreamConfig),
+		responsesStore:       cfg.ResponsesStore,
 	}, nil
 }
 

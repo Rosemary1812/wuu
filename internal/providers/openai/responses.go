@@ -83,17 +83,22 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		return responsesRequest{}, err
 	}
 
-	input := make([]responsesInputItem, 0, len(normalized))
-	for _, msg := range normalized {
+	instructions, messages := splitResponsesInstructions(normalized)
+	input := make([]responsesInputItem, 0, len(messages))
+	for _, msg := range messages {
 		input = appendResponsesInputItem(input, msg)
 	}
 
 	payload := responsesRequest{
 		Model:           req.Model,
+		Instructions:    instructions,
 		Input:           input,
 		Temperature:     req.Temperature,
 		MaxOutputTokens: req.MaxTokens,
 		Stream:          stream,
+	}
+	if c.responsesStore != nil {
+		payload.Store = c.responsesStore
 	}
 	if key := responsePromptCacheKey(req.CacheHint); key != "" {
 		payload.PromptCacheKey = key
@@ -116,6 +121,21 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 	}
 
 	return payload, nil
+}
+
+func splitResponsesInstructions(messages []providers.ChatMessage) (string, []providers.ChatMessage) {
+	instructions := make([]string, 0, 1)
+	input := make([]providers.ChatMessage, 0, len(messages))
+	for _, msg := range messages {
+		if strings.EqualFold(msg.Role, "system") {
+			if text := strings.TrimSpace(msg.Content); text != "" {
+				instructions = append(instructions, text)
+			}
+			continue
+		}
+		input = append(input, msg)
+	}
+	return strings.Join(instructions, "\n\n"), input
 }
 
 func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMessage) []responsesInputItem {
@@ -545,12 +565,14 @@ func (p *responsesPendingTool) update(item responsesOutputItem, outputIndex int)
 
 type responsesRequest struct {
 	Model           string                    `json:"model"`
+	Instructions    string                    `json:"instructions,omitempty"`
 	Input           []responsesInputItem      `json:"input"`
 	Tools           []responsesToolDefinition `json:"tools,omitempty"`
 	ToolChoice      string                    `json:"tool_choice,omitempty"`
 	Temperature     float64                   `json:"temperature,omitempty"`
 	MaxOutputTokens int                       `json:"max_output_tokens,omitempty"`
 	Stream          bool                      `json:"stream,omitempty"`
+	Store           *bool                     `json:"store,omitempty"`
 	Reasoning       *responsesReasoning       `json:"reasoning,omitempty"`
 	PromptCacheKey  string                    `json:"prompt_cache_key,omitempty"`
 }

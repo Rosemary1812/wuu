@@ -35,6 +35,19 @@ func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
 		if got := r.Header.Get("ChatGPT-Account-ID"); got != "acct_123" {
 			t.Fatalf("ChatGPT-Account-ID = %q", got)
 		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if _, exists := body["temperature"]; exists {
+			t.Fatalf("Codex request must omit unsupported temperature, got %#v", body["temperature"])
+		}
+		if body["instructions"] == "" {
+			t.Fatalf("Codex request must include instructions: %#v", body)
+		}
+		if body["store"] != false {
+			t.Fatalf("Codex request must set store=false, got %#v", body["store"])
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
 	}))
@@ -45,8 +58,12 @@ func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	resp, err := client.Chat(context.Background(), providers.ChatRequest{
-		Model:    "gpt-5-codex",
-		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Model:       "gpt-5-codex",
+		Temperature: 0.2,
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "hello"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
