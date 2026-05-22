@@ -15,33 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
-const ProtocolVersion = "wuu-app-server/v0.1"
-
 var errShutdown = errors.New("app-server shutdown requested")
-
-type request struct {
-	ID     json.RawMessage `json:"id,omitempty"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
-}
-
-type response struct {
-	Type   string          `json:"type"`
-	ID     json.RawMessage `json:"id,omitempty"`
-	Result any             `json:"result,omitempty"`
-	Error  *responseError  `json:"error,omitempty"`
-}
-
-type responseError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-type notification struct {
-	Type   string `json:"type"`
-	Method string `json:"method"`
-	Params any    `json:"params,omitempty"`
-}
 
 type threadState struct {
 	ID      string
@@ -96,25 +70,25 @@ func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Wri
 }
 
 func (s *Server) handleLine(ctx context.Context, raw []byte) error {
-	var req request
+	var req Request
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return s.writeResponse(nil, nil, fmt.Errorf("parse request: %w", err))
 	}
 	switch req.Method {
-	case "initialize":
+	case MethodInitialize:
 		return s.handleInitialize(req)
-	case "config/read":
+	case MethodConfigRead:
 		return s.handleConfigRead(req)
-	case "thread/start":
+	case MethodThreadStart:
 		return s.handleThreadStart(req)
-	case "thread/list":
+	case MethodThreadList:
 		return s.handleThreadList(req)
-	case "turn/start":
+	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
-	case "turn/interrupt":
+	case MethodTurnInterrupt:
 		return s.handleTurnInterrupt(req)
-	case "shutdown":
-		if err := s.writeResponse(req.ID, map[string]any{"ok": true}, nil); err != nil {
+	case MethodShutdown:
+		if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 			return err
 		}
 		return errShutdown
@@ -123,26 +97,26 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 	}
 }
 
-func (s *Server) handleInitialize(req request) error {
-	return s.writeResponse(req.ID, map[string]any{
-		"protocol_version": ProtocolVersion,
-		"provider":         s.rt.ProviderName,
-		"model":            s.rt.Model,
-		"workspace_root":   s.rt.RootDir,
+func (s *Server) handleInitialize(req Request) error {
+	return s.writeResponse(req.ID, InitializeResult{
+		ProtocolVersion: ProtocolVersion,
+		Provider:        s.rt.ProviderName,
+		Model:           s.rt.Model,
+		WorkspaceRoot:   s.rt.RootDir,
 	}, nil)
 }
 
-func (s *Server) handleConfigRead(req request) error {
-	return s.writeResponse(req.ID, map[string]any{
-		"provider":       s.rt.ProviderName,
-		"model":          s.rt.Model,
-		"config_path":    s.rt.ConfigPath,
-		"workspace_root": s.rt.RootDir,
-		"session_dir":    s.rt.SessionDir,
+func (s *Server) handleConfigRead(req Request) error {
+	return s.writeResponse(req.ID, ConfigReadResult{
+		Provider:      s.rt.ProviderName,
+		Model:         s.rt.Model,
+		ConfigPath:    s.rt.ConfigPath,
+		WorkspaceRoot: s.rt.RootDir,
+		SessionDir:    s.rt.SessionDir,
 	}, nil)
 }
 
-func (s *Server) handleThreadStart(req request) error {
+func (s *Server) handleThreadStart(req Request) error {
 	id := session.NewID()
 	history := make([]providers.ChatMessage, 0, 1)
 	if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
@@ -155,38 +129,33 @@ func (s *Server) handleThreadStart(req request) error {
 	s.mu.Unlock()
 
 	s.rt.SetSessionID(id)
-	if err := s.writeResponse(req.ID, map[string]any{"thread_id": id}, nil); err != nil {
+	if err := s.writeResponse(req.ID, ThreadStartResult{ThreadID: id}, nil); err != nil {
 		return err
 	}
-	return s.writeNotification("thread/started", map[string]any{
-		"thread_id": id,
+	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
+		ThreadID: id,
 	})
 }
 
-func (s *Server) handleThreadList(req request) error {
+func (s *Server) handleThreadList(req Request) error {
 	s.mu.Lock()
-	threads := make([]map[string]any, 0, len(s.threads))
+	threads := make([]ThreadInfo, 0, len(s.threads))
 	for _, th := range s.threads {
 		th.mu.Lock()
-		threads = append(threads, map[string]any{
-			"thread_id":     th.ID,
-			"message_count": len(th.History),
-			"running":       th.running,
-			"current_turn":  th.currentTurn,
+		threads = append(threads, ThreadInfo{
+			ThreadID:     th.ID,
+			MessageCount: len(th.History),
+			Running:      th.running,
+			CurrentTurn:  th.currentTurn,
 		})
 		th.mu.Unlock()
 	}
 	s.mu.Unlock()
-	return s.writeResponse(req.ID, map[string]any{"threads": threads}, nil)
+	return s.writeResponse(req.ID, ThreadListResult{Threads: threads}, nil)
 }
 
-type turnStartParams struct {
-	ThreadID string `json:"thread_id"`
-	Prompt   string `json:"prompt"`
-}
-
-func (s *Server) handleTurnStart(ctx context.Context, req request) error {
-	var params turnStartParams
+func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
+	var params TurnStartParams
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -221,13 +190,13 @@ func (s *Server) handleTurnStart(ctx context.Context, req request) error {
 	th.cancel = cancel
 	th.mu.Unlock()
 
-	if err := s.writeResponse(req.ID, map[string]any{"turn_id": turnID}, nil); err != nil {
+	if err := s.writeResponse(req.ID, TurnStartResult{TurnID: turnID}, nil); err != nil {
 		cancel()
 		return err
 	}
-	if err := s.writeNotification("turn/started", map[string]any{
-		"thread_id": params.ThreadID,
-		"turn_id":   turnID,
+	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+		ThreadID: params.ThreadID,
+		TurnID:   turnID,
 	}); err != nil {
 		cancel()
 		return err
@@ -237,12 +206,8 @@ func (s *Server) handleTurnStart(ctx context.Context, req request) error {
 	return nil
 }
 
-type turnInterruptParams struct {
-	ThreadID string `json:"thread_id"`
-}
-
-func (s *Server) handleTurnInterrupt(req request) error {
-	var params turnInterruptParams
+func (s *Server) handleTurnInterrupt(req Request) error {
+	var params TurnInterruptParams
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -257,7 +222,7 @@ func (s *Server) handleTurnInterrupt(req request) error {
 		return s.writeResponse(req.ID, nil, errors.New("thread has no running turn"))
 	}
 	cancel()
-	return s.writeResponse(req.ID, map[string]any{"ok": true}, nil)
+	return s.writeResponse(req.ID, OKResult{OK: true}, nil)
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, history []providers.ChatMessage) {
@@ -265,10 +230,10 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, hi
 		_ = s.writeNotification(method, params)
 	}
 	res, err := s.rt.StreamRunner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
-		notify("turn/event", map[string]any{
-			"thread_id": th.ID,
-			"turn_id":   turnID,
-			"event":     sanitizeStreamEvent(ev),
+		notify(NotificationTurnEvent, TurnEventNotification{
+			ThreadID: th.ID,
+			TurnID:   turnID,
+			Event:    sanitizeStreamEvent(ev),
 		})
 	})
 
@@ -284,19 +249,19 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, hi
 	th.mu.Unlock()
 
 	if err != nil {
-		notify("turn/error", map[string]any{
-			"thread_id": th.ID,
-			"turn_id":   turnID,
-			"error":     err.Error(),
+		notify(NotificationTurnError, TurnErrorNotification{
+			ThreadID: th.ID,
+			TurnID:   turnID,
+			Error:    err.Error(),
 		})
 		return
 	}
-	notify("turn/completed", map[string]any{
-		"thread_id":     th.ID,
-		"turn_id":       turnID,
-		"content":       res.Content,
-		"input_tokens":  res.InputTokens,
-		"output_tokens": res.OutputTokens,
+	notify(NotificationTurnCompleted, TurnCompletedNotification{
+		ThreadID:     th.ID,
+		TurnID:       turnID,
+		Content:      res.Content,
+		InputTokens:  res.InputTokens,
+		OutputTokens: res.OutputTokens,
 	})
 }
 
@@ -306,29 +271,29 @@ func (s *Server) thread(id string) *threadState {
 	return s.threads[id]
 }
 
-func sanitizeStreamEvent(ev providers.StreamEvent) map[string]any {
-	out := map[string]any{
-		"type":      ev.Type,
-		"content":   ev.Content,
-		"truncated": ev.Truncated,
+func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
+	out := StreamEventPayload{
+		Type:      ev.Type,
+		Content:   ev.Content,
+		Truncated: ev.Truncated,
 	}
 	if ev.Message != nil {
-		out["message"] = ev.Message
+		out.Message = ev.Message
 	}
 	if ev.ToolCall != nil {
-		out["tool_call"] = ev.ToolCall
+		out.ToolCall = ev.ToolCall
 	}
 	if ev.ToolResult != "" {
-		out["tool_result"] = ev.ToolResult
+		out.ToolResult = ev.ToolResult
 	}
 	if ev.Usage != nil {
-		out["usage"] = ev.Usage
+		out.Usage = ev.Usage
 	}
 	if ev.StopReason != "" {
-		out["stop_reason"] = ev.StopReason
+		out.StopReason = ev.StopReason
 	}
 	if ev.Error != nil {
-		out["error"] = ev.Error.Error()
+		out.Error = ev.Error.Error()
 	}
 	return out
 }
@@ -346,10 +311,10 @@ func decodeParams(raw json.RawMessage, dst any) error {
 }
 
 func (s *Server) writeResponse(id json.RawMessage, result any, err error) error {
-	resp := response{Type: "response", ID: id, Result: result}
+	resp := Response{Type: EnvelopeResponse, ID: id, Result: result}
 	if err != nil {
 		resp.Result = nil
-		resp.Error = &responseError{
+		resp.Error = &ResponseError{
 			Code:    "error",
 			Message: err.Error(),
 		}
@@ -358,8 +323,8 @@ func (s *Server) writeResponse(id json.RawMessage, result any, err error) error 
 }
 
 func (s *Server) writeNotification(method string, params any) error {
-	return s.writeJSON(notification{
-		Type:   "notification",
+	return s.writeJSON(Notification{
+		Type:   EnvelopeNotification,
 		Method: method,
 		Params: params,
 	})
