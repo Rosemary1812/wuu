@@ -39,8 +39,8 @@ func TestOnboardingStepTransitions(t *testing.T) {
 		t.Fatalf("initial step: %d", m.step)
 	}
 
-	// Select "openai" (cursor 0).
-	m.cursor = 0
+	// Select "openai".
+	m.cursor = 1
 	(&m).selectCurrentOption()
 	if m.step != stepBaseURL {
 		t.Fatalf("after provider select, step: %d", m.step)
@@ -50,6 +50,24 @@ func TestOnboardingStepTransitions(t *testing.T) {
 	}
 	if m.baseURL != "https://api.openai.com/v1" {
 		t.Fatalf("base url not pre-filled: %q", m.baseURL)
+	}
+}
+
+func TestOnboardingCodexOAuthSkipsAPIKey(t *testing.T) {
+	m := NewOnboardingModel()
+	m.cursor = 0
+	(&m).selectCurrentOption()
+	if m.providerType != "openai-codex" {
+		t.Fatalf("provider type: %q", m.providerType)
+	}
+	if m.step != stepModel {
+		t.Fatalf("expected Codex OAuth to skip base URL/API key steps, got step %d", m.step)
+	}
+	if m.baseURL != "https://chatgpt.com/backend-api/codex" {
+		t.Fatalf("base url: %q", m.baseURL)
+	}
+	if m.apiKey != "" {
+		t.Fatalf("api key should be empty, got %q", m.apiKey)
 	}
 }
 

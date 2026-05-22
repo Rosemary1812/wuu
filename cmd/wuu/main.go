@@ -600,8 +600,10 @@ func writeOnboardingResult(rootDir, home string, r tui.OnboardingResult) error {
 	if providerName == "openai-compatible" {
 		providerName = "custom"
 	}
-	if err := config.SaveAuthKey(home, providerName, r.APIKey); err != nil {
-		return fmt.Errorf("save auth key: %w", err)
+	if strings.TrimSpace(r.APIKey) != "" {
+		if err := config.SaveAuthKey(home, providerName, r.APIKey); err != nil {
+			return fmt.Errorf("save auth key: %w", err)
+		}
 	}
 
 	// 2. Write .wuu.json (no API key stored in project config).
@@ -613,6 +615,11 @@ func writeOnboardingResult(rootDir, home string, r tui.OnboardingResult) error {
 			BaseURL: r.BaseURL,
 			Model:   r.Model,
 		},
+	}
+	if r.ProviderType == "openai-codex" {
+		p := cfg.Providers[providerName]
+		p.WireAPI = "responses"
+		cfg.Providers[providerName] = p
 	}
 	configPath := filepath.Join(rootDir, ".wuu.json")
 	data, err := json.MarshalIndent(cfg, "", "  ")

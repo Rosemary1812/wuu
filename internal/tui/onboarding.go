@@ -119,6 +119,7 @@ func (m OnboardingModel) Result() OnboardingResult {
 
 func providerTypeOptions() []selectOption {
 	return []selectOption{
+		{"openai-codex", "OpenAI Codex (ChatGPT OAuth)"},
 		{"openai", "OpenAI"},
 		{"anthropic", "Anthropic"},
 		{"openai-compatible", "OpenAI-Compatible (third-party)"},
@@ -127,6 +128,13 @@ func providerTypeOptions() []selectOption {
 
 func modelOptions(providerType string) []selectOption {
 	switch providerType {
+	case "openai-codex":
+		return []selectOption{
+			{"gpt-5.5", "gpt-5.5"},
+			{"gpt-5.4", "gpt-5.4"},
+			{"gpt-5.4-mini", "gpt-5.4-mini"},
+			{"gpt-5.3-codex", "gpt-5.3-codex"},
+		}
 	case "openai":
 		return []selectOption{
 			{"gpt-4.1", "gpt-4.1"},
@@ -153,6 +161,8 @@ func themeOptions() []selectOption {
 
 func defaultBaseURL(providerType string) string {
 	switch providerType {
+	case "openai-codex":
+		return "https://chatgpt.com/backend-api/codex"
 	case "openai":
 		return "https://api.openai.com/v1"
 	case "anthropic":
@@ -281,6 +291,12 @@ func (m *OnboardingModel) selectCurrentOption() {
 			m.providerType = opts[m.cursor].value
 		}
 		m.baseURL = defaultBaseURL(m.providerType)
+		if m.providerType == "openai-codex" {
+			m.step = stepModel
+			m.cursor = 0
+			m.textInput.Blur()
+			return
+		}
 		m.step = stepBaseURL
 		m.cursor = 0
 		m.textInput.SetValue(m.baseURL)
@@ -307,6 +323,12 @@ func (m *OnboardingModel) selectCurrentOption() {
 // goBack moves to the previous step, or quits if already on the first.
 func (m OnboardingModel) goBack() (tea.Model, tea.Cmd) {
 	if m.step > stepProviderType {
+		if m.providerType == "openai-codex" && m.step == stepModel {
+			m.step = stepProviderType
+			m.cursor = 0
+			m.textInput.Blur()
+			return m, nil
+		}
 		m.step--
 		m.cursor = 0
 		if m.isListStep() {

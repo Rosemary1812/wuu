@@ -188,6 +188,42 @@ func TestHandleSlashRespectsTaskAvailability(t *testing.T) {
 	}
 }
 
+func TestModelsCommandRejectsUnsupportedProvider(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".wuu.json")
+	data := `{
+  "default_provider": "test",
+  "providers": {
+    "test": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "api_key": "sk-test",
+      "model": "test-model"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	m := NewModel(Config{
+		Provider:      "test",
+		Model:         "test-model",
+		ConfigPath:    configPath,
+		WorkspaceRoot: dir,
+	})
+
+	msg, handled := m.handleSlash("/models")
+	if !handled {
+		t.Fatal("expected /models to be handled")
+	}
+	if !strings.Contains(msg, "openai-codex only") {
+		t.Fatalf("unexpected /models response: %q", msg)
+	}
+}
+
 func TestCmdUsageUsesLocalSessionStats(t *testing.T) {
 	dir := t.TempDir()
 	start := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)

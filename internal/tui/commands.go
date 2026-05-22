@@ -18,6 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/insight"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
@@ -134,6 +135,7 @@ func init() {
 
 		// ── Config ─────────────────────────────────────────────────
 		commandSpec(SlashCommandSpec{Name: "model", Group: "Config", Description: "Switch model/provider", ArgHint: "<model-name>", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdModelSwitch}),
+		commandSpec(SlashCommandSpec{Name: "models", Group: "Config", Description: "List models for current provider", AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdModels}),
 		commandSpec(SlashCommandSpec{Name: "effort", Group: "Config", Description: "Set reasoning effort level", ArgHint: "[low|medium|high|max]", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdEffort}),
 
 		// ── Output ─────────────────────────────────────────────────
@@ -613,7 +615,7 @@ func cmdCompact(_ string, m *Model) string {
 func cmdModelSwitch(args string, m *Model) string {
 	name := strings.TrimSpace(args)
 	if name == "" {
-		return fmt.Sprintf("current model: %s (use /model <name> to switch)", m.modelName)
+		return fmt.Sprintf("current model: %s (use /models to list, /model <name> to switch)", m.modelName)
 	}
 	old := m.modelName
 	m.modelName = name
@@ -644,6 +646,74 @@ func cmdModelSwitch(args string, m *Model) string {
 		}
 	}
 	return msg
+}
+
+func cmdModels(_ string, m *Model) string {
+	if m == nil {
+		return "models: no active session"
+	}
+	cfg, _, err := config.LoadFrom(m.workspaceRoot, os.Getenv("HOME"))
+	if err != nil {
+		return fmt.Sprintf("models: %v", err)
+	}
+	providerCfg, _, err := cfg.ResolveProvider(m.provider)
+	if err != nil {
+		return fmt.Sprintf("models: %v", err)
+	}
+	if !isCodexProviderType(providerCfg.Type) {
+		return fmt.Sprintf("models: provider %s uses type %s; live model lookup currently supports openai-codex only", m.provider, providerCfg.Type)
+	}
+	client, err := codex.New(codex.ClientConfig{
+		BaseURL: providerCfg.BaseURL,
+		APIKey:  explicitProviderAPIKey(providerCfg),
+		Headers: providerCfg.Headers,
+	})
+	if err != nil {
+		return fmt.Sprintf("models: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	models, err := client.Models(ctx)
+	if err != nil {
+		return fmt.Sprintf("models: %v", err)
+	}
+	if len(models) == 0 {
+		return "models: no models returned"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Models for %s:\n", m.provider)
+	for _, model := range models {
+		marker := " "
+		if model.Slug == m.modelName {
+			marker = "*"
+		}
+		fmt.Fprintf(&b, "%s %s", marker, model.Slug)
+		if model.DisplayName != "" && model.DisplayName != model.Slug {
+			fmt.Fprintf(&b, "  %s", model.DisplayName)
+		}
+		if len(model.SupportedReasoning) > 0 {
+			fmt.Fprintf(&b, "  effort: %s", strings.Join(model.SupportedReasoning, ","))
+		}
+		b.WriteByte('\n')
+	}
+	b.WriteString("\nUse /model <name> to switch.")
+	return b.String()
+}
+
+func isCodexProviderType(providerType string) bool {
+	s := strings.ToLower(strings.TrimSpace(providerType))
+	s = strings.ReplaceAll(s, "_", "-")
+	return s == "openai-codex" || s == "codex-subscription" || s == "chatgpt-codex"
+}
+
+func explicitProviderAPIKey(provider config.ProviderConfig) string {
+	if key := strings.TrimSpace(provider.APIKey); key != "" {
+		return key
+	}
+	if envKey := strings.TrimSpace(provider.APIKeyEnv); envKey != "" {
+		return strings.TrimSpace(os.Getenv(envKey))
+	}
+	return ""
 }
 
 var validEffortLevels = map[string]bool{
