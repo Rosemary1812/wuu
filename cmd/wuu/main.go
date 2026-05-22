@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
@@ -44,6 +45,8 @@ func run(args []string) error {
 		return runTask(args[1:])
 	case "tui":
 		return runTUI(args[1:])
+	case "app-server":
+		return runAppServer(args[1:])
 	case "version", "-v", "--version":
 		if args[0] == "version" {
 			return runVersion(args[1:])
@@ -387,6 +390,47 @@ func runTUI(args []string) error {
 	return nil
 }
 
+func runAppServer(args []string) error {
+	fs := flag.NewFlagSet("app-server", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	providerName := fs.String("provider", "", "provider name in config")
+	modelOverride := fs.String("model", "", "model override")
+	workdir := fs.String("workdir", "", "workspace directory")
+	noTools := fs.Bool("no-tools", false, "disable local tools")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	rootDir, err := resolveWorkdir(*workdir)
+	if err != nil {
+		return err
+	}
+	homeDir := os.Getenv("HOME")
+	cfg, configPath, err := config.LoadFrom(rootDir, homeDir)
+	if err != nil {
+		return err
+	}
+
+	rt, err := runtime.NewSession(runtime.Options{
+		RootDir:       rootDir,
+		HomeDir:       homeDir,
+		ConfigPath:    configPath,
+		Config:        cfg,
+		ProviderName:  *providerName,
+		ModelOverride: *modelOverride,
+		NoTools:       *noTools,
+	})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = rt.Cleanup()
+	}()
+
+	return appserver.RunStdio(context.Background(), rt, os.Stdin, os.Stdout)
+}
+
 func resolveTUIThemeMode(homeDir, override string) (string, error) {
 	if override != "" {
 		return override, nil
@@ -521,6 +565,7 @@ Usage:
   wuu init [--force]
   wuu run [flags] "your coding task"
   wuu tui [flags]
+  wuu app-server [flags]
   wuu version [--long|--json]
 
 Run flags:
@@ -543,5 +588,11 @@ TUI flags:
   --workdir         workspace directory
   --no-tools        disable local tools
   --memory-file     session memory file path
-  --request-timeout turn timeout (default disabled)`)
+  --request-timeout turn timeout (default disabled)
+
+App server flags:
+  --provider        provider name from config
+  --model           model override
+  --workdir         workspace directory
+  --no-tools        disable local tools`)
 }
