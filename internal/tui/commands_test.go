@@ -71,6 +71,29 @@ func TestHandleSlash(t *testing.T) {
 	}
 }
 
+func TestInsightsAliasRemainsSupported(t *testing.T) {
+	m := NewModel(Config{
+		Provider:   "test",
+		Model:      "test-model",
+		ConfigPath: "/tmp/.wuu.json",
+	})
+
+	msg, handled := m.handleSlash("/insight")
+	if !handled {
+		t.Fatal("expected /insight alias to be handled")
+	}
+	if !strings.Contains(msg, "insights: no session directory configured") {
+		t.Fatalf("unexpected alias response: %q", msg)
+	}
+
+	if _, ok := findCommandSpec("insights"); !ok {
+		t.Fatal("expected canonical /insights command")
+	}
+	if cmd, ok := findCommandSpec("insight"); !ok || cmd.Name != "insights" {
+		t.Fatalf("expected /insight alias to resolve to /insights, got %#v ok=%v", cmd, ok)
+	}
+}
+
 func TestHandleSlashNewResetsChatHistoryButKeepsSystemPrompt(t *testing.T) {
 	m := NewModel(Config{
 		Provider:   "test",

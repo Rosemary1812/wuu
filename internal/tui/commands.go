@@ -130,7 +130,7 @@ func init() {
 		commandSpec(SlashCommandSpec{Name: "usage", Group: "Info", Description: "Show local usage statistics", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdUsage}),
 		commandSpec(SlashCommandSpec{Name: "skills", Group: "Info", Description: "List available skills", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdSkills}),
 		commandSpec(SlashCommandSpec{Name: "memory", Group: "Info", Description: "Show loaded memory files (CLAUDE.md / AGENTS.md)", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdMemory}),
-		commandSpec(SlashCommandSpec{Name: "insight", Group: "Info", Description: "Session stats and diagnostics", AvailableDuringTask: false, Kind: slashCommandKindReport, Execute: cmdInsight}),
+		commandSpec(SlashCommandSpec{Name: "insights", Group: "Info", Aliases: []string{"insight"}, Description: "Generate semantic usage insights report", AvailableDuringTask: false, Kind: slashCommandKindReport, Execute: cmdInsights}),
 
 		// ── Config ─────────────────────────────────────────────────
 		commandSpec(SlashCommandSpec{Name: "model", Group: "Config", Description: "Switch model/provider", ArgHint: "<model-name>", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdModelSwitch}),
@@ -1038,23 +1038,27 @@ func cmdCleanupWorktrees(_ string, m *Model) string {
 	return "cleanup-worktrees: removed all worktrees for this session"
 }
 
-func cmdInsight(_ string, m *Model) string {
+func cmdInsights(_ string, m *Model) string {
 	if m.insightRunning {
-		return "insight: already running"
+		return "insights: already running"
 	}
-	// Insight should run in a fresh session to avoid polluting conversation
+	// Insights should run in a fresh session to avoid polluting conversation
 	// context with the lengthy report output.
 	if len(m.entries) > 0 {
-		return "insight: please start a new session first (/new), then run /insight.\n  The report is large and would pollute your current conversation context."
+		return "insights: please start a new session first (/new), then run /insights.\n  The report is large and would pollute your current conversation context."
 	}
 	if m.streaming || m.pendingRequest {
-		return "insight: please wait for the current response to finish"
+		return "insights: please wait for the current response to finish"
 	}
 	if m.sessionDir == "" {
-		return "insight: no session directory configured"
+		return "insights: no session directory configured"
 	}
 	if m.streamRunner == nil {
-		return "insight: requires a streaming provider (no LLM client available)"
+		return "insights: requires a streaming provider (no LLM client available)"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return "insights: no home directory available"
 	}
 
 	ch := make(chan insight.ProgressEvent, 16)
@@ -1067,12 +1071,12 @@ func cmdInsight(_ string, m *Model) string {
 	go insight.Run(ctx, insight.RunConfig{
 		SessionDir:    m.sessionDir,
 		WorkspaceRoot: m.workspaceRoot,
+		OutputDir:     insight.UsageDataDir(home),
 		Client:        m.streamRunner.Client,
 		Model:         m.streamRunner.Model,
-		MaxSessions:   50,
 	}, ch)
 
-	return "insight: scanning sessions..."
+	return fmt.Sprintf("insights: scanning local sessions...\n  semantic analysis uses %s/%s and sends condensed session transcripts to the provider.", m.provider, m.streamRunner.Model)
 }
 
 func cmdExit(_ string, _ *Model) string {

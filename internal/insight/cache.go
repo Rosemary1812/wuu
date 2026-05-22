@@ -4,13 +4,23 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-const cacheSubDir = "insight-cache"
+const usageDataSubDir = "usage-data"
+const cacheSubDir = "cache"
 
-// CacheDir returns the cache directory: .wuu/insight-cache/
-func CacheDir(workspaceRoot string) string {
-	return filepath.Join(workspaceRoot, ".wuu", cacheSubDir)
+// UsageDataDir returns the user-level directory for usage reports and caches.
+func UsageDataDir(homeDir string) string {
+	if strings.TrimSpace(homeDir) == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, ".wuu", usageDataSubDir)
+}
+
+// CacheDir returns the cache directory under usage-data.
+func CacheDir(usageDataDir string) string {
+	return filepath.Join(usageDataDir, cacheSubDir)
 }
 
 // LoadCachedMeta loads cached session metadata, returns nil if missing.

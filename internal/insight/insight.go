@@ -3,6 +3,7 @@ package insight
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -12,15 +13,22 @@ import (
 func Run(ctx context.Context, cfg RunConfig, progress chan<- ProgressEvent) {
 	defer close(progress)
 
-	if cfg.MaxSessions <= 0 {
-		cfg.MaxSessions = 50
+	outputDir := strings.TrimSpace(cfg.OutputDir)
+	if outputDir == "" {
+		outputDir = filepath.Join(cfg.WorkspaceRoot, ".wuu", usageDataSubDir)
 	}
-	cacheDir := CacheDir(cfg.WorkspaceRoot)
+	cacheDir := CacheDir(outputDir)
 
 	// Phase 1: Scan sessions.
 	send(progress, "scanning", "Scanning session files...", 0.05)
 
-	metas, err := ScanSessionsForCWD(cfg.SessionDir, cfg.WorkspaceRoot, cfg.MaxSessions)
+	var metas []SessionMeta
+	var err error
+	if strings.TrimSpace(cfg.ScopeCWD) != "" {
+		metas, err = ScanSessionsForCWD(cfg.SessionDir, cfg.ScopeCWD, cfg.MaxSessions)
+	} else {
+		metas, err = ScanSessions(cfg.SessionDir, cfg.MaxSessions)
+	}
 	if err != nil {
 		sendErr(progress, fmt.Errorf("scan sessions: %w", err))
 		return
@@ -142,10 +150,6 @@ func Run(ctx context.Context, cfg RunConfig, progress chan<- ProgressEvent) {
 	agg := Aggregate(metas, facets)
 
 	// Phase 4: Generate insights via LLM.
-	sectionNames := make([]string, len(insightSections))
-	for i, s := range insightSections {
-		sectionNames[i] = s.Title
-	}
 	send(progress, "generating",
 		fmt.Sprintf("Generating %d insight sections in parallel...", len(insightSections)), 0.75)
 
@@ -168,7 +172,7 @@ func Run(ctx context.Context, cfg RunConfig, progress chan<- ProgressEvent) {
 	}
 
 	// Generate HTML report.
-	if htmlPath, err := GenerateHTML(cfg.WorkspaceRoot, report); err == nil {
+	if htmlPath, err := GenerateHTML(outputDir, report); err == nil {
 		report.HTMLPath = htmlPath
 	}
 

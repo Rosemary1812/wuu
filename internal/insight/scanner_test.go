@@ -154,6 +154,32 @@ func TestBuildUsageReportAggregatesLocalSessions(t *testing.T) {
 	}
 }
 
+func TestUsageDataPathsStayUnderUserState(t *testing.T) {
+	home := t.TempDir()
+	usageDir := UsageDataDir(home)
+	if want := filepath.Join(home, ".wuu", "usage-data"); usageDir != want {
+		t.Fatalf("UsageDataDir() = %q, want %q", usageDir, want)
+	}
+	if want := filepath.Join(usageDir, "cache"); CacheDir(usageDir) != want {
+		t.Fatalf("CacheDir() = %q, want %q", CacheDir(usageDir), want)
+	}
+
+	report := &Report{
+		Stats:       AggregatedData{TotalSessions: 1},
+		GeneratedAt: time.Date(2026, time.April, 16, 12, 0, 0, 0, time.UTC),
+	}
+	path, err := GenerateHTML(usageDir, report)
+	if err != nil {
+		t.Fatalf("GenerateHTML: %v", err)
+	}
+	if path != filepath.Join(usageDir, "report.html") {
+		t.Fatalf("GenerateHTML path = %q, want report.html under usage dir", path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected report file: %v", err)
+	}
+}
+
 func writeInsightSessionRecords(t *testing.T, path string, records []memoryRecord) {
 	t.Helper()
 

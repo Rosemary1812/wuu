@@ -194,7 +194,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.insightProgressIdx >= 0 && m.insightProgressIdx < len(m.entries) {
 				m.entries[m.insightProgressIdx].Content += fmt.Sprintf("\n\n**Error:** %v", msg.event.Err)
 			} else {
-				m.appendEntry("system", fmt.Sprintf("insight failed: %v", msg.event.Err))
+				m.appendEntry("system", fmt.Sprintf("insights failed: %v", msg.event.Err))
 			}
 			m.insightProgressIdx = -1
 			m.statusLine = "ready"
@@ -210,7 +210,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.entries[m.insightProgressIdx].Content += "\n" + line
 				m.entries[m.insightProgressIdx].rendered = ""
 			}
-			m.statusLine = fmt.Sprintf("insight: %s", msg.event.Detail)
+			m.statusLine = fmt.Sprintf("insights: %s", msg.event.Detail)
 			m.refreshViewport(true)
 			return m, waitInsightEvent(m.insightCh)
 		}
@@ -757,7 +757,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.entries[m.insightProgressIdx].Content += "\n\n**Cancelled** by user."
 				}
 				m.insightProgressIdx = -1
-				m.statusLine = "insight cancelled"
+				m.statusLine = "insights cancelled"
 				m.refreshViewport(true)
 				return m, nil
 			}
@@ -957,7 +957,7 @@ func (m Model) submit(shouldQueue bool) (tea.Model, tea.Cmd) {
 			m.input.Reset()
 			m.statusLine = "command executed"
 			m.refreshViewport(true)
-			// If insight was launched, start listening for progress events.
+			// If insights was launched, start listening for progress events.
 			if m.insightRunning && m.insightCh != nil {
 				return m, waitInsightEvent(m.insightCh)
 			}
