@@ -14,6 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/session"
 )
 
 type fakeClient struct {
@@ -141,6 +142,21 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	messages := client.requests[0].Messages
 	if len(messages) < 2 || messages[0].Role != "system" || messages[1].Role != "user" || messages[1].Content != "hello" {
 		t.Fatalf("unexpected agent-loop messages: %+v", messages)
+	}
+
+	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	if len(persisted) != 2 || persisted[0].Role != "user" || persisted[0].Content != "hello" || persisted[1].Role != "assistant" || persisted[1].Content != "done" {
+		t.Fatalf("unexpected persisted history: %+v", persisted)
+	}
+	sessions, err := session.List(rt.SessionDir, 1)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != threadID || sessions[0].Entries != 2 || sessions[0].Summary != "hello" {
+		t.Fatalf("unexpected session index: %+v", sessions)
 	}
 }
 

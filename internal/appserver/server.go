@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -27,6 +28,7 @@ type threadState struct {
 	Model         string
 	CWD           string
 	Turns         []Turn
+	MemoryPath    string
 
 	mu          sync.Mutex
 	running     bool
@@ -132,11 +134,15 @@ func (s *Server) handleConfigRead(req Request) error {
 
 func (s *Server) handleThreadStart(req Request) error {
 	id := session.NewID()
+	sess, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	history := make([]providers.ChatMessage, 0, 1)
 	if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, time.Now().UTC())
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, session.FilePath(s.rt.SessionDir, sess.ID), time.Now().UTC())
 
 	s.mu.Lock()
 	s.threads[id] = th
@@ -178,12 +184,8 @@ func (s *Server) handleThreadResume(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if len(history) == 0 {
-		if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
-			history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
-		}
-	}
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, time.Now().UTC())
+	history = ensureBaseSystemPrompt(history, s.rt.StreamRunner.SystemPrompt)
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, time.Now().UTC())
 	s.mu.Lock()
 	s.threads[id] = th
 	s.mu.Unlock()
@@ -241,6 +243,11 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		th.mu.Unlock()
 		cancel()
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", params.ThreadID))
+	}
+	if err := appendChatMessage(th.MemoryPath, userMsg); err != nil {
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, err)
 	}
 	history := append([]providers.ChatMessage(nil), th.History...)
 	history = append(history, userMsg)
@@ -312,12 +319,17 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, hi
 	} else {
 		th.History = append(th.History, res.NewMessages...)
 	}
+	persistErr := s.persistTurnResultLocked(th, res)
 	status := TurnStatusCompleted
 	if err != nil {
 		status = TurnStatusFailed
 		if errors.Is(err, context.Canceled) {
 			status = TurnStatusInterrupted
 		}
+	}
+	if err == nil && persistErr != nil {
+		err = persistErr
+		status = TurnStatusFailed
 	}
 	turn := th.completeTurnLocked(turnID, status, err, now)
 	th.mu.Unlock()
@@ -344,6 +356,27 @@ func (s *Server) thread(id string) *threadState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.threads[id]
+}
+
+func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult) error {
+	if strings.TrimSpace(th.MemoryPath) == "" {
+		return nil
+	}
+	if res.HistoryRewritten {
+		if err := rewriteChatHistory(th.MemoryPath, th.History); err != nil {
+			return err
+		}
+	} else {
+		for _, msg := range res.NewMessages {
+			if err := appendChatMessage(th.MemoryPath, msg); err != nil {
+				return err
+			}
+		}
+	}
+	if err := appendTokenUsage(th.MemoryPath, res.InputTokens, res.OutputTokens); err != nil {
+		return err
+	}
+	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))
 }
 
 func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
