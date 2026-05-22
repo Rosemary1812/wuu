@@ -81,6 +81,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigRead(req)
 	case MethodThreadStart:
 		return s.handleThreadStart(req)
+	case MethodThreadResume:
+		return s.handleThreadResume(req)
 	case MethodThreadList:
 		return s.handleThreadList(req)
 	case MethodTurnStart:
@@ -134,6 +136,51 @@ func (s *Server) handleThreadStart(req Request) error {
 	}
 	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
 		ThreadID: id,
+	})
+}
+
+func (s *Server) handleThreadResume(req Request) error {
+	var params ThreadResumeParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	id := strings.TrimSpace(params.SessionID)
+	var err error
+	if id == "" {
+		id, err = session.MostRecent(s.rt.SessionDir)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		if id == "" {
+			return s.writeResponse(req.ID, nil, errors.New("no sessions found"))
+		}
+	}
+	path, err := session.Load(s.rt.SessionDir, id)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	history, err := loadChatMessages(path)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if len(history) == 0 {
+		if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
+			history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
+		}
+	}
+	th := &threadState{ID: id, History: history}
+	s.mu.Lock()
+	s.threads[id] = th
+	s.mu.Unlock()
+
+	s.rt.SetSessionID(id)
+	result := ThreadResumeResult{ThreadID: id, MessageCount: len(history)}
+	if err := s.writeResponse(req.ID, result, nil); err != nil {
+		return err
+	}
+	return s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
+		ThreadID:     id,
+		MessageCount: len(history),
 	})
 }
 

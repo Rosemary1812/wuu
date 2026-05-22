@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -143,6 +145,57 @@ func TestServerRejectsUnknownTurnParams(t *testing.T) {
 	resp := responseByID(t, parseOutput(t, out.String()), "1")
 	if resp["error"] == nil {
 		t.Fatalf("expected response error, got %+v", resp)
+	}
+}
+
+func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir session dir: %v", err)
+	}
+	sessionID := "20260523-000000-test"
+	sessionPath := filepath.Join(rt.SessionDir, sessionID+".jsonl")
+	history := strings.Join([]string{
+		`{"role":"system","content":"system prompt"}`,
+		`{"role":"user","content":"hello"}`,
+		`{"role":"assistant","content":"done"}`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(sessionPath, []byte(history), 0o644); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	payload := map[string]any{
+		"id":     "1",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: sessionID},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadResumeResult](t, responseByID(t, msgs, "1")["result"])
+	if result.ThreadID != sessionID || result.MessageCount != 3 {
+		t.Fatalf("unexpected resume result: %+v", result)
+	}
+	resumed := remarshal[ThreadResumedNotification](t, notificationByMethod(t, msgs, NotificationThreadResumed)["params"])
+	if resumed.ThreadID != sessionID || resumed.MessageCount != 3 {
+		t.Fatalf("unexpected resume notification: %+v", resumed)
+	}
+
+	th := srv.thread(sessionID)
+	if th == nil {
+		t.Fatal("expected resumed thread")
+	}
+	if len(th.History) != 3 || th.History[1].Role != "user" || th.History[1].Content != "hello" {
+		t.Fatalf("unexpected resumed history: %+v", th.History)
 	}
 }
 

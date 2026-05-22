@@ -15,12 +15,14 @@ const (
 	MethodInitialize    = "initialize"
 	MethodConfigRead    = "config/read"
 	MethodThreadStart   = "thread/start"
+	MethodThreadResume  = "thread/resume"
 	MethodThreadList    = "thread/list"
 	MethodTurnStart     = "turn/start"
 	MethodTurnInterrupt = "turn/interrupt"
 	MethodShutdown      = "shutdown"
 
 	NotificationThreadStarted = "thread/started"
+	NotificationThreadResumed = "thread/resumed"
 	NotificationTurnStarted   = "turn/started"
 	NotificationTurnEvent     = "turn/event"
 	NotificationTurnError     = "turn/error"
@@ -70,6 +72,15 @@ type ThreadStartResult struct {
 	ThreadID string `json:"thread_id"`
 }
 
+type ThreadResumeParams struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type ThreadResumeResult struct {
+	ThreadID     string `json:"thread_id"`
+	MessageCount int    `json:"message_count"`
+}
+
 type ThreadInfo struct {
 	ThreadID     string `json:"thread_id"`
 	MessageCount int    `json:"message_count"`
@@ -100,6 +111,11 @@ type OKResult struct {
 
 type ThreadStartedNotification struct {
 	ThreadID string `json:"thread_id"`
+}
+
+type ThreadResumedNotification struct {
+	ThreadID     string `json:"thread_id"`
+	MessageCount int    `json:"message_count"`
 }
 
 type TurnStartedNotification struct {
