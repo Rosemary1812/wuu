@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -198,6 +200,73 @@ func TestClientModelsUsesCodexOAuth(t *testing.T) {
 	}
 	if got := models[0].SupportedReasoning; len(got) != 2 || got[0] != "low" || got[1] != "medium" {
 		t.Fatalf("unexpected reasoning levels: %#v", got)
+	}
+}
+
+func TestCompactWithCodexClientUsesNormalResponsesEndpoint(t *testing.T) {
+	home := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	token := fakeJWT(t, time.Now().Add(time.Hour), "acct_compact")
+	writeCodexCLIAuth(t, codexHome, token, "refresh-token")
+
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/responses/compact" {
+			t.Fatalf("wuu compact must not use Codex remote compact endpoint")
+		}
+		if r.URL.Path != "/responses" {
+			t.Fatalf("path = %q, want /responses", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("Authorization = %q", got)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if _, exists := body["tools"]; exists {
+			t.Fatalf("compact summary request must not include tools: %#v", body["tools"])
+		}
+		input, ok := body["input"].([]any)
+		if !ok || len(input) != 1 {
+			t.Fatalf("expected one normal Responses input item, got %#v", body["input"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"<analysis>draft</analysis><summary>summary via normal responses</summary>"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+		{Role: "user", Content: "fourth"},
+		{Role: "assistant", Content: "fourth reply"},
+	}
+
+	result, err := compact.Compact(context.Background(), messages, client, "gpt-5-codex")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if len(paths) != 1 || paths[0] != "/responses" {
+		t.Fatalf("unexpected request paths: %#v", paths)
+	}
+	if len(result) == 0 || result[0].Role != "system" || !compact.IsConversationSummaryContent(result[0].Content) {
+		t.Fatalf("expected compacted summary at history root, got %#v", result)
+	}
+	if !strings.Contains(result[0].Content, "summary via normal responses") {
+		t.Fatalf("expected cleaned summary from normal Responses call, got %q", result[0].Content)
 	}
 }
 

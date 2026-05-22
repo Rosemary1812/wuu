@@ -147,7 +147,10 @@ const maxCompactRetries = 3
 
 // Compact compresses older messages into a summary. It finds an
 // appropriate boundary near the end of the conversation, summarizes
-// everything before it, and returns the compacted message list.
+// everything before it through the provided client's normal Chat path,
+// and returns the compacted message list. Provider-specific remote
+// compaction endpoints are intentionally not part of this flow; wuu owns
+// the prompt, output format, and history replacement.
 //
 // Defensive trimming: if the summarization request itself overflows
 // the model's context window (because the conversation being
