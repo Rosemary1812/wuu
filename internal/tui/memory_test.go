@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -400,9 +401,12 @@ func TestLoadChatHistory_IncludesConversationSummarySystemMessage(t *testing.T) 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
 
+	if err := appendChatMessage(path, providers.ChatMessage{Role: "system", Content: "old system prompt"}); err != nil {
+		t.Fatalf("append system msg: %v", err)
+	}
 	summary := providers.ChatMessage{
 		Role:    "system",
-		Content: "[Conversation summary]\nOlder turns were compacted.",
+		Content: compact.BuildSummaryContent("Older turns were compacted."),
 	}
 	if err := appendChatMessage(path, summary); err != nil {
 		t.Fatalf("append summary msg: %v", err)
@@ -416,7 +420,7 @@ func TestLoadChatHistory_IncludesConversationSummarySystemMessage(t *testing.T) 
 		t.Fatalf("load chat history: %v", err)
 	}
 	if len(msgs) != 2 {
-		t.Fatalf("expected summary + user, got %d", len(msgs))
+		t.Fatalf("expected persisted system prompt to be dropped and summary + user kept, got %d", len(msgs))
 	}
 	if msgs[0].Role != "system" || msgs[0].Content != summary.Content {
 		t.Fatalf("unexpected summary message: %#v", msgs[0])

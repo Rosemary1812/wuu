@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/jsonl"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -307,7 +308,7 @@ func loadChatHistory(path string) ([]providers.ChatMessage, error) {
 		switch role {
 		case "user", "assistant", "tool":
 		case "system":
-			if !isConversationSummaryContent(rec.Content) {
+			if !compact.IsConversationSummaryContent(rec.Content) {
 				return nil
 			}
 		default:
@@ -403,8 +404,4 @@ func loadTokenUsageTotals(path string) (inputTokens, outputTokens int, err error
 		outputTokens += rec.OutputTokens
 	}
 	return inputTokens, outputTokens, nil
-}
-
-func isConversationSummaryContent(content string) bool {
-	return strings.HasPrefix(strings.TrimSpace(content), "[Conversation summary]")
 }

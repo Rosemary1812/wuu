@@ -23,6 +23,15 @@ const toolResultPruneThresholdChars = 400
 // the context window, defeating the purpose of compaction.
 const maxCompactOutputChars = 80_000
 
+const (
+	// ConversationSummaryPrefix marks the synthetic summary installed after
+	// compacting older conversation turns. Kept stable for persisted sessions
+	// and cache-hint detection.
+	ConversationSummaryPrefix = "[Conversation summary]"
+	summarySectionHeader      = "Summary:"
+	summaryContinuationNote   = "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation."
+)
+
 func compactTimeout() time.Duration {
 	if v := os.Getenv("WUU_COMPACT_TIMEOUT_MS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
@@ -153,15 +162,22 @@ func Compact(ctx context.Context, messages []providers.ChatMessage, client provi
 	ctx, cancel := withCompactTimeout(ctx)
 	defer cancel()
 
+	systemEnd := leadingSystemEnd(messages)
+	systemPrefix := append([]providers.ChatMessage(nil), messages[:systemEnd]...)
+	conversation := messages[systemEnd:]
+	if len(conversation) <= 2 {
+		return messages, nil
+	}
+
 	// Find compaction boundary: keep the last 2 exchanges (4 messages)
 	keepCount := 4
-	keepStart := compactKeepStart(messages, keepCount)
+	keepStart := compactKeepStart(conversation, keepCount)
 	if keepStart <= 0 {
 		return messages, nil
 	}
 
-	toSummarize := pruneOldToolResults(messages[:keepStart])
-	toKeep := messages[keepStart:]
+	toSummarize := pruneOldToolResults(conversation[:keepStart])
+	toKeep := conversation[keepStart:]
 
 	for attempt := 0; ; attempt++ {
 		summaryInput := buildSummaryPrompt(toSummarize)
@@ -186,7 +202,7 @@ func Compact(ctx context.Context, messages []providers.ChatMessage, client provi
 			return messages, fmt.Errorf("compact summary failed: %w", err)
 		}
 
-		summary := strings.TrimSpace(resp.Content)
+		summary := FormatSummary(resp.Content)
 		if len(summary) > maxCompactOutputChars {
 			cut := maxCompactOutputChars
 			for cut > 0 && summary[cut-1]&0xC0 == 0x80 {
@@ -198,12 +214,100 @@ func Compact(ctx context.Context, messages []providers.ChatMessage, client provi
 			return messages, nil
 		}
 
-		compacted := []providers.ChatMessage{
-			{Role: "system", Content: fmt.Sprintf("[Conversation summary]\n%s", summary)},
-		}
+		compacted := append([]providers.ChatMessage(nil), systemPrefix...)
+		compacted = append(compacted, providers.ChatMessage{Role: "system", Content: BuildSummaryContent(summary)})
 		compacted = append(compacted, toKeep...)
 		return compacted, nil
 	}
+}
+
+func leadingSystemEnd(messages []providers.ChatMessage) int {
+	i := 0
+	for i < len(messages) && strings.EqualFold(messages[i].Role, "system") {
+		i++
+	}
+	return i
+}
+
+// FormatSummary turns the model's compact response into the content that will
+// be replayed later. The prompt asks for an <analysis> drafting block followed
+// by <summary>; only the summary belongs in future model context.
+func FormatSummary(raw string) string {
+	summary := strings.TrimSpace(raw)
+	summary = stripXMLBlock(summary, "analysis")
+	if extracted, ok := extractXMLBlock(summary, "summary"); ok {
+		summary = extracted
+	}
+	summary = strings.TrimSpace(summary)
+	summary = strings.ReplaceAll(summary, "\r\n", "\n")
+	summary = collapseBlankLines(summary)
+	return summary
+}
+
+// BuildSummaryContent wraps a cleaned summary in the stable persisted handoff
+// format used by load/resume and cache-hint detection.
+func BuildSummaryContent(summary string) string {
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return ConversationSummaryPrefix
+	}
+	return fmt.Sprintf("%s\n%s\n\n%s\n%s", ConversationSummaryPrefix, summaryContinuationNote, summarySectionHeader, summary)
+}
+
+// IsConversationSummaryContent reports whether content is a persisted compact
+// summary. It accepts both the current handoff format and the older bare
+// "[Conversation summary]" format for existing sessions.
+func IsConversationSummaryContent(content string) bool {
+	return strings.HasPrefix(strings.TrimSpace(content), ConversationSummaryPrefix)
+}
+
+func stripXMLBlock(text, tag string) string {
+	open := "<" + tag + ">"
+	close := "</" + tag + ">"
+	start := strings.Index(text, open)
+	if start < 0 {
+		return text
+	}
+	end := strings.Index(text[start+len(open):], close)
+	if end < 0 {
+		return text
+	}
+	end += start + len(open)
+	return strings.TrimSpace(text[:start] + text[end+len(close):])
+}
+
+func extractXMLBlock(text, tag string) (string, bool) {
+	open := "<" + tag + ">"
+	close := "</" + tag + ">"
+	start := strings.Index(text, open)
+	if start < 0 {
+		return "", false
+	}
+	start += len(open)
+	end := strings.Index(text[start:], close)
+	if end < 0 {
+		return "", false
+	}
+	return strings.TrimSpace(text[start : start+end]), true
+}
+
+func collapseBlankLines(text string) string {
+	var b strings.Builder
+	blank := false
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) == "" {
+			if blank {
+				continue
+			}
+			blank = true
+			b.WriteByte('\n')
+			continue
+		}
+		blank = false
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // compactKeepStart returns the index where the un-compacted tail should begin.

@@ -53,6 +53,7 @@ func TestBuildCacheHint_OnlyCurrentTurnStillGetsPromptCacheKey(t *testing.T) {
 
 func TestBuildCacheHint_CompactSummaryBecomesStableAnchor(t *testing.T) {
 	messages := []providers.ChatMessage{
+		{Role: "system", Content: "You are wuu."},
 		{Role: "system", Content: "[Conversation summary]\nOlder turns were compacted."},
 		{Role: "user", Content: "keep working"},
 	}
@@ -72,6 +73,7 @@ func TestBuildCacheHint_CompactSummaryBecomesStableAnchor(t *testing.T) {
 	}
 
 	otherCurrentTurn := []providers.ChatMessage{
+		{Role: "system", Content: "You are wuu."},
 		{Role: "system", Content: "[Conversation summary]\nOlder turns were compacted."},
 		{Role: "user", Content: "do something else now"},
 	}

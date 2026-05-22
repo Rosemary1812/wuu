@@ -159,6 +159,30 @@ func TestCompactInstructionPrompt_CoversHandoffSections(t *testing.T) {
 	}
 }
 
+func TestFormatSummary_StripsAnalysisAndExtractsSummary(t *testing.T) {
+	raw := "<analysis>\nprivate reasoning\n</analysis>\n\n<summary>\n## Current Work\nContinue implementation.\n</summary>"
+	got := FormatSummary(raw)
+	if strings.Contains(got, "private reasoning") || strings.Contains(got, "<analysis>") || strings.Contains(got, "<summary>") {
+		t.Fatalf("expected only cleaned summary, got %q", got)
+	}
+	if got != "## Current Work\nContinue implementation." {
+		t.Fatalf("unexpected cleaned summary: %q", got)
+	}
+}
+
+func TestBuildSummaryContent_UsesStableConversationSummaryPrefix(t *testing.T) {
+	content := BuildSummaryContent("Older turns were compacted.")
+	if !IsConversationSummaryContent(content) {
+		t.Fatalf("expected compact summary content, got %q", content)
+	}
+	if !strings.Contains(content, "This session is being continued") {
+		t.Fatalf("expected continuation handoff text, got %q", content)
+	}
+	if !strings.Contains(content, "Summary:\nOlder turns were compacted.") {
+		t.Fatalf("expected formatted summary body, got %q", content)
+	}
+}
+
 func TestCompact_DefensiveTrimOnOverflow(t *testing.T) {
 	// 8 messages, summary request overflows twice then succeeds.
 	// The final compact result should still contain the summary +
@@ -190,6 +214,38 @@ func TestCompact_DefensiveTrimOnOverflow(t *testing.T) {
 	}
 	if result[0].Role != "system" {
 		t.Fatalf("expected system summary first, got %s", result[0].Role)
+	}
+}
+
+func TestCompact_PreservesLeadingSystemPrompt(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "system", Content: "You are wuu."},
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+		{Role: "user", Content: "fourth"},
+		{Role: "assistant", Content: "fourth reply"},
+	}
+
+	client := &mockCompactClient{response: "<analysis>draft</analysis><summary>summary of older turns</summary>"}
+	result, err := Compact(context.Background(), messages, client, "test")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if len(result) < 6 {
+		t.Fatalf("expected system prompt + summary + 4 kept messages, got %d", len(result))
+	}
+	if result[0].Role != "system" || result[0].Content != "You are wuu." {
+		t.Fatalf("expected original system prompt preserved first, got %#v", result[0])
+	}
+	if result[1].Role != "system" || !IsConversationSummaryContent(result[1].Content) {
+		t.Fatalf("expected compact summary after system prompt, got %#v", result[1])
+	}
+	if strings.Contains(result[1].Content, "draft") || strings.Contains(result[1].Content, "<analysis>") {
+		t.Fatalf("analysis leaked into compact summary: %q", result[1].Content)
 	}
 }
 

@@ -5,12 +5,12 @@ import (
 	"encoding/hex"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 const (
-	volatileTurnUserRole    = "user"
-	conversationSummaryHead = "[Conversation summary]"
+	volatileTurnUserRole = "user"
 )
 
 // buildCacheHint derives a light-weight, provider-agnostic cache hint
@@ -96,10 +96,15 @@ func stablePrefixMessageCount(messages []providers.ChatMessage, systemCount, las
 }
 
 func leadingSystemHasCompactSummary(messages []providers.ChatMessage) bool {
-	if len(messages) == 0 || !strings.EqualFold(messages[0].Role, "system") {
-		return false
+	for _, msg := range messages {
+		if !strings.EqualFold(msg.Role, "system") {
+			break
+		}
+		if compact.IsConversationSummaryContent(msg.Content) {
+			return true
+		}
 	}
-	return strings.HasPrefix(strings.TrimSpace(messages[0].Content), conversationSummaryHead)
+	return false
 }
 
 func buildPromptCacheKey(messages []providers.ChatMessage, systemCount, stablePrefixMessages int) string {

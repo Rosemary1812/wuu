@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -722,8 +724,11 @@ func TestStreamRunner_ReusesUsageAcrossTurnsForPreRequestCompact(t *testing.T) {
 		t.Fatalf("expected compacted second request, got %d messages from %d-history input",
 			len(client.requests[2].Messages), len(secondHistory))
 	}
-	if got := client.requests[2].Messages[0].Content; got != "[Conversation summary]\nsummarized" {
-		t.Fatalf("expected compacted root summary, got %q", got)
+	if got := client.requests[2].Messages[0].Content; got != "sys" {
+		t.Fatalf("expected original system prompt to remain first, got %q", got)
+	}
+	if got := client.requests[2].Messages[1].Content; !compact.IsConversationSummaryContent(got) || !strings.Contains(got, "summarized") {
+		t.Fatalf("expected compacted summary after system prompt, got %q", got)
 	}
 }
 
