@@ -12,26 +12,17 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/catwalk/pkg/catwalk"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/config"
-	wuucontext "github.com/blueberrycongee/wuu/internal/context"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
-	"github.com/blueberrycongee/wuu/internal/hooks"
-	"github.com/blueberrycongee/wuu/internal/memory"
-	"github.com/blueberrycongee/wuu/internal/mcp"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
-	"github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
-	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
-	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/tui"
 	"github.com/blueberrycongee/wuu/internal/version"
-	"github.com/blueberrycongee/wuu/internal/worktree"
 )
 
 func main() {
@@ -191,7 +182,7 @@ func runTask(args []string) error {
 		MaxSteps:     cfg.Agent.MaxSteps,
 		Temperature:  cfg.Agent.Temperature,
 		Effort:       cfg.Agent.Effort,
-		ContextWindowOverride: resolveContextWindow(
+		ContextWindowOverride: runtime.ResolveContextWindow(
 			providerCfg.Model,
 			providerCfg.ContextWindow,
 			cfg.Agent.MaxContextTokens,
@@ -254,8 +245,6 @@ func runTUI(args []string) error {
 		return err
 	}
 
-	providers.InitDebugLog(rootDir)
-
 	homeDir := os.Getenv("HOME")
 
 	resolvedTheme, err := resolveTUIThemeMode(homeDir, strings.TrimSpace(*themeMode))
@@ -301,257 +290,31 @@ func runTUI(args []string) error {
 		}
 	}
 
-	providerCfg, resolvedName, err := cfg.ResolveProvider(*providerName)
-	if err != nil {
-		return err
-	}
-	if *modelOverride != "" {
-		providerCfg.Model = *modelOverride
-	}
-
-	client, err := providerfactory.BuildStreamClient(providerCfg, resolvedName)
-	if err != nil {
-		return err
-	}
-
-	// Initialize debug logging.
-	providers.InitDebugLog(rootDir)
-
-	// Catwalk model registry. Always installs the syncer (so the
-	// embedded → cache resolution chain runs even with autoupdate
-	// off), but only attaches a remote client when autoupdate is
-	// enabled in config. The first ContextWindowFor lookup populates
-	// the index; if autoupdate is on, a tiny background goroutine
-	// also kicks off a remote refresh that swaps the in-memory
-	// index when the fetch returns.
-	catwalkCfg := providers.CatwalkSyncConfig{
-		CachePath: providers.DefaultCatwalkCachePath(),
-	}
-	if cfg.Agent.CatwalkAutoupdate {
-		catwalkCfg.Client = catwalk.NewWithURL(providers.DefaultCatwalkURL)
-	}
-	catwalkSync := providers.NewCatwalkSync(catwalkCfg)
-	providers.SetCatwalkSync(catwalkSync)
-	if cfg.Agent.CatwalkAutoupdate {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			_ = providers.RefreshCatwalkIndex(ctx)
-		}()
-	}
-
-	// Build hook dispatcher from config.
-	hookEntries := make(map[hooks.Event][]hooks.HookConfig)
-	for evName, entries := range cfg.Hooks {
-		ev := hooks.Event(evName)
-		for _, e := range entries {
-			hookEntries[ev] = append(hookEntries[ev], hooks.HookConfig{
-				Matcher: e.Matcher,
-				Type:    e.Type,
-				Command: e.Command,
-				Prompt:  e.Prompt,
-				Model:   e.Model,
-				Timeout: e.Timeout,
-			})
-		}
-	}
-	hookRegistry := hooks.NewRegistry(hookEntries)
-	hookDispatcher := hooks.NewDispatcher(hookRegistry)
-
-	// Discover skills from project and user dirs.
-	projectSkillsDir := filepath.Join(rootDir, ".claude", "skills")
-	userSkillsDir := ""
-	if home := os.Getenv("HOME"); home != "" {
-		userSkillsDir = filepath.Join(home, ".claude", "skills")
-	}
-	discoveredSkills := skills.Discover(projectSkillsDir, userSkillsDir)
-
-	// AskUserBridge connects the ask_user tool to the TUI's modal
-	// dialog. The main agent's toolkit gets it via SetAskUserBridge;
-	// sub-agent workers get a fresh toolkit without it (see the
-	// WorkerFactory below) so they cannot interrupt the human.
 	askBridge := tui.NewAskUserBridge()
-
-	var toolExecutor agent.ToolExecutor
-	var toolkit *tools.Toolkit
-	var processMgr *processruntime.Manager
-	processMgr, err = processruntime.NewManager(rootDir)
+	rt, err := runtime.NewSession(runtime.Options{
+		RootDir:       rootDir,
+		HomeDir:       homeDir,
+		ConfigPath:    configPath,
+		Config:        cfg,
+		ProviderName:  *providerName,
+		ModelOverride: *modelOverride,
+		NoTools:       *noTools,
+		AskBridge:     askBridge,
+	})
 	if err != nil {
 		return err
-	}
-	if !*noTools {
-		kit, newErr := tools.New(rootDir)
-		if newErr != nil {
-			return newErr
-		}
-		// Default normal mode: main agent retains all tools including write_file,
-		// edit_file, and run_shell. Coordinator mode can be entered at runtime via
-		// the /coordinator slash command.
-		kit.SetProcessManager(processMgr)
-		kit.SetSkills(discoveredSkills)
-		kit.SetAskUserBridge(askBridge)
-		// Wire FileChanged hook dispatch from write_file/edit_file.
-		kit.SetOnFileChanged(func(absPath string) {
-			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{
-				CWD:      rootDir,
-				FilePath: absPath,
-			})
-		})
-		toolkit = kit
-		toolExecutor = hooks.NewHookedExecutor(kit, hookDispatcher, "", rootDir)
-
-		// ── MCP integration ───────────────────────────────────────────────
-		// Connect to configured MCP servers in the background so tool
-		// discovery doesn't block TUI startup. MCP tools are appended
-		// after built-ins to preserve prompt cache stability.
-		if len(cfg.MCPServers) > 0 {
-			mcpMgr := mcp.NewManager()
-			toolkit.SetMCPManager(mcpMgr)
-			go func() {
-				ctx := context.Background()
-				for name, mcpCfg := range cfg.MCPServers {
-					serverCfg := mcp.ServerConfig{
-						Name:    name,
-						Command: mcpCfg.Command,
-						Args:    mcpCfg.Args,
-						URL:     mcpCfg.URL,
-						Env:     mcpCfg.Env,
-					}
-					if err := mcpMgr.Add(ctx, serverCfg); err != nil {
-						providers.DebugLogf("mcp server %q failed to connect: %v", name, err)
-					} else {
-						providers.DebugLogf("mcp server %q connected (%d tools)", name, mcpMgr.Status()[name].ToolCount)
-					}
-				}
-			}()
-		}
-	}
-
-	// Discover memory files (AGENTS.md / CLAUDE.md / AGENTS.override.md)
-	// from the project hierarchy (bounded by .git markers) and from
-	// user-level directories (~/.config/wuu, ~/.claude, ~/.codex).
-	// Honor any overrides set under config.memory.
-	var memoryFiles []memory.File
-	if !cfg.Memory.Disable {
-		memOpts := memory.DefaultOptions()
-		if len(cfg.Memory.Filenames) > 0 {
-			memOpts.Filenames = cfg.Memory.Filenames
-		}
-		if len(cfg.Memory.ProjectRootMarkers) > 0 {
-			memOpts.ProjectRootMarkers = cfg.Memory.ProjectRootMarkers
-		}
-		if len(cfg.Memory.UserDirs) > 0 {
-			memOpts.UserDirs = cfg.Memory.UserDirs
-		}
-		memoryFiles = memory.Discover(rootDir, homeDir, memOpts)
-	}
-
-	// Assemble system prompt via the section-based builder. Static
-	// sections (base prompt, coordinator preamble) are placed first for
-	// prompt-cache stability; dynamic sections (memory, skills, git)
-	// follow. Memory files are auto-truncated to 200 lines / 25 KB.
-	var pb prompt.Builder
-	pb.AddSection("base", cfg.Agent.SystemPrompt, true)
-	pb.AddMemory(memoryFiles)
-	pb.AddSkills(discoveredSkills)
-
-	// Inject git context when the workspace is a git repo.
-	if worktree.IsGitRepo(rootDir) {
-		gitCtx := prompt.NewGitContext(rootDir)
-		pb.AddGitContext(gitCtx.Collect())
-	}
-
-	// Base system prompt without coordinator preamble. This is what
-	// normal mode uses; coordinator mode prepends the preamble at runtime.
-	baseSystemPrompt := pb.Build()
-
-	// Ensure the cross-agent shared filesystem region exists. Agents
-	// use .wuu/shared/{findings,plans,status,reports} as the data
-	// plane between themselves; the system prompt teaches the
-	// convention but the directories must exist on disk so list_files
-	// returns something sensible on a fresh session.
-	if toolkit != nil {
-		if err := coordinator.EnsureSharedDir(rootDir); err != nil {
-			return fmt.Errorf("ensure shared dir: %w", err)
-		}
-	}
-
-	// Wire up the coordinator runtime so the orchestration tools
-	// (spawn_agent, fork_agent, send_message_to_agent, stop_agent,
-	// list_agents) become callable. The preamble is stored separately
-	// and applied at runtime when the user switches to coordinator mode.
-	var coord *coordinator.Coordinator
-	var coordinatorPreamble string
-	if toolkit != nil {
-		// Sub-agents get their own client instance with a more
-		// aggressive HTTP retry policy than the interactive main
-		// agent (6 attempts, 2s→60s backoff). Workers run for many
-		// minutes and frequently sit through rate-limit bursts that
-		// would otherwise kill them; the main TUI agent stays on the
-		// snappier 3-attempt default so failures surface faster.
-		workerRetry := providerfactory.SubAgentRetryConfig()
-		workerClient, werr := providerfactory.BuildStreamClientWithRetry(providerCfg, resolvedName, &workerRetry)
-		if werr != nil {
-			return fmt.Errorf("build worker client: %w", werr)
-		}
-
-		c, cerr := coordinator.New(coordinator.Config{
-			Client:          workerClient,
-			DefaultModel:    providerCfg.Model,
-			ParentRepo:      rootDir,
-			WorktreeRoot:    filepath.Join(rootDir, ".wuu", "worktrees"),
-			SessionID:       "session-pending", // overwritten via SetSessionInfo
-			HistoryDir:      "",                // overwritten via SetSessionInfo
-			WorkerSysPrompt: baseSystemPrompt,
-			WorkerFactory: func(workerRoot string, _ coordinator.WorkerType) (agent.ToolExecutor, error) {
-				wkit, werr := tools.New(workerRoot)
-				if werr != nil {
-					return nil, werr
-				}
-				wkit.SetProcessManager(processMgr)
-				wkit.SetSkills(discoveredSkills)
-				// Workers do NOT get a coordinator (no recursive spawns).
-				return wkit, nil
-			},
-			MaxParallel: 5,
-		})
-		if cerr == nil {
-			coord = c
-			toolkit.SetCoordinator(coord)
-			coordinatorPreamble = coordinator.SystemPromptPreamble()
-		}
-	}
-
-	// Default to normal mode (no coordinator preamble).
-	systemPromptText := baseSystemPrompt
-
-	streamRunner := &agent.StreamRunner{
-		Client:       client,
-		Tools:        toolExecutor,
-		Model:        providerCfg.Model,
-		SystemPrompt: systemPromptText,
-		MaxSteps:     cfg.Agent.MaxSteps,
-		Temperature:  cfg.Agent.Temperature,
-		Effort:       cfg.Agent.Effort,
-		ContextWindowOverride: resolveContextWindow(
-			providerCfg.Model,
-			providerCfg.ContextWindow,
-			cfg.Agent.MaxContextTokens,
-		),
-		DisableAutoCompact: cfg.Agent.DisableAutoCompact,
-		BeforeStep:         envContextInjector(rootDir),
 	}
 	if *maxSteps > 0 {
-		streamRunner.MaxSteps = *maxSteps
+		rt.StreamRunner.MaxSteps = *maxSteps
 	}
 	if *temperature >= 0 {
-		streamRunner.Temperature = *temperature
+		rt.StreamRunner.Temperature = *temperature
 	}
 	if strings.TrimSpace(*systemPrompt) != "" {
 		// CLI --system-prompt overrides everything, including base and
 		// coordinator preamble. It becomes the new base for both modes.
-		streamRunner.SystemPrompt = *systemPrompt
-		baseSystemPrompt = *systemPrompt
+		rt.StreamRunner.SystemPrompt = *systemPrompt
+		rt.BaseSystemPrompt = *systemPrompt
 	}
 
 	resolvedMemoryPath, err := resolveRuntimePath(rootDir, *memoryFile)
@@ -559,7 +322,7 @@ func runTUI(args []string) error {
 		return err
 	}
 
-	sessDir := session.Dir(rootDir)
+	sessDir := rt.SessionDir
 
 	// Handle --resume flag.
 	resolvedResumeID := strings.TrimSpace(*resumeID)
@@ -576,47 +339,39 @@ func runTUI(args []string) error {
 	}
 
 	cfgUI := tui.Config{
-		Provider:       resolvedName,
-		Model:          providerCfg.Model,
-		WorkspaceRoot:  rootDir,
-		ConfigPath:     configPath,
-		MemoryPath:     resolvedMemoryPath,
-		SessionDir:     sessDir,
-		ResumeID:       resolvedResumeID,
-		RequestTimeout: *requestTimeout,
-		StreamRunner:   streamRunner,
-		HookDispatcher: hookDispatcher,
-		Skills:         discoveredSkills,
-		Memory:         memoryFiles,
-		Coordinator:         coord,
+		Provider:            rt.ProviderName,
+		Model:               rt.Model,
+		WorkspaceRoot:       rootDir,
+		ConfigPath:          configPath,
+		MemoryPath:          resolvedMemoryPath,
+		SessionDir:          sessDir,
+		ResumeID:            resolvedResumeID,
+		RequestTimeout:      *requestTimeout,
+		StreamRunner:        rt.StreamRunner,
+		HookDispatcher:      rt.HookDispatcher,
+		Skills:              rt.Skills,
+		Memory:              rt.Memory,
+		Coordinator:         rt.Coordinator,
 		AskUserBridge:       askBridge,
-		ProcessManager:      processMgr,
-		Toolkit:             toolkit,
-		BaseSystemPrompt:    baseSystemPrompt,
-		CoordinatorPreamble: coordinatorPreamble,
+		ProcessManager:      rt.ProcessManager,
+		Toolkit:             rt.Toolkit,
+		BaseSystemPrompt:    rt.BaseSystemPrompt,
+		CoordinatorPreamble: rt.CoordinatorPreamble,
 	}
-	if toolkit != nil {
-		cfgUI.OnSessionID = func(id string) {
-			toolkit.SetSessionID(id)
-			sessionDir := filepath.Join(rootDir, ".wuu", "sessions", id)
-			toolkit.SetSessionDir(sessionDir)
-			if coord != nil {
-				historyDir := filepath.Join(sessionDir, "workers")
-				coord.SetSessionInfo(id, historyDir)
-			}
-		}
+	if rt.Toolkit != nil {
+		cfgUI.OnSessionID = rt.SetSessionID
 	}
 	var cleanupSummary processruntime.CleanupResult
 	defer func() {
-		if coord != nil {
-			_ = coord.CleanupSession()
+		if rt.Coordinator != nil {
+			_ = rt.Coordinator.CleanupSession()
 		}
 	}()
 	if err := tui.Run(cfgUI); err != nil {
 		return err
 	}
-	if processMgr != nil {
-		result, err := processMgr.CleanupSessionWithResult()
+	if rt.ProcessManager != nil {
+		result, err := rt.ProcessManager.CleanupSessionWithResult()
 		if err != nil {
 			return err
 		}
@@ -676,40 +431,6 @@ func resolveRuntimePath(rootDir, input string) (string, error) {
 	}
 	return filepath.Join(rootDir, value), nil
 }
-
-func resolveContextWindow(model string, providerOverride, agentOverride int) int {
-	if providerOverride > 0 {
-		return providerOverride
-	}
-	if agentOverride > 0 {
-		return agentOverride
-	}
-	return providers.ContextWindowFor(model)
-}
-
-// envContextInjector returns a BeforeStep callback that injects dynamic
-// environment context (CWD, date, git branch/status) as a system-reminder
-// user message before each model round. This aligns with Claude Code's
-// per-turn context injection — the model always knows where it is and
-// what the current state looks like.
-//
-// The injected message is ephemeral: it goes into the live history for
-// the current round but the conversation loop naturally replaces it on
-// the next round. This keeps the context fresh without bloating history.
-func envContextInjector(rootDir string) func() []providers.ChatMessage {
-	return func() []providers.ChatMessage {
-		env := wuucontext.Snapshot(rootDir)
-		reminder := wuucontext.FormatSystemReminder(env)
-		return []providers.ChatMessage{{
-			Role:    "user",
-			Name:    wuucontext.SystemReminderMessageName,
-			Content: reminder,
-		}}
-	}
-}
-
-// appendMemoryToPrompt and appendSkillsToPrompt removed — replaced by
-// the section-based prompt.Builder in internal/prompt/.
 
 func resolvePrompt(args []string) (string, error) {
 	if len(args) > 0 {

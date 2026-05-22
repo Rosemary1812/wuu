@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/runtime"
 )
 
 func TestResolveTUIThemeMode_UsesAutoWhenHomeMissing(t *testing.T) {
@@ -80,19 +82,19 @@ func TestRunVersionAliasForwardsLongFlag(t *testing.T) {
 }
 
 func TestResolveContextWindow_PrefersProviderOverride(t *testing.T) {
-	if got := resolveContextWindow("gpt-5.4", 777, 555); got != 777 {
+	if got := runtime.ResolveContextWindow("gpt-5.4", 777, 555); got != 777 {
 		t.Fatalf("expected provider override, got %d", got)
 	}
 }
 
 func TestResolveContextWindow_FallsBackToAgentOverride(t *testing.T) {
-	if got := resolveContextWindow("gpt-5.4", 0, 555); got != 555 {
+	if got := runtime.ResolveContextWindow("gpt-5.4", 0, 555); got != 555 {
 		t.Fatalf("expected agent override, got %d", got)
 	}
 }
 
 func TestResolveContextWindow_UsesModelRegistryByDefault(t *testing.T) {
-	if got := resolveContextWindow("gpt-5.4", 0, 0); got != 400000 {
+	if got := runtime.ResolveContextWindow("gpt-5.4", 0, 0); got != 400000 {
 		t.Fatalf("expected model registry context window, got %d", got)
 	}
 }
