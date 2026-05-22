@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -24,6 +25,13 @@ const (
 	NotificationTurnEvent     = "turn/event"
 	NotificationTurnError     = "turn/error"
 	NotificationTurnCompleted = "turn/completed"
+
+	NotificationItemStarted       = "item/started"
+	NotificationItemCompleted     = "item/completed"
+	NotificationAgentMessageDelta = "item/agentMessage/delta"
+	NotificationReasoningDelta    = "item/reasoning/delta"
+	NotificationToolCallDelta     = "item/toolCall/delta"
+	NotificationToolCallOutput    = "item/toolCall/outputDelta"
 )
 
 type Request struct {
@@ -64,7 +72,7 @@ type ConfigReadResult struct {
 }
 
 type ThreadStartResult struct {
-	ThreadID string `json:"thread_id"`
+	Thread Thread `json:"thread"`
 }
 
 type ThreadResumeParams struct {
@@ -72,19 +80,11 @@ type ThreadResumeParams struct {
 }
 
 type ThreadResumeResult struct {
-	ThreadID     string `json:"thread_id"`
-	MessageCount int    `json:"message_count"`
-}
-
-type ThreadInfo struct {
-	ThreadID     string `json:"thread_id"`
-	MessageCount int    `json:"message_count"`
-	Running      bool   `json:"running"`
-	CurrentTurn  string `json:"current_turn"`
+	Thread Thread `json:"thread"`
 }
 
 type ThreadListResult struct {
-	Threads []ThreadInfo `json:"threads"`
+	Threads []Thread `json:"threads"`
 }
 
 type TurnStartParams struct {
@@ -93,7 +93,7 @@ type TurnStartParams struct {
 }
 
 type TurnStartResult struct {
-	TurnID string `json:"turn_id"`
+	Turn Turn `json:"turn"`
 }
 
 type TurnInterruptParams struct {
@@ -105,17 +105,16 @@ type OKResult struct {
 }
 
 type ThreadStartedNotification struct {
-	ThreadID string `json:"thread_id"`
+	Thread Thread `json:"thread"`
 }
 
 type ThreadResumedNotification struct {
-	ThreadID     string `json:"thread_id"`
-	MessageCount int    `json:"message_count"`
+	Thread Thread `json:"thread"`
 }
 
 type TurnStartedNotification struct {
 	ThreadID string `json:"thread_id"`
-	TurnID   string `json:"turn_id"`
+	Turn     Turn   `json:"turn"`
 }
 
 type TurnEventNotification struct {
@@ -128,14 +127,137 @@ type TurnErrorNotification struct {
 	ThreadID string `json:"thread_id"`
 	TurnID   string `json:"turn_id"`
 	Error    string `json:"error"`
+	Turn     Turn   `json:"turn"`
 }
 
 type TurnCompletedNotification struct {
 	ThreadID     string `json:"thread_id"`
-	TurnID       string `json:"turn_id"`
+	Turn         Turn   `json:"turn"`
 	Content      string `json:"content"`
 	InputTokens  int    `json:"input_tokens"`
 	OutputTokens int    `json:"output_tokens"`
+}
+
+type ThreadStatus string
+
+const (
+	ThreadStatusIdle       ThreadStatus = "idle"
+	ThreadStatusInProgress ThreadStatus = "in_progress"
+)
+
+type TurnStatus string
+
+const (
+	TurnStatusInProgress  TurnStatus = "in_progress"
+	TurnStatusCompleted   TurnStatus = "completed"
+	TurnStatusFailed      TurnStatus = "failed"
+	TurnStatusInterrupted TurnStatus = "interrupted"
+)
+
+type TurnItemsView string
+
+const (
+	TurnItemsViewFull TurnItemsView = "full"
+)
+
+type Thread struct {
+	ID            string       `json:"id"`
+	Preview       string       `json:"preview"`
+	ModelProvider string       `json:"model_provider"`
+	Model         string       `json:"model"`
+	CWD           string       `json:"cwd"`
+	Status        ThreadStatus `json:"status"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
+	Turns         []Turn       `json:"turns"`
+}
+
+type Turn struct {
+	ID          string        `json:"id"`
+	Items       []ThreadItem  `json:"items"`
+	ItemsView   TurnItemsView `json:"items_view"`
+	Status      TurnStatus    `json:"status"`
+	Error       *TurnError    `json:"error,omitempty"`
+	StartedAt   time.Time     `json:"started_at"`
+	CompletedAt *time.Time    `json:"completed_at,omitempty"`
+	DurationMS  *int64        `json:"duration_ms,omitempty"`
+}
+
+type TurnError struct {
+	Message string `json:"message"`
+}
+
+type ThreadItemType string
+
+const (
+	ThreadItemUserMessage       ThreadItemType = "user_message"
+	ThreadItemAgentMessage      ThreadItemType = "agent_message"
+	ThreadItemReasoning         ThreadItemType = "reasoning"
+	ThreadItemToolCall          ThreadItemType = "tool_call"
+	ThreadItemContextCompaction ThreadItemType = "context_compaction"
+	ThreadItemError             ThreadItemType = "error"
+)
+
+type ThreadItemStatus string
+
+const (
+	ThreadItemStatusInProgress ThreadItemStatus = "in_progress"
+	ThreadItemStatusCompleted  ThreadItemStatus = "completed"
+	ThreadItemStatusFailed     ThreadItemStatus = "failed"
+)
+
+type ThreadItem struct {
+	ID        string           `json:"id"`
+	Type      ThreadItemType   `json:"type"`
+	Status    ThreadItemStatus `json:"status,omitempty"`
+	Role      string           `json:"role,omitempty"`
+	Text      string           `json:"text,omitempty"`
+	Name      string           `json:"name,omitempty"`
+	Arguments string           `json:"arguments,omitempty"`
+	Result    string           `json:"result,omitempty"`
+	Error     string           `json:"error,omitempty"`
+}
+
+type ItemStartedNotification struct {
+	ThreadID    string     `json:"thread_id"`
+	TurnID      string     `json:"turn_id"`
+	Item        ThreadItem `json:"item"`
+	StartedAtMS int64      `json:"started_at_ms"`
+}
+
+type ItemCompletedNotification struct {
+	ThreadID      string     `json:"thread_id"`
+	TurnID        string     `json:"turn_id"`
+	Item          ThreadItem `json:"item"`
+	CompletedAtMS int64      `json:"completed_at_ms"`
+}
+
+type AgentMessageDeltaNotification struct {
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id"`
+	ItemID   string `json:"item_id"`
+	Delta    string `json:"delta"`
+}
+
+type ReasoningDeltaNotification struct {
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id"`
+	ItemID   string `json:"item_id"`
+	Delta    string `json:"delta"`
+}
+
+type ToolCallDeltaNotification struct {
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id"`
+	ItemID   string `json:"item_id"`
+	Delta    string `json:"delta"`
+}
+
+type ToolCallOutputNotification struct {
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id"`
+	ItemID   string `json:"item_id"`
+	Delta    string `json:"delta"`
 }
 
 type StreamEventPayload struct {

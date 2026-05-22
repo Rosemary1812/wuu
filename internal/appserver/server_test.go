@@ -89,7 +89,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
 		t.Fatalf("thread/start: %v", err)
 	}
-	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).ThreadID
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
 	if strings.TrimSpace(threadID) == "" {
 		t.Fatal("expected thread id")
 	}
@@ -110,7 +110,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	msgs := waitForMethod(t, out, NotificationTurnCompleted)
 	completed := notificationByMethod(t, msgs, NotificationTurnCompleted)
 	params := remarshal[TurnCompletedNotification](t, completed["params"])
-	if params.ThreadID != threadID || params.Content != "done" {
+	if params.ThreadID != threadID || params.Turn.ID == "" || params.Turn.Status != TurnStatusCompleted || params.Content != "done" {
 		t.Fatalf("unexpected completion: %+v", params)
 	}
 	if params.InputTokens != 10 || params.OutputTokens != 3 {
@@ -121,6 +121,16 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	eventParams := remarshal[TurnEventNotification](t, event["params"])
 	if eventParams.Event.Type != providers.EventContentDelta || eventParams.Event.Content != "done" {
 		t.Fatalf("unexpected turn event: %+v", eventParams)
+	}
+	delta := notificationByMethod(t, msgs, NotificationAgentMessageDelta)
+	deltaParams := remarshal[AgentMessageDeltaNotification](t, delta["params"])
+	if deltaParams.ThreadID != threadID || deltaParams.Delta != "done" {
+		t.Fatalf("unexpected agent delta: %+v", deltaParams)
+	}
+	itemCompleted := notificationByMethod(t, msgs, NotificationItemCompleted)
+	itemParams := remarshal[ItemCompletedNotification](t, itemCompleted["params"])
+	if itemParams.Item.Type != ThreadItemAgentMessage || itemParams.Item.Text != "done" {
+		t.Fatalf("unexpected completed item: %+v", itemParams)
 	}
 
 	client.mu.Lock()
@@ -145,6 +155,55 @@ func TestServerRejectsUnknownTurnParams(t *testing.T) {
 	resp := responseByID(t, parseOutput(t, out.String()), "1")
 	if resp["error"] == nil {
 		t.Fatalf("expected response error, got %+v", resp)
+	}
+}
+
+func TestServerTurnItemsIncludeReasoningAndAgentMessage(t *testing.T) {
+	client := &fakeClient{
+		response: providers.ChatResponse{
+			ReasoningContent: "inspect first",
+			Content:          "done",
+		},
+	}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	raw, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "hello"},
+	})
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
+	var reasoning, agent int
+	for _, item := range completed.Turn.Items {
+		switch item.Type {
+		case ThreadItemReasoning:
+			reasoning++
+			if item.Text != "inspect first" {
+				t.Fatalf("unexpected reasoning item: %+v", item)
+			}
+		case ThreadItemAgentMessage:
+			agent++
+			if item.Text != "done" {
+				t.Fatalf("unexpected agent item: %+v", item)
+			}
+		}
+	}
+	if reasoning != 1 || agent != 1 {
+		t.Fatalf("expected one reasoning and one agent item, got reasoning=%d agent=%d turn=%+v", reasoning, agent, completed.Turn)
 	}
 }
 
@@ -182,11 +241,11 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 
 	msgs := parseOutput(t, out.String())
 	result := remarshal[ThreadResumeResult](t, responseByID(t, msgs, "1")["result"])
-	if result.ThreadID != sessionID || result.MessageCount != 3 {
+	if result.Thread.ID != sessionID || len(result.Thread.Turns) != 1 {
 		t.Fatalf("unexpected resume result: %+v", result)
 	}
 	resumed := remarshal[ThreadResumedNotification](t, notificationByMethod(t, msgs, NotificationThreadResumed)["params"])
-	if resumed.ThreadID != sessionID || resumed.MessageCount != 3 {
+	if resumed.Thread.ID != sessionID || len(resumed.Thread.Turns) != 1 {
 		t.Fatalf("unexpected resume notification: %+v", resumed)
 	}
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -18,13 +19,24 @@ import (
 var errShutdown = errors.New("app-server shutdown requested")
 
 type threadState struct {
-	ID      string
-	History []providers.ChatMessage
+	ID            string
+	History       []providers.ChatMessage
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ModelProvider string
+	Model         string
+	CWD           string
+	Turns         []Turn
 
 	mu          sync.Mutex
 	running     bool
 	currentTurn string
 	cancel      context.CancelFunc
+
+	nextItemIndex         int
+	activeAgentItemID     string
+	activeReasoningItemID string
+	toolItems             map[string]string
 }
 
 type Server struct {
@@ -124,18 +136,21 @@ func (s *Server) handleThreadStart(req Request) error {
 	if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
-	th := &threadState{ID: id, History: history}
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, time.Now().UTC())
 
 	s.mu.Lock()
 	s.threads[id] = th
 	s.mu.Unlock()
 
 	s.rt.SetSessionID(id)
-	if err := s.writeResponse(req.ID, ThreadStartResult{ThreadID: id}, nil); err != nil {
+	th.mu.Lock()
+	thread := th.snapshotLocked()
+	th.mu.Unlock()
+	if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
 		return err
 	}
 	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
-		ThreadID: id,
+		Thread: thread,
 	})
 }
 
@@ -168,33 +183,30 @@ func (s *Server) handleThreadResume(req Request) error {
 			history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 		}
 	}
-	th := &threadState{ID: id, History: history}
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, time.Now().UTC())
 	s.mu.Lock()
 	s.threads[id] = th
 	s.mu.Unlock()
 
 	s.rt.SetSessionID(id)
-	result := ThreadResumeResult{ThreadID: id, MessageCount: len(history)}
+	th.mu.Lock()
+	thread := th.snapshotLocked()
+	th.mu.Unlock()
+	result := ThreadResumeResult{Thread: thread}
 	if err := s.writeResponse(req.ID, result, nil); err != nil {
 		return err
 	}
 	return s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
-		ThreadID:     id,
-		MessageCount: len(history),
+		Thread: thread,
 	})
 }
 
 func (s *Server) handleThreadList(req Request) error {
 	s.mu.Lock()
-	threads := make([]ThreadInfo, 0, len(s.threads))
+	threads := make([]Thread, 0, len(s.threads))
 	for _, th := range s.threads {
 		th.mu.Lock()
-		threads = append(threads, ThreadInfo{
-			ThreadID:     th.ID,
-			MessageCount: len(th.History),
-			Running:      th.running,
-			CurrentTurn:  th.currentTurn,
-		})
+		threads = append(threads, th.snapshotLocked())
 		th.mu.Unlock()
 	}
 	s.mu.Unlock()
@@ -222,6 +234,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
 	userMsg := providers.ChatMessage{Role: "user", Content: params.Prompt}
+	now := time.Now().UTC()
 
 	th.mu.Lock()
 	if th.running {
@@ -232,18 +245,17 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	history := append([]providers.ChatMessage(nil), th.History...)
 	history = append(history, userMsg)
 	th.History = history
-	th.running = true
-	th.currentTurn = turnID
 	th.cancel = cancel
+	turn := th.startTurnLocked(turnID, params.Prompt, now)
 	th.mu.Unlock()
 
-	if err := s.writeResponse(req.ID, TurnStartResult{TurnID: turnID}, nil); err != nil {
+	if err := s.writeResponse(req.ID, TurnStartResult{Turn: turn}, nil); err != nil {
 		cancel()
 		return err
 	}
 	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: params.ThreadID,
-		TurnID:   turnID,
+		Turn:     turn,
 	}); err != nil {
 		cancel()
 		return err
@@ -276,7 +288,16 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, hi
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
+	notifyBatch := func(batch []outboundNotification) {
+		for _, item := range batch {
+			notify(item.method, item.params)
+		}
+	}
 	res, err := s.rt.StreamRunner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
+		th.mu.Lock()
+		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
+		th.mu.Unlock()
+		notifyBatch(batch)
 		notify(NotificationTurnEvent, TurnEventNotification{
 			ThreadID: th.ID,
 			TurnID:   turnID,
@@ -284,15 +305,21 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, hi
 		})
 	})
 
+	now := time.Now().UTC()
 	th.mu.Lock()
 	if res.HistoryRewritten {
 		th.History = append([]providers.ChatMessage(nil), res.NewMessages...)
 	} else {
 		th.History = append(th.History, res.NewMessages...)
 	}
-	th.running = false
-	th.currentTurn = ""
-	th.cancel = nil
+	status := TurnStatusCompleted
+	if err != nil {
+		status = TurnStatusFailed
+		if errors.Is(err, context.Canceled) {
+			status = TurnStatusInterrupted
+		}
+	}
+	turn := th.completeTurnLocked(turnID, status, err, now)
 	th.mu.Unlock()
 
 	if err != nil {
@@ -300,12 +327,13 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, hi
 			ThreadID: th.ID,
 			TurnID:   turnID,
 			Error:    err.Error(),
+			Turn:     turn,
 		})
 		return
 	}
 	notify(NotificationTurnCompleted, TurnCompletedNotification{
 		ThreadID:     th.ID,
-		TurnID:       turnID,
+		Turn:         turn,
 		Content:      res.Content,
 		InputTokens:  res.InputTokens,
 		OutputTokens: res.OutputTokens,
