@@ -1,14 +1,17 @@
 package tui
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/session"
 )
 
 func TestParseSlashCommand(t *testing.T) {
@@ -159,6 +162,47 @@ func TestHandleSlashRespectsTaskAvailability(t *testing.T) {
 	}
 	if !strings.Contains(msg, "provider: test") {
 		t.Fatalf("expected /status to run during task, got %q", msg)
+	}
+}
+
+func TestCmdUsageUsesLocalSessionStats(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
+	writeCommandMemoryRecords(t, session.FilePath(dir, "usage-session"), []memoryEntry{
+		{Role: "user", Content: "measure usage", At: start},
+		{Role: "assistant", Content: "ok", At: start.Add(10 * time.Second)},
+		{Role: "user", Content: "continue", At: start.Add(2 * time.Minute)},
+		{Role: "assistant", Content: "done", At: start.Add(3 * time.Minute)},
+		{Role: "meta", Content: "token_usage", InputTokens: 10, OutputTokens: 4, At: start.Add(3 * time.Minute)},
+	})
+	m := NewModel(Config{
+		Provider:   "test",
+		Model:      "test-model",
+		ConfigPath: "/tmp/.wuu.json",
+		SessionDir: dir,
+	})
+
+	out := cmdUsage("", &m)
+	if !strings.Contains(out, "Usage") || !strings.Contains(out, "Sessions: 1") {
+		t.Fatalf("unexpected usage output: %q", out)
+	}
+	if !strings.Contains(out, "Tokens: 10 input / 4 output") {
+		t.Fatalf("expected token totals in usage output, got %q", out)
+	}
+}
+
+func writeCommandMemoryRecords(t *testing.T, path string, records []memoryEntry) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create memory records: %v", err)
+	}
+	defer file.Close()
+	enc := json.NewEncoder(file)
+	for _, rec := range records {
+		if err := enc.Encode(rec); err != nil {
+			t.Fatalf("encode memory record: %v", err)
+		}
 	}
 }
 

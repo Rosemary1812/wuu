@@ -127,6 +127,7 @@ func init() {
 
 		// ── Info ───────────────────────────────────────────────────
 		commandSpec(SlashCommandSpec{Name: "status", Group: "Info", Description: "Show session config and token usage", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdStatus}),
+		commandSpec(SlashCommandSpec{Name: "usage", Group: "Info", Description: "Show local usage statistics", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdUsage}),
 		commandSpec(SlashCommandSpec{Name: "skills", Group: "Info", Description: "List available skills", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdSkills}),
 		commandSpec(SlashCommandSpec{Name: "memory", Group: "Info", Description: "Show loaded memory files (CLAUDE.md / AGENTS.md)", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdMemory}),
 		commandSpec(SlashCommandSpec{Name: "insight", Group: "Info", Description: "Session stats and diagnostics", AvailableDuringTask: false, Kind: slashCommandKindReport, Execute: cmdInsight}),
@@ -456,6 +457,17 @@ func removeQueuedAt(m *Model, idx int) (queuedMessage, bool) {
 func cmdStatus(_ string, m *Model) string {
 	return fmt.Sprintf("provider: %s\nmodel: %s\nconfig: %s\nentries: %d\nworkspace: %s",
 		m.provider, m.modelName, m.configPath, len(m.entries), m.workspaceRoot)
+}
+
+func cmdUsage(_ string, m *Model) string {
+	if m.sessionDir == "" {
+		return "usage: no session directory configured"
+	}
+	report, err := insight.BuildUsageReport(m.sessionDir, 0)
+	if err != nil {
+		return fmt.Sprintf("usage: %v", err)
+	}
+	return insight.FormatUsageReport(report)
 }
 
 func cmdContext(_ string, m *Model) string {

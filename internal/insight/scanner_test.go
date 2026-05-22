@@ -113,6 +113,47 @@ func TestScanSessionsForCWDFiltersBySessionIndex(t *testing.T) {
 	}
 }
 
+func TestBuildUsageReportAggregatesLocalSessions(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, time.April, 15, 9, 0, 0, 0, time.UTC)
+
+	writeInsightSessionRecords(t, filepath.Join(dir, "usage-a.jsonl"), []memoryRecord{
+		{Role: "user", Content: "implement usage stats", At: start},
+		{
+			Role: "assistant",
+			At:   start.Add(10 * time.Second),
+			ToolCalls: []toolCallRec{
+				{ID: "call_1", Name: "write_file", Arguments: `{"file_path":"internal/usage.go"}`},
+			},
+		},
+		{Role: "tool", Content: `{"diff":{"hunks":[{"lines":[{"op":"insert"},{"op":"delete"}]}]}}`, ToolCallID: "call_1", Name: "write_file", At: start.Add(20 * time.Second)},
+		{Role: "user", Content: "show the totals", At: start.Add(2 * time.Minute)},
+		{Role: "assistant", Content: "done", At: start.Add(3 * time.Minute)},
+		{Role: "meta", Content: "token_usage", InputTokens: 1200, OutputTokens: 300, At: start.Add(3 * time.Minute)},
+	})
+
+	report, err := BuildUsageReport(dir, 0)
+	if err != nil {
+		t.Fatalf("BuildUsageReport: %v", err)
+	}
+	if report.Stats.TotalSessions != 1 {
+		t.Fatalf("expected 1 session, got %d", report.Stats.TotalSessions)
+	}
+	if report.Stats.TotalInputTokens != 1200 || report.Stats.TotalOutputTokens != 300 {
+		t.Fatalf("unexpected token totals: in=%d out=%d", report.Stats.TotalInputTokens, report.Stats.TotalOutputTokens)
+	}
+	if report.Stats.ToolCounts["write_file"] != 1 {
+		t.Fatalf("expected write_file count, got %+v", report.Stats.ToolCounts)
+	}
+
+	out := FormatUsageReport(report)
+	for _, want := range []string{"Usage", "Sessions: 1", "Tokens: 1.2k input / 300 output", "Top tools", "Languages"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("usage output missing %q: %s", want, out)
+		}
+	}
+}
+
 func writeInsightSessionRecords(t *testing.T, path string, records []memoryRecord) {
 	t.Helper()
 
