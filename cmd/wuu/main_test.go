@@ -81,6 +81,36 @@ func TestRunVersionAliasForwardsLongFlag(t *testing.T) {
 	}
 }
 
+func TestRunModelsRejectsUnsupportedProvider(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := workdir + "/.wuu.json"
+	data := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	err := run([]string{"models", "--workdir", workdir})
+	if err == nil {
+		t.Fatal("expected unsupported provider error")
+	}
+	if !strings.Contains(err.Error(), "openai-codex providers only") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestResolveContextWindow_PrefersProviderOverride(t *testing.T) {
 	if got := runtime.ResolveContextWindow("gpt-5.4", 777, 555); got != 777 {
 		t.Fatalf("expected provider override, got %d", got)

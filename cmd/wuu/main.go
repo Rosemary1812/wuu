@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
+	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/tools"
@@ -41,6 +42,8 @@ func run(args []string) error {
 	switch args[0] {
 	case "init":
 		return runInit(args[1:])
+	case "models":
+		return runModels(args[1:])
 	case "run":
 		return runTask(args[1:])
 	case "tui":
@@ -118,6 +121,60 @@ func runInit(args []string) error {
 	}
 
 	return writeOnboardingResult(workdir, os.Getenv("HOME"), result)
+}
+
+func runModels(args []string) error {
+	fs := flag.NewFlagSet("models", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	providerName := fs.String("provider", "", "provider name in config")
+	workdir := fs.String("workdir", "", "workspace directory")
+	jsonOutput := fs.Bool("json", false, "output model metadata as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	rootDir, err := resolveWorkdir(*workdir)
+	if err != nil {
+		return err
+	}
+	cfg, configPath, err := config.LoadFrom(rootDir, os.Getenv("HOME"))
+	if err != nil {
+		return err
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(*providerName)
+	if err != nil {
+		return err
+	}
+	if !isCodexModelsProvider(providerCfg.Type) {
+		return fmt.Errorf("provider %q uses type %q; live model lookup currently supports openai-codex providers only", resolvedName, providerCfg.Type)
+	}
+
+	client, err := codex.New(codex.ClientConfig{
+		BaseURL: providerCfg.BaseURL,
+		APIKey:  explicitProviderAPIKey(providerCfg),
+		Headers: providerCfg.Headers,
+	})
+	if err != nil {
+		return err
+	}
+	models, err := client.Models(context.Background())
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		data, err := json.MarshalIndent(models, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal models: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	fmt.Printf("provider: %s\nconfig: %s\n\n", resolvedName, configPath)
+	for _, model := range models {
+		fmt.Println(model.Slug)
+	}
+	return nil
 }
 
 func runTask(args []string) error {
@@ -465,6 +522,22 @@ func resolveWorkdir(input string) (string, error) {
 	return abs, nil
 }
 
+func isCodexModelsProvider(providerType string) bool {
+	s := strings.ToLower(strings.TrimSpace(providerType))
+	s = strings.ReplaceAll(s, "_", "-")
+	return s == "openai-codex" || s == "codex-subscription" || s == "chatgpt-codex"
+}
+
+func explicitProviderAPIKey(provider config.ProviderConfig) string {
+	if key := strings.TrimSpace(provider.APIKey); key != "" {
+		return key
+	}
+	if envKey := strings.TrimSpace(provider.APIKeyEnv); envKey != "" {
+		return strings.TrimSpace(os.Getenv(envKey))
+	}
+	return ""
+}
+
 func resolveRuntimePath(rootDir, input string) (string, error) {
 	value := strings.TrimSpace(input)
 	if value == "" {
@@ -563,10 +636,16 @@ func printUsage() {
 
 Usage:
   wuu init [--force]
+  wuu models [flags]
   wuu run [flags] "your coding task"
   wuu tui [flags]
   wuu app-server [flags]
   wuu version [--long|--json]
+
+Models flags:
+  --provider        provider name from config
+  --workdir         workspace directory
+  --json            output model metadata as JSON
 
 Run flags:
   --provider        provider name from config

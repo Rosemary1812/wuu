@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,6 +58,18 @@ type credentials struct {
 	accountID    string
 	source       string
 	refreshable  bool
+}
+
+// ModelInfo describes one model advertised by the OAuth-backed Codex backend.
+type ModelInfo struct {
+	Slug                  string   `json:"slug"`
+	DisplayName           string   `json:"display_name,omitempty"`
+	Description           string   `json:"description,omitempty"`
+	DefaultReasoningLevel string   `json:"default_reasoning_level,omitempty"`
+	SupportedReasoning    []string `json:"supported_reasoning,omitempty"`
+	Visibility            string   `json:"visibility,omitempty"`
+	SupportedInAPI        bool     `json:"supported_in_api"`
+	Priority              int      `json:"priority,omitempty"`
 }
 
 // New creates a Codex subscription-backed provider client.
@@ -114,6 +127,49 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 		return nil, fmt.Errorf("refresh Codex OAuth credentials after auth failure: %w", refreshErr)
 	}
 	return client.StreamChat(ctx, req)
+}
+
+// Models fetches the live model catalog for the current Codex OAuth account.
+func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
+	creds, err := c.resolveCredentials(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	endpoint := c.baseURL + "/models?client_version=1.0.0"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build Codex models request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+creds.accessToken)
+	httpReq.Header.Set("Accept", "application/json")
+	for k, v := range c.headers {
+		httpReq.Header.Set(k, v)
+	}
+	for k, v := range codexHeaders(creds.accessToken, creds.accountID) {
+		if httpReq.Header.Get(k) == "" {
+			httpReq.Header.Set(k, v)
+		}
+	}
+
+	httpClient := c.httpClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 20 * time.Second}
+	}
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("fetch Codex models: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch Codex models: %s: %s", resp.Status, string(body))
+	}
+
+	models, err := parseModels(body)
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
 }
 
 func codexRequest(req providers.ChatRequest) providers.ChatRequest {
@@ -272,6 +328,69 @@ func refreshTokenURL() string {
 		return v
 	}
 	return tokenURL
+}
+
+func parseModels(data []byte) ([]ModelInfo, error) {
+	var payload struct {
+		Models []struct {
+			Slug                  string `json:"slug"`
+			DisplayName           string `json:"display_name"`
+			Description           string `json:"description"`
+			DefaultReasoningLevel string `json:"default_reasoning_level"`
+			SupportedReasoning    []struct {
+				Effort string `json:"effort"`
+			} `json:"supported_reasoning_levels"`
+			Visibility     string `json:"visibility"`
+			SupportedInAPI bool   `json:"supported_in_api"`
+			Priority       *int   `json:"priority"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("parse Codex models response: %w", err)
+	}
+	models := make([]ModelInfo, 0, len(payload.Models))
+	seen := make(map[string]struct{}, len(payload.Models))
+	for _, item := range payload.Models {
+		slug := strings.TrimSpace(item.Slug)
+		if slug == "" {
+			continue
+		}
+		if _, exists := seen[slug]; exists {
+			continue
+		}
+		visibility := strings.TrimSpace(item.Visibility)
+		if strings.EqualFold(visibility, "hide") || strings.EqualFold(visibility, "hidden") {
+			continue
+		}
+		seen[slug] = struct{}{}
+		reasoning := make([]string, 0, len(item.SupportedReasoning))
+		for _, level := range item.SupportedReasoning {
+			if effort := strings.TrimSpace(level.Effort); effort != "" {
+				reasoning = append(reasoning, effort)
+			}
+		}
+		priority := 10000
+		if item.Priority != nil {
+			priority = *item.Priority
+		}
+		models = append(models, ModelInfo{
+			Slug:                  slug,
+			DisplayName:           strings.TrimSpace(item.DisplayName),
+			Description:           strings.TrimSpace(item.Description),
+			DefaultReasoningLevel: strings.TrimSpace(item.DefaultReasoningLevel),
+			SupportedReasoning:    reasoning,
+			Visibility:            visibility,
+			SupportedInAPI:        item.SupportedInAPI,
+			Priority:              priority,
+		})
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].Priority != models[j].Priority {
+			return models[i].Priority < models[j].Priority
+		}
+		return models[i].Slug < models[j].Slug
+	})
+	return models, nil
 }
 
 func loadCodexCLIAuth(home string) (config.CodexOAuthState, error) {

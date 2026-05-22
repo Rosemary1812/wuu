@@ -148,6 +148,59 @@ func TestClientRefreshesStoredWuuCodexOAuth(t *testing.T) {
 	}
 }
 
+func TestClientModelsUsesCodexOAuth(t *testing.T) {
+	home := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	token := fakeJWT(t, time.Now().Add(time.Hour), "acct_models")
+	writeCodexCLIAuth(t, codexHome, token, "refresh-token")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Fatalf("path = %q, want /models", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("client_version"); got != "1.0.0" {
+			t.Fatalf("client_version = %q", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if got := r.Header.Get("originator"); got != "codex_cli_rs" {
+			t.Fatalf("originator = %q", got)
+		}
+		if got := r.Header.Get("ChatGPT-Account-ID"); got != "acct_models" {
+			t.Fatalf("ChatGPT-Account-ID = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+		  "models": [
+		    {"slug":"hidden-model","visibility":"hide","priority":1},
+		    {"slug":"gpt-5.4","display_name":"GPT-5.4","priority":20,"supported_in_api":true},
+		    {"slug":"gpt-5.5","display_name":"GPT-5.5","priority":9,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"}],"supported_in_api":true}
+		  ]
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	models, err := client.Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("models len = %d, want 2: %#v", len(models), models)
+	}
+	if models[0].Slug != "gpt-5.5" || models[1].Slug != "gpt-5.4" {
+		t.Fatalf("unexpected model order: %#v", models)
+	}
+	if got := models[0].SupportedReasoning; len(got) != 2 || got[0] != "low" || got[1] != "medium" {
+		t.Fatalf("unexpected reasoning levels: %#v", got)
+	}
+}
+
 func writeCodexCLIAuth(t *testing.T, codexHome, accessToken, refreshToken string) {
 	t.Helper()
 	payload := map[string]any{
