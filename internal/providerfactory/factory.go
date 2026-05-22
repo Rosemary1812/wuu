@@ -9,6 +9,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/anthropic"
+	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/providers/openai"
 )
 
@@ -72,14 +73,12 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 	// the Anthropic SDK's ANTHROPIC_AUTH_TOKEN support).
 	authToken := resolveAuthToken(provider)
 
-	// API key is optional when auth token is available (anthropic providers).
-	apiKey, apiKeyErr := resolveAPIKey(provider, providerName)
-	if apiKeyErr != nil && authToken == "" {
-		return nil, apiKeyErr
-	}
-
 	switch typeName {
 	case "openai", "openai-compatible", "codex":
+		apiKey, apiKeyErr := resolveAPIKey(provider, providerName)
+		if apiKeyErr != nil {
+			return nil, apiKeyErr
+		}
 		client, newErr := openai.New(openai.ClientConfig{
 			BaseURL:      provider.BaseURL,
 			WireAPI:      provider.WireAPI,
@@ -92,7 +91,24 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 			return nil, newErr
 		}
 		return client, nil
+	case "openai-codex", "codex-subscription", "chatgpt-codex":
+		client, newErr := codex.New(codex.ClientConfig{
+			BaseURL:      provider.BaseURL,
+			APIKey:       resolveExplicitAPIKey(provider),
+			Headers:      provider.Headers,
+			RetryConfig:  retry,
+			StreamConfig: providerStreamTransportConfig(provider),
+		})
+		if newErr != nil {
+			return nil, newErr
+		}
+		return client, nil
 	case "anthropic", "claude", "anthropic-official":
+		// API key is optional when auth token is available.
+		apiKey, apiKeyErr := resolveAPIKey(provider, providerName)
+		if apiKeyErr != nil && authToken == "" {
+			return nil, apiKeyErr
+		}
 		client, newErr := anthropic.New(anthropic.ClientConfig{
 			BaseURL:      provider.BaseURL,
 			APIKey:       apiKey,
@@ -166,6 +182,16 @@ func ResolveAPIKeyWithHome(provider config.ProviderConfig, providerName, home st
 
 func resolveAPIKey(provider config.ProviderConfig, providerName string) (string, error) {
 	return ResolveAPIKeyWithHome(provider, providerName, os.Getenv("HOME"))
+}
+
+func resolveExplicitAPIKey(provider config.ProviderConfig) string {
+	if strings.TrimSpace(provider.APIKey) != "" {
+		return strings.TrimSpace(provider.APIKey)
+	}
+	if envKey := strings.TrimSpace(provider.APIKeyEnv); envKey != "" {
+		return strings.TrimSpace(os.Getenv(envKey))
+	}
+	return ""
 }
 
 // resolveAuthToken resolves a Bearer auth token from config or environment.

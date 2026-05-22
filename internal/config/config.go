@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -211,7 +212,7 @@ func (c Config) Validate() error {
 		if provider.Type == "" {
 			return fmt.Errorf("providers.%s.type is required", name)
 		}
-		if provider.BaseURL == "" {
+		if provider.BaseURL == "" && !isCodexSubscriptionProvider(provider.Type) {
 			return fmt.Errorf("providers.%s.base_url is required", name)
 		}
 		if provider.Model == "" {
@@ -260,6 +261,12 @@ func Default() Config {
 				APIKeyEnv: "OPENAI_API_KEY",
 				Model:     "gpt-5-codex",
 			},
+			"openai-codex": {
+				Type:    "openai-codex",
+				BaseURL: "https://chatgpt.com/backend-api/codex",
+				WireAPI: "responses",
+				Model:   "gpt-5-codex",
+			},
 			"anthropic": {
 				Type:      "anthropic",
 				BaseURL:   "https://api.anthropic.com",
@@ -297,6 +304,17 @@ func Default() Config {
 				"Write 'why' comments only when they preserve a non-obvious rationale or tradeoff, and keep them sparse, factual, and up to the standard of top-tier open-source projects. " +
 				"Do not leave future-intent/status comments such as 'I will do it later' or other speculative notes. Treat every comment as long-lived documentation that future agents will read, so avoid anything misleading or not true at the time it is written.",
 		},
+	}
+}
+
+func isCodexSubscriptionProvider(providerType string) bool {
+	s := strings.ToLower(strings.TrimSpace(providerType))
+	s = strings.ReplaceAll(s, "_", "-")
+	switch s {
+	case "openai-codex", "codex-subscription", "chatgpt-codex":
+		return true
+	default:
+		return false
 	}
 }
 

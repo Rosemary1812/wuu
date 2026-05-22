@@ -11,7 +11,26 @@ import (
 const authRelativePath = ".config/wuu/auth.json"
 
 type authStore struct {
-	Keys map[string]string `json:"keys"`
+	Keys       map[string]string `json:"keys"`
+	CodexOAuth *CodexOAuthState  `json:"codex_oauth,omitempty"`
+}
+
+// CodexOAuthTokens stores the token payload used by the ChatGPT-backed Codex
+// endpoint. These are bearer credentials and must stay in the user auth store.
+type CodexOAuthTokens struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	IDToken      string `json:"id_token,omitempty"`
+	AccountID    string `json:"account_id,omitempty"`
+}
+
+// CodexOAuthState stores wuu's own Codex OAuth session.
+type CodexOAuthState struct {
+	Tokens      CodexOAuthTokens `json:"tokens"`
+	LastRefresh string           `json:"last_refresh,omitempty"`
+	AuthMode    string           `json:"auth_mode,omitempty"`
+	Source      string           `json:"source,omitempty"`
+	BaseURL     string           `json:"base_url,omitempty"`
 }
 
 func SaveAuthKey(home, providerName, apiKey string) error {
@@ -41,6 +60,36 @@ func LoadAuthKey(home, providerName string) (string, error) {
 		return "", fmt.Errorf("no auth key for provider %q", providerName)
 	}
 	return key, nil
+}
+
+// SaveCodexOAuth stores wuu's own Codex OAuth session.
+func SaveCodexOAuth(home string, state CodexOAuthState) error {
+	path, err := authPath(home)
+	if err != nil {
+		return err
+	}
+	store, _ := loadAuthStore(path)
+	if store.Keys == nil {
+		store.Keys = make(map[string]string)
+	}
+	store.CodexOAuth = &state
+	return writeAuthStore(path, store)
+}
+
+// LoadCodexOAuth loads wuu's own Codex OAuth session.
+func LoadCodexOAuth(home string) (CodexOAuthState, error) {
+	path, err := authPath(home)
+	if err != nil {
+		return CodexOAuthState{}, err
+	}
+	store, err := loadAuthStore(path)
+	if err != nil {
+		return CodexOAuthState{}, err
+	}
+	if store.CodexOAuth == nil || strings.TrimSpace(store.CodexOAuth.Tokens.AccessToken) == "" {
+		return CodexOAuthState{}, fmt.Errorf("no Codex OAuth credentials")
+	}
+	return *store.CodexOAuth, nil
 }
 
 func authPath(home string) (string, error) {

@@ -51,6 +51,43 @@ func TestAuthStore_MultipleProviders(t *testing.T) {
 	}
 }
 
+func TestAuthStore_CodexOAuthState(t *testing.T) {
+	home := t.TempDir()
+	state := CodexOAuthState{
+		Tokens: CodexOAuthTokens{
+			AccessToken:  "access-token",
+			RefreshToken: "refresh-token",
+			AccountID:    "account-id",
+		},
+		LastRefresh: "2026-05-23T00:00:00Z",
+		AuthMode:    "chatgpt",
+		Source:      "codex-cli-import",
+		BaseURL:     "https://chatgpt.com/backend-api/codex",
+	}
+
+	if err := SaveCodexOAuth(home, state); err != nil {
+		t.Fatalf("SaveCodexOAuth: %v", err)
+	}
+	if err := SaveAuthKey(home, "openai", "sk-openai"); err != nil {
+		t.Fatalf("SaveAuthKey: %v", err)
+	}
+
+	got, err := LoadCodexOAuth(home)
+	if err != nil {
+		t.Fatalf("LoadCodexOAuth: %v", err)
+	}
+	if got.Tokens.AccessToken != state.Tokens.AccessToken || got.Tokens.RefreshToken != state.Tokens.RefreshToken {
+		t.Fatalf("unexpected codex tokens: %#v", got.Tokens)
+	}
+	key, err := LoadAuthKey(home, "openai")
+	if err != nil {
+		t.Fatalf("LoadAuthKey after SaveCodexOAuth: %v", err)
+	}
+	if key != "sk-openai" {
+		t.Fatalf("key = %q, want sk-openai", key)
+	}
+}
+
 func TestAuthStore_RequiresHomeDir(t *testing.T) {
 	for _, home := range []string{"", "   \t\n  "} {
 		t.Run("home="+strings.TrimSpace(home), func(t *testing.T) {

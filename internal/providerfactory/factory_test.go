@@ -24,6 +24,22 @@ func TestBuildClient_OpenAICompatible(t *testing.T) {
 	}
 }
 
+func TestBuildClient_OpenAICodexDoesNotRequireAPIKey(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+
+	client, err := BuildClient(config.ProviderConfig{
+		Type:    "openai-codex",
+		Model:   "gpt-5-codex",
+		WireAPI: "responses",
+	}, "openai-codex")
+	if err != nil {
+		t.Fatalf("BuildClient returned error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected client")
+	}
+}
+
 func TestBuildClient_Anthropic(t *testing.T) {
 	t.Setenv("TEST_ANTHROPIC_KEY", "abc")
 

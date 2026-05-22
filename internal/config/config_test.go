@@ -138,6 +138,38 @@ func TestConfig_ProviderWireAPI(t *testing.T) {
 	}
 }
 
+func TestConfig_CodexSubscriptionAllowsDefaultBaseURL(t *testing.T) {
+	workdir := t.TempDir()
+	home := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-codex",
+      "wire_api": "responses",
+      "model": "gpt-5-codex"
+    }
+  },
+  "agent": {
+    "max_steps": 0,
+    "temperature": 0.2,
+    "system_prompt": "test"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, home)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if cfg.Providers["main"].Type != "openai-codex" {
+		t.Fatalf("provider type = %q", cfg.Providers["main"].Type)
+	}
+}
+
 func TestConfig_RejectsUnknownWireAPI(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
