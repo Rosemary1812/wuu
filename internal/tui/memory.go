@@ -40,6 +40,11 @@ type memoryEntry struct {
 	OutputTokens     int                        `json:"output_tokens,omitempty"`
 }
 
+const (
+	compactBoundaryRole    = "compact_boundary"
+	compactBoundaryContent = "Conversation compacted"
+)
+
 func loadMemoryEntries(path string) ([]transcriptEntry, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil
@@ -71,6 +76,13 @@ func loadMemoryEntries(path string) ([]transcriptEntry, error) {
 			role = "SYSTEM"
 		}
 		if role == "META" {
+			return nil
+		}
+		if role == strings.ToUpper(compactBoundaryRole) {
+			entries = append(entries, transcriptEntry{
+				Role:    "SYSTEM",
+				Content: compactBoundaryContent,
+			})
 			return nil
 		}
 		content := strings.TrimSpace(rec.Content)
@@ -173,6 +185,9 @@ func appendChatMessage(path string, msg providers.ChatMessage) error {
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}
+	if !shouldPersistChatMessage(msg) {
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create memory directory: %w", err)
 	}
@@ -241,7 +256,21 @@ func rewriteChatHistory(path string, msgs []providers.ChatMessage) error {
 	defer file.Close()
 
 	enc := json.NewEncoder(file)
+	wroteBoundary := false
 	for _, msg := range msgs {
+		if !wroteBoundary && compact.IsConversationSummaryContent(msg.Content) {
+			if err := enc.Encode(memoryEntry{
+				Role:    compactBoundaryRole,
+				Content: compactBoundaryContent,
+				At:      time.Now().UTC(),
+			}); err != nil {
+				return fmt.Errorf("write compact boundary: %w", err)
+			}
+			wroteBoundary = true
+		}
+		if !shouldPersistChatMessage(msg) {
+			continue
+		}
 		if err := enc.Encode(memoryEntryFromChatMessage(msg)); err != nil {
 			return fmt.Errorf("write chat history: %w", err)
 		}
@@ -404,4 +433,15 @@ func loadTokenUsageTotals(path string) (inputTokens, outputTokens int, err error
 		outputTokens += rec.OutputTokens
 	}
 	return inputTokens, outputTokens, nil
+}
+
+func shouldPersistChatMessage(msg providers.ChatMessage) bool {
+	switch strings.ToLower(strings.TrimSpace(msg.Role)) {
+	case "user", "assistant", "tool":
+		return true
+	case "system":
+		return compact.IsConversationSummaryContent(msg.Content)
+	default:
+		return false
+	}
 }

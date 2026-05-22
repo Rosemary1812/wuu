@@ -439,6 +439,7 @@ func TestRewriteChatHistory_PreservesMetaEntries(t *testing.T) {
 	}
 
 	replacement := []providers.ChatMessage{
+		{Role: "system", Content: "current system prompt should not be persisted"},
 		{Role: "system", Content: "[Conversation summary]\nOlder turns were compacted."},
 		{Role: "user", Content: "new prompt"},
 		{Role: "assistant", Content: "new answer"},
@@ -457,10 +458,16 @@ func TestRewriteChatHistory_PreservesMetaEntries(t *testing.T) {
 	if msgs[0].Role != "system" || msgs[2].Content != "new answer" {
 		t.Fatalf("unexpected rewritten history: %#v", msgs)
 	}
+	if strings.Contains(msgs[0].Content, "current system prompt") {
+		t.Fatalf("base system prompt leaked into restored history: %#v", msgs)
+	}
 
 	entries, err := loadMemoryEntries(path)
 	if err != nil {
 		t.Fatalf("load memory entries: %v", err)
+	}
+	if len(entries) == 0 || entries[0].Role != "SYSTEM" || entries[0].Content != compactBoundaryContent {
+		t.Fatalf("expected compact boundary transcript entry, got %#v", entries)
 	}
 	foundMeta := false
 	for _, entry := range entries {
@@ -478,6 +485,17 @@ func TestRewriteChatHistory_PreservesMetaEntries(t *testing.T) {
 	}
 	if len(meta) != 1 || meta[0].Content != "token_usage" {
 		t.Fatalf("expected preserved token usage meta, got %#v", meta)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read rewritten history: %v", err)
+	}
+	if strings.Contains(string(raw), "current system prompt should not be persisted") {
+		t.Fatalf("base system prompt should not be written to session file: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"role":"compact_boundary"`) {
+		t.Fatalf("expected compact boundary record in session file: %s", raw)
 	}
 }
 
