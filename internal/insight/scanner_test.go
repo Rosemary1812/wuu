@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sessionstore "github.com/blueberrycongee/wuu/internal/session"
 )
 
 func TestScanSessionsAndFormatTranscriptHandleLargeToolRecords(t *testing.T) {
@@ -76,6 +78,38 @@ func TestScanSessionsAndFormatTranscriptHandleLargeToolRecords(t *testing.T) {
 	}
 	if strings.Contains(transcript, largeToolResult[:256]) {
 		t.Fatal("expected large tool payload to stay out of transcript output")
+	}
+}
+
+func TestScanSessionsForCWDFiltersBySessionIndex(t *testing.T) {
+	dir := t.TempDir()
+	cwdA := filepath.Join(t.TempDir(), "project-a")
+	cwdB := filepath.Join(t.TempDir(), "project-b")
+	start := time.Date(2026, time.April, 14, 9, 0, 0, 0, time.UTC)
+
+	if _, err := sessionstore.CreateWithMetadata(dir, "sess-a", cwdA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessionstore.CreateWithMetadata(dir, "sess-b", cwdB); err != nil {
+		t.Fatal(err)
+	}
+	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-a"), []memoryRecord{
+		{Role: "user", Content: "work in project a", At: start},
+		{Role: "assistant", Content: "ok", At: start.Add(10 * time.Second)},
+		{Role: "user", Content: "continue project a", At: start.Add(2 * time.Minute)},
+	})
+	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-b"), []memoryRecord{
+		{Role: "user", Content: "work in project b", At: start},
+		{Role: "assistant", Content: "ok", At: start.Add(10 * time.Second)},
+		{Role: "user", Content: "continue project b", At: start.Add(2 * time.Minute)},
+	})
+
+	metas, err := ScanSessionsForCWD(dir, cwdA, 0)
+	if err != nil {
+		t.Fatalf("ScanSessionsForCWD: %v", err)
+	}
+	if len(metas) != 1 || metas[0].ID != "sess-a" {
+		t.Fatalf("unexpected scoped metas: %+v", metas)
 	}
 }
 

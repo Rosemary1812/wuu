@@ -38,9 +38,10 @@ type resumePicker struct {
 	cancel   bool   // true when user pressed Esc / Ctrl+C
 }
 
-// newResumePicker builds a picker over the most recent maxItems sessions.
-func newResumePicker(sessDir string, maxItems int, width, height int) (*resumePicker, error) {
-	sessions, err := session.List(sessDir, maxItems)
+// newResumePicker builds a picker over the most recent maxItems sessions for
+// the current workspace.
+func newResumePicker(sessDir, cwd string, maxItems int, width, height int) (*resumePicker, error) {
+	sessions, err := session.ListForCWD(sessDir, cwd, maxItems)
 	if err != nil {
 		return nil, err
 	}

@@ -22,7 +22,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
-
 // Update handles events.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Resume picker takes over when active.
@@ -1557,6 +1556,7 @@ func (m Model) headerUsageSummary() string {
 // available. Resolution order for the window size:
 //   - StreamRunner.ContextWindowOverride (user config wins)
 //   - providers.ContextWindowFor(model) (registry lookup)
+//
 // Small-context models (8K–32K) show the same format; the percentage
 // scales naturally so a 32K model hits the 75% warning three times
 // earlier than a 128K one without any special case.
@@ -1772,7 +1772,7 @@ func (m *Model) ensureSessionFile() {
 	if m.sessionCreated || m.sessionDir == "" || m.sessionID == "" {
 		return
 	}
-	sess, err := session.Create(m.sessionDir, m.sessionID)
+	sess, err := session.CreateWithMetadata(m.sessionDir, m.sessionID, m.workspaceRoot)
 	if err != nil {
 		m.statusLine = fmt.Sprintf("session write failed: %v", err)
 		return

@@ -30,6 +30,46 @@ func TestCreateAndList(t *testing.T) {
 	}
 }
 
+func TestDirUsesUserHome(t *testing.T) {
+	home := t.TempDir()
+	want := filepath.Join(home, ".wuu", "sessions")
+	if got := Dir(home); got != want {
+		t.Fatalf("Dir() = %q, want %q", got, want)
+	}
+	if got := Dir(""); got != "" {
+		t.Fatalf("Dir(empty) = %q, want empty", got)
+	}
+}
+
+func TestListForCWDFiltersSessions(t *testing.T) {
+	dir := t.TempDir()
+	cwdA := filepath.Join(t.TempDir(), "project-a")
+	cwdB := filepath.Join(t.TempDir(), "project-b")
+
+	if _, err := CreateWithMetadata(dir, "sess-a", cwdA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateWithMetadata(dir, "sess-b", cwdB); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := ListForCWD(dir, cwdA, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != "sess-a" {
+		t.Fatalf("unexpected scoped sessions: %+v", sessions)
+	}
+
+	recent, err := MostRecentForCWD(dir, cwdB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recent != "sess-b" {
+		t.Fatalf("MostRecentForCWD() = %q, want sess-b", recent)
+	}
+}
+
 func TestUpdateIndex(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Create(dir)

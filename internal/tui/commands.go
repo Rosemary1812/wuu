@@ -626,7 +626,7 @@ func cmdResume(args string, m *Model) string {
 	if m.sessionDir != "" {
 		if id == "" {
 			// Open the interactive picker with preview pane.
-			picker, err := newResumePicker(m.sessionDir, 50, m.width, m.height)
+			picker, err := newResumePicker(m.sessionDir, m.workspaceRoot, 50, m.width, m.height)
 			if err != nil {
 				return fmt.Sprintf("resume: failed to list sessions: %v", err)
 			}

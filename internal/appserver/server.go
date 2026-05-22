@@ -147,7 +147,7 @@ func (s *Server) handleThreadResume(req Request) error {
 	id := strings.TrimSpace(params.SessionID)
 	var err error
 	if id == "" {
-		id, err = session.MostRecent(s.rt.SessionDir)
+		id, err = session.MostRecentForCWD(s.rt.SessionDir, s.rt.RootDir)
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}

@@ -159,6 +159,11 @@ func NewSession(opts Options) (*Session, error) {
 		}
 	}
 
+	sessionDir := session.Dir(opts.HomeDir)
+	if sessionDir == "" {
+		sessionDir = filepath.Join(rootDir, ".wuu", "sessions")
+	}
+
 	streamRunner := &agent.StreamRunner{
 		Client:       client,
 		Tools:        toolExecutor,
@@ -181,7 +186,7 @@ func NewSession(opts Options) (*Session, error) {
 		Model:               providerCfg.Model,
 		RootDir:             rootDir,
 		ConfigPath:          opts.ConfigPath,
-		SessionDir:          session.Dir(rootDir),
+		SessionDir:          sessionDir,
 		StreamRunner:        streamRunner,
 		HookDispatcher:      hookDispatcher,
 		Skills:              discoveredSkills,
@@ -195,18 +200,18 @@ func NewSession(opts Options) (*Session, error) {
 	}, nil
 }
 
-// SetSessionID binds session-scoped runtime paths after the UI has created or
-// resumed a session.
+// SetSessionID binds workspace-scoped runtime artifact paths after the UI has
+// created or resumed a session. Conversation logs live in SessionDir.
 func (s *Session) SetSessionID(id string) {
 	if s == nil || strings.TrimSpace(id) == "" {
 		return
 	}
 	if s.Toolkit != nil {
 		s.Toolkit.SetSessionID(id)
-		sessionDir := filepath.Join(s.RootDir, ".wuu", "sessions", id)
-		s.Toolkit.SetSessionDir(sessionDir)
+		artifactDir := filepath.Join(s.RootDir, ".wuu", "sessions", id)
+		s.Toolkit.SetSessionDir(artifactDir)
 		if s.Coordinator != nil {
-			s.Coordinator.SetSessionInfo(id, filepath.Join(sessionDir, "workers"))
+			s.Coordinator.SetSessionInfo(id, filepath.Join(artifactDir, "workers"))
 		}
 	}
 }

@@ -333,7 +333,7 @@ func runTUI(args []string) error {
 	for _, a := range args {
 		if a == "--resume" && resolvedResumeID == "" {
 			// Resume most recent session.
-			recent, err := session.MostRecent(sessDir)
+			recent, err := session.MostRecentForCWD(sessDir, rootDir)
 			if err == nil && recent != "" {
 				resolvedResumeID = recent
 			}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/jsonl"
+	sessionstore "github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
@@ -35,6 +36,27 @@ type toolCallRec struct {
 // sorted by creation time descending (most recent first).
 // maxSessions limits how many sessions to return (0 = all).
 func ScanSessions(sessDir string, maxSessions int) ([]SessionMeta, error) {
+	return scanSessions(sessDir, maxSessions, nil)
+}
+
+// ScanSessionsForCWD reads session files scoped to a workspace cwd using the
+// session index metadata.
+func ScanSessionsForCWD(sessDir, cwd string, maxSessions int) ([]SessionMeta, error) {
+	if strings.TrimSpace(cwd) == "" {
+		return ScanSessions(sessDir, maxSessions)
+	}
+	sessions, err := sessionstore.ListForCWD(sessDir, cwd, 0)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]bool, len(sessions))
+	for _, s := range sessions {
+		allowed[s.ID] = true
+	}
+	return scanSessions(sessDir, maxSessions, allowed)
+}
+
+func scanSessions(sessDir string, maxSessions int, allowedIDs map[string]bool) ([]SessionMeta, error) {
 	entries, err := os.ReadDir(sessDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -52,6 +74,9 @@ func ScanSessions(sessDir string, maxSessions int) ([]SessionMeta, error) {
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), ".jsonl")
+		if allowedIDs != nil && !allowedIDs[id] {
+			continue
+		}
 		path := filepath.Join(sessDir, entry.Name())
 		meta, err := scanOneSession(path, id)
 		if err != nil {

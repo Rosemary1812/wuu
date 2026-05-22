@@ -20,7 +20,7 @@ func Run(ctx context.Context, cfg RunConfig, progress chan<- ProgressEvent) {
 	// Phase 1: Scan sessions.
 	send(progress, "scanning", "Scanning session files...", 0.05)
 
-	metas, err := ScanSessions(cfg.SessionDir, cfg.MaxSessions)
+	metas, err := ScanSessionsForCWD(cfg.SessionDir, cfg.WorkspaceRoot, cfg.MaxSessions)
 	if err != nil {
 		sendErr(progress, fmt.Errorf("scan sessions: %w", err))
 		return

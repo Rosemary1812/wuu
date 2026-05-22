@@ -45,18 +45,22 @@ type Session struct {
 	CreatedAt time.Time `json:"created_at"`
 	Summary   string    `json:"summary,omitempty"`
 	Entries   int       `json:"entries"`
+	CWD       string    `json:"cwd,omitempty"`
 }
 
-// NewID generates a human-readable, sortable session ID: YYYYMMDD-HHMMSS-xxxx.
+// NewID generates a human-readable, sortable session ID: YYYYMMDD-HHMMSS-xxxxxxxxxxxxxxxx.
 func NewID() string {
-	b := make([]byte, 2)
+	b := make([]byte, 8)
 	rand.Read(b)
 	return time.Now().Format("20060102-150405") + "-" + hex.EncodeToString(b)
 }
 
-// Dir returns the sessions directory for a workspace.
-func Dir(workspaceRoot string) string {
-	return filepath.Join(workspaceRoot, ".wuu", "sessions")
+// Dir returns the user-level sessions directory.
+func Dir(homeDir string) string {
+	if strings.TrimSpace(homeDir) == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, ".wuu", "sessions")
 }
 
 // FilePath returns the data file path for a session ID.
@@ -72,18 +76,28 @@ func IndexPath(sessDir string) string {
 // Create initializes a new session: creates the directory, data file, and index entry.
 // If id is non-empty, it is used as the session ID; otherwise a new one is generated.
 func Create(sessDir string, id ...string) (*Session, error) {
+	sessID := ""
+	if len(id) > 0 {
+		sessID = id[0]
+	}
+	return CreateWithMetadata(sessDir, sessID, "")
+}
+
+// CreateWithMetadata initializes a new session with thread-level metadata.
+func CreateWithMetadata(sessDir, id, cwd string) (*Session, error) {
 	if err := os.MkdirAll(sessDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create sessions dir: %w", err)
 	}
 
 	sessID := NewID()
-	if len(id) > 0 && id[0] != "" {
-		sessID = id[0]
+	if strings.TrimSpace(id) != "" {
+		sessID = strings.TrimSpace(id)
 	}
 
 	sess := &Session{
 		ID:        sessID,
 		CreatedAt: time.Now().UTC(),
+		CWD:       normalizeCWD(cwd),
 	}
 
 	// Hold the index lock for both the data-file create and the index
@@ -112,6 +126,28 @@ func List(sessDir string, limit int) ([]Session, error) {
 		return err
 	})
 	return sessions, err
+}
+
+// ListForCWD reads sessions scoped to a workspace cwd.
+func ListForCWD(sessDir, cwd string, limit int) ([]Session, error) {
+	target := normalizeCWD(cwd)
+	if target == "" {
+		return List(sessDir, limit)
+	}
+	sessions, err := List(sessDir, 0)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]Session, 0, len(sessions))
+	for _, s := range sessions {
+		if normalizeCWD(s.CWD) == target {
+			filtered = append(filtered, s)
+		}
+	}
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+	return filtered, nil
 }
 
 // listLocked reads the index assuming the caller already holds the lock.
@@ -229,6 +265,18 @@ func MostRecent(sessDir string) (string, error) {
 	return sessions[0].ID, nil
 }
 
+// MostRecentForCWD returns the most recent session for a workspace cwd.
+func MostRecentForCWD(sessDir, cwd string) (string, error) {
+	sessions, err := ListForCWD(sessDir, cwd, 1)
+	if err != nil {
+		return "", err
+	}
+	if len(sessions) == 0 {
+		return "", nil
+	}
+	return sessions[0].ID, nil
+}
+
 // appendIndexLocked appends to the index assuming the caller already holds
 // the exclusive lock (via withIndexLock). O_APPEND is atomic for small
 // writes, but the Create→append sequence in Create must be atomic as a
@@ -241,4 +289,16 @@ func appendIndexLocked(sessDir string, sess *Session) error {
 	}
 	defer f.Close()
 	return json.NewEncoder(f).Encode(sess)
+}
+
+func normalizeCWD(cwd string) string {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return filepath.Clean(cwd)
+	}
+	return filepath.Clean(abs)
 }
