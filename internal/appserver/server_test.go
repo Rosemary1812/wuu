@@ -252,7 +252,7 @@ func waitForMethod(t *testing.T, out *lockedBuffer, method string) []map[string]
 func responseByID(t *testing.T, msgs []map[string]any, id string) map[string]any {
 	t.Helper()
 	for _, msg := range msgs {
-		if msg["type"] == EnvelopeResponse && msg["id"] == id {
+		if msg["id"] == id && msg["method"] == nil {
 			return msg
 		}
 	}
@@ -263,7 +263,7 @@ func responseByID(t *testing.T, msgs []map[string]any, id string) map[string]any
 func notificationByMethod(t *testing.T, msgs []map[string]any, method string) map[string]any {
 	t.Helper()
 	for _, msg := range msgs {
-		if msg["type"] == EnvelopeNotification && msg["method"] == method {
+		if msg["method"] == method && msg["id"] == nil {
 			return msg
 		}
 	}
@@ -274,7 +274,7 @@ func notificationByMethod(t *testing.T, msgs []map[string]any, method string) ma
 func turnEventByType(t *testing.T, msgs []map[string]any, typ providers.StreamEventType) map[string]any {
 	t.Helper()
 	for _, msg := range msgs {
-		if msg["type"] != EnvelopeNotification || msg["method"] != NotificationTurnEvent {
+		if msg["id"] != nil || msg["method"] != NotificationTurnEvent {
 			continue
 		}
 		params := remarshal[TurnEventNotification](t, msg["params"])

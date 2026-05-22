@@ -9,9 +9,6 @@ import (
 const (
 	ProtocolVersion = "wuu-app-server/v0.1"
 
-	EnvelopeResponse     = "response"
-	EnvelopeNotification = "notification"
-
 	MethodInitialize    = "initialize"
 	MethodConfigRead    = "config/read"
 	MethodThreadStart   = "thread/start"
@@ -36,7 +33,6 @@ type Request struct {
 }
 
 type Response struct {
-	Type   string          `json:"type"`
 	ID     json.RawMessage `json:"id,omitempty"`
 	Result any             `json:"result,omitempty"`
 	Error  *ResponseError  `json:"error,omitempty"`
@@ -48,7 +44,6 @@ type ResponseError struct {
 }
 
 type Notification struct {
-	Type   string `json:"type"`
 	Method string `json:"method"`
 	Params any    `json:"params,omitempty"`
 }

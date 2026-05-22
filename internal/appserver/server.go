@@ -358,7 +358,7 @@ func decodeParams(raw json.RawMessage, dst any) error {
 }
 
 func (s *Server) writeResponse(id json.RawMessage, result any, err error) error {
-	resp := Response{Type: EnvelopeResponse, ID: id, Result: result}
+	resp := Response{ID: id, Result: result}
 	if err != nil {
 		resp.Result = nil
 		resp.Error = &ResponseError{
@@ -371,7 +371,6 @@ func (s *Server) writeResponse(id json.RawMessage, result any, err error) error 
 
 func (s *Server) writeNotification(method string, params any) error {
 	return s.writeJSON(Notification{
-		Type:   EnvelopeNotification,
 		Method: method,
 		Params: params,
 	})
