@@ -1896,7 +1896,7 @@ function BranchMenu({
       {gitStatus.dirty_count > 0 ? (
         <div className="composer-menu-note warning">
           <strong>有未提交更改</strong>
-          <span>先处理 {gitStatus.dirty_count} 个文件后再切换分支。</span>
+          <span>{gitStatus.dirty_count} 个文件会随分支切换保留；如果会覆盖本地改动，Git 会拒绝切换。</span>
         </div>
       ) : null}
       {branches.length === 0 ? <div className="composer-menu-empty">没有本地分支</div> : null}
@@ -1907,7 +1907,7 @@ function BranchMenu({
             key={branch}
             role="menuitem"
             type="button"
-            disabled={selected || gitStatus.dirty_count > 0}
+            disabled={selected}
             onClick={() => onSelectBranch(branch)}
           >
             <GitBranch size={18} />

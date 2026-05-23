@@ -337,9 +337,6 @@ function checkoutGitBranch(branch: string): GitStatusResult {
   if (!target || !current.branches?.includes(target)) {
     throw new Error("branch not found");
   }
-  if (current.dirty_count > 0) {
-    throw new Error("working tree has uncommitted changes");
-  }
   const result = spawnSync("git", ["-C", context.cwd, "checkout", target], {
     cwd: context.cwd,
     encoding: "utf8",
