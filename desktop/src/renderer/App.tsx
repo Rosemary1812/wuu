@@ -188,25 +188,48 @@ export function App(): JSX.Element {
   useEffect(() => {
     const root = document.documentElement;
     let resizeEndTimer: number | undefined;
+    let resizing = false;
 
-    function handleWindowResize(): void {
-      root.classList.add("window-resizing");
+    function setResizeState(nextResizing: boolean): void {
+      if (resizing === nextResizing) {
+        return;
+      }
+      resizing = nextResizing;
+      root.classList.toggle("window-resizing", nextResizing);
+    }
+
+    function scheduleResizeEnd(delay = 140): void {
       if (resizeEndTimer !== undefined) {
         window.clearTimeout(resizeEndTimer);
       }
       resizeEndTimer = window.setTimeout(() => {
-        root.classList.remove("window-resizing");
         resizeEndTimer = undefined;
-      }, 140);
+        setResizeState(false);
+      }, delay);
     }
+
+    function handleWindowResize(): void {
+      setResizeState(true);
+      scheduleResizeEnd();
+    }
+
+    const offWindowResizeState = window.wuu.onWindowResizeState(({ resizing: nextResizing }) => {
+      if (nextResizing) {
+        setResizeState(true);
+        scheduleResizeEnd();
+        return;
+      }
+      scheduleResizeEnd(40);
+    });
 
     window.addEventListener("resize", handleWindowResize);
     return () => {
+      offWindowResizeState();
       window.removeEventListener("resize", handleWindowResize);
       if (resizeEndTimer !== undefined) {
         window.clearTimeout(resizeEndTimer);
       }
-      root.classList.remove("window-resizing");
+      setResizeState(false);
     };
   }, []);
 

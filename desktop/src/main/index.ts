@@ -258,6 +258,8 @@ type ProjectStore = {
 let mainWindow: BrowserWindow | null = null;
 let client: AppServerClient | null = null;
 let projectStore: ProjectStore = { projects: [] };
+let windowResizeEndTimer: NodeJS.Timeout | undefined;
+let windowResizeState = false;
 
 function projectStorePath(): string {
   return join(app.getPath("userData"), "projects.json");
@@ -638,6 +640,27 @@ function emitServerEvent(event: ServerEvent): void {
   mainWindow.webContents.send("wuu:server-event", event);
 }
 
+function setWindowResizeState(resizing: boolean): void {
+  if (windowResizeState === resizing) {
+    return;
+  }
+  windowResizeState = resizing;
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send("wuu:window-resize-state", { resizing });
+}
+
+function scheduleWindowResizeEnd(delay = 140): void {
+  if (windowResizeEndTimer) {
+    clearTimeout(windowResizeEndTimer);
+  }
+  windowResizeEndTimer = setTimeout(() => {
+    windowResizeEndTimer = undefined;
+    setWindowResizeState(false);
+  }, delay);
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -652,6 +675,26 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false
     }
+  });
+
+  mainWindow.on("will-resize", () => {
+    setWindowResizeState(true);
+    scheduleWindowResizeEnd();
+  });
+  mainWindow.on("resize", () => {
+    setWindowResizeState(true);
+    scheduleWindowResizeEnd();
+  });
+  mainWindow.on("resized", () => {
+    scheduleWindowResizeEnd(40);
+  });
+  mainWindow.on("closed", () => {
+    if (windowResizeEndTimer) {
+      clearTimeout(windowResizeEndTimer);
+      windowResizeEndTimer = undefined;
+    }
+    windowResizeState = false;
+    mainWindow = null;
   });
 
   if (!app.isPackaged) {

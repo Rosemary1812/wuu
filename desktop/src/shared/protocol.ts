@@ -168,6 +168,10 @@ export type ServerEvent =
   | { kind: "server-error"; message: string }
   | { kind: "server-exit"; code: number | null };
 
+export type WindowResizeState = {
+  resizing: boolean;
+};
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -188,4 +192,5 @@ export type WuuDesktopApi = {
   respondToServerRequest: (id: string, result: unknown) => Promise<void>;
   rejectServerRequest: (id: string, message: string) => Promise<void>;
   onServerEvent: (handler: (event: ServerEvent) => void) => () => void;
+  onWindowResizeState: (handler: (state: WindowResizeState) => void) => () => void;
 };

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ServerEvent, WuuDesktopApi } from "../shared/protocol";
+import type { ServerEvent, WindowResizeState, WuuDesktopApi } from "../shared/protocol";
 
 const api: WuuDesktopApi = {
   listProjects: () => ipcRenderer.invoke("wuu:project-list"),
@@ -27,6 +27,11 @@ const api: WuuDesktopApi = {
     const listener = (_event: Electron.IpcRendererEvent, payload: ServerEvent) => handler(payload);
     ipcRenderer.on("wuu:server-event", listener);
     return () => ipcRenderer.removeListener("wuu:server-event", listener);
+  },
+  onWindowResizeState: (handler: (state: WindowResizeState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: WindowResizeState) => handler(payload);
+    ipcRenderer.on("wuu:window-resize-state", listener);
+    return () => ipcRenderer.removeListener("wuu:window-resize-state", listener);
   }
 };
 

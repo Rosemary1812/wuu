@@ -54,11 +54,24 @@ body {
   --os-handle-interactive-area-offset: 4px;
 }
 
-.window-resizing *,
-.window-resizing *::before,
-.window-resizing *::after {
-  transition-duration: 0s !important;
-  transition-delay: 0s !important;
+.window-resizing .app-shell,
+.window-resizing .sidebar,
+.window-resizing .titlebar,
+.window-resizing .workspace-right-panel,
+.window-resizing .workspace-bottom-panel,
+.window-resizing .activity-details {
+  transition: none !important;
+}
+
+.window-resizing .sidebar-resizer::before,
+.window-resizing .activity-chevron {
+  transition: none !important;
+}
+
+.window-resizing .stream-word,
+.window-resizing .wuu-launch-mark::after,
+.window-resizing .wuu-launch-mark span,
+.window-resizing .wuu-launch-rail::after {
   animation-play-state: paused !important;
 }
 
