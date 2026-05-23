@@ -273,6 +273,7 @@ const RENDERER_ENV = (
 ).env;
 const ENABLE_LAUNCH_PREVIEW = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_RUN_DEBUG_PANEL = Boolean(RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true");
+const ENABLE_AGENT_TREE_DEMO = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
   contain: "strict",
@@ -670,6 +671,173 @@ function buildEnvironmentSourceItems({
   return items;
 }
 
+function createAgentTreeDemo(cwd: string, initialized?: InitializeResult): { parent: Thread; children: Thread[] } {
+  const base = Date.now();
+  const at = (offsetMs: number): string => new Date(base + offsetMs).toISOString();
+  const parentID = `demo-agent-tree-${base}`;
+  const inspectID = `${parentID}-inspect-sidebar`;
+  const resumeID = `${parentID}-resume-child`;
+  const provider = initialized?.provider ?? "demo-provider";
+  const model = initialized?.model ?? "demo-model";
+  const parentTurnID = `${parentID}-turn-0001`;
+  const inspectTurnID = `${inspectID}-turn-0001`;
+  const resumeTurnID = `${resumeID}-turn-0001`;
+
+  const parent: Thread = {
+    id: parentID,
+    preview: "模拟：父 agent 分发子任务",
+    model_provider: provider,
+    model,
+    cwd,
+    status: "idle",
+    created_at: at(0),
+    updated_at: at(4000),
+    turns: [
+      {
+        id: parentTurnID,
+        items_view: "full",
+        status: "completed",
+        items: [
+          {
+            id: `${parentTurnID}-item-1`,
+            type: "user_message",
+            status: "completed",
+            role: "user",
+            text: "把左侧 session 树改成可以展示父 agent 和子 agent 的层级。"
+          },
+          {
+            id: `${parentTurnID}-item-2`,
+            type: "collab_agent_tool_call",
+            status: "completed",
+            name: "spawn_agent",
+            arguments: `{"task_name":"检查左侧树","message":"验证子 agent 行的视觉和状态"}`,
+            result: `{"agent_id":"${inspectID}","agent_path":"/root/inspect-sidebar","status":"completed"}`
+          },
+          {
+            id: `${parentTurnID}-item-3`,
+            type: "collab_agent_tool_call",
+            status: "completed",
+            name: "spawn_agent",
+            arguments: `{"task_name":"子会话恢复","message":"确认点击子 agent 后能正常查看会话"}`,
+            result: `{"agent_id":"${resumeID}","agent_path":"/root/resume-child","status":"running"}`
+          },
+          {
+            id: `${parentTurnID}-item-4`,
+            type: "agent_message",
+            status: "completed",
+            role: "assistant",
+            text: "已分发两个子 agent。左侧只展示直属子任务；更深层级会折叠成数量提示。"
+          }
+        ]
+      }
+    ],
+    child_agents: [
+      {
+        id: inspectID,
+        type: "worker",
+        task_name: "检查左侧树",
+        agent_path: "/root/inspect-sidebar",
+        parent_id: parentID,
+        description: "验证子 agent 行的视觉和状态",
+        status: "completed",
+        nested_count: 1,
+        nested_running_count: 0,
+        started_at: at(1000),
+        completed_at: at(2500)
+      },
+      {
+        id: resumeID,
+        type: "worker",
+        task_name: "子会话恢复",
+        agent_path: "/root/resume-child",
+        parent_id: parentID,
+        description: "确认点击子 agent 后能正常查看会话",
+        status: "running",
+        nested_count: 1,
+        nested_running_count: 1,
+        started_at: at(1800)
+      }
+    ]
+  };
+
+  const children: Thread[] = [
+    {
+      id: inspectID,
+      parent_id: parentID,
+      agent_path: "/root/inspect-sidebar",
+      preview: "检查左侧树",
+      model_provider: provider,
+      model,
+      cwd,
+      status: "idle",
+      read_only: true,
+      created_at: at(1000),
+      updated_at: at(2500),
+      turns: [
+        {
+          id: inspectTurnID,
+          items_view: "full",
+          status: "completed",
+          items: [
+            {
+              id: `${inspectTurnID}-item-1`,
+              type: "user_message",
+              status: "completed",
+              role: "user",
+              text: "检查左侧 session 树中子 agent 的缩进、状态和折叠数量。"
+            },
+            {
+              id: `${inspectTurnID}-item-2`,
+              type: "agent_message",
+              status: "completed",
+              role: "assistant",
+              text: "子 agent 显示在父会话下方，保留一层缩进；更深层级只显示数量，不再展开。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: resumeID,
+      parent_id: parentID,
+      agent_path: "/root/resume-child",
+      preview: "子会话恢复",
+      model_provider: provider,
+      model,
+      cwd,
+      status: "idle",
+      read_only: true,
+      created_at: at(1800),
+      updated_at: at(4200),
+      turns: [
+        {
+          id: resumeTurnID,
+          items_view: "full",
+          status: "completed",
+          items: [
+            {
+              id: `${resumeTurnID}-item-1`,
+              type: "user_message",
+              status: "completed",
+              role: "user",
+              text: "验证点击左侧子 agent 后，主区域可以正常展示这个子会话。"
+            },
+            {
+              id: `${resumeTurnID}-item-2`,
+              type: "agent_message",
+              status: "completed",
+              role: "assistant",
+              text: "这个视图是只读的子 agent session。左侧仍保留父子关系，主区域展示子 agent 的对话内容。"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  return { parent, children };
+}
+
 function pullRequestUnavailableReason(gitStatus?: GitStatusResult): string {
   if (!gitStatus?.is_repo) {
     return "不是 Git 仓库";
@@ -750,6 +918,7 @@ export function App(): JSX.Element {
   const appStateRef = useRef<AppState>(initialState);
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
+  const demoAgentThreadsRef = useRef(new Map<string, Thread>());
   const drainingQueueRef = useRef(false);
   const queueDrainPausedRef = useRef(false);
   const runDebugEventIDRef = useRef(0);
@@ -1017,7 +1186,8 @@ export function App(): JSX.Element {
   const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
-  const activeThreadIsRunning = isStateActiveThreadRunning(state);
+  const activeThreadReadOnly = Boolean(state.thread?.read_only);
+  const activeThreadIsRunning = !activeThreadReadOnly && isStateActiveThreadRunning(state);
   const anyThreadIsRunning = isAnyThreadRunning(state);
   const environmentPanelCanShow = Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen);
   const environmentPanelVisible =
@@ -1301,7 +1471,8 @@ export function App(): JSX.Element {
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
         running={activeThreadIsRunning}
-        status={state.status}
+        status={activeThreadReadOnly ? "子任务会话只读" : state.status}
+        readOnly={activeThreadReadOnly}
         initialized={state.initialized}
         gitStatus={state.gitStatus}
         projects={state.projects}
@@ -1700,6 +1871,27 @@ export function App(): JSX.Element {
     }));
   }
 
+  function seedAgentTreeDemo(): void {
+    if (!state.activeContext || !state.initialized) {
+      return;
+    }
+    setArchiveConfirmThreadID(undefined);
+    setPrompt("");
+    setComposerImages([]);
+    clearPendingComposerMessages();
+    const demo = createAgentTreeDemo(state.activeContext.cwd, state.initialized);
+    demoAgentThreadsRef.current = new Map(demo.children.map((thread) => [thread.id, thread]));
+    setState((current) => ({
+      ...current,
+      thread: demo.parent,
+      threads: upsertThread(current.threads, demo.parent),
+      running: false,
+      status: "ready",
+      askRequests: [],
+      answeredAskRequests: []
+    }));
+  }
+
   async function selectThread(threadId: string): Promise<void> {
     if (!state.activeContext || threadId === state.thread?.id) {
       return;
@@ -1720,6 +1912,34 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "load failed"
+      }));
+    }
+  }
+
+  async function selectChildAgent(agent: Agent): Promise<void> {
+    if (!state.activeContext || agent.id === state.thread?.id) {
+      return;
+    }
+    setArchiveConfirmThreadID(undefined);
+    setPrompt("");
+    setComposerImages([]);
+    clearPendingComposerMessages();
+    setState((current) => ({ ...current, status: "loading", running: false, askRequests: [], answeredAskRequests: [] }));
+    try {
+      const thread =
+        demoAgentThreadsRef.current.get(agent.id) ??
+        requireThread(await window.wuu.resumeThread(agent.id), "resume did not return a child agent thread");
+      setState((current) => ({
+        ...current,
+        thread,
+        threads: upsertThread(current.threads, thread),
+        running: false,
+        status: "ready"
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "load child agent failed"
       }));
     }
   }
@@ -1776,6 +1996,10 @@ export function App(): JSX.Element {
   async function sendPrompt(): Promise<void> {
     const message = createComposerMessage(prompt, composerImages);
     const currentState = appStateRef.current;
+    if (currentState.thread?.read_only) {
+      setState((current) => ({ ...current, status: "子任务会话只读" }));
+      return;
+    }
     if (!message || !currentState.activeContext || !currentState.initialized) {
       return;
     }
@@ -1796,6 +2020,7 @@ export function App(): JSX.Element {
       (!text && images.length === 0) ||
       !currentState.activeContext ||
       !currentState.initialized ||
+      currentState.thread?.read_only ||
       isStateActiveThreadRunning(currentState)
     ) {
       return false;
@@ -2110,6 +2335,12 @@ export function App(): JSX.Element {
             <MessageSquarePlus size={18} />
             <span>新对话</span>
           </button>
+          {ENABLE_AGENT_TREE_DEMO ? (
+            <button className="nav-item" onClick={seedAgentTreeDemo} disabled={!state.activeContext || !state.initialized}>
+              <CornerDownRight size={18} />
+              <span>模拟子任务</span>
+            </button>
+          ) : null}
         </nav>
 
         {sidebarPinnedThreads.length > 0 ? (
@@ -2120,6 +2351,7 @@ export function App(): JSX.Element {
               activeID={state.thread?.id}
               archiveConfirmThreadID={archiveConfirmThreadID}
               onSelect={(id) => void selectThread(id)}
+              onSelectChildAgent={(agent) => void selectChildAgent(agent)}
               onTogglePinned={(thread) => void toggleThreadPinned(thread)}
               onArchive={(thread) => void archiveThread(thread)}
               onClearArchiveConfirm={(id) =>
@@ -2163,6 +2395,7 @@ export function App(): JSX.Element {
             archiveConfirmThreadID={archiveConfirmThreadID}
             onSelectProject={(id) => void openProject(id)}
             onSelectThread={(id) => void selectThread(id)}
+            onSelectChildAgent={(agent) => void selectChildAgent(agent)}
             onToggleThreadPinned={(thread) => void toggleThreadPinned(thread)}
             onArchiveThread={(thread) => void archiveThread(thread)}
             onClearArchiveConfirm={(id) =>
@@ -4862,7 +5095,7 @@ function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
   if (!isThread(thread)) {
     return validThreads;
   }
-  if (thread.archived) {
+  if (thread.archived || thread.read_only) {
     return validThreads.filter((item) => item.id !== thread.id);
   }
   const index = validThreads.findIndex((item) => item.id === thread.id);
@@ -4876,7 +5109,7 @@ function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
 
 function sortThreads(threads: Thread[]): Thread[] {
   return threads
-    .filter((thread): thread is Thread => isThread(thread) && !thread.archived)
+    .filter((thread): thread is Thread => isThread(thread) && !thread.archived && !thread.read_only)
     .sort((left, right) => threadTime(right) - threadTime(left));
 }
 
@@ -4923,6 +5156,9 @@ function isThread(value: unknown): value is Thread {
 }
 
 function isThreadRunning(thread: Thread | undefined): boolean {
+  if (thread?.read_only) {
+    return false;
+  }
   return Boolean(thread?.status === "in_progress" || thread?.turns.some((turn) => turn.status === "in_progress"));
 }
 
@@ -5066,6 +5302,7 @@ function ProjectList({
   archiveConfirmThreadID,
   onSelectProject,
   onSelectThread,
+  onSelectChildAgent,
   onToggleThreadPinned,
   onArchiveThread,
   onClearArchiveConfirm
@@ -5077,6 +5314,7 @@ function ProjectList({
   archiveConfirmThreadID?: string;
   onSelectProject: (id: string) => void;
   onSelectThread: (id: string) => void;
+  onSelectChildAgent: (agent: Agent) => void;
   onToggleThreadPinned: (thread: Thread) => void;
   onArchiveThread: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -5100,6 +5338,7 @@ function ProjectList({
               activeID={activeThreadID}
               archiveConfirmThreadID={archiveConfirmThreadID}
               onSelect={onSelectThread}
+              onSelectChildAgent={onSelectChildAgent}
               onTogglePinned={onToggleThreadPinned}
               onArchive={onArchiveThread}
               onClearArchiveConfirm={onClearArchiveConfirm}
@@ -5116,6 +5355,7 @@ function ThreadList({
   activeID,
   archiveConfirmThreadID,
   onSelect,
+  onSelectChildAgent,
   onTogglePinned,
   onArchive,
   onClearArchiveConfirm
@@ -5124,6 +5364,7 @@ function ThreadList({
   activeID?: string;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
+  onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: Thread) => void;
   onArchive: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -5136,6 +5377,7 @@ function ThreadList({
         activeID={activeID}
         archiveConfirmThreadID={archiveConfirmThreadID}
         onSelect={onSelect}
+        onSelectChildAgent={onSelectChildAgent}
         onTogglePinned={onTogglePinned}
         onArchive={onArchive}
         onClearArchiveConfirm={onClearArchiveConfirm}
@@ -5149,6 +5391,7 @@ function PinnedThreadList({
   activeID,
   archiveConfirmThreadID,
   onSelect,
+  onSelectChildAgent,
   onTogglePinned,
   onArchive,
   onClearArchiveConfirm
@@ -5157,6 +5400,7 @@ function PinnedThreadList({
   activeID?: string;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
+  onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: Thread) => void;
   onArchive: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -5168,6 +5412,7 @@ function PinnedThreadList({
         activeID={activeID}
         archiveConfirmThreadID={archiveConfirmThreadID}
         onSelect={onSelect}
+        onSelectChildAgent={onSelectChildAgent}
         onTogglePinned={onTogglePinned}
         onArchive={onArchive}
         onClearArchiveConfirm={onClearArchiveConfirm}
@@ -5181,6 +5426,7 @@ function ThreadRows({
   activeID,
   archiveConfirmThreadID,
   onSelect,
+  onSelectChildAgent,
   onTogglePinned,
   onArchive,
   onClearArchiveConfirm
@@ -5189,6 +5435,7 @@ function ThreadRows({
   activeID?: string;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
+  onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: Thread) => void;
   onArchive: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -5229,7 +5476,9 @@ function ThreadRows({
                 </button>
               </div>
             </div>
-            {thread.child_agents?.length ? <ThreadChildAgentRows agents={thread.child_agents} /> : null}
+            {thread.child_agents?.length ? (
+              <ThreadChildAgentRows agents={thread.child_agents} activeID={activeID} onSelect={onSelectChildAgent} />
+            ) : null}
           </Fragment>
         );
       })}
@@ -5237,26 +5486,37 @@ function ThreadRows({
   );
 }
 
-function ThreadChildAgentRows({ agents }: { agents: Agent[] }): JSX.Element {
+function ThreadChildAgentRows({
+  agents,
+  activeID,
+  onSelect
+}: {
+  agents: Agent[];
+  activeID?: string;
+  onSelect: (agent: Agent) => void;
+}): JSX.Element {
   return (
-    <div className="thread-child-agent-list" role="list" aria-label="子任务">
+    <div className="thread-child-agent-list" aria-label="子任务">
       {sortChildAgents(agents).map((agent) => {
         const status = agentStatusTone(agent.status);
         const label = agentLabel(agent);
         const nestedLabel = agentNestedLabel(agent);
+        const active = activeID === agent.id;
         return (
-          <div
+          <button
             key={agent.id}
-            className={`thread-child-agent-row ${status}`}
-            role="listitem"
+            className={`thread-child-agent-row ${status}${active ? " active" : ""}`}
+            type="button"
+            aria-current={active ? "page" : undefined}
             aria-label={`${label}，${agentStatusLabel(agent.status)}`}
             title={agentTooltip(agent)}
+            onClick={() => onSelect(agent)}
           >
             <CornerDownRight className="thread-child-agent-branch" size={13} />
             <span className="thread-child-agent-name">{label}</span>
             {nestedLabel ? <span className="thread-child-agent-nested">{nestedLabel}</span> : null}
             <span className="thread-child-agent-status">{agentStatusLabel(agent.status)}</span>
-          </div>
+          </button>
         );
       })}
     </div>
@@ -7377,6 +7637,7 @@ function Composer({
   guideMessages,
   running,
   status,
+  readOnly,
   initialized,
   gitStatus,
   projects,
@@ -7424,6 +7685,7 @@ function Composer({
   guideMessages: QueuedComposerMessage[];
   running: boolean;
   status: string;
+  readOnly: boolean;
   initialized?: InitializeResult;
   gitStatus?: GitStatusResult;
   projects: DesktopProject[];
@@ -7483,9 +7745,14 @@ function Composer({
           {images.length > 0 ? <ComposerImageStrip images={images} onRemoveImage={onRemoveImage} /> : null}
           <textarea
             value={prompt}
-            placeholder={images.length > 0 ? "添加描述" : "尽管问"}
+            placeholder={readOnly ? "子任务会话只读" : images.length > 0 ? "添加描述" : "尽管问"}
+            disabled={readOnly}
+            aria-readonly={readOnly}
             onChange={(event) => setPrompt(event.target.value)}
             onPaste={(event) => {
+              if (readOnly) {
+                return;
+              }
               const files = clipboardImageFiles(event);
               if (files.length === 0) {
                 return;
@@ -7494,6 +7761,9 @@ function Composer({
               onPasteImageFiles(files);
             }}
             onKeyDown={(event) => {
+              if (readOnly) {
+                return;
+              }
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 onSend();
@@ -7569,7 +7839,7 @@ function Composer({
                 type="button"
                 onClick={onSend}
                 aria-label="发送"
-                disabled={!hasDraft}
+                disabled={readOnly || !hasDraft}
               >
                 <Send size={18} />
               </button>

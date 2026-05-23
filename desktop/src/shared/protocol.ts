@@ -218,11 +218,14 @@ export type Agent = {
 
 export type Thread = {
   id: string;
+  parent_id?: string;
+  agent_path?: string;
   preview: string;
   model_provider: string;
   model: string;
   cwd: string;
   status: ThreadStatus;
+  read_only?: boolean;
   pinned?: boolean;
   archived?: boolean;
   created_at: string;
