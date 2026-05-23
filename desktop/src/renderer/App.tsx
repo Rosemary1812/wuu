@@ -77,6 +77,7 @@ const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_STEP = 24;
 const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
 const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
+const ENABLE_LAUNCH_PREVIEW = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 
 type SidebarResizeSession = {
   startX: number;
@@ -109,6 +110,7 @@ export function App(): JSX.Element {
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
+  const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
@@ -255,6 +257,7 @@ export function App(): JSX.Element {
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
       : "我们应该构建什么？";
   const turns = state.thread?.turns ?? [];
+  const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
   }`;
@@ -670,10 +673,22 @@ export function App(): JSX.Element {
             ) : null}
             <h1>{activeTitle}</h1>
           </div>
-          <div className="title-actions" />
+          <div className="title-actions">
+            {ENABLE_LAUNCH_PREVIEW ? (
+              <button
+                className="launch-preview-button"
+                type="button"
+                disabled={previewingLaunch}
+                onClick={() => setLaunchPreviewPinned(true)}
+              >
+                <Terminal size={15} />
+                <span>启动动画</span>
+              </button>
+            ) : null}
+          </div>
         </header>
 
-        {state.initialized ? (
+        {state.initialized && !previewingLaunch ? (
           <div className="scroll-region" ref={scrollRef}>
             <div className="conversation-width">
               {turns.length === 0 ? (
@@ -686,10 +701,14 @@ export function App(): JSX.Element {
             </div>
           </div>
         ) : (
-          <RuntimeLoading status={state.status} />
+          <RuntimeLoading
+            status={state.status}
+            pinned={previewingLaunch}
+            onExitPreview={() => setLaunchPreviewPinned(false)}
+          />
         )}
 
-        {state.initialized ? (
+        {state.initialized && !previewingLaunch ? (
           <Composer
             prompt={prompt}
             setPrompt={setPrompt}
@@ -1372,12 +1391,37 @@ function EmptyThread({ title }: { title: string }): JSX.Element {
   );
 }
 
-function RuntimeLoading({ status }: { status: string }): JSX.Element {
+function RuntimeLoading({
+  status,
+  pinned = false,
+  onExitPreview
+}: {
+  status: string;
+  pinned?: boolean;
+  onExitPreview?: () => void;
+}): JSX.Element {
+  const isStarting = pinned || status === "connecting" || status === "opening";
   return (
     <div className="project-empty-pane">
-      <div className="project-empty-content">
-        <h2>{status === "connecting" || status === "opening" ? "正在启动 wuu" : status}</h2>
-      </div>
+      {isStarting ? (
+        <div className="wuu-launch" role="status" aria-label={pinned ? "wuu 启动动画预览" : "wuu 正在启动"}>
+          <div className="wuu-launch-mark" aria-hidden="true">
+            <span>w</span>
+            <span>u</span>
+            <span>u</span>
+          </div>
+          <div className="wuu-launch-rail" aria-hidden="true" />
+          {pinned && onExitPreview ? (
+            <button className="wuu-launch-exit" type="button" onClick={onExitPreview}>
+              退出预览
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="project-empty-content">
+          <h2>{status}</h2>
+        </div>
+      )}
     </div>
   );
 }
