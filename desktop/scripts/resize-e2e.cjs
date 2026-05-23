@@ -135,6 +135,19 @@ async function run() {
     duringEnvironmentResize.composerPaddingRight <= 1,
     "Composer should release inline environment panel space before resize end."
   );
+  const flowResize = await waitFor(win, () => flowSnapshot(), 1000);
+  assert.ok(
+    Math.abs(flowResize.conversationRight - flowResize.scrollContentRight) <= 2,
+    "Message flow should track the live scroll region right edge during right-side window resize."
+  );
+  assert.ok(
+    Math.abs(flowResize.composerStackRight - flowResize.composerContentRight) <= 2,
+    "Dock composer should track the live composer region right edge during right-side window resize."
+  );
+  assert.ok(
+    flowResize.composerStackWidth > 840,
+    "Dock composer should use the resized message flow width instead of staying capped at the old centered width."
+  );
 
   await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
   win.setSize(1280, 860);
@@ -144,11 +157,22 @@ async function run() {
   const resizeObserverName = await evaluate(win, () => ResizeObserver.name);
   assert.notEqual(resizeObserverName, "FileTreeResizeObserverGate", "ResizeObserver must not be gated during live window resize.");
 
-  const appShellIdleTransition = await evaluate(win, () => getComputedStyle(document.querySelector(".app-shell")).transitionProperty);
+  const appShellIdleTransitions = await evaluate(win, () => {
+    const style = getComputedStyle(document.querySelector(".app-shell"));
+    return {
+      property: style.transitionProperty,
+      duration: style.transitionDuration
+    };
+  });
+  assert.doesNotMatch(
+    appShellIdleTransitions.property,
+    /grid-template-(columns|rows)/,
+    "Top-level grid layout must not transition because viewport-driven columns should track live resize immediately."
+  );
   assert.match(
-    appShellIdleTransition,
-    /grid-template-columns/,
-    "App shell should keep normal panel open/close layout transitions while idle."
+    appShellIdleTransitions.duration,
+    /^0s(, 0s)*$/,
+    "Top-level grid layout should not keep idle transitions that can lag live resize."
   );
 
   await evaluate(win, () => {
@@ -309,6 +333,30 @@ async function evaluate(win, fn) {
         scrollTransitionDuration: scrollStyle.transitionDuration,
         composerTransitionProperty: composerStyle.transitionProperty,
         composerTransitionDuration: composerStyle.transitionDuration
+      };
+    };
+    window.flowSnapshot = () => {
+      const scroll = document.querySelector(".scroll-region");
+      const conversation = document.querySelector(".conversation-width");
+      const composer = document.querySelector(".dock-composer-wrap");
+      const stack = composer?.querySelector(".composer-stack");
+      if (!scroll || !conversation || !composer || !stack) {
+        return null;
+      }
+      const scrollRect = scroll.getBoundingClientRect();
+      const conversationRect = conversation.getBoundingClientRect();
+      const composerRect = composer.getBoundingClientRect();
+      const stackRect = stack.getBoundingClientRect();
+      const scrollStyle = getComputedStyle(scroll);
+      const composerStyle = getComputedStyle(composer);
+      const scrollPaddingRight = Number.parseFloat(scrollStyle.paddingRight || "0");
+      const composerPaddingRight = Number.parseFloat(composerStyle.paddingRight || "0");
+      return {
+        composerContentRight: composerRect.left + composer.clientWidth - composerPaddingRight,
+        composerStackRight: stackRect.right,
+        composerStackWidth: stackRect.width,
+        conversationRight: conversationRect.right,
+        scrollContentRight: scrollRect.left + scroll.clientWidth - scrollPaddingRight
       };
     };
     return (${fn.toString()})();
