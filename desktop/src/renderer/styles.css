@@ -305,18 +305,40 @@ kbd {
 
 .settings-popover {
   position: absolute;
-  right: 0;
+  right: auto;
   bottom: 46px;
   left: 0;
   z-index: 35;
   display: grid;
-  gap: 12px;
+  width: min(360px, calc(100vw - 32px));
+  gap: 10px;
   border: 1px solid rgba(30, 34, 38, 0.12);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 18px 44px rgba(20, 24, 28, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
   padding: 12px;
   backdrop-filter: blur(18px);
+}
+
+.settings-popover-row {
+  display: flex;
+  height: 50px;
+  align-items: center;
+  gap: 14px;
+  border-radius: 10px;
+  color: #1f2328;
+  font-size: 18px;
+  font-weight: 750;
+  padding: 0 16px;
+}
+
+.settings-popover-row.active {
+  background: #f0f0ee;
+}
+
+.settings-popover-row svg {
+  color: #202427;
+  flex: 0 0 auto;
 }
 
 .settings-popover label {
@@ -325,6 +347,7 @@ kbd {
   color: #74787c;
   font-size: 12px;
   font-weight: 750;
+  padding: 0 4px;
 }
 
 .settings-popover input,
@@ -349,12 +372,14 @@ kbd {
   color: #b42318;
   font-size: 12px;
   line-height: 1.35;
+  padding: 0 4px;
 }
 
 .settings-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  padding: 0 4px 2px;
 }
 
 .settings-actions button {

@@ -1433,6 +1433,10 @@ function SidebarSettings({
       </button>
       {open && initialized ? (
         <form className="settings-popover" onSubmit={submit}>
+          <div className="settings-popover-row active">
+            <Settings size={22} />
+            <span>设置</span>
+          </div>
           <label>
             <span>Provider</span>
             {providers.length > 0 ? (
