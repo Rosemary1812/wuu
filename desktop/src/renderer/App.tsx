@@ -93,6 +93,7 @@ const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_STEP = 24;
 const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
 const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
+const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const ENABLE_LAUNCH_PREVIEW = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 
 type SidebarResizeSession = {
@@ -177,6 +178,7 @@ export function App(): JSX.Element {
   const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
   const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState<string | undefined>(undefined);
   const conversationScrollRef = useRef<OverlayScrollbarsComponentRef<"div"> | null>(null);
+  const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
@@ -282,7 +284,12 @@ export function App(): JSX.Element {
   }, [accessMenuOpen, branchMenuOpen, modeMenuOpen, projectMenuOpen, runtimeMenuOpen]);
 
   useEffect(() => {
-    scrollConversationToBottom();
+    conversationAutoFollowRef.current = true;
+    scrollConversationToBottom(undefined, { force: true });
+  }, [state.thread?.id]);
+
+  useEffect(() => {
+    scheduleStreamScroll();
   }, [state.thread?.turns]);
 
   useEffect(() => {
@@ -378,6 +385,9 @@ export function App(): JSX.Element {
   }
 
   function scheduleStreamScroll(): void {
+    if (!conversationAutoFollowRef.current) {
+      return;
+    }
     if (streamScrollFrameRef.current !== undefined) {
       return;
     }
@@ -387,12 +397,35 @@ export function App(): JSX.Element {
     });
   }
 
-  function scrollConversationToBottom(instance?: OverlayScrollbars): void {
-    const node = instance?.elements().viewport ?? conversationScrollRef.current?.osInstance()?.elements().viewport;
+  function handleConversationInitialized(instance: OverlayScrollbars): void {
+    conversationAutoFollowRef.current = true;
+    scrollConversationToBottom(instance, { force: true });
+  }
+
+  function handleConversationScroll(instance: OverlayScrollbars): void {
+    const node = conversationViewport(instance);
     if (!node) {
       return;
     }
+    conversationAutoFollowRef.current = isConversationNearBottom(node);
+  }
+
+  function scrollConversationToBottom(instance?: OverlayScrollbars, options: { force?: boolean } = {}): void {
+    const node = conversationViewport(instance);
+    if (!node || (!options.force && !conversationAutoFollowRef.current)) {
+      return;
+    }
     node.scrollTop = node.scrollHeight;
+    conversationAutoFollowRef.current = true;
+  }
+
+  function conversationViewport(instance?: OverlayScrollbars): HTMLElement | undefined {
+    return instance?.elements().viewport ?? conversationScrollRef.current?.osInstance()?.elements().viewport;
+  }
+
+  function isConversationNearBottom(node: HTMLElement): boolean {
+    const distanceFromBottom = Math.max(0, node.scrollHeight - node.scrollTop - node.clientHeight);
+    return distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
   }
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -713,6 +746,7 @@ export function App(): JSX.Element {
     if (!text || !state.activeContext || !state.initialized || state.running) {
       return;
     }
+    conversationAutoFollowRef.current = true;
     setPrompt("");
     setState((current) => ({ ...current, running: true, status: "thinking" }));
     try {
@@ -938,7 +972,7 @@ export function App(): JSX.Element {
             }`}
             data-overlayscrollbars-initialize
             defer
-            events={{ initialized: scrollConversationToBottom }}
+            events={{ initialized: handleConversationInitialized, scroll: handleConversationScroll }}
             options={OVERLAY_SCROLLBAR_OPTIONS}
             ref={conversationScrollRef}
           >
