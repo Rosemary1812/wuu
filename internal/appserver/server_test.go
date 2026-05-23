@@ -86,6 +86,48 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdate(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, msgs, "1")["result"])
+	if result.Provider != "fake-provider" || result.Model != "new-model" {
+		t.Fatalf("unexpected update result: %+v", result)
+	}
+	if rt.Model != "new-model" || rt.StreamRunner.Model != "new-model" {
+		t.Fatalf("runtime model not updated: runtime=%q stream_runner=%q", rt.Model, rt.StreamRunner.Model)
+	}
+	if rt.StreamRunner.ContextWindowOverride != providers.ContextWindowFor("new-model") {
+		t.Fatalf("context window override not updated: got %d", rt.StreamRunner.ContextWindowOverride)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"model": "new-model"`) {
+		t.Fatalf("config model was not persisted: %s", data)
+	}
+}
+
 func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	client := &fakeClient{
 		response: providers.ChatResponse{

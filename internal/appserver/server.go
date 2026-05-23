@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -163,6 +164,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleInitialize(req)
 	case MethodConfigRead:
 		return s.handleConfigRead(req)
+	case MethodConfigModelUpdate:
+		return s.handleConfigModelUpdate(req)
 	case MethodThreadStart:
 		return s.handleThreadStart(req)
 	case MethodThreadResume:
@@ -221,6 +224,35 @@ func (s *Server) handleConfigRead(req Request) error {
 		ConfigPath:    s.rt.ConfigPath,
 		WorkspaceRoot: s.rt.RootDir,
 		SessionDir:    s.rt.SessionDir,
+	}, nil)
+}
+
+func (s *Server) handleConfigModelUpdate(req Request) error {
+	var params ConfigModelUpdateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	model := strings.TrimSpace(params.Model)
+	if model == "" {
+		return s.writeResponse(req.ID, nil, errors.New("model is required"))
+	}
+	if s.hasRunningThread() {
+		return s.writeResponse(req.ID, nil, errors.New("cannot change model while a turn is running"))
+	}
+	if err := config.UpdateProviderModel(s.rt.ConfigPath, s.rt.ProviderName, model); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	s.rt.Model = model
+	if s.rt.StreamRunner != nil {
+		s.rt.StreamRunner.Model = model
+		s.rt.StreamRunner.ContextWindowOverride = providers.ContextWindowFor(model)
+	}
+	s.updateIdleThreadModels(model)
+
+	return s.writeResponse(req.ID, ConfigModelUpdateResult{
+		Provider: s.rt.ProviderName,
+		Model:    model,
 	}, nil)
 }
 
@@ -305,6 +337,33 @@ func (s *Server) handleThreadList(req Request) error {
 	}
 	s.mu.Unlock()
 	return s.writeResponse(req.ID, ThreadListResult{Threads: threads}, nil)
+}
+
+func (s *Server) hasRunningThread() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, th := range s.threads {
+		th.mu.Lock()
+		running := th.running
+		th.mu.Unlock()
+		if running {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) updateIdleThreadModels(model string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, th := range s.threads {
+		th.mu.Lock()
+		if !th.running {
+			th.ModelProvider = s.rt.ProviderName
+			th.Model = model
+		}
+		th.mu.Unlock()
+	}
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {

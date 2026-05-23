@@ -12,14 +12,15 @@ import (
 const (
 	ProtocolVersion = "wuu-app-server/v0.1"
 
-	MethodInitialize    = "initialize"
-	MethodConfigRead    = "config/read"
-	MethodThreadStart   = "thread/start"
-	MethodThreadResume  = "thread/resume"
-	MethodThreadList    = "thread/list"
-	MethodTurnStart     = "turn/start"
-	MethodTurnInterrupt = "turn/interrupt"
-	MethodShutdown      = "shutdown"
+	MethodInitialize        = "initialize"
+	MethodConfigRead        = "config/read"
+	MethodConfigModelUpdate = "config/model/update"
+	MethodThreadStart       = "thread/start"
+	MethodThreadResume      = "thread/resume"
+	MethodThreadList        = "thread/list"
+	MethodTurnStart         = "turn/start"
+	MethodTurnInterrupt     = "turn/interrupt"
+	MethodShutdown          = "shutdown"
 
 	MethodToolRequestUserInput = "item/tool/requestUserInput"
 
@@ -87,6 +88,15 @@ type ConfigReadResult struct {
 	ConfigPath    string `json:"config_path"`
 	WorkspaceRoot string `json:"workspace_root"`
 	SessionDir    string `json:"session_dir"`
+}
+
+type ConfigModelUpdateParams struct {
+	Model string `json:"model"`
+}
+
+type ConfigModelUpdateResult struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 type ThreadStartResult struct {
