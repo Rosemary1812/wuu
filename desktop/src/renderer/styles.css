@@ -3027,29 +3027,6 @@ button:disabled {
   font-weight: 500;
 }
 
-.turn-progress-stop {
-  display: inline-flex;
-  height: 28px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  border-radius: 7px;
-  background: #f3f4f1;
-  color: #6a7277;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  padding: 0 9px;
-}
-
-.turn-progress-stop:hover {
-  background: #e9ebe6;
-  color: #202427;
-}
-
-.turn-progress-stop svg {
-  flex: 0 0 auto;
-}
-
 .turn-progress-rule {
   position: relative;
   height: 1px;

@@ -2345,7 +2345,6 @@ export function App(): JSX.Element {
                       turn={turn}
                       cwd={state.thread?.cwd ?? state.activeContext?.cwd}
                       onStreamFrame={scheduleStreamScroll}
-                      onInterrupt={() => void interrupt()}
                     />
                     {visibleAnsweredAskRequests
                       .filter((request) => request.turnID === turn.id)
@@ -5192,13 +5191,11 @@ function ThreadRows({
 function TurnView({
   turn,
   cwd,
-  onStreamFrame,
-  onInterrupt
+  onStreamFrame
 }: {
   turn: Turn;
   cwd?: string;
   onStreamFrame: () => void;
-  onInterrupt: () => void;
 }): JSX.Element {
   const renderedItems: JSX.Element[] = [];
   let statusInserted = false;
@@ -5220,7 +5217,7 @@ function TurnView({
     }
 
     if (!statusInserted) {
-      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} onInterrupt={onInterrupt} />);
+      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
       statusInserted = true;
     }
 
@@ -5252,7 +5249,7 @@ function TurnView({
   }
 
   if (!statusInserted && turn.status === "in_progress") {
-    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} onInterrupt={onInterrupt} />);
+    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
   }
 
   return (
@@ -5263,7 +5260,7 @@ function TurnView({
   );
 }
 
-function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => void }): JSX.Element {
+function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = parseTurnTimestampMs(turn.started_at);
   const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
@@ -5291,12 +5288,6 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
             {content.detail ? <span className="turn-progress-detail">{content.detail}</span> : null}
           </span>
         </div>
-        {liveDuration ? (
-          <button className="turn-progress-stop" type="button" onClick={onInterrupt}>
-            <Square size={13} />
-            <span>停止</span>
-          </button>
-        ) : null}
       </div>
       <div className="turn-progress-rule">{campaign ? <TurnProgressCampaignScene campaign={campaign} /> : null}</div>
     </div>
