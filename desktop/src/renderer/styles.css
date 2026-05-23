@@ -399,6 +399,16 @@ kbd {
   word-break: break-word;
 }
 
+.rich-image-block {
+  display: block;
+  margin: 0;
+}
+
+.rich-image-block.inline {
+  display: block;
+  margin-top: 8px;
+}
+
 .rich-image {
   display: block;
   max-width: 100%;

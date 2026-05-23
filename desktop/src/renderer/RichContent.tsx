@@ -7,6 +7,7 @@ type RichContentProps = {
 
 type RichBlock =
   | { kind: "paragraph"; text: string }
+  | { kind: "image"; source: string; alt?: string }
   | { kind: "code"; language: string; code: string }
   | { kind: "mermaid"; code: string };
 
@@ -24,6 +25,9 @@ export function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
   return (
     <div className="rich-content">
       {blocks.map((block, index) => {
+        if (block.kind === "image") {
+          return <RichImage key={`${index}-image`} source={block.source} alt={block.alt ?? ""} cwd={cwd} />;
+        }
         if (block.kind === "mermaid") {
           return <MermaidDiagram key={`${index}-mermaid`} code={block.code} />;
         }
@@ -66,8 +70,30 @@ function pushParagraphBlocks(blocks: RichBlock[], text: string): void {
   for (const paragraph of text.split(/\n{2,}/)) {
     const content = paragraph.replace(/^\n+|\n+$/g, "");
     if (content.trim()) {
-      blocks.push({ kind: "paragraph", text: content });
+      pushParagraphOrImageBlocks(blocks, content);
     }
+  }
+}
+
+function pushParagraphOrImageBlocks(blocks: RichBlock[], content: string): void {
+  const textLines: string[] = [];
+  for (const line of content.split("\n")) {
+    const imageSource = bareImageSource(line);
+    if (!imageSource) {
+      textLines.push(line);
+      continue;
+    }
+    pushTextLines(blocks, textLines);
+    blocks.push({ kind: "image", source: imageSource });
+  }
+  pushTextLines(blocks, textLines);
+}
+
+function pushTextLines(blocks: RichBlock[], lines: string[]): void {
+  const text = lines.join("\n").trim();
+  lines.length = 0;
+  if (text) {
+    blocks.push({ kind: "paragraph", text });
   }
 }
 
@@ -82,8 +108,7 @@ function renderInlineContent(text: string, cwd: string | undefined, blockIndex: 
       output.push(text.slice(cursor, match.index));
     }
     const alt = match[1].trim();
-    const source = resolveImageSource(match[2], cwd);
-    output.push(<img key={`${blockIndex}-${match.index}`} className="rich-image" src={source} alt={alt} loading="lazy" />);
+    output.push(<RichImage key={`${blockIndex}-${match.index}`} source={match[2]} alt={alt} cwd={cwd} inline />);
     cursor = match.index + match[0].length;
   }
 
@@ -93,10 +118,62 @@ function renderInlineContent(text: string, cwd: string | undefined, blockIndex: 
   return output;
 }
 
+function RichImage({
+  source,
+  alt,
+  cwd,
+  inline = false
+}: {
+  source: string;
+  alt: string;
+  cwd: string | undefined;
+  inline?: boolean;
+}): JSX.Element {
+  const resolvedSource = resolveImageSource(source, cwd);
+  const image = <img className="rich-image" src={resolvedSource} alt={alt} title={imageTarget(source)} loading="lazy" />;
+  return inline ? <span className="rich-image-block inline">{image}</span> : <figure className="rich-image-block">{image}</figure>;
+}
+
+function bareImageSource(line: string): string | undefined {
+  const source = imageTarget(stripListMarker(line));
+  if (!source || !IMAGE_FILE_PATTERN.test(source)) {
+    return undefined;
+  }
+  if (isWebImageSource(source) || source.startsWith("file://")) {
+    return source;
+  }
+  if (source.startsWith("/") || source.startsWith("~/") || source.startsWith("./") || source.startsWith("../")) {
+    return source;
+  }
+  return source.includes("/") ? source : undefined;
+}
+
+function stripListMarker(line: string): string {
+  return stripWrappers(line.trim().replace(/^[-*]\s+/, ""));
+}
+
+function stripWrappers(value: string): string {
+  const pairs: Array<[string, string]> = [
+    ["`", "`"],
+    ['"', '"'],
+    ["'", "'"],
+    ["<", ">"]
+  ];
+  for (const [open, close] of pairs) {
+    if (value.startsWith(open) && value.endsWith(close)) {
+      return value.slice(open.length, -close.length).trim();
+    }
+  }
+  return value;
+}
+
 function resolveImageSource(rawSource: string, cwd: string | undefined): string {
   const source = imageTarget(rawSource);
   if (isWebImageSource(source)) {
     return source;
+  }
+  if (source.startsWith("file://")) {
+    return renderableFileURL(fileURLPath(source));
   }
   if (source.startsWith("~/")) {
     return renderableFileURL(resolveHomePath(cwd, source));
@@ -111,7 +188,7 @@ function resolveImageSource(rawSource: string, cwd: string | undefined): string 
 }
 
 function imageTarget(rawSource: string): string {
-  let source = rawSource.trim();
+  let source = stripWrappers(rawSource.trim());
   if (source.startsWith("<") && source.endsWith(">")) {
     return source.slice(1, -1).trim();
   }
@@ -124,6 +201,14 @@ function imageTarget(rawSource: string): string {
 
 function isWebImageSource(source: string): boolean {
   return /^(https?:|data:image\/|blob:|wuu-file:)/i.test(source);
+}
+
+function fileURLPath(source: string): string {
+  try {
+    return decodeURIComponent(new URL(source).pathname);
+  } catch {
+    return source.replace(/^file:\/\//, "");
+  }
 }
 
 function resolveRelativePath(cwd: string | undefined, relativePath: string): string {
