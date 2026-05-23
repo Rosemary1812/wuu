@@ -10,13 +10,17 @@ import {
   FolderX,
   FolderOpen,
   FolderPlus,
+  GitBranch,
+  Laptop,
   List as ListIcon,
   MessageSquarePlus,
   PanelLeftOpen,
   Pencil,
+  Plus,
   Search,
   Send,
   Settings,
+  ShieldCheck,
   Square,
   Terminal,
   Wrench,
@@ -37,6 +41,7 @@ import type {
   AppServerNotification,
   AskUserQuestion,
   DesktopProject,
+  GitStatusResult,
   InitializeResult,
   ProjectListResult,
   RuntimeContext,
@@ -57,6 +62,7 @@ type AppState = {
   projects: DesktopProject[];
   activeContext?: RuntimeContext;
   activeProjectId?: string;
+  gitStatus?: GitStatusResult;
   thread?: Thread;
   threads: Thread[];
   running: boolean;
@@ -329,6 +335,7 @@ export function App(): JSX.Element {
         status={state.status}
         provider={state.initialized?.provider}
         model={state.initialized?.model}
+        gitStatus={state.gitStatus}
         projects={state.projects}
         activeContext={state.activeContext}
         activeProject={activeProject}
@@ -351,7 +358,7 @@ export function App(): JSX.Element {
     if (!projectState.active_context) {
       return emptyRuntimeState(projectState);
     }
-    const initialized = await window.wuu.initialize();
+    const [initialized, gitStatus] = await Promise.all([window.wuu.initialize(), window.wuu.gitStatus()]);
     const listed = await window.wuu.listThreads();
     const thread =
       listed.threads.length > 0
@@ -362,6 +369,7 @@ export function App(): JSX.Element {
       projects: projectState.projects,
       activeContext: projectState.active_context,
       activeProjectId: activeProjectID(projectState.active_context),
+      gitStatus,
       thread,
       threads: thread ? upsertThread(listed.threads, thread) : listed.threads.filter(isThread),
       running: false,
@@ -375,6 +383,7 @@ export function App(): JSX.Element {
       projects: projectState.projects,
       activeContext: undefined,
       activeProjectId: undefined,
+      gitStatus: undefined,
       thread: undefined,
       threads: [],
       running: false,
@@ -722,7 +731,14 @@ export function App(): JSX.Element {
         {state.initialized && !previewingLaunch ? (
           <div className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}`} ref={scrollRef}>
             {emptyConversation ? (
-              <EmptyConversationHome title={emptyThreadTitle}>{renderComposer("hero")}</EmptyConversationHome>
+              <EmptyConversationHome
+                title={emptyThreadTitle}
+                onOpenProject={() => void chooseProjectFolder()}
+                onCreateProject={() => void createBlankProject()}
+                onSelectNoProject={() => void useNoProject(true)}
+              >
+                {renderComposer("hero")}
+              </EmptyConversationHome>
             ) : (
               <div className="conversation-width">
                 {turns.map((turn) => (
@@ -747,12 +763,47 @@ export function App(): JSX.Element {
   );
 }
 
-function EmptyConversationHome({ title, children }: { title: string; children: JSX.Element }): JSX.Element {
+function EmptyConversationHome({
+  title,
+  children,
+  onOpenProject,
+  onCreateProject,
+  onSelectNoProject
+}: {
+  title: string;
+  children: JSX.Element;
+  onOpenProject: () => void;
+  onCreateProject: () => void;
+  onSelectNoProject: () => void;
+}): JSX.Element {
   return (
     <section className="empty-home">
       <div className="empty-home-inner">
         <h2>{title}</h2>
         {children}
+        <div className="empty-home-actions" aria-label="快速开始">
+          <button type="button" onClick={onOpenProject}>
+            <FolderOpen size={22} />
+            <span>
+              <strong>打开项目</strong>
+              <small>从本地文件夹开始构建</small>
+            </span>
+          </button>
+          <button type="button" onClick={onCreateProject}>
+            <FolderPlus size={22} />
+            <span>
+              <strong>新建空白项目</strong>
+              <small>为新任务准备工作区</small>
+            </span>
+          </button>
+          <button type="button" onClick={onSelectNoProject}>
+            <FolderX size={22} />
+            <span>
+              <strong>临时对话</strong>
+              <small>不绑定项目直接开始</small>
+            </span>
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -1574,6 +1625,7 @@ function Composer({
   status,
   provider,
   model,
+  gitStatus,
   projects,
   activeContext,
   activeProject,
@@ -1596,6 +1648,7 @@ function Composer({
   status: string;
   provider?: string;
   model?: string;
+  gitStatus?: GitStatusResult;
   projects: DesktopProject[];
   activeContext?: RuntimeContext;
   activeProject?: DesktopProject;
@@ -1630,6 +1683,14 @@ function Composer({
             }}
           />
           <div className="composer-bar">
+            <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
+              <Plus size={20} />
+            </button>
+            <span className="permission-chip">
+              <ShieldCheck size={16} />
+              <span>完全访问权限</span>
+              <ChevronDown size={15} />
+            </span>
             <div className="composer-spacer" />
             <span className="provider-pill">{provider ?? "provider"}</span>
             <span className="model-label">{model ?? "model"}</span>
@@ -1645,6 +1706,19 @@ function Composer({
             <span>{contextLabel}</span>
             <ChevronDown size={16} />
           </button>
+          <span className="context-mode-chip">
+            <Laptop size={17} />
+            <span>本地模式</span>
+            <ChevronDown size={15} />
+          </span>
+          {gitStatus?.is_repo && gitStatus.branch ? (
+            <span className="context-branch-chip">
+              <GitBranch size={17} />
+              <span>{gitStatus.branch}</span>
+              {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
+              <ChevronDown size={15} />
+            </span>
+          ) : null}
           {menuOpen ? (
             <ProjectPickerMenu
               projects={projects}

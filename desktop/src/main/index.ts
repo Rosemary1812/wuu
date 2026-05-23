@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, type OpenDialogOptions } from "electron";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +9,7 @@ import type {
   AppServerResponse,
   ConfigModelUpdateResult,
   DesktopProject,
+  GitStatusResult,
   InitializeResult,
   ProjectListResult,
   RuntimeContext,
@@ -305,6 +306,34 @@ function projectListResult(): ProjectListResult {
   };
 }
 
+function gitStatusResult(): GitStatusResult {
+  const context = ensureRuntimeContext();
+  const insideWorkTree = gitOutput(context.cwd, ["rev-parse", "--is-inside-work-tree"]) === "true";
+  if (!insideWorkTree) {
+    return { is_repo: false, dirty_count: 0 };
+  }
+  const branch = gitOutput(context.cwd, ["branch", "--show-current"]) || gitOutput(context.cwd, ["rev-parse", "--short", "HEAD"]);
+  const porcelain = gitOutput(context.cwd, ["status", "--porcelain"]);
+  const dirtyCount = porcelain ? porcelain.split("\n").filter((line) => line.trim()).length : 0;
+  return {
+    is_repo: true,
+    branch,
+    dirty_count: dirtyCount
+  };
+}
+
+function gitOutput(cwd: string, args: string[]): string | undefined {
+  const result = spawnSync("git", ["-C", cwd, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: process.env
+  });
+  if (result.status !== 0) {
+    return undefined;
+  }
+  return result.stdout.trim() || undefined;
+}
+
 function ensureRuntimeContext(): RuntimeContext {
   const activeContext = projectStore.active_context;
   if (activeContext?.kind === "project") {
@@ -515,6 +544,7 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:project-list", () => projectListResult());
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) => selectProject(projectIDToSelect));
   ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean) => selectNoProject(Boolean(fresh)));
+  ipcMain.handle("wuu:git-status", () => gitStatusResult());
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
       title: "使用现有文件夹",

@@ -73,6 +73,12 @@ export type ProjectListResult = {
   active_project_id?: string;
 };
 
+export type GitStatusResult = {
+  is_repo: boolean;
+  branch?: string;
+  dirty_count: number;
+};
+
 export type ThreadStatus = "idle" | "in_progress";
 export type TurnStatus = "in_progress" | "completed" | "failed" | "interrupted";
 export type TurnItemsView = "full";
@@ -151,6 +157,7 @@ export type WuuDesktopApi = {
   chooseProjectFolder: () => Promise<ProjectListResult>;
   selectProject: (projectId: string) => Promise<ProjectListResult>;
   selectNoProject: (fresh?: boolean) => Promise<ProjectListResult>;
+  gitStatus: () => Promise<GitStatusResult>;
   initialize: () => Promise<InitializeResult>;
   updateRuntimeSettings: (provider: string, model: string) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;

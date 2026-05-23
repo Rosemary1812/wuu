@@ -7,6 +7,7 @@ const api: WuuDesktopApi = {
   chooseProjectFolder: () => ipcRenderer.invoke("wuu:project-choose-folder"),
   selectProject: (projectId: string) => ipcRenderer.invoke("wuu:project-select", projectId),
   selectNoProject: (fresh?: boolean) => ipcRenderer.invoke("wuu:project-select-none", fresh),
+  gitStatus: () => ipcRenderer.invoke("wuu:git-status"),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   updateRuntimeSettings: (provider: string, model: string) =>
     ipcRenderer.invoke("wuu:config-model-update", provider, model),
