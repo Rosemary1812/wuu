@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -201,6 +202,117 @@ func TestNormalizeAndValidateMessages_repairsNonContiguousToolResult(t *testing.
 	}
 }
 
+func TestNormalizeAndValidateMessages_asyncTimingScenarios(t *testing.T) {
+	tests := []struct {
+		name          string
+		msgs          []ChatMessage
+		want          string
+		wantContentBy map[string]string
+	}{
+		{
+			name: "parallel tool outputs finish out of order",
+			msgs: []ChatMessage{
+				{Role: "user", Content: "inspect"},
+				{Role: "assistant", ToolCalls: []ToolCall{
+					{ID: "call_1", Name: "read_file"},
+					{ID: "call_2", Name: "grep"},
+				}},
+				{Role: "tool", ToolCallID: "call_2", Content: "grep ok"},
+				{Role: "tool", ToolCallID: "call_1", Content: "read ok"},
+			},
+			want: "user,assistant,tool:call_1,tool:call_2",
+		},
+		{
+			name: "worker message arrives between parallel tool outputs",
+			msgs: []ChatMessage{
+				{Role: "user", Content: "inspect"},
+				{Role: "assistant", ToolCalls: []ToolCall{
+					{ID: "call_1", Name: "read_file"},
+					{ID: "call_2", Name: "grep"},
+				}},
+				{Role: "tool", ToolCallID: "call_1", Content: "read ok"},
+				{Role: "user", Content: `{"type":"agent_result","agent_id":"worker-1","result":"done"}`},
+				{Role: "tool", ToolCallID: "call_2", Content: "grep ok"},
+			},
+			want: "user,assistant,tool:call_1,tool:call_2,user",
+		},
+		{
+			name: "worker message arrives before first tool output",
+			msgs: []ChatMessage{
+				{Role: "user", Content: "inspect"},
+				{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "spawn_agent"}}},
+				{Role: "user", Content: `{"type":"agent_result","agent_id":"worker-1","result":"done"}`},
+				{Role: "tool", ToolCallID: "call_1", Content: "worker ok"},
+			},
+			want: "user,assistant,tool:call_1,user",
+		},
+		{
+			name: "orphan and retry outputs are dropped",
+			msgs: []ChatMessage{
+				{Role: "user", Content: "inspect"},
+				{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "read_file"}}},
+				{Role: "tool", ToolCallID: "call_orphan", Content: "orphan"},
+				{Role: "tool", ToolCallID: "call_1", Content: "first result"},
+				{Role: "tool", ToolCallID: "call_1", Content: "retry result"},
+				{Role: "user", Content: "after"},
+			},
+			want: "user,assistant,tool:call_1,user",
+			wantContentBy: map[string]string{
+				"call_1": "first result",
+			},
+		},
+		{
+			name: "missing earlier output is synthesized before later output",
+			msgs: []ChatMessage{
+				{Role: "user", Content: "inspect"},
+				{Role: "assistant", ToolCalls: []ToolCall{
+					{ID: "call_1", Name: "read_file"},
+					{ID: "call_2", Name: "grep"},
+				}},
+				{Role: "tool", ToolCallID: "call_2", Content: "grep ok"},
+				{Role: "user", Content: `{"type":"agent_result","agent_id":"worker-1","result":"done"}`},
+			},
+			want: "user,assistant,tool:call_1,tool:call_2,user",
+			wantContentBy: map[string]string{
+				"call_1": `{"error":"aborted"}`,
+				"call_2": "grep ok",
+			},
+		},
+		{
+			name: "tool output is committed before assistant tool call",
+			msgs: []ChatMessage{
+				{Role: "user", Content: "inspect"},
+				{Role: "tool", ToolCallID: "call_1", Content: "early output"},
+				{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "read_file"}}},
+			},
+			want: "user,assistant,tool:call_1",
+			wantContentBy: map[string]string{
+				"call_1": "early output",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeAndValidateMessages(tt.msgs)
+			if err != nil {
+				t.Fatalf("NormalizeAndValidateMessages: %v", err)
+			}
+			if err := ValidateMessageSequence(got); err != nil {
+				t.Fatalf("ValidateMessageSequence: %v: %+v", err, got)
+			}
+			if gotOrder := roleToolOrder(got); gotOrder != tt.want {
+				t.Fatalf("unexpected order: got %s want %s: %+v", gotOrder, tt.want, got)
+			}
+			for callID, want := range tt.wantContentBy {
+				if got := toolContent(got, callID); got != want {
+					t.Fatalf("tool %s content: got %q want %q", callID, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestValidateMessageSequence_ok(t *testing.T) {
 	msgs := []ChatMessage{
 		{Role: "system", Content: "sys"},
@@ -264,4 +376,25 @@ func roles(msgs []ChatMessage) []string {
 		out[i] = m.Role
 	}
 	return out
+}
+
+func roleToolOrder(msgs []ChatMessage) string {
+	out := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Role == "tool" {
+			out = append(out, "tool:"+msg.ToolCallID)
+			continue
+		}
+		out = append(out, msg.Role)
+	}
+	return strings.Join(out, ",")
+}
+
+func toolContent(msgs []ChatMessage, callID string) string {
+	for _, msg := range msgs {
+		if msg.Role == "tool" && msg.ToolCallID == callID {
+			return msg.Content
+		}
+	}
+	return ""
 }

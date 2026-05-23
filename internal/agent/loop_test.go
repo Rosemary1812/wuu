@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -70,6 +72,57 @@ func (f *contextLoopTools) Execute(_ context.Context, call providers.ToolCall) (
 	return `{"ok":"` + call.ID + `"}`, nil
 }
 func (f *contextLoopTools) LastAdditionalContext() string { return f.last }
+
+type delayedConcurrentTools struct {
+	call2Done chan struct{}
+	closeOnce sync.Once
+	mu        sync.Mutex
+	completed []string
+}
+
+func newDelayedConcurrentTools() *delayedConcurrentTools {
+	return &delayedConcurrentTools{call2Done: make(chan struct{})}
+}
+
+func (f *delayedConcurrentTools) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{Name: "read_file"}}
+}
+
+func (f *delayedConcurrentTools) ToolMetadata(_ string) (ToolMetadata, bool) {
+	return ToolMetadata{ReadOnly: true, ConcurrencySafe: true}, true
+}
+
+func (f *delayedConcurrentTools) Execute(_ context.Context, call providers.ToolCall) (string, error) {
+	switch call.ID {
+	case "call_1":
+		select {
+		case <-f.call2Done:
+		case <-time.After(time.Second):
+			return "", errors.New("call_1 timed out waiting for call_2")
+		}
+		f.recordCompleted(call.ID)
+	case "call_2":
+		f.recordCompleted(call.ID)
+		f.closeOnce.Do(func() { close(f.call2Done) })
+	default:
+		f.recordCompleted(call.ID)
+	}
+	return `{"ok":"` + call.ID + `"}`, nil
+}
+
+func (f *delayedConcurrentTools) recordCompleted(id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.completed = append(f.completed, id)
+}
+
+func (f *delayedConcurrentTools) completedOrder() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.completed))
+	copy(out, f.completed)
+	return out
+}
 
 func userMsg(content string) providers.ChatMessage {
 	return providers.ChatMessage{Role: "user", Content: content}
@@ -253,6 +306,43 @@ func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
 		if msg.Role != "tool" || msg.ToolCallID != wantID {
 			t.Fatalf("tool result %d: got %+v want call_id %s", i, msg, wantID)
 		}
+	}
+}
+
+func TestRunToolLoop_ConcurrentToolCompletionDoesNotReorderProviderMessages(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "read_file", Arguments: `{}`},
+			{ID: "call_2", Name: "read_file", Arguments: `{}`},
+		}},
+		{Content: "done"},
+	}}
+	tools := newDelayedConcurrentTools()
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("inspect")}, LoopConfig{
+		Model: "m",
+		Tools: tools,
+	}, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := providers.ValidateMessageSequence(res.NewMessages); err != nil {
+		t.Fatalf("expected valid returned message sequence, got %v: %+v", err, res.NewMessages)
+	}
+	if got := strings.Join(tools.completedOrder(), ","); got != "call_2,call_1" {
+		t.Fatalf("test did not simulate out-of-order completion: got %s", got)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected two provider requests, got %d", len(step.calls))
+	}
+	var gotToolIDs []string
+	for _, msg := range step.calls[1].Messages {
+		if msg.Role == "tool" {
+			gotToolIDs = append(gotToolIDs, msg.ToolCallID)
+		}
+	}
+	if got, want := strings.Join(gotToolIDs, ","), "call_1,call_2"; got != want {
+		t.Fatalf("provider request tool order changed with completion order: got %s want %s", got, want)
 	}
 }
 
