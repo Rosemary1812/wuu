@@ -639,6 +639,29 @@ func TestToolkit_SpawnAgentDefinitionIncludesForkTurns(t *testing.T) {
 	t.Fatal("spawn_agent must be present in tool definitions")
 }
 
+func TestToolkit_SpawnAgentDescriptionDoesNotForceStopAfterSpawn(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, d := range kit.Definitions() {
+		if d.Name != "spawn_agent" {
+			continue
+		}
+		if strings.Contains(d.Description, "END YOUR TURN") {
+			t.Fatalf("spawn_agent description must not force stopping after async spawn: %q", d.Description)
+		}
+		for _, want := range []string{"non-overlapping", "Do not loop checking status", "synchronous=true"} {
+			if !strings.Contains(d.Description, want) {
+				t.Fatalf("spawn_agent description missing %q: %q", want, d.Description)
+			}
+		}
+		return
+	}
+	t.Fatal("spawn_agent must be present in tool definitions")
+}
+
 func TestToolkit_WaitAgentUsesV2MailboxSchema(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

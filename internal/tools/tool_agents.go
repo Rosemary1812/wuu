@@ -139,11 +139,14 @@ func (t *SpawnAgentTool) IsConcurrencySafe() bool { return true }
 func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "spawn_agent",
-		Description: "Spawn a named child task to perform focused work. The sub-agent has its own " +
-			"context and its own tools. There is exactly one worker type, 'worker', with the " +
-			"full tool set; specialized roles (verification, read-only research) are injected " +
-			"by pasting the appropriate preset block at the start of the prompt — see the " +
-			"orchestration preamble for the verbatim preset text. " +
+		Description: "Spawn a named child agent to work on a focused task. If your current task is " +
+			"/root/task1 and you spawn task_name='task_3', the child has canonical task name " +
+			"/root/task1/task_3 and can be addressed as task_3 from the current agent or by its " +
+			"canonical path from elsewhere. The child has its own context, the same non-ask_user " +
+			"tool set, and can spawn its own sub-agents. It can message you and other running " +
+			"agents, and its final answer is delivered to you when it finishes. There is exactly " +
+			"one worker type, 'worker'; specialized roles (verification, read-only research) are " +
+			"injected by pasting the appropriate preset block at the start of the prompt. " +
 			"By default the spawn runs INPLACE in the user's repo, so any files the worker " +
 			"creates or edits land directly in the working tree. Set isolation='worktree' ONLY " +
 			"when the work might break the build, when concurrent writers would collide, or " +
@@ -155,14 +158,13 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Give every task a stable task_name so you can address it later by task name, " +
 			"agent path, or agent_id. task_name is the child path segment and must use " +
 			"only lowercase letters, digits, and underscores, for example inspect_auth_flow. " +
-			"By default the spawn is asynchronous: this returns " +
-			"immediately with an agent_id and agent_path, and the worker's result will be delivered to you " +
-			"automatically as a structured mailbox message once it completes — you will be " +
-			"notified without any action on your part. After spawning async workers, END " +
-			"YOUR TURN — do NOT generate waiting messages or loop checking status. The system handles notification and auto-resume. " +
-			"Set synchronous=true to block until " +
-			"the worker finishes. Spawn multiple workers in parallel by calling spawn_agent " +
-			"multiple times in the same response — they run concurrently.",
+			"By default the spawn is asynchronous: this returns immediately with an agent_id " +
+			"and agent_path, and the worker's result is delivered later as a structured mailbox " +
+			"message. After spawning async workers, continue meaningful non-overlapping local " +
+			"work when available; otherwise end your turn and let the mailbox notification resume " +
+			"you. Do not loop checking status or call wait_agent by reflex. Set synchronous=true " +
+			"only when the next critical step is blocked on the worker's result. Spawn multiple " +
+			"independent workers in parallel by calling spawn_agent multiple times in the same response.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -419,8 +421,9 @@ func (t *SendAgentMessageTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "send_message",
 		Description: "Queue a message for an existing child task without waiting for it. " +
-			"Address the target by agent_id, agent_path, or task_name. The current runtime " +
-			"delivers queued messages before the worker's next model step; idle tasks keep the message in their mailbox.",
+			"Address the target by agent_id, agent_path, or task_name. This is queue-only: " +
+			"it does not trigger a new turn on an idle worker. Running workers receive queued " +
+			"messages before a later model step; idle workers keep the message in their mailbox.",
 		InputSchema: targetMessageSchema(),
 	}
 }
@@ -447,9 +450,11 @@ func (t *FollowupTaskTool) IsConcurrencySafe() bool { return true }
 func (t *FollowupTaskTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "followup_task",
-		Description: "Send a follow-up task message to an existing child task. " +
-			"Address the target by agent_id, agent_path, or task_name. In the current runtime " +
-			"running tasks receive the message before their next model step, and idle tasks start a new turn from their saved history.",
+		Description: "Send a follow-up task message to an existing non-root child task and " +
+			"trigger that target to continue. Address the target by agent_id, agent_path, or " +
+			"task_name. If the target is mid-turn, the message is queued and starts the " +
+			"target's next turn after the current turn completes. If the target is idle, it " +
+			"starts a new turn from its saved history.",
 		InputSchema: targetMessageSchema(),
 	}
 }
