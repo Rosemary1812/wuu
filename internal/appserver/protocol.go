@@ -76,27 +76,37 @@ type Notification struct {
 }
 
 type InitializeResult struct {
-	ProtocolVersion string `json:"protocol_version"`
-	Provider        string `json:"provider"`
-	Model           string `json:"model"`
-	WorkspaceRoot   string `json:"workspace_root"`
+	ProtocolVersion string            `json:"protocol_version"`
+	Provider        string            `json:"provider"`
+	Model           string            `json:"model"`
+	WorkspaceRoot   string            `json:"workspace_root"`
+	Providers       []ProviderSummary `json:"providers,omitempty"`
 }
 
 type ConfigReadResult struct {
-	Provider      string `json:"provider"`
-	Model         string `json:"model"`
-	ConfigPath    string `json:"config_path"`
-	WorkspaceRoot string `json:"workspace_root"`
-	SessionDir    string `json:"session_dir"`
+	Provider      string            `json:"provider"`
+	Model         string            `json:"model"`
+	ConfigPath    string            `json:"config_path"`
+	WorkspaceRoot string            `json:"workspace_root"`
+	SessionDir    string            `json:"session_dir"`
+	Providers     []ProviderSummary `json:"providers,omitempty"`
 }
 
 type ConfigModelUpdateParams struct {
-	Model string `json:"model"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model"`
 }
 
 type ConfigModelUpdateResult struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
+	Provider  string            `json:"provider"`
+	Model     string            `json:"model"`
+	Providers []ProviderSummary `json:"providers,omitempty"`
+}
+
+type ProviderSummary struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Model string `json:"model"`
 }
 
 type ThreadStartResult struct {

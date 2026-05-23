@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/coordinator"
+	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -214,6 +217,7 @@ func (s *Server) handleInitialize(req Request) error {
 		Provider:        s.rt.ProviderName,
 		Model:           s.rt.Model,
 		WorkspaceRoot:   s.rt.RootDir,
+		Providers:       s.providerSummaries(),
 	}, nil)
 }
 
@@ -224,6 +228,7 @@ func (s *Server) handleConfigRead(req Request) error {
 		ConfigPath:    s.rt.ConfigPath,
 		WorkspaceRoot: s.rt.RootDir,
 		SessionDir:    s.rt.SessionDir,
+		Providers:     s.providerSummaries(),
 	}, nil)
 }
 
@@ -232,6 +237,10 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	providerName := strings.TrimSpace(params.Provider)
+	if providerName == "" {
+		providerName = s.rt.ProviderName
+	}
 	model := strings.TrimSpace(params.Model)
 	if model == "" {
 		return s.writeResponse(req.ID, nil, errors.New("model is required"))
@@ -239,20 +248,46 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if s.hasRunningThread() {
 		return s.writeResponse(req.ID, nil, errors.New("cannot change model while a turn is running"))
 	}
-	if err := config.UpdateProviderModel(s.rt.ConfigPath, s.rt.ProviderName, model); err != nil {
+	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(providerName)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerCfg.Model = model
+
+	var client providers.StreamClient
+	if resolvedName != s.rt.ProviderName {
+		client, err = providerfactory.BuildStreamClient(providerCfg, resolvedName)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	if err := config.UpdateProviderSelection(s.rt.ConfigPath, resolvedName, model); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
+	s.rt.ProviderName = resolvedName
 	s.rt.Model = model
 	if s.rt.StreamRunner != nil {
+		if client != nil {
+			s.rt.StreamRunner.Client = client
+		}
 		s.rt.StreamRunner.Model = model
-		s.rt.StreamRunner.ContextWindowOverride = providers.ContextWindowFor(model)
+		s.rt.StreamRunner.ContextWindowOverride = runtime.ResolveContextWindow(
+			model,
+			providerCfg.ContextWindow,
+			cfg.Agent.MaxContextTokens,
+		)
 	}
-	s.updateIdleThreadModels(model)
+	s.updateIdleThreadRuntime(resolvedName, model)
 
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
-		Provider: s.rt.ProviderName,
-		Model:    model,
+		Provider:  resolvedName,
+		Model:     model,
+		Providers: s.providerSummaries(),
 	}, nil)
 }
 
@@ -353,17 +388,43 @@ func (s *Server) hasRunningThread() bool {
 	return false
 }
 
-func (s *Server) updateIdleThreadModels(model string) {
+func (s *Server) updateIdleThreadRuntime(providerName, model string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, th := range s.threads {
 		th.mu.Lock()
 		if !th.running {
-			th.ModelProvider = s.rt.ProviderName
+			th.ModelProvider = providerName
 			th.Model = model
 		}
 		th.mu.Unlock()
 	}
+}
+
+func (s *Server) providerSummaries() []ProviderSummary {
+	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return nil
+	}
+	return providerSummariesFromConfig(cfg)
+}
+
+func providerSummariesFromConfig(cfg config.Config) []ProviderSummary {
+	names := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]ProviderSummary, 0, len(names))
+	for _, name := range names {
+		provider := cfg.Providers[name]
+		out = append(out, ProviderSummary{
+			Name:  name,
+			Type:  provider.Type,
+			Model: provider.Model,
+		})
+	}
+	return out
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
