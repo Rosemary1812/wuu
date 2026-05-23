@@ -7,6 +7,45 @@ const workspacePaths = Array.from({ length: 220 }, (_value, index) => {
   const file = String(index).padStart(3, "0");
   return `resize-fixture-${file}.ts`;
 });
+const heavyAnswer = Array.from({ length: 12 }, (_value, index) => {
+  const item = index + 1;
+  return [
+    `### Section ${item}`,
+    "This resize fixture intentionally keeps a dense message flow visible while the BrowserWindow width changes.",
+    "The line contains enough words to force browser line wrapping and markdown layout work on every horizontal resize step.",
+    "",
+    "| path | status | notes |",
+    "| --- | --- | --- |",
+    `| desktop/src/renderer/App.tsx | changed | resize measurement row ${item} |`,
+    `| desktop/src/renderer/styles.css | changed | layout wrapping row ${item} |`,
+    "",
+    "```ts",
+    `export const resizeFixture${item} = { width: \"responsive\", stable: true };`,
+    "```"
+  ].join("\n");
+}).join("\n\n");
+const turns = Array.from({ length: 36 }, (_value, index) => ({
+  id: `resize-turn-${index}`,
+  status: "completed",
+  items_view: "full",
+  started_at: now,
+  completed_at: now,
+  duration_ms: 42 + index,
+  items: [
+    {
+      id: `resize-user-${index}`,
+      type: "user_message",
+      text: `Resize checkpoint ${index + 1}: keep right-edge live resize aligned with this message flow.`,
+      status: "completed"
+    },
+    {
+      id: `resize-agent-${index}`,
+      type: "agent_message",
+      text: heavyAnswer,
+      status: "completed"
+    }
+  ]
+}));
 const resizeThread = {
   id: "resize-thread",
   preview: "Resize fixture",
@@ -16,31 +55,7 @@ const resizeThread = {
   status: "idle",
   created_at: now,
   updated_at: now,
-  turns: [
-    {
-      id: "resize-turn",
-      status: "completed",
-      items_view: "full",
-      started_at: now,
-      completed_at: now,
-      duration_ms: 42,
-      items: [
-        {
-          id: "resize-user",
-          type: "user_message",
-          text: "Resize the window while this conversation is visible.",
-          status: "completed"
-        },
-        {
-          id: "resize-agent",
-          type: "agent_message",
-          text:
-            "This fixture keeps the conversation non-empty so the inline environment panel and docked composer resize path are exercised.",
-          status: "completed"
-        }
-      ]
-    }
-  ]
+  turns
 };
 
 function projectList() {

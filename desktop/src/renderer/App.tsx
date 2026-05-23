@@ -710,7 +710,6 @@ export function App(): JSX.Element {
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const [codexRuntimeMenu, setCodexRuntimeMenu] = useState<CodexRuntimeMenu>(null);
   const [codexModels, setCodexModels] = useState<CodexModelLoadState>({ loading: false, error: "", models: [] });
-  const [dockComposerHeight, setDockComposerHeight] = useState(0);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -734,7 +733,9 @@ export function App(): JSX.Element {
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const conversationPaneRef = useRef<HTMLElement | null>(null);
   const dockComposerRef = useRef<HTMLElement>(null);
+  const dockComposerHeightRef = useRef(0);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
@@ -1059,14 +1060,26 @@ export function App(): JSX.Element {
 
   useLayoutEffect(() => {
     const node = dockComposerRef.current;
+    const pane = conversationPaneRef.current;
+    const applyHeight = (nextHeight: number): void => {
+      if (dockComposerHeightRef.current === nextHeight) {
+        return;
+      }
+      dockComposerHeightRef.current = nextHeight;
+      pane?.style.setProperty("--dock-composer-height", `${nextHeight}px`);
+      if (nextHeight > 0 && conversationAutoFollowRef.current) {
+        scrollConversationToBottom();
+      }
+    };
+
     if (!node) {
-      setDockComposerHeight(0);
+      applyHeight(0);
       return;
     }
 
     const updateHeight = (): void => {
       const nextHeight = Math.ceil(node.getBoundingClientRect().height);
-      setDockComposerHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight));
+      applyHeight(nextHeight);
     };
 
     updateHeight();
@@ -1074,13 +1087,6 @@ export function App(): JSX.Element {
     resizeObserver.observe(node);
     return () => resizeObserver.disconnect();
   }, [emptyConversation, previewingLaunch, showingWorkspaceMode, state.initialized]);
-
-  useLayoutEffect(() => {
-    if (dockComposerHeight <= 0 || !conversationAutoFollowRef.current) {
-      return;
-    }
-    scrollConversationToBottom();
-  }, [dockComposerHeight]);
 
   function applySidebarWidth(nextWidth: number): void {
     if (nextWidth <= SIDEBAR_MIN_WIDTH) {
@@ -2094,10 +2100,6 @@ export function App(): JSX.Element {
       />
     ) : null;
 
-  const conversationPaneStyle = {
-    "--dock-composer-height": `${dockComposerHeight}px`
-  } as CSSProperties;
-
   return (
     <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
@@ -2201,7 +2203,7 @@ export function App(): JSX.Element {
         />
       )}
 
-      <main className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}`} style={conversationPaneStyle}>
+      <main className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}`} ref={conversationPaneRef}>
         <header className="titlebar">
           <div className="title-block">
             {sidebarCollapsed ? (

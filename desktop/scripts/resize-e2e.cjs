@@ -149,6 +149,40 @@ async function run() {
     "Dock composer should use the resized message flow width instead of staying capped at the old centered width."
   );
 
+  await delay(300);
+  await evaluate(win, () => {
+    const probe = { samples: [] };
+    window.__flowProbe = probe;
+    let previousTs;
+    const sample = (ts) => {
+      const flow = window.flowSnapshot?.();
+      if (flow) {
+        probe.samples.push({
+          ...flow,
+          dt: previousTs === undefined ? 0 : ts - previousTs,
+          innerWidth: window.innerWidth
+        });
+      }
+      previousTs = ts;
+      if (probe.samples.length < 120) {
+        window.requestAnimationFrame(sample);
+      }
+    };
+    window.requestAnimationFrame(sample);
+  });
+  for (let width = 1280; width <= 1720; width += 22) {
+    win.setSize(width, 640);
+    await delay(16);
+  }
+  await delay(240);
+  const flowProbe = await evaluate(win, () => window.__flowProbe);
+  const maxFrameMs = Math.max(...flowProbe.samples.map((sample) => sample.dt));
+  const maxFlowDelta = Math.max(
+    ...flowProbe.samples.map((sample) => Math.abs(sample.conversationRight - sample.scrollContentRight))
+  );
+  assert.ok(maxFlowDelta <= 2, "Message flow should stay aligned throughout continuous right-side resize.");
+  assert.ok(maxFrameMs < 80, `Continuous right-side resize should not stall the renderer for ${Math.round(maxFrameMs)}ms.`);
+
   await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
   win.setSize(1280, 860);
   await delay(180);
