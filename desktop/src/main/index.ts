@@ -500,7 +500,7 @@ function createWindow(): void {
     width: 1280,
     height: 860,
     minWidth: 980,
-    minHeight: 680,
+    minHeight: 460,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: "#f6f6f4",
