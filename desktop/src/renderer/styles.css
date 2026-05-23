@@ -3,8 +3,22 @@
   background: #f6f6f4;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 14px;
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-ui: 13px;
+  --font-body: 14px;
+  --font-content: 14px;
+  --font-title: 15px;
+  --font-heading: 18px;
+  --font-display: 24px;
+  --weight-medium: 560;
+  --weight-semibold: 620;
+  --weight-bold: 700;
+  --line-ui: 1.35;
+  --line-body: 1.55;
+  font-size: var(--font-ui);
   letter-spacing: 0;
+  line-height: var(--line-ui);
   text-rendering: optimizeLegibility;
 }
 
@@ -171,8 +185,8 @@ button:disabled {
 
 .section-label {
   color: #8a8e91;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
 }
 
 .project-add-button {
@@ -216,8 +230,8 @@ button:disabled {
   border-radius: 10px;
   background: transparent;
   color: #1f2328;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
   padding: 0 14px;
   text-align: left;
 }
@@ -241,10 +255,11 @@ button:disabled {
 .thread-row.active {
   background: #dcdedb;
   color: #202427;
+  font-weight: var(--weight-semibold);
 }
 
 .project-row {
-  font-weight: 620;
+  font-weight: var(--weight-medium);
 }
 
 .project-row span {
@@ -282,8 +297,8 @@ kbd {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.6);
   color: #8a8e91;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
   padding: 2px 6px;
   text-align: center;
 }
@@ -302,7 +317,7 @@ kbd {
   border-radius: 8px;
   background: transparent;
   color: #4c5155;
-  font-weight: 620;
+  font-weight: var(--weight-medium);
   padding: 0 12px;
   text-align: left;
 }
@@ -338,7 +353,7 @@ kbd {
   border-radius: 8px;
   background: transparent;
   color: #6f7478;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   padding: 0 12px;
   text-align: left;
 }
@@ -374,8 +389,8 @@ kbd {
 
 .settings-page h1 {
   margin: 0 0 64px;
-  font-size: 24px;
-  font-weight: 800;
+  font-size: var(--font-heading);
+  font-weight: var(--weight-bold);
 }
 
 .settings-section {
@@ -385,15 +400,15 @@ kbd {
 
 .settings-section h2 {
   margin: 0 0 6px;
-  font-size: 17px;
-  font-weight: 800;
+  font-size: var(--font-title);
+  font-weight: var(--weight-bold);
 }
 
 .settings-section p {
   margin: 0;
   color: #8a8e91;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
 }
 
 .settings-card {
@@ -420,13 +435,13 @@ kbd {
 
 .settings-row strong {
   color: #1f2328;
-  font-size: 15px;
+  font-size: var(--font-ui);
 }
 
 .settings-row small {
   color: #787d81;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
 }
 
 .settings-row input,
@@ -460,22 +475,22 @@ kbd {
   border-radius: 8px;
   background: #24282c;
   color: #fff;
-  font-weight: 750;
+  font-weight: var(--weight-semibold);
   padding: 0 14px;
 }
 
 .settings-error {
   margin-right: auto;
   color: #b42318;
-  font-size: 13px;
+  font-size: var(--font-ui);
   line-height: 1.35;
 }
 
 .settings-saved {
   margin-right: auto;
   color: #16833a;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
 }
 
 .conversation-pane {
@@ -507,8 +522,8 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
   margin: 0;
 }
 
@@ -535,8 +550,8 @@ kbd {
   border-radius: 8px;
   background: #f2f2ef;
   color: #555a5f;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
   padding: 0 10px;
 }
 
@@ -544,8 +559,8 @@ kbd {
   max-width: 220px;
   overflow: hidden;
   color: #2f3337;
-  font-size: 14px;
-  font-weight: 650;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -572,8 +587,8 @@ kbd {
   max-width: min(660px, 72%);
   border-radius: 22px;
   padding: 10px 16px;
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: var(--font-content);
+  line-height: var(--line-body);
 }
 
 .user-message {
@@ -585,8 +600,8 @@ kbd {
 .agent-block {
   display: block;
   color: #202427;
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: var(--font-content);
+  line-height: var(--line-body);
 }
 
 .agent-text {
@@ -604,8 +619,8 @@ kbd {
   align-items: center;
   gap: 8px;
   color: #777b80;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
 }
 
 .turn-progress-label svg {
@@ -624,8 +639,8 @@ kbd {
   align-items: center;
   gap: 10px;
   color: #9a9da1;
-  font-size: 14px;
-  font-weight: 650;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
   line-height: 1.45;
 }
 
@@ -649,7 +664,7 @@ kbd {
 
 .activity-file {
   color: #2f8cf0;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .activity-add {
@@ -669,7 +684,7 @@ kbd {
   min-width: 0;
   flex-direction: column;
   gap: 10px;
-  line-height: 1.65;
+  line-height: var(--line-body);
   white-space: normal;
 }
 
@@ -726,7 +741,7 @@ kbd {
 .rich-mermaid-loading,
 .rich-mermaid-error {
   color: #6e7478;
-  font-size: 13px;
+  font-size: var(--font-ui);
 }
 
 .rich-mermaid-error {
@@ -760,7 +775,7 @@ kbd {
   gap: 9px;
   border-bottom: 1px solid #e8e8e5;
   padding: 0 14px;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .status-dot {
@@ -788,7 +803,7 @@ pre {
   background: #f7f7f5;
   color: #383d42;
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -825,8 +840,8 @@ pre {
 
 .empty-thread h2 {
   margin: 0;
-  font-size: 30px;
-  font-weight: 540;
+  font-size: var(--font-display);
+  font-weight: var(--weight-medium);
   letter-spacing: 0;
 }
 
@@ -848,7 +863,7 @@ pre {
 .project-empty-content h2 {
   margin: 0;
   color: #22262a;
-  font-size: 18px;
+  font-size: var(--font-title);
 }
 
 .project-empty-actions {
@@ -866,7 +881,7 @@ pre {
   border-radius: 8px;
   background: #fff;
   color: #22262a;
-  font-weight: 750;
+  font-weight: var(--weight-semibold);
   padding: 0 16px;
   text-align: left;
 }
@@ -906,6 +921,7 @@ pre {
   outline: 0;
   padding: 15px 18px 6px;
   color: #1f2328;
+  font-size: var(--font-body);
 }
 
 .composer textarea::placeholder {
@@ -926,7 +942,7 @@ pre {
 
 .status-label {
   color: #858a8e;
-  font-size: 13px;
+  font-size: var(--font-ui);
 }
 
 .send-button {
@@ -961,7 +977,7 @@ pre {
   border-radius: 999px;
   background: #e8e8e6;
   color: #73777a;
-  font-size: 13px;
+  font-size: var(--font-ui);
   padding: 0 12px;
   text-align: left;
 }
@@ -1103,7 +1119,7 @@ pre {
 }
 
 .ask-header h2 {
-  font-size: 16px;
+  font-size: var(--font-title);
 }
 
 .ask-body {
@@ -1126,8 +1142,8 @@ pre {
   border-radius: 999px;
   background: #eef2f0;
   color: #5a7768;
-  font-size: 12px;
-  font-weight: 750;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
   padding: 4px 8px;
 }
 
@@ -1166,7 +1182,7 @@ pre {
 .secondary-button {
   height: 36px;
   border-radius: 8px;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   padding: 0 14px;
 }
 
