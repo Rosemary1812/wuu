@@ -129,39 +129,17 @@ body {
   --os-handle-interactive-area-offset: 4px;
 }
 
-.window-resizing .app-shell,
-.window-resizing .sidebar,
-.window-resizing .titlebar,
-.window-resizing .conversation-pane,
-.window-resizing .scroll-region,
-.window-resizing .composer-wrap,
-.window-resizing .workspace-right-panel,
-.window-resizing .workspace-bottom-panel,
-.window-resizing .activity-details {
+.window-resizing *,
+.window-resizing *::before,
+.window-resizing *::after {
   transition: none !important;
+  animation-play-state: paused !important;
 }
 
 .resizing-review-split,
 .resizing-review-split * {
   cursor: col-resize !important;
   user-select: none;
-}
-
-.window-resizing .sidebar-resizer::before,
-.window-resizing .activity-chevron {
-  transition: none !important;
-}
-
-.window-resizing .stream-word,
-.window-resizing .wuu-launch-mark::after,
-.window-resizing .wuu-launch-mark span,
-.window-resizing .wuu-launch-rail::after,
-.window-resizing .turn-progress.in_progress .turn-progress-label svg,
-.window-resizing .turn-progress.in_progress .turn-progress-rule::after,
-.window-resizing .turn-progress-campaign,
-.window-resizing .turn-progress-scene,
-.window-resizing .turn-progress-scene * {
-  animation-play-state: paused !important;
 }
 
 .window-resizing .sidebar {

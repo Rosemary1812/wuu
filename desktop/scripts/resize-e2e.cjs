@@ -166,6 +166,27 @@ async function run() {
   assert.ok(before.renderedRows > 20, "Initial file tree should render virtualized rows.");
 
   await evaluate(win, () => {
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes resize-e2e-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .resize-e2e-animation-probe {
+        width: 10px;
+        height: 10px;
+        opacity: 0;
+        pointer-events: none;
+        animation: resize-e2e-spin 1000ms linear infinite;
+        transition: width 1000ms linear;
+      }
+    `;
+    document.head.append(style);
+    const probe = document.createElement("div");
+    probe.className = "resize-e2e-animation-probe";
+    document.body.append(probe);
+  });
+  await evaluate(win, () => {
     const probe = { samples: [] };
     window.__resizeProbe = probe;
     const startedAt = performance.now();
@@ -200,6 +221,8 @@ async function run() {
 
   assert.equal(during.resizing, true, "Window resize marker should be set by programmatic BrowserWindow resizing.");
   assert.equal(during.shellTransitionProperty, "none", "App shell transitions should be disabled only during live resize.");
+  assert.equal(during.animationProbePlayState, "paused", "All CSS animations should pause during live window resize.");
+  assert.equal(during.animationProbeTransitionProperty, "none", "All CSS transitions should be disabled during live window resize.");
   assert.ok(during.viewportHeight < before.viewportHeight - 180, "Renderer viewport should shrink with the Electron window.");
   assert.ok(during.frameHeight < before.frameHeight - 180, "File tree frame should shrink with the Electron window.");
   assert.ok(
@@ -250,10 +273,14 @@ async function evaluate(win, fn) {
       const root = host?.shadowRoot;
       const scroll = root?.querySelector('[data-file-tree-virtualized-scroll="true"]');
       const virtualWindow = root?.querySelector('[data-file-tree-virtualized-sticky="true"]');
+      const animationProbe = document.querySelector(".resize-e2e-animation-probe");
+      const animationProbeStyle = animationProbe ? getComputedStyle(animationProbe) : undefined;
       if (!frame || !host || !root || !scroll || !virtualWindow) {
         return null;
       }
       return {
+        animationProbePlayState: animationProbeStyle?.animationPlayState ?? "",
+        animationProbeTransitionProperty: animationProbeStyle?.transitionProperty ?? "",
         frameHeight: frame.getBoundingClientRect().height,
         renderedRows: root.querySelectorAll('[data-type="item"]').length,
         resizing: document.documentElement.classList.contains("window-resizing"),
