@@ -266,6 +266,7 @@ const WORKSPACE_REVIEW_DIFF_MIN_WIDTH = 140;
 const WORKSPACE_REVIEW_TREE_STEP = 24;
 const WORKSPACE_REVIEW_TREE_WIDTH_KEY = "wuu.desktop.reviewTreeWidth";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
+const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
 const IMAGE_MAX_DIMENSION = 2000;
 const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
 const RENDERER_ENV = (
@@ -907,6 +908,7 @@ export function App(): JSX.Element {
   const dockComposerHeightRef = useRef(0);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
+  const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
@@ -923,6 +925,14 @@ export function App(): JSX.Element {
   const queueDrainPausedRef = useRef(false);
   const runDebugEventIDRef = useRef(0);
   const runDebugDeltaSeenRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    return () => {
+      if (conversationScrollbarHideTimerRef.current !== undefined) {
+        window.clearTimeout(conversationScrollbarHideTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -1286,6 +1296,7 @@ export function App(): JSX.Element {
     if (!node) {
       return;
     }
+    showConversationScrollbar(node);
     conversationAutoFollowRef.current = isConversationNearBottom(node);
   }
 
@@ -1295,7 +1306,26 @@ export function App(): JSX.Element {
       return;
     }
     node.scrollTop = node.scrollHeight;
+    showConversationScrollbar(node);
     conversationAutoFollowRef.current = true;
+  }
+
+  function showConversationScrollbar(node: HTMLElement): void {
+    if (
+      node.classList.contains("empty-scroll-region") ||
+      node.classList.contains("workspace-scroll-region") ||
+      node.scrollHeight <= node.clientHeight
+    ) {
+      return;
+    }
+    node.classList.add("scrollbar-visible");
+    if (conversationScrollbarHideTimerRef.current !== undefined) {
+      window.clearTimeout(conversationScrollbarHideTimerRef.current);
+    }
+    conversationScrollbarHideTimerRef.current = window.setTimeout(() => {
+      conversationScrollbarHideTimerRef.current = undefined;
+      node.classList.remove("scrollbar-visible");
+    }, CONVERSATION_SCROLLBAR_HIDE_DELAY_MS);
   }
 
   function conversationViewport(): HTMLElement | undefined {

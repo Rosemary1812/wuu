@@ -3006,15 +3006,20 @@ button:disabled {
   border: 1px solid transparent;
   border-left-width: 4px;
   border-radius: 999px;
-  background-color: rgba(82, 88, 94, 0.32);
+  background-color: transparent;
   background-clip: padding-box;
+  transition: background-color 160ms ease;
 }
 
-.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:hover {
+.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb {
+  background-color: rgba(82, 88, 94, 0.32);
+}
+
+.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:hover {
   background-color: rgba(56, 88, 118, 0.48);
 }
 
-.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:active {
+.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:active {
   background-color: rgba(38, 70, 98, 0.64);
 }
 

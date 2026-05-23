@@ -97,6 +97,39 @@ async function run() {
   );
   assert.match(primaryScroll.overflowY, /auto|scroll/, "Primary conversation scroll region should use native scrolling.");
 
+  const scrollbarInitiallyHidden = await waitFor(
+    win,
+    () => {
+      const node = document.querySelector(".scroll-region");
+      return node instanceof HTMLElement && !node.classList.contains("scrollbar-visible") ? true : null;
+    },
+    2000
+  );
+  assert.equal(scrollbarInitiallyHidden, true, "Conversation scrollbar should hide once the initial scroll settles.");
+  await evaluate(win, () => {
+    const node = document.querySelector(".scroll-region");
+    if (!(node instanceof HTMLElement)) {
+      throw new Error("Primary conversation scroll region not found.");
+    }
+    node.scrollTop = Math.max(0, node.scrollTop - 160);
+    node.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  const scrollbarVisibleDuringScroll = await waitFor(
+    win,
+    () => document.querySelector(".scroll-region")?.classList.contains("scrollbar-visible") || null,
+    1000
+  );
+  assert.equal(scrollbarVisibleDuringScroll, true, "Conversation scrollbar should appear while scrolling.");
+  const scrollbarHiddenAfterIdle = await waitFor(
+    win,
+    () => {
+      const node = document.querySelector(".scroll-region");
+      return node instanceof HTMLElement && !node.classList.contains("scrollbar-visible") ? true : null;
+    },
+    2000
+  );
+  assert.equal(scrollbarHiddenAfterIdle, true, "Conversation scrollbar should hide after scrolling stops.");
+
   const beforeEnvironmentResize = await waitFor(win, () => environmentSnapshot(), 5000);
   assert.equal(beforeEnvironmentResize.visible, true, "Environment panel should start visible above the wide-window breakpoint.");
   assert.ok(
