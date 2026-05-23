@@ -33,6 +33,11 @@ async function run() {
   win.webContents.on("render-process-gone", (_event, details) => {
     fail(new Error(`Renderer process exited: ${details.reason}`));
   });
+  win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (level >= 2) {
+      console.error(`renderer console: ${message} (${sourceId}:${line})`);
+    }
+  });
 
   await loadFile(win, rendererHtml);
   await waitFor(win, () => Boolean(document.querySelector(".conversation-pane")), 5000);
@@ -92,19 +97,6 @@ async function run() {
   emitNotification(win, "turn/started", { turn });
   emitNotification(win, "item/started", { turn_id: turn.id, item: agentItem });
   emitNotification(win, "item/agentMessage/delta", { turn_id: turn.id, item_id: agentItem.id, delta: fullText });
-  emitNotification(win, "item/completed", {
-    turn_id: turn.id,
-    item: { ...agentItem, status: "completed", text: fullText }
-  });
-  emitNotification(win, "turn/completed", {
-    turn: {
-      ...turn,
-      status: "completed",
-      completed_at: new Date().toISOString(),
-      duration_ms: 100,
-      items: [userItem, { ...agentItem, status: "completed", text: fullText }]
-    }
-  });
 
   await waitFor(win, () => Boolean(document.querySelector(".agent-text .streaming-markdown")), 3000);
   const partial = await waitFor(
@@ -119,6 +111,20 @@ async function run() {
     { fullLength: fullText.length }
   );
   assert.equal(partial.hasStaticFallback, false, "Assistant content should not switch to static RichContent fallback.");
+
+  emitNotification(win, "item/completed", {
+    turn_id: turn.id,
+    item: { ...agentItem, status: "completed", text: fullText }
+  });
+  emitNotification(win, "turn/completed", {
+    turn: {
+      ...turn,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      duration_ms: 100,
+      items: [userItem, { ...agentItem, status: "completed", text: fullText }]
+    }
+  });
 
   const final = await waitFor(
     win,
