@@ -875,30 +875,6 @@ export function App(): JSX.Element {
   }, [state.askRequest?.id]);
 
   useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (settingsOpen) {
-        return;
-      }
-      if (!event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
-        return;
-      }
-      const index = Number(event.key) - 1;
-      if (!Number.isInteger(index) || index < 0 || index >= 8) {
-        return;
-      }
-      const thread = state.threads[index];
-      if (!thread) {
-        return;
-      }
-      event.preventDefault();
-      void selectThread(thread.id);
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [settingsOpen, state.thread?.id, state.threads, state.running]);
-
-  useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
   }, [sidebarWidth, sidebarCollapsed]);
@@ -3355,14 +3331,13 @@ function ThreadList({
   const visibleThreads = threads.filter((thread): thread is Thread => Boolean(thread?.id));
   return (
     <div className="thread-list">
-      {visibleThreads.slice(0, 8).map((thread, index) => (
+      {visibleThreads.map((thread) => (
         <button
           key={thread.id}
           className={`thread-row ${thread.id === activeID ? "active" : ""}`}
           onClick={() => onSelect(thread.id)}
         >
           <span>{thread.preview || "未命名对话"}</span>
-          <kbd>⌘{index + 1}</kbd>
         </button>
       ))}
     </div>

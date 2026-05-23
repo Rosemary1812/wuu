@@ -394,17 +394,6 @@ button:disabled {
   white-space: nowrap;
 }
 
-kbd {
-  min-width: 32px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.6);
-  color: #8a8e91;
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  padding: 2px 6px;
-  text-align: center;
-}
-
 .sidebar-settings {
   position: relative;
   margin-top: 14px;
