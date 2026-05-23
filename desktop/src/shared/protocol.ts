@@ -65,31 +65,6 @@ export type ConfigCodexModelsResult = {
   models: CodexModelSummary[];
 };
 
-export type RuntimeSetupReason = "missing_config" | "missing_api_key" | "runtime_error";
-
-export type RuntimeSetupState = {
-  required: boolean;
-  reason: RuntimeSetupReason;
-  message: string;
-  config_path?: string;
-  target_config_path: string;
-  provider: string;
-  provider_type: string;
-  base_url: string;
-  model: string;
-  api_key_env: string;
-  has_api_key: boolean;
-};
-
-export type RuntimeSetupSaveParams = {
-  provider: string;
-  provider_type: string;
-  base_url: string;
-  model: string;
-  api_key: string;
-  api_key_env: string;
-};
-
 export type DesktopProject = {
   id: string;
   name: string;
@@ -310,8 +285,6 @@ export type WuuDesktopApi = {
   listWorkspaceFiles: () => Promise<FileTreeListResult>;
   readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
   initialize: () => Promise<InitializeResult>;
-  readRuntimeSetup: () => Promise<RuntimeSetupState>;
-  saveRuntimeSetup: (params: RuntimeSetupSaveParams) => Promise<RuntimeSetupState>;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
   updateRuntimeSettings: (provider: string, model: string, effort?: string) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;
