@@ -939,13 +939,15 @@ export function App(): JSX.Element {
       if (codexRuntimeMenu && !codexRuntimeRef.current?.contains(target)) {
         setCodexRuntimeMenu(null);
       }
-      if (
-        environmentPanelOpen &&
-        !environmentToggleRef.current?.contains(target) &&
-        !environmentPanelRef.current?.contains(target)
-      ) {
-        setEnvironmentPanelOpen(false);
-        setEnvironmentPanelMenu(null);
+      const environmentPanelClickOutside =
+        !environmentToggleRef.current?.contains(target) && !environmentPanelRef.current?.contains(target);
+      if (environmentPanelClickOutside) {
+        if (environmentPanelMenu) {
+          setEnvironmentPanelMenu(null);
+        }
+        if (environmentPanelOpen && !environmentPanelHasRoom) {
+          setEnvironmentPanelOpen(false);
+        }
       }
       if (runDebugOpen && !runDebugRef.current?.contains(target)) {
         setRunDebugOpen(false);
@@ -958,6 +960,8 @@ export function App(): JSX.Element {
     accessMenuOpen,
     branchMenuOpen,
     codexRuntimeMenu,
+    environmentPanelHasRoom,
+    environmentPanelMenu,
     environmentPanelOpen,
     modeMenuOpen,
     projectMenuOpen,
@@ -1038,12 +1042,20 @@ export function App(): JSX.Element {
   const sidebarPinnedThreads = pinnedThreads(state.threads);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
   const anyThreadIsRunning = isAnyThreadRunning(state);
+  const environmentPanelCanShow = Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen);
+  const environmentPanelVisible =
+    environmentPanelCanShow &&
+    (environmentPanelOpen || (environmentPanelHasRoom && !environmentPanelDismissed && !emptyConversation));
+  const environmentPanelDocked = environmentPanelVisible && environmentPanelHasRoom;
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
-  }${rightPanelOpen ? " right-panel-open" : ""}${bottomPanelOpen ? " bottom-panel-open" : ""}`;
+  }${rightPanelOpen ? " right-panel-open" : ""}${environmentPanelDocked ? " environment-panel-docked" : ""}${
+    bottomPanelOpen ? " bottom-panel-open" : ""
+  }`;
   const shellStyle = {
     "--sidebar-width": `${sidebarCollapsed ? 0 : sidebarWidth}px`,
     "--workspace-right-panel-width": "360px",
+    "--environment-panel-width": "392px",
     "--workspace-bottom-panel-height": "238px"
   } as CSSProperties;
   const environmentSourceItems = useMemo(
@@ -1058,9 +1070,6 @@ export function App(): JSX.Element {
       }),
     [activeProject, composerImages, guideMessages, queuedMessages, selectedWorkspaceFile, state.activeContext]
   );
-  const environmentPanelVisible =
-    Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen) &&
-    (environmentPanelOpen || (environmentPanelHasRoom && !environmentPanelDismissed && !emptyConversation));
   const pullRequestDisabledReason = pullRequestUnavailableReason(state.gitStatus);
   const runDebugPhase = runDebugPhaseForState(state);
 
@@ -2016,6 +2025,39 @@ export function App(): JSX.Element {
     );
   }
 
+  const environmentPanelNode =
+    environmentPanelVisible && state.initialized ? (
+      <EnvironmentPanel
+        panelRef={environmentPanelRef}
+        docked={environmentPanelDocked}
+        initialized={state.initialized}
+        gitStatus={state.gitStatus}
+        activeContext={state.activeContext}
+        activeProject={activeProject}
+        sourceItems={environmentSourceItems}
+        activeMenu={environmentPanelMenu}
+        running={anyThreadIsRunning}
+        pullRequestDisabledReason={pullRequestDisabledReason}
+        onSetActiveMenu={setEnvironmentPanelMenu}
+        onClose={() => {
+          setEnvironmentPanelOpen(false);
+          setEnvironmentPanelDismissed(true);
+          setEnvironmentPanelMenu(null);
+        }}
+        onOpenSettings={() => {
+          setEnvironmentPanelMenu(null);
+          setSettingsOpen(true);
+        }}
+        onRefreshGit={() => void refreshGitStatus()}
+        onOpenProject={() => void chooseProjectFolder()}
+        onSelectNoProject={() => void useNoProject(false)}
+        onSelectBranch={(branch) => void checkoutBranch(branch)}
+        onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
+        onOpenCommit={() => setEnvironmentDialog("commit")}
+        onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
+      />
+    ) : null;
+
   return (
     <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
@@ -2221,36 +2263,7 @@ export function App(): JSX.Element {
           <TurnProgressPreviewOverlay onClose={() => setTurnProgressPreviewOpen(false)} />
         ) : null}
 
-        {environmentPanelVisible && state.initialized ? (
-          <EnvironmentPanel
-            panelRef={environmentPanelRef}
-            initialized={state.initialized}
-            gitStatus={state.gitStatus}
-            activeContext={state.activeContext}
-            activeProject={activeProject}
-            sourceItems={environmentSourceItems}
-            activeMenu={environmentPanelMenu}
-            running={anyThreadIsRunning}
-            pullRequestDisabledReason={pullRequestDisabledReason}
-            onSetActiveMenu={setEnvironmentPanelMenu}
-            onClose={() => {
-              setEnvironmentPanelOpen(false);
-              setEnvironmentPanelDismissed(true);
-              setEnvironmentPanelMenu(null);
-            }}
-            onOpenSettings={() => {
-              setEnvironmentPanelMenu(null);
-              setSettingsOpen(true);
-            }}
-            onRefreshGit={() => void refreshGitStatus()}
-            onOpenProject={() => void chooseProjectFolder()}
-            onSelectNoProject={() => void useNoProject(false)}
-            onSelectBranch={(branch) => void checkoutBranch(branch)}
-            onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
-            onOpenCommit={() => setEnvironmentDialog("commit")}
-            onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
-          />
-        ) : null}
+        {environmentPanelDocked ? null : environmentPanelNode}
 
         {state.initialized && !previewingLaunch ? (
           <div
@@ -2329,6 +2342,7 @@ export function App(): JSX.Element {
         onSelectTool={openWorkspaceTool}
         onClose={() => setBottomPanelOpen(false)}
       />
+      {environmentPanelDocked ? environmentPanelNode : null}
 
       {environmentDialog === "commit" ? (
         <CommitChangesDialog
@@ -2559,6 +2573,7 @@ function LiveSince({ atMs }: { atMs: number }): JSX.Element {
 
 function EnvironmentPanel({
   panelRef,
+  docked,
   initialized,
   gitStatus,
   activeContext,
@@ -2579,6 +2594,7 @@ function EnvironmentPanel({
   onOpenPullRequest
 }: {
   panelRef: RefObject<HTMLDivElement>;
+  docked: boolean;
   initialized: InitializeResult;
   gitStatus?: GitStatusResult;
   activeContext?: RuntimeContext;
@@ -2610,7 +2626,7 @@ function EnvironmentPanel({
   }
 
   return (
-    <aside className="environment-panel" ref={panelRef} aria-label="环境信息">
+    <aside className={`environment-panel${docked ? " docked" : ""}`} ref={panelRef} aria-label="环境信息">
       <div className="environment-panel-header">
         <h2>环境信息</h2>
         <div className="environment-panel-actions">

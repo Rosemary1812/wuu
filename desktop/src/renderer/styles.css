@@ -138,6 +138,10 @@ button:disabled {
   grid-template-columns: var(--sidebar-width, 326px) minmax(0, 1fr);
 }
 
+.app-shell.environment-panel-docked {
+  grid-template-columns: var(--sidebar-width, 326px) minmax(0, 1fr) var(--environment-panel-width, 392px);
+}
+
 .app-shell.bottom-panel-open {
   grid-template-rows: minmax(0, 1fr) var(--workspace-bottom-panel-height, 238px);
 }
@@ -1095,6 +1099,21 @@ button:disabled {
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
+.environment-panel.docked {
+  position: relative;
+  top: auto;
+  right: auto;
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: start;
+  width: min(360px, calc(100% - 32px));
+  max-height: calc(100vh - 90px);
+  margin: 76px 24px 0 8px;
+  overflow: visible;
+  transform-origin: top right;
+  --menu-enter-x: 8px;
+}
+
 .environment-panel-header {
   display: flex;
   align-items: center;
@@ -1246,6 +1265,12 @@ button:disabled {
   transform-origin: top right;
   --menu-enter-x: 6px;
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.environment-panel.docked .environment-side-menu {
+  right: 0;
+  width: min(344px, 100%);
+  --menu-enter-x: 0;
 }
 
 .environment-side-menu.mode {
