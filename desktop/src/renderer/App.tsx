@@ -2217,14 +2217,16 @@ function EnvironmentModeMenu({
   return (
     <div className="environment-side-menu mode" role="menu">
       <div className="environment-side-label">继续使用</div>
-      <button role="menuitem" type="button" disabled={activeContext?.kind === "project"} onClick={onOpenProject}>
-        <FolderOpen size={17} />
-        <span>{activeProject?.name ?? "本地项目"}</span>
-        {activeContext?.kind === "project" ? <Check size={17} /> : null}
-      </button>
+      {activeProject ? (
+        <button role="menuitem" type="button" disabled>
+          <Folder size={17} />
+          <span>{activeProject.name}</span>
+          <Check size={17} />
+        </button>
+      ) : null}
       <button role="menuitem" type="button" onClick={onOpenProject}>
-        <FolderPlus size={17} />
-        <span>打开其他文件夹</span>
+        <FolderOpen size={17} />
+        <span>打开本地项目</span>
       </button>
       <button role="menuitem" type="button" disabled={activeContext?.kind === "no_project"} onClick={onSelectNoProject}>
         <FolderX size={17} />
