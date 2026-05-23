@@ -372,6 +372,81 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 }
 
+func TestServerTurnStartAcceptsImageOnlyPrompt(t *testing.T) {
+	client := &fakeClient{
+		response: providers.ChatResponse{Content: "saw it"},
+	}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{
+			ThreadID: threadID,
+			Images: []TurnStartImage{{
+				MediaType: "image/png",
+				Data:      "ZmFrZS1pbWFnZQ==",
+			}},
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	started := remarshal[TurnStartResult](t, responseByID(t, msgs, "2")["result"])
+	if len(started.Turn.Items) != 1 || len(started.Turn.Items[0].Images) != 1 {
+		t.Fatalf("start response missing user image: %+v", started.Turn)
+	}
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
+	if len(completed.Turn.Items) < 1 || len(completed.Turn.Items[0].Images) != 1 {
+		t.Fatalf("completed turn missing user image: %+v", completed.Turn)
+	}
+
+	client.mu.Lock()
+	requestCount := len(client.requests)
+	var messages []providers.ChatMessage
+	if requestCount > 0 {
+		messages = append([]providers.ChatMessage(nil), client.requests[0].Messages...)
+	}
+	client.mu.Unlock()
+	if requestCount != 1 {
+		t.Fatalf("expected one provider request, got %d", requestCount)
+	}
+	if len(messages) < 2 || messages[1].Role != "user" || messages[1].Content != "" || len(messages[1].Images) != 1 {
+		t.Fatalf("unexpected provider messages: %+v", messages)
+	}
+	if messages[1].Images[0].MediaType != "image/png" || messages[1].Images[0].Data != "ZmFrZS1pbWFnZQ==" {
+		t.Fatalf("unexpected provider image: %+v", messages[1].Images[0])
+	}
+
+	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	if len(persisted) != 2 || len(persisted[0].Images) != 1 {
+		t.Fatalf("unexpected persisted history: %+v", persisted)
+	}
+	sessions, err := session.List(rt.SessionDir, 1)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Summary != "[Image #1]" {
+		t.Fatalf("unexpected session index: %+v", sessions)
+	}
+}
+
 func TestServerRejectsUnknownTurnParams(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	out := &lockedBuffer{}

@@ -3,6 +3,7 @@ package appserver
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -542,8 +543,12 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if params.ThreadID == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
 	}
-	if params.Prompt == "" {
-		return s.writeResponse(req.ID, nil, errors.New("prompt is required"))
+	images, err := normalizeTurnStartImages(params.Images)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.Prompt == "" && len(images) == 0 {
+		return s.writeResponse(req.ID, nil, errors.New("prompt or image is required"))
 	}
 	th := s.thread(params.ThreadID)
 	if th == nil {
@@ -552,7 +557,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
-	userMsg := providers.ChatMessage{Role: "user", Content: params.Prompt}
+	userMsg := providers.ChatMessage{Role: "user", Content: params.Prompt, Images: images}
 	now := time.Now().UTC()
 
 	th.mu.Lock()
@@ -570,7 +575,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	history = append(history, userMsg)
 	th.History = history
 	th.cancel = cancel
-	turn := th.startTurnLocked(turnID, params.Prompt, now)
+	turn := th.startTurnLocked(turnID, userMsg, now)
 	th.mu.Unlock()
 
 	if err := s.writeResponse(req.ID, TurnStartResult{Turn: turn}, nil); err != nil {
@@ -587,6 +592,53 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 
 	go s.runTurn(turnCtx, th, turnID, history)
 	return nil
+}
+
+func normalizeTurnStartImages(images []TurnStartImage) ([]providers.InputImage, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	out := make([]providers.InputImage, 0, len(images))
+	for index, image := range images {
+		mediaType := strings.TrimSpace(image.MediaType)
+		data := strings.TrimSpace(image.Data)
+		if data == "" {
+			return nil, fmt.Errorf("image %d data is required", index+1)
+		}
+		var err error
+		mediaType, data, err = normalizeImagePayload(mediaType, data)
+		if err != nil {
+			return nil, fmt.Errorf("image %d: %w", index+1, err)
+		}
+		out = append(out, providers.InputImage{MediaType: mediaType, Data: data})
+	}
+	return out, nil
+}
+
+func normalizeImagePayload(mediaType, data string) (string, string, error) {
+	if strings.HasPrefix(strings.ToLower(data), "data:") {
+		header, payload, ok := strings.Cut(data, ",")
+		if !ok {
+			return "", "", errors.New("invalid data URL")
+		}
+		if !strings.Contains(strings.ToLower(header), ";base64") {
+			return "", "", errors.New("image data URL must be base64")
+		}
+		if mediaType == "" {
+			mediaType = strings.TrimPrefix(strings.Split(header, ";")[0], "data:")
+		}
+		data = strings.TrimSpace(payload)
+	}
+	if mediaType == "" {
+		mediaType = "image/png"
+	}
+	if !strings.HasPrefix(strings.ToLower(mediaType), "image/") {
+		return "", "", fmt.Errorf("unsupported media type %q", mediaType)
+	}
+	if _, err := base64.StdEncoding.DecodeString(data); err != nil {
+		return "", "", fmt.Errorf("invalid base64 data: %w", err)
+	}
+	return mediaType, data, nil
 }
 
 func (s *Server) handleTurnInterrupt(req Request) error {

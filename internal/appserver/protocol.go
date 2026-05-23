@@ -150,8 +150,14 @@ type ThreadListResult struct {
 }
 
 type TurnStartParams struct {
-	ThreadID string `json:"thread_id"`
-	Prompt   string `json:"prompt"`
+	ThreadID string           `json:"thread_id"`
+	Prompt   string           `json:"prompt"`
+	Images   []TurnStartImage `json:"images,omitempty"`
+}
+
+type TurnStartImage struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type TurnStartResult struct {
@@ -294,15 +300,21 @@ const (
 )
 
 type ThreadItem struct {
-	ID        string           `json:"id"`
-	Type      ThreadItemType   `json:"type"`
-	Status    ThreadItemStatus `json:"status,omitempty"`
-	Role      string           `json:"role,omitempty"`
-	Text      string           `json:"text,omitempty"`
-	Name      string           `json:"name,omitempty"`
-	Arguments string           `json:"arguments,omitempty"`
-	Result    string           `json:"result,omitempty"`
-	Error     string           `json:"error,omitempty"`
+	ID        string            `json:"id"`
+	Type      ThreadItemType    `json:"type"`
+	Status    ThreadItemStatus  `json:"status,omitempty"`
+	Role      string            `json:"role,omitempty"`
+	Text      string            `json:"text,omitempty"`
+	Images    []ThreadItemImage `json:"images,omitempty"`
+	Name      string            `json:"name,omitempty"`
+	Arguments string            `json:"arguments,omitempty"`
+	Result    string            `json:"result,omitempty"`
+	Error     string            `json:"error,omitempty"`
+}
+
+type ThreadItemImage struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type ItemStartedNotification struct {

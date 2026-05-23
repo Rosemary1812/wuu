@@ -155,10 +155,16 @@ export type ThreadItem = {
   status?: ThreadItemStatus;
   role?: string;
   text?: string;
+  images?: InputImage[];
   name?: string;
   arguments?: string;
   result?: string;
   error?: string;
+};
+
+export type InputImage = {
+  media_type: string;
+  data: string;
 };
 
 export type AskUserOption = {
@@ -205,7 +211,7 @@ export type WuuDesktopApi = {
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   listThreads: () => Promise<{ threads: Thread[] }>;
-  startTurn: (threadId: string, prompt: string) => Promise<{ turn: Turn }>;
+  startTurn: (threadId: string, prompt: string, images?: InputImage[]) => Promise<{ turn: Turn }>;
   interruptTurn: (threadId: string) => Promise<{ ok: boolean }>;
   respondToServerRequest: (id: string, result: unknown) => Promise<void>;
   rejectServerRequest: (id: string, message: string) => Promise<void>;

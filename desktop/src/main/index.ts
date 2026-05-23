@@ -24,6 +24,7 @@ import type {
   DesktopProject,
   FileTreeListResult,
   GitStatusResult,
+  InputImage,
   InitializeResult,
   ProjectListResult,
   RuntimeContext,
@@ -799,8 +800,8 @@ app.whenReady().then(() => {
     serverClient().request<{ thread: Thread }>("thread/resume", { session_id: sessionId ?? "" })
   );
   ipcMain.handle("wuu:thread-list", () => serverClient().request<{ threads: Thread[] }>("thread/list"));
-  ipcMain.handle("wuu:turn-start", (_event, threadId: string, prompt: string) =>
-    serverClient().request<{ turn: Turn }>("turn/start", { thread_id: threadId, prompt })
+  ipcMain.handle("wuu:turn-start", (_event, threadId: string, prompt: string, images?: InputImage[]) =>
+    serverClient().request<{ turn: Turn }>("turn/start", { thread_id: threadId, prompt, images: images ?? [] })
   );
   ipcMain.handle("wuu:turn-interrupt", (_event, threadId: string) =>
     serverClient().request<{ ok: boolean }>("turn/interrupt", { thread_id: threadId })

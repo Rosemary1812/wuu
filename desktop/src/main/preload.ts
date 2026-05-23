@@ -18,7 +18,7 @@ const api: WuuDesktopApi = {
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) => ipcRenderer.invoke("wuu:thread-resume", sessionId),
   listThreads: () => ipcRenderer.invoke("wuu:thread-list"),
-  startTurn: (threadId: string, prompt: string) => ipcRenderer.invoke("wuu:turn-start", threadId, prompt),
+  startTurn: (threadId: string, prompt: string, images) => ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images),
   interruptTurn: (threadId: string) => ipcRenderer.invoke("wuu:turn-interrupt", threadId),
   respondToServerRequest: (id: string, result: unknown) =>
     ipcRenderer.invoke("wuu:respond-server-request", id, result),

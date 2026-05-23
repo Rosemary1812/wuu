@@ -46,7 +46,7 @@ func (th *threadState) snapshotLocked() Thread {
 	}
 }
 
-func (th *threadState) startTurnLocked(turnID, prompt string, now time.Time) Turn {
+func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMessage, now time.Time) Turn {
 	th.currentTurn = turnID
 	th.running = true
 	th.UpdatedAt = now
@@ -55,13 +55,7 @@ func (th *threadState) startTurnLocked(turnID, prompt string, now time.Time) Tur
 	th.activeReasoningItemID = ""
 	th.toolItems = make(map[string]string)
 
-	userItem := ThreadItem{
-		ID:     th.nextItemIDLocked(turnID),
-		Type:   ThreadItemUserMessage,
-		Status: ThreadItemStatusCompleted,
-		Role:   "user",
-		Text:   prompt,
-	}
+	userItem := chatMessageItem(th.nextItemIDLocked(turnID), userMsg)
 	turn := Turn{
 		ID:        turnID,
 		Items:     []ThreadItem{userItem},
@@ -539,6 +533,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 			Status: ThreadItemStatusCompleted,
 			Role:   "user",
 			Text:   msg.Content,
+			Images: threadItemImages(msg.Images),
 		}
 	case "assistant":
 		if strings.TrimSpace(msg.Content) != "" {
@@ -587,8 +582,36 @@ func threadPreview(history []providers.ChatMessage) string {
 		if msg.Role == "user" && !isToolResultMessage(msg) && strings.TrimSpace(msg.Content) != "" {
 			return strings.TrimSpace(msg.Content)
 		}
+		if msg.Role == "user" && !isToolResultMessage(msg) && len(msg.Images) > 0 {
+			if len(msg.Images) == 1 {
+				return "[Image #1]"
+			}
+			return fmt.Sprintf("[%d images]", len(msg.Images))
+		}
 	}
 	return ""
+}
+
+func threadItemImages(images []providers.InputImage) []ThreadItemImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]ThreadItemImage, 0, len(images))
+	for _, image := range images {
+		data := strings.TrimSpace(image.Data)
+		if data == "" {
+			continue
+		}
+		mediaType := strings.TrimSpace(image.MediaType)
+		if mediaType == "" {
+			mediaType = "image/png"
+		}
+		out = append(out, ThreadItemImage{
+			MediaType: mediaType,
+			Data:      data,
+		})
+	}
+	return out
 }
 
 func cloneTurns(turns []Turn) []Turn {
