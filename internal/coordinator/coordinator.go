@@ -26,13 +26,10 @@ import (
 	"github.com/blueberrycongee/wuu/internal/worktree"
 )
 
-// WorkerToolkitFactory builds a fresh ToolExecutor for a worker that
-// will run inside the given root directory (typically a worktree path).
-// The factory should configure skills, memory, and any per-worker
-// restrictions but MUST NOT include orchestration tools — workers
-// don't spawn sub-sub-agents. The worker type is provided so the
-// factory can apply tool whitelisting via FilterToolsForWorker.
-type WorkerToolkitFactory func(rootDir string, wt WorkerType) (agent.ToolExecutor, error)
+// WorkerToolkitFactory builds a fresh ToolExecutor for a worker thread.
+// The metadata argument contains the worker's canonical agent path, so
+// orchestration tools inside that worker can resolve relative child paths.
+type WorkerToolkitFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error)
 
 // Coordinator owns the orchestration runtime for one wuu session.
 type Coordinator struct {
@@ -155,6 +152,8 @@ type SpawnRequest struct {
 	TaskName    string
 	Description string
 	Prompt      string
+	ParentID    string
+	ParentPath  string
 	BaseRepo    string // optional: chain off another worktree (worktree mode only)
 	Synchronous bool
 	Timeout     time.Duration
@@ -231,32 +230,38 @@ func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult
 		workerRoot = c.parentRepo
 	}
 
-	// 2. Build worker's toolkit rooted at the chosen working directory.
-	workerKit, err := c.workerFact(workerRoot, wt)
+	// 2. Register the child thread before launch so the visible worker
+	// ID, worktree ID, and thread path all point at the same task.
+	threadMeta, err := c.registerChildThread(workerID, taskName, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath)
 	if err != nil {
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
+		return nil, err
+	}
+
+	// 3. Build worker's toolkit rooted at the chosen working directory.
+	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
+	if err != nil {
+		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
+			_ = c.threadStore.RecordStatus(failed)
+		}
+		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
+			_ = c.threadStore.RecordEdgeStatus(closed)
+		}
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker toolkit: %w", err)
 	}
 
-	// 3. Compose system prompt: type-specific role + working dir + base prompt.
+	// 4. Compose system prompt: type-specific role + working dir + base prompt.
 	sys := composeWorkerSystemPrompt(c.defaultSys, wt, workerRoot, isolation)
 
-	// 4. History path.
+	// 5. History path.
 	historyPath := ""
 	if c.historyDir != "" {
 		historyPath = filepath.Join(c.historyDir, workerID+".json")
-	}
-
-	// 5. Register the child thread before launch so the visible worker
-	// ID, worktree ID, and thread path all point at the same task.
-	threadMeta, err := c.registerChildThread(workerID, taskName, wtype, req.Prompt, agentthread.SourceThreadSpawn)
-	if err != nil {
-		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
-		}
-		return nil, err
 	}
 
 	// 6. Spawn via manager using the ID already allocated by the
@@ -334,6 +339,8 @@ type ForkRequest struct {
 	TaskName    string
 	Description string
 	ForkMode    string
+	ParentID    string
+	ParentPath  string
 	// Prompt is what the worker sees as its FINAL user message,
 	// appended to the inherited history. Callers should wrap any
 	// role-override instructions in <system-reminder> tags so the
@@ -377,8 +384,19 @@ func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory [
 	taskName := req.TaskName
 	workerRoot := c.parentRepo
 
-	workerKit, err := c.workerFact(workerRoot, wt)
+	threadMeta, err := c.registerChildThread(workerID, taskName, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath)
 	if err != nil {
+		return nil, err
+	}
+
+	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
+	if err != nil {
+		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
+			_ = c.threadStore.RecordStatus(failed)
+		}
+		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
+			_ = c.threadStore.RecordEdgeStatus(closed)
+		}
 		return nil, fmt.Errorf("worker toolkit: %w", err)
 	}
 
@@ -393,11 +411,6 @@ func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory [
 	workerCtx := ctx
 	if !req.Synchronous {
 		workerCtx = context.WithoutCancel(ctx)
-	}
-
-	threadMeta, err := c.registerChildThread(workerID, taskName, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode)
-	if err != nil {
-		return nil, err
 	}
 
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
@@ -456,7 +469,11 @@ func (c *Coordinator) StopAll() {
 
 // Stop cancels a specific worker by ID, path, or task name. Returns false if not found.
 func (c *Coordinator) Stop(target string) bool {
-	agentID := c.resolveAgentID(target)
+	return c.StopFrom(agentthread.RootPath, target)
+}
+
+func (c *Coordinator) StopFrom(currentPath, target string) bool {
+	agentID := c.resolveAgentIDFrom(currentPath, target)
 	if agentID == "" {
 		return false
 	}
@@ -474,11 +491,39 @@ func (c *Coordinator) List() []subagent.SubAgentSnapshot {
 	return c.manager.List()
 }
 
+func (c *Coordinator) ListFrom(currentPath, pathPrefix string) []subagent.SubAgentSnapshot {
+	list := c.manager.List()
+	prefix := strings.TrimSpace(pathPrefix)
+	if prefix == "" {
+		return list
+	}
+	resolved, err := agentthread.ResolveAgentPath(agentthread.AgentPath(currentPath), prefix)
+	if err != nil {
+		if parsed, parseErr := agentthread.ParseAgentPath(prefix); parseErr == nil {
+			resolved = parsed
+		} else {
+			return nil
+		}
+	}
+	want := string(resolved)
+	out := make([]subagent.SubAgentSnapshot, 0, len(list))
+	for _, snap := range list {
+		if snap.AgentPath == want || strings.HasPrefix(snap.AgentPath, want+"/") {
+			out = append(out, snap)
+		}
+	}
+	return out
+}
+
 // SendMessage delivers a follow-up message to a specific sub-agent.
 // Messages are queued while the worker is running and injected as
 // user-role turns before the next model round.
 func (c *Coordinator) SendMessage(target, message string) error {
-	id := c.resolveAgentID(target)
+	return c.SendMessageFrom(agentthread.RootPath, target, message)
+}
+
+func (c *Coordinator) SendMessageFrom(currentPath, target, message string) error {
+	id := c.resolveAgentIDFrom(currentPath, target)
 	if id == "" {
 		return errors.New("target is required")
 	}
@@ -505,7 +550,11 @@ func (c *Coordinator) SendMessage(target, message string) error {
 }
 
 func (c *Coordinator) FollowupTask(ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
-	id := c.resolveAgentID(target)
+	return c.FollowupTaskFrom(agentthread.RootPath, ctx, target, message)
+}
+
+func (c *Coordinator) FollowupTaskFrom(currentPath string, ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
+	id := c.resolveAgentIDFrom(currentPath, target)
 	if id == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("target is required")
 	}
@@ -524,7 +573,11 @@ func (c *Coordinator) FollowupTask(ctx context.Context, target, message string) 
 }
 
 func (c *Coordinator) Wait(ctx context.Context, target string) (subagent.SubAgentSnapshot, error) {
-	id := c.resolveAgentID(target)
+	return c.WaitFrom(agentthread.RootPath, ctx, target)
+}
+
+func (c *Coordinator) WaitFrom(currentPath string, ctx context.Context, target string) (subagent.SubAgentSnapshot, error) {
+	id := c.resolveAgentIDFrom(currentPath, target)
 	if id == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("target is required")
 	}
@@ -554,26 +607,30 @@ func (c *Coordinator) registerRootThread() {
 	c.rootThreadDir = c.threadDir
 }
 
-func (c *Coordinator) registerChildThread(id, taskName, role, message string, source agentthread.SourceKind, forkMode ...string) (agentthread.Metadata, error) {
+func (c *Coordinator) registerChildThread(id, taskName, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string) (agentthread.Metadata, error) {
 	if c == nil || c.threads == nil {
 		return agentthread.Metadata{}, errors.New("thread registry is not configured")
 	}
 	c.registerRootThread()
-	mode := ""
-	if len(forkMode) > 0 {
-		mode = forkMode[0]
+	parentPath = strings.TrimSpace(parentPath)
+	if parentPath == "" {
+		parentPath = agentthread.RootPath
+	}
+	parentID = strings.TrimSpace(parentID)
+	if parentID == "" {
+		parentID = c.sessionID
 	}
 	meta, err := c.threads.RegisterSpawn(agentthread.SpawnSpec{
 		ID:              id,
 		SessionID:       c.sessionID,
-		ParentID:        c.sessionID,
-		ParentPath:      agentthread.RootPath,
+		ParentID:        parentID,
+		ParentPath:      parentPath,
 		TaskName:        taskName,
 		Role:            role,
 		LastTaskMessage: message,
 		CWD:             c.parentRepo,
 		SourceKind:      source,
-		ForkMode:        mode,
+		ForkMode:        strings.TrimSpace(forkMode),
 		Status:          agentthread.StatusRunning,
 		Now:             time.Now().UTC(),
 	})
@@ -601,6 +658,10 @@ func (c *Coordinator) consumeWorkerStatus(ch <-chan subagent.Notification) {
 }
 
 func (c *Coordinator) resolveAgentID(target string) string {
+	return c.resolveAgentIDFrom(agentthread.RootPath, target)
+}
+
+func (c *Coordinator) resolveAgentIDFrom(currentPath, target string) string {
 	id := strings.TrimSpace(target)
 	if id == "" {
 		return ""
@@ -609,7 +670,7 @@ func (c *Coordinator) resolveAgentID(target string) string {
 		return id
 	}
 	if c.threads != nil {
-		if meta, ok := c.threads.Resolve(id); ok {
+		if meta, ok := c.threads.ResolveFrom(currentPath, id); ok {
 			return meta.ID
 		}
 	}

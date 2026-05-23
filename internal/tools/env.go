@@ -59,6 +59,8 @@ type Env struct {
 	// Tools check for nil and return a clear error rather than panic.
 	SessionID   string
 	SessionDir  string // absolute path to .wuu/sessions/{id}/ — enables result budgeting
+	AgentID     string
+	AgentPath   string
 	ProcessMgr  *proc.Manager
 	AskBridge   AskUserBridge
 	Coordinator *coordinator.Coordinator

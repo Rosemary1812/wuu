@@ -53,7 +53,7 @@ func TestFilterToolsForWorker_Worker(t *testing.T) {
 	full := []string{
 		"read_file", "write_file", "edit_file", "run_shell",
 		"grep", "glob", "spawn_agent", "send_message", "followup_task",
-		"wait_agent", "close_agent", "list_agents",
+		"wait_agent", "close_agent", "list_agents", "ask_user",
 	}
 	filtered := FilterToolsForWorker(wt, full)
 	allowed := map[string]bool{}
@@ -66,10 +66,10 @@ func TestFilterToolsForWorker_Worker(t *testing.T) {
 			t.Errorf("worker missing %s", expected)
 		}
 	}
-	// Orchestration tools always blocked (no recursive spawning).
-	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "wait_agent", "close_agent", "list_agents"} {
+	// Human-interruption tools are blocked for background workers.
+	for _, blocked := range []string{"ask_user"} {
 		if allowed[blocked] {
-			t.Errorf("worker should not have %s (orchestration tool)", blocked)
+			t.Errorf("worker should not have %s", blocked)
 		}
 	}
 }

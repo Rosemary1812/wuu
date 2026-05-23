@@ -76,7 +76,7 @@ func TestNew_NonGitRepoSucceeds(t *testing.T) {
 		DefaultModel:  "fake",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatalf("New should succeed for non-git directory, got: %v", err)
@@ -98,7 +98,7 @@ func TestSpawn_SyncHappyPath(t *testing.T) {
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-1",
 		HistoryDir:    filepath.Join(dir, ".wuu", "sessions", "sess-1", "workers"),
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 		SessionID:     "sess-threads",
 		HistoryDir:    filepath.Join(dir, ".wuu", "sessions", "sess-threads", "workers"),
 		ThreadDir:     threadDir,
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -198,6 +198,54 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 	}
 }
 
+func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-nested",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "worker",
+		TaskName: "parent",
+		Prompt:   "p",
+	})
+	if err != nil {
+		t.Fatalf("parent spawn: %v", err)
+	}
+	child, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:       "worker",
+		TaskName:   "child",
+		Prompt:     "p",
+		ParentID:   parent.AgentID,
+		ParentPath: parent.AgentPath,
+	})
+	if err != nil {
+		t.Fatalf("child spawn: %v", err)
+	}
+	if child.AgentPath != "/root/parent/child" {
+		t.Fatalf("unexpected nested path: %+v", child)
+	}
+	meta, ok := c.threads.ResolveFrom(parent.AgentPath, "child")
+	if !ok || meta.ID != child.AgentID || meta.ParentID != parent.AgentID {
+		t.Fatalf("nested child did not resolve from parent path: %+v ok=%v", meta, ok)
+	}
+	if err := c.SendMessageFrom(parent.AgentPath, "child", "queued from parent"); err != nil {
+		t.Fatalf("SendMessageFrom parent path: %v", err)
+	}
+	if got := c.Manager().PendingMessageCount(child.AgentID); got != 1 {
+		t.Fatalf("expected child pending message, got %d", got)
+	}
+	c.StopAll()
+}
+
 func TestSpawn_InplaceSkipsWorktree(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
@@ -208,7 +256,7 @@ func TestSpawn_InplaceSkipsWorktree(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-inplace",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +297,7 @@ func TestSpawn_IsolationOverride(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess-override",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 
 	// Worker defaults to inplace; explicit isolation="worktree"
@@ -296,7 +344,7 @@ func TestSpawn_UnknownIsolationRejected(t *testing.T) {
 		DefaultModel:  "fake",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	_, err := c.Spawn(context.Background(), SpawnRequest{
 		Type: "worker", TaskName: "bad_isolation", Description: "x", Prompt: "p", Isolation: "yolo",
@@ -323,7 +371,7 @@ func TestSpawn_PreservesCleanWorktreeForFollowup(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-recycle",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
@@ -353,7 +401,7 @@ func TestSpawn_KeepDirtyWorktree(t *testing.T) {
 	initRepo(t, dir)
 
 	// Toolkit that drops a file in the worker's root before returning.
-	dirtyKit := func(root string, _ WorkerType) (agent.ToolExecutor, error) {
+	dirtyKit := func(root string, _ WorkerType, _ agentthread.Metadata) (agent.ToolExecutor, error) {
 		if err := os.WriteFile(filepath.Join(root, "scratch.txt"), []byte("x"), 0o644); err != nil {
 			return nil, err
 		}
@@ -396,7 +444,7 @@ func TestSpawn_RequiresPrompt(t *testing.T) {
 		DefaultModel:  "fake",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 
 	_, err := c.Spawn(context.Background(), SpawnRequest{Description: "x"})
@@ -419,7 +467,7 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 		MaxParallel:   2,
 	})
 
@@ -476,7 +524,7 @@ func TestSendMessage_QueuesWhileRunning(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess-send-running",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -508,7 +556,7 @@ func TestSendMessage_ResolvesThreadPathAndTaskName(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess-send-path",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -549,7 +597,7 @@ func TestSpawn_AsyncDetachedFromParentContext(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess-detached-spawn",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -588,7 +636,7 @@ func TestFork_AsyncDetachedFromParentContext(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess-detached-fork",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -633,7 +681,7 @@ func TestSendMessage_QueuesCompletedWorker(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess-send-complete",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -664,7 +712,7 @@ func TestSendMessage_RejectsEmptyFields(t *testing.T) {
 		DefaultModel:  "fake",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err := c.SendMessage("", "x"); err == nil {
 		t.Fatal("expected target required error")
@@ -684,7 +732,7 @@ func TestAgentMailboxChatMessage(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess",
-		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 
 	res, _ := c.Spawn(context.Background(), SpawnRequest{

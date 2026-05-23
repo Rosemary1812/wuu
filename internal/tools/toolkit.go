@@ -151,6 +151,13 @@ func (t *Toolkit) SetSessionDir(dir string) {
 	t.env.SessionDir = dir
 }
 
+// SetAgentIdentity sets the current agent identity for relative agent-path
+// resolution inside orchestration tools.
+func (t *Toolkit) SetAgentIdentity(id, path string) {
+	t.env.AgentID = strings.TrimSpace(id)
+	t.env.AgentPath = strings.TrimSpace(path)
+}
+
 // SetOnFileChanged sets the callback fired after write_file/edit_file
 // successfully modifies a file. Used to dispatch FileChanged hooks.
 func (t *Toolkit) SetOnFileChanged(fn func(absPath string)) {

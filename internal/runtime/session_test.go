@@ -23,20 +23,12 @@ func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	for _, def := range kit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, blocked := range []string{
-		"ask_user",
-		"spawn_agent",
-		"send_message",
-		"followup_task",
-		"wait_agent",
-		"close_agent",
-		"list_agents",
-	} {
+	for _, blocked := range []string{"ask_user"} {
 		if defs[blocked] {
 			t.Fatalf("worker toolkit should hide %s", blocked)
 		}
 	}
-	for _, allowed := range []string{"read_file", "write_file", "run_shell", "update_plan"} {
+	for _, allowed := range []string{"read_file", "write_file", "run_shell", "update_plan", "spawn_agent", "send_message", "followup_task", "wait_agent", "close_agent", "list_agents"} {
 		if !defs[allowed] {
 			t.Fatalf("worker toolkit should keep %s", allowed)
 		}

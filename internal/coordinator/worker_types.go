@@ -94,17 +94,13 @@ func LookupWorkerType(name string) (WorkerType, error) {
 
 // alwaysBlockedTools is the set of tools that workers can never use.
 var alwaysBlockedTools = map[string]struct{}{
-	"spawn_agent":   {},
-	"send_message":  {},
-	"followup_task": {},
-	"wait_agent":    {},
-	"close_agent":   {},
-	"list_agents":   {},
-	"ask_user":      {},
+	"ask_user": {},
 }
 
 // FilterToolsForWorker returns the subset of fullList that this worker
-// type is allowed to call. Always strips orchestration tools.
+// type is allowed to call. Workers keep orchestration tools so sub-agents
+// can spawn/message their own children like Codex V2; ask_user remains
+// blocked because background agents cannot interrupt the human directly.
 func FilterToolsForWorker(wt WorkerType, fullList []string) []string {
 	out := make([]string, 0, len(fullList))
 	allowSet := map[string]struct{}{}

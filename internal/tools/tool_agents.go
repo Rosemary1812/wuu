@@ -250,6 +250,8 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 			TaskName:    strings.TrimSpace(args.TaskName),
 			Description: strings.TrimSpace(args.TaskName),
 			ForkMode:    forkModeLabel(forkMode, lastNTurns),
+			ParentID:    strings.TrimSpace(t.env.AgentID),
+			ParentPath:  currentAgentPath(t.env),
 			Prompt:      wrapForkPrompt(args.Message),
 			Synchronous: args.Synchronous,
 		}, cleaned)
@@ -267,6 +269,8 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		TaskName:    strings.TrimSpace(args.TaskName),
 		Description: strings.TrimSpace(args.TaskName),
 		Prompt:      args.Message,
+		ParentID:    strings.TrimSpace(t.env.AgentID),
+		ParentPath:  currentAgentPath(t.env),
 		Isolation:   args.Isolation,
 		BaseRepo:    args.BaseRepo,
 		Synchronous: args.Synchronous,
@@ -513,7 +517,7 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	snap, err := t.env.Coordinator.Wait(waitCtx, args.Target)
+	snap, err := t.env.Coordinator.WaitFrom(currentAgentPath(t.env), waitCtx, args.Target)
 	if err != nil {
 		return "", err
 	}
@@ -563,7 +567,7 @@ func (t *CloseAgentTool) Execute(_ context.Context, argsJSON string) (string, er
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	if !t.env.Coordinator.Stop(args.Target) {
+	if !t.env.Coordinator.StopFrom(currentAgentPath(t.env), args.Target) {
 		return "", fmt.Errorf("agent %q not found", args.Target)
 	}
 	return `{"status":"closed"}`, nil
@@ -588,15 +592,27 @@ func (t *ListAgentsTool) Definition() providers.ToolDefinition {
 			"completed, failed, cancelled), type, description, and timing info.",
 		InputSchema: map[string]any{
 			"type": "object",
+			"properties": map[string]any{
+				"path_prefix": map[string]any{
+					"type":        "string",
+					"description": "Optional relative or absolute agent path prefix to list.",
+				},
+			},
 		},
 	}
 }
 
-func (t *ListAgentsTool) Execute(_ context.Context, _ string) (string, error) {
+func (t *ListAgentsTool) Execute(_ context.Context, argsJSON string) (string, error) {
 	if t.env.Coordinator == nil {
 		return "", errors.New("list_agents: coordinator not configured")
 	}
-	list := t.env.Coordinator.List()
+	var args struct {
+		PathPrefix string `json:"path_prefix"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return "", err
+	}
+	list := t.env.Coordinator.ListFrom(currentAgentPath(t.env), args.PathPrefix)
 	out, err := json.Marshal(list)
 	if err != nil {
 		return "", err
@@ -635,7 +651,7 @@ func executeAgentMessage(env *Env, argsJSON string) error {
 	if strings.TrimSpace(args.Target) == "" {
 		return errors.New("send_message: target is required")
 	}
-	return env.Coordinator.SendMessage(args.Target, args.Message)
+	return env.Coordinator.SendMessageFrom(currentAgentPath(env), args.Target, args.Message)
 }
 
 func executeFollowupTask(ctx context.Context, env *Env, argsJSON string) (subagent.SubAgentSnapshot, error) {
@@ -652,7 +668,14 @@ func executeFollowupTask(ctx context.Context, env *Env, argsJSON string) (subage
 	if strings.TrimSpace(args.Target) == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("followup_task: target is required")
 	}
-	return env.Coordinator.FollowupTask(ctx, args.Target, args.Message)
+	return env.Coordinator.FollowupTaskFrom(currentAgentPath(env), ctx, args.Target, args.Message)
+}
+
+func currentAgentPath(env *Env) string {
+	if env == nil || strings.TrimSpace(env.AgentPath) == "" {
+		return agentthread.RootPath
+	}
+	return strings.TrimSpace(env.AgentPath)
 }
 
 type agentSnapshotResponse struct {

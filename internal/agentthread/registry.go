@@ -128,9 +128,17 @@ func (r *Registry) RegisterSpawn(spec SpawnSpec) (Metadata, error) {
 }
 
 func (r *Registry) Resolve(target string) (Metadata, bool) {
+	return r.ResolveFrom(RootPath, target)
+}
+
+func (r *Registry) ResolveFrom(currentPath, target string) (Metadata, bool) {
 	key := strings.TrimSpace(target)
 	if key == "" {
 		return Metadata{}, false
+	}
+	current, err := ParseAgentPath(cleanPath(currentPath))
+	if err != nil {
+		current = RootAgentPath()
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -141,24 +149,10 @@ func (r *Registry) Resolve(target string) (Metadata, bool) {
 		return r.byID[id], true
 	}
 	if !strings.HasPrefix(key, "/") {
-		if path, err := ResolveAgentPath(RootAgentPath(), key); err == nil {
+		if path, err := ResolveAgentPath(current, key); err == nil {
 			if id, ok := r.byPath[string(path)]; ok {
 				return r.byID[id], true
 			}
-		}
-		if id, ok := r.byPath[RootPath+"/"+key]; ok {
-			return r.byID[id], true
-		}
-		var found Metadata
-		count := 0
-		for _, meta := range r.byID {
-			if meta.TaskName == key {
-				found = meta
-				count++
-			}
-		}
-		if count == 1 {
-			return found, true
 		}
 	}
 	return Metadata{}, false

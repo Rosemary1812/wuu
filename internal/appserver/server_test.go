@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -346,7 +347,7 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 		ParentRepo:   rt.RootDir,
 		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
 		SessionID:    "sess-agents",
-		WorkerFactory: func(string, coordinator.WorkerType) (agent.ToolExecutor, error) {
+		WorkerFactory: func(string, coordinator.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
 			return noopToolExecutor{}, nil
 		},
 	})
@@ -359,7 +360,7 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 	_ = New(rt, out)
 	res, err := coord.Spawn(context.Background(), coordinator.SpawnRequest{
 		Type:        "worker",
-		TaskName:    "check bridge",
+		TaskName:    "check_bridge",
 		Description: "check bridge",
 		Prompt:      "do it",
 		Synchronous: true,
@@ -370,7 +371,7 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 
 	msgs := waitForMethod(t, out, NotificationAgentMailbox)
 	updated := remarshal[AgentUpdatedNotification](t, notificationByMethod(t, msgs, NotificationAgentUpdated)["params"])
-	if updated.Agent.ID != res.AgentID || updated.Agent.TaskName != "check bridge" {
+	if updated.Agent.ID != res.AgentID || updated.Agent.TaskName != "check_bridge" {
 		t.Fatalf("unexpected agent update: %+v", updated)
 	}
 	mailbox := remarshal[AgentMailboxNotification](t, notificationByMethod(t, msgs, NotificationAgentMailbox)["params"])

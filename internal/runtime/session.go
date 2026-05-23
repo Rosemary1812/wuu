@@ -10,6 +10,7 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/coordinator"
@@ -142,13 +143,15 @@ func NewSession(opts Options) (*Session, error) {
 			SessionID:       "session-pending",
 			HistoryDir:      "",
 			WorkerSysPrompt: baseSystemPrompt,
-			WorkerFactory: func(workerRoot string, wt coordinator.WorkerType) (agent.ToolExecutor, error) {
+			WorkerFactory: func(workerRoot string, wt coordinator.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := tools.New(workerRoot)
 				if werr != nil {
 					return nil, werr
 				}
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
+				wkit.SetCoordinator(coord)
+				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
 			},
@@ -236,6 +239,7 @@ func (s *Session) SetSessionID(id string) {
 	}
 	if s.Toolkit != nil {
 		s.Toolkit.SetSessionID(id)
+		s.Toolkit.SetAgentIdentity(id, agentthread.RootPath)
 		artifactDir := filepath.Join(s.RootDir, ".wuu", "sessions", id)
 		s.Toolkit.SetSessionDir(artifactDir)
 		if s.Coordinator != nil {
