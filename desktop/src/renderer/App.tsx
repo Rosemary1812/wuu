@@ -13,7 +13,9 @@ import {
   FolderX,
   FolderOpen,
   FolderPlus,
+  Github,
   GitBranch,
+  Info,
   Laptop,
   List as ListIcon,
   MessageSquarePlus,
@@ -23,6 +25,7 @@ import {
   PanelRightOpen,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Settings,
@@ -53,9 +56,12 @@ import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
   AppServerNotification,
   AskUserQuestion,
+  AskUserResponse,
   CodexModelSummary,
   DesktopProject,
   FileTreeListResult,
+  GitCommitResult,
+  GitPullRequestResult,
   GitStatusResult,
   InputImage,
   InitializeResult,
@@ -84,6 +90,8 @@ type CodexModelLoadState = {
 };
 
 type CodexRuntimeMenu = "main" | "model" | null;
+type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
+type EnvironmentDialog = "commit" | "pull-request" | null;
 
 type ComposerImage = InputImage & {
   id: string;
@@ -93,6 +101,13 @@ type QueuedComposerMessage = {
   id: string;
   text: string;
   images: ComposerImage[];
+};
+
+type EnvironmentSourceItem = {
+  id: string;
+  icon: "project" | "temporary" | "file" | "image" | "queue" | "guide";
+  title: string;
+  detail: string;
 };
 
 type AppState = {
@@ -543,6 +558,100 @@ function trimMiddle(value: string, maxLength: number): string {
   return `${value.slice(0, left)}…${value.slice(value.length - right)}`;
 }
 
+function buildEnvironmentSourceItems({
+  activeContext,
+  activeProject,
+  selectedWorkspaceFile,
+  composerImages,
+  queuedMessages,
+  guideMessages
+}: {
+  activeContext?: RuntimeContext;
+  activeProject?: DesktopProject;
+  selectedWorkspaceFile?: string;
+  composerImages: ComposerImage[];
+  queuedMessages: QueuedComposerMessage[];
+  guideMessages: QueuedComposerMessage[];
+}): EnvironmentSourceItem[] {
+  const items: EnvironmentSourceItem[] = [];
+  if (activeContext?.kind === "project") {
+    items.push({
+      id: "project",
+      icon: "project",
+      title: activeProject?.name ?? "当前项目",
+      detail: activeContext.cwd
+    });
+  } else if (activeContext?.kind === "no_project") {
+    items.push({
+      id: "temporary",
+      icon: "temporary",
+      title: "临时工作区",
+      detail: activeContext.cwd
+    });
+  }
+  if (selectedWorkspaceFile) {
+    items.push({
+      id: "selected-file",
+      icon: "file",
+      title: "当前文件",
+      detail: selectedWorkspaceFile
+    });
+  }
+  if (composerImages.length > 0) {
+    items.push({
+      id: "composer-images",
+      icon: "image",
+      title: "输入图片",
+      detail: `${composerImages.length} 张`
+    });
+  }
+  if (guideMessages.length > 0) {
+    items.push({
+      id: "guide-messages",
+      icon: "guide",
+      title: "下轮引导",
+      detail: `${guideMessages.length} 条`
+    });
+  }
+  if (queuedMessages.length > 0) {
+    const imageCount = queuedMessages.reduce((count, message) => count + message.images.length, 0);
+    items.push({
+      id: "queued-messages",
+      icon: "queue",
+      title: "排队消息",
+      detail: imageCount > 0 ? `${queuedMessages.length} 条，${imageCount} 张图片` : `${queuedMessages.length} 条`
+    });
+  }
+  return items;
+}
+
+function pullRequestUnavailableReason(gitStatus?: GitStatusResult): string {
+  if (!gitStatus?.is_repo) {
+    return "不是 Git 仓库";
+  }
+  if (!gitStatus.gh_available) {
+    return "未安装 GitHub CLI";
+  }
+  if (gitStatus.detached || !gitStatus.branch) {
+    return "需要具名分支";
+  }
+  if (gitStatus.default_branch && gitStatus.branch === gitStatus.default_branch) {
+    return "先创建功能分支";
+  }
+  if (gitStatus.dirty_count > 0) {
+    return "先提交本地更改";
+  }
+  return "";
+}
+
+function humanizeBranchTitle(branch: string): string {
+  return branch
+    .split(/[/-]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
@@ -567,6 +676,13 @@ export function App(): JSX.Element {
   const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
   const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState<string | undefined>(undefined);
+  const [environmentPanelOpen, setEnvironmentPanelOpen] = useState(false);
+  const [environmentPanelDismissed, setEnvironmentPanelDismissed] = useState(false);
+  const [environmentPanelHasRoom, setEnvironmentPanelHasRoom] = useState(() =>
+    typeof window === "undefined" ? false : window.matchMedia("(min-width: 1320px) and (min-height: 680px)").matches
+  );
+  const [environmentPanelMenu, setEnvironmentPanelMenu] = useState<EnvironmentPanelMenu>(null);
+  const [environmentDialog, setEnvironmentDialog] = useState<EnvironmentDialog>(null);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
@@ -575,6 +691,7 @@ export function App(): JSX.Element {
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
   const codexRuntimeRef = useRef<HTMLDivElement>(null);
+  const environmentPanelRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
@@ -630,6 +747,14 @@ export function App(): JSX.Element {
       }
       setResizeState(false);
     };
+  }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1320px) and (min-height: 680px)");
+    const update = (): void => setEnvironmentPanelHasRoom(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
@@ -712,11 +837,23 @@ export function App(): JSX.Element {
       if (codexRuntimeMenu && !codexRuntimeRef.current?.contains(target)) {
         setCodexRuntimeMenu(null);
       }
+      if (environmentPanelOpen && !environmentPanelRef.current?.contains(target)) {
+        setEnvironmentPanelOpen(false);
+        setEnvironmentPanelMenu(null);
+      }
     }
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [accessMenuOpen, branchMenuOpen, codexRuntimeMenu, modeMenuOpen, projectMenuOpen, runtimeMenuOpen]);
+  }, [
+    accessMenuOpen,
+    branchMenuOpen,
+    codexRuntimeMenu,
+    environmentPanelOpen,
+    modeMenuOpen,
+    projectMenuOpen,
+    runtimeMenuOpen
+  ]);
 
   useEffect(() => {
     conversationAutoFollowRef.current = true;
@@ -726,6 +863,16 @@ export function App(): JSX.Element {
   useEffect(() => {
     scheduleStreamScroll();
   }, [state.thread?.turns]);
+
+  useEffect(() => {
+    if (!state.askRequest) {
+      return;
+    }
+    setSettingsOpen(false);
+    setWorkspaceMode(undefined);
+    conversationAutoFollowRef.current = true;
+    window.requestAnimationFrame(() => scrollConversationToBottom({ force: true }));
+  }, [state.askRequest?.id]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -798,7 +945,7 @@ export function App(): JSX.Element {
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
       : "我们应该在 wuu 中构建什么？";
   const turns = state.thread?.turns ?? [];
-  const emptyConversation = turns.length === 0;
+  const emptyConversation = turns.length === 0 && !state.askRequest;
   const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
@@ -809,6 +956,22 @@ export function App(): JSX.Element {
     "--workspace-right-panel-width": "360px",
     "--workspace-bottom-panel-height": "238px"
   } as CSSProperties;
+  const environmentSourceItems = useMemo(
+    () =>
+      buildEnvironmentSourceItems({
+        activeContext: state.activeContext,
+        activeProject,
+        selectedWorkspaceFile,
+        composerImages,
+        queuedMessages,
+        guideMessages
+      }),
+    [activeProject, composerImages, guideMessages, queuedMessages, selectedWorkspaceFile, state.activeContext]
+  );
+  const environmentPanelVisible =
+    Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen) &&
+    (environmentPanelOpen || (environmentPanelHasRoom && !environmentPanelDismissed && !emptyConversation));
+  const pullRequestDisabledReason = pullRequestUnavailableReason(state.gitStatus);
 
   function applySidebarWidth(nextWidth: number): void {
     if (nextWidth <= SIDEBAR_MIN_WIDTH) {
@@ -1129,6 +1292,7 @@ export function App(): JSX.Element {
     setCodexRuntimeMenu(null);
     setModeMenuOpen(false);
     setBranchMenuOpen(false);
+    setEnvironmentPanelMenu(null);
     setSettingsOpen(false);
     setProjectFilter("");
   }
@@ -1246,6 +1410,92 @@ export function App(): JSX.Element {
         ...current,
         status: error instanceof Error ? error.message : "checkout branch failed"
       }));
+    }
+  }
+
+  async function refreshGitStatus(): Promise<void> {
+    if (!state.activeContext) {
+      return;
+    }
+    try {
+      const gitStatus = await window.wuu.gitStatus();
+      setState((current) => ({
+        ...current,
+        gitStatus,
+        status: current.status === "ready" ? "ready" : current.status
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "refresh git status failed"
+      }));
+    }
+  }
+
+  async function createAndCheckoutBranch(branch: string): Promise<void> {
+    if (!branch || state.running) {
+      return;
+    }
+    try {
+      const result = await window.wuu.createCheckoutGitBranch(branch);
+      setState((current) => ({
+        ...current,
+        gitStatus: result.status,
+        status: current.status === "ready" ? "ready" : current.status
+      }));
+      setEnvironmentPanelMenu(null);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "create branch failed"
+      }));
+      throw error;
+    }
+  }
+
+  async function commitEnvironmentChanges(params: { message: string; includeUnstaged: boolean }): Promise<GitCommitResult> {
+    const result = await window.wuu.commitGitChanges({
+      message: params.message,
+      include_unstaged: params.includeUnstaged
+    });
+    setState((current) => ({
+      ...current,
+      gitStatus: result.status,
+      status: `已提交 ${result.commit}`
+    }));
+    return result;
+  }
+
+  async function createEnvironmentPullRequest(params: {
+    title: string;
+    body: string;
+    draft: boolean;
+  }): Promise<GitPullRequestResult> {
+    const result = await window.wuu.createPullRequest({
+      title: params.title,
+      body: params.body,
+      draft: params.draft
+    });
+    setState((current) => ({
+      ...current,
+      gitStatus: result.status,
+      status: result.already_exists ? "已有拉取请求" : "已创建拉取请求"
+    }));
+    return result;
+  }
+
+  function toggleEnvironmentPanel(): void {
+    const visible = environmentPanelVisible;
+    setEnvironmentPanelOpen(!visible);
+    setEnvironmentPanelDismissed(visible);
+    if (visible) {
+      setEnvironmentPanelMenu(null);
+    } else {
+      setRuntimeMenuOpen(false);
+      setAccessMenuOpen(false);
+      setModeMenuOpen(false);
+      setBranchMenuOpen(false);
+      setCodexRuntimeMenu(null);
     }
   }
 
@@ -1522,17 +1772,27 @@ export function App(): JSX.Element {
     await window.wuu.interruptTurn(state.thread.id);
   }
 
+  async function respondToAskRequest(request: AskRequestState, response: AskUserResponse): Promise<void> {
+    setState((current) => (current.askRequest?.id === request.id ? { ...current, askRequest: undefined } : current));
+    try {
+      await window.wuu.respondToServerRequest(request.id, response);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        askRequest: current.askRequest ?? request,
+        status: desktopApiErrorMessage(error, "提交选择失败")
+      }));
+    }
+  }
+
   if (settingsOpen) {
     return (
-      <>
-        <SettingsView
-          initialized={state.initialized}
-          running={state.running}
-          onBack={() => setSettingsOpen(false)}
-          onSave={updateRuntimeSettings}
-        />
-        {state.askRequest ? <AskUserDialog request={state.askRequest} /> : null}
-      </>
+      <SettingsView
+        initialized={state.initialized}
+        running={state.running}
+        onBack={() => setSettingsOpen(false)}
+        onSave={updateRuntimeSettings}
+      />
     );
   }
 
@@ -1644,6 +1904,15 @@ export function App(): JSX.Element {
               </button>
             ) : null}
             <button
+              className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
+              type="button"
+              aria-label={environmentPanelVisible ? "隐藏环境信息" : "显示环境信息"}
+              aria-pressed={environmentPanelVisible}
+              onClick={toggleEnvironmentPanel}
+            >
+              <Info size={18} />
+            </button>
+            <button
               className={`icon-button workspace-toggle-button${bottomPanelOpen ? " active" : ""}`}
               type="button"
               aria-label={bottomPanelOpen ? "关闭底部栏" : "打开底部栏"}
@@ -1663,6 +1932,37 @@ export function App(): JSX.Element {
             </button>
           </div>
         </header>
+
+        {environmentPanelVisible && state.initialized ? (
+          <EnvironmentPanel
+            panelRef={environmentPanelRef}
+            initialized={state.initialized}
+            gitStatus={state.gitStatus}
+            activeContext={state.activeContext}
+            activeProject={activeProject}
+            sourceItems={environmentSourceItems}
+            activeMenu={environmentPanelMenu}
+            running={state.running}
+            pullRequestDisabledReason={pullRequestDisabledReason}
+            onSetActiveMenu={setEnvironmentPanelMenu}
+            onClose={() => {
+              setEnvironmentPanelOpen(false);
+              setEnvironmentPanelDismissed(true);
+              setEnvironmentPanelMenu(null);
+            }}
+            onOpenSettings={() => {
+              setEnvironmentPanelMenu(null);
+              setSettingsOpen(true);
+            }}
+            onRefreshGit={() => void refreshGitStatus()}
+            onOpenProject={() => void chooseProjectFolder()}
+            onSelectNoProject={() => void useNoProject(false)}
+            onSelectBranch={(branch) => void checkoutBranch(branch)}
+            onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
+            onOpenCommit={() => setEnvironmentDialog("commit")}
+            onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
+          />
+        ) : null}
 
         {state.initialized && !previewingLaunch ? (
           <div
@@ -1701,6 +2001,14 @@ export function App(): JSX.Element {
                     onStreamFrame={scheduleStreamScroll}
                   />
                 ))}
+                {state.askRequest ? (
+                  <AskUserMessage
+                    key={state.askRequest.id}
+                    request={state.askRequest}
+                    onCancel={(request) => respondToAskRequest(request, { answers: {}, cancelled: true })}
+                    onSubmit={(request, answers) => respondToAskRequest(request, { answers })}
+                  />
+                ) : null}
               </div>
             )}
           </div>
@@ -1733,7 +2041,500 @@ export function App(): JSX.Element {
         onClose={() => setBottomPanelOpen(false)}
       />
 
-      {state.askRequest ? <AskUserDialog request={state.askRequest} /> : null}
+      {environmentDialog === "commit" ? (
+        <CommitChangesDialog
+          gitStatus={state.gitStatus}
+          branch={state.gitStatus?.branch}
+          onCancel={() => setEnvironmentDialog(null)}
+          onCommit={commitEnvironmentChanges}
+        />
+      ) : null}
+      {environmentDialog === "pull-request" ? (
+        <PullRequestDialog
+          gitStatus={state.gitStatus}
+          disabledReason={pullRequestDisabledReason}
+          onCancel={() => setEnvironmentDialog(null)}
+          onCreate={createEnvironmentPullRequest}
+        />
+      ) : null}
+
+    </div>
+  );
+}
+
+function EnvironmentPanel({
+  panelRef,
+  initialized,
+  gitStatus,
+  activeContext,
+  activeProject,
+  sourceItems,
+  activeMenu,
+  running,
+  pullRequestDisabledReason,
+  onSetActiveMenu,
+  onClose,
+  onOpenSettings,
+  onRefreshGit,
+  onOpenProject,
+  onSelectNoProject,
+  onSelectBranch,
+  onCreateBranch,
+  onOpenCommit,
+  onOpenPullRequest
+}: {
+  panelRef: RefObject<HTMLDivElement>;
+  initialized: InitializeResult;
+  gitStatus?: GitStatusResult;
+  activeContext?: RuntimeContext;
+  activeProject?: DesktopProject;
+  sourceItems: EnvironmentSourceItem[];
+  activeMenu: EnvironmentPanelMenu;
+  running: boolean;
+  pullRequestDisabledReason: string;
+  onSetActiveMenu: (menu: EnvironmentPanelMenu) => void;
+  onClose: () => void;
+  onOpenSettings: () => void;
+  onRefreshGit: () => void;
+  onOpenProject: () => void;
+  onSelectNoProject: () => void;
+  onSelectBranch: (branch: string) => void;
+  onCreateBranch: (branch: string) => Promise<void>;
+  onOpenCommit: () => void;
+  onOpenPullRequest: () => void;
+}): JSX.Element {
+  const diff = gitStatus?.diff ?? { files: 0, additions: 0, deletions: 0 };
+  const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
+  const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
+  const contextLabel =
+    activeContext?.kind === "project" ? activeProject?.name ?? "当前项目" : activeContext ? "临时对话" : "未连接";
+  const prDisabled = Boolean(pullRequestDisabledReason && !gitStatus?.pr_url);
+
+  function toggleMenu(menu: Exclude<EnvironmentPanelMenu, null>): void {
+    onSetActiveMenu(activeMenu === menu ? null : menu);
+  }
+
+  return (
+    <aside className="environment-panel" ref={panelRef} aria-label="环境信息">
+      <div className="environment-panel-header">
+        <h2>环境信息</h2>
+        <div className="environment-panel-actions">
+          <button className="icon-button" type="button" aria-label="刷新 Git 状态" onClick={onRefreshGit}>
+            <RefreshCw size={16} />
+          </button>
+          <button className="icon-button" type="button" aria-label="打开设置" onClick={onOpenSettings}>
+            <Settings size={16} />
+          </button>
+          <button className="icon-button" type="button" aria-label="关闭环境信息" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div className="environment-panel-body">
+        <div className="environment-row static">
+          <FolderPlus size={18} />
+          <strong>变更</strong>
+          <span className="environment-row-meta">
+            {gitStatus?.is_repo ? `${diff.files} 个文件` : "非 Git"}
+            {gitStatus?.is_repo && diff.files > 0 ? (
+              <span className="environment-diff">
+                <span className="additions">+{diff.additions.toLocaleString()}</span>
+                <span className="deletions">-{diff.deletions.toLocaleString()}</span>
+              </span>
+            ) : null}
+          </span>
+        </div>
+
+        <button
+          className={`environment-row${activeMenu === "mode" ? " active" : ""}`}
+          type="button"
+          onClick={() => toggleMenu("mode")}
+        >
+          <Laptop size={18} />
+          <strong>本地</strong>
+          <span>{contextLabel}</span>
+          <ChevronRight size={17} />
+        </button>
+
+        <button
+          className={`environment-row${activeMenu === "branch" ? " active" : ""}`}
+          type="button"
+          disabled={!gitStatus?.is_repo || running}
+          onClick={() => toggleMenu("branch")}
+        >
+          <GitBranch size={18} />
+          <strong>{branchLabel}</strong>
+          <span>{gitStatus?.dirty_count ? `未提交：${gitStatus.dirty_count} 个文件` : ""}</span>
+          {gitStatus?.is_repo ? <ChevronRight size={17} /> : null}
+        </button>
+
+        <button
+          className="environment-row"
+          type="button"
+          disabled={!hasChanges || running}
+          onClick={onOpenCommit}
+        >
+          <CornerDownRight size={18} />
+          <strong>提交</strong>
+          <span>{hasChanges ? "提交当前更改" : "工作区干净"}</span>
+        </button>
+
+        <button
+          className="environment-row"
+          type="button"
+          disabled={prDisabled || running}
+          title={prDisabled ? pullRequestDisabledReason : undefined}
+          onClick={onOpenPullRequest}
+        >
+          <Github size={18} />
+          <strong>{gitStatus?.pr_url ? "查看拉取请求" : "创建拉取请求"}</strong>
+          <span>{gitStatus?.pr_url ? "已有 PR" : prDisabled ? pullRequestDisabledReason : "推送并创建 PR"}</span>
+        </button>
+      </div>
+
+      <button
+        className={`environment-footer-row${activeMenu === "sources" ? " active" : ""}`}
+        type="button"
+        onClick={() => toggleMenu("sources")}
+      >
+        <span>来源 {sourceItems.length}</span>
+        <ChevronRight size={17} />
+      </button>
+
+      <div className="environment-runtime-summary">
+        <span>{initialized.provider}</span>
+        <span>{shortCodexModelLabel(initialized.model)}</span>
+      </div>
+
+      {activeMenu === "mode" ? (
+        <EnvironmentModeMenu
+          activeContext={activeContext}
+          activeProject={activeProject}
+          onOpenProject={onOpenProject}
+          onSelectNoProject={onSelectNoProject}
+        />
+      ) : null}
+      {activeMenu === "branch" && gitStatus?.is_repo ? (
+        <EnvironmentBranchMenu
+          gitStatus={gitStatus}
+          onSelectBranch={onSelectBranch}
+          onCreateBranch={onCreateBranch}
+        />
+      ) : null}
+      {activeMenu === "sources" ? <EnvironmentSourcesMenu items={sourceItems} /> : null}
+    </aside>
+  );
+}
+
+function EnvironmentModeMenu({
+  activeContext,
+  activeProject,
+  onOpenProject,
+  onSelectNoProject
+}: {
+  activeContext?: RuntimeContext;
+  activeProject?: DesktopProject;
+  onOpenProject: () => void;
+  onSelectNoProject: () => void;
+}): JSX.Element {
+  return (
+    <div className="environment-side-menu mode" role="menu">
+      <div className="environment-side-label">继续使用</div>
+      <button role="menuitem" type="button" disabled={activeContext?.kind === "project"} onClick={onOpenProject}>
+        <FolderOpen size={17} />
+        <span>{activeProject?.name ?? "本地项目"}</span>
+        {activeContext?.kind === "project" ? <Check size={17} /> : null}
+      </button>
+      <button role="menuitem" type="button" onClick={onOpenProject}>
+        <FolderPlus size={17} />
+        <span>打开其他文件夹</span>
+      </button>
+      <button role="menuitem" type="button" disabled={activeContext?.kind === "no_project"} onClick={onSelectNoProject}>
+        <FolderX size={17} />
+        <span>临时对话</span>
+        {activeContext?.kind === "no_project" ? <Check size={17} /> : null}
+      </button>
+    </div>
+  );
+}
+
+function EnvironmentBranchMenu({
+  gitStatus,
+  onSelectBranch,
+  onCreateBranch
+}: {
+  gitStatus: GitStatusResult;
+  onSelectBranch: (branch: string) => void;
+  onCreateBranch: (branch: string) => Promise<void>;
+}): JSX.Element {
+  const [query, setQuery] = useState("");
+  const [newBranch, setNewBranch] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const branches = (gitStatus.branches ?? []).filter((branch) =>
+    normalizedQuery ? branch.toLocaleLowerCase().includes(normalizedQuery) : true
+  );
+
+  async function submitNewBranch(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const branch = newBranch.trim();
+    if (!branch || submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onCreateBranch(branch);
+      setNewBranch("");
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "无法创建分支");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="environment-side-menu branch" role="menu">
+      <label className="environment-search">
+        <Search size={16} />
+        <input value={query} placeholder="搜索分支" onChange={(event) => setQuery(event.target.value)} />
+      </label>
+      {gitStatus.dirty_count > 0 ? (
+        <div className="environment-side-note">未提交更改会跟随分支切换；如果会覆盖本地内容，Git 会拒绝。</div>
+      ) : null}
+      <div className="environment-branch-list">
+        {branches.length === 0 ? <div className="environment-empty">没有匹配分支</div> : null}
+        {branches.map((branch) => {
+          const selected = branch === gitStatus.branch;
+          return (
+            <button key={branch} role="menuitem" type="button" disabled={selected} onClick={() => onSelectBranch(branch)}>
+              <GitBranch size={17} />
+              <span>{branch}</span>
+              {selected ? <Check size={17} /> : null}
+            </button>
+          );
+        })}
+      </div>
+      <form className="environment-create-branch" onSubmit={(event) => void submitNewBranch(event)}>
+        <input value={newBranch} placeholder="新分支名称" onChange={(event) => setNewBranch(event.target.value)} />
+        <button type="submit" disabled={!newBranch.trim() || submitting}>
+          <Plus size={16} />
+        </button>
+      </form>
+      {error ? <div className="environment-side-error">{error}</div> : null}
+    </div>
+  );
+}
+
+function EnvironmentSourcesMenu({ items }: { items: EnvironmentSourceItem[] }): JSX.Element {
+  return (
+    <div className="environment-side-menu sources" role="menu">
+      <div className="environment-side-label">当前上下文</div>
+      {items.length === 0 ? <div className="environment-empty">没有额外来源</div> : null}
+      {items.map((item) => (
+        <div className="environment-source-item" key={item.id}>
+          <EnvironmentSourceIcon item={item} />
+          <div>
+            <strong>{item.title}</strong>
+            <span>{item.detail}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EnvironmentSourceIcon({ item }: { item: EnvironmentSourceItem }): JSX.Element {
+  if (item.icon === "project") {
+    return <Folder size={17} />;
+  }
+  if (item.icon === "temporary") {
+    return <FolderX size={17} />;
+  }
+  if (item.icon === "file") {
+    return <FileText size={17} />;
+  }
+  if (item.icon === "image") {
+    return <Globe2 size={17} />;
+  }
+  if (item.icon === "guide") {
+    return <CornerDownRight size={17} />;
+  }
+  return <MessageSquarePlus size={17} />;
+}
+
+function CommitChangesDialog({
+  gitStatus,
+  branch,
+  onCancel,
+  onCommit
+}: {
+  gitStatus?: GitStatusResult;
+  branch?: string;
+  onCancel: () => void;
+  onCommit: (params: { message: string; includeUnstaged: boolean }) => Promise<GitCommitResult>;
+}): JSX.Element {
+  const [message, setMessage] = useState("");
+  const [includeUnstaged, setIncludeUnstaged] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const diff = gitStatus?.diff ?? { files: 0, additions: 0, deletions: 0 };
+  const staged = gitStatus?.staged_diff ?? { files: 0, additions: 0, deletions: 0 };
+  const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0 || staged.files > 0));
+
+  async function submit(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!hasChanges || submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onCommit({ message, includeUnstaged });
+      onCancel();
+    } catch (commitError) {
+      setError(commitError instanceof Error ? commitError.message : "提交失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop environment-modal-backdrop">
+      <form className="environment-dialog" onSubmit={(event) => void submit(event)}>
+        <div className="environment-dialog-header">
+          <span className="environment-dialog-icon">
+            <CornerDownRight size={18} />
+          </span>
+          <button className="icon-button" type="button" aria-label="关闭" onClick={onCancel}>
+            <X size={17} />
+          </button>
+        </div>
+        <h2>提交更改</h2>
+        <div className="environment-dialog-summary">
+          <span>分支</span>
+          <strong>{branch ?? "未知"}</strong>
+          <span>更改</span>
+          <strong>
+            {diff.files} 个文件 <span className="additions">+{diff.additions.toLocaleString()}</span>{" "}
+            <span className="deletions">-{diff.deletions.toLocaleString()}</span>
+          </strong>
+        </div>
+        <label className="environment-toggle">
+          <input
+            type="checkbox"
+            checked={includeUnstaged}
+            onChange={(event) => setIncludeUnstaged(event.currentTarget.checked)}
+          />
+          <span>包含未暂存的更改</span>
+        </label>
+        <label className="environment-field">
+          <span>提交消息</span>
+          <input value={message} placeholder="留空以自动生成提交消息" onChange={(event) => setMessage(event.target.value)} />
+        </label>
+        {error ? <div className="environment-dialog-error">{error}</div> : null}
+        <div className="environment-dialog-footer">
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            取消
+          </button>
+          <button className="primary-button" type="submit" disabled={!hasChanges || submitting}>
+            继续
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PullRequestDialog({
+  gitStatus,
+  disabledReason,
+  onCancel,
+  onCreate
+}: {
+  gitStatus?: GitStatusResult;
+  disabledReason: string;
+  onCancel: () => void;
+  onCreate: (params: { title: string; body: string; draft: boolean }) => Promise<GitPullRequestResult>;
+}): JSX.Element {
+  const [title, setTitle] = useState(() => humanizeBranchTitle(gitStatus?.branch ?? ""));
+  const [body, setBody] = useState("");
+  const [draft, setDraft] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<GitPullRequestResult | undefined>(undefined);
+  const existingURL = gitStatus?.pr_url ?? result?.url;
+  const blocked = Boolean(disabledReason && !existingURL);
+
+  async function submit(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (blocked || submitting) {
+      return;
+    }
+    if (existingURL) {
+      window.open(existingURL, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      const created = await onCreate({ title, body, draft });
+      setResult(created);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "创建拉取请求失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop environment-modal-backdrop">
+      <form className="environment-dialog" onSubmit={(event) => void submit(event)}>
+        <div className="environment-dialog-header">
+          <span className="environment-dialog-icon">
+            <Github size={18} />
+          </span>
+          <button className="icon-button" type="button" aria-label="关闭" onClick={onCancel}>
+            <X size={17} />
+          </button>
+        </div>
+        <h2>{existingURL ? "拉取请求" : "创建拉取请求"}</h2>
+        {blocked ? <div className="environment-dialog-error">{disabledReason}</div> : null}
+        {existingURL ? (
+          <div className="environment-pr-result">
+            <span>{result?.already_exists ? "已有 PR" : "PR 已准备好"}</span>
+            <button className="secondary-button" type="button" onClick={() => window.open(existingURL, "_blank", "noopener,noreferrer")}>
+              打开 PR
+            </button>
+          </div>
+        ) : (
+          <>
+            <label className="environment-field">
+              <span>标题</span>
+              <input value={title} placeholder="使用分支名作为标题" onChange={(event) => setTitle(event.target.value)} />
+            </label>
+            <label className="environment-field">
+              <span>说明</span>
+              <textarea value={body} placeholder="可留空，让 gh 使用提交内容" onChange={(event) => setBody(event.target.value)} />
+            </label>
+            <label className="environment-toggle">
+              <input type="checkbox" checked={draft} onChange={(event) => setDraft(event.currentTarget.checked)} />
+              <span>创建为草稿</span>
+            </label>
+          </>
+        )}
+        {error ? <div className="environment-dialog-error">{error}</div> : null}
+        <div className="environment-dialog-footer">
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            关闭
+          </button>
+          <button className="primary-button" type="submit" disabled={blocked || submitting}>
+            {existingURL ? "打开" : "继续"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -4263,7 +5064,15 @@ function ProjectPickerMenu({
   );
 }
 
-function AskUserDialog({ request }: { request: AskRequestState }): JSX.Element {
+function AskUserMessage({
+  request,
+  onCancel,
+  onSubmit
+}: {
+  request: AskRequestState;
+  onCancel: (request: AskRequestState) => Promise<void>;
+  onSubmit: (request: AskRequestState, answers: Record<string, string>) => Promise<void>;
+}): JSX.Element {
   const [answers, setAnswers] = useState<Record<string, string[]>>(() => {
     const initial: Record<string, string[]> = {};
     for (const question of request.questions) {
@@ -4271,6 +5080,7 @@ function AskUserDialog({ request }: { request: AskRequestState }): JSX.Element {
     }
     return initial;
   });
+  const [submitting, setSubmitting] = useState(false);
   const flatAnswers = useMemo(() => {
     const output: Record<string, string> = {};
     for (const question of request.questions) {
@@ -4278,6 +5088,7 @@ function AskUserDialog({ request }: { request: AskRequestState }): JSX.Element {
     }
     return output;
   }, [answers, request.questions]);
+  const allQuestionsAnswered = request.questions.every((question) => (answers[question.question] ?? []).length > 0);
 
   function select(question: AskUserQuestion, label: string): void {
     setAnswers((current) => {
@@ -4290,67 +5101,101 @@ function AskUserDialog({ request }: { request: AskRequestState }): JSX.Element {
     });
   }
 
+  async function cancel(): Promise<void> {
+    if (submitting) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onCancel(request);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submit(): Promise<void> {
+    if (submitting || !allQuestionsAnswered) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSubmit(request, flatAnswers);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
-    <div className="modal-backdrop">
-      <div className="ask-dialog">
-        <div className="ask-header">
-          <h2>需要确认</h2>
-          <button
-            className="icon-button"
-            onClick={() => {
-              void window.wuu.respondToServerRequest(request.id, { answers: {}, cancelled: true });
-            }}
-          >
-            <X size={18} />
-          </button>
+    <article className="ask-message" aria-live="polite">
+      <div className="ask-header">
+        <div className="ask-title">
+          <MessageSquarePlus size={17} />
+          <span>需要你选择</span>
         </div>
-        <OverlayScrollbarsComponent
-          className="ask-body"
-          data-overlayscrollbars-initialize
-          defer
-          options={OVERLAY_SCROLLBAR_OPTIONS}
+        <button
+          className="icon-button ask-dismiss"
+          type="button"
+          aria-label="取消这次提问"
+          disabled={submitting}
+          onClick={() => void cancel()}
         >
-          {request.questions.map((question) => (
+          <X size={17} />
+        </button>
+      </div>
+      <div className="ask-body">
+        {request.questions.map((question) => {
+          const selectedAnswers = answers[question.question] ?? [];
+          return (
             <section key={question.question} className="ask-question">
-              <div className="ask-chip">{question.header}</div>
+              <div className="ask-question-meta">
+                <div className="ask-chip">{question.header}</div>
+                {question.multi_select ? <div className="ask-chip secondary">可多选</div> : null}
+              </div>
               <h3>{question.question}</h3>
-              <div className="ask-options">
+              <div
+                className="ask-options"
+                role={question.multi_select ? "group" : "radiogroup"}
+                aria-label={question.question}
+              >
                 {question.options.map((option) => {
-                  const selected = (answers[question.question] ?? []).includes(option.label);
+                  const selected = selectedAnswers.includes(option.label);
                   return (
                     <button
                       key={option.label}
                       className={`ask-option ${selected ? "selected" : ""}`}
+                      type="button"
+                      role={question.multi_select ? undefined : "radio"}
+                      aria-checked={question.multi_select ? undefined : selected}
+                      aria-pressed={question.multi_select ? selected : undefined}
+                      disabled={submitting}
                       onClick={() => select(question, option.label)}
                     >
-                      <strong>{option.label}</strong>
-                      <span>{option.description}</span>
+                      <span className="ask-option-check" aria-hidden="true">
+                        {selected ? <Check size={15} /> : null}
+                      </span>
+                      <span className="ask-option-copy">
+                        <strong>{option.label}</strong>
+                        {option.description ? <span>{option.description}</span> : null}
+                      </span>
                     </button>
                   );
                 })}
               </div>
             </section>
-          ))}
-        </OverlayScrollbarsComponent>
-        <div className="ask-footer">
-          <button
-            className="secondary-button"
-            onClick={() => {
-              void window.wuu.respondToServerRequest(request.id, { answers: {}, cancelled: true });
-            }}
-          >
+          );
+        })}
+      </div>
+      <div className="ask-footer">
+        <span>{request.questions.length > 1 ? `${request.questions.length} 个问题` : "等待你的选择"}</span>
+        <div className="ask-actions">
+          <button className="secondary-button" type="button" disabled={submitting} onClick={() => void cancel()}>
             取消
           </button>
-          <button
-            className="primary-button"
-            onClick={() => {
-              void window.wuu.respondToServerRequest(request.id, { answers: flatAnswers });
-            }}
-          >
+          <button className="primary-button" type="button" disabled={submitting || !allQuestionsAnswered} onClick={() => void submit()}>
             提交
           </button>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
