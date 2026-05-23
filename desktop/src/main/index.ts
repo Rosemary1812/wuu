@@ -1,7 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, type OpenDialogOptions } from "electron";
 import { spawn as spawnChild, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
+  accessSync,
+  chmodSync,
   closeSync,
+  constants,
   existsSync,
   mkdirSync,
   openSync,
@@ -13,6 +16,7 @@ import {
   writeFileSync,
   type Dirent
 } from "node:fs";
+import { createRequire } from "node:module";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as pty from "node-pty";
@@ -49,6 +53,7 @@ import type {
 } from "../shared/protocol";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const requireFromMain = createRequire(import.meta.url);
 const RENDERABLE_IMAGE_EXTENSIONS = new Set([".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"]);
 const FILE_TREE_MAX_PATHS = 4000;
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
@@ -1246,6 +1251,7 @@ function startTerminalSession(params: TerminalSessionStartParams = {}): Terminal
   const shell = terminalShell();
   const cols = normalizeTerminalSize(params.cols, 80, 20, 500);
   const rows = normalizeTerminalSize(params.rows, 24, 6, 200);
+  ensureNodePtyHelperExecutable();
   const ptyProcess = pty.spawn(shell.command, shell.args, {
     name: "xterm-256color",
     cols,
@@ -1337,7 +1343,62 @@ function terminalShell(): { command: string; args: string[] } {
   if (process.platform === "win32") {
     return { command: process.env.ComSpec || "cmd.exe", args: [] };
   }
-  return { command: process.env.SHELL || "bash", args: ["-l"] };
+  return { command: resolveTerminalShell(), args: ["-l"] };
+}
+
+function resolveTerminalShell(): string {
+  const candidates = [
+    process.env.SHELL,
+    "/bin/zsh",
+    "/bin/bash",
+    "/bin/sh",
+    "/usr/bin/zsh",
+    "/usr/bin/bash",
+    "/usr/bin/sh"
+  ];
+  for (const candidate of candidates) {
+    if (isExecutableFile(candidate)) {
+      return candidate;
+    }
+  }
+  return "/bin/sh";
+}
+
+function ensureNodePtyHelperExecutable(): void {
+  if (process.platform === "win32") {
+    return;
+  }
+  let helperPath: string;
+  try {
+    const nodePtyMain = requireFromMain.resolve("node-pty");
+    helperPath = resolve(dirname(nodePtyMain), "..", "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
+    helperPath = helperPath
+      .replace("app.asar", "app.asar.unpacked")
+      .replace("node_modules.asar", "node_modules.asar.unpacked");
+  } catch {
+    return;
+  }
+  try {
+    accessSync(helperPath, constants.X_OK);
+  } catch {
+    const mode = existsSync(helperPath) ? statSync(helperPath).mode : 0o755;
+    chmodSync(helperPath, mode | 0o755);
+  }
+}
+
+function isExecutableFile(path: string | undefined): path is string {
+  if (!path || !isAbsolute(path)) {
+    return false;
+  }
+  try {
+    if (!statSync(path).isFile()) {
+      return false;
+    }
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function setWindowResizeState(resizing: boolean): void {
