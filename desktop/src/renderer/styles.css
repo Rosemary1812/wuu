@@ -2474,6 +2474,8 @@ button:disabled {
 }
 
 .civilization-prop,
+.civilization-fire,
+.civilization-banner,
 .era-projectile,
 .era-vehicle,
 .era-rocket,
@@ -2484,11 +2486,48 @@ button:disabled {
   pointer-events: none;
 }
 
+.stickman-crowd {
+  display: none;
+}
+
 .civilization-prop {
   top: 16px;
   border-radius: 2px 2px 0 0;
   background: currentColor;
   opacity: 0.42;
+}
+
+.civilization-fire {
+  top: 22px;
+  left: calc(50% - 8px);
+  width: 10px;
+  height: 10px;
+  border-radius: 999px 999px 999px 3px;
+  background: #d9a23a;
+  box-shadow:
+    -5px 6px 0 -2px #8e765d,
+    5px 6px 0 -2px #8e765d;
+  transform: rotate(45deg);
+  animation: campfire-flicker 1200ms ease-in-out infinite;
+}
+
+.civilization-banner {
+  top: 7px;
+  width: 1.5px;
+  height: 23px;
+  background: currentColor;
+  opacity: 0.72;
+}
+
+.civilization-banner::before {
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  width: 12px;
+  height: 8px;
+  border-radius: 1px 5px 5px 1px;
+  background: rgba(217, 162, 58, 0.72);
+  content: "";
 }
 
 .era-projectile {
@@ -2594,13 +2633,12 @@ button:disabled {
 }
 
 .era-sticks .stickman-a {
-  left: calc(50% - 58px);
-  animation: fight-duel-a 3200ms ease-in-out infinite;
+  left: calc(50% - 72px);
+  animation: scout-walk 4200ms ease-in-out infinite;
 }
 
 .era-sticks .stickman-b {
-  left: calc(50% + 34px);
-  animation: fight-duel-b 3200ms ease-in-out infinite;
+  display: none;
 }
 
 .era-sticks .stickman-weapon {
@@ -2627,19 +2665,45 @@ button:disabled {
   left: calc(50% + 74px);
 }
 
-.era-sticks .fight-spark,
+.era-sticks .civilization-fire {
+  display: block;
+}
+
+.era-sticks .crowd-one,
+.era-sticks .crowd-two,
+.era-sticks .crowd-three {
+  display: block;
+  top: 13px;
+  transform: scale(0.78);
+}
+
+.era-sticks .crowd-one {
+  left: calc(50% - 18px);
+  animation: tribe-gather-one 5200ms ease-in-out infinite;
+}
+
+.era-sticks .crowd-two {
+  left: calc(50% + 12px);
+  animation: tribe-gather-two 5400ms ease-in-out infinite;
+}
+
+.era-sticks .crowd-three {
+  left: calc(50% + 42px);
+  animation: tribe-gather-three 5600ms ease-in-out infinite;
+}
+
 .era-swords .fight-spark {
   animation: fight-spark 3200ms ease-in-out infinite;
 }
 
 .era-swords .stickman-a {
-  left: calc(50% - 62px);
-  animation: fight-duel-a 2600ms ease-in-out infinite;
+  left: calc(50% - 82px);
+  animation: battle-line-left 3300ms ease-in-out infinite;
 }
 
 .era-swords .stickman-b {
-  left: calc(50% + 34px);
-  animation: fight-duel-b 2600ms ease-in-out infinite;
+  left: calc(50% + 58px);
+  animation: battle-line-right 3300ms ease-in-out infinite;
 }
 
 .era-swords .stickman-weapon {
@@ -2650,6 +2714,49 @@ button:disabled {
 
 .era-swords .spark-two {
   animation-delay: 140ms;
+}
+
+.era-swords .crowd-one,
+.era-swords .crowd-two,
+.era-swords .crowd-three,
+.era-swords .crowd-four {
+  display: block;
+  top: 12px;
+  transform: scale(0.82);
+}
+
+.era-swords .crowd-one {
+  left: calc(50% - 108px);
+  animation: battle-line-left 3300ms ease-in-out infinite;
+}
+
+.era-swords .crowd-two {
+  left: calc(50% - 56px);
+  animation: battle-line-left 3300ms ease-in-out infinite;
+}
+
+.era-swords .crowd-three {
+  left: calc(50% + 28px);
+  animation: battle-line-right 3300ms ease-in-out infinite;
+}
+
+.era-swords .crowd-four {
+  left: calc(50% + 88px);
+  animation: battle-line-right 3300ms ease-in-out infinite;
+}
+
+.era-swords .banner-left,
+.era-swords .banner-right {
+  display: block;
+}
+
+.era-swords .banner-left {
+  left: calc(50% - 126px);
+}
+
+.era-swords .banner-right {
+  left: calc(50% + 119px);
+  transform: scaleX(-1);
 }
 
 .era-fortress .prop-left,
@@ -2681,13 +2788,13 @@ button:disabled {
 }
 
 .era-fortress .stickman-a {
-  left: calc(50% - 76px);
-  animation: fight-chase-a 3400ms ease-in-out infinite;
+  left: calc(50% - 108px);
+  animation: siege-advance 4300ms ease-in-out infinite;
 }
 
 .era-fortress .stickman-b {
-  left: calc(50% + 52px);
-  animation: fight-bonk-b 3400ms ease-in-out infinite;
+  left: calc(50% + 58px);
+  animation: wall-guard 3600ms ease-in-out infinite;
 }
 
 .era-fortress .fight-spark {
@@ -2695,14 +2802,42 @@ button:disabled {
   animation: fight-spark 3400ms ease-in-out infinite;
 }
 
-.era-cannon .stickman-a {
+.era-fortress .crowd-one,
+.era-fortress .crowd-two,
+.era-fortress .crowd-three {
+  display: block;
+  top: 13px;
+  transform: scale(0.8);
+}
+
+.era-fortress .crowd-one {
+  left: calc(50% - 132px);
+  animation: siege-advance 4300ms ease-in-out infinite;
+}
+
+.era-fortress .crowd-two {
   left: calc(50% - 78px);
-  animation: fight-bonk-a 3600ms ease-in-out infinite;
+  animation: siege-advance 4300ms ease-in-out infinite;
+}
+
+.era-fortress .crowd-three {
+  left: calc(50% + 86px);
+  animation: wall-guard 3600ms ease-in-out infinite;
+}
+
+.era-fortress .banner-left {
+  display: block;
+  left: calc(50% - 146px);
+}
+
+.era-cannon .stickman-a {
+  left: calc(50% - 86px);
+  animation: cannon-crew-one 3600ms ease-in-out infinite;
 }
 
 .era-cannon .stickman-b {
-  left: calc(50% + 54px);
-  animation: fight-bonk-b 3600ms ease-in-out infinite;
+  left: calc(50% - 60px);
+  animation: cannon-crew-two 3600ms ease-in-out infinite;
 }
 
 .era-cannon .era-vehicle {
@@ -2727,14 +2862,31 @@ button:disabled {
   animation: fight-spark 1800ms ease-in-out infinite;
 }
 
+.era-cannon .crowd-one,
+.era-cannon .crowd-two {
+  display: block;
+  top: 13px;
+  transform: scale(0.78);
+}
+
+.era-cannon .crowd-one {
+  left: calc(50% - 112px);
+  animation: cannon-crew-one 3600ms ease-in-out infinite;
+}
+
+.era-cannon .crowd-two {
+  left: calc(50% + 72px);
+  animation: wall-guard 3600ms ease-in-out infinite;
+}
+
 .era-factory .stickman-a {
   left: calc(50% - 68px);
-  animation: fight-chase-a 4300ms ease-in-out infinite;
+  animation: worker-shift-left 4300ms ease-in-out infinite;
 }
 
 .era-factory .stickman-b {
   left: calc(50% + 40px);
-  animation: fight-chase-b 4300ms ease-in-out infinite;
+  animation: worker-shift-right 4300ms ease-in-out infinite;
 }
 
 .era-factory .prop-left {
@@ -2780,6 +2932,23 @@ button:disabled {
 .era-factory .era-vehicle::before,
 .era-factory .era-vehicle::after {
   display: none;
+}
+
+.era-factory .crowd-one,
+.era-factory .crowd-two {
+  display: block;
+  top: 13px;
+  transform: scale(0.78);
+}
+
+.era-factory .crowd-one {
+  left: calc(50% - 94px);
+  animation: worker-shift-left 4300ms ease-in-out infinite;
+}
+
+.era-factory .crowd-two {
+  left: calc(50% + 70px);
+  animation: worker-shift-right 4300ms ease-in-out infinite;
 }
 
 .era-armor .stickman-a,
@@ -3742,6 +3911,150 @@ pre {
   to {
     opacity: 0;
     transform: translateX(100vw);
+  }
+}
+
+@keyframes scout-walk {
+  0%,
+  100% {
+    transform: translateX(-6px) rotate(0deg);
+  }
+  45% {
+    transform: translateX(18px) rotate(-3deg);
+  }
+  72% {
+    transform: translateX(9px) rotate(2deg);
+  }
+}
+
+@keyframes tribe-gather-one {
+  0%,
+  100% {
+    transform: translate(-5px, 1px) scale(0.78);
+  }
+  50% {
+    transform: translate(3px, -1px) scale(0.78);
+  }
+}
+
+@keyframes tribe-gather-two {
+  0%,
+  100% {
+    transform: translate(5px, 0) scale(0.78);
+  }
+  48% {
+    transform: translate(-4px, 1px) scale(0.78);
+  }
+}
+
+@keyframes tribe-gather-three {
+  0%,
+  100% {
+    transform: translate(1px, 1px) scale(0.78);
+  }
+  46% {
+    transform: translate(-6px, -1px) scale(0.78);
+  }
+}
+
+@keyframes battle-line-left {
+  0%,
+  100% {
+    transform: translateX(-8px) rotate(0deg);
+  }
+  46% {
+    transform: translateX(18px) rotate(-4deg);
+  }
+  66% {
+    transform: translateX(11px) rotate(2deg);
+  }
+}
+
+@keyframes battle-line-right {
+  0%,
+  100% {
+    transform: translateX(8px) rotate(0deg);
+  }
+  46% {
+    transform: translateX(-18px) rotate(4deg);
+  }
+  66% {
+    transform: translateX(-11px) rotate(-2deg);
+  }
+}
+
+@keyframes siege-advance {
+  0%,
+  100% {
+    transform: translateX(-12px);
+  }
+  48% {
+    transform: translateX(14px);
+  }
+  68% {
+    transform: translateX(8px);
+  }
+}
+
+@keyframes wall-guard {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes cannon-crew-one {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  42% {
+    transform: translateX(9px) rotate(-6deg);
+  }
+}
+
+@keyframes cannon-crew-two {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  42% {
+    transform: translateX(-6px) rotate(5deg);
+  }
+}
+
+@keyframes worker-shift-left {
+  0%,
+  100% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(7px);
+  }
+}
+
+@keyframes worker-shift-right {
+  0%,
+  100% {
+    transform: translateX(5px);
+  }
+  50% {
+    transform: translateX(-7px);
+  }
+}
+
+@keyframes campfire-flicker {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: rotate(45deg) scale(0.85);
+  }
+  45% {
+    opacity: 1;
+    transform: rotate(45deg) scale(1.08);
   }
 }
 

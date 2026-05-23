@@ -179,6 +179,7 @@ const TURN_PROGRESS_ERAS: TurnProgressEra[] = [
   "galaxy"
 ];
 const TURN_PROGRESS_CAMPAIGN_MS = TURN_PROGRESS_ERA_MS * TURN_PROGRESS_ERAS.length;
+const TURN_PROGRESS_PREVIEW_SPEED = TURN_PROGRESS_CAMPAIGN_MS / TURN_PROGRESS_PREVIEW_MS;
 const TURN_PROGRESS_ERA_LABELS: Record<TurnProgressEra, string> = {
   sticks: "木棍",
   swords: "刀剑",
@@ -4238,14 +4239,17 @@ function TurnProgressPreviewOverlay({ onClose }: { onClose: () => void }): JSX.E
   const now = usePreviewNow(!complete);
   const previewElapsedMs = Math.min(TURN_PROGRESS_PREVIEW_MS, Math.max(0, now - startedAt));
   const previewRatio = previewElapsedMs / TURN_PROGRESS_PREVIEW_MS;
-  const campaignElapsedMs = Math.min(TURN_PROGRESS_CAMPAIGN_MS - 1, previewRatio * TURN_PROGRESS_CAMPAIGN_MS);
-  const campaign = turnProgressCampaign("turn-progress-preview", campaignElapsedMs);
+  const previewComplete = previewElapsedMs >= TURN_PROGRESS_PREVIEW_MS;
+  const campaignElapsedMs = previewComplete
+    ? TURN_PROGRESS_CAMPAIGN_MS
+    : Math.min(TURN_PROGRESS_CAMPAIGN_MS - 1, previewRatio * TURN_PROGRESS_CAMPAIGN_MS);
+  const campaign = turnProgressCampaign("turn-progress-preview", Math.min(TURN_PROGRESS_CAMPAIGN_MS - 1, campaignElapsedMs));
 
   useEffect(() => {
-    if (!complete && previewElapsedMs >= TURN_PROGRESS_PREVIEW_MS) {
+    if (!complete && previewComplete) {
       setComplete(true);
     }
-  }, [complete, previewElapsedMs]);
+  }, [complete, previewComplete]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -4273,6 +4277,8 @@ function TurnProgressPreviewOverlay({ onClose }: { onClose: () => void }): JSX.E
             <p>
               {formatDuration(campaignElapsedMs)} / {formatDuration(TURN_PROGRESS_CAMPAIGN_MS)}
               <span>{TURN_PROGRESS_ERA_LABELS[campaign.currentEra]}</span>
+              <span>{formatDuration(TURN_PROGRESS_PREVIEW_MS)} 预览</span>
+              <span>{Math.round(TURN_PROGRESS_PREVIEW_SPEED)}x</span>
             </p>
           </div>
           <div className="turn-progress-preview-actions">
@@ -4346,6 +4352,9 @@ function TurnProgressSceneLayer({
       <span className="civilization-prop prop-left" />
       <span className="civilization-prop prop-mid" />
       <span className="civilization-prop prop-right" />
+      <span className="civilization-fire" />
+      <span className="civilization-banner banner-left" />
+      <span className="civilization-banner banner-right" />
       <span className="era-projectile projectile-one" />
       <span className="era-projectile projectile-two" />
       <span className="era-vehicle" />
@@ -4357,6 +4366,10 @@ function TurnProgressSceneLayer({
       <span className="fight-spark spark-two" />
       <Stickman className="stickman-a" />
       <Stickman className="stickman-b" />
+      <Stickman className="stickman-crowd crowd-one" />
+      <Stickman className="stickman-crowd crowd-two" />
+      <Stickman className="stickman-crowd crowd-three" />
+      <Stickman className="stickman-crowd crowd-four" />
     </span>
   );
 }
