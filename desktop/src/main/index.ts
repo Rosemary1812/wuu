@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, type OpenDialogOptions } from "electron";
-import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn as spawnChild, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import * as pty from "node-pty";
 import type {
   AppServerNotification,
   AppServerRequest,
@@ -38,9 +39,10 @@ import type {
   ProjectListResult,
   RuntimeContext,
   ServerEvent,
-  TerminalCommandEvent,
-  TerminalCommandStartResult,
-  TerminalCommandStopResult,
+  TerminalSessionActionResult,
+  TerminalSessionEvent,
+  TerminalSessionStartParams,
+  TerminalSessionStartResult,
   Thread,
   Turn,
   WorkspaceFileReadResult
@@ -147,7 +149,7 @@ class AppServerClient {
       return;
     }
     const command = resolveWuuCommand(this.workdir);
-    this.child = spawn(command.command, [...command.args, "app-server", "--workdir", this.workdir], {
+    this.child = spawnChild(command.command, [...command.args, "app-server", "--workdir", this.workdir], {
       cwd: command.cwd,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"]
@@ -276,14 +278,14 @@ let client: AppServerClient | null = null;
 let projectStore: ProjectStore = { projects: [] };
 let windowResizeEndTimer: NodeJS.Timeout | undefined;
 let windowResizeState = false;
-let terminalCommandCounter = 1;
-const terminalCommands = new Map<string, TerminalCommand>();
+let terminalSessionCounter = 1;
+const terminalSessions = new Map<string, TerminalSession>();
 
-type TerminalCommand = {
+type TerminalSession = {
   id: string;
-  child: ChildProcess;
-  command: string;
+  ptyProcess: pty.IPty;
   cwd: string;
+  shell: string;
   startedAt: number;
 };
 
@@ -1202,7 +1204,7 @@ function selectNoProject(fresh: boolean): ProjectListResult {
 function resetClient(): void {
   client?.dispose();
   client = null;
-  cleanupTerminalCommands();
+  cleanupTerminalSessions();
 }
 
 async function showProjectDirectoryDialog(options: OpenDialogOptions): Promise<string | undefined> {
@@ -1229,52 +1231,40 @@ function emitServerEvent(event: ServerEvent): void {
   mainWindow.webContents.send("wuu:server-event", event);
 }
 
-function emitTerminalEvent(event: TerminalCommandEvent): void {
+function emitTerminalEvent(event: TerminalSessionEvent): void {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
     return;
   }
   mainWindow.webContents.send("wuu:terminal-event", event);
 }
 
-function startTerminalCommand(command: string): TerminalCommandStartResult {
-  const trimmed = command.trim();
-  if (!trimmed) {
-    throw new Error("command is required");
-  }
+function startTerminalSession(params: TerminalSessionStartParams = {}): TerminalSessionStartResult {
   const context = ensureRuntimeContext();
   const cwd = context.cwd;
-  const id = `term-${terminalCommandCounter++}`;
+  const id = `term-${terminalSessionCounter++}`;
   const startedAt = Date.now();
-  const shell = terminalShellCommand(trimmed);
-  const child = spawn(shell.command, shell.args, {
+  const shell = terminalShell();
+  const cols = normalizeTerminalSize(params.cols, 80, 20, 500);
+  const rows = normalizeTerminalSize(params.rows, 24, 6, 200);
+  const ptyProcess = pty.spawn(shell.command, shell.args, {
+    name: "xterm-256color",
+    cols,
+    rows,
     cwd,
-    env: { ...process.env, CLICOLOR: "1", FORCE_COLOR: "1", TERM: "xterm-256color" },
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: process.platform !== "win32"
+    env: { ...process.env, CLICOLOR: "1", COLORTERM: "truecolor", FORCE_COLOR: "1", TERM: "xterm-256color" }
   });
-  const entry: TerminalCommand = { id, child, command: trimmed, cwd, startedAt };
-  terminalCommands.set(id, entry);
 
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (text: string) => emitTerminalEvent({ type: "output", id, stream: "stdout", text }));
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (text: string) => emitTerminalEvent({ type: "output", id, stream: "stderr", text }));
-  child.on("error", (error) => {
-    terminalCommands.delete(id);
-    emitTerminalEvent({
-      type: "error",
-      id,
-      message: error.message,
-      finished_at: new Date().toISOString()
-    });
-  });
-  child.on("exit", (exitCode, signal) => {
-    terminalCommands.delete(id);
+  const entry: TerminalSession = { id, ptyProcess, cwd, shell: shell.command, startedAt };
+  terminalSessions.set(id, entry);
+
+  ptyProcess.onData((text) => emitTerminalEvent({ type: "data", id, text }));
+  ptyProcess.onExit((event) => {
+    terminalSessions.delete(id);
     emitTerminalEvent({
       type: "exit",
       id,
-      exit_code: exitCode,
-      signal,
+      exit_code: event.exitCode,
+      signal: event.signal ?? null,
       duration_ms: Date.now() - startedAt,
       finished_at: new Date().toISOString()
     });
@@ -1282,48 +1272,72 @@ function startTerminalCommand(command: string): TerminalCommandStartResult {
 
   return {
     id,
-    command: trimmed,
     cwd,
+    shell: shell.command,
     started_at: new Date(startedAt).toISOString()
   };
 }
 
-function stopTerminalCommand(id: string): TerminalCommandStopResult {
-  const command = terminalCommands.get(id);
-  if (!command) {
+function writeTerminalSession(id: string, data: string): TerminalSessionActionResult {
+  const session = terminalSessions.get(id);
+  if (!session) {
     return { ok: false };
   }
-  terminateTerminalChild(command.child);
+  session.ptyProcess.write(data);
   return { ok: true };
 }
 
-function cleanupTerminalCommands(): void {
-  for (const command of terminalCommands.values()) {
-    terminateTerminalChild(command.child);
+function resizeTerminalSession(id: string, cols: number, rows: number): TerminalSessionActionResult {
+  const session = terminalSessions.get(id);
+  if (!session) {
+    return { ok: false };
   }
-  terminalCommands.clear();
+  session.ptyProcess.resize(normalizeTerminalSize(cols, 80, 20, 500), normalizeTerminalSize(rows, 24, 6, 200));
+  return { ok: true };
 }
 
-function terminateTerminalChild(child: ChildProcess): void {
-  if (child.killed) {
-    return;
+function stopTerminalSession(id: string): TerminalSessionActionResult {
+  const session = terminalSessions.get(id);
+  if (!session) {
+    return { ok: false };
   }
-  if (process.platform !== "win32" && child.pid) {
-    try {
-      process.kill(-child.pid, "SIGTERM");
-      return;
-    } catch {
-      // Fall through to killing the direct child.
-    }
-  }
-  child.kill("SIGTERM");
+  terminateTerminalSession(session);
+  return { ok: true };
 }
 
-function terminalShellCommand(command: string): { command: string; args: string[] } {
+function cleanupTerminalSessions(): void {
+  for (const session of terminalSessions.values()) {
+    terminateTerminalSession(session);
+  }
+  terminalSessions.clear();
+}
+
+function terminateTerminalSession(session: TerminalSession): void {
+  terminalSessions.delete(session.id);
+  try {
+    session.ptyProcess.kill();
+  } catch (error) {
+    emitTerminalEvent({
+      type: "error",
+      id: session.id,
+      message: error instanceof Error ? error.message : "Failed to stop terminal session.",
+      finished_at: new Date().toISOString()
+    });
+  }
+}
+
+function normalizeTerminalSize(value: number | undefined, fallback: number, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+function terminalShell(): { command: string; args: string[] } {
   if (process.platform === "win32") {
-    return { command: "cmd.exe", args: ["/d", "/s", "/c", command] };
+    return { command: process.env.ComSpec || "cmd.exe", args: [] };
   }
-  return { command: process.env.SHELL || "bash", args: ["-lc", command] };
+  return { command: process.env.SHELL || "bash", args: ["-l"] };
 }
 
 function setWindowResizeState(resizing: boolean): void {
@@ -1451,8 +1465,12 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:git-create-pr", (_event, params: GitPullRequestParams) => createPullRequest(params ?? {}));
   ipcMain.handle("wuu:file-tree-list", () => fileTreeListResult());
   ipcMain.handle("wuu:file-read", (_event, path: string) => readWorkspaceFileResult(path));
-  ipcMain.handle("wuu:terminal-start", (_event, command: string) => startTerminalCommand(command));
-  ipcMain.handle("wuu:terminal-stop", (_event, id: string) => stopTerminalCommand(id));
+  ipcMain.handle("wuu:terminal-start", (_event, params?: TerminalSessionStartParams) => startTerminalSession(params));
+  ipcMain.handle("wuu:terminal-write", (_event, id: string, data: string) => writeTerminalSession(id, data));
+  ipcMain.handle("wuu:terminal-resize", (_event, id: string, cols: number, rows: number) =>
+    resizeTerminalSession(id, cols, rows)
+  );
+  ipcMain.handle("wuu:terminal-stop", (_event, id: string) => stopTerminalSession(id));
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
       title: "使用现有文件夹",
@@ -1520,7 +1538,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
-  cleanupTerminalCommands();
+  cleanupTerminalSessions();
   client?.shutdown();
 });
 

@@ -43,6 +43,9 @@ import {
 } from "lucide-react";
 import { preparePresortedFileTreeInput } from "@pierre/trees";
 import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
+import { FitAddon } from "@xterm/addon-fit";
+import { Terminal as XtermTerminal } from "@xterm/xterm";
+import "@xterm/xterm/css/xterm.css";
 import {
   type CSSProperties,
   type ClipboardEvent as ReactClipboardEvent,
@@ -81,7 +84,7 @@ import type {
   ProjectListResult,
   RuntimeContext,
   ServerEvent,
-  TerminalCommandEvent,
+  TerminalSessionEvent,
   Thread,
   ThreadItem,
   Turn,
@@ -3796,7 +3799,7 @@ function WorkspaceRightPanel({
             ) : view === "review" ? (
               <WorkspaceReviewPanel gitStatus={gitStatus} />
             ) : view === "terminal" ? (
-              <WorkspaceTerminalPanel activeContext={activeContext} gitStatus={gitStatus} />
+              <WorkspaceTerminalPanel activeContext={activeContext} />
             ) : null}
           </div>
         </>
@@ -3886,26 +3889,11 @@ function WorkspaceBottomPanel({
   );
 }
 
-const WORKSPACE_TERMINAL_MAX_LINES = 800;
 const WORKSPACE_TERMINAL_PENDING_EVENT_IDS = 12;
 
-type WorkspaceTerminalLine = {
-  id: string;
-  kind: "stdout" | "stderr" | "status" | "error";
-  text: string;
-} | {
-  id: string;
-  kind: "command";
-  text: string;
-  prompt: WorkspaceTerminalPrompt;
-};
+type WorkspaceTerminalState = "starting" | "ready" | "exited" | "error";
 
-type WorkspaceTerminalPrompt = {
-  cwd: string;
-  git?: string;
-};
-
-function terminalExitText(event: Extract<TerminalCommandEvent, { type: "exit" }>): string {
+function terminalExitText(event: Extract<TerminalSessionEvent, { type: "exit" }>): string {
   const duration = formatDuration(event.duration_ms);
   if (event.signal) {
     return `stopped by ${event.signal} after ${duration}`;
@@ -3913,192 +3901,170 @@ function terminalExitText(event: Extract<TerminalCommandEvent, { type: "exit" }>
   return `exit ${event.exit_code ?? "unknown"} after ${duration}`;
 }
 
-function WorkspaceTerminalPanel({
-  activeContext,
-  gitStatus
-}: {
-  activeContext?: RuntimeContext;
-  gitStatus?: GitStatusResult;
-}): JSX.Element {
-  const [lines, setLines] = useState<WorkspaceTerminalLine[]>([]);
-  const [draft, setDraft] = useState("");
-  const [runningCommandID, setRunningCommandID] = useState<string | undefined>(undefined);
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState<number | undefined>(undefined);
-  const knownCommandIDsRef = useRef(new Set<string>());
-  const pendingTerminalEventsRef = useRef(new Map<string, TerminalCommandEvent[]>());
-  const runningCommandIDRef = useRef<string | undefined>(undefined);
-  const lineCounterRef = useRef(1);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+function WorkspaceTerminalPanel({ activeContext }: { activeContext?: RuntimeContext }): JSX.Element {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const terminalRef = useRef<XtermTerminal | null>(null);
+  const sessionIDRef = useRef<string | undefined>(undefined);
+  const pendingTerminalEventsRef = useRef(new Map<string, TerminalSessionEvent[]>());
+  const [terminalState, setTerminalState] = useState<WorkspaceTerminalState>("starting");
+  const [restartKey, setRestartKey] = useState(0);
   const workspaceRoot = activeContext?.cwd;
-  const prompt = useMemo(() => terminalPromptFor(workspaceRoot, gitStatus), [gitStatus, workspaceRoot]);
 
   useEffect(() => {
-    runningCommandIDRef.current = runningCommandID;
-  }, [runningCommandID]);
+    const container = containerRef.current;
+    if (!workspaceRoot || !container) {
+      return undefined;
+    }
 
-  useEffect(() => {
-    return window.wuu.onTerminalEvent((event) => {
-      if (!knownCommandIDsRef.current.has(event.id)) {
+    let disposed = false;
+    let resizeFrame: number | undefined;
+    setTerminalState("starting");
+    pendingTerminalEventsRef.current.clear();
+
+    const terminal = new XtermTerminal({
+      allowTransparency: false,
+      convertEol: false,
+      cursorBlink: true,
+      fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+      fontSize: 12,
+      lineHeight: 1.45,
+      scrollback: 5000,
+      theme: {
+        background: "#ffffff",
+        black: "#24292f",
+        blue: "#2f98ff",
+        cursor: "#202427",
+        foreground: "#1f2328",
+        green: "#1f9d46",
+        red: "#b42318",
+        selectionBackground: "#d7e9ff",
+        yellow: "#ffc21a"
+      }
+    });
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(container);
+    terminal.focus();
+    terminalRef.current = terminal;
+
+    function fitAndResize(): void {
+      if (disposed) {
+        return;
+      }
+      try {
+        fitAddon.fit();
+      } catch {
+        return;
+      }
+      const id = sessionIDRef.current;
+      if (id) {
+        void window.wuu.resizeTerminalSession(id, terminal.cols, terminal.rows);
+      }
+    }
+
+    const dataDisposable = terminal.onData((data) => {
+      const id = sessionIDRef.current;
+      if (id) {
+        void window.wuu.writeTerminalSession(id, data);
+      }
+    });
+    const resizeObserver = new ResizeObserver(() => {
+      if (resizeFrame !== undefined) {
+        window.cancelAnimationFrame(resizeFrame);
+      }
+      resizeFrame = window.requestAnimationFrame(fitAndResize);
+    });
+    resizeObserver.observe(container);
+    resizeFrame = window.requestAnimationFrame(fitAndResize);
+
+    function bufferTerminalEvent(event: TerminalSessionEvent): void {
+      const events = pendingTerminalEventsRef.current.get(event.id) ?? [];
+      pendingTerminalEventsRef.current.set(event.id, [...events, event]);
+      while (pendingTerminalEventsRef.current.size > WORKSPACE_TERMINAL_PENDING_EVENT_IDS) {
+        const firstID = pendingTerminalEventsRef.current.keys().next().value;
+        if (!firstID) {
+          break;
+        }
+        pendingTerminalEventsRef.current.delete(firstID);
+      }
+    }
+
+    function handleTerminalEvent(event: TerminalSessionEvent): void {
+      if (event.type === "data") {
+        terminal.write(event.text);
+        return;
+      }
+      if (event.type === "exit") {
+        terminal.writeln("");
+        terminal.writeln(`[${terminalExitText(event)}]`);
+        setTerminalState("exited");
+        sessionIDRef.current = undefined;
+        return;
+      }
+      terminal.writeln("");
+      terminal.writeln(`[terminal error: ${event.message}]`);
+      setTerminalState("error");
+      sessionIDRef.current = undefined;
+    }
+
+    function flushPendingTerminalEvents(id: string): void {
+      const events = pendingTerminalEventsRef.current.get(id);
+      if (!events) {
+        return;
+      }
+      pendingTerminalEventsRef.current.delete(id);
+      for (const event of events) {
+        handleTerminalEvent(event);
+      }
+    }
+
+    const unsubscribeTerminal = window.wuu.onTerminalEvent((event) => {
+      if (event.id !== sessionIDRef.current) {
         bufferTerminalEvent(event);
         return;
       }
       handleTerminalEvent(event);
     });
-  }, []);
 
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (!node) {
-      return;
+    async function startSession(): Promise<void> {
+      try {
+        fitAndResize();
+        const started = await window.wuu.startTerminalSession({ cols: terminal.cols, rows: terminal.rows });
+        if (disposed) {
+          void window.wuu.stopTerminalSession(started.id);
+          return;
+        }
+        sessionIDRef.current = started.id;
+        setTerminalState("ready");
+        flushPendingTerminalEvents(started.id);
+        fitAndResize();
+        terminal.focus();
+      } catch (error) {
+        terminal.writeln(desktopApiErrorMessage(error, "终端启动失败"));
+        setTerminalState("error");
+      }
     }
-    node.scrollTop = node.scrollHeight;
-  }, [lines]);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [runningCommandID, workspaceRoot]);
+    void startSession();
 
-  useEffect(() => {
-    const commandID = runningCommandIDRef.current;
-    if (commandID) {
-      void window.wuu.stopTerminalCommand(commandID);
-      runningCommandIDRef.current = undefined;
-    }
-    setLines([]);
-    setDraft("");
-    setRunningCommandID(undefined);
-    setHistoryIndex(undefined);
-    knownCommandIDsRef.current.clear();
-    pendingTerminalEventsRef.current.clear();
-  }, [workspaceRoot]);
-
-  useEffect(() => {
     return () => {
-      const commandID = runningCommandIDRef.current;
-      if (commandID) {
-        void window.wuu.stopTerminalCommand(commandID);
+      disposed = true;
+      if (resizeFrame !== undefined) {
+        window.cancelAnimationFrame(resizeFrame);
       }
+      const sessionID = sessionIDRef.current;
+      sessionIDRef.current = undefined;
+      if (sessionID) {
+        void window.wuu.stopTerminalSession(sessionID);
+      }
+      unsubscribeTerminal();
+      dataDisposable.dispose();
+      resizeObserver.disconnect();
+      pendingTerminalEventsRef.current.clear();
+      terminal.dispose();
+      terminalRef.current = null;
     };
-  }, []);
-
-  function nextLineID(): string {
-    const next = lineCounterRef.current++;
-    return `terminal-line-${next}`;
-  }
-
-  function appendLines(nextLines: WorkspaceTerminalLine[]): void {
-    setLines((current) => [...current, ...nextLines].slice(-WORKSPACE_TERMINAL_MAX_LINES));
-  }
-
-  function bufferTerminalEvent(event: TerminalCommandEvent): void {
-    const events = pendingTerminalEventsRef.current.get(event.id) ?? [];
-    pendingTerminalEventsRef.current.set(event.id, [...events, event]);
-    while (pendingTerminalEventsRef.current.size > WORKSPACE_TERMINAL_PENDING_EVENT_IDS) {
-      const firstID = pendingTerminalEventsRef.current.keys().next().value;
-      if (!firstID) {
-        break;
-      }
-      pendingTerminalEventsRef.current.delete(firstID);
-    }
-  }
-
-  function flushPendingTerminalEvents(id: string): void {
-    const events = pendingTerminalEventsRef.current.get(id);
-    if (!events) {
-      return;
-    }
-    pendingTerminalEventsRef.current.delete(id);
-    for (const event of events) {
-      handleTerminalEvent(event);
-    }
-  }
-
-  function handleTerminalEvent(event: TerminalCommandEvent): void {
-    if (event.type === "output") {
-      appendLines([{ id: nextLineID(), kind: event.stream, text: event.text }]);
-      return;
-    }
-    if (event.type === "exit") {
-      appendLines([{ id: nextLineID(), kind: event.exit_code === 0 ? "status" : "error", text: terminalExitText(event) }]);
-      if (runningCommandIDRef.current === event.id) {
-        runningCommandIDRef.current = undefined;
-        setRunningCommandID(undefined);
-      }
-      knownCommandIDsRef.current.delete(event.id);
-      return;
-    }
-    appendLines([{ id: nextLineID(), kind: "error", text: event.message }]);
-    if (runningCommandIDRef.current === event.id) {
-      runningCommandIDRef.current = undefined;
-      setRunningCommandID(undefined);
-    }
-    knownCommandIDsRef.current.delete(event.id);
-  }
-
-  async function submitCommand(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    const command = draft.trim();
-    if (!command || runningCommandID || !workspaceRoot) {
-      return;
-    }
-    appendLines([{ id: nextLineID(), kind: "command", prompt, text: command }]);
-    setDraft("");
-    setHistory((current) => [...current.filter((item) => item !== command), command].slice(-80));
-    setHistoryIndex(undefined);
-    try {
-      const started = await window.wuu.startTerminalCommand(command);
-      knownCommandIDsRef.current.add(started.id);
-      runningCommandIDRef.current = started.id;
-      setRunningCommandID(started.id);
-      flushPendingTerminalEvents(started.id);
-    } catch (error) {
-      appendLines([{ id: nextLineID(), kind: "error", text: desktopApiErrorMessage(error, "命令启动失败") }]);
-    }
-  }
-
-  async function stopCommand(): Promise<void> {
-    const commandID = runningCommandIDRef.current;
-    if (!commandID) {
-      return;
-    }
-    try {
-      const stopped = await window.wuu.stopTerminalCommand(commandID);
-      if (!stopped.ok) {
-        setRunningCommandID(undefined);
-      }
-    } catch (error) {
-      appendLines([{ id: nextLineID(), kind: "error", text: desktopApiErrorMessage(error, "停止失败") }]);
-    }
-  }
-
-  function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      if (history.length === 0) {
-        return;
-      }
-      const nextIndex = historyIndex === undefined ? history.length - 1 : Math.max(0, historyIndex - 1);
-      setHistoryIndex(nextIndex);
-      setDraft(history[nextIndex] ?? "");
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      if (historyIndex === undefined) {
-        return;
-      }
-      const nextIndex = historyIndex + 1;
-      if (nextIndex >= history.length) {
-        setHistoryIndex(undefined);
-        setDraft("");
-        return;
-      }
-      setHistoryIndex(nextIndex);
-      setDraft(history[nextIndex] ?? "");
-    }
-  }
+  }, [restartKey, workspaceRoot]);
 
   if (!workspaceRoot) {
     return <WorkspacePanelEmpty title="没有项目" description="先选择一个项目。" icon={<Terminal size={24} />} />;
@@ -4106,93 +4072,16 @@ function WorkspaceTerminalPanel({
 
   return (
     <div className="workspace-terminal-panel">
-      <div className="workspace-terminal-screen" ref={scrollRef} onMouseDown={() => inputRef.current?.focus()}>
-        {lines.map((line) => (
-          line.kind === "command" ? (
-            <div className="workspace-terminal-row workspace-terminal-command-line" key={line.id}>
-              <WorkspaceTerminalPrompt prompt={line.prompt} />
-              <span className="workspace-terminal-command-text">{line.text}</span>
-            </div>
-          ) : (
-            <pre className={`workspace-terminal-line ${line.kind}`} key={line.id}>
-              {line.text}
-            </pre>
-          )
-        ))}
-        {runningCommandID ? (
-          <div className="workspace-terminal-row workspace-terminal-running">
-            <WorkspaceTerminalPrompt prompt={prompt} />
-            <span className="workspace-terminal-running-label">running</span>
-            <button type="button" aria-label="停止命令" onClick={() => void stopCommand()}>
-              <Square size={14} />
-            </button>
-          </div>
-        ) : (
-          <form className="workspace-terminal-input workspace-terminal-prompt-form" onSubmit={(event) => void submitCommand(event)}>
-            <WorkspaceTerminalPrompt prompt={prompt} />
-            <input
-              ref={inputRef}
-              className="workspace-terminal-prompt-input"
-              value={draft}
-              aria-label="终端命令"
-              spellCheck={false}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={handleInputKeyDown}
-            />
-            <button type="submit" aria-label="运行命令" disabled={!draft.trim()}>
-              <Send size={14} />
-            </button>
-          </form>
-        )}
+      <div className="workspace-terminal-screen" onMouseDown={() => terminalRef.current?.focus()}>
+        <div className="workspace-terminal-host" ref={containerRef} />
       </div>
+      {terminalState === "exited" || terminalState === "error" ? (
+        <button className="workspace-terminal-restart" type="button" onClick={() => setRestartKey((current) => current + 1)}>
+          重新启动
+        </button>
+      ) : null}
     </div>
   );
-}
-
-function WorkspaceTerminalPrompt({ prompt }: { prompt: WorkspaceTerminalPrompt }): JSX.Element {
-  return (
-    <span className="workspace-terminal-prompt" aria-hidden="true">
-      <span className="workspace-terminal-prompt-cwd">{prompt.cwd}</span>
-      {prompt.git ? <span className="workspace-terminal-prompt-git">{prompt.git}</span> : null}
-      <span className="workspace-terminal-prompt-ok">✓</span>
-    </span>
-  );
-}
-
-function terminalPromptFor(workspaceRoot: string | undefined, gitStatus?: GitStatusResult): WorkspaceTerminalPrompt {
-  return {
-    cwd: workspaceRoot ? terminalCwdLabel(workspaceRoot) : "~",
-    git: terminalGitPrompt(gitStatus)
-  };
-}
-
-function terminalCwdLabel(root: string): string {
-  const normalized = root.replace(/\\/g, "/");
-  const homeMatch = normalized.match(/^\/Users\/[^/]+(?:\/(.+))?$/);
-  if (homeMatch) {
-    return homeMatch[1] ? `~/${homeMatch[1]}` : "~";
-  }
-  return formatWorkspaceRoot(root);
-}
-
-function terminalGitPrompt(gitStatus?: GitStatusResult): string | undefined {
-  if (!gitStatus?.is_repo) {
-    return undefined;
-  }
-  const parts = [gitStatus.branch ?? "detached"];
-  if (gitStatus.ahead_count) {
-    parts.push(`↑${gitStatus.ahead_count}`);
-  }
-  if (gitStatus.behind_count) {
-    parts.push(`↓${gitStatus.behind_count}`);
-  }
-  if (gitStatus.diff?.files) {
-    parts.push(`*${gitStatus.diff.files}`);
-  }
-  if (gitStatus.staged_diff?.files) {
-    parts.push(`+${gitStatus.staged_diff.files}`);
-  }
-  return parts.join(" ");
 }
 function WorkspaceFileTree({
   activeContext,

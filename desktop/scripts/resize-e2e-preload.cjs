@@ -4,7 +4,8 @@ const cwd = process.env.WUU_RESIZE_E2E_CWD || process.cwd();
 const runtimeContext = { kind: "no_project", cwd };
 const now = new Date().toISOString();
 const terminalListeners = new Set();
-let terminalCommandCounter = 1;
+let terminalSessionCounter = 1;
+const terminalSessions = new Map();
 const workspacePaths = Array.from({ length: 220 }, (_value, index) => {
   const file = String(index).padStart(3, "0");
   return `resize-fixture-${file}.ts`;
@@ -124,20 +125,52 @@ contextBridge.exposeInMainWorld("wuu", {
     truncated: false,
     text: `export const path = ${JSON.stringify(path)};\n`
   }),
-  startTerminalCommand: async (command) => {
-    const id = `mock-terminal-${terminalCommandCounter++}`;
-    for (const listener of terminalListeners) {
-      listener({ type: "output", id, stream: "stdout", text: `mock terminal output: ${command}\n` });
-      listener({ type: "exit", id, exit_code: 0, signal: null, duration_ms: 12, finished_at: new Date().toISOString() });
-    }
+  startTerminalSession: async () => {
+    const id = `mock-terminal-${terminalSessionCounter++}`;
+    terminalSessions.set(id, { input: "" });
+    queueMicrotask(() => {
+      for (const listener of terminalListeners) {
+        listener({ type: "data", id, text: "~/wuu resize-e2e $ " });
+      }
+    });
     return {
       id,
-      command,
       cwd,
+      shell: "/bin/mock",
       started_at: new Date().toISOString()
     };
   },
-  stopTerminalCommand: async () => ({ ok: true }),
+  writeTerminalSession: async (id, data) => {
+    const session = terminalSessions.get(id);
+    if (!session) {
+      return { ok: false };
+    }
+    if (data === "\r") {
+      const command = session.input.trim();
+      session.input = "";
+      for (const listener of terminalListeners) {
+        listener({ type: "data", id, text: `\r\nmock terminal output: ${command}\r\n~/wuu resize-e2e $ ` });
+      }
+      return { ok: true };
+    }
+    if (data === "\u007f") {
+      session.input = session.input.slice(0, -1);
+      for (const listener of terminalListeners) {
+        listener({ type: "data", id, text: "\b \b" });
+      }
+      return { ok: true };
+    }
+    session.input += data;
+    for (const listener of terminalListeners) {
+      listener({ type: "data", id, text: data });
+    }
+    return { ok: true };
+  },
+  resizeTerminalSession: async (id) => ({ ok: terminalSessions.has(id) }),
+  stopTerminalSession: async (id) => {
+    const existed = terminalSessions.delete(id);
+    return { ok: existed };
+  },
   initialize: async () => ({
     protocol_version: "e2e",
     provider: "e2e",

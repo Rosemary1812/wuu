@@ -185,29 +185,33 @@ export type WorkspaceFileReadResult = {
   text?: string;
 };
 
-export type TerminalCommandStartResult = {
+export type TerminalSessionStartParams = {
+  cols?: number;
+  rows?: number;
+};
+
+export type TerminalSessionStartResult = {
   id: string;
-  command: string;
   cwd: string;
+  shell: string;
   started_at: string;
 };
 
-export type TerminalCommandStopResult = {
+export type TerminalSessionActionResult = {
   ok: boolean;
 };
 
-export type TerminalCommandEvent =
+export type TerminalSessionEvent =
   | {
-      type: "output";
+      type: "data";
       id: string;
-      stream: "stdout" | "stderr";
       text: string;
     }
   | {
       type: "exit";
       id: string;
       exit_code: number | null;
-      signal: string | null;
+      signal: string | number | null;
       duration_ms: number;
       finished_at: string;
     }
@@ -339,8 +343,10 @@ export type WuuDesktopApi = {
   createPullRequest: (params: GitPullRequestParams) => Promise<GitPullRequestResult>;
   listWorkspaceFiles: () => Promise<FileTreeListResult>;
   readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
-  startTerminalCommand: (command: string) => Promise<TerminalCommandStartResult>;
-  stopTerminalCommand: (id: string) => Promise<TerminalCommandStopResult>;
+  startTerminalSession: (params?: TerminalSessionStartParams) => Promise<TerminalSessionStartResult>;
+  writeTerminalSession: (id: string, data: string) => Promise<TerminalSessionActionResult>;
+  resizeTerminalSession: (id: string, cols: number, rows: number) => Promise<TerminalSessionActionResult>;
+  stopTerminalSession: (id: string) => Promise<TerminalSessionActionResult>;
   initialize: () => Promise<InitializeResult>;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
   updateRuntimeSettings: (provider: string, model: string, effort?: string) => Promise<ConfigModelUpdateResult>;
@@ -354,6 +360,6 @@ export type WuuDesktopApi = {
   respondToServerRequest: (id: string, result: unknown) => Promise<void>;
   rejectServerRequest: (id: string, message: string) => Promise<void>;
   onServerEvent: (handler: (event: ServerEvent) => void) => () => void;
-  onTerminalEvent: (handler: (event: TerminalCommandEvent) => void) => () => void;
+  onTerminalEvent: (handler: (event: TerminalSessionEvent) => void) => () => void;
   onWindowResizeState: (handler: (state: WindowResizeState) => void) => () => void;
 };

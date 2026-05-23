@@ -16,8 +16,11 @@ const api: WuuDesktopApi = {
   createPullRequest: (params) => ipcRenderer.invoke("wuu:git-create-pr", params),
   listWorkspaceFiles: () => ipcRenderer.invoke("wuu:file-tree-list"),
   readWorkspaceFile: (path: string) => ipcRenderer.invoke("wuu:file-read", path),
-  startTerminalCommand: (command: string) => ipcRenderer.invoke("wuu:terminal-start", command),
-  stopTerminalCommand: (id: string) => ipcRenderer.invoke("wuu:terminal-stop", id),
+  startTerminalSession: (params) => ipcRenderer.invoke("wuu:terminal-start", params),
+  writeTerminalSession: (id: string, data: string) => ipcRenderer.invoke("wuu:terminal-write", id, data),
+  resizeTerminalSession: (id: string, cols: number, rows: number) =>
+    ipcRenderer.invoke("wuu:terminal-resize", id, cols, rows),
+  stopTerminalSession: (id: string) => ipcRenderer.invoke("wuu:terminal-stop", id),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   loadCodexModels: (provider?: string) => ipcRenderer.invoke("wuu:config-codex-models", provider),
   updateRuntimeSettings: (provider: string, model: string, effort?: string) =>

@@ -2226,19 +2226,20 @@ button:disabled {
 }
 
 .workspace-terminal-panel {
-  display: block;
+  position: relative;
+  display: grid;
   height: 100%;
   min-width: 0;
   min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .workspace-terminal-screen {
+  position: relative;
   height: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
-  border: 1px solid #ececea;
-  border-radius: 8px;
+  overflow: hidden;
   background: #fff;
   color: #1f2328;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -2247,117 +2248,57 @@ button:disabled {
   padding: 10px 12px;
 }
 
-.workspace-terminal-line {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  margin: 0;
+.workspace-terminal-host,
+.workspace-terminal-host .xterm {
+  width: 100%;
+  height: 100%;
+}
+
+.workspace-terminal-host .xterm {
   padding: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
-.workspace-terminal-line.stderr,
-.workspace-terminal-line.error {
-  color: #b42318;
-}
-
-.workspace-terminal-line.status {
-  color: #7e858b;
-}
-
-.workspace-terminal-row,
-.workspace-terminal-input {
-  display: flex;
+.workspace-terminal-host .xterm-screen {
   min-width: 0;
-  align-items: baseline;
-  gap: 0;
 }
 
-.workspace-terminal-prompt {
-  display: inline-flex;
-  min-width: 0;
-  flex: 0 1 auto;
-  align-items: center;
-  overflow: hidden;
-  margin-right: 7px;
-  white-space: nowrap;
+.workspace-terminal-host .xterm-viewport,
+.workspace-terminal-host .xterm-screen {
+  background: transparent !important;
 }
 
-.workspace-terminal-prompt span {
-  min-width: 0;
-  overflow: hidden;
-  padding: 1px 7px;
-  text-overflow: ellipsis;
+.workspace-terminal-host .xterm-viewport {
+  scrollbar-gutter: stable;
 }
 
-.workspace-terminal-prompt-cwd {
-  max-width: min(190px, 42vw);
-  background: #2f98ff;
-  color: #fff;
+.workspace-terminal-host .xterm-viewport::-webkit-scrollbar {
+  width: 6px;
 }
 
-.workspace-terminal-prompt-git {
-  max-width: min(220px, 44vw);
-  background: #ffc21a;
-  color: #68530c;
-}
-
-.workspace-terminal-prompt-ok {
-  background: #f3f4f1;
-  color: #1f9d46;
-  font-weight: var(--weight-semibold);
-}
-
-.workspace-terminal-command-text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: #1f2328;
-  white-space: pre-wrap;
-}
-
-.workspace-terminal-running {
-  align-items: center;
-}
-
-.workspace-terminal-running-label {
-  color: #7e858b;
-}
-
-.workspace-terminal-running button,
-.workspace-terminal-input button {
-  display: grid;
-  width: 24px;
-  height: 22px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 5px;
+.workspace-terminal-host .xterm-viewport::-webkit-scrollbar-track,
+.workspace-terminal-host .xterm-viewport::-webkit-scrollbar-track-piece {
   background: transparent;
-  color: #7e858b;
-  margin-left: 6px;
 }
 
-.workspace-terminal-running button:hover,
-.workspace-terminal-input button:hover:not(:disabled) {
+.workspace-terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(32, 36, 39, 0.22);
+}
+
+.workspace-terminal-restart {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  border-radius: 6px;
   background: #eeeeeb;
   color: #202427;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  padding: 6px 10px;
 }
 
-.workspace-terminal-input input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #1f2328;
-  font: inherit;
-  padding: 0;
-}
-
-.workspace-terminal-input button:disabled {
-  opacity: 0;
-  pointer-events: none;
+.workspace-terminal-restart:hover {
+  background: #e2e2df;
 }
 
 .workspace-scroll-region {

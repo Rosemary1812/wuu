@@ -277,36 +277,33 @@ async function run() {
     }
     terminalTool.click();
   });
-  await waitFor(win, () => Boolean(document.querySelector(".workspace-terminal-input input")), 1000);
-  const terminalPrompt = await evaluate(win, () => {
-    const screen = document.querySelector(".workspace-terminal-screen");
-    const prompt = screen?.querySelector(".workspace-terminal-prompt");
-    return {
-      screenContainsInput: Boolean(screen?.querySelector(".workspace-terminal-input input")),
-      cwd: prompt?.querySelector(".workspace-terminal-prompt-cwd")?.textContent ?? "",
-      git: prompt?.querySelector(".workspace-terminal-prompt-git")?.textContent ?? ""
-    };
-  });
-  assert.equal(terminalPrompt.screenContainsInput, true, "Terminal input should live inside the terminal screen.");
-  assert.equal(terminalPrompt.cwd, "~/wuu", "Terminal prompt should show the workspace directory.");
-  assert.match(terminalPrompt.git, /resize-e2e/, "Terminal prompt should show the git branch.");
+  await waitFor(win, () => Boolean(document.querySelector(".workspace-terminal-host .xterm")), 1000);
+  const terminalText = await waitFor(
+    win,
+    () => {
+      const screen = document.querySelector(".workspace-terminal-screen");
+      const text = screen?.textContent ?? "";
+      return text.includes("~/wuu") && text.includes("resize-e2e") ? text : null;
+    },
+    1000
+  );
+  assert.match(terminalText, /~\/wuu/, "Terminal prompt should show the workspace directory.");
+  assert.match(terminalText, /resize-e2e/, "Terminal prompt should show the git branch.");
   await evaluate(win, () => {
-    const input = document.querySelector(".workspace-terminal-input input");
-    const form = document.querySelector(".workspace-terminal-input");
-    if (!(input instanceof HTMLInputElement) || !(form instanceof HTMLFormElement)) {
-      throw new Error("Terminal input not found.");
+    const screen = document.querySelector(".workspace-terminal-screen");
+    if (!(screen instanceof HTMLElement)) {
+      throw new Error("Terminal screen not found.");
     }
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-    setter?.call(input, "echo terminal-ready");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    form.requestSubmit();
+    screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
   });
+  for (const char of "echo terminal-ready") {
+    win.webContents.sendInputEvent({ type: "char", keyCode: char });
+  }
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
   await waitFor(
     win,
-    () =>
-      Array.from(document.querySelectorAll(".workspace-terminal-line.stdout")).some((line) =>
-        line.textContent?.includes("mock terminal output: echo terminal-ready")
-      ),
+    () => document.querySelector(".workspace-terminal-screen")?.textContent?.includes("mock terminal output: echo terminal-ready"),
     1000
   );
 
