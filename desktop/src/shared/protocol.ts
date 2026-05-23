@@ -185,6 +185,39 @@ export type WorkspaceFileReadResult = {
   text?: string;
 };
 
+export type TerminalCommandStartResult = {
+  id: string;
+  command: string;
+  cwd: string;
+  started_at: string;
+};
+
+export type TerminalCommandStopResult = {
+  ok: boolean;
+};
+
+export type TerminalCommandEvent =
+  | {
+      type: "output";
+      id: string;
+      stream: "stdout" | "stderr";
+      text: string;
+    }
+  | {
+      type: "exit";
+      id: string;
+      exit_code: number | null;
+      signal: string | null;
+      duration_ms: number;
+      finished_at: string;
+    }
+  | {
+      type: "error";
+      id: string;
+      message: string;
+      finished_at: string;
+    };
+
 export type ThreadStatus = "idle" | "in_progress";
 export type TurnStatus = "in_progress" | "completed" | "failed" | "interrupted";
 export type TurnItemsView = "full";
@@ -306,6 +339,8 @@ export type WuuDesktopApi = {
   createPullRequest: (params: GitPullRequestParams) => Promise<GitPullRequestResult>;
   listWorkspaceFiles: () => Promise<FileTreeListResult>;
   readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
+  startTerminalCommand: (command: string) => Promise<TerminalCommandStartResult>;
+  stopTerminalCommand: (id: string) => Promise<TerminalCommandStopResult>;
   initialize: () => Promise<InitializeResult>;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
   updateRuntimeSettings: (provider: string, model: string, effort?: string) => Promise<ConfigModelUpdateResult>;
@@ -319,5 +354,6 @@ export type WuuDesktopApi = {
   respondToServerRequest: (id: string, result: unknown) => Promise<void>;
   rejectServerRequest: (id: string, message: string) => Promise<void>;
   onServerEvent: (handler: (event: ServerEvent) => void) => () => void;
+  onTerminalEvent: (handler: (event: TerminalCommandEvent) => void) => () => void;
   onWindowResizeState: (handler: (state: WindowResizeState) => void) => () => void;
 };

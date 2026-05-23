@@ -16,6 +16,8 @@ const api: WuuDesktopApi = {
   createPullRequest: (params) => ipcRenderer.invoke("wuu:git-create-pr", params),
   listWorkspaceFiles: () => ipcRenderer.invoke("wuu:file-tree-list"),
   readWorkspaceFile: (path: string) => ipcRenderer.invoke("wuu:file-read", path),
+  startTerminalCommand: (command: string) => ipcRenderer.invoke("wuu:terminal-start", command),
+  stopTerminalCommand: (id: string) => ipcRenderer.invoke("wuu:terminal-stop", id),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   loadCodexModels: (provider?: string) => ipcRenderer.invoke("wuu:config-codex-models", provider),
   updateRuntimeSettings: (provider: string, model: string, effort?: string) =>
@@ -35,6 +37,11 @@ const api: WuuDesktopApi = {
     const listener = (_event: Electron.IpcRendererEvent, payload: ServerEvent) => handler(payload);
     ipcRenderer.on("wuu:server-event", listener);
     return () => ipcRenderer.removeListener("wuu:server-event", listener);
+  },
+  onTerminalEvent: (handler) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+    ipcRenderer.on("wuu:terminal-event", listener);
+    return () => ipcRenderer.removeListener("wuu:terminal-event", listener);
   },
   onWindowResizeState: (handler: (state: WindowResizeState) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: WindowResizeState) => handler(payload);

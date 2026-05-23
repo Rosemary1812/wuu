@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, type OpenDialogOptions } from "electron";
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -38,6 +38,9 @@ import type {
   ProjectListResult,
   RuntimeContext,
   ServerEvent,
+  TerminalCommandEvent,
+  TerminalCommandStartResult,
+  TerminalCommandStopResult,
   Thread,
   Turn,
   WorkspaceFileReadResult
@@ -273,6 +276,16 @@ let client: AppServerClient | null = null;
 let projectStore: ProjectStore = { projects: [] };
 let windowResizeEndTimer: NodeJS.Timeout | undefined;
 let windowResizeState = false;
+let terminalCommandCounter = 1;
+const terminalCommands = new Map<string, TerminalCommand>();
+
+type TerminalCommand = {
+  id: string;
+  child: ChildProcess;
+  command: string;
+  cwd: string;
+  startedAt: number;
+};
 
 function projectStorePath(): string {
   return join(app.getPath("userData"), "projects.json");
@@ -1189,6 +1202,7 @@ function selectNoProject(fresh: boolean): ProjectListResult {
 function resetClient(): void {
   client?.dispose();
   client = null;
+  cleanupTerminalCommands();
 }
 
 async function showProjectDirectoryDialog(options: OpenDialogOptions): Promise<string | undefined> {
@@ -1213,6 +1227,103 @@ function emitServerEvent(event: ServerEvent): void {
     return;
   }
   mainWindow.webContents.send("wuu:server-event", event);
+}
+
+function emitTerminalEvent(event: TerminalCommandEvent): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send("wuu:terminal-event", event);
+}
+
+function startTerminalCommand(command: string): TerminalCommandStartResult {
+  const trimmed = command.trim();
+  if (!trimmed) {
+    throw new Error("command is required");
+  }
+  const context = ensureRuntimeContext();
+  const cwd = context.cwd;
+  const id = `term-${terminalCommandCounter++}`;
+  const startedAt = Date.now();
+  const shell = terminalShellCommand(trimmed);
+  const child = spawn(shell.command, shell.args, {
+    cwd,
+    env: { ...process.env, CLICOLOR: "1", FORCE_COLOR: "1", TERM: "xterm-256color" },
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32"
+  });
+  const entry: TerminalCommand = { id, child, command: trimmed, cwd, startedAt };
+  terminalCommands.set(id, entry);
+
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (text: string) => emitTerminalEvent({ type: "output", id, stream: "stdout", text }));
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (text: string) => emitTerminalEvent({ type: "output", id, stream: "stderr", text }));
+  child.on("error", (error) => {
+    terminalCommands.delete(id);
+    emitTerminalEvent({
+      type: "error",
+      id,
+      message: error.message,
+      finished_at: new Date().toISOString()
+    });
+  });
+  child.on("exit", (exitCode, signal) => {
+    terminalCommands.delete(id);
+    emitTerminalEvent({
+      type: "exit",
+      id,
+      exit_code: exitCode,
+      signal,
+      duration_ms: Date.now() - startedAt,
+      finished_at: new Date().toISOString()
+    });
+  });
+
+  return {
+    id,
+    command: trimmed,
+    cwd,
+    started_at: new Date(startedAt).toISOString()
+  };
+}
+
+function stopTerminalCommand(id: string): TerminalCommandStopResult {
+  const command = terminalCommands.get(id);
+  if (!command) {
+    return { ok: false };
+  }
+  terminateTerminalChild(command.child);
+  return { ok: true };
+}
+
+function cleanupTerminalCommands(): void {
+  for (const command of terminalCommands.values()) {
+    terminateTerminalChild(command.child);
+  }
+  terminalCommands.clear();
+}
+
+function terminateTerminalChild(child: ChildProcess): void {
+  if (child.killed) {
+    return;
+  }
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+      return;
+    } catch {
+      // Fall through to killing the direct child.
+    }
+  }
+  child.kill("SIGTERM");
+}
+
+function terminalShellCommand(command: string): { command: string; args: string[] } {
+  if (process.platform === "win32") {
+    return { command: "cmd.exe", args: ["/d", "/s", "/c", command] };
+  }
+  return { command: "bash", args: ["-lc", command] };
 }
 
 function setWindowResizeState(resizing: boolean): void {
@@ -1340,6 +1451,8 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:git-create-pr", (_event, params: GitPullRequestParams) => createPullRequest(params ?? {}));
   ipcMain.handle("wuu:file-tree-list", () => fileTreeListResult());
   ipcMain.handle("wuu:file-read", (_event, path: string) => readWorkspaceFileResult(path));
+  ipcMain.handle("wuu:terminal-start", (_event, command: string) => startTerminalCommand(command));
+  ipcMain.handle("wuu:terminal-stop", (_event, id: string) => stopTerminalCommand(id));
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
       title: "使用现有文件夹",
@@ -1407,6 +1520,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  cleanupTerminalCommands();
   client?.shutdown();
 });
 

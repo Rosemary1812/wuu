@@ -3,6 +3,8 @@ const { contextBridge } = require("electron");
 const cwd = process.env.WUU_RESIZE_E2E_CWD || process.cwd();
 const runtimeContext = { kind: "no_project", cwd };
 const now = new Date().toISOString();
+const terminalListeners = new Set();
+let terminalCommandCounter = 1;
 const workspacePaths = Array.from({ length: 220 }, (_value, index) => {
   const file = String(index).padStart(3, "0");
   return `resize-fixture-${file}.ts`;
@@ -122,6 +124,20 @@ contextBridge.exposeInMainWorld("wuu", {
     truncated: false,
     text: `export const path = ${JSON.stringify(path)};\n`
   }),
+  startTerminalCommand: async (command) => {
+    const id = `mock-terminal-${terminalCommandCounter++}`;
+    for (const listener of terminalListeners) {
+      listener({ type: "output", id, stream: "stdout", text: `mock terminal output: ${command}\n` });
+      listener({ type: "exit", id, exit_code: 0, signal: null, duration_ms: 12, finished_at: new Date().toISOString() });
+    }
+    return {
+      id,
+      command,
+      cwd,
+      started_at: new Date().toISOString()
+    };
+  },
+  stopTerminalCommand: async () => ({ ok: true }),
   initialize: async () => ({
     protocol_version: "e2e",
     provider: "e2e",
@@ -148,5 +164,9 @@ contextBridge.exposeInMainWorld("wuu", {
   respondToServerRequest: async () => undefined,
   rejectServerRequest: async () => undefined,
   onServerEvent: () => () => undefined,
+  onTerminalEvent: (handler) => {
+    terminalListeners.add(handler);
+    return () => terminalListeners.delete(handler);
+  },
   onWindowResizeState: () => () => undefined
 });

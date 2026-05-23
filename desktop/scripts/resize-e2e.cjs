@@ -66,7 +66,7 @@ async function run() {
   );
   assert.deepEqual(
     workspaceToolLabels,
-    ["文件", "审查"],
+    ["文件", "审查", "终端"],
     "Workspace tool picker should only expose implemented user-facing tools."
   );
   await evaluate(win, () => {
@@ -264,14 +264,51 @@ async function run() {
   );
   assert.deepEqual(
     rightPanelToolLabels,
-    ["文件", "审查"],
+    ["文件", "审查", "终端"],
     "Opening the right panel should show the workspace tool picker before a tool detail."
   );
 
   await evaluate(win, () => {
-    const fileTool = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item")).find(
-      (candidate) => candidate.textContent?.includes("文件")
+    const terminalTool = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item")).find(
+      (candidate) => candidate.textContent?.includes("终端")
     );
+    if (!(terminalTool instanceof HTMLButtonElement)) {
+      throw new Error("Right panel terminal tool button not found.");
+    }
+    terminalTool.click();
+  });
+  await waitFor(win, () => Boolean(document.querySelector(".workspace-terminal-input input")), 1000);
+  await evaluate(win, () => {
+    const input = document.querySelector(".workspace-terminal-input input");
+    const form = document.querySelector(".workspace-terminal-input");
+    if (!(input instanceof HTMLInputElement) || !(form instanceof HTMLFormElement)) {
+      throw new Error("Terminal input not found.");
+    }
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, "echo terminal-ready");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    form.requestSubmit();
+  });
+  await waitFor(
+    win,
+    () =>
+      Array.from(document.querySelectorAll(".workspace-terminal-line.stdout")).some((line) =>
+        line.textContent?.includes("mock terminal output: echo terminal-ready")
+      ),
+    1000
+  );
+
+  await evaluate(win, () => {
+    const back = document.querySelector(".workspace-panel-back");
+    if (!(back instanceof HTMLButtonElement)) {
+      throw new Error("Right panel back button not found.");
+    }
+    back.click();
+  });
+  await evaluate(win, () => {
+    const fileTool = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item"))
+      .filter((candidate) => candidate instanceof HTMLButtonElement)
+      .find((candidate) => candidate.textContent?.includes("文件"));
     if (!(fileTool instanceof HTMLButtonElement)) {
       throw new Error("Right panel file tool button not found.");
     }

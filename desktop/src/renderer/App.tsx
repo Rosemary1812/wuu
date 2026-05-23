@@ -81,6 +81,7 @@ import type {
   ProjectListResult,
   RuntimeContext,
   ServerEvent,
+  TerminalCommandEvent,
   Thread,
   ThreadItem,
   Turn,
@@ -291,7 +292,7 @@ type SidebarResizeSession = {
 };
 
 type ComposerVariant = "dock" | "hero";
-type WorkspacePanelView = "files" | "review";
+type WorkspacePanelView = "files" | "review" | "terminal";
 type WorkspaceRightPanelView = "tools" | WorkspacePanelView;
 
 const WORKSPACE_TOOL_ITEMS: Array<{
@@ -300,7 +301,8 @@ const WORKSPACE_TOOL_ITEMS: Array<{
   subtitle: string;
 }> = [
   { id: "files", title: "文件", subtitle: "浏览项目文件" },
-  { id: "review", title: "审查", subtitle: "查看代码更改" }
+  { id: "review", title: "审查", subtitle: "查看代码更改" },
+  { id: "terminal", title: "终端", subtitle: "运行 shell 命令" }
 ];
 
 const WORKSPACE_TREE_CSS = `
@@ -1200,6 +1202,7 @@ export function App(): JSX.Element {
   const sidebarPinnedThreads = pinnedThreads(state.threads);
   const activeThreadReadOnly = Boolean(state.thread?.read_only);
   const activeThreadIsRunning = !activeThreadReadOnly && isStateActiveThreadRunning(state);
+  const pendingAskThreadIDs = pendingAskThreadIDsForRequests(state.askRequests);
   const anyThreadIsRunning = isAnyThreadRunning(state);
   const environmentPanelCanShow = Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen);
   const environmentPanelVisible =
@@ -1359,7 +1362,7 @@ export function App(): JSX.Element {
   function openWorkspaceTool(view: WorkspacePanelView): void {
     setWorkspacePanelView(view);
     setWorkspaceRightPanelView(view);
-    if (view === "review") {
+    if (view === "review" || view === "terminal") {
       setWorkspaceMode(undefined);
       setRightPanelOpen(true);
       return;
@@ -1908,9 +1911,7 @@ export function App(): JSX.Element {
       ...current,
       thread: undefined,
       running: false,
-      status: "ready",
-      askRequests: [],
-      answeredAskRequests: []
+      status: "ready"
     }));
   }
 
@@ -1941,7 +1942,7 @@ export function App(): JSX.Element {
     }
     setArchiveConfirmThreadID(undefined);
     clearPendingComposerMessages();
-    setState((current) => ({ ...current, status: "loading", askRequests: [], answeredAskRequests: [] }));
+    setState((current) => ({ ...current, status: "loading" }));
     try {
       const thread = requireThread(await window.wuu.resumeThread(threadId), "resume did not return a thread");
       setState((current) => ({
@@ -2393,6 +2394,7 @@ export function App(): JSX.Element {
             <PinnedThreadList
               threads={sidebarPinnedThreads}
               activeID={state.thread?.id}
+              pendingAskThreadIDs={pendingAskThreadIDs}
               archiveConfirmThreadID={archiveConfirmThreadID}
               onSelect={(id) => void selectThread(id)}
               onSelectChildAgent={(agent) => void selectChildAgent(agent)}
@@ -2436,6 +2438,7 @@ export function App(): JSX.Element {
             activeID={state.activeProjectId}
             threads={state.threads}
             activeThreadID={state.thread?.id}
+            pendingAskThreadIDs={pendingAskThreadIDs}
             archiveConfirmThreadID={archiveConfirmThreadID}
             onSelectProject={(id) => void openProject(id)}
             onSelectThread={(id) => void selectThread(id)}
@@ -3792,6 +3795,8 @@ function WorkspaceRightPanel({
               />
             ) : view === "review" ? (
               <WorkspaceReviewPanel gitStatus={gitStatus} />
+            ) : view === "terminal" ? (
+              <WorkspaceTerminalPanel activeContext={activeContext} />
             ) : null}
           </div>
         </>
@@ -3878,6 +3883,239 @@ function WorkspaceBottomPanel({
         </OverlayScrollbarsComponent>
       ) : null}
     </section>
+  );
+}
+
+const WORKSPACE_TERMINAL_MAX_LINES = 800;
+const WORKSPACE_TERMINAL_PENDING_EVENT_IDS = 12;
+
+type WorkspaceTerminalLine = {
+  id: string;
+  kind: "command" | "stdout" | "stderr" | "status" | "error";
+  text: string;
+};
+
+function terminalExitText(event: Extract<TerminalCommandEvent, { type: "exit" }>): string {
+  const duration = formatDuration(event.duration_ms);
+  if (event.signal) {
+    return `stopped by ${event.signal} after ${duration}`;
+  }
+  return `exit ${event.exit_code ?? "unknown"} after ${duration}`;
+}
+
+function WorkspaceTerminalPanel({ activeContext }: { activeContext?: RuntimeContext }): JSX.Element {
+  const [lines, setLines] = useState<WorkspaceTerminalLine[]>([]);
+  const [draft, setDraft] = useState("");
+  const [runningCommandID, setRunningCommandID] = useState<string | undefined>(undefined);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | undefined>(undefined);
+  const knownCommandIDsRef = useRef(new Set<string>());
+  const pendingTerminalEventsRef = useRef(new Map<string, TerminalCommandEvent[]>());
+  const runningCommandIDRef = useRef<string | undefined>(undefined);
+  const lineCounterRef = useRef(1);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const workspaceRoot = activeContext?.cwd;
+
+  useEffect(() => {
+    runningCommandIDRef.current = runningCommandID;
+  }, [runningCommandID]);
+
+  useEffect(() => {
+    return window.wuu.onTerminalEvent((event) => {
+      if (!knownCommandIDsRef.current.has(event.id)) {
+        bufferTerminalEvent(event);
+        return;
+      }
+      handleTerminalEvent(event);
+    });
+  }, []);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) {
+      return;
+    }
+    node.scrollTop = node.scrollHeight;
+  }, [lines]);
+
+  useEffect(() => {
+    const commandID = runningCommandIDRef.current;
+    if (commandID) {
+      void window.wuu.stopTerminalCommand(commandID);
+      runningCommandIDRef.current = undefined;
+    }
+    setLines([]);
+    setDraft("");
+    setRunningCommandID(undefined);
+    setHistoryIndex(undefined);
+    knownCommandIDsRef.current.clear();
+    pendingTerminalEventsRef.current.clear();
+  }, [workspaceRoot]);
+
+  useEffect(() => {
+    return () => {
+      const commandID = runningCommandIDRef.current;
+      if (commandID) {
+        void window.wuu.stopTerminalCommand(commandID);
+      }
+    };
+  }, []);
+
+  function nextLineID(): string {
+    const next = lineCounterRef.current++;
+    return `terminal-line-${next}`;
+  }
+
+  function appendLines(nextLines: WorkspaceTerminalLine[]): void {
+    setLines((current) => [...current, ...nextLines].slice(-WORKSPACE_TERMINAL_MAX_LINES));
+  }
+
+  function bufferTerminalEvent(event: TerminalCommandEvent): void {
+    const events = pendingTerminalEventsRef.current.get(event.id) ?? [];
+    pendingTerminalEventsRef.current.set(event.id, [...events, event]);
+    while (pendingTerminalEventsRef.current.size > WORKSPACE_TERMINAL_PENDING_EVENT_IDS) {
+      const firstID = pendingTerminalEventsRef.current.keys().next().value;
+      if (!firstID) {
+        break;
+      }
+      pendingTerminalEventsRef.current.delete(firstID);
+    }
+  }
+
+  function flushPendingTerminalEvents(id: string): void {
+    const events = pendingTerminalEventsRef.current.get(id);
+    if (!events) {
+      return;
+    }
+    pendingTerminalEventsRef.current.delete(id);
+    for (const event of events) {
+      handleTerminalEvent(event);
+    }
+  }
+
+  function handleTerminalEvent(event: TerminalCommandEvent): void {
+    if (event.type === "output") {
+      appendLines([{ id: nextLineID(), kind: event.stream, text: event.text }]);
+      return;
+    }
+    if (event.type === "exit") {
+      appendLines([{ id: nextLineID(), kind: event.exit_code === 0 ? "status" : "error", text: terminalExitText(event) }]);
+      if (runningCommandIDRef.current === event.id) {
+        runningCommandIDRef.current = undefined;
+        setRunningCommandID(undefined);
+      }
+      knownCommandIDsRef.current.delete(event.id);
+      return;
+    }
+    appendLines([{ id: nextLineID(), kind: "error", text: event.message }]);
+    if (runningCommandIDRef.current === event.id) {
+      runningCommandIDRef.current = undefined;
+      setRunningCommandID(undefined);
+    }
+    knownCommandIDsRef.current.delete(event.id);
+  }
+
+  async function submitCommand(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const command = draft.trim();
+    if (!command || runningCommandID || !workspaceRoot) {
+      return;
+    }
+    appendLines([{ id: nextLineID(), kind: "command", text: command }]);
+    setDraft("");
+    setHistory((current) => [...current.filter((item) => item !== command), command].slice(-80));
+    setHistoryIndex(undefined);
+    try {
+      const started = await window.wuu.startTerminalCommand(command);
+      knownCommandIDsRef.current.add(started.id);
+      runningCommandIDRef.current = started.id;
+      setRunningCommandID(started.id);
+      flushPendingTerminalEvents(started.id);
+    } catch (error) {
+      appendLines([{ id: nextLineID(), kind: "error", text: desktopApiErrorMessage(error, "命令启动失败") }]);
+    }
+  }
+
+  async function stopCommand(): Promise<void> {
+    const commandID = runningCommandIDRef.current;
+    if (!commandID) {
+      return;
+    }
+    try {
+      const stopped = await window.wuu.stopTerminalCommand(commandID);
+      if (!stopped.ok) {
+        setRunningCommandID(undefined);
+      }
+    } catch (error) {
+      appendLines([{ id: nextLineID(), kind: "error", text: desktopApiErrorMessage(error, "停止失败") }]);
+    }
+  }
+
+  function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (history.length === 0) {
+        return;
+      }
+      const nextIndex = historyIndex === undefined ? history.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(nextIndex);
+      setDraft(history[nextIndex] ?? "");
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (historyIndex === undefined) {
+        return;
+      }
+      const nextIndex = historyIndex + 1;
+      if (nextIndex >= history.length) {
+        setHistoryIndex(undefined);
+        setDraft("");
+        return;
+      }
+      setHistoryIndex(nextIndex);
+      setDraft(history[nextIndex] ?? "");
+    }
+  }
+
+  if (!workspaceRoot) {
+    return <WorkspacePanelEmpty title="没有项目" description="先选择一个项目。" icon={<Terminal size={24} />} />;
+  }
+
+  return (
+    <div className="workspace-terminal-panel">
+      <div className="workspace-terminal-meta">
+        <span>{formatWorkspaceRoot(workspaceRoot)}</span>
+        <small>{runningCommandID ? "运行中" : "就绪"}</small>
+      </div>
+      <div className="workspace-terminal-screen" ref={scrollRef}>
+        {lines.length === 0 ? <div className="workspace-terminal-cursor">$</div> : null}
+        {lines.map((line) => (
+          <pre className={`workspace-terminal-line ${line.kind}`} key={line.id}>
+            {line.kind === "command" ? `$ ${line.text}` : line.text}
+          </pre>
+        ))}
+      </div>
+      <form className="workspace-terminal-input" onSubmit={(event) => void submitCommand(event)}>
+        <span aria-hidden="true">$</span>
+        <input
+          value={draft}
+          placeholder="输入 shell 命令"
+          disabled={Boolean(runningCommandID)}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleInputKeyDown}
+        />
+        {runningCommandID ? (
+          <button type="button" aria-label="停止命令" onClick={() => void stopCommand()}>
+            <Square size={16} />
+          </button>
+        ) : (
+          <button type="submit" aria-label="运行命令" disabled={!draft.trim()}>
+            <Send size={16} />
+          </button>
+        )}
+      </form>
+    </div>
   );
 }
 
@@ -4040,6 +4278,8 @@ function WorkspaceToolIcon({ view, size }: { view: WorkspacePanelView; size: num
       return <FolderOpen size={size} />;
     case "review":
       return <ShieldCheck size={size} />;
+    case "terminal":
+      return <Terminal size={size} />;
   }
 }
 
@@ -5287,6 +5527,16 @@ function visibleAskRequestForThread(requests: AskRequestState[], threadID: strin
   return undefined;
 }
 
+function pendingAskThreadIDsForRequests(requests: AskRequestState[]): Set<string> {
+  const ids = new Set<string>();
+  for (const request of requests) {
+    if (request.threadID) {
+      ids.add(request.threadID);
+    }
+  }
+  return ids;
+}
+
 function visibleAnsweredAskRequestsForThread(
   requests: AnsweredAskRequestState[],
   threadID: string | undefined
@@ -5406,6 +5656,7 @@ function ProjectList({
   activeID,
   threads,
   activeThreadID,
+  pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelectProject,
   onSelectThread,
@@ -5418,6 +5669,7 @@ function ProjectList({
   activeID?: string;
   threads: Thread[];
   activeThreadID?: string;
+  pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelectProject: (id: string) => void;
   onSelectThread: (id: string) => void;
@@ -5443,6 +5695,7 @@ function ProjectList({
             <ThreadList
               threads={threads}
               activeID={activeThreadID}
+              pendingAskThreadIDs={pendingAskThreadIDs}
               archiveConfirmThreadID={archiveConfirmThreadID}
               onSelect={onSelectThread}
               onSelectChildAgent={onSelectChildAgent}
@@ -5460,6 +5713,7 @@ function ProjectList({
 function ThreadList({
   threads,
   activeID,
+  pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelect,
   onSelectChildAgent,
@@ -5469,6 +5723,7 @@ function ThreadList({
 }: {
   threads: Thread[];
   activeID?: string;
+  pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
@@ -5482,6 +5737,7 @@ function ThreadList({
       <ThreadRows
         threads={visibleThreads}
         activeID={activeID}
+        pendingAskThreadIDs={pendingAskThreadIDs}
         archiveConfirmThreadID={archiveConfirmThreadID}
         onSelect={onSelect}
         onSelectChildAgent={onSelectChildAgent}
@@ -5496,6 +5752,7 @@ function ThreadList({
 function PinnedThreadList({
   threads,
   activeID,
+  pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelect,
   onSelectChildAgent,
@@ -5505,6 +5762,7 @@ function PinnedThreadList({
 }: {
   threads: Thread[];
   activeID?: string;
+  pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
@@ -5517,6 +5775,7 @@ function PinnedThreadList({
       <ThreadRows
         threads={threads}
         activeID={activeID}
+        pendingAskThreadIDs={pendingAskThreadIDs}
         archiveConfirmThreadID={archiveConfirmThreadID}
         onSelect={onSelect}
         onSelectChildAgent={onSelectChildAgent}
@@ -5531,6 +5790,7 @@ function PinnedThreadList({
 function ThreadRows({
   threads,
   activeID,
+  pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelect,
   onSelectChildAgent,
@@ -5540,6 +5800,7 @@ function ThreadRows({
 }: {
   threads: Thread[];
   activeID?: string;
+  pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
@@ -5551,16 +5812,23 @@ function ThreadRows({
     <>
       {threads.map((thread, index) => {
         const archiveConfirming = archiveConfirmThreadID === thread.id;
+        const pendingAsk = pendingAskThreadIDs.has(thread.id);
         return (
           <Fragment key={thread.id}>
             <div
-              className={`thread-row ${thread.id === activeID ? "active" : ""}`}
+              className={`thread-row ${thread.id === activeID ? "active" : ""}${pendingAsk ? " pending-ask" : ""}`}
               aria-current={thread.id === activeID ? "page" : undefined}
               style={{ animationDelay: `${index * 18}ms` } as CSSProperties}
               onMouseLeave={() => onClearArchiveConfirm(thread.id)}
             >
               <button className="thread-row-main" type="button" onClick={() => onSelect(thread.id)}>
-                <span>{thread.preview || "未命名对话"}</span>
+                <span className="thread-row-title">{thread.preview || "未命名对话"}</span>
+                {pendingAsk ? (
+                  <span className="thread-row-ask-badge" title="需要你选择">
+                    <MessageSquarePlus size={12} />
+                    <span>需选择</span>
+                  </span>
+                ) : null}
               </button>
               <div className="thread-row-actions" aria-label="对话操作">
                 <button
