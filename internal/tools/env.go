@@ -10,6 +10,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 // ReadFileEntry tracks a successful read_file invocation for dedup
@@ -53,12 +54,13 @@ func (r *readFileState) getEntry(absPath string) (ReadFileEntry, bool) {
 // construction time. It replaces the old approach of making every
 // handler a method on *Toolkit.
 type Env struct {
-	RootDir string
+	RootDir  string
+	StateDir string
 
 	// Optional dependencies — nil means the feature is unavailable.
 	// Tools check for nil and return a clear error rather than panic.
 	SessionID    string
-	SessionDir   string // absolute path to .wuu/sessions/{id}/ — enables result budgeting
+	SessionDir   string // absolute session artifact path for result budgeting
 	AgentID      string
 	AgentPath    string
 	ProcessMgr   *proc.Manager
@@ -150,7 +152,28 @@ func (e *Env) ProcessManager() (*proc.Manager, error) {
 	if e.ProcessMgr != nil {
 		return e.ProcessMgr, nil
 	}
-	return proc.NewManager(e.RootDir)
+	stateDir, err := e.WorkspaceStateDir()
+	if err != nil {
+		return nil, err
+	}
+	return proc.NewManager(e.RootDir, statepath.RuntimeDir(stateDir))
+}
+
+// WorkspaceStateDir returns the user-level state directory for this workspace.
+func (e *Env) WorkspaceStateDir() (string, error) {
+	if strings.TrimSpace(e.StateDir) != "" {
+		return e.StateDir, nil
+	}
+	wuuHome, err := statepath.Home("")
+	if err != nil {
+		return "", err
+	}
+	stateDir, err := statepath.WorkspaceDir(wuuHome, e.RootDir)
+	if err != nil {
+		return "", err
+	}
+	e.StateDir = stateDir
+	return stateDir, nil
 }
 
 // FindSkill looks up a skill by name, returning it and true if found.

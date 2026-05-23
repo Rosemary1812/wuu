@@ -3,7 +3,6 @@ package insight
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -15,7 +14,11 @@ func Run(ctx context.Context, cfg RunConfig, progress chan<- ProgressEvent) {
 
 	outputDir := strings.TrimSpace(cfg.OutputDir)
 	if outputDir == "" {
-		outputDir = filepath.Join(cfg.WorkspaceRoot, ".wuu", usageDataSubDir)
+		outputDir = UsageDataDir("")
+		if outputDir == "" {
+			sendErr(progress, fmt.Errorf("no user state directory available"))
+			return
+		}
 	}
 	cacheDir := CacheDir(outputDir)
 

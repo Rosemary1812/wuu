@@ -19,6 +19,7 @@ import (
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
@@ -34,6 +35,14 @@ func NewModel(cfg Config) Model {
 	if workspaceRoot == "" {
 		workspaceRoot = filepath.Dir(cfg.ConfigPath)
 	}
+	stateDir := strings.TrimSpace(cfg.StateDir)
+	if stateDir == "" {
+		if home, err := statepath.Home(""); err == nil {
+			if dir, err := statepath.WorkspaceDir(home, workspaceRoot); err == nil {
+				stateDir = dir
+			}
+		}
+	}
 
 	m := Model{
 		provider:                    cfg.Provider,
@@ -41,6 +50,7 @@ func NewModel(cfg Config) Model {
 		configPath:                  cfg.ConfigPath,
 		workspaceRoot:               workspaceRoot,
 		memoryPath:                  cfg.MemoryPath,
+		stateDir:                    stateDir,
 		sessionDir:                  cfg.SessionDir,
 		streamRunner:                cfg.StreamRunner,
 		hookDispatcher:              cfg.HookDispatcher,
@@ -270,10 +280,13 @@ func (m Model) loadMemory() Model {
 	m.refreshViewport(true)
 
 	// Start cron scheduler for durable tasks.
-	schedPath := filepath.Join(m.workspaceRoot, ".wuu", "scheduled_tasks.json")
-	lockPath := filepath.Join(m.workspaceRoot, ".wuu", "scheduled_tasks.lock")
+	if m.stateDir == "" {
+		return m
+	}
+	schedPath := statepath.ScheduledTasksPath(m.stateDir)
+	lockPath := statepath.ScheduledTasksLockPath(m.stateDir)
 	schedStore := cron.NewTaskStore(schedPath)
-	sessionStore := cron.NewSessionTaskStore(m.workspaceRoot)
+	sessionStore := cron.NewSessionTaskStore(m.stateDir)
 	m.cronFireCh = make(chan cron.Task, 8)
 	m.schedulerLock = cron.NewLock(lockPath, m.sessionID)
 	m.scheduler = cron.NewScheduler(cron.SchedulerConfig{

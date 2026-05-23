@@ -14,7 +14,7 @@ func TestEnsureSharedDir_CreatesAllSubdirs(t *testing.T) {
 	}
 
 	for _, sub := range SharedSubdirs {
-		path := filepath.Join(root, ".wuu", SharedDirName, sub)
+		path := filepath.Join(root, SharedDirName, sub)
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Errorf("expected %s to exist: %v", path, err)
@@ -36,7 +36,7 @@ func TestEnsureSharedDir_IdempotentOnExisting(t *testing.T) {
 
 	// Drop a file inside one of the subdirs to simulate a worker
 	// having written something. The second call must NOT touch it.
-	canary := filepath.Join(root, ".wuu", SharedDirName, "findings", "auth.md")
+	canary := filepath.Join(root, SharedDirName, "findings", "auth.md")
 	if err := os.WriteFile(canary, []byte("worker output"), 0o644); err != nil {
 		t.Fatalf("write canary: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestEnsureSharedDir_IdempotentOnExisting(t *testing.T) {
 
 func TestSharedDirPath_ReturnsExpectedPath(t *testing.T) {
 	got := SharedDirPath("/tmp/myproject")
-	want := filepath.Join("/tmp/myproject", ".wuu", "shared")
+	want := filepath.Join("/tmp/myproject", "shared")
 	if got != want {
 		t.Errorf("SharedDirPath = %q, want %q", got, want)
 	}

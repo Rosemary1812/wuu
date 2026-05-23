@@ -50,6 +50,7 @@ func TestResumeSlashLoadsMemory(t *testing.T) {
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 		StreamRunner: &agent.StreamRunner{
 			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},

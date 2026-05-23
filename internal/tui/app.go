@@ -24,6 +24,7 @@ type Config struct {
 	WorkspaceRoot               string
 	ConfigPath                  string
 	MemoryPath                  string
+	StateDir                    string // user-level workspace state directory
 	SessionDir                  string // user-level sessions directory for conversation logs
 	ResumeID                    string // session ID to resume (empty = new session)
 	MaxContextTokens            int

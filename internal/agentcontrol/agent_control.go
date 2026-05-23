@@ -36,7 +36,7 @@ type AgentControl struct {
 	manager       *subagent.Manager
 	worktrees     *worktree.Manager // nil when workspace is not a git repo
 	parentRepo    string            // absolute path to workspace root
-	worktreeRoot  string            // .wuu/worktrees/ directory
+	worktreeRoot  string            // workspace-state worktrees directory
 	sessionID     string
 	historyDir    string
 	threadDir     string
@@ -58,9 +58,9 @@ type Config struct {
 	Client          providers.StreamClient
 	DefaultModel    string
 	ParentRepo      string // absolute path to the user's workspace
-	WorktreeRoot    string // .wuu/worktrees/ (only used when workspace is a git repo)
-	HistoryDir      string // .wuu/sessions/{session-id}/workers/
-	ThreadDir       string // .wuu/sessions/{session-id}/threads/
+	WorktreeRoot    string // workspace-state worktrees directory (only used when workspace is a git repo)
+	HistoryDir      string // session artifact workers directory
+	ThreadDir       string // session artifact threads directory
 	SessionID       string
 	WorkerSysPrompt string
 	WorkerFactory   WorkerToolkitFactory

@@ -94,7 +94,7 @@ func EnforceAggregateBudget(results []string) []string {
 	return out
 }
 
-// persistResult writes content to .wuu/sessions/{sid}/tool-results/{callID}.txt
+// persistResult writes content to the session artifact directory
 // and returns the absolute path.
 func persistResult(sessionDir, callID, content string) (string, error) {
 	dir := filepath.Join(sessionDir, "tool-results")

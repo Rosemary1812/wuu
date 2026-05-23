@@ -58,7 +58,8 @@ func newTestModel(answer func([]providers.ChatMessage) string) Model {
 
 func newTestProcessManager(t *testing.T) *processruntime.Manager {
 	t.Helper()
-	mgr, err := processruntime.NewManager(t.TempDir())
+	root := t.TempDir()
+	mgr, err := processruntime.NewManager(root, filepath.Join(root, "state", "runtime"))
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -297,6 +298,7 @@ func TestStreamFinished_PersistsTurnTokenDeltasOnly(t *testing.T) {
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 	})
 	m.mainInputTokens = 100
@@ -343,6 +345,7 @@ func TestLoadPersistedTokenUsage_RestoresMainTotalsFromTurnDeltas(t *testing.T) 
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 	})
 
@@ -511,6 +514,7 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterTurnMessages(t *testing.
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 	})
 	assistant := providers.ChatMessage{
@@ -575,6 +579,7 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterHistoryRewrite(t *testin
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 	})
 	m.chatHistory = []providers.ChatMessage{{Role: "user", Content: "stale"}}
@@ -635,6 +640,7 @@ func TestStreamFinishedNormalizesInterleavedToolResults(t *testing.T) {
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 	})
 	assistant := providers.ChatMessage{
@@ -703,6 +709,7 @@ func TestBusyEnterSteerSendsOnlyAfterActiveTurnFinishes(t *testing.T) {
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 		StreamRunner: &agent.StreamRunner{
 			Client: &echoStreamClient{answer: func(msgs []providers.ChatMessage) string { return "answer to: " + msgs[len(msgs)-1].Content }},
@@ -1999,6 +2006,7 @@ func TestStreamMessageEventPersistsChatMessageIncrementally(t *testing.T) {
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 		StreamRunner: &agent.StreamRunner{
 			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
@@ -2042,6 +2050,7 @@ func TestStreamFinishedSkipsDuplicateAppendAfterIncrementalPersistence(t *testin
 		Provider:   "test",
 		Model:      "test-model",
 		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		StateDir:   filepath.Join(dir, "state"),
 		MemoryPath: path,
 		StreamRunner: &agent.StreamRunner{
 			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},

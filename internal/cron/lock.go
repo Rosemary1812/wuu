@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -29,6 +30,9 @@ func (l *Lock) TryAcquire() (bool, error) {
 		PID:       os.Getpid(),
 		Acquired:  time.Now().UnixMilli(),
 	})
+	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
+		return false, err
+	}
 
 	f, err := os.OpenFile(l.path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err == nil {

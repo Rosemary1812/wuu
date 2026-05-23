@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 const usageDataSubDir = "usage-data"
@@ -12,10 +13,11 @@ const cacheSubDir = "cache"
 
 // UsageDataDir returns the user-level directory for usage reports and caches.
 func UsageDataDir(homeDir string) string {
-	if strings.TrimSpace(homeDir) == "" {
+	home, err := statepath.Home(homeDir)
+	if err != nil {
 		return ""
 	}
-	return filepath.Join(homeDir, ".wuu", usageDataSubDir)
+	return statepath.UsageDataDir(home)
 }
 
 // CacheDir returns the cache directory under usage-data.

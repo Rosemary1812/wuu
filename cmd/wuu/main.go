@@ -22,6 +22,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/tui"
 	"github.com/blueberrycongee/wuu/internal/version"
@@ -218,7 +219,15 @@ func runTask(args []string) error {
 
 	var toolExecutor agent.ToolExecutor
 	var processMgr *processruntime.Manager
-	processMgr, err = processruntime.NewManager(rootDir)
+	wuuHome, err := statepath.Home(os.Getenv("HOME"))
+	if err != nil {
+		return err
+	}
+	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, rootDir)
+	if err != nil {
+		return err
+	}
+	processMgr, err = processruntime.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
 	if err != nil {
 		return err
 	}
@@ -230,6 +239,7 @@ func runTask(args []string) error {
 		// Default normal mode: main agent retains all tools including write_file,
 		// edit_file, and run_shell. Coordinator mode can be entered at runtime via
 		// the /coordinator slash command.
+		kit.SetStateDir(workspaceStateDir)
 		kit.SetProcessManager(processMgr)
 		toolExecutor = kit
 	}
@@ -404,6 +414,7 @@ func runTUI(args []string) error {
 		WorkspaceRoot:       rootDir,
 		ConfigPath:          configPath,
 		MemoryPath:          resolvedMemoryPath,
+		StateDir:            rt.StateDir,
 		SessionDir:          sessDir,
 		ResumeID:            resolvedResumeID,
 		RequestTimeout:      *requestTimeout,

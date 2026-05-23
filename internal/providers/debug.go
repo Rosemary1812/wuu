@@ -13,10 +13,9 @@ var (
 	debugOnce sync.Once
 )
 
-// InitDebugLog opens a debug log file at .wuu/debug.log in the given directory.
-func InitDebugLog(dir string) {
+// InitDebugLog opens a debug log file in the given user-level log directory.
+func InitDebugLog(logDir string) {
 	debugOnce.Do(func() {
-		logDir := filepath.Join(dir, ".wuu")
 		os.MkdirAll(logDir, 0o755)
 		path := filepath.Join(logDir, "debug.log")
 		// Rotate if the log exceeds 2 MB to prevent unbounded growth.

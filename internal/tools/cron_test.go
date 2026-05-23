@@ -11,7 +11,8 @@ import (
 
 func TestScheduleCronTool_DefaultsToSessionOnly(t *testing.T) {
 	dir := t.TempDir()
-	env := &Env{RootDir: dir}
+	stateDir := filepath.Join(dir, "state")
+	env := &Env{RootDir: dir, StateDir: stateDir}
 	tool := NewScheduleCronTool(env)
 
 	result, err := tool.Execute(context.Background(), `{"cron":"*/5 * * * *","prompt":"check deploy","recurring":true}`)
@@ -22,14 +23,14 @@ func TestScheduleCronTool_DefaultsToSessionOnly(t *testing.T) {
 		t.Fatal("expected non-empty result")
 	}
 
-	fileTasks, err := cron.NewTaskStore(filepath.Join(dir, ".wuu", "scheduled_tasks.json")).List()
+	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
 	if err != nil {
 		t.Fatalf("file store list: %v", err)
 	}
 	if len(fileTasks) != 0 {
 		t.Fatalf("expected no durable tasks, got %d", len(fileTasks))
 	}
-	sessionTasks, err := cron.NewSessionTaskStore(dir).List()
+	sessionTasks, err := cron.NewSessionTaskStore(stateDir).List()
 	if err != nil {
 		t.Fatalf("session store list: %v", err)
 	}
@@ -43,7 +44,8 @@ func TestScheduleCronTool_DefaultsToSessionOnly(t *testing.T) {
 
 func TestScheduleCronTool_DurablePersistsToDisk(t *testing.T) {
 	dir := t.TempDir()
-	env := &Env{RootDir: dir}
+	stateDir := filepath.Join(dir, "state")
+	env := &Env{RootDir: dir, StateDir: stateDir}
 	tool := NewScheduleCronTool(env)
 
 	result, err := tool.Execute(context.Background(), `{"cron":"*/5 * * * *","prompt":"check deploy","recurring":true,"durable":true}`)
@@ -54,7 +56,7 @@ func TestScheduleCronTool_DurablePersistsToDisk(t *testing.T) {
 		t.Fatal("expected non-empty result")
 	}
 
-	fileTasks, err := cron.NewTaskStore(filepath.Join(dir, ".wuu", "scheduled_tasks.json")).List()
+	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
 	if err != nil {
 		t.Fatalf("file store list: %v", err)
 	}
@@ -65,12 +67,13 @@ func TestScheduleCronTool_DurablePersistsToDisk(t *testing.T) {
 
 func TestCancelCronTool(t *testing.T) {
 	dir := t.TempDir()
-	env := &Env{RootDir: dir}
-	fileStore := cron.NewTaskStore(filepath.Join(dir, ".wuu", "scheduled_tasks.json"))
+	stateDir := filepath.Join(dir, "state")
+	env := &Env{RootDir: dir, StateDir: stateDir}
+	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
 	if err := fileStore.Add(cron.Task{ID: "abc123", Cron: "* * * * *", Prompt: "x"}); err != nil {
 		t.Fatalf("fileStore.Add: %v", err)
 	}
-	sessionStore := cron.NewSessionTaskStore(dir)
+	sessionStore := cron.NewSessionTaskStore(stateDir)
 	if err := sessionStore.Add(cron.Task{ID: "def456", Cron: "* * * * *", Prompt: "y"}); err != nil {
 		t.Fatalf("sessionStore.Add: %v", err)
 	}
@@ -95,12 +98,13 @@ func TestCancelCronTool(t *testing.T) {
 
 func TestListCronTool(t *testing.T) {
 	dir := t.TempDir()
-	env := &Env{RootDir: dir}
-	fileStore := cron.NewTaskStore(filepath.Join(dir, ".wuu", "scheduled_tasks.json"))
+	stateDir := filepath.Join(dir, "state")
+	env := &Env{RootDir: dir, StateDir: stateDir}
+	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
 	if err := fileStore.Add(cron.Task{ID: "abc", Cron: "*/5 * * * *", Prompt: "check"}); err != nil {
 		t.Fatalf("fileStore.Add: %v", err)
 	}
-	sessionStore := cron.NewSessionTaskStore(dir)
+	sessionStore := cron.NewSessionTaskStore(stateDir)
 	if err := sessionStore.Add(cron.Task{ID: "def", Cron: "*/10 * * * *", Prompt: "ping", Recurring: true}); err != nil {
 		t.Fatalf("sessionStore.Add: %v", err)
 	}

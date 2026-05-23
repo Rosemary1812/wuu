@@ -32,12 +32,14 @@ func TestCreateAndList(t *testing.T) {
 
 func TestDirUsesUserHome(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("WUU_HOME", "")
+	t.Setenv("HOME", home)
 	want := filepath.Join(home, ".wuu", "sessions")
 	if got := Dir(home); got != want {
 		t.Fatalf("Dir() = %q, want %q", got, want)
 	}
-	if got := Dir(""); got != "" {
-		t.Fatalf("Dir(empty) = %q, want empty", got)
+	if got := Dir(""); got != want {
+		t.Fatalf("Dir(empty) = %q, want %q", got, want)
 	}
 }
 

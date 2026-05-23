@@ -21,6 +21,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
@@ -1192,8 +1193,10 @@ func cmdLoop(args string, m *Model) string {
 		return fmt.Sprintf("loop: invalid interval %q", interval)
 	}
 
-	fileStore := cron.NewTaskStore(filepath.Join(m.workspaceRoot, ".wuu", "scheduled_tasks.json"))
-	sessionStore := cron.NewSessionTaskStore(m.workspaceRoot)
+	fileStore, sessionStore, err := scheduledTaskStores(m)
+	if err != nil {
+		return fmt.Sprintf("loop: %v", err)
+	}
 	fileTasks, _ := fileStore.List()
 	sessionTasks, _ := sessionStore.List()
 	if len(fileTasks)+len(sessionTasks) >= cron.MaxJobs {
@@ -1226,8 +1229,10 @@ func cmdUnloop(args string, m *Model) string {
 		return "usage: /unloop <task-id>"
 	}
 
-	fileStore := cron.NewTaskStore(filepath.Join(m.workspaceRoot, ".wuu", "scheduled_tasks.json"))
-	sessionStore := cron.NewSessionTaskStore(m.workspaceRoot)
+	fileStore, sessionStore, err := scheduledTaskStores(m)
+	if err != nil {
+		return fmt.Sprintf("unloop: %v", err)
+	}
 	fileTasks, err := fileStore.List()
 	if err != nil {
 		return fmt.Sprintf("unloop: %v", err)
@@ -1274,8 +1279,10 @@ func cmdUnloop(args string, m *Model) string {
 }
 
 func cmdTasks(_ string, m *Model) string {
-	fileStore := cron.NewTaskStore(filepath.Join(m.workspaceRoot, ".wuu", "scheduled_tasks.json"))
-	sessionStore := cron.NewSessionTaskStore(m.workspaceRoot)
+	fileStore, sessionStore, err := scheduledTaskStores(m)
+	if err != nil {
+		return fmt.Sprintf("tasks: %v", err)
+	}
 	fileTasks, err := fileStore.List()
 	if err != nil {
 		return fmt.Sprintf("tasks: %v", err)
@@ -1310,6 +1317,13 @@ func cmdTasks(_ string, m *Model) string {
 		appendTask(task, true)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func scheduledTaskStores(m *Model) (*cron.TaskStore, *cron.SessionTaskStore, error) {
+	if m == nil || strings.TrimSpace(m.stateDir) == "" {
+		return nil, nil, fmt.Errorf("workspace state directory unavailable")
+	}
+	return cron.NewTaskStore(statepath.ScheduledTasksPath(m.stateDir)), cron.NewSessionTaskStore(m.stateDir), nil
 }
 
 // parseLoopArgs extracts interval and prompt from /loop arguments.

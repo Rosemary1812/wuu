@@ -21,8 +21,8 @@ import (
 	"github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
-	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/worktree"
 )
@@ -49,6 +49,7 @@ type Session struct {
 	ProviderName                string
 	Model                       string
 	RootDir                     string
+	StateDir                    string
 	ConfigPath                  string
 	SessionDir                  string
 	StreamRunner                *agent.StreamRunner
@@ -72,6 +73,15 @@ func NewSession(opts Options) (*Session, error) {
 	}
 	cfg := opts.Config
 
+	wuuHome, err := statepath.Home(opts.HomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve wuu home: %w", err)
+	}
+	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace state directory: %w", err)
+	}
+
 	providerCfg, resolvedName, err := cfg.ResolveProvider(opts.ProviderName)
 	if err != nil {
 		return nil, err
@@ -85,13 +95,13 @@ func NewSession(opts Options) (*Session, error) {
 		return nil, err
 	}
 
-	providers.InitDebugLog(rootDir)
+	providers.InitDebugLog(statepath.LogDir(wuuHome))
 	setupCatwalk(cfg)
 
 	hookDispatcher := buildHookDispatcher(cfg)
 	discoveredSkills := discoverSkills(rootDir, opts.HomeDir)
 
-	processMgr, err := process.NewManager(rootDir)
+	processMgr, err := process.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +113,7 @@ func NewSession(opts Options) (*Session, error) {
 		if newErr != nil {
 			return nil, newErr
 		}
+		kit.SetStateDir(workspaceStateDir)
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
 		kit.SetAskUserBridge(opts.AskBridge)
@@ -121,7 +132,7 @@ func NewSession(opts Options) (*Session, error) {
 	baseSystemPrompt := buildBaseSystemPrompt(rootDir, cfg.Agent.SystemPrompt, memoryFiles, discoveredSkills)
 
 	if toolkit != nil {
-		if err := agentcontrol.EnsureSharedDir(rootDir); err != nil {
+		if err := agentcontrol.EnsureSharedDir(workspaceStateDir); err != nil {
 			return nil, fmt.Errorf("ensure shared dir: %w", err)
 		}
 	}
@@ -139,7 +150,7 @@ func NewSession(opts Options) (*Session, error) {
 			Client:          workerClient,
 			DefaultModel:    providerCfg.Model,
 			ParentRepo:      rootDir,
-			WorktreeRoot:    filepath.Join(rootDir, ".wuu", "worktrees"),
+			WorktreeRoot:    statepath.WorktreeRoot(workspaceStateDir),
 			SessionID:       "session-pending",
 			HistoryDir:      "",
 			WorkerSysPrompt: baseSystemPrompt,
@@ -148,6 +159,13 @@ func NewSession(opts Options) (*Session, error) {
 				if werr != nil {
 					return nil, werr
 				}
+				workerStateDir := workspaceStateDir
+				if workerRoot != rootDir {
+					if dir, err := statepath.WorkspaceDir(wuuHome, workerRoot); err == nil {
+						workerStateDir = dir
+					}
+				}
+				wkit.SetStateDir(workerStateDir)
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetAgentControl(agentControl)
@@ -164,10 +182,7 @@ func NewSession(opts Options) (*Session, error) {
 		}
 	}
 
-	sessionDir := session.Dir(opts.HomeDir)
-	if sessionDir == "" {
-		sessionDir = filepath.Join(rootDir, ".wuu", "sessions")
-	}
+	sessionDir := statepath.SessionsDir(wuuHome)
 
 	streamRunner := &agent.StreamRunner{
 		Client:       client,
@@ -190,6 +205,7 @@ func NewSession(opts Options) (*Session, error) {
 		ProviderName:                resolvedName,
 		Model:                       providerCfg.Model,
 		RootDir:                     rootDir,
+		StateDir:                    workspaceStateDir,
 		ConfigPath:                  opts.ConfigPath,
 		SessionDir:                  sessionDir,
 		StreamRunner:                streamRunner,
@@ -231,7 +247,7 @@ func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType) {
 	kit.DisableTools(disabled...)
 }
 
-// SetSessionID binds workspace-scoped runtime artifact paths after the UI has
+// SetSessionID binds user-level runtime artifact paths after the UI has
 // created or resumed a session. Conversation logs live in SessionDir.
 func (s *Session) SetSessionID(id string) {
 	if s == nil || strings.TrimSpace(id) == "" {
@@ -240,13 +256,24 @@ func (s *Session) SetSessionID(id string) {
 	if s.Toolkit != nil {
 		s.Toolkit.SetSessionID(id)
 		s.Toolkit.SetAgentIdentity(id, agentthread.RootPath)
-		artifactDir := filepath.Join(s.RootDir, ".wuu", "sessions", id)
+		stateDir := strings.TrimSpace(s.StateDir)
+		if stateDir == "" {
+			if home, err := statepath.Home(""); err == nil {
+				if dir, err := statepath.WorkspaceDir(home, s.RootDir); err == nil {
+					stateDir = dir
+				}
+			}
+		}
+		if stateDir == "" {
+			return
+		}
+		artifactDir := statepath.SessionArtifactDir(stateDir, id)
 		s.Toolkit.SetSessionDir(artifactDir)
 		if s.AgentControl != nil {
 			s.AgentControl.SetSessionInfo(
 				id,
 				filepath.Join(artifactDir, "workers"),
-				filepath.Join(s.SessionDir, id+".threads"),
+				filepath.Join(artifactDir, "threads"),
 			)
 		}
 	}

@@ -208,6 +208,7 @@ type Model struct {
 	configPath      string
 	workspaceRoot   string
 	memoryPath      string
+	stateDir        string
 	sessionID       string
 	sessionDir      string
 	streamRunner    *agent.StreamRunner

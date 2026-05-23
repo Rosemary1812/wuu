@@ -16,6 +16,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 type OwnerKind string
@@ -86,7 +88,7 @@ type Manager struct {
 	subscribers []chan<- Event
 }
 
-func NewManager(rootDir string) (*Manager, error) {
+func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
 	if strings.TrimSpace(rootDir) == "" {
 		return nil, errors.New("root directory is required")
 	}
@@ -94,7 +96,26 @@ func NewManager(rootDir string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &Manager{rootDir: abs, registryDir: filepath.Join(abs, ".wuu", "runtime", "processes"), logDir: filepath.Join(abs, ".wuu", "runtime", "logs")}
+	runtimeDir := ""
+	if len(runtimeDirs) > 0 {
+		runtimeDir = strings.TrimSpace(runtimeDirs[0])
+	}
+	if runtimeDir == "" {
+		wuuHome, err := statepath.Home("")
+		if err != nil {
+			return nil, err
+		}
+		workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, abs)
+		if err != nil {
+			return nil, err
+		}
+		runtimeDir = statepath.RuntimeDir(workspaceStateDir)
+	}
+	runtimeDir, err = filepath.Abs(runtimeDir)
+	if err != nil {
+		return nil, err
+	}
+	m := &Manager{rootDir: abs, registryDir: filepath.Join(runtimeDir, "processes"), logDir: filepath.Join(runtimeDir, "logs")}
 	if err := os.MkdirAll(m.registryDir, 0o755); err != nil {
 		return nil, err
 	}

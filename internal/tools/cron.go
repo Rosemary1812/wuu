@@ -3,15 +3,15 @@ package tools
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
-func taskStorePath(rootDir string) string {
-	return filepath.Join(rootDir, ".wuu", "scheduled_tasks.json")
+func taskStorePath(stateDir string) string {
+	return statepath.ScheduledTasksPath(stateDir)
 }
 
 type ScheduleCronTool struct{ env *Env }
@@ -78,8 +78,12 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 		return "", fmt.Errorf("cron next run is more than 1 year away")
 	}
 
-	fileStore := cron.NewTaskStore(taskStorePath(t.env.RootDir))
-	sessionStore := cron.NewSessionTaskStore(t.env.RootDir)
+	stateDir, err := t.env.WorkspaceStateDir()
+	if err != nil {
+		return "", err
+	}
+	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
+	sessionStore := cron.NewSessionTaskStore(stateDir)
 	fileTasks, _ := fileStore.List()
 	sessionTasks, _ := sessionStore.List()
 	if len(fileTasks)+len(sessionTasks) >= cron.MaxJobs {
@@ -149,8 +153,12 @@ func (t *CancelCronTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return "", fmt.Errorf("cancel_cron requires id")
 	}
 
-	fileStore := cron.NewTaskStore(taskStorePath(t.env.RootDir))
-	sessionStore := cron.NewSessionTaskStore(t.env.RootDir)
+	stateDir, err := t.env.WorkspaceStateDir()
+	if err != nil {
+		return "", err
+	}
+	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
+	sessionStore := cron.NewSessionTaskStore(stateDir)
 	if err := fileStore.Remove(args.ID); err != nil {
 		return "", fmt.Errorf("failed to cancel task: %w", err)
 	}
@@ -181,8 +189,12 @@ func (t *ListCronTool) Definition() providers.ToolDefinition {
 }
 
 func (t *ListCronTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	fileStore := cron.NewTaskStore(taskStorePath(t.env.RootDir))
-	sessionStore := cron.NewSessionTaskStore(t.env.RootDir)
+	stateDir, err := t.env.WorkspaceStateDir()
+	if err != nil {
+		return "", err
+	}
+	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
+	sessionStore := cron.NewSessionTaskStore(stateDir)
 	fileTasks, err := fileStore.List()
 	if err != nil {
 		return "", fmt.Errorf("failed to list tasks: %w", err)

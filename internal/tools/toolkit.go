@@ -18,6 +18,7 @@ import (
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
@@ -62,8 +63,16 @@ func New(rootDir string) (*Toolkit, error) {
 	if ev, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = ev
 	}
+	wuuHome, err := statepath.Home("")
+	if err != nil {
+		return nil, fmt.Errorf("resolve wuu home: %w", err)
+	}
+	stateDir, err := statepath.WorkspaceDir(wuuHome, abs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace state directory: %w", err)
+	}
 
-	env := &Env{RootDir: abs}
+	env := &Env{RootDir: abs, StateDir: stateDir}
 	t := &Toolkit{env: env}
 	t.rebuildRegistry()
 	return t, nil
@@ -129,6 +138,11 @@ func (t *Toolkit) SetAskUserBridge(b AskUserBridge) {
 // SetProcessManager attaches the process manager.
 func (t *Toolkit) SetProcessManager(m *proc.Manager) {
 	t.env.ProcessMgr = m
+}
+
+// SetStateDir sets the workspace-scoped runtime state directory.
+func (t *Toolkit) SetStateDir(dir string) {
+	t.env.StateDir = strings.TrimSpace(dir)
 }
 
 // SetSkills attaches the discovered skills.

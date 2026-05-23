@@ -1,7 +1,8 @@
 // Package worktree wraps git worktree operations for subagent isolation.
 //
 // Each subagent in coordinator mode runs inside its own git worktree,
-// rooted at .wuu/worktrees/{session-id}/{worker-id}/. The worktree is
+// rooted under the workspace state directory at
+// worktrees/{session-id}/{worker-id}/. The worktree is
 // created in detached HEAD mode based on the parent repository's current
 // HEAD, so workers see a snapshot of the project at spawn time without
 // polluting the parent's branch state.
@@ -31,12 +32,12 @@ type Worktree struct {
 // Manager creates and tracks worktrees rooted at a parent repository.
 type Manager struct {
 	parentRepo string // absolute path to the source git repo (parent cwd)
-	rootDir    string // .wuu/worktrees/ directory
+	rootDir    string // workspace-state worktrees directory
 }
 
 // NewManager constructs a Manager. parentRepo must be inside a git
 // repository (or be one). rootDir is where worktrees are stored,
-// typically <parentRepo>/.wuu/worktrees.
+// typically under the user-level workspace state directory.
 func NewManager(parentRepo, rootDir string) (*Manager, error) {
 	abs, err := filepath.Abs(parentRepo)
 	if err != nil {

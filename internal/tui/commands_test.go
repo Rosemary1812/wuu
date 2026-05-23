@@ -12,6 +12,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 func TestParseSlashCommand(t *testing.T) {
@@ -300,11 +301,13 @@ func writeCommandMemoryRecords(t *testing.T, path string, records []memoryEntry)
 
 func TestCmdLoopStoresSessionOnlyTask(t *testing.T) {
 	root := t.TempDir()
+	stateDir := filepath.Join(root, "state")
 	m := NewModel(Config{
 		Provider:      "test",
 		Model:         "test-model",
 		WorkspaceRoot: root,
 		ConfigPath:    filepath.Join(root, ".wuu.json"),
+		StateDir:      stateDir,
 		StreamRunner: &agent.StreamRunner{
 			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
 			Model:  "test-model",
@@ -316,7 +319,7 @@ func TestCmdLoopStoresSessionOnlyTask(t *testing.T) {
 		t.Fatalf("expected session-only message, got %q", out)
 	}
 
-	fileTasks, err := cron.NewTaskStore(filepath.Join(root, ".wuu", "scheduled_tasks.json")).List()
+	fileTasks, err := cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir)).List()
 	if err != nil {
 		t.Fatalf("file store list: %v", err)
 	}
@@ -324,7 +327,7 @@ func TestCmdLoopStoresSessionOnlyTask(t *testing.T) {
 		t.Fatalf("expected no durable tasks, got %d", len(fileTasks))
 	}
 
-	sessionTasks, err := cron.NewSessionTaskStore(root).List()
+	sessionTasks, err := cron.NewSessionTaskStore(stateDir).List()
 	if err != nil {
 		t.Fatalf("session store list: %v", err)
 	}
@@ -341,7 +344,8 @@ func TestCmdLoopStoresSessionOnlyTask(t *testing.T) {
 
 func TestCmdTasksShowsSessionOnlyTasks(t *testing.T) {
 	root := t.TempDir()
-	store := cron.NewSessionTaskStore(root)
+	stateDir := filepath.Join(root, "state")
+	store := cron.NewSessionTaskStore(stateDir)
 	if err := store.Add(cron.Task{
 		ID:        "abc123",
 		Cron:      "*/5 * * * *",
@@ -357,6 +361,7 @@ func TestCmdTasksShowsSessionOnlyTasks(t *testing.T) {
 		Model:         "test-model",
 		WorkspaceRoot: root,
 		ConfigPath:    filepath.Join(root, ".wuu.json"),
+		StateDir:      stateDir,
 		StreamRunner: &agent.StreamRunner{
 			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
 			Model:  "test-model",
@@ -371,8 +376,9 @@ func TestCmdTasksShowsSessionOnlyTasks(t *testing.T) {
 
 func TestCmdUnloopRemovesTaskAndQueuedRun(t *testing.T) {
 	root := t.TempDir()
-	store := cron.NewSessionTaskStore(root)
-	durablePath := filepath.Join(root, ".wuu", "scheduled_tasks.json")
+	stateDir := filepath.Join(root, "state")
+	store := cron.NewSessionTaskStore(stateDir)
+	durablePath := statepath.ScheduledTasksPath(stateDir)
 	task := cron.Task{
 		ID:        "abc123",
 		Cron:      "*/5 * * * *",
@@ -389,6 +395,7 @@ func TestCmdUnloopRemovesTaskAndQueuedRun(t *testing.T) {
 		Model:         "test-model",
 		WorkspaceRoot: root,
 		ConfigPath:    filepath.Join(root, ".wuu.json"),
+		StateDir:      stateDir,
 		StreamRunner: &agent.StreamRunner{
 			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
 			Model:  "test-model",
@@ -421,11 +428,13 @@ func TestCmdUnloopRemovesTaskAndQueuedRun(t *testing.T) {
 
 func TestCmdUnloopRejectsUnknownTask(t *testing.T) {
 	root := t.TempDir()
+	stateDir := filepath.Join(root, "state")
 	m := NewModel(Config{
 		Provider:      "test",
 		Model:         "test-model",
 		WorkspaceRoot: root,
 		ConfigPath:    filepath.Join(root, ".wuu.json"),
+		StateDir:      stateDir,
 		StreamRunner: &agent.StreamRunner{
 			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
 			Model:  "test-model",

@@ -12,7 +12,8 @@ import (
 
 func TestStartListAndPersist(t *testing.T) {
 	root := t.TempDir()
-	m, err := NewManager(root)
+	runtimeDir := filepath.Join(root, "state", "runtime")
+	m, err := NewManager(root, runtimeDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,14 +31,14 @@ func TestStartListAndPersist(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("want 1 process, got %d", len(list))
 	}
-	if _, err := os.Stat(filepath.Join(root, ".wuu", "runtime", "processes", p.ID+".json")); err != nil {
+	if _, err := os.Stat(filepath.Join(runtimeDir, "processes", p.ID+".json")); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestStartDetachesProcessLifecycleFromStartContext(t *testing.T) {
 	root := t.TempDir()
-	m, err := NewManager(root)
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestStartDetachesProcessLifecycleFromStartContext(t *testing.T) {
 
 func TestStopStopsProcessGroup(t *testing.T) {
 	root := t.TempDir()
-	m, _ := NewManager(root)
+	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
 	p, err := m.Start(context.Background(), StartOptions{Command: "sleep 30 & wait", OwnerKind: OwnerSubagent, OwnerID: "worker-1", Lifecycle: LifecycleSession})
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +97,7 @@ func TestStopStopsProcessGroup(t *testing.T) {
 
 func TestCleanupSessionOnlyStopsSessionLifecycle(t *testing.T) {
 	root := t.TempDir()
-	m, _ := NewManager(root)
+	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
 	sessionProc, err := m.Start(context.Background(), StartOptions{Command: "sleep 30", OwnerKind: OwnerMainAgent, OwnerID: "main", Lifecycle: LifecycleSession})
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +131,7 @@ func TestCleanupSessionOnlyStopsSessionLifecycle(t *testing.T) {
 
 func TestReadOutput(t *testing.T) {
 	root := t.TempDir()
-	m, _ := NewManager(root)
+	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
 	p, err := m.Start(context.Background(), StartOptions{Command: "echo ready; sleep 1", OwnerKind: OwnerMainAgent, OwnerID: "main", Lifecycle: LifecycleSession})
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +149,7 @@ func TestReadOutput(t *testing.T) {
 
 func TestManagerPublishesLifecycleEventsAndCleanupSkipsManaged(t *testing.T) {
 	root := t.TempDir()
-	m, err := NewManager(root)
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
 	if err != nil {
 		t.Fatal(err)
 	}

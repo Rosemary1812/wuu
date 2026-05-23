@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 // withIndexLock serializes access to the session index file across
@@ -57,10 +59,11 @@ func NewID() string {
 
 // Dir returns the user-level sessions directory.
 func Dir(homeDir string) string {
-	if strings.TrimSpace(homeDir) == "" {
+	home, err := statepath.Home(homeDir)
+	if err != nil {
 		return ""
 	}
-	return filepath.Join(homeDir, ".wuu", "sessions")
+	return statepath.SessionsDir(home)
 }
 
 // FilePath returns the data file path for a session ID.
