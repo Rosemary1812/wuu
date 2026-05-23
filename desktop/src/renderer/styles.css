@@ -2481,6 +2481,9 @@ button:disabled {
 .battle-front,
 .battle-impact,
 .battle-tracer,
+.battle-squad,
+.battle-smoke,
+.battle-barrage,
 .era-projectile,
 .era-vehicle,
 .era-rocket,
@@ -2614,6 +2617,111 @@ button:disabled {
 
 .tracer-two {
   left: calc(50% + 34px);
+}
+
+.battle-squad {
+  --squad-facing: 1;
+  top: 13px;
+  width: 46px;
+  height: 18px;
+  color: currentColor;
+  opacity: 0.78;
+  background:
+    radial-gradient(circle, currentColor 0 2px, transparent 2.6px) 1px 1px / 11px 9px repeat-x,
+    linear-gradient(currentColor, currentColor) 4px 10px / 7px 1.5px repeat-x,
+    linear-gradient(145deg, transparent 0 54%, currentColor 55% 62%, transparent 63%) 0 13px / 12px 5px repeat-x;
+  transform-origin: 50% 100%;
+}
+
+.battle-squad::before {
+  position: absolute;
+  top: -4px;
+  left: 7px;
+  width: 1.5px;
+  height: 20px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 5px 3px 0 -2px #d9a23a;
+  content: "";
+  opacity: 0.72;
+}
+
+.squad-left {
+  left: calc(50% - 158px);
+}
+
+.squad-left-rear {
+  left: calc(50% - 198px);
+  opacity: 0.54;
+}
+
+.squad-right {
+  --squad-facing: -1;
+  left: calc(50% + 112px);
+}
+
+.squad-right-rear {
+  --squad-facing: -1;
+  left: calc(50% + 154px);
+  opacity: 0.54;
+}
+
+.battle-smoke {
+  top: 21px;
+  width: 28px;
+  height: 10px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 24% 52%, rgba(142, 118, 93, 0.42) 0 4px, transparent 4.5px),
+    radial-gradient(circle at 58% 38%, rgba(151, 133, 105, 0.36) 0 5px, transparent 5.5px),
+    radial-gradient(circle at 82% 60%, rgba(105, 113, 111, 0.24) 0 4px, transparent 4.5px);
+  opacity: 0;
+  filter: blur(0.15px);
+}
+
+.smoke-left {
+  left: calc(50% - 114px);
+}
+
+.smoke-right {
+  left: calc(50% + 82px);
+}
+
+.battle-barrage {
+  top: 16px;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #d9a23a, transparent);
+  opacity: 0;
+}
+
+.battle-barrage::before,
+.battle-barrage::after {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #d9a23a;
+  content: "";
+}
+
+.battle-barrage::before {
+  top: -4px;
+  left: 4px;
+}
+
+.battle-barrage::after {
+  right: 2px;
+  bottom: -5px;
+}
+
+.barrage-one {
+  left: calc(50% - 72px);
+}
+
+.barrage-two {
+  left: calc(50% + 44px);
 }
 
 .era-projectile {
@@ -2796,6 +2904,28 @@ button:disabled {
   animation: battle-dust-rise 4200ms ease-in-out infinite;
 }
 
+.era-sticks .squad-left,
+.era-sticks .squad-left-rear {
+  display: block;
+  top: 16px;
+  width: 36px;
+  opacity: 0.58;
+}
+
+.era-sticks .battle-squad::before {
+  display: none;
+}
+
+.era-sticks .squad-left {
+  left: calc(50% - 50px);
+  animation: tribe-pack-left 5600ms ease-in-out infinite;
+}
+
+.era-sticks .squad-left-rear {
+  left: calc(50% + 36px);
+  animation: tribe-pack-right 5600ms ease-in-out infinite;
+}
+
 .era-swords .fight-spark {
   animation: fight-spark 3200ms ease-in-out infinite;
 }
@@ -2886,6 +3016,46 @@ button:disabled {
 .era-swords .dust-left,
 .era-swords .dust-right {
   animation: battle-dust-rise 3300ms ease-in-out infinite;
+}
+
+.era-swords .squad-left,
+.era-swords .squad-left-rear,
+.era-swords .squad-right,
+.era-swords .squad-right-rear,
+.era-swords .smoke-left,
+.era-swords .smoke-right,
+.era-swords .barrage-one,
+.era-swords .barrage-two {
+  display: block;
+}
+
+.era-swords .squad-left {
+  animation: army-charge-left 3300ms ease-in-out infinite;
+}
+
+.era-swords .squad-left-rear {
+  animation: army-support-left 3300ms ease-in-out infinite;
+}
+
+.era-swords .squad-right {
+  animation: army-charge-right 3300ms ease-in-out infinite;
+}
+
+.era-swords .squad-right-rear {
+  animation: army-support-right 3300ms ease-in-out infinite;
+}
+
+.era-swords .smoke-left,
+.era-swords .smoke-right {
+  animation: battle-smoke-pulse 3300ms ease-in-out infinite;
+}
+
+.era-swords .barrage-one {
+  animation: melee-barrage-one 3300ms ease-in-out infinite;
+}
+
+.era-swords .barrage-two {
+  animation: melee-barrage-two 3300ms ease-in-out infinite;
 }
 
 .era-fortress .prop-left,
@@ -2983,6 +3153,45 @@ button:disabled {
   animation: battle-dust-rise 4300ms ease-in-out infinite;
 }
 
+.era-fortress .squad-left,
+.era-fortress .squad-left-rear,
+.era-fortress .squad-right,
+.era-fortress .smoke-left,
+.era-fortress .barrage-one,
+.era-fortress .barrage-two {
+  display: block;
+}
+
+.era-fortress .squad-left {
+  left: calc(50% - 172px);
+  animation: siege-formation-left 4300ms ease-in-out infinite;
+}
+
+.era-fortress .squad-left-rear {
+  left: calc(50% - 214px);
+  animation: siege-formation-left-rear 4300ms ease-in-out infinite;
+}
+
+.era-fortress .squad-right {
+  top: 7px;
+  left: calc(50% + 65px);
+  width: 34px;
+  opacity: 0.5;
+  animation: wall-formation 3600ms ease-in-out infinite;
+}
+
+.era-fortress .smoke-left {
+  animation: battle-smoke-pulse 4300ms ease-in-out infinite;
+}
+
+.era-fortress .barrage-one {
+  animation: arrow-barrage-one 2400ms ease-in-out infinite;
+}
+
+.era-fortress .barrage-two {
+  animation: arrow-barrage-two 2800ms ease-in-out infinite;
+}
+
 .era-cannon .stickman-a {
   left: calc(50% - 86px);
   animation: cannon-crew-one 3600ms ease-in-out infinite;
@@ -3051,6 +3260,48 @@ button:disabled {
 .era-cannon .dust-left,
 .era-cannon .dust-right {
   animation: battle-dust-rise 1800ms ease-in-out infinite;
+}
+
+.era-cannon .squad-left,
+.era-cannon .squad-left-rear,
+.era-cannon .squad-right,
+.era-cannon .smoke-left,
+.era-cannon .smoke-right,
+.era-cannon .barrage-one {
+  display: block;
+}
+
+.era-cannon .squad-left {
+  left: calc(50% - 144px);
+  animation: battery-crew-left 3600ms ease-in-out infinite;
+}
+
+.era-cannon .squad-left-rear {
+  left: calc(50% - 184px);
+  animation: battery-crew-left 3600ms ease-in-out infinite;
+  animation-delay: -420ms;
+}
+
+.era-cannon .squad-right {
+  top: 14px;
+  left: calc(50% + 94px);
+  opacity: 0.48;
+  animation: wall-formation 3600ms ease-in-out infinite;
+}
+
+.era-cannon .smoke-left {
+  left: calc(50% - 40px);
+  animation: cannon-smoke-bloom 1800ms ease-in-out infinite;
+}
+
+.era-cannon .smoke-right {
+  left: calc(50% + 54px);
+  animation: impact-smoke-bloom 1800ms ease-in-out infinite;
+}
+
+.era-cannon .barrage-one {
+  left: calc(50% + 16px);
+  animation: cannon-barrage 1800ms ease-in-out infinite;
 }
 
 .era-factory .stickman-a {
@@ -3142,6 +3393,35 @@ button:disabled {
   animation: battle-dust-rise 4300ms ease-in-out infinite;
 }
 
+.era-factory .squad-left,
+.era-factory .squad-left-rear,
+.era-factory .smoke-left {
+  display: block;
+}
+
+.era-factory .squad-left,
+.era-factory .squad-left-rear {
+  top: 17px;
+  width: 52px;
+  opacity: 0.68;
+}
+
+.era-factory .squad-left {
+  left: calc(50% - 124px);
+  animation: mobilized-column-left 4300ms ease-in-out infinite;
+}
+
+.era-factory .squad-left-rear {
+  left: calc(50% + 48px);
+  animation: mobilized-column-right 4300ms ease-in-out infinite;
+}
+
+.era-factory .smoke-left {
+  top: 8px;
+  left: calc(50% + 2px);
+  animation: factory-war-smoke 2200ms ease-in-out infinite;
+}
+
 .era-armor .stickman-a,
 .era-armor .stickman-b {
   display: none;
@@ -3195,6 +3475,67 @@ button:disabled {
   animation: battle-dust-rise 4700ms ease-in-out infinite;
 }
 
+.era-armor .squad-left,
+.era-armor .squad-left-rear,
+.era-armor .squad-right,
+.era-armor .smoke-left,
+.era-armor .smoke-right,
+.era-armor .barrage-one {
+  display: block;
+}
+
+.era-armor .battle-squad {
+  top: 22px;
+  height: 8px;
+  border-radius: 999px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 3px / 100% 3px no-repeat,
+    repeating-linear-gradient(90deg, currentColor 0 12px, transparent 12px 17px);
+}
+
+.era-armor .battle-squad::before {
+  top: -4px;
+  left: 12px;
+  width: 21px;
+  height: 2px;
+  box-shadow: none;
+  transform: rotate(-4deg);
+}
+
+.era-armor .squad-left {
+  left: calc(50% - 152px);
+  width: 68px;
+  animation: armor-column-left 4700ms ease-in-out infinite;
+}
+
+.era-armor .squad-left-rear {
+  left: calc(50% - 220px);
+  width: 58px;
+  animation: armor-column-left-rear 4700ms ease-in-out infinite;
+}
+
+.era-armor .squad-right {
+  left: calc(50% + 86px);
+  width: 58px;
+  opacity: 0.5;
+  animation: armor-column-right 4700ms ease-in-out infinite;
+}
+
+.era-armor .smoke-left {
+  left: calc(50% - 78px);
+  animation: cannon-smoke-bloom 1600ms ease-in-out infinite;
+}
+
+.era-armor .smoke-right {
+  left: calc(50% + 78px);
+  animation: impact-smoke-bloom 1600ms ease-in-out infinite;
+}
+
+.era-armor .barrage-one {
+  left: calc(50% + 16px);
+  animation: tank-barrage 1600ms linear infinite;
+}
+
 .era-rockets .stickman-a,
 .era-rockets .stickman-b {
   display: none;
@@ -3238,6 +3579,37 @@ button:disabled {
 .era-rockets .dust-left,
 .era-rockets .dust-right {
   animation: launch-dust 5200ms ease-in-out infinite;
+}
+
+.era-rockets .squad-left,
+.era-rockets .smoke-left,
+.era-rockets .smoke-right,
+.era-rockets .barrage-one {
+  display: block;
+}
+
+.era-rockets .squad-left {
+  top: 19px;
+  left: calc(50% - 126px);
+  width: 64px;
+  opacity: 0.5;
+  animation: launch-crew-fallout 5200ms ease-in-out infinite;
+}
+
+.era-rockets .smoke-left {
+  left: calc(50% - 38px);
+  animation: launch-smoke-bloom 5200ms ease-in-out infinite;
+}
+
+.era-rockets .smoke-right {
+  left: calc(50% + 8px);
+  animation: launch-smoke-bloom 5200ms ease-in-out infinite;
+  animation-delay: -240ms;
+}
+
+.era-rockets .barrage-one {
+  left: calc(50% - 10px);
+  animation: launch-barrage 5200ms ease-in-out infinite;
 }
 
 .era-orbit .stickman-a,
@@ -3289,6 +3661,50 @@ button:disabled {
   top: 11px;
   left: calc(50% - 30px);
   animation: orbital-impact 2400ms ease-in-out infinite;
+}
+
+.era-orbit .squad-left,
+.era-orbit .squad-right,
+.era-orbit .barrage-one,
+.era-orbit .barrage-two {
+  display: block;
+}
+
+.era-orbit .battle-squad,
+.era-galaxy .battle-squad {
+  height: 14px;
+  background:
+    radial-gradient(circle at 14% 50%, currentColor 0 2.5px, transparent 3px),
+    radial-gradient(circle at 48% 26%, currentColor 0 2.5px, transparent 3px),
+    radial-gradient(circle at 78% 66%, currentColor 0 2.5px, transparent 3px),
+    linear-gradient(135deg, transparent 0 44%, currentColor 45% 58%, transparent 59%);
+}
+
+.era-orbit .battle-squad::before,
+.era-galaxy .battle-squad::before {
+  display: none;
+}
+
+.era-orbit .squad-left {
+  top: 8px;
+  left: calc(50% - 132px);
+  animation: fleet-cross-left 4800ms ease-in-out infinite;
+}
+
+.era-orbit .squad-right {
+  top: 20px;
+  left: calc(50% + 96px);
+  animation: fleet-cross-right 4800ms ease-in-out infinite;
+}
+
+.era-orbit .barrage-one {
+  left: calc(50% - 22px);
+  animation: orbital-barrage-one 2400ms ease-in-out infinite;
+}
+
+.era-orbit .barrage-two {
+  left: calc(50% + 36px);
+  animation: orbital-barrage-two 2600ms ease-in-out infinite;
 }
 
 .era-galaxy .era-planet {
@@ -3369,6 +3785,49 @@ button:disabled {
   top: 22px;
   left: calc(50% - 44px);
   animation: orbital-impact 2500ms ease-in-out infinite;
+}
+
+.era-galaxy .squad-left,
+.era-galaxy .squad-left-rear,
+.era-galaxy .squad-right,
+.era-galaxy .squad-right-rear,
+.era-galaxy .barrage-one,
+.era-galaxy .barrage-two {
+  display: block;
+}
+
+.era-galaxy .squad-left {
+  top: 7px;
+  left: calc(50% - 156px);
+  animation: fleet-cross-left 5800ms ease-in-out infinite;
+}
+
+.era-galaxy .squad-left-rear {
+  top: 22px;
+  left: calc(50% - 118px);
+  animation: fleet-cross-left-rear 5800ms ease-in-out infinite;
+}
+
+.era-galaxy .squad-right {
+  top: 12px;
+  left: calc(50% + 104px);
+  animation: fleet-cross-right 5800ms ease-in-out infinite;
+}
+
+.era-galaxy .squad-right-rear {
+  top: 25px;
+  left: calc(50% + 54px);
+  animation: fleet-cross-right-rear 5800ms ease-in-out infinite;
+}
+
+.era-galaxy .barrage-one {
+  left: calc(50% - 42px);
+  animation: orbital-barrage-one 2200ms ease-in-out infinite;
+}
+
+.era-galaxy .barrage-two {
+  left: calc(50% + 38px);
+  animation: orbital-barrage-two 2500ms ease-in-out infinite;
 }
 
 .turn-progress.failed .turn-progress-label svg,
@@ -4578,6 +5037,458 @@ pre {
   64% {
     opacity: 0;
     transform: scale(2.2);
+  }
+}
+
+@keyframes tribe-pack-left {
+  0%,
+  100% {
+    transform: translate(-8px, 1px) scaleX(var(--squad-facing, 1));
+  }
+  46% {
+    transform: translate(6px, -1px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes tribe-pack-right {
+  0%,
+  100% {
+    transform: translate(7px, 0) scaleX(var(--squad-facing, 1));
+  }
+  46% {
+    transform: translate(-8px, 1px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes army-charge-left {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translateX(-18px) scaleX(var(--squad-facing, 1));
+  }
+  42% {
+    opacity: 0.95;
+    transform: translateX(54px) scaleX(var(--squad-facing, 1));
+  }
+  58% {
+    opacity: 0.7;
+    transform: translateX(38px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes army-charge-right {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translateX(18px) scaleX(var(--squad-facing, 1));
+  }
+  42% {
+    opacity: 0.95;
+    transform: translateX(-54px) scaleX(var(--squad-facing, 1));
+  }
+  58% {
+    opacity: 0.7;
+    transform: translateX(-38px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes army-support-left {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: translateX(-10px) scaleX(var(--squad-facing, 1));
+  }
+  44% {
+    opacity: 0.68;
+    transform: translateX(36px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes army-support-right {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: translateX(10px) scaleX(var(--squad-facing, 1));
+  }
+  44% {
+    opacity: 0.68;
+    transform: translateX(-36px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes battle-smoke-pulse {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.7);
+  }
+  45% {
+    opacity: 0.72;
+    transform: translate(7px, -3px) scale(1.25);
+  }
+  76% {
+    opacity: 0.14;
+    transform: translate(14px, -7px) scale(1.55);
+  }
+}
+
+@keyframes melee-barrage-one {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(-22px, 6px) rotate(16deg) scaleX(0.5);
+  }
+  40%,
+  52% {
+    opacity: 0.9;
+    transform: translate(40px, 0) rotate(4deg) scaleX(1.1);
+  }
+}
+
+@keyframes melee-barrage-two {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(30px, 5px) rotate(164deg) scaleX(0.5);
+  }
+  42%,
+  54% {
+    opacity: 0.82;
+    transform: translate(-38px, -1px) rotate(176deg) scaleX(1.08);
+  }
+}
+
+@keyframes siege-formation-left {
+  0%,
+  100% {
+    opacity: 0.74;
+    transform: translateX(-12px) scaleX(var(--squad-facing, 1));
+  }
+  52% {
+    opacity: 0.95;
+    transform: translateX(58px) scaleX(var(--squad-facing, 1));
+  }
+  70% {
+    opacity: 0.62;
+    transform: translateX(44px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes siege-formation-left-rear {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translateX(-8px) scaleX(var(--squad-facing, 1));
+  }
+  52% {
+    opacity: 0.6;
+    transform: translateX(42px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes wall-formation {
+  0%,
+  100% {
+    transform: translateY(0) scaleX(var(--squad-facing, 1));
+  }
+  48% {
+    transform: translateY(-2px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes arrow-barrage-one {
+  0% {
+    opacity: 0;
+    transform: translate(-52px, -2px) rotate(-14deg) scaleX(0.6);
+  }
+  24%,
+  72% {
+    opacity: 0.86;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(84px, 11px) rotate(12deg) scaleX(1.2);
+  }
+}
+
+@keyframes arrow-barrage-two {
+  0% {
+    opacity: 0;
+    transform: translate(74px, 8px) rotate(170deg) scaleX(0.6);
+  }
+  20%,
+  66% {
+    opacity: 0.72;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-42px, -4px) rotate(190deg) scaleX(1.1);
+  }
+}
+
+@keyframes battery-crew-left {
+  0%,
+  100% {
+    opacity: 0.56;
+    transform: translateX(-4px) scaleX(var(--squad-facing, 1));
+  }
+  42% {
+    opacity: 0.78;
+    transform: translateX(8px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes cannon-smoke-bloom {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateX(-10px) scale(0.55);
+  }
+  26% {
+    opacity: 0.76;
+    transform: translateX(6px) scale(1.3);
+  }
+  68% {
+    opacity: 0.16;
+    transform: translateX(22px) scale(1.8);
+  }
+}
+
+@keyframes impact-smoke-bloom {
+  0%,
+  54%,
+  100% {
+    opacity: 0;
+    transform: translateX(0) scale(0.5);
+  }
+  68% {
+    opacity: 0.82;
+    transform: translateX(8px) scale(1.35);
+  }
+  84% {
+    opacity: 0.12;
+    transform: translateX(14px) scale(1.72);
+  }
+}
+
+@keyframes cannon-barrage {
+  0% {
+    opacity: 0;
+    transform: translateX(-42px) rotate(3deg) scaleX(0.45);
+  }
+  20%,
+  60% {
+    opacity: 0.86;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(70px) rotate(3deg) scaleX(1.2);
+  }
+}
+
+@keyframes mobilized-column-left {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: translateX(-14px) scaleX(var(--squad-facing, 1));
+  }
+  50% {
+    opacity: 0.76;
+    transform: translateX(42px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes mobilized-column-right {
+  0%,
+  100% {
+    opacity: 0.44;
+    transform: translateX(12px) scaleX(var(--squad-facing, 1));
+  }
+  50% {
+    opacity: 0.7;
+    transform: translateX(-32px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes factory-war-smoke {
+  0%,
+  100% {
+    opacity: 0.08;
+    transform: translateY(6px) scale(0.7);
+  }
+  50% {
+    opacity: 0.46;
+    transform: translateY(-10px) scale(1.4);
+  }
+}
+
+@keyframes armor-column-left {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translateX(-24px) scaleX(var(--squad-facing, 1));
+  }
+  48% {
+    opacity: 0.95;
+    transform: translateX(78px) scaleX(var(--squad-facing, 1));
+  }
+  66% {
+    opacity: 0.82;
+    transform: translateX(58px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes armor-column-left-rear {
+  0%,
+  100% {
+    opacity: 0.46;
+    transform: translateX(-12px) scaleX(var(--squad-facing, 1));
+  }
+  48% {
+    opacity: 0.64;
+    transform: translateX(58px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes armor-column-right {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: translateX(20px) scaleX(var(--squad-facing, 1));
+  }
+  48% {
+    opacity: 0.62;
+    transform: translateX(-40px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes tank-barrage {
+  0% {
+    opacity: 0;
+    transform: translateX(-48px) scaleX(0.5);
+  }
+  16%,
+  68% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(90px) scaleX(1.25);
+  }
+}
+
+@keyframes launch-crew-fallout {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: translate(0, 0) scaleX(var(--squad-facing, 1));
+  }
+  42% {
+    opacity: 0.68;
+    transform: translate(-16px, 4px) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes launch-smoke-bloom {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.55);
+  }
+  44% {
+    opacity: 0.86;
+    transform: translateY(3px) scale(1.75);
+  }
+  70% {
+    opacity: 0.18;
+    transform: translateY(-5px) scale(2.05);
+  }
+}
+
+@keyframes launch-barrage {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 16px) rotate(-80deg) scaleX(0.45);
+  }
+  44%,
+  58% {
+    opacity: 0.92;
+    transform: translate(8px, -28px) rotate(-80deg) scaleX(1.35);
+  }
+}
+
+@keyframes fleet-cross-left {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translate(-20px, 2px) rotate(4deg) scaleX(var(--squad-facing, 1));
+  }
+  52% {
+    opacity: 0.82;
+    transform: translate(80px, -4px) rotate(-8deg) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes fleet-cross-left-rear {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translate(-12px, -2px) rotate(-3deg) scaleX(var(--squad-facing, 1));
+  }
+  52% {
+    opacity: 0.66;
+    transform: translate(54px, 4px) rotate(8deg) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes fleet-cross-right {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translate(18px, -2px) rotate(-4deg) scaleX(var(--squad-facing, 1));
+  }
+  52% {
+    opacity: 0.82;
+    transform: translate(-78px, 5px) rotate(8deg) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes fleet-cross-right-rear {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translate(10px, 3px) rotate(5deg) scaleX(var(--squad-facing, 1));
+  }
+  52% {
+    opacity: 0.66;
+    transform: translate(-52px, -3px) rotate(-8deg) scaleX(var(--squad-facing, 1));
+  }
+}
+
+@keyframes orbital-barrage-one {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(-34px, -8px) rotate(-20deg) scaleX(0.45);
+  }
+  42%,
+  58% {
+    opacity: 0.92;
+    transform: translate(44px, 5px) rotate(-20deg) scaleX(1.35);
+  }
+}
+
+@keyframes orbital-barrage-two {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(38px, 8px) rotate(158deg) scaleX(0.45);
+  }
+  42%,
+  60% {
+    opacity: 0.84;
+    transform: translate(-42px, -5px) rotate(158deg) scaleX(1.28);
   }
 }
 

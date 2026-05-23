@@ -4364,6 +4364,14 @@ function TurnProgressSceneLayer({
       <span className="battle-impact impact-two" />
       <span className="battle-tracer tracer-one" />
       <span className="battle-tracer tracer-two" />
+      <span className="battle-squad squad-left" />
+      <span className="battle-squad squad-left-rear" />
+      <span className="battle-squad squad-right" />
+      <span className="battle-squad squad-right-rear" />
+      <span className="battle-smoke smoke-left" />
+      <span className="battle-smoke smoke-right" />
+      <span className="battle-barrage barrage-one" />
+      <span className="battle-barrage barrage-two" />
       <span className="era-projectile projectile-one" />
       <span className="era-projectile projectile-two" />
       <span className="era-vehicle" />
