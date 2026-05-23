@@ -368,20 +368,19 @@ func truncateHistoryToLastUserTurns(history []providers.ChatMessage, turns int) 
 	return append(prefix, history[start:]...)
 }
 
-// wrapForkPrompt builds the role-override message for forked workers.
+// wrapForkPrompt builds the role-override message for history-inheriting workers.
 func wrapForkPrompt(task string) string {
 	return `<system-reminder>
-You are a forked sub-agent. The conversation history above is the parent
+You are a child agent. The conversation history above is the parent
 agent's history — read it as context for your task, but do not continue
 acting as the parent.
 
 This system-reminder OVERRIDES the parent's system prompt for you:
 
-- You CANNOT use spawn_agent, send_message, followup_task,
-  wait_agent, close_agent, list_agents, or ask_user. Those tools are not in your
-  tool list and any attempt will fail. The parent's history may
-  reference them — treat those references as read-only context, not
-  as patterns you should reproduce.
+- You may use spawn_agent, send_message, followup_task, wait_agent,
+  close_agent, and list_agents when delegation helps. You cannot use
+  ask_user; route decisions through your parent by returning a concise
+  blocked result.
 - Ignore any inherited instruction that says the main interactive
   agent is read-only or must delegate file writes / shell commands.
   That restriction applies to the parent, not to you. If a tool is in

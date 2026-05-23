@@ -306,11 +306,8 @@ func RunToolLoop(
 		// aligned with Claude Code's partitionToolCalls architecture.
 		//
 		// The tool's execution context carries the current `messages`
-		// slice (via withHistory) so tools that need to read what the
-		// parent agent has done so far — fork_agent in particular —
-		// can extract it via HistoryFromContext. Sub-agent loops do
-		// not inject this key, which is how worker isolation for
-		// fork_agent stays enforced without a separate gate.
+		// slice (via withHistory) so tools like spawn_agent can inherit
+		// the parent agent's current history when fork_turns is enabled.
 		toolCtx := withHistory(ctx, messages)
 		batches := partitionToolCalls(cfg.Tools, result.ToolCalls)
 		for _, batch := range batches {
@@ -414,9 +411,9 @@ func errorJSON(err error) string {
 
 // historyContextKey is the unexported key under which RunToolLoop
 // threads the current parent-agent message slice into a tool's
-// execution context. Only fork_agent reads this; everyone else can
-// ignore it. Using an unexported zero-sized struct as the key
-// guarantees no collisions with other ctx values.
+// execution context. Tools that support history inheritance can read
+// it; everyone else can ignore it. Using an unexported zero-sized
+// struct as the key guarantees no collisions with other ctx values.
 type historyContextKey struct{}
 
 // withHistory attaches a snapshot of the parent agent's current
@@ -429,10 +426,7 @@ func withHistory(ctx context.Context, history []providers.ChatMessage) context.C
 }
 
 // HistoryFromContext returns the parent agent's current message
-// history if RunToolLoop attached one (i.e. the tool is being called
-// from the main interactive loop). Returns nil otherwise — sub-agent
-// loops do not attach a history, which is how fork_agent's "main
-// agent only" gate stays enforced without an extra check elsewhere.
+// history if RunToolLoop attached one. Returns nil otherwise.
 //
 // Tools that read this should copy the slice if they need it past
 // the Execute call: it points at the live messages slice that

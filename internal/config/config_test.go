@@ -249,8 +249,11 @@ func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 	if !strings.Contains(prompt, "spawn_agent") {
 		t.Fatalf("default system prompt must mention spawn_agent: %q", prompt)
 	}
-	if !strings.Contains(prompt, "fork_agent") {
-		t.Fatalf("default system prompt must mention fork_agent: %q", prompt)
+	if !strings.Contains(prompt, "fork_turns") {
+		t.Fatalf("default system prompt must mention fork_turns: %q", prompt)
+	}
+	if strings.Contains(prompt, "fork_agent") {
+		t.Fatalf("default system prompt must not mention removed fork_agent tool: %q", prompt)
 	}
 }
 

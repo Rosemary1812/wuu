@@ -301,7 +301,7 @@ func Default() Config {
 				"Make minimal changes to achieve the goal. Follow the existing coding style of the project. " +
 				"Test what you build and verify what you change. " +
 				"If multiple tool calls are independent, make them in parallel. " +
-				"You may spawn sub-agents with stable names to perform tasks in parallel or to isolate complex work. Use spawn_agent with task_name/message for self-contained subtasks; use fork_agent when the work depends on context you have already built up. Address child tasks later with agent_id, agent_path, or task_name. You can also make changes directly when it is simpler. " +
+				"You may spawn sub-agents with stable names to perform tasks in parallel or to isolate complex work. Use spawn_agent with task_name/message; by default it inherits your full conversation history, and you can set fork_turns='none' for a clean child or a positive integer string for only the last N user turns. Address child tasks later with agent_id, agent_path, or task_name. You can also make changes directly when it is simpler. " +
 				"Treat shell commands as non-interactive. Use 'git commit -m' instead of 'git commit -e', 'git rebase -i' is not possible here, and 'git add -i' is not possible here. " +
 				"Before your first tool call, give one short sentence so the user knows what you're doing. After that, send short updates only at meaningful moments. No fluff. " +
 				"Think in three comment buckets: 'what', 'why', and future-intent/status comments. " +
