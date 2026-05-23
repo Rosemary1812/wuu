@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -54,6 +55,21 @@ func (f *fakeLoopTools) Execute(_ context.Context, call providers.ToolCall) (str
 	}
 	return `{"ok":true}`, nil
 }
+
+type contextLoopTools struct {
+	defs []providers.ToolDefinition
+
+	calls []providers.ToolCall
+	last  string
+}
+
+func (f *contextLoopTools) Definitions() []providers.ToolDefinition { return f.defs }
+func (f *contextLoopTools) Execute(_ context.Context, call providers.ToolCall) (string, error) {
+	f.calls = append(f.calls, call)
+	f.last = "context for " + call.ID
+	return `{"ok":"` + call.ID + `"}`, nil
+}
+func (f *contextLoopTools) LastAdditionalContext() string { return f.last }
 
 func userMsg(content string) providers.ChatMessage {
 	return providers.ChatMessage{Role: "user", Content: content}
@@ -191,6 +207,55 @@ func TestRunToolLoop_ToolCallThenAnswer(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "read_file", Arguments: `{}`},
+			{ID: "call_2", Name: "grep", Arguments: `{}`},
+			{ID: "call_3", Name: "read_file", Arguments: `{}`},
+		}},
+		{Content: "done"},
+	}}
+	tools := &contextLoopTools{defs: []providers.ToolDefinition{
+		{Name: "read_file"},
+		{Name: "grep"},
+	}}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("inspect")}, LoopConfig{
+		Model: "m",
+		Tools: tools,
+	}, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := providers.ValidateMessageSequence(res.NewMessages); err != nil {
+		t.Fatalf("expected valid returned message sequence, got %v: %+v", err, res.NewMessages)
+	}
+	roles := make([]string, 0, len(res.NewMessages))
+	for _, msg := range res.NewMessages {
+		roles = append(roles, msg.Role)
+	}
+	if got, want := strings.Join(roles, ","), "assistant,tool,tool,tool,user,user,user,assistant"; got != want {
+		t.Fatalf("unexpected returned message order: got %s want %s", got, want)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected two provider requests, got %d", len(step.calls))
+	}
+	requestRoles := make([]string, 0, len(step.calls[1].Messages))
+	for _, msg := range step.calls[1].Messages {
+		requestRoles = append(requestRoles, msg.Role)
+	}
+	if got, want := strings.Join(requestRoles, ","), "user,assistant,tool,tool,tool,user,user,user"; got != want {
+		t.Fatalf("unexpected second request order: got %s want %s", got, want)
+	}
+	for i, wantID := range []string{"call_1", "call_2", "call_3"} {
+		msg := step.calls[1].Messages[2+i]
+		if msg.Role != "tool" || msg.ToolCallID != wantID {
+			t.Fatalf("tool result %d: got %+v want call_id %s", i, msg, wantID)
+		}
+	}
+}
+
 func TestRunToolLoop_TruncationRecovery(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{Content: "part1 ", Truncated: true, StopReason: "length"},
@@ -286,7 +351,7 @@ func TestRunToolLoop_ZeroMaxStepsIsUnlimited(t *testing.T) {
 	const rounds = 12
 	results := make([]StepResult, 0, rounds+1)
 	for i := 0; i < rounds; i++ {
-		results = append(results, StepResult{ToolCalls: []providers.ToolCall{{ID: "c", Name: "t", Arguments: `{}`}}})
+		results = append(results, StepResult{ToolCalls: []providers.ToolCall{{ID: fmt.Sprintf("c%d", i), Name: "t", Arguments: `{}`}}})
 	}
 	results = append(results, StepResult{Content: "all done"})
 

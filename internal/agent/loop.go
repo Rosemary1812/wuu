@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -154,6 +155,19 @@ func RunToolLoop(
 					})
 				}
 			}
+		}
+		if normalized, changed, nerr := normalizeLiveMessages(messages); nerr != nil {
+			return LoopResult{
+				NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
+				HistoryRewritten: historyRewritten,
+				InputTokens:      totalIn,
+				OutputTokens:     totalOut,
+			}, nerr
+		} else if changed {
+			messages = normalized
+			historyRewritten = true
+			usage.Reset()
+			usage.RecordPendingMessages(messages)
 		}
 		req := providers.ChatRequest{
 			Model:       cfg.Model,
@@ -310,14 +324,24 @@ func RunToolLoop(
 		// the parent agent's current history when fork_turns is enabled.
 		toolCtx := withHistory(ctx, messages)
 		batches := partitionToolCalls(cfg.Tools, result.ToolCalls)
+		var toolMessages []providers.ChatMessage
+		var followupMessages []providers.ChatMessage
 		for _, batch := range batches {
-			toolMessages := executeBatch(toolCtx, cfg.Tools, batch, cfg.OnToolResult, result.PrecomputedResults)
-			enforceAggregateResultBudget(toolMessages)
-			for _, toolMsg := range toolMessages {
-				appendMessage(toolMsg)
+			batchMessages := executeBatch(toolCtx, cfg.Tools, batch, cfg.OnToolResult, result.PrecomputedResults)
+			for _, msg := range batchMessages {
+				if strings.EqualFold(msg.Role, "tool") {
+					toolMessages = append(toolMessages, msg)
+				} else {
+					followupMessages = append(followupMessages, msg)
+				}
 			}
-			usage.RecordPendingMessages(toolMessages)
 		}
+		enforceAggregateResultBudget(toolMessages)
+		orderedToolMessages := append(toolMessages, followupMessages...)
+		for _, toolMsg := range orderedToolMessages {
+			appendMessage(toolMsg)
+		}
+		usage.RecordPendingMessages(orderedToolMessages)
 	}
 
 	return LoopResult{
@@ -351,6 +375,14 @@ func copyMessages(msgs []providers.ChatMessage) []providers.ChatMessage {
 	out := make([]providers.ChatMessage, len(msgs))
 	copy(out, msgs)
 	return out
+}
+
+func normalizeLiveMessages(messages []providers.ChatMessage) ([]providers.ChatMessage, bool, error) {
+	normalized, err := providers.NormalizeAndValidateMessages(messages)
+	if err != nil {
+		return nil, false, err
+	}
+	return normalized, !reflect.DeepEqual(normalized, messages), nil
 }
 
 func newMessagesForReturn(messages []providers.ChatMessage, startLen int, historyRewritten bool) []providers.ChatMessage {
@@ -527,6 +559,7 @@ func executeBatch(
 	if !batch.concurrent || len(batch.calls) == 1 {
 		// Serial execution.
 		msgs := make([]providers.ChatMessage, 0, len(batch.calls))
+		followups := make([]providers.ChatMessage, 0, len(batch.calls))
 		for _, call := range batch.calls {
 			// Check for precomputed results from streaming tool execution.
 			result, ok := precomputed[call.ID]
@@ -546,20 +579,20 @@ func executeBatch(
 				ToolCallID: call.ID,
 				Content:    result,
 			})
-			// Inject hook-provided additional context as a system
-			// message right after the tool result, so the model sees
-			// it in context. Aligned with Claude Code's
-			// hook_additional_context attachment pattern.
+			// Collect hook-provided additional context separately so
+			// every tool result remains contiguous after the assistant
+			// tool_calls block. Some providers reject user messages
+			// interleaved between tool results.
 			if hasCtxProvider {
 				if extra := ctxProvider.LastAdditionalContext(); extra != "" {
-					msgs = append(msgs, providers.ChatMessage{
+					followups = append(followups, providers.ChatMessage{
 						Role:    "user",
 						Content: "[Hook context for " + call.Name + "]: " + extra,
 					})
 				}
 			}
 		}
-		return msgs
+		return append(msgs, followups...)
 	}
 
 	// Concurrent execution with bounded parallelism.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -343,6 +344,16 @@ func (s *Server) handleThreadResume(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	normalized, err := providers.NormalizeAndValidateMessages(history)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if !reflect.DeepEqual(normalized, history) {
+		if err := rewriteChatHistory(path, normalized); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	history = normalized
 	history = ensureBaseSystemPrompt(history, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, time.Now().UTC())
 	s.mu.Lock()
@@ -526,12 +537,25 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, hi
 
 	now := time.Now().UTC()
 	th.mu.Lock()
+	rewriteHistory := res.HistoryRewritten
 	if res.HistoryRewritten {
 		th.History = append([]providers.ChatMessage(nil), res.NewMessages...)
 	} else {
 		th.History = append(th.History, res.NewMessages...)
 	}
-	persistErr := s.persistTurnResultLocked(th, res)
+	var historyErr error
+	if normalized, nerr := providers.NormalizeAndValidateMessages(th.History); nerr != nil {
+		historyErr = nerr
+	} else if !reflect.DeepEqual(normalized, th.History) {
+		th.History = normalized
+		rewriteHistory = true
+	}
+	var persistErr error
+	if historyErr != nil {
+		persistErr = historyErr
+	} else {
+		persistErr = s.persistTurnResultLocked(th, res, rewriteHistory)
+	}
 	status := TurnStatusCompleted
 	if err != nil {
 		status = TurnStatusFailed
@@ -570,11 +594,11 @@ func (s *Server) thread(id string) *threadState {
 	return s.threads[id]
 }
 
-func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult) error {
+func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool) error {
 	if strings.TrimSpace(th.MemoryPath) == "" {
 		return nil
 	}
-	if res.HistoryRewritten {
+	if rewriteHistory {
 		if err := rewriteChatHistory(th.MemoryPath, th.History); err != nil {
 			return err
 		}

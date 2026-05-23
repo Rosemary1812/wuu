@@ -319,8 +319,12 @@ func TestSpawn_WithInitialHistory_PrefixIsParentHistory(t *testing.T) {
 	parentHistory := []providers.ChatMessage{
 		{Role: "system", Content: "you are the parent agent"},
 		{Role: "user", Content: "fix the bug"},
-		{Role: "assistant", Content: "let me read the file"},
-		{Role: "tool", Name: "read_file", Content: "file contents"},
+		{
+			Role:      "assistant",
+			Content:   "let me read the file",
+			ToolCalls: []providers.ToolCall{{ID: "call_read", Name: "read_file", Arguments: `{}`}},
+		},
+		{Role: "tool", Name: "read_file", ToolCallID: "call_read", Content: "file contents"},
 	}
 
 	sa, err := mgr.Spawn(context.Background(), SpawnOptions{

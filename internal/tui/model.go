@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -347,6 +348,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = appendChatMessage(m.memoryPath, msg)
 		}
 		m.pendingWorkerMessages = nil
+		m.normalizeCommittedChatHistory()
 
 		// Persist token usage for this turn.
 		if m.turnInputTokens > 0 || m.turnOutputTokens > 0 {
@@ -2547,6 +2549,21 @@ func (m *Model) persistStreamMessage(msg providers.ChatMessage) {
 	_ = appendChatMessage(m.memoryPath, msg)
 	if m.pendingTurn != nil {
 		m.pendingTurn.incrementalPersisted = true
+	}
+}
+
+func (m *Model) normalizeCommittedChatHistory() {
+	normalized, err := providers.NormalizeAndValidateMessages(m.chatHistory)
+	if err != nil {
+		m.statusLine = fmt.Sprintf("session history invalid: %v", err)
+		return
+	}
+	if reflect.DeepEqual(normalized, m.chatHistory) {
+		return
+	}
+	m.chatHistory = normalized
+	if err := rewriteChatHistory(m.memoryPath, normalized); err != nil {
+		m.statusLine = fmt.Sprintf("session write failed: %v", err)
 	}
 }
 

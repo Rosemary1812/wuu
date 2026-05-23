@@ -628,6 +628,74 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterHistoryRewrite(t *testin
 	}
 }
 
+func TestStreamFinishedNormalizesInterleavedToolResults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	m := NewModel(Config{
+		Provider:   "test",
+		Model:      "test-model",
+		ConfigPath: filepath.Join(dir, ".wuu.json"),
+		MemoryPath: path,
+	})
+	assistant := providers.ChatMessage{
+		Role: "assistant",
+		ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "read_file"},
+			{ID: "call_2", Name: "grep"},
+		},
+	}
+	tool1 := providers.ChatMessage{
+		Role:       "tool",
+		Name:       "read_file",
+		ToolCallID: "call_1",
+		Content:    "read ok",
+	}
+	hookContext := providers.ChatMessage{
+		Role:    "user",
+		Content: "[Hook context for read_file]: use this next",
+	}
+	tool2 := providers.ChatMessage{
+		Role:       "tool",
+		Name:       "grep",
+		ToolCallID: "call_2",
+		Content:    "grep ok",
+	}
+	m.pendingTurn = &pendingTurnResult{
+		newMsgs: []providers.ChatMessage{assistant, tool1, hookContext, tool2},
+	}
+	m.streaming = true
+	m.pendingRequest = true
+
+	updated, _ := m.Update(streamFinishedMsg{})
+	after := updated.(Model)
+
+	if err := providers.ValidateMessageSequence(after.chatHistory); err != nil {
+		t.Fatalf("expected normalized in-memory history, got %v: %+v", err, after.chatHistory)
+	}
+	roles := make([]string, 0, len(after.chatHistory))
+	for _, msg := range after.chatHistory {
+		roles = append(roles, msg.Role)
+	}
+	if got, want := strings.Join(roles, ","), "assistant,tool,tool,user"; got != want {
+		t.Fatalf("unexpected in-memory order: got %s want %s", got, want)
+	}
+	if after.chatHistory[1].ToolCallID != "call_1" || after.chatHistory[2].ToolCallID != "call_2" {
+		t.Fatalf("unexpected tool result order: %+v", after.chatHistory)
+	}
+
+	msgs, err := loadChatHistory(path)
+	if err != nil {
+		t.Fatalf("loadChatHistory: %v", err)
+	}
+	roles = roles[:0]
+	for _, msg := range msgs {
+		roles = append(roles, msg.Role)
+	}
+	if got, want := strings.Join(roles, ","), "assistant,tool,tool,user"; got != want {
+		t.Fatalf("unexpected persisted order: got %s want %s", got, want)
+	}
+}
+
 func TestBusyEnterSteerSendsOnlyAfterActiveTurnFinishes(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")

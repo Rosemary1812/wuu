@@ -434,6 +434,68 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	}
 }
 
+func TestServerThreadResumeNormalizesToolResultOrder(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir session dir: %v", err)
+	}
+	sessionID := "20260523-000001-tools"
+	sessionPath := filepath.Join(rt.SessionDir, sessionID+".jsonl")
+	history := strings.Join([]string{
+		`{"role":"system","content":"system prompt"}`,
+		`{"role":"user","content":"inspect"}`,
+		`{"role":"assistant","tool_calls":[{"id":"call_1","name":"read_file","arguments":"{}"}]}`,
+		`{"role":"user","content":"mid-turn context"}`,
+		`{"role":"tool","name":"read_file","tool_call_id":"call_1","content":"ok"}`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(sessionPath, []byte(history), 0o644); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	payload := map[string]any{
+		"id":     "1",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: sessionID},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+
+	th := srv.thread(sessionID)
+	if th == nil {
+		t.Fatal("expected resumed thread")
+	}
+	if err := providers.ValidateMessageSequence(th.History); err != nil {
+		t.Fatalf("expected valid resumed history, got %v: %+v", err, th.History)
+	}
+	roles := make([]string, 0, len(th.History))
+	for _, msg := range th.History {
+		roles = append(roles, msg.Role)
+	}
+	if got, want := strings.Join(roles, ","), "system,user,assistant,tool,user"; got != want {
+		t.Fatalf("unexpected resumed order: got %s want %s", got, want)
+	}
+
+	persisted, err := loadChatMessages(sessionPath)
+	if err != nil {
+		t.Fatalf("load rewritten session: %v", err)
+	}
+	roles = roles[:0]
+	for _, msg := range persisted {
+		roles = append(roles, msg.Role)
+	}
+	if got, want := strings.Join(roles, ","), "user,assistant,tool,user"; got != want {
+		t.Fatalf("unexpected persisted order: got %s want %s", got, want)
+	}
+}
+
 func TestTurnsFromHistoryRestoresToolCallItems(t *testing.T) {
 	history := []providers.ChatMessage{
 		{Role: "user", Content: "inspect"},
