@@ -554,3 +554,49 @@ func TestUpdateProviderModel_NotFound(t *testing.T) {
 		t.Fatal("expected error for missing provider")
 	}
 }
+
+func TestUpdateProviderSelection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "old",
+  "providers": {
+    "old": {
+      "type": "openai-compatible",
+      "base_url": "https://old.example.com",
+      "model": "old-model"
+    },
+    "next": {
+      "type": "openai-compatible",
+      "base_url": "https://next.example.com",
+      "model": "next-model"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := UpdateProviderSelection(path, "next", "chosen-model"); err != nil {
+		t.Fatalf("UpdateProviderSelection: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.DefaultProvider != "next" {
+		t.Fatalf("expected default provider next, got %q", cfg.DefaultProvider)
+	}
+	p, _, _ := cfg.ResolveProvider("next")
+	if p.Model != "chosen-model" {
+		t.Fatalf("expected chosen-model, got %s", p.Model)
+	}
+	old, _, _ := cfg.ResolveProvider("old")
+	if old.Model != "old-model" {
+		t.Fatalf("old provider model changed: %s", old.Model)
+	}
+}
