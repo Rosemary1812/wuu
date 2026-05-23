@@ -1323,7 +1323,7 @@ function terminalShellCommand(command: string): { command: string; args: string[
   if (process.platform === "win32") {
     return { command: "cmd.exe", args: ["/d", "/s", "/c", command] };
   }
-  return { command: "bash", args: ["-lc", command] };
+  return { command: process.env.SHELL || "bash", args: ["-lc", command] };
 }
 
 function setWindowResizeState(resizing: boolean): void {

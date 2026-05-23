@@ -2226,57 +2226,25 @@ button:disabled {
 }
 
 .workspace-terminal-panel {
-  display: grid;
+  display: block;
   height: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 10px;
-}
-
-.workspace-terminal-meta {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: #303438;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-  padding: 0 2px;
-}
-
-.workspace-terminal-meta span,
-.workspace-terminal-meta small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspace-terminal-meta small {
-  color: #8a8f94;
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
 }
 
 .workspace-terminal-screen {
+  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  border: 1px solid #ececea;
   border-radius: 8px;
-  background: #16191c;
-  color: #e7e9e8;
+  background: #fff;
+  color: #1f2328;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
-  line-height: 1.5;
-  padding: 12px;
-}
-
-.workspace-terminal-cursor {
-  color: #8f969c;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
+  line-height: 1.45;
+  padding: 10px 12px;
 }
 
 .workspace-terminal-line {
@@ -2290,68 +2258,106 @@ button:disabled {
   word-break: break-word;
 }
 
-.workspace-terminal-line.command {
-  color: #f7f7f2;
-  font-weight: var(--weight-semibold);
-}
-
 .workspace-terminal-line.stderr,
 .workspace-terminal-line.error {
-  color: #ffb4a8;
+  color: #b42318;
 }
 
 .workspace-terminal-line.status {
-  color: #9aa3aa;
+  color: #7e858b;
 }
 
+.workspace-terminal-row,
 .workspace-terminal-input {
-  display: grid;
+  display: flex;
   min-width: 0;
-  grid-template-columns: auto minmax(0, 1fr) 34px;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #e2e2df;
-  border-radius: 8px;
-  background: #fff;
-  padding: 7px 8px;
+  align-items: baseline;
+  gap: 0;
 }
 
-.workspace-terminal-input span {
-  color: #8a8f94;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
+.workspace-terminal-prompt {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  overflow: hidden;
+  margin-right: 7px;
+  white-space: nowrap;
+}
+
+.workspace-terminal-prompt span {
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px 7px;
+  text-overflow: ellipsis;
+}
+
+.workspace-terminal-prompt-cwd {
+  max-width: min(190px, 42vw);
+  background: #2f98ff;
+  color: #fff;
+}
+
+.workspace-terminal-prompt-git {
+  max-width: min(220px, 44vw);
+  background: #ffc21a;
+  color: #68530c;
+}
+
+.workspace-terminal-prompt-ok {
+  background: #f3f4f1;
+  color: #1f9d46;
+  font-weight: var(--weight-semibold);
+}
+
+.workspace-terminal-command-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #1f2328;
+  white-space: pre-wrap;
+}
+
+.workspace-terminal-running {
+  align-items: center;
+}
+
+.workspace-terminal-running-label {
+  color: #7e858b;
+}
+
+.workspace-terminal-running button,
+.workspace-terminal-input button {
+  display: grid;
+  width: 24px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 5px;
+  background: transparent;
+  color: #7e858b;
+  margin-left: 6px;
+}
+
+.workspace-terminal-running button:hover,
+.workspace-terminal-input button:hover:not(:disabled) {
+  background: #eeeeeb;
+  color: #202427;
 }
 
 .workspace-terminal-input input {
   min-width: 0;
+  flex: 1;
   border: 0;
   outline: 0;
   background: transparent;
-  color: #25292d;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-}
-
-.workspace-terminal-input input:disabled {
-  color: #8a8f94;
-}
-
-.workspace-terminal-input button {
-  display: grid;
-  width: 34px;
-  height: 30px;
-  place-items: center;
-  border-radius: 7px;
-  background: #eeeeeb;
-  color: #25292d;
-}
-
-.workspace-terminal-input button:hover:not(:disabled) {
-  background: #e4e4e1;
+  color: #1f2328;
+  font: inherit;
+  padding: 0;
 }
 
 .workspace-terminal-input button:disabled {
-  color: #a4a8ab;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .workspace-scroll-region {

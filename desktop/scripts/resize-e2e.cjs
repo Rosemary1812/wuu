@@ -278,6 +278,18 @@ async function run() {
     terminalTool.click();
   });
   await waitFor(win, () => Boolean(document.querySelector(".workspace-terminal-input input")), 1000);
+  const terminalPrompt = await evaluate(win, () => {
+    const screen = document.querySelector(".workspace-terminal-screen");
+    const prompt = screen?.querySelector(".workspace-terminal-prompt");
+    return {
+      screenContainsInput: Boolean(screen?.querySelector(".workspace-terminal-input input")),
+      cwd: prompt?.querySelector(".workspace-terminal-prompt-cwd")?.textContent ?? "",
+      git: prompt?.querySelector(".workspace-terminal-prompt-git")?.textContent ?? ""
+    };
+  });
+  assert.equal(terminalPrompt.screenContainsInput, true, "Terminal input should live inside the terminal screen.");
+  assert.equal(terminalPrompt.cwd, "~/wuu", "Terminal prompt should show the workspace directory.");
+  assert.match(terminalPrompt.git, /resize-e2e/, "Terminal prompt should show the git branch.");
   await evaluate(win, () => {
     const input = document.querySelector(".workspace-terminal-input input");
     const form = document.querySelector(".workspace-terminal-input");

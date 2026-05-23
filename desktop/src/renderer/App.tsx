@@ -3796,7 +3796,7 @@ function WorkspaceRightPanel({
             ) : view === "review" ? (
               <WorkspaceReviewPanel gitStatus={gitStatus} />
             ) : view === "terminal" ? (
-              <WorkspaceTerminalPanel activeContext={activeContext} />
+              <WorkspaceTerminalPanel activeContext={activeContext} gitStatus={gitStatus} />
             ) : null}
           </div>
         </>
@@ -3891,8 +3891,18 @@ const WORKSPACE_TERMINAL_PENDING_EVENT_IDS = 12;
 
 type WorkspaceTerminalLine = {
   id: string;
-  kind: "command" | "stdout" | "stderr" | "status" | "error";
+  kind: "stdout" | "stderr" | "status" | "error";
   text: string;
+} | {
+  id: string;
+  kind: "command";
+  text: string;
+  prompt: WorkspaceTerminalPrompt;
+};
+
+type WorkspaceTerminalPrompt = {
+  cwd: string;
+  git?: string;
 };
 
 function terminalExitText(event: Extract<TerminalCommandEvent, { type: "exit" }>): string {
@@ -3903,7 +3913,13 @@ function terminalExitText(event: Extract<TerminalCommandEvent, { type: "exit" }>
   return `exit ${event.exit_code ?? "unknown"} after ${duration}`;
 }
 
-function WorkspaceTerminalPanel({ activeContext }: { activeContext?: RuntimeContext }): JSX.Element {
+function WorkspaceTerminalPanel({
+  activeContext,
+  gitStatus
+}: {
+  activeContext?: RuntimeContext;
+  gitStatus?: GitStatusResult;
+}): JSX.Element {
   const [lines, setLines] = useState<WorkspaceTerminalLine[]>([]);
   const [draft, setDraft] = useState("");
   const [runningCommandID, setRunningCommandID] = useState<string | undefined>(undefined);
@@ -3914,7 +3930,9 @@ function WorkspaceTerminalPanel({ activeContext }: { activeContext?: RuntimeCont
   const runningCommandIDRef = useRef<string | undefined>(undefined);
   const lineCounterRef = useRef(1);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const workspaceRoot = activeContext?.cwd;
+  const prompt = useMemo(() => terminalPromptFor(workspaceRoot, gitStatus), [gitStatus, workspaceRoot]);
 
   useEffect(() => {
     runningCommandIDRef.current = runningCommandID;
@@ -3937,6 +3955,10 @@ function WorkspaceTerminalPanel({ activeContext }: { activeContext?: RuntimeCont
     }
     node.scrollTop = node.scrollHeight;
   }, [lines]);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [runningCommandID, workspaceRoot]);
 
   useEffect(() => {
     const commandID = runningCommandIDRef.current;
@@ -4021,7 +4043,7 @@ function WorkspaceTerminalPanel({ activeContext }: { activeContext?: RuntimeCont
     if (!command || runningCommandID || !workspaceRoot) {
       return;
     }
-    appendLines([{ id: nextLineID(), kind: "command", text: command }]);
+    appendLines([{ id: nextLineID(), kind: "command", prompt, text: command }]);
     setDraft("");
     setHistory((current) => [...current.filter((item) => item !== command), command].slice(-80));
     setHistoryIndex(undefined);
@@ -4084,41 +4106,94 @@ function WorkspaceTerminalPanel({ activeContext }: { activeContext?: RuntimeCont
 
   return (
     <div className="workspace-terminal-panel">
-      <div className="workspace-terminal-meta">
-        <span>{formatWorkspaceRoot(workspaceRoot)}</span>
-        <small>{runningCommandID ? "运行中" : "就绪"}</small>
-      </div>
-      <div className="workspace-terminal-screen" ref={scrollRef}>
-        {lines.length === 0 ? <div className="workspace-terminal-cursor">$</div> : null}
+      <div className="workspace-terminal-screen" ref={scrollRef} onMouseDown={() => inputRef.current?.focus()}>
         {lines.map((line) => (
-          <pre className={`workspace-terminal-line ${line.kind}`} key={line.id}>
-            {line.kind === "command" ? `$ ${line.text}` : line.text}
-          </pre>
+          line.kind === "command" ? (
+            <div className="workspace-terminal-row workspace-terminal-command-line" key={line.id}>
+              <WorkspaceTerminalPrompt prompt={line.prompt} />
+              <span className="workspace-terminal-command-text">{line.text}</span>
+            </div>
+          ) : (
+            <pre className={`workspace-terminal-line ${line.kind}`} key={line.id}>
+              {line.text}
+            </pre>
+          )
         ))}
-      </div>
-      <form className="workspace-terminal-input" onSubmit={(event) => void submitCommand(event)}>
-        <span aria-hidden="true">$</span>
-        <input
-          value={draft}
-          placeholder="输入 shell 命令"
-          disabled={Boolean(runningCommandID)}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={handleInputKeyDown}
-        />
         {runningCommandID ? (
-          <button type="button" aria-label="停止命令" onClick={() => void stopCommand()}>
-            <Square size={16} />
-          </button>
+          <div className="workspace-terminal-row workspace-terminal-running">
+            <WorkspaceTerminalPrompt prompt={prompt} />
+            <span className="workspace-terminal-running-label">running</span>
+            <button type="button" aria-label="停止命令" onClick={() => void stopCommand()}>
+              <Square size={14} />
+            </button>
+          </div>
         ) : (
-          <button type="submit" aria-label="运行命令" disabled={!draft.trim()}>
-            <Send size={16} />
-          </button>
+          <form className="workspace-terminal-input workspace-terminal-prompt-form" onSubmit={(event) => void submitCommand(event)}>
+            <WorkspaceTerminalPrompt prompt={prompt} />
+            <input
+              ref={inputRef}
+              className="workspace-terminal-prompt-input"
+              value={draft}
+              aria-label="终端命令"
+              spellCheck={false}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={handleInputKeyDown}
+            />
+            <button type="submit" aria-label="运行命令" disabled={!draft.trim()}>
+              <Send size={14} />
+            </button>
+          </form>
         )}
-      </form>
+      </div>
     </div>
   );
 }
 
+function WorkspaceTerminalPrompt({ prompt }: { prompt: WorkspaceTerminalPrompt }): JSX.Element {
+  return (
+    <span className="workspace-terminal-prompt" aria-hidden="true">
+      <span className="workspace-terminal-prompt-cwd">{prompt.cwd}</span>
+      {prompt.git ? <span className="workspace-terminal-prompt-git">{prompt.git}</span> : null}
+      <span className="workspace-terminal-prompt-ok">✓</span>
+    </span>
+  );
+}
+
+function terminalPromptFor(workspaceRoot: string | undefined, gitStatus?: GitStatusResult): WorkspaceTerminalPrompt {
+  return {
+    cwd: workspaceRoot ? terminalCwdLabel(workspaceRoot) : "~",
+    git: terminalGitPrompt(gitStatus)
+  };
+}
+
+function terminalCwdLabel(root: string): string {
+  const normalized = root.replace(/\\/g, "/");
+  const homeMatch = normalized.match(/^\/Users\/[^/]+(?:\/(.+))?$/);
+  if (homeMatch) {
+    return homeMatch[1] ? `~/${homeMatch[1]}` : "~";
+  }
+  return formatWorkspaceRoot(root);
+}
+
+function terminalGitPrompt(gitStatus?: GitStatusResult): string | undefined {
+  if (!gitStatus?.is_repo) {
+    return undefined;
+  }
+  const parts = [gitStatus.branch ?? "detached"];
+  if (gitStatus.ahead_count) {
+    parts.push(`↑${gitStatus.ahead_count}`);
+  }
+  if (gitStatus.behind_count) {
+    parts.push(`↓${gitStatus.behind_count}`);
+  }
+  if (gitStatus.diff?.files) {
+    parts.push(`*${gitStatus.diff.files}`);
+  }
+  if (gitStatus.staged_diff?.files) {
+    parts.push(`+${gitStatus.staged_diff.files}`);
+  }
+  return parts.join(" ");
+}
 function WorkspaceFileTree({
   activeContext,
   open,
