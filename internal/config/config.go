@@ -228,6 +228,9 @@ func (c Config) Validate() error {
 		default:
 			return fmt.Errorf("providers.%s.wire_api must be \"chat\" or \"responses\"", name)
 		}
+		if isCodexSubscriptionProvider(provider.Type) && provider.WireAPI == "chat" {
+			return fmt.Errorf("providers.%s.wire_api must be \"responses\" for %s", name, provider.Type)
+		}
 		if provider.StreamConnectTimeoutMS < 0 {
 			return fmt.Errorf("providers.%s.stream_connect_timeout_ms cannot be negative", name)
 		}

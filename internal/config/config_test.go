@@ -170,6 +170,36 @@ func TestConfig_CodexSubscriptionAllowsDefaultBaseURL(t *testing.T) {
 	}
 }
 
+func TestConfig_CodexSubscriptionRejectsChatWireAPI(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-codex",
+      "wire_api": "chat",
+      "model": "gpt-5-codex"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, _, err := LoadFrom(workdir, "")
+	if err == nil {
+		t.Fatal("expected codex wire_api validation error")
+	}
+	if !strings.Contains(err.Error(), "wire_api") || !strings.Contains(err.Error(), "responses") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestConfig_RejectsUnknownWireAPI(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
