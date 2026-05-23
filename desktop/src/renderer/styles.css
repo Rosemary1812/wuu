@@ -53,6 +53,18 @@
   }
 }
 
+@keyframes environment-panel-enter {
+  from {
+    opacity: 1;
+    transform: translate3d(10px, 0, 0) scale(0.992);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 @keyframes session-tree-enter {
   from {
     opacity: 0;
@@ -1295,7 +1307,7 @@ button:disabled {
   padding: 14px;
   backdrop-filter: blur(18px);
   transform-origin: top right;
-  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+  animation: environment-panel-enter 120ms var(--menu-enter-easing) both;
 }
 
 .environment-panel-header {
