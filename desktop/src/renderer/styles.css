@@ -2476,6 +2476,11 @@ button:disabled {
 .civilization-prop,
 .civilization-fire,
 .civilization-banner,
+.battle-ground,
+.battle-dust,
+.battle-front,
+.battle-impact,
+.battle-tracer,
 .era-projectile,
 .era-vehicle,
 .era-rocket,
@@ -2528,6 +2533,87 @@ button:disabled {
   border-radius: 1px 5px 5px 1px;
   background: rgba(217, 162, 58, 0.72);
   content: "";
+}
+
+.battle-ground {
+  top: 30px;
+  left: calc(50% - 146px);
+  width: 292px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(70, 76, 72, 0.2), transparent);
+  opacity: 0.65;
+}
+
+.battle-dust {
+  top: 27px;
+  width: 18px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(151, 133, 105, 0.32);
+  opacity: 0;
+}
+
+.dust-left {
+  left: calc(50% - 92px);
+}
+
+.dust-right {
+  left: calc(50% + 70px);
+}
+
+.battle-front {
+  top: 28px;
+  width: 54px;
+  height: 2px;
+  border-radius: 999px;
+  opacity: 0;
+}
+
+.front-left {
+  left: calc(50% - 118px);
+  background: linear-gradient(90deg, transparent, rgba(95, 116, 110, 0.68));
+}
+
+.front-right {
+  left: calc(50% + 62px);
+  background: linear-gradient(90deg, rgba(128, 132, 142, 0.68), transparent);
+}
+
+.battle-impact {
+  top: 17px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #d9a23a;
+  box-shadow:
+    -7px 3px 0 -1px rgba(217, 162, 58, 0.62),
+    7px -3px 0 -1px rgba(217, 162, 58, 0.5);
+  opacity: 0;
+}
+
+.impact-one {
+  left: calc(50% - 2px);
+}
+
+.impact-two {
+  left: calc(50% + 54px);
+}
+
+.battle-tracer {
+  top: 18px;
+  width: 24px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #d9a23a, transparent);
+  opacity: 0;
+}
+
+.tracer-one {
+  left: calc(50% - 90px);
+}
+
+.tracer-two {
+  left: calc(50% + 34px);
 }
 
 .era-projectile {
@@ -2632,6 +2718,18 @@ button:disabled {
   content: "";
 }
 
+.era-sticks .battle-ground,
+.era-swords .battle-ground,
+.era-fortress .battle-ground,
+.era-cannon .battle-ground,
+.era-factory .battle-ground,
+.era-armor .battle-ground,
+.era-rockets .battle-ground,
+.era-orbit .battle-ground,
+.era-galaxy .battle-ground {
+  display: block;
+}
+
 .era-sticks .stickman-a {
   left: calc(50% - 72px);
   animation: scout-walk 4200ms ease-in-out infinite;
@@ -2690,6 +2788,12 @@ button:disabled {
 .era-sticks .crowd-three {
   left: calc(50% + 42px);
   animation: tribe-gather-three 5600ms ease-in-out infinite;
+}
+
+.era-sticks .dust-left,
+.era-sticks .dust-right {
+  display: block;
+  animation: battle-dust-rise 4200ms ease-in-out infinite;
 }
 
 .era-swords .fight-spark {
@@ -2757,6 +2861,31 @@ button:disabled {
 .era-swords .banner-right {
   left: calc(50% + 119px);
   transform: scaleX(-1);
+}
+
+.era-swords .front-left,
+.era-swords .front-right,
+.era-swords .impact-one,
+.era-swords .dust-left,
+.era-swords .dust-right {
+  display: block;
+}
+
+.era-swords .front-left {
+  animation: battle-front-left 3300ms ease-in-out infinite;
+}
+
+.era-swords .front-right {
+  animation: battle-front-right 3300ms ease-in-out infinite;
+}
+
+.era-swords .impact-one {
+  animation: battle-impact-flash 3300ms ease-in-out infinite;
+}
+
+.era-swords .dust-left,
+.era-swords .dust-right {
+  animation: battle-dust-rise 3300ms ease-in-out infinite;
 }
 
 .era-fortress .prop-left,
@@ -2830,6 +2959,30 @@ button:disabled {
   left: calc(50% - 146px);
 }
 
+.era-fortress .tracer-one,
+.era-fortress .tracer-two,
+.era-fortress .impact-one,
+.era-fortress .dust-left {
+  display: block;
+}
+
+.era-fortress .tracer-one {
+  animation: arrow-volley-one 2400ms ease-in-out infinite;
+}
+
+.era-fortress .tracer-two {
+  animation: arrow-volley-two 2800ms ease-in-out infinite;
+}
+
+.era-fortress .impact-one {
+  left: calc(50% + 38px);
+  animation: wall-impact 2400ms ease-in-out infinite;
+}
+
+.era-fortress .dust-left {
+  animation: battle-dust-rise 4300ms ease-in-out infinite;
+}
+
 .era-cannon .stickman-a {
   left: calc(50% - 86px);
   animation: cannon-crew-one 3600ms ease-in-out infinite;
@@ -2877,6 +3030,27 @@ button:disabled {
 .era-cannon .crowd-two {
   left: calc(50% + 72px);
   animation: wall-guard 3600ms ease-in-out infinite;
+}
+
+.era-cannon .tracer-one,
+.era-cannon .impact-two,
+.era-cannon .dust-left,
+.era-cannon .dust-right {
+  display: block;
+}
+
+.era-cannon .tracer-one {
+  width: 46px;
+  animation: cannon-smoke-trail 1800ms ease-in-out infinite;
+}
+
+.era-cannon .impact-two {
+  animation: cannon-impact-flash 1800ms ease-in-out infinite;
+}
+
+.era-cannon .dust-left,
+.era-cannon .dust-right {
+  animation: battle-dust-rise 1800ms ease-in-out infinite;
 }
 
 .era-factory .stickman-a {
@@ -2951,6 +3125,23 @@ button:disabled {
   animation: worker-shift-right 4300ms ease-in-out infinite;
 }
 
+.era-factory .front-left,
+.era-factory .dust-left,
+.era-factory .dust-right {
+  display: block;
+}
+
+.era-factory .front-left {
+  left: calc(50% - 104px);
+  width: 80px;
+  animation: mobilization-line 4300ms ease-in-out infinite;
+}
+
+.era-factory .dust-left,
+.era-factory .dust-right {
+  animation: battle-dust-rise 4300ms ease-in-out infinite;
+}
+
 .era-armor .stickman-a,
 .era-armor .stickman-b {
   display: none;
@@ -2983,6 +3174,27 @@ button:disabled {
   animation: fight-spark 1600ms ease-in-out infinite;
 }
 
+.era-armor .tracer-one,
+.era-armor .impact-two,
+.era-armor .dust-left,
+.era-armor .dust-right {
+  display: block;
+}
+
+.era-armor .tracer-one {
+  width: 58px;
+  animation: tank-tracer 1600ms linear infinite;
+}
+
+.era-armor .impact-two {
+  animation: cannon-impact-flash 1600ms ease-in-out infinite;
+}
+
+.era-armor .dust-left,
+.era-armor .dust-right {
+  animation: battle-dust-rise 4700ms ease-in-out infinite;
+}
+
 .era-rockets .stickman-a,
 .era-rockets .stickman-b {
   display: none;
@@ -3010,6 +3222,24 @@ button:disabled {
   animation: launch-spark 1200ms ease-in-out infinite;
 }
 
+.era-rockets .dust-left,
+.era-rockets .dust-right,
+.era-rockets .front-left {
+  display: block;
+}
+
+.era-rockets .front-left {
+  left: calc(50% - 42px);
+  width: 64px;
+  background: linear-gradient(90deg, transparent, rgba(217, 162, 58, 0.72), transparent);
+  animation: launch-front 5200ms ease-in-out infinite;
+}
+
+.era-rockets .dust-left,
+.era-rockets .dust-right {
+  animation: launch-dust 5200ms ease-in-out infinite;
+}
+
 .era-orbit .stickman-a,
 .era-orbit .stickman-b,
 .era-galaxy .stickman-a,
@@ -3035,6 +3265,30 @@ button:disabled {
 .era-orbit .ship-two {
   left: calc(50% + 46px);
   animation-delay: -1300ms;
+}
+
+.era-orbit .tracer-one,
+.era-orbit .tracer-two,
+.era-orbit .impact-one {
+  display: block;
+}
+
+.era-orbit .tracer-one {
+  top: 13px;
+  left: calc(50% + 4px);
+  animation: orbital-laser-one 2400ms ease-in-out infinite;
+}
+
+.era-orbit .tracer-two {
+  top: 19px;
+  left: calc(50% + 50px);
+  animation: orbital-laser-two 2600ms ease-in-out infinite;
+}
+
+.era-orbit .impact-one {
+  top: 11px;
+  left: calc(50% - 30px);
+  animation: orbital-impact 2400ms ease-in-out infinite;
 }
 
 .era-galaxy .era-planet {
@@ -3084,6 +3338,37 @@ button:disabled {
 .era-galaxy .ship-two {
   left: calc(50% + 40px);
   animation-delay: -1900ms;
+}
+
+.era-galaxy .tracer-one,
+.era-galaxy .tracer-two,
+.era-galaxy .impact-one,
+.era-galaxy .impact-two {
+  display: block;
+}
+
+.era-galaxy .tracer-one {
+  top: 10px;
+  left: calc(50% - 72px);
+  animation: orbital-laser-one 2200ms ease-in-out infinite;
+}
+
+.era-galaxy .tracer-two {
+  top: 22px;
+  left: calc(50% + 28px);
+  animation: orbital-laser-two 2500ms ease-in-out infinite;
+}
+
+.era-galaxy .impact-one {
+  top: 13px;
+  left: calc(50% + 18px);
+  animation: orbital-impact 2200ms ease-in-out infinite;
+}
+
+.era-galaxy .impact-two {
+  top: 22px;
+  left: calc(50% - 44px);
+  animation: orbital-impact 2500ms ease-in-out infinite;
 }
 
 .turn-progress.failed .turn-progress-label svg,
@@ -4055,6 +4340,244 @@ pre {
   45% {
     opacity: 1;
     transform: rotate(45deg) scale(1.08);
+  }
+}
+
+@keyframes battle-dust-rise {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.65);
+  }
+  42% {
+    opacity: 0.7;
+    transform: translate(8px, -3px) scale(1.18);
+  }
+  68% {
+    opacity: 0.18;
+    transform: translate(14px, -5px) scale(1.35);
+  }
+}
+
+@keyframes battle-front-left {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: translateX(-16px);
+  }
+  46% {
+    opacity: 0.9;
+    transform: translateX(54px);
+  }
+  58% {
+    opacity: 0.35;
+    transform: translateX(42px);
+  }
+}
+
+@keyframes battle-front-right {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: translateX(16px);
+  }
+  46% {
+    opacity: 0.9;
+    transform: translateX(-54px);
+  }
+  58% {
+    opacity: 0.35;
+    transform: translateX(-42px);
+  }
+}
+
+@keyframes battle-impact-flash {
+  0%,
+  39%,
+  100% {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  47% {
+    opacity: 1;
+    transform: scale(1.6);
+  }
+  56% {
+    opacity: 0;
+    transform: scale(2.3);
+  }
+}
+
+@keyframes arrow-volley-one {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(-12deg);
+  }
+  20%,
+  62% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(104px, 10px) rotate(10deg);
+  }
+}
+
+@keyframes arrow-volley-two {
+  0% {
+    opacity: 0;
+    transform: translate(72px, 8px) rotate(170deg);
+  }
+  18%,
+  60% {
+    opacity: 0.72;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-30px, -3px) rotate(190deg);
+  }
+}
+
+@keyframes wall-impact {
+  0%,
+  58%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    opacity: 0.95;
+    transform: scale(1.5);
+  }
+  82% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+
+@keyframes cannon-smoke-trail {
+  0% {
+    opacity: 0;
+    transform: translateX(0) scaleX(0.4);
+  }
+  18%,
+  60% {
+    opacity: 0.82;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(78px) scaleX(1.25);
+  }
+}
+
+@keyframes cannon-impact-flash {
+  0%,
+  52%,
+  100% {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  66% {
+    opacity: 1;
+    transform: scale(1.9);
+  }
+  78% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@keyframes mobilization-line {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: translateX(-22px);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateX(34px);
+  }
+}
+
+@keyframes tank-tracer {
+  0% {
+    opacity: 0;
+    transform: translateX(0) scaleX(0.4);
+  }
+  15%,
+  68% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(82px) scaleX(1.2);
+  }
+}
+
+@keyframes launch-front {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(0) scaleX(0.4);
+  }
+  45% {
+    opacity: 0.9;
+    transform: translateY(5px) scaleX(1.2);
+  }
+}
+
+@keyframes launch-dust {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(0) scale(0.6);
+  }
+  44% {
+    opacity: 0.75;
+    transform: translateY(4px) scale(1.45);
+  }
+}
+
+@keyframes orbital-laser-one {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(-18deg) scaleX(0.4);
+  }
+  38%,
+  52% {
+    opacity: 0.95;
+    transform: translate(18px, 3px) rotate(-18deg) scaleX(1.4);
+  }
+}
+
+@keyframes orbital-laser-two {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(160deg) scaleX(0.4);
+  }
+  42%,
+  58% {
+    opacity: 0.8;
+    transform: translate(-18px, -4px) rotate(160deg) scaleX(1.35);
+  }
+}
+
+@keyframes orbital-impact {
+  0%,
+  42%,
+  100% {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  52% {
+    opacity: 1;
+    transform: scale(1.55);
+  }
+  64% {
+    opacity: 0;
+    transform: scale(2.2);
   }
 }
 
