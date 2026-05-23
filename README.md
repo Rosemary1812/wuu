@@ -60,8 +60,10 @@ When a `v*` tag is pushed, GitHub Actions + GoReleaser publishes release artifac
 - Interactive TUI with streaming markdown rendering, slash commands, and session memory
 - Agentic tool-calling loop — reads, writes, edits, searches, and runs shell commands in your repo
 - Supports OpenAI-compatible APIs (OpenAI / OpenRouter / one-api / etc.) and Anthropic Messages API
-- Built-in tools: `run_shell`, `read_file`, `write_file`, `edit_file`, `list_files`, `grep`, `glob`, `web_search`, `web_fetch`
+- Built-in tools: `run_shell`, `git`, `read_file`, `write_file`, `edit_file`, `list_files`, `grep`, `glob`, `web_search`, `web_fetch`
 - Orchestration and session tools: `ask_user`, `spawn_agent`, `fork_agent`, `send_message_to_agent`, `stop_agent`, `list_agents`, `load_skill`
+- Managed process tools: `start_process`, `list_processes`, `stop_process`, `read_process_output`
+- Scheduling tools: `schedule_cron`, `cancel_cron`, `list_cron`
 - Tool availability model:
   - Main interactive agent (TUI session): full tool set
   - Sub-agents: no `ask_user` and no orchestration tools (`spawn_agent`, `fork_agent`, `send_message_to_agent`, `stop_agent`, `list_agents`)

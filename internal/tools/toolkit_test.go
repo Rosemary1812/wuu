@@ -356,6 +356,20 @@ func TestToolkit_SendMessageToAgent_RegisteredInDefinitions(t *testing.T) {
 	t.Fatal("send_message_to_agent must be present in tool definitions")
 }
 
+func TestToolkit_ListAgents_RegisteredInDefinitions(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, d := range kit.Definitions() {
+		if d.Name == "list_agents" {
+			return
+		}
+	}
+	t.Fatal("list_agents must be present in tool definitions")
+}
+
 func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

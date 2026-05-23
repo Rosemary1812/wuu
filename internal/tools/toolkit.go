@@ -98,6 +98,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewForkAgentTool(e),
 		NewSendMessageTool(e),
 		NewStopAgentTool(e),
+		NewListAgentsTool(e),
 		// Process management
 		NewStartProcessTool(e),
 		NewListProcessesTool(e),

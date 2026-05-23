@@ -58,8 +58,10 @@ git push origin v$(cat VERSION)
 - 交互式 TUI，支持流式 Markdown 渲染、斜杠命令、会话记忆
 - Agent 工具调用循环 —— 在你的仓库里读、写、编辑、搜索、执行命令
 - 支持 OpenAI 兼容 API（OpenAI / OpenRouter / one-api 等）和 Anthropic Messages API
-- 内置工具：`run_shell`、`read_file`、`write_file`、`edit_file`、`list_files`、`grep`、`glob`、`web_search`、`web_fetch`
+- 内置工具：`run_shell`、`git`、`read_file`、`write_file`、`edit_file`、`list_files`、`grep`、`glob`、`web_search`、`web_fetch`
 - 编排与会话工具：`ask_user`、`spawn_agent`、`fork_agent`、`send_message_to_agent`、`stop_agent`、`list_agents`、`load_skill`
+- 后台进程工具：`start_process`、`list_processes`、`stop_process`、`read_process_output`
+- 定时任务工具：`schedule_cron`、`cancel_cron`、`list_cron`
 - 工具可用范围：
   - 主交互代理（TUI 会话）：可用全部工具
   - 子代理：不可用 `ask_user` 与编排工具（`spawn_agent`、`fork_agent`、`send_message_to_agent`、`stop_agent`、`list_agents`）
