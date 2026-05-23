@@ -176,6 +176,8 @@ export type Thread = {
   model: string;
   cwd: string;
   status: ThreadStatus;
+  pinned?: boolean;
+  archived?: boolean;
   created_at: string;
   updated_at: string;
   turns: Turn[];
@@ -257,6 +259,8 @@ export type WuuDesktopApi = {
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   listThreads: () => Promise<{ threads: Thread[] }>;
+  pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
+  archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
   startTurn: (threadId: string, prompt: string, images?: InputImage[]) => Promise<{ turn: Turn }>;
   interruptTurn: (threadId: string) => Promise<{ ok: boolean }>;
   respondToServerRequest: (id: string, result: unknown) => Promise<void>;

@@ -1083,6 +1083,12 @@ app.whenReady().then(() => {
     serverClient().request<{ thread: Thread }>("thread/resume", { session_id: sessionId ?? "" })
   );
   ipcMain.handle("wuu:thread-list", () => serverClient().request<{ threads: Thread[] }>("thread/list"));
+  ipcMain.handle("wuu:thread-pin", (_event, threadId: string, pinned: boolean) =>
+    serverClient().request<{ thread: Thread }>("thread/pin", { thread_id: threadId, pinned })
+  );
+  ipcMain.handle("wuu:thread-archive", (_event, threadId: string, archived: boolean) =>
+    serverClient().request<{ thread: Thread }>("thread/archive", { thread_id: threadId, archived })
+  );
   ipcMain.handle("wuu:turn-start", (_event, threadId: string, prompt: string, images?: InputImage[]) =>
     serverClient().request<{ turn: Turn }>("turn/start", { thread_id: threadId, prompt, images: images ?? [] })
   );

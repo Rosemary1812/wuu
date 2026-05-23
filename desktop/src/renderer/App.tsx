@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  Archive,
   ArrowLeft,
   Brain,
   Bug,
@@ -26,6 +27,7 @@ import {
   PanelLeftOpen,
   PanelRightOpen,
   Pencil,
+  Pin,
   Plus,
   RefreshCw,
   Search,
@@ -721,6 +723,7 @@ export function App(): JSX.Element {
   const [runDebugOpen, setRunDebugOpen] = useState(false);
   const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
   const [runDebugCopied, setRunDebugCopied] = useState(false);
+  const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
@@ -1277,9 +1280,10 @@ export function App(): JSX.Element {
     }
     const [initialized, gitStatus] = await Promise.all([window.wuu.initialize(), window.wuu.gitStatus()]);
     const listed = await window.wuu.listThreads();
+    const listedThreads = sortThreads(listed.threads);
     const thread =
-      listed.threads.length > 0
-        ? requireThread(await window.wuu.resumeThread(listed.threads[0].id), "resume did not return a thread")
+      listedThreads.length > 0
+        ? requireThread(await window.wuu.resumeThread(listedThreads[0].id), "resume did not return a thread")
         : undefined;
     return {
       initialized,
@@ -1288,7 +1292,7 @@ export function App(): JSX.Element {
       activeProjectId: activeProjectID(projectState.active_context),
       gitStatus,
       thread,
-      threads: thread ? upsertThread(listed.threads, thread) : listed.threads.filter(isThread),
+      threads: thread ? upsertThread(listedThreads, thread) : listedThreads,
       running: false,
       status: "ready"
     };
@@ -1574,6 +1578,7 @@ export function App(): JSX.Element {
     if (!state.activeContext || state.running) {
       return;
     }
+    setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
@@ -1593,6 +1598,7 @@ export function App(): JSX.Element {
     if (!state.activeContext || threadId === state.thread?.id || state.running) {
       return;
     }
+    setArchiveConfirmThreadID(undefined);
     clearPendingComposerMessages();
     setState((current) => ({ ...current, status: "loading" }));
     try {
@@ -1607,6 +1613,55 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "load failed"
+      }));
+    }
+  }
+
+  async function toggleThreadPinned(thread: Thread): Promise<void> {
+    if (!state.activeContext) {
+      return;
+    }
+    setArchiveConfirmThreadID(undefined);
+    try {
+      const result = await window.wuu.pinThread(thread.id, !thread.pinned);
+      setState((current) => ({
+        ...current,
+        thread: current.thread?.id === thread.id ? result.thread : current.thread,
+        threads: upsertThread(current.threads, result.thread),
+        status: current.status === "ready" ? "ready" : current.status
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "pin thread failed"
+      }));
+    }
+  }
+
+  async function archiveThread(thread: Thread): Promise<void> {
+    if (!state.activeContext || state.running) {
+      return;
+    }
+    if (archiveConfirmThreadID !== thread.id) {
+      setArchiveConfirmThreadID(thread.id);
+      return;
+    }
+    clearPendingComposerMessages();
+    try {
+      const result = await window.wuu.archiveThread(thread.id, true);
+      setArchiveConfirmThreadID(undefined);
+      setState((current) => ({
+        ...current,
+        thread: current.thread?.id === thread.id ? undefined : current.thread,
+        threads: current.threads.filter((candidate) => candidate.id !== result.thread.id),
+        running: false,
+        status: "ready"
+      }));
+    } catch (error) {
+      setArchiveConfirmThreadID(undefined);
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "archive thread failed"
       }));
     }
   }
@@ -1924,8 +1979,14 @@ export function App(): JSX.Element {
             activeID={state.activeProjectId}
             threads={state.threads}
             activeThreadID={state.thread?.id}
+            archiveConfirmThreadID={archiveConfirmThreadID}
             onSelectProject={(id) => void openProject(id)}
             onSelectThread={(id) => void selectThread(id)}
+            onToggleThreadPinned={(thread) => void toggleThreadPinned(thread)}
+            onArchiveThread={(thread) => void archiveThread(thread)}
+            onClearArchiveConfirm={(id) =>
+              setArchiveConfirmThreadID((current) => (current === id ? undefined : current))
+            }
           />
         </section>
         <div className="sidebar-settings">
@@ -3568,17 +3629,40 @@ function updateThread(state: AppState, update: (thread: Thread) => Thread): AppS
 }
 
 function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
-  const validThreads = threads.filter(isThread);
+  const validThreads = sortThreads(threads);
   if (!isThread(thread)) {
     return validThreads;
   }
+  if (thread.archived) {
+    return validThreads.filter((item) => item.id !== thread.id);
+  }
   const index = validThreads.findIndex((item) => item.id === thread.id);
   if (index < 0) {
-    return [thread, ...validThreads];
+    return sortThreads([thread, ...validThreads]);
   }
   const next = validThreads.slice();
   next[index] = thread;
-  return next;
+  return sortThreads(next);
+}
+
+function sortThreads(threads: Thread[]): Thread[] {
+  return threads
+    .filter((thread): thread is Thread => isThread(thread) && !thread.archived)
+    .sort((left, right) => {
+      if (Boolean(left.pinned) !== Boolean(right.pinned)) {
+        return left.pinned ? -1 : 1;
+      }
+      return threadTime(right) - threadTime(left);
+    });
+}
+
+function threadTime(thread: Thread): number {
+  const updatedAt = Date.parse(thread.updated_at);
+  if (Number.isFinite(updatedAt)) {
+    return updatedAt;
+  }
+  const createdAt = Date.parse(thread.created_at);
+  return Number.isFinite(createdAt) ? createdAt : 0;
 }
 
 function requireThread(result: { thread?: Thread }, message: string): Thread {
@@ -3653,15 +3737,23 @@ function ProjectList({
   activeID,
   threads,
   activeThreadID,
+  archiveConfirmThreadID,
   onSelectProject,
-  onSelectThread
+  onSelectThread,
+  onToggleThreadPinned,
+  onArchiveThread,
+  onClearArchiveConfirm
 }: {
   projects: DesktopProject[];
   activeID?: string;
   threads: Thread[];
   activeThreadID?: string;
+  archiveConfirmThreadID?: string;
   onSelectProject: (id: string) => void;
   onSelectThread: (id: string) => void;
+  onToggleThreadPinned: (thread: Thread) => void;
+  onArchiveThread: (thread: Thread) => void;
+  onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
   return (
     <div className="projects">
@@ -3675,7 +3767,15 @@ function ProjectList({
             <span>{project.name}</span>
           </button>
           {project.id === activeID ? (
-            <ThreadList threads={threads} activeID={activeThreadID} onSelect={onSelectThread} />
+            <ThreadList
+              threads={threads}
+              activeID={activeThreadID}
+              archiveConfirmThreadID={archiveConfirmThreadID}
+              onSelect={onSelectThread}
+              onTogglePinned={onToggleThreadPinned}
+              onArchive={onArchiveThread}
+              onClearArchiveConfirm={onClearArchiveConfirm}
+            />
           ) : null}
         </div>
       ))}
@@ -3686,24 +3786,57 @@ function ProjectList({
 function ThreadList({
   threads,
   activeID,
-  onSelect
+  archiveConfirmThreadID,
+  onSelect,
+  onTogglePinned,
+  onArchive,
+  onClearArchiveConfirm
 }: {
   threads: Thread[];
   activeID?: string;
+  archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
+  onTogglePinned: (thread: Thread) => void;
+  onArchive: (thread: Thread) => void;
+  onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
-  const visibleThreads = threads.filter((thread): thread is Thread => Boolean(thread?.id));
+  const visibleThreads = sortThreads(threads);
   return (
     <div className="thread-list">
-      {visibleThreads.map((thread) => (
-        <button
-          key={thread.id}
-          className={`thread-row ${thread.id === activeID ? "active" : ""}`}
-          onClick={() => onSelect(thread.id)}
-        >
-          <span>{thread.preview || "未命名对话"}</span>
-        </button>
-      ))}
+      {visibleThreads.map((thread) => {
+        const archiveConfirming = archiveConfirmThreadID === thread.id;
+        return (
+          <div
+            key={thread.id}
+            className={`thread-row ${thread.id === activeID ? "active" : ""}`}
+            onMouseLeave={() => onClearArchiveConfirm(thread.id)}
+          >
+            <button className="thread-row-main" type="button" onClick={() => onSelect(thread.id)}>
+              <span>{thread.preview || "未命名对话"}</span>
+            </button>
+            <div className="thread-row-actions" aria-label="对话操作">
+              <button
+                className={`thread-row-action ${thread.pinned ? "active" : ""}`}
+                type="button"
+                aria-label={thread.pinned ? "取消置顶" : "置顶"}
+                title={thread.pinned ? "取消置顶" : "置顶"}
+                onClick={() => onTogglePinned(thread)}
+              >
+                <Pin size={14} />
+              </button>
+              <button
+                className={`thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
+                type="button"
+                aria-label={archiveConfirming ? "确认归档" : "归档"}
+                title={archiveConfirming ? "再次点击归档" : "归档"}
+                onClick={() => onArchive(thread)}
+              >
+                <Archive size={14} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
