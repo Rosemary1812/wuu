@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -152,7 +153,9 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"through exploration (files read, user discussions, dead ends ruled out), consider " +
 			"fork_agent instead to avoid losing information to prompt compression. " +
 			"Give every task a stable task_name so you can address it later by task name, " +
-			"agent path, or agent_id. By default the spawn is asynchronous: this returns " +
+			"agent path, or agent_id. task_name is the child path segment and must use " +
+			"only lowercase letters, digits, and underscores, for example inspect_auth_flow. " +
+			"By default the spawn is asynchronous: this returns " +
 			"immediately with an agent_id and agent_path, and the worker's result will be delivered to you " +
 			"automatically as a structured mailbox message once it completes — you will be " +
 			"notified without any action on your part. After spawning async workers, END " +
@@ -165,7 +168,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"properties": map[string]any{
 				"task_name": map[string]any{
 					"type":        "string",
-					"description": "Stable short task name used for path-based addressing. Example: \"inspect auth flow\".",
+					"description": "Stable child task name used for path-based addressing. Must use only lowercase letters, digits, and underscores. Example: \"inspect_auth_flow\".",
 				},
 				"agent_type": map[string]any{
 					"type":        "string",
@@ -211,6 +214,9 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 	if strings.TrimSpace(args.TaskName) == "" {
 		return "", errors.New("spawn_agent: task_name is required")
+	}
+	if err := agentthread.ValidateAgentName(strings.TrimSpace(args.TaskName)); err != nil {
+		return "", fmt.Errorf("spawn_agent: invalid task_name: %w", err)
 	}
 	if strings.TrimSpace(args.Message) == "" {
 		return "", errors.New("spawn_agent: message is required")
@@ -267,13 +273,13 @@ func (t *ForkAgentTool) Definition() providers.ToolDefinition {
 			"Like spawn_agent, fork_agent is asynchronous by default: returns immediately " +
 			"with an agent_id, the result arrives later automatically as a structured mailbox " +
 			"message. After spawning, END YOUR TURN — do NOT generate waiting messages. The system handles notification and auto-resume. " +
-			"Set synchronous=true to block until the worker finishes.",
+			"Set synchronous=true to block until the worker finishes. task_name must use only lowercase letters, digits, and underscores.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"task_name": map[string]any{
 					"type":        "string",
-					"description": "Stable short task name used for path-based addressing.",
+					"description": "Stable child task name used for path-based addressing. Must use only lowercase letters, digits, and underscores.",
 				},
 				"message": map[string]any{
 					"type":        "string",
@@ -308,6 +314,9 @@ func (t *ForkAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 	if strings.TrimSpace(args.TaskName) == "" {
 		return "", errors.New("fork_agent: task_name is required")
+	}
+	if err := agentthread.ValidateAgentName(strings.TrimSpace(args.TaskName)); err != nil {
+		return "", fmt.Errorf("fork_agent: invalid task_name: %w", err)
 	}
 	if strings.TrimSpace(args.Message) == "" {
 		return "", errors.New("fork_agent: message is required")

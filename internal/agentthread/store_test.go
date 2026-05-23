@@ -9,12 +9,12 @@ func TestStorePersistsThreadIndexAndEvents(t *testing.T) {
 	store := NewStore(t.TempDir())
 	meta := Metadata{
 		ID:        "worker-1",
-		Path:      "/root/check-tests",
-		TaskName:  "check tests",
+		Path:      "/root/check_tests",
+		TaskName:  "check_tests",
 		Status:    StatusRunning,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
-		Source:    Source{Kind: SourceSpawn, ParentPath: RootPath, Depth: 2},
+		Source:    Source{Kind: SourceThreadSpawn, ParentPath: RootPath, Depth: 2, EdgeStatus: EdgeOpen},
 	}
 	if err := store.UpsertThread(meta); err != nil {
 		t.Fatalf("UpsertThread: %v", err)
@@ -40,5 +40,39 @@ func TestStorePersistsThreadIndexAndEvents(t *testing.T) {
 	}
 	if events[0].Type != EventThreadUpsert || events[1].Type != EventStatusChange {
 		t.Fatalf("unexpected event sequence: %+v", events)
+	}
+}
+
+func TestStoreRecordsEdgeStatus(t *testing.T) {
+	store := NewStore(t.TempDir())
+	meta := Metadata{
+		ID:        "worker-1",
+		Path:      "/root/check_tests",
+		TaskName:  "check_tests",
+		Status:    StatusRunning,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Source:    Source{Kind: SourceThreadSpawn, ParentPath: RootPath, Depth: 2, EdgeStatus: EdgeOpen},
+	}
+	if err := store.UpsertThread(meta); err != nil {
+		t.Fatalf("UpsertThread: %v", err)
+	}
+	meta.Source.EdgeStatus = EdgeClosed
+	if err := store.RecordEdgeStatus(meta); err != nil {
+		t.Fatalf("RecordEdgeStatus: %v", err)
+	}
+	threads, err := store.ListThreads()
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	if len(threads) != 1 || threads[0].Source.EdgeStatus != EdgeClosed {
+		t.Fatalf("edge status not persisted: %+v", threads)
+	}
+	events, err := store.ReadEvents()
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if len(events) != 2 || events[1].Type != EventEdgeChange || events[1].EdgeStatus != EdgeClosed {
+		t.Fatalf("unexpected edge event: %+v", events)
 	}
 }

@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,6 +106,7 @@ func TestSpawn_SyncHappyPath(t *testing.T) {
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
+		TaskName:    "sync_happy",
 		Description: "test",
 		Prompt:      "do something",
 		Synchronous: true,
@@ -149,7 +151,7 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
-		TaskName:    "scan auth flow",
+		TaskName:    "scan_auth_flow",
 		Description: "scan auth flow",
 		Prompt:      "find auth problems",
 		Synchronous: true,
@@ -157,7 +159,7 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
-	if res.TaskName != "scan auth flow" || res.AgentPath != "/root/scan-auth-flow" {
+	if res.TaskName != "scan_auth_flow" || res.AgentPath != "/root/scan_auth_flow" {
 		t.Fatalf("unexpected thread metadata in result: %+v", res)
 	}
 	snap := c.Manager().Get(res.AgentID).Snapshot()
@@ -181,7 +183,7 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 		t.Fatalf("expected root + child threads, got %+v", threads)
 	}
 	child := threads[1]
-	if child.ID != res.AgentID || child.Path != res.AgentPath || child.Source.Kind != agentthread.SourceSpawn {
+	if child.ID != res.AgentID || child.Path != res.AgentPath || child.Source.Kind != agentthread.SourceThreadSpawn {
 		t.Fatalf("unexpected child thread metadata: %+v", child)
 	}
 	if child.Status != agentthread.StatusCompleted {
@@ -218,6 +220,7 @@ func TestSpawn_InplaceSkipsWorktree(t *testing.T) {
 	// no-disk-side-effect property by reading the worktree dir.
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
+		TaskName:    "inplace",
 		Description: "look",
 		Prompt:      "p",
 		Synchronous: true,
@@ -253,6 +256,7 @@ func TestSpawn_IsolationOverride(t *testing.T) {
 	// must override that and put the worker in a fresh worktree.
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
+		TaskName:    "force_isolated",
 		Description: "force-isolated",
 		Prompt:      "p",
 		Isolation:   "worktree",
@@ -270,6 +274,7 @@ func TestSpawn_IsolationOverride(t *testing.T) {
 	// worktree directory.
 	res2, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
+		TaskName:    "explicit_inplace",
 		Description: "explicit-inplace",
 		Prompt:      "p",
 		Isolation:   "inplace",
@@ -294,7 +299,7 @@ func TestSpawn_UnknownIsolationRejected(t *testing.T) {
 		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	_, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: "worker", Description: "x", Prompt: "p", Isolation: "yolo",
+		Type: "worker", TaskName: "bad_isolation", Description: "x", Prompt: "p", Isolation: "yolo",
 	})
 	if err == nil {
 		t.Fatal("expected error for unknown isolation")
@@ -323,6 +328,7 @@ func TestSpawn_PreservesCleanWorktreeForFollowup(t *testing.T) {
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
+		TaskName:    "preserve_clean",
 		Description: "noop",
 		Prompt:      "p",
 		Isolation:   "worktree",
@@ -365,6 +371,7 @@ func TestSpawn_KeepDirtyWorktree(t *testing.T) {
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
+		TaskName:    "keep_dirty",
 		Description: "modifies",
 		Prompt:      "p",
 		Isolation:   "worktree",
@@ -419,7 +426,7 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 	// Fire 2 async spawns to fill the cap.
 	for i := 0; i < 2; i++ {
 		_, err := c.Spawn(context.Background(), SpawnRequest{
-			Type: "worker", Description: "x", Prompt: "p",
+			Type: "worker", TaskName: fmt.Sprintf("slow_%d", i), Description: "x", Prompt: "p",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -428,7 +435,7 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 
 	// 3rd spawn should be rejected.
 	_, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: "worker", Description: "x", Prompt: "p",
+		Type: "worker", TaskName: "slow_2", Description: "x", Prompt: "p",
 	})
 	if err == nil {
 		t.Fatal("expected concurrency cap error")
@@ -476,7 +483,7 @@ func TestSendMessage_QueuesWhileRunning(t *testing.T) {
 	}
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: "worker", Description: "slow", Prompt: "p",
+		Type: "worker", TaskName: "send_running", Description: "slow", Prompt: "p",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -509,7 +516,7 @@ func TestSendMessage_ResolvesThreadPathAndTaskName(t *testing.T) {
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
-		TaskName:    "review config",
+		TaskName:    "review_config",
 		Description: "slow",
 		Prompt:      "p",
 	})
@@ -522,7 +529,7 @@ func TestSendMessage_ResolvesThreadPathAndTaskName(t *testing.T) {
 	if err := c.SendMessage(res.AgentPath, "check env files too"); err != nil {
 		t.Fatalf("SendMessage by path: %v", err)
 	}
-	if err := c.SendMessage("review config", "check defaults too"); err != nil {
+	if err := c.SendMessage("review_config", "check defaults too"); err != nil {
 		t.Fatalf("SendMessage by task name: %v", err)
 	}
 	if got := c.Manager().PendingMessageCount(res.AgentID); got != 2 {
@@ -550,7 +557,7 @@ func TestSpawn_AsyncDetachedFromParentContext(t *testing.T) {
 
 	parentCtx, cancelParent := context.WithCancel(context.Background())
 	res, err := c.Spawn(parentCtx, SpawnRequest{
-		Type: "worker", Description: "slow", Prompt: "p",
+		Type: "worker", TaskName: "detached_spawn", Description: "slow", Prompt: "p",
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
@@ -593,6 +600,7 @@ func TestFork_AsyncDetachedFromParentContext(t *testing.T) {
 	}
 	parentCtx, cancelParent := context.WithCancel(context.Background())
 	res, err := c.Fork(parentCtx, ForkRequest{
+		TaskName:    "detached_fork",
 		Description: "slow fork",
 		Prompt:      "continue",
 	}, parentHistory)
@@ -632,7 +640,7 @@ func TestSendMessage_QueuesCompletedWorker(t *testing.T) {
 	}
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: "worker", Description: "quick", Prompt: "p", Synchronous: true,
+		Type: "worker", TaskName: "send_complete", Description: "quick", Prompt: "p", Synchronous: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -681,6 +689,7 @@ func TestAgentMailboxChatMessage(t *testing.T) {
 
 	res, _ := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
+		TaskName:    "find_bug",
 		Description: "find the bug",
 		Prompt:      "look for it",
 		Synchronous: true,

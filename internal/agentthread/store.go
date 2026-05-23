@@ -99,6 +99,37 @@ func (s *Store) RecordStatus(meta Metadata) error {
 	})
 }
 
+func (s *Store) RecordEdgeStatus(meta Metadata) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return fmt.Errorf("create thread store: %w", err)
+	}
+	threads, err := s.loadThreadsLocked()
+	if err != nil {
+		return err
+	}
+	for i := range threads {
+		if threads[i].ID == meta.ID {
+			threads[i] = meta
+			break
+		}
+	}
+	if err := s.writeThreadsLocked(threads); err != nil {
+		return err
+	}
+	return s.appendEventLocked(Event{
+		Type:       EventEdgeChange,
+		ThreadID:   meta.ID,
+		Path:       meta.Path,
+		EdgeStatus: meta.Source.EdgeStatus,
+		CreatedAt:  time.Now().UTC(),
+	})
+}
+
 func (s *Store) AppendEvent(event Event) error {
 	if s == nil || s.dir == "" {
 		return nil

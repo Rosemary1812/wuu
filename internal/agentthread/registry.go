@@ -10,17 +10,15 @@ import (
 )
 
 type Registry struct {
-	mu          sync.Mutex
-	byID        map[string]Metadata
-	byPath      map[string]string
-	childCounts map[string]int
+	mu     sync.Mutex
+	byID   map[string]Metadata
+	byPath map[string]string
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		byID:        make(map[string]Metadata),
-		byPath:      make(map[string]string),
-		childCounts: make(map[string]int),
+		byID:   make(map[string]Metadata),
+		byPath: make(map[string]string),
 	}
 }
 
@@ -77,6 +75,9 @@ func (r *Registry) RegisterSpawn(spec SpawnSpec) (Metadata, error) {
 	if parentPath == "" {
 		parentPath = RootPath
 	}
+	if _, err := ParseAgentPath(parentPath); err != nil {
+		return Metadata{}, err
+	}
 	parentID := strings.TrimSpace(spec.ParentID)
 
 	r.mu.Lock()
@@ -93,7 +94,7 @@ func (r *Registry) RegisterSpawn(spec SpawnSpec) (Metadata, error) {
 	}
 	sourceKind := spec.SourceKind
 	if sourceKind == "" {
-		sourceKind = SourceSpawn
+		sourceKind = SourceThreadSpawn
 	}
 	status := spec.Status
 	if status == "" {
@@ -114,6 +115,7 @@ func (r *Registry) RegisterSpawn(spec SpawnSpec) (Metadata, error) {
 			ParentThreadID: parentID,
 			ParentPath:     parentPath,
 			Depth:          depthForPath(path),
+			EdgeStatus:     EdgeOpen,
 		},
 		Status:    status,
 		CreatedAt: now,
@@ -138,6 +140,11 @@ func (r *Registry) Resolve(target string) (Metadata, bool) {
 		return r.byID[id], true
 	}
 	if !strings.HasPrefix(key, "/") {
+		if path, err := ResolveAgentPath(RootAgentPath(), key); err == nil {
+			if id, ok := r.byPath[string(path)]; ok {
+				return r.byID[id], true
+			}
+		}
 		if id, ok := r.byPath[RootPath+"/"+key]; ok {
 			return r.byID[id], true
 		}
@@ -188,6 +195,22 @@ func (r *Registry) UpdateLastTaskMessage(id, message string, now time.Time) (Met
 	return meta, true
 }
 
+func (r *Registry) UpdateEdgeStatus(id string, status EdgeStatus, now time.Time) (Metadata, bool) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	meta, ok := r.byID[strings.TrimSpace(id)]
+	if !ok {
+		return Metadata{}, false
+	}
+	meta.Source.EdgeStatus = status
+	meta.UpdatedAt = now
+	r.byID[meta.ID] = meta
+	return meta, true
+}
+
 func (r *Registry) List() []Metadata {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -203,23 +226,25 @@ func (r *Registry) List() []Metadata {
 
 func (r *Registry) nextChildPathLocked(parentPath, taskName string) (string, string, error) {
 	trimmedName := strings.TrimSpace(taskName)
-	segment := pathSegment(trimmedName)
-	if segment != "" {
-		path := parentPath + "/" + segment
-		if _, exists := r.byPath[path]; exists {
-			return "", "", fmt.Errorf("agent path %q already exists", path)
-		}
-		return path, trimmedName, nil
+	if trimmedName == "" {
+		return "", "", errors.New("task_name is required")
 	}
-	for {
-		r.childCounts[parentPath]++
-		generated := fmt.Sprintf("task-%d", r.childCounts[parentPath])
-		path := parentPath + "/" + generated
-		if _, exists := r.byPath[path]; exists {
-			continue
-		}
-		return path, generated, nil
+	if err := ValidateAgentName(trimmedName); err != nil {
+		return "", "", err
 	}
+	parent, err := ParseAgentPath(parentPath)
+	if err != nil {
+		return "", "", err
+	}
+	child, err := JoinAgentPath(parent, trimmedName)
+	if err != nil {
+		return "", "", err
+	}
+	path := string(child)
+	if _, exists := r.byPath[path]; exists {
+		return "", "", fmt.Errorf("agent path %q already exists", path)
+	}
+	return path, trimmedName, nil
 }
 
 func cleanPath(path string) string {
@@ -227,38 +252,14 @@ func cleanPath(path string) string {
 	if path == "" {
 		return ""
 	}
-	if !strings.HasPrefix(path, "/") {
-		path = RootPath + "/" + path
+	if strings.HasPrefix(path, "/") {
+		return strings.TrimRight(path, "/")
 	}
-	path = strings.TrimRight(path, "/")
-	if path == "" {
-		return RootPath
+	resolved, err := ResolveAgentPath(RootAgentPath(), path)
+	if err != nil {
+		return path
 	}
-	return path
-}
-
-func pathSegment(name string) string {
-	name = strings.ToLower(strings.TrimSpace(name))
-	var b strings.Builder
-	lastDash := false
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			lastDash = false
-		case r == '_' || r == '-':
-			if !lastDash {
-				b.WriteByte('-')
-				lastDash = true
-			}
-		default:
-			if !lastDash {
-				b.WriteByte('-')
-				lastDash = true
-			}
-		}
-	}
-	return strings.Trim(b.String(), "-")
+	return string(resolved)
 }
 
 func depthForPath(path string) int {

@@ -251,7 +251,7 @@ func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult
 
 	// 5. Register the child thread before launch so the visible worker
 	// ID, worktree ID, and thread path all point at the same task.
-	threadMeta, err := c.registerChildThread(workerID, taskName, wtype, req.Prompt, agentthread.SourceSpawn)
+	threadMeta, err := c.registerChildThread(workerID, taskName, wtype, req.Prompt, agentthread.SourceThreadSpawn)
 	if err != nil {
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
@@ -393,7 +393,7 @@ func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory [
 		workerCtx = context.WithoutCancel(ctx)
 	}
 
-	threadMeta, err := c.registerChildThread(workerID, taskName, "fork", req.Prompt, agentthread.SourceFork)
+	threadMeta, err := c.registerChildThread(workerID, taskName, "fork", req.Prompt, agentthread.SourceThreadSpawn)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +458,13 @@ func (c *Coordinator) Stop(target string) bool {
 	if agentID == "" {
 		return false
 	}
-	return c.manager.Stop(agentID)
+	ok := c.manager.Stop(agentID)
+	if ok {
+		if meta, found := c.threads.UpdateEdgeStatus(agentID, agentthread.EdgeClosed, time.Now().UTC()); found {
+			_ = c.threadStore.RecordEdgeStatus(meta)
+		}
+	}
+	return ok
 }
 
 // List returns snapshots of all sub-agents in this session.

@@ -2,8 +2,6 @@ package agentthread
 
 import "time"
 
-const RootPath = "/root"
-
 type Status string
 
 const (
@@ -17,9 +15,15 @@ const (
 type SourceKind string
 
 const (
-	SourceRoot  SourceKind = "root"
-	SourceSpawn SourceKind = "spawn"
-	SourceFork  SourceKind = "fork"
+	SourceRoot        SourceKind = "root"
+	SourceThreadSpawn SourceKind = "thread_spawn"
+)
+
+type EdgeStatus string
+
+const (
+	EdgeOpen   EdgeStatus = "open"
+	EdgeClosed EdgeStatus = "closed"
 )
 
 type Source struct {
@@ -28,6 +32,7 @@ type Source struct {
 	ParentPath     string     `json:"parent_path,omitempty"`
 	Depth          int        `json:"depth,omitempty"`
 	ForkMode       string     `json:"fork_mode,omitempty"`
+	EdgeStatus     EdgeStatus `json:"edge_status,omitempty"`
 }
 
 type Metadata struct {
@@ -66,15 +71,17 @@ type EventType string
 const (
 	EventThreadUpsert EventType = "thread_upsert"
 	EventStatusChange EventType = "status_change"
+	EventEdgeChange   EventType = "edge_change"
 	EventMessage      EventType = "message"
 )
 
 type Event struct {
-	Type      EventType `json:"type"`
-	ThreadID  string    `json:"thread_id"`
-	Path      string    `json:"path,omitempty"`
-	Status    Status    `json:"status,omitempty"`
-	Message   string    `json:"message,omitempty"`
-	Metadata  *Metadata `json:"metadata,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	Type       EventType  `json:"type"`
+	ThreadID   string     `json:"thread_id"`
+	Path       string     `json:"path,omitempty"`
+	Status     Status     `json:"status,omitempty"`
+	EdgeStatus EdgeStatus `json:"edge_status,omitempty"`
+	Message    string     `json:"message,omitempty"`
+	Metadata   *Metadata  `json:"metadata,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
