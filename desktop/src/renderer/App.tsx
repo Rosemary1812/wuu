@@ -734,6 +734,9 @@ export function App(): JSX.Element {
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const conversationPaneRef = useRef<HTMLElement | null>(null);
+  const dockComposerRef = useRef<HTMLElement>(null);
+  const dockComposerHeightRef = useRef(0);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
@@ -1056,6 +1059,36 @@ export function App(): JSX.Element {
     window.requestAnimationFrame(() => scrollConversationToBottom({ force: true }));
   }, [visibleAnsweredAskRequests.length]);
 
+  useLayoutEffect(() => {
+    const node = dockComposerRef.current;
+    const pane = conversationPaneRef.current;
+    const applyHeight = (nextHeight: number): void => {
+      if (dockComposerHeightRef.current === nextHeight) {
+        return;
+      }
+      dockComposerHeightRef.current = nextHeight;
+      pane?.style.setProperty("--dock-composer-height", `${nextHeight}px`);
+      if (nextHeight > 0 && conversationAutoFollowRef.current) {
+        scrollConversationToBottom();
+      }
+    };
+
+    if (!node) {
+      applyHeight(0);
+      return;
+    }
+
+    const updateHeight = (): void => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      applyHeight(nextHeight);
+    };
+
+    updateHeight();
+    const resizeObserver = new ResizeObserver(updateHeight);
+    resizeObserver.observe(node);
+    return () => resizeObserver.disconnect();
+  }, [emptyConversation, previewingLaunch, showingWorkspaceMode, state.initialized]);
+
   function applySidebarWidth(nextWidth: number): void {
     if (nextWidth <= SIDEBAR_MIN_WIDTH) {
       setSidebarCollapsed(true);
@@ -1261,6 +1294,7 @@ export function App(): JSX.Element {
     return (
       <Composer
         variant={variant}
+        containerRef={variant === "dock" ? dockComposerRef : undefined}
         prompt={prompt}
         setPrompt={setPrompt}
         images={composerImages}
@@ -2170,7 +2204,7 @@ export function App(): JSX.Element {
         />
       )}
 
-      <main className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}`}>
+      <main className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}`} ref={conversationPaneRef}>
         <header className="titlebar">
           <div className="title-block">
             {sidebarCollapsed ? (
@@ -2312,7 +2346,6 @@ export function App(): JSX.Element {
                       turn={turn}
                       cwd={state.thread?.cwd ?? state.activeContext?.cwd}
                       onStreamFrame={scheduleStreamScroll}
-                      onInterrupt={() => void interrupt()}
                     />
                     {visibleAnsweredAskRequests
                       .filter((request) => request.turnID === turn.id)
@@ -5284,13 +5317,11 @@ function agentStatusTone(status: string | undefined): "running" | "completed" | 
 function TurnView({
   turn,
   cwd,
-  onStreamFrame,
-  onInterrupt
+  onStreamFrame
 }: {
   turn: Turn;
   cwd?: string;
   onStreamFrame: () => void;
-  onInterrupt: () => void;
 }): JSX.Element {
   const renderedItems: JSX.Element[] = [];
   let statusInserted = false;
@@ -5312,7 +5343,7 @@ function TurnView({
     }
 
     if (!statusInserted) {
-      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} onInterrupt={onInterrupt} />);
+      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
       statusInserted = true;
     }
 
@@ -5344,7 +5375,7 @@ function TurnView({
   }
 
   if (!statusInserted && turn.status === "in_progress") {
-    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} onInterrupt={onInterrupt} />);
+    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
   }
 
   return (
@@ -5355,7 +5386,7 @@ function TurnView({
   );
 }
 
-function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => void }): JSX.Element {
+function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = parseTurnTimestampMs(turn.started_at);
   const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
@@ -5383,12 +5414,6 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
             {content.detail ? <span className="turn-progress-detail">{content.detail}</span> : null}
           </span>
         </div>
-        {liveDuration ? (
-          <button className="turn-progress-stop" type="button" onClick={onInterrupt}>
-            <Square size={13} />
-            <span>停止</span>
-          </button>
-        ) : null}
       </div>
       <div className="turn-progress-rule">{campaign ? <TurnProgressCampaignScene campaign={campaign} /> : null}</div>
     </div>
@@ -7344,6 +7369,7 @@ function FloatingMenuPortal({
 
 function Composer({
   variant = "dock",
+  containerRef,
   prompt,
   setPrompt,
   images,
@@ -7390,6 +7416,7 @@ function Composer({
   onInterrupt
 }: {
   variant?: ComposerVariant;
+  containerRef?: RefObject<HTMLElement>;
   prompt: string;
   setPrompt: (value: string) => void;
   images: ComposerImage[];
@@ -7633,7 +7660,13 @@ function Composer({
       </div>
     </div>
   );
-  return variant === "hero" ? <div className={className}>{content}</div> : <footer className={className}>{content}</footer>;
+  return variant === "hero" ? (
+    <div className={className}>{content}</div>
+  ) : (
+    <footer className={className} ref={containerRef}>
+      {content}
+    </footer>
+  );
 }
 
 function CodexRuntimePicker({

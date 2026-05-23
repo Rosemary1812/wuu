@@ -53,6 +53,18 @@
   }
 }
 
+@keyframes environment-panel-enter {
+  from {
+    opacity: 1;
+    transform: translate3d(10px, 0, 0) scale(0.992);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 @keyframes session-tree-enter {
   from {
     opacity: 0;
@@ -175,9 +187,6 @@ button:disabled {
   height: 100%;
   overflow: hidden;
   background: #f7f7f5;
-  transition:
-    grid-template-columns 180ms cubic-bezier(0.2, 0, 0, 1),
-    grid-template-rows 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .app-shell.right-panel-open {
@@ -989,6 +998,8 @@ button:disabled {
 .conversation-pane {
   --environment-panel-reserved-width: 432px;
   --environment-panel-width: 360px;
+  --conversation-scrollbar-gutter: 12px;
+  --dock-composer-height: 0px;
   grid-column: 2;
   grid-row: 1;
   display: grid;
@@ -996,7 +1007,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 54px minmax(0, 1fr) auto;
+  grid-template-rows: 54px minmax(0, 1fr);
   overflow: hidden;
   background: #fff;
   margin-right: 0;
@@ -1370,7 +1381,7 @@ button:disabled {
   padding: 14px;
   backdrop-filter: blur(18px);
   transform-origin: top right;
-  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+  animation: environment-panel-enter 120ms var(--menu-enter-easing) both;
 }
 
 .environment-panel-header {
@@ -2935,6 +2946,8 @@ button:disabled {
 
 .scroll-region {
   contain: layout paint;
+  grid-column: 1;
+  grid-row: 2;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2943,9 +2956,13 @@ button:disabled {
 
 .conversation-width {
   contain: layout style;
-  width: min(1120px, calc(100% - 96px));
+  width: 100%;
   margin: 0 auto;
-  padding: 72px 0 28px;
+  padding: 72px clamp(24px, 4vw, 48px) 28px;
+}
+
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-width {
+  padding-bottom: calc(var(--dock-composer-height) + 32px);
 }
 
 .turn {
@@ -3094,29 +3111,6 @@ button:disabled {
   color: #9ca1a5;
   font-size: var(--font-ui);
   font-weight: 500;
-}
-
-.turn-progress-stop {
-  display: inline-flex;
-  height: 28px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  border-radius: 7px;
-  background: #f3f4f1;
-  color: #6a7277;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  padding: 0 9px;
-}
-
-.turn-progress-stop:hover {
-  background: #e9ebe6;
-  color: #202427;
-}
-
-.turn-progress-stop svg {
-  flex: 0 0 auto;
 }
 
 .turn-progress-rule {
@@ -6724,6 +6718,33 @@ pre {
   overflow: hidden;
   padding: 14px 0 22px;
   background: #fff;
+}
+
+.dock-composer-wrap {
+  position: relative;
+  z-index: 5;
+  grid-column: 1;
+  grid-row: 2;
+  align-self: end;
+  background: transparent;
+  pointer-events: none;
+}
+
+.dock-composer-wrap::before {
+  position: absolute;
+  inset: 0 var(--conversation-scrollbar-gutter) 0 0;
+  z-index: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 24px, #fff 100%);
+  content: "";
+  pointer-events: none;
+}
+
+.dock-composer-wrap .composer-stack {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 0 clamp(24px, 4vw, 48px);
+  pointer-events: auto;
 }
 
 .hero-composer-wrap {
