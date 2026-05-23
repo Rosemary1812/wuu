@@ -2990,6 +2990,38 @@ button:disabled {
   padding-bottom: calc(var(--dock-composer-height) + 32px);
 }
 
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar {
+  width: 10px;
+  background: transparent;
+}
+
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-track,
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-track-piece {
+  border: 0;
+  background: transparent;
+}
+
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-left-width: 4px;
+  border-radius: 999px;
+  background-color: rgba(82, 88, 94, 0.32);
+  background-clip: padding-box;
+}
+
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(56, 88, 118, 0.48);
+}
+
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:active {
+  background-color: rgba(38, 70, 98, 0.64);
+}
+
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .turn {
   content-visibility: auto;
   contain-intrinsic-size: auto 220px;
