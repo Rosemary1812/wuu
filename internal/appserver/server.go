@@ -20,6 +20,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -170,6 +171,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigRead(req)
 	case MethodConfigModelUpdate:
 		return s.handleConfigModelUpdate(req)
+	case MethodConfigCodexModels:
+		return s.handleConfigCodexModels(ctx, req)
 	case MethodThreadStart:
 		return s.handleThreadStart(req)
 	case MethodThreadResume:
@@ -217,6 +220,7 @@ func (s *Server) handleInitialize(req Request) error {
 		ProtocolVersion: ProtocolVersion,
 		Provider:        s.rt.ProviderName,
 		Model:           s.rt.Model,
+		Effort:          s.currentEffort(),
 		WorkspaceRoot:   s.rt.RootDir,
 		Providers:       s.providerSummaries(),
 	}, nil)
@@ -226,6 +230,7 @@ func (s *Server) handleConfigRead(req Request) error {
 	return s.writeResponse(req.ID, ConfigReadResult{
 		Provider:      s.rt.ProviderName,
 		Model:         s.rt.Model,
+		Effort:        s.currentEffort(),
 		ConfigPath:    s.rt.ConfigPath,
 		WorkspaceRoot: s.rt.RootDir,
 		SessionDir:    s.rt.SessionDir,
@@ -258,6 +263,10 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	providerCfg.Model = model
+	effort := s.currentEffort()
+	if params.Effort != nil {
+		effort = strings.TrimSpace(*params.Effort)
+	}
 
 	var client providers.StreamClient
 	if resolvedName != s.rt.ProviderName {
@@ -266,7 +275,11 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
-	if err := config.UpdateProviderSelection(s.rt.ConfigPath, resolvedName, model); err != nil {
+	if params.Effort != nil {
+		if err := config.UpdateProviderSelectionAndEffort(s.rt.ConfigPath, resolvedName, model, effort); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	} else if err := config.UpdateProviderSelection(s.rt.ConfigPath, resolvedName, model); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
@@ -277,6 +290,9 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			s.rt.StreamRunner.Client = client
 		}
 		s.rt.StreamRunner.Model = model
+		if params.Effort != nil {
+			s.rt.StreamRunner.Effort = effort
+		}
 		s.rt.StreamRunner.ContextWindowOverride = runtime.ResolveContextWindow(
 			model,
 			providerCfg.ContextWindow,
@@ -288,7 +304,62 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
 		Provider:  resolvedName,
 		Model:     model,
+		Effort:    effort,
 		Providers: s.providerSummaries(),
+	}, nil)
+}
+
+func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error {
+	var params ConfigCodexModelsParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerName := strings.TrimSpace(params.Provider)
+	if providerName == "" {
+		providerName = s.rt.ProviderName
+	}
+	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(providerName)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if !isCodexProviderType(providerCfg.Type) {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("provider %s uses type %s; Codex models require openai-codex", resolvedName, providerCfg.Type))
+	}
+	client, err := codex.New(codex.ClientConfig{
+		BaseURL: providerCfg.BaseURL,
+		APIKey:  explicitProviderAPIKey(providerCfg),
+		Headers: providerCfg.Headers,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	models, err := client.Models(ctx)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	out := make([]CodexModelSummary, 0, len(models))
+	for _, model := range models {
+		out = append(out, CodexModelSummary{
+			Slug:                  model.Slug,
+			DisplayName:           model.DisplayName,
+			DefaultReasoningLevel: model.DefaultReasoningLevel,
+			SupportedReasoning:    append([]string(nil), model.SupportedReasoning...),
+			SupportedInAPI:        model.SupportedInAPI,
+		})
+	}
+	effort := strings.TrimSpace(cfg.Agent.Effort)
+	if resolvedName == s.rt.ProviderName {
+		effort = s.currentEffort()
+	}
+	return s.writeResponse(req.ID, ConfigCodexModelsResult{
+		Provider: resolvedName,
+		Model:    providerCfg.Model,
+		Effort:   effort,
+		Models:   out,
 	}, nil)
 }
 
@@ -412,6 +483,13 @@ func (s *Server) updateIdleThreadRuntime(providerName, model string) {
 	}
 }
 
+func (s *Server) currentEffort() string {
+	if s == nil || s.rt == nil || s.rt.StreamRunner == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.rt.StreamRunner.Effort)
+}
+
 func (s *Server) providerSummaries() []ProviderSummary {
 	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
 	if err != nil {
@@ -436,6 +514,22 @@ func providerSummariesFromConfig(cfg config.Config) []ProviderSummary {
 		})
 	}
 	return out
+}
+
+func isCodexProviderType(providerType string) bool {
+	s := strings.ToLower(strings.TrimSpace(providerType))
+	s = strings.ReplaceAll(s, "_", "-")
+	return s == "openai-codex" || s == "codex-subscription" || s == "chatgpt-codex"
+}
+
+func explicitProviderAPIKey(provider config.ProviderConfig) string {
+	if key := strings.TrimSpace(provider.APIKey); key != "" {
+		return key
+	}
+	if envKey := strings.TrimSpace(provider.APIKeyEnv); envKey != "" {
+		return strings.TrimSpace(os.Getenv(envKey))
+	}
+	return ""
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {

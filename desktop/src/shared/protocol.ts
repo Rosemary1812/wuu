@@ -32,6 +32,7 @@ export type InitializeResult = {
   protocol_version: string;
   provider: string;
   model: string;
+  effort?: string;
   workspace_root: string;
   providers?: ProviderSummary[];
 };
@@ -39,6 +40,7 @@ export type InitializeResult = {
 export type ConfigModelUpdateResult = {
   provider: string;
   model: string;
+  effort?: string;
   providers?: ProviderSummary[];
 };
 
@@ -46,6 +48,21 @@ export type ProviderSummary = {
   name: string;
   type: string;
   model: string;
+};
+
+export type CodexModelSummary = {
+  slug: string;
+  display_name?: string;
+  default_reasoning_level?: string;
+  supported_reasoning?: string[];
+  supported_in_api: boolean;
+};
+
+export type ConfigCodexModelsResult = {
+  provider: string;
+  model: string;
+  effort?: string;
+  models: CodexModelSummary[];
 };
 
 export type DesktopProject = {
@@ -183,7 +200,8 @@ export type WuuDesktopApi = {
   listWorkspaceFiles: () => Promise<FileTreeListResult>;
   readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
   initialize: () => Promise<InitializeResult>;
-  updateRuntimeSettings: (provider: string, model: string) => Promise<ConfigModelUpdateResult>;
+  loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
+  updateRuntimeSettings: (provider: string, model: string, effort?: string) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   listThreads: () => Promise<{ threads: Thread[] }>;

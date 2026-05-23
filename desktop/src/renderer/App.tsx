@@ -4,6 +4,7 @@ import {
   Brain,
   Check,
   ChevronDown,
+  ChevronRight,
   Clock,
   Globe2,
   FileText,
@@ -46,6 +47,7 @@ import { OverlayScrollbarsComponent, type OverlayScrollbarsComponentRef } from "
 import type {
   AppServerNotification,
   AskUserQuestion,
+  CodexModelSummary,
   DesktopProject,
   FileTreeListResult,
   GitStatusResult,
@@ -66,6 +68,15 @@ type AskRequestState = {
   id: string;
   questions: AskUserQuestion[];
 };
+
+type CodexModelLoadState = {
+  provider?: string;
+  loading: boolean;
+  error: string;
+  models: CodexModelSummary[];
+};
+
+type CodexRuntimeMenu = "main" | "model" | null;
 
 type AppState = {
   initialized?: InitializeResult;
@@ -158,6 +169,66 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function isCodexProvider(initialized: InitializeResult): boolean {
+  const summary = initialized.providers?.find((provider) => provider.name === initialized.provider);
+  const type = (summary?.type ?? initialized.provider).trim().toLowerCase().replaceAll("_", "-");
+  return type === "openai-codex" || type === "codex-subscription" || type === "chatgpt-codex";
+}
+
+function displayCodexModelName(model?: CodexModelSummary): string {
+  return model?.display_name || model?.slug || "GPT";
+}
+
+function shortCodexModelLabel(model: string): string {
+  return model.replace(/^gpt-/i, "");
+}
+
+function codexEffortLabel(effort: string): string {
+  switch (effort) {
+    case "":
+      return "智能";
+    case "none":
+      return "无";
+    case "minimal":
+      return "最少";
+    case "low":
+      return "低";
+    case "medium":
+      return "中";
+    case "high":
+      return "高";
+    case "xhigh":
+    case "max":
+      return "超高";
+    default:
+      return effort;
+  }
+}
+
+function codexEffortOptions(model: CodexModelSummary | undefined, currentEffort: string): string[] {
+  const defaults = ["low", "medium", "high", "xhigh"];
+  const supported = (model?.supported_reasoning?.length ? model.supported_reasoning : defaults).filter(Boolean);
+  const options = ["", ...supported];
+  if (currentEffort && !options.includes(currentEffort)) {
+    options.push(currentEffort);
+  }
+  return options;
+}
+
+function normalizedEffortForModel(currentEffort: string, model: CodexModelSummary): string {
+  if (currentEffort === "") {
+    return "";
+  }
+  const supported = model.supported_reasoning ?? [];
+  if (supported.length === 0 || supported.includes(currentEffort)) {
+    return currentEffort;
+  }
+  if (model.default_reasoning_level && supported.includes(model.default_reasoning_level)) {
+    return model.default_reasoning_level;
+  }
+  return supported[0] ?? "";
+}
+
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
@@ -167,6 +238,8 @@ export function App(): JSX.Element {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
+  const [codexRuntimeMenu, setCodexRuntimeMenu] = useState<CodexRuntimeMenu>(null);
+  const [codexModels, setCodexModels] = useState<CodexModelLoadState>({ loading: false, error: "", models: [] });
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -184,6 +257,7 @@ export function App(): JSX.Element {
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
+  const codexRuntimeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -300,11 +374,14 @@ export function App(): JSX.Element {
       if (accessMenuOpen && !accessMenuRef.current?.contains(target)) {
         setAccessMenuOpen(false);
       }
+      if (codexRuntimeMenu && !codexRuntimeRef.current?.contains(target)) {
+        setCodexRuntimeMenu(null);
+      }
     }
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [accessMenuOpen, branchMenuOpen, modeMenuOpen, projectMenuOpen, runtimeMenuOpen]);
+  }, [accessMenuOpen, branchMenuOpen, codexRuntimeMenu, modeMenuOpen, projectMenuOpen, runtimeMenuOpen]);
 
   useEffect(() => {
     conversationAutoFollowRef.current = true;
@@ -514,12 +591,14 @@ export function App(): JSX.Element {
         setPrompt={setPrompt}
         running={state.running}
         status={state.status}
-        provider={state.initialized?.provider}
-        model={state.initialized?.model}
+        initialized={state.initialized}
         gitStatus={state.gitStatus}
         projects={state.projects}
         activeContext={state.activeContext}
         activeProject={activeProject}
+        codexModels={codexModels}
+        codexRuntimeMenu={codexRuntimeMenu}
+        codexRuntimeRef={codexRuntimeRef}
         menuOpen={runtimeMenuOpen}
         accessMenuOpen={accessMenuOpen}
         modeMenuOpen={modeMenuOpen}
@@ -532,26 +611,33 @@ export function App(): JSX.Element {
           setAccessMenuOpen(false);
           setModeMenuOpen(false);
           setBranchMenuOpen(false);
+          setCodexRuntimeMenu(null);
           setRuntimeMenuOpen((open) => !open);
         }}
         onToggleAccessMenu={() => {
           setRuntimeMenuOpen(false);
           setModeMenuOpen(false);
           setBranchMenuOpen(false);
+          setCodexRuntimeMenu(null);
           setAccessMenuOpen((open) => !open);
         }}
         onToggleModeMenu={() => {
           setRuntimeMenuOpen(false);
           setAccessMenuOpen(false);
           setBranchMenuOpen(false);
+          setCodexRuntimeMenu(null);
           setModeMenuOpen((open) => !open);
         }}
         onToggleBranchMenu={() => {
           setRuntimeMenuOpen(false);
           setAccessMenuOpen(false);
           setModeMenuOpen(false);
+          setCodexRuntimeMenu(null);
           setBranchMenuOpen((open) => !open);
         }}
+        onToggleCodexRuntimeMenu={toggleCodexRuntimeMenu}
+        onSelectCodexModel={(nextModel) => void selectCodexModel(nextModel)}
+        onSelectCodexEffort={(nextEffort) => void selectCodexEffort(nextEffort)}
         onOpenSettings={() => {
           closeProjectMenus();
           setSettingsOpen(true);
@@ -608,6 +694,7 @@ export function App(): JSX.Element {
     setProjectMenuOpen(false);
     setRuntimeMenuOpen(false);
     setAccessMenuOpen(false);
+    setCodexRuntimeMenu(null);
     setModeMenuOpen(false);
     setBranchMenuOpen(false);
     setSettingsOpen(false);
@@ -794,26 +881,30 @@ export function App(): JSX.Element {
     }
   }
 
-  async function updateRuntimeSettings(provider: string, model: string): Promise<void> {
+  async function updateRuntimeSettings(provider: string, model: string, effort?: string): Promise<void> {
     const nextProvider = provider.trim();
     const nextModel = model.trim();
+    const nextEffort = effort === undefined ? undefined : effort.trim();
     if (
       !nextProvider ||
       !nextModel ||
       !state.initialized ||
       state.running ||
-      (nextProvider === state.initialized.provider && nextModel === state.initialized.model)
+      (nextProvider === state.initialized.provider &&
+        nextModel === state.initialized.model &&
+        (nextEffort === undefined || nextEffort === (state.initialized.effort ?? "")))
     ) {
       return;
     }
     try {
-      const updated = await window.wuu.updateRuntimeSettings(nextProvider, nextModel);
+      const updated = await window.wuu.updateRuntimeSettings(nextProvider, nextModel, nextEffort);
       setState((current) => {
         const initialized = current.initialized
           ? {
               ...current.initialized,
               provider: updated.provider,
               model: updated.model,
+              effort: updated.effort ?? "",
               providers: updated.providers ?? current.initialized.providers
             }
           : current.initialized;
@@ -838,6 +929,74 @@ export function App(): JSX.Element {
       }));
       throw error;
     }
+  }
+
+  function toggleCodexRuntimeMenu(menu: Exclude<CodexRuntimeMenu, null>): void {
+    if (!state.initialized || state.running || !isCodexProvider(state.initialized)) {
+      return;
+    }
+    setRuntimeMenuOpen(false);
+    setAccessMenuOpen(false);
+    setModeMenuOpen(false);
+    setBranchMenuOpen(false);
+    setCodexRuntimeMenu((current) => (current === menu ? null : menu));
+    void loadCodexModelsForProvider(state.initialized.provider);
+  }
+
+  async function loadCodexModelsForProvider(provider: string): Promise<void> {
+    if (!provider) {
+      return;
+    }
+    if (codexModels.provider === provider && (codexModels.loading || codexModels.models.length > 0)) {
+      return;
+    }
+    setCodexModels({ provider, loading: true, error: "", models: [] });
+    try {
+      const result = await window.wuu.loadCodexModels(provider);
+      setCodexModels({
+        provider: result.provider,
+        loading: false,
+        error: "",
+        models: result.models
+      });
+      setState((current) => {
+        if (!current.initialized || current.initialized.provider !== result.provider) {
+          return current;
+        }
+        return {
+          ...current,
+          initialized: {
+            ...current.initialized,
+            model: result.model,
+            effort: result.effort ?? ""
+          }
+        };
+      });
+    } catch (error) {
+      setCodexModels({
+        provider,
+        loading: false,
+        error: error instanceof Error ? error.message : "无法加载 Codex 模型",
+        models: []
+      });
+    }
+  }
+
+  async function selectCodexModel(nextModel: CodexModelSummary): Promise<void> {
+    if (!state.initialized || state.running) {
+      return;
+    }
+    const nextEffort = normalizedEffortForModel(state.initialized.effort ?? "", nextModel);
+    await updateRuntimeSettings(state.initialized.provider, nextModel.slug, nextEffort);
+    setCodexRuntimeMenu(null);
+  }
+
+  async function selectCodexEffort(nextEffort: string): Promise<void> {
+    if (!state.initialized || state.running) {
+      return;
+    }
+    await updateRuntimeSettings(state.initialized.provider, state.initialized.model, nextEffort);
+    setCodexRuntimeMenu(null);
   }
 
   async function interrupt(): Promise<void> {
@@ -915,6 +1074,7 @@ export function App(): JSX.Element {
             onClick={() => {
               setProjectMenuOpen(false);
               setRuntimeMenuOpen(false);
+              setCodexRuntimeMenu(null);
               setSettingsOpen(true);
             }}
           >
@@ -2932,12 +3092,14 @@ function Composer({
   setPrompt,
   running,
   status,
-  provider,
-  model,
+  initialized,
   gitStatus,
   projects,
   activeContext,
   activeProject,
+  codexModels,
+  codexRuntimeMenu,
+  codexRuntimeRef,
   menuOpen,
   accessMenuOpen,
   modeMenuOpen,
@@ -2948,6 +3110,9 @@ function Composer({
   setProjectFilter,
   onToggleMenu,
   onToggleAccessMenu,
+  onToggleCodexRuntimeMenu,
+  onSelectCodexModel,
+  onSelectCodexEffort,
   onToggleModeMenu,
   onToggleBranchMenu,
   onOpenSettings,
@@ -2964,12 +3129,14 @@ function Composer({
   setPrompt: (value: string) => void;
   running: boolean;
   status: string;
-  provider?: string;
-  model?: string;
+  initialized?: InitializeResult;
   gitStatus?: GitStatusResult;
   projects: DesktopProject[];
   activeContext?: RuntimeContext;
   activeProject?: DesktopProject;
+  codexModels: CodexModelLoadState;
+  codexRuntimeMenu: CodexRuntimeMenu;
+  codexRuntimeRef: RefObject<HTMLDivElement>;
   menuOpen: boolean;
   accessMenuOpen: boolean;
   modeMenuOpen: boolean;
@@ -2980,6 +3147,9 @@ function Composer({
   setProjectFilter: (value: string) => void;
   onToggleMenu: () => void;
   onToggleAccessMenu: () => void;
+  onToggleCodexRuntimeMenu: (menu: Exclude<CodexRuntimeMenu, null>) => void;
+  onSelectCodexModel: (model: CodexModelSummary) => void;
+  onSelectCodexEffort: (effort: string) => void;
   onToggleModeMenu: () => void;
   onToggleBranchMenu: () => void;
   onOpenSettings: () => void;
@@ -2994,6 +3164,7 @@ function Composer({
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = status === "ready" ? "" : status;
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
+  const codexProvider = initialized ? isCodexProvider(initialized) : false;
   const content = (
     <>
       <div className="composer-shell">
@@ -3028,12 +3199,27 @@ function Composer({
               {accessMenuOpen ? <AccessMenu /> : null}
             </div>
             <div className="composer-spacer" />
-            <button className="provider-pill" type="button" onClick={onOpenSettings}>
-              {provider ?? "provider"}
-            </button>
-            <button className="model-label" type="button" onClick={onOpenSettings}>
-              {model ?? "model"}
-            </button>
+            {codexProvider && initialized ? (
+              <CodexRuntimePicker
+                initialized={initialized}
+                state={codexModels}
+                openMenu={codexRuntimeMenu}
+                anchorRef={codexRuntimeRef}
+                running={running}
+                onToggleMenu={onToggleCodexRuntimeMenu}
+                onSelectModel={onSelectCodexModel}
+                onSelectEffort={onSelectCodexEffort}
+              />
+            ) : (
+              <>
+                <button className="provider-pill" type="button" onClick={onOpenSettings}>
+                  {initialized?.provider ?? "provider"}
+                </button>
+                <button className="model-label" type="button" onClick={onOpenSettings}>
+                  {initialized?.model ?? "model"}
+                </button>
+              </>
+            )}
             {statusText ? <span className="status-label">{statusText}</span> : null}
             <button className="send-button" onClick={running ? onInterrupt : onSend} aria-label={running ? "停止" : "发送"}>
               {running ? <Square size={18} /> : <Send size={18} />}
@@ -3098,6 +3284,133 @@ function Composer({
     </>
   );
   return variant === "hero" ? <div className={className}>{content}</div> : <footer className={className}>{content}</footer>;
+}
+
+function CodexRuntimePicker({
+  initialized,
+  state,
+  openMenu,
+  anchorRef,
+  running,
+  onToggleMenu,
+  onSelectModel,
+  onSelectEffort
+}: {
+  initialized: InitializeResult;
+  state: CodexModelLoadState;
+  openMenu: CodexRuntimeMenu;
+  anchorRef: RefObject<HTMLDivElement>;
+  running: boolean;
+  onToggleMenu: (menu: Exclude<CodexRuntimeMenu, null>) => void;
+  onSelectModel: (model: CodexModelSummary) => void;
+  onSelectEffort: (effort: string) => void;
+}): JSX.Element {
+  const currentModel = state.models.find((model) => model.slug === initialized.model);
+  const effort = initialized.effort ?? "";
+  const effortOptions = codexEffortOptions(currentModel, effort);
+  return (
+    <div className="codex-runtime-anchor" ref={anchorRef}>
+      <button
+        className="codex-runtime-trigger"
+        type="button"
+        disabled={running}
+        aria-haspopup="menu"
+        aria-expanded={openMenu !== null}
+        onClick={() => onToggleMenu("main")}
+      >
+        <span>{shortCodexModelLabel(initialized.model)}</span>
+        <span className="codex-runtime-effort">{codexEffortLabel(effort)}</span>
+        <ChevronDown size={15} />
+      </button>
+      {openMenu === "main" ? (
+        <CodexMainMenu
+          selectedEffort={effort}
+          options={effortOptions}
+          currentModel={currentModel}
+          fallbackModel={initialized.model}
+          onSelectEffort={onSelectEffort}
+          onOpenModelMenu={() => onToggleMenu("model")}
+        />
+      ) : null}
+      {openMenu === "model" ? (
+        <CodexModelMenu
+          state={state}
+          selectedModel={initialized.model}
+          onSelectModel={onSelectModel}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function CodexMainMenu({
+  selectedEffort,
+  options,
+  currentModel,
+  fallbackModel,
+  onSelectEffort,
+  onOpenModelMenu
+}: {
+  selectedEffort: string;
+  options: string[];
+  currentModel?: CodexModelSummary;
+  fallbackModel: string;
+  onSelectEffort: (effort: string) => void;
+  onOpenModelMenu: () => void;
+}): JSX.Element {
+  return (
+    <div className="codex-runtime-menu codex-main-menu" role="menu">
+      {options.map((effort) => {
+        const selected = effort === selectedEffort;
+        return (
+          <button key={effort || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(effort)}>
+            <span>{codexEffortLabel(effort)}</span>
+            {selected ? <Check size={18} /> : null}
+          </button>
+        );
+      })}
+      <div className="codex-menu-separator" />
+      <button role="menuitem" type="button" onClick={onOpenModelMenu}>
+        <span>{currentModel ? displayCodexModelName(currentModel) : fallbackModel}</span>
+        <ChevronRight className="codex-menu-chevron" size={18} />
+      </button>
+    </div>
+  );
+}
+
+function CodexModelMenu({
+  state,
+  selectedModel,
+  onSelectModel
+}: {
+  state: CodexModelLoadState;
+  selectedModel: string;
+  onSelectModel: (model: CodexModelSummary) => void;
+}): JSX.Element {
+  return (
+    <div className="codex-runtime-menu codex-model-menu" role="menu">
+      <div className="codex-menu-label">模型</div>
+      {state.loading ? <div className="composer-menu-empty">正在加载 Codex 模型</div> : null}
+      {state.error ? (
+        <div className="composer-menu-note warning">
+          <strong>无法读取 Codex 登录态</strong>
+          <span>{state.error}</span>
+        </div>
+      ) : null}
+      {!state.loading && !state.error && state.models.length === 0 ? (
+        <div className="composer-menu-empty">没有可用模型</div>
+      ) : null}
+      {state.models.map((model) => {
+        const selected = model.slug === selectedModel;
+        return (
+          <button key={model.slug} role="menuitem" type="button" onClick={() => onSelectModel(model)}>
+            <span>{displayCodexModelName(model)}</span>
+            {selected ? <Check size={18} /> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function AccessMenu(): JSX.Element {

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,6 +181,110 @@ func TestServerConfigModelUpdateSwitchesProvider(t *testing.T) {
 	if !strings.Contains(string(data), `"default_provider": "codex-provider"`) ||
 		!strings.Contains(string(data), `"model": "new-codex-model"`) {
 		t.Fatalf("provider selection was not persisted: %s", data)
+	}
+}
+
+func TestServerConfigModelUpdatePersistsEffort(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Effort = "medium"
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "agent": {
+    "effort": "medium"
+  },
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model","effort":"xhigh"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Model != "new-model" || result.Effort != "xhigh" {
+		t.Fatalf("unexpected update result: %+v", result)
+	}
+	if rt.StreamRunner.Effort != "xhigh" {
+		t.Fatalf("runtime effort not updated: %q", rt.StreamRunner.Effort)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"effort": "xhigh"`) {
+		t.Fatalf("effort was not persisted: %s", data)
+	}
+}
+
+func TestServerConfigCodexModels(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.ProviderName = "openai-codex"
+	rt.Model = "gpt-5.5"
+	rt.StreamRunner.Model = "gpt-5.5"
+	rt.StreamRunner.Effort = "xhigh"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Fatalf("path = %q, want /models", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+		  "models": [
+		    {"slug":"gpt-hidden","visibility":"hide","supported_in_api":true},
+		    {"slug":"spark","display_name":"Spark","supported_in_api":false},
+		    {"slug":"gpt-5.4","display_name":"GPT-5.4","priority":20,"supported_in_api":true},
+		    {"slug":"gpt-5.5","display_name":"GPT-5.5","priority":9,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"xhigh"}],"supported_in_api":true}
+		  ]
+		}`))
+	}))
+	defer server.Close()
+
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "agent": {
+    "effort": "xhigh"
+  },
+  "default_provider": "openai-codex",
+  "providers": {
+    "openai-codex": {
+      "type": "openai-codex",
+      "base_url": "`+server.URL+`",
+      "api_key": "test-token",
+      "model": "gpt-5.5"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/codex/models"}`)); err != nil {
+		t.Fatalf("config/codex/models: %v", err)
+	}
+
+	result := remarshal[ConfigCodexModelsResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Provider != "openai-codex" || result.Model != "gpt-5.5" || result.Effort != "xhigh" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if len(result.Models) != 3 || result.Models[0].Slug != "gpt-5.5" || result.Models[1].Slug != "gpt-5.4" || result.Models[2].Slug != "spark" {
+		t.Fatalf("unexpected models: %+v", result.Models)
+	}
+	if got := result.Models[0].SupportedReasoning; len(got) != 2 || got[0] != "low" || got[1] != "xhigh" {
+		t.Fatalf("unexpected reasoning levels: %+v", got)
 	}
 }
 

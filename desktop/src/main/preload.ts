@@ -12,8 +12,9 @@ const api: WuuDesktopApi = {
   listWorkspaceFiles: () => ipcRenderer.invoke("wuu:file-tree-list"),
   readWorkspaceFile: (path: string) => ipcRenderer.invoke("wuu:file-read", path),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
-  updateRuntimeSettings: (provider: string, model: string) =>
-    ipcRenderer.invoke("wuu:config-model-update", provider, model),
+  loadCodexModels: (provider?: string) => ipcRenderer.invoke("wuu:config-codex-models", provider),
+  updateRuntimeSettings: (provider: string, model: string, effort?: string) =>
+    ipcRenderer.invoke("wuu:config-model-update", provider, model, effort),
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) => ipcRenderer.invoke("wuu:thread-resume", sessionId),
   listThreads: () => ipcRenderer.invoke("wuu:thread-list"),

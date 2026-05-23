@@ -1050,6 +1050,120 @@ kbd {
   white-space: nowrap;
 }
 
+.codex-runtime-anchor {
+  position: relative;
+  display: inline-flex;
+  max-width: 280px;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.codex-runtime-trigger {
+  display: inline-flex;
+  height: 30px;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  border-radius: 8px;
+  background: transparent;
+  color: #2f3337;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  padding: 0 8px;
+}
+
+.codex-runtime-effort {
+  color: #74797d;
+}
+
+.codex-runtime-trigger:hover,
+.codex-runtime-trigger[aria-expanded="true"] {
+  background: #e9e9e6;
+  color: #22262a;
+}
+
+.codex-runtime-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-runtime-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 35;
+  display: grid;
+  width: 280px;
+  max-height: min(430px, calc(100vh - 180px));
+  overflow: hidden;
+  border: 1px solid rgba(30, 34, 38, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
+  padding: 12px;
+  backdrop-filter: blur(18px);
+}
+
+.codex-model-menu {
+  width: 360px;
+}
+
+.codex-main-menu {
+  width: 300px;
+}
+
+.hero-composer-wrap .codex-runtime-menu {
+  top: calc(100% + 10px);
+  bottom: auto;
+}
+
+.codex-menu-label {
+  color: #9a9ea2;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+  padding: 4px 12px 10px;
+}
+
+.codex-runtime-menu button {
+  display: flex;
+  height: 40px;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: #202427;
+  font-size: var(--font-body);
+  padding: 0 12px;
+  text-align: left;
+}
+
+.codex-runtime-menu button:hover {
+  background: #f0f1ef;
+}
+
+.codex-menu-separator {
+  height: 1px;
+  margin: 8px 0;
+  background: #e6e7e4;
+}
+
+.codex-menu-chevron {
+  flex: 0 0 auto;
+  color: #8a8f93;
+}
+
+.codex-runtime-menu button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .scroll-region {
   contain: layout paint;
   min-height: 0;

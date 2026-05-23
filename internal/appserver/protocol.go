@@ -15,6 +15,7 @@ const (
 	MethodInitialize        = "initialize"
 	MethodConfigRead        = "config/read"
 	MethodConfigModelUpdate = "config/model/update"
+	MethodConfigCodexModels = "config/codex/models"
 	MethodThreadStart       = "thread/start"
 	MethodThreadResume      = "thread/resume"
 	MethodThreadList        = "thread/list"
@@ -79,6 +80,7 @@ type InitializeResult struct {
 	ProtocolVersion string            `json:"protocol_version"`
 	Provider        string            `json:"provider"`
 	Model           string            `json:"model"`
+	Effort          string            `json:"effort,omitempty"`
 	WorkspaceRoot   string            `json:"workspace_root"`
 	Providers       []ProviderSummary `json:"providers,omitempty"`
 }
@@ -86,6 +88,7 @@ type InitializeResult struct {
 type ConfigReadResult struct {
 	Provider      string            `json:"provider"`
 	Model         string            `json:"model"`
+	Effort        string            `json:"effort,omitempty"`
 	ConfigPath    string            `json:"config_path"`
 	WorkspaceRoot string            `json:"workspace_root"`
 	SessionDir    string            `json:"session_dir"`
@@ -93,14 +96,35 @@ type ConfigReadResult struct {
 }
 
 type ConfigModelUpdateParams struct {
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model"`
+	Provider string  `json:"provider,omitempty"`
+	Model    string  `json:"model"`
+	Effort   *string `json:"effort,omitempty"`
 }
 
 type ConfigModelUpdateResult struct {
 	Provider  string            `json:"provider"`
 	Model     string            `json:"model"`
+	Effort    string            `json:"effort,omitempty"`
 	Providers []ProviderSummary `json:"providers,omitempty"`
+}
+
+type ConfigCodexModelsParams struct {
+	Provider string `json:"provider,omitempty"`
+}
+
+type ConfigCodexModelsResult struct {
+	Provider string              `json:"provider"`
+	Model    string              `json:"model"`
+	Effort   string              `json:"effort,omitempty"`
+	Models   []CodexModelSummary `json:"models"`
+}
+
+type CodexModelSummary struct {
+	Slug                  string   `json:"slug"`
+	DisplayName           string   `json:"display_name,omitempty"`
+	DefaultReasoningLevel string   `json:"default_reasoning_level,omitempty"`
+	SupportedReasoning    []string `json:"supported_reasoning,omitempty"`
+	SupportedInAPI        bool     `json:"supported_in_api"`
 }
 
 type ProviderSummary struct {

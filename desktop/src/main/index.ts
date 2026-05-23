@@ -19,6 +19,7 @@ import type {
   AppServerNotification,
   AppServerRequest,
   AppServerResponse,
+  ConfigCodexModelsResult,
   ConfigModelUpdateResult,
   DesktopProject,
   FileTreeListResult,
@@ -783,8 +784,15 @@ app.whenReady().then(() => {
     return addProject(projectPath);
   });
   ipcMain.handle("wuu:initialize", () => serverClient().request<InitializeResult>("initialize"));
-  ipcMain.handle("wuu:config-model-update", (_event, provider: string, model: string) =>
-    serverClient().request<ConfigModelUpdateResult>("config/model/update", { provider, model })
+  ipcMain.handle("wuu:config-codex-models", (_event, provider?: string) =>
+    serverClient().request<ConfigCodexModelsResult>("config/codex/models", { provider: provider ?? "" })
+  );
+  ipcMain.handle("wuu:config-model-update", (_event, provider: string, model: string, effort?: string) =>
+    serverClient().request<ConfigModelUpdateResult>("config/model/update", {
+      provider,
+      model,
+      ...(effort === undefined ? {} : { effort })
+    })
   );
   ipcMain.handle("wuu:thread-start", () => serverClient().request<{ thread: Thread }>("thread/start"));
   ipcMain.handle("wuu:thread-resume", (_event, sessionId?: string) =>

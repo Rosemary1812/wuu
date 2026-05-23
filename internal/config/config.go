@@ -370,6 +370,16 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
+	return updateProviderSelection(configPath, providerName, newModel, nil)
+}
+
+// UpdateProviderSelectionAndEffort changes the default provider, selected
+// provider's model, and global reasoning effort in the config file at configPath.
+func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
+	return updateProviderSelection(configPath, providerName, newModel, &effort)
+}
+
+func updateProviderSelection(configPath, providerName, newModel string, effort *string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -390,6 +400,18 @@ func UpdateProviderSelection(configPath, providerName, newModel string) error {
 	}
 	raw["default_provider"] = providerName
 	provider["model"] = newModel
+	if effort != nil {
+		agent, _ := raw["agent"].(map[string]any)
+		if agent == nil {
+			agent = make(map[string]any)
+			raw["agent"] = agent
+		}
+		if strings.TrimSpace(*effort) == "" {
+			delete(agent, "effort")
+		} else {
+			agent["effort"] = strings.TrimSpace(*effort)
+		}
+	}
 
 	out, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
