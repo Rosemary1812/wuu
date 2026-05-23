@@ -1,4 +1,6 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { Children, cloneElement, isValidElement, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type RichContentProps = {
   text?: string;
@@ -15,7 +17,7 @@ export type RichBlockWithOffset = RichBlock & {
   startOffset: number;
 };
 
-type RichTextRenderer = (text: string, keyPrefix: string) => Array<JSX.Element | string>;
+export type RichTextRenderer = (text: string, keyPrefix: string) => Array<JSX.Element | string>;
 
 type MermaidState =
   | { status: "rendering" }
@@ -26,14 +28,27 @@ const IMAGE_MARKDOWN_PATTERN = /!\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 const IMAGE_FILE_PATTERN = /\.(apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
 
 export function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
-  const blocks = useMemo(() => parseRichBlocks(text), [text]);
-
   return (
     <div className="rich-content">
-      {blocks.map((block, index) => (
-        <RichContentBlock key={`${index}-${block.kind}`} block={block} blockKey={String(index)} cwd={cwd} />
-      ))}
+      <MarkdownContent text={text} cwd={cwd} />
     </div>
+  );
+}
+
+export function MarkdownContent({
+  text,
+  cwd,
+  renderText
+}: {
+  text: string;
+  cwd?: string;
+  renderText?: RichTextRenderer;
+}): JSX.Element {
+  const components = useMemo(() => markdownComponents(cwd, renderText), [cwd, renderText]);
+  return (
+    <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
+      {text}
+    </ReactMarkdown>
   );
 }
 
@@ -181,6 +196,135 @@ function renderInlineContent(
   return output;
 }
 
+type CodeElementProps = {
+  className?: string;
+  children?: ReactNode;
+};
+
+function markdownComponents(cwd: string | undefined, renderText: RichTextRenderer | undefined): Components {
+  return {
+    p({ children }) {
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "p")}</p>;
+    },
+    h1({ children }) {
+      return <h1 className="rich-heading rich-heading-1">{renderMarkdownText(children, renderText, "h1")}</h1>;
+    },
+    h2({ children }) {
+      return <h2 className="rich-heading rich-heading-2">{renderMarkdownText(children, renderText, "h2")}</h2>;
+    },
+    h3({ children }) {
+      return <h3 className="rich-heading rich-heading-3">{renderMarkdownText(children, renderText, "h3")}</h3>;
+    },
+    h4({ children }) {
+      return <h4 className="rich-heading rich-heading-4">{renderMarkdownText(children, renderText, "h4")}</h4>;
+    },
+    h5({ children }) {
+      return <h5 className="rich-heading rich-heading-5">{renderMarkdownText(children, renderText, "h5")}</h5>;
+    },
+    h6({ children }) {
+      return <h6 className="rich-heading rich-heading-6">{renderMarkdownText(children, renderText, "h6")}</h6>;
+    },
+    a({ href, title, children }) {
+      const safeHref = safeMarkdownHref(href);
+      if (!safeHref) {
+        return <span>{renderMarkdownText(children, renderText, "a-disabled")}</span>;
+      }
+      return (
+        <a className="rich-link" href={safeHref} title={title} target="_blank" rel="noreferrer">
+          {renderMarkdownText(children, renderText, "a")}
+        </a>
+      );
+    },
+    img({ src, alt }) {
+      if (!src) {
+        return null;
+      }
+      return <RichImage source={src} alt={alt ?? ""} cwd={cwd} inline />;
+    },
+    pre({ children }) {
+      const child = Children.toArray(children)[0];
+      if (isValidElement<CodeElementProps>(child)) {
+        const language = languageFromClassName(child.props.className);
+        if (language === "mermaid") {
+          return <MermaidDiagram code={reactNodeText(child.props.children).replace(/\n$/, "")} />;
+        }
+        return (
+          <pre className="rich-code" data-language={language || undefined}>
+            {children}
+          </pre>
+        );
+      }
+      return <pre className="rich-code">{children}</pre>;
+    },
+    code({ className, children }) {
+      return <code className={className}>{children}</code>;
+    },
+    table({ children }) {
+      return (
+        <div className="rich-table-wrap">
+          <table>{children}</table>
+        </div>
+      );
+    },
+    blockquote({ children }) {
+      return <blockquote className="rich-blockquote">{renderMarkdownText(children, renderText, "blockquote")}</blockquote>;
+    },
+    hr() {
+      return <hr className="rich-rule" />;
+    }
+  };
+}
+
+function renderMarkdownText(
+  children: ReactNode,
+  renderText: RichTextRenderer | undefined,
+  keyPrefix: string
+): ReactNode {
+  if (!renderText) {
+    return children;
+  }
+  return Children.toArray(children).flatMap((child, index): ReactNode[] => {
+    const childKey = `${keyPrefix}-${index}`;
+    if (typeof child === "string" || typeof child === "number") {
+      return renderText(String(child), childKey);
+    }
+    if (!isValidElement<{ children?: ReactNode }>(child) || child.props.children === undefined) {
+      return [child];
+    }
+    return [
+      cloneElement(child, {
+        children: renderMarkdownText(child.props.children, renderText, childKey)
+      })
+    ];
+  });
+}
+
+function languageFromClassName(className: string | undefined): string {
+  const match = className?.match(/(?:^|\s)language-([^\s]+)/);
+  return match?.[1]?.toLowerCase() ?? "";
+}
+
+function reactNodeText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(reactNodeText).join("");
+  }
+  return "";
+}
+
+function safeMarkdownHref(href: string | undefined): string | undefined {
+  const value = href?.trim();
+  if (!value) {
+    return undefined;
+  }
+  if (value.startsWith("#")) {
+    return value;
+  }
+  return /^(https?:|mailto:)/i.test(value) ? value : undefined;
+}
+
 function RichImage({
   source,
   alt,
@@ -230,7 +374,7 @@ function stripWrappers(value: string): string {
   return value;
 }
 
-function resolveImageSource(rawSource: string, cwd: string | undefined): string {
+export function resolveImageSource(rawSource: string, cwd: string | undefined): string {
   const source = imageTarget(rawSource);
   if (isWebImageSource(source)) {
     return source;
@@ -250,7 +394,7 @@ function resolveImageSource(rawSource: string, cwd: string | undefined): string 
   return source;
 }
 
-function imageTarget(rawSource: string): string {
+export function imageTarget(rawSource: string): string {
   let source = stripWrappers(rawSource.trim());
   if (source.startsWith("<") && source.endsWith(">")) {
     return source.slice(1, -1).trim();

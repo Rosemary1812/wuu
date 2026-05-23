@@ -1,9 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  RichContentBlock,
-  parseRichBlocksWithOffsets,
-  type RichBlockWithOffset
-} from "./RichContent";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { MarkdownContent, type RichTextRenderer } from "./RichContent";
 import { streamTextStore } from "./StreamText";
 
 type StreamingMarkdownProps = {
@@ -12,6 +8,7 @@ type StreamingMarkdownProps = {
   cwd?: string;
   className?: string;
   final?: boolean;
+  live?: boolean;
   onFrame?: () => void;
   onSettled?: () => void;
 };
@@ -22,11 +19,19 @@ type FadeUnit = {
   whitespace: boolean;
 };
 
+type StreamVisualState = "streaming" | "settling" | "settled";
+
+type SmoothStreamState = {
+  text: string;
+  visualState: StreamVisualState;
+};
+
 const STREAM_CONFIG = {
   defaultCps: 60,
   flushCps: 180,
   maxCps: 320,
   minCps: 24,
+  settleAnimationMs: 220,
   targetLagChars: 8
 };
 
@@ -39,119 +44,100 @@ export function StreamingMarkdown({
   cwd,
   className = "streaming-markdown rich-content",
   final = false,
+  live = !final,
   onFrame,
   onSettled
 }: StreamingMarkdownProps): JSX.Element {
-  const displayedText = useSmoothStreamText(streamKey, initialText, { final, onFrame, onSettled });
-  const blocks = useMemo(() => parseRichBlocksWithOffsets(displayedText, { allowOpenFence: true }), [displayedText]);
+  const { text, visualState } = useSmoothStreamText(streamKey, initialText, { final, live, onFrame, onSettled });
 
   return (
-    <div className={className}>
-      {blocks.map((block, index) => (
-        <StreamingMarkdownBlock
-          key={`${block.startOffset}-${block.kind}`}
-          block={block}
-          blockKey={`${block.startOffset}-${block.kind}`}
-          cwd={cwd}
-          active={index === blocks.length - 1}
-        />
-      ))}
+    <div className={className} data-stream-state={visualState}>
+      <MarkdownContent text={text} cwd={cwd} renderText={renderStreamText} />
     </div>
   );
 }
 
-const StreamingMarkdownBlock = memo(
-  function StreamingMarkdownBlock({
-    block,
-    blockKey,
-    cwd,
-    active
-  }: {
-    block: RichBlockWithOffset;
-    blockKey: string;
-    cwd?: string;
-    active: boolean;
-  }): JSX.Element {
-    if (active && block.kind === "paragraph") {
-      return (
-        <p className="rich-paragraph stream-paragraph">
-          <AnimatedStreamText text={block.text} blockKey={blockKey} />
-        </p>
-      );
-    }
-    if (active && (block.kind === "code" || block.kind === "mermaid")) {
-      const language = block.kind === "code" ? block.language : "mermaid";
-      return (
-        <pre className="rich-code stream-code" data-language={language || undefined}>
-          <code>{block.code}</code>
-        </pre>
-      );
-    }
-    return <RichContentBlock block={block} blockKey={blockKey} cwd={cwd} />;
-  },
-  (prev, next) =>
-    prev.active === next.active &&
-    prev.cwd === next.cwd &&
-    prev.block.kind === next.block.kind &&
-    prev.block.startOffset === next.block.startOffset &&
-    richBlockContent(prev.block) === richBlockContent(next.block)
-);
-
-function AnimatedStreamText({ text, blockKey }: { text: string; blockKey: string }): JSX.Element {
-  const units = useMemo(() => splitFadeUnits(text), [text]);
-  return (
-    <>
-      {units.map((unit) =>
-        unit.whitespace ? (
-          unit.text
-        ) : (
-          <span key={`${blockKey}-${unit.start}`} className="stream-word">
-            {unit.text}
-          </span>
-        )
-      )}
-    </>
+const renderStreamText: RichTextRenderer = (text, keyPrefix) => {
+  return splitFadeUnits(text).map((unit) =>
+    unit.whitespace ? (
+      unit.text
+    ) : (
+      <span key={`${keyPrefix}-${unit.start}`} className="stream-word">
+        {unit.text}
+      </span>
+    )
   );
-}
-
-type SmoothStreamOptions = {
-  final: boolean;
-  onFrame?: () => void;
-  onSettled?: () => void;
 };
 
 function useSmoothStreamText(
   streamKey: string,
   initialText: string,
-  { final, onFrame, onSettled }: SmoothStreamOptions
-): string {
+  {
+    final,
+    live,
+    onFrame,
+    onSettled
+  }: {
+    final: boolean;
+    live: boolean;
+    onFrame?: () => void;
+    onSettled?: () => void;
+  }
+): SmoothStreamState {
   const [displayedText, setDisplayedText] = useState(initialText);
+  const [visualState, setVisualState] = useState<StreamVisualState>(
+    live ? (final ? "settling" : "streaming") : "settled"
+  );
   const targetRef = useRef(initialText);
   const targetCharsRef = useRef([...initialText]);
   const displayedCountRef = useRef([...initialText].length);
-  const displayedTextRef = useRef(initialText);
   const rafRef = useRef<number | undefined>(undefined);
+  const settleTimerRef = useRef<number | undefined>(undefined);
   const lastFrameTsRef = useRef<number | undefined>(undefined);
   const finalRef = useRef(final);
+  const liveRef = useRef(live);
   const onFrameRef = useRef(onFrame);
   const onSettledRef = useRef(onSettled);
   const settledNotifiedRef = useRef(false);
 
   useEffect(() => {
     finalRef.current = final;
+    liveRef.current = live;
     onFrameRef.current = onFrame;
     onSettledRef.current = onSettled;
-  }, [final, onFrame, onSettled]);
+  }, [final, live, onFrame, onSettled]);
 
-  const notifySettled = useCallback((): void => {
-    if (!finalRef.current || settledNotifiedRef.current) {
+  const clearSettleTimer = useCallback((): void => {
+    if (settleTimerRef.current === undefined) {
+      return;
+    }
+    window.clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = undefined;
+  }, []);
+
+  const scheduleSettled = useCallback((): void => {
+    if (!liveRef.current || !finalRef.current || settledNotifiedRef.current) {
       return;
     }
     if (displayedCountRef.current < targetCharsRef.current.length) {
       return;
     }
-    settledNotifiedRef.current = true;
-    onSettledRef.current?.();
+    setVisualState("settling");
+    if (settleTimerRef.current !== undefined) {
+      return;
+    }
+    settleTimerRef.current = window.setTimeout(() => {
+      settleTimerRef.current = undefined;
+      if (!finalRef.current || settledNotifiedRef.current) {
+        return;
+      }
+      if (displayedCountRef.current < targetCharsRef.current.length) {
+        return;
+      }
+      settledNotifiedRef.current = true;
+      setVisualState("settled");
+      onSettledRef.current?.();
+    }, STREAM_CONFIG.settleAnimationMs);
   }, []);
 
   const syncImmediate = useCallback((nextText: string): void => {
@@ -159,15 +145,17 @@ function useSmoothStreamText(
       window.cancelAnimationFrame(rafRef.current);
       rafRef.current = undefined;
     }
+    clearSettleTimer();
     lastFrameTsRef.current = undefined;
     targetRef.current = nextText;
     targetCharsRef.current = [...nextText];
     displayedCountRef.current = targetCharsRef.current.length;
-    displayedTextRef.current = nextText;
     settledNotifiedRef.current = false;
+    setVisualState(liveRef.current ? (finalRef.current ? "settling" : "streaming") : "settled");
     setDisplayedText(nextText);
     onFrameRef.current?.();
-  }, []);
+    scheduleSettled();
+  }, [clearSettleTimer, scheduleSettled]);
 
   const startFrameLoop = useCallback((): void => {
     if (rafRef.current !== undefined) {
@@ -181,7 +169,7 @@ function useSmoothStreamText(
       if (backlog <= 0) {
         rafRef.current = undefined;
         lastFrameTsRef.current = undefined;
-        notifySettled();
+        scheduleSettled();
         return;
       }
 
@@ -198,22 +186,38 @@ function useSmoothStreamText(
       const nextText = targetCharsRef.current.slice(0, nextCount).join("");
 
       displayedCountRef.current = nextCount;
-      displayedTextRef.current = nextText;
       setDisplayedText(nextText);
+      setVisualState(finalRef.current ? "settling" : "streaming");
       onFrameRef.current?.();
       if (nextCount >= targetCount) {
         rafRef.current = undefined;
         lastFrameTsRef.current = undefined;
-        notifySettled();
+        scheduleSettled();
         return;
       }
       rafRef.current = window.requestAnimationFrame(tick);
     };
 
     rafRef.current = window.requestAnimationFrame(tick);
-  }, [notifySettled]);
+  }, [scheduleSettled]);
 
   useEffect(() => {
+    if (!live) {
+      clearSettleTimer();
+      if (rafRef.current !== undefined) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = undefined;
+      }
+      lastFrameTsRef.current = undefined;
+      targetRef.current = initialText;
+      targetCharsRef.current = [...initialText];
+      displayedCountRef.current = targetCharsRef.current.length;
+      settledNotifiedRef.current = false;
+      setVisualState("settled");
+      setDisplayedText(initialText);
+      return;
+    }
+
     streamTextStore.seed(streamKey, initialText);
     const seedText = streamTextStore.seedValue(streamKey);
     syncImmediate(seedText);
@@ -227,9 +231,11 @@ function useSmoothStreamText(
         syncImmediate(nextText);
         return;
       }
+      clearSettleTimer();
       targetRef.current = nextText;
       targetCharsRef.current = [...nextText];
       settledNotifiedRef.current = false;
+      setVisualState(finalRef.current ? "settling" : "streaming");
       startFrameLoop();
     };
 
@@ -237,18 +243,32 @@ function useSmoothStreamText(
     const unsubscribe = streamTextStore.subscribe(streamKey, applyTarget);
     return () => {
       unsubscribe();
+      clearSettleTimer();
       if (rafRef.current !== undefined) {
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = undefined;
       }
     };
-  }, [initialText, startFrameLoop, streamKey, syncImmediate]);
+  }, [clearSettleTimer, initialText, live, startFrameLoop, streamKey, syncImmediate]);
 
   useEffect(() => {
-    notifySettled();
-  }, [final, notifySettled]);
+    if (!live) {
+      clearSettleTimer();
+      settledNotifiedRef.current = false;
+      setVisualState("settled");
+      return;
+    }
+    if (!final) {
+      clearSettleTimer();
+      settledNotifiedRef.current = false;
+      setVisualState("streaming");
+      return;
+    }
+    setVisualState("settling");
+    scheduleSettled();
+  }, [clearSettleTimer, final, live, scheduleSettled]);
 
-  return displayedText;
+  return { text: displayedText, visualState };
 }
 
 function splitFadeUnits(text: string): FadeUnit[] {
@@ -264,17 +284,4 @@ function splitFadeUnits(text: string): FadeUnit[] {
     });
   }
   return units;
-}
-
-function richBlockContent(block: RichBlockWithOffset): string {
-  switch (block.kind) {
-    case "paragraph":
-      return block.text;
-    case "image":
-      return `${block.source}\n${block.alt ?? ""}`;
-    case "code":
-      return `${block.language}\n${block.code}`;
-    case "mermaid":
-      return block.code;
-  }
 }

@@ -68,7 +68,25 @@ async function run() {
     status: "in_progress",
     started_at: now
   };
-  const fullText = Array.from({ length: 120 }, (_value, index) => `streaming-word-${index}`).join(" ");
+  const longTail = Array.from({ length: 120 }, (_value, index) => `streaming-word-${index}`).join(" ");
+  const fullText = [
+    "# Streaming markdown",
+    "",
+    "Intro with **bold text** and [a link](https://example.com).",
+    "",
+    "- first item",
+    "- [x] completed item",
+    "",
+    "| Name | Value |",
+    "| --- | --- |",
+    "| alpha | beta |",
+    "",
+    "```ts",
+    "const answer = 42;",
+    "```",
+    "",
+    longTail
+  ].join("\n");
 
   emitNotification(win, "thread/resumed", { thread });
   emitNotification(win, "turn/started", { turn });
@@ -106,18 +124,34 @@ async function run() {
     win,
     () => {
       const snapshot = streamingSnapshot();
-      return snapshot.hasStreaming && snapshot.textLength >= window.__STREAMING_E2E_FULL_LENGTH__ ? snapshot : null;
+      return snapshot.hasStreaming && snapshot.text.includes("streaming-word-119") ? snapshot : null;
     },
     16000,
     { fullLength: fullText.length }
   );
   assert.equal(final.hasStaticFallback, false, "Assistant content should remain on StreamingMarkdown after settling.");
-  assert.equal(final.text, fullText, "StreamingMarkdown should eventually show the complete response.");
+  assert.ok(final.text.includes("streaming-word-119"), "StreamingMarkdown should eventually show the complete response.");
+  assert.match(final.streamState, /^(settling|settled)$/, "Final text should be in a completion visual state.");
 
-  await delay(120);
-  const settled = await evaluate(win, () => streamingSnapshot(), { fullLength: fullText.length });
+  const settled = await waitFor(
+    win,
+    () => {
+      const snapshot = streamingSnapshot();
+      return snapshot.streamState === "settled" ? snapshot : null;
+    },
+    3000,
+    { fullLength: fullText.length }
+  );
   assert.equal(settled.hasStreaming, true, "Assistant content should still use StreamingMarkdown after completion.");
   assert.equal(settled.hasStaticFallback, false, "No static fallback should be rendered after stream completion.");
+  assert.equal(settled.animatedWords, 0, "Settled content should not keep running word animations.");
+  assert.equal(settled.heading, "Streaming markdown", "Final assistant content should render Markdown headings.");
+  assert.equal(settled.bold, "bold text", "Final assistant content should render Markdown emphasis.");
+  assert.equal(settled.linkHref, "https://example.com/", "Final assistant content should render safe Markdown links.");
+  assert.equal(settled.listItems, 2, "Final assistant content should render Markdown lists.");
+  assert.equal(settled.checkedTasks, 1, "Final assistant content should render GFM task list items.");
+  assert.equal(settled.hasTable, true, "Final assistant content should render GFM tables.");
+  assert.equal(settled.code, "const answer = 42;", "Final assistant content should render fenced code blocks.");
 
   console.log("streaming markdown e2e passed");
   app.exit(0);
@@ -158,11 +192,25 @@ async function evaluate(win, fn, options = {}) {
       const streaming = document.querySelector(".agent-text .streaming-markdown");
       const staticFallback = document.querySelector(".agent-text > .rich-content:not(.streaming-markdown)");
       const text = streaming?.textContent ?? "";
+      const animatedWords = streaming
+        ? Array.from(streaming.querySelectorAll(".stream-word")).filter(
+            (node) => getComputedStyle(node).animationName !== "none"
+          ).length
+        : 0;
       return {
         hasStreaming: Boolean(streaming),
         hasStaticFallback: Boolean(staticFallback),
+        streamState: streaming?.getAttribute("data-stream-state") ?? null,
+        animatedWords,
         text,
-        textLength: text.length
+        textLength: text.length,
+        heading: streaming?.querySelector("h1")?.textContent ?? "",
+        bold: streaming?.querySelector("strong")?.textContent ?? "",
+        linkHref: streaming?.querySelector("a")?.href ?? "",
+        listItems: streaming?.querySelectorAll("li").length ?? 0,
+        checkedTasks: streaming?.querySelectorAll('input[type="checkbox"]:checked').length ?? 0,
+        hasTable: Boolean(streaming?.querySelector("table")),
+        code: streaming?.querySelector("pre code")?.textContent?.trim() ?? ""
       };
     };
     return (${fn.toString()})();
