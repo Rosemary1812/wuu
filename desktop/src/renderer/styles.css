@@ -38,6 +38,14 @@ body {
   overflow: hidden;
 }
 
+.window-resizing *,
+.window-resizing *::before,
+.window-resizing *::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  animation-play-state: paused !important;
+}
+
 button,
 select,
 input,
@@ -612,8 +620,10 @@ kbd {
 }
 
 .scroll-region {
+  contain: layout paint;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 44px 0 28px;
 }
 
@@ -622,11 +632,14 @@ kbd {
 }
 
 .conversation-width {
+  contain: layout style;
   width: min(1120px, calc(100% - 96px));
   margin: 0 auto;
 }
 
 .turn {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
   display: flex;
   flex-direction: column;
   gap: 22px;

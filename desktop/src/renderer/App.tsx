@@ -129,6 +129,31 @@ export function App(): JSX.Element {
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const root = document.documentElement;
+    let resizeEndTimer: number | undefined;
+
+    function handleWindowResize(): void {
+      root.classList.add("window-resizing");
+      if (resizeEndTimer !== undefined) {
+        window.clearTimeout(resizeEndTimer);
+      }
+      resizeEndTimer = window.setTimeout(() => {
+        root.classList.remove("window-resizing");
+        resizeEndTimer = undefined;
+      }, 140);
+    }
+
+    window.addEventListener("resize", handleWindowResize);
+    return () => {
+      window.removeEventListener("resize", handleWindowResize);
+      if (resizeEndTimer !== undefined) {
+        window.clearTimeout(resizeEndTimer);
+      }
+      root.classList.remove("window-resizing");
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     const off = window.wuu.onServerEvent((event) => {
       if (!mounted) {
