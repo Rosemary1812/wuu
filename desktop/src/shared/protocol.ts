@@ -95,6 +95,49 @@ export type GitStatusResult = {
   branch?: string;
   branches?: string[];
   dirty_count: number;
+  detached?: boolean;
+  diff?: GitDiffStats;
+  staged_diff?: GitDiffStats;
+  upstream?: string;
+  ahead_count?: number;
+  behind_count?: number;
+  remote?: string;
+  default_branch?: string;
+  gh_available?: boolean;
+  pr_url?: string;
+};
+
+export type GitDiffStats = {
+  files: number;
+  additions: number;
+  deletions: number;
+};
+
+export type GitCommitParams = {
+  message?: string;
+  include_unstaged?: boolean;
+};
+
+export type GitCommitResult = {
+  status: GitStatusResult;
+  commit: string;
+  message: string;
+};
+
+export type GitCreateBranchResult = {
+  status: GitStatusResult;
+};
+
+export type GitPullRequestParams = {
+  title?: string;
+  body?: string;
+  draft?: boolean;
+};
+
+export type GitPullRequestResult = {
+  status: GitStatusResult;
+  url: string;
+  already_exists: boolean;
 };
 
 export type FileTreeListResult = {
@@ -203,6 +246,9 @@ export type WuuDesktopApi = {
   selectNoProject: (fresh?: boolean) => Promise<ProjectListResult>;
   gitStatus: () => Promise<GitStatusResult>;
   checkoutGitBranch: (branch: string) => Promise<GitStatusResult>;
+  createCheckoutGitBranch: (branch: string) => Promise<GitCreateBranchResult>;
+  commitGitChanges: (params: GitCommitParams) => Promise<GitCommitResult>;
+  createPullRequest: (params: GitPullRequestParams) => Promise<GitPullRequestResult>;
   listWorkspaceFiles: () => Promise<FileTreeListResult>;
   readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
   initialize: () => Promise<InitializeResult>;

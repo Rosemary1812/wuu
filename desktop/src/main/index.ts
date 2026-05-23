@@ -22,6 +22,12 @@ import type {
   ConfigCodexModelsResult,
   ConfigModelUpdateResult,
   DesktopProject,
+  GitCommitParams,
+  GitCommitResult,
+  GitCreateBranchResult,
+  GitDiffStats,
+  GitPullRequestParams,
+  GitPullRequestResult,
   FileTreeListResult,
   GitStatusResult,
   InputImage,
@@ -340,22 +346,43 @@ function projectListResult(): ProjectListResult {
 
 function gitStatusResult(): GitStatusResult {
   const context = ensureRuntimeContext();
-  const insideWorkTree = gitOutput(context.cwd, ["rev-parse", "--is-inside-work-tree"]) === "true";
+  const root = gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
+  const insideWorkTree = gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
   if (!insideWorkTree) {
-    return { is_repo: false, dirty_count: 0 };
+    return { is_repo: false, dirty_count: 0, diff: emptyGitDiffStats(), staged_diff: emptyGitDiffStats() };
   }
-  const branch = gitOutput(context.cwd, ["branch", "--show-current"]) || gitOutput(context.cwd, ["rev-parse", "--short", "HEAD"]);
-  const branches = gitOutput(context.cwd, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+
+  const branchName = gitOutput(root, ["branch", "--show-current"]);
+  const head = gitOutput(root, ["rev-parse", "--short", "HEAD"]);
+  const branch = branchName || head;
+  const branches = gitOutput(root, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])
     ?.split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
-  const porcelain = gitOutput(context.cwd, ["status", "--porcelain"]);
+  const porcelain = gitOutput(root, ["status", "--porcelain"]);
   const dirtyCount = porcelain ? porcelain.split("\n").filter((line) => line.trim()).length : 0;
+  const upstream = gitOutput(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+  const [aheadCount, behindCount] = upstream ? gitAheadBehind(root) : [0, 0];
+  const remote = upstream?.split("/")[0] || firstGitRemote(root);
+  const defaultBranch = remote ? gitDefaultBranch(root, remote) : undefined;
+  const ghAvailable = commandAvailable("gh", ["--version"]);
+  const prURL = branchName && ghAvailable ? ghPullRequestURL(root) : undefined;
+
   return {
     is_repo: true,
     branch,
     branches,
-    dirty_count: dirtyCount
+    dirty_count: dirtyCount,
+    detached: !branchName,
+    diff: gitDiffStats(root, true),
+    staged_diff: gitStagedDiffStats(root),
+    upstream,
+    ahead_count: aheadCount,
+    behind_count: behindCount,
+    remote,
+    default_branch: defaultBranch,
+    gh_available: ghAvailable,
+    pr_url: prURL
   };
 }
 
@@ -380,6 +407,118 @@ function checkoutGitBranch(branch: string): GitStatusResult {
   return gitStatusResult();
 }
 
+function createCheckoutGitBranch(branch: string): GitCreateBranchResult {
+  const context = ensureRuntimeContext();
+  const current = gitStatusResult();
+  const target = branch.trim();
+  if (!current.is_repo) {
+    throw new Error("current workspace is not a git repository");
+  }
+  validateGitBranchName(context.cwd, target);
+  if (current.branches?.includes(target)) {
+    throw new Error("branch already exists");
+  }
+  gitRun(context.cwd, ["checkout", "-b", target]);
+  return { status: gitStatusResult() };
+}
+
+function commitGitChanges(params: GitCommitParams): GitCommitResult {
+  const context = ensureRuntimeContext();
+  const current = gitStatusResult();
+  if (!current.is_repo) {
+    throw new Error("current workspace is not a git repository");
+  }
+  if (params.include_unstaged !== false) {
+    gitRun(context.cwd, ["add", "-A"]);
+  }
+  const stagedDiff = gitStagedDiffStats(context.cwd);
+  if (stagedDiff.files === 0) {
+    throw new Error("there are no staged changes to commit");
+  }
+  const message = params.message?.trim() || generatedCommitMessage(context.cwd);
+  gitRun(context.cwd, ["commit", "-m", message]);
+  const commit = gitOutput(context.cwd, ["rev-parse", "--short", "HEAD"]) ?? "";
+  return {
+    status: gitStatusResult(),
+    commit,
+    message
+  };
+}
+
+function createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
+  const context = ensureRuntimeContext();
+  const status = gitStatusResult();
+  if (!status.is_repo) {
+    throw new Error("current workspace is not a git repository");
+  }
+  if (!status.gh_available) {
+    throw new Error("GitHub CLI is not available");
+  }
+  const branch = gitOutput(context.cwd, ["branch", "--show-current"]);
+  if (!branch) {
+    throw new Error("pull requests require a named branch");
+  }
+  if (status.default_branch && branch === status.default_branch) {
+    throw new Error("create a feature branch before opening a pull request");
+  }
+  if (status.dirty_count > 0) {
+    throw new Error("commit or discard local changes before opening a pull request");
+  }
+
+  const existingURL = ghPullRequestURL(context.cwd);
+  if (existingURL) {
+    return { status, url: existingURL, already_exists: true };
+  }
+
+  if (!status.upstream) {
+    const remote = status.remote || "origin";
+    gitRun(context.cwd, ["push", "-u", remote, branch]);
+  }
+
+  const args = ["pr", "create"];
+  if (params.draft) {
+    args.push("--draft");
+  }
+  const title = params.title?.trim();
+  const body = params.body?.trim();
+  if (title || body) {
+    args.push("--title", title || branch, "--body", body || "");
+  } else {
+    args.push("--fill");
+  }
+  const url = ghOutput(context.cwd, args);
+  if (!url) {
+    throw new Error("GitHub CLI did not return a pull request URL");
+  }
+  return { status: gitStatusResult(), url, already_exists: false };
+}
+
+function validateGitBranchName(cwd: string, branch: string): void {
+  if (!branch) {
+    throw new Error("branch name is required");
+  }
+  const result = spawnSync("git", ["-C", cwd, "check-ref-format", "--branch", branch], {
+    cwd,
+    encoding: "utf8",
+    env: process.env
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || "invalid branch name");
+  }
+}
+
+function gitRun(cwd: string, args: string[]): string {
+  const result = spawnSync("git", ["-C", cwd, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: process.env
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || result.stdout.trim() || `git ${args.join(" ")} failed`);
+  }
+  return result.stdout.trim();
+}
+
 function gitOutput(cwd: string, args: string[]): string | undefined {
   const result = spawnSync("git", ["-C", cwd, ...args], {
     cwd,
@@ -390,6 +529,147 @@ function gitOutput(cwd: string, args: string[]): string | undefined {
     return undefined;
   }
   return result.stdout.trim() || undefined;
+}
+
+function emptyGitDiffStats(): GitDiffStats {
+  return { files: 0, additions: 0, deletions: 0 };
+}
+
+function gitDiffStats(cwd: string, includeUntracked: boolean): GitDiffStats {
+  const stats = parseGitNumstat(gitOutput(cwd, ["diff", "--numstat", "HEAD", "--"]) ?? "");
+  if (!includeUntracked) {
+    return stats;
+  }
+  const untracked = gitOutput(cwd, ["ls-files", "--others", "--exclude-standard"])
+    ?.split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!untracked?.length) {
+    return stats;
+  }
+  let additions = 0;
+  for (const path of untracked.slice(0, 100)) {
+    additions += countTextFileLines(resolve(cwd, path));
+  }
+  return {
+    files: stats.files + untracked.length,
+    additions: stats.additions + additions,
+    deletions: stats.deletions
+  };
+}
+
+function gitStagedDiffStats(cwd: string): GitDiffStats {
+  return parseGitNumstat(gitOutput(cwd, ["diff", "--cached", "--numstat", "--"]) ?? "");
+}
+
+function parseGitNumstat(output: string): GitDiffStats {
+  const stats = emptyGitDiffStats();
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const [additions, deletions] = trimmed.split(/\s+/, 3);
+    stats.files += 1;
+    if (additions !== "-") {
+      stats.additions += Number(additions) || 0;
+    }
+    if (deletions !== "-") {
+      stats.deletions += Number(deletions) || 0;
+    }
+  }
+  return stats;
+}
+
+function countTextFileLines(filePath: string): number {
+  try {
+    const stats = statSync(filePath);
+    if (!stats.isFile() || stats.size > 1024 * 1024) {
+      return 0;
+    }
+    const content = readFileSync(filePath);
+    if (content.includes(0)) {
+      return 0;
+    }
+    const text = content.toString("utf8");
+    if (!text) {
+      return 0;
+    }
+    return text.endsWith("\n") ? text.split("\n").length - 1 : text.split(/\r\n|\n|\r/).length;
+  } catch {
+    return 0;
+  }
+}
+
+function gitAheadBehind(cwd: string): [number, number] {
+  const output = gitOutput(cwd, ["rev-list", "--left-right", "--count", "HEAD...@{u}"]);
+  const [ahead, behind] = output?.split(/\s+/, 2).map((item) => Number(item) || 0) ?? [0, 0];
+  return [ahead, behind];
+}
+
+function firstGitRemote(cwd: string): string | undefined {
+  return gitOutput(cwd, ["remote"])
+    ?.split("\n")
+    .map((item) => item.trim())
+    .find(Boolean);
+}
+
+function gitDefaultBranch(cwd: string, remote: string): string | undefined {
+  const symbolic = gitOutput(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`]);
+  if (symbolic?.startsWith(`${remote}/`)) {
+    return symbolic.slice(remote.length + 1);
+  }
+  return gitOutput(cwd, ["remote", "show", remote])
+    ?.split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("HEAD branch:"))
+    ?.replace("HEAD branch:", "")
+    .trim();
+}
+
+function commandAvailable(command: string, args: string[]): boolean {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    env: process.env
+  });
+  return result.status === 0;
+}
+
+function ghOutput(cwd: string, args: string[]): string | undefined {
+  const result = spawnSync("gh", args, {
+    cwd,
+    encoding: "utf8",
+    env: process.env
+  });
+  if (result.status !== 0) {
+    if (args[0] === "pr" && args[1] === "view") {
+      return undefined;
+    }
+    throw new Error(result.stderr.trim() || result.stdout.trim() || `gh ${args.join(" ")} failed`);
+  }
+  return result.stdout.trim() || undefined;
+}
+
+function ghPullRequestURL(cwd: string): string | undefined {
+  return ghOutput(cwd, ["pr", "view", "--json", "url", "--jq", ".url"]);
+}
+
+function generatedCommitMessage(cwd: string): string {
+  const files = gitOutput(cwd, ["diff", "--cached", "--name-only"])
+    ?.split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!files?.length) {
+    return "Update workspace changes";
+  }
+  if (files.length === 1) {
+    return `Update ${basename(files[0])}`;
+  }
+  const topLevel = files
+    .map((file) => file.split("/", 1)[0])
+    .filter(Boolean);
+  const sharedArea = topLevel.length > 0 && topLevel.every((item) => item === topLevel[0]) ? topLevel[0] : "";
+  return sharedArea ? `Update ${sharedArea} changes` : "Update workspace changes";
 }
 
 function fileTreeListResult(): FileTreeListResult {
@@ -760,6 +1040,9 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean) => selectNoProject(Boolean(fresh)));
   ipcMain.handle("wuu:git-status", () => gitStatusResult());
   ipcMain.handle("wuu:git-checkout-branch", (_event, branch: string) => checkoutGitBranch(branch));
+  ipcMain.handle("wuu:git-create-checkout-branch", (_event, branch: string) => createCheckoutGitBranch(branch));
+  ipcMain.handle("wuu:git-commit", (_event, params: GitCommitParams) => commitGitChanges(params ?? {}));
+  ipcMain.handle("wuu:git-create-pr", (_event, params: GitPullRequestParams) => createPullRequest(params ?? {}));
   ipcMain.handle("wuu:file-tree-list", () => fileTreeListResult());
   ipcMain.handle("wuu:file-read", (_event, path: string) => readWorkspaceFileResult(path));
   ipcMain.handle("wuu:project-choose-folder", async () => {
