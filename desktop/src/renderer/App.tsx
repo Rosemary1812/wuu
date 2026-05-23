@@ -141,6 +141,10 @@ type TurnProgressContent = {
   detail?: string;
 };
 
+type TurnProgressScene = "duel" | "chase" | "kick" | "bonk";
+
+const TURN_PROGRESS_SCENES: TurnProgressScene[] = ["duel", "chase", "kick", "bonk"];
+
 type AppState = {
   initialized?: InitializeResult;
   projects: DesktopProject[];
@@ -3786,6 +3790,7 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
   const elapsedMs =
     completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, liveNow - startedAt) : 0);
   const content = turnProgressContent(turn, elapsedMs);
+  const scene = liveDuration ? turnProgressScene(turn.id) : undefined;
 
   return (
     <div
@@ -3811,8 +3816,35 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
           </button>
         ) : null}
       </div>
-      <div className="turn-progress-rule" />
+      <div className="turn-progress-rule">{scene ? <TurnProgressFightScene scene={scene} /> : null}</div>
     </div>
+  );
+}
+
+function TurnProgressFightScene({ scene }: { scene: TurnProgressScene }): JSX.Element {
+  return (
+    <span className={`turn-progress-scene scene-${scene}`} aria-hidden="true">
+      <span className="fight-spark spark-one" />
+      <span className="fight-spark spark-two" />
+      <Stickman className="stickman-a" />
+      <Stickman className="stickman-b" />
+    </span>
+  );
+}
+
+function Stickman({ className }: { className: string }): JSX.Element {
+  return (
+    <span className={`stickman ${className}`}>
+      <span className="stickman-figure">
+        <span className="stickman-head" />
+        <span className="stickman-body" />
+        <span className="stickman-arm arm-front" />
+        <span className="stickman-arm arm-back" />
+        <span className="stickman-leg leg-front" />
+        <span className="stickman-leg leg-back" />
+        <span className="stickman-weapon" />
+      </span>
+    </span>
   );
 }
 
@@ -3828,6 +3860,14 @@ function useLiveNow(active: boolean): number {
   }, [active]);
 
   return active ? now : Date.now();
+}
+
+function turnProgressScene(turnID: string): TurnProgressScene {
+  let hash = 0;
+  for (let index = 0; index < turnID.length; index++) {
+    hash = (hash * 31 + turnID.charCodeAt(index)) >>> 0;
+  }
+  return TURN_PROGRESS_SCENES[hash % TURN_PROGRESS_SCENES.length];
 }
 
 function LiveDuration({ startedAtMs }: { startedAtMs: number }): JSX.Element {

@@ -95,7 +95,9 @@ body {
 .window-resizing .wuu-launch-mark span,
 .window-resizing .wuu-launch-rail::after,
 .window-resizing .turn-progress.in_progress .turn-progress-label svg,
-.window-resizing .turn-progress.in_progress .turn-progress-rule::after {
+.window-resizing .turn-progress.in_progress .turn-progress-rule::after,
+.window-resizing .turn-progress-scene,
+.window-resizing .turn-progress-scene * {
   animation-play-state: paused !important;
 }
 
@@ -2171,17 +2173,227 @@ button:disabled {
 }
 
 .turn-progress.in_progress .turn-progress-rule {
+  height: 34px;
+  background: transparent;
+}
+
+.turn-progress.in_progress .turn-progress-rule::before {
+  position: absolute;
+  top: 22px;
+  right: 0;
+  left: 0;
+  height: 1px;
   background: #e5e5e1;
+  content: "";
 }
 
 .turn-progress.in_progress .turn-progress-rule::after {
   position: absolute;
-  inset: 0 auto 0 0;
+  top: 22px;
+  left: 0;
   width: min(160px, 26%);
+  height: 1px;
   border-radius: inherit;
   background: linear-gradient(90deg, transparent, rgba(47, 125, 104, 0.08), rgba(47, 125, 104, 0.2), transparent);
   content: "";
   animation: turn-progress-scan 5600ms ease-in-out infinite;
+}
+
+.turn-progress-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: #6f8780;
+  pointer-events: none;
+}
+
+.stickman {
+  position: absolute;
+  top: 4px;
+  width: 24px;
+  height: 27px;
+  transform-origin: 50% 100%;
+}
+
+.stickman-figure {
+  position: absolute;
+  inset: 0;
+}
+
+.stickman-b .stickman-figure {
+  transform: scaleX(-1);
+}
+
+.stickman-head {
+  position: absolute;
+  top: 0;
+  left: 8px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+}
+
+.stickman-body,
+.stickman-arm,
+.stickman-leg,
+.stickman-weapon {
+  position: absolute;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: 0 50%;
+}
+
+.stickman-body {
+  top: 8px;
+  left: 11px;
+  width: 10px;
+  transform: rotate(90deg);
+}
+
+.stickman-arm {
+  top: 12px;
+  left: 11px;
+  width: 11px;
+}
+
+.arm-front {
+  transform: rotate(-22deg);
+}
+
+.arm-back {
+  width: 10px;
+  transform: rotate(206deg);
+}
+
+.stickman-leg {
+  top: 18px;
+  left: 11px;
+  width: 10px;
+}
+
+.leg-front {
+  transform: rotate(48deg);
+}
+
+.leg-back {
+  transform: rotate(130deg);
+}
+
+.stickman-weapon {
+  top: 10px;
+  left: 18px;
+  width: 15px;
+  background: #8a918d;
+  transform: rotate(-18deg);
+}
+
+.fight-spark {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #d9a23a;
+  box-shadow:
+    -5px 2px 0 rgba(217, 162, 58, 0.7),
+    5px -2px 0 rgba(217, 162, 58, 0.55);
+  opacity: 0;
+  transform: translate(-50%, 0) scale(0.6);
+}
+
+.spark-two {
+  top: 16px;
+  background: #86a89d;
+  box-shadow:
+    -4px -2px 0 rgba(134, 168, 157, 0.55),
+    4px 2px 0 rgba(134, 168, 157, 0.42);
+}
+
+.scene-duel .stickman-a {
+  left: calc(50% - 58px);
+  animation: fight-duel-a 2500ms ease-in-out infinite;
+}
+
+.scene-duel .stickman-b {
+  left: calc(50% + 34px);
+  animation: fight-duel-b 2500ms ease-in-out infinite;
+}
+
+.scene-duel .fight-spark {
+  animation: fight-spark 2500ms ease-in-out infinite;
+}
+
+.scene-duel .spark-two {
+  animation-delay: 120ms;
+}
+
+.scene-chase .stickman-a {
+  left: calc(50% - 72px);
+  animation: fight-chase-a 3200ms ease-in-out infinite;
+}
+
+.scene-chase .stickman-b {
+  left: calc(50% - 18px);
+  animation: fight-chase-b 3200ms ease-in-out infinite;
+}
+
+.scene-chase .stickman-weapon {
+  transform: rotate(8deg);
+}
+
+.scene-chase .fight-spark {
+  left: calc(50% + 38px);
+  animation: fight-spark 3200ms ease-in-out infinite;
+}
+
+.scene-chase .spark-two {
+  animation-delay: 160ms;
+}
+
+.scene-kick .stickman-a {
+  left: calc(50% - 54px);
+  animation: fight-kick-a 2800ms ease-in-out infinite;
+}
+
+.scene-kick .stickman-b {
+  left: calc(50% + 30px);
+  animation: fight-kick-b 2800ms ease-in-out infinite;
+}
+
+.scene-kick .stickman-a .stickman-weapon {
+  opacity: 0;
+}
+
+.scene-kick .stickman-a .leg-front {
+  animation: fight-kick-leg 2800ms ease-in-out infinite;
+}
+
+.scene-kick .fight-spark {
+  left: calc(50% + 12px);
+  animation: fight-spark 2800ms ease-in-out infinite;
+}
+
+.scene-bonk .stickman-a {
+  left: calc(50% - 58px);
+  animation: fight-bonk-a 3000ms ease-in-out infinite;
+}
+
+.scene-bonk .stickman-b {
+  left: calc(50% + 30px);
+  animation: fight-bonk-b 3000ms ease-in-out infinite;
+}
+
+.scene-bonk .stickman-a .stickman-weapon {
+  width: 19px;
+  animation: fight-bonk-weapon 3000ms ease-in-out infinite;
+}
+
+.scene-bonk .fight-spark {
+  left: calc(50% + 20px);
+  animation: fight-spark 3000ms ease-in-out infinite;
 }
 
 .turn-progress.failed .turn-progress-label svg,
@@ -2917,6 +3129,175 @@ pre {
   }
 }
 
+@keyframes fight-duel-a {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  34% {
+    transform: translateX(28px) rotate(-7deg);
+  }
+  46% {
+    transform: translateX(20px) rotate(5deg);
+  }
+  72% {
+    transform: translateX(8px) rotate(0deg);
+  }
+}
+
+@keyframes fight-duel-b {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  30% {
+    transform: translateX(-20px) rotate(6deg);
+  }
+  48% {
+    transform: translateX(-30px) rotate(-5deg);
+  }
+  74% {
+    transform: translateX(-8px) rotate(0deg);
+  }
+}
+
+@keyframes fight-chase-a {
+  0%,
+  100% {
+    transform: translateX(-16px) rotate(0deg);
+  }
+  42% {
+    transform: translateX(30px) rotate(-6deg);
+  }
+  58% {
+    transform: translateX(56px) rotate(8deg);
+  }
+  78% {
+    transform: translateX(34px) rotate(-2deg);
+  }
+}
+
+@keyframes fight-chase-b {
+  0%,
+  100% {
+    transform: translateX(10px) rotate(0deg);
+  }
+  42% {
+    transform: translateX(54px) rotate(4deg);
+  }
+  58% {
+    transform: translateX(68px) rotate(-11deg);
+  }
+  78% {
+    transform: translateX(44px) rotate(3deg);
+  }
+}
+
+@keyframes fight-kick-a {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  38% {
+    transform: translate(28px, -6px) rotate(12deg);
+  }
+  54% {
+    transform: translate(38px, -3px) rotate(-4deg);
+  }
+  76% {
+    transform: translate(10px, 0) rotate(0deg);
+  }
+}
+
+@keyframes fight-kick-b {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  46% {
+    transform: translateX(-8px) rotate(0deg);
+  }
+  60% {
+    transform: translateX(15px) rotate(16deg);
+  }
+  76% {
+    transform: translateX(5px) rotate(4deg);
+  }
+}
+
+@keyframes fight-kick-leg {
+  0%,
+  30%,
+  100% {
+    transform: rotate(48deg);
+  }
+  44%,
+  58% {
+    transform: rotate(-8deg);
+  }
+}
+
+@keyframes fight-bonk-a {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  35% {
+    transform: translateX(22px) rotate(-5deg);
+  }
+  48% {
+    transform: translateX(32px) rotate(7deg);
+  }
+  74% {
+    transform: translateX(8px) rotate(0deg);
+  }
+}
+
+@keyframes fight-bonk-b {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  44% {
+    transform: translateX(-8px) rotate(0deg);
+  }
+  56% {
+    transform: translateX(6px) rotate(22deg);
+  }
+  76% {
+    transform: translateX(0) rotate(6deg);
+  }
+}
+
+@keyframes fight-bonk-weapon {
+  0%,
+  34%,
+  100% {
+    transform: rotate(-18deg);
+  }
+  48%,
+  58% {
+    transform: rotate(24deg);
+  }
+}
+
+@keyframes fight-spark {
+  0%,
+  32%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.55);
+  }
+  46% {
+    opacity: 0.95;
+    transform: translate(-50%, -1px) scale(1);
+  }
+  58% {
+    opacity: 0;
+    transform: translate(-50%, -5px) scale(1.25);
+  }
+}
+
 @keyframes thinking-icon-breathe {
   0%,
   100% {
@@ -2934,13 +3315,25 @@ pre {
   .wuu-launch-mark span,
   .wuu-launch-rail::after,
   .turn-progress.in_progress .turn-progress-label svg,
-  .turn-progress.in_progress .turn-progress-rule::after {
+  .turn-progress.in_progress .turn-progress-rule::after,
+  .turn-progress-scene,
+  .turn-progress-scene * {
     animation: none;
   }
 
   .wuu-launch-mark span {
     opacity: 1;
     transform: none;
+  }
+
+  .turn-progress.in_progress .turn-progress-rule {
+    height: 1px;
+    background: #e5e5e1;
+  }
+
+  .turn-progress.in_progress .turn-progress-rule::before,
+  .turn-progress-scene {
+    display: none;
   }
 }
 
