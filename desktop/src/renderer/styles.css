@@ -23,6 +23,8 @@
   --menu-shadow:
     0 14px 34px rgba(20, 24, 28, 0.12),
     0 2px 8px rgba(20, 24, 28, 0.08);
+  --menu-enter-duration: 140ms;
+  --menu-enter-easing: cubic-bezier(0.16, 1, 0.3, 1);
   font-size: var(--font-ui);
   letter-spacing: 0;
   line-height: var(--line-ui);
@@ -31,6 +33,18 @@
 
 * {
   box-sizing: border-box;
+}
+
+@keyframes menu-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--menu-enter-x, 0), var(--menu-enter-y, -4px), 0) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
 }
 
 html,
@@ -287,6 +301,10 @@ button:disabled {
   box-shadow: var(--menu-shadow);
   padding: 6px;
   backdrop-filter: blur(16px);
+  transform-origin: top left;
+  --menu-enter-x: -4px;
+  --menu-enter-y: 0;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
 .project-add-menu button {
@@ -1132,6 +1150,9 @@ kbd {
   box-shadow: var(--menu-shadow);
   padding: 6px;
   backdrop-filter: blur(16px);
+  transform-origin: bottom right;
+  --menu-enter-y: 4px;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
 .codex-model-menu {
@@ -1145,6 +1166,8 @@ kbd {
 .hero-composer-wrap .codex-runtime-menu {
   top: calc(100% + 8px);
   bottom: auto;
+  transform-origin: top right;
+  --menu-enter-y: -4px;
 }
 
 .codex-menu-label {
@@ -2144,6 +2167,9 @@ pre {
   box-shadow: var(--menu-shadow);
   padding: 6px;
   backdrop-filter: blur(16px);
+  transform-origin: bottom left;
+  --menu-enter-y: 4px;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
 .composer-context-menu {
@@ -2162,11 +2188,16 @@ pre {
   box-shadow: var(--menu-shadow);
   padding: 6px;
   backdrop-filter: blur(16px);
+  transform-origin: bottom left;
+  --menu-enter-y: 4px;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
 .hero-composer-wrap .composer-context-menu {
   top: calc(100% + 8px);
   bottom: auto;
+  transform-origin: top left;
+  --menu-enter-y: -4px;
 }
 
 .permission-menu-anchor .access-menu,
@@ -2247,6 +2278,8 @@ pre {
   top: calc(100% + 8px);
   bottom: auto;
   left: 12px;
+  transform-origin: top left;
+  --menu-enter-y: -4px;
 }
 
 .project-search {
@@ -2334,6 +2367,15 @@ pre {
   height: 1px;
   background: #e8e8e5;
   margin: 6px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-add-menu,
+  .codex-runtime-menu,
+  .composer-project-menu,
+  .composer-context-menu {
+    animation: none;
+  }
 }
 
 .modal-backdrop {
