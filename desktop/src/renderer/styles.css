@@ -261,10 +261,9 @@ button:disabled {
   gap: 2px;
   border: 1px solid rgba(30, 34, 38, 0.12);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.96);
+  background: #fff;
   box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
   padding: 12px;
-  backdrop-filter: blur(18px);
 }
 
 .project-add-menu button {
@@ -1984,10 +1983,9 @@ pre {
   overflow: hidden;
   border: 1px solid rgba(30, 34, 38, 0.12);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.97);
+  background: #fff;
   box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
   padding: 12px;
-  backdrop-filter: blur(18px);
 }
 
 .composer-context-menu {
@@ -2001,10 +1999,9 @@ pre {
   overflow: hidden;
   border: 1px solid rgba(30, 34, 38, 0.12);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.97);
+  background: #fff;
   box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
   padding: 12px;
-  backdrop-filter: blur(18px);
 }
 
 .hero-composer-wrap .composer-context-menu {
