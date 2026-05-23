@@ -62,7 +62,7 @@ func TestSystemPromptPreamble_ContainsOrchestrationRules(t *testing.T) {
 		"coordinator",
 		"worker",
 		"spawn_agent",
-		"fork_agent",
+		"fork_turns",
 		"send_message",
 		"followup_task",
 		"parallel",

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -148,10 +149,9 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"when the work might break the build, when concurrent writers would collide, or " +
 			"when the user explicitly asked for a sandbox. Do NOT use a worktree just because " +
 			"the task involves writing files — additive writes are not a reason for isolation. " +
-			"Use this for tasks that are context-independent — where a self-contained prompt " +
-			"can fully specify what to do. When the task depends on context you've built up " +
-			"through exploration (files read, user discussions, dead ends ruled out), consider " +
-			"fork_agent instead to avoid losing information to prompt compression. " +
+			"By default the child receives a fork of your full conversation history. Set " +
+			"fork_turns='none' only when the task is fully self-contained and should start " +
+			"from a clean slate; set a positive integer string to fork only the last N user turns. " +
 			"Give every task a stable task_name so you can address it later by task name, " +
 			"agent path, or agent_id. task_name is the child path segment and must use " +
 			"only lowercase letters, digits, and underscores, for example inspect_auth_flow. " +
@@ -191,6 +191,10 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 					"type":        "boolean",
 					"description": "If true, block until the worker completes and return its result inline. If false (default), return immediately and receive the result later via a structured mailbox message.",
 				},
+				"fork_turns": map[string]any{
+					"type":        "string",
+					"description": "Context inheritance mode: 'all' (default), 'none', or a positive integer string for the last N user turns.",
+				},
 			},
 			"required": []string{"task_name", "message"},
 		},
@@ -208,6 +212,8 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		Isolation   string `json:"isolation"`
 		BaseRepo    string `json:"base_repo"`
 		Synchronous bool   `json:"synchronous"`
+		ForkTurns   string `json:"fork_turns"`
+		ForkContext *bool  `json:"fork_context"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -221,120 +227,50 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	if strings.TrimSpace(args.Message) == "" {
 		return "", errors.New("spawn_agent: message is required")
 	}
+	forkMode, lastNTurns, err := parseSpawnForkTurns(args.ForkTurns, args.ForkContext)
+	if err != nil {
+		return "", err
+	}
+	if forkMode != spawnForkNone {
+		if strings.TrimSpace(args.Isolation) != "" || strings.TrimSpace(args.BaseRepo) != "" {
+			return "", errors.New("spawn_agent: isolation and base_repo are only supported with fork_turns='none'")
+		}
+		parentHistory := agent.HistoryFromContext(ctx)
+		if len(parentHistory) == 0 {
+			return "", errors.New("spawn_agent: fork_turns requires parent history; use fork_turns='none' for a clean spawn")
+		}
+		cleaned := stripDanglingToolUses(parentHistory)
+		if len(cleaned) == 0 {
+			return "", errors.New("spawn_agent: history is empty after stripping the in-flight tool_use (nothing to inherit)")
+		}
+		if forkMode == spawnForkLastN {
+			cleaned = truncateHistoryToLastUserTurns(cleaned, lastNTurns)
+		}
+		result, err := t.env.Coordinator.Fork(ctx, coordinator.ForkRequest{
+			TaskName:    strings.TrimSpace(args.TaskName),
+			Description: strings.TrimSpace(args.TaskName),
+			ForkMode:    forkModeLabel(forkMode, lastNTurns),
+			Prompt:      wrapForkPrompt(args.Message),
+			Synchronous: args.Synchronous,
+		}, cleaned)
+		if err != nil {
+			return "", err
+		}
+		out, err := json.Marshal(result)
+		if err != nil {
+			return "", err
+		}
+		return string(out), nil
+	}
 	result, err := t.env.Coordinator.Spawn(ctx, coordinator.SpawnRequest{
 		Type:        args.AgentType,
-		TaskName:    args.TaskName,
-		Description: args.TaskName,
+		TaskName:    strings.TrimSpace(args.TaskName),
+		Description: strings.TrimSpace(args.TaskName),
 		Prompt:      args.Message,
 		Isolation:   args.Isolation,
 		BaseRepo:    args.BaseRepo,
 		Synchronous: args.Synchronous,
 	})
-	if err != nil {
-		return "", err
-	}
-	out, err := json.Marshal(result)
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
-}
-
-// ---------------------------------------------------------------------------
-// fork_agent
-// ---------------------------------------------------------------------------
-
-type ForkAgentTool struct{ env *Env }
-
-func NewForkAgentTool(env *Env) *ForkAgentTool { return &ForkAgentTool{env: env} }
-
-func (t *ForkAgentTool) Name() string            { return "fork_agent" }
-func (t *ForkAgentTool) IsReadOnly() bool        { return false }
-func (t *ForkAgentTool) IsConcurrencySafe() bool { return false }
-
-func (t *ForkAgentTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "fork_agent",
-		Description: "Spawn a sub-agent that INHERITS your full conversation history — every " +
-			"tool call, every observation, every piece of reasoning you've done so far. " +
-			"The worker gets zero-loss context: everything you read, explored, or discussed " +
-			"with the user is available without you needing to compress it into a prompt. " +
-			"Use fork when the task is context-sensitive — the right execution depends on " +
-			"details you learned during exploration that are hard to fully capture in a " +
-			"summary. Use spawn_agent instead when the task is self-contained and a short " +
-			"prompt can fully specify what to do. " +
-			"The forked worker uses your system prompt verbatim (so prompt-cache hits across " +
-			"the fork boundary) and runs INPLACE in the parent repo — there is no worktree " +
-			"isolation option, because fork is for continuing your work, not for sandboxing. " +
-			"The forked worker CANNOT use spawn_agent, fork_agent, send_message, followup_task, " +
-			"wait_agent, close_agent, list_agents, or ask_user (those tools are blocked at the worker " +
-			"toolkit level). Your inherited history may reference those tools — the worker " +
-			"sees them as read-only context, not patterns to reproduce. " +
-			"Like spawn_agent, fork_agent is asynchronous by default: returns immediately " +
-			"with an agent_id, the result arrives later automatically as a structured mailbox " +
-			"message. After spawning, END YOUR TURN — do NOT generate waiting messages. The system handles notification and auto-resume. " +
-			"Set synchronous=true to block until the worker finishes. task_name must use only lowercase letters, digits, and underscores.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"task_name": map[string]any{
-					"type":        "string",
-					"description": "Stable child task name used for path-based addressing. Must use only lowercase letters, digits, and underscores.",
-				},
-				"message": map[string]any{
-					"type":        "string",
-					"description": "The specific task for the forked worker to perform. The worker will see your full conversation history as context, so this message only needs to describe the NEW work — do not recap what's already in the history.",
-				},
-				"synchronous": map[string]any{
-					"type":        "boolean",
-					"description": "If true, block until the worker completes and return its result inline. If false (default), return immediately and receive the result later via a structured mailbox message.",
-				},
-			},
-			"required": []string{"task_name", "message"},
-		},
-	}
-}
-
-func (t *ForkAgentTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	if t.env.Coordinator == nil {
-		return "", errors.New("fork_agent: coordinator not configured (this build does not support sub-agents)")
-	}
-	parentHistory := agent.HistoryFromContext(ctx)
-	if len(parentHistory) == 0 {
-		return "", errors.New("fork_agent: no parent history available — only the main agent in an interactive session can fork (workers cannot fork)")
-	}
-
-	var args struct {
-		TaskName    string `json:"task_name"`
-		Message     string `json:"message"`
-		Synchronous bool   `json:"synchronous"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", fmt.Errorf("fork_agent: %w", err)
-	}
-	if strings.TrimSpace(args.TaskName) == "" {
-		return "", errors.New("fork_agent: task_name is required")
-	}
-	if err := agentthread.ValidateAgentName(strings.TrimSpace(args.TaskName)); err != nil {
-		return "", fmt.Errorf("fork_agent: invalid task_name: %w", err)
-	}
-	if strings.TrimSpace(args.Message) == "" {
-		return "", errors.New("fork_agent: message is required")
-	}
-
-	cleaned := stripDanglingToolUses(parentHistory)
-	if len(cleaned) == 0 {
-		return "", errors.New("fork_agent: history is empty after stripping the in-flight tool_use (nothing to inherit)")
-	}
-
-	wrapped := wrapForkPrompt(args.Message)
-
-	result, err := t.env.Coordinator.Fork(ctx, coordinator.ForkRequest{
-		TaskName:    args.TaskName,
-		Description: args.TaskName,
-		Prompt:      wrapped,
-		Synchronous: args.Synchronous,
-	}, cleaned)
 	if err != nil {
 		return "", err
 	}
@@ -358,6 +294,76 @@ func stripDanglingToolUses(history []providers.ChatMessage) []providers.ChatMess
 	return history
 }
 
+type spawnForkMode int
+
+const (
+	spawnForkNone spawnForkMode = iota
+	spawnForkAll
+	spawnForkLastN
+)
+
+func parseSpawnForkTurns(raw string, forkContext *bool) (spawnForkMode, int, error) {
+	if forkContext != nil {
+		return spawnForkNone, 0, errors.New("spawn_agent: fork_context is not supported; use fork_turns")
+	}
+	forkTurns := strings.TrimSpace(raw)
+	if forkTurns == "" {
+		forkTurns = "all"
+	}
+	switch {
+	case strings.EqualFold(forkTurns, "none"):
+		return spawnForkNone, 0, nil
+	case strings.EqualFold(forkTurns, "all"):
+		return spawnForkAll, 0, nil
+	default:
+		n, err := strconv.Atoi(forkTurns)
+		if err != nil || n <= 0 {
+			return spawnForkNone, 0, errors.New("spawn_agent: fork_turns must be 'none', 'all', or a positive integer string")
+		}
+		return spawnForkLastN, n, nil
+	}
+}
+
+func forkModeLabel(mode spawnForkMode, lastNTurns int) string {
+	switch mode {
+	case spawnForkAll:
+		return "all"
+	case spawnForkLastN:
+		return strconv.Itoa(lastNTurns)
+	default:
+		return ""
+	}
+}
+
+func truncateHistoryToLastUserTurns(history []providers.ChatMessage, turns int) []providers.ChatMessage {
+	if turns <= 0 || len(history) == 0 {
+		return history
+	}
+	seen := 0
+	start := -1
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role != "user" {
+			continue
+		}
+		seen++
+		if seen == turns {
+			start = i
+			break
+		}
+	}
+	if start <= 0 {
+		return history
+	}
+	prefix := make([]providers.ChatMessage, 0, len(history)-start+start)
+	for _, msg := range history[:start] {
+		if msg.Role != "system" {
+			break
+		}
+		prefix = append(prefix, msg)
+	}
+	return append(prefix, history[start:]...)
+}
+
 // wrapForkPrompt builds the role-override message for forked workers.
 func wrapForkPrompt(task string) string {
 	return `<system-reminder>
@@ -367,7 +373,7 @@ acting as the parent.
 
 This system-reminder OVERRIDES the parent's system prompt for you:
 
-- You CANNOT use spawn_agent, fork_agent, send_message, followup_task,
+- You CANNOT use spawn_agent, send_message, followup_task,
   wait_agent, close_agent, list_agents, or ask_user. Those tools are not in your
   tool list and any attempt will fail. The parent's history may
   reference them — treat those references as read-only context, not

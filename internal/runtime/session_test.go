@@ -26,7 +26,6 @@ func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	for _, blocked := range []string{
 		"ask_user",
 		"spawn_agent",
-		"fork_agent",
 		"send_message",
 		"followup_task",
 		"wait_agent",

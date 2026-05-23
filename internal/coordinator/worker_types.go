@@ -95,7 +95,6 @@ func LookupWorkerType(name string) (WorkerType, error) {
 // alwaysBlockedTools is the set of tools that workers can never use.
 var alwaysBlockedTools = map[string]struct{}{
 	"spawn_agent":   {},
-	"fork_agent":    {},
 	"send_message":  {},
 	"followup_task": {},
 	"wait_agent":    {},

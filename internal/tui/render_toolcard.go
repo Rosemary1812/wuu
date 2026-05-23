@@ -193,7 +193,7 @@ func toolArgsSummary(toolName, args string, maxWidth int) string {
 		if s, ok := parsed["subcommand"].(string); ok {
 			summary = s
 		}
-	case "spawn_agent", "fork_agent":
+	case "spawn_agent":
 		if taskName, ok := parsed["task_name"].(string); ok {
 			summary = taskName
 		} else if message, ok := parsed["message"].(string); ok {

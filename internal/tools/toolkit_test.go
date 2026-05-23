@@ -620,26 +620,26 @@ func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T)
 	t.Fatal("run_shell must be present in tool definitions")
 }
 
-func TestToolkit_ForkAgent_RegisteredInDefinitions(t *testing.T) {
+func TestToolkit_SpawnAgentDefinitionIncludesForkTurns(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defs := kit.Definitions()
-	found := false
-	for _, d := range defs {
-		if d.Name == "fork_agent" {
-			found = true
-			break
+	for _, d := range kit.Definitions() {
+		if d.Name != "spawn_agent" {
+			continue
 		}
+		props, _ := d.InputSchema["properties"].(map[string]any)
+		if _, ok := props["fork_turns"]; !ok {
+			t.Fatalf("spawn_agent schema must expose fork_turns: %#v", d.InputSchema)
+		}
+		return
 	}
-	if !found {
-		t.Fatal("fork_agent must be present in tool definitions")
-	}
+	t.Fatal("spawn_agent must be present in tool definitions")
 }
 
-func TestToolkit_ForkAgent_FailsWithoutCoordinator(t *testing.T) {
+func TestToolkit_SpawnAgent_FailsWithoutCoordinator(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -647,7 +647,7 @@ func TestToolkit_ForkAgent_FailsWithoutCoordinator(t *testing.T) {
 	}
 	// Don't call SetCoordinator — simulates a worker toolkit.
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "fork_agent",
+		Name:      "spawn_agent",
 		Arguments: `{"task_name":"test","message":"do thing"}`,
 	})
 	if err == nil {
@@ -673,7 +673,7 @@ func TestStripDanglingToolUses(t *testing.T) {
 	with := []providers.ChatMessage{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: "u"},
-		{Role: "assistant", Content: "ok", ToolCalls: []providers.ToolCall{{Name: "fork_agent"}}},
+		{Role: "assistant", Content: "ok", ToolCalls: []providers.ToolCall{{Name: "spawn_agent"}}},
 	}
 	got := stripDanglingToolUses(with)
 	if len(got) != 2 {
@@ -710,6 +710,46 @@ func TestStripDanglingToolUses(t *testing.T) {
 	// Empty history — should pass through.
 	if got := stripDanglingToolUses(nil); got != nil {
 		t.Fatal("nil history should pass through unchanged")
+	}
+}
+
+func TestParseSpawnForkTurns(t *testing.T) {
+	mode, n, err := parseSpawnForkTurns("", nil)
+	if err != nil || mode != spawnForkAll || n != 0 {
+		t.Fatalf("default fork turns = mode %d n %d err %v", mode, n, err)
+	}
+	mode, _, err = parseSpawnForkTurns("none", nil)
+	if err != nil || mode != spawnForkNone {
+		t.Fatalf("none fork turns = mode %d err %v", mode, err)
+	}
+	mode, n, err = parseSpawnForkTurns("3", nil)
+	if err != nil || mode != spawnForkLastN || n != 3 {
+		t.Fatalf("last-n fork turns = mode %d n %d err %v", mode, n, err)
+	}
+	if _, _, err := parseSpawnForkTurns("0", nil); err == nil {
+		t.Fatal("expected zero fork_turns to fail")
+	}
+	legacy := true
+	if _, _, err := parseSpawnForkTurns("", &legacy); err == nil {
+		t.Fatal("expected fork_context to fail")
+	}
+}
+
+func TestTruncateHistoryToLastUserTurnsPreservesSystemPrefix(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "u1"},
+		{Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "u2"},
+		{Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "u3"},
+	}
+	got := truncateHistoryToLastUserTurns(history, 2)
+	if len(got) != 4 {
+		t.Fatalf("expected system + last two user turns, got %d: %+v", len(got), got)
+	}
+	if got[0].Role != "system" || got[1].Content != "u2" || got[3].Content != "u3" {
+		t.Fatalf("unexpected truncated history: %+v", got)
 	}
 }
 

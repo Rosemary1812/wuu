@@ -62,6 +62,7 @@ type SpawnSpec struct {
 	CWD             string
 	Model           string
 	SourceKind      SourceKind
+	ForkMode        string
 	Status          Status
 	Now             time.Time
 }

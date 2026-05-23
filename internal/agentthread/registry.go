@@ -115,6 +115,7 @@ func (r *Registry) RegisterSpawn(spec SpawnSpec) (Metadata, error) {
 			ParentThreadID: parentID,
 			ParentPath:     parentPath,
 			Depth:          depthForPath(path),
+			ForkMode:       strings.TrimSpace(spec.ForkMode),
 			EdgeStatus:     EdgeOpen,
 		},
 		Status:    status,

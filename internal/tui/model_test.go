@@ -1499,7 +1499,6 @@ func TestRenderInlineStatus_ShowsWaitingLabels(t *testing.T) {
 		"tool: run_shell":      "Running run_shell",
 		"executing tool: read": "Running read",
 		"tool: spawn_agent":    "Spawning worker",
-		"tool: fork_agent":     "Spawning worker",
 	}
 	for status, want := range cases {
 		got := ansi.Strip(renderInlineStatus(status, 1, 80))

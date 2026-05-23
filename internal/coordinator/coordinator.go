@@ -324,7 +324,8 @@ func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult
 	return result, nil
 }
 
-// ForkRequest is the internal shape of a fork_agent tool invocation
+// ForkRequest is the internal shape of a spawn_agent invocation with
+// fork_turns enabled
 // after argument validation. Unlike SpawnRequest there is no Type or
 // Isolation choice — fork is always inplace (it inherits the parent's
 // conversation continuation, so a worktree sandbox would defeat the
@@ -332,6 +333,7 @@ func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult
 type ForkRequest struct {
 	TaskName    string
 	Description string
+	ForkMode    string
 	// Prompt is what the worker sees as its FINAL user message,
 	// appended to the inherited history. Callers should wrap any
 	// role-override instructions in <system-reminder> tags so the
@@ -349,8 +351,8 @@ type ForkRequest struct {
 // hits across the fork boundary.
 //
 // `parentHistory` MUST be a complete history with no dangling
-// tool_use blocks: the caller (the fork_agent tool handler) is
-// expected to have already stripped the in-flight fork_agent
+// tool_use blocks: the caller is expected to have already stripped the
+// in-flight spawn_agent
 // assistant turn before passing it through.
 func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory []providers.ChatMessage) (*SpawnResult, error) {
 	if c.manager.CountRunning() >= c.maxParallel {
@@ -360,7 +362,7 @@ func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory [
 		return nil, errors.New("prompt is required")
 	}
 	if len(parentHistory) == 0 {
-		return nil, errors.New("fork_agent: no parent history (only the main agent in an interactive session can fork)")
+		return nil, errors.New("spawn_agent fork: no parent history (only the main agent in an interactive session can fork)")
 	}
 
 	// Resolve the default worker type so the worker has the full
@@ -371,7 +373,7 @@ func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory [
 		return nil, err
 	}
 
-	workerID := newCoordinatorWorkerID("fork")
+	workerID := newCoordinatorWorkerID(wt.Name)
 	taskName := req.TaskName
 	workerRoot := c.parentRepo
 
@@ -393,14 +395,14 @@ func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory [
 		workerCtx = context.WithoutCancel(ctx)
 	}
 
-	threadMeta, err := c.registerChildThread(workerID, taskName, "fork", req.Prompt, agentthread.SourceThreadSpawn)
+	threadMeta, err := c.registerChildThread(workerID, taskName, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode)
 	if err != nil {
 		return nil, err
 	}
 
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
 		ID:             workerID,
-		Type:           "fork",
+		Type:           wt.Name,
 		TaskName:       threadMeta.TaskName,
 		AgentPath:      threadMeta.Path,
 		ParentID:       threadMeta.ParentID,
@@ -552,11 +554,15 @@ func (c *Coordinator) registerRootThread() {
 	c.rootThreadDir = c.threadDir
 }
 
-func (c *Coordinator) registerChildThread(id, taskName, role, message string, source agentthread.SourceKind) (agentthread.Metadata, error) {
+func (c *Coordinator) registerChildThread(id, taskName, role, message string, source agentthread.SourceKind, forkMode ...string) (agentthread.Metadata, error) {
 	if c == nil || c.threads == nil {
 		return agentthread.Metadata{}, errors.New("thread registry is not configured")
 	}
 	c.registerRootThread()
+	mode := ""
+	if len(forkMode) > 0 {
+		mode = forkMode[0]
+	}
 	meta, err := c.threads.RegisterSpawn(agentthread.SpawnSpec{
 		ID:              id,
 		SessionID:       c.sessionID,
@@ -567,6 +573,7 @@ func (c *Coordinator) registerChildThread(id, taskName, role, message string, so
 		LastTaskMessage: message,
 		CWD:             c.parentRepo,
 		SourceKind:      source,
+		ForkMode:        mode,
 		Status:          agentthread.StatusRunning,
 		Now:             time.Now().UTC(),
 	})
@@ -639,7 +646,7 @@ func threadStatusFromSubAgent(status subagent.Status) agentthread.Status {
 //     artifact, read_file it in full before planning.
 //   - The interview loop: the default iterative rhythm for
 //     non-trivial tasks.
-//   - Delegation rules (spawn vs fork, communication planes,
+//   - Delegation rules (spawn/fork_turns, communication planes,
 //     honesty rules, failure handling) — but only AFTER alignment.
 //
 // There is NO separate "coordinator role" persona here. The main
@@ -651,8 +658,7 @@ func SystemPromptPreamble() string {
 
 ## Your Tools
 
-- spawn_agent — start a new worker with a clean slate. Best for context-independent tasks or when you want fresh framing.
-- fork_agent — start a worker that inherits your full conversation history. Best for context-sensitive tasks that depend on what you have read and discussed.
+- spawn_agent — start a new worker. By default it inherits your full conversation history; set fork_turns="none" for a clean slate, or a positive integer string for only the last N user turns.
 - send_message — queue a non-blocking message for an existing worker.
 - followup_task — send a follow-up task message to an existing worker.
 - wait_agent — wait for a worker only when its result blocks your next step.

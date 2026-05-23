@@ -52,7 +52,7 @@ type statusTextSegment struct {
 
 func isOrchestrationTool(name string) bool {
 	switch strings.TrimSpace(name) {
-	case "spawn_agent", "fork_agent":
+	case "spawn_agent":
 		return true
 	default:
 		return false

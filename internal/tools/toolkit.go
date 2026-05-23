@@ -97,7 +97,6 @@ func (t *Toolkit) rebuildRegistry() {
 		NewAskUserTool(e),
 		// Agent orchestration
 		NewSpawnAgentTool(e),
-		NewForkAgentTool(e),
 		NewSendAgentMessageTool(e),
 		NewFollowupTaskTool(e),
 		NewWaitAgentTool(e),
