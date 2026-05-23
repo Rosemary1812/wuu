@@ -1,7 +1,19 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, type OpenDialogOptions } from "electron";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+  type Dirent
+} from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
   AppServerNotification,
@@ -9,17 +21,33 @@ import type {
   AppServerResponse,
   ConfigModelUpdateResult,
   DesktopProject,
+  FileTreeListResult,
   GitStatusResult,
   InitializeResult,
   ProjectListResult,
   RuntimeContext,
   ServerEvent,
   Thread,
-  Turn
+  Turn,
+  WorkspaceFileReadResult
 } from "../shared/protocol";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RENDERABLE_IMAGE_EXTENSIONS = new Set([".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"]);
+const FILE_TREE_MAX_PATHS = 4000;
+const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
+const FILE_TREE_IGNORED_DIRS = new Set([
+  ".git",
+  ".next",
+  ".turbo",
+  ".vite",
+  "coverage",
+  "dist",
+  "node_modules",
+  "out",
+  "target"
+]);
+const FILE_TREE_IGNORED_FILES = new Set([".DS_Store"]);
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -360,6 +388,121 @@ function gitOutput(cwd: string, args: string[]): string | undefined {
   return result.stdout.trim() || undefined;
 }
 
+function fileTreeListResult(): FileTreeListResult {
+  const context = ensureRuntimeContext();
+  const paths: string[] = [];
+  const truncated = collectFileTreePaths(context.cwd, "", paths);
+  return { root: context.cwd, paths, truncated };
+}
+
+function readWorkspaceFileResult(path: string): WorkspaceFileReadResult {
+  const context = ensureRuntimeContext();
+  const relativeFilePath = normalizeWorkspaceRelativePath(path);
+  const absolutePath = resolveWorkspacePath(context.cwd, relativeFilePath);
+  const stats = statSync(absolutePath);
+  if (!stats.isFile()) {
+    throw new Error("selected path is not a file");
+  }
+
+  const readLimit = Math.min(stats.size, FILE_PREVIEW_MAX_BYTES + 1);
+  const buffer = Buffer.alloc(readLimit);
+  const descriptor = openSync(absolutePath, "r");
+  let bytesRead = 0;
+  try {
+    bytesRead = readSync(descriptor, buffer, 0, readLimit, 0);
+  } finally {
+    closeSync(descriptor);
+  }
+  const truncated = stats.size > FILE_PREVIEW_MAX_BYTES;
+  const previewBuffer = buffer.subarray(0, truncated ? FILE_PREVIEW_MAX_BYTES : bytesRead);
+  const binary = previewBuffer.includes(0);
+
+  return {
+    root: context.cwd,
+    path: relativeFilePath,
+    absolute_path: absolutePath,
+    size_bytes: stats.size,
+    binary,
+    truncated,
+    text: binary ? undefined : previewBuffer.toString("utf8")
+  };
+}
+
+function normalizeWorkspaceRelativePath(path: string): string {
+  const value = path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+  if (!value || value.includes("\0") || value.split("/").some((segment) => segment === "..")) {
+    throw new Error("invalid workspace file path");
+  }
+  return value;
+}
+
+function resolveWorkspacePath(root: string, relativeFilePath: string): string {
+  const absolutePath = resolve(root, relativeFilePath);
+  const relativeToRoot = relative(root, absolutePath);
+  if (!relativeToRoot || relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot)) {
+    throw new Error("file is outside the current workspace");
+  }
+
+  const realRoot = realpathSync(root);
+  const realFile = realpathSync(absolutePath);
+  const realRelative = relative(realRoot, realFile);
+  if (!realRelative || realRelative.startsWith("..") || isAbsolute(realRelative)) {
+    throw new Error("file is outside the current workspace");
+  }
+  return absolutePath;
+}
+
+function collectFileTreePaths(root: string, relativeDirectory: string, paths: string[]): boolean {
+  if (paths.length >= FILE_TREE_MAX_PATHS) {
+    return true;
+  }
+
+  const directory = relativeDirectory ? join(root, relativeDirectory) : root;
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+
+  entries.sort((left, right) => {
+    const leftDirectory = left.isDirectory();
+    const rightDirectory = right.isDirectory();
+    if (leftDirectory !== rightDirectory) {
+      return leftDirectory ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+  });
+
+  for (const entry of entries) {
+    if (FILE_TREE_IGNORED_FILES.has(entry.name)) {
+      continue;
+    }
+
+    const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (FILE_TREE_IGNORED_DIRS.has(entry.name)) {
+        continue;
+      }
+      paths.push(`${relativePath}/`);
+      if (collectFileTreePaths(root, relativePath, paths)) {
+        return true;
+      }
+      continue;
+    }
+
+    if (entry.isFile() || entry.isSymbolicLink()) {
+      paths.push(relativePath);
+    }
+
+    if (paths.length >= FILE_TREE_MAX_PATHS) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function ensureRuntimeContext(): RuntimeContext {
   const activeContext = projectStore.active_context;
   if (activeContext?.kind === "project") {
@@ -572,6 +715,8 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean) => selectNoProject(Boolean(fresh)));
   ipcMain.handle("wuu:git-status", () => gitStatusResult());
   ipcMain.handle("wuu:git-checkout-branch", (_event, branch: string) => checkoutGitBranch(branch));
+  ipcMain.handle("wuu:file-tree-list", () => fileTreeListResult());
+  ipcMain.handle("wuu:file-read", (_event, path: string) => readWorkspaceFileResult(path));
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
       title: "使用现有文件夹",

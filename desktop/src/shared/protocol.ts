@@ -80,6 +80,22 @@ export type GitStatusResult = {
   dirty_count: number;
 };
 
+export type FileTreeListResult = {
+  root: string;
+  paths: string[];
+  truncated: boolean;
+};
+
+export type WorkspaceFileReadResult = {
+  root: string;
+  path: string;
+  absolute_path: string;
+  size_bytes: number;
+  binary: boolean;
+  truncated: boolean;
+  text?: string;
+};
+
 export type ThreadStatus = "idle" | "in_progress";
 export type TurnStatus = "in_progress" | "completed" | "failed" | "interrupted";
 export type TurnItemsView = "full";
@@ -160,6 +176,8 @@ export type WuuDesktopApi = {
   selectNoProject: (fresh?: boolean) => Promise<ProjectListResult>;
   gitStatus: () => Promise<GitStatusResult>;
   checkoutGitBranch: (branch: string) => Promise<GitStatusResult>;
+  listWorkspaceFiles: () => Promise<FileTreeListResult>;
+  readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
   initialize: () => Promise<InitializeResult>;
   updateRuntimeSettings: (provider: string, model: string) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;

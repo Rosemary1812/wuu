@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Globe2,
   FileText,
   Folder,
   FolderX,
@@ -14,7 +15,9 @@ import {
   Laptop,
   List as ListIcon,
   MessageSquarePlus,
+  PanelBottomOpen,
   PanelLeftOpen,
+  PanelRightOpen,
   Pencil,
   Plus,
   Search,
@@ -26,6 +29,7 @@ import {
   Wrench,
   X
 } from "lucide-react";
+import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
 import {
   type CSSProperties,
   type FormEvent as ReactFormEvent,
@@ -37,10 +41,13 @@ import {
   useRef,
   useState
 } from "react";
+import type { OverlayScrollbars, PartialOptions } from "overlayscrollbars";
+import { OverlayScrollbarsComponent, type OverlayScrollbarsComponentRef } from "overlayscrollbars-react";
 import type {
   AppServerNotification,
   AskUserQuestion,
   DesktopProject,
+  FileTreeListResult,
   GitStatusResult,
   InitializeResult,
   ProjectListResult,
@@ -48,7 +55,8 @@ import type {
   ServerEvent,
   Thread,
   ThreadItem,
-  Turn
+  Turn,
+  WorkspaceFileReadResult
 } from "../shared/protocol";
 import { RichContent } from "./RichContent";
 import { StreamingMarkdown } from "./StreamingMarkdown";
@@ -93,6 +101,45 @@ type SidebarResizeSession = {
 };
 
 type ComposerVariant = "dock" | "hero";
+type WorkspacePanelView = "files" | "chat" | "browser" | "review" | "terminal";
+
+const WORKSPACE_TOOL_ITEMS: Array<{
+  id: WorkspacePanelView;
+  title: string;
+  subtitle: string;
+}> = [
+  { id: "files", title: "文件", subtitle: "浏览项目文件" },
+  { id: "chat", title: "侧边聊天", subtitle: "发起侧边对话" },
+  { id: "browser", title: "浏览器", subtitle: "打开网站" },
+  { id: "review", title: "审查", subtitle: "查看代码更改" },
+  { id: "terminal", title: "终端", subtitle: "运行项目命令" }
+];
+
+const WORKSPACE_TREE_CSS = `
+  :host {
+    --trees-fg-override: #34393d;
+    --trees-muted-fg-override: #7a8085;
+    --trees-selected-bg-override: #eeeeeb;
+    --trees-hover-bg-override: #f4f4f2;
+    --trees-border-color-override: transparent;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  button[data-type="item"] {
+    border-radius: 7px;
+  }
+`;
+
+const OVERLAY_SCROLLBAR_OPTIONS = {
+  scrollbars: {
+    autoHide: "leave",
+    autoHideDelay: 360,
+    clickScroll: true,
+    theme: "os-theme-wuu"
+  }
+} satisfies PartialOptions;
 
 function initialSidebarWidth(): number {
   const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
@@ -124,11 +171,17 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
+  const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
+  const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState<string | undefined>(undefined);
+  const conversationScrollRef = useRef<OverlayScrollbarsComponentRef<"div"> | null>(null);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
+  const accessMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -214,11 +267,13 @@ export function App(): JSX.Element {
       if (projectMenuOpen && !projectMenuRef.current?.contains(target)) {
         setProjectMenuOpen(false);
       }
-      if ((runtimeMenuOpen || accessMenuOpen || modeMenuOpen || branchMenuOpen) && !runtimeMenuRef.current?.contains(target)) {
+      if ((runtimeMenuOpen || modeMenuOpen || branchMenuOpen) && !runtimeMenuRef.current?.contains(target)) {
         setRuntimeMenuOpen(false);
-        setAccessMenuOpen(false);
         setModeMenuOpen(false);
         setBranchMenuOpen(false);
+      }
+      if (accessMenuOpen && !accessMenuRef.current?.contains(target)) {
+        setAccessMenuOpen(false);
       }
     }
 
@@ -227,11 +282,7 @@ export function App(): JSX.Element {
   }, [accessMenuOpen, branchMenuOpen, modeMenuOpen, projectMenuOpen, runtimeMenuOpen]);
 
   useEffect(() => {
-    const node = scrollRef.current;
-    if (!node) {
-      return;
-    }
-    node.scrollTop = node.scrollHeight;
+    scrollConversationToBottom();
   }, [state.thread?.turns]);
 
   useEffect(() => {
@@ -264,6 +315,10 @@ export function App(): JSX.Element {
   }, [sidebarWidth, sidebarCollapsed]);
 
   useEffect(() => {
+    setSelectedWorkspaceFile(undefined);
+  }, [state.activeContext?.cwd]);
+
+  useEffect(() => {
     if (!resizingSidebar) {
       return;
     }
@@ -291,12 +346,11 @@ export function App(): JSX.Element {
     };
   }, [resizingSidebar]);
 
-
   const activeProject = useMemo(
     () => state.projects.find((project) => project.id === state.activeProjectId),
     [state.activeProjectId, state.projects]
   );
-  const activeTitle = state.thread?.preview || "新对话";
+  const activeTitle = workspaceMode ? workspaceModeTitle(workspaceMode) : state.thread?.preview || "新对话";
   const emptyThreadTitle =
     state.activeContext?.kind === "project"
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
@@ -304,11 +358,14 @@ export function App(): JSX.Element {
   const turns = state.thread?.turns ?? [];
   const emptyConversation = turns.length === 0;
   const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
+  const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
-  }`;
+  }${rightPanelOpen ? " right-panel-open" : ""}${bottomPanelOpen ? " bottom-panel-open" : ""}`;
   const shellStyle = {
-    "--sidebar-width": `${sidebarCollapsed ? 0 : sidebarWidth}px`
+    "--sidebar-width": `${sidebarCollapsed ? 0 : sidebarWidth}px`,
+    "--workspace-right-panel-width": "360px",
+    "--workspace-bottom-panel-height": "238px"
   } as CSSProperties;
 
   function applySidebarWidth(nextWidth: number): void {
@@ -326,12 +383,16 @@ export function App(): JSX.Element {
     }
     streamScrollFrameRef.current = window.requestAnimationFrame(() => {
       streamScrollFrameRef.current = undefined;
-      const node = scrollRef.current;
-      if (!node) {
-        return;
-      }
-      node.scrollTop = node.scrollHeight;
+      scrollConversationToBottom();
     });
+  }
+
+  function scrollConversationToBottom(instance?: OverlayScrollbars): void {
+    const node = instance?.elements().viewport ?? conversationScrollRef.current?.osInstance()?.elements().viewport;
+    if (!node) {
+      return;
+    }
+    node.scrollTop = node.scrollHeight;
   }
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -349,6 +410,19 @@ export function App(): JSX.Element {
   function toggleSidebar(): void {
     setSidebarCollapsed((collapsed) => !collapsed);
     setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
+  }
+
+  function openWorkspaceTool(view: WorkspacePanelView): void {
+    setWorkspacePanelView(view);
+    setWorkspaceMode(view);
+    setRightPanelOpen(true);
+  }
+
+  function openWorkspaceFile(path: string): void {
+    setWorkspacePanelView("files");
+    setWorkspaceMode("files");
+    setRightPanelOpen(true);
+    setSelectedWorkspaceFile((current) => (current === path ? current : path));
   }
 
   function handleSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
@@ -395,6 +469,7 @@ export function App(): JSX.Element {
         modeMenuOpen={modeMenuOpen}
         branchMenuOpen={branchMenuOpen}
         menuRef={runtimeMenuRef}
+        accessMenuRef={accessMenuRef}
         projectFilter={projectFilter}
         setProjectFilter={setProjectFilter}
         onToggleMenu={() => {
@@ -816,6 +891,11 @@ export function App(): JSX.Element {
                 <PanelLeftOpen size={18} />
               </button>
             ) : null}
+            {workspaceMode ? (
+              <span className="workspace-title-icon" aria-hidden="true">
+                <WorkspaceToolIcon view={workspaceMode} size={18} />
+              </span>
+            ) : null}
             <h1>{activeTitle}</h1>
           </div>
           <div className="title-actions">
@@ -830,12 +910,49 @@ export function App(): JSX.Element {
                 <span>启动动画</span>
               </button>
             ) : null}
+            <button
+              className={`icon-button workspace-toggle-button${bottomPanelOpen ? " active" : ""}`}
+              type="button"
+              aria-label={bottomPanelOpen ? "关闭底部栏" : "打开底部栏"}
+              aria-pressed={bottomPanelOpen}
+              onClick={() => setBottomPanelOpen((open) => !open)}
+            >
+              <PanelBottomOpen size={18} />
+            </button>
+            <button
+              className={`icon-button workspace-toggle-button${rightPanelOpen ? " active" : ""}`}
+              type="button"
+              aria-label={rightPanelOpen ? "关闭右侧栏" : "打开右侧栏"}
+              aria-pressed={rightPanelOpen}
+              onClick={() => setRightPanelOpen((open) => !open)}
+            >
+              <PanelRightOpen size={18} />
+            </button>
           </div>
         </header>
 
         {state.initialized && !previewingLaunch ? (
-          <div className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}`} ref={scrollRef}>
-            {emptyConversation ? (
+          <OverlayScrollbarsComponent
+            className={`scroll-region${emptyConversation && !showingWorkspaceMode ? " empty-scroll-region" : ""}${
+              showingWorkspaceMode ? " workspace-scroll-region" : ""
+            }`}
+            data-overlayscrollbars-initialize
+            defer
+            events={{ initialized: scrollConversationToBottom }}
+            options={OVERLAY_SCROLLBAR_OPTIONS}
+            ref={conversationScrollRef}
+          >
+            {workspaceMode ? (
+              <WorkspaceMainPanel
+                view={workspaceMode}
+                activeContext={state.activeContext}
+                selectedFilePath={selectedWorkspaceFile}
+                onOpenRightPanel={() => {
+                  setWorkspacePanelView(workspaceMode);
+                  setRightPanelOpen(true);
+                }}
+              />
+            ) : emptyConversation ? (
               <EmptyConversationHome
                 title={emptyThreadTitle}
                 onOpenProject={() => void chooseProjectFolder()}
@@ -856,7 +973,7 @@ export function App(): JSX.Element {
                 ))}
               </div>
             )}
-          </div>
+          </OverlayScrollbarsComponent>
         ) : (
           <RuntimeLoading
             status={state.status}
@@ -865,12 +982,520 @@ export function App(): JSX.Element {
           />
         )}
 
-        {state.initialized && !previewingLaunch && !emptyConversation ? renderComposer("dock") : null}
+        {state.initialized && !previewingLaunch && !emptyConversation && !showingWorkspaceMode
+          ? renderComposer("dock")
+          : null}
       </main>
+
+      <WorkspaceRightPanel
+        open={rightPanelOpen}
+        view={workspacePanelView}
+        activeContext={state.activeContext}
+        selectedFilePath={selectedWorkspaceFile}
+        onSelectView={openWorkspaceTool}
+        onOpenFile={openWorkspaceFile}
+        onClose={() => setRightPanelOpen(false)}
+      />
+      <WorkspaceBottomPanel
+        open={bottomPanelOpen}
+        selectedView={workspacePanelView}
+        onSelectTool={openWorkspaceTool}
+        onClose={() => setBottomPanelOpen(false)}
+      />
 
       {state.askRequest ? <AskUserDialog request={state.askRequest} /> : null}
     </div>
   );
+}
+
+function WorkspaceRightPanel({
+  open,
+  view,
+  activeContext,
+  selectedFilePath,
+  onSelectView,
+  onOpenFile,
+  onClose
+}: {
+  open: boolean;
+  view: WorkspacePanelView;
+  activeContext?: RuntimeContext;
+  selectedFilePath?: string;
+  onSelectView: (view: WorkspacePanelView) => void;
+  onOpenFile: (path: string) => void;
+  onClose: () => void;
+}): JSX.Element {
+  const activeTool = workspaceToolFor(view);
+
+  return (
+    <aside className="workspace-right-panel" aria-hidden={!open}>
+      <div className="workspace-panel-header">
+        <div className="workspace-panel-title">
+          <WorkspaceToolIcon view={view} size={18} />
+          <span>{activeTool.title}</span>
+        </div>
+        <button
+          className="icon-button workspace-panel-close"
+          type="button"
+          aria-label="关闭右侧栏"
+          disabled={!open}
+          onClick={onClose}
+        >
+          <X size={17} />
+        </button>
+      </div>
+      <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
+        {WORKSPACE_TOOL_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            className={item.id === view ? "active" : ""}
+            type="button"
+            role="tab"
+            aria-selected={item.id === view}
+            disabled={!open}
+            title={item.title}
+            onClick={() => onSelectView(item.id)}
+          >
+            <WorkspaceToolIcon view={item.id} size={17} />
+          </button>
+        ))}
+      </div>
+      <div className="workspace-panel-body">
+        {view === "files" ? (
+          <WorkspaceFileTree
+            activeContext={activeContext}
+            open={open}
+            selectedFilePath={selectedFilePath}
+            onOpenFile={onOpenFile}
+          />
+        ) : (
+          <WorkspacePanelPlaceholder view={view} />
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function WorkspaceBottomPanel({
+  open,
+  selectedView,
+  onSelectTool,
+  onClose
+}: {
+  open: boolean;
+  selectedView: WorkspacePanelView;
+  onSelectTool: (view: WorkspacePanelView) => void;
+  onClose: () => void;
+}): JSX.Element {
+  return (
+    <section className="workspace-bottom-panel" aria-hidden={!open}>
+      <div className="workspace-bottom-header">
+        <div className="workspace-bottom-title">工具</div>
+        <button
+          className="icon-button workspace-panel-close"
+          type="button"
+          aria-label="关闭底部栏"
+          disabled={!open}
+          onClick={onClose}
+        >
+          <X size={17} />
+        </button>
+      </div>
+      <OverlayScrollbarsComponent
+        className="workspace-tool-grid"
+        aria-label="工作区工具"
+        data-overlayscrollbars-initialize
+        defer
+        options={OVERLAY_SCROLLBAR_OPTIONS}
+      >
+        {WORKSPACE_TOOL_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            className={`workspace-tool-card${item.id === selectedView ? " active" : ""}`}
+            type="button"
+            disabled={!open}
+            onClick={() => onSelectTool(item.id)}
+          >
+            <WorkspaceToolIcon view={item.id} size={25} />
+            <strong>{item.title}</strong>
+            <span>{item.subtitle}</span>
+          </button>
+        ))}
+      </OverlayScrollbarsComponent>
+    </section>
+  );
+}
+
+function WorkspaceFileTree({
+  activeContext,
+  open,
+  selectedFilePath,
+  onOpenFile
+}: {
+  activeContext?: RuntimeContext;
+  open: boolean;
+  selectedFilePath?: string;
+  onOpenFile: (path: string) => void;
+}): JSX.Element {
+  const [fileTree, setFileTree] = useState<FileTreeListResult | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const workspaceRoot = activeContext?.cwd;
+
+  useEffect(() => {
+    if (!open || !workspaceRoot) {
+      return;
+    }
+
+    let cancelled = false;
+    setFileTree(undefined);
+    setLoading(true);
+    setError(undefined);
+    void window.wuu
+      .listWorkspaceFiles()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setFileTree(result);
+      })
+      .catch((nextError) => {
+        if (cancelled) {
+          return;
+        }
+        setError(desktopApiErrorMessage(nextError, "读取文件失败"));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, workspaceRoot]);
+
+  if (!workspaceRoot) {
+    return <WorkspacePanelEmpty title="没有项目" description="先选择一个项目。这个面板会显示它的文件。" />;
+  }
+
+  if (loading && !fileTree) {
+    return <WorkspacePanelEmpty title="正在读取文件" description="文件树马上就绪。" />;
+  }
+
+  if (error) {
+    return <WorkspacePanelEmpty title="读取失败" description={error} />;
+  }
+
+  if (!fileTree || fileTree.paths.length === 0) {
+    return <WorkspacePanelEmpty title="没有文件" description={formatWorkspaceRoot(workspaceRoot)} />;
+  }
+
+  return (
+    <div className="workspace-file-panel">
+      <div className="workspace-file-meta">
+        <span>{formatWorkspaceRoot(fileTree.root)}</span>
+        <small>
+          {fileTree.paths.length} 项{fileTree.truncated ? "，已截断" : ""}
+        </small>
+      </div>
+      <WorkspaceFileTreeView
+        paths={fileTree.paths}
+        selectedFilePath={selectedFilePath}
+        onOpenFile={onOpenFile}
+      />
+    </div>
+  );
+}
+
+function WorkspaceFileTreeView({
+  paths,
+  selectedFilePath,
+  onOpenFile
+}: {
+  paths: string[];
+  selectedFilePath?: string;
+  onOpenFile: (path: string) => void;
+}): JSX.Element {
+  const { model } = useFileTree({
+    flattenEmptyDirectories: true,
+    initialExpansion: 1,
+    initialSelectedPaths: selectedFilePath ? [selectedFilePath] : [],
+    itemHeight: 28,
+    overscan: 8,
+    paths,
+    search: true,
+    stickyFolders: true,
+    unsafeCSS: WORKSPACE_TREE_CSS
+  });
+  const selectedPaths = useFileTreeSelection(model);
+  const onOpenFileRef = useRef(onOpenFile);
+
+  useEffect(() => {
+    onOpenFileRef.current = onOpenFile;
+  }, [onOpenFile]);
+
+  useEffect(() => {
+    model.resetPaths(paths);
+  }, [model, paths]);
+
+  useEffect(() => {
+    const nextPath = selectedPaths[0];
+    if (!nextPath || nextPath.endsWith("/")) {
+      return;
+    }
+    onOpenFileRef.current(nextPath);
+  }, [selectedPaths]);
+
+  return (
+    <FileTree
+      className="workspace-file-tree"
+      model={model}
+      style={{ height: "100%", width: "100%" }}
+    />
+  );
+}
+
+function WorkspacePanelPlaceholder({ view }: { view: WorkspacePanelView }): JSX.Element {
+  const tool = workspaceToolFor(view);
+  return (
+    <WorkspacePanelEmpty
+      title={tool.title}
+      description={`${tool.subtitle}会在这里打开。`}
+      icon={<WorkspaceToolIcon view={view} size={24} />}
+    />
+  );
+}
+
+function WorkspacePanelEmpty({
+  title,
+  description,
+  icon
+}: {
+  title: string;
+  description: string;
+  icon?: JSX.Element;
+}): JSX.Element {
+  return (
+    <div className="workspace-panel-empty">
+      <div className="workspace-panel-empty-icon">{icon ?? <FolderOpen size={24} />}</div>
+      <strong>{title}</strong>
+      <span>{description}</span>
+    </div>
+  );
+}
+
+function WorkspaceToolIcon({ view, size }: { view: WorkspacePanelView; size: number }): JSX.Element {
+  switch (view) {
+    case "files":
+      return <FolderOpen size={size} />;
+    case "chat":
+      return <MessageSquarePlus size={size} />;
+    case "browser":
+      return <Globe2 size={size} />;
+    case "review":
+      return <ShieldCheck size={size} />;
+    case "terminal":
+      return <Terminal size={size} />;
+  }
+}
+
+function workspaceToolFor(view: WorkspacePanelView): (typeof WORKSPACE_TOOL_ITEMS)[number] {
+  return WORKSPACE_TOOL_ITEMS.find((item) => item.id === view) ?? WORKSPACE_TOOL_ITEMS[0];
+}
+
+function formatWorkspaceRoot(root: string): string {
+  const segments = root.split(/[\\/]/).filter(Boolean);
+  return segments.at(-1) ?? root;
+}
+
+function workspaceModeTitle(view: WorkspacePanelView): string {
+  return view === "files" ? "打开文件" : workspaceToolFor(view).title;
+}
+
+function WorkspaceMainPanel({
+  view,
+  activeContext,
+  selectedFilePath,
+  onOpenRightPanel
+}: {
+  view: WorkspacePanelView;
+  activeContext?: RuntimeContext;
+  selectedFilePath?: string;
+  onOpenRightPanel: () => void;
+}): JSX.Element {
+  if (view === "files") {
+    return (
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath={selectedFilePath}
+        onOpenRightPanel={onOpenRightPanel}
+      />
+    );
+  }
+
+  return (
+    <div className="workspace-main-empty">
+      <WorkspaceToolIcon view={view} size={34} />
+      <strong>{workspaceToolFor(view).title}</strong>
+      <span>{workspaceToolFor(view).subtitle}</span>
+    </div>
+  );
+}
+
+function WorkspaceFilePreview({
+  activeContext,
+  selectedFilePath,
+  onOpenRightPanel
+}: {
+  activeContext?: RuntimeContext;
+  selectedFilePath?: string;
+  onOpenRightPanel: () => void;
+}): JSX.Element {
+  const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!selectedFilePath) {
+      setFile(undefined);
+      setError(undefined);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setFile(undefined);
+    setLoading(true);
+    setError(undefined);
+    void window.wuu
+      .readWorkspaceFile(selectedFilePath)
+      .then((result) => {
+        if (!cancelled) {
+          setFile(result);
+        }
+      })
+      .catch((nextError) => {
+        if (!cancelled) {
+          setError(desktopApiErrorMessage(nextError, "打开文件失败"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFilePath]);
+
+  if (!activeContext) {
+    return (
+      <div className="workspace-main-empty">
+        <FolderX size={36} />
+        <strong>没有项目</strong>
+        <span>先打开一个项目，再浏览文件。</span>
+      </div>
+    );
+  }
+
+  if (!selectedFilePath) {
+    return (
+      <div className="workspace-main-empty">
+        <FolderOpen size={38} />
+        <strong>打开文件</strong>
+        <span>从工作区目录树中选择文件</span>
+        <button type="button" onClick={onOpenRightPanel}>
+          显示目录树
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="workspace-main-empty">
+        <FileText size={36} />
+        <strong>正在打开</strong>
+        <span>{selectedFilePath}</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="workspace-main-empty">
+        <AlertCircle size={36} />
+        <strong>打开失败</strong>
+        <span>{error}</span>
+      </div>
+    );
+  }
+
+  if (!file) {
+    return (
+      <div className="workspace-main-empty">
+        <FileText size={36} />
+        <strong>没有内容</strong>
+        <span>{selectedFilePath}</span>
+      </div>
+    );
+  }
+
+  if (file.binary) {
+    return (
+      <div className="workspace-main-empty">
+        <FileText size={36} />
+        <strong>无法预览</strong>
+        <span>{file.path} 是二进制文件。</span>
+      </div>
+    );
+  }
+
+  return (
+    <article className="workspace-file-preview">
+      <header className="workspace-file-preview-header">
+        <div>
+          <strong>{file.path}</strong>
+          <span>
+            {formatBytes(file.size_bytes)}
+            {file.truncated ? " · 仅显示前 512 KB" : ""}
+          </span>
+        </div>
+      </header>
+      <OverlayScrollbarsComponent
+        className="workspace-file-code-scroll"
+        data-overlayscrollbars-initialize
+        defer
+        options={OVERLAY_SCROLLBAR_OPTIONS}
+      >
+        <pre className="workspace-file-code">
+          <code>{file.text}</code>
+        </pre>
+      </OverlayScrollbarsComponent>
+    </article>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 102.4) / 10} KB`;
+  }
+  return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
+}
+
+function desktopApiErrorMessage(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (message.includes("No handler registered")) {
+    return "文件接口还没被当前窗口加载。请重启桌面端后再试。";
+  }
+  return message || fallback;
 }
 
 function EmptyConversationHome({
@@ -1792,7 +2417,13 @@ function SettingsView({
           </button>
         </nav>
       </aside>
-      <main className="settings-main">
+      <OverlayScrollbarsComponent
+        element="main"
+        className="settings-main"
+        data-overlayscrollbars-initialize
+        defer
+        options={OVERLAY_SCROLLBAR_OPTIONS}
+      >
         <div className="settings-page">
           <h1>常规</h1>
 
@@ -1850,7 +2481,7 @@ function SettingsView({
             </form>
           </section>
         </div>
-      </main>
+      </OverlayScrollbarsComponent>
     </div>
   );
 }
@@ -1872,6 +2503,7 @@ function Composer({
   modeMenuOpen,
   branchMenuOpen,
   menuRef,
+  accessMenuRef,
   projectFilter,
   setProjectFilter,
   onToggleMenu,
@@ -1903,6 +2535,7 @@ function Composer({
   modeMenuOpen: boolean;
   branchMenuOpen: boolean;
   menuRef: RefObject<HTMLDivElement>;
+  accessMenuRef: RefObject<HTMLDivElement>;
   projectFilter: string;
   setProjectFilter: (value: string) => void;
   onToggleMenu: () => void;
@@ -1940,17 +2573,20 @@ function Composer({
             <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
               <Plus size={20} />
             </button>
-            <button
-              className="permission-chip"
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={accessMenuOpen}
-              onClick={onToggleAccessMenu}
-            >
-              <ShieldCheck size={16} />
-              <span>完全访问权限</span>
-              <ChevronDown size={15} />
-            </button>
+            <div className="permission-menu-anchor" ref={accessMenuRef}>
+              <button
+                className="permission-chip"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={accessMenuOpen}
+                onClick={onToggleAccessMenu}
+              >
+                <ShieldCheck size={16} />
+                <span>完全访问权限</span>
+                <ChevronDown size={15} />
+              </button>
+              {accessMenuOpen ? <AccessMenu /> : null}
+            </div>
             <div className="composer-spacer" />
             <button className="provider-pill" type="button" onClick={onOpenSettings}>
               {provider ?? "provider"}
@@ -1995,7 +2631,6 @@ function Composer({
               <ChevronDown size={15} />
             </button>
           ) : null}
-          {accessMenuOpen ? <AccessMenu /> : null}
           {modeMenuOpen ? (
             <ModeMenu
               activeContext={activeContext}
@@ -2128,7 +2763,12 @@ function ProjectPickerMenu({
         <Search size={18} />
         <input value={query} placeholder="搜索项目" onChange={(event) => setQuery(event.target.value)} />
       </label>
-      <div className="project-picker-list">
+      <OverlayScrollbarsComponent
+        className="project-picker-list"
+        data-overlayscrollbars-initialize
+        defer
+        options={OVERLAY_SCROLLBAR_OPTIONS}
+      >
         {filteredProjects.length === 0 ? <div className="project-picker-empty">没有匹配项目</div> : null}
         {filteredProjects.map((project) => {
           const selected = activeContext?.kind === "project" && activeContext.project_id === project.id;
@@ -2140,7 +2780,7 @@ function ProjectPickerMenu({
             </button>
           );
         })}
-      </div>
+      </OverlayScrollbarsComponent>
       <div className="project-picker-divider" />
       <button role="menuitem" onClick={onOpenProject}>
         <FolderOpen size={19} />
@@ -2200,7 +2840,12 @@ function AskUserDialog({ request }: { request: AskRequestState }): JSX.Element {
             <X size={18} />
           </button>
         </div>
-        <div className="ask-body">
+        <OverlayScrollbarsComponent
+          className="ask-body"
+          data-overlayscrollbars-initialize
+          defer
+          options={OVERLAY_SCROLLBAR_OPTIONS}
+        >
           {request.questions.map((question) => (
             <section key={question.question} className="ask-question">
               <div className="ask-chip">{question.header}</div>
@@ -2222,7 +2867,7 @@ function AskUserDialog({ request }: { request: AskRequestState }): JSX.Element {
               </div>
             </section>
           ))}
-        </div>
+        </OverlayScrollbarsComponent>
         <div className="ask-footer">
           <button
             className="secondary-button"
