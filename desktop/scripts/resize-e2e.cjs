@@ -136,9 +136,10 @@ async function run() {
     "Composer should release inline environment panel space before resize end."
   );
 
-  await evaluate(win, () => document.documentElement.classList.remove("window-resizing"));
+  await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
   win.setSize(1280, 860);
   await delay(180);
+  await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
 
   const resizeObserverName = await evaluate(win, () => ResizeObserver.name);
   assert.notEqual(resizeObserverName, "FileTreeResizeObserverGate", "ResizeObserver must not be gated during live window resize.");
@@ -164,19 +165,57 @@ async function run() {
   assert.ok(before.frameHeight > 500, "Initial file tree frame should be tall enough for resize verification.");
   assert.ok(before.renderedRows > 20, "Initial file tree should render virtualized rows.");
 
-  await evaluate(win, () => document.documentElement.classList.add("window-resizing"));
+  await evaluate(win, () => {
+    const probe = { samples: [] };
+    window.__resizeProbe = probe;
+    const startedAt = performance.now();
+    const sample = () => {
+      const snapshot = window.treeSnapshot?.();
+      if (snapshot) {
+        probe.samples.push(snapshot);
+      }
+      if (performance.now() - startedAt < 240) {
+        window.requestAnimationFrame(sample);
+      }
+    };
+    window.requestAnimationFrame(sample);
+  });
   win.setSize(980, 560);
-  await delay(80);
-  const during = await evaluate(win, () => treeSnapshot());
+  await delay(280);
+  const resizeProbe = await evaluate(win, () => window.__resizeProbe);
+  const liveResizeSamples = resizeProbe.samples.filter((sample) => sample.resizing);
+  const during =
+    liveResizeSamples.find(
+      (sample) =>
+        sample.frameHeight < before.frameHeight - 180 &&
+        Math.abs(sample.virtualWindowHeight - before.virtualWindowHeight) >= 84 &&
+        sample.renderedRows < before.renderedRows
+    ) ??
+    liveResizeSamples.find(
+      (sample) => sample.frameHeight < before.frameHeight - 180
+    ) ?? resizeProbe.samples.find((sample) => sample.frameHeight < before.frameHeight - 180);
 
-  assert.equal(during.resizing, true, "Window resize marker should still be active during the live resize sample.");
+  assert.ok(liveResizeSamples.length > 0, "Programmatic BrowserWindow resizing should set the window resize marker.");
+  assert.ok(during, "Resize probe should capture a shrunken file tree frame during programmatic resize.");
+
+  assert.equal(during.resizing, true, "Window resize marker should be set by programmatic BrowserWindow resizing.");
   assert.equal(during.shellTransitionProperty, "none", "App shell transitions should be disabled only during live resize.");
+  assert.ok(during.viewportHeight < before.viewportHeight - 180, "Renderer viewport should shrink with the Electron window.");
   assert.ok(during.frameHeight < before.frameHeight - 180, "File tree frame should shrink with the Electron window.");
+  assert.ok(
+    during.scrollHeight < before.scrollHeight - 180,
+    "Virtualized file tree scroll frame should shrink with the resized container."
+  );
+  assert.ok(
+    Math.abs(during.frameHeight - during.scrollHeight - (before.frameHeight - before.scrollHeight)) <= 2,
+    "Virtualized file tree scroll frame should preserve its internal chrome while tracking container height."
+  );
   assert.ok(
     Math.abs(during.virtualWindowHeight - before.virtualWindowHeight) >= 84,
     "Virtualized file tree content should recompute before resize end."
   );
   assert.ok(during.renderedRows < before.renderedRows, "Rendered virtual rows should decrease while the window is still resizing.");
+  await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
 
   console.log("resize e2e passed");
   app.exit(0);
@@ -220,6 +259,8 @@ async function evaluate(win, fn) {
         resizing: document.documentElement.classList.contains("window-resizing"),
         shellTransitionProperty: getComputedStyle(document.querySelector(".app-shell")).transitionProperty,
         scrollHeight: scroll.getBoundingClientRect().height,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
         virtualWindowHeight: Number.parseFloat(virtualWindow.style.height || "0")
       };
     };
