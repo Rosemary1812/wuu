@@ -444,9 +444,16 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 	var turns []Turn
 	var current *Turn
 	itemIndex := 0
+	toolItems := make(map[string]int)
 	nextItemID := func(turnID string) string {
 		itemIndex++
 		return fmt.Sprintf("%s-item-%d", turnID, itemIndex)
+	}
+	appendItem := func(item ThreadItem) {
+		if current == nil || item.ID == "" {
+			return
+		}
+		current.Items = append(current.Items, item)
 	}
 	for _, msg := range history {
 		if msg.Role == "system" {
@@ -455,6 +462,7 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 		if msg.Role == "user" && !isToolResultMessage(msg) {
 			turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
 			itemIndex = 0
+			toolItems = make(map[string]int)
 			turn := Turn{
 				ID:        turnID,
 				ItemsView: TurnItemsViewFull,
@@ -470,11 +478,54 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 		if current == nil {
 			continue
 		}
-		item := chatMessageItem(nextItemID(current.ID), msg)
-		if item.ID == "" {
-			continue
+		switch msg.Role {
+		case "assistant":
+			if strings.TrimSpace(msg.ReasoningContent) != "" {
+				appendItem(ThreadItem{
+					ID:     nextItemID(current.ID),
+					Type:   ThreadItemReasoning,
+					Status: ThreadItemStatusCompleted,
+					Text:   msg.ReasoningContent,
+				})
+			}
+			if strings.TrimSpace(msg.Content) != "" {
+				appendItem(ThreadItem{
+					ID:     nextItemID(current.ID),
+					Type:   ThreadItemAgentMessage,
+					Status: ThreadItemStatusCompleted,
+					Role:   "assistant",
+					Text:   msg.Content,
+				})
+			}
+			for _, call := range msg.ToolCalls {
+				item := ThreadItem{
+					ID:        nextItemID(current.ID),
+					Type:      ThreadItemToolCall,
+					Status:    ThreadItemStatusCompleted,
+					Name:      call.Name,
+					Arguments: call.Arguments,
+				}
+				if strings.TrimSpace(call.ID) != "" {
+					toolItems[call.ID] = len(current.Items)
+				}
+				appendItem(item)
+			}
+		case "tool":
+			if idx, ok := toolItems[msg.ToolCallID]; ok && idx >= 0 && idx < len(current.Items) {
+				current.Items[idx].Result += msg.Content
+				current.Items[idx].Status = ThreadItemStatusCompleted
+				continue
+			}
+			appendItem(ThreadItem{
+				ID:     nextItemID(current.ID),
+				Type:   ThreadItemToolCall,
+				Status: ThreadItemStatusCompleted,
+				Result: msg.Content,
+			})
+		default:
+			item := chatMessageItem(nextItemID(current.ID), msg)
+			appendItem(item)
 		}
-		current.Items = append(current.Items, item)
 	}
 	return turns
 }

@@ -338,6 +338,42 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	}
 }
 
+func TestTurnsFromHistoryRestoresToolCallItems(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "inspect"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_1",
+				Name:      "read_file",
+				Arguments: `{"path":"internal/appserver/model.go"}`,
+			}},
+		},
+		{
+			Role:       "tool",
+			ToolCallID: "call_1",
+			Content:    `{"path":"internal/appserver/model.go","num_lines":20}`,
+		},
+		{Role: "assistant", Content: "done"},
+	}
+
+	turns := turnsFromHistory("thread", history, time.Unix(0, 0).UTC())
+	if len(turns) != 1 {
+		t.Fatalf("expected one turn, got %+v", turns)
+	}
+	items := turns[0].Items
+	if len(items) != 3 {
+		t.Fatalf("expected user, tool, and assistant items, got %+v", items)
+	}
+	toolItem := items[1]
+	if toolItem.Type != ThreadItemToolCall || toolItem.Name != "read_file" || toolItem.Arguments == "" || toolItem.Result == "" {
+		t.Fatalf("unexpected restored tool item: %+v", toolItem)
+	}
+	if items[2].Type != ThreadItemAgentMessage || items[2].Text != "done" {
+		t.Fatalf("unexpected assistant item: %+v", items[2])
+	}
+}
+
 func TestServerForwardsAgentNotifications(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	workerClient := &fakeClient{response: providers.ChatResponse{Content: "agent done"}}

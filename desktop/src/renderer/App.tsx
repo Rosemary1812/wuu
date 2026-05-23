@@ -1,17 +1,22 @@
 import {
-  Bot,
+  AlertCircle,
   Brain,
   Check,
   ChevronDown,
+  Clock,
+  FileText,
   Folder,
   FolderX,
   FolderOpen,
   FolderPlus,
+  List as ListIcon,
   MessageSquarePlus,
   PanelLeftOpen,
+  Pencil,
   Search,
   Send,
   Square,
+  Terminal,
   Wrench,
   X
 } from "lucide-react";
@@ -100,6 +105,7 @@ export function App(): JSX.Element {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
@@ -222,6 +228,15 @@ export function App(): JSX.Element {
       window.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [resizingSidebar]);
+
+  useEffect(() => {
+    if (!state.running) {
+      return;
+    }
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [state.running]);
 
   const activeProject = useMemo(
     () => state.projects.find((project) => project.id === state.activeProjectId),
@@ -583,7 +598,9 @@ export function App(): JSX.Element {
               {turns.length === 0 ? (
                 <EmptyThread title={emptyThreadTitle} />
               ) : (
-                turns.map((turn) => <TurnView key={turn.id} turn={turn} cwd={state.thread?.cwd ?? state.activeContext?.cwd} />)
+                turns.map((turn) => (
+                  <TurnView key={turn.id} turn={turn} cwd={state.thread?.cwd ?? state.activeContext?.cwd} nowMs={nowMs} />
+                ))
               )}
             </div>
           </div>
@@ -843,14 +860,77 @@ function ThreadList({
   );
 }
 
-function TurnView({ turn, cwd }: { turn: Turn; cwd?: string }): JSX.Element {
+function TurnView({ turn, cwd, nowMs }: { turn: Turn; cwd?: string; nowMs: number }): JSX.Element {
+  const renderedItems: JSX.Element[] = [];
+  let statusInserted = false;
+  let hasAssistantWork = false;
+
+  for (let index = 0; index < turn.items.length; index++) {
+    const item = turn.items[index];
+    if (item.type === "user_message") {
+      renderedItems.push(<ThreadItemView key={item.id} item={item} cwd={cwd} />);
+      continue;
+    }
+
+    if (!statusInserted) {
+      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} nowMs={nowMs} />);
+      statusInserted = true;
+    }
+    hasAssistantWork = true;
+
+    if (item.type === "tool_call") {
+      const group = [item];
+      let nextIndex = index + 1;
+      while (nextIndex < turn.items.length && turn.items[nextIndex].type === "tool_call") {
+        group.push(turn.items[nextIndex]);
+        nextIndex++;
+      }
+      renderedItems.push(<ToolActivityRow key={`${item.id}-activity`} items={group} />);
+      index = nextIndex - 1;
+      continue;
+    }
+
+    renderedItems.push(<ThreadItemView key={item.id} item={item} cwd={cwd} />);
+  }
+
+  if (!statusInserted && turn.status === "in_progress") {
+    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} nowMs={nowMs} />);
+  }
+  if (!hasAssistantWork && turn.status === "in_progress") {
+    renderedItems.push(
+      <div key={`${turn.id}-thinking`} className="activity-row thinking-inline">
+        <Brain size={18} />
+        <span>正在思考</span>
+      </div>
+    );
+  }
+
   return (
     <section className="turn">
-      {turn.items.map((item) => (
-        <ThreadItemView key={item.id} item={item} cwd={cwd} />
-      ))}
+      {renderedItems}
       {turn.error ? <div className="turn-error">{turn.error.message}</div> : null}
     </section>
+  );
+}
+
+function TurnStatusLine({ turn, nowMs }: { turn: Turn; nowMs: number }): JSX.Element {
+  const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
+  const startedAt = Date.parse(turn.started_at);
+  const elapsedMs =
+    completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, nowMs - startedAt) : 0);
+  const statusLabel =
+    turn.status === "failed" ? "处理失败" : turn.status === "interrupted" ? "已停止" : "已处理";
+
+  return (
+    <div className="turn-progress">
+      <div className="turn-progress-label">
+        <Clock size={17} />
+        <span>
+          {statusLabel} {formatDuration(elapsedMs)}
+        </span>
+      </div>
+      <div className="turn-progress-rule" />
+    </div>
   );
 }
 
@@ -865,7 +945,6 @@ function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.
     case "agent_message":
       return (
         <article className="agent-block">
-          <Bot size={18} />
           <div className="agent-text">
             <RichContent text={item.text} cwd={cwd} />
           </div>
@@ -879,17 +958,7 @@ function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.
         </article>
       );
     case "tool_call":
-      return (
-        <article className="tool-card">
-          <div className="tool-header">
-            <Wrench size={16} />
-            <span>{item.name || "tool"}</span>
-            <span className={`status-dot ${item.status ?? "in_progress"}`} />
-          </div>
-          {item.arguments ? <pre>{item.arguments}</pre> : null}
-          {item.result ? <pre className="tool-result">{item.result}</pre> : null}
-        </article>
-      );
+      return <ToolActivityRow items={[item]} />;
     case "context_compaction":
       return <div className="system-line">{item.text}</div>;
     case "error":
@@ -897,6 +966,316 @@ function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.
     default:
       return null;
   }
+}
+
+type ToolActivityKind = "edit" | "create" | "search" | "read" | "list" | "command" | "agent" | "unknown";
+
+type ToolActivitySummary = {
+  kind: ToolActivityKind;
+  text: string;
+  fileName?: string;
+  additions: number;
+  deletions: number;
+  running: boolean;
+  failed: boolean;
+};
+
+type DiffStats = {
+  additions: number;
+  deletions: number;
+  newFile: boolean;
+};
+
+type JsonRecord = Record<string, unknown>;
+
+function ToolActivityRow({ items }: { items: ThreadItem[] }): JSX.Element {
+  const summary = summarizeToolActivity(items);
+  const className = `activity-row${summary.running ? " running" : ""}${summary.failed ? " failed" : ""}`;
+
+  return (
+    <article className={className}>
+      <ActivityIcon kind={summary.kind} failed={summary.failed} />
+      <span className="activity-copy">
+        <span>{summary.text}</span>
+        {summary.fileName ? <span className="activity-file">{summary.fileName}</span> : null}
+        {summary.additions > 0 ? <span className="activity-add">+{summary.additions}</span> : null}
+        {summary.deletions > 0 ? <span className="activity-delete">-{summary.deletions}</span> : null}
+      </span>
+    </article>
+  );
+}
+
+function ActivityIcon({ kind, failed }: { kind: ToolActivityKind; failed: boolean }): JSX.Element {
+  if (failed) {
+    return <AlertCircle size={18} />;
+  }
+  switch (kind) {
+    case "edit":
+    case "create":
+      return <Pencil size={18} />;
+    case "search":
+      return <Search size={18} />;
+    case "read":
+      return <FileText size={18} />;
+    case "list":
+      return <ListIcon size={18} />;
+    case "command":
+      return <Terminal size={18} />;
+    case "agent":
+      return <MessageSquarePlus size={18} />;
+    default:
+      return <Wrench size={18} />;
+  }
+}
+
+function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary {
+  const readFiles = new Set<string>();
+  const searchedFiles = new Set<string>();
+  const editedFiles = new Set<string>();
+  const createdFiles = new Set<string>();
+  const unknownTools = new Set<string>();
+  let searchCount = 0;
+  let listCount = 0;
+  let commandCount = 0;
+  let agentCount = 0;
+  let additions = 0;
+  let deletions = 0;
+  let running = false;
+  let failed = false;
+  let primaryKind: ToolActivityKind = "unknown";
+
+  for (const item of items) {
+    const name = (item.name ?? "tool").trim() || "tool";
+    const args = parseJSONRecord(item.arguments);
+    const result = parseJSONRecord(item.result);
+    const path = stringValue(result, "path") ?? stringValue(args, "path") ?? stringValue(args, "file");
+
+    running = running || (item.status ?? "in_progress") === "in_progress";
+    failed = failed || item.status === "failed" || Boolean(item.error);
+
+    if (name === "read_file") {
+      primaryKind = primaryKind === "unknown" ? "read" : primaryKind;
+      addPath(readFiles, path);
+      continue;
+    }
+    if (name === "grep" || name === "glob" || name === "web_search") {
+      primaryKind = primaryKind === "unknown" || primaryKind === "read" ? "search" : primaryKind;
+      searchCount++;
+      collectResultFiles(result, searchedFiles);
+      continue;
+    }
+    if (name === "list_files") {
+      primaryKind = primaryKind === "unknown" ? "list" : primaryKind;
+      listCount++;
+      continue;
+    }
+    if (name === "run_shell" || name === "git") {
+      primaryKind = primaryKind === "unknown" ? "command" : primaryKind;
+      commandCount++;
+      continue;
+    }
+    if (name === "edit_file" || name === "write_file") {
+      const diff = summarizeDiff(result);
+      const target = diff.newFile ? createdFiles : editedFiles;
+      addPath(target, path);
+      additions += diff.additions;
+      deletions += diff.deletions;
+      primaryKind = diff.newFile ? "create" : "edit";
+      continue;
+    }
+    if (name === "spawn_agent" || name === "fork_agent" || name === "send_message") {
+      primaryKind = primaryKind === "unknown" ? "agent" : primaryKind;
+      agentCount++;
+      continue;
+    }
+    unknownTools.add(name);
+  }
+
+  const singleChangedFile = editedFiles.size + createdFiles.size === 1 && items.length === 1;
+  if (singleChangedFile) {
+    const created = createdFiles.size === 1;
+    const filePath = firstSetValue(created ? createdFiles : editedFiles);
+    return {
+      kind: created ? "create" : "edit",
+      text: failed ? "编辑失败" : created ? (running ? "正在创建" : "已创建") : running ? "正在编辑" : "已编辑",
+      fileName: filePath ? fileBaseName(filePath) : undefined,
+      additions,
+      deletions,
+      running,
+      failed
+    };
+  }
+
+  const parts: string[] = [];
+  if (createdFiles.size > 0) {
+    parts.push(`已创建 ${createdFiles.size} 个文件`);
+  }
+  if (editedFiles.size > 0) {
+    parts.push(`已编辑 ${editedFiles.size} 个文件`);
+  }
+  if (readFiles.size > 0) {
+    parts.push(`已探索 ${readFiles.size} 个文件`);
+  }
+  if (searchedFiles.size > 0) {
+    parts.push(`已搜索 ${searchedFiles.size} 个文件`);
+  }
+  if (searchCount > 0) {
+    parts.push(`${searchCount} 次搜索`);
+  }
+  if (listCount > 0) {
+    parts.push(`${listCount} 次列表`);
+  }
+  if (commandCount > 0) {
+    parts.push(`已运行 ${commandCount} 条命令`);
+  }
+  if (agentCount > 0) {
+    parts.push(`已启动 ${agentCount} 个子任务`);
+  }
+  if (parts.length === 0 && unknownTools.size > 0) {
+    const names = Array.from(unknownTools).slice(0, 2).join("、");
+    parts.push(`${running ? "正在调用" : "已调用"} ${names}`);
+  }
+  if (parts.length === 0) {
+    parts.push(running ? "正在使用工具" : "已使用工具");
+  }
+
+  return {
+    kind: primaryKind,
+    text: `${failed ? "工具失败 · " : ""}${parts.join(" · ")}`,
+    additions,
+    deletions,
+    running,
+    failed
+  };
+}
+
+function summarizeDiff(result: JsonRecord | undefined): DiffStats {
+  const diff = recordValue(result, "diff");
+  if (!diff) {
+    return { additions: 0, deletions: 0, newFile: false };
+  }
+  const newFile = diff.new_file === true;
+  if (newFile) {
+    return { additions: numberValue(diff, "lines") ?? 0, deletions: 0, newFile };
+  }
+
+  let additions = 0;
+  let deletions = 0;
+  for (const hunk of arrayValue(diff, "hunks")) {
+    if (!isRecord(hunk)) {
+      continue;
+    }
+    for (const line of arrayValue(hunk, "lines")) {
+      if (!isRecord(line)) {
+        continue;
+      }
+      if (line.op === "insert") {
+        additions++;
+      } else if (line.op === "delete") {
+        deletions++;
+      }
+    }
+  }
+  return { additions, deletions, newFile };
+}
+
+function collectResultFiles(result: JsonRecord | undefined, output: Set<string>): void {
+  for (const file of arrayValue(result, "files")) {
+    if (typeof file === "string" && file.trim()) {
+      output.add(file.trim());
+    }
+  }
+  for (const match of arrayValue(result, "matches")) {
+    if (isRecord(match)) {
+      addPath(output, stringValue(match, "file"));
+    }
+  }
+  for (const count of arrayValue(result, "counts")) {
+    if (isRecord(count)) {
+      addPath(output, stringValue(count, "file"));
+    }
+  }
+}
+
+function parseJSONRecord(value: string | undefined): JsonRecord | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function recordValue(record: JsonRecord | undefined, key: string): JsonRecord | undefined {
+  if (!record) {
+    return undefined;
+  }
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
+}
+
+function arrayValue(record: JsonRecord | undefined, key: string): unknown[] {
+  if (!record) {
+    return [];
+  }
+  const value = record[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function stringValue(record: JsonRecord | undefined, key: string): string | undefined {
+  if (!record) {
+    return undefined;
+  }
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberValue(record: JsonRecord | undefined, key: string): number | undefined {
+  if (!record) {
+    return undefined;
+  }
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function addPath(output: Set<string>, path: string | undefined): void {
+  if (path?.trim()) {
+    output.add(path.trim());
+  }
+}
+
+function firstSetValue(values: Set<string>): string | undefined {
+  for (const value of values) {
+    return value;
+  }
+  return undefined;
+}
+
+function fileBaseName(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
 }
 
 function EmptyThread({ title }: { title: string }): JSX.Element {
