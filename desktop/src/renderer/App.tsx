@@ -267,7 +267,11 @@ const WORKSPACE_REVIEW_TREE_WIDTH_KEY = "wuu.desktop.reviewTreeWidth";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const IMAGE_MAX_DIMENSION = 2000;
 const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
-const ENABLE_LAUNCH_PREVIEW = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+const RENDERER_ENV = (
+  import.meta as ImportMeta & { env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string } }
+).env;
+const ENABLE_LAUNCH_PREVIEW = Boolean(RENDERER_ENV?.DEV);
+const ENABLE_RUN_DEBUG_PANEL = Boolean(RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true");
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
   contain: "strict",
@@ -2206,35 +2210,37 @@ export function App(): JSX.Element {
                 <span>完整预览</span>
               </button>
             ) : null}
-            <div className="run-debug-anchor" ref={runDebugRef}>
-              <button
-                className={`launch-preview-button run-debug-button${runDebugOpen ? " active" : ""}`}
-                type="button"
-                aria-label={runDebugOpen ? "隐藏调试信息" : "显示调试信息"}
-                aria-expanded={runDebugOpen}
-                onClick={() => {
-                  setEnvironmentPanelOpen(false);
-                  setEnvironmentPanelMenu(null);
-                  setRunDebugOpen((open) => !open);
-                }}
-              >
-                <Bug size={15} />
-                <span>调试</span>
-              </button>
-              {runDebugOpen ? (
-                <RunDebugPanel
-                  state={state}
-                  phase={runDebugPhase}
-                  events={runDebugEvents}
-                  queuedMessages={queuedMessages}
-                  guideMessages={guideMessages}
-                  composerImages={composerImages}
-                  copied={runDebugCopied}
-                  onCopy={() => void copyRunDebugInfo()}
-                  onClose={() => setRunDebugOpen(false)}
-                />
-              ) : null}
-            </div>
+            {ENABLE_RUN_DEBUG_PANEL ? (
+              <div className="run-debug-anchor" ref={runDebugRef}>
+                <button
+                  className={`launch-preview-button run-debug-button${runDebugOpen ? " active" : ""}`}
+                  type="button"
+                  aria-label={runDebugOpen ? "隐藏调试信息" : "显示调试信息"}
+                  aria-expanded={runDebugOpen}
+                  onClick={() => {
+                    setEnvironmentPanelOpen(false);
+                    setEnvironmentPanelMenu(null);
+                    setRunDebugOpen((open) => !open);
+                  }}
+                >
+                  <Bug size={15} />
+                  <span>调试</span>
+                </button>
+                {runDebugOpen ? (
+                  <RunDebugPanel
+                    state={state}
+                    phase={runDebugPhase}
+                    events={runDebugEvents}
+                    queuedMessages={queuedMessages}
+                    guideMessages={guideMessages}
+                    composerImages={composerImages}
+                    copied={runDebugCopied}
+                    onCopy={() => void copyRunDebugInfo()}
+                    onClose={() => setRunDebugOpen(false)}
+                  />
+                ) : null}
+              </div>
+            ) : null}
             <button
               ref={environmentToggleRef}
               className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}

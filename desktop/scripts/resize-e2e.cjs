@@ -42,6 +42,9 @@ async function run() {
   await loadFile(win, rendererHtml);
   await waitFor(win, () => Boolean(document.querySelector(".conversation-pane")), 5000);
 
+  const runDebugVisible = await evaluate(win, () => Boolean(document.querySelector(".run-debug-button")));
+  assert.equal(runDebugVisible, false, "Production desktop builds must not expose the internal run debug panel.");
+
   const primaryScroll = await evaluate(win, () => {
     const node = document.querySelector(".scroll-region");
     return {
