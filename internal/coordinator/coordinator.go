@@ -473,17 +473,28 @@ func (c *Coordinator) Stop(target string) bool {
 }
 
 func (c *Coordinator) StopFrom(currentPath, target string) bool {
-	agentID := c.resolveAgentIDFrom(currentPath, target)
-	if agentID == "" {
+	meta, ok := c.threads.ResolveFrom(currentPath, target)
+	if !ok || meta.Path == agentthread.RootPath {
 		return false
 	}
-	ok := c.manager.Stop(agentID)
-	if ok {
-		if meta, found := c.threads.UpdateEdgeStatus(agentID, agentthread.EdgeClosed, time.Now().UTC()); found {
-			_ = c.threadStore.RecordEdgeStatus(meta)
+	subtree := c.threads.Subtree(meta.ID)
+	if len(subtree) == 0 {
+		subtree = []agentthread.Metadata{meta}
+	}
+	stopped := false
+	now := time.Now().UTC()
+	for _, node := range subtree {
+		if node.Path == agentthread.RootPath {
+			continue
+		}
+		if c.manager.Stop(node.ID) {
+			stopped = true
+		}
+		if closed, found := c.threads.UpdateEdgeStatus(node.ID, agentthread.EdgeClosed, now); found {
+			_ = c.threadStore.RecordEdgeStatus(closed)
 		}
 	}
-	return ok
+	return stopped
 }
 
 // List returns snapshots of all sub-agents in this session.

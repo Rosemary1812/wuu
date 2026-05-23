@@ -287,6 +287,59 @@ func TestNestedResultRoutesToParentAgent(t *testing.T) {
 	c.StopAll()
 }
 
+func TestStopClosesAgentSubtree(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-close-tree",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "worker",
+		TaskName: "parent",
+		Prompt:   "parent task",
+	})
+	if err != nil {
+		t.Fatalf("parent spawn: %v", err)
+	}
+	child, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:       "worker",
+		TaskName:   "child",
+		Prompt:     "child task",
+		ParentID:   parent.AgentID,
+		ParentPath: parent.AgentPath,
+	})
+	if err != nil {
+		t.Fatalf("child spawn: %v", err)
+	}
+
+	if !c.Stop(parent.AgentPath) {
+		t.Fatal("expected parent subtree stop to succeed")
+	}
+	if _, err := c.Wait(context.Background(), parent.AgentID); err != nil {
+		t.Fatalf("wait parent: %v", err)
+	}
+	if _, err := c.Wait(context.Background(), child.AgentID); err != nil {
+		t.Fatalf("wait child: %v", err)
+	}
+	for _, id := range []string{parent.AgentID, child.AgentID} {
+		meta, ok := c.threads.Resolve(id)
+		if !ok {
+			t.Fatalf("missing metadata for %s", id)
+		}
+		if meta.Source.EdgeStatus != agentthread.EdgeClosed {
+			t.Fatalf("expected %s edge closed, got %+v", id, meta.Source)
+		}
+	}
+}
+
 func TestSpawn_InplaceSkipsWorktree(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

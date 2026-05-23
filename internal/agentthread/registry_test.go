@@ -61,3 +61,32 @@ func TestRegistryRejectsInvalidTaskName(t *testing.T) {
 		t.Fatal("expected natural-language task_name to fail")
 	}
 }
+
+func TestRegistrySubtreeReturnsNodeAndDescendants(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterRoot("root-thread", "sess-1", "", "", time.Now())
+	parent, err := reg.RegisterSpawn(SpawnSpec{ID: "parent", TaskName: "parent"})
+	if err != nil {
+		t.Fatalf("register parent: %v", err)
+	}
+	child, err := reg.RegisterSpawn(SpawnSpec{
+		ID:         "child",
+		ParentID:   parent.ID,
+		ParentPath: parent.Path,
+		TaskName:   "child",
+	})
+	if err != nil {
+		t.Fatalf("register child: %v", err)
+	}
+	if _, err := reg.RegisterSpawn(SpawnSpec{ID: "sibling", TaskName: "sibling"}); err != nil {
+		t.Fatalf("register sibling: %v", err)
+	}
+
+	got := reg.Subtree(parent.ID)
+	if len(got) != 2 {
+		t.Fatalf("expected parent subtree only, got %+v", got)
+	}
+	if got[0].ID != parent.ID || got[1].ID != child.ID {
+		t.Fatalf("unexpected subtree order/content: %+v", got)
+	}
+}

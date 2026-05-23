@@ -219,6 +219,30 @@ func (r *Registry) List() []Metadata {
 	return out
 }
 
+func (r *Registry) Subtree(id string) []Metadata {
+	key := strings.TrimSpace(id)
+	if key == "" {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	root, ok := r.byID[key]
+	if !ok {
+		return nil
+	}
+	prefix := root.Path + "/"
+	out := make([]Metadata, 0, len(r.byID))
+	for _, meta := range r.byID {
+		if meta.ID == root.ID || strings.HasPrefix(meta.Path, prefix) {
+			out = append(out, meta)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Path < out[j].Path
+	})
+	return out
+}
+
 func (r *Registry) nextChildPathLocked(parentPath, taskName string) (string, string, error) {
 	trimmedName := strings.TrimSpace(taskName)
 	if trimmedName == "" {
