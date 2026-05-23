@@ -16,6 +16,13 @@
   --weight-bold: 700;
   --line-ui: 1.35;
   --line-body: 1.55;
+  --menu-bg: rgba(255, 255, 255, 0.98);
+  --menu-border: rgba(31, 35, 40, 0.1);
+  --menu-hover: #f2f3f0;
+  --menu-radius: 12px;
+  --menu-shadow:
+    0 14px 34px rgba(20, 24, 28, 0.12),
+    0 2px 8px rgba(20, 24, 28, 0.08);
   font-size: var(--font-ui);
   letter-spacing: 0;
   line-height: var(--line-ui);
@@ -268,39 +275,51 @@ button:disabled {
 
 .project-add-menu {
   position: absolute;
-  top: 0;
-  left: calc(100% + 8px);
+  top: 3px;
+  left: calc(100% + 6px);
   z-index: 30;
   display: grid;
-  width: 300px;
-  gap: 2px;
-  border: 1px solid rgba(30, 34, 38, 0.12);
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
-  padding: 12px;
+  width: 244px;
+  gap: 1px;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 6px;
+  backdrop-filter: blur(16px);
 }
 
 .project-add-menu button {
   display: flex;
-  height: 44px;
+  height: 34px;
   align-items: center;
-  gap: 12px;
-  border-radius: 10px;
+  gap: 9px;
+  border-radius: 7px;
   background: transparent;
   color: #1f2328;
-  font-size: var(--font-body);
-  font-weight: var(--weight-semibold);
-  padding: 0 14px;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  padding: 0 9px;
   text-align: left;
 }
 
 .project-add-menu button:hover {
-  background: #f0f1ef;
+  background: var(--menu-hover);
 }
 
 .project-add-menu svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
   color: #596168;
+}
+
+.project-add-menu button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .projects,
@@ -1100,67 +1119,77 @@ kbd {
 .codex-runtime-menu {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 10px);
+  bottom: calc(100% + 8px);
   z-index: 35;
   display: grid;
-  width: 280px;
-  max-height: min(430px, calc(100vh - 180px));
-  overflow: hidden;
-  border: 1px solid rgba(30, 34, 38, 0.12);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
-  padding: 12px;
-  backdrop-filter: blur(18px);
+  width: 236px;
+  max-height: min(340px, calc(100vh - 180px));
+  gap: 1px;
+  overflow-y: auto;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 6px;
+  backdrop-filter: blur(16px);
 }
 
 .codex-model-menu {
-  width: 360px;
+  width: 286px;
 }
 
 .codex-main-menu {
-  width: 300px;
+  width: 236px;
 }
 
 .hero-composer-wrap .codex-runtime-menu {
-  top: calc(100% + 10px);
+  top: calc(100% + 8px);
   bottom: auto;
 }
 
 .codex-menu-label {
   color: #9a9ea2;
-  font-size: var(--font-body);
-  font-weight: var(--weight-semibold);
-  padding: 4px 12px 10px;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  padding: 4px 8px 6px;
 }
 
 .codex-runtime-menu button {
   display: flex;
-  height: 40px;
+  height: 34px;
   min-width: 0;
   align-items: center;
-  gap: 10px;
-  border-radius: 8px;
+  gap: 8px;
+  border-radius: 7px;
   background: transparent;
   color: #202427;
-  font-size: var(--font-body);
-  padding: 0 12px;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  padding: 0 9px;
   text-align: left;
 }
 
 .codex-runtime-menu button:hover {
-  background: #f0f1ef;
+  background: var(--menu-hover);
 }
 
 .codex-menu-separator {
   height: 1px;
-  margin: 8px 0;
+  margin: 5px 0;
   background: #e6e7e4;
 }
 
 .codex-menu-chevron {
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
   color: #8a8f93;
+}
+
+.codex-runtime-menu button svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 
 .codex-runtime-menu button span {
@@ -2102,72 +2131,79 @@ pre {
 
 .composer-project-menu {
   position: absolute;
-  left: 16px;
-  bottom: 44px;
+  left: 12px;
+  bottom: 42px;
   z-index: 30;
   display: grid;
-  width: 360px;
-  max-height: min(460px, calc(100vh - 180px));
+  width: 300px;
+  max-height: min(360px, calc(100vh - 180px));
   overflow: hidden;
-  border: 1px solid rgba(30, 34, 38, 0.12);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
-  padding: 12px;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 6px;
+  backdrop-filter: blur(16px);
 }
 
 .composer-context-menu {
   position: absolute;
-  bottom: 44px;
-  left: 16px;
+  bottom: 42px;
+  left: 12px;
   z-index: 30;
   display: grid;
-  width: 320px;
-  gap: 2px;
-  overflow: hidden;
-  border: 1px solid rgba(30, 34, 38, 0.12);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
-  padding: 12px;
+  width: 244px;
+  max-height: min(340px, calc(100vh - 180px));
+  gap: 1px;
+  overflow-y: auto;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 6px;
+  backdrop-filter: blur(16px);
 }
 
 .hero-composer-wrap .composer-context-menu {
-  top: calc(100% + 10px);
+  top: calc(100% + 8px);
   bottom: auto;
 }
 
 .permission-menu-anchor .access-menu,
 .hero-composer-wrap .permission-menu-anchor .access-menu {
   top: auto;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 6px);
   left: 0;
+  width: 260px;
 }
 
 .mode-menu {
-  left: 188px;
+  left: 170px;
+  width: 224px;
 }
 
 .branch-menu {
-  left: 330px;
-  width: 360px;
+  left: 304px;
+  width: 300px;
 }
 
 .composer-context-menu button {
   display: flex;
-  height: 40px;
+  height: 34px;
   min-width: 0;
   align-items: center;
-  gap: 10px;
-  border-radius: 8px;
+  gap: 8px;
+  border-radius: 7px;
   background: transparent;
   color: #202427;
-  padding: 0 12px;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  padding: 0 9px;
   text-align: left;
 }
 
 .composer-context-menu button:hover:not(:disabled) {
-  background: #f0f1ef;
+  background: var(--menu-hover);
 }
 
 .composer-context-menu button:disabled {
@@ -2182,19 +2218,25 @@ pre {
   white-space: nowrap;
 }
 
+.composer-context-menu button svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
 .composer-menu-note,
 .composer-menu-empty {
   display: grid;
-  gap: 5px;
-  padding: 10px 12px;
+  gap: 4px;
+  padding: 8px 9px;
   color: #777d82;
-  font-size: var(--font-ui);
-  line-height: 1.4;
+  font-size: var(--font-sm);
+  line-height: 1.38;
 }
 
 .composer-menu-note strong {
   color: #22262a;
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
 }
 
 .composer-menu-note.warning strong {
@@ -2202,18 +2244,28 @@ pre {
 }
 
 .hero-composer-wrap .composer-project-menu {
-  top: calc(100% + 10px);
+  top: calc(100% + 8px);
   bottom: auto;
-  left: 16px;
+  left: 12px;
 }
 
 .project-search {
   display: flex;
-  height: 40px;
+  height: 34px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  border: 1px solid #ececea;
+  border-radius: 8px;
+  background: #f8f8f6;
   color: #81868a;
-  padding: 0 12px;
+  margin: 0 0 6px;
+  padding: 0 9px;
+}
+
+.project-search svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
 }
 
 .project-search input {
@@ -2230,29 +2282,31 @@ pre {
 }
 
 .project-picker-list {
-  max-height: 220px;
+  max-height: 188px;
   overflow: hidden;
 }
 
 .project-picker-list > [data-overlayscrollbars-contents] {
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .composer-project-menu button {
   display: flex;
-  height: 40px;
+  height: 34px;
   align-items: center;
-  gap: 10px;
-  border-radius: 8px;
+  gap: 8px;
+  border-radius: 7px;
   background: transparent;
   color: #202427;
-  padding: 0 12px;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  padding: 0 9px;
   text-align: left;
 }
 
 .composer-project-menu button:hover {
-  background: #f0f1ef;
+  background: var(--menu-hover);
 }
 
 .composer-project-menu button span {
@@ -2264,19 +2318,22 @@ pre {
 }
 
 .composer-project-menu svg {
+  width: 16px;
+  height: 16px;
   color: #6b7176;
   flex: 0 0 auto;
 }
 
 .project-picker-empty {
   color: #8a8e91;
-  padding: 10px 12px;
+  padding: 8px 9px;
+  font-size: var(--font-sm);
 }
 
 .project-picker-divider {
   height: 1px;
   background: #e8e8e5;
-  margin: 8px 0;
+  margin: 6px 0;
 }
 
 .modal-backdrop {
