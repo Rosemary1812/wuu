@@ -90,6 +90,49 @@ func TestUpdateIndex(t *testing.T) {
 	}
 }
 
+func TestPinAndArchiveMetadata(t *testing.T) {
+	dir := t.TempDir()
+	first, err := CreateWithMetadata(dir, "first", "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := CreateWithMetadata(dir, "second", "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pinned, err := UpdatePinned(dir, first.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pinned.PinnedAt == nil {
+		t.Fatalf("expected pinned timestamp: %+v", pinned)
+	}
+	sessions, err := List(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 2 || sessions[0].ID != first.ID || sessions[1].ID != second.ID {
+		t.Fatalf("expected pinned session first, got %+v", sessions)
+	}
+
+	archived, err := UpdateArchived(dir, first.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived.ArchivedAt == nil || archived.PinnedAt != nil {
+		t.Fatalf("expected archived session to clear pin: %+v", archived)
+	}
+
+	found, ok, err := Find(dir, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || found.ArchivedAt == nil {
+		t.Fatalf("expected archived metadata from Find, got ok=%v session=%+v", ok, found)
+	}
+}
+
 // TestConcurrentCreateAndUpdate exercises the race fixed by withIndexLock:
 // before the fix, UpdateIndex's read-modify-rewrite could clobber a Create
 // that happened between the read and the rewrite.

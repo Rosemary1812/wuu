@@ -19,6 +19,8 @@ const (
 	MethodThreadStart       = "thread/start"
 	MethodThreadResume      = "thread/resume"
 	MethodThreadList        = "thread/list"
+	MethodThreadPin         = "thread/pin"
+	MethodThreadArchive     = "thread/archive"
 	MethodTurnStart         = "turn/start"
 	MethodTurnInterrupt     = "turn/interrupt"
 	MethodShutdown          = "shutdown"
@@ -149,6 +151,24 @@ type ThreadListResult struct {
 	Threads []Thread `json:"threads"`
 }
 
+type ThreadPinParams struct {
+	ThreadID string `json:"thread_id"`
+	Pinned   bool   `json:"pinned"`
+}
+
+type ThreadPinResult struct {
+	Thread Thread `json:"thread"`
+}
+
+type ThreadArchiveParams struct {
+	ThreadID string `json:"thread_id"`
+	Archived bool   `json:"archived"`
+}
+
+type ThreadArchiveResult struct {
+	Thread Thread `json:"thread"`
+}
+
 type TurnStartParams struct {
 	ThreadID string           `json:"thread_id"`
 	Prompt   string           `json:"prompt"`
@@ -259,6 +279,8 @@ type Thread struct {
 	Model         string       `json:"model"`
 	CWD           string       `json:"cwd"`
 	Status        ThreadStatus `json:"status"`
+	Pinned        bool         `json:"pinned,omitempty"`
+	Archived      bool         `json:"archived,omitempty"`
 	CreatedAt     time.Time    `json:"created_at"`
 	UpdatedAt     time.Time    `json:"updated_at"`
 	Turns         []Turn       `json:"turns"`

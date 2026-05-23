@@ -43,11 +43,13 @@ func withIndexLock(sessDir string, exclusive bool, fn func() error) error {
 
 // Session represents one conversation session.
 type Session struct {
-	ID        string    `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	Summary   string    `json:"summary,omitempty"`
-	Entries   int       `json:"entries"`
-	CWD       string    `json:"cwd,omitempty"`
+	ID         string     `json:"id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Summary    string     `json:"summary,omitempty"`
+	Entries    int        `json:"entries"`
+	CWD        string     `json:"cwd,omitempty"`
+	PinnedAt   *time.Time `json:"pinned_at,omitempty"`
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 }
 
 // NewID generates a human-readable, sortable session ID: YYYYMMDD-HHMMSS-xxxxxxxxxxxxxxxx.
@@ -183,6 +185,14 @@ func listLocked(sessDir string, limit int) ([]Session, error) {
 	}
 
 	sort.Slice(sessions, func(i, j int) bool {
+		leftPinned := sessions[i].PinnedAt != nil
+		rightPinned := sessions[j].PinnedAt != nil
+		if leftPinned != rightPinned {
+			return leftPinned
+		}
+		if leftPinned && rightPinned && !sessions[i].PinnedAt.Equal(*sessions[j].PinnedAt) {
+			return sessions[i].PinnedAt.After(*sessions[j].PinnedAt)
+		}
 		return sessions[i].CreatedAt.After(sessions[j].CreatedAt)
 	})
 
@@ -201,9 +211,66 @@ func Load(sessDir, id string) (string, error) {
 	return path, nil
 }
 
+// Find returns metadata for a session ID from the index.
+func Find(sessDir, id string) (Session, bool, error) {
+	var found Session
+	ok := false
+	err := withIndexLock(sessDir, false, func() error {
+		sessions, err := listLocked(sessDir, 0)
+		if err != nil {
+			return err
+		}
+		for _, s := range sessions {
+			if s.ID == id {
+				found = s
+				ok = true
+				return nil
+			}
+		}
+		return nil
+	})
+	return found, ok, err
+}
+
 // UpdateIndex updates the entries count and summary for a session in the index.
 func UpdateIndex(sessDir string, id string, entries int, summary string) error {
-	return withIndexLock(sessDir, true, func() error {
+	_, err := updateMetadata(sessDir, id, true, func(s *Session) {
+		s.Entries = entries
+		if summary != "" && s.Summary == "" {
+			s.Summary = summary
+		}
+	})
+	return err
+}
+
+// UpdatePinned marks a session as pinned or unpinned in the index.
+func UpdatePinned(sessDir, id string, pinned bool) (Session, error) {
+	now := time.Now().UTC()
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		if pinned {
+			s.PinnedAt = &now
+		} else {
+			s.PinnedAt = nil
+		}
+	})
+}
+
+// UpdateArchived marks a session as archived or active in the index.
+func UpdateArchived(sessDir, id string, archived bool) (Session, error) {
+	now := time.Now().UTC()
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		if archived {
+			s.ArchivedAt = &now
+			s.PinnedAt = nil
+		} else {
+			s.ArchivedAt = nil
+		}
+	})
+}
+
+func updateMetadata(sessDir, id string, missingOK bool, update func(*Session)) (Session, error) {
+	var updated Session
+	err := withIndexLock(sessDir, true, func() error {
 		sessions, err := listLocked(sessDir, 0)
 		if err != nil {
 			return err
@@ -212,16 +279,17 @@ func UpdateIndex(sessDir string, id string, entries int, summary string) error {
 		found := false
 		for i := range sessions {
 			if sessions[i].ID == id {
-				sessions[i].Entries = entries
-				if summary != "" && sessions[i].Summary == "" {
-					sessions[i].Summary = summary
-				}
+				update(&sessions[i])
+				updated = sessions[i]
 				found = true
 				break
 			}
 		}
 		if !found {
-			return nil
+			if missingOK {
+				return nil
+			}
+			return fmt.Errorf("session %q not found", id)
 		}
 
 		// Sort chronologically for stable output, then write to a
@@ -254,6 +322,10 @@ func UpdateIndex(sessDir string, id string, entries int, summary string) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return Session{}, err
+	}
+	return updated, nil
 }
 
 // MostRecent returns the most recent session ID, or empty string if none.

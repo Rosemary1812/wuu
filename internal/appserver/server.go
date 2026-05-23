@@ -38,6 +38,8 @@ type threadState struct {
 	ModelProvider string
 	Model         string
 	CWD           string
+	PinnedAt      *time.Time
+	ArchivedAt    *time.Time
 	Turns         []Turn
 	MemoryPath    string
 
@@ -180,6 +182,10 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadResume(req)
 	case MethodThreadList:
 		return s.handleThreadList(req)
+	case MethodThreadPin:
+		return s.handleThreadPin(req)
+	case MethodThreadArchive:
+		return s.handleThreadArchive(req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnInterrupt:
@@ -400,7 +406,7 @@ func (s *Server) handleThreadResume(req Request) error {
 	id := strings.TrimSpace(params.SessionID)
 	var err error
 	if id == "" {
-		id, err = session.MostRecentForCWD(s.rt.SessionDir, s.rt.RootDir)
+		id, err = s.mostRecentVisibleThreadID()
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
@@ -428,6 +434,11 @@ func (s *Server) handleThreadResume(req Request) error {
 	history = normalized
 	history = ensureBaseSystemPrompt(history, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, time.Now().UTC())
+	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	} else if ok {
+		applySessionMetadata(th, metadata)
+	}
 	s.mu.Lock()
 	s.threads[id] = th
 	s.mu.Unlock()
@@ -446,15 +457,176 @@ func (s *Server) handleThreadResume(req Request) error {
 }
 
 func (s *Server) handleThreadList(req Request) error {
+	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, 0)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	entries := make(map[string]threadListEntry, len(sessions))
+	for _, sess := range sessions {
+		if sess.ArchivedAt != nil {
+			continue
+		}
+		entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
+	}
+
 	s.mu.Lock()
-	threads := make([]Thread, 0, len(s.threads))
 	for _, th := range s.threads {
 		th.mu.Lock()
-		threads = append(threads, th.snapshotLocked())
+		thread := th.snapshotLocked()
+		entry := threadListEntry{thread: thread, pinnedAt: th.PinnedAt}
 		th.mu.Unlock()
+		if thread.Archived {
+			delete(entries, thread.ID)
+			continue
+		}
+		if thread.CWD == s.rt.RootDir {
+			entries[thread.ID] = entry
+		}
 	}
 	s.mu.Unlock()
-	return s.writeResponse(req.ID, ThreadListResult{Threads: threads}, nil)
+
+	threads := make([]threadListEntry, 0, len(entries))
+	for _, entry := range entries {
+		threads = append(threads, entry)
+	}
+	sortThreadListEntries(threads)
+	result := make([]Thread, 0, len(threads))
+	for _, entry := range threads {
+		result = append(result, entry.thread)
+	}
+	return s.writeResponse(req.ID, ThreadListResult{Threads: result}, nil)
+}
+
+func (s *Server) handleThreadPin(req Request) error {
+	var params ThreadPinParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	id := strings.TrimSpace(params.ThreadID)
+	if id == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	metadata, err := session.UpdatePinned(s.rt.SessionDir, id, params.Pinned)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	thread := s.threadAfterMetadataUpdate(metadata)
+	return s.writeResponse(req.ID, ThreadPinResult{Thread: thread}, nil)
+}
+
+func (s *Server) handleThreadArchive(req Request) error {
+	var params ThreadArchiveParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	id := strings.TrimSpace(params.ThreadID)
+	if id == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	if params.Archived {
+		if th := s.thread(id); th != nil {
+			th.mu.Lock()
+			running := th.running
+			th.mu.Unlock()
+			if running {
+				return s.writeResponse(req.ID, nil, errors.New("cannot archive a running thread"))
+			}
+		}
+	}
+	metadata, err := session.UpdateArchived(s.rt.SessionDir, id, params.Archived)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	thread := s.threadAfterMetadataUpdate(metadata)
+	return s.writeResponse(req.ID, ThreadArchiveResult{Thread: thread}, nil)
+}
+
+type threadListEntry struct {
+	thread   Thread
+	pinnedAt *time.Time
+}
+
+func applySessionMetadata(th *threadState, metadata session.Session) {
+	if !metadata.CreatedAt.IsZero() {
+		th.CreatedAt = metadata.CreatedAt
+	}
+	if strings.TrimSpace(metadata.CWD) != "" {
+		th.CWD = metadata.CWD
+	}
+	th.PinnedAt = metadata.PinnedAt
+	th.ArchivedAt = metadata.ArchivedAt
+}
+
+func threadEntryFromSession(sess session.Session, provider, model string) threadListEntry {
+	updatedAt := sess.CreatedAt
+	return threadListEntry{
+		thread: Thread{
+			ID:            sess.ID,
+			Preview:       sess.Summary,
+			ModelProvider: provider,
+			Model:         model,
+			CWD:           sess.CWD,
+			Status:        ThreadStatusIdle,
+			Pinned:        sess.PinnedAt != nil,
+			Archived:      sess.ArchivedAt != nil,
+			CreatedAt:     sess.CreatedAt,
+			UpdatedAt:     updatedAt,
+			Turns:         []Turn{},
+		},
+		pinnedAt: sess.PinnedAt,
+	}
+}
+
+func sortThreadListEntries(entries []threadListEntry) {
+	sort.Slice(entries, func(i, j int) bool {
+		leftPinned := entries[i].pinnedAt != nil
+		rightPinned := entries[j].pinnedAt != nil
+		if leftPinned != rightPinned {
+			return leftPinned
+		}
+		if leftPinned && rightPinned && !entries[i].pinnedAt.Equal(*entries[j].pinnedAt) {
+			return entries[i].pinnedAt.After(*entries[j].pinnedAt)
+		}
+		leftTime := entries[i].thread.UpdatedAt
+		if leftTime.IsZero() {
+			leftTime = entries[i].thread.CreatedAt
+		}
+		rightTime := entries[j].thread.UpdatedAt
+		if rightTime.IsZero() {
+			rightTime = entries[j].thread.CreatedAt
+		}
+		return leftTime.After(rightTime)
+	})
+}
+
+func (s *Server) mostRecentVisibleThreadID() (string, error) {
+	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, 0)
+	if err != nil {
+		return "", err
+	}
+	entries := make([]threadListEntry, 0, len(sessions))
+	for _, sess := range sessions {
+		if sess.ArchivedAt != nil {
+			continue
+		}
+		entries = append(entries, threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model))
+	}
+	sortThreadListEntries(entries)
+	if len(entries) == 0 {
+		return "", nil
+	}
+	return entries[0].thread.ID, nil
+}
+
+func (s *Server) threadAfterMetadataUpdate(metadata session.Session) Thread {
+	if th := s.thread(metadata.ID); th != nil {
+		th.mu.Lock()
+		applySessionMetadata(th, metadata)
+		thread := th.snapshotLocked()
+		th.mu.Unlock()
+		return thread
+	}
+	return threadEntryFromSession(metadata, s.rt.ProviderName, s.rt.Model).thread
 }
 
 func (s *Server) hasRunningThread() bool {

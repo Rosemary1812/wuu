@@ -40,6 +40,8 @@ func (th *threadState) snapshotLocked() Thread {
 		Model:         th.Model,
 		CWD:           th.CWD,
 		Status:        status,
+		Pinned:        th.PinnedAt != nil,
+		Archived:      th.ArchivedAt != nil,
 		CreatedAt:     th.CreatedAt,
 		UpdatedAt:     th.UpdatedAt,
 		Turns:         cloneTurns(th.Turns),

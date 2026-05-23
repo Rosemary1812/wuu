@@ -447,6 +447,110 @@ func TestServerTurnStartAcceptsImageOnlyPrompt(t *testing.T) {
 	}
 }
 
+func TestServerThreadListUsesSessionIndexMetadata(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "old-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, "old-thread", 2, "old summary"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "new-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, "new-thread", 2, "new summary"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "archived-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.UpdateArchived(rt.SessionDir, "archived-thread", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "other-thread", filepath.Join(rt.RootDir, "other")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.UpdatePinned(rt.SessionDir, "old-thread", true); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/list"}`)); err != nil {
+		t.Fatalf("thread/list: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadListResult](t, responseByID(t, msgs, "1")["result"])
+	if len(result.Threads) != 2 {
+		t.Fatalf("expected two visible workspace threads, got %+v", result.Threads)
+	}
+	if result.Threads[0].ID != "old-thread" || !result.Threads[0].Pinned || result.Threads[0].Preview != "old summary" {
+		t.Fatalf("expected pinned old thread first, got %+v", result.Threads)
+	}
+	if result.Threads[1].ID != "new-thread" || result.Threads[1].Archived {
+		t.Fatalf("unexpected second thread: %+v", result.Threads[1])
+	}
+}
+
+func TestServerThreadPinAndArchive(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	pinPayload, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodThreadPin,
+		"params": ThreadPinParams{ThreadID: threadID, Pinned: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), pinPayload); err != nil {
+		t.Fatalf("thread/pin: %v", err)
+	}
+	pinResult := remarshal[ThreadPinResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	if pinResult.Thread.ID != threadID || !pinResult.Thread.Pinned {
+		t.Fatalf("unexpected pin result: %+v", pinResult)
+	}
+	pinned, ok, err := session.Find(rt.SessionDir, threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || pinned.PinnedAt == nil {
+		t.Fatalf("pin not persisted: ok=%v session=%+v", ok, pinned)
+	}
+
+	archivePayload, err := json.Marshal(map[string]any{
+		"id":     "3",
+		"method": MethodThreadArchive,
+		"params": ThreadArchiveParams{ThreadID: threadID, Archived: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), archivePayload); err != nil {
+		t.Fatalf("thread/archive: %v", err)
+	}
+	archiveResult := remarshal[ThreadArchiveResult](t, responseByID(t, parseOutput(t, out.String()), "3")["result"])
+	if archiveResult.Thread.ID != threadID || !archiveResult.Thread.Archived || archiveResult.Thread.Pinned {
+		t.Fatalf("unexpected archive result: %+v", archiveResult)
+	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"4","method":"thread/list"}`)); err != nil {
+		t.Fatalf("thread/list: %v", err)
+	}
+	listResult := remarshal[ThreadListResult](t, responseByID(t, parseOutput(t, out.String()), "4")["result"])
+	if len(listResult.Threads) != 0 {
+		t.Fatalf("archived thread should be hidden, got %+v", listResult.Threads)
+	}
+}
+
 func TestServerRejectsUnknownTurnParams(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	out := &lockedBuffer{}
