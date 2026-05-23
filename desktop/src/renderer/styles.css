@@ -1167,17 +1167,9 @@ kbd {
 .scroll-region {
   contain: layout paint;
   min-height: 0;
-  overflow: hidden;
-}
-
-.scroll-region > [data-overlayscrollbars-contents] {
-  min-height: 100%;
+  overflow-y: auto;
   overscroll-behavior: contain;
-}
-
-.empty-scroll-region > [data-overlayscrollbars-contents],
-.workspace-scroll-region > [data-overlayscrollbars-contents] {
-  padding: 0;
+  scrollbar-gutter: stable;
 }
 
 .conversation-width {

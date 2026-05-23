@@ -65,5 +65,6 @@ contextBridge.exposeInMainWorld("wuu", {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on("test:server-event", listener);
     return () => ipcRenderer.removeListener("test:server-event", listener);
-  }
+  },
+  onWindowResizeState: () => () => undefined
 });

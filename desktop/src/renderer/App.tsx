@@ -42,8 +42,8 @@ import {
   useRef,
   useState
 } from "react";
-import type { OverlayScrollbars, PartialOptions } from "overlayscrollbars";
-import { OverlayScrollbarsComponent, type OverlayScrollbarsComponentRef } from "overlayscrollbars-react";
+import type { PartialOptions } from "overlayscrollbars";
+import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
   AppServerNotification,
   AskUserQuestion,
@@ -250,7 +250,7 @@ export function App(): JSX.Element {
   const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
   const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState<string | undefined>(undefined);
-  const conversationScrollRef = useRef<OverlayScrollbarsComponentRef<"div"> | null>(null);
+  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
@@ -385,7 +385,7 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     conversationAutoFollowRef.current = true;
-    scrollConversationToBottom(undefined, { force: true });
+    scrollConversationToBottom({ force: true });
   }, [state.thread?.id]);
 
   useEffect(() => {
@@ -497,21 +497,16 @@ export function App(): JSX.Element {
     });
   }
 
-  function handleConversationInitialized(instance: OverlayScrollbars): void {
-    conversationAutoFollowRef.current = true;
-    scrollConversationToBottom(instance, { force: true });
-  }
-
-  function handleConversationScroll(instance: OverlayScrollbars): void {
-    const node = conversationViewport(instance);
+  function handleConversationScroll(): void {
+    const node = conversationViewport();
     if (!node) {
       return;
     }
     conversationAutoFollowRef.current = isConversationNearBottom(node);
   }
 
-  function scrollConversationToBottom(instance?: OverlayScrollbars, options: { force?: boolean } = {}): void {
-    const node = conversationViewport(instance);
+  function scrollConversationToBottom(options: { force?: boolean } = {}): void {
+    const node = conversationViewport();
     if (!node || (!options.force && !conversationAutoFollowRef.current)) {
       return;
     }
@@ -519,8 +514,8 @@ export function App(): JSX.Element {
     conversationAutoFollowRef.current = true;
   }
 
-  function conversationViewport(instance?: OverlayScrollbars): HTMLElement | undefined {
-    return instance?.elements().viewport ?? conversationScrollRef.current?.osInstance()?.elements().viewport;
+  function conversationViewport(): HTMLElement | undefined {
+    return conversationScrollRef.current ?? undefined;
   }
 
   function isConversationNearBottom(node: HTMLElement): boolean {
@@ -1149,14 +1144,11 @@ export function App(): JSX.Element {
         </header>
 
         {state.initialized && !previewingLaunch ? (
-          <OverlayScrollbarsComponent
+          <div
             className={`scroll-region${emptyConversation && !showingWorkspaceMode ? " empty-scroll-region" : ""}${
               showingWorkspaceMode ? " workspace-scroll-region" : ""
             }`}
-            data-overlayscrollbars-initialize
-            defer
-            events={{ initialized: handleConversationInitialized, scroll: handleConversationScroll }}
-            options={OVERLAY_SCROLLBAR_OPTIONS}
+            onScroll={handleConversationScroll}
             ref={conversationScrollRef}
           >
             {workspaceMode ? (
@@ -1190,7 +1182,7 @@ export function App(): JSX.Element {
                 ))}
               </div>
             )}
-          </OverlayScrollbarsComponent>
+          </div>
         ) : (
           <RuntimeLoading
             status={state.status}
@@ -1261,34 +1253,37 @@ function WorkspaceRightPanel({
           <X size={17} />
         </button>
       </div>
-      <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
-        {WORKSPACE_TOOL_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            className={item.id === view ? "active" : ""}
-            type="button"
-            role="tab"
-            aria-selected={item.id === view}
-            disabled={!open}
-            title={item.title}
-            onClick={() => onSelectView(item.id)}
-          >
-            <WorkspaceToolIcon view={item.id} size={17} />
-          </button>
-        ))}
-      </div>
-      <div className="workspace-panel-body">
-        {view === "files" ? (
-          <WorkspaceFileTree
-            activeContext={activeContext}
-            open={open}
-            selectedFilePath={selectedFilePath}
-            onOpenFile={onOpenFile}
-          />
-        ) : (
-          <WorkspacePanelPlaceholder view={view} />
-        )}
-      </div>
+      {open ? (
+        <>
+          <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
+            {WORKSPACE_TOOL_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                className={item.id === view ? "active" : ""}
+                type="button"
+                role="tab"
+                aria-selected={item.id === view}
+                title={item.title}
+                onClick={() => onSelectView(item.id)}
+              >
+                <WorkspaceToolIcon view={item.id} size={17} />
+              </button>
+            ))}
+          </div>
+          <div className="workspace-panel-body">
+            {view === "files" ? (
+              <WorkspaceFileTree
+                activeContext={activeContext}
+                open={open}
+                selectedFilePath={selectedFilePath}
+                onOpenFile={onOpenFile}
+              />
+            ) : (
+              <WorkspacePanelPlaceholder view={view} />
+            )}
+          </div>
+        </>
+      ) : null}
     </aside>
   );
 }
@@ -1318,27 +1313,28 @@ function WorkspaceBottomPanel({
           <X size={17} />
         </button>
       </div>
-      <OverlayScrollbarsComponent
-        className="workspace-tool-grid"
-        aria-label="工作区工具"
-        data-overlayscrollbars-initialize
-        defer
-        options={OVERLAY_SCROLLBAR_OPTIONS}
-      >
-        {WORKSPACE_TOOL_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            className={`workspace-tool-card${item.id === selectedView ? " active" : ""}`}
-            type="button"
-            disabled={!open}
-            onClick={() => onSelectTool(item.id)}
-          >
-            <WorkspaceToolIcon view={item.id} size={25} />
-            <strong>{item.title}</strong>
-            <span>{item.subtitle}</span>
-          </button>
-        ))}
-      </OverlayScrollbarsComponent>
+      {open ? (
+        <OverlayScrollbarsComponent
+          className="workspace-tool-grid"
+          aria-label="工作区工具"
+          data-overlayscrollbars-initialize
+          defer
+          options={OVERLAY_SCROLLBAR_OPTIONS}
+        >
+          {WORKSPACE_TOOL_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              className={`workspace-tool-card${item.id === selectedView ? " active" : ""}`}
+              type="button"
+              onClick={() => onSelectTool(item.id)}
+            >
+              <WorkspaceToolIcon view={item.id} size={25} />
+              <strong>{item.title}</strong>
+              <span>{item.subtitle}</span>
+            </button>
+          ))}
+        </OverlayScrollbarsComponent>
+      ) : null}
     </section>
   );
 }
