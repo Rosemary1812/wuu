@@ -978,6 +978,7 @@ export function App(): JSX.Element {
   const emptyConversation = turns.length === 0 && !state.askRequest;
   const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
+  const sidebarPinnedThreads = pinnedThreads(state.threads);
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
   }${rightPanelOpen ? " right-panel-open" : ""}${bottomPanelOpen ? " bottom-panel-open" : ""}`;
@@ -1286,10 +1287,10 @@ export function App(): JSX.Element {
     const [initialized, gitStatus] = await Promise.all([window.wuu.initialize(), window.wuu.gitStatus()]);
     const listed = await window.wuu.listThreads();
     const listedThreads = sortThreads(listed.threads);
-    const thread =
-      listedThreads.length > 0
-        ? requireThread(await window.wuu.resumeThread(listedThreads[0].id), "resume did not return a thread")
-        : undefined;
+    const defaultThread = listedThreads.find((candidate) => !candidate.pinned) ?? listedThreads[0];
+    const thread = defaultThread
+      ? requireThread(await window.wuu.resumeThread(defaultThread.id), "resume did not return a thread")
+      : undefined;
     return {
       initialized,
       projects: projectState.projects,
@@ -1952,6 +1953,23 @@ export function App(): JSX.Element {
             <span>新对话</span>
           </button>
         </nav>
+
+        {sidebarPinnedThreads.length > 0 ? (
+          <section className="pinned-thread-section" aria-label="置顶">
+            <div className="section-label pinned-thread-label">置顶</div>
+            <PinnedThreadList
+              threads={sidebarPinnedThreads}
+              activeID={state.thread?.id}
+              archiveConfirmThreadID={archiveConfirmThreadID}
+              onSelect={(id) => void selectThread(id)}
+              onTogglePinned={(thread) => void toggleThreadPinned(thread)}
+              onArchive={(thread) => void archiveThread(thread)}
+              onClearArchiveConfirm={(id) =>
+                setArchiveConfirmThreadID((current) => (current === id ? undefined : current))
+              }
+            />
+          </section>
+        ) : null}
 
         <section className="project-list" aria-label="项目">
           <div className="project-section-header" ref={projectMenuRef}>
@@ -3654,12 +3672,15 @@ function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
 function sortThreads(threads: Thread[]): Thread[] {
   return threads
     .filter((thread): thread is Thread => isThread(thread) && !thread.archived)
-    .sort((left, right) => {
-      if (Boolean(left.pinned) !== Boolean(right.pinned)) {
-        return left.pinned ? -1 : 1;
-      }
-      return threadTime(right) - threadTime(left);
-    });
+    .sort((left, right) => threadTime(right) - threadTime(left));
+}
+
+function pinnedThreads(threads: Thread[]): Thread[] {
+  return sortThreads(threads).filter((thread) => thread.pinned);
+}
+
+function projectThreads(threads: Thread[]): Thread[] {
+  return sortThreads(threads).filter((thread) => !thread.pinned);
 }
 
 function threadTime(thread: Thread): number {
@@ -3806,10 +3827,74 @@ function ThreadList({
   onArchive: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
-  const visibleThreads = sortThreads(threads);
+  const visibleThreads = projectThreads(threads);
   return (
     <div className="thread-list">
-      {visibleThreads.map((thread) => {
+      <ThreadRows
+        threads={visibleThreads}
+        activeID={activeID}
+        archiveConfirmThreadID={archiveConfirmThreadID}
+        onSelect={onSelect}
+        onTogglePinned={onTogglePinned}
+        onArchive={onArchive}
+        onClearArchiveConfirm={onClearArchiveConfirm}
+      />
+    </div>
+  );
+}
+
+function PinnedThreadList({
+  threads,
+  activeID,
+  archiveConfirmThreadID,
+  onSelect,
+  onTogglePinned,
+  onArchive,
+  onClearArchiveConfirm
+}: {
+  threads: Thread[];
+  activeID?: string;
+  archiveConfirmThreadID?: string;
+  onSelect: (id: string) => void;
+  onTogglePinned: (thread: Thread) => void;
+  onArchive: (thread: Thread) => void;
+  onClearArchiveConfirm: (threadID: string) => void;
+}): JSX.Element {
+  return (
+    <div className="pinned-thread-list">
+      <ThreadRows
+        threads={threads}
+        activeID={activeID}
+        archiveConfirmThreadID={archiveConfirmThreadID}
+        onSelect={onSelect}
+        onTogglePinned={onTogglePinned}
+        onArchive={onArchive}
+        onClearArchiveConfirm={onClearArchiveConfirm}
+      />
+    </div>
+  );
+}
+
+function ThreadRows({
+  threads,
+  activeID,
+  archiveConfirmThreadID,
+  onSelect,
+  onTogglePinned,
+  onArchive,
+  onClearArchiveConfirm
+}: {
+  threads: Thread[];
+  activeID?: string;
+  archiveConfirmThreadID?: string;
+  onSelect: (id: string) => void;
+  onTogglePinned: (thread: Thread) => void;
+  onArchive: (thread: Thread) => void;
+  onClearArchiveConfirm: (threadID: string) => void;
+}): JSX.Element {
+  return (
+    <>
+      {threads.map((thread) => {
         const archiveConfirming = archiveConfirmThreadID === thread.id;
         return (
           <div
@@ -3843,7 +3928,7 @@ function ThreadList({
           </div>
         );
       })}
-    </div>
+    </>
   );
 }
 
