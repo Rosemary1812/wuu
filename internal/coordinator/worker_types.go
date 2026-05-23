@@ -96,6 +96,10 @@ func LookupWorkerType(name string) (WorkerType, error) {
 var alwaysBlockedTools = map[string]struct{}{
 	"spawn_agent":           {},
 	"fork_agent":            {},
+	"send_message":          {},
+	"followup_task":         {},
+	"wait_agent":            {},
+	"close_agent":           {},
 	"send_message_to_agent": {},
 	"stop_agent":            {},
 	"list_agents":           {},

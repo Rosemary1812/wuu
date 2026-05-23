@@ -660,8 +660,10 @@ func SystemPromptPreamble() string {
 
 - spawn_agent — start a new worker with a clean slate. Best for context-independent tasks or when you want fresh framing.
 - fork_agent — start a worker that inherits your full conversation history. Best for context-sensitive tasks that depend on what you have read and discussed.
-- send_message_to_agent — continue an existing worker with new instructions.
-- stop_agent — stop a running worker that is stuck or off-track.
+- send_message — queue a non-blocking message for an existing worker.
+- followup_task — send a follow-up task message to an existing worker.
+- wait_agent — wait for a worker only when its result blocks your next step.
+- close_agent — stop a running worker that is stuck or off-track.
 - list_agents — see active workers and their status.
 
 ## Workers
@@ -697,9 +699,9 @@ Good worker prompts are self-contained: specific file paths, line numbers, exact
 
 ## Handling Worker Failures
 
-When a worker reports failure, continue the same worker with send_message_to_agent — it has the full error context. If correction still fails, try a different approach or report to the user.
+When a worker reports failure, continue the same worker with followup_task — it has the full error context. If correction still fails, try a different approach or report to the user.
 
-If a worker seems stuck, stop it with stop_agent and respawn with clearer instructions.
+If a worker seems stuck, close it with close_agent and respawn with clearer instructions.
 `
 }
 

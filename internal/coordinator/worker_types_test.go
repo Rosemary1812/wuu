@@ -52,7 +52,8 @@ func TestFilterToolsForWorker_Worker(t *testing.T) {
 	wt, _ := LookupWorkerType("worker")
 	full := []string{
 		"read_file", "write_file", "edit_file", "run_shell",
-		"grep", "glob", "spawn_agent", "list_agents",
+		"grep", "glob", "spawn_agent", "send_message", "followup_task",
+		"wait_agent", "close_agent", "list_agents",
 	}
 	filtered := FilterToolsForWorker(wt, full)
 	allowed := map[string]bool{}
@@ -66,7 +67,7 @@ func TestFilterToolsForWorker_Worker(t *testing.T) {
 		}
 	}
 	// Orchestration tools always blocked (no recursive spawning).
-	for _, blocked := range []string{"spawn_agent", "list_agents"} {
+	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "wait_agent", "close_agent", "list_agents"} {
 		if allowed[blocked] {
 			t.Errorf("worker should not have %s (orchestration tool)", blocked)
 		}

@@ -63,7 +63,8 @@ func TestSystemPromptPreamble_ContainsOrchestrationRules(t *testing.T) {
 		"worker",
 		"spawn_agent",
 		"fork_agent",
-		"send_message_to_agent",
+		"send_message",
+		"followup_task",
 		"parallel",
 	} {
 		if !strings.Contains(preamble, want) {
@@ -103,7 +104,7 @@ func TestSystemPromptPreamble_ContainsHonestyRules(t *testing.T) {
 	for _, want := range []string{
 		"stuck",
 		"failure",
-		"stop_agent",
+		"close_agent",
 	} {
 		if !strings.Contains(preamble, want) {
 			t.Errorf("SystemPromptPreamble missing honesty rule %q", want)
