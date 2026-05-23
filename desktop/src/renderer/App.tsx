@@ -53,10 +53,12 @@ import {
   type ReactNode,
   memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
 } from "react";
+import { createPortal } from "react-dom";
 import type { PartialOptions } from "overlayscrollbars";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
@@ -99,6 +101,9 @@ type CodexModelLoadState = {
 type CodexRuntimeMenu = "main" | "model" | null;
 type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
 type EnvironmentDialog = "commit" | "pull-request" | null;
+type FloatingMenuOwner = "composer-runtime" | "composer-access" | "codex-runtime";
+type FloatingMenuPlacement = "above" | "below";
+type FloatingMenuAlign = "left" | "right";
 type RunDebugEventSource = "client" | "server";
 type RunDebugEventTone = "info" | "running" | "success" | "warning" | "error";
 type RunDebugPhaseTone = "idle" | "running" | "success" | "warning" | "error";
@@ -403,6 +408,11 @@ function initialSidebarCollapsed(): boolean {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function isInsideFloatingMenu(target: Node, owner: FloatingMenuOwner): boolean {
+  const element = target instanceof Element ? target : target.parentElement;
+  return Boolean(element?.closest(`[data-floating-menu-owner="${owner}"]`));
 }
 
 function isCodexProvider(initialized: InitializeResult): boolean {
@@ -928,15 +938,27 @@ export function App(): JSX.Element {
       if (projectMenuOpen && !projectMenuRef.current?.contains(target)) {
         setProjectMenuOpen(false);
       }
-      if ((runtimeMenuOpen || modeMenuOpen || branchMenuOpen) && !runtimeMenuRef.current?.contains(target)) {
+      if (
+        (runtimeMenuOpen || modeMenuOpen || branchMenuOpen) &&
+        !runtimeMenuRef.current?.contains(target) &&
+        !isInsideFloatingMenu(target, "composer-runtime")
+      ) {
         setRuntimeMenuOpen(false);
         setModeMenuOpen(false);
         setBranchMenuOpen(false);
       }
-      if (accessMenuOpen && !accessMenuRef.current?.contains(target)) {
+      if (
+        accessMenuOpen &&
+        !accessMenuRef.current?.contains(target) &&
+        !isInsideFloatingMenu(target, "composer-access")
+      ) {
         setAccessMenuOpen(false);
       }
-      if (codexRuntimeMenu && !codexRuntimeRef.current?.contains(target)) {
+      if (
+        codexRuntimeMenu &&
+        !codexRuntimeRef.current?.contains(target) &&
+        !isInsideFloatingMenu(target, "codex-runtime")
+      ) {
         setCodexRuntimeMenu(null);
       }
       const environmentPanelClickOutside =
@@ -6094,6 +6116,72 @@ function ComposerQueueItem({
   );
 }
 
+function FloatingMenuPortal({
+  anchorRef,
+  owner,
+  placement,
+  align,
+  offset = 8,
+  crossAxisOffset = 0,
+  width,
+  children
+}: {
+  anchorRef: RefObject<HTMLElement>;
+  owner: FloatingMenuOwner;
+  placement: FloatingMenuPlacement;
+  align: FloatingMenuAlign;
+  offset?: number;
+  crossAxisOffset?: number;
+  width: number;
+  children: ReactNode;
+}): JSX.Element | null {
+  const [style, setStyle] = useState<CSSProperties>({
+    position: "fixed",
+    visibility: "hidden"
+  });
+
+  useLayoutEffect(() => {
+    function updatePosition(): void {
+      const anchor = anchorRef.current;
+      if (!anchor) {
+        return;
+      }
+      const viewportMargin = 8;
+      const rect = anchor.getBoundingClientRect();
+      const baseLeft = align === "right" ? rect.right - width : rect.left;
+      const maxLeft = Math.max(viewportMargin, window.innerWidth - width - viewportMargin);
+      const left = clamp(baseLeft + crossAxisOffset, viewportMargin, maxLeft);
+      const nextStyle: CSSProperties = {
+        left,
+        position: "fixed",
+        visibility: "visible",
+        zIndex: 80
+      };
+      if (placement === "above") {
+        nextStyle.bottom = Math.max(viewportMargin, window.innerHeight - rect.top + offset);
+      } else {
+        nextStyle.top = Math.max(viewportMargin, rect.bottom + offset);
+      }
+      setStyle(nextStyle);
+    }
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [align, anchorRef, crossAxisOffset, offset, placement, width]);
+
+  return createPortal(
+    <div className={`floating-menu-layer floating-menu-${placement}`} data-floating-menu-owner={owner} style={style}>
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 function Composer({
   variant = "dock",
   prompt,
@@ -6192,6 +6280,7 @@ function Composer({
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
   const codexProvider = initialized ? isCodexProvider(initialized) : false;
   const hasDraft = prompt.trim().length > 0 || images.length > 0;
+  const menuPlacement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   const content = (
     <div className="composer-stack">
       <ComposerQueueStrip
@@ -6240,11 +6329,23 @@ function Composer({
                 <span>完全访问权限</span>
                 <ChevronDown size={15} />
               </button>
-              {accessMenuOpen ? <AccessMenu /> : null}
+              {accessMenuOpen ? (
+                <FloatingMenuPortal
+                  anchorRef={accessMenuRef}
+                  owner="composer-access"
+                  placement="above"
+                  align="left"
+                  offset={6}
+                  width={260}
+                >
+                  <AccessMenu />
+                </FloatingMenuPortal>
+              ) : null}
             </div>
             <div className="composer-spacer" />
             {codexProvider && initialized ? (
               <CodexRuntimePicker
+                variant={variant}
                 initialized={initialized}
                 state={codexModels}
                 openMenu={codexRuntimeMenu}
@@ -6320,26 +6421,53 @@ function Composer({
             </button>
           ) : null}
           {modeMenuOpen ? (
-            <ModeMenu
-              activeContext={activeContext}
-              onSelectNoProject={onSelectNoProject}
-              onOpenProject={onOpenProject}
-            />
+            <FloatingMenuPortal
+              anchorRef={menuRef}
+              owner="composer-runtime"
+              placement={menuPlacement}
+              align="left"
+              crossAxisOffset={170}
+              width={224}
+            >
+              <ModeMenu
+                activeContext={activeContext}
+                onSelectNoProject={onSelectNoProject}
+                onOpenProject={onOpenProject}
+              />
+            </FloatingMenuPortal>
           ) : null}
           {branchMenuOpen && gitStatus?.is_repo ? (
-            <BranchMenu gitStatus={gitStatus} onSelectBranch={onSelectGitBranch} />
+            <FloatingMenuPortal
+              anchorRef={menuRef}
+              owner="composer-runtime"
+              placement={menuPlacement}
+              align="left"
+              crossAxisOffset={304}
+              width={300}
+            >
+              <BranchMenu gitStatus={gitStatus} onSelectBranch={onSelectGitBranch} />
+            </FloatingMenuPortal>
           ) : null}
           {menuOpen ? (
-            <ProjectPickerMenu
-              projects={projects}
-              activeContext={activeContext}
-              query={projectFilter}
-              setQuery={setProjectFilter}
-              onSelectProject={onSelectProject}
-              onSelectNoProject={onSelectNoProject}
-              onCreateProject={onCreateProject}
-              onOpenProject={onOpenProject}
-            />
+            <FloatingMenuPortal
+              anchorRef={menuRef}
+              owner="composer-runtime"
+              placement={menuPlacement}
+              align="left"
+              crossAxisOffset={12}
+              width={300}
+            >
+              <ProjectPickerMenu
+                projects={projects}
+                activeContext={activeContext}
+                query={projectFilter}
+                setQuery={setProjectFilter}
+                onSelectProject={onSelectProject}
+                onSelectNoProject={onSelectNoProject}
+                onCreateProject={onCreateProject}
+                onOpenProject={onOpenProject}
+              />
+            </FloatingMenuPortal>
           ) : null}
         </div>
       </div>
@@ -6349,6 +6477,7 @@ function Composer({
 }
 
 function CodexRuntimePicker({
+  variant,
   initialized,
   state,
   openMenu,
@@ -6358,6 +6487,7 @@ function CodexRuntimePicker({
   onSelectModel,
   onSelectEffort
 }: {
+  variant: ComposerVariant;
   initialized: InitializeResult;
   state: CodexModelLoadState;
   openMenu: CodexRuntimeMenu;
@@ -6370,6 +6500,7 @@ function CodexRuntimePicker({
   const currentModel = state.models.find((model) => model.slug === initialized.model);
   const effort = initialized.effort ?? "";
   const effortOptions = codexEffortOptions(currentModel, effort);
+  const placement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   return (
     <div className="codex-runtime-anchor" ref={anchorRef}>
       <button
@@ -6385,21 +6516,37 @@ function CodexRuntimePicker({
         <ChevronDown size={15} />
       </button>
       {openMenu === "main" ? (
-        <CodexMainMenu
-          selectedEffort={effort}
-          options={effortOptions}
-          currentModel={currentModel}
-          fallbackModel={initialized.model}
-          onSelectEffort={onSelectEffort}
-          onOpenModelMenu={() => onToggleMenu("model")}
-        />
+        <FloatingMenuPortal
+          anchorRef={anchorRef}
+          owner="codex-runtime"
+          placement={placement}
+          align="right"
+          width={236}
+        >
+          <CodexMainMenu
+            selectedEffort={effort}
+            options={effortOptions}
+            currentModel={currentModel}
+            fallbackModel={initialized.model}
+            onSelectEffort={onSelectEffort}
+            onOpenModelMenu={() => onToggleMenu("model")}
+          />
+        </FloatingMenuPortal>
       ) : null}
       {openMenu === "model" ? (
-        <CodexModelMenu
-          state={state}
-          selectedModel={initialized.model}
-          onSelectModel={onSelectModel}
-        />
+        <FloatingMenuPortal
+          anchorRef={anchorRef}
+          owner="codex-runtime"
+          placement={placement}
+          align="right"
+          width={286}
+        >
+          <CodexModelMenu
+            state={state}
+            selectedModel={initialized.model}
+            onSelectModel={onSelectModel}
+          />
+        </FloatingMenuPortal>
       ) : null}
     </div>
   );
