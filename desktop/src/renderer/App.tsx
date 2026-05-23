@@ -209,8 +209,7 @@ export function App(): JSX.Element {
     };
   }, [resizingSidebar]);
 
-  const activeProject = state.projects.find((project) => project.id === state.activeProjectId);
-  const activeTitle = state.thread?.preview || activeProject?.name || "选择项目";
+  const activeTitle = state.activeProjectId ? state.thread?.preview || "新对话" : "选择项目";
   const turns = state.thread?.turns ?? [];
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
@@ -279,13 +278,13 @@ export function App(): JSX.Element {
     const thread =
       listed.threads.length > 0
         ? requireThread(await window.wuu.resumeThread(listed.threads[0].id), "resume did not return a thread")
-        : requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
+        : undefined;
     return {
       initialized,
       projects: projectState.projects,
       activeProjectId: projectState.active_project_id,
       thread,
-      threads: upsertThread(listed.threads, thread),
+      threads: thread ? upsertThread(listed.threads, thread) : listed.threads.filter(isThread),
       running: false,
       status: "ready"
     };
@@ -366,25 +365,16 @@ export function App(): JSX.Element {
   }
 
   async function startNewThread(): Promise<void> {
-    if (!state.activeProjectId) {
+    if (!state.activeProjectId || state.running) {
       return;
     }
-    try {
-      const thread = requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
-      setState((current) => ({
-        ...current,
-        thread,
-        threads: upsertThread(current.threads, thread),
-        running: false,
-        status: "ready"
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        running: false,
-        status: error instanceof Error ? error.message : "new thread failed"
-      }));
-    }
+    setPrompt("");
+    setState((current) => ({
+      ...current,
+      thread: undefined,
+      running: false,
+      status: "ready"
+    }));
   }
 
   async function selectThread(threadId: string): Promise<void> {
@@ -410,14 +400,24 @@ export function App(): JSX.Element {
 
   async function sendPrompt(): Promise<void> {
     const text = prompt.trim();
-    if (!text || !state.activeProjectId || !state.thread || state.running) {
+    if (!text || !state.activeProjectId || state.running) {
       return;
     }
     setPrompt("");
     setState((current) => ({ ...current, running: true, status: "thinking" }));
     try {
-      const result = await window.wuu.startTurn(state.thread.id, text);
-      setState((current) => updateThread(current, (thread) => upsertTurn(thread, result.turn)));
+      const thread = state.thread ?? requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
+      setState((current) => ({
+        ...current,
+        thread,
+        threads: upsertThread(current.threads, thread)
+      }));
+      const result = await window.wuu.startTurn(thread.id, text);
+      setState((current) =>
+        updateThread({ ...current, thread: current.thread?.id === thread.id ? current.thread : thread }, (currentThread) =>
+          upsertTurn(currentThread, result.turn)
+        )
+      );
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -525,7 +525,7 @@ export function App(): JSX.Element {
           <ProjectEmptyState onCreate={() => void createBlankProject()} onOpen={() => void chooseProjectFolder()} />
         )}
 
-        {state.activeProjectId && state.thread ? (
+        {state.activeProjectId && state.initialized ? (
           <Composer
             prompt={prompt}
             setPrompt={setPrompt}
