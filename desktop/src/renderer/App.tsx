@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CornerDownRight,
   Clock,
   Globe2,
   FileText,
@@ -16,6 +17,7 @@ import {
   Laptop,
   List as ListIcon,
   MessageSquarePlus,
+  MoreHorizontal,
   PanelBottomOpen,
   PanelLeftOpen,
   PanelRightOpen,
@@ -27,6 +29,7 @@ import {
   ShieldCheck,
   Square,
   Terminal,
+  Trash2,
   Wrench,
   X
 } from "lucide-react";
@@ -86,6 +89,12 @@ type ComposerImage = InputImage & {
   id: string;
 };
 
+type QueuedComposerMessage = {
+  id: string;
+  text: string;
+  images: ComposerImage[];
+};
+
 type AppState = {
   initialized?: InitializeResult;
   projects: DesktopProject[];
@@ -117,12 +126,123 @@ const IMAGE_MAX_DIMENSION = 2000;
 const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
 const ENABLE_LAUNCH_PREVIEW = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
-  contain: "layout paint style",
+  contain: "strict",
   height: "100%",
   minHeight: 0,
   minWidth: 0,
   width: "100%"
 };
+const WORKSPACE_FILE_TREE_ITEM_HEIGHT = 28;
+
+installFileTreeResizeObserverGate();
+
+function installFileTreeResizeObserverGate(): void {
+  if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+    return;
+  }
+
+  const resizeWindow = window as typeof window & { __wuuFileTreeResizeObserverGate?: boolean };
+  if (resizeWindow.__wuuFileTreeResizeObserverGate) {
+    return;
+  }
+  resizeWindow.__wuuFileTreeResizeObserverGate = true;
+
+  const NativeResizeObserver = window.ResizeObserver;
+  const pendingObservers = new Set<FileTreeResizeObserverGate>();
+
+  class FileTreeResizeObserverGate implements ResizeObserver {
+    private readonly observer: ResizeObserver;
+    private readonly callback: ResizeObserverCallback;
+    private readonly pendingEntries = new Map<Element, ResizeObserverEntry>();
+    private readonly lastResizeBucketByTarget = new WeakMap<Element, string>();
+
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+      this.observer = new NativeResizeObserver((entries, observer) => {
+        const deliverNow: ResizeObserverEntry[] = [];
+        const resizing = document.documentElement.classList.contains("window-resizing");
+
+        for (const entry of entries) {
+          if (!resizing || !isWorkspaceFileTreeResizeTarget(entry.target)) {
+            deliverNow.push(entry);
+            continue;
+          }
+
+          const target = entry.target;
+          const nextBucket = fileTreeResizeBucket(entry);
+          const previousBucket = this.lastResizeBucketByTarget.get(target);
+          this.pendingEntries.set(target, entry);
+          pendingObservers.add(this);
+
+          if (previousBucket === nextBucket) {
+            continue;
+          }
+
+          this.lastResizeBucketByTarget.set(target, nextBucket);
+          this.pendingEntries.delete(target);
+          deliverNow.push(entry);
+        }
+
+        if (deliverNow.length > 0) {
+          callback(deliverNow, observer);
+        }
+      });
+    }
+
+    observe(target: Element, options?: ResizeObserverOptions): void {
+      this.observer.observe(target, options);
+    }
+
+    unobserve(target: Element): void {
+      this.pendingEntries.delete(target);
+      this.observer.unobserve(target);
+    }
+
+    disconnect(): void {
+      this.pendingEntries.clear();
+      pendingObservers.delete(this);
+      this.observer.disconnect();
+    }
+
+    flushPending(): void {
+      if (this.pendingEntries.size === 0) {
+        pendingObservers.delete(this);
+        return;
+      }
+
+      const entries = [...this.pendingEntries.values()];
+      this.pendingEntries.clear();
+      pendingObservers.delete(this);
+      this.callback(entries, this.observer);
+    }
+  }
+
+  window.ResizeObserver = FileTreeResizeObserverGate;
+  window.addEventListener("wuu-window-resize-end", () => {
+    for (const observer of [...pendingObservers]) {
+      observer.flushPending();
+    }
+  });
+}
+
+function isWorkspaceFileTreeResizeTarget(target: Element): boolean {
+  if (!target.matches('[data-file-tree-virtualized-scroll="true"]')) {
+    return false;
+  }
+
+  const root = target.getRootNode();
+  if (!(root instanceof ShadowRoot)) {
+    return false;
+  }
+
+  return root.host instanceof Element && Boolean(root.host.closest(".workspace-file-tree-frame"));
+}
+
+function fileTreeResizeBucket(entry: ResizeObserverEntry): string {
+  const width = Math.round(entry.contentRect.width);
+  const rowBucket = Math.floor(entry.contentRect.height / WORKSPACE_FILE_TREE_ITEM_HEIGHT);
+  return `${width}:${rowBucket}`;
+}
 
 type SidebarResizeSession = {
   startX: number;
@@ -371,15 +491,64 @@ function nextComposerImageID(): string {
   return browserCrypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+function nextComposerMessageID(): string {
+  return nextComposerImageID();
+}
+
 function imageSource(image: InputImage): string {
   const mediaType = normalizeImageMediaType(image.media_type);
   return `data:${mediaType};base64,${image.data}`;
+}
+
+function createComposerMessage(text: string, images: ComposerImage[]): QueuedComposerMessage | undefined {
+  const trimmed = text.trim();
+  if (!trimmed && images.length === 0) {
+    return undefined;
+  }
+  return {
+    id: nextComposerMessageID(),
+    text,
+    images: images.map((image) => ({ ...image }))
+  };
+}
+
+function inputImagesFromComposer(images: ComposerImage[]): InputImage[] {
+  return images.map(({ media_type, data }) => ({ media_type, data }));
+}
+
+function mergeGuideMessages(messages: QueuedComposerMessage[]): QueuedComposerMessage {
+  return {
+    id: nextComposerMessageID(),
+    text: messages
+      .map((message) => message.text.trim())
+      .filter(Boolean)
+      .join("\n"),
+    images: messages.flatMap((message) => message.images.map((image) => ({ ...image })))
+  };
+}
+
+function queuedMessagePreview(message: QueuedComposerMessage): string {
+  const text = message.text.trim().replace(/\s+/g, " ");
+  const imageText = message.images.length > 0 ? `${message.images.length} 张图片` : "";
+  const preview = [text, imageText].filter(Boolean).join(" · ");
+  return trimMiddle(preview || "空消息", 48);
+}
+
+function trimMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  const left = Math.ceil((maxLength - 1) / 2);
+  const right = Math.floor((maxLength - 1) / 2);
+  return `${value.slice(0, left)}…${value.slice(value.length - right)}`;
 }
 
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
   const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
+  const [guideMessages, setGuideMessages] = useState<QueuedComposerMessage[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [resizingSidebar, setResizingSidebar] = useState(false);
@@ -406,6 +575,11 @@ export function App(): JSX.Element {
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
   const codexRuntimeRef = useRef<HTMLDivElement>(null);
+  const appStateRef = useRef<AppState>(initialState);
+  const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
+  const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
+  const drainingQueueRef = useRef(false);
+  const queueDrainPausedRef = useRef(false);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -418,6 +592,9 @@ export function App(): JSX.Element {
       }
       resizing = nextResizing;
       root.classList.toggle("window-resizing", nextResizing);
+      if (!nextResizing) {
+        window.dispatchEvent(new Event("wuu-window-resize-end"));
+      }
     }
 
     function scheduleResizeEnd(delay = 140): void {
@@ -454,6 +631,16 @@ export function App(): JSX.Element {
       setResizeState(false);
     };
   }, []);
+
+  useEffect(() => {
+    appStateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    if (!state.running) {
+      void drainQueuedMessages();
+    }
+  }, [state.activeContext?.cwd, state.initialized?.model, state.initialized?.provider, state.running, state.thread?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -720,6 +907,80 @@ export function App(): JSX.Element {
     setComposerImages((current) => current.filter((image) => image.id !== id));
   }
 
+  function setQueuedMessagesNow(messages: QueuedComposerMessage[]): void {
+    queuedMessagesRef.current = messages;
+    setQueuedMessages(messages);
+  }
+
+  function setGuideMessagesNow(messages: QueuedComposerMessage[]): void {
+    guideMessagesRef.current = messages;
+    setGuideMessages(messages);
+  }
+
+  function clearPendingComposerMessages(): void {
+    queueDrainPausedRef.current = false;
+    setQueuedMessagesNow([]);
+    setGuideMessagesNow([]);
+  }
+
+  function enqueueComposerMessage(message: QueuedComposerMessage): void {
+    queueDrainPausedRef.current = false;
+    const next = [...queuedMessagesRef.current, message];
+    setQueuedMessagesNow(next);
+    setState((current) => ({
+      ...current,
+      status: `已排队 ${next.length} 条`
+    }));
+  }
+
+  function removeQueuedMessage(id: string): void {
+    queueDrainPausedRef.current = false;
+    setQueuedMessagesNow(queuedMessagesRef.current.filter((message) => message.id !== id));
+    void drainQueuedMessages();
+  }
+
+  function removeGuideMessage(id: string): void {
+    queueDrainPausedRef.current = false;
+    setGuideMessagesNow(guideMessagesRef.current.filter((message) => message.id !== id));
+    void drainQueuedMessages();
+  }
+
+  async function guideQueuedMessage(id: string): Promise<void> {
+    const queuedIndex = queuedMessagesRef.current.findIndex((message) => message.id === id);
+    if (queuedIndex < 0) {
+      return;
+    }
+    const message = queuedMessagesRef.current[queuedIndex];
+    const remainingQueued = [
+      ...queuedMessagesRef.current.slice(0, queuedIndex),
+      ...queuedMessagesRef.current.slice(queuedIndex + 1)
+    ];
+    queueDrainPausedRef.current = false;
+    setQueuedMessagesNow(remainingQueued);
+    setGuideMessagesNow([...guideMessagesRef.current, message]);
+    setState((current) => ({
+      ...current,
+      status: "引导已加入"
+    }));
+
+    const currentState = appStateRef.current;
+    if (!currentState.running) {
+      void drainQueuedMessages();
+      return;
+    }
+    if (!currentState.thread) {
+      return;
+    }
+    try {
+      await window.wuu.interruptTurn(currentState.thread.id);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "interrupt failed"
+      }));
+    }
+  }
+
   function handleSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -752,6 +1013,8 @@ export function App(): JSX.Element {
         prompt={prompt}
         setPrompt={setPrompt}
         images={composerImages}
+        queuedMessages={queuedMessages}
+        guideMessages={guideMessages}
         running={state.running}
         status={state.status}
         initialized={state.initialized}
@@ -812,6 +1075,10 @@ export function App(): JSX.Element {
         onOpenProject={() => void chooseProjectFolder()}
         onPasteImageFiles={(files) => void attachComposerImageFiles(files)}
         onRemoveImage={removeComposerImage}
+        onRemoveQueuedMessage={removeQueuedMessage}
+        onRemoveGuideMessage={removeGuideMessage}
+        onGuideQueuedMessage={(id) => void guideQueuedMessage(id)}
+        onClearQueuedMessages={clearPendingComposerMessages}
         onSend={() => void sendPrompt()}
         onInterrupt={() => void interrupt()}
       />
@@ -872,6 +1139,7 @@ export function App(): JSX.Element {
       return;
     }
     closeProjectMenus();
+    clearPendingComposerMessages();
     setState((current) => ({
       ...current,
       activeContext: undefined,
@@ -896,6 +1164,7 @@ export function App(): JSX.Element {
 
   async function createBlankProject(): Promise<void> {
     closeProjectMenus();
+    clearPendingComposerMessages();
     try {
       const projectState = await window.wuu.createBlankProject();
       if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
@@ -914,6 +1183,7 @@ export function App(): JSX.Element {
 
   async function chooseProjectFolder(): Promise<void> {
     closeProjectMenus();
+    clearPendingComposerMessages();
     try {
       const projectState = await window.wuu.chooseProjectFolder();
       if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
@@ -936,6 +1206,7 @@ export function App(): JSX.Element {
       return;
     }
     closeProjectMenus();
+    clearPendingComposerMessages();
     setState((current) => ({
       ...current,
       activeContext: undefined,
@@ -983,6 +1254,8 @@ export function App(): JSX.Element {
       return;
     }
     setPrompt("");
+    setComposerImages([]);
+    clearPendingComposerMessages();
     if (state.activeContext.kind === "no_project" && state.thread) {
       await useNoProject(true);
       return;
@@ -999,6 +1272,7 @@ export function App(): JSX.Element {
     if (!state.activeContext || threadId === state.thread?.id || state.running) {
       return;
     }
+    clearPendingComposerMessages();
     setState((current) => ({ ...current, status: "loading" }));
     try {
       const thread = requireThread(await window.wuu.resumeThread(threadId), "resume did not return a thread");
@@ -1017,19 +1291,38 @@ export function App(): JSX.Element {
   }
 
   async function sendPrompt(): Promise<void> {
-    const text = prompt.trim();
-    const images = composerImages.map(({ media_type, data }) => ({ media_type, data }));
-    if ((!text && images.length === 0) || !state.activeContext || !state.initialized || state.running) {
+    const message = createComposerMessage(prompt, composerImages);
+    const currentState = appStateRef.current;
+    if (!message || !currentState.activeContext || !currentState.initialized) {
       return;
     }
-    const draftPrompt = prompt;
-    const draftImages = composerImages;
-    conversationAutoFollowRef.current = true;
     setPrompt("");
     setComposerImages([]);
+    if (currentState.running) {
+      enqueueComposerMessage(message);
+      return;
+    }
+    await sendComposerMessage(message, true);
+  }
+
+  async function sendComposerMessage(message: QueuedComposerMessage, restoreDraftOnError = false): Promise<boolean> {
+    const currentState = appStateRef.current;
+    const text = message.text.trim();
+    const images = inputImagesFromComposer(message.images);
+    if ((!text && images.length === 0) || !currentState.activeContext || !currentState.initialized || currentState.running) {
+      return false;
+    }
+    conversationAutoFollowRef.current = true;
+    appStateRef.current = { ...currentState, running: true, status: "thinking" };
     setState((current) => ({ ...current, running: true, status: "thinking" }));
     try {
-      const thread = state.thread ?? requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
+      const thread =
+        currentState.thread ?? requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
+      appStateRef.current = {
+        ...appStateRef.current,
+        thread,
+        threads: upsertThread(appStateRef.current.threads, thread)
+      };
       setState((current) => ({
         ...current,
         thread,
@@ -1042,13 +1335,65 @@ export function App(): JSX.Element {
         )
       );
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "send failed";
+      appStateRef.current = { ...appStateRef.current, running: false, status: errorMessage };
       setState((current) => ({
         ...current,
         running: false,
-        status: error instanceof Error ? error.message : "send failed"
+        status: errorMessage
       }));
-      setPrompt(draftPrompt);
-      setComposerImages(draftImages);
+      if (restoreDraftOnError) {
+        setPrompt(message.text);
+        setComposerImages(message.images);
+      }
+      return false;
+    }
+    return true;
+  }
+
+  async function drainQueuedMessages(): Promise<void> {
+    if (drainingQueueRef.current || queueDrainPausedRef.current) {
+      return;
+    }
+    const currentState = appStateRef.current;
+    if (currentState.running || !currentState.activeContext || !currentState.initialized) {
+      return;
+    }
+
+    const guidesToSend = guideMessagesRef.current;
+    let message: QueuedComposerMessage | undefined;
+    let restoreGuides: QueuedComposerMessage[] = [];
+    let restoreQueued: QueuedComposerMessage | undefined;
+
+    if (guidesToSend.length > 0) {
+      restoreGuides = guidesToSend;
+      message = mergeGuideMessages(guidesToSend);
+      setGuideMessagesNow([]);
+    } else if (queuedMessagesRef.current.length > 0) {
+      const [nextMessage, ...remainingMessages] = queuedMessagesRef.current;
+      message = nextMessage;
+      restoreQueued = nextMessage;
+      setQueuedMessagesNow(remainingMessages);
+    }
+
+    if (!message) {
+      return;
+    }
+
+    drainingQueueRef.current = true;
+    const sent = await sendComposerMessage(message);
+    drainingQueueRef.current = false;
+    if (!sent) {
+      queueDrainPausedRef.current = true;
+      if (restoreGuides.length > 0) {
+        setGuideMessagesNow([...restoreGuides, ...guideMessagesRef.current]);
+      } else if (restoreQueued) {
+        setQueuedMessagesNow([restoreQueued, ...queuedMessagesRef.current]);
+      }
+      setState((current) => ({
+        ...current,
+        status: "队列暂停"
+      }));
     }
   }
 
@@ -1612,7 +1957,7 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({
     flattenEmptyDirectories: true,
     initialExpansion: 1,
     initialSelectedPaths: selectedFilePath ? [selectedFilePath] : [],
-    itemHeight: 28,
+    itemHeight: WORKSPACE_FILE_TREE_ITEM_HEIGHT,
     overscan: 8,
     preparedInput,
     search: true,
@@ -2415,6 +2760,7 @@ function AgentMessageContent({
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
+  const liveStream = streaming || hasBufferedStream;
 
   return (
     <StreamingMarkdown
@@ -2422,6 +2768,7 @@ function AgentMessageContent({
       initialText={hasBufferedStream ? streamTextStore.seedValue(streamKeyValue) : item.text}
       cwd={cwd}
       final={!streaming}
+      live={liveStream}
       onFrame={onStreamFrame}
       onSettled={() => {
         streamTextStore.clearItem(turnID, item.id);
@@ -2444,6 +2791,7 @@ function ReasoningContent({
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
+  const liveStream = streaming || hasBufferedStream;
 
   return (
     <StreamingMarkdown
@@ -2451,6 +2799,7 @@ function ReasoningContent({
       initialText={hasBufferedStream ? streamTextStore.seedValue(streamKeyValue) : item.text}
       className="streaming-markdown reasoning-stream"
       final={!streaming}
+      live={liveStream}
       onFrame={onStreamFrame}
       onSettled={() => {
         streamTextStore.clearItem(turnID, item.id);
@@ -3294,11 +3643,98 @@ function ComposerImageStrip({
   );
 }
 
+function ComposerQueueStrip({
+  guideMessages,
+  queuedMessages,
+  onRemoveGuideMessage,
+  onRemoveQueuedMessage,
+  onGuideQueuedMessage,
+  onClearQueuedMessages
+}: {
+  guideMessages: QueuedComposerMessage[];
+  queuedMessages: QueuedComposerMessage[];
+  onRemoveGuideMessage: (id: string) => void;
+  onRemoveQueuedMessage: (id: string) => void;
+  onGuideQueuedMessage: (id: string) => void;
+  onClearQueuedMessages: () => void;
+}): JSX.Element | null {
+  const total = guideMessages.length + queuedMessages.length;
+  if (total === 0) {
+    return null;
+  }
+
+  return (
+    <div className="composer-queue-strip" aria-label="待发送消息">
+      <div className="composer-queue-items">
+        {guideMessages.map((message) => (
+          <ComposerQueueItem
+            key={message.id}
+            message={message}
+            kind="guide"
+            onClearAll={onClearQueuedMessages}
+            onRemove={() => onRemoveGuideMessage(message.id)}
+          />
+        ))}
+        {queuedMessages.map((message) => (
+          <ComposerQueueItem
+            key={message.id}
+            message={message}
+            kind="queue"
+            onGuide={() => onGuideQueuedMessage(message.id)}
+            onClearAll={onClearQueuedMessages}
+            onRemove={() => onRemoveQueuedMessage(message.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ComposerQueueItem({
+  message,
+  kind,
+  onGuide,
+  onClearAll,
+  onRemove
+}: {
+  message: QueuedComposerMessage;
+  kind: "guide" | "queue";
+  onGuide?: () => void;
+  onClearAll: () => void;
+  onRemove: () => void;
+}): JSX.Element {
+  return (
+    <div className={`composer-queue-item ${kind}`}>
+      <CornerDownRight className="composer-queue-corner" size={18} aria-hidden="true" />
+      <strong>{queuedMessagePreview(message)}</strong>
+      {kind === "guide" ? (
+        <span className="composer-queue-guide active">
+          <CornerDownRight size={16} aria-hidden="true" />
+          引导
+        </span>
+      ) : (
+        <button className="composer-queue-guide" type="button" aria-label="作为引导发送" onClick={onGuide}>
+          <CornerDownRight size={16} aria-hidden="true" />
+          <span>引导</span>
+        </button>
+      )}
+      <button className="composer-queue-icon" type="button" aria-label="移除待发送消息" onClick={onRemove}>
+        <Trash2 size={16} />
+      </button>
+      <button className="composer-queue-icon" type="button" aria-label="清空全部待发送消息" onClick={onClearAll}>
+        <MoreHorizontal size={18} />
+      </button>
+    </div>
+  );
+}
+
 function Composer({
   variant = "dock",
   prompt,
   setPrompt,
   images,
+  queuedMessages,
+  guideMessages,
   running,
   status,
   initialized,
@@ -3332,6 +3768,10 @@ function Composer({
   onOpenProject,
   onPasteImageFiles,
   onRemoveImage,
+  onRemoveQueuedMessage,
+  onRemoveGuideMessage,
+  onGuideQueuedMessage,
+  onClearQueuedMessages,
   onSend,
   onInterrupt
 }: {
@@ -3339,6 +3779,8 @@ function Composer({
   prompt: string;
   setPrompt: (value: string) => void;
   images: ComposerImage[];
+  queuedMessages: QueuedComposerMessage[];
+  guideMessages: QueuedComposerMessage[];
   running: boolean;
   status: string;
   initialized?: InitializeResult;
@@ -3372,6 +3814,10 @@ function Composer({
   onOpenProject: () => void;
   onPasteImageFiles: (files: File[]) => void;
   onRemoveImage: (id: string) => void;
+  onRemoveQueuedMessage: (id: string) => void;
+  onRemoveGuideMessage: (id: string) => void;
+  onGuideQueuedMessage: (id: string) => void;
+  onClearQueuedMessages: () => void;
   onSend: () => void;
   onInterrupt: () => void;
 }): JSX.Element {
@@ -3379,8 +3825,17 @@ function Composer({
   const statusText = status === "ready" ? "" : status;
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
   const codexProvider = initialized ? isCodexProvider(initialized) : false;
+  const hasDraft = prompt.trim().length > 0 || images.length > 0;
   const content = (
-    <>
+    <div className="composer-stack">
+      <ComposerQueueStrip
+        guideMessages={guideMessages}
+        queuedMessages={queuedMessages}
+        onRemoveGuideMessage={onRemoveGuideMessage}
+        onRemoveQueuedMessage={onRemoveQueuedMessage}
+        onGuideQueuedMessage={onGuideQueuedMessage}
+        onClearQueuedMessages={onClearQueuedMessages}
+      />
       <div className="composer-shell">
         <div className="composer">
           {images.length > 0 ? <ComposerImageStrip images={images} onRemoveImage={onRemoveImage} /> : null}
@@ -3444,9 +3899,27 @@ function Composer({
               </>
             )}
             {statusText ? <span className="status-label">{statusText}</span> : null}
-            <button className="send-button" onClick={running ? onInterrupt : onSend} aria-label={running ? "停止" : "发送"}>
-              {running ? <Square size={18} /> : <Send size={18} />}
-            </button>
+            {running ? (
+              <>
+                <button
+                  className="send-button"
+                  type="button"
+                  aria-label="排队发送"
+                  title="排队发送"
+                  disabled={!hasDraft}
+                  onClick={onSend}
+                >
+                  <Send size={18} />
+                </button>
+                <button className="stop-button" type="button" onClick={onInterrupt} aria-label="停止" title="停止">
+                  <Square size={17} />
+                </button>
+              </>
+            ) : (
+              <button className="send-button" type="button" onClick={onSend} aria-label="发送" disabled={!hasDraft}>
+                <Send size={18} />
+              </button>
+            )}
           </div>
         </div>
         <div className="composer-context-bar" ref={menuRef}>
@@ -3504,7 +3977,7 @@ function Composer({
           ) : null}
         </div>
       </div>
-    </>
+    </div>
   );
   return variant === "hero" ? <div className={className}>{content}</div> : <footer className={className}>{content}</footer>;
 }
