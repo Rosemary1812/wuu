@@ -578,12 +578,21 @@ kbd {
   padding: 0 10px;
 }
 
+.provider-pill:hover,
+.model-label:hover {
+  background: #e9e9e6;
+  color: #22262a;
+}
+
 .model-label {
   max-width: 220px;
   overflow: hidden;
+  border-radius: 8px;
+  background: transparent;
   color: #2f3337;
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
+  padding: 4px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1198,10 +1207,18 @@ pre {
   height: 34px;
   align-items: center;
   gap: 7px;
+  border-radius: 8px;
+  background: transparent;
   color: #ef5b18;
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
+  padding: 0 8px;
   white-space: nowrap;
+}
+
+.permission-chip:hover,
+.permission-chip[aria-expanded="true"] {
+  background: #fff3ec;
 }
 
 .composer-spacer {
@@ -1272,8 +1289,20 @@ pre {
   background: transparent;
 }
 
+.context-mode-chip:hover,
+.context-mode-chip[aria-expanded="true"] {
+  background: #e8e8e6;
+  color: #25282b;
+}
+
 .context-branch-chip {
   background: #e9e9e6;
+}
+
+.context-branch-chip:hover,
+.context-branch-chip[aria-expanded="true"] {
+  background: #dededc;
+  color: #25282b;
 }
 
 .context-mode-chip span,
@@ -1319,6 +1348,85 @@ pre {
   box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
   padding: 12px;
   backdrop-filter: blur(18px);
+}
+
+.composer-context-menu {
+  position: absolute;
+  bottom: 44px;
+  left: 16px;
+  z-index: 30;
+  display: grid;
+  width: 320px;
+  gap: 2px;
+  overflow: hidden;
+  border: 1px solid rgba(30, 34, 38, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
+  padding: 12px;
+  backdrop-filter: blur(18px);
+}
+
+.hero-composer-wrap .composer-context-menu {
+  top: calc(100% + 10px);
+  bottom: auto;
+}
+
+.mode-menu {
+  left: 188px;
+}
+
+.branch-menu {
+  left: 330px;
+  width: 360px;
+}
+
+.composer-context-menu button {
+  display: flex;
+  height: 40px;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: #202427;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.composer-context-menu button:hover:not(:disabled) {
+  background: #f0f1ef;
+}
+
+.composer-context-menu button:disabled {
+  opacity: 0.52;
+}
+
+.composer-context-menu button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-menu-note,
+.composer-menu-empty {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  color: #777d82;
+  font-size: var(--font-ui);
+  line-height: 1.4;
+}
+
+.composer-menu-note strong {
+  color: #22262a;
+  font-size: var(--font-body);
+}
+
+.composer-menu-note.warning strong {
+  color: #b45309;
 }
 
 .hero-composer-wrap .composer-project-menu {

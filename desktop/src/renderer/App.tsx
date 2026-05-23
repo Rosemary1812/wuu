@@ -116,6 +116,9 @@ export function App(): JSX.Element {
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
+  const [accessMenuOpen, setAccessMenuOpen] = useState(false);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
@@ -172,14 +175,17 @@ export function App(): JSX.Element {
       if (projectMenuOpen && !projectMenuRef.current?.contains(target)) {
         setProjectMenuOpen(false);
       }
-      if (runtimeMenuOpen && !runtimeMenuRef.current?.contains(target)) {
+      if ((runtimeMenuOpen || accessMenuOpen || modeMenuOpen || branchMenuOpen) && !runtimeMenuRef.current?.contains(target)) {
         setRuntimeMenuOpen(false);
+        setAccessMenuOpen(false);
+        setModeMenuOpen(false);
+        setBranchMenuOpen(false);
       }
     }
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [projectMenuOpen, runtimeMenuOpen]);
+  }, [accessMenuOpen, branchMenuOpen, modeMenuOpen, projectMenuOpen, runtimeMenuOpen]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -340,12 +346,43 @@ export function App(): JSX.Element {
         activeContext={state.activeContext}
         activeProject={activeProject}
         menuOpen={runtimeMenuOpen}
+        accessMenuOpen={accessMenuOpen}
+        modeMenuOpen={modeMenuOpen}
+        branchMenuOpen={branchMenuOpen}
         menuRef={runtimeMenuRef}
         projectFilter={projectFilter}
         setProjectFilter={setProjectFilter}
-        onToggleMenu={() => setRuntimeMenuOpen((open) => !open)}
+        onToggleMenu={() => {
+          setAccessMenuOpen(false);
+          setModeMenuOpen(false);
+          setBranchMenuOpen(false);
+          setRuntimeMenuOpen((open) => !open);
+        }}
+        onToggleAccessMenu={() => {
+          setRuntimeMenuOpen(false);
+          setModeMenuOpen(false);
+          setBranchMenuOpen(false);
+          setAccessMenuOpen((open) => !open);
+        }}
+        onToggleModeMenu={() => {
+          setRuntimeMenuOpen(false);
+          setAccessMenuOpen(false);
+          setBranchMenuOpen(false);
+          setModeMenuOpen((open) => !open);
+        }}
+        onToggleBranchMenu={() => {
+          setRuntimeMenuOpen(false);
+          setAccessMenuOpen(false);
+          setModeMenuOpen(false);
+          setBranchMenuOpen((open) => !open);
+        }}
+        onOpenSettings={() => {
+          closeProjectMenus();
+          setSettingsOpen(true);
+        }}
         onSelectProject={(id) => void openProject(id)}
         onSelectNoProject={() => void useNoProject(false)}
+        onSelectGitBranch={(branch) => void checkoutBranch(branch)}
         onCreateProject={() => void createBlankProject()}
         onOpenProject={() => void chooseProjectFolder()}
         onSend={() => void sendPrompt()}
@@ -394,6 +431,9 @@ export function App(): JSX.Element {
   function closeProjectMenus(): void {
     setProjectMenuOpen(false);
     setRuntimeMenuOpen(false);
+    setAccessMenuOpen(false);
+    setModeMenuOpen(false);
+    setBranchMenuOpen(false);
     setSettingsOpen(false);
     setProjectFilter("");
   }
@@ -486,6 +526,26 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "open no-project failed"
+      }));
+    }
+  }
+
+  async function checkoutBranch(branch: string): Promise<void> {
+    if (!branch || state.running) {
+      return;
+    }
+    closeProjectMenus();
+    try {
+      const gitStatus = await window.wuu.checkoutGitBranch(branch);
+      setState((current) => ({
+        ...current,
+        gitStatus,
+        status: current.status === "ready" ? "ready" : current.status
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "checkout branch failed"
       }));
     }
   }
@@ -1630,12 +1690,20 @@ function Composer({
   activeContext,
   activeProject,
   menuOpen,
+  accessMenuOpen,
+  modeMenuOpen,
+  branchMenuOpen,
   menuRef,
   projectFilter,
   setProjectFilter,
   onToggleMenu,
+  onToggleAccessMenu,
+  onToggleModeMenu,
+  onToggleBranchMenu,
+  onOpenSettings,
   onSelectProject,
   onSelectNoProject,
+  onSelectGitBranch,
   onCreateProject,
   onOpenProject,
   onSend,
@@ -1653,12 +1721,20 @@ function Composer({
   activeContext?: RuntimeContext;
   activeProject?: DesktopProject;
   menuOpen: boolean;
+  accessMenuOpen: boolean;
+  modeMenuOpen: boolean;
+  branchMenuOpen: boolean;
   menuRef: RefObject<HTMLDivElement>;
   projectFilter: string;
   setProjectFilter: (value: string) => void;
   onToggleMenu: () => void;
+  onToggleAccessMenu: () => void;
+  onToggleModeMenu: () => void;
+  onToggleBranchMenu: () => void;
+  onOpenSettings: () => void;
   onSelectProject: (id: string) => void;
   onSelectNoProject: () => void;
+  onSelectGitBranch: (branch: string) => void;
   onCreateProject: () => void;
   onOpenProject: () => void;
   onSend: () => void;
@@ -1686,14 +1762,24 @@ function Composer({
             <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
               <Plus size={20} />
             </button>
-            <span className="permission-chip">
+            <button
+              className="permission-chip"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={accessMenuOpen}
+              onClick={onToggleAccessMenu}
+            >
               <ShieldCheck size={16} />
               <span>完全访问权限</span>
               <ChevronDown size={15} />
-            </span>
+            </button>
             <div className="composer-spacer" />
-            <span className="provider-pill">{provider ?? "provider"}</span>
-            <span className="model-label">{model ?? "model"}</span>
+            <button className="provider-pill" type="button" onClick={onOpenSettings}>
+              {provider ?? "provider"}
+            </button>
+            <button className="model-label" type="button" onClick={onOpenSettings}>
+              {model ?? "model"}
+            </button>
             {statusText ? <span className="status-label">{statusText}</span> : null}
             <button className="send-button" onClick={running ? onInterrupt : onSend} aria-label={running ? "停止" : "发送"}>
               {running ? <Square size={18} /> : <Send size={18} />}
@@ -1706,18 +1792,41 @@ function Composer({
             <span>{contextLabel}</span>
             <ChevronDown size={16} />
           </button>
-          <span className="context-mode-chip">
+          <button
+            className="context-mode-chip"
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={modeMenuOpen}
+            onClick={onToggleModeMenu}
+          >
             <Laptop size={17} />
             <span>本地模式</span>
             <ChevronDown size={15} />
-          </span>
+          </button>
           {gitStatus?.is_repo && gitStatus.branch ? (
-            <span className="context-branch-chip">
+            <button
+              className="context-branch-chip"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={branchMenuOpen}
+              onClick={onToggleBranchMenu}
+            >
               <GitBranch size={17} />
               <span>{gitStatus.branch}</span>
               {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
               <ChevronDown size={15} />
-            </span>
+            </button>
+          ) : null}
+          {accessMenuOpen ? <AccessMenu /> : null}
+          {modeMenuOpen ? (
+            <ModeMenu
+              activeContext={activeContext}
+              onSelectNoProject={onSelectNoProject}
+              onOpenProject={onOpenProject}
+            />
+          ) : null}
+          {branchMenuOpen && gitStatus?.is_repo ? (
+            <BranchMenu gitStatus={gitStatus} onSelectBranch={onSelectGitBranch} />
           ) : null}
           {menuOpen ? (
             <ProjectPickerMenu
@@ -1736,6 +1845,79 @@ function Composer({
     </>
   );
   return variant === "hero" ? <div className={className}>{content}</div> : <footer className={className}>{content}</footer>;
+}
+
+function AccessMenu(): JSX.Element {
+  return (
+    <div className="composer-context-menu access-menu" role="menu">
+      <div className="composer-menu-note">
+        <strong>完全访问权限</strong>
+        <span>wuu 可以读取并修改当前工作区文件，适合直接做开发任务。</span>
+      </div>
+    </div>
+  );
+}
+
+function ModeMenu({
+  activeContext,
+  onSelectNoProject,
+  onOpenProject
+}: {
+  activeContext?: RuntimeContext;
+  onSelectNoProject: () => void;
+  onOpenProject: () => void;
+}): JSX.Element {
+  return (
+    <div className="composer-context-menu mode-menu" role="menu">
+      <button role="menuitem" type="button" onClick={onOpenProject}>
+        <FolderOpen size={18} />
+        <span>打开本地项目</span>
+        {activeContext?.kind === "project" ? <Check size={17} /> : null}
+      </button>
+      <button role="menuitem" type="button" onClick={onSelectNoProject}>
+        <FolderX size={18} />
+        <span>不使用项目</span>
+        {activeContext?.kind === "no_project" ? <Check size={17} /> : null}
+      </button>
+    </div>
+  );
+}
+
+function BranchMenu({
+  gitStatus,
+  onSelectBranch
+}: {
+  gitStatus: GitStatusResult;
+  onSelectBranch: (branch: string) => void;
+}): JSX.Element {
+  const branches = gitStatus.branches ?? [];
+  return (
+    <div className="composer-context-menu branch-menu" role="menu">
+      {gitStatus.dirty_count > 0 ? (
+        <div className="composer-menu-note warning">
+          <strong>有未提交更改</strong>
+          <span>先处理 {gitStatus.dirty_count} 个文件后再切换分支。</span>
+        </div>
+      ) : null}
+      {branches.length === 0 ? <div className="composer-menu-empty">没有本地分支</div> : null}
+      {branches.map((branch) => {
+        const selected = branch === gitStatus.branch;
+        return (
+          <button
+            key={branch}
+            role="menuitem"
+            type="button"
+            disabled={selected || gitStatus.dirty_count > 0}
+            onClick={() => onSelectBranch(branch)}
+          >
+            <GitBranch size={18} />
+            <span>{branch}</span>
+            {selected ? <Check size={17} /> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function ProjectPickerMenu({

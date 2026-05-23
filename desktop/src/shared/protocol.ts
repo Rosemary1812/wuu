@@ -76,6 +76,7 @@ export type ProjectListResult = {
 export type GitStatusResult = {
   is_repo: boolean;
   branch?: string;
+  branches?: string[];
   dirty_count: number;
 };
 
@@ -158,6 +159,7 @@ export type WuuDesktopApi = {
   selectProject: (projectId: string) => Promise<ProjectListResult>;
   selectNoProject: (fresh?: boolean) => Promise<ProjectListResult>;
   gitStatus: () => Promise<GitStatusResult>;
+  checkoutGitBranch: (branch: string) => Promise<GitStatusResult>;
   initialize: () => Promise<InitializeResult>;
   updateRuntimeSettings: (provider: string, model: string) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;

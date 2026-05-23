@@ -313,13 +313,42 @@ function gitStatusResult(): GitStatusResult {
     return { is_repo: false, dirty_count: 0 };
   }
   const branch = gitOutput(context.cwd, ["branch", "--show-current"]) || gitOutput(context.cwd, ["rev-parse", "--short", "HEAD"]);
+  const branches = gitOutput(context.cwd, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+    ?.split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
   const porcelain = gitOutput(context.cwd, ["status", "--porcelain"]);
   const dirtyCount = porcelain ? porcelain.split("\n").filter((line) => line.trim()).length : 0;
   return {
     is_repo: true,
     branch,
+    branches,
     dirty_count: dirtyCount
   };
+}
+
+function checkoutGitBranch(branch: string): GitStatusResult {
+  const context = ensureRuntimeContext();
+  const current = gitStatusResult();
+  const target = branch.trim();
+  if (!current.is_repo) {
+    throw new Error("current workspace is not a git repository");
+  }
+  if (!target || !current.branches?.includes(target)) {
+    throw new Error("branch not found");
+  }
+  if (current.dirty_count > 0) {
+    throw new Error("working tree has uncommitted changes");
+  }
+  const result = spawnSync("git", ["-C", context.cwd, "checkout", target], {
+    cwd: context.cwd,
+    encoding: "utf8",
+    env: process.env
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || `failed to checkout ${target}`);
+  }
+  return gitStatusResult();
 }
 
 function gitOutput(cwd: string, args: string[]): string | undefined {
@@ -545,6 +574,7 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) => selectProject(projectIDToSelect));
   ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean) => selectNoProject(Boolean(fresh)));
   ipcMain.handle("wuu:git-status", () => gitStatusResult());
+  ipcMain.handle("wuu:git-checkout-branch", (_event, branch: string) => checkoutGitBranch(branch));
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
       title: "使用现有文件夹",
