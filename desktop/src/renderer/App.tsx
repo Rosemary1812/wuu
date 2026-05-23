@@ -2627,9 +2627,18 @@ function TurnView({ turn, cwd, onStreamFrame }: { turn: Turn; cwd?: string; onSt
   }
   if (!hasAssistantWork && turn.status === "in_progress") {
     renderedItems.push(
-      <div key={`${turn.id}-thinking`} className="activity-row thinking-inline">
-        <Brain size={18} />
-        <span>正在思考</span>
+      <div key={`${turn.id}-thinking`} className="activity-row thinking-inline" role="status" aria-live="polite">
+        <span className="thinking-mark" aria-hidden="true">
+          <Brain size={18} />
+        </span>
+        <span className="thinking-copy">
+          正在思考
+          <span className="thinking-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </span>
       </div>
     );
   }
@@ -2649,10 +2658,16 @@ function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   const elapsedMs =
     completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, Date.now() - startedAt) : 0);
   const statusLabel =
-    turn.status === "failed" ? "处理失败" : turn.status === "interrupted" ? "已停止" : "已处理";
+    turn.status === "in_progress"
+      ? "处理中"
+      : turn.status === "failed"
+        ? "处理失败"
+        : turn.status === "interrupted"
+          ? "已停止"
+          : "已处理";
 
   return (
-    <div className="turn-progress">
+    <div className={`turn-progress ${turn.status}`}>
       <div className="turn-progress-label">
         <Clock size={17} />
         <span>
