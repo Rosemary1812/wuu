@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/coordinator"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -495,8 +496,8 @@ func TestWorkerNotifyCompletedBuffersResultWhileTurnInFlight(t *testing.T) {
 	if len(after.chatHistory) != 0 {
 		t.Fatalf("expected in-flight worker result to stay out of chatHistory, got %+v", after.chatHistory)
 	}
-	if len(after.pendingWorkerResults) != 1 {
-		t.Fatalf("expected one buffered worker result, got %d", len(after.pendingWorkerResults))
+	if len(after.pendingWorkerMessages) != 1 {
+		t.Fatalf("expected one buffered worker mailbox message, got %d", len(after.pendingWorkerMessages))
 	}
 	if !after.pendingAutoResume {
 		t.Fatal("expected auto-resume flag when worker completes during an active turn")
@@ -523,14 +524,16 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterTurnMessages(t *testing.
 		ToolCallID: "call_1",
 		Content:    `{"agent_id":"worker-1","status":"running"}`,
 	}
-	worker := providers.ChatMessage{
-		Role:    "user",
-		Content: "<worker-result agent-id=\"worker-1\">done</worker-result>",
-	}
+	worker := coordinator.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
+		ID:     "worker-1",
+		Type:   "worker",
+		Status: subagent.StatusCompleted,
+		Result: "done",
+	})
 	m.pendingTurn = &pendingTurnResult{
 		newMsgs: []providers.ChatMessage{assistant, tool},
 	}
-	m.pendingWorkerResults = []providers.ChatMessage{worker}
+	m.pendingWorkerMessages = []providers.ChatMessage{worker}
 	m.streaming = true
 	m.pendingRequest = true
 
@@ -543,8 +546,11 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterTurnMessages(t *testing.
 	if after.chatHistory[0].Role != "assistant" || after.chatHistory[1].Role != "tool" || after.chatHistory[2].Role != "user" {
 		t.Fatalf("unexpected post-flush order: %+v", after.chatHistory)
 	}
-	if len(after.pendingWorkerResults) != 0 {
-		t.Fatalf("expected buffered worker results to be cleared, got %d", len(after.pendingWorkerResults))
+	if len(after.pendingWorkerMessages) != 0 {
+		t.Fatalf("expected buffered worker mailbox messages to be cleared, got %d", len(after.pendingWorkerMessages))
+	}
+	if after.chatHistory[2].Name != coordinator.AgentMailboxMessageName {
+		t.Fatalf("expected mailbox message name, got %+v", after.chatHistory[2])
 	}
 	if err := providers.ValidateMessageSequence(after.chatHistory); err != nil {
 		t.Fatalf("expected valid post-flush history, got %v", err)
@@ -583,15 +589,17 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterHistoryRewrite(t *testin
 		ToolCallID: "call_1",
 		Content:    `{"agent_id":"worker-1","status":"running"}`,
 	}
-	worker := providers.ChatMessage{
-		Role:    "user",
-		Content: "<worker-result agent-id=\"worker-1\">done</worker-result>",
-	}
+	worker := coordinator.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
+		ID:     "worker-1",
+		Type:   "worker",
+		Status: subagent.StatusCompleted,
+		Result: "done",
+	})
 	m.pendingTurn = &pendingTurnResult{
 		newMsgs:          []providers.ChatMessage{assistant, tool},
 		historyRewritten: true,
 	}
-	m.pendingWorkerResults = []providers.ChatMessage{worker}
+	m.pendingWorkerMessages = []providers.ChatMessage{worker}
 	m.streaming = true
 	m.pendingRequest = true
 

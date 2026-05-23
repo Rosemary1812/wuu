@@ -279,7 +279,7 @@ func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool
 			// blocks in a single user message.  Always merge consecutive
 			// same-role messages instead of silently dropping when
 			// canMergeBlocks returned false (the previous behaviour
-			// caused tool results to vanish when a worker-result text
+			// caused tool results to vanish when a worker mailbox text
 			// block landed between an assistant tool_call and its
 			// tool_result).
 			payload.Messages[n-1].Content = append(payload.Messages[n-1].Content, mapped.Content...)

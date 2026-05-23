@@ -10,20 +10,20 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
-// TestWorkerResultMessageStructure verifies that the message sequence
+// TestAgentMailboxMessageStructure verifies that the message sequence
 // after worker completion produces valid role alternation with no
 // mixed tool_result+text content blocks in any user message.
 //
 // This is the root cause test for the deterministic reconnect loop
 // on proxies after worker completion.
-func TestWorkerResultMessageStructure(t *testing.T) {
+func TestAgentMailboxMessageStructure(t *testing.T) {
 	// Simulate the EXACT message sequence after worker completion:
 	//
 	// 1. user: original prompt
 	// 2. assistant: spawns a worker (tool_use)
 	// 3. tool: spawn result (maps to user+tool_result)
 	// 4. assistant: "" (empty — model stopped after tool result)
-	// 5. user: <worker-result>... (injected on completion)
+	// 5. user: structured agent mailbox payload (injected on completion)
 	// 6. user: env context (BeforeStep injection)
 	history := []providers.ChatMessage{
 		{Role: "system", Content: "You are a coding agent."},
@@ -35,7 +35,7 @@ func TestWorkerResultMessageStructure(t *testing.T) {
 		// Key: empty assistant persisted for alternation (the fix).
 		{Role: "assistant", Content: ""},
 		// Worker result injected after completion.
-		{Role: "user", Content: "<worker-result agent-id=\"w-123\">\nDone: git pull succeeded\n</worker-result>"},
+		{Role: "user", Content: `{"type":"agent_result","agent_id":"w-123","status":"completed","result":"Done: git pull succeeded"}`},
 		// BeforeStep env context injection.
 		{Role: "user", Content: "[Environment context]: cwd=/workspace"},
 	}
@@ -57,8 +57,8 @@ func TestWorkerResultMessageStructure(t *testing.T) {
 	defer server.Close()
 
 	client, err := New(ClientConfig{
-		BaseURL:  server.URL,
-		APIKey:   "test-key",
+		BaseURL:   server.URL,
+		APIKey:    "test-key",
 		MaxTokens: 1024,
 	})
 	if err != nil {
@@ -135,5 +135,3 @@ func TestWorkerResultMessageStructure(t *testing.T) {
 	}
 	t.Logf("  sequence: %s", roles)
 }
-
-

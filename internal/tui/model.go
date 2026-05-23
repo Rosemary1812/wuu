@@ -228,7 +228,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workerNotifyMsg:
 		// Worker status changed. Show transient progress in chat for
 		// "running" / "completed" / "failed". When completed, also
-		// inject the worker-result XML into chatHistory so the
+		// append a structured mailbox message into chatHistory so the
 		// orchestrator sees it on its next turn.
 		n := msg.notification
 		m.recordWorkerUsage(n.Snapshot)
@@ -249,7 +249,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Surface the actual error so the user can tell apart
 				// auth / rate limit / context overflow / fatal at a
 				// glance instead of guessing. The full error string is
-				// also in the <worker-result> XML the orchestrator sees.
+				// also in the mailbox payload the orchestrator sees.
 				if n.Snapshot.Error != nil {
 					class := coordinator.ClassifyError(n.Snapshot.Error)
 					suffix = fmt.Sprintf(" — [%s] %s", class,
@@ -260,18 +260,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.appendEntry("system", fmt.Sprintf("%s %s %s: %s%s",
 				icon, n.Snapshot.Type, n.Status, n.Snapshot.Description, suffix))
-			// Inject the worker-result XML into the orchestrator's
-			// next API request as a user-role message. If a turn is
-			// still in flight, buffer it until streamFinishedMsg so
-			// it cannot interleave with assistant/tool messages from
-			// the active turn.
-			xml := coordinator.FormatWorkerResult(n.Snapshot)
-			workerMsg := providers.ChatMessage{
-				Role:    "user",
-				Content: xml,
-			}
+			// Queue the structured mailbox message for the
+			// orchestrator's next API request. If a turn is still in
+			// flight, buffer it until streamFinishedMsg so it cannot
+			// interleave with assistant/tool messages from the active
+			// turn.
+			workerMsg := coordinator.AgentMailboxChatMessage(n.Snapshot)
 			if m.streaming || m.pendingRequest {
-				m.pendingWorkerResults = append(m.pendingWorkerResults, workerMsg)
+				m.pendingWorkerMessages = append(m.pendingWorkerMessages, workerMsg)
 			} else {
 				m.chatHistory = append(m.chatHistory, workerMsg)
 				_ = appendChatMessage(m.memoryPath, workerMsg)
@@ -344,11 +340,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.pendingTurn = nil
 		}
-		for _, msg := range m.pendingWorkerResults {
+		for _, msg := range m.pendingWorkerMessages {
 			m.chatHistory = append(m.chatHistory, msg)
 			_ = appendChatMessage(m.memoryPath, msg)
 		}
-		m.pendingWorkerResults = nil
+		m.pendingWorkerMessages = nil
 
 		// Persist token usage for this turn.
 		if m.turnInputTokens > 0 || m.turnOutputTokens > 0 {
@@ -376,7 +372,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// If a worker completed while this turn was running, fire an
 		// auto-resume now so the orchestrator processes the queued
-		// worker-result(s).
+		// worker mailbox message(s).
 		if m.pendingAutoResume {
 			m.pendingAutoResume = false
 			updated, autoCmd := m.triggerAutoResume()

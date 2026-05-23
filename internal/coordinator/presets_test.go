@@ -94,7 +94,7 @@ func TestSystemPromptPreamble_ContainsWorkerResultHandling(t *testing.T) {
 		"self-contained",
 	} {
 		if !strings.Contains(preamble, want) {
-			t.Errorf("SystemPromptPreamble missing worker-result handling %q", want)
+			t.Errorf("SystemPromptPreamble missing worker result handling %q", want)
 		}
 	}
 }

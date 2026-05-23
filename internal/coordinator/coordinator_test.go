@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -665,7 +666,7 @@ func TestSendMessage_RejectsEmptyFields(t *testing.T) {
 	}
 }
 
-func TestFormatWorkerResult(t *testing.T) {
+func TestAgentMailboxChatMessage(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
@@ -686,15 +687,19 @@ func TestFormatWorkerResult(t *testing.T) {
 	})
 
 	snap := c.Manager().Get(res.AgentID).Snapshot()
-	xml := FormatWorkerResult(snap)
-	if !contains(xml, "<worker-result") || !contains(xml, "found bug at line 42") {
-		t.Fatalf("worker-result XML missing expected fields: %s", xml)
+	msg := AgentMailboxChatMessage(snap)
+	if msg.Role != "user" || msg.Name != AgentMailboxMessageName {
+		t.Fatalf("unexpected mailbox chat message envelope: %+v", msg)
 	}
-	if !contains(xml, "find the bug") {
-		t.Fatalf("summary missing: %s", xml)
+	var payload AgentMailboxMessage
+	if err := json.Unmarshal([]byte(msg.Content), &payload); err != nil {
+		t.Fatalf("mailbox payload is not JSON: %v\n%s", err, msg.Content)
 	}
-	if !contains(xml, "completed") {
-		t.Fatalf("status missing: %s", xml)
+	if payload.Type != "agent_result" || payload.AgentID != res.AgentID || payload.Result != "found bug at line 42" {
+		t.Fatalf("unexpected mailbox payload: %+v", payload)
+	}
+	if payload.Description != "find the bug" || payload.Status != "completed" {
+		t.Fatalf("missing summary/status in mailbox payload: %+v", payload)
 	}
 }
 
@@ -710,22 +715,22 @@ func waitForRunningWorkersToStop(t *testing.T, mgr *subagent.Manager, timeout ti
 	t.Fatalf("expected workers to stop within %s, still have %d running", timeout, mgr.CountRunning())
 }
 
-func TestFormatWorkerResult_IncludesErrorClass(t *testing.T) {
+func TestAgentMailboxMessage_IncludesErrorClass(t *testing.T) {
 	snap := subagentSnapshotWithError(&providers.HTTPError{
 		StatusCode: 429,
 		Body:       "rate limited",
 	})
-	xml := FormatWorkerResult(snap)
-	if !contains(xml, `<error class="retryable"`) {
-		t.Fatalf("expected retryable error class, got: %s", xml)
+	payload := NewAgentMailboxMessage(snap)
+	if payload.ErrorClass != "retryable" {
+		t.Fatalf("expected retryable error class, got: %+v", payload)
 	}
-	if !contains(xml, "rate limited") {
-		t.Fatalf("expected error body in XML, got: %s", xml)
+	if !contains(payload.Error, "rate limited") {
+		t.Fatalf("expected error body in mailbox payload, got: %+v", payload)
 	}
 }
 
 // subagentSnapshotWithError builds a minimal failed-worker snapshot
-// for FormatWorkerResult tests without actually spawning anything.
+// for mailbox tests without actually spawning anything.
 func subagentSnapshotWithError(err error) subagent.SubAgentSnapshot {
 	return subagent.SubAgentSnapshot{
 		ID:          "worker-test",

@@ -112,7 +112,7 @@ func TestNormalizeMessages_interleavedUserMovedAfterToolResults(t *testing.T) {
 	msgs := []ChatMessage{
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "", ToolCalls: []ToolCall{{ID: "call_1", Name: "a"}}},
-		{Role: "user", Content: "<worker-result>done</worker-result>"},
+		{Role: "user", Content: `{"type":"agent_result","agent_id":"worker-1","result":"done"}`},
 		{Role: "tool", ToolCallID: "call_1", Content: "ok"},
 	}
 	got := NormalizeMessages(msgs)
@@ -122,7 +122,7 @@ func TestNormalizeMessages_interleavedUserMovedAfterToolResults(t *testing.T) {
 	if got[1].Role != "assistant" || got[2].Role != "tool" || got[3].Role != "user" {
 		t.Fatalf("expected assistant/tool/user ordering after repair, got %+v", got)
 	}
-	if got[2].ToolCallID != "call_1" || got[3].Content != "<worker-result>done</worker-result>" {
+	if got[2].ToolCallID != "call_1" || got[3].Content != `{"type":"agent_result","agent_id":"worker-1","result":"done"}` {
 		t.Fatalf("unexpected repaired messages: %+v", got)
 	}
 }

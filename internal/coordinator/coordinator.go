@@ -523,8 +523,8 @@ func (c *Coordinator) Wait(ctx context.Context, target string) (subagent.SubAgen
 	return c.manager.Wait(ctx, id)
 }
 
-// Subscribe forwards to the underlying manager so the TUI can receive
-// status notifications and inject worker-result messages.
+// Subscribe forwards to the underlying manager so the UI can receive
+// status notifications and publish mailbox messages.
 func (c *Coordinator) Subscribe(ch chan<- subagent.Notification) {
 	c.manager.Subscribe(ch)
 }
@@ -690,40 +690,6 @@ When a worker reports failure, continue the same worker with followup_task — i
 
 If a worker seems stuck, close it with close_agent and respawn with clearer instructions.
 `
-}
-
-// FormatWorkerResult turns a sub-agent snapshot into the XML message
-// that the orchestrator sees when a worker completes.
-//
-//	<worker-result agent_id="..." type="..." status="completed">
-//	<summary>...</summary>
-//	<duration_ms>1234</duration_ms>
-//	<result>
-//	... worker's final assistant message ...
-//	</result>
-//	</worker-result>
-func FormatWorkerResult(snap subagent.SubAgentSnapshot) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "<worker-result agent_id=%q type=%q status=%q>\n",
-		snap.ID, snap.Type, snap.Status)
-	if snap.Description != "" {
-		fmt.Fprintf(&b, "<summary>%s</summary>\n", snap.Description)
-	}
-	if !snap.CompletedAt.IsZero() && !snap.StartedAt.IsZero() {
-		ms := snap.CompletedAt.Sub(snap.StartedAt).Milliseconds()
-		fmt.Fprintf(&b, "<duration_ms>%d</duration_ms>\n", ms)
-	}
-	if snap.Error != nil {
-		class := ClassifyError(snap.Error)
-		fmt.Fprintf(&b, "<error class=%q>%s</error>\n", class, snap.Error.Error())
-	}
-	if snap.Result != "" {
-		b.WriteString("<result>\n")
-		b.WriteString(snap.Result)
-		b.WriteString("\n</result>\n")
-	}
-	b.WriteString("</worker-result>")
-	return b.String()
 }
 
 // CleanupSession removes all worktrees belonging to this session.

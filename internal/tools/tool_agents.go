@@ -154,7 +154,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Give every task a stable task_name so you can address it later by task name, " +
 			"agent path, or agent_id. By default the spawn is asynchronous: this returns " +
 			"immediately with an agent_id and agent_path, and the worker's result will be delivered to you " +
-			"automatically as a <worker-result> message once it completes — you will be " +
+			"automatically as a structured mailbox message once it completes — you will be " +
 			"notified without any action on your part. After spawning async workers, END " +
 			"YOUR TURN — do NOT generate waiting messages or loop checking status. The system handles notification and auto-resume. " +
 			"Set synchronous=true to block until " +
@@ -194,7 +194,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"synchronous": map[string]any{
 					"type":        "boolean",
-					"description": "If true, block until the worker completes and return its result inline. If false (default), return immediately and receive the result later via a <worker-result> message.",
+					"description": "If true, block until the worker completes and return its result inline. If false (default), return immediately and receive the result later via a structured mailbox message.",
 				},
 			},
 			"required": []string{"task_name", "message"},
@@ -271,7 +271,7 @@ func (t *ForkAgentTool) Definition() providers.ToolDefinition {
 			"toolkit level). Your inherited history may reference those tools — the worker " +
 			"sees them as read-only context, not patterns to reproduce. " +
 			"Like spawn_agent, fork_agent is asynchronous by default: returns immediately " +
-			"with an agent_id, the result arrives later automatically as a <worker-result> " +
+			"with an agent_id, the result arrives later automatically as a structured mailbox " +
 			"message. After spawning, END YOUR TURN — do NOT generate waiting messages. The system handles notification and auto-resume. " +
 			"Set synchronous=true to block until the worker finishes.",
 		InputSchema: map[string]any{
@@ -295,7 +295,7 @@ func (t *ForkAgentTool) Definition() providers.ToolDefinition {
 				},
 				"synchronous": map[string]any{
 					"type":        "boolean",
-					"description": "If true, block until the worker completes and return its result inline. If false (default), return immediately and receive the result later via a <worker-result> message.",
+					"description": "If true, block until the worker completes and return its result inline. If false (default), return immediately and receive the result later via a structured mailbox message.",
 				},
 			},
 			"required": []string{"description", "prompt"},

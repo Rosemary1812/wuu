@@ -242,11 +242,11 @@ type Model struct {
 	pendingAutoResume bool
 	autoResumeChain   int
 
-	// pendingWorkerResults holds worker-result messages that arrived
-	// while a turn was still in flight. They are appended only after
-	// the turn's messages have been committed so they cannot land
-	// between an assistant tool_call and its tool result.
-	pendingWorkerResults []providers.ChatMessage
+	// pendingWorkerMessages holds structured worker mailbox messages
+	// that arrived while a turn was still in flight. They are appended
+	// only after the turn's messages have been committed so they cannot
+	// land between an assistant tool_call and its tool result.
+	pendingWorkerMessages []providers.ChatMessage
 
 	requestTimeout time.Duration
 

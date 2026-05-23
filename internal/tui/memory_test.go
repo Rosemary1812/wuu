@@ -8,7 +8,9 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/compact"
+	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
 func TestAppendAndLoadMemoryEntries(t *testing.T) {
@@ -338,7 +340,7 @@ func TestLoadChatHistory_SkipsNonChatRoles(t *testing.T) {
 	}
 }
 
-func TestLoadChatHistory_RepairsAndRewritesInterleavedWorkerResult(t *testing.T) {
+func TestLoadChatHistory_RepairsAndRewritesInterleavedWorkerMailboxMessage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
 
@@ -347,10 +349,12 @@ func TestLoadChatHistory_RepairsAndRewritesInterleavedWorkerResult(t *testing.T)
 		Content:   "",
 		ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "spawn_agent"}},
 	}
-	worker := providers.ChatMessage{
-		Role:    "user",
-		Content: "<worker-result agent_id=\"worker-1\">done</worker-result>",
-	}
+	worker := coordinator.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
+		ID:     "worker-1",
+		Type:   "worker",
+		Status: subagent.StatusCompleted,
+		Result: "done",
+	})
 	tool := providers.ChatMessage{
 		Role:       "tool",
 		Name:       "spawn_agent",
