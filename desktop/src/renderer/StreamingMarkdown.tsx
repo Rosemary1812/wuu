@@ -147,7 +147,7 @@ function StreamingMarkdownSurface({
   }, []);
 
   const syncImmediate = useCallback(
-    (nextText: string): void => {
+    (nextText: string, notify = true): void => {
       if (rafRef.current !== undefined) {
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = undefined;
@@ -159,7 +159,9 @@ function StreamingMarkdownSurface({
       settledNotifiedRef.current = false;
       renderText(nextText);
       onFrameRef.current?.();
-      notifySettled();
+      if (notify) {
+        notifySettled();
+      }
     },
     [notifySettled, renderText]
   );
@@ -223,7 +225,7 @@ function StreamingMarkdownSurface({
 
     streamTextStore.seed(streamKey, initialText);
     const seedText = streamTextStore.seedValue(streamKey);
-    syncImmediate(seedText);
+    syncImmediate(seedText, false);
 
     const applyTarget = (nextText: string): void => {
       if (nextText === targetRef.current) {
@@ -241,6 +243,7 @@ function StreamingMarkdownSurface({
     };
 
     applyTarget(streamTextStore.get(streamKey));
+    notifySettled();
     const unsubscribe = streamTextStore.subscribe(streamKey, applyTarget);
     return () => {
       unsubscribe();
