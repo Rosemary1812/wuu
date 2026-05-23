@@ -708,6 +708,8 @@ button:disabled {
 }
 
 .conversation-pane {
+  --environment-panel-reserved-width: 432px;
+  --environment-panel-width: 360px;
   grid-column: 2;
   grid-row: 1;
   display: grid;
@@ -723,6 +725,11 @@ button:disabled {
 
 .right-panel-open .conversation-pane {
   margin-right: var(--workspace-right-panel-width, 360px);
+}
+
+.conversation-pane.environment-panel-inline .scroll-region,
+.conversation-pane.environment-panel-inline .dock-composer-wrap {
+  padding-right: var(--environment-panel-reserved-width);
 }
 
 .titlebar {
@@ -1082,7 +1089,7 @@ button:disabled {
   right: 24px;
   z-index: 35;
   display: grid;
-  width: min(360px, calc(100% - 32px));
+  width: min(var(--environment-panel-width), calc(100% - 32px));
   overflow: visible;
   border: 1px solid rgba(31, 35, 40, 0.1);
   border-radius: 16px;
@@ -2101,6 +2108,7 @@ button:disabled {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  transition: padding-right 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .conversation-width {
@@ -5883,6 +5891,7 @@ pre {
 .composer-wrap {
   padding: 14px 0 22px;
   background: #fff;
+  transition: padding-right 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .hero-composer-wrap {
@@ -6742,6 +6751,8 @@ pre {
   .app-shell,
   .sidebar,
   .titlebar,
+  .scroll-region,
+  .composer-wrap,
   .workspace-right-panel,
   .workspace-bottom-panel {
     transition: none;

@@ -1046,12 +1046,15 @@ export function App(): JSX.Element {
   const environmentPanelVisible =
     environmentPanelCanShow &&
     (environmentPanelOpen || (environmentPanelHasRoom && !environmentPanelDismissed && !emptyConversation));
+  const environmentPanelInline = environmentPanelVisible && environmentPanelHasRoom;
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
   }${rightPanelOpen ? " right-panel-open" : ""}${bottomPanelOpen ? " bottom-panel-open" : ""}`;
   const shellStyle = {
     "--sidebar-width": `${sidebarCollapsed ? 0 : sidebarWidth}px`,
     "--workspace-right-panel-width": "360px",
+    "--environment-panel-width": "360px",
+    "--environment-panel-reserved-width": "432px",
     "--workspace-bottom-panel-height": "238px"
   } as CSSProperties;
   const environmentSourceItems = useMemo(
@@ -2156,7 +2159,7 @@ export function App(): JSX.Element {
         />
       )}
 
-      <main className="conversation-pane">
+      <main className={`conversation-pane${environmentPanelInline ? " environment-panel-inline" : ""}`}>
         <header className="titlebar">
           <div className="title-block">
             {sidebarCollapsed ? (
