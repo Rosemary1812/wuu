@@ -7035,28 +7035,46 @@ pre {
   white-space: nowrap;
 }
 
-.send-button {
+.composer-action-button {
   display: grid;
   width: 40px;
   height: 40px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 999px;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.composer-send-button {
   background: #878b90;
   color: #fff;
 }
 
-.send-button:hover {
+.composer-send-button:hover {
   background: #22262a;
 }
 
-.send-button:disabled {
+.composer-send-button:disabled {
   cursor: default;
   opacity: 0.45;
 }
 
-.send-button:disabled:hover {
+.composer-send-button:disabled:hover {
   background: #878b90;
+}
+
+.composer-stop-button {
+  border-radius: 12px;
+  background: #f1f2ef;
+  color: #596066;
+}
+
+.composer-stop-button:hover {
+  background: #e7e8e4;
+  color: #202427;
 }
 
 .composer-context-bar {
