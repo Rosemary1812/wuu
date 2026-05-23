@@ -370,6 +370,64 @@ func TestToolkit_ListAgents_RegisteredInDefinitions(t *testing.T) {
 	t.Fatal("list_agents must be present in tool definitions")
 }
 
+func TestToolkit_UpdatePlan_RegisteredInDefinitions(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, d := range kit.Definitions() {
+		if d.Name == "update_plan" {
+			return
+		}
+	}
+	t.Fatal("update_plan must be present in tool definitions")
+}
+
+func TestToolkit_UpdatePlan_ValidatesSingleInProgress(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "update_plan",
+		Arguments: `{"plan":[{"step":"one","status":"in_progress"},{"step":"two","status":"in_progress"}]}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "only one") {
+		t.Fatalf("expected single in_progress validation error, got: %v", err)
+	}
+}
+
+func TestToolkit_UpdatePlan_StoresCurrentPlan(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "update_plan",
+		Arguments: `{"explanation":"starting work","plan":[{"step":"inspect","status":"completed"},{"step":"edit","status":"in_progress"}]}`,
+	})
+	if err != nil {
+		t.Fatalf("update_plan: %v", err)
+	}
+	var parsed struct {
+		Status      string     `json:"status"`
+		Explanation string     `json:"explanation"`
+		Plan        []PlanItem `json:"plan"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if parsed.Status != "updated" || parsed.Explanation != "starting work" {
+		t.Fatalf("unexpected response metadata: %+v", parsed)
+	}
+	if len(parsed.Plan) != 2 || parsed.Plan[1].Status != "in_progress" {
+		t.Fatalf("unexpected plan: %+v", parsed.Plan)
+	}
+}
+
 func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

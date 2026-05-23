@@ -91,6 +91,8 @@ func (t *Toolkit) rebuildRegistry() {
 		NewWebFetchTool(e),
 		// Skills
 		NewLoadSkillTool(e),
+		// Planning
+		NewUpdatePlanTool(e),
 		// User interaction
 		NewAskUserTool(e),
 		// Agent orchestration

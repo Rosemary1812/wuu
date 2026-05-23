@@ -69,6 +69,7 @@ type Env struct {
 	OnFileChanged func(absPath string)
 
 	readState *readFileState
+	planState planState
 }
 
 // RecordRead records a successful read_file invocation.
