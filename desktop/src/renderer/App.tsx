@@ -943,10 +943,13 @@ function TurnView({ turn, cwd, nowMs }: { turn: Turn; cwd?: string; nowMs: numbe
     }
     hasAssistantWork = true;
 
-    if (item.type === "tool_call") {
+    if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
       const group = [item];
       let nextIndex = index + 1;
-      while (nextIndex < turn.items.length && turn.items[nextIndex].type === "tool_call") {
+      while (
+        nextIndex < turn.items.length &&
+        (turn.items[nextIndex].type === "tool_call" || turn.items[nextIndex].type === "collab_agent_tool_call")
+      ) {
         group.push(turn.items[nextIndex]);
         nextIndex++;
       }
@@ -1023,6 +1026,7 @@ function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.
         </article>
       );
     case "tool_call":
+    case "collab_agent_tool_call":
       return <ToolActivityRow items={[item]} />;
     case "context_compaction":
       return <div className="system-line">{item.text}</div>;

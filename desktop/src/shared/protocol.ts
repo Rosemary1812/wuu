@@ -81,6 +81,7 @@ export type ThreadItemType =
   | "agent_message"
   | "reasoning"
   | "tool_call"
+  | "collab_agent_tool_call"
   | "context_compaction"
   | "error";
 export type ThreadItemStatus = "in_progress" | "completed" | "failed";

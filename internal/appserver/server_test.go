@@ -470,6 +470,34 @@ func TestTurnsFromHistoryRestoresToolCallItems(t *testing.T) {
 	}
 }
 
+func TestTurnsFromHistoryRestoresCollabAgentToolItems(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "delegate"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_1",
+				Name:      "spawn_agent",
+				Arguments: `{"task_name":"inspect","message":"inspect"}`,
+			}},
+		},
+		{
+			Role:       "tool",
+			ToolCallID: "call_1",
+			Content:    `{"agent_id":"worker-1","agent_path":"/root/inspect","status":"running"}`,
+		},
+	}
+
+	turns := turnsFromHistory("thread", history, time.Unix(0, 0).UTC())
+	if len(turns) != 1 || len(turns[0].Items) != 2 {
+		t.Fatalf("unexpected turns: %+v", turns)
+	}
+	item := turns[0].Items[1]
+	if item.Type != ThreadItemCollabAgentTool || item.Name != "spawn_agent" || item.Result == "" {
+		t.Fatalf("unexpected collab agent item: %+v", item)
+	}
+}
+
 func TestServerForwardsAgentNotifications(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	workerClient := &fakeClient{response: providers.ChatResponse{Content: "agent done"}}
