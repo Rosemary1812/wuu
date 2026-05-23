@@ -56,7 +56,7 @@
 @keyframes environment-panel-enter {
   from {
     opacity: 1;
-    transform: translate3d(10px, 0, 0) scale(0.992);
+    transform: translate3d(0, -2px, 0) scale(0.996);
   }
 
   to {
