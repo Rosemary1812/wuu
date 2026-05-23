@@ -95,10 +95,7 @@ body {
 .window-resizing .wuu-launch-mark span,
 .window-resizing .wuu-launch-rail::after,
 .window-resizing .turn-progress.in_progress .turn-progress-label svg,
-.window-resizing .turn-progress.in_progress .turn-progress-rule::after,
-.window-resizing .thinking-mark::before,
-.window-resizing .thinking-mark svg,
-.window-resizing .thinking-dots span {
+.window-resizing .turn-progress.in_progress .turn-progress-rule::after {
   animation-play-state: paused !important;
 }
 
@@ -2079,21 +2076,82 @@ button:disabled {
 
 .turn-progress {
   display: grid;
-  gap: 18px;
+  gap: 12px;
   margin-top: 18px;
+}
+
+.turn-progress-header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .turn-progress-label {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 9px;
   color: #777b80;
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
+  line-height: 1.35;
 }
 
 .turn-progress-label svg {
+  flex: 0 0 auto;
   color: #8a8e92;
+  margin-top: 1px;
+}
+
+.turn-progress-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.turn-progress-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 7px;
+}
+
+.turn-progress-duration {
+  color: #8b9094;
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-progress-detail {
+  overflow-wrap: anywhere;
+  color: #9ca1a5;
+  font-size: var(--font-ui);
+  font-weight: 500;
+}
+
+.turn-progress-stop {
+  display: inline-flex;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border-radius: 7px;
+  background: #f3f4f1;
+  color: #6a7277;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  padding: 0 9px;
+}
+
+.turn-progress-stop:hover {
+  background: #e9ebe6;
+  color: #202427;
+}
+
+.turn-progress-stop svg {
+  flex: 0 0 auto;
 }
 
 .turn-progress-rule {
@@ -2105,7 +2163,11 @@ button:disabled {
 
 .turn-progress.in_progress .turn-progress-label svg {
   color: #718f86;
-  animation: thinking-icon-breathe 1600ms ease-in-out infinite;
+  animation: thinking-icon-breathe 2200ms ease-in-out infinite;
+}
+
+.turn-progress.in_progress .turn-progress-title {
+  color: #5f746e;
 }
 
 .turn-progress.in_progress .turn-progress-rule {
@@ -2115,11 +2177,20 @@ button:disabled {
 .turn-progress.in_progress .turn-progress-rule::after {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 72px;
+  width: min(160px, 26%);
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, rgba(47, 125, 104, 0.12), rgba(47, 125, 104, 0.36), transparent);
+  background: linear-gradient(90deg, transparent, rgba(47, 125, 104, 0.08), rgba(47, 125, 104, 0.2), transparent);
   content: "";
-  animation: turn-progress-scan 1800ms cubic-bezier(0.2, 0, 0, 1) infinite;
+  animation: turn-progress-scan 5600ms ease-in-out infinite;
+}
+
+.turn-progress.failed .turn-progress-label svg,
+.turn-progress.failed .turn-progress-title {
+  color: #b42318;
+}
+
+.turn-progress.failed .turn-progress-rule {
+  background: #f2d3cf;
 }
 
 .activity-group {
@@ -2300,70 +2371,6 @@ button:disabled {
 
 .activity-delete {
   color: #cf2e2e;
-}
-
-.thinking-inline {
-  margin-top: -4px;
-  color: #7f8589;
-}
-
-.thinking-mark {
-  display: grid;
-  position: relative;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 999px;
-}
-
-.thinking-mark::before {
-  position: absolute;
-  inset: 2px;
-  border: 1px solid rgba(47, 125, 104, 0.24);
-  border-radius: inherit;
-  content: "";
-  opacity: 0.72;
-  transform: scale(0.82);
-  animation: thinking-ring 1600ms ease-in-out infinite;
-}
-
-.thinking-mark svg {
-  position: relative;
-  color: #718f86;
-  animation: thinking-icon-breathe 1600ms ease-in-out infinite;
-}
-
-.thinking-copy {
-  display: inline-flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 5px;
-}
-
-.thinking-dots {
-  display: inline-flex;
-  width: 21px;
-  align-items: center;
-  gap: 3px;
-  transform: translateY(-1px);
-}
-
-.thinking-dots span {
-  width: 4px;
-  height: 4px;
-  border-radius: 999px;
-  background: #7f9a92;
-  opacity: 0.32;
-  animation: thinking-dot 1200ms ease-in-out infinite;
-}
-
-.thinking-dots span:nth-child(2) {
-  animation-delay: 150ms;
-}
-
-.thinking-dots span:nth-child(3) {
-  animation-delay: 300ms;
 }
 
 .rich-content {
@@ -2895,10 +2902,17 @@ pre {
 
 @keyframes turn-progress-scan {
   from {
-    transform: translateX(-80px);
+    opacity: 0;
+    transform: translateX(-180px);
+  }
+
+  18%,
+  72% {
+    opacity: 1;
   }
 
   to {
+    opacity: 0;
     transform: translateX(100vw);
   }
 }
@@ -2915,39 +2929,12 @@ pre {
   }
 }
 
-@keyframes thinking-ring {
-  0%,
-  100% {
-    opacity: 0.42;
-    transform: scale(0.82);
-  }
-  48% {
-    opacity: 0.12;
-    transform: scale(1.16);
-  }
-}
-
-@keyframes thinking-dot {
-  0%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  42% {
-    opacity: 0.92;
-    transform: translateY(-2px);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .wuu-launch-mark::after,
   .wuu-launch-mark span,
   .wuu-launch-rail::after,
   .turn-progress.in_progress .turn-progress-label svg,
-  .turn-progress.in_progress .turn-progress-rule::after,
-  .thinking-mark::before,
-  .thinking-mark svg,
-  .thinking-dots span {
+  .turn-progress.in_progress .turn-progress-rule::after {
     animation: none;
   }
 

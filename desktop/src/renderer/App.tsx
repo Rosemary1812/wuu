@@ -136,6 +136,11 @@ type RunDebugPhase = {
   activeItem?: ThreadItem;
 };
 
+type TurnProgressContent = {
+  label: string;
+  detail?: string;
+};
+
 type AppState = {
   initialized?: InitializeResult;
   projects: DesktopProject[];
@@ -2105,6 +2110,7 @@ export function App(): JSX.Element {
                     turn={turn}
                     cwd={state.thread?.cwd ?? state.activeContext?.cwd}
                     onStreamFrame={scheduleStreamScroll}
+                    onInterrupt={() => void interrupt()}
                   />
                 ))}
                 {state.askRequest ? (
@@ -3698,10 +3704,19 @@ function ThreadList({
   );
 }
 
-function TurnView({ turn, cwd, onStreamFrame }: { turn: Turn; cwd?: string; onStreamFrame: () => void }): JSX.Element {
+function TurnView({
+  turn,
+  cwd,
+  onStreamFrame,
+  onInterrupt
+}: {
+  turn: Turn;
+  cwd?: string;
+  onStreamFrame: () => void;
+  onInterrupt: () => void;
+}): JSX.Element {
   const renderedItems: JSX.Element[] = [];
   let statusInserted = false;
-  let hasAssistantWork = false;
 
   for (let index = 0; index < turn.items.length; index++) {
     const item = turn.items[index];
@@ -3720,10 +3735,9 @@ function TurnView({ turn, cwd, onStreamFrame }: { turn: Turn; cwd?: string; onSt
     }
 
     if (!statusInserted) {
-      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
+      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} onInterrupt={onInterrupt} />);
       statusInserted = true;
     }
-    hasAssistantWork = true;
 
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
       const group = [item];
@@ -3753,24 +3767,7 @@ function TurnView({ turn, cwd, onStreamFrame }: { turn: Turn; cwd?: string; onSt
   }
 
   if (!statusInserted && turn.status === "in_progress") {
-    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
-  }
-  if (!hasAssistantWork && turn.status === "in_progress") {
-    renderedItems.push(
-      <div key={`${turn.id}-thinking`} className="activity-row thinking-inline" role="status" aria-live="polite">
-        <span className="thinking-mark" aria-hidden="true">
-          <Brain size={18} />
-        </span>
-        <span className="thinking-copy">
-          正在思考
-          <span className="thinking-dots" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </span>
-        </span>
-      </div>
-    );
+    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} onInterrupt={onInterrupt} />);
   }
 
   return (
@@ -3781,32 +3778,56 @@ function TurnView({ turn, cwd, onStreamFrame }: { turn: Turn; cwd?: string; onSt
   );
 }
 
-function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
+function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => void }): JSX.Element {
   const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = Date.parse(turn.started_at);
   const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
+  const liveNow = useLiveNow(liveDuration);
   const elapsedMs =
-    completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, Date.now() - startedAt) : 0);
-  const statusLabel =
-    turn.status === "in_progress"
-      ? "处理中"
-      : turn.status === "failed"
-        ? "处理失败"
-        : turn.status === "interrupted"
-          ? "已停止"
-          : "已处理";
+    completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, liveNow - startedAt) : 0);
+  const content = turnProgressContent(turn, elapsedMs);
 
   return (
-    <div className={`turn-progress ${turn.status}`}>
-      <div className="turn-progress-label">
-        <Clock size={17} />
-        <span>
-          {statusLabel} {liveDuration ? <LiveDuration startedAtMs={startedAt} /> : formatDuration(elapsedMs)}
-        </span>
+    <div
+      className={`turn-progress ${turn.status}`}
+      role={liveDuration ? "status" : undefined}
+      aria-live={liveDuration ? "polite" : undefined}
+    >
+      <div className="turn-progress-header">
+        <div className="turn-progress-label">
+          <Clock size={17} />
+          <span className="turn-progress-copy">
+            <span className="turn-progress-title">
+              <span>{content.label}</span>
+              <span className="turn-progress-duration">{formatDuration(elapsedMs)}</span>
+            </span>
+            {content.detail ? <span className="turn-progress-detail">{content.detail}</span> : null}
+          </span>
+        </div>
+        {liveDuration ? (
+          <button className="turn-progress-stop" type="button" onClick={onInterrupt}>
+            <Square size={13} />
+            <span>停止</span>
+          </button>
+        ) : null}
       </div>
       <div className="turn-progress-rule" />
     </div>
   );
+}
+
+function useLiveNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+
+  return active ? now : Date.now();
 }
 
 function LiveDuration({ startedAtMs }: { startedAtMs: number }): JSX.Element {
@@ -3824,6 +3845,69 @@ function LiveDuration({ startedAtMs }: { startedAtMs: number }): JSX.Element {
   }, [startedAtMs]);
 
   return <span ref={nodeRef}>{formatDuration(Math.max(0, Date.now() - startedAtMs))}</span>;
+}
+
+function turnProgressContent(turn: Turn, elapsedMs: number): TurnProgressContent {
+  if (turn.status === "failed") {
+    return { label: "处理失败", detail: turn.error?.message ?? "请求没有完成" };
+  }
+  if (turn.status === "interrupted") {
+    return { label: "已停止", detail: "本轮请求已取消" };
+  }
+  if (turn.status !== "in_progress") {
+    return { label: "已处理" };
+  }
+
+  const runningTool = turn.items.find(
+    (item) =>
+      (item.type === "tool_call" || item.type === "collab_agent_tool_call") &&
+      (item.status ?? "in_progress") === "in_progress"
+  );
+  if (runningTool) {
+    return { label: "正在处理", detail: `正在调用 ${readableToolName(runningTool.name)}` };
+  }
+
+  const latestItem = latestDebugItem(turn);
+  if (!latestItem) {
+    return {
+      label: "正在思考",
+      detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应")
+    };
+  }
+  if (latestItem.type === "agent_message") {
+    const hasText = debugStreamFieldLength(turn.id, latestItem, "text") > 0;
+    return {
+      label: hasText ? "正在生成回复" : "正在思考",
+      detail: hasText ? "正在输出回答" : waitingDetail(elapsedMs, "正在组织回答")
+    };
+  }
+  if (latestItem.type === "reasoning") {
+    return {
+      label: "正在思考",
+      detail: waitingDetail(elapsedMs, "正在组织回答")
+    };
+  }
+  if (latestItem.type === "tool_call" || latestItem.type === "collab_agent_tool_call") {
+    return { label: "正在处理", detail: "工具已返回，正在整理结果" };
+  }
+  if (latestItem.type === "context_compaction") {
+    return { label: "正在处理", detail: "正在整理上下文" };
+  }
+  if (latestItem.type === "error") {
+    return { label: "正在处理", detail: "收到错误信息，正在收尾" };
+  }
+
+  return { label: "正在处理", detail: waitingDetail(elapsedMs, "请求正在处理中") };
+}
+
+function waitingDetail(elapsedMs: number, defaultDetail: string): string {
+  if (elapsedMs >= 30_000) {
+    return "这个请求比平常更久，仍在等待响应";
+  }
+  if (elapsedMs >= 8_000) {
+    return "请求已开始，正在继续处理";
+  }
+  return defaultDetail;
 }
 
 function ThreadItemView({
