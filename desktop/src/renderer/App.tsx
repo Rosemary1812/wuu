@@ -155,11 +155,15 @@ type TurnProgressEra =
   | "galaxy";
 
 type TurnProgressCampaign = {
-  era: TurnProgressEra;
+  currentEra: TurnProgressEra;
+  nextEra: TurnProgressEra;
+  currentLayer: "a" | "b";
+  transitionProgress: number;
   variant: number;
 };
 
 const TURN_PROGRESS_ERA_MS = 4 * 60 * 1000;
+const TURN_PROGRESS_TRANSITION_MS = 30 * 1000;
 const TURN_PROGRESS_ERAS: TurnProgressEra[] = [
   "sticks",
   "swords",
@@ -4072,8 +4076,51 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
 }
 
 function TurnProgressCampaignScene({ campaign }: { campaign: TurnProgressCampaign }): JSX.Element {
+  const currentLayerActive = campaign.currentLayer === "a";
   return (
-    <span className={`turn-progress-scene era-${campaign.era} variant-${campaign.variant}`} aria-hidden="true">
+    <span className="turn-progress-campaign" aria-hidden="true">
+      <TurnProgressSceneLayer
+        era={currentLayerActive ? campaign.currentEra : campaign.nextEra}
+        variant={campaign.variant}
+        state={currentLayerActive ? "current" : "next"}
+        transitionProgress={campaign.transitionProgress}
+      />
+      <TurnProgressSceneLayer
+        era={currentLayerActive ? campaign.nextEra : campaign.currentEra}
+        variant={campaign.variant}
+        state={currentLayerActive ? "next" : "current"}
+        transitionProgress={campaign.transitionProgress}
+      />
+    </span>
+  );
+}
+
+function TurnProgressSceneLayer({
+  era,
+  variant,
+  state,
+  transitionProgress
+}: {
+  era: TurnProgressEra;
+  variant: number;
+  state: "current" | "next";
+  transitionProgress: number;
+}): JSX.Element {
+  const entering = state === "next";
+  const progress = entering ? transitionProgress : 1 - transitionProgress;
+  const opacity = entering ? transitionProgress : 1 - transitionProgress;
+  const yOffset = entering ? (1 - progress) * 6 : -transitionProgress * 5;
+  const scale = entering ? 0.982 + progress * 0.018 : 1 + transitionProgress * 0.012;
+  const blur = entering ? (1 - progress) * 1.1 : transitionProgress * 1.1;
+  const style = {
+    "--scene-opacity": opacity,
+    "--scene-y": `${yOffset}px`,
+    "--scene-scale": scale,
+    "--scene-blur": `${blur}px`
+  } as CSSProperties;
+
+  return (
+    <span className={`turn-progress-scene era-${era} variant-${variant} scene-${state}`} style={style}>
       <span className="civilization-prop prop-left" />
       <span className="civilization-prop prop-mid" />
       <span className="civilization-prop prop-right" />
@@ -4129,8 +4176,18 @@ function turnProgressCampaign(turnID: string, elapsedMs: number): TurnProgressCa
   }
   const campaignMs = elapsedMs % TURN_PROGRESS_CAMPAIGN_MS;
   const eraIndex = Math.floor(campaignMs / TURN_PROGRESS_ERA_MS);
+  const eraElapsedMs = campaignMs % TURN_PROGRESS_ERA_MS;
+  const nextEraIndex = (eraIndex + 1) % TURN_PROGRESS_ERAS.length;
+  const rawTransitionProgress =
+    eraElapsedMs < TURN_PROGRESS_ERA_MS - TURN_PROGRESS_TRANSITION_MS
+      ? 0
+      : Math.min(1, (eraElapsedMs - (TURN_PROGRESS_ERA_MS - TURN_PROGRESS_TRANSITION_MS)) / TURN_PROGRESS_TRANSITION_MS);
+  const transitionProgress = rawTransitionProgress * rawTransitionProgress * (3 - 2 * rawTransitionProgress);
   return {
-    era: TURN_PROGRESS_ERAS[eraIndex] ?? TURN_PROGRESS_ERAS[0],
+    currentEra: TURN_PROGRESS_ERAS[eraIndex] ?? TURN_PROGRESS_ERAS[0],
+    nextEra: TURN_PROGRESS_ERAS[nextEraIndex] ?? TURN_PROGRESS_ERAS[0],
+    currentLayer: eraIndex % 2 === 0 ? "a" : "b",
+    transitionProgress,
     variant: hash % 3
   };
 }
