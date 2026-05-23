@@ -915,6 +915,8 @@ button:disabled {
 .conversation-pane {
   --environment-panel-reserved-width: 432px;
   --environment-panel-width: 360px;
+  --conversation-scrollbar-gutter: 12px;
+  --dock-composer-height: 0px;
   grid-column: 2;
   grid-row: 1;
   display: grid;
@@ -922,7 +924,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 54px minmax(0, 1fr) auto;
+  grid-template-rows: 54px minmax(0, 1fr);
   overflow: hidden;
   background: #fff;
   margin-right: 0;
@@ -2861,6 +2863,8 @@ button:disabled {
 
 .scroll-region {
   contain: layout paint;
+  grid-column: 1;
+  grid-row: 2;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2872,6 +2876,10 @@ button:disabled {
   width: min(1120px, calc(100% - 96px));
   margin: 0 auto;
   padding: 72px 0 28px;
+}
+
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-width {
+  padding-bottom: calc(var(--dock-composer-height) + 32px);
 }
 
 .turn {
@@ -6650,6 +6658,31 @@ pre {
   overflow: hidden;
   padding: 14px 0 22px;
   background: #fff;
+}
+
+.dock-composer-wrap {
+  position: relative;
+  z-index: 5;
+  grid-column: 1;
+  grid-row: 2;
+  align-self: end;
+  background: transparent;
+  pointer-events: none;
+}
+
+.dock-composer-wrap::before {
+  position: absolute;
+  inset: 0 var(--conversation-scrollbar-gutter) 0 0;
+  z-index: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 24px, #fff 100%);
+  content: "";
+  pointer-events: none;
+}
+
+.dock-composer-wrap .composer-stack {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
 }
 
 .hero-composer-wrap {

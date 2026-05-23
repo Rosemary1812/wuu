@@ -710,6 +710,7 @@ export function App(): JSX.Element {
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const [codexRuntimeMenu, setCodexRuntimeMenu] = useState<CodexRuntimeMenu>(null);
   const [codexModels, setCodexModels] = useState<CodexModelLoadState>({ loading: false, error: "", models: [] });
+  const [dockComposerHeight, setDockComposerHeight] = useState(0);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -733,6 +734,7 @@ export function App(): JSX.Element {
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const dockComposerRef = useRef<HTMLElement>(null);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
@@ -1055,6 +1057,31 @@ export function App(): JSX.Element {
     window.requestAnimationFrame(() => scrollConversationToBottom({ force: true }));
   }, [visibleAnsweredAskRequests.length]);
 
+  useLayoutEffect(() => {
+    const node = dockComposerRef.current;
+    if (!node) {
+      setDockComposerHeight(0);
+      return;
+    }
+
+    const updateHeight = (): void => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      setDockComposerHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight));
+    };
+
+    updateHeight();
+    const resizeObserver = new ResizeObserver(updateHeight);
+    resizeObserver.observe(node);
+    return () => resizeObserver.disconnect();
+  }, [emptyConversation, previewingLaunch, showingWorkspaceMode, state.initialized]);
+
+  useLayoutEffect(() => {
+    if (dockComposerHeight <= 0 || !conversationAutoFollowRef.current) {
+      return;
+    }
+    scrollConversationToBottom();
+  }, [dockComposerHeight]);
+
   function applySidebarWidth(nextWidth: number): void {
     if (nextWidth <= SIDEBAR_MIN_WIDTH) {
       setSidebarCollapsed(true);
@@ -1260,6 +1287,7 @@ export function App(): JSX.Element {
     return (
       <Composer
         variant={variant}
+        containerRef={variant === "dock" ? dockComposerRef : undefined}
         prompt={prompt}
         setPrompt={setPrompt}
         images={composerImages}
@@ -2066,6 +2094,10 @@ export function App(): JSX.Element {
       />
     ) : null;
 
+  const conversationPaneStyle = {
+    "--dock-composer-height": `${dockComposerHeight}px`
+  } as CSSProperties;
+
   return (
     <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
@@ -2169,7 +2201,7 @@ export function App(): JSX.Element {
         />
       )}
 
-      <main className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}`}>
+      <main className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}`} style={conversationPaneStyle}>
         <header className="titlebar">
           <div className="title-block">
             {sidebarCollapsed ? (
@@ -7181,6 +7213,7 @@ function FloatingMenuPortal({
 
 function Composer({
   variant = "dock",
+  containerRef,
   prompt,
   setPrompt,
   images,
@@ -7227,6 +7260,7 @@ function Composer({
   onInterrupt
 }: {
   variant?: ComposerVariant;
+  containerRef?: RefObject<HTMLElement>;
   prompt: string;
   setPrompt: (value: string) => void;
   images: ComposerImage[];
@@ -7470,7 +7504,13 @@ function Composer({
       </div>
     </div>
   );
-  return variant === "hero" ? <div className={className}>{content}</div> : <footer className={className}>{content}</footer>;
+  return variant === "hero" ? (
+    <div className={className}>{content}</div>
+  ) : (
+    <footer className={className} ref={containerRef}>
+      {content}
+    </footer>
+  );
 }
 
 function CodexRuntimePicker({
