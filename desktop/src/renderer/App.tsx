@@ -732,6 +732,7 @@ export function App(): JSX.Element {
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
   const codexRuntimeRef = useRef<HTMLDivElement>(null);
+  const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const runDebugRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
@@ -882,7 +883,11 @@ export function App(): JSX.Element {
       if (codexRuntimeMenu && !codexRuntimeRef.current?.contains(target)) {
         setCodexRuntimeMenu(null);
       }
-      if (environmentPanelOpen && !environmentPanelRef.current?.contains(target)) {
+      if (
+        environmentPanelOpen &&
+        !environmentToggleRef.current?.contains(target) &&
+        !environmentPanelRef.current?.contains(target)
+      ) {
         setEnvironmentPanelOpen(false);
         setEnvironmentPanelMenu(null);
       }
@@ -2080,6 +2085,7 @@ export function App(): JSX.Element {
               ) : null}
             </div>
             <button
+              ref={environmentToggleRef}
               className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
               type="button"
               aria-label={environmentPanelVisible ? "隐藏环境信息" : "显示环境信息"}
