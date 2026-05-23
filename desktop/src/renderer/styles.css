@@ -792,6 +792,12 @@ button:disabled {
   color: #22262a;
 }
 
+.launch-preview-button.active,
+.turn-progress-preview-button[aria-pressed="true"] {
+  background: #dedfdb;
+  color: #202427;
+}
+
 .launch-preview-button span {
   white-space: nowrap;
 }
@@ -2918,6 +2924,101 @@ button:disabled {
 
 .turn-progress.failed .turn-progress-rule {
   background: #f2d3cf;
+}
+
+.turn-progress-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  background: rgba(31, 35, 38, 0.18);
+  -webkit-app-region: no-drag;
+}
+
+.turn-progress-preview-panel {
+  display: grid;
+  width: min(760px, calc(100vw - 56px));
+  gap: 18px;
+  border: 1px solid rgba(64, 70, 68, 0.13);
+  border-radius: 12px;
+  background: rgba(253, 254, 251, 0.96);
+  box-shadow:
+    0 24px 60px rgba(31, 35, 38, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  padding: 18px 18px 16px;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.turn-progress-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.turn-progress-preview-header h2 {
+  color: #202427;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+  margin: 0 0 5px;
+}
+
+.turn-progress-preview-header p {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #747a7e;
+  font-size: var(--font-ui);
+  margin: 0;
+}
+
+.turn-progress-preview-header p span {
+  color: #5f746e;
+  font-weight: var(--weight-semibold);
+}
+
+.turn-progress-preview-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.turn-progress-preview-stage {
+  display: grid;
+  gap: 12px;
+}
+
+.turn-progress-preview-rule {
+  position: relative;
+  height: 72px;
+  overflow: hidden;
+}
+
+.turn-progress-preview-rule::before {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: #e3e4df;
+  content: "";
+}
+
+.turn-progress-preview-track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8e9e4;
+}
+
+.turn-progress-preview-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #7fa08d;
+  transition: width 120ms linear;
 }
 
 .activity-group {

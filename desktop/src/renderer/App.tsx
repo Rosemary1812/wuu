@@ -12,6 +12,7 @@ import {
   Clock,
   Globe2,
   FileText,
+  Film,
   Folder,
   FolderX,
   FolderOpen,
@@ -165,6 +166,7 @@ type TurnProgressCampaign = {
 
 const TURN_PROGRESS_ERA_MS = 4 * 60 * 1000;
 const TURN_PROGRESS_TRANSITION_MS = 30 * 1000;
+const TURN_PROGRESS_PREVIEW_MS = 72 * 1000;
 const TURN_PROGRESS_ERAS: TurnProgressEra[] = [
   "sticks",
   "swords",
@@ -177,6 +179,17 @@ const TURN_PROGRESS_ERAS: TurnProgressEra[] = [
   "galaxy"
 ];
 const TURN_PROGRESS_CAMPAIGN_MS = TURN_PROGRESS_ERA_MS * TURN_PROGRESS_ERAS.length;
+const TURN_PROGRESS_ERA_LABELS: Record<TurnProgressEra, string> = {
+  sticks: "木棍",
+  swords: "刀剑",
+  fortress: "城堡",
+  cannon: "火炮",
+  factory: "工厂",
+  armor: "装甲",
+  rockets: "火箭",
+  orbit: "轨道",
+  galaxy: "星际"
+};
 
 type AppState = {
   initialized?: InitializeResult;
@@ -740,6 +753,7 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
+  const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
   const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
@@ -2130,6 +2144,15 @@ export function App(): JSX.Element {
                 <span>启动动画</span>
               </button>
             ) : null}
+            <button
+              className={`launch-preview-button turn-progress-preview-button${turnProgressPreviewOpen ? " active" : ""}`}
+              type="button"
+              aria-pressed={turnProgressPreviewOpen}
+              onClick={() => setTurnProgressPreviewOpen(true)}
+            >
+              <Film size={15} />
+              <span>完整预览</span>
+            </button>
             <div className="run-debug-anchor" ref={runDebugRef}>
               <button
                 className={`launch-preview-button run-debug-button${runDebugOpen ? " active" : ""}`}
@@ -2189,6 +2212,8 @@ export function App(): JSX.Element {
             </button>
           </div>
         </header>
+
+        {turnProgressPreviewOpen ? <TurnProgressPreviewOverlay onClose={() => setTurnProgressPreviewOpen(false)} /> : null}
 
         {environmentPanelVisible && state.initialized ? (
           <EnvironmentPanel
@@ -4207,6 +4232,71 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
   );
 }
 
+function TurnProgressPreviewOverlay({ onClose }: { onClose: () => void }): JSX.Element {
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [complete, setComplete] = useState(false);
+  const now = usePreviewNow(!complete);
+  const previewElapsedMs = Math.min(TURN_PROGRESS_PREVIEW_MS, Math.max(0, now - startedAt));
+  const previewRatio = previewElapsedMs / TURN_PROGRESS_PREVIEW_MS;
+  const campaignElapsedMs = Math.min(TURN_PROGRESS_CAMPAIGN_MS - 1, previewRatio * TURN_PROGRESS_CAMPAIGN_MS);
+  const campaign = turnProgressCampaign("turn-progress-preview", campaignElapsedMs);
+
+  useEffect(() => {
+    if (!complete && previewElapsedMs >= TURN_PROGRESS_PREVIEW_MS) {
+      setComplete(true);
+    }
+  }, [complete, previewElapsedMs]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  function restart(): void {
+    setStartedAt(Date.now());
+    setComplete(false);
+  }
+
+  const progressStyle = { width: `${previewRatio * 100}%` } as CSSProperties;
+
+  return (
+    <div className="turn-progress-preview-backdrop" role="dialog" aria-modal="true" aria-label="完整预览等待动画">
+      <div className="turn-progress-preview-panel">
+        <div className="turn-progress-preview-header">
+          <div>
+            <h2>完整预览</h2>
+            <p>
+              {formatDuration(campaignElapsedMs)} / {formatDuration(TURN_PROGRESS_CAMPAIGN_MS)}
+              <span>{TURN_PROGRESS_ERA_LABELS[campaign.currentEra]}</span>
+            </p>
+          </div>
+          <div className="turn-progress-preview-actions">
+            <button className="icon-button" type="button" aria-label="重播" title="重播" onClick={restart}>
+              <RefreshCw size={16} />
+            </button>
+            <button className="icon-button" type="button" aria-label="关闭" title="关闭" onClick={onClose}>
+              <X size={17} />
+            </button>
+          </div>
+        </div>
+        <div className="turn-progress-preview-stage">
+          <div className="turn-progress-preview-rule">
+            <TurnProgressCampaignScene campaign={campaign} />
+          </div>
+          <div className="turn-progress-preview-track" aria-hidden="true">
+            <span style={progressStyle} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TurnProgressCampaignScene({ campaign }: { campaign: TurnProgressCampaign }): JSX.Element {
   const currentLayerActive = campaign.currentLayer === "a";
   return (
@@ -4299,6 +4389,20 @@ function useLiveNow(active: boolean): number {
   }, [active]);
 
   return active ? now : Date.now();
+}
+
+function usePreviewNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 120);
+    return () => window.clearInterval(timer);
+  }, [active]);
+
+  return now;
 }
 
 function turnProgressCampaign(turnID: string, elapsedMs: number): TurnProgressCampaign {
