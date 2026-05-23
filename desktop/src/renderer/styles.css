@@ -303,97 +303,169 @@ kbd {
   color: #202427;
 }
 
-.settings-popover {
-  position: absolute;
-  right: auto;
-  bottom: 46px;
-  left: 0;
-  z-index: 35;
+.settings-shell {
   display: grid;
-  width: min(360px, calc(100vw - 32px));
-  gap: 10px;
-  border: 1px solid rgba(30, 34, 38, 0.12);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
-  padding: 12px;
-  backdrop-filter: blur(18px);
+  grid-template-columns: 326px minmax(0, 1fr);
+  height: 100vh;
+  background: #fff;
 }
 
-.settings-popover-row {
+.settings-sidebar {
   display: flex;
-  height: 50px;
+  min-width: 0;
+  flex-direction: column;
+  background: #ebecea;
+  padding: 0 12px 16px;
+}
+
+.settings-back-button,
+.settings-nav-item {
+  display: flex;
+  width: 100%;
+  height: 38px;
   align-items: center;
-  gap: 14px;
-  border-radius: 10px;
-  color: #1f2328;
-  font-size: 18px;
-  font-weight: 750;
-  padding: 0 16px;
+  gap: 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: #6f7478;
+  font-weight: 650;
+  padding: 0 12px;
+  text-align: left;
 }
 
-.settings-popover-row.active {
-  background: #f0f0ee;
+.settings-back-button {
+  margin-bottom: 18px;
 }
 
-.settings-popover-row svg {
+.settings-back-button:hover,
+.settings-nav-item:hover,
+.settings-nav-item.active {
+  background: rgba(40, 45, 50, 0.08);
   color: #202427;
-  flex: 0 0 auto;
 }
 
-.settings-popover label {
+.settings-nav {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-main {
+  min-width: 0;
+  overflow-y: auto;
+  border-left: 1px solid #dfdfdc;
+  border-radius: 16px 0 0 16px;
+  background: #fff;
+}
+
+.settings-page {
+  width: min(960px, calc(100% - 96px));
+  margin: 72px auto 96px;
+}
+
+.settings-page h1 {
+  margin: 0 0 64px;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.settings-section {
+  display: grid;
+  gap: 24px;
+}
+
+.settings-section h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.settings-section p {
+  margin: 0;
+  color: #8a8e91;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.settings-card {
+  overflow: hidden;
+  border: 1px solid #e4e4e1;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.settings-row {
+  display: grid;
+  min-height: 92px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 36%);
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid #ececea;
+  padding: 16px 18px;
+}
+
+.settings-row span {
   display: grid;
   gap: 6px;
-  color: #74787c;
-  font-size: 12px;
-  font-weight: 750;
-  padding: 0 4px;
 }
 
-.settings-popover input,
-.settings-popover select {
+.settings-row strong {
+  color: #1f2328;
+  font-size: 15px;
+}
+
+.settings-row small {
+  color: #787d81;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-row input,
+.settings-row select {
   width: 100%;
-  height: 36px;
-  border: 1px solid #ddddda;
+  height: 38px;
+  border: 0;
   border-radius: 8px;
   outline: 0;
-  background: #fff;
+  background: #f0f0ee;
   color: #1f2328;
-  padding: 0 10px;
-}
-
-.settings-popover input:focus,
-.settings-popover select:focus {
-  border-color: #9da2a6;
-  box-shadow: 0 0 0 3px rgba(31, 35, 40, 0.08);
-}
-
-.settings-error {
-  color: #b42318;
-  font-size: 12px;
-  line-height: 1.35;
-  padding: 0 4px;
-}
-
-.settings-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 0 4px 2px;
-}
-
-.settings-actions button {
-  height: 32px;
-  border-radius: 8px;
-  background: #f0f0ed;
-  color: #3c4145;
-  font-weight: 700;
   padding: 0 12px;
 }
 
-.settings-actions button[type="submit"] {
+.settings-row input:focus,
+.settings-row select:focus {
+  box-shadow: 0 0 0 3px rgba(31, 35, 40, 0.08);
+}
+
+.settings-card-footer {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+.settings-card-footer button {
+  height: 34px;
+  border-radius: 8px;
   background: #24282c;
   color: #fff;
+  font-weight: 750;
+  padding: 0 14px;
+}
+
+.settings-error {
+  margin-right: auto;
+  color: #b42318;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.settings-saved {
+  margin-right: auto;
+  color: #16833a;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .conversation-pane {

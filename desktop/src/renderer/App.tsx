@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  ArrowLeft,
   Brain,
   Check,
   ChevronDown,
@@ -113,7 +114,6 @@ export function App(): JSX.Element {
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
-  const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -165,14 +165,11 @@ export function App(): JSX.Element {
       if (runtimeMenuOpen && !runtimeMenuRef.current?.contains(target)) {
         setRuntimeMenuOpen(false);
       }
-      if (settingsOpen && !settingsRef.current?.contains(target)) {
-        setSettingsOpen(false);
-      }
     }
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [projectMenuOpen, runtimeMenuOpen, settingsOpen]);
+  }, [projectMenuOpen, runtimeMenuOpen]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -184,6 +181,9 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
+      if (settingsOpen) {
+        return;
+      }
       if (!event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
         return;
       }
@@ -201,7 +201,7 @@ export function App(): JSX.Element {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state.thread?.id, state.threads, state.running]);
+  }, [settingsOpen, state.thread?.id, state.threads, state.running]);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
@@ -567,6 +567,20 @@ export function App(): JSX.Element {
     await window.wuu.interruptTurn(state.thread.id);
   }
 
+  if (settingsOpen) {
+    return (
+      <>
+        <SettingsView
+          initialized={state.initialized}
+          running={state.running}
+          onBack={() => setSettingsOpen(false)}
+          onSave={updateRuntimeSettings}
+        />
+        {state.askRequest ? <AskUserDialog request={state.askRequest} /> : null}
+      </>
+    );
+  }
+
   return (
     <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
@@ -613,18 +627,21 @@ export function App(): JSX.Element {
             onSelectThread={(id) => void selectThread(id)}
           />
         </section>
-        <SidebarSettings
-          initialized={state.initialized}
-          running={state.running}
-          open={settingsOpen}
-          settingsRef={settingsRef}
-          onToggle={() => {
-            setProjectMenuOpen(false);
-            setRuntimeMenuOpen(false);
-            setSettingsOpen((open) => !open);
-          }}
-          onSave={updateRuntimeSettings}
-        />
+        <div className="sidebar-settings">
+          <button
+            className="settings-button"
+            type="button"
+            disabled={!state.initialized}
+            onClick={() => {
+              setProjectMenuOpen(false);
+              setRuntimeMenuOpen(false);
+              setSettingsOpen(true);
+            }}
+          >
+            <Settings size={18} />
+            <span>设置</span>
+          </button>
+        </div>
       </aside>
 
       {sidebarCollapsed ? null : (
@@ -1365,36 +1382,33 @@ function RuntimeLoading({ status }: { status: string }): JSX.Element {
   );
 }
 
-function SidebarSettings({
+function SettingsView({
   initialized,
   running,
-  open,
-  settingsRef,
-  onToggle,
+  onBack,
   onSave
 }: {
   initialized?: InitializeResult;
   running: boolean;
-  open: boolean;
-  settingsRef: RefObject<HTMLDivElement>;
-  onToggle: () => void;
+  onBack: () => void;
   onSave: (provider: string, model: string) => Promise<void>;
 }): JSX.Element {
   const providers = initialized?.providers ?? [];
   const [providerDraft, setProviderDraft] = useState(initialized?.provider ?? "");
   const [modelDraft, setModelDraft] = useState(initialized?.model ?? "");
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (!open) {
-      setProviderDraft(initialized?.provider ?? "");
-      setModelDraft(initialized?.model ?? "");
-      setError("");
-    }
-  }, [initialized?.provider, initialized?.model, open]);
+    setProviderDraft(initialized?.provider ?? "");
+    setModelDraft(initialized?.model ?? "");
+    setError("");
+    setSaved(false);
+  }, [initialized?.provider, initialized?.model]);
 
   function changeProvider(provider: string): void {
     setProviderDraft(provider);
+    setSaved(false);
     const summary = providers.find((item) => item.name === provider);
     if (summary) {
       setModelDraft(summary.model);
@@ -1404,9 +1418,10 @@ function SidebarSettings({
   async function submit(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError("");
+    setSaved(false);
     try {
       await onSave(providerDraft, modelDraft);
-      onToggle();
+      setSaved(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "保存失败");
     }
@@ -1419,53 +1434,79 @@ function SidebarSettings({
     (providerDraft === initialized?.provider && modelDraft === initialized?.model);
 
   return (
-    <div className="sidebar-settings" ref={settingsRef}>
-      <button
-        className="settings-button"
-        type="button"
-        disabled={!initialized}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={onToggle}
-      >
-        <Settings size={18} />
-        <span>设置</span>
-      </button>
-      {open && initialized ? (
-        <form className="settings-popover" onSubmit={submit}>
-          <div className="settings-popover-row active">
-            <Settings size={22} />
-            <span>设置</span>
-          </div>
-          <label>
-            <span>Provider</span>
-            {providers.length > 0 ? (
-              <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
-                {providers.map((provider) => (
-                  <option key={provider.name} value={provider.name}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input value={providerDraft} onChange={(event) => setProviderDraft(event.target.value)} disabled={running} />
-            )}
-          </label>
-          <label>
-            <span>模型</span>
-            <input value={modelDraft} onChange={(event) => setModelDraft(event.target.value)} disabled={running} />
-          </label>
-          {error ? <div className="settings-error">{error}</div> : null}
-          <div className="settings-actions">
-            <button type="button" onClick={onToggle}>
-              取消
-            </button>
-            <button type="submit" disabled={disabled}>
-              保存
-            </button>
-          </div>
-        </form>
-      ) : null}
+    <div className="settings-shell">
+      <aside className="settings-sidebar">
+        <div className="traffic-spacer" />
+        <button className="settings-back-button" type="button" onClick={onBack}>
+          <ArrowLeft size={17} />
+          <span>返回应用</span>
+        </button>
+        <nav className="settings-nav" aria-label="设置">
+          <button className="settings-nav-item active" type="button">
+            <Settings size={18} />
+            <span>常规</span>
+          </button>
+        </nav>
+      </aside>
+      <main className="settings-main">
+        <div className="settings-page">
+          <h1>常规</h1>
+
+          <section className="settings-section">
+            <div>
+              <h2>模型</h2>
+              <p>选择 wuu 使用的 Provider 和模型。</p>
+            </div>
+            <form className="settings-card" onSubmit={submit}>
+              <label className="settings-row">
+                <span>
+                  <strong>Provider</strong>
+                  <small>选择当前会话运行时使用的模型服务</small>
+                </span>
+                {providers.length > 0 ? (
+                  <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
+                    {providers.map((provider) => (
+                      <option key={provider.name} value={provider.name}>
+                        {provider.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={providerDraft}
+                    onChange={(event) => {
+                      setProviderDraft(event.target.value);
+                      setSaved(false);
+                    }}
+                    disabled={running}
+                  />
+                )}
+              </label>
+              <label className="settings-row">
+                <span>
+                  <strong>模型</strong>
+                  <small>Provider 配置里的模型名称</small>
+                </span>
+                <input
+                  value={modelDraft}
+                  onChange={(event) => {
+                    setModelDraft(event.target.value);
+                    setSaved(false);
+                  }}
+                  disabled={running}
+                />
+              </label>
+              <div className="settings-card-footer">
+                {error ? <div className="settings-error">{error}</div> : null}
+                {saved ? <div className="settings-saved">已保存</div> : null}
+                <button type="submit" disabled={disabled}>
+                  保存
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </main>
     </div>
   );
 }
