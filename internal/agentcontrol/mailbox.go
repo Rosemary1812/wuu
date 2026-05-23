@@ -1,4 +1,4 @@
-package coordinator
+package agentcontrol
 
 import (
 	"time"

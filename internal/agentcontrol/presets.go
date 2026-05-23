@@ -1,4 +1,4 @@
-package coordinator
+package agentcontrol
 
 const VerificationPreset = `You are operating in VERIFICATION mode. Your job is NOT to confirm that the code works — it is to TRY TO BREAK IT.
 

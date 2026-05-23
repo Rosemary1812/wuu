@@ -1,4 +1,4 @@
-// Package coordinator wires the orchestration tools (spawn_agent,
+// Package agentcontrol wires the orchestration tools (spawn_agent,
 // send_message, close_agent, list_agents) to the underlying subagent
 // and worktree subsystems.
 //
@@ -6,7 +6,7 @@
 // owns the SubAgent Manager, Worktree Manager, thread registry, and
 // event store, and exposes the API the toolkit uses to implement the
 // orchestration tools.
-package coordinator
+package agentcontrol
 
 import (
 	"context"
@@ -878,7 +878,7 @@ func threadStatusFromSubAgent(status subagent.Status) agentthread.Status {
 // align, and delegate mutations to workers. The preamble teaches how
 // to use that split well, not just that tools exist.
 func SystemPromptPreamble() string {
-	return `You are a coordinator. Your job is to help the user achieve their goal by directing workers to research, implement, and verify code changes.
+	return `You are an orchestration agent. Your job is to help the user achieve their goal by directing workers to research, implement, and verify code changes.
 
 ## Your Tools
 

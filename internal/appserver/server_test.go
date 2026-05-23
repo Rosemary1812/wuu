@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -473,13 +473,13 @@ func TestTurnsFromHistoryRestoresToolCallItems(t *testing.T) {
 func TestServerForwardsAgentNotifications(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	workerClient := &fakeClient{response: providers.ChatResponse{Content: "agent done"}}
-	coord, err := coordinator.New(coordinator.Config{
+	coord, err := agentcontrol.New(agentcontrol.Config{
 		Client:       providers.AdaptStreamClient(workerClient),
 		DefaultModel: "fake-model",
 		ParentRepo:   rt.RootDir,
 		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
 		SessionID:    "sess-agents",
-		WorkerFactory: func(string, coordinator.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
 			return noopToolExecutor{}, nil
 		},
 	})
@@ -490,7 +490,7 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 
 	out := &lockedBuffer{}
 	_ = New(rt, out)
-	res, err := coord.Spawn(context.Background(), coordinator.SpawnRequest{
+	res, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
 		Type:        "worker",
 		TaskName:    "check_bridge",
 		Description: "check bridge",

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -246,7 +246,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		if forkMode == spawnForkLastN {
 			cleaned = truncateHistoryToLastUserTurns(cleaned, lastNTurns)
 		}
-		result, err := t.env.AgentControl.Fork(ctx, coordinator.ForkRequest{
+		result, err := t.env.AgentControl.Fork(ctx, agentcontrol.ForkRequest{
 			TaskName:    strings.TrimSpace(args.TaskName),
 			Description: strings.TrimSpace(args.TaskName),
 			ForkMode:    forkModeLabel(forkMode, lastNTurns),
@@ -264,7 +264,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		}
 		return string(out), nil
 	}
-	result, err := t.env.AgentControl.Spawn(ctx, coordinator.SpawnRequest{
+	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
 		Type:        args.AgentType,
 		TaskName:    strings.TrimSpace(args.TaskName),
 		Description: strings.TrimSpace(args.TaskName),

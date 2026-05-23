@@ -11,8 +11,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/compact"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/markdown"
@@ -251,7 +251,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// glance instead of guessing. The full error string is
 				// also in the mailbox payload the orchestrator sees.
 				if n.Snapshot.Error != nil {
-					class := coordinator.ClassifyError(n.Snapshot.Error)
+					class := agentcontrol.ClassifyError(n.Snapshot.Error)
 					suffix = fmt.Sprintf(" — [%s] %s", class,
 						trimWorkerErrMsg(n.Snapshot.Error.Error(), 240))
 				}
@@ -266,7 +266,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// flight, buffer it until streamFinishedMsg so it cannot
 				// interleave with assistant/tool messages from the active
 				// turn.
-				workerMsg := coordinator.AgentMailboxChatMessage(n.Snapshot)
+				workerMsg := agentcontrol.AgentMailboxChatMessage(n.Snapshot)
 				if m.streaming || m.pendingRequest {
 					m.pendingWorkerMessages = append(m.pendingWorkerMessages, workerMsg)
 				} else {

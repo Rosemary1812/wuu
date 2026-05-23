@@ -10,10 +10,10 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
@@ -55,7 +55,7 @@ type Session struct {
 	HookDispatcher              *hooks.Dispatcher
 	Skills                      []skills.Skill
 	Memory                      []memory.File
-	AgentControl                *coordinator.AgentControl
+	AgentControl                *agentcontrol.AgentControl
 	AskBridge                   tools.AskUserBridge
 	ProcessManager              *process.Manager
 	Toolkit                     *tools.Toolkit
@@ -121,12 +121,12 @@ func NewSession(opts Options) (*Session, error) {
 	baseSystemPrompt := buildBaseSystemPrompt(rootDir, cfg.Agent.SystemPrompt, memoryFiles, discoveredSkills)
 
 	if toolkit != nil {
-		if err := coordinator.EnsureSharedDir(rootDir); err != nil {
+		if err := agentcontrol.EnsureSharedDir(rootDir); err != nil {
 			return nil, fmt.Errorf("ensure shared dir: %w", err)
 		}
 	}
 
-	var agentControl *coordinator.AgentControl
+	var agentControl *agentcontrol.AgentControl
 	var coordinatorPreamble string
 	if toolkit != nil {
 		workerRetry := providerfactory.SubAgentRetryConfig()
@@ -135,7 +135,7 @@ func NewSession(opts Options) (*Session, error) {
 			return nil, fmt.Errorf("build worker client: %w", werr)
 		}
 
-		c, cerr := coordinator.New(coordinator.Config{
+		c, cerr := agentcontrol.New(agentcontrol.Config{
 			Client:          workerClient,
 			DefaultModel:    providerCfg.Model,
 			ParentRepo:      rootDir,
@@ -143,7 +143,7 @@ func NewSession(opts Options) (*Session, error) {
 			SessionID:       "session-pending",
 			HistoryDir:      "",
 			WorkerSysPrompt: baseSystemPrompt,
-			WorkerFactory: func(workerRoot string, wt coordinator.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
+			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := tools.New(workerRoot)
 				if werr != nil {
 					return nil, werr
@@ -160,7 +160,7 @@ func NewSession(opts Options) (*Session, error) {
 		if cerr == nil {
 			agentControl = c
 			toolkit.SetAgentControl(agentControl)
-			coordinatorPreamble = coordinator.SystemPromptPreamble()
+			coordinatorPreamble = agentcontrol.SystemPromptPreamble()
 		}
 	}
 
@@ -206,7 +206,7 @@ func NewSession(opts Options) (*Session, error) {
 	}, nil
 }
 
-func applyWorkerToolFilter(kit *tools.Toolkit, wt coordinator.WorkerType) {
+func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType) {
 	if kit == nil {
 		return
 	}
@@ -216,7 +216,7 @@ func applyWorkerToolFilter(kit *tools.Toolkit, wt coordinator.WorkerType) {
 		fullNames = append(fullNames, def.Name)
 	}
 
-	allowed := coordinator.FilterToolsForWorker(wt, fullNames)
+	allowed := agentcontrol.FilterToolsForWorker(wt, fullNames)
 	allowedSet := make(map[string]struct{}, len(allowed))
 	for _, name := range allowed {
 		allowedSet[name] = struct{}{}

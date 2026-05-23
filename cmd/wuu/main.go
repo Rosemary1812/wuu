@@ -411,7 +411,7 @@ func runTUI(args []string) error {
 		HookDispatcher:      rt.HookDispatcher,
 		Skills:              rt.Skills,
 		Memory:              rt.Memory,
-		Coordinator:         rt.Coordinator,
+		AgentControl:        rt.AgentControl,
 		AskUserBridge:       askBridge,
 		ProcessManager:      rt.ProcessManager,
 		Toolkit:             rt.Toolkit,
@@ -423,8 +423,8 @@ func runTUI(args []string) error {
 	}
 	var cleanupSummary processruntime.CleanupResult
 	defer func() {
-		if rt.Coordinator != nil {
-			_ = rt.Coordinator.CleanupSession()
+		if rt.AgentControl != nil {
+			_ = rt.AgentControl.CleanupSession()
 		}
 	}()
 	if err := tui.Run(cfgUI); err != nil {

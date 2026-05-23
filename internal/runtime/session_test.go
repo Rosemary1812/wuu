@@ -3,7 +3,7 @@ package runtime
 import (
 	"testing"
 
-	"github.com/blueberrycongee/wuu/internal/coordinator"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -12,7 +12,7 @@ func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New toolkit: %v", err)
 	}
-	wt, err := coordinator.LookupWorkerType("worker")
+	wt, err := agentcontrol.LookupWorkerType("worker")
 	if err != nil {
 		t.Fatalf("worker type: %v", err)
 	}

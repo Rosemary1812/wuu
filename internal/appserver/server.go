@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -90,7 +90,7 @@ func (s *Server) forwardAgentNotifications(ch <-chan subagent.Notification) {
 		case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
 			if s.isRootAgentSnapshot(n.Snapshot) {
 				_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
-					Message: coordinator.NewAgentMailboxMessage(n.Snapshot),
+					Message: agentcontrol.NewAgentMailboxMessage(n.Snapshot),
 				})
 			}
 		}

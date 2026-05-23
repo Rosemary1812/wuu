@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/eventbus"
 	"github.com/blueberrycongee/wuu/internal/hooks"
@@ -217,7 +217,7 @@ type Model struct {
 	onSessionID     func(string)
 	skills          []skills.Skill
 	memoryFiles     []memory.File
-	agentControl    *coordinator.AgentControl
+	agentControl    *agentcontrol.AgentControl
 	processManager  *processruntime.Manager
 	processNotifyCh chan processruntime.Event
 	workerNotifyCh  chan subagent.Notification

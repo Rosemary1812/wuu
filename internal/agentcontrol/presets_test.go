@@ -1,4 +1,4 @@
-package coordinator
+package agentcontrol
 
 import (
 	"strings"
@@ -59,7 +59,7 @@ func TestResearchPreset_OutputShape(t *testing.T) {
 func TestSystemPromptPreamble_ContainsOrchestrationRules(t *testing.T) {
 	preamble := SystemPromptPreamble()
 	for _, want := range []string{
-		"coordinator",
+		"orchestration",
 		"worker",
 		"spawn_agent",
 		"fork_turns",

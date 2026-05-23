@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/compact"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -349,7 +349,7 @@ func TestLoadChatHistory_RepairsAndRewritesInterleavedWorkerMailboxMessage(t *te
 		Content:   "",
 		ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "spawn_agent"}},
 	}
-	worker := coordinator.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
+	worker := agentcontrol.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
 		ID:     "worker-1",
 		Type:   "worker",
 		Status: subagent.StatusCompleted,

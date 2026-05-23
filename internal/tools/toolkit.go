@@ -13,7 +13,7 @@ import (
 	"sync"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -117,7 +117,7 @@ func (t *Toolkit) rebuildRegistry() {
 // ── Dependency setters ─────────────────────────────────────────────
 
 // SetAgentControl attaches the shared agent control runtime.
-func (t *Toolkit) SetAgentControl(c *coordinator.AgentControl) {
+func (t *Toolkit) SetAgentControl(c *agentcontrol.AgentControl) {
 	t.env.AgentControl = c
 }
 
@@ -170,7 +170,7 @@ func (t *Toolkit) SetMCPManager(m *mcp.Manager) {
 }
 
 // AgentControl returns the attached agent control runtime, or nil.
-func (t *Toolkit) AgentControl() *coordinator.AgentControl {
+func (t *Toolkit) AgentControl() *agentcontrol.AgentControl {
 	return t.env.AgentControl
 }
 

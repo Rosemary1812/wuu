@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/coordinator"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -197,7 +197,7 @@ type AgentUpdatedNotification struct {
 }
 
 type AgentMailboxNotification struct {
-	Message coordinator.AgentMailboxMessage `json:"message"`
+	Message agentcontrol.AgentMailboxMessage `json:"message"`
 }
 
 type ThreadStatus string

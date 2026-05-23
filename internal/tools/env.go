@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blueberrycongee/wuu/internal/coordinator"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
 )
@@ -63,7 +63,7 @@ type Env struct {
 	AgentPath    string
 	ProcessMgr   *proc.Manager
 	AskBridge    AskUserBridge
-	AgentControl *coordinator.AgentControl
+	AgentControl *agentcontrol.AgentControl
 	Skills       []skills.Skill
 	// OnFileChanged is called after write_file/edit_file successfully
 	// modifies a file. Enables FileChanged hook dispatch without

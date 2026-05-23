@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
-	"github.com/blueberrycongee/wuu/internal/coordinator"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -524,7 +524,7 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterTurnMessages(t *testing.
 		ToolCallID: "call_1",
 		Content:    `{"agent_id":"worker-1","status":"running"}`,
 	}
-	worker := coordinator.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
+	worker := agentcontrol.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
 		ID:     "worker-1",
 		Type:   "worker",
 		Status: subagent.StatusCompleted,
@@ -589,7 +589,7 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterHistoryRewrite(t *testin
 		ToolCallID: "call_1",
 		Content:    `{"agent_id":"worker-1","status":"running"}`,
 	}
-	worker := coordinator.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
+	worker := agentcontrol.AgentMailboxChatMessage(subagent.SubAgentSnapshot{
 		ID:     "worker-1",
 		Type:   "worker",
 		Status: subagent.StatusCompleted,
