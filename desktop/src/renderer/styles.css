@@ -325,8 +325,7 @@ kbd {
   color: #25282b;
 }
 
-.runtime-pill,
-.model-pill {
+.provider-pill {
   display: inline-flex;
   height: 30px;
   align-items: center;
@@ -335,6 +334,11 @@ kbd {
   color: #555a5f;
   font-weight: 650;
   padding: 0 12px;
+}
+
+.model-label {
+  color: #2f3337;
+  font-weight: 650;
 }
 
 .scroll-region {

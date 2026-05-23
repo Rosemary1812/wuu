@@ -587,9 +587,7 @@ export function App(): JSX.Element {
             ) : null}
             <h1>{activeTitle}</h1>
           </div>
-          <div className="title-actions">
-            {state.initialized ? <span className="runtime-pill">{state.initialized.provider}</span> : null}
-          </div>
+          <div className="title-actions" />
         </header>
 
         {state.initialized ? (
@@ -614,6 +612,7 @@ export function App(): JSX.Element {
             setPrompt={setPrompt}
             running={state.running}
             status={state.status}
+            provider={state.initialized?.provider}
             model={state.initialized?.model}
             projects={state.projects}
             activeContext={state.activeContext}
@@ -1301,6 +1300,7 @@ function Composer({
   setPrompt,
   running,
   status,
+  provider,
   model,
   projects,
   activeContext,
@@ -1321,6 +1321,7 @@ function Composer({
   setPrompt: (value: string) => void;
   running: boolean;
   status: string;
+  provider?: string;
   model?: string;
   projects: DesktopProject[];
   activeContext?: RuntimeContext;
@@ -1356,7 +1357,8 @@ function Composer({
           />
           <div className="composer-bar">
             <div className="composer-spacer" />
-            <span className="model-pill">{model ?? "model"}</span>
+            <span className="provider-pill">{provider ?? "provider"}</span>
+            <span className="model-label">{model ?? "model"}</span>
             {statusText ? <span className="status-label">{statusText}</span> : null}
             <button className="send-button" onClick={running ? onInterrupt : onSend} aria-label={running ? "停止" : "发送"}>
               {running ? <Square size={18} /> : <Send size={18} />}
