@@ -117,7 +117,7 @@ button {
 }
 
 .nav-item,
-.project-row,
+.workspace-row,
 .thread-row {
   display: flex;
   width: 100%;
@@ -132,7 +132,6 @@ button {
 }
 
 .nav-item:hover,
-.project-row:hover,
 .thread-row:hover {
   background: rgba(40, 45, 50, 0.06);
 }
@@ -149,10 +148,14 @@ button {
   padding: 0 12px 8px;
 }
 
-.project-row.active,
+.workspace-row,
 .thread-row.active {
   background: #dcdedb;
   color: #202427;
+}
+
+.workspace-row {
+  font-weight: 650;
 }
 
 .thread-list {
@@ -182,10 +185,6 @@ kbd {
   font-weight: 600;
   padding: 2px 6px;
   text-align: center;
-}
-
-.sidebar-footer {
-  margin-top: auto;
 }
 
 .conversation-pane {
@@ -238,8 +237,7 @@ kbd {
 }
 
 .runtime-pill,
-.model-pill,
-.permission-pill {
+.model-pill {
   display: inline-flex;
   height: 30px;
   align-items: center;
@@ -432,11 +430,6 @@ pre {
 
 .composer-spacer {
   flex: 1;
-}
-
-.permission-pill {
-  color: #d8521c;
-  background: #fff4ed;
 }
 
 .status-label {

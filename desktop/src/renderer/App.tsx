@@ -1,17 +1,10 @@
 import {
   Bot,
   Brain,
-  ChevronDown,
-  Clock3,
   Folder,
-  Info,
   MessageSquarePlus,
-  Package,
   PanelLeftOpen,
-  Plus,
-  Search,
   Send,
-  Settings,
   Square,
   Wrench,
   X
@@ -325,32 +318,13 @@ export function App(): JSX.Element {
             <MessageSquarePlus size={18} />
             <span>新对话</span>
           </button>
-          <button className="nav-item">
-            <Search size={18} />
-            <span>搜索</span>
-          </button>
-          <button className="nav-item">
-            <Package size={18} />
-            <span>插件</span>
-          </button>
-          <button className="nav-item">
-            <Clock3 size={18} />
-            <span>自动化</span>
-          </button>
         </nav>
 
         <section className="project-list" aria-label="项目">
           <div className="section-label">项目</div>
-          <ProjectRow name={workspaceName(state.initialized?.workspace_root)} active />
+          <WorkspaceRow name={workspaceName(state.initialized?.workspace_root)} />
           <ThreadList threads={state.threads} activeID={state.thread?.id} onSelect={(id) => void selectThread(id)} />
         </section>
-
-        <div className="sidebar-footer">
-          <button className="nav-item">
-            <Settings size={18} />
-            <span>设置</span>
-          </button>
-        </div>
       </aside>
 
       {sidebarCollapsed ? null : (
@@ -378,15 +352,9 @@ export function App(): JSX.Element {
               </button>
             ) : null}
             <h1>{activeTitle}</h1>
-            <button className="icon-button" aria-label="更多">
-              <ChevronDown size={17} />
-            </button>
           </div>
           <div className="title-actions">
             <span className="runtime-pill">{state.initialized?.provider ?? "runtime"}</span>
-            <button className="icon-button" aria-label="信息">
-              <Info size={18} />
-            </button>
           </div>
         </header>
 
@@ -569,12 +537,12 @@ function ThreadList({
   );
 }
 
-function ProjectRow({ name, active }: { name: string; active?: boolean }): JSX.Element {
+function WorkspaceRow({ name }: { name: string }): JSX.Element {
   return (
-    <button className={`project-row ${active ? "active" : ""}`}>
+    <div className="workspace-row">
       <Folder size={18} />
       <span>{name}</span>
-    </button>
+    </div>
   );
 }
 
@@ -669,10 +637,6 @@ function Composer({
           }}
         />
         <div className="composer-bar">
-          <button className="icon-button" aria-label="添加">
-            <Plus size={20} />
-          </button>
-          <span className="permission-pill">完全访问权限</span>
           <div className="composer-spacer" />
           <span className="model-pill">{model ?? "model"}</span>
           <span className="status-label">{status}</span>
