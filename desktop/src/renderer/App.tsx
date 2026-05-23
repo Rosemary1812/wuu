@@ -2044,23 +2044,7 @@ function AgentMessageContent({
   onStreamFrame: () => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
-  const [streamSettled, setStreamSettled] = useState(false);
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
-  const renderStream = streaming || (hasBufferedStream && !streamSettled);
-
-  useEffect(() => {
-    setStreamSettled(false);
-  }, [streamKeyValue]);
-
-  useEffect(() => {
-    if (streaming) {
-      setStreamSettled(false);
-    }
-  }, [streaming]);
-
-  if (!renderStream) {
-    return <RichContent text={item.text} cwd={cwd} />;
-  }
 
   return (
     <StreamingMarkdown
@@ -2071,7 +2055,6 @@ function AgentMessageContent({
       onFrame={onStreamFrame}
       onSettled={() => {
         streamTextStore.clearItem(turnID, item.id);
-        setStreamSettled(true);
         onStreamFrame();
       }}
     />
@@ -2090,23 +2073,7 @@ function ReasoningContent({
   onStreamFrame: () => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
-  const [streamSettled, setStreamSettled] = useState(false);
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
-  const renderStream = streaming || (hasBufferedStream && !streamSettled);
-
-  useEffect(() => {
-    setStreamSettled(false);
-  }, [streamKeyValue]);
-
-  useEffect(() => {
-    if (streaming) {
-      setStreamSettled(false);
-    }
-  }, [streaming]);
-
-  if (!renderStream) {
-    return <div>{item.text}</div>;
-  }
 
   return (
     <StreamingMarkdown
@@ -2117,7 +2084,6 @@ function ReasoningContent({
       onFrame={onStreamFrame}
       onSettled={() => {
         streamTextStore.clearItem(turnID, item.id);
-        setStreamSettled(true);
         onStreamFrame();
       }}
     />

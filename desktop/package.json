@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "test:e2e:streaming": "npm run build && electron scripts/streaming-e2e.cjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
