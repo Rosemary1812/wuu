@@ -138,6 +138,9 @@ type SubAgent struct {
 	toolkit        agent.ToolExecutor
 	historyPath    string
 	initialHistory []providers.ChatMessage
+	history        []providers.ChatMessage
+	maxSteps       int
+	maxLifetime    time.Duration
 	// Follow-up messages queued by the coordinator while this worker
 	// is already running. Manager.run drains this queue between model
 	// turns and appends each entry as a new user message.
@@ -164,23 +167,7 @@ type SubAgent struct {
 func (s *SubAgent) Snapshot() SubAgentSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return SubAgentSnapshot{
-		ID:           s.ID,
-		Type:         s.Type,
-		TaskName:     s.TaskName,
-		AgentPath:    s.AgentPath,
-		ParentID:     s.ParentID,
-		Description:  s.Description,
-		Status:       s.Status,
-		StartedAt:    s.StartedAt,
-		CompletedAt:  s.CompletedAt,
-		Result:       s.Result,
-		Error:        s.Error,
-		InputTokens:  s.InputTokens,
-		OutputTokens: s.OutputTokens,
-		Activity:     s.Activity,
-		ActivityAt:   s.ActivityAt,
-	}
+	return snapshotLocked(s)
 }
 
 // SubAgentSnapshot is an immutable view of a SubAgent's state at a

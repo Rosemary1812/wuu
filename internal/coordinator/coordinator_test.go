@@ -250,8 +250,6 @@ func TestSpawn_IsolationOverride(t *testing.T) {
 
 	// Worker defaults to inplace; explicit isolation="worktree"
 	// must override that and put the worker in a fresh worktree.
-	// (The worker does no work, so the post-completion auto-recycle
-	// will drop the path — verify the override via res.Isolation.)
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
 		Description: "force-isolated",
@@ -302,17 +300,17 @@ func TestSpawn_UnknownIsolationRejected(t *testing.T) {
 	}
 }
 
-func TestSpawn_AutoRecycleCleanWorktree(t *testing.T) {
+func TestSpawn_PreservesCleanWorktreeForFollowup(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
 	// fakeToolkit doesn't touch the filesystem, so the worker leaves
-	// its worktree pristine. The coordinator should drop it on sync
-	// completion and clear the WorktreePath in the result.
+	// its worktree pristine. The coordinator must still keep it after
+	// completion because child tasks can receive follow-up turns.
 	//
 	// Worker no longer defaults to worktree, so this test explicitly
 	// opts in via Isolation: "worktree" — that's the supported way to
-	// get the auto-recycle path now.
+	// get an isolated child task now.
 	c, _ := New(Config{
 		Client:        &fakeClient{resp: providers.ChatResponse{Content: "ok"}},
 		DefaultModel:  "fake",
@@ -335,13 +333,11 @@ func TestSpawn_AutoRecycleCleanWorktree(t *testing.T) {
 	if res.Isolation != "worktree" {
 		t.Fatalf("expected worktree isolation, got %q", res.Isolation)
 	}
-	if res.WorktreePath != "" {
-		t.Fatalf("clean worktree should be recycled and path cleared, got %q", res.WorktreePath)
+	if res.WorktreePath == "" {
+		t.Fatal("clean worktree should be preserved for follow-up turns")
 	}
-	// And nothing left under the session directory.
-	entries, _ := os.ReadDir(filepath.Join(dir, ".wuu", "worktrees", "sess-recycle"))
-	if len(entries) != 0 {
-		t.Fatalf("expected recycled worktree to be removed, found %d entries", len(entries))
+	if _, err := os.Stat(res.WorktreePath); err != nil {
+		t.Fatalf("preserved worktree should exist: %v", err)
 	}
 }
 
@@ -618,7 +614,7 @@ func TestFork_AsyncDetachedFromParentContext(t *testing.T) {
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
 
-func TestSendMessage_RejectsCompletedWorker(t *testing.T) {
+func TestSendMessage_QueuesCompletedWorker(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
@@ -643,8 +639,11 @@ func TestSendMessage_RejectsCompletedWorker(t *testing.T) {
 	if res.Status != "completed" {
 		t.Fatalf("expected completed spawn, got %s", res.Status)
 	}
-	if err := c.SendMessage(res.AgentID, "extra instruction"); err == nil {
-		t.Fatal("expected error when sending to completed worker")
+	if err := c.SendMessage(res.AgentID, "extra instruction"); err != nil {
+		t.Fatalf("SendMessage should queue on completed worker: %v", err)
+	}
+	if got := c.Manager().PendingMessageCount(res.AgentID); got != 1 {
+		t.Fatalf("expected queued message on completed worker, got %d", got)
 	}
 }
 

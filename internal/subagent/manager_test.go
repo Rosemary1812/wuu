@@ -402,6 +402,68 @@ func TestSpawn_WithoutInitialHistory_UsesSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestFollowup_CompletedAgentStartsNewTurnWithHistory(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "turn done"}}
+	mgr := NewManager(client, "fake-model")
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:         "worker",
+		Prompt:       "initial task",
+		SystemPrompt: "you are a worker",
+		Toolkit:      fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if _, err := mgr.Wait(context.Background(), sa.ID); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if ok := mgr.QueueMessage(sa.ID, "queued mailbox note"); !ok {
+		t.Fatal("QueueMessage returned false")
+	}
+
+	snap, err := mgr.Followup(context.Background(), sa.ID, "continue task")
+	if err != nil {
+		t.Fatalf("Followup: %v", err)
+	}
+	if snap.Status != StatusRunning {
+		t.Fatalf("expected follow-up turn running, got %s", snap.Status)
+	}
+	final, err := mgr.Wait(context.Background(), sa.ID)
+	if err != nil {
+		t.Fatalf("Wait follow-up: %v", err)
+	}
+	if final.Status != StatusCompleted {
+		t.Fatalf("expected completed follow-up, got %s", final.Status)
+	}
+	if client.calls.Load() != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", client.calls.Load())
+	}
+
+	last := client.lastRequest.Load()
+	if last == nil {
+		t.Fatal("client never received follow-up request")
+	}
+	want := []struct {
+		role    string
+		content string
+	}{
+		{"system", "you are a worker"},
+		{"user", "initial task"},
+		{"assistant", "turn done"},
+		{"user", "queued mailbox note"},
+		{"user", "continue task"},
+	}
+	if len(last.Messages) != len(want) {
+		t.Fatalf("expected %d messages in follow-up request, got %d: %+v", len(want), len(last.Messages), last.Messages)
+	}
+	for i, msg := range want {
+		if last.Messages[i].Role != msg.role || last.Messages[i].Content != msg.content {
+			t.Fatalf("message %d = {%s,%q}, want {%s,%q}", i, last.Messages[i].Role, last.Messages[i].Content, msg.role, msg.content)
+		}
+	}
+}
+
 func TestQueueMessageFIFO(t *testing.T) {
 	sa := &SubAgent{}
 	sa.pushPendingMessage("first")

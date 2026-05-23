@@ -416,8 +416,8 @@ func (t *SendMessageTool) Definition() providers.ToolDefinition {
 		Name: "send_message_to_agent",
 		Description: "Send a follow-up instruction to an existing sub-agent. " +
 			"If the worker is still running, the message is queued and injected as a " +
-			"user turn before its next model round. Sending to completed / failed / " +
-			"cancelled workers returns an error.",
+			"user turn before its next model round. If the worker is idle, the message " +
+			"is queued for the next followup_task. Sending to cancelled workers returns an error.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -471,7 +471,7 @@ func (t *SendAgentMessageTool) Definition() providers.ToolDefinition {
 		Name: "send_message",
 		Description: "Queue a message for an existing child task without waiting for it. " +
 			"Address the target by agent_id, agent_path, or task_name. The current runtime " +
-			"delivers queued messages before the worker's next model step and rejects completed tasks.",
+			"delivers queued messages before the worker's next model step; idle tasks keep the message in their mailbox.",
 		InputSchema: targetMessageSchema(),
 	}
 }
@@ -500,16 +500,21 @@ func (t *FollowupTaskTool) Definition() providers.ToolDefinition {
 		Name: "followup_task",
 		Description: "Send a follow-up task message to an existing child task. " +
 			"Address the target by agent_id, agent_path, or task_name. In the current runtime " +
-			"this queues the follow-up for the worker's next model step; completed tasks cannot be resumed yet.",
+			"running tasks receive the message before their next model step, and idle tasks start a new turn from their saved history.",
 		InputSchema: targetMessageSchema(),
 	}
 }
 
-func (t *FollowupTaskTool) Execute(_ context.Context, argsJSON string) (string, error) {
-	if err := executeAgentMessage(t.env, argsJSON); err != nil {
+func (t *FollowupTaskTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	snap, err := executeFollowupTask(ctx, t.env, argsJSON)
+	if err != nil {
 		return "", err
 	}
-	return `{"status":"queued"}`, nil
+	out, err := json.Marshal(snapshotForJSON(snap))
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -736,6 +741,22 @@ func executeAgentMessage(env *Env, argsJSON string) error {
 	}
 	target := firstNonEmpty(args.Target, args.AgentID)
 	return env.Coordinator.SendMessage(target, args.Message)
+}
+
+func executeFollowupTask(ctx context.Context, env *Env, argsJSON string) (subagent.SubAgentSnapshot, error) {
+	if env.Coordinator == nil {
+		return subagent.SubAgentSnapshot{}, errors.New("followup_task: coordinator not configured")
+	}
+	var args struct {
+		Target  string `json:"target"`
+		AgentID string `json:"agent_id"`
+		Message string `json:"message"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return subagent.SubAgentSnapshot{}, err
+	}
+	target := firstNonEmpty(args.Target, args.AgentID)
+	return env.Coordinator.FollowupTask(ctx, target, args.Message)
 }
 
 type agentSnapshotResponse struct {

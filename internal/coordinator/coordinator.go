@@ -298,12 +298,6 @@ func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult
 	}
 
 	if !req.Synchronous {
-		// Async path: schedule background recycle once the worker
-		// finishes. Detached context so it survives a cancelled
-		// parent (the worker itself runs detached too).
-		if worktreeRef != nil {
-			go c.recycleWorktreeWhenDone(sa.ID, worktreeRef)
-		}
 		return result, nil
 	}
 
@@ -327,33 +321,7 @@ func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult
 		result.DurationMS = snap.CompletedAt.Sub(snap.StartedAt).Milliseconds()
 	}
 
-	// Sync recycle: drop the worktree if the worker left it pristine.
-	// Anything dirty stays on disk so the orchestrator (or user) can
-	// inspect / merge it.
-	if worktreeRef != nil {
-		if kept, cerr := c.worktrees.CleanupIfClean(worktreeRef); cerr == nil && !kept {
-			result.WorktreePath = "" // recycled — no path to surface
-		}
-	}
 	return result, nil
-}
-
-// recycleWorktreeWhenDone is the async-spawn cleanup tail. It blocks
-// on the worker's completion, then attempts to drop the worktree if
-// nothing was modified. Errors are intentionally swallowed: cleanup is
-// best-effort and the user can always run `git worktree prune` later.
-func (c *Coordinator) recycleWorktreeWhenDone(agentID string, wtRef *worktree.Worktree) {
-	if wtRef == nil {
-		return
-	}
-	// Long ceiling — workers can legitimately run for a while. The
-	// real cap comes from the worker's own context, not this wait.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
-	defer cancel()
-	if _, err := c.manager.Wait(ctx, agentID); err != nil {
-		return
-	}
-	_, _ = c.worktrees.CleanupIfClean(wtRef)
 }
 
 // ForkRequest is the internal shape of a fork_agent tool invocation
@@ -516,8 +484,8 @@ func (c *Coordinator) SendMessage(agentID, message string) error {
 	}
 	snap := sa.Snapshot()
 	switch snap.Status {
-	case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
-		return fmt.Errorf("agent %q is %s and cannot receive follow-up messages", id, snap.Status)
+	case subagent.StatusCancelled:
+		return fmt.Errorf("agent %q is %s and cannot receive messages", id, snap.Status)
 	}
 	if ok := c.manager.QueueMessage(id, msg); !ok {
 		return fmt.Errorf("agent %q not found", id)
@@ -526,6 +494,25 @@ func (c *Coordinator) SendMessage(agentID, message string) error {
 		_ = c.threadStore.UpsertThread(meta)
 	}
 	return nil
+}
+
+func (c *Coordinator) FollowupTask(ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
+	id := c.resolveAgentID(target)
+	if id == "" {
+		return subagent.SubAgentSnapshot{}, errors.New("agent_id is required")
+	}
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		return subagent.SubAgentSnapshot{}, errors.New("message is required")
+	}
+	snap, err := c.manager.Followup(ctx, id, msg)
+	if err != nil {
+		return snap, err
+	}
+	if meta, ok := c.threads.UpdateLastTaskMessage(id, msg, time.Now().UTC()); ok {
+		_ = c.threadStore.UpsertThread(meta)
+	}
+	return snap, nil
 }
 
 func (c *Coordinator) Wait(ctx context.Context, target string) (subagent.SubAgentSnapshot, error) {

@@ -73,6 +73,7 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		lifetime = DefaultMaxLifetime
 	}
 	subCtx, cancel := context.WithTimeout(ctx, lifetime)
+	history := initialTurnHistory(opts)
 
 	sa := &SubAgent{
 		ID:             id,
@@ -89,6 +90,9 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		toolkit:        opts.Toolkit,
 		historyPath:    opts.HistoryPath,
 		initialHistory: opts.InitialHistory,
+		history:        append([]providers.ChatMessage(nil), history...),
+		maxSteps:       opts.MaxSteps,
+		maxLifetime:    lifetime,
 		client:         m.client,
 		cancelFunc:     cancel,
 		doneCh:         make(chan struct{}),
@@ -101,17 +105,18 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		return nil, fmt.Errorf("subagent %q already exists", id)
 	}
 	m.agents[id] = sa
+	doneCh := sa.doneCh
 	m.mu.Unlock()
 
-	go m.run(subCtx, sa, opts)
+	go m.runTurn(subCtx, cancel, sa, opts.MaxSteps, history, doneCh)
 
 	return sa, nil
 }
 
-// run executes the sub-agent's turn loop in a goroutine.
-func (m *Manager) run(ctx context.Context, sa *SubAgent, opts SpawnOptions) {
-	defer close(sa.doneCh)
-	defer sa.cancelFunc()
+// runTurn executes one turn for a sub-agent in a goroutine.
+func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *SubAgent, maxSteps int, history []providers.ChatMessage, doneCh chan struct{}) {
+	defer close(doneCh)
+	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
 			sa.mu.Lock()
@@ -164,7 +169,7 @@ func (m *Manager) run(ctx context.Context, sa *SubAgent, opts SpawnOptions) {
 		Tools:        sa.toolkit,
 		Model:        sa.model,
 		SystemPrompt: sa.systemPrompt,
-		MaxSteps:     opts.MaxSteps,
+		MaxSteps:     maxSteps,
 		Temperature:  0.2,
 		OnUsage:      onUsage,
 		OnEvent:      onEvent,
@@ -174,44 +179,24 @@ func (m *Manager) run(ctx context.Context, sa *SubAgent, opts SpawnOptions) {
 		return sa.popPendingUserMessages()
 	}
 
-	var (
-		content string
-		err     error
-	)
-	if len(sa.initialHistory) > 0 {
-		// Fork path: the parent's history is the worker's starting
-		// state. We append the role-override prompt as the final
-		// user message and call RunWithCallback directly so the
-		// runner does NOT prepend its own [system, user] envelope —
-		// the system message already lives at history[0] (parent's
-		// system prompt verbatim, for prompt-cache friendliness).
-		history := make([]providers.ChatMessage, 0, len(sa.initialHistory)+1)
-		history = append(history, sa.initialHistory...)
-		history = append(history, providers.ChatMessage{
-			Role:    "user",
-			Content: sa.prompt,
-		})
-		runner.BeforeStep = beforeStep
-		var res agent.LoopResult
-		res, err = runner.RunWithCallback(ctx, history, nil)
-		content = res.Content
-	} else {
-		// Spawn path: fresh conversation built from the worker's
-		// own system prompt + the user prompt as the first message.
-		runner.BeforeStep = beforeStep
-		content, err = runner.Run(ctx, sa.prompt)
+	runner.BeforeStep = beforeStep
+	res, err := runner.RunWithCallback(ctx, history, nil)
+	content := res.Content
+	nextHistory := append([]providers.ChatMessage(nil), history...)
+	if res.HistoryRewritten {
+		nextHistory = append([]providers.ChatMessage(nil), res.NewMessages...)
+	} else if len(res.NewMessages) > 0 {
+		nextHistory = append(nextHistory, res.NewMessages...)
 	}
 
 	sa.mu.Lock()
+	sa.history = nextHistory
 	sa.CompletedAt = time.Now()
 	if err != nil {
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
 			sa.Status = StatusFailed
-			sa.Error = fmt.Errorf("worker exceeded max lifetime (%s)", opts.MaxLifetime)
-			if opts.MaxLifetime <= 0 {
-				sa.Error = fmt.Errorf("worker exceeded max lifetime (%s)", DefaultMaxLifetime)
-			}
+			sa.Error = fmt.Errorf("worker exceeded max lifetime (%s)", sa.maxLifetime)
 		case errors.Is(err, context.Canceled):
 			sa.Status = StatusCancelled
 		default:
@@ -312,6 +297,65 @@ func (m *Manager) QueueMessage(id, message string) bool {
 	return true
 }
 
+// Followup starts a new turn for an idle sub-agent or queues the
+// message for the current turn if it is still running.
+func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSnapshot, error) {
+	sa := m.Get(id)
+	if sa == nil {
+		return SubAgentSnapshot{}, fmt.Errorf("subagent %q not found", id)
+	}
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		return SubAgentSnapshot{}, errors.New("message is required")
+	}
+
+	sa.mu.Lock()
+	switch sa.Status {
+	case StatusRunning, StatusPending:
+		sa.pendingMessages = append(sa.pendingMessages, msg)
+		snap := snapshotLocked(sa)
+		sa.mu.Unlock()
+		m.BroadcastSnapshot(sa)
+		return snap, nil
+	case StatusCancelled:
+		snap := snapshotLocked(sa)
+		sa.mu.Unlock()
+		return snap, fmt.Errorf("subagent %q is cancelled and cannot receive follow-up messages", id)
+	}
+
+	history := append([]providers.ChatMessage(nil), sa.history...)
+	if len(history) == 0 {
+		sa.mu.Unlock()
+		return SubAgentSnapshot{}, fmt.Errorf("subagent %q has no history to resume", id)
+	}
+	for _, pending := range sa.pendingMessages {
+		history = append(history, providers.ChatMessage{Role: "user", Content: pending})
+	}
+	sa.pendingMessages = nil
+	history = append(history, providers.ChatMessage{Role: "user", Content: msg})
+
+	lifetime := sa.maxLifetime
+	if lifetime <= 0 {
+		lifetime = DefaultMaxLifetime
+	}
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lifetime)
+	doneCh := make(chan struct{})
+	sa.Status = StatusRunning
+	sa.CompletedAt = time.Time{}
+	sa.Error = nil
+	sa.Result = ""
+	sa.Activity = ""
+	sa.ActivityAt = time.Time{}
+	sa.cancelFunc = cancel
+	sa.doneCh = doneCh
+	snap := snapshotLocked(sa)
+	maxSteps := sa.maxSteps
+	sa.mu.Unlock()
+
+	go m.runTurn(runCtx, cancel, sa, maxSteps, history, doneCh)
+	return snap, nil
+}
+
 // NextPendingMessage returns and removes the oldest queued follow-up
 // message for an agent. Used by tests and diagnostics.
 func (m *Manager) NextPendingMessage(id string) (string, bool) {
@@ -339,8 +383,11 @@ func (m *Manager) Wait(ctx context.Context, id string) (SubAgentSnapshot, error)
 	if sa == nil {
 		return SubAgentSnapshot{}, fmt.Errorf("subagent %q not found", id)
 	}
+	sa.mu.Lock()
+	doneCh := sa.doneCh
+	sa.mu.Unlock()
 	select {
-	case <-sa.doneCh:
+	case <-doneCh:
 		return sa.Snapshot(), nil
 	case <-ctx.Done():
 		return sa.Snapshot(), ctx.Err()
@@ -414,4 +461,42 @@ func newAgentID(typ string) string {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
 	return fmt.Sprintf("%s-%s", typ, hex.EncodeToString(b))
+}
+
+func initialTurnHistory(opts SpawnOptions) []providers.ChatMessage {
+	if len(opts.InitialHistory) > 0 {
+		history := make([]providers.ChatMessage, 0, len(opts.InitialHistory)+1)
+		history = append(history, opts.InitialHistory...)
+		history = append(history, providers.ChatMessage{
+			Role:    "user",
+			Content: opts.Prompt,
+		})
+		return history
+	}
+	history := make([]providers.ChatMessage, 0, 2)
+	if strings.TrimSpace(opts.SystemPrompt) != "" {
+		history = append(history, providers.ChatMessage{Role: "system", Content: opts.SystemPrompt})
+	}
+	history = append(history, providers.ChatMessage{Role: "user", Content: opts.Prompt})
+	return history
+}
+
+func snapshotLocked(s *SubAgent) SubAgentSnapshot {
+	return SubAgentSnapshot{
+		ID:           s.ID,
+		Type:         s.Type,
+		TaskName:     s.TaskName,
+		AgentPath:    s.AgentPath,
+		ParentID:     s.ParentID,
+		Description:  s.Description,
+		Status:       s.Status,
+		StartedAt:    s.StartedAt,
+		CompletedAt:  s.CompletedAt,
+		Result:       s.Result,
+		Error:        s.Error,
+		InputTokens:  s.InputTokens,
+		OutputTokens: s.OutputTokens,
+		Activity:     s.Activity,
+		ActivityAt:   s.ActivityAt,
+	}
 }
