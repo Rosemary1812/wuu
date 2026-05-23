@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +38,38 @@ func (f *fakeClient) StreamChat(_ context.Context, _ providers.ChatRequest) (<-c
 	ch <- providers.StreamEvent{Type: providers.EventDone}
 	close(ch)
 	return ch, nil
+}
+
+type recordingClient struct {
+	resp providers.ChatResponse
+	mu   sync.Mutex
+	last providers.ChatRequest
+}
+
+func (r *recordingClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	r.mu.Lock()
+	r.last = req
+	r.mu.Unlock()
+	return r.resp, nil
+}
+
+func (r *recordingClient) StreamChat(_ context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	r.mu.Lock()
+	r.last = req
+	r.mu.Unlock()
+	ch := make(chan providers.StreamEvent, 2)
+	if r.resp.Content != "" {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: r.resp.Content}
+	}
+	ch <- providers.StreamEvent{Type: providers.EventDone}
+	close(ch)
+	return ch, nil
+}
+
+func (r *recordingClient) LastRequest() providers.ChatRequest {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.last
 }
 
 // fakeToolkit is a no-op tool executor.
@@ -851,6 +884,73 @@ func TestFork_AsyncDetachedFromParentContext(t *testing.T) {
 
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
+func TestFork_WorktreeIsolation(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	client := &recordingClient{resp: providers.ChatResponse{Content: "done"}}
+	var capturedRoot string
+	c, err := New(Config{
+		Client:       client,
+		DefaultModel: "fake",
+		ParentRepo:   dir,
+		WorktreeRoot: filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:    "sess-fork-worktree",
+		WorkerFactory: func(root string, _ WorkerType, _ agentthread.Metadata) (agent.ToolExecutor, error) {
+			capturedRoot = root
+			return fakeToolkit{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parentHistory := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "hello"},
+	}
+	res, err := c.Fork(context.Background(), ForkRequest{
+		TaskName:    "fork_worktree",
+		Description: "worktree fork",
+		Prompt:      "continue",
+		Isolation:   "worktree",
+		Synchronous: true,
+	}, parentHistory)
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+	if res.Status != "completed" {
+		t.Fatalf("expected completed fork, got %s", res.Status)
+	}
+	if res.Isolation != "worktree" {
+		t.Fatalf("expected worktree isolation, got %q", res.Isolation)
+	}
+	if res.WorktreePath == "" {
+		t.Fatal("expected fork worktree path")
+	}
+	if capturedRoot != res.WorktreePath {
+		t.Fatalf("worker factory root %q did not match result worktree %q", capturedRoot, res.WorktreePath)
+	}
+	if capturedRoot == dir {
+		t.Fatal("worktree fork should not run in the parent repo")
+	}
+	if _, err := os.Stat(res.WorktreePath); err != nil {
+		t.Fatalf("fork worktree should exist: %v", err)
+	}
+
+	last := client.LastRequest()
+	if len(last.Messages) != len(parentHistory)+1 {
+		t.Fatalf("expected parent history plus final fork prompt, got %d messages", len(last.Messages))
+	}
+	tail := last.Messages[len(last.Messages)-1]
+	if tail.Role != "user" || !strings.Contains(tail.Content, "continue") {
+		t.Fatalf("expected final fork task prompt, got %+v", tail)
+	}
+	if !strings.Contains(tail.Content, res.WorktreePath) || !strings.Contains(tail.Content, "Isolation mode: worktree") {
+		t.Fatalf("fork prompt should remind worker of worktree root, got %q", tail.Content)
+	}
 }
 
 func TestSendMessage_QueuesCompletedWorker(t *testing.T) {

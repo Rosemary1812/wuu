@@ -176,7 +176,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"message": map[string]any{
 					"type":        "string",
-					"description": "Self-contained task message. The worker cannot see your conversation, so include all needed context: file paths, line numbers, requirements, acceptance criteria.",
+					"description": "Task message. With the default fork_turns='all', the worker also inherits your current conversation history; still include the concrete task, file paths, requirements, and acceptance criteria. With fork_turns='none', this message must be fully self-contained.",
 				},
 				"isolation": map[string]any{
 					"type":        "string",
@@ -232,9 +232,6 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return "", err
 	}
 	if forkMode != spawnForkNone {
-		if strings.TrimSpace(args.Isolation) != "" || strings.TrimSpace(args.BaseRepo) != "" {
-			return "", errors.New("spawn_agent: isolation and base_repo are only supported with fork_turns='none'")
-		}
 		parentHistory := agent.HistoryFromContext(ctx)
 		if len(parentHistory) == 0 {
 			return "", errors.New("spawn_agent: fork_turns requires parent history; use fork_turns='none' for a clean spawn")
@@ -253,6 +250,8 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 			ParentID:    strings.TrimSpace(t.env.AgentID),
 			ParentPath:  currentAgentPath(t.env),
 			Prompt:      wrapForkPrompt(args.Message),
+			Isolation:   args.Isolation,
+			BaseRepo:    args.BaseRepo,
 			Synchronous: args.Synchronous,
 		}, cleaned)
 		if err != nil {

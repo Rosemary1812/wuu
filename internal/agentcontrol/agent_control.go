@@ -330,17 +330,19 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 }
 
 // ForkRequest is the internal shape of a spawn_agent invocation with
-// fork_turns enabled
-// after argument validation. Unlike SpawnRequest there is no Type or
-// Isolation choice — fork is always inplace (it inherits the parent's
-// conversation continuation, so a worktree sandbox would defeat the
-// continuation semantics) and always uses the default worker type.
+// fork_turns enabled after argument validation. It always uses the
+// default worker type, but isolation is still caller-selectable: a
+// forked history and a worktree are orthogonal concerns.
 type ForkRequest struct {
 	TaskName    string
 	Description string
 	ForkMode    string
 	ParentID    string
 	ParentPath  string
+	BaseRepo    string // optional: chain off another worktree (worktree mode only)
+	// Isolation overrides the default worker type's DefaultIsolation
+	// when set. Empty string means "use the type default".
+	Isolation string
 	// Prompt is what the worker sees as its FINAL user message,
 	// appended to the inherited history. Callers should wrap any
 	// role-override instructions in <system-reminder> tags so the
@@ -382,10 +384,41 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 
 	workerID := newAgentControlWorkerID(wt.Name)
 	taskName := req.TaskName
-	workerRoot := c.parentRepo
-
-	threadMeta, err := c.registerChildThread(workerID, taskName, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath)
+	isolation, err := NormalizeIsolation(req.Isolation, wt)
 	if err != nil {
+		return nil, err
+	}
+	if isolation == IsolationInplace && strings.TrimSpace(req.BaseRepo) != "" {
+		return nil, errors.New("base_repo is only supported with isolation=worktree")
+	}
+
+	var (
+		workerRoot  string
+		worktreeRef *worktree.Worktree
+	)
+	if isolation == IsolationWorktree {
+		if c.worktrees == nil {
+			return nil, errors.New("isolation=worktree requires a git repository (this workspace is not a git repo)")
+		}
+		worktreeRef, err = c.worktrees.Create(c.sessionID, workerID, req.BaseRepo)
+		if err != nil {
+			return nil, fmt.Errorf("worktree create: %w", err)
+		}
+		workerRoot = worktreeRef.Path
+	} else {
+		workerRoot = c.parentRepo
+	}
+
+	forkPrompt := req.Prompt
+	if isolation == IsolationWorktree {
+		forkPrompt = appendForkWorktreeReminder(forkPrompt, workerRoot, isolation)
+	}
+
+	threadMeta, err := c.registerChildThread(workerID, taskName, wt.Name, forkPrompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath)
+	if err != nil {
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
 		return nil, err
 	}
 
@@ -396,6 +429,9 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		}
 		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
 			_ = c.threadStore.RecordEdgeStatus(closed)
+		}
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker toolkit: %w", err)
 	}
@@ -420,12 +456,15 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		AgentPath:      threadMeta.Path,
 		ParentID:       threadMeta.ParentID,
 		Description:    req.Description,
-		Prompt:         req.Prompt,
+		Prompt:         forkPrompt,
 		Toolkit:        workerKit,
 		HistoryPath:    historyPath,
 		InitialHistory: parentHistory,
 	})
 	if err != nil {
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
 		return nil, fmt.Errorf("spawn: %w", err)
 	}
 
@@ -434,7 +473,10 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		TaskName:  threadMeta.TaskName,
 		AgentPath: threadMeta.Path,
 		Status:    string(sa.Status),
-		Isolation: string(IsolationInplace),
+		Isolation: string(isolation),
+	}
+	if worktreeRef != nil {
+		result.WorktreePath = worktreeRef.Path
 	}
 
 	if !req.Synchronous {
@@ -934,6 +976,17 @@ func (c *AgentControl) CleanupSession() error {
 		return nil // non-git workspace, no worktrees to clean
 	}
 	return c.worktrees.CleanupSession(c.sessionID)
+}
+
+func appendForkWorktreeReminder(prompt, workerRoot string, isolation IsolationMode) string {
+	var b strings.Builder
+	b.WriteString(prompt)
+	b.WriteString("\n\n<system-reminder>\n")
+	fmt.Fprintf(&b, "Your active working directory for this child task is: %s\n", workerRoot)
+	fmt.Fprintf(&b, "Isolation mode: %s\n", isolation)
+	b.WriteString("This overrides any inherited working-directory assumptions from the parent history.\n")
+	b.WriteString("</system-reminder>")
+	return b.String()
 }
 
 // composeWorkerSystemPrompt builds the system prompt for a worker.
