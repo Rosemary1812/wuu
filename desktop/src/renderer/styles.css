@@ -1059,7 +1059,6 @@ kbd {
 .scroll-region > [data-overlayscrollbars-contents] {
   min-height: 100%;
   overscroll-behavior: contain;
-  padding: 44px 0 28px;
 }
 
 .empty-scroll-region > [data-overlayscrollbars-contents],
@@ -1071,6 +1070,7 @@ kbd {
   contain: layout style;
   width: min(1120px, calc(100% - 96px));
   margin: 0 auto;
+  padding: 72px 0 28px;
 }
 
 .turn {
