@@ -142,13 +142,14 @@ func NewSession(opts Options) (*Session, error) {
 			SessionID:       "session-pending",
 			HistoryDir:      "",
 			WorkerSysPrompt: baseSystemPrompt,
-			WorkerFactory: func(workerRoot string, _ coordinator.WorkerType) (agent.ToolExecutor, error) {
+			WorkerFactory: func(workerRoot string, wt coordinator.WorkerType) (agent.ToolExecutor, error) {
 				wkit, werr := tools.New(workerRoot)
 				if werr != nil {
 					return nil, werr
 				}
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
+				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
 			},
 			MaxParallel: 5,
@@ -200,6 +201,31 @@ func NewSession(opts Options) (*Session, error) {
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
 	}, nil
+}
+
+func applyWorkerToolFilter(kit *tools.Toolkit, wt coordinator.WorkerType) {
+	if kit == nil {
+		return
+	}
+	full := kit.Definitions()
+	fullNames := make([]string, 0, len(full))
+	for _, def := range full {
+		fullNames = append(fullNames, def.Name)
+	}
+
+	allowed := coordinator.FilterToolsForWorker(wt, fullNames)
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, name := range allowed {
+		allowedSet[name] = struct{}{}
+	}
+
+	disabled := make([]string, 0, len(fullNames)-len(allowedSet))
+	for _, name := range fullNames {
+		if _, ok := allowedSet[name]; !ok {
+			disabled = append(disabled, name)
+		}
+	}
+	kit.DisableTools(disabled...)
 }
 
 // SetSessionID binds workspace-scoped runtime artifact paths after the UI has
