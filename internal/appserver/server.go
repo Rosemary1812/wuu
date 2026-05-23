@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -18,12 +19,14 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -416,6 +419,10 @@ func (s *Server) handleThreadResume(req Request) error {
 		th.mu.Lock()
 		thread := th.snapshotLocked()
 		th.mu.Unlock()
+		thread, err = s.threadWithChildAgents(thread)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
 		result := ThreadResumeResult{Thread: thread}
 		if err := s.writeResponse(req.ID, result, nil); err != nil {
 			return err
@@ -456,6 +463,10 @@ func (s *Server) handleThreadResume(req Request) error {
 	th.mu.Lock()
 	thread := th.snapshotLocked()
 	th.mu.Unlock()
+	thread, err = s.threadWithChildAgents(thread)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	result := ThreadResumeResult{Thread: thread}
 	if err := s.writeResponse(req.ID, result, nil); err != nil {
 		return err
@@ -501,7 +512,11 @@ func (s *Server) handleThreadList(req Request) error {
 	sortThreadListEntries(threads)
 	result := make([]Thread, 0, len(threads))
 	for _, entry := range threads {
-		result = append(result, entry.thread)
+		thread, err := s.threadWithChildAgents(entry.thread)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		result = append(result, thread)
 	}
 	return s.writeResponse(req.ID, ThreadListResult{Threads: result}, nil)
 }
@@ -519,7 +534,10 @@ func (s *Server) handleThreadPin(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	thread := s.threadAfterMetadataUpdate(metadata)
+	thread, err := s.threadAfterMetadataUpdate(metadata)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	return s.writeResponse(req.ID, ThreadPinResult{Thread: thread}, nil)
 }
 
@@ -546,7 +564,10 @@ func (s *Server) handleThreadArchive(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	thread := s.threadAfterMetadataUpdate(metadata)
+	thread, err := s.threadAfterMetadataUpdate(metadata)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	return s.writeResponse(req.ID, ThreadArchiveResult{Thread: thread}, nil)
 }
 
@@ -584,6 +605,127 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 		},
 		pinnedAt: sess.PinnedAt,
 	}
+}
+
+func (s *Server) threadWithChildAgents(thread Thread) (Thread, error) {
+	agents, err := s.childAgentsForThread(thread.ID)
+	if err != nil {
+		return thread, err
+	}
+	thread.ChildAgents = agents
+	return thread, nil
+}
+
+func (s *Server) childAgentsForThread(threadID string) ([]Agent, error) {
+	store := s.agentThreadStore(threadID)
+	if store == nil {
+		return nil, nil
+	}
+	threads, err := store.ListThreads()
+	if err != nil {
+		return nil, err
+	}
+
+	children := make([]Agent, 0)
+	childIndexByPath := make(map[string]int)
+	for _, meta := range threads {
+		if !isDirectChildAgentThread(threadID, meta) {
+			continue
+		}
+		childIndexByPath[meta.Path] = len(children)
+		children = append(children, agentFromThreadMetadata(meta))
+	}
+	if len(children) == 0 {
+		return nil, nil
+	}
+
+	for _, meta := range threads {
+		if meta.Source.Kind != agentthread.SourceThreadSpawn {
+			continue
+		}
+		for path, index := range childIndexByPath {
+			if meta.ID == children[index].ID || !strings.HasPrefix(meta.Path, path+"/") {
+				continue
+			}
+			children[index].NestedCount++
+			if isRunningAgentStatus(string(meta.Status)) {
+				children[index].NestedRunningCount++
+			}
+			break
+		}
+	}
+
+	sort.Slice(children, func(i, j int) bool {
+		left := children[i].StartedAt
+		right := children[j].StartedAt
+		if !left.Equal(right) {
+			return left.Before(right)
+		}
+		return children[i].AgentPath < children[j].AgentPath
+	})
+	return children, nil
+}
+
+func (s *Server) agentThreadStore(threadID string) *agentthread.Store {
+	if s == nil || s.rt == nil || strings.TrimSpace(threadID) == "" {
+		return nil
+	}
+	stateDir := strings.TrimSpace(s.rt.StateDir)
+	if stateDir == "" {
+		home, err := statepath.Home("")
+		if err != nil {
+			return nil
+		}
+		stateDir, err = statepath.WorkspaceDir(home, s.rt.RootDir)
+		if err != nil {
+			return nil
+		}
+	}
+	return agentthread.NewStore(filepath.Join(statepath.SessionArtifactDir(stateDir, threadID), "threads"))
+}
+
+func isDirectChildAgentThread(threadID string, meta agentthread.Metadata) bool {
+	if meta.Source.Kind != agentthread.SourceThreadSpawn || meta.ID == threadID {
+		return false
+	}
+	if meta.Source.ParentPath == agentthread.RootPath {
+		return true
+	}
+	return strings.TrimSpace(meta.ParentID) == strings.TrimSpace(threadID) && agentPathDepth(meta.Path) == 2
+}
+
+func agentFromThreadMetadata(meta agentthread.Metadata) Agent {
+	startedAt := meta.CreatedAt
+	if startedAt.IsZero() {
+		startedAt = meta.UpdatedAt
+	}
+	return Agent{
+		ID:          meta.ID,
+		Type:        meta.Role,
+		TaskName:    meta.TaskName,
+		AgentPath:   meta.Path,
+		ParentID:    meta.ParentID,
+		Description: meta.TaskName,
+		Status:      string(meta.Status),
+		StartedAt:   startedAt,
+	}
+}
+
+func isRunningAgentStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case string(agentthread.StatusPending), string(agentthread.StatusRunning):
+		return true
+	default:
+		return false
+	}
+}
+
+func agentPathDepth(path string) int {
+	trimmed := strings.Trim(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return 0
+	}
+	return strings.Count(trimmed, "/") + 1
 }
 
 func sortThreadListEntries(entries []threadListEntry) {
@@ -627,15 +769,15 @@ func (s *Server) mostRecentVisibleThreadID() (string, error) {
 	return entries[0].thread.ID, nil
 }
 
-func (s *Server) threadAfterMetadataUpdate(metadata session.Session) Thread {
+func (s *Server) threadAfterMetadataUpdate(metadata session.Session) (Thread, error) {
 	if th := s.thread(metadata.ID); th != nil {
 		th.mu.Lock()
 		applySessionMetadata(th, metadata)
 		thread := th.snapshotLocked()
 		th.mu.Unlock()
-		return thread
+		return s.threadWithChildAgents(thread)
 	}
-	return threadEntryFromSession(metadata, s.rt.ProviderName, s.rt.Model).thread
+	return s.threadWithChildAgents(threadEntryFromSession(metadata, s.rt.ProviderName, s.rt.Model).thread)
 }
 
 func (s *Server) hasRunningThread() bool {

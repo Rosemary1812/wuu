@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -493,6 +494,88 @@ func TestServerThreadListUsesSessionIndexMetadata(t *testing.T) {
 	}
 	if result.Threads[1].ID != "new-thread" || result.Threads[1].Archived {
 		t.Fatalf("unexpected second thread: %+v", result.Threads[1])
+	}
+}
+
+func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu", "state")
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "root-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, "root-thread", 2, "root summary"); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 5, 24, 10, 0, 0, 0, time.UTC)
+	store := agentthread.NewStore(filepath.Join(statepath.SessionArtifactDir(rt.StateDir, "root-thread"), "threads"))
+	metas := []agentthread.Metadata{
+		{
+			ID:        "root-thread",
+			Path:      agentthread.RootPath,
+			Status:    agentthread.StatusRunning,
+			CreatedAt: now,
+			UpdatedAt: now,
+			Source:    agentthread.Source{Kind: agentthread.SourceRoot, Depth: 1},
+		},
+		{
+			ID:        "worker-1",
+			SessionID: "root-thread",
+			ParentID:  "root-thread",
+			Path:      "/root/inspect",
+			TaskName:  "inspect",
+			Role:      "worker",
+			Status:    agentthread.StatusRunning,
+			CreatedAt: now.Add(time.Second),
+			UpdatedAt: now.Add(time.Second),
+			Source: agentthread.Source{
+				Kind:           agentthread.SourceThreadSpawn,
+				ParentThreadID: "root-thread",
+				ParentPath:     agentthread.RootPath,
+				Depth:          2,
+			},
+		},
+		{
+			ID:        "worker-2",
+			SessionID: "root-thread",
+			ParentID:  "worker-1",
+			Path:      "/root/inspect/deeper",
+			TaskName:  "deeper",
+			Role:      "worker",
+			Status:    agentthread.StatusPending,
+			CreatedAt: now.Add(2 * time.Second),
+			UpdatedAt: now.Add(2 * time.Second),
+			Source: agentthread.Source{
+				Kind:           agentthread.SourceThreadSpawn,
+				ParentThreadID: "worker-1",
+				ParentPath:     "/root/inspect",
+				Depth:          3,
+			},
+		},
+	}
+	for _, meta := range metas {
+		if err := store.UpsertThread(meta); err != nil {
+			t.Fatalf("upsert thread %s: %v", meta.ID, err)
+		}
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/list"}`)); err != nil {
+		t.Fatalf("thread/list: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadListResult](t, responseByID(t, msgs, "1")["result"])
+	if len(result.Threads) != 1 {
+		t.Fatalf("expected one root thread, got %+v", result.Threads)
+	}
+	agents := result.Threads[0].ChildAgents
+	if len(agents) != 1 {
+		t.Fatalf("expected only the direct child agent, got %+v", agents)
+	}
+	if agents[0].ID != "worker-1" || agents[0].TaskName != "inspect" || agents[0].NestedCount != 1 || agents[0].NestedRunningCount != 1 {
+		t.Fatalf("unexpected child agent summary: %+v", agents[0])
 	}
 }
 

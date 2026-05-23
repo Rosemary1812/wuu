@@ -227,19 +227,21 @@ type TurnCompletedNotification struct {
 }
 
 type Agent struct {
-	ID           string    `json:"id"`
-	Type         string    `json:"type"`
-	TaskName     string    `json:"task_name,omitempty"`
-	AgentPath    string    `json:"agent_path,omitempty"`
-	ParentID     string    `json:"parent_id,omitempty"`
-	Description  string    `json:"description,omitempty"`
-	Status       string    `json:"status"`
-	Result       string    `json:"result,omitempty"`
-	Error        string    `json:"error,omitempty"`
-	InputTokens  int       `json:"input_tokens,omitempty"`
-	OutputTokens int       `json:"output_tokens,omitempty"`
-	StartedAt    time.Time `json:"started_at"`
-	CompletedAt  time.Time `json:"completed_at,omitempty"`
+	ID                 string    `json:"id"`
+	Type               string    `json:"type"`
+	TaskName           string    `json:"task_name,omitempty"`
+	AgentPath          string    `json:"agent_path,omitempty"`
+	ParentID           string    `json:"parent_id,omitempty"`
+	Description        string    `json:"description,omitempty"`
+	Status             string    `json:"status"`
+	Result             string    `json:"result,omitempty"`
+	Error              string    `json:"error,omitempty"`
+	InputTokens        int       `json:"input_tokens,omitempty"`
+	OutputTokens       int       `json:"output_tokens,omitempty"`
+	NestedCount        int       `json:"nested_count,omitempty"`
+	NestedRunningCount int       `json:"nested_running_count,omitempty"`
+	StartedAt          time.Time `json:"started_at"`
+	CompletedAt        time.Time `json:"completed_at,omitempty"`
 }
 
 type AgentUpdatedNotification struct {
@@ -286,6 +288,7 @@ type Thread struct {
 	CreatedAt     time.Time    `json:"created_at"`
 	UpdatedAt     time.Time    `json:"updated_at"`
 	Turns         []Turn       `json:"turns"`
+	ChildAgents   []Agent      `json:"child_agents,omitempty"`
 }
 
 type Turn struct {
