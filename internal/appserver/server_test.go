@@ -724,6 +724,45 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	}
 }
 
+func TestServerThreadResumeReturnsLoadedRunningThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatal("expected loaded thread")
+	}
+	now := time.Now().UTC()
+	th.mu.Lock()
+	th.startTurnLocked("turn-loaded-running", providers.ChatMessage{Role: "user", Content: "keep running"}, now)
+	th.mu.Unlock()
+
+	raw, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: threadID},
+	})
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+
+	if srv.thread(threadID) != th {
+		t.Fatal("resume should not replace an already loaded thread")
+	}
+	result := remarshal[ThreadResumeResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	if result.Thread.ID != threadID || result.Thread.Status != ThreadStatusInProgress || len(result.Thread.Turns) != 1 {
+		t.Fatalf("unexpected loaded resume result: %+v", result.Thread)
+	}
+}
+
 func TestServerThreadResumeNormalizesToolResultOrder(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {

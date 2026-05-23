@@ -412,6 +412,18 @@ func (s *Server) handleThreadResume(req Request) error {
 			return s.writeResponse(req.ID, nil, errors.New("no sessions found"))
 		}
 	}
+	if th := s.thread(id); th != nil {
+		th.mu.Lock()
+		thread := th.snapshotLocked()
+		th.mu.Unlock()
+		result := ThreadResumeResult{Thread: thread}
+		if err := s.writeResponse(req.ID, result, nil); err != nil {
+			return err
+		}
+		return s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
+			Thread: thread,
+		})
+	}
 	path, err := session.Load(s.rt.SessionDir, id)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
