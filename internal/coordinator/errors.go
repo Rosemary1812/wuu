@@ -29,7 +29,7 @@ const (
 	// Re-spawning won't help; the orchestrator should split the task.
 	ErrorClassContextOverflow ErrorClass = "context_overflow"
 	// ErrorClassCancelled means the worker was stopped on purpose
-	// (Ctrl+C, stop_agent). Not really a "failure" — surface for UX.
+	// (Ctrl+C, close_agent). Not really a "failure" — surface for UX.
 	ErrorClassCancelled ErrorClass = "cancelled"
 	// ErrorClassFatal is the default: an unknown / non-recoverable
 	// error. The orchestrator should report it and stop, not retry.

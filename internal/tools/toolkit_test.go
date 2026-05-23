@@ -338,22 +338,35 @@ func TestToolkit_AskUser_ValidatesInput(t *testing.T) {
 	}
 }
 
-func TestToolkit_SendMessageToAgent_RegisteredInDefinitions(t *testing.T) {
+func TestToolkit_TaskAddressedAgentTools_RegisteredInDefinitions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	want := map[string]bool{
+		"send_message":  false,
+		"followup_task": false,
+		"wait_agent":    false,
+		"close_agent":   false,
+	}
 	defs := kit.Definitions()
 	for _, d := range defs {
-		if d.Name == "send_message_to_agent" {
+		if d.Name == "send_message_to_agent" || d.Name == "stop_agent" {
+			t.Fatalf("legacy agent tool %s must not be registered", d.Name)
+		}
+		if _, ok := want[d.Name]; ok {
 			if strings.Contains(strings.ToLower(d.Description), "currently unavailable") {
-				t.Fatalf("send_message_to_agent description should not say unavailable: %q", d.Description)
+				t.Fatalf("%s description should not say unavailable: %q", d.Name, d.Description)
 			}
-			return
+			want[d.Name] = true
 		}
 	}
-	t.Fatal("send_message_to_agent must be present in tool definitions")
+	for name, found := range want {
+		if !found {
+			t.Fatalf("%s must be present in tool definitions", name)
+		}
+	}
 }
 
 func TestToolkit_ListAgents_RegisteredInDefinitions(t *testing.T) {
@@ -635,7 +648,7 @@ func TestToolkit_ForkAgent_FailsWithoutCoordinator(t *testing.T) {
 	// Don't call SetCoordinator — simulates a worker toolkit.
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "fork_agent",
-		Arguments: `{"description":"test","prompt":"do thing"}`,
+		Arguments: `{"task_name":"test","message":"do thing"}`,
 	})
 	if err == nil {
 		t.Fatal("expected error when coordinator is not configured")

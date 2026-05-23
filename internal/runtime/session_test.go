@@ -31,8 +31,6 @@ func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 		"followup_task",
 		"wait_agent",
 		"close_agent",
-		"send_message_to_agent",
-		"stop_agent",
 		"list_agents",
 	} {
 		if defs[blocked] {

@@ -659,7 +659,7 @@ func TestSendMessage_RejectsEmptyFields(t *testing.T) {
 		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err := c.SendMessage("", "x"); err == nil {
-		t.Fatal("expected agent_id required error")
+		t.Fatal("expected target required error")
 	}
 	if err := c.SendMessage("worker-123", ""); err == nil {
 		t.Fatal("expected message required error")

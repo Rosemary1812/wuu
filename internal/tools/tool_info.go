@@ -103,7 +103,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindPlan
 	case "ask_user":
 		return ToolKindUserInteraction
-	case "spawn_agent", "fork_agent", "send_message", "followup_task", "wait_agent", "close_agent", "send_message_to_agent", "stop_agent", "list_agents":
+	case "spawn_agent", "fork_agent", "send_message", "followup_task", "wait_agent", "close_agent", "list_agents":
 		return ToolKindAgent
 	case "start_process", "list_processes", "stop_process", "read_process_output":
 		return ToolKindProcess

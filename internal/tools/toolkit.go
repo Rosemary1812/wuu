@@ -102,8 +102,6 @@ func (t *Toolkit) rebuildRegistry() {
 		NewFollowupTaskTool(e),
 		NewWaitAgentTool(e),
 		NewCloseAgentTool(e),
-		NewSendMessageTool(e),
-		NewStopAgentTool(e),
 		NewListAgentsTool(e),
 		// Process management
 		NewStartProcessTool(e),

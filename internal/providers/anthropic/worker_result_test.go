@@ -29,7 +29,7 @@ func TestAgentMailboxMessageStructure(t *testing.T) {
 		{Role: "system", Content: "You are a coding agent."},
 		{Role: "user", Content: "Run git pull"},
 		{Role: "assistant", Content: "I'll spawn a worker.", ToolCalls: []providers.ToolCall{
-			{ID: "call_001", Name: "spawn_agent", Arguments: `{"description":"git pull","prompt":"run git pull"}`},
+			{ID: "call_001", Name: "spawn_agent", Arguments: `{"task_name":"git pull","message":"run git pull"}`},
 		}},
 		{Role: "tool", ToolCallID: "call_001", Name: "spawn_agent", Content: `{"agent_id":"w-123","status":"running"}`},
 		// Key: empty assistant persisted for alternation (the fix).

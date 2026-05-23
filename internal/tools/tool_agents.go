@@ -167,17 +167,9 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Stable short task name used for path-based addressing. Example: \"inspect auth flow\".",
 				},
-				"type": map[string]any{
+				"agent_type": map[string]any{
 					"type":        "string",
 					"description": "Worker type. Only 'worker' is supported; omit to use the default.",
-				},
-				"description": map[string]any{
-					"type":        "string",
-					"description": "Short 3-7 word task summary shown in status displays.",
-				},
-				"prompt": map[string]any{
-					"type":        "string",
-					"description": "Legacy alias for message. Prefer message.",
 				},
 				"message": map[string]any{
 					"type":        "string",
@@ -208,9 +200,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 	var args struct {
 		TaskName    string `json:"task_name"`
-		Type        string `json:"type"`
-		Description string `json:"description"`
-		Prompt      string `json:"prompt"`
+		AgentType   string `json:"agent_type"`
 		Message     string `json:"message"`
 		Isolation   string `json:"isolation"`
 		BaseRepo    string `json:"base_repo"`
@@ -219,13 +209,17 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	prompt := firstNonEmpty(args.Message, args.Prompt)
-	description := firstNonEmpty(args.Description, args.TaskName)
+	if strings.TrimSpace(args.TaskName) == "" {
+		return "", errors.New("spawn_agent: task_name is required")
+	}
+	if strings.TrimSpace(args.Message) == "" {
+		return "", errors.New("spawn_agent: message is required")
+	}
 	result, err := t.env.Coordinator.Spawn(ctx, coordinator.SpawnRequest{
-		Type:        args.Type,
+		Type:        args.AgentType,
 		TaskName:    args.TaskName,
-		Description: description,
-		Prompt:      prompt,
+		Description: args.TaskName,
+		Prompt:      args.Message,
 		Isolation:   args.Isolation,
 		BaseRepo:    args.BaseRepo,
 		Synchronous: args.Synchronous,
@@ -266,8 +260,8 @@ func (t *ForkAgentTool) Definition() providers.ToolDefinition {
 			"The forked worker uses your system prompt verbatim (so prompt-cache hits across " +
 			"the fork boundary) and runs INPLACE in the parent repo — there is no worktree " +
 			"isolation option, because fork is for continuing your work, not for sandboxing. " +
-			"The forked worker CANNOT use spawn_agent, fork_agent, send_message_to_agent, " +
-			"stop_agent, list_agents, or ask_user (those tools are blocked at the worker " +
+			"The forked worker CANNOT use spawn_agent, fork_agent, send_message, followup_task, " +
+			"wait_agent, close_agent, list_agents, or ask_user (those tools are blocked at the worker " +
 			"toolkit level). Your inherited history may reference those tools — the worker " +
 			"sees them as read-only context, not patterns to reproduce. " +
 			"Like spawn_agent, fork_agent is asynchronous by default: returns immediately " +
@@ -277,17 +271,9 @@ func (t *ForkAgentTool) Definition() providers.ToolDefinition {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"description": map[string]any{
-					"type":        "string",
-					"description": "Short 3-7 word task summary shown in status displays.",
-				},
 				"task_name": map[string]any{
 					"type":        "string",
 					"description": "Stable short task name used for path-based addressing.",
-				},
-				"prompt": map[string]any{
-					"type":        "string",
-					"description": "Legacy alias for message.",
 				},
 				"message": map[string]any{
 					"type":        "string",
@@ -298,7 +284,7 @@ func (t *ForkAgentTool) Definition() providers.ToolDefinition {
 					"description": "If true, block until the worker completes and return its result inline. If false (default), return immediately and receive the result later via a structured mailbox message.",
 				},
 			},
-			"required": []string{"description", "prompt"},
+			"required": []string{"task_name", "message"},
 		},
 	}
 }
@@ -314,19 +300,16 @@ func (t *ForkAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 
 	var args struct {
 		TaskName    string `json:"task_name"`
-		Description string `json:"description"`
-		Prompt      string `json:"prompt"`
 		Message     string `json:"message"`
 		Synchronous bool   `json:"synchronous"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", fmt.Errorf("fork_agent: %w", err)
 	}
-	if strings.TrimSpace(args.Description) == "" {
-		return "", errors.New("fork_agent: description is required")
+	if strings.TrimSpace(args.TaskName) == "" {
+		return "", errors.New("fork_agent: task_name is required")
 	}
-	prompt := firstNonEmpty(args.Message, args.Prompt)
-	if strings.TrimSpace(prompt) == "" {
+	if strings.TrimSpace(args.Message) == "" {
 		return "", errors.New("fork_agent: message is required")
 	}
 
@@ -335,11 +318,11 @@ func (t *ForkAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 		return "", errors.New("fork_agent: history is empty after stripping the in-flight tool_use (nothing to inherit)")
 	}
 
-	wrapped := wrapForkPrompt(prompt)
+	wrapped := wrapForkPrompt(args.Message)
 
 	result, err := t.env.Coordinator.Fork(ctx, coordinator.ForkRequest{
 		TaskName:    args.TaskName,
-		Description: args.Description,
+		Description: args.TaskName,
 		Prompt:      wrapped,
 		Synchronous: args.Synchronous,
 	}, cleaned)
@@ -376,8 +359,7 @@ acting as the parent.
 This system-reminder OVERRIDES the parent's system prompt for you:
 
 - You CANNOT use spawn_agent, fork_agent, send_message, followup_task,
-  wait_agent, close_agent, send_message_to_agent, stop_agent,
-  list_agents, or ask_user. Those tools are not in your
+  wait_agent, close_agent, list_agents, or ask_user. Those tools are not in your
   tool list and any attempt will fail. The parent's history may
   reference them — treat those references as read-only context, not
   as patterns you should reproduce.
@@ -397,59 +379,6 @@ Your specific task:
 
 ` + task + `
 </system-reminder>`
-}
-
-// ---------------------------------------------------------------------------
-// send_message_to_agent
-// ---------------------------------------------------------------------------
-
-type SendMessageTool struct{ env *Env }
-
-func NewSendMessageTool(env *Env) *SendMessageTool { return &SendMessageTool{env: env} }
-
-func (t *SendMessageTool) Name() string            { return "send_message_to_agent" }
-func (t *SendMessageTool) IsReadOnly() bool        { return false }
-func (t *SendMessageTool) IsConcurrencySafe() bool { return true }
-
-func (t *SendMessageTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "send_message_to_agent",
-		Description: "Send a follow-up instruction to an existing sub-agent. " +
-			"If the worker is still running, the message is queued and injected as a " +
-			"user turn before its next model round. If the worker is idle, the message " +
-			"is queued for the next followup_task. Sending to cancelled workers returns an error.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"agent_id": map[string]any{
-					"type":        "string",
-					"description": "The agent_id returned by spawn_agent.",
-				},
-				"message": map[string]any{
-					"type":        "string",
-					"description": "Follow-up instruction to send.",
-				},
-			},
-			"required": []string{"agent_id", "message"},
-		},
-	}
-}
-
-func (t *SendMessageTool) Execute(_ context.Context, argsJSON string) (string, error) {
-	if t.env.Coordinator == nil {
-		return "", errors.New("send_message_to_agent: coordinator not configured")
-	}
-	var args struct {
-		AgentID string `json:"agent_id"`
-		Message string `json:"message"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
-	}
-	if err := t.env.Coordinator.SendMessage(args.AgentID, args.Message); err != nil {
-		return "", err
-	}
-	return `{"status":"sent"}`, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -626,52 +555,6 @@ func (t *CloseAgentTool) Execute(_ context.Context, argsJSON string) (string, er
 }
 
 // ---------------------------------------------------------------------------
-// stop_agent
-// ---------------------------------------------------------------------------
-
-type StopAgentTool struct{ env *Env }
-
-func NewStopAgentTool(env *Env) *StopAgentTool { return &StopAgentTool{env: env} }
-
-func (t *StopAgentTool) Name() string            { return "stop_agent" }
-func (t *StopAgentTool) IsReadOnly() bool        { return false }
-func (t *StopAgentTool) IsConcurrencySafe() bool { return true }
-
-func (t *StopAgentTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "stop_agent",
-		Description: "Halt a running sub-agent. Use this to abort work that's no longer needed " +
-			"or that's taking too long.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"agent_id": map[string]any{
-					"type":        "string",
-					"description": "The agent_id to stop.",
-				},
-			},
-			"required": []string{"agent_id"},
-		},
-	}
-}
-
-func (t *StopAgentTool) Execute(_ context.Context, argsJSON string) (string, error) {
-	if t.env.Coordinator == nil {
-		return "", errors.New("stop_agent: coordinator not configured")
-	}
-	var args struct {
-		AgentID string `json:"agent_id"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
-	}
-	if !t.env.Coordinator.Stop(args.AgentID) {
-		return "", fmt.Errorf("agent %q not found", args.AgentID)
-	}
-	return `{"status":"stopped"}`, nil
-}
-
-// ---------------------------------------------------------------------------
 // list_agents
 // ---------------------------------------------------------------------------
 
@@ -714,16 +597,12 @@ func targetMessageSchema() map[string]any {
 				"type":        "string",
 				"description": "agent_id, agent_path, or task_name.",
 			},
-			"agent_id": map[string]any{
-				"type":        "string",
-				"description": "Legacy alias for target.",
-			},
 			"message": map[string]any{
 				"type":        "string",
 				"description": "Message to deliver.",
 			},
 		},
-		"required": []string{"message"},
+		"required": []string{"target", "message"},
 	}
 }
 
@@ -733,14 +612,15 @@ func executeAgentMessage(env *Env, argsJSON string) error {
 	}
 	var args struct {
 		Target  string `json:"target"`
-		AgentID string `json:"agent_id"`
 		Message string `json:"message"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return err
 	}
-	target := firstNonEmpty(args.Target, args.AgentID)
-	return env.Coordinator.SendMessage(target, args.Message)
+	if strings.TrimSpace(args.Target) == "" {
+		return errors.New("send_message: target is required")
+	}
+	return env.Coordinator.SendMessage(args.Target, args.Message)
 }
 
 func executeFollowupTask(ctx context.Context, env *Env, argsJSON string) (subagent.SubAgentSnapshot, error) {
@@ -749,14 +629,15 @@ func executeFollowupTask(ctx context.Context, env *Env, argsJSON string) (subage
 	}
 	var args struct {
 		Target  string `json:"target"`
-		AgentID string `json:"agent_id"`
 		Message string `json:"message"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return subagent.SubAgentSnapshot{}, err
 	}
-	target := firstNonEmpty(args.Target, args.AgentID)
-	return env.Coordinator.FollowupTask(ctx, target, args.Message)
+	if strings.TrimSpace(args.Target) == "" {
+		return subagent.SubAgentSnapshot{}, errors.New("followup_task: target is required")
+	}
+	return env.Coordinator.FollowupTask(ctx, args.Target, args.Message)
 }
 
 type agentSnapshotResponse struct {
@@ -794,13 +675,4 @@ func snapshotForJSON(snap subagent.SubAgentSnapshot) agentSnapshotResponse {
 		out.Error = snap.Error.Error()
 	}
 	return out
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }

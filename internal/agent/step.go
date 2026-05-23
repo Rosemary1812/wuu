@@ -118,7 +118,7 @@ type LoopConfig struct {
 	// BeforeStep, when set, is called at the start of each model
 	// round. Any returned messages are appended to the live history
 	// before the next provider request is built. This is used by
-	// sub-agent follow-up messaging: send_message_to_agent queues
+	// sub-agent follow-up messaging: send_message queues
 	// user-role messages that are injected on the next round.
 	BeforeStep func() []providers.ChatMessage
 	// OnUsage is invoked once per LLM round-trip with the per-call

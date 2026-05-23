@@ -1,5 +1,5 @@
 // Package coordinator wires the orchestration tools (spawn_agent,
-// send_message, stop_agent, list_agents) to the underlying subagent
+// send_message, close_agent, list_agents) to the underlying subagent
 // and worktree subsystems.
 //
 // The coordinator is the brain that the main agent talks to in
@@ -184,7 +184,7 @@ type SpawnResult struct {
 func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, error) {
 	// Concurrency cap.
 	if c.manager.CountRunning() >= c.maxParallel {
-		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or stop one with stop_agent.", c.maxParallel)
+		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or close one with close_agent.", c.maxParallel)
 	}
 
 	if strings.TrimSpace(req.Prompt) == "" {
@@ -354,7 +354,7 @@ type ForkRequest struct {
 // assistant turn before passing it through.
 func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory []providers.ChatMessage) (*SpawnResult, error) {
 	if c.manager.CountRunning() >= c.maxParallel {
-		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or stop one with stop_agent.", c.maxParallel)
+		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or close one with close_agent.", c.maxParallel)
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, errors.New("prompt is required")
@@ -452,9 +452,9 @@ func (c *Coordinator) StopAll() {
 	c.manager.StopAll()
 }
 
-// Stop cancels a specific worker by ID. Returns false if not found.
-func (c *Coordinator) Stop(id string) bool {
-	agentID := c.resolveAgentID(id)
+// Stop cancels a specific worker by ID, path, or task name. Returns false if not found.
+func (c *Coordinator) Stop(target string) bool {
+	agentID := c.resolveAgentID(target)
 	if agentID == "" {
 		return false
 	}
@@ -469,10 +469,10 @@ func (c *Coordinator) List() []subagent.SubAgentSnapshot {
 // SendMessage delivers a follow-up message to a specific sub-agent.
 // Messages are queued while the worker is running and injected as
 // user-role turns before the next model round.
-func (c *Coordinator) SendMessage(agentID, message string) error {
-	id := c.resolveAgentID(agentID)
+func (c *Coordinator) SendMessage(target, message string) error {
+	id := c.resolveAgentID(target)
 	if id == "" {
-		return errors.New("agent_id is required")
+		return errors.New("target is required")
 	}
 	msg := strings.TrimSpace(message)
 	if msg == "" {
@@ -499,7 +499,7 @@ func (c *Coordinator) SendMessage(agentID, message string) error {
 func (c *Coordinator) FollowupTask(ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
 	id := c.resolveAgentID(target)
 	if id == "" {
-		return subagent.SubAgentSnapshot{}, errors.New("agent_id is required")
+		return subagent.SubAgentSnapshot{}, errors.New("target is required")
 	}
 	msg := strings.TrimSpace(message)
 	if msg == "" {
@@ -518,7 +518,7 @@ func (c *Coordinator) FollowupTask(ctx context.Context, target, message string) 
 func (c *Coordinator) Wait(ctx context.Context, target string) (subagent.SubAgentSnapshot, error) {
 	id := c.resolveAgentID(target)
 	if id == "" {
-		return subagent.SubAgentSnapshot{}, errors.New("agent_id is required")
+		return subagent.SubAgentSnapshot{}, errors.New("target is required")
 	}
 	return c.manager.Wait(ctx, id)
 }

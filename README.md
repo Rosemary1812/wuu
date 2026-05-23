@@ -61,13 +61,13 @@ When a `v*` tag is pushed, GitHub Actions + GoReleaser publishes release artifac
 - Agentic tool-calling loop — reads, writes, edits, searches, and runs shell commands in your repo
 - Supports OpenAI-compatible APIs (OpenAI / OpenRouter / one-api / etc.) and Anthropic Messages API
 - Built-in tools: `run_shell`, `git`, `read_file`, `write_file`, `edit_file`, `list_files`, `grep`, `glob`, `web_search`, `web_fetch`
-- Orchestration and session tools: `ask_user`, `spawn_agent`, `fork_agent`, `send_message_to_agent`, `stop_agent`, `list_agents`, `load_skill`
+- Orchestration and session tools: `ask_user`, `spawn_agent`, `fork_agent`, `send_message`, `followup_task`, `wait_agent`, `close_agent`, `list_agents`, `load_skill`
 - Managed process tools: `start_process`, `list_processes`, `stop_process`, `read_process_output`
 - Scheduling tools: `schedule_cron`, `cancel_cron`, `list_cron`
 - Tool availability model:
   - Main interactive agent (TUI session): full tool set
-  - Sub-agents: no `ask_user` and no orchestration tools (`spawn_agent`, `fork_agent`, `send_message_to_agent`, `stop_agent`, `list_agents`)
-- Follow-up control: `send_message_to_agent` can queue short instructions for running workers; they are injected as user turns before the worker's next model round
+  - Sub-agents: no `ask_user` and no orchestration tools (`spawn_agent`, `fork_agent`, `send_message`, `followup_task`, `wait_agent`, `close_agent`, `list_agents`)
+- Follow-up control: `send_message` queues short instructions for workers; `followup_task` starts a new worker turn from saved history when a task is idle
 - File tools are sandboxed to the current workspace
 - Session isolation with resume support
 - Context compaction for long conversations

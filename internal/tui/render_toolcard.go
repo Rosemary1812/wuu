@@ -12,13 +12,13 @@ import (
 // Codex-aligned tool card styles: lightweight tree indentation instead
 // of heavy box-drawing borders. Tool calls render as:
 //
-//	• Called read_file · main.go
-//	  └ package main...
+//   - Called read_file · main.go
+//     └ package main...
 //
 // Running tools show a spinner, success shows green •, failure red •.
 var (
-	toolBulletSuccess = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)  // green
-	toolBulletFail    = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)  // red
+	toolBulletSuccess = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true) // green
+	toolBulletFail    = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true) // red
 	toolVerbStyle     = lipgloss.NewStyle().Bold(true)
 	toolNameStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
 	toolMetaDim       = lipgloss.NewStyle().Faint(true)
@@ -194,13 +194,13 @@ func toolArgsSummary(toolName, args string, maxWidth int) string {
 			summary = s
 		}
 	case "spawn_agent", "fork_agent":
-		if d, ok := parsed["description"].(string); ok {
-			summary = d
-		} else if p, ok := parsed["prompt"].(string); ok {
-			if len(p) > 60 {
-				summary = p[:60] + "…"
+		if taskName, ok := parsed["task_name"].(string); ok {
+			summary = taskName
+		} else if message, ok := parsed["message"].(string); ok {
+			if len(message) > 60 {
+				summary = message[:60] + "…"
 			} else {
-				summary = p
+				summary = message
 			}
 		}
 	}
