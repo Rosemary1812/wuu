@@ -89,7 +89,7 @@ class AppServerClient {
     }
     const command = resolveWuuCommand(this.workdir);
     this.child = spawn(command.command, [...command.args, "app-server", "--workdir", this.workdir], {
-      cwd: this.workdir,
+      cwd: command.cwd,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"]
     });
@@ -176,21 +176,35 @@ class AppServerClient {
 type WuuCommand = {
   command: string;
   args: string[];
+  cwd: string;
 };
 
 function resolveWuuCommand(workdir: string): WuuCommand {
   if (process.env.WUU_BIN) {
-    return { command: process.env.WUU_BIN, args: [] };
+    return { command: process.env.WUU_BIN, args: [], cwd: workdir };
   }
-  if (existsSync(join(workdir, "go.mod")) && process.env.WUU_DESKTOP_USE_GO_RUN !== "0") {
-    return { command: "go", args: ["run", "./cmd/wuu"] };
+  const sourceRoot = wuuSourceRoot();
+  if (sourceRoot && process.env.WUU_DESKTOP_USE_GO_RUN !== "0") {
+    return { command: "go", args: ["run", "./cmd/wuu"], cwd: sourceRoot };
   }
   for (const candidate of [join(workdir, "bin", "wuu"), join(workdir, "wuu")]) {
     if (existsSync(candidate)) {
-      return { command: candidate, args: [] };
+      return { command: candidate, args: [], cwd: workdir };
     }
   }
-  return { command: "wuu", args: [] };
+  return { command: "wuu", args: [], cwd: workdir };
+}
+
+function wuuSourceRoot(): string | undefined {
+  const candidates = [
+    process.env.WUU_SOURCE_ROOT,
+    process.cwd(),
+    resolve(process.cwd(), ".."),
+    app.getAppPath(),
+    resolve(app.getAppPath(), ".."),
+    resolve(__dirname, "..", "..", "..")
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find((candidate) => existsSync(join(candidate, "go.mod")) && existsSync(join(candidate, "cmd", "wuu")));
 }
 
 type ProjectStore = {

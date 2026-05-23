@@ -278,8 +278,8 @@ export function App(): JSX.Element {
     const listed = await window.wuu.listThreads();
     const thread =
       listed.threads.length > 0
-        ? (await window.wuu.resumeThread(listed.threads[0].id)).thread
-        : (await window.wuu.startThread()).thread;
+        ? requireThread(await window.wuu.resumeThread(listed.threads[0].id), "resume did not return a thread")
+        : requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
     return {
       initialized,
       projects: projectState.projects,
@@ -369,14 +369,22 @@ export function App(): JSX.Element {
     if (!state.activeProjectId) {
       return;
     }
-    const result = await window.wuu.startThread();
-    setState((current) => ({
-      ...current,
-      thread: result.thread,
-      threads: upsertThread(current.threads, result.thread),
-      running: false,
-      status: "ready"
-    }));
+    try {
+      const thread = requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
+      setState((current) => ({
+        ...current,
+        thread,
+        threads: upsertThread(current.threads, thread),
+        running: false,
+        status: "ready"
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        running: false,
+        status: error instanceof Error ? error.message : "new thread failed"
+      }));
+    }
   }
 
   async function selectThread(threadId: string): Promise<void> {
@@ -385,11 +393,11 @@ export function App(): JSX.Element {
     }
     setState((current) => ({ ...current, status: "loading" }));
     try {
-      const result = await window.wuu.resumeThread(threadId);
+      const thread = requireThread(await window.wuu.resumeThread(threadId), "resume did not return a thread");
       setState((current) => ({
         ...current,
-        thread: result.thread,
-        threads: upsertThread(current.threads, result.thread),
+        thread,
+        threads: upsertThread(current.threads, thread),
         status: "ready"
       }));
     } catch (error) {
@@ -631,14 +639,29 @@ function updateThread(state: AppState, update: (thread: Thread) => Thread): AppS
   return { ...state, thread, threads: upsertThread(state.threads, thread) };
 }
 
-function upsertThread(threads: Thread[], thread: Thread): Thread[] {
-  const index = threads.findIndex((item) => item.id === thread.id);
-  if (index < 0) {
-    return [thread, ...threads];
+function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
+  const validThreads = threads.filter(isThread);
+  if (!isThread(thread)) {
+    return validThreads;
   }
-  const next = threads.slice();
+  const index = validThreads.findIndex((item) => item.id === thread.id);
+  if (index < 0) {
+    return [thread, ...validThreads];
+  }
+  const next = validThreads.slice();
   next[index] = thread;
   return next;
+}
+
+function requireThread(result: { thread?: Thread }, message: string): Thread {
+  if (!isThread(result.thread)) {
+    throw new Error(message);
+  }
+  return result.thread;
+}
+
+function isThread(value: unknown): value is Thread {
+  return Boolean(value && typeof value === "object" && typeof (value as Thread).id === "string");
 }
 
 function upsertTurn(thread: Thread, turn: Turn): Thread {
