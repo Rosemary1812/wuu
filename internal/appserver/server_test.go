@@ -620,6 +620,7 @@ func TestServerAskUserUsesClientResponse(t *testing.T) {
 	srv := New(rt, out)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	ctx = withAskUserThreadID(ctx, "thread-ask")
 
 	done := make(chan tools.AskUserResponse, 1)
 	errCh := make(chan error, 1)
@@ -643,6 +644,10 @@ func TestServerAskUserUsesClientResponse(t *testing.T) {
 
 	msgs := waitForMethod(t, out, MethodToolRequestUserInput)
 	request := requestByMethod(t, msgs, MethodToolRequestUserInput)
+	params := remarshal[ToolRequestUserInputParams](t, request["params"])
+	if params.ThreadID != "thread-ask" {
+		t.Fatalf("ask_user request missing thread id: %+v", params)
+	}
 	raw, err := json.Marshal(map[string]any{
 		"id": request["id"],
 		"result": tools.AskUserResponse{
@@ -864,7 +869,9 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 	rt.AgentControl = coord
 
 	out := &lockedBuffer{}
-	_ = New(rt, out)
+	srv := New(rt, out)
+	threadID := "sess-agents"
+	srv.subscribeThreadRuntime(threadID, &runtime.ThreadRuntime{AgentControl: coord})
 	res, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
 		Type:        "worker",
 		TaskName:    "check_bridge",
@@ -878,11 +885,11 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 
 	msgs := waitForMethod(t, out, NotificationAgentMailbox)
 	updated := remarshal[AgentUpdatedNotification](t, notificationByMethod(t, msgs, NotificationAgentUpdated)["params"])
-	if updated.Agent.ID != res.AgentID || updated.Agent.TaskName != "check_bridge" {
+	if updated.ThreadID != threadID || updated.Agent.ID != res.AgentID || updated.Agent.TaskName != "check_bridge" {
 		t.Fatalf("unexpected agent update: %+v", updated)
 	}
 	mailbox := remarshal[AgentMailboxNotification](t, notificationByMethod(t, msgs, NotificationAgentMailbox)["params"])
-	if mailbox.Message.AgentID != res.AgentID || mailbox.Message.Result != "agent done" || mailbox.Message.Type != "agent_result" {
+	if mailbox.ThreadID != threadID || mailbox.Message.AgentID != res.AgentID || mailbox.Message.Result != "agent done" || mailbox.Message.Type != "agent_result" {
 		t.Fatalf("unexpected mailbox notification: %+v", mailbox)
 	}
 }

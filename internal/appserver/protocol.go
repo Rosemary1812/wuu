@@ -243,11 +243,13 @@ type Agent struct {
 }
 
 type AgentUpdatedNotification struct {
-	Agent Agent `json:"agent"`
+	ThreadID string `json:"thread_id,omitempty"`
+	Agent    Agent  `json:"agent"`
 }
 
 type AgentMailboxNotification struct {
-	Message agentcontrol.AgentMailboxMessage `json:"message"`
+	ThreadID string                           `json:"thread_id,omitempty"`
+	Message  agentcontrol.AgentMailboxMessage `json:"message"`
 }
 
 type ThreadStatus string
@@ -382,6 +384,7 @@ type ToolCallOutputNotification struct {
 }
 
 type ToolRequestUserInputParams struct {
+	ThreadID  string                  `json:"thread_id,omitempty"`
 	Questions []tools.AskUserQuestion `json:"questions"`
 }
 

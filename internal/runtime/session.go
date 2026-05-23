@@ -60,9 +60,19 @@ type Session struct {
 	AskBridge                   tools.AskUserBridge
 	ProcessManager              *process.Manager
 	Toolkit                     *tools.Toolkit
+	WorkerClient                providers.StreamClient
 	BaseSystemPrompt            string
 	CoordinatorPreamble         string
 	ExperimentalCoordinatorMode bool
+}
+
+// ThreadRuntime owns the mutable execution state for one app-server
+// conversation. The desktop app can run multiple ThreadRuntimes at once; each
+// one has its own StreamRunner, Toolkit Env, usage tracker, and AgentControl.
+type ThreadRuntime struct {
+	StreamRunner *agent.StreamRunner
+	Toolkit      *tools.Toolkit
+	AgentControl *agentcontrol.AgentControl
 }
 
 // NewSession builds the shared runtime for an interactive agent surface.
@@ -139,9 +149,11 @@ func NewSession(opts Options) (*Session, error) {
 
 	var agentControl *agentcontrol.AgentControl
 	var coordinatorPreamble string
+	var workerClient providers.StreamClient
 	if toolkit != nil {
 		workerRetry := providerfactory.SubAgentRetryConfig()
-		workerClient, werr := providerfactory.BuildStreamClientWithRetry(providerCfg, resolvedName, &workerRetry)
+		var werr error
+		workerClient, werr = providerfactory.BuildStreamClientWithRetry(providerCfg, resolvedName, &workerRetry)
 		if werr != nil {
 			return nil, fmt.Errorf("build worker client: %w", werr)
 		}
@@ -216,10 +228,137 @@ func NewSession(opts Options) (*Session, error) {
 		AskBridge:                   opts.AskBridge,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
+		WorkerClient:                workerClient,
 		BaseSystemPrompt:            baseSystemPrompt,
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
 	}, nil
+}
+
+// NewThreadRuntime creates a per-conversation execution runtime from the
+// shared workspace runtime. It intentionally does not mutate Session.Toolkit or
+// Session.AgentControl; those remain the legacy single-session runtime used by
+// the TUI and older call sites.
+func (s *Session) NewThreadRuntime(sessionID string, askBridge tools.AskUserBridge) (*ThreadRuntime, error) {
+	if s == nil {
+		return nil, fmt.Errorf("runtime session is required")
+	}
+	id := strings.TrimSpace(sessionID)
+	if id == "" {
+		return nil, fmt.Errorf("session id is required")
+	}
+	if s.StreamRunner == nil {
+		return nil, fmt.Errorf("stream runner is required")
+	}
+
+	stateDir := strings.TrimSpace(s.StateDir)
+	if stateDir == "" {
+		home, err := statepath.Home("")
+		if err != nil {
+			return nil, fmt.Errorf("resolve wuu home: %w", err)
+		}
+		stateDir, err = statepath.WorkspaceDir(home, s.RootDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve workspace state directory: %w", err)
+		}
+	}
+	artifactDir := statepath.SessionArtifactDir(stateDir, id)
+
+	var (
+		kit          *tools.Toolkit
+		agentControl *agentcontrol.AgentControl
+		toolExecutor = s.StreamRunner.Tools
+	)
+
+	if s.Toolkit != nil {
+		workerClient := s.WorkerClient
+		if workerClient == nil {
+			workerClient = s.StreamRunner.Client
+		}
+		if workerClient != nil {
+			var control *agentcontrol.AgentControl
+			control, _ = agentcontrol.New(agentcontrol.Config{
+				Client:          workerClient,
+				DefaultModel:    s.Model,
+				ParentRepo:      s.RootDir,
+				WorktreeRoot:    statepath.WorktreeRoot(stateDir),
+				SessionID:       id,
+				HistoryDir:      filepath.Join(artifactDir, "workers"),
+				ThreadDir:       filepath.Join(artifactDir, "threads"),
+				WorkerSysPrompt: s.BaseSystemPrompt,
+				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
+					workerKit, err := s.Toolkit.CloneForRoot(workerRoot)
+					if err != nil {
+						return nil, err
+					}
+					workerStateDir := stateDir
+					if workerRoot != s.RootDir {
+						if home, err := statepath.Home(""); err == nil {
+							if dir, err := statepath.WorkspaceDir(home, workerRoot); err == nil {
+								workerStateDir = dir
+							}
+						}
+					}
+					workerKit.SetStateDir(workerStateDir)
+					workerKit.SetProcessManager(s.ProcessManager)
+					workerKit.SetSkills(s.Skills)
+					workerKit.SetAskUserBridge(nil)
+					workerKit.SetAgentControl(control)
+					workerKit.SetAgentIdentity(meta.ID, meta.Path)
+					applyWorkerToolFilter(workerKit, wt)
+					return workerKit, nil
+				},
+				MaxParallel: 5,
+			})
+			agentControl = control
+		}
+
+		var err error
+		kit, err = s.Toolkit.CloneForRoot(s.RootDir)
+		if err != nil {
+			return nil, err
+		}
+		kit.SetStateDir(stateDir)
+		kit.SetProcessManager(s.ProcessManager)
+		kit.SetSkills(s.Skills)
+		kit.SetAskUserBridge(askBridge)
+		kit.SetAgentControl(agentControl)
+		kit.SetSessionID(id)
+		kit.SetSessionDir(artifactDir)
+		kit.SetAgentIdentity(id, agentthread.RootPath)
+		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", s.RootDir)
+	}
+
+	return &ThreadRuntime{
+		StreamRunner: cloneStreamRunnerForThread(s.StreamRunner, toolExecutor),
+		Toolkit:      kit,
+		AgentControl: agentControl,
+	}, nil
+}
+
+func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.ToolExecutor) *agent.StreamRunner {
+	if base == nil {
+		return nil
+	}
+	return &agent.StreamRunner{
+		Client:                  base.Client,
+		Tools:                   toolExecutor,
+		Model:                   base.Model,
+		SystemPrompt:            base.SystemPrompt,
+		MaxSteps:                base.MaxSteps,
+		Temperature:             base.Temperature,
+		OnEvent:                 base.OnEvent,
+		Bus:                     base.Bus,
+		OnUsage:                 base.OnUsage,
+		ContextWindowOverride:   base.ContextWindowOverride,
+		DisableAutoCompact:      base.DisableAutoCompact,
+		StreamingToolExecution:  base.StreamingToolExecution,
+		BeforeStep:              base.BeforeStep,
+		Effort:                  base.Effort,
+		StreamReconnectBudget:   base.StreamReconnectBudget,
+		StreamRetryInitialDelay: base.StreamRetryInitialDelay,
+		StreamRetryMaxDelay:     base.StreamRetryMaxDelay,
+	}
 }
 
 func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType) {

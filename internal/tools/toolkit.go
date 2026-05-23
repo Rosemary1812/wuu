@@ -78,6 +78,45 @@ func New(rootDir string) (*Toolkit, error) {
 	return t, nil
 }
 
+// CloneForRoot returns a toolkit with the same configured dependencies but a
+// fresh per-session Env state. It is used by desktop app-server threads so
+// concurrent conversations do not share mutable tool state such as SessionID,
+// read tracking, plans, or telemetry.
+func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
+	if t == nil || t.env == nil {
+		return nil, errors.New("toolkit is not initialized")
+	}
+	cloneRoot := strings.TrimSpace(rootDir)
+	if cloneRoot == "" {
+		cloneRoot = t.env.RootDir
+	}
+	abs, err := filepath.Abs(cloneRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve root directory: %w", err)
+	}
+	if ev, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = ev
+	}
+	env := *t.env
+	env.RootDir = abs
+	env.readState = nil
+	env.planState = planState{}
+	env.toolTelemetry = toolTelemetry{}
+
+	clone := &Toolkit{
+		env:        &env,
+		mcpManager: t.mcpManager,
+	}
+	if len(t.disabledTools) > 0 {
+		clone.disabledTools = make(map[string]struct{}, len(t.disabledTools))
+		for name := range t.disabledTools {
+			clone.disabledTools[name] = struct{}{}
+		}
+	}
+	clone.rebuildRegistry()
+	return clone, nil
+}
+
 // rebuildRegistry constructs the tool registry from the current Env.
 // Called at construction and whenever dependencies change.
 func (t *Toolkit) rebuildRegistry() {
@@ -158,6 +197,14 @@ func (t *Toolkit) Skills() []skills.Skill {
 // SetSessionID sets the current session ID.
 func (t *Toolkit) SetSessionID(id string) {
 	t.env.SessionID = id
+}
+
+// SessionID returns the session currently bound to this toolkit.
+func (t *Toolkit) SessionID() string {
+	if t == nil || t.env == nil {
+		return ""
+	}
+	return t.env.SessionID
 }
 
 // SetSessionDir sets the session directory for result budgeting.

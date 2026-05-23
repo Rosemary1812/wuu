@@ -80,3 +80,58 @@ func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 		}
 	}
 }
+
+func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	first, err := rt.NewThreadRuntime("thread-a", nil)
+	if err != nil {
+		t.Fatalf("NewThreadRuntime first: %v", err)
+	}
+	second, err := rt.NewThreadRuntime("thread-b", nil)
+	if err != nil {
+		t.Fatalf("NewThreadRuntime second: %v", err)
+	}
+
+	if rt.Toolkit.SessionID() != "" {
+		t.Fatalf("base toolkit session should not be mutated, got %q", rt.Toolkit.SessionID())
+	}
+	if first.Toolkit == rt.Toolkit || second.Toolkit == rt.Toolkit || first.Toolkit == second.Toolkit {
+		t.Fatal("thread runtimes must not share toolkit instances")
+	}
+	if first.Toolkit.SessionID() != "thread-a" || second.Toolkit.SessionID() != "thread-b" {
+		t.Fatalf("unexpected thread toolkit sessions: first=%q second=%q", first.Toolkit.SessionID(), second.Toolkit.SessionID())
+	}
+	if first.StreamRunner == rt.StreamRunner || second.StreamRunner == rt.StreamRunner || first.StreamRunner == second.StreamRunner {
+		t.Fatal("thread runtimes must not share stream runner instances")
+	}
+	if first.AgentControl == nil || second.AgentControl == nil || first.AgentControl == second.AgentControl {
+		t.Fatal("thread runtimes must have distinct agent control instances")
+	}
+	if first.AgentControl.SessionID() != "thread-a" || second.AgentControl.SessionID() != "thread-b" {
+		t.Fatalf("unexpected agent control sessions: first=%q second=%q", first.AgentControl.SessionID(), second.AgentControl.SessionID())
+	}
+}

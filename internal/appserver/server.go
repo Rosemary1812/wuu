@@ -43,6 +43,8 @@ type threadState struct {
 	Turns         []Turn
 	MemoryPath    string
 
+	execRuntime *runtime.ThreadRuntime
+
 	mu          sync.Mutex
 	running     bool
 	currentTurn string
@@ -78,39 +80,36 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		rt.Toolkit.SetAskUserBridge(s)
 		rt.AskBridge = s
 	}
-	if rt != nil && rt.AgentControl != nil {
-		ch := make(chan subagent.Notification, 64)
-		rt.AgentControl.Subscribe(ch)
-		go s.forwardAgentNotifications(ch)
-	}
 	return s
 }
 
-func (s *Server) forwardAgentNotifications(ch <-chan subagent.Notification) {
+func (s *Server) forwardAgentNotifications(threadID string, control *agentcontrol.AgentControl, ch <-chan subagent.Notification) {
 	for n := range ch {
 		_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
-			Agent: agentFromSnapshot(n.Snapshot),
+			ThreadID: threadID,
+			Agent:    agentFromSnapshot(n.Snapshot),
 		})
 		switch n.Status {
 		case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
-			if s.isRootAgentSnapshot(n.Snapshot) {
+			if s.isRootAgentSnapshot(control, threadID, n.Snapshot) {
 				_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
-					Message: agentcontrol.NewAgentMailboxMessage(n.Snapshot),
+					ThreadID: threadID,
+					Message:  agentcontrol.NewAgentMailboxMessage(n.Snapshot),
 				})
 			}
 		}
 	}
 }
 
-func (s *Server) isRootAgentSnapshot(snap subagent.SubAgentSnapshot) bool {
+func (s *Server) isRootAgentSnapshot(control *agentcontrol.AgentControl, threadID string, snap subagent.SubAgentSnapshot) bool {
 	parentID := strings.TrimSpace(snap.ParentID)
 	if parentID == "" {
 		return true
 	}
-	if s == nil || s.rt == nil || s.rt.AgentControl == nil {
-		return false
+	if control != nil && parentID == control.SessionID() {
+		return true
 	}
-	return parentID == s.rt.AgentControl.SessionID()
+	return parentID == strings.TrimSpace(threadID)
 }
 
 func agentFromSnapshot(snap subagent.SubAgentSnapshot) Agent {
@@ -386,7 +385,6 @@ func (s *Server) handleThreadStart(req Request) error {
 	s.threads[id] = th
 	s.mu.Unlock()
 
-	s.rt.SetSessionID(id)
 	th.mu.Lock()
 	thread := th.snapshotLocked()
 	th.mu.Unlock()
@@ -443,7 +441,6 @@ func (s *Server) handleThreadResume(req Request) error {
 	s.threads[id] = th
 	s.mu.Unlock()
 
-	s.rt.SetSessionID(id)
 	th.mu.Lock()
 	thread := th.snapshotLocked()
 	th.mu.Unlock()
@@ -651,6 +648,12 @@ func (s *Server) updateIdleThreadRuntime(providerName, model string) {
 		if !th.running {
 			th.ModelProvider = providerName
 			th.Model = model
+			if th.execRuntime != nil && th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
+				th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
+				th.execRuntime.StreamRunner.Model = model
+				th.execRuntime.StreamRunner.Effort = s.currentEffort()
+				th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
+			}
 		}
 		th.mu.Unlock()
 	}
@@ -726,9 +729,14 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if th == nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
 	}
+	threadRuntime, err := s.ensureThreadRuntime(th)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
+	turnCtx = withAskUserThreadID(turnCtx, th.ID)
 	userMsg := providers.ChatMessage{Role: "user", Content: params.Prompt, Images: images}
 	now := time.Now().UTC()
 
@@ -762,8 +770,46 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		return err
 	}
 
-	go s.runTurn(turnCtx, th, turnID, history)
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
 	return nil
+}
+
+func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, error) {
+	if th == nil {
+		return nil, errors.New("thread is required")
+	}
+	th.mu.Lock()
+	existing := th.execRuntime
+	th.mu.Unlock()
+	if existing != nil {
+		return existing, nil
+	}
+	if s.rt == nil {
+		return nil, errors.New("runtime session is required")
+	}
+	threadRuntime, err := s.rt.NewThreadRuntime(th.ID, s)
+	if err != nil {
+		return nil, err
+	}
+	th.mu.Lock()
+	if th.execRuntime == nil {
+		th.execRuntime = threadRuntime
+		th.mu.Unlock()
+		s.subscribeThreadRuntime(th.ID, threadRuntime)
+		return threadRuntime, nil
+	}
+	existing = th.execRuntime
+	th.mu.Unlock()
+	return existing, nil
+}
+
+func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.ThreadRuntime) {
+	if threadRuntime == nil || threadRuntime.AgentControl == nil {
+		return
+	}
+	ch := make(chan subagent.Notification, 64)
+	threadRuntime.AgentControl.Subscribe(ch)
+	go s.forwardAgentNotifications(threadID, threadRuntime.AgentControl, ch)
 }
 
 func normalizeTurnStartImages(images []TurnStartImage) ([]providers.InputImage, error) {
@@ -832,7 +878,7 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	return s.writeResponse(req.ID, OKResult{OK: true}, nil)
 }
 
-func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, history []providers.ChatMessage) {
+func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
@@ -841,7 +887,11 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, turnID string, hi
 			notify(item.method, item.params)
 		}
 	}
-	res, err := s.rt.StreamRunner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
+	runner := s.rt.StreamRunner
+	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
+		runner = threadRuntime.StreamRunner
+	}
+	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
 		th.mu.Lock()
 		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
 		th.mu.Unlock()
@@ -938,6 +988,7 @@ func (s *Server) AskUser(ctx context.Context, req tools.AskUserRequest) (tools.A
 		return tools.AskUserResponse{}, err
 	}
 	result, err := s.requestClient(ctx, MethodToolRequestUserInput, ToolRequestUserInputParams{
+		ThreadID:  askUserThreadID(ctx),
 		Questions: req.Questions,
 	})
 	if err != nil {
@@ -953,6 +1004,17 @@ func (s *Server) AskUser(ctx context.Context, req tools.AskUserRequest) (tools.A
 type clientResponse struct {
 	result json.RawMessage
 	err    *ResponseError
+}
+
+type askUserThreadIDContextKey struct{}
+
+func withAskUserThreadID(ctx context.Context, threadID string) context.Context {
+	return context.WithValue(ctx, askUserThreadIDContextKey{}, strings.TrimSpace(threadID))
+}
+
+func askUserThreadID(ctx context.Context) string {
+	threadID, _ := ctx.Value(askUserThreadIDContextKey{}).(string)
+	return strings.TrimSpace(threadID)
 }
 
 func (s *Server) requestClient(ctx context.Context, method string, params any) (json.RawMessage, error) {
