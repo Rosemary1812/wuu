@@ -2028,19 +2028,352 @@ type JsonRecord = Record<string, unknown>;
 
 function ToolActivityRow({ items }: { items: ThreadItem[] }): JSX.Element {
   const summary = summarizeToolActivity(items);
-  const className = `activity-row${summary.running ? " running" : ""}${summary.failed ? " failed" : ""}`;
+  const sections = buildToolActivitySections(items);
+  const summaryText = activitySummaryText(sections, summary);
+  const [expanded, setExpanded] = useState(summary.running || summary.failed);
+  const className = `activity-group${expanded ? " expanded" : ""}${summary.running ? " running" : ""}${
+    summary.failed ? " failed" : ""
+  }`;
+
+  useEffect(() => {
+    if (summary.running || summary.failed) {
+      setExpanded(true);
+    }
+  }, [summary.failed, summary.running]);
 
   return (
     <article className={className}>
-      <ActivityIcon kind={summary.kind} failed={summary.failed} />
-      <span className="activity-copy">
-        <span>{summary.text}</span>
-        {summary.fileName ? <span className="activity-file">{summary.fileName}</span> : null}
-        {summary.additions > 0 ? <span className="activity-add">+{summary.additions}</span> : null}
-        {summary.deletions > 0 ? <span className="activity-delete">-{summary.deletions}</span> : null}
-      </span>
+      <button
+        className="activity-row activity-toggle"
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <ActivityIcon kind={summary.kind} failed={summary.failed} />
+        <span className="activity-copy">
+          <span>{summaryText}</span>
+          {summary.fileName ? <span className="activity-file">{summary.fileName}</span> : null}
+          {summary.additions > 0 ? <span className="activity-add">+{summary.additions}</span> : null}
+          {summary.deletions > 0 ? <span className="activity-delete">-{summary.deletions}</span> : null}
+        </span>
+        <ChevronDown className="activity-chevron" size={16} />
+      </button>
+      <div className="activity-details" aria-hidden={!expanded}>
+        <div className="activity-details-inner">
+          {sections.map((section) => (
+            <ToolActivitySectionView key={section.id} section={section} />
+          ))}
+        </div>
+      </div>
     </article>
   );
+}
+
+type ToolActivitySectionStatus = "running" | "completed" | "failed";
+
+type ToolActivitySection = {
+  id: string;
+  kind: ToolActivityKind;
+  title: string;
+  subtitle?: string;
+  detail?: string;
+  status: ToolActivitySectionStatus;
+  error?: string;
+};
+
+function ToolActivitySectionView({ section }: { section: ToolActivitySection }): JSX.Element {
+  return (
+    <section className="activity-detail">
+      <div className="activity-detail-marker">
+        <ActivityIcon kind={section.kind} failed={section.status === "failed"} />
+      </div>
+      <div className="activity-detail-body">
+        <div className="activity-detail-title">
+          <strong>{section.title}</strong>
+          <span>{section.detail ?? section.subtitle}</span>
+        </div>
+        {section.error ? <div className="activity-detail-error">{section.error}</div> : null}
+      </div>
+      <span className={`activity-status ${section.status}`}>{toolSectionStatusLabel(section.status)}</span>
+    </section>
+  );
+}
+
+function toolStatusLabel(item: ThreadItem | undefined): string {
+  if (!item) {
+    return "";
+  }
+  if (item.status === "failed" || item.error) {
+    return "失败";
+  }
+  if ((item.status ?? "in_progress") === "in_progress") {
+    return "运行中";
+  }
+  return "完成";
+}
+
+function toolSectionStatusLabel(status: ToolActivitySectionStatus): string {
+  switch (status) {
+    case "failed":
+      return "未完成";
+    case "running":
+      return "进行中";
+    case "completed":
+      return "完成";
+  }
+}
+
+function buildToolActivitySections(items: ThreadItem[]): ToolActivitySection[] {
+  const groups = new Map<string, ThreadItem[]>();
+  for (const item of items) {
+    const key = toolActivitySectionKey(item);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  return Array.from(groups.entries()).map(([key, grouped]) => toolActivitySectionFromItems(key, grouped));
+}
+
+function activitySummaryText(sections: ToolActivitySection[], fallback: ToolActivitySummary): string {
+  if (sections.length === 0) {
+    return fallback.text;
+  }
+  const fragments = sections.map((section) => sectionSummaryText(section)).filter(Boolean);
+  if (fragments.length === 0) {
+    return fallback.text;
+  }
+  return fallback.failed ? `未完成 · ${fragments.join("，")}` : fragments.join("，");
+}
+
+function sectionSummaryText(section: ToolActivitySection): string {
+  return section.title;
+}
+
+function toolActivitySectionKey(item: ThreadItem): string {
+  const name = (item.name ?? "").trim();
+  switch (name) {
+    case "read_file":
+    case "list_files":
+      return "read";
+    case "grep":
+    case "glob":
+    case "web_search":
+      return "search";
+    case "edit_file":
+    case "write_file":
+      return "change";
+    case "run_shell":
+    case "git":
+    case "start_process":
+    case "read_process_output":
+    case "stop_process":
+      return "command";
+    case "spawn_agent":
+    case "send_message":
+    case "followup_task":
+    case "wait_agent":
+    case "close_agent":
+    case "list_agents":
+      return "agent";
+    default:
+      return "other";
+  }
+}
+
+function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolActivitySection {
+  switch (key) {
+    case "read":
+      return {
+        id: key,
+        kind: "read",
+        title: `查看 ${items.length} 处`,
+        detail: compactDetailText(compactToolTargets(items)),
+        status: combinedToolStatus(items),
+        error: firstToolError(items)
+      };
+    case "search":
+      return {
+        id: key,
+        kind: "search",
+        title: `搜索 ${items.length} 次`,
+        detail: compactDetailText(compactSearchTargets(items)),
+        status: combinedToolStatus(items),
+        error: firstToolError(items)
+      };
+    case "change":
+      return {
+        id: key,
+        kind: "edit",
+        title: `更新 ${items.length} 个文件`,
+        detail: compactDetailText(compactToolTargets(items)),
+        status: combinedToolStatus(items),
+        error: firstToolError(items)
+      };
+    case "command":
+      return {
+        id: key,
+        kind: "command",
+        title: `检查 ${items.length} 项`,
+        detail: compactDetailText(compactCommandLabels(items)),
+        status: combinedToolStatus(items),
+        error: firstToolError(items)
+      };
+    case "agent":
+      return {
+        id: key,
+        kind: "agent",
+        title: `子任务 ${items.length} 项`,
+        detail: compactDetailText(compactAgentLabels(items)),
+        status: combinedToolStatus(items),
+        error: firstToolError(items)
+      };
+    default:
+      return {
+        id: key,
+        kind: "unknown",
+        title: `工具 ${items.length} 项`,
+        detail: compactDetailText(uniqueStrings(items.map((item) => readableToolName(item.name)))),
+        status: combinedToolStatus(items),
+        error: firstToolError(items)
+      };
+  }
+}
+
+function combinedToolStatus(items: ThreadItem[]): ToolActivitySectionStatus {
+  if (items.some((item) => item.status === "failed" || item.error)) {
+    return "failed";
+  }
+  if (items.some((item) => (item.status ?? "in_progress") === "in_progress")) {
+    return "running";
+  }
+  return "completed";
+}
+
+function firstToolError(items: ThreadItem[]): string | undefined {
+  return items.find((item) => item.error)?.error;
+}
+
+function compactToolTargets(items: ThreadItem[]): string[] {
+  return uniqueStrings(
+    items
+      .map((item) => {
+        const args = parseJSONRecord(item.arguments);
+        const result = parseJSONRecord(item.result);
+        const path = stringValue(result, "path") ?? stringValue(args, "path") ?? stringValue(args, "file");
+        return path ? fileBaseName(path) : undefined;
+      })
+      .filter((value): value is string => Boolean(value))
+  );
+}
+
+function compactSearchTargets(items: ThreadItem[]): string[] {
+  return uniqueStrings(
+    items
+      .map((item) => {
+        const args = parseJSONRecord(item.arguments);
+        return stringValue(args, "pattern") ?? stringValue(args, "query") ?? readableToolName(item.name);
+      })
+      .filter((value): value is string => Boolean(value))
+  );
+}
+
+function compactCommandLabels(items: ThreadItem[]): string[] {
+  return uniqueStrings(items.map((item) => readableCommandLabel(item)));
+}
+
+function compactAgentLabels(items: ThreadItem[]): string[] {
+  return uniqueStrings(
+    items.map((item) => {
+      const args = parseJSONRecord(item.arguments);
+      return stringValue(args, "task_name") ?? readableToolName(item.name);
+    })
+  );
+}
+
+function compactDetailText(values: string[]): string | undefined {
+  if (values.length === 0) {
+    return undefined;
+  }
+  const shown = values.slice(0, 4).join("、");
+  return values.length > 4 ? `${shown} 等 ${values.length} 项` : shown;
+}
+
+function readableCommandLabel(item: ThreadItem): string {
+  const args = parseJSONRecord(item.arguments);
+  const result = parseJSONRecord(item.result);
+  const name = (item.name ?? "").trim();
+  const command = stringValue(result, "command") ?? stringValue(args, "command") ?? "";
+  const subcommand = stringValue(result, "subcommand") ?? stringValue(args, "subcommand") ?? "";
+  if (name === "git" || command.startsWith("git ")) {
+    if (subcommand === "status" || command.includes("status")) {
+      return "检查 Git 状态";
+    }
+    if (subcommand === "diff" || command.includes("diff")) {
+      return "查看代码差异";
+    }
+    if (subcommand === "log" || command.includes("log")) {
+      return "查看提交历史";
+    }
+    return "执行 Git 操作";
+  }
+  if (/npm\s+run\s+typecheck|tsc\s+--noEmit/.test(command)) {
+    return "检查类型";
+  }
+  if (/npm\s+run\s+build|vite\s+build|electron-vite\s+build/.test(command)) {
+    return "构建应用";
+  }
+  if (/go\s+test|npm\s+test|pnpm\s+test|yarn\s+test/.test(command)) {
+    return "运行测试";
+  }
+  if (name === "read_process_output") {
+    return "读取后台输出";
+  }
+  if (name === "start_process") {
+    return "启动后台任务";
+  }
+  if (name === "stop_process") {
+    return "停止后台任务";
+  }
+  return "运行命令";
+}
+
+function readableToolName(name: string | undefined): string {
+  switch ((name ?? "").trim()) {
+    case "read_file":
+      return "查看文件";
+    case "list_files":
+      return "查看目录";
+    case "grep":
+      return "搜索内容";
+    case "glob":
+      return "匹配文件";
+    case "edit_file":
+      return "编辑文件";
+    case "write_file":
+      return "写入文件";
+    case "web_search":
+      return "搜索网页";
+    case "web_fetch":
+      return "读取网页";
+    case "run_shell":
+      return "运行命令";
+    case "git":
+      return "Git 操作";
+    default:
+      return name?.trim() || "工具";
+  }
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
 }
 
 function ActivityIcon({ kind, failed }: { kind: ToolActivityKind; failed: boolean }): JSX.Element {
