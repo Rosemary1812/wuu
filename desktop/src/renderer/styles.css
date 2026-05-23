@@ -20,6 +20,7 @@ body {
 }
 
 button,
+input,
 textarea {
   font: inherit;
 }
@@ -27,6 +28,11 @@ textarea {
 button {
   border: 0;
   color: inherit;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .app-shell {
@@ -467,10 +473,14 @@ pre {
   display: grid;
   height: 42vh;
   place-items: center;
-  align-content: center;
-  gap: 10px;
-  color: #7b807f;
-  font-weight: 700;
+  color: #202427;
+}
+
+.empty-thread h2 {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 520;
+  letter-spacing: 0;
 }
 
 .project-empty-pane {
@@ -523,14 +533,21 @@ pre {
   background: #fff;
 }
 
-.composer {
+.composer-shell {
+  position: relative;
   width: min(760px, calc(100% - 72px));
-  min-height: 132px;
   margin: 0 auto;
+  border-radius: 18px;
+  background: #f4f4f2;
+  box-shadow: 0 8px 26px rgba(20, 24, 28, 0.08);
+}
+
+.composer {
+  width: 100%;
+  min-height: 132px;
   border: 1px solid #dededb;
   border-radius: 18px;
   background: #fff;
-  box-shadow: 0 8px 26px rgba(20, 24, 28, 0.08);
   overflow: hidden;
 }
 
@@ -577,6 +594,127 @@ pre {
 
 .send-button:hover {
   background: #22262a;
+}
+
+.composer-context-bar {
+  display: flex;
+  height: 48px;
+  align-items: center;
+  gap: 10px;
+  border-radius: 0 0 18px 18px;
+  padding: 0 12px;
+}
+
+.context-project-button {
+  display: inline-flex;
+  max-width: 240px;
+  height: 34px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: #e8e8e6;
+  color: #73777a;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.context-project-button:hover,
+.context-project-button[aria-expanded="true"] {
+  background: #dededc;
+  color: #25282b;
+}
+
+.context-project-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-project-menu {
+  position: absolute;
+  left: 16px;
+  bottom: 44px;
+  z-index: 30;
+  display: grid;
+  width: 360px;
+  max-height: min(460px, calc(100vh - 180px));
+  overflow: hidden;
+  border: 1px solid rgba(30, 34, 38, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
+  padding: 12px;
+  backdrop-filter: blur(18px);
+}
+
+.project-search {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
+  color: #81868a;
+  padding: 0 12px;
+}
+
+.project-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1f2328;
+}
+
+.project-search input::placeholder {
+  color: #9da1a4;
+}
+
+.project-picker-list {
+  display: grid;
+  max-height: 220px;
+  overflow-y: auto;
+  gap: 2px;
+}
+
+.composer-project-menu button {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: #202427;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.composer-project-menu button:hover {
+  background: #f0f1ef;
+}
+
+.composer-project-menu button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-project-menu svg {
+  color: #6b7176;
+  flex: 0 0 auto;
+}
+
+.project-picker-empty {
+  color: #8a8e91;
+  padding: 10px 12px;
+}
+
+.project-picker-divider {
+  height: 1px;
+  background: #e8e8e5;
+  margin: 8px 0;
 }
 
 .modal-backdrop {

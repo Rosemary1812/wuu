@@ -1,11 +1,15 @@
 import {
   Bot,
   Brain,
+  Check,
+  ChevronDown,
   Folder,
+  FolderX,
   FolderOpen,
   FolderPlus,
   MessageSquarePlus,
   PanelLeftOpen,
+  Search,
   Send,
   Square,
   Wrench,
@@ -15,6 +19,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   useEffect,
   useMemo,
   useRef,
@@ -26,6 +31,7 @@ import type {
   DesktopProject,
   InitializeResult,
   ProjectListResult,
+  RuntimeContext,
   ServerEvent,
   Thread,
   ThreadItem,
@@ -40,6 +46,7 @@ type AskRequestState = {
 type AppState = {
   initialized?: InitializeResult;
   projects: DesktopProject[];
+  activeContext?: RuntimeContext;
   activeProjectId?: string;
   thread?: Thread;
   threads: Thread[];
@@ -90,9 +97,12 @@ export function App(): JSX.Element {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
+  const [projectFilter, setProjectFilter] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
-  const projectMenuRef = useRef<HTMLDivElement | null>(null);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
+  const runtimeMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -106,7 +116,8 @@ export function App(): JSX.Element {
     void (async () => {
       try {
         const listedProjects = await window.wuu.listProjects();
-        const loadedState = listedProjects.active_project_id ? await loadProjectRuntime(listedProjects) : emptyProjectState(listedProjects);
+        const runtimeState = listedProjects.active_context ? listedProjects : await window.wuu.selectNoProject(false);
+        const loadedState = await loadRuntime(runtimeState);
         if (!mounted) {
           return;
         }
@@ -133,19 +144,21 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent): void {
-      if (!projectMenuOpen) {
-        return;
-      }
       const target = event.target;
-      if (target instanceof Node && projectMenuRef.current?.contains(target)) {
+      if (!(target instanceof Node)) {
         return;
       }
-      setProjectMenuOpen(false);
+      if (projectMenuOpen && !projectMenuRef.current?.contains(target)) {
+        setProjectMenuOpen(false);
+      }
+      if (runtimeMenuOpen && !runtimeMenuRef.current?.contains(target)) {
+        setRuntimeMenuOpen(false);
+      }
     }
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [projectMenuOpen]);
+  }, [projectMenuOpen, runtimeMenuOpen]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -209,7 +222,11 @@ export function App(): JSX.Element {
     };
   }, [resizingSidebar]);
 
-  const activeTitle = state.activeProjectId ? state.thread?.preview || "新对话" : "选择项目";
+  const activeProject = useMemo(
+    () => state.projects.find((project) => project.id === state.activeProjectId),
+    [state.activeProjectId, state.projects]
+  );
+  const activeTitle = state.thread?.preview || "新对话";
   const turns = state.thread?.turns ?? [];
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
@@ -269,9 +286,9 @@ export function App(): JSX.Element {
     }
   }
 
-  async function loadProjectRuntime(projectState: ProjectListResult): Promise<Partial<AppState>> {
-    if (!projectState.active_project_id) {
-      return emptyProjectState(projectState);
+  async function loadRuntime(projectState: ProjectListResult): Promise<Partial<AppState>> {
+    if (!projectState.active_context) {
+      return emptyRuntimeState(projectState);
     }
     const initialized = await window.wuu.initialize();
     const listed = await window.wuu.listThreads();
@@ -282,7 +299,8 @@ export function App(): JSX.Element {
     return {
       initialized,
       projects: projectState.projects,
-      activeProjectId: projectState.active_project_id,
+      activeContext: projectState.active_context,
+      activeProjectId: activeProjectID(projectState.active_context),
       thread,
       threads: thread ? upsertThread(listed.threads, thread) : listed.threads.filter(isThread),
       running: false,
@@ -290,25 +308,34 @@ export function App(): JSX.Element {
     };
   }
 
-  function emptyProjectState(projectState: ProjectListResult): Partial<AppState> {
+  function emptyRuntimeState(projectState: ProjectListResult): Partial<AppState> {
     return {
       initialized: undefined,
       projects: projectState.projects,
+      activeContext: undefined,
       activeProjectId: undefined,
       thread: undefined,
       threads: [],
       running: false,
-      status: projectState.projects.length > 0 ? "select-project" : "no-project"
+      status: "no-runtime"
     };
   }
 
+  function closeProjectMenus(): void {
+    setProjectMenuOpen(false);
+    setRuntimeMenuOpen(false);
+    setProjectFilter("");
+  }
+
   async function openProject(projectId: string): Promise<void> {
-    if (projectId === state.activeProjectId && state.thread) {
+    if (projectId === state.activeProjectId && state.activeContext?.kind === "project") {
+      closeProjectMenus();
       return;
     }
-    setProjectMenuOpen(false);
+    closeProjectMenus();
     setState((current) => ({
       ...current,
+      activeContext: undefined,
       activeProjectId: projectId,
       initialized: undefined,
       thread: undefined,
@@ -318,7 +345,7 @@ export function App(): JSX.Element {
     }));
     try {
       const projectState = await window.wuu.selectProject(projectId);
-      const loadedState = await loadProjectRuntime(projectState);
+      const loadedState = await loadRuntime(projectState);
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
       setState((current) => ({
@@ -329,14 +356,14 @@ export function App(): JSX.Element {
   }
 
   async function createBlankProject(): Promise<void> {
-    setProjectMenuOpen(false);
+    closeProjectMenus();
     try {
       const projectState = await window.wuu.createBlankProject();
-      if (!projectState.active_project_id) {
-        setState((current) => ({ ...current, ...emptyProjectState(projectState) }));
+      if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
+        setState((current) => ({ ...current, projects: projectState.projects }));
         return;
       }
-      const loadedState = await loadProjectRuntime(projectState);
+      const loadedState = await loadRuntime(projectState);
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
       setState((current) => ({
@@ -347,14 +374,14 @@ export function App(): JSX.Element {
   }
 
   async function chooseProjectFolder(): Promise<void> {
-    setProjectMenuOpen(false);
+    closeProjectMenus();
     try {
       const projectState = await window.wuu.chooseProjectFolder();
-      if (!projectState.active_project_id) {
-        setState((current) => ({ ...current, ...emptyProjectState(projectState) }));
+      if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
+        setState((current) => ({ ...current, projects: projectState.projects }));
         return;
       }
-      const loadedState = await loadProjectRuntime(projectState);
+      const loadedState = await loadRuntime(projectState);
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
       setState((current) => ({
@@ -364,11 +391,43 @@ export function App(): JSX.Element {
     }
   }
 
+  async function useNoProject(fresh: boolean): Promise<void> {
+    if (!fresh && state.activeContext?.kind === "no_project") {
+      closeProjectMenus();
+      return;
+    }
+    closeProjectMenus();
+    setState((current) => ({
+      ...current,
+      activeContext: undefined,
+      activeProjectId: undefined,
+      initialized: undefined,
+      thread: undefined,
+      threads: [],
+      running: false,
+      status: "opening"
+    }));
+    try {
+      const projectState = await window.wuu.selectNoProject(fresh);
+      const loadedState = await loadRuntime(projectState);
+      setState((current) => ({ ...current, ...loadedState }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "open no-project failed"
+      }));
+    }
+  }
+
   async function startNewThread(): Promise<void> {
-    if (!state.activeProjectId || state.running) {
+    if (!state.activeContext || state.running) {
       return;
     }
     setPrompt("");
+    if (state.activeContext.kind === "no_project" && state.thread) {
+      await useNoProject(true);
+      return;
+    }
     setState((current) => ({
       ...current,
       thread: undefined,
@@ -378,7 +437,7 @@ export function App(): JSX.Element {
   }
 
   async function selectThread(threadId: string): Promise<void> {
-    if (!state.activeProjectId || threadId === state.thread?.id || state.running) {
+    if (!state.activeContext || threadId === state.thread?.id || state.running) {
       return;
     }
     setState((current) => ({ ...current, status: "loading" }));
@@ -400,7 +459,7 @@ export function App(): JSX.Element {
 
   async function sendPrompt(): Promise<void> {
     const text = prompt.trim();
-    if (!text || !state.activeProjectId || state.running) {
+    if (!text || !state.activeContext || !state.initialized || state.running) {
       return;
     }
     setPrompt("");
@@ -438,14 +497,12 @@ export function App(): JSX.Element {
     <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
         <div className="traffic-spacer" />
-        {state.activeProjectId ? (
-          <nav className="primary-nav" aria-label="主导航">
-            <button className="nav-item" onClick={() => void startNewThread()}>
-              <MessageSquarePlus size={18} />
-              <span>新对话</span>
-            </button>
-          </nav>
-        ) : null}
+        <nav className="primary-nav" aria-label="主导航">
+          <button className="nav-item" onClick={() => void startNewThread()} disabled={!state.activeContext || state.running}>
+            <MessageSquarePlus size={18} />
+            <span>新对话</span>
+          </button>
+        </nav>
 
         <section className="project-list" aria-label="项目">
           <div className="project-section-header" ref={projectMenuRef}>
@@ -515,23 +572,35 @@ export function App(): JSX.Element {
           </div>
         </header>
 
-        {state.activeProjectId ? (
+        {state.initialized ? (
           <div className="scroll-region" ref={scrollRef}>
             <div className="conversation-width">
               {turns.length === 0 ? <EmptyThread /> : turns.map((turn) => <TurnView key={turn.id} turn={turn} />)}
             </div>
           </div>
         ) : (
-          <ProjectEmptyState onCreate={() => void createBlankProject()} onOpen={() => void chooseProjectFolder()} />
+          <RuntimeLoading status={state.status} />
         )}
 
-        {state.activeProjectId && state.initialized ? (
+        {state.initialized ? (
           <Composer
             prompt={prompt}
             setPrompt={setPrompt}
             running={state.running}
             status={state.status}
             model={state.initialized?.model}
+            projects={state.projects}
+            activeContext={state.activeContext}
+            activeProject={activeProject}
+            menuOpen={runtimeMenuOpen}
+            menuRef={runtimeMenuRef}
+            projectFilter={projectFilter}
+            setProjectFilter={setProjectFilter}
+            onToggleMenu={() => setRuntimeMenuOpen((open) => !open)}
+            onSelectProject={(id) => void openProject(id)}
+            onSelectNoProject={() => void useNoProject(false)}
+            onCreateProject={() => void createBlankProject()}
+            onOpenProject={() => void chooseProjectFolder()}
             onSend={() => void sendPrompt()}
             onInterrupt={() => void interrupt()}
           />
@@ -658,6 +727,20 @@ function requireThread(result: { thread?: Thread }, message: string): Thread {
     throw new Error(message);
   }
   return result.thread;
+}
+
+function activeProjectID(context: RuntimeContext | undefined): string | undefined {
+  return context?.kind === "project" ? context.project_id : undefined;
+}
+
+function sameRuntimeContext(left: RuntimeContext | undefined, right: RuntimeContext | undefined): boolean {
+  if (!left || !right || left.kind !== right.kind) {
+    return false;
+  }
+  if (left.kind === "project" && right.kind === "project") {
+    return left.project_id === right.project_id;
+  }
+  return left.cwd === right.cwd;
 }
 
 function isThread(value: unknown): value is Thread {
@@ -804,28 +887,16 @@ function ThreadItemView({ item }: { item: ThreadItem }): JSX.Element | null {
 function EmptyThread(): JSX.Element {
   return (
     <div className="empty-thread">
-      <Bot size={24} />
-      <span>wuu</span>
+      <h2>我们应该在 wuu 中构建什么?</h2>
     </div>
   );
 }
 
-function ProjectEmptyState({ onCreate, onOpen }: { onCreate: () => void; onOpen: () => void }): JSX.Element {
+function RuntimeLoading({ status }: { status: string }): JSX.Element {
   return (
     <div className="project-empty-pane">
       <div className="project-empty-content">
-        <FolderPlus size={28} />
-        <h2>添加项目</h2>
-        <div className="project-empty-actions">
-          <button onClick={onCreate}>
-            <FolderPlus size={22} />
-            <span>新建空白项目</span>
-          </button>
-          <button onClick={onOpen}>
-            <FolderOpen size={22} />
-            <span>使用现有文件夹</span>
-          </button>
-        </div>
+        <h2>{status === "connecting" || status === "opening" ? "正在启动 wuu" : status}</h2>
       </div>
     </div>
   );
@@ -837,6 +908,18 @@ function Composer({
   running,
   status,
   model,
+  projects,
+  activeContext,
+  activeProject,
+  menuOpen,
+  menuRef,
+  projectFilter,
+  setProjectFilter,
+  onToggleMenu,
+  onSelectProject,
+  onSelectNoProject,
+  onCreateProject,
+  onOpenProject,
   onSend,
   onInterrupt
 }: {
@@ -845,33 +928,129 @@ function Composer({
   running: boolean;
   status: string;
   model?: string;
+  projects: DesktopProject[];
+  activeContext?: RuntimeContext;
+  activeProject?: DesktopProject;
+  menuOpen: boolean;
+  menuRef: RefObject<HTMLDivElement>;
+  projectFilter: string;
+  setProjectFilter: (value: string) => void;
+  onToggleMenu: () => void;
+  onSelectProject: (id: string) => void;
+  onSelectNoProject: () => void;
+  onCreateProject: () => void;
+  onOpenProject: () => void;
   onSend: () => void;
   onInterrupt: () => void;
 }): JSX.Element {
+  const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
+  const statusText = status === "ready" ? "" : status;
   return (
     <footer className="composer-wrap">
-      <div className="composer">
-        <textarea
-          value={prompt}
-          placeholder="要求后续变更"
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              onSend();
-            }
-          }}
-        />
-        <div className="composer-bar">
-          <div className="composer-spacer" />
-          <span className="model-pill">{model ?? "model"}</span>
-          <span className="status-label">{status}</span>
-          <button className="send-button" onClick={running ? onInterrupt : onSend} aria-label={running ? "停止" : "发送"}>
-            {running ? <Square size={18} /> : <Send size={18} />}
+      <div className="composer-shell">
+        <div className="composer">
+          <textarea
+            value={prompt}
+            placeholder="尽管问"
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                onSend();
+              }
+            }}
+          />
+          <div className="composer-bar">
+            <div className="composer-spacer" />
+            <span className="model-pill">{model ?? "model"}</span>
+            {statusText ? <span className="status-label">{statusText}</span> : null}
+            <button className="send-button" onClick={running ? onInterrupt : onSend} aria-label={running ? "停止" : "发送"}>
+              {running ? <Square size={18} /> : <Send size={18} />}
+            </button>
+          </div>
+        </div>
+        <div className="composer-context-bar" ref={menuRef}>
+          <button className="context-project-button" onClick={onToggleMenu} aria-haspopup="menu" aria-expanded={menuOpen}>
+            {activeContext?.kind === "project" ? <Folder size={18} /> : <FolderX size={18} />}
+            <span>{contextLabel}</span>
+            <ChevronDown size={16} />
           </button>
+          {menuOpen ? (
+            <ProjectPickerMenu
+              projects={projects}
+              activeContext={activeContext}
+              query={projectFilter}
+              setQuery={setProjectFilter}
+              onSelectProject={onSelectProject}
+              onSelectNoProject={onSelectNoProject}
+              onCreateProject={onCreateProject}
+              onOpenProject={onOpenProject}
+            />
+          ) : null}
         </div>
       </div>
     </footer>
+  );
+}
+
+function ProjectPickerMenu({
+  projects,
+  activeContext,
+  query,
+  setQuery,
+  onSelectProject,
+  onSelectNoProject,
+  onCreateProject,
+  onOpenProject
+}: {
+  projects: DesktopProject[];
+  activeContext?: RuntimeContext;
+  query: string;
+  setQuery: (value: string) => void;
+  onSelectProject: (id: string) => void;
+  onSelectNoProject: () => void;
+  onCreateProject: () => void;
+  onOpenProject: () => void;
+}): JSX.Element {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredProjects = normalizedQuery
+    ? projects.filter((project) => project.name.toLocaleLowerCase().includes(normalizedQuery) || project.path.toLocaleLowerCase().includes(normalizedQuery))
+    : projects;
+
+  return (
+    <div className="composer-project-menu" role="menu">
+      <label className="project-search">
+        <Search size={18} />
+        <input value={query} placeholder="搜索项目" onChange={(event) => setQuery(event.target.value)} />
+      </label>
+      <div className="project-picker-list">
+        {filteredProjects.length === 0 ? <div className="project-picker-empty">没有匹配项目</div> : null}
+        {filteredProjects.map((project) => {
+          const selected = activeContext?.kind === "project" && activeContext.project_id === project.id;
+          return (
+            <button key={project.id} role="menuitem" onClick={() => onSelectProject(project.id)}>
+              <Folder size={19} />
+              <span>{project.name}</span>
+              {selected ? <Check size={18} /> : null}
+            </button>
+          );
+        })}
+      </div>
+      <div className="project-picker-divider" />
+      <button role="menuitem" onClick={onOpenProject}>
+        <FolderOpen size={19} />
+        <span>使用现有文件夹</span>
+      </button>
+      <button role="menuitem" onClick={onCreateProject}>
+        <FolderPlus size={19} />
+        <span>新建空白项目</span>
+      </button>
+      <button role="menuitem" onClick={onSelectNoProject}>
+        <FolderX size={19} />
+        <span>不使用项目</span>
+        {activeContext?.kind === "no_project" ? <Check size={18} /> : null}
+      </button>
+    </div>
   );
 }
 
