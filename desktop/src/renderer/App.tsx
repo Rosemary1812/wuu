@@ -143,9 +143,35 @@ type TurnProgressContent = {
   detail?: string;
 };
 
-type TurnProgressScene = "duel" | "chase" | "kick" | "bonk";
+type TurnProgressEra =
+  | "sticks"
+  | "swords"
+  | "fortress"
+  | "cannon"
+  | "factory"
+  | "armor"
+  | "rockets"
+  | "orbit"
+  | "galaxy";
 
-const TURN_PROGRESS_SCENES: TurnProgressScene[] = ["duel", "chase", "kick", "bonk"];
+type TurnProgressCampaign = {
+  era: TurnProgressEra;
+  variant: number;
+};
+
+const TURN_PROGRESS_ERA_MS = 4 * 60 * 1000;
+const TURN_PROGRESS_ERAS: TurnProgressEra[] = [
+  "sticks",
+  "swords",
+  "fortress",
+  "cannon",
+  "factory",
+  "armor",
+  "rockets",
+  "orbit",
+  "galaxy"
+];
+const TURN_PROGRESS_CAMPAIGN_MS = TURN_PROGRESS_ERA_MS * TURN_PROGRESS_ERAS.length;
 
 type AppState = {
   initialized?: InitializeResult;
@@ -4014,7 +4040,7 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
   const elapsedMs =
     completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, liveNow - startedAt) : 0);
   const content = turnProgressContent(turn, elapsedMs);
-  const scene = liveDuration ? turnProgressScene(turn.id) : undefined;
+  const campaign = liveDuration ? turnProgressCampaign(turn.id, elapsedMs) : undefined;
 
   return (
     <div
@@ -4040,14 +4066,24 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
           </button>
         ) : null}
       </div>
-      <div className="turn-progress-rule">{scene ? <TurnProgressFightScene scene={scene} /> : null}</div>
+      <div className="turn-progress-rule">{campaign ? <TurnProgressCampaignScene campaign={campaign} /> : null}</div>
     </div>
   );
 }
 
-function TurnProgressFightScene({ scene }: { scene: TurnProgressScene }): JSX.Element {
+function TurnProgressCampaignScene({ campaign }: { campaign: TurnProgressCampaign }): JSX.Element {
   return (
-    <span className={`turn-progress-scene scene-${scene}`} aria-hidden="true">
+    <span className={`turn-progress-scene era-${campaign.era} variant-${campaign.variant}`} aria-hidden="true">
+      <span className="civilization-prop prop-left" />
+      <span className="civilization-prop prop-mid" />
+      <span className="civilization-prop prop-right" />
+      <span className="era-projectile projectile-one" />
+      <span className="era-projectile projectile-two" />
+      <span className="era-vehicle" />
+      <span className="era-rocket" />
+      <span className="era-planet" />
+      <span className="era-ship ship-one" />
+      <span className="era-ship ship-two" />
       <span className="fight-spark spark-one" />
       <span className="fight-spark spark-two" />
       <Stickman className="stickman-a" />
@@ -4086,12 +4122,17 @@ function useLiveNow(active: boolean): number {
   return active ? now : Date.now();
 }
 
-function turnProgressScene(turnID: string): TurnProgressScene {
+function turnProgressCampaign(turnID: string, elapsedMs: number): TurnProgressCampaign {
   let hash = 0;
   for (let index = 0; index < turnID.length; index++) {
     hash = (hash * 31 + turnID.charCodeAt(index)) >>> 0;
   }
-  return TURN_PROGRESS_SCENES[hash % TURN_PROGRESS_SCENES.length];
+  const campaignMs = elapsedMs % TURN_PROGRESS_CAMPAIGN_MS;
+  const eraIndex = Math.floor(campaignMs / TURN_PROGRESS_ERA_MS);
+  return {
+    era: TURN_PROGRESS_ERAS[eraIndex] ?? TURN_PROGRESS_ERAS[0],
+    variant: hash % 3
+  };
 }
 
 function LiveDuration({ startedAtMs }: { startedAtMs: number }): JSX.Element {
