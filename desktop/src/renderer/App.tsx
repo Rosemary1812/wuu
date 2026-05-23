@@ -10,7 +10,6 @@ import {
   Copy,
   CornerDownRight,
   Clock,
-  Globe2,
   FileText,
   Film,
   Folder,
@@ -19,6 +18,7 @@ import {
   FolderPlus,
   Github,
   GitBranch,
+  Image as ImageIcon,
   Info,
   Laptop,
   List as ListIcon,
@@ -288,7 +288,7 @@ type SidebarResizeSession = {
 };
 
 type ComposerVariant = "dock" | "hero";
-type WorkspacePanelView = "files" | "chat" | "browser" | "review" | "terminal";
+type WorkspacePanelView = "files" | "review";
 
 const WORKSPACE_TOOL_ITEMS: Array<{
   id: WorkspacePanelView;
@@ -296,10 +296,7 @@ const WORKSPACE_TOOL_ITEMS: Array<{
   subtitle: string;
 }> = [
   { id: "files", title: "文件", subtitle: "浏览项目文件" },
-  { id: "chat", title: "侧边聊天", subtitle: "发起侧边对话" },
-  { id: "browser", title: "浏览器", subtitle: "打开网站" },
-  { id: "review", title: "审查", subtitle: "查看代码更改" },
-  { id: "terminal", title: "终端", subtitle: "运行项目命令" }
+  { id: "review", title: "审查", subtitle: "查看代码更改" }
 ];
 
 const WORKSPACE_TREE_CSS = `
@@ -3204,7 +3201,7 @@ function EnvironmentSourceIcon({ item }: { item: EnvironmentSourceItem }): JSX.E
     return <FileText size={17} />;
   }
   if (item.icon === "image") {
-    return <Globe2 size={17} />;
+    return <ImageIcon size={17} />;
   }
   if (item.icon === "guide") {
     return <CornerDownRight size={17} />;
@@ -3451,9 +3448,7 @@ function WorkspaceRightPanel({
               />
             ) : view === "review" ? (
               <WorkspaceReviewPanel gitStatus={gitStatus} />
-            ) : (
-              <WorkspacePanelPlaceholder view={view} />
-            )}
+            ) : null}
           </div>
         </>
       ) : null}
@@ -3647,17 +3642,6 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({
   );
 });
 
-function WorkspacePanelPlaceholder({ view }: { view: WorkspacePanelView }): JSX.Element {
-  const tool = workspaceToolFor(view);
-  return (
-    <WorkspacePanelEmpty
-      title={tool.title}
-      description={`${tool.subtitle}会在这里打开。`}
-      icon={<WorkspaceToolIcon view={view} size={24} />}
-    />
-  );
-}
-
 function WorkspacePanelEmpty({
   title,
   description,
@@ -3680,14 +3664,8 @@ function WorkspaceToolIcon({ view, size }: { view: WorkspacePanelView; size: num
   switch (view) {
     case "files":
       return <FolderOpen size={size} />;
-    case "chat":
-      return <MessageSquarePlus size={size} />;
-    case "browser":
-      return <Globe2 size={size} />;
     case "review":
       return <ShieldCheck size={size} />;
-    case "terminal":
-      return <Terminal size={size} />;
   }
 }
 
@@ -3716,7 +3694,7 @@ function WorkspaceMainPanel({
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
   onOpenRightPanel: () => void;
-}): JSX.Element {
+}): JSX.Element | null {
   if (view === "files") {
     return (
       <WorkspaceFilePreview
@@ -3731,13 +3709,7 @@ function WorkspaceMainPanel({
     return <WorkspaceDiffReview activeContext={activeContext} gitStatus={gitStatus} />;
   }
 
-  return (
-    <div className="workspace-main-empty">
-      <WorkspaceToolIcon view={view} size={34} />
-      <strong>{workspaceToolFor(view).title}</strong>
-      <span>{workspaceToolFor(view).subtitle}</span>
-    </div>
-  );
+  return null;
 }
 
 function WorkspaceDiffReview({

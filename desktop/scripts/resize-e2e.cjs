@@ -45,6 +45,40 @@ async function run() {
   const runDebugVisible = await evaluate(win, () => Boolean(document.querySelector(".run-debug-button")));
   assert.equal(runDebugVisible, false, "Production desktop builds must not expose the internal run debug panel.");
 
+  await evaluate(win, () => {
+    const button = Array.from(document.querySelectorAll(".workspace-toggle-button")).find((candidate) =>
+      candidate.getAttribute("aria-label")?.includes("底部栏")
+    );
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Bottom panel toggle button not found.");
+    }
+    button.click();
+  });
+  const workspaceToolLabels = await waitFor(
+    win,
+    () => {
+      const labels = Array.from(document.querySelectorAll(".workspace-tool-card strong"))
+        .map((node) => node.textContent?.trim())
+        .filter(Boolean);
+      return labels.length > 0 ? labels : null;
+    },
+    1000
+  );
+  assert.deepEqual(
+    workspaceToolLabels,
+    ["文件", "审查"],
+    "Workspace tool picker should only expose implemented user-facing tools."
+  );
+  await evaluate(win, () => {
+    const button = Array.from(document.querySelectorAll(".workspace-toggle-button")).find((candidate) =>
+      candidate.getAttribute("aria-label")?.includes("底部栏")
+    );
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Bottom panel toggle button not found.");
+    }
+    button.click();
+  });
+
   const primaryScroll = await evaluate(win, () => {
     const node = document.querySelector(".scroll-region");
     return {
