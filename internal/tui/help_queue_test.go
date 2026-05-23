@@ -40,13 +40,28 @@ func TestCmdHelp_EmitsGroupHeadersInDeclaredOrder(t *testing.T) {
 func TestCmdHelp_ListsAllVisibleCommands(t *testing.T) {
 	out := cmdHelp("", nil)
 	for _, cmd := range commandRegistry {
-		if !cmd.isVisible() {
+		if !cmd.isVisibleFor(nil) {
 			continue
 		}
 		needle := "/" + cmd.Name
 		if !strings.Contains(out, needle) {
 			t.Errorf("help missing %q: %q", needle, out)
 		}
+	}
+}
+
+func TestCmdHelp_HidesExperimentalCoordinatorByDefault(t *testing.T) {
+	out := cmdHelp("", nil)
+	if strings.Contains(out, "/coordinator") || strings.Contains(out, "/normal") {
+		t.Fatalf("experimental coordinator commands should be hidden by default: %q", out)
+	}
+}
+
+func TestCmdHelp_ShowsExperimentalCoordinatorWhenEnabled(t *testing.T) {
+	m := &Model{experimentalCoordinatorMode: true}
+	out := cmdHelp("", m)
+	if !strings.Contains(out, "/coordinator") || !strings.Contains(out, "/normal") {
+		t.Fatalf("experimental coordinator commands should be visible when enabled: %q", out)
 	}
 }
 

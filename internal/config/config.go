@@ -121,6 +121,11 @@ type AgentConfig struct {
 	// disabled, only the embedded data ships with each wuu binary
 	// is used.
 	CatwalkAutoupdate bool `json:"catwalk_autoupdate,omitempty"`
+	// ExperimentalCoordinatorMode exposes the old coordinator slash mode
+	// for local experimentation. Disabled by default because the mode's
+	// user-facing contract is still unclear: the main agent loses some
+	// direct write tools but not every mutating capability.
+	ExperimentalCoordinatorMode bool `json:"experimental_coordinator_mode,omitempty"`
 }
 
 // Load reads config with priority: .wuu.json, wuu.json, ~/.config/wuu/config.json.

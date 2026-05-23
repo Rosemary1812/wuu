@@ -19,27 +19,28 @@ import (
 
 // Config defines runtime dependencies for the interactive UI.
 type Config struct {
-	Provider            string
-	Model               string
-	WorkspaceRoot       string
-	ConfigPath          string
-	MemoryPath          string
-	SessionDir          string // user-level sessions directory for conversation logs
-	ResumeID            string // session ID to resume (empty = new session)
-	MaxContextTokens    int
-	RequestTimeout      time.Duration
-	StreamRunner        *agent.StreamRunner
-	HookDispatcher      *hooks.Dispatcher        // optional, dispatches lifecycle hooks
-	OnSessionID         func(string)             // optional, called when the session ID changes
-	Skills              []skills.Skill           // discovered skills, for /<skill-name> shorthand
-	Memory              []memory.File            // discovered CLAUDE.md / AGENTS.md files
-	Coordinator         *coordinator.Coordinator // optional, enables worker status panel + result injection
-	AskUserBridge       *AskUserBridge           // optional, enables the ask_user modal dialog
-	ProcessManager      *processruntime.Manager  // optional, enables process panel + commands
-	Toolkit             *tools.Toolkit           // optional, underlying toolkit for runtime tool switching
-	BaseSystemPrompt    string                   // system prompt without coordinator preamble
-	CoordinatorPreamble string                   // coordinator preamble text
-	CleanupSummary      processruntime.CleanupResult
+	Provider                    string
+	Model                       string
+	WorkspaceRoot               string
+	ConfigPath                  string
+	MemoryPath                  string
+	SessionDir                  string // user-level sessions directory for conversation logs
+	ResumeID                    string // session ID to resume (empty = new session)
+	MaxContextTokens            int
+	RequestTimeout              time.Duration
+	StreamRunner                *agent.StreamRunner
+	HookDispatcher              *hooks.Dispatcher        // optional, dispatches lifecycle hooks
+	OnSessionID                 func(string)             // optional, called when the session ID changes
+	Skills                      []skills.Skill           // discovered skills, for /<skill-name> shorthand
+	Memory                      []memory.File            // discovered CLAUDE.md / AGENTS.md files
+	Coordinator                 *coordinator.Coordinator // optional, enables worker status panel + result injection
+	AskUserBridge               *AskUserBridge           // optional, enables the ask_user modal dialog
+	ProcessManager              *processruntime.Manager  // optional, enables process panel + commands
+	Toolkit                     *tools.Toolkit           // optional, underlying toolkit for runtime tool switching
+	BaseSystemPrompt            string                   // system prompt without coordinator preamble
+	CoordinatorPreamble         string                   // coordinator preamble text
+	ExperimentalCoordinatorMode bool                     // opt-in slash mode for coordinator experiments
+	CleanupSummary              processruntime.CleanupResult
 }
 
 // Run starts the interactive terminal UI.

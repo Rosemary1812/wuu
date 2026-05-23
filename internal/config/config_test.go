@@ -325,6 +325,35 @@ func TestConfig_DisableAutoCompactDefaultsFalse(t *testing.T) {
 	}
 }
 
+func TestConfig_ExperimentalCoordinatorMode(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://x",
+      "api_key": "k",
+      "model": "test"
+    }
+  },
+  "agent": {
+    "experimental_coordinator_mode": true
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Agent.ExperimentalCoordinatorMode {
+		t.Fatal("expected ExperimentalCoordinatorMode=true")
+	}
+}
+
 func TestConfig_CatwalkAutoupdate(t *testing.T) {
 	workdir := t.TempDir()
 	jsonData := `{

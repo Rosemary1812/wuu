@@ -49,17 +49,18 @@ const (
 )
 
 type SlashCommandSpec struct {
-	Name                string
-	Group               string // one of commandGroupOrder; "Other" falls to the tail
-	Aliases             []string
-	Description         string
-	ArgHint             string
-	ArgMode             slashCommandArgMode
-	AvailableDuringTask bool
-	Visible             bool
-	HiddenFromPopup     bool
-	Kind                slashCommandKind
-	Execute             func(args string, m *Model) string
+	Name                            string
+	Group                           string // one of commandGroupOrder; "Other" falls to the tail
+	Aliases                         []string
+	Description                     string
+	ArgHint                         string
+	ArgMode                         slashCommandArgMode
+	AvailableDuringTask             bool
+	Visible                         bool
+	HiddenFromPopup                 bool
+	RequiresExperimentalCoordinator bool
+	Kind                            slashCommandKind
+	Execute                         func(args string, m *Model) string
 }
 
 type command = SlashCommandSpec
@@ -92,8 +93,22 @@ func (c SlashCommandSpec) isVisible() bool {
 	return c.Visible
 }
 
+func (c SlashCommandSpec) isVisibleFor(m *Model) bool {
+	if !c.isVisible() {
+		return false
+	}
+	if c.RequiresExperimentalCoordinator {
+		return m != nil && m.experimentalCoordinatorMode
+	}
+	return true
+}
+
 func (c SlashCommandSpec) isVisibleInPopup() bool {
 	return c.isVisible() && !c.HiddenFromPopup
+}
+
+func (c SlashCommandSpec) isVisibleInPopupFor(m *Model) bool {
+	return c.isVisibleFor(m) && !c.HiddenFromPopup
 }
 
 func commandSpec(spec SlashCommandSpec) SlashCommandSpec {
@@ -158,8 +173,8 @@ func init() {
 		commandSpec(SlashCommandSpec{Name: "tasks", Group: "Scheduling", Description: "List scheduled tasks", AvailableDuringTask: true, Kind: slashCommandKindBackground, Execute: cmdTasks}),
 
 		// ── Mode ───────────────────────────────────────────────────
-		commandSpec(SlashCommandSpec{Name: "coordinator", Group: "Mode", Aliases: []string{"coord"}, Description: "Switch to coordinator mode (disable write tools)", AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdCoordinator}),
-		commandSpec(SlashCommandSpec{Name: "normal", Group: "Mode", Description: "Return to normal mode (enable write tools)", AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdNormal}),
+		commandSpec(SlashCommandSpec{Name: "coordinator", Group: "Mode", Aliases: []string{"coord"}, Description: "Experimental: switch to coordinator mode (disable direct write tools)", AvailableDuringTask: false, RequiresExperimentalCoordinator: true, Kind: slashCommandKindConfig, Execute: cmdCoordinator}),
+		commandSpec(SlashCommandSpec{Name: "normal", Group: "Mode", Description: "Experimental: return to normal mode (enable direct write tools)", AvailableDuringTask: false, RequiresExperimentalCoordinator: true, Kind: slashCommandKindConfig, Execute: cmdNormal}),
 	}
 }
 
@@ -210,7 +225,7 @@ func (m *Model) handleSlash(input string) (string, bool) {
 		args = parts[1]
 	}
 
-	if cmd, ok := findCommandSpec(name); ok {
+	if cmd, ok := m.findCommandSpec(name); ok {
 		if m != nil && m.isSlashCommandTaskRunning() && !cmd.AvailableDuringTask {
 			return fmt.Sprintf("'/%s' is disabled while a task is in progress.", cmd.Name), true
 		}
@@ -235,7 +250,7 @@ func (m *Model) expandSkillShorthand(input string) (string, bool) {
 	if name == "" {
 		return "", false
 	}
-	if _, ok := findCommandSpec(name); ok {
+	if _, ok := m.findCommandSpec(name); ok {
 		return "", false
 	}
 	skill, ok := skills.Find(m.skills, name)
@@ -273,9 +288,17 @@ func containsAlias(aliases []string, name string) bool {
 }
 
 func findCommandSpec(name string) (*SlashCommandSpec, bool) {
+	return findCommandSpecFor(nil, name)
+}
+
+func (m *Model) findCommandSpec(name string) (*SlashCommandSpec, bool) {
+	return findCommandSpecFor(m, name)
+}
+
+func findCommandSpecFor(m *Model, name string) (*SlashCommandSpec, bool) {
 	for i := range commandRegistry {
 		cmd := &commandRegistry[i]
-		if !cmd.isVisible() {
+		if !cmd.isVisibleFor(m) {
 			continue
 		}
 		if cmd.Name == name || containsAlias(cmd.Aliases, name) {
@@ -293,13 +316,13 @@ func (m *Model) isSlashCommandTaskRunning() bool {
 // Command implementations
 // ---------------------------------------------------------------------------
 
-func cmdHelp(_ string, _ *Model) string {
+func cmdHelp(_ string, m *Model) string {
 	// Bucket commands by their declared group. Commands that forgot to
 	// set one land in "Other" so the screen degrades gracefully instead
 	// of silently hiding them.
 	byGroup := make(map[string][]command)
 	for _, cmd := range commandRegistry {
-		if !cmd.isVisible() {
+		if !cmd.isVisibleFor(m) {
 			continue
 		}
 		g := cmd.Group

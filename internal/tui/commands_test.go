@@ -71,6 +71,39 @@ func TestHandleSlash(t *testing.T) {
 	}
 }
 
+func TestCoordinatorCommandRequiresExperimentalMode(t *testing.T) {
+	m := NewModel(Config{
+		Provider:   "test",
+		Model:      "test-model",
+		ConfigPath: "/tmp/.wuu.json",
+	})
+
+	msg, handled := m.handleSlash("/coordinator")
+	if !handled {
+		t.Fatal("expected slash command to be handled")
+	}
+	if !strings.Contains(msg, "unknown command") {
+		t.Fatalf("expected coordinator command to be hidden by default, got %q", msg)
+	}
+	if _, ok := findCommandSpec("coordinator"); ok {
+		t.Fatal("package-level lookup should hide experimental coordinator by default")
+	}
+
+	m = NewModel(Config{
+		Provider:                    "test",
+		Model:                       "test-model",
+		ConfigPath:                  "/tmp/.wuu.json",
+		ExperimentalCoordinatorMode: true,
+	})
+	msg, handled = m.handleSlash("/coordinator")
+	if !handled {
+		t.Fatal("expected experimental coordinator command to be handled")
+	}
+	if !strings.Contains(msg, "coordinator mode") {
+		t.Fatalf("unexpected coordinator response: %q", msg)
+	}
+}
+
 func TestInsightsAliasRemainsSupported(t *testing.T) {
 	m := NewModel(Config{
 		Provider:   "test",

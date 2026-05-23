@@ -45,21 +45,22 @@ type Options struct {
 // stream runner. UI surfaces should depend on this instead of reassembling the
 // pieces themselves.
 type Session struct {
-	ProviderName        string
-	Model               string
-	RootDir             string
-	ConfigPath          string
-	SessionDir          string
-	StreamRunner        *agent.StreamRunner
-	HookDispatcher      *hooks.Dispatcher
-	Skills              []skills.Skill
-	Memory              []memory.File
-	Coordinator         *coordinator.Coordinator
-	AskBridge           tools.AskUserBridge
-	ProcessManager      *process.Manager
-	Toolkit             *tools.Toolkit
-	BaseSystemPrompt    string
-	CoordinatorPreamble string
+	ProviderName                string
+	Model                       string
+	RootDir                     string
+	ConfigPath                  string
+	SessionDir                  string
+	StreamRunner                *agent.StreamRunner
+	HookDispatcher              *hooks.Dispatcher
+	Skills                      []skills.Skill
+	Memory                      []memory.File
+	Coordinator                 *coordinator.Coordinator
+	AskBridge                   tools.AskUserBridge
+	ProcessManager              *process.Manager
+	Toolkit                     *tools.Toolkit
+	BaseSystemPrompt            string
+	CoordinatorPreamble         string
+	ExperimentalCoordinatorMode bool
 }
 
 // NewSession builds the shared runtime for an interactive agent surface.
@@ -182,21 +183,22 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	return &Session{
-		ProviderName:        resolvedName,
-		Model:               providerCfg.Model,
-		RootDir:             rootDir,
-		ConfigPath:          opts.ConfigPath,
-		SessionDir:          sessionDir,
-		StreamRunner:        streamRunner,
-		HookDispatcher:      hookDispatcher,
-		Skills:              discoveredSkills,
-		Memory:              memoryFiles,
-		Coordinator:         coord,
-		AskBridge:           opts.AskBridge,
-		ProcessManager:      processMgr,
-		Toolkit:             toolkit,
-		BaseSystemPrompt:    baseSystemPrompt,
-		CoordinatorPreamble: coordinatorPreamble,
+		ProviderName:                resolvedName,
+		Model:                       providerCfg.Model,
+		RootDir:                     rootDir,
+		ConfigPath:                  opts.ConfigPath,
+		SessionDir:                  sessionDir,
+		StreamRunner:                streamRunner,
+		HookDispatcher:              hookDispatcher,
+		Skills:                      discoveredSkills,
+		Memory:                      memoryFiles,
+		Coordinator:                 coord,
+		AskBridge:                   opts.AskBridge,
+		ProcessManager:              processMgr,
+		Toolkit:                     toolkit,
+		BaseSystemPrompt:            baseSystemPrompt,
+		CoordinatorPreamble:         coordinatorPreamble,
+		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
 	}, nil
 }
 

@@ -217,16 +217,17 @@ type Model struct {
 	onSessionID     func(string)
 	skills          []skills.Skill
 	memoryFiles     []memory.File
-	coordinator         *coordinator.Coordinator
-	processManager      *processruntime.Manager
-	processNotifyCh     chan processruntime.Event
-	workerNotifyCh      chan subagent.Notification
+	coordinator     *coordinator.Coordinator
+	processManager  *processruntime.Manager
+	processNotifyCh chan processruntime.Event
+	workerNotifyCh  chan subagent.Notification
 
-	// Toolkit allows runtime toolset switching (normal vs coordinator mode).
-	toolkit             *tools.Toolkit
-	baseSystemPrompt    string
-	coordinatorPreamble string
-	coordinatorMode     bool
+	// Toolkit allows runtime toolset switching for experimental slash modes.
+	toolkit                     *tools.Toolkit
+	baseSystemPrompt            string
+	coordinatorPreamble         string
+	experimentalCoordinatorMode bool
+	coordinatorMode             bool
 
 	// Cron scheduler: fires scheduled prompts into messageQueue.
 	scheduler     *cron.Scheduler
