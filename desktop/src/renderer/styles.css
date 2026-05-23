@@ -2294,12 +2294,12 @@ button:disabled {
   color: #5f746e;
 }
 
-.turn-progress.in_progress .turn-progress-rule {
+.turn-progress.in_progress.has-campaign .turn-progress-rule {
   height: 42px;
   background: transparent;
 }
 
-.turn-progress.in_progress .turn-progress-rule::before {
+.turn-progress.in_progress.has-campaign .turn-progress-rule::before {
   position: absolute;
   top: 28px;
   right: 0;
@@ -2309,7 +2309,7 @@ button:disabled {
   content: "";
 }
 
-.turn-progress.in_progress .turn-progress-rule::after {
+.turn-progress.in_progress.has-campaign .turn-progress-rule::after {
   position: absolute;
   top: 28px;
   left: 0;

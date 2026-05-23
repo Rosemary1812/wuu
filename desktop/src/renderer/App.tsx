@@ -223,6 +223,7 @@ const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const IMAGE_MAX_DIMENSION = 2000;
 const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
 const ENABLE_LAUNCH_PREVIEW = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
   contain: "strict",
   height: "100%",
@@ -2145,15 +2146,17 @@ export function App(): JSX.Element {
                 <span>启动动画</span>
               </button>
             ) : null}
-            <button
-              className={`launch-preview-button turn-progress-preview-button${turnProgressPreviewOpen ? " active" : ""}`}
-              type="button"
-              aria-pressed={turnProgressPreviewOpen}
-              onClick={() => setTurnProgressPreviewOpen(true)}
-            >
-              <Film size={15} />
-              <span>完整预览</span>
-            </button>
+            {ENABLE_TURN_PROGRESS_EXPERIMENT ? (
+              <button
+                className={`launch-preview-button turn-progress-preview-button${turnProgressPreviewOpen ? " active" : ""}`}
+                type="button"
+                aria-pressed={turnProgressPreviewOpen}
+                onClick={() => setTurnProgressPreviewOpen(true)}
+              >
+                <Film size={15} />
+                <span>完整预览</span>
+              </button>
+            ) : null}
             <div className="run-debug-anchor" ref={runDebugRef}>
               <button
                 className={`launch-preview-button run-debug-button${runDebugOpen ? " active" : ""}`}
@@ -2214,7 +2217,9 @@ export function App(): JSX.Element {
           </div>
         </header>
 
-        {turnProgressPreviewOpen ? <TurnProgressPreviewOverlay onClose={() => setTurnProgressPreviewOpen(false)} /> : null}
+        {ENABLE_TURN_PROGRESS_EXPERIMENT && turnProgressPreviewOpen ? (
+          <TurnProgressPreviewOverlay onClose={() => setTurnProgressPreviewOpen(false)} />
+        ) : null}
 
         {environmentPanelVisible && state.initialized ? (
           <EnvironmentPanel
@@ -4202,11 +4207,12 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
   const elapsedMs =
     completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, liveNow - startedAt) : 0);
   const content = turnProgressContent(turn, elapsedMs);
-  const campaign = liveDuration ? turnProgressCampaign(turn.id, elapsedMs) : undefined;
+  const campaign =
+    ENABLE_TURN_PROGRESS_EXPERIMENT && liveDuration ? turnProgressCampaign(turn.id, elapsedMs) : undefined;
 
   return (
     <div
-      className={`turn-progress ${turn.status}`}
+      className={`turn-progress ${turn.status}${campaign ? " has-campaign" : ""}`}
       role={liveDuration ? "status" : undefined}
       aria-live={liveDuration ? "polite" : undefined}
     >
