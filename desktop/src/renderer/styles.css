@@ -70,11 +70,6 @@ button {
   -webkit-app-region: no-drag;
 }
 
-.sidebar-collapsed .sidebar-resizer {
-  left: 0;
-  width: 14px;
-}
-
 .sidebar-resizer::before {
   position: absolute;
   top: 12px;
@@ -97,23 +92,6 @@ button {
 .resizing-sidebar .sidebar-resizer::before {
   background: rgba(45, 50, 54, 0.24);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4);
-}
-
-.sidebar-collapsed .sidebar-resizer::before {
-  top: 72px;
-  bottom: 72px;
-  width: 3px;
-  background: rgba(45, 50, 54, 0.1);
-  opacity: 0;
-  transform: translateX(-50%) scaleX(0.65);
-}
-
-.sidebar-collapsed .sidebar-resizer:hover::before,
-.sidebar-collapsed .sidebar-resizer:focus-visible::before,
-.sidebar-collapsed.resizing-sidebar .sidebar-resizer::before {
-  background: rgba(45, 50, 54, 0.22);
-  opacity: 1;
-  transform: translateX(-50%) scaleX(1);
 }
 
 .resizing-sidebar,

@@ -7,6 +7,7 @@ import {
   Info,
   MessageSquarePlus,
   Package,
+  PanelLeftOpen,
   Plus,
   Search,
   Send,
@@ -352,23 +353,30 @@ export function App(): JSX.Element {
         </div>
       </aside>
 
-      <div
-        className="sidebar-resizer"
-        role="separator"
-        aria-label={sidebarCollapsed ? "展开侧边栏" : "调整侧边栏宽度"}
-        aria-orientation="vertical"
-        aria-valuemin={0}
-        aria-valuemax={SIDEBAR_MAX_WIDTH}
-        aria-valuenow={sidebarCollapsed ? 0 : sidebarWidth}
-        tabIndex={0}
-        onPointerDown={startSidebarResize}
-        onDoubleClick={toggleSidebar}
-        onKeyDown={handleSidebarSeparatorKey}
-      />
+      {sidebarCollapsed ? null : (
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-label="调整侧边栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={startSidebarResize}
+          onDoubleClick={toggleSidebar}
+          onKeyDown={handleSidebarSeparatorKey}
+        />
+      )}
 
       <main className="conversation-pane">
         <header className="titlebar">
           <div className="title-block">
+            {sidebarCollapsed ? (
+              <button className="icon-button sidebar-toggle-button" aria-label="展开侧边栏" onClick={toggleSidebar}>
+                <PanelLeftOpen size={18} />
+              </button>
+            ) : null}
             <h1>{activeTitle}</h1>
             <button className="icon-button" aria-label="更多">
               <ChevronDown size={17} />
