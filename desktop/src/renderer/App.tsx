@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import {
   type CSSProperties,
+  type FormEvent as ReactFormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
@@ -506,6 +507,39 @@ export function App(): JSX.Element {
     }
   }
 
+  async function updateModel(model: string): Promise<void> {
+    const nextModel = model.trim();
+    if (!nextModel || !state.initialized || state.running || nextModel === state.initialized.model) {
+      return;
+    }
+    try {
+      const updated = await window.wuu.updateModel(nextModel);
+      setState((current) => {
+        const initialized = current.initialized
+          ? { ...current.initialized, provider: updated.provider, model: updated.model }
+          : current.initialized;
+        const updateThreadModel = (thread: Thread): Thread => ({
+          ...thread,
+          model_provider: updated.provider,
+          model: updated.model
+        });
+        const thread = current.thread ? updateThreadModel(current.thread) : current.thread;
+        return {
+          ...current,
+          initialized,
+          thread,
+          threads: current.threads.map(updateThreadModel),
+          status: current.status === "ready" ? current.status : "ready"
+        };
+      });
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "switch model failed"
+      }));
+    }
+  }
+
   async function interrupt(): Promise<void> {
     if (!state.thread) {
       return;
@@ -626,6 +660,7 @@ export function App(): JSX.Element {
             onSelectNoProject={() => void useNoProject(false)}
             onCreateProject={() => void createBlankProject()}
             onOpenProject={() => void chooseProjectFolder()}
+            onUpdateModel={(model) => updateModel(model)}
             onSend={() => void sendPrompt()}
             onInterrupt={() => void interrupt()}
           />
@@ -1314,6 +1349,7 @@ function Composer({
   onSelectNoProject,
   onCreateProject,
   onOpenProject,
+  onUpdateModel,
   onSend,
   onInterrupt
 }: {
@@ -1335,11 +1371,52 @@ function Composer({
   onSelectNoProject: () => void;
   onCreateProject: () => void;
   onOpenProject: () => void;
+  onUpdateModel: (model: string) => Promise<void>;
   onSend: () => void;
   onInterrupt: () => void;
 }): JSX.Element {
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = status === "ready" ? "" : status;
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [modelDraft, setModelDraft] = useState(model ?? "");
+  const modelMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!modelMenuOpen) {
+      setModelDraft(model ?? "");
+    }
+  }, [model, modelMenuOpen]);
+
+  useEffect(() => {
+    if (!modelMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent): void {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (!modelMenuRef.current?.contains(target)) {
+        setModelMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [modelMenuOpen]);
+
+  async function submitModel(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const nextModel = modelDraft.trim();
+    if (!nextModel || nextModel === model || running) {
+      setModelMenuOpen(false);
+      return;
+    }
+    await onUpdateModel(nextModel);
+    setModelMenuOpen(false);
+  }
+
   return (
     <footer className="composer-wrap">
       <div className="composer-shell">
@@ -1358,7 +1435,42 @@ function Composer({
           <div className="composer-bar">
             <div className="composer-spacer" />
             <span className="provider-pill">{provider ?? "provider"}</span>
-            <span className="model-label">{model ?? "model"}</span>
+            <div className="model-picker" ref={modelMenuRef}>
+              <button
+                className="model-button"
+                type="button"
+                disabled={running}
+                aria-haspopup="menu"
+                aria-expanded={modelMenuOpen}
+                onClick={() => {
+                  setModelDraft(model ?? "");
+                  setModelMenuOpen((open) => !open);
+                }}
+              >
+                <span>{model ?? "model"}</span>
+                <ChevronDown size={14} />
+              </button>
+              {modelMenuOpen ? (
+                <form className="model-menu" role="menu" onSubmit={submitModel}>
+                  <label htmlFor="model-switch-input">模型</label>
+                  <input
+                    id="model-switch-input"
+                    value={modelDraft}
+                    autoFocus
+                    onChange={(event) => setModelDraft(event.target.value)}
+                    placeholder="输入 model 名称"
+                  />
+                  <div className="model-menu-actions">
+                    <button type="button" onClick={() => setModelMenuOpen(false)}>
+                      取消
+                    </button>
+                    <button type="submit" disabled={!modelDraft.trim() || modelDraft.trim() === model}>
+                      切换
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+            </div>
             {statusText ? <span className="status-label">{statusText}</span> : null}
             <button className="send-button" onClick={running ? onInterrupt : onSend} aria-label={running ? "停止" : "发送"}>
               {running ? <Square size={18} /> : <Send size={18} />}

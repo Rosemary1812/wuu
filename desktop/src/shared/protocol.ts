@@ -35,6 +35,11 @@ export type InitializeResult = {
   workspace_root: string;
 };
 
+export type ConfigModelUpdateResult = {
+  provider: string;
+  model: string;
+};
+
 export type DesktopProject = {
   id: string;
   name: string;
@@ -138,6 +143,7 @@ export type WuuDesktopApi = {
   selectProject: (projectId: string) => Promise<ProjectListResult>;
   selectNoProject: (fresh?: boolean) => Promise<ProjectListResult>;
   initialize: () => Promise<InitializeResult>;
+  updateModel: (model: string) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   listThreads: () => Promise<{ threads: Thread[] }>;

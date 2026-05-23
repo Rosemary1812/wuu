@@ -7,6 +7,7 @@ import type {
   AppServerNotification,
   AppServerRequest,
   AppServerResponse,
+  ConfigModelUpdateResult,
   DesktopProject,
   InitializeResult,
   ProjectListResult,
@@ -537,6 +538,9 @@ app.whenReady().then(() => {
     return addProject(projectPath);
   });
   ipcMain.handle("wuu:initialize", () => serverClient().request<InitializeResult>("initialize"));
+  ipcMain.handle("wuu:config-model-update", (_event, model: string) =>
+    serverClient().request<ConfigModelUpdateResult>("config/model/update", { model })
+  );
   ipcMain.handle("wuu:thread-start", () => serverClient().request<{ thread: Thread }>("thread/start"));
   ipcMain.handle("wuu:thread-resume", (_event, sessionId?: string) =>
     serverClient().request<{ thread: Thread }>("thread/resume", { session_id: sessionId ?? "" })
