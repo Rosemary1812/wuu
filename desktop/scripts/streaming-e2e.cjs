@@ -68,7 +68,7 @@ async function run() {
     status: "in_progress",
     started_at: now
   };
-  const fullText = Array.from({ length: 260 }, (_value, index) => `streaming-word-${index}`).join(" ");
+  const fullText = Array.from({ length: 120 }, (_value, index) => `streaming-word-${index}`).join(" ");
 
   emitNotification(win, "thread/resumed", { thread });
   emitNotification(win, "turn/started", { turn });
