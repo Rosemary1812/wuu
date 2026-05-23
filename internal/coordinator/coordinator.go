@@ -595,6 +595,63 @@ func (c *Coordinator) WaitFrom(currentPath string, ctx context.Context, target s
 	return c.manager.Wait(ctx, id)
 }
 
+func (c *Coordinator) WaitForMailboxUpdateFrom(currentPath string, ctx context.Context) (bool, error) {
+	if c == nil || c.manager == nil {
+		return false, errors.New("coordinator not configured")
+	}
+	currentID := c.agentIDForPath(currentPath)
+	if currentID != "" && c.manager.PendingMessageCount(currentID) > 0 {
+		return true, nil
+	}
+	ch := make(chan subagent.Notification, 16)
+	c.manager.Subscribe(ch)
+	defer c.manager.Unsubscribe(ch)
+	if currentID != "" && c.manager.PendingMessageCount(currentID) > 0 {
+		return true, nil
+	}
+	for {
+		select {
+		case n := <-ch:
+			if c.isMailboxNotificationFor(currentID, n) {
+				return true, nil
+			}
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return false, nil
+			}
+			return false, ctx.Err()
+		}
+	}
+}
+
+func (c *Coordinator) agentIDForPath(currentPath string) string {
+	path := strings.TrimSpace(currentPath)
+	if path == "" || path == agentthread.RootPath {
+		return ""
+	}
+	if meta, ok := c.threads.ResolveFrom(path, path); ok && meta.Path != agentthread.RootPath {
+		return meta.ID
+	}
+	return ""
+}
+
+func (c *Coordinator) isMailboxNotificationFor(currentID string, n subagent.Notification) bool {
+	if currentID == "" {
+		if !isFinalSubAgentStatus(n.Status) {
+			return false
+		}
+		parentID := strings.TrimSpace(n.Snapshot.ParentID)
+		return parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID
+	}
+	if n.Snapshot.ID == currentID && c.manager.PendingMessageCount(currentID) > 0 {
+		return true
+	}
+	if strings.TrimSpace(n.Snapshot.ParentID) == currentID && isFinalSubAgentStatus(n.Status) {
+		return true
+	}
+	return false
+}
+
 // Subscribe forwards to the underlying manager so the UI can receive
 // status notifications and publish mailbox messages.
 func (c *Coordinator) Subscribe(ch chan<- subagent.Notification) {

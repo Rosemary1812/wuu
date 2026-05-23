@@ -45,6 +45,17 @@ func (m *Manager) Subscribe(ch chan<- Notification) {
 	m.listeners = append(m.listeners, ch)
 }
 
+func (m *Manager) Unsubscribe(ch chan<- Notification) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, listener := range m.listeners {
+		if listener == ch {
+			m.listeners = append(m.listeners[:i], m.listeners[i+1:]...)
+			return
+		}
+	}
+}
+
 // Spawn launches a new sub-agent asynchronously. The returned SubAgent
 // has Status == StatusPending or StatusRunning; callers can poll via
 // Snapshot or wait via Wait.

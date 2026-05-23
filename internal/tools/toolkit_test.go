@@ -639,6 +639,31 @@ func TestToolkit_SpawnAgentDefinitionIncludesForkTurns(t *testing.T) {
 	t.Fatal("spawn_agent must be present in tool definitions")
 }
 
+func TestToolkit_WaitAgentUsesV2MailboxSchema(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, d := range kit.Definitions() {
+		if d.Name != "wait_agent" {
+			continue
+		}
+		props, _ := d.InputSchema["properties"].(map[string]any)
+		if _, ok := props["timeout_ms"]; !ok {
+			t.Fatalf("wait_agent schema must expose timeout_ms: %#v", d.InputSchema)
+		}
+		if _, ok := props["target"]; ok {
+			t.Fatalf("wait_agent v2 schema must not expose target: %#v", d.InputSchema)
+		}
+		if _, ok := d.InputSchema["required"]; ok {
+			t.Fatalf("wait_agent v2 schema must not require fields: %#v", d.InputSchema)
+		}
+		return
+	}
+	t.Fatal("wait_agent must be present in tool definitions")
+}
+
 func TestToolkit_SpawnAgent_FailsWithoutCoordinator(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

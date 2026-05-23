@@ -479,22 +479,18 @@ func (t *WaitAgentTool) IsConcurrencySafe() bool { return true }
 func (t *WaitAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "wait_agent",
-		Description: "Wait for a child task to finish and return its latest status. " +
-			"Use sparingly; keep working locally when the task is not blocking your next step. " +
-			"Address the target by agent_id, agent_path, or task_name.",
+		Description: "Wait for a mailbox update from any live agent, including queued messages " +
+			"and final-status notifications. Does not return the content; returns either " +
+			"a completion summary or a timeout summary. Use sparingly; keep working locally " +
+			"when agent output is not blocking your next critical step.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"target": map[string]any{
-					"type":        "string",
-					"description": "agent_id, agent_path, or task_name.",
-				},
 				"timeout_ms": map[string]any{
 					"type":        "integer",
 					"description": "Optional timeout in milliseconds. Defaults to 10000.",
 				},
 			},
-			"required": []string{"target"},
 		},
 	}
 }
@@ -504,8 +500,7 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 		return "", errors.New("wait_agent: coordinator not configured")
 	}
 	var args struct {
-		Target    string `json:"target"`
-		TimeoutMS int    `json:"timeout_ms"`
+		TimeoutMS int `json:"timeout_ms"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -516,11 +511,18 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	snap, err := t.env.Coordinator.WaitFrom(currentAgentPath(t.env), waitCtx, args.Target)
+	completed, err := t.env.Coordinator.WaitForMailboxUpdateFrom(currentAgentPath(t.env), waitCtx)
 	if err != nil {
 		return "", err
 	}
-	out, err := json.Marshal(snapshotForJSON(snap))
+	message := "Wait timed out."
+	if completed {
+		message = "Wait completed."
+	}
+	out, err := json.Marshal(map[string]any{
+		"message":   message,
+		"timed_out": !completed,
+	})
 	if err != nil {
 		return "", err
 	}

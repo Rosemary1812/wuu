@@ -340,6 +340,94 @@ func TestStopClosesAgentSubtree(t *testing.T) {
 	}
 }
 
+func TestWaitForMailboxUpdateFromRootWakesOnChildFinalStatus(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-wait-root",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "worker",
+		TaskName: "child",
+		Prompt:   "child task",
+	})
+	if err != nil {
+		t.Fatalf("child spawn: %v", err)
+	}
+
+	type waitResult struct {
+		completed bool
+		err       error
+	}
+	done := make(chan waitResult, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		completed, err := c.WaitForMailboxUpdateFrom(agentthread.RootPath, ctx)
+		done <- waitResult{completed: completed, err: err}
+	}()
+	time.Sleep(20 * time.Millisecond)
+	if !c.Stop(child.AgentID) {
+		t.Fatal("expected stop to succeed")
+	}
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("wait mailbox: %v", got.err)
+		}
+		if !got.completed {
+			t.Fatal("expected wait to complete")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for mailbox update")
+	}
+}
+
+func TestWaitForMailboxUpdateFromAgentReturnsAlreadyQueuedMail(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-wait-agent",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "worker",
+		TaskName: "parent",
+		Prompt:   "parent task",
+	})
+	if err != nil {
+		t.Fatalf("parent spawn: %v", err)
+	}
+	if err := c.SendMessage(parent.AgentID, "queued update"); err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	completed, err := c.WaitForMailboxUpdateFrom(parent.AgentPath, ctx)
+	if err != nil {
+		t.Fatalf("wait mailbox: %v", err)
+	}
+	if !completed {
+		t.Fatal("expected already queued mailbox update to complete immediately")
+	}
+	c.StopAll()
+}
+
 func TestSpawn_InplaceSkipsWorktree(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
