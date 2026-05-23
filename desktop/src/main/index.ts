@@ -10,6 +10,7 @@ import type {
   DesktopProject,
   InitializeResult,
   ProjectListResult,
+  RuntimeContext,
   ServerEvent,
   Thread,
   Turn
@@ -209,7 +210,7 @@ function wuuSourceRoot(): string | undefined {
 
 type ProjectStore = {
   projects: DesktopProject[];
-  active_project_id?: string;
+  active_context?: RuntimeContext;
 };
 
 let mainWindow: BrowserWindow | null = null;
@@ -222,16 +223,16 @@ function projectStorePath(): string {
 
 function loadProjectStore(): ProjectStore {
   try {
-    const parsed = JSON.parse(readFileSync(projectStorePath(), "utf8")) as Partial<ProjectStore>;
+    const parsed = JSON.parse(readFileSync(projectStorePath(), "utf8")) as Partial<ProjectStore> & {
+      active_project_id?: unknown;
+    };
     const projects = Array.isArray(parsed.projects)
       ? parsed.projects.filter((project): project is DesktopProject => isDesktopProject(project))
       : [];
-    const activeProjectID = projects.some((project) => project.id === parsed.active_project_id)
-      ? parsed.active_project_id
-      : undefined;
+    const activeContext = normalizeRuntimeContext(parsed.active_context, projects) ?? legacyProjectContext(parsed.active_project_id, projects);
     return {
       projects,
-      active_project_id: activeProjectID
+      active_context: activeContext
     };
   } catch {
     return { projects: [] };
@@ -252,20 +253,87 @@ function isDesktopProject(value: unknown): value is DesktopProject {
   );
 }
 
+function normalizeRuntimeContext(value: unknown, projects: DesktopProject[]): RuntimeContext | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const context = value as Partial<RuntimeContext>;
+  if (context.kind === "project" && typeof context.project_id === "string") {
+    const project = projects.find((candidate) => candidate.id === context.project_id);
+    return project ? { kind: "project", project_id: project.id, cwd: project.path } : undefined;
+  }
+  if (context.kind === "no_project" && typeof context.cwd === "string") {
+    const cwd = resolve(context.cwd);
+    mkdirSync(cwd, { recursive: true });
+    return { kind: "no_project", cwd };
+  }
+  return undefined;
+}
+
+function legacyProjectContext(value: unknown, projects: DesktopProject[]): RuntimeContext | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const project = projects.find((candidate) => candidate.id === value);
+  return project ? { kind: "project", project_id: project.id, cwd: project.path } : undefined;
+}
+
 function saveProjectStore(): void {
   mkdirSync(dirname(projectStorePath()), { recursive: true });
   writeFileSync(projectStorePath(), `${JSON.stringify(projectStore, null, 2)}\n`);
 }
 
 function projectListResult(): ProjectListResult {
+  const context = ensureRuntimeContext();
   return {
     projects: projectStore.projects,
-    active_project_id: projectStore.active_project_id
+    active_context: context,
+    active_project_id: context.kind === "project" ? context.project_id : undefined
   };
 }
 
-function activeProject(): DesktopProject | undefined {
-  return projectStore.projects.find((project) => project.id === projectStore.active_project_id);
+function ensureRuntimeContext(): RuntimeContext {
+  const activeContext = projectStore.active_context;
+  if (activeContext?.kind === "project") {
+    const project = projectStore.projects.find((candidate) => candidate.id === activeContext.project_id);
+    if (project) {
+      projectStore.active_context = { kind: "project", project_id: project.id, cwd: project.path };
+      return projectStore.active_context;
+    }
+  }
+  if (projectStore.active_context?.kind === "no_project") {
+    mkdirSync(projectStore.active_context.cwd, { recursive: true });
+    return projectStore.active_context;
+  }
+  projectStore.active_context = createNoProjectContext();
+  saveProjectStore();
+  return projectStore.active_context;
+}
+
+function createNoProjectContext(): RuntimeContext {
+  return { kind: "no_project", cwd: allocateNoProjectCwd() };
+}
+
+function allocateNoProjectCwd(): string {
+  const baseDir = join(app.getPath("documents"), "Wuu", formatLocalDate(new Date()));
+  mkdirSync(baseDir, { recursive: true });
+  for (let index = 0; index < 1000; index += 1) {
+    const name = index === 0 ? "new-chat" : `new-chat-${index + 1}`;
+    const candidate = join(baseDir, name);
+    if (existsSync(candidate)) {
+      continue;
+    }
+    mkdirSync(candidate, { recursive: true });
+    return candidate;
+  }
+  throw new Error(`failed to allocate no-project workspace under ${baseDir}`);
+}
+
+function formatLocalDate(date: Date): string {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function projectID(projectPath: string): string {
@@ -304,7 +372,7 @@ function addProject(projectPath: string): ProjectListResult {
   } else {
     projectStore.projects = [project, ...projectStore.projects];
   }
-  projectStore.active_project_id = id;
+  projectStore.active_context = { kind: "project", project_id: id, cwd: resolvedPath };
   resetClient();
   saveProjectStore();
   return projectListResult();
@@ -315,7 +383,16 @@ function selectProject(projectIDToSelect: string): ProjectListResult {
   if (!project) {
     throw new Error("project not found");
   }
-  projectStore.active_project_id = project.id;
+  projectStore.active_context = { kind: "project", project_id: project.id, cwd: project.path };
+  resetClient();
+  saveProjectStore();
+  return projectListResult();
+}
+
+function selectNoProject(fresh: boolean): ProjectListResult {
+  if (fresh || projectStore.active_context?.kind !== "no_project") {
+    projectStore.active_context = createNoProjectContext();
+  }
   resetClient();
   saveProjectStore();
   return projectListResult();
@@ -335,17 +412,19 @@ async function showProjectDirectoryDialog(options: OpenDialogOptions): Promise<s
 }
 
 function serverClient(): AppServerClient {
-  const project = activeProject();
-  if (!project) {
-    throw new Error("no project selected");
-  }
-  if (!client || client.workdir !== project.path) {
+  const context = ensureRuntimeContext();
+  if (!client || client.workdir !== context.cwd) {
     resetClient();
-    client = new AppServerClient(project.path, (event) => {
-      mainWindow?.webContents.send("wuu:server-event", event);
-    });
+    client = new AppServerClient(context.cwd, emitServerEvent);
   }
   return client;
+}
+
+function emitServerEvent(event: ServerEvent): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send("wuu:server-event", event);
 }
 
 function createWindow(): void {
@@ -387,6 +466,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle("wuu:project-list", () => projectListResult());
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) => selectProject(projectIDToSelect));
+  ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean) => selectNoProject(Boolean(fresh)));
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
       title: "使用现有文件夹",

@@ -43,8 +43,20 @@ export type DesktopProject = {
   updated_at: string;
 };
 
+export type RuntimeContext =
+  | {
+      kind: "project";
+      project_id: string;
+      cwd: string;
+    }
+  | {
+      kind: "no_project";
+      cwd: string;
+    };
+
 export type ProjectListResult = {
   projects: DesktopProject[];
+  active_context?: RuntimeContext;
   active_project_id?: string;
 };
 
@@ -124,6 +136,7 @@ export type WuuDesktopApi = {
   createBlankProject: () => Promise<ProjectListResult>;
   chooseProjectFolder: () => Promise<ProjectListResult>;
   selectProject: (projectId: string) => Promise<ProjectListResult>;
+  selectNoProject: (fresh?: boolean) => Promise<ProjectListResult>;
   initialize: () => Promise<InitializeResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;

@@ -6,6 +6,7 @@ const api: WuuDesktopApi = {
   createBlankProject: () => ipcRenderer.invoke("wuu:project-create-blank"),
   chooseProjectFolder: () => ipcRenderer.invoke("wuu:project-choose-folder"),
   selectProject: (projectId: string) => ipcRenderer.invoke("wuu:project-select", projectId),
+  selectNoProject: (fresh?: boolean) => ipcRenderer.invoke("wuu:project-select-none", fresh),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) => ipcRenderer.invoke("wuu:thread-resume", sessionId),
