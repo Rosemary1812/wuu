@@ -78,6 +78,25 @@ func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
 	}
 }
 
+func TestOAuthSourceExplicitAPIKey(t *testing.T) {
+	token := fakeJWT(t, time.Now().Add(time.Hour), "acct_explicit")
+	source := NewOAuthSource(OAuthConfig{APIKey: token})
+
+	creds, err := source.Credentials(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Credentials: %v", err)
+	}
+	if creds.accessToken != token {
+		t.Fatalf("accessToken = %q, want explicit token", creds.accessToken)
+	}
+	if creds.accountID != "acct_explicit" {
+		t.Fatalf("accountID = %q, want acct_explicit", creds.accountID)
+	}
+	if creds.source != "explicit" {
+		t.Fatalf("source = %q, want explicit", creds.source)
+	}
+}
+
 func TestClientRefreshesStoredWuuCodexOAuth(t *testing.T) {
 	home := t.TempDir()
 	stale := fakeJWT(t, time.Now().Add(-time.Hour), "acct_old")
