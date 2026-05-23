@@ -8,7 +8,8 @@ const api: WuuDesktopApi = {
   selectProject: (projectId: string) => ipcRenderer.invoke("wuu:project-select", projectId),
   selectNoProject: (fresh?: boolean) => ipcRenderer.invoke("wuu:project-select-none", fresh),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
-  updateModel: (model: string) => ipcRenderer.invoke("wuu:config-model-update", model),
+  updateRuntimeSettings: (provider: string, model: string) =>
+    ipcRenderer.invoke("wuu:config-model-update", provider, model),
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) => ipcRenderer.invoke("wuu:thread-resume", sessionId),
   listThreads: () => ipcRenderer.invoke("wuu:thread-list"),

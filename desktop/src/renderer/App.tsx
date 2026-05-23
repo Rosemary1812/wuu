@@ -15,6 +15,7 @@ import {
   Pencil,
   Search,
   Send,
+  Settings,
   Square,
   Terminal,
   Wrench,
@@ -105,12 +106,14 @@ export function App(): JSX.Element {
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -162,11 +165,14 @@ export function App(): JSX.Element {
       if (runtimeMenuOpen && !runtimeMenuRef.current?.contains(target)) {
         setRuntimeMenuOpen(false);
       }
+      if (settingsOpen && !settingsRef.current?.contains(target)) {
+        setSettingsOpen(false);
+      }
     }
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [projectMenuOpen, runtimeMenuOpen]);
+  }, [projectMenuOpen, runtimeMenuOpen, settingsOpen]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -345,6 +351,7 @@ export function App(): JSX.Element {
   function closeProjectMenus(): void {
     setProjectMenuOpen(false);
     setRuntimeMenuOpen(false);
+    setSettingsOpen(false);
     setProjectFilter("");
   }
 
@@ -507,16 +514,28 @@ export function App(): JSX.Element {
     }
   }
 
-  async function updateModel(model: string): Promise<void> {
+  async function updateRuntimeSettings(provider: string, model: string): Promise<void> {
+    const nextProvider = provider.trim();
     const nextModel = model.trim();
-    if (!nextModel || !state.initialized || state.running || nextModel === state.initialized.model) {
+    if (
+      !nextProvider ||
+      !nextModel ||
+      !state.initialized ||
+      state.running ||
+      (nextProvider === state.initialized.provider && nextModel === state.initialized.model)
+    ) {
       return;
     }
     try {
-      const updated = await window.wuu.updateModel(nextModel);
+      const updated = await window.wuu.updateRuntimeSettings(nextProvider, nextModel);
       setState((current) => {
         const initialized = current.initialized
-          ? { ...current.initialized, provider: updated.provider, model: updated.model }
+          ? {
+              ...current.initialized,
+              provider: updated.provider,
+              model: updated.model,
+              providers: updated.providers ?? current.initialized.providers
+            }
           : current.initialized;
         const updateThreadModel = (thread: Thread): Thread => ({
           ...thread,
@@ -535,8 +554,9 @@ export function App(): JSX.Element {
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "switch model failed"
+        status: error instanceof Error ? error.message : "update runtime settings failed"
       }));
+      throw error;
     }
   }
 
@@ -593,6 +613,18 @@ export function App(): JSX.Element {
             onSelectThread={(id) => void selectThread(id)}
           />
         </section>
+        <SidebarSettings
+          initialized={state.initialized}
+          running={state.running}
+          open={settingsOpen}
+          settingsRef={settingsRef}
+          onToggle={() => {
+            setProjectMenuOpen(false);
+            setRuntimeMenuOpen(false);
+            setSettingsOpen((open) => !open);
+          }}
+          onSave={updateRuntimeSettings}
+        />
       </aside>
 
       {sidebarCollapsed ? null : (
@@ -660,7 +692,6 @@ export function App(): JSX.Element {
             onSelectNoProject={() => void useNoProject(false)}
             onCreateProject={() => void createBlankProject()}
             onOpenProject={() => void chooseProjectFolder()}
-            onUpdateModel={(model) => updateModel(model)}
             onSend={() => void sendPrompt()}
             onInterrupt={() => void interrupt()}
           />
@@ -1330,6 +1361,107 @@ function RuntimeLoading({ status }: { status: string }): JSX.Element {
   );
 }
 
+function SidebarSettings({
+  initialized,
+  running,
+  open,
+  settingsRef,
+  onToggle,
+  onSave
+}: {
+  initialized?: InitializeResult;
+  running: boolean;
+  open: boolean;
+  settingsRef: RefObject<HTMLDivElement>;
+  onToggle: () => void;
+  onSave: (provider: string, model: string) => Promise<void>;
+}): JSX.Element {
+  const providers = initialized?.providers ?? [];
+  const [providerDraft, setProviderDraft] = useState(initialized?.provider ?? "");
+  const [modelDraft, setModelDraft] = useState(initialized?.model ?? "");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setProviderDraft(initialized?.provider ?? "");
+      setModelDraft(initialized?.model ?? "");
+      setError("");
+    }
+  }, [initialized?.provider, initialized?.model, open]);
+
+  function changeProvider(provider: string): void {
+    setProviderDraft(provider);
+    const summary = providers.find((item) => item.name === provider);
+    if (summary) {
+      setModelDraft(summary.model);
+    }
+  }
+
+  async function submit(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setError("");
+    try {
+      await onSave(providerDraft, modelDraft);
+      onToggle();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "保存失败");
+    }
+  }
+
+  const disabled =
+    running ||
+    !providerDraft.trim() ||
+    !modelDraft.trim() ||
+    (providerDraft === initialized?.provider && modelDraft === initialized?.model);
+
+  return (
+    <div className="sidebar-settings" ref={settingsRef}>
+      <button
+        className="settings-button"
+        type="button"
+        disabled={!initialized}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <Settings size={18} />
+        <span>设置</span>
+      </button>
+      {open && initialized ? (
+        <form className="settings-popover" onSubmit={submit}>
+          <label>
+            <span>Provider</span>
+            {providers.length > 0 ? (
+              <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
+                {providers.map((provider) => (
+                  <option key={provider.name} value={provider.name}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input value={providerDraft} onChange={(event) => setProviderDraft(event.target.value)} disabled={running} />
+            )}
+          </label>
+          <label>
+            <span>模型</span>
+            <input value={modelDraft} onChange={(event) => setModelDraft(event.target.value)} disabled={running} />
+          </label>
+          {error ? <div className="settings-error">{error}</div> : null}
+          <div className="settings-actions">
+            <button type="button" onClick={onToggle}>
+              取消
+            </button>
+            <button type="submit" disabled={disabled}>
+              保存
+            </button>
+          </div>
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
 function Composer({
   prompt,
   setPrompt,
@@ -1349,7 +1481,6 @@ function Composer({
   onSelectNoProject,
   onCreateProject,
   onOpenProject,
-  onUpdateModel,
   onSend,
   onInterrupt
 }: {
@@ -1371,52 +1502,11 @@ function Composer({
   onSelectNoProject: () => void;
   onCreateProject: () => void;
   onOpenProject: () => void;
-  onUpdateModel: (model: string) => Promise<void>;
   onSend: () => void;
   onInterrupt: () => void;
 }): JSX.Element {
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = status === "ready" ? "" : status;
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [modelDraft, setModelDraft] = useState(model ?? "");
-  const modelMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!modelMenuOpen) {
-      setModelDraft(model ?? "");
-    }
-  }, [model, modelMenuOpen]);
-
-  useEffect(() => {
-    if (!modelMenuOpen) {
-      return;
-    }
-
-    function handlePointerDown(event: PointerEvent): void {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-      if (!modelMenuRef.current?.contains(target)) {
-        setModelMenuOpen(false);
-      }
-    }
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [modelMenuOpen]);
-
-  async function submitModel(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    const nextModel = modelDraft.trim();
-    if (!nextModel || nextModel === model || running) {
-      setModelMenuOpen(false);
-      return;
-    }
-    await onUpdateModel(nextModel);
-    setModelMenuOpen(false);
-  }
-
   return (
     <footer className="composer-wrap">
       <div className="composer-shell">
@@ -1435,42 +1525,7 @@ function Composer({
           <div className="composer-bar">
             <div className="composer-spacer" />
             <span className="provider-pill">{provider ?? "provider"}</span>
-            <div className="model-picker" ref={modelMenuRef}>
-              <button
-                className="model-button"
-                type="button"
-                disabled={running}
-                aria-haspopup="menu"
-                aria-expanded={modelMenuOpen}
-                onClick={() => {
-                  setModelDraft(model ?? "");
-                  setModelMenuOpen((open) => !open);
-                }}
-              >
-                <span>{model ?? "model"}</span>
-                <ChevronDown size={14} />
-              </button>
-              {modelMenuOpen ? (
-                <form className="model-menu" role="menu" onSubmit={submitModel}>
-                  <label htmlFor="model-switch-input">模型</label>
-                  <input
-                    id="model-switch-input"
-                    value={modelDraft}
-                    autoFocus
-                    onChange={(event) => setModelDraft(event.target.value)}
-                    placeholder="输入 model 名称"
-                  />
-                  <div className="model-menu-actions">
-                    <button type="button" onClick={() => setModelMenuOpen(false)}>
-                      取消
-                    </button>
-                    <button type="submit" disabled={!modelDraft.trim() || modelDraft.trim() === model}>
-                      切换
-                    </button>
-                  </div>
-                </form>
-              ) : null}
-            </div>
+            <span className="model-label">{model ?? "model"}</span>
             {statusText ? <span className="status-label">{statusText}</span> : null}
             <button className="send-button" onClick={running ? onInterrupt : onSend} aria-label={running ? "停止" : "发送"}>
               {running ? <Square size={18} /> : <Send size={18} />}
