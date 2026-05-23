@@ -267,6 +267,53 @@ async function run() {
     ["文件", "审查", "终端"],
     "Opening the right panel should show the workspace tool picker before a tool detail."
   );
+  const rightPanelWidthBefore = await evaluate(win, () => {
+    const shell = document.querySelector(".app-shell");
+    const resizer = document.querySelector(".workspace-right-panel-resizer");
+    if (!(shell instanceof HTMLElement) || !(resizer instanceof HTMLElement)) {
+      throw new Error("Right panel resizer not found.");
+    }
+    return Number.parseFloat(getComputedStyle(shell).getPropertyValue("--workspace-right-panel-width"));
+  });
+  await evaluate(win, () => {
+    const resizer = document.querySelector(".workspace-right-panel-resizer");
+    if (!(resizer instanceof HTMLElement)) {
+      throw new Error("Right panel resizer not found.");
+    }
+    const rect = resizer.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    resizer.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: startX, pointerId: 1 }));
+  });
+  await waitFor(win, () => document.querySelector(".app-shell")?.classList.contains("resizing-right-panel"), 1000);
+  await evaluate(win, () => {
+    const resizer = document.querySelector(".workspace-right-panel-resizer");
+    if (!(resizer instanceof HTMLElement)) {
+      throw new Error("Right panel resizer not found.");
+    }
+    const rect = resizer.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, button: 0, clientX: startX - 96, pointerId: 1 }));
+    window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, clientX: startX - 96, pointerId: 1 }));
+  });
+  let rightPanelWidthAfter = rightPanelWidthBefore;
+  const rightPanelResizeStarted = Date.now();
+  while (Date.now() - rightPanelResizeStarted < 1000) {
+    rightPanelWidthAfter = await evaluate(win, () => {
+      const shell = document.querySelector(".app-shell");
+      if (!(shell instanceof HTMLElement)) {
+        return 0;
+      }
+      return Number.parseFloat(getComputedStyle(shell).getPropertyValue("--workspace-right-panel-width"));
+    });
+    if (rightPanelWidthAfter >= rightPanelWidthBefore + 72) {
+      break;
+    }
+    await delay(40);
+  }
+  assert.ok(
+    rightPanelWidthAfter >= rightPanelWidthBefore + 72,
+    `Dragging the right panel resizer should increase width. Before: ${rightPanelWidthBefore}, after: ${rightPanelWidthAfter}.`
+  );
 
   await evaluate(win, () => {
     const terminalTool = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item")).find(

@@ -149,7 +149,9 @@ body {
 }
 
 .resizing-review-split,
-.resizing-review-split * {
+.resizing-right-panel,
+.resizing-review-split *,
+.resizing-right-panel * {
   cursor: col-resize !important;
   user-select: none;
 }
@@ -289,6 +291,46 @@ button:disabled {
 }
 
 .resizing-sidebar {
+  transition: none;
+}
+
+.workspace-right-panel-resizer {
+  position: absolute;
+  top: 0;
+  right: calc(var(--workspace-right-panel-width, 360px) - 5px);
+  bottom: 0;
+  z-index: 18;
+  width: 10px;
+  cursor: col-resize;
+  outline: 0;
+  -webkit-app-region: no-drag;
+}
+
+.workspace-right-panel-resizer::before {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 1px;
+  border-radius: 999px;
+  background: transparent;
+  content: "";
+  transform: translateX(-50%);
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease,
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.workspace-right-panel-resizer:hover::before,
+.workspace-right-panel-resizer:focus-visible::before,
+.resizing-right-panel .workspace-right-panel-resizer::before {
+  background: rgba(45, 50, 54, 0.24);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.resizing-right-panel .workspace-right-panel {
   transition: none;
 }
 
