@@ -113,6 +113,35 @@ export type GitDiffStats = {
   deletions: number;
 };
 
+export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "unknown";
+
+export type GitChangeFile = {
+  path: string;
+  old_path?: string;
+  status: GitChangeStatus;
+  additions: number;
+  deletions: number;
+  binary?: boolean;
+};
+
+export type GitChangesResult = {
+  is_repo: boolean;
+  root?: string;
+  files: GitChangeFile[];
+};
+
+export type GitFileDiffResult = {
+  is_repo: boolean;
+  path: string;
+  old_path?: string;
+  status: GitChangeStatus;
+  additions: number;
+  deletions: number;
+  binary?: boolean;
+  patch: string;
+  truncated: boolean;
+};
+
 export type GitCommitParams = {
   message?: string;
   include_unstaged?: boolean;
@@ -247,6 +276,8 @@ export type WuuDesktopApi = {
   selectProject: (projectId: string) => Promise<ProjectListResult>;
   selectNoProject: (fresh?: boolean) => Promise<ProjectListResult>;
   gitStatus: () => Promise<GitStatusResult>;
+  listGitChanges: () => Promise<GitChangesResult>;
+  readGitFileDiff: (path: string) => Promise<GitFileDiffResult>;
   checkoutGitBranch: (branch: string) => Promise<GitStatusResult>;
   createCheckoutGitBranch: (branch: string) => Promise<GitCreateBranchResult>;
   commitGitChanges: (params: GitCommitParams) => Promise<GitCommitResult>;

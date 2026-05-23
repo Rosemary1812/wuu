@@ -22,10 +22,13 @@ import type {
   ConfigCodexModelsResult,
   ConfigModelUpdateResult,
   DesktopProject,
+  GitChangeFile,
+  GitChangesResult,
   GitCommitParams,
   GitCommitResult,
   GitCreateBranchResult,
   GitDiffStats,
+  GitFileDiffResult,
   GitPullRequestParams,
   GitPullRequestResult,
   FileTreeListResult,
@@ -44,6 +47,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const RENDERABLE_IMAGE_EXTENSIONS = new Set([".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"]);
 const FILE_TREE_MAX_PATHS = 4000;
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
+const GIT_DIFF_PREVIEW_MAX_BYTES = 512 * 1024;
+const GIT_DIFF_COMMAND_MAX_BUFFER = 8 * 1024 * 1024;
 const FILE_TREE_IGNORED_DIRS = new Set([
   ".git",
   ".next",
@@ -386,6 +391,84 @@ function gitStatusResult(): GitStatusResult {
   };
 }
 
+function gitChangesResult(): GitChangesResult {
+  const context = ensureRuntimeContext();
+  const root = gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
+  const insideWorkTree = gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
+  if (!insideWorkTree) {
+    return { is_repo: false, files: [] };
+  }
+
+  const filesByPath = new Map<string, GitChangeFile>();
+  for (const file of parseGitNameStatus(gitOutput(root, ["diff", "--name-status", "--find-renames", "HEAD", "--"]) ?? "")) {
+    filesByPath.set(file.path, file);
+  }
+
+  for (const file of parseGitNumstatFiles(gitOutput(root, ["diff", "--numstat", "--find-renames", "HEAD", "--"]) ?? "")) {
+    const existing = filesByPath.get(file.path);
+    filesByPath.set(file.path, {
+      ...file,
+      ...existing,
+      additions: file.additions,
+      deletions: file.deletions,
+      binary: existing?.binary || file.binary
+    });
+  }
+
+  for (const path of listUntrackedGitFiles(root)) {
+    const stats = untrackedGitFileStats(root, path);
+    filesByPath.set(path, {
+      path,
+      status: "untracked",
+      additions: stats.additions,
+      deletions: 0,
+      binary: stats.binary
+    });
+  }
+
+  return {
+    is_repo: true,
+    root,
+    files: Array.from(filesByPath.values()).sort((left, right) => left.path.localeCompare(right.path))
+  };
+}
+
+function gitFileDiffResult(path: string): GitFileDiffResult {
+  const context = ensureRuntimeContext();
+  const root = gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
+  const insideWorkTree = gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
+  const { relativePath, absolutePath } = resolveGitRelativePath(root, path);
+  if (!insideWorkTree) {
+    return emptyGitFileDiffResult(relativePath, false);
+  }
+
+  const change = gitChangesResult().files.find((file) => file.path === relativePath) ?? {
+    path: relativePath,
+    status: "unknown" as const,
+    additions: 0,
+    deletions: 0
+  };
+
+  if (change.status === "untracked") {
+    return gitUntrackedFileDiffResult(root, absolutePath, change);
+  }
+
+  const rawPatch = gitDiffOutput(root, relativePath);
+  const truncatedPatch = truncateTextBytes(rawPatch, GIT_DIFF_PREVIEW_MAX_BYTES);
+  const binary = change.binary || rawPatch.includes("Binary files ") || rawPatch.includes("GIT binary patch");
+  return {
+    is_repo: true,
+    path: change.path,
+    old_path: change.old_path,
+    status: change.status,
+    additions: change.additions,
+    deletions: change.deletions,
+    binary,
+    patch: truncatedPatch.text,
+    truncated: truncatedPatch.truncated
+  };
+}
+
 function checkoutGitBranch(branch: string): GitStatusResult {
   const context = ensureRuntimeContext();
   const current = gitStatusResult();
@@ -562,6 +645,19 @@ function gitStagedDiffStats(cwd: string): GitDiffStats {
   return parseGitNumstat(gitOutput(cwd, ["diff", "--cached", "--numstat", "--"]) ?? "");
 }
 
+function gitDiffOutput(cwd: string, relativePath: string): string {
+  const result = spawnSync("git", ["-C", cwd, "diff", "--no-ext-diff", "--find-renames", "--unified=3", "HEAD", "--", relativePath], {
+    cwd,
+    encoding: "utf8",
+    env: process.env,
+    maxBuffer: GIT_DIFF_COMMAND_MAX_BUFFER
+  });
+  if (result.status !== 0 && !result.stdout) {
+    throw new Error(result.stderr.trim() || `git diff failed for ${relativePath}`);
+  }
+  return result.stdout;
+}
+
 function parseGitNumstat(output: string): GitDiffStats {
   const stats = emptyGitDiffStats();
   for (const line of output.split("\n")) {
@@ -579,6 +675,203 @@ function parseGitNumstat(output: string): GitDiffStats {
     }
   }
   return stats;
+}
+
+function parseGitNameStatus(output: string): GitChangeFile[] {
+  const files: GitChangeFile[] = [];
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const columns = trimmed.split("\t");
+    const statusCode = columns[0] ?? "";
+    const status = gitChangeStatus(statusCode);
+    const oldPath = status === "renamed" || status === "copied" ? columns[1] : undefined;
+    const path = status === "renamed" || status === "copied" ? columns[2] : columns[1];
+    if (!path) {
+      continue;
+    }
+    files.push({
+      path,
+      old_path: oldPath,
+      status,
+      additions: 0,
+      deletions: 0
+    });
+  }
+  return files;
+}
+
+function parseGitNumstatFiles(output: string): GitChangeFile[] {
+  const files: GitChangeFile[] = [];
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const columns = trimmed.split("\t");
+    if (columns.length < 3) {
+      continue;
+    }
+    const additions = columns[0];
+    const deletions = columns[1];
+    const path = columns.at(-1);
+    if (!path) {
+      continue;
+    }
+    files.push({
+      path,
+      status: "unknown",
+      additions: additions === "-" ? 0 : Number(additions) || 0,
+      deletions: deletions === "-" ? 0 : Number(deletions) || 0,
+      binary: additions === "-" || deletions === "-"
+    });
+  }
+  return files;
+}
+
+function gitChangeStatus(statusCode: string): GitChangeFile["status"] {
+  switch (statusCode[0]) {
+    case "M":
+      return "modified";
+    case "A":
+      return "added";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    case "C":
+      return "copied";
+    default:
+      return "unknown";
+  }
+}
+
+function listUntrackedGitFiles(cwd: string): string[] {
+  return (
+    gitOutput(cwd, ["ls-files", "--others", "--exclude-standard"])
+      ?.split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean) ?? []
+  );
+}
+
+function untrackedGitFileStats(root: string, path: string): { additions: number; binary: boolean } {
+  const { absolutePath } = resolveGitRelativePath(root, path);
+  try {
+    const stats = statSync(absolutePath);
+    if (!stats.isFile()) {
+      return { additions: 0, binary: false };
+    }
+    const previewBuffer = readFilePreviewBuffer(absolutePath, Math.min(stats.size, FILE_PREVIEW_MAX_BYTES));
+    const binary = previewBuffer.includes(0);
+    return {
+      additions: binary ? 0 : countTextFileLines(absolutePath),
+      binary
+    };
+  } catch {
+    return { additions: 0, binary: false };
+  }
+}
+
+function gitUntrackedFileDiffResult(root: string, absolutePath: string, change: GitChangeFile): GitFileDiffResult {
+  try {
+    const stats = statSync(absolutePath);
+    if (!stats.isFile()) {
+      return emptyGitFileDiffResult(change.path, true);
+    }
+    const readLimit = Math.min(stats.size, GIT_DIFF_PREVIEW_MAX_BYTES + 1);
+    const buffer = readFilePreviewBuffer(absolutePath, readLimit);
+    const truncated = stats.size > GIT_DIFF_PREVIEW_MAX_BYTES;
+    const previewBuffer = buffer.subarray(0, truncated ? GIT_DIFF_PREVIEW_MAX_BYTES : buffer.length);
+    const binary = previewBuffer.includes(0);
+    const patch = binary ? `Binary file ${change.path} is untracked` : buildUntrackedPatch(change.path, previewBuffer.toString("utf8"), truncated);
+    return {
+      is_repo: true,
+      path: change.path,
+      old_path: change.old_path,
+      status: change.status,
+      additions: change.additions,
+      deletions: change.deletions,
+      binary,
+      patch,
+      truncated
+    };
+  } catch {
+    return emptyGitFileDiffResult(change.path, true);
+  }
+}
+
+function buildUntrackedPatch(path: string, text: string, truncated: boolean): string {
+  const lines = splitPatchTextLines(text);
+  const patchLines = [
+    `diff --git a/${path} b/${path}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${path}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((line) => `+${line}`)
+  ];
+  if (truncated) {
+    patchLines.push("+");
+    patchLines.push("+[diff truncated]");
+  }
+  return patchLines.join("\n");
+}
+
+function splitPatchTextLines(text: string): string[] {
+  if (!text) {
+    return [];
+  }
+  const withoutFinalNewline = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return withoutFinalNewline ? withoutFinalNewline.split(/\r?\n/) : [];
+}
+
+function readFilePreviewBuffer(filePath: string, readLimit: number): Buffer {
+  const buffer = Buffer.alloc(readLimit);
+  const descriptor = openSync(filePath, "r");
+  let bytesRead = 0;
+  try {
+    bytesRead = readSync(descriptor, buffer, 0, readLimit, 0);
+  } finally {
+    closeSync(descriptor);
+  }
+  return buffer.subarray(0, bytesRead);
+}
+
+function resolveGitRelativePath(root: string, path: string): { relativePath: string; absolutePath: string } {
+  const relativePath = normalizeWorkspaceRelativePath(path);
+  const absolutePath = resolve(root, relativePath);
+  const relativeToRoot = relative(root, absolutePath);
+  if (!relativeToRoot || relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot)) {
+    throw new Error("file is outside the current git repository");
+  }
+  return { relativePath, absolutePath };
+}
+
+function truncateTextBytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
+  const buffer = Buffer.from(text, "utf8");
+  if (buffer.byteLength <= maxBytes) {
+    return { text, truncated: false };
+  }
+  return {
+    text: `${buffer.subarray(0, maxBytes).toString("utf8")}\n[diff truncated]\n`,
+    truncated: true
+  };
+}
+
+function emptyGitFileDiffResult(path: string, isRepo: boolean): GitFileDiffResult {
+  return {
+    is_repo: isRepo,
+    path,
+    status: "unknown",
+    additions: 0,
+    deletions: 0,
+    binary: false,
+    patch: "",
+    truncated: false
+  };
 }
 
 function countTextFileLines(filePath: string): number {
@@ -1039,6 +1332,8 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) => selectProject(projectIDToSelect));
   ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean) => selectNoProject(Boolean(fresh)));
   ipcMain.handle("wuu:git-status", () => gitStatusResult());
+  ipcMain.handle("wuu:git-changes", () => gitChangesResult());
+  ipcMain.handle("wuu:git-file-diff", (_event, path: string) => gitFileDiffResult(path));
   ipcMain.handle("wuu:git-checkout-branch", (_event, branch: string) => checkoutGitBranch(branch));
   ipcMain.handle("wuu:git-create-checkout-branch", (_event, branch: string) => createCheckoutGitBranch(branch));
   ipcMain.handle("wuu:git-commit", (_event, params: GitCommitParams) => commitGitChanges(params ?? {}));
