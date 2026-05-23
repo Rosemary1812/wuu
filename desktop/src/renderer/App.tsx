@@ -84,6 +84,8 @@ type SidebarResizeSession = {
   startWidth: number;
 };
 
+type ComposerVariant = "dock" | "hero";
+
 function initialSidebarWidth(): number {
   const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
   if (!Number.isFinite(stored)) {
@@ -255,8 +257,9 @@ export function App(): JSX.Element {
   const emptyThreadTitle =
     state.activeContext?.kind === "project"
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
-      : "我们应该构建什么？";
+      : "我们应该在 wuu 中构建什么？";
   const turns = state.thread?.turns ?? [];
+  const emptyConversation = turns.length === 0;
   const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
@@ -314,6 +317,34 @@ export function App(): JSX.Element {
       }
       applySidebarWidth(sidebarWidth + SIDEBAR_STEP);
     }
+  }
+
+  function renderComposer(variant: ComposerVariant): JSX.Element {
+    return (
+      <Composer
+        variant={variant}
+        prompt={prompt}
+        setPrompt={setPrompt}
+        running={state.running}
+        status={state.status}
+        provider={state.initialized?.provider}
+        model={state.initialized?.model}
+        projects={state.projects}
+        activeContext={state.activeContext}
+        activeProject={activeProject}
+        menuOpen={runtimeMenuOpen}
+        menuRef={runtimeMenuRef}
+        projectFilter={projectFilter}
+        setProjectFilter={setProjectFilter}
+        onToggleMenu={() => setRuntimeMenuOpen((open) => !open)}
+        onSelectProject={(id) => void openProject(id)}
+        onSelectNoProject={() => void useNoProject(false)}
+        onCreateProject={() => void createBlankProject()}
+        onOpenProject={() => void chooseProjectFolder()}
+        onSend={() => void sendPrompt()}
+        onInterrupt={() => void interrupt()}
+      />
+    );
   }
 
   async function loadRuntime(projectState: ProjectListResult): Promise<Partial<AppState>> {
@@ -689,16 +720,16 @@ export function App(): JSX.Element {
         </header>
 
         {state.initialized && !previewingLaunch ? (
-          <div className="scroll-region" ref={scrollRef}>
-            <div className="conversation-width">
-              {turns.length === 0 ? (
-                <EmptyThread title={emptyThreadTitle} />
-              ) : (
-                turns.map((turn) => (
+          <div className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}`} ref={scrollRef}>
+            {emptyConversation ? (
+              <EmptyConversationHome title={emptyThreadTitle}>{renderComposer("hero")}</EmptyConversationHome>
+            ) : (
+              <div className="conversation-width">
+                {turns.map((turn) => (
                   <TurnView key={turn.id} turn={turn} cwd={state.thread?.cwd ?? state.activeContext?.cwd} nowMs={nowMs} />
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <RuntimeLoading
@@ -708,34 +739,22 @@ export function App(): JSX.Element {
           />
         )}
 
-        {state.initialized && !previewingLaunch ? (
-          <Composer
-            prompt={prompt}
-            setPrompt={setPrompt}
-            running={state.running}
-            status={state.status}
-            provider={state.initialized?.provider}
-            model={state.initialized?.model}
-            projects={state.projects}
-            activeContext={state.activeContext}
-            activeProject={activeProject}
-            menuOpen={runtimeMenuOpen}
-            menuRef={runtimeMenuRef}
-            projectFilter={projectFilter}
-            setProjectFilter={setProjectFilter}
-            onToggleMenu={() => setRuntimeMenuOpen((open) => !open)}
-            onSelectProject={(id) => void openProject(id)}
-            onSelectNoProject={() => void useNoProject(false)}
-            onCreateProject={() => void createBlankProject()}
-            onOpenProject={() => void chooseProjectFolder()}
-            onSend={() => void sendPrompt()}
-            onInterrupt={() => void interrupt()}
-          />
-        ) : null}
+        {state.initialized && !previewingLaunch && !emptyConversation ? renderComposer("dock") : null}
       </main>
 
       {state.askRequest ? <AskUserDialog request={state.askRequest} /> : null}
     </div>
+  );
+}
+
+function EmptyConversationHome({ title, children }: { title: string; children: JSX.Element }): JSX.Element {
+  return (
+    <section className="empty-home">
+      <div className="empty-home-inner">
+        <h2>{title}</h2>
+        {children}
+      </div>
+    </section>
   );
 }
 
@@ -1383,14 +1402,6 @@ function formatDuration(ms: number): string {
   return `${seconds}s`;
 }
 
-function EmptyThread({ title }: { title: string }): JSX.Element {
-  return (
-    <div className="empty-thread">
-      <h2>{title}</h2>
-    </div>
-  );
-}
-
 function RuntimeLoading({
   status,
   pinned = false,
@@ -1556,6 +1567,7 @@ function SettingsView({
 }
 
 function Composer({
+  variant = "dock",
   prompt,
   setPrompt,
   running,
@@ -1577,6 +1589,7 @@ function Composer({
   onSend,
   onInterrupt
 }: {
+  variant?: ComposerVariant;
   prompt: string;
   setPrompt: (value: string) => void;
   running: boolean;
@@ -1600,8 +1613,9 @@ function Composer({
 }): JSX.Element {
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = status === "ready" ? "" : status;
-  return (
-    <footer className="composer-wrap">
+  const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
+  const content = (
+    <>
       <div className="composer-shell">
         <div className="composer">
           <textarea
@@ -1645,8 +1659,9 @@ function Composer({
           ) : null}
         </div>
       </div>
-    </footer>
+    </>
   );
+  return variant === "hero" ? <div className={className}>{content}</div> : <footer className={className}>{content}</footer>;
 }
 
 function ProjectPickerMenu({

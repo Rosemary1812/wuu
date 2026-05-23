@@ -594,6 +594,10 @@ kbd {
   padding: 44px 0 28px;
 }
 
+.empty-scroll-region {
+  padding: 0;
+}
+
 .conversation-width {
   width: min(1120px, calc(100% - 96px));
   margin: 0 auto;
@@ -854,18 +858,33 @@ pre {
   color: #b42318;
 }
 
-.empty-thread {
+.empty-home {
   display: grid;
-  height: 42vh;
-  place-items: center;
+  min-height: 100%;
+  align-items: start;
+  background: #fff;
+  padding: 0 0 48px;
   color: #202427;
 }
 
-.empty-thread h2 {
+.empty-home-inner {
+  display: grid;
+  width: min(860px, calc(100% - 72px));
+  justify-items: center;
+  gap: 54px;
+  margin: 0 auto;
+  padding-top: 92px;
+}
+
+.empty-home h2 {
+  max-width: 820px;
   margin: 0;
-  font-size: var(--font-display);
+  color: #22262a;
+  font-size: 34px;
   font-weight: var(--weight-medium);
   letter-spacing: 0;
+  line-height: 1.18;
+  text-align: center;
 }
 
 .project-empty-pane {
@@ -1047,6 +1066,12 @@ pre {
   background: #fff;
 }
 
+.hero-composer-wrap {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+}
+
 .composer-shell {
   position: relative;
   width: min(760px, calc(100% - 72px));
@@ -1054,6 +1079,13 @@ pre {
   border-radius: 18px;
   background: #f4f4f2;
   box-shadow: 0 8px 26px rgba(20, 24, 28, 0.08);
+}
+
+.hero-composer-wrap .composer-shell {
+  width: 100%;
+  border-radius: 22px;
+  background: #f1f2ef;
+  box-shadow: 0 22px 58px rgba(20, 24, 28, 0.12);
 }
 
 .composer {
@@ -1065,6 +1097,11 @@ pre {
   overflow: hidden;
 }
 
+.hero-composer-wrap .composer {
+  min-height: 150px;
+  border-radius: 22px;
+}
+
 .composer textarea {
   width: 100%;
   min-height: 76px;
@@ -1074,6 +1111,11 @@ pre {
   padding: 15px 18px 6px;
   color: #1f2328;
   font-size: var(--font-body);
+}
+
+.hero-composer-wrap .composer textarea {
+  min-height: 92px;
+  padding: 22px 24px 8px;
 }
 
 .composer textarea::placeholder {
@@ -1120,6 +1162,10 @@ pre {
   padding: 0 12px;
 }
 
+.hero-composer-wrap .composer-context-bar {
+  padding: 0 16px;
+}
+
 .context-project-button {
   display: inline-flex;
   max-width: 240px;
@@ -1162,6 +1208,12 @@ pre {
   box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
   padding: 12px;
   backdrop-filter: blur(18px);
+}
+
+.hero-composer-wrap .composer-project-menu {
+  top: calc(100% + 10px);
+  bottom: auto;
+  left: 16px;
 }
 
 .project-search {
