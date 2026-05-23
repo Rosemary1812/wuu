@@ -11,13 +11,16 @@ const mainBundle = path.join(desktopRoot, "out", "main", "index.js");
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "wuu-desktop-setup-"));
 const userData = path.join(home, "userData");
 const documents = path.join(home, "Documents");
+const scenario = process.env.WUU_SETUP_E2E_SCENARIO || "missing-config";
 
 fs.mkdirSync(userData, { recursive: true });
 fs.mkdirSync(documents, { recursive: true });
+seedScenario();
 
 process.env.HOME = home;
 process.env.WUU_SOURCE_ROOT = repoRoot;
 process.env.OPENAI_API_KEY = "";
+process.env.ANTHROPIC_API_KEY = "";
 app.setPath("userData", userData);
 app.setPath("documents", documents);
 app.commandLine.appendSwitch("disable-gpu");
@@ -72,14 +75,50 @@ async function run() {
   const auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
   const preferences = JSON.parse(fs.readFileSync(preferencesPath, "utf8"));
 
-  assert.equal(config.default_provider, "openai");
-  assert.equal(config.providers.openai.type, "openai-compatible");
-  assert.equal(config.providers.openai.api_key, undefined);
-  assert.equal(auth.keys.openai, "sk-desktop-setup-test");
+  const expectedProvider = scenario === "missing-key" ? "anthropic" : "openai";
+  const expectedType = scenario === "missing-key" ? "anthropic" : "openai-compatible";
+
+  assert.equal(config.default_provider, expectedProvider);
+  assert.equal(config.providers[expectedProvider].type, expectedType);
+  assert.equal(config.providers[expectedProvider].api_key, undefined);
+  assert.equal(auth.keys[expectedProvider], "sk-desktop-setup-test");
   assert.equal(preferences.has_completed_onboarding, true);
 
-  console.log("setup e2e passed");
+  console.log(`setup e2e passed: ${scenario}`);
   app.quit();
+}
+
+function seedScenario() {
+  if (scenario === "missing-config") {
+    return;
+  }
+  if (scenario !== "missing-key") {
+    throw new Error(`unknown setup e2e scenario: ${scenario}`);
+  }
+  const configPath = path.join(home, ".config", "wuu", "config.json");
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(
+    configPath,
+    `${JSON.stringify(
+      {
+        default_provider: "anthropic",
+        providers: {
+          anthropic: {
+            type: "anthropic",
+            base_url: "https://api.anthropic.com",
+            api_key_env: "ANTHROPIC_API_KEY",
+            model: "claude-3-5-sonnet-latest"
+          }
+        },
+        agent: {
+          max_steps: 0,
+          temperature: 0.2
+        }
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 async function waitForWindow(timeoutMs) {

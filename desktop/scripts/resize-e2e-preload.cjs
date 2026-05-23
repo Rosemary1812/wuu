@@ -114,6 +114,30 @@ contextBridge.exposeInMainWorld("wuu", {
     workspace_root: cwd,
     providers: [{ name: "e2e", type: "mock", model: "mock-resize" }]
   }),
+  readRuntimeSetup: async () => ({
+    required: false,
+    reason: "runtime_error",
+    message: "",
+    target_config_path: "",
+    provider: "e2e",
+    provider_type: "mock",
+    base_url: "http://127.0.0.1",
+    model: "mock-resize",
+    api_key_env: "",
+    has_api_key: true
+  }),
+  saveRuntimeSetup: async () => ({
+    required: false,
+    reason: "runtime_error",
+    message: "",
+    target_config_path: "",
+    provider: "e2e",
+    provider_type: "mock",
+    base_url: "http://127.0.0.1",
+    model: "mock-resize",
+    api_key_env: "",
+    has_api_key: true
+  }),
   updateRuntimeSettings: async (provider, model) => ({
     provider,
     model,

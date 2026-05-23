@@ -1410,6 +1410,23 @@ export function App(): JSX.Element {
     if (!projectState.active_context) {
       return emptyRuntimeState(projectState);
     }
+    const setup = await window.wuu.readRuntimeSetup();
+    if (setup.required) {
+      const gitStatus = await window.wuu.gitStatus();
+      return {
+        initialized: undefined,
+        projects: projectState.projects,
+        activeContext: projectState.active_context,
+        activeProjectId: activeProjectID(projectState.active_context),
+        gitStatus,
+        thread: undefined,
+        threads: [],
+        running: false,
+        status: runtimeSetupStatus(setup),
+        askRequests: [],
+        answeredAskRequests: []
+      };
+    }
     const [initialized, gitStatus] = await Promise.all([window.wuu.initialize(), window.wuu.gitStatus()]);
     const listed = await window.wuu.listThreads();
     const listedThreads = sortThreads(listed.threads);
@@ -6947,6 +6964,17 @@ function runtimeSetupNeeded(status: string): boolean {
     normalized.includes("api key is required") ||
     normalized.includes("either api key or auth token is required")
   );
+}
+
+function runtimeSetupStatus(setup: RuntimeSetupState): string {
+  switch (setup.reason) {
+    case "missing_config":
+      return "config not found";
+    case "missing_api_key":
+      return "no API key found";
+    case "runtime_error":
+      return setup.message;
+  }
 }
 
 function runtimeSetupPresetID(setup: RuntimeSetupState): RuntimeSetupPresetID {
