@@ -2,6 +2,8 @@ import {
   Bot,
   Brain,
   Folder,
+  FolderOpen,
+  FolderPlus,
   MessageSquarePlus,
   PanelLeftOpen,
   Send,
@@ -21,7 +23,9 @@ import {
 import type {
   AppServerNotification,
   AskUserQuestion,
+  DesktopProject,
   InitializeResult,
+  ProjectListResult,
   ServerEvent,
   Thread,
   ThreadItem,
@@ -35,6 +39,8 @@ type AskRequestState = {
 
 type AppState = {
   initialized?: InitializeResult;
+  projects: DesktopProject[];
+  activeProjectId?: string;
   thread?: Thread;
   threads: Thread[];
   running: boolean;
@@ -43,6 +49,7 @@ type AppState = {
 };
 
 const initialState: AppState = {
+  projects: [],
   threads: [],
   running: false,
   status: "connecting"
@@ -82,8 +89,10 @@ export function App(): JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [resizingSidebar, setResizingSidebar] = useState(false);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -96,21 +105,14 @@ export function App(): JSX.Element {
 
     void (async () => {
       try {
-        const initialized = await window.wuu.initialize();
-        const listed = await window.wuu.listThreads();
-        const thread =
-          listed.threads.length > 0
-            ? (await window.wuu.resumeThread(listed.threads[0].id)).thread
-            : (await window.wuu.startThread()).thread;
+        const listedProjects = await window.wuu.listProjects();
+        const loadedState = listedProjects.active_project_id ? await loadProjectRuntime(listedProjects) : emptyProjectState(listedProjects);
         if (!mounted) {
           return;
         }
         setState((current) => ({
           ...current,
-          initialized,
-          thread,
-          threads: upsertThread(listed.threads, thread),
-          status: "ready"
+          ...loadedState
         }));
       } catch (error) {
         if (!mounted) {
@@ -128,6 +130,22 @@ export function App(): JSX.Element {
       off();
     };
   }, []);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent): void {
+      if (!projectMenuOpen) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof Node && projectMenuRef.current?.contains(target)) {
+        return;
+      }
+      setProjectMenuOpen(false);
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [projectMenuOpen]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -191,7 +209,8 @@ export function App(): JSX.Element {
     };
   }, [resizingSidebar]);
 
-  const activeTitle = state.thread?.preview || "新对话";
+  const activeProject = state.projects.find((project) => project.id === state.activeProjectId);
+  const activeTitle = state.thread?.preview || activeProject?.name || "选择项目";
   const turns = state.thread?.turns ?? [];
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
@@ -251,7 +270,105 @@ export function App(): JSX.Element {
     }
   }
 
+  async function loadProjectRuntime(projectState: ProjectListResult): Promise<Partial<AppState>> {
+    if (!projectState.active_project_id) {
+      return emptyProjectState(projectState);
+    }
+    const initialized = await window.wuu.initialize();
+    const listed = await window.wuu.listThreads();
+    const thread =
+      listed.threads.length > 0
+        ? (await window.wuu.resumeThread(listed.threads[0].id)).thread
+        : (await window.wuu.startThread()).thread;
+    return {
+      initialized,
+      projects: projectState.projects,
+      activeProjectId: projectState.active_project_id,
+      thread,
+      threads: upsertThread(listed.threads, thread),
+      running: false,
+      status: "ready"
+    };
+  }
+
+  function emptyProjectState(projectState: ProjectListResult): Partial<AppState> {
+    return {
+      initialized: undefined,
+      projects: projectState.projects,
+      activeProjectId: undefined,
+      thread: undefined,
+      threads: [],
+      running: false,
+      status: projectState.projects.length > 0 ? "select-project" : "no-project"
+    };
+  }
+
+  async function openProject(projectId: string): Promise<void> {
+    if (projectId === state.activeProjectId && state.thread) {
+      return;
+    }
+    setProjectMenuOpen(false);
+    setState((current) => ({
+      ...current,
+      activeProjectId: projectId,
+      initialized: undefined,
+      thread: undefined,
+      threads: [],
+      running: false,
+      status: "opening"
+    }));
+    try {
+      const projectState = await window.wuu.selectProject(projectId);
+      const loadedState = await loadProjectRuntime(projectState);
+      setState((current) => ({ ...current, ...loadedState }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "open project failed"
+      }));
+    }
+  }
+
+  async function createBlankProject(): Promise<void> {
+    setProjectMenuOpen(false);
+    try {
+      const projectState = await window.wuu.createBlankProject();
+      if (!projectState.active_project_id) {
+        setState((current) => ({ ...current, ...emptyProjectState(projectState) }));
+        return;
+      }
+      const loadedState = await loadProjectRuntime(projectState);
+      setState((current) => ({ ...current, ...loadedState }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "create project failed"
+      }));
+    }
+  }
+
+  async function chooseProjectFolder(): Promise<void> {
+    setProjectMenuOpen(false);
+    try {
+      const projectState = await window.wuu.chooseProjectFolder();
+      if (!projectState.active_project_id) {
+        setState((current) => ({ ...current, ...emptyProjectState(projectState) }));
+        return;
+      }
+      const loadedState = await loadProjectRuntime(projectState);
+      setState((current) => ({ ...current, ...loadedState }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "open folder failed"
+      }));
+    }
+  }
+
   async function startNewThread(): Promise<void> {
+    if (!state.activeProjectId) {
+      return;
+    }
     const result = await window.wuu.startThread();
     setState((current) => ({
       ...current,
@@ -263,7 +380,7 @@ export function App(): JSX.Element {
   }
 
   async function selectThread(threadId: string): Promise<void> {
-    if (threadId === state.thread?.id || state.running) {
+    if (!state.activeProjectId || threadId === state.thread?.id || state.running) {
       return;
     }
     setState((current) => ({ ...current, status: "loading" }));
@@ -285,7 +402,7 @@ export function App(): JSX.Element {
 
   async function sendPrompt(): Promise<void> {
     const text = prompt.trim();
-    if (!text || !state.thread || state.running) {
+    if (!text || !state.activeProjectId || !state.thread || state.running) {
       return;
     }
     setPrompt("");
@@ -313,17 +430,49 @@ export function App(): JSX.Element {
     <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
         <div className="traffic-spacer" />
-        <nav className="primary-nav" aria-label="主导航">
-          <button className="nav-item" onClick={() => void startNewThread()}>
-            <MessageSquarePlus size={18} />
-            <span>新对话</span>
-          </button>
-        </nav>
+        {state.activeProjectId ? (
+          <nav className="primary-nav" aria-label="主导航">
+            <button className="nav-item" onClick={() => void startNewThread()}>
+              <MessageSquarePlus size={18} />
+              <span>新对话</span>
+            </button>
+          </nav>
+        ) : null}
 
         <section className="project-list" aria-label="项目">
-          <div className="section-label">项目</div>
-          <WorkspaceRow name={workspaceName(state.initialized?.workspace_root)} />
-          <ThreadList threads={state.threads} activeID={state.thread?.id} onSelect={(id) => void selectThread(id)} />
+          <div className="project-section-header" ref={projectMenuRef}>
+            <div className="section-label">项目</div>
+            <button
+              className="project-add-button"
+              aria-label="添加项目"
+              aria-haspopup="menu"
+              aria-expanded={projectMenuOpen}
+              onClick={() => setProjectMenuOpen((open) => !open)}
+            >
+              <FolderPlus size={20} />
+            </button>
+            {projectMenuOpen ? (
+              <div className="project-add-menu" role="menu">
+                <button role="menuitem" onClick={() => void createBlankProject()}>
+                  <FolderPlus size={22} />
+                  <span>新建空白项目</span>
+                </button>
+                <button role="menuitem" onClick={() => void chooseProjectFolder()}>
+                  <FolderOpen size={22} />
+                  <span>使用现有文件夹</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {state.projects.length === 0 ? <div className="project-empty-note">还没有项目</div> : null}
+          <ProjectList
+            projects={state.projects}
+            activeID={state.activeProjectId}
+            threads={state.threads}
+            activeThreadID={state.thread?.id}
+            onSelectProject={(id) => void openProject(id)}
+            onSelectThread={(id) => void selectThread(id)}
+          />
         </section>
       </aside>
 
@@ -354,25 +503,31 @@ export function App(): JSX.Element {
             <h1>{activeTitle}</h1>
           </div>
           <div className="title-actions">
-            <span className="runtime-pill">{state.initialized?.provider ?? "runtime"}</span>
+            {state.initialized ? <span className="runtime-pill">{state.initialized.provider}</span> : null}
           </div>
         </header>
 
-        <div className="scroll-region" ref={scrollRef}>
-          <div className="conversation-width">
-            {turns.length === 0 ? <EmptyThread /> : turns.map((turn) => <TurnView key={turn.id} turn={turn} />)}
+        {state.activeProjectId ? (
+          <div className="scroll-region" ref={scrollRef}>
+            <div className="conversation-width">
+              {turns.length === 0 ? <EmptyThread /> : turns.map((turn) => <TurnView key={turn.id} turn={turn} />)}
+            </div>
           </div>
-        </div>
+        ) : (
+          <ProjectEmptyState onCreate={() => void createBlankProject()} onOpen={() => void chooseProjectFolder()} />
+        )}
 
-        <Composer
-          prompt={prompt}
-          setPrompt={setPrompt}
-          running={state.running}
-          status={state.status}
-          model={state.initialized?.model}
-          onSend={() => void sendPrompt()}
-          onInterrupt={() => void interrupt()}
-        />
+        {state.activeProjectId && state.thread ? (
+          <Composer
+            prompt={prompt}
+            setPrompt={setPrompt}
+            running={state.running}
+            status={state.status}
+            model={state.initialized?.model}
+            onSend={() => void sendPrompt()}
+            onInterrupt={() => void interrupt()}
+          />
+        ) : null}
       </main>
 
       {state.askRequest ? <AskUserDialog request={state.askRequest} /> : null}
@@ -512,6 +667,41 @@ function updateTurnItem(thread: Thread, turnID: string, itemID: string, update: 
   return { ...thread, turns };
 }
 
+function ProjectList({
+  projects,
+  activeID,
+  threads,
+  activeThreadID,
+  onSelectProject,
+  onSelectThread
+}: {
+  projects: DesktopProject[];
+  activeID?: string;
+  threads: Thread[];
+  activeThreadID?: string;
+  onSelectProject: (id: string) => void;
+  onSelectThread: (id: string) => void;
+}): JSX.Element {
+  return (
+    <div className="projects">
+      {projects.map((project) => (
+        <div key={project.id} className="project-group">
+          <button
+            className={`project-row ${project.id === activeID ? "active" : ""}`}
+            onClick={() => onSelectProject(project.id)}
+          >
+            <Folder size={18} />
+            <span>{project.name}</span>
+          </button>
+          {project.id === activeID ? (
+            <ThreadList threads={threads} activeID={activeThreadID} onSelect={onSelectThread} />
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ThreadList({
   threads,
   activeID,
@@ -521,9 +711,10 @@ function ThreadList({
   activeID?: string;
   onSelect: (id: string) => void;
 }): JSX.Element {
+  const visibleThreads = threads.filter((thread): thread is Thread => Boolean(thread?.id));
   return (
     <div className="thread-list">
-      {threads.slice(0, 8).map((thread, index) => (
+      {visibleThreads.slice(0, 8).map((thread, index) => (
         <button
           key={thread.id}
           className={`thread-row ${thread.id === activeID ? "active" : ""}`}
@@ -533,15 +724,6 @@ function ThreadList({
           <kbd>⌘{index + 1}</kbd>
         </button>
       ))}
-    </div>
-  );
-}
-
-function WorkspaceRow({ name }: { name: string }): JSX.Element {
-  return (
-    <div className="workspace-row">
-      <Folder size={18} />
-      <span>{name}</span>
     </div>
   );
 }
@@ -601,6 +783,27 @@ function EmptyThread(): JSX.Element {
     <div className="empty-thread">
       <Bot size={24} />
       <span>wuu</span>
+    </div>
+  );
+}
+
+function ProjectEmptyState({ onCreate, onOpen }: { onCreate: () => void; onOpen: () => void }): JSX.Element {
+  return (
+    <div className="project-empty-pane">
+      <div className="project-empty-content">
+        <FolderPlus size={28} />
+        <h2>添加项目</h2>
+        <div className="project-empty-actions">
+          <button onClick={onCreate}>
+            <FolderPlus size={22} />
+            <span>新建空白项目</span>
+          </button>
+          <button onClick={onOpen}>
+            <FolderOpen size={22} />
+            <span>使用现有文件夹</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -734,11 +937,4 @@ function AskUserDialog({ request }: { request: AskRequestState }): JSX.Element {
       </div>
     </div>
   );
-}
-
-function workspaceName(path?: string): string {
-  if (!path) {
-    return "wuu";
-  }
-  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "wuu";
 }

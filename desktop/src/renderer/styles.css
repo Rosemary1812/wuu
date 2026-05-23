@@ -117,7 +117,7 @@ button {
 }
 
 .nav-item,
-.workspace-row,
+.project-row,
 .thread-row {
   display: flex;
   width: 100%;
@@ -132,6 +132,7 @@ button {
 }
 
 .nav-item:hover,
+.project-row:hover,
 .thread-row:hover {
   background: rgba(40, 45, 50, 0.06);
 }
@@ -142,20 +143,102 @@ button {
   overflow: hidden;
 }
 
+.project-section-header {
+  position: relative;
+  display: flex;
+  height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 8px 12px;
+}
+
 .section-label {
   color: #8a8e91;
   font-weight: 650;
-  padding: 0 12px 8px;
 }
 
-.workspace-row,
+.project-add-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: transparent;
+  color: #687078;
+  -webkit-app-region: no-drag;
+}
+
+.project-add-button:hover,
+.project-add-button[aria-expanded="true"] {
+  background: rgba(40, 45, 50, 0.08);
+  color: #202427;
+}
+
+.project-add-menu {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 8px);
+  z-index: 30;
+  display: grid;
+  width: 330px;
+  gap: 2px;
+  border: 1px solid rgba(30, 34, 38, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 22px 54px rgba(20, 24, 28, 0.18);
+  padding: 12px;
+  backdrop-filter: blur(18px);
+}
+
+.project-add-menu button {
+  display: flex;
+  height: 50px;
+  align-items: center;
+  gap: 14px;
+  border-radius: 10px;
+  background: transparent;
+  color: #1f2328;
+  font-size: 18px;
+  font-weight: 750;
+  padding: 0 14px;
+  text-align: left;
+}
+
+.project-add-menu button:hover {
+  background: #f0f1ef;
+}
+
+.project-add-menu svg {
+  color: #596168;
+}
+
+.projects,
+.project-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-row.active,
 .thread-row.active {
   background: #dcdedb;
   color: #202427;
 }
 
-.workspace-row {
+.project-row {
   font-weight: 650;
+}
+
+.project-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-empty-note {
+  color: #8a8e91;
+  padding: 2px 12px;
 }
 
 .thread-list {
@@ -388,6 +471,51 @@ pre {
   gap: 10px;
   color: #7b807f;
   font-weight: 700;
+}
+
+.project-empty-pane {
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  background: #fff;
+}
+
+.project-empty-content {
+  display: grid;
+  width: min(440px, calc(100% - 72px));
+  justify-items: center;
+  gap: 18px;
+  color: #697075;
+}
+
+.project-empty-content h2 {
+  margin: 0;
+  color: #22262a;
+  font-size: 18px;
+}
+
+.project-empty-actions {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+}
+
+.project-empty-actions button {
+  display: flex;
+  height: 52px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #e0e0dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #22262a;
+  font-weight: 750;
+  padding: 0 16px;
+  text-align: left;
+}
+
+.project-empty-actions button:hover {
+  background: #f5f5f2;
 }
 
 .composer-wrap {

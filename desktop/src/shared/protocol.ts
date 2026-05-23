@@ -35,6 +35,19 @@ export type InitializeResult = {
   workspace_root: string;
 };
 
+export type DesktopProject = {
+  id: string;
+  name: string;
+  path: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectListResult = {
+  projects: DesktopProject[];
+  active_project_id?: string;
+};
+
 export type ThreadStatus = "idle" | "in_progress";
 export type TurnStatus = "in_progress" | "completed" | "failed" | "interrupted";
 export type TurnItemsView = "full";
@@ -107,6 +120,10 @@ export type ServerEvent =
   | { kind: "server-exit"; code: number | null };
 
 export type WuuDesktopApi = {
+  listProjects: () => Promise<ProjectListResult>;
+  createBlankProject: () => Promise<ProjectListResult>;
+  chooseProjectFolder: () => Promise<ProjectListResult>;
+  selectProject: (projectId: string) => Promise<ProjectListResult>;
   initialize: () => Promise<InitializeResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;

@@ -1,13 +1,15 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   AppServerNotification,
   AppServerRequest,
   AppServerResponse,
+  DesktopProject,
   InitializeResult,
+  ProjectListResult,
   ServerEvent,
   Thread,
   Turn
@@ -25,9 +27,10 @@ class AppServerClient {
   private pending = new Map<string, PendingRequest>();
   private nextRequestID = 1;
   private stdoutBuffer = "";
+  private disposing = false;
 
   constructor(
-    private readonly workdir: string,
+    readonly workdir: string,
     private readonly emit: (event: ServerEvent) => void
   ) {}
 
@@ -71,6 +74,15 @@ class AppServerClient {
     }
   }
 
+  dispose(): void {
+    this.disposing = true;
+    for (const pending of this.pending.values()) {
+      pending.reject(new Error("app-server stopped"));
+    }
+    this.pending.clear();
+    this.shutdown();
+  }
+
   private ensureStarted(): void {
     if (this.child && !this.child.killed) {
       return;
@@ -96,7 +108,9 @@ class AppServerClient {
         pending.reject(new Error("app-server exited"));
       }
       this.pending.clear();
-      this.emit({ kind: "server-exit", code });
+      if (!this.disposing) {
+        this.emit({ kind: "server-exit", code });
+      }
       this.child = null;
     });
   }
@@ -179,31 +193,141 @@ function resolveWuuCommand(workdir: string): WuuCommand {
   return { command: "wuu", args: [] };
 }
 
-function defaultWorkdir(): string {
-  if (process.env.WUU_WORKDIR) {
-    return resolve(process.env.WUU_WORKDIR);
-  }
-  const candidates = [
-    process.cwd(),
-    resolve(process.cwd(), ".."),
-    app.getAppPath(),
-    resolve(app.getAppPath(), ".."),
-    resolve(__dirname, "..", "..", "..")
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(join(candidate, "go.mod"))) {
-      return candidate;
-    }
-  }
-  return process.cwd();
-}
+type ProjectStore = {
+  projects: DesktopProject[];
+  active_project_id?: string;
+};
 
 let mainWindow: BrowserWindow | null = null;
 let client: AppServerClient | null = null;
+let projectStore: ProjectStore = { projects: [] };
+
+function projectStorePath(): string {
+  return join(app.getPath("userData"), "projects.json");
+}
+
+function loadProjectStore(): ProjectStore {
+  try {
+    const parsed = JSON.parse(readFileSync(projectStorePath(), "utf8")) as Partial<ProjectStore>;
+    const projects = Array.isArray(parsed.projects)
+      ? parsed.projects.filter((project): project is DesktopProject => isDesktopProject(project))
+      : [];
+    const activeProjectID = projects.some((project) => project.id === parsed.active_project_id)
+      ? parsed.active_project_id
+      : undefined;
+    return {
+      projects,
+      active_project_id: activeProjectID
+    };
+  } catch {
+    return { projects: [] };
+  }
+}
+
+function isDesktopProject(value: unknown): value is DesktopProject {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const project = value as Partial<DesktopProject>;
+  return (
+    typeof project.id === "string" &&
+    typeof project.name === "string" &&
+    typeof project.path === "string" &&
+    typeof project.created_at === "string" &&
+    typeof project.updated_at === "string"
+  );
+}
+
+function saveProjectStore(): void {
+  mkdirSync(dirname(projectStorePath()), { recursive: true });
+  writeFileSync(projectStorePath(), `${JSON.stringify(projectStore, null, 2)}\n`);
+}
+
+function projectListResult(): ProjectListResult {
+  return {
+    projects: projectStore.projects,
+    active_project_id: projectStore.active_project_id
+  };
+}
+
+function activeProject(): DesktopProject | undefined {
+  return projectStore.projects.find((project) => project.id === projectStore.active_project_id);
+}
+
+function projectID(projectPath: string): string {
+  return Buffer.from(resolve(projectPath)).toString("base64url");
+}
+
+function projectName(projectPath: string): string {
+  return basename(projectPath) || projectPath;
+}
+
+function isDirectory(projectPath: string): boolean {
+  try {
+    return statSync(projectPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function addProject(projectPath: string): ProjectListResult {
+  const resolvedPath = resolve(projectPath);
+  if (!isDirectory(resolvedPath)) {
+    throw new Error("selected project is not a directory");
+  }
+  const now = new Date().toISOString();
+  const id = projectID(resolvedPath);
+  const existingIndex = projectStore.projects.findIndex((project) => project.id === id);
+  const project: DesktopProject = {
+    id,
+    name: projectName(resolvedPath),
+    path: resolvedPath,
+    created_at: existingIndex >= 0 ? projectStore.projects[existingIndex].created_at : now,
+    updated_at: now
+  };
+  if (existingIndex >= 0) {
+    projectStore.projects[existingIndex] = project;
+  } else {
+    projectStore.projects = [project, ...projectStore.projects];
+  }
+  projectStore.active_project_id = id;
+  resetClient();
+  saveProjectStore();
+  return projectListResult();
+}
+
+function selectProject(projectIDToSelect: string): ProjectListResult {
+  const project = projectStore.projects.find((candidate) => candidate.id === projectIDToSelect);
+  if (!project) {
+    throw new Error("project not found");
+  }
+  projectStore.active_project_id = project.id;
+  resetClient();
+  saveProjectStore();
+  return projectListResult();
+}
+
+function resetClient(): void {
+  client?.dispose();
+  client = null;
+}
+
+async function showProjectDirectoryDialog(options: OpenDialogOptions): Promise<string | undefined> {
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+  if (result.canceled) {
+    return undefined;
+  }
+  return result.filePaths[0];
+}
 
 function serverClient(): AppServerClient {
-  if (!client) {
-    client = new AppServerClient(defaultWorkdir(), (event) => {
+  const project = activeProject();
+  if (!project) {
+    throw new Error("no project selected");
+  }
+  if (!client || client.workdir !== project.path) {
+    resetClient();
+    client = new AppServerClient(project.path, (event) => {
       mainWindow?.webContents.send("wuu:server-event", event);
     });
   }
@@ -245,6 +369,32 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  projectStore = loadProjectStore();
+
+  ipcMain.handle("wuu:project-list", () => projectListResult());
+  ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) => selectProject(projectIDToSelect));
+  ipcMain.handle("wuu:project-choose-folder", async () => {
+    const projectPath = await showProjectDirectoryDialog({
+      title: "使用现有文件夹",
+      buttonLabel: "使用文件夹",
+      properties: ["openDirectory"]
+    });
+    if (!projectPath) {
+      return projectListResult();
+    }
+    return addProject(projectPath);
+  });
+  ipcMain.handle("wuu:project-create-blank", async () => {
+    const projectPath = await showProjectDirectoryDialog({
+      title: "新建空白项目",
+      buttonLabel: "创建项目",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    if (!projectPath) {
+      return projectListResult();
+    }
+    return addProject(projectPath);
+  });
   ipcMain.handle("wuu:initialize", () => serverClient().request<InitializeResult>("initialize"));
   ipcMain.handle("wuu:thread-start", () => serverClient().request<{ thread: Thread }>("thread/start"));
   ipcMain.handle("wuu:thread-resume", (_event, sessionId?: string) =>

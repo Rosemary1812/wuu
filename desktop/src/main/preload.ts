@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { ServerEvent, WuuDesktopApi } from "../shared/protocol";
 
 const api: WuuDesktopApi = {
+  listProjects: () => ipcRenderer.invoke("wuu:project-list"),
+  createBlankProject: () => ipcRenderer.invoke("wuu:project-create-blank"),
+  chooseProjectFolder: () => ipcRenderer.invoke("wuu:project-choose-folder"),
+  selectProject: (projectId: string) => ipcRenderer.invoke("wuu:project-select", projectId),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) => ipcRenderer.invoke("wuu:thread-resume", sessionId),
