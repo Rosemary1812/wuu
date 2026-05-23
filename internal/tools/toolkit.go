@@ -241,21 +241,13 @@ func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string,
 		if t.mcpManager != nil {
 			for _, mcpTool := range t.mcpManager.AllTools() {
 				if mcpTool.Name() == call.Name {
-					result, err := mcpTool.Execute(ctx, call.Arguments)
-					if err != nil {
-						return result, err
-					}
-					return MaybePersistResult(t.env.SessionDir, call.Name, call.ID, result, defaultResultBudget), nil
+					return t.executeKnownTool(ctx, call, mcpTool)
 				}
 			}
 		}
 		return "", fmt.Errorf("unknown tool %q", call.Name)
 	}
-	result, err := tool.Execute(ctx, call.Arguments)
-	if err != nil {
-		return result, err
-	}
-	return MaybePersistResult(t.env.SessionDir, call.Name, call.ID, result, defaultResultBudget), nil
+	return t.executeKnownTool(ctx, call, tool)
 }
 
 // LookupTool returns the Tool with the given name, or nil. This

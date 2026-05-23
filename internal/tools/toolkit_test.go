@@ -501,6 +501,79 @@ func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolTelemetry_RecordsSuccess(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-read",
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	record := records[0]
+	if record.Name != "read_file" || record.CallID != "call-read" {
+		t.Fatalf("unexpected record identity: %+v", record)
+	}
+	if record.Kind != ToolKindFile || record.Exposure != ToolExposureDirect {
+		t.Fatalf("unexpected record classification: %+v", record)
+	}
+	if !record.ReadOnly || !record.ConcurrencySafe || !record.Success || record.Error != "" {
+		t.Fatalf("unexpected record status: %+v", record)
+	}
+	if record.StartedAt.IsZero() || record.DurationMS < 0 {
+		t.Fatalf("unexpected timing: %+v", record)
+	}
+	if record.RawOutputBytes != len(resp) || record.ReturnedOutputBytes != len(resp) || record.ResultBudgeted {
+		t.Fatalf("unexpected output sizing: %+v response_len=%d", record, len(resp))
+	}
+}
+
+func TestToolkit_ToolTelemetry_RecordsToolError(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-missing",
+		Name:      "read_file",
+		Arguments: `{"path":"missing.txt"}`,
+	})
+	if err == nil {
+		t.Fatal("expected read_file error")
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	record := records[0]
+	if record.Name != "read_file" || record.CallID != "call-missing" {
+		t.Fatalf("unexpected record identity: %+v", record)
+	}
+	if record.Success || record.Error == "" {
+		t.Fatalf("expected failed telemetry record with error, got %+v", record)
+	}
+	if record.RawOutputBytes != 0 || record.ReturnedOutputBytes != 0 || record.ResultBudgeted {
+		t.Fatalf("unexpected failed output sizing: %+v", record)
+	}
+}
+
 func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

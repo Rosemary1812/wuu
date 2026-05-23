@@ -70,6 +70,8 @@ type Env struct {
 
 	readState *readFileState
 	planState planState
+
+	toolTelemetry toolTelemetry
 }
 
 // RecordRead records a successful read_file invocation.
