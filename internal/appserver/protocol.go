@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -35,6 +36,8 @@ const (
 	NotificationReasoningDelta    = "item/reasoning/delta"
 	NotificationToolCallDelta     = "item/toolCall/delta"
 	NotificationToolCallOutput    = "item/toolCall/outputDelta"
+	NotificationAgentUpdated      = "agent/updated"
+	NotificationAgentMailbox      = "agent/mailbox"
 )
 
 type Request struct {
@@ -151,6 +154,30 @@ type TurnCompletedNotification struct {
 	Content      string `json:"content"`
 	InputTokens  int    `json:"input_tokens"`
 	OutputTokens int    `json:"output_tokens"`
+}
+
+type Agent struct {
+	ID           string    `json:"id"`
+	Type         string    `json:"type"`
+	TaskName     string    `json:"task_name,omitempty"`
+	AgentPath    string    `json:"agent_path,omitempty"`
+	ParentID     string    `json:"parent_id,omitempty"`
+	Description  string    `json:"description,omitempty"`
+	Status       string    `json:"status"`
+	Result       string    `json:"result,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	InputTokens  int       `json:"input_tokens,omitempty"`
+	OutputTokens int       `json:"output_tokens,omitempty"`
+	StartedAt    time.Time `json:"started_at"`
+	CompletedAt  time.Time `json:"completed_at,omitempty"`
+}
+
+type AgentUpdatedNotification struct {
+	Agent Agent `json:"agent"`
+}
+
+type AgentMailboxNotification struct {
+	Message coordinator.AgentMailboxMessage `json:"message"`
 }
 
 type ThreadStatus string

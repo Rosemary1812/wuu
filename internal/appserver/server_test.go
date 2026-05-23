@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -34,6 +35,13 @@ func (f *fakeClient) Chat(_ context.Context, req providers.ChatRequest) (provide
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
+}
+
+type noopToolExecutor struct{}
+
+func (noopToolExecutor) Definitions() []providers.ToolDefinition { return nil }
+func (noopToolExecutor) Execute(_ context.Context, _ providers.ToolCall) (string, error) {
+	return "", nil
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
@@ -326,6 +334,48 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	}
 	if len(th.History) != 3 || th.History[1].Role != "user" || th.History[1].Content != "hello" {
 		t.Fatalf("unexpected resumed history: %+v", th.History)
+	}
+}
+
+func TestServerForwardsAgentNotifications(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	workerClient := &fakeClient{response: providers.ChatResponse{Content: "agent done"}}
+	coord, err := coordinator.New(coordinator.Config{
+		Client:       providers.AdaptStreamClient(workerClient),
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    "sess-agents",
+		WorkerFactory: func(string, coordinator.WorkerType) (agent.ToolExecutor, error) {
+			return noopToolExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("coordinator: %v", err)
+	}
+	rt.Coordinator = coord
+
+	out := &lockedBuffer{}
+	_ = New(rt, out)
+	res, err := coord.Spawn(context.Background(), coordinator.SpawnRequest{
+		Type:        "worker",
+		TaskName:    "check bridge",
+		Description: "check bridge",
+		Prompt:      "do it",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationAgentMailbox)
+	updated := remarshal[AgentUpdatedNotification](t, notificationByMethod(t, msgs, NotificationAgentUpdated)["params"])
+	if updated.Agent.ID != res.AgentID || updated.Agent.TaskName != "check bridge" {
+		t.Fatalf("unexpected agent update: %+v", updated)
+	}
+	mailbox := remarshal[AgentMailboxNotification](t, notificationByMethod(t, msgs, NotificationAgentMailbox)["params"])
+	if mailbox.Message.AgentID != res.AgentID || mailbox.Message.Result != "agent done" || mailbox.Message.Type != "agent_result" {
+		t.Fatalf("unexpected mailbox notification: %+v", mailbox)
 	}
 }
 

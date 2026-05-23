@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/coordinator"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -67,7 +69,47 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		rt.Toolkit.SetAskUserBridge(s)
 		rt.AskBridge = s
 	}
+	if rt != nil && rt.Coordinator != nil {
+		ch := make(chan subagent.Notification, 64)
+		rt.Coordinator.Subscribe(ch)
+		go s.forwardAgentNotifications(ch)
+	}
 	return s
+}
+
+func (s *Server) forwardAgentNotifications(ch <-chan subagent.Notification) {
+	for n := range ch {
+		_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
+			Agent: agentFromSnapshot(n.Snapshot),
+		})
+		switch n.Status {
+		case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
+			_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
+				Message: coordinator.NewAgentMailboxMessage(n.Snapshot),
+			})
+		}
+	}
+}
+
+func agentFromSnapshot(snap subagent.SubAgentSnapshot) Agent {
+	out := Agent{
+		ID:           snap.ID,
+		Type:         snap.Type,
+		TaskName:     snap.TaskName,
+		AgentPath:    snap.AgentPath,
+		ParentID:     snap.ParentID,
+		Description:  snap.Description,
+		Status:       string(snap.Status),
+		Result:       snap.Result,
+		InputTokens:  snap.InputTokens,
+		OutputTokens: snap.OutputTokens,
+		StartedAt:    snap.StartedAt,
+		CompletedAt:  snap.CompletedAt,
+	}
+	if snap.Error != nil {
+		out.Error = snap.Error.Error()
+	}
+	return out
 }
 
 func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Writer) error {
