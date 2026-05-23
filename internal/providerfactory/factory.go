@@ -67,21 +67,37 @@ func BuildStreamClientWithRetry(provider config.ProviderConfig, providerName str
 }
 
 func buildClientWithRetry(provider config.ProviderConfig, providerName string, retry *providers.RetryConfig) (providers.Client, error) {
-	typeName := normalizeType(provider.Type)
+	profile, err := resolveProviderProfile(provider)
+	if err != nil {
+		return nil, err
+	}
 
 	// Resolve auth token for anthropic providers (Bearer auth, aligned with
 	// the Anthropic SDK's ANTHROPIC_AUTH_TOKEN support).
 	authToken := resolveAuthToken(provider)
 
-	switch typeName {
-	case "openai", "openai-compatible", "codex":
+	switch profile.Wire {
+	case wireOpenAIChat, wireOpenAIResponses:
+		if profile.Auth == authCodexOAuth {
+			client, newErr := codex.New(codex.ClientConfig{
+				BaseURL:      provider.BaseURL,
+				APIKey:       resolveExplicitAPIKey(provider),
+				Headers:      provider.Headers,
+				RetryConfig:  retry,
+				StreamConfig: providerStreamTransportConfig(provider),
+			})
+			if newErr != nil {
+				return nil, newErr
+			}
+			return client, nil
+		}
 		apiKey, apiKeyErr := resolveAPIKey(provider, providerName)
 		if apiKeyErr != nil {
 			return nil, apiKeyErr
 		}
 		client, newErr := openai.New(openai.ClientConfig{
 			BaseURL:      provider.BaseURL,
-			WireAPI:      provider.WireAPI,
+			WireAPI:      openAIWireConfig(profile.Wire),
 			APIKey:       apiKey,
 			Headers:      provider.Headers,
 			RetryConfig:  retry,
@@ -91,19 +107,7 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 			return nil, newErr
 		}
 		return client, nil
-	case "openai-codex", "codex-subscription", "chatgpt-codex":
-		client, newErr := codex.New(codex.ClientConfig{
-			BaseURL:      provider.BaseURL,
-			APIKey:       resolveExplicitAPIKey(provider),
-			Headers:      provider.Headers,
-			RetryConfig:  retry,
-			StreamConfig: providerStreamTransportConfig(provider),
-		})
-		if newErr != nil {
-			return nil, newErr
-		}
-		return client, nil
-	case "anthropic", "claude", "anthropic-official":
+	case wireAnthropicMessages:
 		// API key is optional when auth token is available.
 		apiKey, apiKeyErr := resolveAPIKey(provider, providerName)
 		if apiKeyErr != nil && authToken == "" {
@@ -122,7 +126,7 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 		}
 		return client, nil
 	default:
-		return nil, fmt.Errorf("unsupported provider type %q", provider.Type)
+		return nil, fmt.Errorf("unsupported provider wire protocol %q", profile.Wire)
 	}
 }
 

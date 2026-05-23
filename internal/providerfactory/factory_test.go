@@ -57,6 +57,52 @@ func TestBuildClient_Anthropic(t *testing.T) {
 	}
 }
 
+func TestResolveProviderProfile_OpenAICodex(t *testing.T) {
+	profile, err := resolveProviderProfile(config.ProviderConfig{Type: "openai-codex"})
+	if err != nil {
+		t.Fatalf("resolveProviderProfile returned error: %v", err)
+	}
+	if profile.Wire != wireOpenAIResponses {
+		t.Fatalf("Wire = %q, want %q", profile.Wire, wireOpenAIResponses)
+	}
+	if profile.Auth != authCodexOAuth {
+		t.Fatalf("Auth = %q, want %q", profile.Auth, authCodexOAuth)
+	}
+}
+
+func TestResolveProviderProfile_OpenAIResponses(t *testing.T) {
+	profile, err := resolveProviderProfile(config.ProviderConfig{Type: "openai-compatible", WireAPI: "responses"})
+	if err != nil {
+		t.Fatalf("resolveProviderProfile returned error: %v", err)
+	}
+	if profile.Wire != wireOpenAIResponses {
+		t.Fatalf("Wire = %q, want %q", profile.Wire, wireOpenAIResponses)
+	}
+	if profile.Auth != authAPIKey {
+		t.Fatalf("Auth = %q, want %q", profile.Auth, authAPIKey)
+	}
+}
+
+func TestResolveProviderProfile_Anthropic(t *testing.T) {
+	profile, err := resolveProviderProfile(config.ProviderConfig{Type: "anthropic"})
+	if err != nil {
+		t.Fatalf("resolveProviderProfile returned error: %v", err)
+	}
+	if profile.Wire != wireAnthropicMessages {
+		t.Fatalf("Wire = %q, want %q", profile.Wire, wireAnthropicMessages)
+	}
+	if profile.Auth != authAnthropicToken {
+		t.Fatalf("Auth = %q, want %q", profile.Auth, authAnthropicToken)
+	}
+}
+
+func TestResolveProviderProfile_OpenAICodexRejectsChatWire(t *testing.T) {
+	_, err := resolveProviderProfile(config.ProviderConfig{Type: "openai-codex", WireAPI: "chat"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestResolveAPIKey_AuthStoreFallback(t *testing.T) {
 	// Clear default env var so fallback to auth store is exercised.
 	t.Setenv("OPENAI_API_KEY", "")
