@@ -551,7 +551,8 @@ func (c *Coordinator) SendMessageFrom(currentPath, target, message string) error
 	case subagent.StatusCancelled:
 		return fmt.Errorf("agent %q is %s and cannot receive messages", id, snap.Status)
 	}
-	if ok := c.manager.QueueMessage(id, msg); !ok {
+	communication := formatInterAgentCommunication(currentPath, snap.AgentPath, msg, false)
+	if ok := c.manager.QueueMessage(id, communication); !ok {
 		return fmt.Errorf("agent %q not found", id)
 	}
 	if meta, ok := c.threads.UpdateLastTaskMessage(id, msg, time.Now().UTC()); ok {
@@ -573,7 +574,13 @@ func (c *Coordinator) FollowupTaskFrom(currentPath string, ctx context.Context, 
 	if msg == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("message is required")
 	}
-	snap, err := c.manager.Followup(ctx, id, msg)
+	sa := c.manager.Get(id)
+	if sa == nil {
+		return subagent.SubAgentSnapshot{}, fmt.Errorf("agent %q not found", id)
+	}
+	current := sa.Snapshot()
+	communication := formatInterAgentCommunication(currentPath, current.AgentPath, msg, true)
+	snap, err := c.manager.Followup(ctx, id, communication)
 	if err != nil {
 		return snap, err
 	}
@@ -739,8 +746,48 @@ func (c *Coordinator) deliverNestedResultToParent(ctx context.Context, snap suba
 	if c.manager.Get(parentID) == nil {
 		return false
 	}
-	_, err := c.manager.Followup(ctx, parentID, FormatAgentMailboxMessage(snap))
+	parentPath := parentPathForSnapshot(snap)
+	if meta, ok := c.threads.Resolve(parentID); ok && strings.TrimSpace(meta.Path) != "" {
+		parentPath = meta.Path
+	}
+	_, err := c.manager.Followup(ctx, parentID, formatAgentCompletionCommunication(snap, parentPath))
 	return err == nil
+}
+
+func formatAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) string {
+	if strings.TrimSpace(recipientPath) == "" {
+		recipientPath = agentthread.RootPath
+	}
+	content := agentthread.SubagentNotificationContent(snap.AgentPath, NewAgentMailboxMessage(snap))
+	return agentthread.NewInterAgentCommunication(parseAgentPathOrRoot(snap.AgentPath), parseAgentPathOrRoot(recipientPath), content, false).String()
+}
+
+func formatInterAgentCommunication(authorPath, recipientPath, content string, triggerTurn bool) string {
+	return agentthread.NewInterAgentCommunication(
+		parseAgentPathOrRoot(authorPath),
+		parseAgentPathOrRoot(recipientPath),
+		content,
+		triggerTurn,
+	).String()
+}
+
+func parseAgentPathOrRoot(path string) agentthread.AgentPath {
+	parsed, err := agentthread.ParseAgentPath(path)
+	if err != nil {
+		return agentthread.RootAgentPath()
+	}
+	return parsed
+}
+
+func parentPathForSnapshot(snap subagent.SubAgentSnapshot) string {
+	path := strings.TrimSpace(snap.AgentPath)
+	if path == "" || path == agentthread.RootPath {
+		return agentthread.RootPath
+	}
+	if idx := strings.LastIndex(path, "/"); idx > len("/root") {
+		return path[:idx]
+	}
+	return agentthread.RootPath
 }
 
 func isFinalSubAgentStatus(status subagent.Status) bool {
@@ -817,7 +864,7 @@ func SystemPromptPreamble() string {
 - spawn_agent — start a new worker. By default it inherits your full conversation history; set fork_turns="none" for a clean slate, or a positive integer string for only the last N user turns.
 - send_message — queue a non-blocking message for an existing worker.
 - followup_task — send a follow-up task message to an existing worker.
-- wait_agent — wait for a worker only when its result blocks your next step.
+- wait_agent — wait for any mailbox update only when agent output blocks your next step.
 - close_agent — stop a running worker that is stuck or off-track.
 - list_agents — see active workers and their status.
 
@@ -846,7 +893,7 @@ Launch independent workers in parallel whenever possible. Research tasks can run
 
 ## Working with Worker Results
 
-When a worker finishes, its result arrives as a notification in your next turn. Workers cannot see your conversation history or other workers' results.
+Agent messages arrive as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the actual instruction or result. When a worker finishes, its result arrives as a notification in your next turn.
 
 Before launching follow-up work, read the returned content yourself and do your own synthesis. Never chain workers by implication with phrases like "based on your findings" or "based on the research".
 

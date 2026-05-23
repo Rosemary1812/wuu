@@ -927,13 +927,26 @@ func TestAgentMailboxChatMessage(t *testing.T) {
 
 	snap := c.Manager().Get(res.AgentID).Snapshot()
 	msg := AgentMailboxChatMessage(snap)
-	if msg.Role != "user" || msg.Name != AgentMailboxMessageName {
+	if msg.Role != "assistant" || msg.Name != "" {
 		t.Fatalf("unexpected mailbox chat message envelope: %+v", msg)
 	}
-	var payload AgentMailboxMessage
-	if err := json.Unmarshal([]byte(msg.Content), &payload); err != nil {
+	var communication agentthread.InterAgentCommunication
+	if err := json.Unmarshal([]byte(msg.Content), &communication); err != nil {
 		t.Fatalf("mailbox payload is not JSON: %v\n%s", err, msg.Content)
 	}
+	if communication.Author != agentthread.AgentPath(snap.AgentPath) || communication.Recipient != agentthread.RootAgentPath() || communication.TriggerTurn {
+		t.Fatalf("unexpected inter-agent envelope: %+v", communication)
+	}
+	var fragment struct {
+		AgentPath string              `json:"agent_path"`
+		Status    AgentMailboxMessage `json:"status"`
+	}
+	content := strings.TrimPrefix(communication.Content, "<subagent_notification>\n")
+	content = strings.TrimSuffix(content, "\n</subagent_notification>")
+	if err := json.Unmarshal([]byte(content), &fragment); err != nil {
+		t.Fatalf("notification content is not JSON: %v\n%s", err, communication.Content)
+	}
+	payload := fragment.Status
 	if payload.Type != "agent_result" || payload.AgentID != res.AgentID || payload.Result != "found bug at line 42" {
 		t.Fatalf("unexpected mailbox payload: %+v", payload)
 	}

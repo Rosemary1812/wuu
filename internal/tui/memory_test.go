@@ -378,7 +378,7 @@ func TestLoadChatHistory_RepairsAndRewritesInterleavedWorkerMailboxMessage(t *te
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 normalized messages, got %+v", msgs)
 	}
-	if msgs[0].Role != "assistant" || msgs[1].Role != "tool" || msgs[2].Role != "user" {
+	if msgs[0].Role != "assistant" || msgs[1].Role != "tool" || msgs[2].Role != "assistant" {
 		t.Fatalf("unexpected normalized order: %+v", msgs)
 	}
 	if err := providers.ValidateMessageSequence(msgs); err != nil {
@@ -392,12 +392,12 @@ func TestLoadChatHistory_RepairsAndRewritesInterleavedWorkerMailboxMessage(t *te
 	content := string(raw)
 	assistantPos := strings.Index(content, `"role":"assistant"`)
 	toolPos := strings.Index(content, `"role":"tool"`)
-	userPos := strings.LastIndex(content, `"role":"user"`)
-	if assistantPos < 0 || toolPos < 0 || userPos < 0 {
-		t.Fatalf("expected rewritten file to contain assistant/tool/user entries, got %q", content)
+	mailboxPos := strings.LastIndex(content, "trigger_turn")
+	if assistantPos < 0 || toolPos < 0 || mailboxPos < 0 {
+		t.Fatalf("expected rewritten file to contain assistant/tool/mailbox entries, got %q", content)
 	}
-	if !(assistantPos < toolPos && toolPos < userPos) {
-		t.Fatalf("expected rewritten assistant/tool/user ordering, got %q", content)
+	if !(assistantPos < toolPos && toolPos < mailboxPos) {
+		t.Fatalf("expected rewritten assistant/tool/mailbox ordering, got %q", content)
 	}
 }
 

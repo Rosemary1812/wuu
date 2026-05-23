@@ -89,7 +89,7 @@ func TestSystemPromptPreamble_ContainsConcurrencyRules(t *testing.T) {
 func TestSystemPromptPreamble_ContainsWorkerResultHandling(t *testing.T) {
 	preamble := SystemPromptPreamble()
 	for _, want := range []string{
-		"Workers cannot see your conversation history",
+		"inter-agent notifications",
 		"based on your findings",
 		"self-contained",
 	} {

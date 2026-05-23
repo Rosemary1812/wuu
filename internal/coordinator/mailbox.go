@@ -1,14 +1,12 @@
 package coordinator
 
 import (
-	"encoding/json"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
-
-const AgentMailboxMessageName = "wuu_agent_mailbox"
 
 type AgentMailboxMessage struct {
 	Type         string    `json:"type"`
@@ -56,17 +54,18 @@ func NewAgentMailboxMessage(snap subagent.SubAgentSnapshot) AgentMailboxMessage 
 }
 
 func FormatAgentMailboxMessage(snap subagent.SubAgentSnapshot) string {
-	data, err := json.Marshal(NewAgentMailboxMessage(snap))
-	if err != nil {
-		return `{"type":"agent_result","error":"marshal failed"}`
-	}
-	return string(data)
+	content := agentthread.SubagentNotificationContent(snap.AgentPath, NewAgentMailboxMessage(snap))
+	return agentthread.NewInterAgentCommunication(
+		parseAgentPathOrRoot(snap.AgentPath),
+		agentthread.RootAgentPath(),
+		content,
+		false,
+	).String()
 }
 
 func AgentMailboxChatMessage(snap subagent.SubAgentSnapshot) providers.ChatMessage {
 	return providers.ChatMessage{
-		Role:    "user",
-		Name:    AgentMailboxMessageName,
+		Role:    "assistant",
 		Content: FormatAgentMailboxMessage(snap),
 	}
 }

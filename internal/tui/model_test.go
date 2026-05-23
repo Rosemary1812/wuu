@@ -543,14 +543,14 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterTurnMessages(t *testing.
 	if got := len(after.chatHistory); got != 3 {
 		t.Fatalf("expected 3 messages after flush, got %d", got)
 	}
-	if after.chatHistory[0].Role != "assistant" || after.chatHistory[1].Role != "tool" || after.chatHistory[2].Role != "user" {
+	if after.chatHistory[0].Role != "assistant" || after.chatHistory[1].Role != "tool" || after.chatHistory[2].Role != "assistant" {
 		t.Fatalf("unexpected post-flush order: %+v", after.chatHistory)
 	}
 	if len(after.pendingWorkerMessages) != 0 {
 		t.Fatalf("expected buffered worker mailbox messages to be cleared, got %d", len(after.pendingWorkerMessages))
 	}
-	if after.chatHistory[2].Name != coordinator.AgentMailboxMessageName {
-		t.Fatalf("expected mailbox message name, got %+v", after.chatHistory[2])
+	if after.chatHistory[2].Name != "" {
+		t.Fatalf("expected mailbox message to use structured assistant content, got %+v", after.chatHistory[2])
 	}
 	if err := providers.ValidateMessageSequence(after.chatHistory); err != nil {
 		t.Fatalf("expected valid post-flush history, got %v", err)
@@ -563,7 +563,7 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterTurnMessages(t *testing.
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 persisted messages, got %+v", msgs)
 	}
-	if msgs[0].Role != "assistant" || msgs[1].Role != "tool" || msgs[2].Role != "user" {
+	if msgs[0].Role != "assistant" || msgs[1].Role != "tool" || msgs[2].Role != "assistant" {
 		t.Fatalf("unexpected persisted order: %+v", msgs)
 	}
 }
@@ -609,7 +609,7 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterHistoryRewrite(t *testin
 	if got := len(after.chatHistory); got != 3 {
 		t.Fatalf("expected rewritten history plus worker result, got %d", got)
 	}
-	if after.chatHistory[0].Role != "assistant" || after.chatHistory[1].Role != "tool" || after.chatHistory[2].Role != "user" {
+	if after.chatHistory[0].Role != "assistant" || after.chatHistory[1].Role != "tool" || after.chatHistory[2].Role != "assistant" {
 		t.Fatalf("unexpected rewritten order: %+v", after.chatHistory)
 	}
 	if err := providers.ValidateMessageSequence(after.chatHistory); err != nil {
@@ -623,7 +623,7 @@ func TestStreamFinishedFlushesBufferedWorkerResultsAfterHistoryRewrite(t *testin
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 persisted messages after rewrite, got %+v", msgs)
 	}
-	if msgs[0].Role != "assistant" || msgs[1].Role != "tool" || msgs[2].Role != "user" {
+	if msgs[0].Role != "assistant" || msgs[1].Role != "tool" || msgs[2].Role != "assistant" {
 		t.Fatalf("unexpected persisted rewrite order: %+v", msgs)
 	}
 }

@@ -381,6 +381,9 @@ This system-reminder OVERRIDES the parent's system prompt for you:
   close_agent, and list_agents when delegation helps. You cannot use
   ask_user; route decisions through your parent by returning a concise
   blocked result.
+- Messages from other agents may arrive as inter-agent JSON with
+  author, recipient, content, and trigger_turn fields. Treat the
+  content field as the actual instruction or notification.
 - Ignore any inherited instruction that says the main interactive
   agent is read-only or must delegate file writes / shell commands.
   That restriction applies to the parent, not to you. If a tool is in
