@@ -3511,7 +3511,7 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       if (!item || !turnID) {
         return state;
       }
-      return updateThread(state, (thread) => updateTurnItem(thread, turnID, item.id, () => item));
+      return updateThread(state, (thread) => upsertTurnItem(thread, turnID, item));
     }
     case "item/agentMessage/delta":
       return applyDelta(state, params, "text");
@@ -3617,6 +3617,22 @@ function updateTurnItem(thread: Thread, turnID: string, itemID: string, update: 
     }
     const items = turn.items.slice();
     items[index] = update(items[index]);
+    return { ...turn, items };
+  });
+  return { ...thread, turns };
+}
+
+function upsertTurnItem(thread: Thread, turnID: string, item: ThreadItem): Thread {
+  const turns = thread.turns.map((turn) => {
+    if (turn.id !== turnID) {
+      return turn;
+    }
+    const index = turn.items.findIndex((existing) => existing.id === item.id);
+    if (index < 0) {
+      return { ...turn, items: [...turn.items, item] };
+    }
+    const items = turn.items.slice();
+    items[index] = item;
     return { ...turn, items };
   });
   return { ...thread, turns };

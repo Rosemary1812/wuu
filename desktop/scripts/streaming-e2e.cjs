@@ -68,7 +68,7 @@ async function run() {
   };
   const turn = {
     id: "turn-streaming-e2e",
-    items: [userItem, agentItem],
+    items: [userItem],
     items_view: "full",
     status: "in_progress",
     started_at: now
