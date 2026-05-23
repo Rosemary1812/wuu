@@ -198,6 +198,24 @@ export type ThreadItemType =
   | "error";
 export type ThreadItemStatus = "in_progress" | "completed" | "failed";
 
+export type Agent = {
+  id: string;
+  type?: string;
+  task_name?: string;
+  agent_path?: string;
+  parent_id?: string;
+  description?: string;
+  status: string;
+  result?: string;
+  error?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  nested_count?: number;
+  nested_running_count?: number;
+  started_at?: string;
+  completed_at?: string | null;
+};
+
 export type Thread = {
   id: string;
   preview: string;
@@ -210,6 +228,7 @@ export type Thread = {
   created_at: string;
   updated_at: string;
   turns: Turn[];
+  child_agents?: Agent[];
 };
 
 export type Turn = {

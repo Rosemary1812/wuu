@@ -63,6 +63,7 @@ import { createPortal } from "react-dom";
 import type { PartialOptions } from "overlayscrollbars";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
+  Agent,
   AppServerNotification,
   AskUserQuestion,
   AskUserResponse,
@@ -4715,6 +4716,14 @@ function reduceNotification(state: AppState, notification: AppServerNotification
         status: activateThread ? "ready" : state.status
       };
     }
+    case "agent/updated": {
+      const threadID = threadIDFromParams(params);
+      const agent = agentFromRecord(recordValue(params, "agent"));
+      if (!threadID || !agent || !isDirectChildAgent(threadID, agent)) {
+        return state;
+      }
+      return updateThreadByID(state, threadID, (thread) => upsertThreadChildAgent(thread, agent));
+    }
     case "turn/started": {
       const turn = params?.turn as Turn | undefined;
       if (!turn) {
@@ -4978,6 +4987,44 @@ function upsertTurnItem(thread: Thread, turnID: string, item: ThreadItem): Threa
   return { ...thread, turns };
 }
 
+function upsertThreadChildAgent(thread: Thread, agent: Agent): Thread {
+  const current = thread.child_agents ?? [];
+  const index = current.findIndex((item) => item.id === agent.id);
+  const nextAgent = mergeAgentSummary(index >= 0 ? current[index] : undefined, agent);
+  const next = current.slice();
+  if (index < 0) {
+    next.push(nextAgent);
+  } else {
+    next[index] = nextAgent;
+  }
+  return { ...thread, child_agents: sortChildAgents(next) };
+}
+
+function mergeAgentSummary(current: Agent | undefined, incoming: Agent): Agent {
+  if (!current) {
+    return incoming;
+  }
+  return {
+    ...current,
+    ...incoming,
+    nested_count: incoming.nested_count ?? current.nested_count,
+    nested_running_count: incoming.nested_running_count ?? current.nested_running_count,
+    started_at: incoming.started_at ?? current.started_at,
+    completed_at: incoming.completed_at ?? current.completed_at
+  };
+}
+
+function sortChildAgents(agents: Agent[]): Agent[] {
+  return agents.slice().sort((left, right) => {
+    const leftTime = Date.parse(left.started_at ?? "");
+    const rightTime = Date.parse(right.started_at ?? "");
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
+    return agentLabel(left).localeCompare(agentLabel(right), "zh-CN");
+  });
+}
+
 function ProjectList({
   projects,
   activeID,
@@ -5118,41 +5165,120 @@ function ThreadRows({
       {threads.map((thread, index) => {
         const archiveConfirming = archiveConfirmThreadID === thread.id;
         return (
-          <div
-            key={thread.id}
-            className={`thread-row ${thread.id === activeID ? "active" : ""}`}
-            aria-current={thread.id === activeID ? "page" : undefined}
-            style={{ animationDelay: `${index * 18}ms` } as CSSProperties}
-            onMouseLeave={() => onClearArchiveConfirm(thread.id)}
-          >
-            <button className="thread-row-main" type="button" onClick={() => onSelect(thread.id)}>
-              <span>{thread.preview || "未命名对话"}</span>
-            </button>
-            <div className="thread-row-actions" aria-label="对话操作">
-              <button
-                className={`thread-row-action ${thread.pinned ? "active" : ""}`}
-                type="button"
-                aria-label={thread.pinned ? "取消置顶" : "置顶"}
-                title={thread.pinned ? "取消置顶" : "置顶"}
-                onClick={() => onTogglePinned(thread)}
-              >
-                <Pin size={14} />
+          <Fragment key={thread.id}>
+            <div
+              className={`thread-row ${thread.id === activeID ? "active" : ""}`}
+              aria-current={thread.id === activeID ? "page" : undefined}
+              style={{ animationDelay: `${index * 18}ms` } as CSSProperties}
+              onMouseLeave={() => onClearArchiveConfirm(thread.id)}
+            >
+              <button className="thread-row-main" type="button" onClick={() => onSelect(thread.id)}>
+                <span>{thread.preview || "未命名对话"}</span>
               </button>
-              <button
-                className={`thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
-                type="button"
-                aria-label={archiveConfirming ? "确认归档" : "归档"}
-                title={archiveConfirming ? "再次点击归档" : "归档"}
-                onClick={() => onArchive(thread)}
-              >
-                <Archive size={14} />
-              </button>
+              <div className="thread-row-actions" aria-label="对话操作">
+                <button
+                  className={`thread-row-action ${thread.pinned ? "active" : ""}`}
+                  type="button"
+                  aria-label={thread.pinned ? "取消置顶" : "置顶"}
+                  title={thread.pinned ? "取消置顶" : "置顶"}
+                  onClick={() => onTogglePinned(thread)}
+                >
+                  <Pin size={14} />
+                </button>
+                <button
+                  className={`thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
+                  type="button"
+                  aria-label={archiveConfirming ? "确认归档" : "归档"}
+                  title={archiveConfirming ? "再次点击归档" : "归档"}
+                  onClick={() => onArchive(thread)}
+                >
+                  <Archive size={14} />
+                </button>
+              </div>
             </div>
-          </div>
+            {thread.child_agents?.length ? <ThreadChildAgentRows agents={thread.child_agents} /> : null}
+          </Fragment>
         );
       })}
     </>
   );
+}
+
+function ThreadChildAgentRows({ agents }: { agents: Agent[] }): JSX.Element {
+  return (
+    <div className="thread-child-agent-list" role="list" aria-label="子任务">
+      {sortChildAgents(agents).map((agent) => {
+        const status = agentStatusTone(agent.status);
+        const label = agentLabel(agent);
+        const nestedLabel = agentNestedLabel(agent);
+        return (
+          <div
+            key={agent.id}
+            className={`thread-child-agent-row ${status}`}
+            role="listitem"
+            aria-label={`${label}，${agentStatusLabel(agent.status)}`}
+            title={agentTooltip(agent)}
+          >
+            <CornerDownRight className="thread-child-agent-branch" size={13} />
+            <span className="thread-child-agent-name">{label}</span>
+            {nestedLabel ? <span className="thread-child-agent-nested">{nestedLabel}</span> : null}
+            <span className="thread-child-agent-status">{agentStatusLabel(agent.status)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function agentLabel(agent: Agent): string {
+  const pathParts = agent.agent_path?.split("/").filter(Boolean) ?? [];
+  return agent.task_name || agent.description || pathParts[pathParts.length - 1] || agent.id;
+}
+
+function agentTooltip(agent: Agent): string {
+  const path = agent.agent_path ? ` · ${agent.agent_path}` : "";
+  return `${agentLabel(agent)} · ${agentStatusLabel(agent.status)}${path}`;
+}
+
+function agentNestedLabel(agent: Agent): string | undefined {
+  const total = agent.nested_count ?? 0;
+  if (total <= 0) {
+    return undefined;
+  }
+  const running = agent.nested_running_count ?? 0;
+  return running > 0 ? `${running}/${total}` : `+${total}`;
+}
+
+function agentStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case "pending":
+      return "等待";
+    case "running":
+      return "运行中";
+    case "completed":
+      return "完成";
+    case "failed":
+      return "失败";
+    case "cancelled":
+      return "已停止";
+    default:
+      return status?.trim() || "未知";
+  }
+}
+
+function agentStatusTone(status: string | undefined): "running" | "completed" | "failed" | "cancelled" | "pending" {
+  switch (status) {
+    case "running":
+      return "running";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "pending";
+  }
 }
 
 function TurnView({
@@ -6086,6 +6212,43 @@ function threadFromRecord(record: JsonRecord | undefined): Thread | undefined {
     return undefined;
   }
   return record as Thread;
+}
+
+function agentFromRecord(record: JsonRecord | undefined): Agent | undefined {
+  const id = stringValue(record, "id");
+  const status = stringValue(record, "status");
+  if (!id || !status) {
+    return undefined;
+  }
+  return {
+    id,
+    type: stringValue(record, "type"),
+    task_name: stringValue(record, "task_name"),
+    agent_path: stringValue(record, "agent_path"),
+    parent_id: stringValue(record, "parent_id"),
+    description: stringValue(record, "description"),
+    status,
+    result: stringValue(record, "result"),
+    error: stringValue(record, "error"),
+    input_tokens: numberValue(record, "input_tokens"),
+    output_tokens: numberValue(record, "output_tokens"),
+    nested_count: numberValue(record, "nested_count"),
+    nested_running_count: numberValue(record, "nested_running_count"),
+    started_at: stringValue(record, "started_at"),
+    completed_at: stringValue(record, "completed_at")
+  };
+}
+
+function isDirectChildAgent(threadID: string, agent: Agent): boolean {
+  if (agent.parent_id === threadID) {
+    return true;
+  }
+  return agentPathDepth(agent.agent_path) === 2;
+}
+
+function agentPathDepth(path: string | undefined): number {
+  const trimmed = path?.trim().replace(/^\/+|\/+$/g, "") ?? "";
+  return trimmed ? trimmed.split("/").length : 0;
 }
 
 function debugItemTitle(item: ThreadItem): string {

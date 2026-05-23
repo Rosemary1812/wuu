@@ -623,6 +623,80 @@ button:disabled {
   transform: scale(1);
 }
 
+.thread-child-agent-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -1px 0 3px 14px;
+  padding-left: 12px;
+}
+
+.thread-child-agent-list::before {
+  position: absolute;
+  top: -4px;
+  bottom: 8px;
+  left: 1px;
+  width: 1px;
+  border-radius: 999px;
+  background: rgba(95, 126, 104, 0.12);
+  content: "";
+}
+
+.thread-child-agent-row {
+  display: flex;
+  height: 25px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  color: #707875;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 8px 0 2px;
+}
+
+.thread-child-agent-branch {
+  flex: 0 0 auto;
+  color: rgba(95, 126, 104, 0.42);
+}
+
+.thread-child-agent-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-child-agent-nested,
+.thread-child-agent-status {
+  flex: 0 0 auto;
+  color: #8a928e;
+  font-size: 11px;
+}
+
+.thread-child-agent-nested {
+  min-width: 22px;
+  text-align: right;
+}
+
+.thread-child-agent-row.running .thread-child-agent-status {
+  color: #5f7e68;
+}
+
+.thread-child-agent-row.completed .thread-child-agent-status {
+  color: #68716c;
+}
+
+.thread-child-agent-row.failed .thread-child-agent-status {
+  color: #b84f35;
+}
+
+.thread-child-agent-row.cancelled .thread-child-agent-status {
+  color: #94745f;
+}
+
 .thread-row-main {
   display: flex;
   min-width: 0;
