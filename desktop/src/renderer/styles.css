@@ -471,7 +471,7 @@ kbd {
 .conversation-pane {
   display: grid;
   min-width: 0;
-  grid-template-rows: 64px minmax(0, 1fr) auto;
+  grid-template-rows: 54px minmax(0, 1fr) auto;
   background: #fff;
 }
 
