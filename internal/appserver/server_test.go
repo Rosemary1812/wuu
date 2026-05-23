@@ -326,6 +326,9 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if params.ThreadID != threadID || params.Turn.ID == "" || params.Turn.Status != TurnStatusCompleted || params.Content != "done" {
 		t.Fatalf("unexpected completion: %+v", params)
 	}
+	if params.Turn.StartedAt == nil || params.Turn.CompletedAt == nil || params.Turn.DurationMS == nil {
+		t.Fatalf("completed turn should include timing: %+v", params.Turn)
+	}
 	if params.InputTokens != 10 || params.OutputTokens != 3 {
 		t.Fatalf("unexpected usage: %+v", params)
 	}
@@ -709,6 +712,9 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	result := remarshal[ThreadResumeResult](t, responseByID(t, msgs, "1")["result"])
 	if result.Thread.ID != sessionID || len(result.Thread.Turns) != 1 {
 		t.Fatalf("unexpected resume result: %+v", result)
+	}
+	if turn := result.Thread.Turns[0]; turn.StartedAt != nil || turn.CompletedAt != nil || turn.DurationMS != nil {
+		t.Fatalf("historical turn should leave unknown timing unset: %+v", turn)
 	}
 	resumed := remarshal[ThreadResumedNotification](t, notificationByMethod(t, msgs, NotificationThreadResumed)["params"])
 	if resumed.Thread.ID != sessionID || len(resumed.Thread.Turns) != 1 {

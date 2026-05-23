@@ -294,7 +294,7 @@ type Turn struct {
 	ItemsView   TurnItemsView `json:"items_view"`
 	Status      TurnStatus    `json:"status"`
 	Error       *TurnError    `json:"error,omitempty"`
-	StartedAt   time.Time     `json:"started_at"`
+	StartedAt   *time.Time    `json:"started_at,omitempty"`
 	CompletedAt *time.Time    `json:"completed_at,omitempty"`
 	DurationMS  *int64        `json:"duration_ms,omitempty"`
 }

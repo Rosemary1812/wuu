@@ -2375,7 +2375,7 @@ function RunDebugPanel({
   const turn = phase.turn ?? activeDebugTurn(state.thread);
   const thread = state.thread;
   const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
-  const turnStartedAt = turn ? Date.parse(turn.started_at) : NaN;
+  const turnStartedAt = turn ? parseTurnTimestampMs(turn.started_at) : NaN;
   const model = state.initialized
     ? `${state.initialized.provider} / ${state.initialized.model}${state.initialized.effort ? ` / ${state.initialized.effort}` : ""}`
     : "未初始化";
@@ -2420,7 +2420,7 @@ function RunDebugPanel({
                   {shortDebugID(turn.id)} · {debugTurnStatusLabel(turn.status)} ·{" "}
                   {typeof turn.duration_ms === "number"
                     ? formatDuration(turn.duration_ms)
-                    : Number.isFinite(turnStartedAt)
+                    : turn.status === "in_progress" && Number.isFinite(turnStartedAt)
                       ? <LiveDuration startedAtMs={turnStartedAt} />
                       : "未知耗时"}
                 </>
@@ -4201,11 +4201,11 @@ function TurnView({
 
 function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => void }): JSX.Element {
   const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
-  const startedAt = Date.parse(turn.started_at);
+  const startedAt = parseTurnTimestampMs(turn.started_at);
   const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
   const liveNow = useLiveNow(liveDuration);
-  const elapsedMs =
-    completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, liveNow - startedAt) : 0);
+  const elapsedMs = completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
+  const showDuration = completedDuration !== undefined || liveDuration;
   const content = turnProgressContent(turn, elapsedMs);
   const campaign =
     ENABLE_TURN_PROGRESS_EXPERIMENT && liveDuration ? turnProgressCampaign(turn.id, elapsedMs) : undefined;
@@ -4222,7 +4222,7 @@ function TurnStatusLine({ turn, onInterrupt }: { turn: Turn; onInterrupt: () => 
           <span className="turn-progress-copy">
             <span className="turn-progress-title">
               <span>{content.label}</span>
-              <span className="turn-progress-duration">{formatDuration(elapsedMs)}</span>
+              {showDuration ? <span className="turn-progress-duration">{formatDuration(elapsedMs)}</span> : null}
             </span>
             {content.detail ? <span className="turn-progress-detail">{content.detail}</span> : null}
           </span>
@@ -5784,6 +5784,13 @@ function fileBaseName(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const parts = normalized.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? path;
+}
+
+function parseTurnTimestampMs(value: string | null | undefined): number {
+  if (!value) {
+    return NaN;
+  }
+  return Date.parse(value);
 }
 
 function formatDuration(ms: number): string {

@@ -63,7 +63,7 @@ func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMess
 		Items:     []ThreadItem{userItem},
 		ItemsView: TurnItemsViewFull,
 		Status:    TurnStatusInProgress,
-		StartedAt: now,
+		StartedAt: &now,
 	}
 	th.Turns = append(th.Turns, turn)
 	return turn
@@ -84,8 +84,10 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 		turn.Error = &TurnError{Message: err.Error()}
 	}
 	turn.CompletedAt = &now
-	duration := now.Sub(turn.StartedAt).Milliseconds()
-	turn.DurationMS = &duration
+	if turn.StartedAt != nil {
+		duration := now.Sub(*turn.StartedAt).Milliseconds()
+		turn.DurationMS = &duration
+	}
 	th.replaceTurnLocked(turn)
 	return turn
 }
@@ -363,7 +365,7 @@ func (th *threadState) ensureTurnLocked(turnID string, now time.Time) Turn {
 		ID:        turnID,
 		ItemsView: TurnItemsViewFull,
 		Status:    TurnStatusInProgress,
-		StartedAt: now,
+		StartedAt: &now,
 	}
 	th.Turns = append(th.Turns, turn)
 	return turn
@@ -463,10 +465,8 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 				ID:        turnID,
 				ItemsView: TurnItemsViewFull,
 				Status:    TurnStatusCompleted,
-				StartedAt: now,
 			}
 			turn.Items = append(turn.Items, chatMessageItem(nextItemID(turnID), msg))
-			turn.CompletedAt = &now
 			turns = append(turns, turn)
 			current = &turns[len(turns)-1]
 			continue

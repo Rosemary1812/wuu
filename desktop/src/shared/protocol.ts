@@ -189,8 +189,8 @@ export type Turn = {
   items_view: TurnItemsView;
   status: TurnStatus;
   error?: { message: string };
-  started_at: string;
-  completed_at?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
   duration_ms?: number;
 };
 
