@@ -7554,21 +7554,9 @@ function Composer({
             )}
             {statusText ? <span className="status-label">{statusText}</span> : null}
             {running ? (
-              <>
-                <button
-                  className="send-button"
-                  type="button"
-                  aria-label="排队发送"
-                  title="排队发送"
-                  disabled={!hasDraft}
-                  onClick={onSend}
-                >
-                  <Send size={18} />
-                </button>
-                <button className="stop-button" type="button" onClick={onInterrupt} aria-label="停止" title="停止">
-                  <Square size={17} />
-                </button>
-              </>
+              <button className="send-button" type="button" onClick={onInterrupt} aria-label="停止" title="停止">
+                <Square size={17} />
+              </button>
             ) : (
               <button className="send-button" type="button" onClick={onSend} aria-label="发送" disabled={!hasDraft}>
                 <Send size={18} />

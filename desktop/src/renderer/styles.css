@@ -7059,28 +7059,6 @@ pre {
   background: #878b90;
 }
 
-.stop-button {
-  display: inline-flex;
-  height: 34px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-}
-
-.stop-button {
-  width: 34px;
-  background: #f1f2ef;
-  color: #596066;
-}
-
-.stop-button:hover {
-  background: #e7e8e4;
-  color: #202427;
-}
-
 .composer-context-bar {
   display: flex;
   min-width: 0;
