@@ -45,7 +45,7 @@ button:disabled {
 
 .sidebar {
   display: flex;
-  overflow: hidden;
+  overflow: visible;
   min-width: 0;
   flex-direction: column;
   border-right: 1px solid #dfdfdc;
@@ -146,7 +146,7 @@ button:disabled {
 .project-list {
   margin-top: 28px;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .project-section-header {

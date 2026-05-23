@@ -228,6 +228,10 @@ export function App(): JSX.Element {
     [state.activeProjectId, state.projects]
   );
   const activeTitle = state.thread?.preview || "新对话";
+  const emptyThreadTitle =
+    state.activeContext?.kind === "project"
+      ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
+      : "我们应该构建什么？";
   const turns = state.thread?.turns ?? [];
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
@@ -577,7 +581,7 @@ export function App(): JSX.Element {
           <div className="scroll-region" ref={scrollRef}>
             <div className="conversation-width">
               {turns.length === 0 ? (
-                <EmptyThread />
+                <EmptyThread title={emptyThreadTitle} />
               ) : (
                 turns.map((turn) => <TurnView key={turn.id} turn={turn} cwd={state.thread?.cwd ?? state.activeContext?.cwd} />)
               )}
@@ -895,10 +899,10 @@ function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.
   }
 }
 
-function EmptyThread(): JSX.Element {
+function EmptyThread({ title }: { title: string }): JSX.Element {
   return (
     <div className="empty-thread">
-      <h2>我们应该在 wuu 中构建什么?</h2>
+      <h2>{title}</h2>
     </div>
   );
 }
