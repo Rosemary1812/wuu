@@ -428,6 +428,79 @@ func TestToolkit_UpdatePlan_StoresCurrentPlan(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	tests := []struct {
+		name            string
+		kind            ToolKind
+		exposure        ToolExposure
+		readOnly        bool
+		concurrencySafe bool
+	}{
+		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, readOnly: true, concurrencySafe: true},
+		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
+		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
+		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
+		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
+	}
+	for _, tt := range tests {
+		info, ok := kit.ToolInfo(tt.name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", tt.name)
+		}
+		if info.Name != tt.name || info.Kind != tt.kind || info.Exposure != tt.exposure ||
+			info.ReadOnly != tt.readOnly || info.ConcurrencySafe != tt.concurrencySafe {
+			t.Fatalf("ToolInfo(%q) = %+v, want kind=%s exposure=%s readOnly=%t concurrencySafe=%t",
+				tt.name, info, tt.kind, tt.exposure, tt.readOnly, tt.concurrencySafe)
+		}
+	}
+
+	if _, ok := kit.ToolInfo("not_a_tool"); ok {
+		t.Fatal("unknown tool should not return metadata")
+	}
+}
+
+func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.DisableTools("run_shell")
+
+	info, ok := kit.ToolInfo("run_shell")
+	if !ok {
+		t.Fatal("disabled known tool should still return metadata")
+	}
+	if info.Exposure != ToolExposureHidden {
+		t.Fatalf("disabled tool exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
+
+	found := false
+	for _, info := range kit.ToolInfos() {
+		if info.Name == "run_shell" {
+			found = true
+			if info.Exposure != ToolExposureHidden {
+				t.Fatalf("ToolInfos run_shell exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("ToolInfos should include hidden disabled tools")
+	}
+
+	for _, d := range kit.Definitions() {
+		if d.Name == "run_shell" {
+			t.Fatal("hidden disabled tool should not appear in definitions")
+		}
+	}
+}
+
 func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
