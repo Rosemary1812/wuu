@@ -654,6 +654,33 @@ func (c *Coordinator) consumeWorkerStatus(ch <-chan subagent.Notification) {
 			continue
 		}
 		_ = c.threadStore.RecordStatus(meta)
+		if isFinalSubAgentStatus(n.Status) {
+			_ = c.deliverNestedResultToParent(context.Background(), n.Snapshot)
+		}
+	}
+}
+
+func (c *Coordinator) deliverNestedResultToParent(ctx context.Context, snap subagent.SubAgentSnapshot) bool {
+	if c == nil || c.manager == nil {
+		return false
+	}
+	parentID := strings.TrimSpace(snap.ParentID)
+	if parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID {
+		return false
+	}
+	if c.manager.Get(parentID) == nil {
+		return false
+	}
+	_, err := c.manager.Followup(ctx, parentID, FormatAgentMailboxMessage(snap))
+	return err == nil
+}
+
+func isFinalSubAgentStatus(status subagent.Status) bool {
+	switch status {
+	case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
+		return true
+	default:
+		return false
 	}
 }
 

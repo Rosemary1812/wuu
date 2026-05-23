@@ -14,6 +14,7 @@ type AgentMailboxMessage struct {
 	Type         string    `json:"type"`
 	AgentID      string    `json:"agent_id"`
 	AgentPath    string    `json:"agent_path,omitempty"`
+	ParentID     string    `json:"parent_id,omitempty"`
 	TaskName     string    `json:"task_name,omitempty"`
 	AgentType    string    `json:"agent_type,omitempty"`
 	Status       string    `json:"status"`
@@ -33,6 +34,7 @@ func NewAgentMailboxMessage(snap subagent.SubAgentSnapshot) AgentMailboxMessage 
 		Type:         "agent_result",
 		AgentID:      snap.ID,
 		AgentPath:    snap.AgentPath,
+		ParentID:     snap.ParentID,
 		TaskName:     snap.TaskName,
 		AgentType:    snap.Type,
 		Status:       string(snap.Status),

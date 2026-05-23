@@ -246,6 +246,47 @@ func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 	c.StopAll()
 }
 
+func TestNestedResultRoutesToParentAgent(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-nested-route",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "worker",
+		TaskName: "parent",
+		Prompt:   "p",
+	})
+	if err != nil {
+		t.Fatalf("parent spawn: %v", err)
+	}
+	delivered := c.deliverNestedResultToParent(context.Background(), subagent.SubAgentSnapshot{
+		ID:          "child-1",
+		ParentID:    parent.AgentID,
+		AgentPath:   parent.AgentPath + "/child",
+		TaskName:    "child",
+		Type:        "worker",
+		Status:      subagent.StatusCompleted,
+		Description: "child task",
+		Result:      "child done",
+	})
+	if !delivered {
+		t.Fatal("expected nested result to route to parent")
+	}
+	if got := c.Manager().PendingMessageCount(parent.AgentID); got != 1 {
+		t.Fatalf("expected parent pending mailbox message, got %d", got)
+	}
+	c.StopAll()
+}
+
 func TestSpawn_InplaceSkipsWorktree(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

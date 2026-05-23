@@ -84,11 +84,24 @@ func (s *Server) forwardAgentNotifications(ch <-chan subagent.Notification) {
 		})
 		switch n.Status {
 		case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
-			_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
-				Message: coordinator.NewAgentMailboxMessage(n.Snapshot),
-			})
+			if s.isRootAgentSnapshot(n.Snapshot) {
+				_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
+					Message: coordinator.NewAgentMailboxMessage(n.Snapshot),
+				})
+			}
 		}
 	}
+}
+
+func (s *Server) isRootAgentSnapshot(snap subagent.SubAgentSnapshot) bool {
+	parentID := strings.TrimSpace(snap.ParentID)
+	if parentID == "" {
+		return true
+	}
+	if s == nil || s.rt == nil || s.rt.Coordinator == nil {
+		return false
+	}
+	return parentID == s.rt.Coordinator.SessionID()
 }
 
 func agentFromSnapshot(snap subagent.SubAgentSnapshot) Agent {

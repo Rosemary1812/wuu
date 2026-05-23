@@ -260,19 +260,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.appendEntry("system", fmt.Sprintf("%s %s %s: %s%s",
 				icon, n.Snapshot.Type, n.Status, n.Snapshot.Description, suffix))
-			// Queue the structured mailbox message for the
-			// orchestrator's next API request. If a turn is still in
-			// flight, buffer it until streamFinishedMsg so it cannot
-			// interleave with assistant/tool messages from the active
-			// turn.
-			workerMsg := coordinator.AgentMailboxChatMessage(n.Snapshot)
-			if m.streaming || m.pendingRequest {
-				m.pendingWorkerMessages = append(m.pendingWorkerMessages, workerMsg)
-			} else {
-				m.chatHistory = append(m.chatHistory, workerMsg)
-				_ = appendChatMessage(m.memoryPath, workerMsg)
+			if m.isRootWorkerSnapshot(n.Snapshot) {
+				// Queue the structured mailbox message for the
+				// orchestrator's next API request. If a turn is still in
+				// flight, buffer it until streamFinishedMsg so it cannot
+				// interleave with assistant/tool messages from the active
+				// turn.
+				workerMsg := coordinator.AgentMailboxChatMessage(n.Snapshot)
+				if m.streaming || m.pendingRequest {
+					m.pendingWorkerMessages = append(m.pendingWorkerMessages, workerMsg)
+				} else {
+					m.chatHistory = append(m.chatHistory, workerMsg)
+					_ = appendChatMessage(m.memoryPath, workerMsg)
+				}
+				injected = true
 			}
-			injected = true
 		}
 		// Worker count likely changed — re-layout so the activity
 		// panel appears/disappears immediately.
@@ -1512,6 +1514,11 @@ func (m *Model) recordWorkerUsage(snapshot subagent.SubAgentSnapshot) {
 		inputTokens:  snapshot.InputTokens,
 		outputTokens: snapshot.OutputTokens,
 	}
+}
+
+func (m *Model) isRootWorkerSnapshot(snapshot subagent.SubAgentSnapshot) bool {
+	parentID := strings.TrimSpace(snapshot.ParentID)
+	return parentID == "" || parentID == strings.TrimSpace(m.sessionID)
 }
 
 func (m *Model) hasWorkerSpawned(id string) bool {
