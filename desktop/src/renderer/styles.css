@@ -31,18 +31,99 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 326px minmax(0, 1fr);
+  position: relative;
+  grid-template-columns: var(--sidebar-width, 326px) minmax(0, 1fr);
   height: 100vh;
   background: #f7f7f5;
 }
 
 .sidebar {
   display: flex;
+  overflow: hidden;
   min-width: 0;
   flex-direction: column;
   border-right: 1px solid #dfdfdc;
   background: #ebecea;
   padding: 0 12px 16px;
+  transition:
+    opacity 120ms ease,
+    padding 120ms ease;
+}
+
+.sidebar-collapsed .sidebar {
+  border-right: 0;
+  opacity: 0;
+  padding-right: 0;
+  padding-left: 0;
+  pointer-events: none;
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--sidebar-width, 326px) - 5px);
+  z-index: 10;
+  width: 10px;
+  cursor: col-resize;
+  outline: 0;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-collapsed .sidebar-resizer {
+  left: 0;
+  width: 14px;
+}
+
+.sidebar-resizer::before {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 1px;
+  border-radius: 999px;
+  background: transparent;
+  content: "";
+  transform: translateX(-50%);
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease,
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.sidebar-resizer:hover::before,
+.sidebar-resizer:focus-visible::before,
+.resizing-sidebar .sidebar-resizer::before {
+  background: rgba(45, 50, 54, 0.24);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.sidebar-collapsed .sidebar-resizer::before {
+  top: 72px;
+  bottom: 72px;
+  width: 3px;
+  background: rgba(45, 50, 54, 0.1);
+  opacity: 0;
+  transform: translateX(-50%) scaleX(0.65);
+}
+
+.sidebar-collapsed .sidebar-resizer:hover::before,
+.sidebar-collapsed .sidebar-resizer:focus-visible::before,
+.sidebar-collapsed.resizing-sidebar .sidebar-resizer::before {
+  background: rgba(45, 50, 54, 0.22);
+  opacity: 1;
+  transform: translateX(-50%) scaleX(1);
+}
+
+.resizing-sidebar,
+.resizing-sidebar * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.sidebar-collapsed .titlebar {
+  padding-left: 86px;
 }
 
 .traffic-spacer {

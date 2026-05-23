@@ -15,7 +15,15 @@ import {
   Wrench,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import type {
   AppServerNotification,
   AskUserQuestion,
@@ -46,10 +54,42 @@ const initialState: AppState = {
   status: "connecting"
 };
 
+const SIDEBAR_DEFAULT_WIDTH = 326;
+const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MAX_WIDTH = 520;
+const SIDEBAR_STEP = 24;
+const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
+const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
+
+type SidebarResizeSession = {
+  startX: number;
+  startWidth: number;
+};
+
+function initialSidebarWidth(): number {
+  const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  if (!Number.isFinite(stored)) {
+    return SIDEBAR_DEFAULT_WIDTH;
+  }
+  return clamp(stored, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+}
+
+function initialSidebarCollapsed(): boolean {
+  return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
+  const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
+  const [resizingSidebar, setResizingSidebar] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -124,8 +164,98 @@ export function App(): JSX.Element {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [state.thread?.id, state.threads, state.running]);
 
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+  }, [sidebarWidth, sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!resizingSidebar) {
+      return;
+    }
+
+    function handlePointerMove(event: PointerEvent): void {
+      const session = resizeSessionRef.current;
+      if (!session) {
+        return;
+      }
+      applySidebarWidth(session.startWidth + event.clientX - session.startX);
+    }
+
+    function handlePointerUp(): void {
+      resizeSessionRef.current = null;
+      setResizingSidebar(false);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [resizingSidebar]);
+
   const activeTitle = state.thread?.preview || "新对话";
   const turns = state.thread?.turns ?? [];
+  const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
+    resizingSidebar ? " resizing-sidebar" : ""
+  }`;
+  const shellStyle = {
+    "--sidebar-width": `${sidebarCollapsed ? 0 : sidebarWidth}px`
+  } as CSSProperties;
+
+  function applySidebarWidth(nextWidth: number): void {
+    if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+      setSidebarCollapsed(true);
+      return;
+    }
+    setSidebarCollapsed(false);
+    setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+  }
+
+  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    resizeSessionRef.current = {
+      startX: event.clientX,
+      startWidth: sidebarCollapsed ? 0 : sidebarWidth
+    };
+    setResizingSidebar(true);
+  }
+
+  function toggleSidebar(): void {
+    setSidebarCollapsed((collapsed) => !collapsed);
+    setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
+  }
+
+  function handleSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleSidebar();
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      if (sidebarCollapsed) {
+        return;
+      }
+      applySidebarWidth(sidebarWidth - SIDEBAR_STEP);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      if (sidebarCollapsed) {
+        setSidebarCollapsed(false);
+        setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+        return;
+      }
+      applySidebarWidth(sidebarWidth + SIDEBAR_STEP);
+    }
+  }
 
   async function startNewThread(): Promise<void> {
     const result = await window.wuu.startThread();
@@ -186,7 +316,7 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className="app-shell">
+    <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
         <div className="traffic-spacer" />
         <nav className="primary-nav" aria-label="主导航">
@@ -221,6 +351,20 @@ export function App(): JSX.Element {
           </button>
         </div>
       </aside>
+
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-label={sidebarCollapsed ? "展开侧边栏" : "调整侧边栏宽度"}
+        aria-orientation="vertical"
+        aria-valuemin={0}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuenow={sidebarCollapsed ? 0 : sidebarWidth}
+        tabIndex={0}
+        onPointerDown={startSidebarResize}
+        onDoubleClick={toggleSidebar}
+        onKeyDown={handleSidebarSeparatorKey}
+      />
 
       <main className="conversation-pane">
         <header className="titlebar">
