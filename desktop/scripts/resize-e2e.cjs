@@ -219,6 +219,32 @@ async function run() {
     button.click();
   });
 
+  const rightPanelToolLabels = await waitFor(
+    win,
+    () => {
+      const labels = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item strong"))
+        .map((node) => node.textContent?.trim())
+        .filter(Boolean);
+      return labels.length > 0 ? labels : null;
+    },
+    1000
+  );
+  assert.deepEqual(
+    rightPanelToolLabels,
+    ["文件", "审查"],
+    "Opening the right panel should show the workspace tool picker before a tool detail."
+  );
+
+  await evaluate(win, () => {
+    const fileTool = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item")).find(
+      (candidate) => candidate.textContent?.includes("文件")
+    );
+    if (!(fileTool instanceof HTMLButtonElement)) {
+      throw new Error("Right panel file tool button not found.");
+    }
+    fileTool.click();
+  });
+
   const before = await waitFor(win, () => treeSnapshot(), 5000);
   assert.ok(before.frameHeight > 500, "Initial file tree frame should be tall enough for resize verification.");
   assert.ok(before.renderedRows > 20, "Initial file tree should render virtualized rows.");
