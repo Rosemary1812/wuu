@@ -1617,6 +1617,8 @@ function syncStreamItem(params: Record<string, unknown> | undefined): void {
   if (!turnID || !item?.id) {
     return;
   }
+  const completed = (item.status ?? "in_progress") !== "in_progress";
+  const retainTextStream = completed && (item.type === "agent_message" || item.type === "reasoning");
   if (typeof item.text === "string") {
     streamTextStore.set(streamTextKey(turnID, item.id, "text"), item.text);
   }
@@ -1626,7 +1628,7 @@ function syncStreamItem(params: Record<string, unknown> | undefined): void {
   if (typeof item.result === "string") {
     streamTextStore.set(streamTextKey(turnID, item.id, "result"), item.result);
   }
-  if ((item.status ?? "in_progress") !== "in_progress") {
+  if (completed && !retainTextStream) {
     window.requestAnimationFrame(() => streamTextStore.clearItem(turnID, item.id));
   }
 }
@@ -1965,16 +1967,13 @@ function ThreadItemView({
       return (
         <article className="agent-block">
           <div className="agent-text">
-            {streaming ? (
-              <StreamingMarkdown
-                streamKey={streamTextKey(turnID, item.id, "text")}
-                initialText={item.text}
-                cwd={cwd}
-                onFrame={onStreamFrame}
-              />
-            ) : (
-              <RichContent text={item.text} cwd={cwd} />
-            )}
+            <AgentMessageContent
+              turnID={turnID}
+              item={item}
+              cwd={cwd}
+              streaming={streaming}
+              onStreamFrame={onStreamFrame}
+            />
           </div>
         </article>
       );
@@ -1982,16 +1981,7 @@ function ThreadItemView({
       return (
         <article className="reasoning-block">
           <Brain size={16} />
-          {streaming ? (
-            <StreamingMarkdown
-              streamKey={streamTextKey(turnID, item.id, "text")}
-              initialText={item.text}
-              className="streaming-markdown reasoning-stream"
-              onFrame={onStreamFrame}
-            />
-          ) : (
-            <div>{item.text}</div>
-          )}
+          <ReasoningContent turnID={turnID} item={item} streaming={streaming} onStreamFrame={onStreamFrame} />
         </article>
       );
     case "tool_call":
@@ -2004,6 +1994,100 @@ function ThreadItemView({
     default:
       return null;
   }
+}
+
+function AgentMessageContent({
+  turnID,
+  item,
+  cwd,
+  streaming,
+  onStreamFrame
+}: {
+  turnID: string;
+  item: ThreadItem;
+  cwd?: string;
+  streaming: boolean;
+  onStreamFrame: () => void;
+}): JSX.Element {
+  const streamKeyValue = streamTextKey(turnID, item.id, "text");
+  const [streamSettled, setStreamSettled] = useState(false);
+  const hasBufferedStream = streamTextStore.has(streamKeyValue);
+  const renderStream = streaming || (hasBufferedStream && !streamSettled);
+
+  useEffect(() => {
+    setStreamSettled(false);
+  }, [streamKeyValue]);
+
+  useEffect(() => {
+    if (streaming) {
+      setStreamSettled(false);
+    }
+  }, [streaming]);
+
+  if (!renderStream) {
+    return <RichContent text={item.text} cwd={cwd} />;
+  }
+
+  return (
+    <StreamingMarkdown
+      streamKey={streamKeyValue}
+      initialText={hasBufferedStream ? streamTextStore.seedValue(streamKeyValue) : item.text}
+      cwd={cwd}
+      final={!streaming}
+      onFrame={onStreamFrame}
+      onSettled={() => {
+        streamTextStore.clearItem(turnID, item.id);
+        setStreamSettled(true);
+        onStreamFrame();
+      }}
+    />
+  );
+}
+
+function ReasoningContent({
+  turnID,
+  item,
+  streaming,
+  onStreamFrame
+}: {
+  turnID: string;
+  item: ThreadItem;
+  streaming: boolean;
+  onStreamFrame: () => void;
+}): JSX.Element {
+  const streamKeyValue = streamTextKey(turnID, item.id, "text");
+  const [streamSettled, setStreamSettled] = useState(false);
+  const hasBufferedStream = streamTextStore.has(streamKeyValue);
+  const renderStream = streaming || (hasBufferedStream && !streamSettled);
+
+  useEffect(() => {
+    setStreamSettled(false);
+  }, [streamKeyValue]);
+
+  useEffect(() => {
+    if (streaming) {
+      setStreamSettled(false);
+    }
+  }, [streaming]);
+
+  if (!renderStream) {
+    return <div>{item.text}</div>;
+  }
+
+  return (
+    <StreamingMarkdown
+      streamKey={streamKeyValue}
+      initialText={hasBufferedStream ? streamTextStore.seedValue(streamKeyValue) : item.text}
+      className="streaming-markdown reasoning-stream"
+      final={!streaming}
+      onFrame={onStreamFrame}
+      onSettled={() => {
+        streamTextStore.clearItem(turnID, item.id);
+        setStreamSettled(true);
+        onStreamFrame();
+      }}
+    />
+  );
 }
 
 type ToolActivityKind = "edit" | "create" | "search" | "read" | "list" | "command" | "agent" | "unknown";

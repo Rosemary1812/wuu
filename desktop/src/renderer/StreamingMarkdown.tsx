@@ -11,7 +11,9 @@ type StreamingMarkdownProps = {
   initialText?: string;
   cwd?: string;
   className?: string;
+  final?: boolean;
   onFrame?: () => void;
+  onSettled?: () => void;
 };
 
 type FadeUnit = {
@@ -23,7 +25,6 @@ type FadeUnit = {
 const STREAM_CONFIG = {
   defaultCps: 60,
   flushCps: 180,
-  largeAppendChars: 180,
   maxCps: 320,
   minCps: 24,
   targetLagChars: 8
@@ -37,9 +38,11 @@ export function StreamingMarkdown({
   initialText = "",
   cwd,
   className = "streaming-markdown rich-content",
-  onFrame
+  final = false,
+  onFrame,
+  onSettled
 }: StreamingMarkdownProps): JSX.Element {
-  const displayedText = useSmoothStreamText(streamKey, initialText, onFrame);
+  const displayedText = useSmoothStreamText(streamKey, initialText, { final, onFrame, onSettled });
   const blocks = useMemo(() => parseRichBlocksWithOffsets(displayedText, { allowOpenFence: true }), [displayedText]);
 
   return (
@@ -111,7 +114,17 @@ function AnimatedStreamText({ text, blockKey }: { text: string; blockKey: string
   );
 }
 
-function useSmoothStreamText(streamKey: string, initialText: string, onFrame: (() => void) | undefined): string {
+type SmoothStreamOptions = {
+  final: boolean;
+  onFrame?: () => void;
+  onSettled?: () => void;
+};
+
+function useSmoothStreamText(
+  streamKey: string,
+  initialText: string,
+  { final, onFrame, onSettled }: SmoothStreamOptions
+): string {
   const [displayedText, setDisplayedText] = useState(initialText);
   const targetRef = useRef(initialText);
   const targetCharsRef = useRef([...initialText]);
@@ -119,11 +132,27 @@ function useSmoothStreamText(streamKey: string, initialText: string, onFrame: ((
   const displayedTextRef = useRef(initialText);
   const rafRef = useRef<number | undefined>(undefined);
   const lastFrameTsRef = useRef<number | undefined>(undefined);
+  const finalRef = useRef(final);
   const onFrameRef = useRef(onFrame);
+  const onSettledRef = useRef(onSettled);
+  const settledNotifiedRef = useRef(false);
 
   useEffect(() => {
+    finalRef.current = final;
     onFrameRef.current = onFrame;
-  }, [onFrame]);
+    onSettledRef.current = onSettled;
+  }, [final, onFrame, onSettled]);
+
+  const notifySettled = useCallback((): void => {
+    if (!finalRef.current || settledNotifiedRef.current) {
+      return;
+    }
+    if (displayedCountRef.current < targetCharsRef.current.length) {
+      return;
+    }
+    settledNotifiedRef.current = true;
+    onSettledRef.current?.();
+  }, []);
 
   const syncImmediate = useCallback((nextText: string): void => {
     if (rafRef.current !== undefined) {
@@ -135,6 +164,7 @@ function useSmoothStreamText(streamKey: string, initialText: string, onFrame: ((
     targetCharsRef.current = [...nextText];
     displayedCountRef.current = targetCharsRef.current.length;
     displayedTextRef.current = nextText;
+    settledNotifiedRef.current = false;
     setDisplayedText(nextText);
     onFrameRef.current?.();
   }, []);
@@ -151,6 +181,7 @@ function useSmoothStreamText(streamKey: string, initialText: string, onFrame: ((
       if (backlog <= 0) {
         rafRef.current = undefined;
         lastFrameTsRef.current = undefined;
+        notifySettled();
         return;
       }
 
@@ -170,15 +201,22 @@ function useSmoothStreamText(streamKey: string, initialText: string, onFrame: ((
       displayedTextRef.current = nextText;
       setDisplayedText(nextText);
       onFrameRef.current?.();
+      if (nextCount >= targetCount) {
+        rafRef.current = undefined;
+        lastFrameTsRef.current = undefined;
+        notifySettled();
+        return;
+      }
       rafRef.current = window.requestAnimationFrame(tick);
     };
 
     rafRef.current = window.requestAnimationFrame(tick);
-  }, []);
+  }, [notifySettled]);
 
   useEffect(() => {
     streamTextStore.seed(streamKey, initialText);
-    syncImmediate(streamTextStore.get(streamKey));
+    const seedText = streamTextStore.seedValue(streamKey);
+    syncImmediate(seedText);
 
     const applyTarget = (nextText: string): void => {
       if (nextText === targetRef.current) {
@@ -189,16 +227,13 @@ function useSmoothStreamText(streamKey: string, initialText: string, onFrame: ((
         syncImmediate(nextText);
         return;
       }
-      const appended = nextText.slice(previousTarget.length);
-      if ([...appended].length > STREAM_CONFIG.largeAppendChars) {
-        syncImmediate(nextText);
-        return;
-      }
       targetRef.current = nextText;
-      targetCharsRef.current = [...targetCharsRef.current, ...appended];
+      targetCharsRef.current = [...nextText];
+      settledNotifiedRef.current = false;
       startFrameLoop();
     };
 
+    applyTarget(streamTextStore.get(streamKey));
     const unsubscribe = streamTextStore.subscribe(streamKey, applyTarget);
     return () => {
       unsubscribe();
@@ -208,6 +243,10 @@ function useSmoothStreamText(streamKey: string, initialText: string, onFrame: ((
       }
     };
   }, [initialText, startFrameLoop, streamKey, syncImmediate]);
+
+  useEffect(() => {
+    notifySettled();
+  }, [final, notifySettled]);
 
   return displayedText;
 }

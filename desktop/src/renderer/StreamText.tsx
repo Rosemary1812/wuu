@@ -6,6 +6,7 @@ type StreamTextListener = (value: string) => void;
 
 class StreamTextStore {
   private values = new Map<string, string>();
+  private seeds = new Map<string, string>();
   private listeners = new Map<string, Set<StreamTextListener>>();
 
   key(turnID: string, itemID: string, field: StreamTextField): string {
@@ -16,14 +17,24 @@ class StreamTextStore {
     return this.values.get(key) ?? "";
   }
 
+  has(key: string): boolean {
+    return this.values.has(key);
+  }
+
+  seedValue(key: string): string {
+    return this.seeds.get(key) ?? "";
+  }
+
   seed(key: string, value: string): void {
     if (this.values.has(key)) {
       return;
     }
     this.values.set(key, value);
+    this.seeds.set(key, value);
   }
 
   set(key: string, value: string): void {
+    this.ensureSeed(key);
     this.values.set(key, value);
     this.notify(key, value);
   }
@@ -32,6 +43,7 @@ class StreamTextStore {
     if (!delta) {
       return;
     }
+    this.ensureSeed(key);
     const value = `${this.values.get(key) ?? ""}${delta}`;
     this.values.set(key, value);
     this.notify(key, value);
@@ -39,8 +51,10 @@ class StreamTextStore {
 
   clearItem(turnID: string, itemID: string): void {
     for (const field of ["text", "arguments", "result"] satisfies StreamTextField[]) {
-      this.values.delete(this.key(turnID, itemID, field));
-      this.listeners.delete(this.key(turnID, itemID, field));
+      const key = this.key(turnID, itemID, field);
+      this.values.delete(key);
+      this.seeds.delete(key);
+      this.listeners.delete(key);
     }
   }
 
@@ -66,6 +80,12 @@ class StreamTextStore {
     }
     for (const listener of listeners) {
       listener(value);
+    }
+  }
+
+  private ensureSeed(key: string): void {
+    if (!this.seeds.has(key)) {
+      this.seeds.set(key, this.values.get(key) ?? "");
     }
   }
 }
