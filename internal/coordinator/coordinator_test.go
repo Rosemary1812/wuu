@@ -981,6 +981,50 @@ func TestAgentMailboxMessage_IncludesErrorClass(t *testing.T) {
 	}
 }
 
+func TestAgentControlRecordsRootCompletionMessageEvent(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	threadDir := filepath.Join(dir, ".wuu", "sessions", "sess-events", "threads")
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel:  "fake",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, "wt"),
+		ThreadDir:     threadDir,
+		SessionID:     "sess-events",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        "worker",
+		TaskName:    "record_event",
+		Prompt:      "record",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	store := agentthread.NewStore(threadDir)
+	deadline := time.Now().Add(time.Second)
+	for {
+		events, err := store.ReadEvents()
+		if err != nil {
+			t.Fatalf("ReadEvents: %v", err)
+		}
+		for _, event := range events {
+			if event.Type == agentthread.EventMessage && event.AuthorPath == "/root/record_event" && event.RecipientPath == "/root" {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected root completion message event, got %+v", events)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // subagentSnapshotWithError builds a minimal failed-worker snapshot
 // for mailbox tests without actually spawning anything.
 func subagentSnapshotWithError(err error) subagent.SubAgentSnapshot {

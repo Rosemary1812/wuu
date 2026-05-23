@@ -551,10 +551,11 @@ func (c *AgentControl) SendMessageFrom(currentPath, target, message string) erro
 	case subagent.StatusCancelled:
 		return fmt.Errorf("agent %q is %s and cannot receive messages", id, snap.Status)
 	}
-	communication := formatInterAgentCommunication(currentPath, snap.AgentPath, msg, false)
-	if ok := c.manager.QueueMessage(id, communication); !ok {
+	communication := newInterAgentCommunication(currentPath, snap.AgentPath, msg, false)
+	if ok := c.manager.QueueMessage(id, communication.String()); !ok {
 		return fmt.Errorf("agent %q not found", id)
 	}
+	_ = c.threadStore.RecordCommunication(id, communication)
 	if meta, ok := c.threads.UpdateLastTaskMessage(id, msg, time.Now().UTC()); ok {
 		_ = c.threadStore.UpsertThread(meta)
 	}
@@ -579,11 +580,12 @@ func (c *AgentControl) FollowupTaskFrom(currentPath string, ctx context.Context,
 		return subagent.SubAgentSnapshot{}, fmt.Errorf("agent %q not found", id)
 	}
 	current := sa.Snapshot()
-	communication := formatInterAgentCommunication(currentPath, current.AgentPath, msg, true)
-	snap, err := c.manager.Followup(ctx, id, communication)
+	communication := newInterAgentCommunication(currentPath, current.AgentPath, msg, true)
+	snap, err := c.manager.Followup(ctx, id, communication.String())
 	if err != nil {
 		return snap, err
 	}
+	_ = c.threadStore.RecordCommunication(id, communication)
 	if meta, ok := c.threads.UpdateLastTaskMessage(id, msg, time.Now().UTC()); ok {
 		_ = c.threadStore.UpsertThread(meta)
 	}
@@ -730,7 +732,9 @@ func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
 		}
 		_ = c.threadStore.RecordStatus(meta)
 		if isFinalSubAgentStatus(n.Status) {
-			_ = c.deliverNestedResultToParent(context.Background(), n.Snapshot)
+			if !c.deliverNestedResultToParent(context.Background(), n.Snapshot) && c.isRootChildSnapshot(n.Snapshot) {
+				_ = c.threadStore.RecordCommunication(c.rootThreadID, newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath))
+			}
 		}
 	}
 }
@@ -750,25 +754,42 @@ func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap sub
 	if meta, ok := c.threads.Resolve(parentID); ok && strings.TrimSpace(meta.Path) != "" {
 		parentPath = meta.Path
 	}
-	_, err := c.manager.Followup(ctx, parentID, formatAgentCompletionCommunication(snap, parentPath))
+	communication := newAgentCompletionCommunication(snap, parentPath)
+	_, err := c.manager.Followup(ctx, parentID, communication.String())
+	if err == nil {
+		_ = c.threadStore.RecordCommunication(parentID, communication)
+	}
 	return err == nil
 }
 
+func (c *AgentControl) isRootChildSnapshot(snap subagent.SubAgentSnapshot) bool {
+	parentID := strings.TrimSpace(snap.ParentID)
+	return parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID
+}
+
 func formatAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) string {
+	return newAgentCompletionCommunication(snap, recipientPath).String()
+}
+
+func newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
 	if strings.TrimSpace(recipientPath) == "" {
 		recipientPath = agentthread.RootPath
 	}
 	content := agentthread.SubagentNotificationContent(snap.AgentPath, NewAgentMailboxMessage(snap))
-	return agentthread.NewInterAgentCommunication(parseAgentPathOrRoot(snap.AgentPath), parseAgentPathOrRoot(recipientPath), content, false).String()
+	return agentthread.NewInterAgentCommunication(parseAgentPathOrRoot(snap.AgentPath), parseAgentPathOrRoot(recipientPath), content, false)
 }
 
 func formatInterAgentCommunication(authorPath, recipientPath, content string, triggerTurn bool) string {
+	return newInterAgentCommunication(authorPath, recipientPath, content, triggerTurn).String()
+}
+
+func newInterAgentCommunication(authorPath, recipientPath, content string, triggerTurn bool) agentthread.InterAgentCommunication {
 	return agentthread.NewInterAgentCommunication(
 		parseAgentPathOrRoot(authorPath),
 		parseAgentPathOrRoot(recipientPath),
 		content,
 		triggerTurn,
-	).String()
+	)
 }
 
 func parseAgentPathOrRoot(path string) agentthread.AgentPath {

@@ -77,12 +77,15 @@ const (
 )
 
 type Event struct {
-	Type       EventType  `json:"type"`
-	ThreadID   string     `json:"thread_id"`
-	Path       string     `json:"path,omitempty"`
-	Status     Status     `json:"status,omitempty"`
-	EdgeStatus EdgeStatus `json:"edge_status,omitempty"`
-	Message    string     `json:"message,omitempty"`
-	Metadata   *Metadata  `json:"metadata,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	Type          EventType  `json:"type"`
+	ThreadID      string     `json:"thread_id"`
+	Path          string     `json:"path,omitempty"`
+	Status        Status     `json:"status,omitempty"`
+	EdgeStatus    EdgeStatus `json:"edge_status,omitempty"`
+	AuthorPath    string     `json:"author_path,omitempty"`
+	RecipientPath string     `json:"recipient_path,omitempty"`
+	Message       string     `json:"message,omitempty"`
+	TriggerTurn   bool       `json:"trigger_turn,omitempty"`
+	Metadata      *Metadata  `json:"metadata,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }

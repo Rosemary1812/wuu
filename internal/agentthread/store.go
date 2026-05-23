@@ -130,6 +130,27 @@ func (s *Store) RecordEdgeStatus(meta Metadata) error {
 	})
 }
 
+func (s *Store) RecordCommunication(threadID string, communication InterAgentCommunication) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return fmt.Errorf("create thread store: %w", err)
+	}
+	return s.appendEventLocked(Event{
+		Type:          EventMessage,
+		ThreadID:      strings.TrimSpace(threadID),
+		Path:          string(communication.Recipient),
+		AuthorPath:    string(communication.Author),
+		RecipientPath: string(communication.Recipient),
+		Message:       communication.Content,
+		TriggerTurn:   communication.TriggerTurn,
+		CreatedAt:     time.Now().UTC(),
+	})
+}
+
 func (s *Store) AppendEvent(event Event) error {
 	if s == nil || s.dir == "" {
 		return nil

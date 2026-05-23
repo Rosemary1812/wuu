@@ -76,3 +76,27 @@ func TestStoreRecordsEdgeStatus(t *testing.T) {
 		t.Fatalf("unexpected edge event: %+v", events)
 	}
 }
+
+func TestStoreRecordsInterAgentCommunication(t *testing.T) {
+	store := NewStore(t.TempDir())
+	communication := NewInterAgentCommunication(
+		AgentPath("/root/research"),
+		AgentPath("/root"),
+		"done",
+		false,
+	)
+	if err := store.RecordCommunication("root-thread", communication); err != nil {
+		t.Fatalf("RecordCommunication: %v", err)
+	}
+	events, err := store.ReadEvents()
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %+v", events)
+	}
+	event := events[0]
+	if event.Type != EventMessage || event.ThreadID != "root-thread" || event.AuthorPath != "/root/research" || event.RecipientPath != "/root" || event.Message != "done" {
+		t.Fatalf("unexpected communication event: %+v", event)
+	}
+}
