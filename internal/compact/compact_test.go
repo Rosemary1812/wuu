@@ -186,14 +186,15 @@ func TestBuildSummaryContent_UsesStableConversationSummaryPrefix(t *testing.T) {
 func TestCompact_DefensiveTrimOnOverflow(t *testing.T) {
 	// 8 messages, summary request overflows twice then succeeds.
 	// The final compact result should still contain the summary +
-	// the last 4 (kept) messages.
+	// a recent raw tail.
+	large := strings.Repeat("x", 120000)
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "first"},
 		{Role: "assistant", Content: "first reply"},
 		{Role: "user", Content: "second"},
 		{Role: "assistant", Content: "second reply"},
 		{Role: "user", Content: "third"},
-		{Role: "assistant", Content: "third reply"},
+		{Role: "assistant", Content: large},
 		{Role: "user", Content: "fourth"},
 		{Role: "assistant", Content: "fourth reply"},
 	}
@@ -202,15 +203,15 @@ func TestCompact_DefensiveTrimOnOverflow(t *testing.T) {
 		failsRemaining: 2,
 		finalSummary:   "summary of older turns",
 	}
-	result, err := Compact(context.Background(), messages, client, "test")
+	result, err := Compact(context.Background(), messages, client, "gpt-4")
 	if err != nil {
 		t.Fatalf("Compact returned error: %v", err)
 	}
 	if client.calls != 3 {
 		t.Fatalf("expected 3 client calls (2 fails + 1 success), got %d", client.calls)
 	}
-	if len(result) < 5 {
-		t.Fatalf("expected summary + 4 kept messages, got %d", len(result))
+	if len(result) < 3 {
+		t.Fatalf("expected summary + kept tail messages, got %d", len(result))
 	}
 	if result[0].Role != "system" {
 		t.Fatalf("expected system summary first, got %s", result[0].Role)
@@ -236,7 +237,7 @@ func TestCompact_PreservesLeadingSystemPrompt(t *testing.T) {
 		t.Fatalf("Compact: %v", err)
 	}
 	if len(result) < 6 {
-		t.Fatalf("expected system prompt + summary + 4 kept messages, got %d", len(result))
+		t.Fatalf("expected system prompt + summary + kept tail messages, got %d", len(result))
 	}
 	if result[0].Role != "system" || result[0].Content != "You are wuu." {
 		t.Fatalf("expected original system prompt preserved first, got %#v", result[0])
@@ -252,19 +253,20 @@ func TestCompact_PreservesLeadingSystemPrompt(t *testing.T) {
 func TestCompact_DefensiveTrimGivesUpAfterMaxRetries(t *testing.T) {
 	// Always overflows. Compact should bail after maxCompactRetries
 	// attempts and propagate the error to the caller.
+	large := strings.Repeat("x", 120000)
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "a"},
 		{Role: "assistant", Content: "b"},
 		{Role: "user", Content: "c"},
 		{Role: "assistant", Content: "d"},
 		{Role: "user", Content: "e"},
-		{Role: "assistant", Content: "f"},
+		{Role: "assistant", Content: large},
 		{Role: "user", Content: "g"},
 		{Role: "assistant", Content: "h"},
 	}
 	client := &flakyOverflowClient{failsRemaining: 100} // never succeeds
 
-	_, err := Compact(context.Background(), messages, client, "test")
+	_, err := Compact(context.Background(), messages, client, "gpt-4")
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
@@ -304,6 +306,7 @@ func TestCompact_DoesNotLeaveDanglingToolResults(t *testing.T) {
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "older question"},
 		{Role: "assistant", Content: "older answer"},
+		{Role: "user", Content: "run both reads"},
 		{Role: "assistant", ToolCalls: []providers.ToolCall{
 			{ID: "c1", Name: "read_file", Arguments: `{"path":"README.md"}`},
 			{ID: "c2", Name: "read_file", Arguments: `{"path":"README_zh.md"}`},
@@ -311,7 +314,6 @@ func TestCompact_DoesNotLeaveDanglingToolResults(t *testing.T) {
 		{Role: "tool", Name: "read_file", ToolCallID: "c1", Content: "english"},
 		{Role: "tool", Name: "read_file", ToolCallID: "c2", Content: "chinese"},
 		{Role: "assistant", Content: "done"},
-		{Role: "user", Content: "what next?"},
 	}
 
 	client := &mockCompactClient{response: "summary of older turns"}
@@ -319,14 +321,50 @@ func TestCompact_DoesNotLeaveDanglingToolResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compact: %v", err)
 	}
-	if len(result) != 6 {
-		t.Fatalf("expected summary + intact tool chain, got %d messages", len(result))
+	if err := providers.ValidateMessageSequence(result); err != nil {
+		t.Fatalf("compacted history has invalid tool sequence: %v\n%#v", err, result)
 	}
-	if result[1].Role != "assistant" || len(result[1].ToolCalls) != 2 {
-		t.Fatalf("expected assistant tool_call turn preserved, got %+v", result[1])
+	if len(result) < 6 {
+		t.Fatalf("expected summary + intact current tool turn, got %d messages", len(result))
 	}
-	if result[2].Role != "tool" || result[3].Role != "tool" {
-		t.Fatalf("expected tool results preserved after assistant tool_call, got %+v %+v", result[2], result[3])
+	if result[2].Role != "assistant" || len(result[2].ToolCalls) != 2 {
+		t.Fatalf("expected assistant tool_call turn preserved, got %+v", result[2])
+	}
+	if result[3].Role != "tool" || result[4].Role != "tool" {
+		t.Fatalf("expected tool results preserved after assistant tool_call, got %+v %+v", result[3], result[4])
+	}
+}
+
+func TestCompactKeepStart_UsesTokenBudgetForRecentUserTurns(t *testing.T) {
+	large := strings.Repeat("x", 2000)
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: large},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+	}
+
+	start := compactKeepStart(messages, 100)
+	if start != 4 {
+		t.Fatalf("expected only the latest user turn to fit budget, start=%d", start)
+	}
+}
+
+func TestCompactKeepStart_ExpandsRecentTurnsWithinBudget(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+	}
+
+	start := compactKeepStart(messages, 1000)
+	if start != 2 {
+		t.Fatalf("expected budget to keep recent turns while leaving oldest summarized, start=%d", start)
 	}
 }
 

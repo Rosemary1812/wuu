@@ -145,6 +145,19 @@ func ShouldCompact(messages []providers.ChatMessage, maxContextTokens int) bool 
 // with Codex CLI's safeguard.
 const maxCompactRetries = 3
 
+// compactTailMaxTokens caps the recent raw history kept after compaction.
+// Mature agents avoid a fixed "last N messages" tail: Codex keeps recent user
+// messages under a token budget, and Claude Code budgets compaction headroom by
+// tokens. 20K is the shared practical scale those systems use for compact
+// summary/tail budgets.
+const compactTailMaxTokens = 20_000
+
+// compactTailContextFraction keeps the raw tail small relative to the target
+// model window so the generated summary and post-compact context still have
+// room. The tail selector also keeps complete user-anchored turns and tool
+// chains, so this is a soft budget rather than a hard truncation point.
+const compactTailContextFraction = 0.15
+
 // Compact compresses older messages into a summary. It finds an
 // appropriate boundary near the end of the conversation, summarizes
 // everything before it through the provided client's normal Chat path,
@@ -172,9 +185,7 @@ func Compact(ctx context.Context, messages []providers.ChatMessage, client provi
 		return messages, nil
 	}
 
-	// Find compaction boundary: keep the last 2 exchanges (4 messages)
-	keepCount := 4
-	keepStart := compactKeepStart(conversation, keepCount)
+	keepStart := compactKeepStart(conversation, compactTailBudget(model))
 	if keepStart <= 0 {
 		return messages, nil
 	}
@@ -313,25 +324,90 @@ func collapseBlankLines(text string) string {
 	return strings.TrimSpace(b.String())
 }
 
+func compactTailBudget(model string) int {
+	window := providers.ContextWindowFor(model)
+	budget := int(float64(window) * compactTailContextFraction)
+	if budget <= 0 || budget > compactTailMaxTokens {
+		return compactTailMaxTokens
+	}
+	return budget
+}
+
 // compactKeepStart returns the index where the un-compacted tail should begin.
-// The boundary must not split an assistant tool_call block from its tool
-// results, or the resulting history becomes invalid for chat-completions APIs.
-func compactKeepStart(messages []providers.ChatMessage, keepCount int) int {
-	if keepCount >= len(messages) {
+// It keeps the latest user-anchored turn, then expands backward by complete
+// user turns while the tail remains under the token budget. It deliberately
+// leaves at least one earlier message to summarize so manual /compact still
+// produces a boundary on short but non-trivial sessions.
+func compactKeepStart(messages []providers.ChatMessage, tailBudgetTokens int) int {
+	if len(messages) <= 1 {
 		return 0
 	}
+	if tailBudgetTokens <= 0 {
+		tailBudgetTokens = compactTailMaxTokens
+	}
 
-	start := len(messages) - keepCount
-	if messages[start].Role != "tool" {
+	start := lastUserMessageIndex(messages)
+	if start < 0 {
+		start = compactFallbackTailStart(messages, tailBudgetTokens)
+		return adjustToolBoundary(messages, start)
+	}
+
+	for {
+		prev := previousUserMessageIndex(messages, start-1)
+		if prev <= 0 {
+			break
+		}
+		if EstimateMessagesTokens(messages[prev:]) > tailBudgetTokens {
+			break
+		}
+		start = prev
+	}
+	return start
+}
+
+func compactFallbackTailStart(messages []providers.ChatMessage, tailBudgetTokens int) int {
+	start := len(messages) - 1
+	for candidate := start - 1; candidate > 0; candidate-- {
+		if EstimateMessagesTokens(messages[candidate:]) > tailBudgetTokens {
+			break
+		}
+		start = candidate
+	}
+	return start
+}
+
+func lastUserMessageIndex(messages []providers.ChatMessage) int {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.EqualFold(messages[i].Role, "user") {
+			return i
+		}
+	}
+	return -1
+}
+
+func previousUserMessageIndex(messages []providers.ChatMessage, before int) int {
+	if before >= len(messages) {
+		before = len(messages) - 1
+	}
+	for i := before; i >= 0; i-- {
+		if strings.EqualFold(messages[i].Role, "user") {
+			return i
+		}
+	}
+	return -1
+}
+
+func adjustToolBoundary(messages []providers.ChatMessage, start int) int {
+	if start <= 0 || start >= len(messages) || !strings.EqualFold(messages[start].Role, "tool") {
 		return start
 	}
 
 	// Boundary landed inside a tool-result block. Shift left to include every
 	// contiguous tool result and the assistant tool_calls turn that started it.
-	for start > 0 && messages[start-1].Role == "tool" {
+	for start > 0 && strings.EqualFold(messages[start-1].Role, "tool") {
 		start--
 	}
-	if start > 0 && messages[start-1].Role == "assistant" && len(messages[start-1].ToolCalls) > 0 {
+	if start > 0 && strings.EqualFold(messages[start-1].Role, "assistant") && len(messages[start-1].ToolCalls) > 0 {
 		start--
 	}
 	return start
