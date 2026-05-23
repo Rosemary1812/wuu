@@ -112,6 +112,31 @@ async function run() {
   );
   assert.equal(partial.hasStaticFallback, false, "Assistant content should not switch to static RichContent fallback.");
 
+  const debug = await waitFor(
+    win,
+    () => {
+      const button = document.querySelector(".run-debug-button");
+      if (!button) {
+        return null;
+      }
+      if (!document.querySelector(".run-debug-panel")) {
+        button.click();
+      }
+      const panel = document.querySelector(".run-debug-panel");
+      const text = panel?.textContent ?? "";
+      return text.includes("reply/first-delta") && text.includes("正在生成回复")
+        ? {
+            phase: panel?.querySelector(".run-debug-phase")?.textContent ?? "",
+            text
+          }
+        : null;
+    },
+    3000,
+    { fullLength: fullText.length }
+  );
+  assert.equal(debug.phase, "正在生成回复", "Debug panel should expose the live response phase.");
+  assert.match(debug.text, /reply\/first-delta/, "Debug panel should include the first reply delta event.");
+
   emitNotification(win, "item/completed", {
     turn_id: turn.id,
     item: { ...agentItem, status: "completed", text: fullText }
