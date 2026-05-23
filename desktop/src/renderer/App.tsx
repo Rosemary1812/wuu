@@ -51,6 +51,8 @@ import type {
   Turn
 } from "../shared/protocol";
 import { RichContent } from "./RichContent";
+import { StreamingMarkdown } from "./StreamingMarkdown";
+import { streamTextKey, streamTextStore, type StreamTextField } from "./StreamText";
 
 type AskRequestState = {
   id: string;
@@ -122,8 +124,8 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
@@ -159,6 +161,14 @@ export function App(): JSX.Element {
       if (!mounted) {
         return;
       }
+      const handling = handleStreamingNotification(event);
+      if (handling === "stream") {
+        scheduleStreamScroll();
+        return;
+      }
+      if (handling === "skip") {
+        return;
+      }
       setState((current) => reduceServerEvent(current, event));
     });
 
@@ -188,6 +198,10 @@ export function App(): JSX.Element {
     return () => {
       mounted = false;
       off();
+      if (streamScrollFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(streamScrollFrameRef.current);
+        streamScrollFrameRef.current = undefined;
+      }
     };
   }, []);
 
@@ -277,14 +291,6 @@ export function App(): JSX.Element {
     };
   }, [resizingSidebar]);
 
-  useEffect(() => {
-    if (!state.running) {
-      return;
-    }
-    setNowMs(Date.now());
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [state.running]);
 
   const activeProject = useMemo(
     () => state.projects.find((project) => project.id === state.activeProjectId),
@@ -312,6 +318,20 @@ export function App(): JSX.Element {
     }
     setSidebarCollapsed(false);
     setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+  }
+
+  function scheduleStreamScroll(): void {
+    if (streamScrollFrameRef.current !== undefined) {
+      return;
+    }
+    streamScrollFrameRef.current = window.requestAnimationFrame(() => {
+      streamScrollFrameRef.current = undefined;
+      const node = scrollRef.current;
+      if (!node) {
+        return;
+      }
+      node.scrollTop = node.scrollHeight;
+    });
   }
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -827,7 +847,12 @@ export function App(): JSX.Element {
             ) : (
               <div className="conversation-width">
                 {turns.map((turn) => (
-                  <TurnView key={turn.id} turn={turn} cwd={state.thread?.cwd ?? state.activeContext?.cwd} nowMs={nowMs} />
+                  <TurnView
+                    key={turn.id}
+                    turn={turn}
+                    cwd={state.thread?.cwd ?? state.activeContext?.cwd}
+                    onStreamFrame={scheduleStreamScroll}
+                  />
                 ))}
               </div>
             )}
@@ -916,6 +941,68 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
       return { ...state, status: event.message };
     case "server-exit":
       return { ...state, running: false, status: "app-server exited" };
+  }
+}
+
+type StreamingNotificationHandling = "state" | "stream" | "skip";
+
+function handleStreamingNotification(event: ServerEvent): StreamingNotificationHandling {
+  if (event.kind !== "notification") {
+    return "state";
+  }
+  const notification = event.message;
+  const params = notification.params as Record<string, unknown> | undefined;
+  switch (notification.method) {
+    case "item/agentMessage/delta":
+      appendStreamDelta(params, "text");
+      return "stream";
+    case "item/reasoning/delta":
+      appendStreamDelta(params, "text");
+      return "stream";
+    case "item/toolCall/delta":
+      appendStreamDelta(params, "arguments");
+      return "stream";
+    case "item/toolCall/outputDelta":
+      appendStreamDelta(params, "result");
+      return "stream";
+    case "turn/event":
+      return "skip";
+    case "item/started":
+    case "item/completed":
+      syncStreamItem(params);
+      return "state";
+    default:
+      return "state";
+  }
+}
+
+function appendStreamDelta(params: Record<string, unknown> | undefined, field: StreamTextField): void {
+  const turnID = params?.turn_id as string | undefined;
+  const itemID = params?.item_id as string | undefined;
+  const delta = params?.delta as string | undefined;
+  if (!turnID || !itemID || !delta) {
+    return;
+  }
+  streamTextStore.append(streamTextKey(turnID, itemID, field), delta);
+}
+
+function syncStreamItem(params: Record<string, unknown> | undefined): void {
+  const turnID = params?.turn_id as string | undefined;
+  const item = params?.item as ThreadItem | undefined;
+  if (!turnID || !item?.id) {
+    return;
+  }
+  if (typeof item.text === "string") {
+    streamTextStore.set(streamTextKey(turnID, item.id, "text"), item.text);
+  }
+  if (typeof item.arguments === "string") {
+    streamTextStore.set(streamTextKey(turnID, item.id, "arguments"), item.arguments);
+  }
+  if (typeof item.result === "string") {
+    streamTextStore.set(streamTextKey(turnID, item.id, "result"), item.result);
+  }
+  if ((item.status ?? "in_progress") !== "in_progress") {
+    window.requestAnimationFrame(() => streamTextStore.clearItem(turnID, item.id));
   }
 }
 
@@ -1116,7 +1203,7 @@ function ThreadList({
   );
 }
 
-function TurnView({ turn, cwd, nowMs }: { turn: Turn; cwd?: string; nowMs: number }): JSX.Element {
+function TurnView({ turn, cwd, onStreamFrame }: { turn: Turn; cwd?: string; onStreamFrame: () => void }): JSX.Element {
   const renderedItems: JSX.Element[] = [];
   let statusInserted = false;
   let hasAssistantWork = false;
@@ -1124,12 +1211,21 @@ function TurnView({ turn, cwd, nowMs }: { turn: Turn; cwd?: string; nowMs: numbe
   for (let index = 0; index < turn.items.length; index++) {
     const item = turn.items[index];
     if (item.type === "user_message") {
-      renderedItems.push(<ThreadItemView key={item.id} item={item} cwd={cwd} />);
+      renderedItems.push(
+        <ThreadItemView
+          key={item.id}
+          turnID={turn.id}
+          item={item}
+          cwd={cwd}
+          streaming={false}
+          onStreamFrame={onStreamFrame}
+        />
+      );
       continue;
     }
 
     if (!statusInserted) {
-      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} nowMs={nowMs} />);
+      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
       statusInserted = true;
     }
     hasAssistantWork = true;
@@ -1149,11 +1245,20 @@ function TurnView({ turn, cwd, nowMs }: { turn: Turn; cwd?: string; nowMs: numbe
       continue;
     }
 
-    renderedItems.push(<ThreadItemView key={item.id} item={item} cwd={cwd} />);
+    renderedItems.push(
+      <ThreadItemView
+        key={item.id}
+        turnID={turn.id}
+        item={item}
+        cwd={cwd}
+        streaming={turn.status === "in_progress" && item.status === "in_progress"}
+        onStreamFrame={onStreamFrame}
+      />
+    );
   }
 
   if (!statusInserted && turn.status === "in_progress") {
-    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} nowMs={nowMs} />);
+    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
   }
   if (!hasAssistantWork && turn.status === "in_progress") {
     renderedItems.push(
@@ -1172,11 +1277,12 @@ function TurnView({ turn, cwd, nowMs }: { turn: Turn; cwd?: string; nowMs: numbe
   );
 }
 
-function TurnStatusLine({ turn, nowMs }: { turn: Turn; nowMs: number }): JSX.Element {
+function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = Date.parse(turn.started_at);
+  const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
   const elapsedMs =
-    completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, nowMs - startedAt) : 0);
+    completedDuration ?? (Number.isFinite(startedAt) ? Math.max(0, Date.now() - startedAt) : 0);
   const statusLabel =
     turn.status === "failed" ? "处理失败" : turn.status === "interrupted" ? "已停止" : "已处理";
 
@@ -1185,7 +1291,7 @@ function TurnStatusLine({ turn, nowMs }: { turn: Turn; nowMs: number }): JSX.Ele
       <div className="turn-progress-label">
         <Clock size={17} />
         <span>
-          {statusLabel} {formatDuration(elapsedMs)}
+          {statusLabel} {liveDuration ? <LiveDuration startedAtMs={startedAt} /> : formatDuration(elapsedMs)}
         </span>
       </div>
       <div className="turn-progress-rule" />
@@ -1193,7 +1299,36 @@ function TurnStatusLine({ turn, nowMs }: { turn: Turn; nowMs: number }): JSX.Ele
   );
 }
 
-function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.Element | null {
+function LiveDuration({ startedAtMs }: { startedAtMs: number }): JSX.Element {
+  const nodeRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    const update = (): void => {
+      if (nodeRef.current) {
+        nodeRef.current.textContent = formatDuration(Math.max(0, Date.now() - startedAtMs));
+      }
+    };
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAtMs]);
+
+  return <span ref={nodeRef}>{formatDuration(Math.max(0, Date.now() - startedAtMs))}</span>;
+}
+
+function ThreadItemView({
+  turnID,
+  item,
+  cwd,
+  streaming,
+  onStreamFrame
+}: {
+  turnID: string;
+  item: ThreadItem;
+  cwd?: string;
+  streaming: boolean;
+  onStreamFrame: () => void;
+}): JSX.Element | null {
   switch (item.type) {
     case "user_message":
       return (
@@ -1205,7 +1340,16 @@ function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.
       return (
         <article className="agent-block">
           <div className="agent-text">
-            <RichContent text={item.text} cwd={cwd} />
+            {streaming ? (
+              <StreamingMarkdown
+                streamKey={streamTextKey(turnID, item.id, "text")}
+                initialText={item.text}
+                cwd={cwd}
+                onFrame={onStreamFrame}
+              />
+            ) : (
+              <RichContent text={item.text} cwd={cwd} />
+            )}
           </div>
         </article>
       );
@@ -1213,7 +1357,16 @@ function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.
       return (
         <article className="reasoning-block">
           <Brain size={16} />
-          <div>{item.text}</div>
+          {streaming ? (
+            <StreamingMarkdown
+              streamKey={streamTextKey(turnID, item.id, "text")}
+              initialText={item.text}
+              className="streaming-markdown reasoning-stream"
+              onFrame={onStreamFrame}
+            />
+          ) : (
+            <div>{item.text}</div>
+          )}
         </article>
       );
     case "tool_call":

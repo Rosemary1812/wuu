@@ -5,11 +5,17 @@ type RichContentProps = {
   cwd?: string;
 };
 
-type RichBlock =
+export type RichBlock =
   | { kind: "paragraph"; text: string }
   | { kind: "image"; source: string; alt?: string }
   | { kind: "code"; language: string; code: string }
   | { kind: "mermaid"; code: string };
+
+export type RichBlockWithOffset = RichBlock & {
+  startOffset: number;
+};
+
+type RichTextRenderer = (text: string, keyPrefix: string) => Array<JSX.Element | string>;
 
 type MermaidState =
   | { status: "rendering" }
@@ -24,96 +30,153 @@ export function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
 
   return (
     <div className="rich-content">
-      {blocks.map((block, index) => {
-        if (block.kind === "image") {
-          return <RichImage key={`${index}-image`} source={block.source} alt={block.alt ?? ""} cwd={cwd} />;
-        }
-        if (block.kind === "mermaid") {
-          return <MermaidDiagram key={`${index}-mermaid`} code={block.code} />;
-        }
-        if (block.kind === "code") {
-          return (
-            <pre key={`${index}-code`} className="rich-code">
-              <code>{block.code}</code>
-            </pre>
-          );
-        }
-        return (
-          <p key={`${index}-paragraph`} className="rich-paragraph">
-            {renderInlineContent(block.text, cwd, index)}
-          </p>
-        );
-      })}
+      {blocks.map((block, index) => (
+        <RichContentBlock key={`${index}-${block.kind}`} block={block} blockKey={String(index)} cwd={cwd} />
+      ))}
     </div>
   );
 }
 
-function parseRichBlocks(text: string): RichBlock[] {
-  const blocks: RichBlock[] = [];
-  const fencePattern = /```([^\n`]*)\n([\s\S]*?)```/g;
+export function RichContentBlock({
+  block,
+  blockKey,
+  cwd,
+  renderText
+}: {
+  block: RichBlock;
+  blockKey: string;
+  cwd?: string;
+  renderText?: RichTextRenderer;
+}): JSX.Element {
+  if (block.kind === "image") {
+    return <RichImage source={block.source} alt={block.alt ?? ""} cwd={cwd} />;
+  }
+  if (block.kind === "mermaid") {
+    return <MermaidDiagram code={block.code} />;
+  }
+  if (block.kind === "code") {
+    return (
+      <pre className="rich-code">
+        <code>{block.code}</code>
+      </pre>
+    );
+  }
+  return (
+    <p className="rich-paragraph">
+      {renderInlineContent(block.text, cwd, blockKey, renderText)}
+    </p>
+  );
+}
+
+export function parseRichBlocks(text: string): RichBlock[] {
+  return parseRichBlocksWithOffsets(text).map(({ startOffset: _startOffset, ...block }) => block);
+}
+
+export function parseRichBlocksWithOffsets(
+  text: string,
+  { allowOpenFence = false }: { allowOpenFence?: boolean } = {}
+): RichBlockWithOffset[] {
+  const blocks: RichBlockWithOffset[] = [];
+  const fencePattern = allowOpenFence ? /```([^\n`]*)\n([\s\S]*?)(```|$)/g : /```([^\n`]*)\n([\s\S]*?)```/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
 
   while ((match = fencePattern.exec(text))) {
-    pushParagraphBlocks(blocks, text.slice(cursor, match.index));
+    pushParagraphBlocks(blocks, text.slice(cursor, match.index), cursor);
     const language = match[1].trim().toLowerCase();
     const code = match[2].replace(/\n$/, "");
-    blocks.push(language === "mermaid" ? { kind: "mermaid", code } : { kind: "code", language, code });
+    blocks.push(
+      language === "mermaid"
+        ? { kind: "mermaid", code, startOffset: match.index }
+        : { kind: "code", language, code, startOffset: match.index }
+    );
     cursor = match.index + match[0].length;
   }
 
-  pushParagraphBlocks(blocks, text.slice(cursor));
-  return blocks.length > 0 ? blocks : [{ kind: "paragraph", text }];
+  pushParagraphBlocks(blocks, text.slice(cursor), cursor);
+  return blocks.length > 0 ? blocks : [{ kind: "paragraph", text, startOffset: 0 }];
 }
 
-function pushParagraphBlocks(blocks: RichBlock[], text: string): void {
-  for (const paragraph of text.split(/\n{2,}/)) {
-    const content = paragraph.replace(/^\n+|\n+$/g, "");
-    if (content.trim()) {
-      pushParagraphOrImageBlocks(blocks, content);
-    }
+function pushParagraphBlocks(blocks: RichBlockWithOffset[], text: string, baseOffset: number): void {
+  const separatorPattern = /\n{2,}/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = separatorPattern.exec(text))) {
+    pushParagraphSegment(blocks, text.slice(cursor, match.index), baseOffset + cursor);
+    cursor = match.index + match[0].length;
+  }
+  pushParagraphSegment(blocks, text.slice(cursor), baseOffset + cursor);
+}
+
+function pushParagraphSegment(blocks: RichBlockWithOffset[], paragraph: string, baseOffset: number): void {
+  const leadingTrim = paragraph.match(/^\n+/)?.[0].length ?? 0;
+  const trailingTrim = paragraph.match(/\n+$/)?.[0].length ?? 0;
+  const content = paragraph.slice(leadingTrim, paragraph.length - trailingTrim);
+  if (content.trim()) {
+    pushParagraphOrImageBlocks(blocks, content, baseOffset + leadingTrim);
   }
 }
 
-function pushParagraphOrImageBlocks(blocks: RichBlock[], content: string): void {
+function pushParagraphOrImageBlocks(blocks: RichBlockWithOffset[], content: string, baseOffset: number): void {
   const textLines: string[] = [];
+  let textStartOffset = baseOffset;
+  let lineOffset = 0;
   for (const line of content.split("\n")) {
     const imageSource = bareImageSource(line);
     if (!imageSource) {
+      if (textLines.length === 0) {
+        textStartOffset = baseOffset + lineOffset;
+      }
       textLines.push(line);
+      lineOffset += line.length + 1;
       continue;
     }
-    pushTextLines(blocks, textLines);
-    blocks.push({ kind: "image", source: imageSource });
+    pushTextLines(blocks, textLines, textStartOffset);
+    blocks.push({ kind: "image", source: imageSource, startOffset: baseOffset + lineOffset });
+    lineOffset += line.length + 1;
   }
-  pushTextLines(blocks, textLines);
+  pushTextLines(blocks, textLines, textStartOffset);
 }
 
-function pushTextLines(blocks: RichBlock[], lines: string[]): void {
-  const text = lines.join("\n").trim();
+function pushTextLines(blocks: RichBlockWithOffset[], lines: string[], baseOffset: number): void {
+  const rawText = lines.join("\n");
   lines.length = 0;
+  const leadingTrim = rawText.length - rawText.trimStart().length;
+  const text = rawText.trim();
   if (text) {
-    blocks.push({ kind: "paragraph", text });
+    blocks.push({ kind: "paragraph", text, startOffset: baseOffset + leadingTrim });
   }
 }
 
-function renderInlineContent(text: string, cwd: string | undefined, blockIndex: number): Array<JSX.Element | string> {
+function renderInlineContent(
+  text: string,
+  cwd: string | undefined,
+  keyPrefix: string,
+  renderText?: RichTextRenderer
+): Array<JSX.Element | string> {
   const output: Array<JSX.Element | string> = [];
+  const pushText = (value: string, key: string): void => {
+    if (!value) {
+      return;
+    }
+    output.push(...(renderText ? renderText(value, key) : [value]));
+  };
   let cursor = 0;
   let match: RegExpExecArray | null;
   IMAGE_MARKDOWN_PATTERN.lastIndex = 0;
 
   while ((match = IMAGE_MARKDOWN_PATTERN.exec(text))) {
     if (match.index > cursor) {
-      output.push(text.slice(cursor, match.index));
+      pushText(text.slice(cursor, match.index), `${keyPrefix}-text-${cursor}`);
     }
     const alt = match[1].trim();
-    output.push(<RichImage key={`${blockIndex}-${match.index}`} source={match[2]} alt={alt} cwd={cwd} inline />);
+    output.push(<RichImage key={`${keyPrefix}-image-${match.index}`} source={match[2]} alt={alt} cwd={cwd} inline />);
     cursor = match.index + match[0].length;
   }
 
   if (cursor < text.length) {
-    output.push(text.slice(cursor));
+    pushText(text.slice(cursor), `${keyPrefix}-text-${cursor}`);
   }
   return output;
 }

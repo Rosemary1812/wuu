@@ -671,6 +671,32 @@ kbd {
   word-break: break-word;
 }
 
+.streaming-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.streaming-markdown {
+  min-width: 0;
+  gap: 10px;
+}
+
+.stream-paragraph {
+  overflow-wrap: anywhere;
+}
+
+.stream-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.stream-word {
+  display: inline-block;
+  animation: stream-word-in 260ms ease-out both;
+  vertical-align: baseline;
+}
+
 .turn-progress {
   display: grid;
   gap: 18px;
@@ -822,6 +848,15 @@ kbd {
   color: #8b8f93;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.reasoning-stream {
+  color: inherit;
+  gap: 8px;
+}
+
+.reasoning-stream .rich-paragraph {
+  color: inherit;
 }
 
 .tool-card {
@@ -1104,6 +1139,19 @@ pre {
   }
   to {
     transform: translateX(158px);
+  }
+}
+
+@keyframes stream-word-in {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
   }
 }
 
@@ -1651,5 +1699,9 @@ pre {
   .sidebar,
   .titlebar {
     transition: none;
+  }
+
+  .stream-word {
+    animation: none;
   }
 }
