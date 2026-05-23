@@ -64,7 +64,10 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		return nil, errors.New("no model configured")
 	}
 
-	id := newAgentID(opts.Type)
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		id = newAgentID(opts.Type)
+	}
 	lifetime := opts.MaxLifetime
 	if lifetime <= 0 {
 		lifetime = DefaultMaxLifetime
@@ -74,6 +77,9 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 	sa := &SubAgent{
 		ID:             id,
 		Type:           opts.Type,
+		TaskName:       opts.TaskName,
+		AgentPath:      opts.AgentPath,
+		ParentID:       opts.ParentID,
 		Description:    opts.Description,
 		Status:         StatusRunning, // set synchronously so CountRunning sees it immediately
 		StartedAt:      time.Now(),
@@ -89,6 +95,11 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 	}
 
 	m.mu.Lock()
+	if _, exists := m.agents[id]; exists {
+		m.mu.Unlock()
+		cancel()
+		return nil, fmt.Errorf("subagent %q already exists", id)
+	}
 	m.agents[id] = sa
 	m.mu.Unlock()
 

@@ -34,11 +34,22 @@ const (
 
 // SpawnOptions describes a new sub-agent to launch.
 type SpawnOptions struct {
+	// ID, when set, is used as the sub-agent ID instead of generating
+	// a new one. The coordinator uses this to keep worktree IDs,
+	// thread metadata, and visible agent IDs aligned.
+	ID string
+
 	// Type is a label like "explorer", "worker", "verifier" that the
 	// caller uses to track agent roles. The subagent package itself
 	// doesn't interpret it — type-specific tool whitelists and prompts
 	// are decided by the caller.
 	Type string
+
+	// TaskName is a stable human-provided task identifier. AgentPath is
+	// the canonical path in the root thread's agent tree.
+	TaskName  string
+	AgentPath string
+	ParentID  string
 
 	// Description is a short human-readable summary of the task,
 	// shown in status displays.
@@ -100,6 +111,9 @@ type SpawnOptions struct {
 type SubAgent struct {
 	ID           string
 	Type         string
+	TaskName     string
+	AgentPath    string
+	ParentID     string
 	Description  string
 	Status       Status
 	StartedAt    time.Time
@@ -153,6 +167,9 @@ func (s *SubAgent) Snapshot() SubAgentSnapshot {
 	return SubAgentSnapshot{
 		ID:           s.ID,
 		Type:         s.Type,
+		TaskName:     s.TaskName,
+		AgentPath:    s.AgentPath,
+		ParentID:     s.ParentID,
 		Description:  s.Description,
 		Status:       s.Status,
 		StartedAt:    s.StartedAt,
@@ -171,6 +188,9 @@ func (s *SubAgent) Snapshot() SubAgentSnapshot {
 type SubAgentSnapshot struct {
 	ID           string
 	Type         string
+	TaskName     string
+	AgentPath    string
+	ParentID     string
 	Description  string
 	Status       Status
 	StartedAt    time.Time

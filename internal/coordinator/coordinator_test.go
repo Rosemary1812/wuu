@@ -5,10 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -122,6 +124,74 @@ func TestSpawn_SyncHappyPath(t *testing.T) {
 	}
 	if res.WorktreePath != "" {
 		t.Fatalf("inplace spawn should not produce a worktree path, got %q", res.WorktreePath)
+	}
+}
+
+func TestSpawn_RegistersThreadMetadata(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	threadDir := filepath.Join(dir, ".wuu", "sessions", "sess-threads", "threads")
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "task done"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-threads",
+		HistoryDir:    filepath.Join(dir, ".wuu", "sessions", "sess-threads", "workers"),
+		ThreadDir:     threadDir,
+		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        "worker",
+		TaskName:    "scan auth flow",
+		Description: "scan auth flow",
+		Prompt:      "find auth problems",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if res.TaskName != "scan auth flow" || res.AgentPath != "/root/scan-auth-flow" {
+		t.Fatalf("unexpected thread metadata in result: %+v", res)
+	}
+	snap := c.Manager().Get(res.AgentID).Snapshot()
+	if snap.TaskName != res.TaskName || snap.AgentPath != res.AgentPath || snap.ParentID != "sess-threads" {
+		t.Fatalf("snapshot missing thread metadata: %+v", snap)
+	}
+
+	var threads []agentthread.Metadata
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		threads, err = c.threadStore.ListThreads()
+		if err != nil {
+			t.Fatalf("ListThreads: %v", err)
+		}
+		if len(threads) == 2 && threads[1].Status == agentthread.StatusCompleted {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(threads) != 2 {
+		t.Fatalf("expected root + child threads, got %+v", threads)
+	}
+	child := threads[1]
+	if child.ID != res.AgentID || child.Path != res.AgentPath || child.Source.Kind != agentthread.SourceSpawn {
+		t.Fatalf("unexpected child thread metadata: %+v", child)
+	}
+	if child.Status != agentthread.StatusCompleted {
+		t.Fatalf("expected completed child status, got %s", child.Status)
+	}
+	events, err := c.threadStore.ReadEvents()
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if len(events) < 3 {
+		t.Fatalf("expected root, child, and status events, got %+v", events)
 	}
 }
 
@@ -419,6 +489,47 @@ func TestSendMessage_QueuesWhileRunning(t *testing.T) {
 	}
 	if got := c.Manager().PendingMessageCount(res.AgentID); got != 1 {
 		t.Fatalf("expected pending queue size=1, got %d", got)
+	}
+
+	c.StopAll()
+}
+
+func TestSendMessage_ResolvesThreadPathAndTaskName(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, "wt"),
+		SessionID:     "sess-send-path",
+		WorkerFactory: func(string, WorkerType) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        "worker",
+		TaskName:    "review config",
+		Description: "slow",
+		Prompt:      "p",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(res.AgentPath, "/root/") {
+		t.Fatalf("expected canonical path, got %q", res.AgentPath)
+	}
+	if err := c.SendMessage(res.AgentPath, "check env files too"); err != nil {
+		t.Fatalf("SendMessage by path: %v", err)
+	}
+	if err := c.SendMessage("review config", "check defaults too"); err != nil {
+		t.Fatalf("SendMessage by task name: %v", err)
+	}
+	if got := c.Manager().PendingMessageCount(res.AgentID); got != 2 {
+		t.Fatalf("expected pending queue size=2, got %d", got)
 	}
 
 	c.StopAll()

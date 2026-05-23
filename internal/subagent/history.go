@@ -12,6 +12,9 @@ import (
 type historyRecord struct {
 	ID          string    `json:"id"`
 	Type        string    `json:"type"`
+	TaskName    string    `json:"task_name,omitempty"`
+	AgentPath   string    `json:"agent_path,omitempty"`
+	ParentID    string    `json:"parent_id,omitempty"`
 	Description string    `json:"description"`
 	Status      string    `json:"status"`
 	StartedAt   time.Time `json:"started_at"`
@@ -37,6 +40,9 @@ func persistHistory(sa *SubAgent) error {
 	rec := historyRecord{
 		ID:          sa.ID,
 		Type:        sa.Type,
+		TaskName:    sa.TaskName,
+		AgentPath:   sa.AgentPath,
+		ParentID:    sa.ParentID,
 		Description: sa.Description,
 		Status:      string(sa.Status),
 		StartedAt:   sa.StartedAt,

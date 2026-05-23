@@ -239,7 +239,11 @@ func (s *Session) SetSessionID(id string) {
 		artifactDir := filepath.Join(s.RootDir, ".wuu", "sessions", id)
 		s.Toolkit.SetSessionDir(artifactDir)
 		if s.Coordinator != nil {
-			s.Coordinator.SetSessionInfo(id, filepath.Join(artifactDir, "workers"))
+			s.Coordinator.SetSessionInfo(
+				id,
+				filepath.Join(artifactDir, "workers"),
+				filepath.Join(s.SessionDir, id+".threads"),
+			)
 		}
 	}
 }
