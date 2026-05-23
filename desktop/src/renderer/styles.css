@@ -857,13 +857,20 @@ kbd {
   font-weight: var(--weight-medium);
 }
 
-.workspace-file-tree {
+.workspace-file-tree-frame {
+  contain: layout paint style;
   display: block;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   border-radius: 8px;
   background: #fff;
+}
+
+.workspace-file-tree-frame file-tree-container {
+  min-width: 0;
+  min-height: 0;
 }
 
 .workspace-panel-empty {

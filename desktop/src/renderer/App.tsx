@@ -30,6 +30,7 @@ import {
   Wrench,
   X
 } from "lucide-react";
+import { preparePresortedFileTreeInput } from "@pierre/trees";
 import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
 import {
   type CSSProperties,
@@ -37,6 +38,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -106,6 +108,13 @@ const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
 const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const ENABLE_LAUNCH_PREVIEW = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
+  contain: "layout paint style",
+  height: "100%",
+  minHeight: 0,
+  minWidth: 0,
+  width: "100%"
+};
 
 type SidebarResizeSession = {
   startX: number;
@@ -1422,7 +1431,7 @@ function WorkspaceFileTree({
   );
 }
 
-function WorkspaceFileTreeView({
+const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({
   paths,
   selectedFilePath,
   onOpenFile
@@ -1431,17 +1440,19 @@ function WorkspaceFileTreeView({
   selectedFilePath?: string;
   onOpenFile: (path: string) => void;
 }): JSX.Element {
+  const preparedInput = useMemo(() => preparePresortedFileTreeInput(paths), [paths]);
   const { model } = useFileTree({
     flattenEmptyDirectories: true,
     initialExpansion: 1,
     initialSelectedPaths: selectedFilePath ? [selectedFilePath] : [],
     itemHeight: 28,
     overscan: 8,
-    paths,
+    preparedInput,
     search: true,
-    stickyFolders: true,
+    stickyFolders: false,
     unsafeCSS: WORKSPACE_TREE_CSS
   });
+  const syncedPathsRef = useRef(paths);
   const selectedPaths = useFileTreeSelection(model);
   const onOpenFileRef = useRef(onOpenFile);
 
@@ -1450,8 +1461,12 @@ function WorkspaceFileTreeView({
   }, [onOpenFile]);
 
   useEffect(() => {
-    model.resetPaths(paths);
-  }, [model, paths]);
+    if (paths === syncedPathsRef.current) {
+      return;
+    }
+    model.resetPaths(preparedInput.paths, { preparedInput });
+    syncedPathsRef.current = paths;
+  }, [model, paths, preparedInput]);
 
   useEffect(() => {
     const nextPath = selectedPaths[0];
@@ -1462,13 +1477,11 @@ function WorkspaceFileTreeView({
   }, [selectedPaths]);
 
   return (
-    <FileTree
-      className="workspace-file-tree"
-      model={model}
-      style={{ height: "100%", width: "100%" }}
-    />
+    <div className="workspace-file-tree-frame">
+      <FileTree model={model} style={WORKSPACE_FILE_TREE_STYLE} />
+    </div>
   );
-}
+});
 
 function WorkspacePanelPlaceholder({ view }: { view: WorkspacePanelView }): JSX.Element {
   const tool = workspaceToolFor(view);
