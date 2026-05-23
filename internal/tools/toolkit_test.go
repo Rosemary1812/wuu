@@ -664,22 +664,22 @@ func TestToolkit_WaitAgentUsesV2MailboxSchema(t *testing.T) {
 	t.Fatal("wait_agent must be present in tool definitions")
 }
 
-func TestToolkit_SpawnAgent_FailsWithoutCoordinator(t *testing.T) {
+func TestToolkit_SpawnAgent_FailsWithoutAgentControl(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	// Don't call SetCoordinator — simulates a worker toolkit.
+	// Don't call SetAgentControl — simulates a worker toolkit.
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "spawn_agent",
 		Arguments: `{"task_name":"test","message":"do thing"}`,
 	})
 	if err == nil {
-		t.Fatal("expected error when coordinator is not configured")
+		t.Fatal("expected error when agent control is not configured")
 	}
-	if !strings.Contains(err.Error(), "coordinator not configured") {
-		t.Fatalf("expected coordinator-not-configured error, got: %v", err)
+	if !strings.Contains(err.Error(), "agent control not configured") {
+		t.Fatalf("expected agent-control-not-configured error, got: %v", err)
 	}
 }
 

@@ -432,7 +432,7 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 	if err != nil {
 		t.Fatalf("coordinator: %v", err)
 	}
-	rt.Coordinator = coord
+	rt.AgentControl = coord
 
 	out := &lockedBuffer{}
 	_ = New(rt, out)

@@ -70,9 +70,9 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		rt.Toolkit.SetAskUserBridge(s)
 		rt.AskBridge = s
 	}
-	if rt != nil && rt.Coordinator != nil {
+	if rt != nil && rt.AgentControl != nil {
 		ch := make(chan subagent.Notification, 64)
-		rt.Coordinator.Subscribe(ch)
+		rt.AgentControl.Subscribe(ch)
 		go s.forwardAgentNotifications(ch)
 	}
 	return s
@@ -99,10 +99,10 @@ func (s *Server) isRootAgentSnapshot(snap subagent.SubAgentSnapshot) bool {
 	if parentID == "" {
 		return true
 	}
-	if s == nil || s.rt == nil || s.rt.Coordinator == nil {
+	if s == nil || s.rt == nil || s.rt.AgentControl == nil {
 		return false
 	}
-	return parentID == s.rt.Coordinator.SessionID()
+	return parentID == s.rt.AgentControl.SessionID()
 }
 
 func agentFromSnapshot(snap subagent.SubAgentSnapshot) Agent {

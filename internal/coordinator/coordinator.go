@@ -2,9 +2,9 @@
 // send_message, close_agent, list_agents) to the underlying subagent
 // and worktree subsystems.
 //
-// The coordinator is the brain that the main agent talks to in
-// coordinator mode. It owns the SubAgent Manager and Worktree Manager,
-// and exposes a small API the toolkit uses to implement the
+// AgentControl is the shared control plane for one root agent tree. It
+// owns the SubAgent Manager, Worktree Manager, thread registry, and
+// event store, and exposes the API the toolkit uses to implement the
 // orchestration tools.
 package coordinator
 
@@ -31,8 +31,8 @@ import (
 // orchestration tools inside that worker can resolve relative child paths.
 type WorkerToolkitFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error)
 
-// Coordinator owns the orchestration runtime for one wuu session.
-type Coordinator struct {
+// AgentControl owns the orchestration runtime for one wuu session.
+type AgentControl struct {
 	manager       *subagent.Manager
 	worktrees     *worktree.Manager // nil when workspace is not a git repo
 	parentRepo    string            // absolute path to workspace root
@@ -49,10 +49,10 @@ type Coordinator struct {
 	maxParallel   int
 }
 
-// Config holds the dependencies needed to build a Coordinator.
+// Config holds the dependencies needed to build an AgentControl.
 type Config struct {
 	// Client is the streaming LLM client every worker spawned by this
-	// coordinator will share. It must be a StreamClient (not just a
+	// agent control runtime will share. It must be a StreamClient (not just a
 	// Client) so workers run through the same streaming transport as
 	// the interactive main agent.
 	Client          providers.StreamClient
@@ -67,10 +67,10 @@ type Config struct {
 	MaxParallel     int
 }
 
-// New constructs a Coordinator. Worktree isolation is only available
+// New constructs an AgentControl. Worktree isolation is only available
 // when the workspace is a git repository; inplace spawns and forks
 // work regardless.
-func New(cfg Config) (*Coordinator, error) {
+func New(cfg Config) (*AgentControl, error) {
 	if cfg.Client == nil {
 		return nil, errors.New("Client required")
 	}
@@ -97,7 +97,7 @@ func New(cfg Config) (*Coordinator, error) {
 	if maxP <= 0 {
 		maxP = 5
 	}
-	c := &Coordinator{
+	c := &AgentControl{
 		manager:      mgr,
 		worktrees:    wt,
 		parentRepo:   cfg.ParentRepo,
@@ -120,13 +120,13 @@ func New(cfg Config) (*Coordinator, error) {
 
 // Manager exposes the underlying subagent.Manager for advanced use
 // (Subscribe, etc.).
-func (c *Coordinator) Manager() *subagent.Manager {
+func (c *AgentControl) Manager() *subagent.Manager {
 	return c.manager
 }
 
 // SetSessionInfo updates the coordinator's session ID and history dir
 // after the TUI has generated them. Safe to call once at startup.
-func (c *Coordinator) SetSessionInfo(sessionID, historyDir string, threadDir ...string) {
+func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ...string) {
 	c.sessionID = sessionID
 	c.historyDir = historyDir
 	if len(threadDir) > 0 && strings.TrimSpace(threadDir[0]) != "" {
@@ -141,7 +141,7 @@ func (c *Coordinator) SetSessionInfo(sessionID, historyDir string, threadDir ...
 
 // SessionID returns the bound session ID, or "session-pending" if
 // SetSessionInfo hasn't been called yet.
-func (c *Coordinator) SessionID() string {
+func (c *AgentControl) SessionID() string {
 	return c.sessionID
 }
 
@@ -180,7 +180,7 @@ type SpawnResult struct {
 // Spawn launches a sub-agent. In synchronous mode it blocks until
 // the sub-agent finishes; in async mode it returns immediately with
 // status "running" and the agent_id the orchestrator can poll.
-func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, error) {
+func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, error) {
 	// Concurrency cap.
 	if c.manager.CountRunning() >= c.maxParallel {
 		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or close one with close_agent.", c.maxParallel)
@@ -197,7 +197,7 @@ func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult
 	}
 	wtype := wt.Name
 
-	workerID := newCoordinatorWorkerID(wtype)
+	workerID := newAgentControlWorkerID(wtype)
 	taskName := req.TaskName
 
 	// Resolve effective isolation: caller override > type default.
@@ -265,7 +265,7 @@ func (c *Coordinator) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult
 	}
 
 	// 6. Spawn via manager using the ID already allocated by the
-	// coordinator. That keeps worktree paths, persisted thread
+	// AgentControl. That keeps worktree paths, persisted thread
 	// metadata, and visible agent IDs aligned.
 	workerCtx := ctx
 	if !req.Synchronous {
@@ -361,7 +361,7 @@ type ForkRequest struct {
 // tool_use blocks: the caller is expected to have already stripped the
 // in-flight spawn_agent
 // assistant turn before passing it through.
-func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory []providers.ChatMessage) (*SpawnResult, error) {
+func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory []providers.ChatMessage) (*SpawnResult, error) {
 	if c.manager.CountRunning() >= c.maxParallel {
 		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or close one with close_agent.", c.maxParallel)
 	}
@@ -373,14 +373,14 @@ func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory [
 	}
 
 	// Resolve the default worker type so the worker has the full
-	// tool set (minus orchestration / ask_user, which are blocked
-	// by the no-bridge / no-coordinator pattern in the WorkerFactory).
+	// tool set. ask_user remains unavailable because workers do not
+	// receive an ask bridge.
 	wt, err := LookupWorkerType("worker")
 	if err != nil {
 		return nil, err
 	}
 
-	workerID := newCoordinatorWorkerID(wt.Name)
+	workerID := newAgentControlWorkerID(wt.Name)
 	taskName := req.TaskName
 	workerRoot := c.parentRepo
 
@@ -463,16 +463,16 @@ func (c *Coordinator) Fork(ctx context.Context, req ForkRequest, parentHistory [
 }
 
 // StopAll cancels every running worker. Used for Ctrl+C handling.
-func (c *Coordinator) StopAll() {
+func (c *AgentControl) StopAll() {
 	c.manager.StopAll()
 }
 
 // Stop cancels a specific worker by ID, path, or task name. Returns false if not found.
-func (c *Coordinator) Stop(target string) bool {
+func (c *AgentControl) Stop(target string) bool {
 	return c.StopFrom(agentthread.RootPath, target)
 }
 
-func (c *Coordinator) StopFrom(currentPath, target string) bool {
+func (c *AgentControl) StopFrom(currentPath, target string) bool {
 	meta, ok := c.threads.ResolveFrom(currentPath, target)
 	if !ok || meta.Path == agentthread.RootPath {
 		return false
@@ -498,11 +498,11 @@ func (c *Coordinator) StopFrom(currentPath, target string) bool {
 }
 
 // List returns snapshots of all sub-agents in this session.
-func (c *Coordinator) List() []subagent.SubAgentSnapshot {
+func (c *AgentControl) List() []subagent.SubAgentSnapshot {
 	return c.manager.List()
 }
 
-func (c *Coordinator) ListFrom(currentPath, pathPrefix string) []subagent.SubAgentSnapshot {
+func (c *AgentControl) ListFrom(currentPath, pathPrefix string) []subagent.SubAgentSnapshot {
 	list := c.manager.List()
 	prefix := strings.TrimSpace(pathPrefix)
 	if prefix == "" {
@@ -529,11 +529,11 @@ func (c *Coordinator) ListFrom(currentPath, pathPrefix string) []subagent.SubAge
 // SendMessage delivers a follow-up message to a specific sub-agent.
 // Messages are queued while the worker is running and injected as
 // user-role turns before the next model round.
-func (c *Coordinator) SendMessage(target, message string) error {
+func (c *AgentControl) SendMessage(target, message string) error {
 	return c.SendMessageFrom(agentthread.RootPath, target, message)
 }
 
-func (c *Coordinator) SendMessageFrom(currentPath, target, message string) error {
+func (c *AgentControl) SendMessageFrom(currentPath, target, message string) error {
 	id := c.resolveAgentIDFrom(currentPath, target)
 	if id == "" {
 		return errors.New("target is required")
@@ -561,11 +561,11 @@ func (c *Coordinator) SendMessageFrom(currentPath, target, message string) error
 	return nil
 }
 
-func (c *Coordinator) FollowupTask(ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
+func (c *AgentControl) FollowupTask(ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
 	return c.FollowupTaskFrom(agentthread.RootPath, ctx, target, message)
 }
 
-func (c *Coordinator) FollowupTaskFrom(currentPath string, ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
+func (c *AgentControl) FollowupTaskFrom(currentPath string, ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
 	id := c.resolveAgentIDFrom(currentPath, target)
 	if id == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("target is required")
@@ -590,11 +590,11 @@ func (c *Coordinator) FollowupTaskFrom(currentPath string, ctx context.Context, 
 	return snap, nil
 }
 
-func (c *Coordinator) Wait(ctx context.Context, target string) (subagent.SubAgentSnapshot, error) {
+func (c *AgentControl) Wait(ctx context.Context, target string) (subagent.SubAgentSnapshot, error) {
 	return c.WaitFrom(agentthread.RootPath, ctx, target)
 }
 
-func (c *Coordinator) WaitFrom(currentPath string, ctx context.Context, target string) (subagent.SubAgentSnapshot, error) {
+func (c *AgentControl) WaitFrom(currentPath string, ctx context.Context, target string) (subagent.SubAgentSnapshot, error) {
 	id := c.resolveAgentIDFrom(currentPath, target)
 	if id == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("target is required")
@@ -602,9 +602,9 @@ func (c *Coordinator) WaitFrom(currentPath string, ctx context.Context, target s
 	return c.manager.Wait(ctx, id)
 }
 
-func (c *Coordinator) WaitForMailboxUpdateFrom(currentPath string, ctx context.Context) (bool, error) {
+func (c *AgentControl) WaitForMailboxUpdateFrom(currentPath string, ctx context.Context) (bool, error) {
 	if c == nil || c.manager == nil {
-		return false, errors.New("coordinator not configured")
+		return false, errors.New("agent control not configured")
 	}
 	currentID := c.agentIDForPath(currentPath)
 	if currentID != "" && c.manager.PendingMessageCount(currentID) > 0 {
@@ -631,7 +631,7 @@ func (c *Coordinator) WaitForMailboxUpdateFrom(currentPath string, ctx context.C
 	}
 }
 
-func (c *Coordinator) agentIDForPath(currentPath string) string {
+func (c *AgentControl) agentIDForPath(currentPath string) string {
 	path := strings.TrimSpace(currentPath)
 	if path == "" || path == agentthread.RootPath {
 		return ""
@@ -642,7 +642,7 @@ func (c *Coordinator) agentIDForPath(currentPath string) string {
 	return ""
 }
 
-func (c *Coordinator) isMailboxNotificationFor(currentID string, n subagent.Notification) bool {
+func (c *AgentControl) isMailboxNotificationFor(currentID string, n subagent.Notification) bool {
 	if currentID == "" {
 		if !isFinalSubAgentStatus(n.Status) {
 			return false
@@ -661,11 +661,11 @@ func (c *Coordinator) isMailboxNotificationFor(currentID string, n subagent.Noti
 
 // Subscribe forwards to the underlying manager so the UI can receive
 // status notifications and publish mailbox messages.
-func (c *Coordinator) Subscribe(ch chan<- subagent.Notification) {
+func (c *AgentControl) Subscribe(ch chan<- subagent.Notification) {
 	c.manager.Subscribe(ch)
 }
 
-func (c *Coordinator) registerRootThread() {
+func (c *AgentControl) registerRootThread() {
 	if c == nil || c.threads == nil {
 		return
 	}
@@ -682,7 +682,7 @@ func (c *Coordinator) registerRootThread() {
 	c.rootThreadDir = c.threadDir
 }
 
-func (c *Coordinator) registerChildThread(id, taskName, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string) (agentthread.Metadata, error) {
+func (c *AgentControl) registerChildThread(id, taskName, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string) (agentthread.Metadata, error) {
 	if c == nil || c.threads == nil {
 		return agentthread.Metadata{}, errors.New("thread registry is not configured")
 	}
@@ -718,7 +718,7 @@ func (c *Coordinator) registerChildThread(id, taskName, role, message string, so
 	return meta, nil
 }
 
-func (c *Coordinator) consumeWorkerStatus(ch <-chan subagent.Notification) {
+func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
 	for n := range ch {
 		if c == nil || c.threads == nil {
 			continue
@@ -735,7 +735,7 @@ func (c *Coordinator) consumeWorkerStatus(ch <-chan subagent.Notification) {
 	}
 }
 
-func (c *Coordinator) deliverNestedResultToParent(ctx context.Context, snap subagent.SubAgentSnapshot) bool {
+func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap subagent.SubAgentSnapshot) bool {
 	if c == nil || c.manager == nil {
 		return false
 	}
@@ -799,11 +799,11 @@ func isFinalSubAgentStatus(status subagent.Status) bool {
 	}
 }
 
-func (c *Coordinator) resolveAgentID(target string) string {
+func (c *AgentControl) resolveAgentID(target string) string {
 	return c.resolveAgentIDFrom(agentthread.RootPath, target)
 }
 
-func (c *Coordinator) resolveAgentIDFrom(currentPath, target string) string {
+func (c *AgentControl) resolveAgentIDFrom(currentPath, target string) string {
 	id := strings.TrimSpace(target)
 	if id == "" {
 		return ""
@@ -908,7 +908,7 @@ If a worker seems stuck, close it with close_agent and respawn with clearer inst
 }
 
 // CleanupSession removes all worktrees belonging to this session.
-func (c *Coordinator) CleanupSession() error {
+func (c *AgentControl) CleanupSession() error {
 	if c.worktrees == nil {
 		return nil // non-git workspace, no worktrees to clean
 	}
@@ -918,8 +918,8 @@ func (c *Coordinator) CleanupSession() error {
 // composeWorkerSystemPrompt builds the system prompt for a worker.
 // It prepends the worker type's role-specific prompt + a description
 // of the working directory and isolation mode, then appends the base
-// prompt (typically the main agent's project memory and skills, NOT
-// the coordinator instructions).
+// prompt (typically the main agent's project memory and skills, not
+// the optional coordinator-mode instructions).
 func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, isolation IsolationMode) string {
 	var b strings.Builder
 	b.WriteString(wt.SystemPrompt)
@@ -944,10 +944,10 @@ func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, is
 	return b.String()
 }
 
-// newCoordinatorWorkerID generates a worker ID. Mirrors subagent's
-// scheme but is generated by the coordinator since worktree creation
+// newAgentControlWorkerID generates a worker ID. Mirrors subagent's
+// scheme but is generated by AgentControl since worktree creation
 // happens before subagent.Manager.Spawn.
-func newCoordinatorWorkerID(typ string) string {
+func newAgentControlWorkerID(typ string) string {
 	if typ == "" {
 		typ = "agent"
 	}

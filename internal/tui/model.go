@@ -764,9 +764,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// turn. Without cancelling the main turn, the orchestrator
 			// would keep iterating its tool loop (potentially spawning
 			// more workers via auto-resume) until it hit max_steps.
-			if m.coordinator != nil && m.coordinator.Manager().CountRunning() > 0 {
-				count := m.coordinator.Manager().CountRunning()
-				m.coordinator.StopAll()
+			if m.agentControl != nil && m.agentControl.Manager().CountRunning() > 0 {
+				count := m.agentControl.Manager().CountRunning()
+				m.agentControl.StopAll()
 				m.pendingAutoResume = false
 				if m.cancelStream != nil {
 					m.cancelStream()

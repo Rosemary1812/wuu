@@ -57,14 +57,14 @@ type Env struct {
 
 	// Optional dependencies — nil means the feature is unavailable.
 	// Tools check for nil and return a clear error rather than panic.
-	SessionID   string
-	SessionDir  string // absolute path to .wuu/sessions/{id}/ — enables result budgeting
-	AgentID     string
-	AgentPath   string
-	ProcessMgr  *proc.Manager
-	AskBridge   AskUserBridge
-	Coordinator *coordinator.Coordinator
-	Skills      []skills.Skill
+	SessionID    string
+	SessionDir   string // absolute path to .wuu/sessions/{id}/ — enables result budgeting
+	AgentID      string
+	AgentPath    string
+	ProcessMgr   *proc.Manager
+	AskBridge    AskUserBridge
+	AgentControl *coordinator.AgentControl
+	Skills       []skills.Skill
 	// OnFileChanged is called after write_file/edit_file successfully
 	// modifies a file. Enables FileChanged hook dispatch without
 	// coupling the tools package to the hooks package.

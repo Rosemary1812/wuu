@@ -19,7 +19,7 @@ const workerPanelMaxRows = 6
 // panel will consume given the current Model state. Returns 0 when
 // nothing is active so the layout reclaims the space.
 func (m Model) workerPanelHeight() int {
-	if m.coordinator == nil {
+	if m.agentControl == nil {
 		return 0
 	}
 	active := m.activeWorkerSnapshots()
@@ -36,10 +36,10 @@ func (m Model) workerPanelHeight() int {
 // activeWorkerSnapshots returns the currently-running sub-agent
 // snapshots, sorted oldest first.
 func (m Model) activeWorkerSnapshots() []subagent.SubAgentSnapshot {
-	if m.coordinator == nil {
+	if m.agentControl == nil {
 		return nil
 	}
-	all := m.coordinator.List()
+	all := m.agentControl.List()
 	out := make([]subagent.SubAgentSnapshot, 0, len(all))
 	for _, s := range all {
 		if s.Status == subagent.StatusRunning {
@@ -57,7 +57,7 @@ func (m Model) activeWorkerSnapshots() []subagent.SubAgentSnapshot {
 // renderWorkerPanel builds the panel string. Width should match the
 // terminal width. Returns empty string when nothing is active.
 func (m Model) renderWorkerPanel(width int) string {
-	if m.coordinator == nil {
+	if m.agentControl == nil {
 		return ""
 	}
 	active := m.activeWorkerSnapshots()

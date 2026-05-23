@@ -143,7 +143,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"context and its own tools. There is exactly one worker type, 'worker', with the " +
 			"full tool set; specialized roles (verification, read-only research) are injected " +
 			"by pasting the appropriate preset block at the start of the prompt — see the " +
-			"coordinator system prompt for the verbatim preset text. " +
+			"orchestration preamble for the verbatim preset text. " +
 			"By default the spawn runs INPLACE in the user's repo, so any files the worker " +
 			"creates or edits land directly in the working tree. Set isolation='worktree' ONLY " +
 			"when the work might break the build, when concurrent writers would collide, or " +
@@ -202,8 +202,8 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 }
 
 func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	if t.env.Coordinator == nil {
-		return "", errors.New("spawn_agent: coordinator not configured (this build does not support sub-agents)")
+	if t.env.AgentControl == nil {
+		return "", errors.New("spawn_agent: agent control not configured (this build does not support sub-agents)")
 	}
 	var args struct {
 		TaskName    string `json:"task_name"`
@@ -246,7 +246,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		if forkMode == spawnForkLastN {
 			cleaned = truncateHistoryToLastUserTurns(cleaned, lastNTurns)
 		}
-		result, err := t.env.Coordinator.Fork(ctx, coordinator.ForkRequest{
+		result, err := t.env.AgentControl.Fork(ctx, coordinator.ForkRequest{
 			TaskName:    strings.TrimSpace(args.TaskName),
 			Description: strings.TrimSpace(args.TaskName),
 			ForkMode:    forkModeLabel(forkMode, lastNTurns),
@@ -264,7 +264,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		}
 		return string(out), nil
 	}
-	result, err := t.env.Coordinator.Spawn(ctx, coordinator.SpawnRequest{
+	result, err := t.env.AgentControl.Spawn(ctx, coordinator.SpawnRequest{
 		Type:        args.AgentType,
 		TaskName:    strings.TrimSpace(args.TaskName),
 		Description: strings.TrimSpace(args.TaskName),
@@ -499,8 +499,8 @@ func (t *WaitAgentTool) Definition() providers.ToolDefinition {
 }
 
 func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	if t.env.Coordinator == nil {
-		return "", errors.New("wait_agent: coordinator not configured")
+	if t.env.AgentControl == nil {
+		return "", errors.New("wait_agent: agent control not configured")
 	}
 	var args struct {
 		TimeoutMS int `json:"timeout_ms"`
@@ -514,7 +514,7 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	completed, err := t.env.Coordinator.WaitForMailboxUpdateFrom(currentAgentPath(t.env), waitCtx)
+	completed, err := t.env.AgentControl.WaitForMailboxUpdateFrom(currentAgentPath(t.env), waitCtx)
 	if err != nil {
 		return "", err
 	}
@@ -562,8 +562,8 @@ func (t *CloseAgentTool) Definition() providers.ToolDefinition {
 }
 
 func (t *CloseAgentTool) Execute(_ context.Context, argsJSON string) (string, error) {
-	if t.env.Coordinator == nil {
-		return "", errors.New("close_agent: coordinator not configured")
+	if t.env.AgentControl == nil {
+		return "", errors.New("close_agent: agent control not configured")
 	}
 	var args struct {
 		Target string `json:"target"`
@@ -571,7 +571,7 @@ func (t *CloseAgentTool) Execute(_ context.Context, argsJSON string) (string, er
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	if !t.env.Coordinator.StopFrom(currentAgentPath(t.env), args.Target) {
+	if !t.env.AgentControl.StopFrom(currentAgentPath(t.env), args.Target) {
 		return "", fmt.Errorf("agent %q not found", args.Target)
 	}
 	return `{"status":"closed"}`, nil
@@ -607,8 +607,8 @@ func (t *ListAgentsTool) Definition() providers.ToolDefinition {
 }
 
 func (t *ListAgentsTool) Execute(_ context.Context, argsJSON string) (string, error) {
-	if t.env.Coordinator == nil {
-		return "", errors.New("list_agents: coordinator not configured")
+	if t.env.AgentControl == nil {
+		return "", errors.New("list_agents: agent control not configured")
 	}
 	var args struct {
 		PathPrefix string `json:"path_prefix"`
@@ -616,7 +616,7 @@ func (t *ListAgentsTool) Execute(_ context.Context, argsJSON string) (string, er
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	list := t.env.Coordinator.ListFrom(currentAgentPath(t.env), args.PathPrefix)
+	list := t.env.AgentControl.ListFrom(currentAgentPath(t.env), args.PathPrefix)
 	out, err := json.Marshal(list)
 	if err != nil {
 		return "", err
@@ -642,8 +642,8 @@ func targetMessageSchema() map[string]any {
 }
 
 func executeAgentMessage(env *Env, argsJSON string) error {
-	if env.Coordinator == nil {
-		return errors.New("send_message: coordinator not configured")
+	if env.AgentControl == nil {
+		return errors.New("send_message: agent control not configured")
 	}
 	var args struct {
 		Target  string `json:"target"`
@@ -655,12 +655,12 @@ func executeAgentMessage(env *Env, argsJSON string) error {
 	if strings.TrimSpace(args.Target) == "" {
 		return errors.New("send_message: target is required")
 	}
-	return env.Coordinator.SendMessageFrom(currentAgentPath(env), args.Target, args.Message)
+	return env.AgentControl.SendMessageFrom(currentAgentPath(env), args.Target, args.Message)
 }
 
 func executeFollowupTask(ctx context.Context, env *Env, argsJSON string) (subagent.SubAgentSnapshot, error) {
-	if env.Coordinator == nil {
-		return subagent.SubAgentSnapshot{}, errors.New("followup_task: coordinator not configured")
+	if env.AgentControl == nil {
+		return subagent.SubAgentSnapshot{}, errors.New("followup_task: agent control not configured")
 	}
 	var args struct {
 		Target  string `json:"target"`
@@ -672,7 +672,7 @@ func executeFollowupTask(ctx context.Context, env *Env, argsJSON string) (subage
 	if strings.TrimSpace(args.Target) == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("followup_task: target is required")
 	}
-	return env.Coordinator.FollowupTaskFrom(currentAgentPath(env), ctx, args.Target, args.Message)
+	return env.AgentControl.FollowupTaskFrom(currentAgentPath(env), ctx, args.Target, args.Message)
 }
 
 func currentAgentPath(env *Env) string {

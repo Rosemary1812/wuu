@@ -217,7 +217,7 @@ type Model struct {
 	onSessionID     func(string)
 	skills          []skills.Skill
 	memoryFiles     []memory.File
-	coordinator     *coordinator.Coordinator
+	agentControl    *coordinator.AgentControl
 	processManager  *processruntime.Manager
 	processNotifyCh chan processruntime.Event
 	workerNotifyCh  chan subagent.Notification

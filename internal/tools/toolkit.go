@@ -116,9 +116,9 @@ func (t *Toolkit) rebuildRegistry() {
 
 // ── Dependency setters ─────────────────────────────────────────────
 
-// SetCoordinator attaches the orchestration runtime.
-func (t *Toolkit) SetCoordinator(c *coordinator.Coordinator) {
-	t.env.Coordinator = c
+// SetAgentControl attaches the shared agent control runtime.
+func (t *Toolkit) SetAgentControl(c *coordinator.AgentControl) {
+	t.env.AgentControl = c
 }
 
 // SetAskUserBridge attaches the bridge used by ask_user.
@@ -169,9 +169,9 @@ func (t *Toolkit) SetMCPManager(m *mcp.Manager) {
 	t.mcpManager = m
 }
 
-// Coordinator returns the attached orchestration runtime, or nil.
-func (t *Toolkit) Coordinator() *coordinator.Coordinator {
-	return t.env.Coordinator
+// AgentControl returns the attached agent control runtime, or nil.
+func (t *Toolkit) AgentControl() *coordinator.AgentControl {
+	return t.env.AgentControl
 }
 
 // ── Tool disabling ─────────────────────────────────────────────────

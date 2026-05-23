@@ -972,10 +972,10 @@ func pluralS(n int) string {
 }
 
 func cmdWorkers(_ string, m *Model) string {
-	if m.coordinator == nil {
+	if m.agentControl == nil {
 		return "workers: coordinator not available (not a git repository?)"
 	}
-	list := m.coordinator.List()
+	list := m.agentControl.List()
 	if len(list) == 0 {
 		return "workers: none spawned in this session yet"
 	}
@@ -1122,10 +1122,10 @@ func resolveProcessQuery(manager *processruntime.Manager, query string) (*proces
 }
 
 func cmdCleanupWorktrees(_ string, m *Model) string {
-	if m.coordinator == nil {
+	if m.agentControl == nil {
 		return "cleanup-worktrees: coordinator not available"
 	}
-	if err := m.coordinator.CleanupSession(); err != nil {
+	if err := m.agentControl.CleanupSession(); err != nil {
 		return fmt.Sprintf("cleanup-worktrees: %v", err)
 	}
 	return "cleanup-worktrees: removed all worktrees for this session"

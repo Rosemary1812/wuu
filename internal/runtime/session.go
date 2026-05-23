@@ -55,7 +55,7 @@ type Session struct {
 	HookDispatcher              *hooks.Dispatcher
 	Skills                      []skills.Skill
 	Memory                      []memory.File
-	Coordinator                 *coordinator.Coordinator
+	AgentControl                *coordinator.AgentControl
 	AskBridge                   tools.AskUserBridge
 	ProcessManager              *process.Manager
 	Toolkit                     *tools.Toolkit
@@ -126,7 +126,7 @@ func NewSession(opts Options) (*Session, error) {
 		}
 	}
 
-	var coord *coordinator.Coordinator
+	var agentControl *coordinator.AgentControl
 	var coordinatorPreamble string
 	if toolkit != nil {
 		workerRetry := providerfactory.SubAgentRetryConfig()
@@ -150,7 +150,7 @@ func NewSession(opts Options) (*Session, error) {
 				}
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
-				wkit.SetCoordinator(coord)
+				wkit.SetAgentControl(agentControl)
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
@@ -158,8 +158,8 @@ func NewSession(opts Options) (*Session, error) {
 			MaxParallel: 5,
 		})
 		if cerr == nil {
-			coord = c
-			toolkit.SetCoordinator(coord)
+			agentControl = c
+			toolkit.SetAgentControl(agentControl)
 			coordinatorPreamble = coordinator.SystemPromptPreamble()
 		}
 	}
@@ -196,7 +196,7 @@ func NewSession(opts Options) (*Session, error) {
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
 		Memory:                      memoryFiles,
-		Coordinator:                 coord,
+		AgentControl:                agentControl,
 		AskBridge:                   opts.AskBridge,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
@@ -242,8 +242,8 @@ func (s *Session) SetSessionID(id string) {
 		s.Toolkit.SetAgentIdentity(id, agentthread.RootPath)
 		artifactDir := filepath.Join(s.RootDir, ".wuu", "sessions", id)
 		s.Toolkit.SetSessionDir(artifactDir)
-		if s.Coordinator != nil {
-			s.Coordinator.SetSessionInfo(
+		if s.AgentControl != nil {
+			s.AgentControl.SetSessionInfo(
 				id,
 				filepath.Join(artifactDir, "workers"),
 				filepath.Join(s.SessionDir, id+".threads"),
@@ -257,8 +257,8 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 	if s == nil {
 		return process.CleanupResult{}, nil
 	}
-	if s.Coordinator != nil {
-		_ = s.Coordinator.CleanupSession()
+	if s.AgentControl != nil {
+		_ = s.AgentControl.CleanupSession()
 	}
 	if s.ProcessManager == nil {
 		return process.CleanupResult{}, nil

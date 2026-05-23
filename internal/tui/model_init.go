@@ -47,7 +47,7 @@ func NewModel(cfg Config) Model {
 		onSessionID:                 cfg.OnSessionID,
 		skills:                      cfg.Skills,
 		memoryFiles:                 cfg.Memory,
-		coordinator:                 cfg.Coordinator,
+		agentControl:                cfg.AgentControl,
 		processManager:              cfg.ProcessManager,
 		askBridge:                   cfg.AskUserBridge,
 		requestTimeout:              cfg.RequestTimeout,
@@ -104,9 +104,9 @@ func NewModel(cfg Config) Model {
 	// Subscribe to coordinator worker notifications, if a coordinator
 	// is wired up. The channel is drained by waitWorkerNotify (a tea.Cmd
 	// returned from Init / Update).
-	if m.coordinator != nil {
+	if m.agentControl != nil {
 		m.workerNotifyCh = make(chan subagent.Notification, 64)
-		m.coordinator.Subscribe(m.workerNotifyCh)
+		m.agentControl.Subscribe(m.workerNotifyCh)
 	}
 	if m.processManager != nil {
 		m.processNotifyCh = make(chan processruntime.Event, 64)
@@ -144,7 +144,7 @@ func (m *Model) setCoordinatorMode(enabled bool) string {
 	if m.streaming || m.pendingRequest {
 		return "coordinator mode: cannot switch while a response is in progress"
 	}
-	if enabled && m.coordinator == nil {
+	if enabled && m.agentControl == nil {
 		return "coordinator mode: coordinator runtime not available (not a git repository?)"
 	}
 	if m.coordinatorMode == enabled {
