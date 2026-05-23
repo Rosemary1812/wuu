@@ -579,6 +579,108 @@ func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	}
 }
 
+func TestServerThreadResumeLoadsChildAgentSession(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu", "state")
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "root-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, "root-thread", 2, "root summary"); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 5, 24, 10, 0, 0, 0, time.UTC)
+	meta := agentthread.Metadata{
+		ID:              "worker-1",
+		SessionID:       "root-thread",
+		ParentID:        "root-thread",
+		Path:            "/root/inspect",
+		TaskName:        "inspect",
+		Role:            "worker",
+		LastTaskMessage: "inspect the UI",
+		CWD:             rt.RootDir,
+		Model:           "worker-model",
+		Status:          agentthread.StatusCompleted,
+		CreatedAt:       now,
+		UpdatedAt:       now.Add(time.Minute),
+		Source: agentthread.Source{
+			Kind:           agentthread.SourceThreadSpawn,
+			ParentThreadID: "root-thread",
+			ParentPath:     agentthread.RootPath,
+			Depth:          2,
+		},
+	}
+	store := agentthread.NewStore(filepath.Join(statepath.SessionArtifactDir(rt.StateDir, "root-thread"), "threads"))
+	if err := store.UpsertThread(meta); err != nil {
+		t.Fatalf("upsert worker thread: %v", err)
+	}
+
+	workerDir := filepath.Join(statepath.SessionArtifactDir(rt.StateDir, "root-thread"), "workers")
+	if err := os.MkdirAll(workerDir, 0o755); err != nil {
+		t.Fatalf("mkdir worker history: %v", err)
+	}
+	rec := persistedAgentHistory{
+		ID:          "worker-1",
+		Type:        "worker",
+		TaskName:    "inspect",
+		AgentPath:   "/root/inspect",
+		ParentID:    "root-thread",
+		Description: "inspect",
+		Status:      "completed",
+		StartedAt:   now,
+		CompletedAt: now.Add(time.Minute),
+		Model:       "worker-model",
+		Prompt:      "inspect the UI",
+		Result:      "child session result",
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "worker system"},
+			{Role: "user", Content: "inspect the UI"},
+			{Role: "assistant", Content: "child session result"},
+		},
+	}
+	data, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal worker history: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "worker-1.json"), data, 0o644); err != nil {
+		t.Fatalf("write worker history: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	payload, err := json.Marshal(map[string]any{
+		"id":     "1",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: "worker-1"},
+	})
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), payload); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadResumeResult](t, responseByID(t, msgs, "1")["result"])
+	thread := result.Thread
+	if thread.ID != "worker-1" || !thread.ReadOnly || thread.ParentID != "root-thread" || thread.AgentPath != "/root/inspect" {
+		t.Fatalf("unexpected child thread identity: %+v", thread)
+	}
+	if thread.Model != "worker-model" || thread.Preview != "inspect" {
+		t.Fatalf("unexpected child thread metadata: %+v", thread)
+	}
+	if len(thread.Turns) != 1 || len(thread.Turns[0].Items) != 2 {
+		t.Fatalf("unexpected child thread turns: %+v", thread.Turns)
+	}
+	if got := thread.Turns[0].Items[1].Text; got != "child session result" {
+		t.Fatalf("unexpected child agent message: %q", got)
+	}
+	resumed := remarshal[ThreadResumedNotification](t, notificationByMethod(t, msgs, NotificationThreadResumed)["params"])
+	if resumed.Thread.ID != "worker-1" || !resumed.Thread.ReadOnly {
+		t.Fatalf("unexpected resumed notification: %+v", resumed)
+	}
+}
+
 func TestServerThreadPinAndArchive(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	out := &lockedBuffer{}

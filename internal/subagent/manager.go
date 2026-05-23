@@ -272,6 +272,15 @@ func (m *Manager) List() []SubAgentSnapshot {
 	return out
 }
 
+// History returns a copy of the given sub-agent's current conversation.
+func (m *Manager) History(id string) ([]providers.ChatMessage, bool) {
+	sa := m.Get(id)
+	if sa == nil {
+		return nil, false
+	}
+	return sa.HistorySnapshot(), true
+}
+
 // Stop cancels the sub-agent with the given ID. Does nothing if it's
 // already done. Returns false if no such agent.
 func (m *Manager) Stop(id string) bool {

@@ -278,11 +278,14 @@ const (
 
 type Thread struct {
 	ID            string       `json:"id"`
+	ParentID      string       `json:"parent_id,omitempty"`
+	AgentPath     string       `json:"agent_path,omitempty"`
 	Preview       string       `json:"preview"`
 	ModelProvider string       `json:"model_provider"`
 	Model         string       `json:"model"`
 	CWD           string       `json:"cwd"`
 	Status        ThreadStatus `json:"status"`
+	ReadOnly      bool         `json:"read_only,omitempty"`
 	Pinned        bool         `json:"pinned,omitempty"`
 	Archived      bool         `json:"archived,omitempty"`
 	CreatedAt     time.Time    `json:"created_at"`

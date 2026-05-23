@@ -433,7 +433,20 @@ func (s *Server) handleThreadResume(req Request) error {
 	}
 	path, err := session.Load(s.rt.SessionDir, id)
 	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
+		thread, ok, agentErr := s.agentSessionThread(id)
+		if agentErr != nil {
+			return s.writeResponse(req.ID, nil, agentErr)
+		}
+		if !ok {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		result := ThreadResumeResult{Thread: thread}
+		if err := s.writeResponse(req.ID, result, nil); err != nil {
+			return err
+		}
+		return s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
+			Thread: thread,
+		})
 	}
 	history, err := loadChatMessages(path)
 	if err != nil {
@@ -666,22 +679,217 @@ func (s *Server) childAgentsForThread(threadID string) ([]Agent, error) {
 	return children, nil
 }
 
+func (s *Server) agentSessionThread(agentID string) (Thread, bool, error) {
+	rootID, meta, ok, err := s.agentThreadMetadata(agentID)
+	if err != nil || !ok {
+		return Thread{}, ok, err
+	}
+
+	var rec persistedAgentHistory
+	history, hasHistory := s.liveAgentHistory(rootID, meta.ID)
+	if !hasHistory {
+		path, err := s.agentHistoryPath(rootID, meta.ID)
+		if err != nil {
+			return Thread{}, true, err
+		}
+		if path != "" {
+			loaded, err := loadAgentHistory(path)
+			if err != nil {
+				if !errors.Is(err, os.ErrNotExist) {
+					return Thread{}, true, err
+				}
+			} else {
+				rec = loaded
+				history = append([]providers.ChatMessage(nil), rec.Messages...)
+			}
+		}
+	}
+	if len(history) == 0 {
+		history = fallbackAgentHistory(meta, rec)
+	}
+
+	now := time.Now().UTC()
+	createdAt := meta.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = rec.StartedAt
+	}
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+	updatedAt := meta.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = rec.CompletedAt
+	}
+	if updatedAt.IsZero() {
+		updatedAt = createdAt
+	}
+	model := firstNonEmpty(rec.Model, meta.Model, s.rt.Model)
+	cwd := firstNonEmpty(meta.CWD, s.rt.RootDir)
+
+	return Thread{
+		ID:            meta.ID,
+		ParentID:      rootID,
+		AgentPath:     meta.Path,
+		Preview:       agentSessionPreview(meta, rec, history),
+		ModelProvider: s.rt.ProviderName,
+		Model:         model,
+		CWD:           cwd,
+		Status:        ThreadStatusIdle,
+		ReadOnly:      true,
+		CreatedAt:     createdAt,
+		UpdatedAt:     updatedAt,
+		Turns:         turnsFromHistory(meta.ID, history, now),
+	}, true, nil
+}
+
+func (s *Server) agentThreadMetadata(agentID string) (string, agentthread.Metadata, bool, error) {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return "", agentthread.Metadata{}, false, nil
+	}
+	rootIDs, err := s.rootThreadIDs()
+	if err != nil {
+		return "", agentthread.Metadata{}, false, err
+	}
+	for _, rootID := range rootIDs {
+		store := s.agentThreadStore(rootID)
+		if store == nil {
+			continue
+		}
+		threads, err := store.ListThreads()
+		if err != nil {
+			return "", agentthread.Metadata{}, false, err
+		}
+		for _, meta := range threads {
+			if meta.ID == agentID && meta.Source.Kind == agentthread.SourceThreadSpawn {
+				return rootID, meta, true, nil
+			}
+		}
+	}
+	return "", agentthread.Metadata{}, false, nil
+}
+
+func (s *Server) rootThreadIDs() ([]string, error) {
+	if s == nil || s.rt == nil {
+		return nil, nil
+	}
+	seen := make(map[string]bool)
+	var ids []string
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+
+	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, sess := range sessions {
+		add(sess.ID)
+	}
+
+	s.mu.Lock()
+	for id, th := range s.threads {
+		if th == nil {
+			continue
+		}
+		th.mu.Lock()
+		cwd := th.CWD
+		th.mu.Unlock()
+		if cwd == s.rt.RootDir {
+			add(id)
+		}
+	}
+	s.mu.Unlock()
+	return ids, nil
+}
+
+func (s *Server) liveAgentHistory(rootID, agentID string) ([]providers.ChatMessage, bool) {
+	th := s.thread(rootID)
+	if th == nil {
+		return nil, false
+	}
+	th.mu.Lock()
+	threadRuntime := th.execRuntime
+	th.mu.Unlock()
+	if threadRuntime == nil || threadRuntime.AgentControl == nil || threadRuntime.AgentControl.Manager() == nil {
+		return nil, false
+	}
+	return threadRuntime.AgentControl.Manager().History(agentID)
+}
+
+func (s *Server) agentHistoryPath(rootID, agentID string) (string, error) {
+	rootID = strings.TrimSpace(rootID)
+	agentID = strings.TrimSpace(agentID)
+	if s == nil || s.rt == nil || rootID == "" || agentID == "" {
+		return "", nil
+	}
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(statepath.SessionArtifactDir(stateDir, rootID), "workers", agentID+".json"), nil
+}
+
 func (s *Server) agentThreadStore(threadID string) *agentthread.Store {
 	if s == nil || s.rt == nil || strings.TrimSpace(threadID) == "" {
 		return nil
 	}
-	stateDir := strings.TrimSpace(s.rt.StateDir)
-	if stateDir == "" {
-		home, err := statepath.Home("")
-		if err != nil {
-			return nil
-		}
-		stateDir, err = statepath.WorkspaceDir(home, s.rt.RootDir)
-		if err != nil {
-			return nil
-		}
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return nil
 	}
 	return agentthread.NewStore(filepath.Join(statepath.SessionArtifactDir(stateDir, threadID), "threads"))
+}
+
+func (s *Server) workspaceStateDir() (string, error) {
+	if s == nil || s.rt == nil {
+		return "", errors.New("runtime session is required")
+	}
+	if stateDir := strings.TrimSpace(s.rt.StateDir); stateDir != "" {
+		return stateDir, nil
+	}
+	home, err := statepath.Home("")
+	if err != nil {
+		return "", err
+	}
+	return statepath.WorkspaceDir(home, s.rt.RootDir)
+}
+
+func fallbackAgentHistory(meta agentthread.Metadata, rec persistedAgentHistory) []providers.ChatMessage {
+	prompt := firstNonEmpty(rec.Prompt, meta.LastTaskMessage)
+	result := strings.TrimSpace(rec.Result)
+	errorText := strings.TrimSpace(rec.Error)
+	history := make([]providers.ChatMessage, 0, 2)
+	if prompt != "" {
+		history = append(history, providers.ChatMessage{Role: "user", Content: prompt})
+	}
+	if result != "" {
+		history = append(history, providers.ChatMessage{Role: "assistant", Content: result})
+	} else if errorText != "" {
+		history = append(history, providers.ChatMessage{Role: "assistant", Content: "Worker failed: " + errorText})
+	}
+	return history
+}
+
+func agentSessionPreview(meta agentthread.Metadata, rec persistedAgentHistory, history []providers.ChatMessage) string {
+	if preview := firstNonEmpty(rec.Description, meta.TaskName, threadPreview(history), rec.Prompt, meta.LastTaskMessage, meta.ID); preview != "" {
+		return preview
+	}
+	return "子任务"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func isDirectChildAgentThread(threadID string, meta agentthread.Metadata) bool {

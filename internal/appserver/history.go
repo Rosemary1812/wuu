@@ -39,6 +39,23 @@ type persistedMessage struct {
 	OutputTokens     int                        `json:"output_tokens,omitempty"`
 }
 
+type persistedAgentHistory struct {
+	ID          string                  `json:"id"`
+	Type        string                  `json:"type"`
+	TaskName    string                  `json:"task_name,omitempty"`
+	AgentPath   string                  `json:"agent_path,omitempty"`
+	ParentID    string                  `json:"parent_id,omitempty"`
+	Description string                  `json:"description"`
+	Status      string                  `json:"status"`
+	StartedAt   time.Time               `json:"started_at"`
+	CompletedAt time.Time               `json:"completed_at"`
+	Model       string                  `json:"model"`
+	Prompt      string                  `json:"prompt"`
+	Result      string                  `json:"result,omitempty"`
+	Error       string                  `json:"error,omitempty"`
+	Messages    []providers.ChatMessage `json:"messages,omitempty"`
+}
+
 func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil
@@ -95,6 +112,21 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 		return nil, fmt.Errorf("scan session history: %w", err)
 	}
 	return messages, nil
+}
+
+func loadAgentHistory(path string) (persistedAgentHistory, error) {
+	if strings.TrimSpace(path) == "" {
+		return persistedAgentHistory{}, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return persistedAgentHistory{}, fmt.Errorf("read worker history: %w", err)
+	}
+	var rec persistedAgentHistory
+	if err := json.Unmarshal(data, &rec); err != nil {
+		return persistedAgentHistory{}, fmt.Errorf("decode worker history: %w", err)
+	}
+	return rec, nil
 }
 
 func appendChatMessage(path string, msg providers.ChatMessage) error {

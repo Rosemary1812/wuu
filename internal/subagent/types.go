@@ -170,6 +170,13 @@ func (s *SubAgent) Snapshot() SubAgentSnapshot {
 	return snapshotLocked(s)
 }
 
+// HistorySnapshot returns a copy of the worker's current conversation.
+func (s *SubAgent) HistorySnapshot() []providers.ChatMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]providers.ChatMessage(nil), s.history...)
+}
+
 // SubAgentSnapshot is an immutable view of a SubAgent's state at a
 // point in time.
 type SubAgentSnapshot struct {
