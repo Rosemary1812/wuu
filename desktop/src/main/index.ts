@@ -37,11 +37,13 @@ import type {
   InitializeResult,
   ProjectListResult,
   RuntimeContext,
+  RuntimeSetupSaveParams,
   ServerEvent,
   Thread,
   Turn,
   WorkspaceFileReadResult
 } from "../shared/protocol";
+import { readRuntimeSetup, saveRuntimeSetup } from "./runtimeSetup";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RENDERABLE_IMAGE_EXTENSIONS = new Set([".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"]);
@@ -62,16 +64,18 @@ const FILE_TREE_IGNORED_DIRS = new Set([
 ]);
 const FILE_TREE_IGNORED_FILES = new Set([".DS_Store"]);
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "wuu-file",
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: false
+if (!app.isReady()) {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: "wuu-file",
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: false
+      }
     }
-  }
-]);
+  ]);
+}
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -84,6 +88,7 @@ class AppServerClient {
   private nextRequestID = 1;
   private stdoutBuffer = "";
   private disposing = false;
+  private lastErrorMessage = "";
 
   constructor(
     readonly workdir: string,
@@ -144,6 +149,7 @@ class AppServerClient {
       return;
     }
     const command = resolveWuuCommand(this.workdir);
+    this.lastErrorMessage = "";
     this.child = spawn(command.command, [...command.args, "app-server", "--workdir", this.workdir], {
       cwd: command.cwd,
       env: process.env,
@@ -156,12 +162,17 @@ class AppServerClient {
     this.child.stderr.on("data", (chunk: string) => {
       const message = chunk.trim();
       if (message) {
+        if (/^exit status \d+$/.test(message) && this.lastErrorMessage) {
+          return;
+        }
+        this.lastErrorMessage = message;
         this.emit({ kind: "server-error", message });
       }
     });
     this.child.on("exit", (code) => {
+      const exitError = new Error(this.lastErrorMessage || "app-server exited");
       for (const pending of this.pending.values()) {
-        pending.reject(new Error("app-server exited"));
+        pending.reject(exitError);
       }
       this.pending.clear();
       if (!this.disposing) {
@@ -1363,6 +1374,14 @@ app.whenReady().then(() => {
     return addProject(projectPath);
   });
   ipcMain.handle("wuu:initialize", () => serverClient().request<InitializeResult>("initialize"));
+  ipcMain.handle("wuu:runtime-setup-read", () =>
+    readRuntimeSetup(ensureRuntimeContext().cwd, process.env.HOME)
+  );
+  ipcMain.handle("wuu:runtime-setup-save", (_event, params: RuntimeSetupSaveParams) => {
+    const result = saveRuntimeSetup(ensureRuntimeContext().cwd, process.env.HOME, params);
+    resetClient();
+    return result;
+  });
   ipcMain.handle("wuu:config-codex-models", (_event, provider?: string) =>
     serverClient().request<ConfigCodexModelsResult>("config/codex/models", { provider: provider ?? "" })
   );

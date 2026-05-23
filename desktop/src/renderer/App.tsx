@@ -79,6 +79,8 @@ import type {
   InitializeResult,
   ProjectListResult,
   RuntimeContext,
+  RuntimeSetupSaveParams,
+  RuntimeSetupState,
   ServerEvent,
   Thread,
   ThreadItem,
@@ -102,6 +104,47 @@ type AnsweredAskRequestState = AskRequestState & {
 };
 
 const ASK_USER_OTHER_VALUE = "__wuu_other__";
+
+const RUNTIME_SETUP_PRESETS = [
+  {
+    id: "openai",
+    label: "OpenAI",
+    provider: "openai",
+    provider_type: "openai-compatible",
+    base_url: "https://api.openai.com/v1",
+    model: "gpt-4.1",
+    api_key_env: "OPENAI_API_KEY"
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    provider: "anthropic",
+    provider_type: "anthropic",
+    base_url: "https://api.anthropic.com",
+    model: "claude-3-5-sonnet-latest",
+    api_key_env: "ANTHROPIC_API_KEY"
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    provider: "openrouter",
+    provider_type: "openai-compatible",
+    base_url: "https://openrouter.ai/api/v1",
+    model: "openai/gpt-4.1-mini",
+    api_key_env: "OPENROUTER_API_KEY"
+  },
+  {
+    id: "custom",
+    label: "OpenAI-compatible",
+    provider: "custom",
+    provider_type: "openai-compatible",
+    base_url: "",
+    model: "",
+    api_key_env: ""
+  }
+] as const;
+
+type RuntimeSetupPresetID = (typeof RUNTIME_SETUP_PRESETS)[number]["id"];
 
 type CodexModelLoadState = {
   provider?: string;
@@ -1389,6 +1432,30 @@ export function App(): JSX.Element {
     };
   }
 
+  async function reloadRuntimeAfterSetup(): Promise<void> {
+    setState((current) => ({
+      ...current,
+      initialized: undefined,
+      thread: undefined,
+      threads: [],
+      running: false,
+      status: "connecting",
+      askRequests: [],
+      answeredAskRequests: []
+    }));
+    try {
+      const listedProjects = await window.wuu.listProjects();
+      const runtimeState = listedProjects.active_context ? listedProjects : await window.wuu.selectNoProject(false);
+      const loadedState = await loadRuntime(runtimeState);
+      setState((current) => ({ ...current, ...loadedState }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "failed to start"
+      }));
+    }
+  }
+
   function emptyRuntimeState(projectState: ProjectListResult): Partial<AppState> {
     return {
       initialized: undefined,
@@ -2366,6 +2433,8 @@ export function App(): JSX.Element {
               </div>
             )}
           </div>
+        ) : runtimeSetupNeeded(state.status) && !previewingLaunch ? (
+          <RuntimeSetupView status={state.status} onSaved={() => void reloadRuntimeAfterSetup()} />
         ) : (
           <RuntimeLoading
             status={state.status}
@@ -4642,7 +4711,7 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
     case "server-error":
       return { ...state, status: event.message };
     case "server-exit":
-      return { ...state, running: false, status: "app-server exited" };
+      return { ...state, running: false, status: runtimeSetupNeeded(state.status) ? state.status : "app-server exited" };
   }
 }
 
@@ -6867,6 +6936,210 @@ function formatDuration(ms: number): string {
     return `${minutes}m ${seconds}s`;
   }
   return `${seconds}s`;
+}
+
+function runtimeSetupNeeded(status: string): boolean {
+  const normalized = status.toLowerCase();
+  return (
+    normalized.includes("config not found") ||
+    normalized.includes("wuu init") ||
+    normalized.includes("no api key found") ||
+    normalized.includes("api key is required") ||
+    normalized.includes("either api key or auth token is required")
+  );
+}
+
+function runtimeSetupPresetID(setup: RuntimeSetupState): RuntimeSetupPresetID {
+  const match = RUNTIME_SETUP_PRESETS.find(
+    (preset) =>
+      preset.provider === setup.provider &&
+      preset.provider_type === setup.provider_type &&
+      preset.base_url === setup.base_url
+  );
+  return match?.id ?? "custom";
+}
+
+function RuntimeSetupView({ status, onSaved }: { status: string; onSaved: () => void }): JSX.Element {
+  const [setup, setSetup] = useState<RuntimeSetupState | undefined>(undefined);
+  const [presetID, setPresetID] = useState<RuntimeSetupPresetID>("openai");
+  const [provider, setProvider] = useState("");
+  const [providerType, setProviderType] = useState("");
+  const [baseURL, setBaseURL] = useState("");
+  const [model, setModel] = useState("");
+  const [apiKeyEnv, setAPIKeyEnv] = useState("");
+  const [apiKey, setAPIKey] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setError("");
+    void window.wuu
+      .readRuntimeSetup()
+      .then((result) => {
+        if (!mounted) {
+          return;
+        }
+        setSetup(result);
+        setPresetID(runtimeSetupPresetID(result));
+        setProvider(result.provider);
+        setProviderType(result.provider_type);
+        setBaseURL(result.base_url);
+        setModel(result.model);
+        setAPIKeyEnv(result.api_key_env);
+        setAPIKey("");
+      })
+      .catch((readError) => {
+        if (!mounted) {
+          return;
+        }
+        setError(readError instanceof Error ? readError.message : "读取设置失败");
+      })
+      .finally(() => {
+        if (mounted) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [status]);
+
+  function applyPreset(nextPresetID: RuntimeSetupPresetID): void {
+    setPresetID(nextPresetID);
+    const preset = RUNTIME_SETUP_PRESETS.find((item) => item.id === nextPresetID) ?? RUNTIME_SETUP_PRESETS[0];
+    setProvider(preset.provider);
+    setProviderType(preset.provider_type);
+    setBaseURL(preset.base_url);
+    setModel(preset.model);
+    setAPIKeyEnv(preset.api_key_env);
+  }
+
+  async function submit(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const params: RuntimeSetupSaveParams = {
+        provider,
+        provider_type: providerType,
+        base_url: baseURL,
+        model,
+        api_key: apiKey,
+        api_key_env: apiKeyEnv
+      };
+      await window.wuu.saveRuntimeSetup(params);
+      onSaved();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const needsKey = !setup?.has_api_key;
+  const submitDisabled =
+    loading ||
+    saving ||
+    !provider.trim() ||
+    !providerType.trim() ||
+    !model.trim() ||
+    (!baseURL.trim() && providerType !== "openai-codex") ||
+    (needsKey && !apiKey.trim());
+
+  return (
+    <div className="runtime-setup-pane">
+      <form className="runtime-setup" onSubmit={submit}>
+        <div className="runtime-setup-heading">
+          <div className="runtime-setup-icon" aria-hidden="true">
+            <ShieldCheck size={22} />
+          </div>
+          <div>
+            <h2>连接模型</h2>
+            <p>{setup?.message ?? "wuu 需要可用的模型配置才能启动"}</p>
+          </div>
+        </div>
+
+        <label className="runtime-setup-row">
+          <span>Provider</span>
+          <select
+            data-runtime-setup-field="preset"
+            value={presetID}
+            onChange={(event) => applyPreset(event.target.value as RuntimeSetupPresetID)}
+          >
+            {RUNTIME_SETUP_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {presetID === "custom" ? (
+          <label className="runtime-setup-row">
+            <span>配置名</span>
+            <input
+              data-runtime-setup-field="provider"
+              value={provider}
+              onChange={(event) => setProvider(event.target.value)}
+              placeholder="custom"
+            />
+          </label>
+        ) : null}
+
+        <label className="runtime-setup-row">
+          <span>Base URL</span>
+          <input
+            data-runtime-setup-field="base-url"
+            value={baseURL}
+            onChange={(event) => setBaseURL(event.target.value)}
+            placeholder="https://api.openai.com/v1"
+          />
+        </label>
+
+        <label className="runtime-setup-row">
+          <span>模型</span>
+          <input
+            data-runtime-setup-field="model"
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            placeholder="gpt-4.1"
+          />
+        </label>
+
+        <label className="runtime-setup-row">
+          <span>API Key</span>
+          <input
+            value={apiKey}
+            data-runtime-setup-field="api-key"
+            onChange={(event) => setAPIKey(event.target.value)}
+            placeholder={setup?.has_api_key ? "已保存" : apiKeyEnv || "API key"}
+            type="password"
+          />
+        </label>
+
+        <label className="runtime-setup-row">
+          <span>环境变量</span>
+          <input
+            data-runtime-setup-field="api-key-env"
+            value={apiKeyEnv}
+            onChange={(event) => setAPIKeyEnv(event.target.value)}
+            placeholder="OPENAI_API_KEY"
+          />
+        </label>
+
+        {error ? <div className="runtime-setup-error">{error}</div> : null}
+        <div className="runtime-setup-footer">
+          <small>{setup?.target_config_path ?? status}</small>
+          <button data-runtime-setup-submit type="submit" disabled={submitDisabled}>
+            {saving ? "保存中" : "保存并启动"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 function RuntimeLoading({
