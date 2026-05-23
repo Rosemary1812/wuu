@@ -37,6 +37,7 @@ import type {
   ThreadItem,
   Turn
 } from "../shared/protocol";
+import { RichContent } from "./RichContent";
 
 type AskRequestState = {
   id: string;
@@ -575,7 +576,11 @@ export function App(): JSX.Element {
         {state.initialized ? (
           <div className="scroll-region" ref={scrollRef}>
             <div className="conversation-width">
-              {turns.length === 0 ? <EmptyThread /> : turns.map((turn) => <TurnView key={turn.id} turn={turn} />)}
+              {turns.length === 0 ? (
+                <EmptyThread />
+              ) : (
+                turns.map((turn) => <TurnView key={turn.id} turn={turn} cwd={state.thread?.cwd ?? state.activeContext?.cwd} />)
+              )}
             </div>
           </div>
         ) : (
@@ -834,26 +839,32 @@ function ThreadList({
   );
 }
 
-function TurnView({ turn }: { turn: Turn }): JSX.Element {
+function TurnView({ turn, cwd }: { turn: Turn; cwd?: string }): JSX.Element {
   return (
     <section className="turn">
       {turn.items.map((item) => (
-        <ThreadItemView key={item.id} item={item} />
+        <ThreadItemView key={item.id} item={item} cwd={cwd} />
       ))}
       {turn.error ? <div className="turn-error">{turn.error.message}</div> : null}
     </section>
   );
 }
 
-function ThreadItemView({ item }: { item: ThreadItem }): JSX.Element | null {
+function ThreadItemView({ item, cwd }: { item: ThreadItem; cwd?: string }): JSX.Element | null {
   switch (item.type) {
     case "user_message":
-      return <div className="message user-message">{item.text}</div>;
+      return (
+        <div className="message user-message">
+          <RichContent text={item.text} cwd={cwd} />
+        </div>
+      );
     case "agent_message":
       return (
         <article className="agent-block">
           <Bot size={18} />
-          <div className="agent-text">{item.text}</div>
+          <div className="agent-text">
+            <RichContent text={item.text} cwd={cwd} />
+          </div>
         </article>
       );
     case "reasoning":
