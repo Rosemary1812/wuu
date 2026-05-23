@@ -84,6 +84,7 @@ import { streamTextKey, streamTextStore, type StreamTextField } from "./StreamTe
 
 type AskRequestState = {
   id: string;
+  threadID?: string;
   questions: AskUserQuestion[];
 };
 
@@ -187,14 +188,15 @@ type AppState = {
   threads: Thread[];
   running: boolean;
   status: string;
-  askRequest?: AskRequestState;
+  askRequests: AskRequestState[];
 };
 
 const initialState: AppState = {
   projects: [],
   threads: [],
   running: false,
-  status: "connecting"
+  status: "connecting",
+  askRequests: []
 };
 
 const SIDEBAR_DEFAULT_WIDTH = 326;
@@ -837,10 +839,18 @@ export function App(): JSX.Element {
   }, [state]);
 
   useEffect(() => {
-    if (!state.running) {
+    if (!isStateActiveThreadRunning(state)) {
       void drainQueuedMessages();
     }
-  }, [state.activeContext?.cwd, state.initialized?.model, state.initialized?.provider, state.running, state.thread?.id]);
+  }, [
+    state.activeContext?.cwd,
+    state.initialized?.model,
+    state.initialized?.provider,
+    state.running,
+    state.thread?.id,
+    state.thread?.status,
+    state.thread?.turns
+  ]);
 
   useEffect(() => {
     let mounted = true;
@@ -849,7 +859,7 @@ export function App(): JSX.Element {
         return;
       }
       recordRunDebugEvent(event);
-      const handling = handleStreamingNotification(event);
+      const handling = handleStreamingNotification(event, appStateRef.current);
       if (handling === "stream") {
         scheduleStreamScroll();
         return;
@@ -949,14 +959,14 @@ export function App(): JSX.Element {
   }, [state.thread?.turns]);
 
   useEffect(() => {
-    if (!state.askRequest) {
+    if (!visibleAskRequestForThread(state.askRequests, state.thread?.id)) {
       return;
     }
     setSettingsOpen(false);
     setWorkspaceMode(undefined);
     conversationAutoFollowRef.current = true;
     window.requestAnimationFrame(() => scrollConversationToBottom({ force: true }));
-  }, [state.askRequest?.id]);
+  }, [state.askRequests, state.thread?.id]);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
@@ -1005,10 +1015,13 @@ export function App(): JSX.Element {
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
       : "我们应该在 wuu 中构建什么？";
   const turns = state.thread?.turns ?? [];
-  const emptyConversation = turns.length === 0 && !state.askRequest;
+  const visibleAskRequest = visibleAskRequestForThread(state.askRequests, state.thread?.id);
+  const emptyConversation = turns.length === 0 && !visibleAskRequest;
   const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
+  const activeThreadIsRunning = isStateActiveThreadRunning(state);
+  const anyThreadIsRunning = isAnyThreadRunning(state);
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
   }${rightPanelOpen ? " right-panel-open" : ""}${bottomPanelOpen ? " bottom-panel-open" : ""}`;
@@ -1189,7 +1202,7 @@ export function App(): JSX.Element {
     }));
 
     const currentState = appStateRef.current;
-    if (!currentState.running) {
+    if (!isStateActiveThreadRunning(currentState)) {
       void drainQueuedMessages();
       return;
     }
@@ -1240,7 +1253,7 @@ export function App(): JSX.Element {
         images={composerImages}
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
-        running={state.running}
+        running={activeThreadIsRunning}
         status={state.status}
         initialized={state.initialized}
         gitStatus={state.gitStatus}
@@ -1329,8 +1342,9 @@ export function App(): JSX.Element {
       gitStatus,
       thread,
       threads: thread ? upsertThread(listedThreads, thread) : listedThreads,
-      running: false,
-      status: "ready"
+      running: isThreadRunning(thread),
+      status: "ready",
+      askRequests: []
     };
   }
 
@@ -1344,7 +1358,8 @@ export function App(): JSX.Element {
       thread: undefined,
       threads: [],
       running: false,
-      status: "no-runtime"
+      status: "no-runtime",
+      askRequests: []
     };
   }
 
@@ -1375,7 +1390,8 @@ export function App(): JSX.Element {
       thread: undefined,
       threads: [],
       running: false,
-      status: "opening"
+      status: "opening",
+      askRequests: []
     }));
     try {
       const projectState = await window.wuu.selectProject(projectId);
@@ -1442,7 +1458,8 @@ export function App(): JSX.Element {
       thread: undefined,
       threads: [],
       running: false,
-      status: "opening"
+      status: "opening",
+      askRequests: []
     }));
     try {
       const projectState = await window.wuu.selectNoProject(fresh);
@@ -1457,7 +1474,7 @@ export function App(): JSX.Element {
   }
 
   async function checkoutBranch(branch: string): Promise<void> {
-    if (!branch || state.running) {
+    if (!branch || anyThreadIsRunning) {
       return;
     }
     closeProjectMenus();
@@ -1496,7 +1513,7 @@ export function App(): JSX.Element {
   }
 
   async function createAndCheckoutBranch(branch: string): Promise<void> {
-    if (!branch || state.running) {
+    if (!branch || anyThreadIsRunning) {
       return;
     }
     try {
@@ -1611,7 +1628,7 @@ export function App(): JSX.Element {
   }
 
   async function startNewThread(): Promise<void> {
-    if (!state.activeContext || state.running) {
+    if (!state.activeContext) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
@@ -1626,23 +1643,25 @@ export function App(): JSX.Element {
       ...current,
       thread: undefined,
       running: false,
-      status: "ready"
+      status: "ready",
+      askRequests: []
     }));
   }
 
   async function selectThread(threadId: string): Promise<void> {
-    if (!state.activeContext || threadId === state.thread?.id || state.running) {
+    if (!state.activeContext || threadId === state.thread?.id) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
     clearPendingComposerMessages();
-    setState((current) => ({ ...current, status: "loading" }));
+    setState((current) => ({ ...current, status: "loading", askRequests: [] }));
     try {
       const thread = requireThread(await window.wuu.resumeThread(threadId), "resume did not return a thread");
       setState((current) => ({
         ...current,
         thread,
         threads: upsertThread(current.threads, thread),
+        running: isThreadRunning(thread),
         status: "ready"
       }));
     } catch (error) {
@@ -1675,7 +1694,7 @@ export function App(): JSX.Element {
   }
 
   async function archiveThread(thread: Thread): Promise<void> {
-    if (!state.activeContext || state.running) {
+    if (!state.activeContext || isThreadRunning(thread)) {
       return;
     }
     if (archiveConfirmThreadID !== thread.id) {
@@ -1710,7 +1729,7 @@ export function App(): JSX.Element {
     }
     setPrompt("");
     setComposerImages([]);
-    if (currentState.running) {
+    if (isStateActiveThreadRunning(currentState)) {
       enqueueComposerMessage(message);
       return;
     }
@@ -1721,7 +1740,12 @@ export function App(): JSX.Element {
     const currentState = appStateRef.current;
     const text = message.text.trim();
     const images = inputImagesFromComposer(message.images);
-    if ((!text && images.length === 0) || !currentState.activeContext || !currentState.initialized || currentState.running) {
+    if (
+      (!text && images.length === 0) ||
+      !currentState.activeContext ||
+      !currentState.initialized ||
+      isStateActiveThreadRunning(currentState)
+    ) {
       return false;
     }
     conversationAutoFollowRef.current = true;
@@ -1783,7 +1807,7 @@ export function App(): JSX.Element {
       return;
     }
     const currentState = appStateRef.current;
-    if (currentState.running || !currentState.activeContext || !currentState.initialized) {
+    if (isStateActiveThreadRunning(currentState) || !currentState.activeContext || !currentState.initialized) {
       return;
     }
 
@@ -1832,7 +1856,7 @@ export function App(): JSX.Element {
       !nextProvider ||
       !nextModel ||
       !state.initialized ||
-      state.running ||
+      anyThreadIsRunning ||
       (nextProvider === state.initialized.provider &&
         nextModel === state.initialized.model &&
         (nextEffort === undefined || nextEffort === (state.initialized.effort ?? "")))
@@ -1875,7 +1899,7 @@ export function App(): JSX.Element {
   }
 
   function toggleCodexRuntimeMenu(menu: Exclude<CodexRuntimeMenu, null>): void {
-    if (!state.initialized || state.running || !isCodexProvider(state.initialized)) {
+    if (!state.initialized || anyThreadIsRunning || !isCodexProvider(state.initialized)) {
       return;
     }
     setRuntimeMenuOpen(false);
@@ -1926,7 +1950,7 @@ export function App(): JSX.Element {
   }
 
   async function selectCodexModel(nextModel: CodexModelSummary): Promise<void> {
-    if (!state.initialized || state.running) {
+    if (!state.initialized || anyThreadIsRunning) {
       return;
     }
     const nextEffort = normalizedEffortForModel(state.initialized.effort ?? "", nextModel);
@@ -1935,7 +1959,7 @@ export function App(): JSX.Element {
   }
 
   async function selectCodexEffort(nextEffort: string): Promise<void> {
-    if (!state.initialized || state.running) {
+    if (!state.initialized || anyThreadIsRunning) {
       return;
     }
     await updateRuntimeSettings(state.initialized.provider, state.initialized.model, nextEffort);
@@ -1950,13 +1974,16 @@ export function App(): JSX.Element {
   }
 
   async function respondToAskRequest(request: AskRequestState, response: AskUserResponse): Promise<void> {
-    setState((current) => (current.askRequest?.id === request.id ? { ...current, askRequest: undefined } : current));
     try {
       await window.wuu.respondToServerRequest(request.id, response);
+      setState((current) => ({
+        ...current,
+        askRequests: removeAskRequest(current.askRequests, request.id)
+      }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        askRequest: current.askRequest ?? request,
+        askRequests: upsertAskRequest(current.askRequests, request),
         status: desktopApiErrorMessage(error, "提交选择失败")
       }));
     }
@@ -1966,7 +1993,7 @@ export function App(): JSX.Element {
     return (
       <SettingsView
         initialized={state.initialized}
-        running={state.running}
+        running={anyThreadIsRunning}
         onBack={() => setSettingsOpen(false)}
         onSave={updateRuntimeSettings}
       />
@@ -1978,7 +2005,7 @@ export function App(): JSX.Element {
       <aside className="sidebar">
         <div className="traffic-spacer" />
         <nav className="primary-nav" aria-label="主导航">
-          <button className="nav-item" onClick={() => void startNewThread()} disabled={!state.activeContext || state.running}>
+          <button className="nav-item" onClick={() => void startNewThread()} disabled={!state.activeContext}>
             <MessageSquarePlus size={18} />
             <span>新对话</span>
           </button>
@@ -2172,7 +2199,7 @@ export function App(): JSX.Element {
             activeProject={activeProject}
             sourceItems={environmentSourceItems}
             activeMenu={environmentPanelMenu}
-            running={state.running}
+            running={anyThreadIsRunning}
             pullRequestDisabledReason={pullRequestDisabledReason}
             onSetActiveMenu={setEnvironmentPanelMenu}
             onClose={() => {
@@ -2232,10 +2259,10 @@ export function App(): JSX.Element {
                     onInterrupt={() => void interrupt()}
                   />
                 ))}
-                {state.askRequest ? (
+                {visibleAskRequest ? (
                   <AskUserMessage
-                    key={state.askRequest.id}
-                    request={state.askRequest}
+                    key={visibleAskRequest.id}
+                    request={visibleAskRequest}
                     onCancel={(request) => respondToAskRequest(request, { answers: {}, cancelled: true })}
                     onSubmit={(request, answers) => respondToAskRequest(request, { answers })}
                   />
@@ -3531,13 +3558,15 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
         void window.wuu.rejectServerRequest(event.message.id, `unsupported server request: ${event.message.method}`);
         return state;
       }
-      const params = event.message.params as { questions?: AskUserQuestion[] } | undefined;
+      const params = event.message.params as { thread_id?: string; questions?: AskUserQuestion[] } | undefined;
+      const request: AskRequestState = {
+        id: event.message.id,
+        threadID: typeof params?.thread_id === "string" && params.thread_id ? params.thread_id : undefined,
+        questions: params?.questions ?? []
+      };
       return {
         ...state,
-        askRequest: {
-          id: event.message.id,
-          questions: params?.questions ?? []
-        }
+        askRequests: upsertAskRequest(state.askRequests, request)
       };
     }
     case "server-error":
@@ -3549,7 +3578,7 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
 
 type StreamingNotificationHandling = "state" | "stream" | "skip";
 
-function handleStreamingNotification(event: ServerEvent): StreamingNotificationHandling {
+function handleStreamingNotification(event: ServerEvent, state: AppState): StreamingNotificationHandling {
   if (event.kind !== "notification") {
     return "state";
   }
@@ -3557,26 +3586,45 @@ function handleStreamingNotification(event: ServerEvent): StreamingNotificationH
   const params = notification.params as Record<string, unknown> | undefined;
   switch (notification.method) {
     case "item/agentMessage/delta":
+      if (!notificationTargetsActiveThread(params, state)) {
+        return "skip";
+      }
       appendStreamDelta(params, "text");
       return "stream";
     case "item/reasoning/delta":
+      if (!notificationTargetsActiveThread(params, state)) {
+        return "skip";
+      }
       appendStreamDelta(params, "text");
       return "stream";
     case "item/toolCall/delta":
+      if (!notificationTargetsActiveThread(params, state)) {
+        return "skip";
+      }
       appendStreamDelta(params, "arguments");
       return "stream";
     case "item/toolCall/outputDelta":
+      if (!notificationTargetsActiveThread(params, state)) {
+        return "skip";
+      }
       appendStreamDelta(params, "result");
       return "stream";
     case "turn/event":
       return "skip";
     case "item/started":
     case "item/completed":
-      syncStreamItem(params);
+      if (notificationTargetsActiveThread(params, state)) {
+        syncStreamItem(params);
+      }
       return "state";
     default:
       return "state";
   }
+}
+
+function notificationTargetsActiveThread(params: Record<string, unknown> | undefined, state: AppState): boolean {
+  const threadID = threadIDFromParams(params);
+  return !threadID || threadID === state.thread?.id;
 }
 
 function appendStreamDelta(params: Record<string, unknown> | undefined, field: StreamTextField): void {
@@ -3620,14 +3668,24 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       if (!thread) {
         return state;
       }
-      return { ...state, thread, threads: upsertThread(state.threads, thread), status: "ready" };
+      const knownThread = state.threads.some((item) => item.id === thread.id);
+      const activateThread = state.thread?.id === thread.id || (!state.thread && !knownThread);
+      return {
+        ...state,
+        thread: activateThread ? thread : state.thread,
+        threads: upsertThread(state.threads, thread),
+        running: activateThread ? isThreadRunning(thread) : state.running,
+        status: activateThread ? "ready" : state.status
+      };
     }
     case "turn/started": {
       const turn = params?.turn as Turn | undefined;
       if (!turn) {
         return state;
       }
-      return updateThread({ ...state, running: true }, (thread) => upsertTurn(thread, turn));
+      return updateThreadByID(state, threadIDFromParams(params), (thread) => upsertTurn(thread, turn), {
+        running: true
+      });
     }
     case "item/started":
     case "item/completed": {
@@ -3636,7 +3694,7 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       if (!item || !turnID) {
         return state;
       }
-      return updateThread(state, (thread) => upsertTurnItem(thread, turnID, item));
+      return updateThreadByID(state, threadIDFromParams(params), (thread) => upsertTurnItem(thread, turnID, item));
     }
     case "item/agentMessage/delta":
       return applyDelta(state, params, "text");
@@ -3649,10 +3707,14 @@ function reduceNotification(state: AppState, notification: AppServerNotification
     case "turn/completed":
     case "turn/error": {
       const turn = params?.turn as Turn | undefined;
+      const threadID = threadIDFromParams(params);
       if (!turn) {
-        return { ...state, running: false };
+        return threadID === state.thread?.id ? { ...state, running: false } : state;
       }
-      return updateThread({ ...state, running: false, status: "ready" }, (thread) => upsertTurn(thread, turn));
+      return updateThreadByID(state, threadID, (thread) => upsertTurn(thread, turn), {
+        running: false,
+        status: "ready"
+      });
     }
     default:
       return state;
@@ -3660,18 +3722,52 @@ function reduceNotification(state: AppState, notification: AppServerNotification
 }
 
 function applyDelta(state: AppState, params: Record<string, unknown> | undefined, field: "text" | "arguments" | "result"): AppState {
+  const threadID = threadIDFromParams(params);
   const turnID = params?.turn_id as string | undefined;
   const itemID = params?.item_id as string | undefined;
   const delta = params?.delta as string | undefined;
   if (!turnID || !itemID || !delta) {
     return state;
   }
-  return updateThread(state, (thread) =>
+  return updateThreadByID(state, threadID, (thread) =>
     updateTurnItem(thread, turnID, itemID, (item) => ({
       ...item,
       [field]: `${item[field] ?? ""}${delta}`
     }))
   );
+}
+
+function threadIDFromParams(params: Record<string, unknown> | undefined): string | undefined {
+  const threadID = params?.thread_id;
+  return typeof threadID === "string" && threadID ? threadID : undefined;
+}
+
+function updateThreadByID(
+  state: AppState,
+  threadID: string | undefined,
+  update: (thread: Thread) => Thread,
+  activePatch: Partial<Pick<AppState, "running" | "status">> = {}
+): AppState {
+  if (!threadID) {
+    return state;
+  }
+  const active = state.thread?.id === threadID;
+  if (active && state.thread) {
+    const thread = update(state.thread);
+    return { ...state, ...activePatch, thread, threads: upsertThread(state.threads, thread) };
+  }
+  let updated = false;
+  const threads = state.threads.map((thread) => {
+    if (thread.id !== threadID) {
+      return thread;
+    }
+    updated = true;
+    return update(thread);
+  });
+  if (!updated) {
+    return state;
+  }
+  return { ...state, threads: sortThreads(threads) };
 }
 
 function updateThread(state: AppState, update: (thread: Thread) => Thread): AppState {
@@ -3745,6 +3841,42 @@ function sameRuntimeContext(left: RuntimeContext | undefined, right: RuntimeCont
 
 function isThread(value: unknown): value is Thread {
   return Boolean(value && typeof value === "object" && typeof (value as Thread).id === "string");
+}
+
+function isThreadRunning(thread: Thread | undefined): boolean {
+  return Boolean(thread?.status === "in_progress" || thread?.turns.some((turn) => turn.status === "in_progress"));
+}
+
+function isStateActiveThreadRunning(state: AppState): boolean {
+  return Boolean(state.running || isThreadRunning(state.thread));
+}
+
+function isAnyThreadRunning(state: AppState): boolean {
+  return Boolean(state.running || isThreadRunning(state.thread) || state.threads.some(isThreadRunning));
+}
+
+function visibleAskRequestForThread(requests: AskRequestState[], threadID: string | undefined): AskRequestState | undefined {
+  for (let index = requests.length - 1; index >= 0; index--) {
+    const request = requests[index];
+    if (!request.threadID || request.threadID === threadID) {
+      return request;
+    }
+  }
+  return undefined;
+}
+
+function upsertAskRequest(requests: AskRequestState[], request: AskRequestState): AskRequestState[] {
+  const index = requests.findIndex((item) => item.id === request.id);
+  if (index < 0) {
+    return [...requests, request];
+  }
+  const next = requests.slice();
+  next[index] = request;
+  return next;
+}
+
+function removeAskRequest(requests: AskRequestState[], id: string): AskRequestState[] {
+  return requests.filter((request) => request.id !== id);
 }
 
 function upsertTurn(thread: Thread, turn: Turn): Thread {
@@ -4422,10 +4554,11 @@ type JsonRecord = Record<string, unknown>;
 
 function runDebugPhaseForState(state: AppState): RunDebugPhase {
   const turn = activeDebugTurn(state.thread);
-  if (state.askRequest) {
+  const askRequest = visibleAskRequestForThread(state.askRequests, state.thread?.id);
+  if (askRequest) {
     return {
       label: "等待用户选择",
-      detail: `${state.askRequest.questions.length} 个问题需要响应`,
+      detail: `${askRequest.questions.length} 个问题需要响应`,
       tone: "warning",
       turn
     };

@@ -94,9 +94,9 @@ async function run() {
   ].join("\n");
 
   emitNotification(win, "thread/resumed", { thread });
-  emitNotification(win, "turn/started", { turn });
-  emitNotification(win, "item/started", { turn_id: turn.id, item: agentItem });
-  emitNotification(win, "item/agentMessage/delta", { turn_id: turn.id, item_id: agentItem.id, delta: fullText });
+  emitNotification(win, "turn/started", { thread_id: thread.id, turn });
+  emitNotification(win, "item/started", { thread_id: thread.id, turn_id: turn.id, item: agentItem });
+  emitNotification(win, "item/agentMessage/delta", { thread_id: thread.id, turn_id: turn.id, item_id: agentItem.id, delta: fullText });
 
   await waitFor(win, () => Boolean(document.querySelector(".agent-text .streaming-markdown")), 3000);
   const partial = await waitFor(
@@ -137,11 +137,19 @@ async function run() {
   assert.equal(debug.phase, "正在生成回复", "Debug panel should expose the live response phase.");
   assert.match(debug.text, /reply\/first-delta/, "Debug panel should include the first reply delta event.");
 
+  const newThreadEnabledWhileRunning = await evaluate(win, () => {
+    const button = document.querySelector(".primary-nav .nav-item");
+    return button instanceof HTMLButtonElement ? !button.disabled : false;
+  });
+  assert.equal(newThreadEnabledWhileRunning, true, "New conversation should stay enabled while the active thread is running.");
+
   emitNotification(win, "item/completed", {
+    thread_id: thread.id,
     turn_id: turn.id,
     item: { ...agentItem, status: "completed", text: fullText }
   });
   emitNotification(win, "turn/completed", {
+    thread_id: thread.id,
     turn: {
       ...turn,
       status: "completed",
@@ -184,6 +192,75 @@ async function run() {
   assert.equal(settled.hasTable, true, "Final assistant content should render GFM tables.");
   assert.equal(settled.code, "const answer = 42;", "Final assistant content should render fenced code blocks.");
 
+  const staleTurn = {
+    id: "turn-stale-thread",
+    items: [{ id: "stale-user", type: "user_message", status: "completed", text: "stale user should stay hidden" }],
+    items_view: "full",
+    status: "in_progress",
+    started_at: now
+  };
+  emitNotification(win, "turn/started", { thread_id: "thread-stale", turn: staleTurn });
+  emitServerRequest(win, "server-stale", "item/tool/requestUserInput", {
+    thread_id: "thread-stale",
+    questions: [
+      {
+        question: "Stale question?",
+        header: "Stale",
+        options: [
+          { label: "Yes", description: "Should not be visible." },
+          { label: "No", description: "Should not be visible." }
+        ]
+      }
+    ]
+  });
+  await delay(120);
+  const isolation = await evaluate(win, () => {
+    const conversationText = document.querySelector(".conversation-width")?.textContent ?? "";
+    return {
+      conversationText,
+      askVisible: Boolean(document.querySelector(".ask-message"))
+    };
+  });
+  assert.equal(
+    isolation.conversationText.includes("stale user should stay hidden"),
+    false,
+    "Notifications from another thread should not be inserted into the active conversation."
+  );
+  assert.equal(isolation.askVisible, false, "ask_user requests from another thread should not render in the active conversation.");
+
+  emitServerRequest(win, "server-active", "item/tool/requestUserInput", {
+    thread_id: thread.id,
+    questions: [
+      {
+        question: "Active question?",
+        header: "Active",
+        options: [
+          { label: "Continue", description: "Visible active-thread choice." },
+          { label: "Stop", description: "Visible active-thread choice." }
+        ]
+      }
+    ]
+  });
+  emitServerRequest(win, "server-stale-2", "item/tool/requestUserInput", {
+    thread_id: "thread-stale",
+    questions: [
+      {
+        question: "Stale overwrite?",
+        header: "Stale",
+        options: [{ label: "Hidden", description: "Should not replace the active request." }]
+      }
+    ]
+  });
+  const activeAsk = await waitFor(
+    win,
+    () => {
+      const text = document.querySelector(".ask-message")?.textContent ?? "";
+      return text.includes("Active question?") && !text.includes("Stale overwrite?") ? text : null;
+    },
+    3000
+  );
+  assert.match(activeAsk, /Active question\?/, "active-thread ask_user should stay visible when another thread asks later.");
+
   console.log("streaming markdown e2e passed");
   app.exit(0);
 }
@@ -192,6 +269,13 @@ function emitNotification(win, method, params) {
   win.webContents.send("test:server-event", {
     kind: "notification",
     message: { method, params }
+  });
+}
+
+function emitServerRequest(win, id, method, params) {
+  win.webContents.send("test:server-event", {
+    kind: "server-request",
+    message: { id, method, params }
   });
 }
 
