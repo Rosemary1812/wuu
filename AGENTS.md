@@ -39,6 +39,14 @@
 - Must not focus the explanation on internal code details unless those details are necessary to explain impact, risk, or next steps.
 - When summarizing work, prefer user impact and product outcome over implementation trivia.
 
+## Desktop Debug Controls
+
+- Desktop debug UI must not appear in production builds. This includes the run debug button/panel, launch animation preview, development conversation fixtures, style preview toggles, and any future developer-only shortcut buttons.
+- In development builds, debug UI must still be hidden by default. Expose it only through the debug controls switch in Settings.
+- Future desktop debug buttons or developer-only shortcuts must be gated by the same debug controls setting instead of checking development mode directly.
+- The debug controls switch itself must only be visible in development builds. Production builds must not show either the switch or the debug buttons it controls.
+- If an e2e test needs the run debug panel, enable it explicitly through the test/build path, and keep production e2e coverage that asserts debug controls are not exposed.
+
 ## Local Build and Symlink Refresh
 
 - When the user asks to compile or update the local CLI to the latest source, run `make install` in the repo root.
