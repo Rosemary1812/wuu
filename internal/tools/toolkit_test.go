@@ -102,6 +102,73 @@ func TestToolkit_ReadFileRejectsDirectory(t *testing.T) {
 	}
 }
 
+func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	path := filepath.Join(root, "a.txt")
+	if err := os.WriteFile(path, []byte("alpha\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	}); err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+	originalModTime := info.ModTime()
+
+	if err := os.WriteFile(path, []byte("bravo\n"), 0o644); err != nil {
+		t.Fatalf("external write: %v", err)
+	}
+	if err := os.Chtimes(path, originalModTime, originalModTime); err != nil {
+		t.Fatalf("preserve modtime: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":"a.txt","old_text":"bravo","new_text":"BRAVO"}`,
+	})
+	if err == nil {
+		t.Fatal("expected stale-read rejection")
+	}
+	if !strings.Contains(err.Error(), "changed since last read") {
+		t.Fatalf("expected stale-read guidance, got: %v", err)
+	}
+
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file after stale rejection: %v", err)
+	}
+	if !strings.Contains(readResp, "bravo") || strings.Contains(readResp, `"unchanged":true`) {
+		t.Fatalf("expected fresh read after external edit, got: %s", readResp)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":"a.txt","old_text":"bravo","new_text":"BRAVO"}`,
+	}); err != nil {
+		t.Fatalf("edit_file after fresh read: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read final file: %v", err)
+	}
+	if string(got) != "BRAVO\n" {
+		t.Fatalf("unexpected final content: %q", got)
+	}
+}
+
 func TestToolkit_ListFilesRejectsFile(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

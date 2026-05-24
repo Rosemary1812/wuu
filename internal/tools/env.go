@@ -16,9 +16,12 @@ import (
 // ReadFileEntry tracks a successful read_file invocation for dedup
 // and must-read-first guards.
 type ReadFileEntry struct {
-	MtimeUnix int64
-	Offset    int
-	Limit     int
+	MtimeUnix     int64
+	MtimeUnixNano int64
+	Size          int64
+	ContentSHA256 string
+	Offset        int
+	Limit         int
 }
 
 // readFileState is a thread-safe record of read_file calls.

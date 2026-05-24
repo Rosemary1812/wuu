@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -22,8 +24,8 @@ type ReadFileTool struct{ env *Env }
 func NewReadFileTool(env *Env) *ReadFileTool { return &ReadFileTool{env: env} }
 
 func (t *ReadFileTool) Name() string            { return "read_file" }
-func (t *ReadFileTool) IsReadOnly() bool         { return true }
-func (t *ReadFileTool) IsConcurrencySafe() bool  { return true }
+func (t *ReadFileTool) IsReadOnly() bool        { return true }
+func (t *ReadFileTool) IsConcurrencySafe() bool { return true }
 
 func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -101,22 +103,28 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 		return "", fmt.Errorf("file too large (%d bytes, max %d). Use offset and limit to read portions", info.Size(), defaultMaxFileBytes)
 	}
 
-	// Dedup check: same file, same range, same mtime → return stub.
-	mtimeUnix := info.ModTime().Unix()
-	if entry, ok := t.env.GetReadEntry(resolved); ok {
-		if entry.Offset == args.Offset && entry.Limit == args.Limit && entry.MtimeUnix == mtimeUnix {
-			result := map[string]any{
-				"path":      t.env.NormalizeDisplayPath(resolved),
-				"unchanged": true,
-				"message":   "File unchanged since last read. Refer to the earlier read result.",
-			}
-			return mustJSON(result)
-		}
-	}
-
 	content, err := os.ReadFile(resolved)
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
+	}
+	contentHash := sha256Hex(content)
+
+	// Dedup check: same file, same range, same content → return stub.
+	if entry, ok := t.env.GetReadEntry(resolved); ok {
+		if entry.Offset == args.Offset && entry.Limit == args.Limit {
+			unchanged := entry.ContentSHA256 != "" && entry.ContentSHA256 == contentHash
+			if entry.ContentSHA256 == "" {
+				unchanged = readEntryMatchesInfo(entry, info)
+			}
+			if unchanged {
+				result := map[string]any{
+					"path":      t.env.NormalizeDisplayPath(resolved),
+					"unchanged": true,
+					"message":   "File unchanged since last read. Refer to the earlier read result.",
+				}
+				return mustJSON(result)
+			}
+		}
 	}
 
 	allLines := strings.Split(string(content), "\n")
@@ -146,9 +154,12 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 
 	// Record read state for dedup and must-read-first.
 	t.env.RecordRead(resolved, ReadFileEntry{
-		MtimeUnix: mtimeUnix,
-		Offset:    args.Offset,
-		Limit:     args.Limit,
+		MtimeUnix:     info.ModTime().Unix(),
+		MtimeUnixNano: info.ModTime().UnixNano(),
+		Size:          info.Size(),
+		ContentSHA256: contentHash,
+		Offset:        args.Offset,
+		Limit:         args.Limit,
 	})
 
 	result := map[string]any{
@@ -171,8 +182,8 @@ type WriteFileTool struct{ env *Env }
 func NewWriteFileTool(env *Env) *WriteFileTool { return &WriteFileTool{env: env} }
 
 func (t *WriteFileTool) Name() string            { return "write_file" }
-func (t *WriteFileTool) IsReadOnly() bool         { return false }
-func (t *WriteFileTool) IsConcurrencySafe() bool  { return false }
+func (t *WriteFileTool) IsReadOnly() bool        { return false }
+func (t *WriteFileTool) IsConcurrencySafe() bool { return false }
 
 func (t *WriteFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -254,8 +265,8 @@ type ListFilesTool struct{ env *Env }
 func NewListFilesTool(env *Env) *ListFilesTool { return &ListFilesTool{env: env} }
 
 func (t *ListFilesTool) Name() string            { return "list_files" }
-func (t *ListFilesTool) IsReadOnly() bool         { return true }
-func (t *ListFilesTool) IsConcurrencySafe() bool  { return true }
+func (t *ListFilesTool) IsReadOnly() bool        { return true }
+func (t *ListFilesTool) IsConcurrencySafe() bool { return true }
 
 func (t *ListFilesTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -344,8 +355,8 @@ type EditFileTool struct{ env *Env }
 func NewEditFileTool(env *Env) *EditFileTool { return &EditFileTool{env: env} }
 
 func (t *EditFileTool) Name() string            { return "edit_file" }
-func (t *EditFileTool) IsReadOnly() bool         { return false }
-func (t *EditFileTool) IsConcurrencySafe() bool  { return false }
+func (t *EditFileTool) IsReadOnly() bool        { return false }
+func (t *EditFileTool) IsConcurrencySafe() bool { return false }
 
 func (t *EditFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -411,13 +422,32 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	}
 
 	// Must-read-first guard: reject edit if file hasn't been read.
-	if !t.env.HasBeenRead(resolved) {
+	readEntry, ok := t.env.GetReadEntry(resolved)
+	if !ok {
 		return "", errors.New("file has not been read yet. Use read_file first to inspect the file before editing")
+	}
+
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("stat file: %w", err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("path is a directory: %s. Use read_file to inspect the file before editing", args.Path)
+	}
+
+	if readEntry.Size != 0 && readEntry.Size != info.Size() {
+		return "", errors.New("file changed since last read. Use read_file again before editing")
 	}
 
 	content, err := os.ReadFile(resolved)
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
+	}
+	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != sha256Hex(content) {
+		return "", errors.New("file changed since last read. Use read_file again before editing")
+	}
+	if readEntry.ContentSHA256 == "" && !readEntryMatchesInfo(readEntry, info) {
+		return "", errors.New("file changed since last read. Use read_file again before editing")
 	}
 
 	text := string(content)
@@ -449,4 +479,16 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 		"diff": diff,
 	}
 	return mustJSON(result)
+}
+
+func readEntryMatchesInfo(entry ReadFileEntry, info os.FileInfo) bool {
+	if entry.MtimeUnixNano != 0 {
+		return entry.MtimeUnixNano == info.ModTime().UnixNano() && entry.Size == info.Size()
+	}
+	return entry.MtimeUnix == info.ModTime().Unix()
+}
+
+func sha256Hex(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }
