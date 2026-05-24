@@ -1926,14 +1926,20 @@ export function App(): JSX.Element {
     );
   }
 
-  async function loadRuntime(projectState: ProjectListResult): Promise<Partial<AppState>> {
+  async function loadRuntime(
+    projectState: ProjectListResult,
+    options: { resumeLatestThread?: boolean } = {}
+  ): Promise<Partial<AppState>> {
     if (!projectState.active_context) {
       return emptyRuntimeState(projectState);
     }
+    const resumeLatestThread = options.resumeLatestThread ?? true;
     const [initialized, gitStatus] = await Promise.all([window.wuu.initialize(), window.wuu.gitStatus()]);
     const listed = await window.wuu.listThreads();
     const listedThreads = sortThreads(listed.threads);
-    const defaultThread = listedThreads.find((candidate) => !candidate.pinned) ?? listedThreads[0];
+    const defaultThread = resumeLatestThread
+      ? listedThreads.find((candidate) => !candidate.pinned) ?? listedThreads[0]
+      : undefined;
     const thread = defaultThread
       ? requireThread(await window.wuu.resumeThread(defaultThread.id), "resume did not return a thread")
       : undefined;
@@ -2002,6 +2008,45 @@ export function App(): JSX.Element {
     try {
       const projectState = await window.wuu.selectProject(projectId);
       const loadedState = await loadRuntime(projectState);
+      setState((current) => ({ ...current, ...loadedState }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "open project failed"
+      }));
+    }
+  }
+
+  async function startNewThreadForProject(projectId: string): Promise<void> {
+    closeProjectMenus();
+    setArchiveConfirmThreadID(undefined);
+    setPrompt("");
+    setComposerImages([]);
+    clearPendingComposerMessages();
+    if (projectId === state.activeProjectId && state.activeContext?.kind === "project") {
+      setState((current) => ({
+        ...current,
+        thread: undefined,
+        running: false,
+        status: "ready"
+      }));
+      return;
+    }
+    setState((current) => ({
+      ...current,
+      activeContext: undefined,
+      activeProjectId: projectId,
+      initialized: undefined,
+      thread: undefined,
+      threads: [],
+      running: false,
+      status: "opening",
+      askRequests: [],
+      answeredAskRequests: []
+    }));
+    try {
+      const projectState = await window.wuu.selectProject(projectId);
+      const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
       setState((current) => ({
@@ -2780,6 +2825,7 @@ export function App(): JSX.Element {
             pendingAskThreadIDs={pendingAskThreadIDs}
             archiveConfirmThreadID={archiveConfirmThreadID}
             onSelectProject={(id) => void openProject(id)}
+            onStartNewThread={(id) => void startNewThreadForProject(id)}
             onSelectThread={(id) => void selectThread(id)}
             onSelectChildAgent={(agent) => void selectChildAgent(agent)}
             onToggleThreadPinned={(thread) => void toggleThreadPinned(thread)}
@@ -5901,12 +5947,57 @@ function upsertAnsweredAskRequest(
 
 function upsertTurn(thread: Thread, turn: Turn): Thread {
   const index = thread.turns.findIndex((item) => item.id === turn.id);
+  const status = turn.status === "in_progress" ? "in_progress" : "idle";
   if (index < 0) {
-    return { ...thread, turns: [...thread.turns, turn], status: turn.status === "in_progress" ? "in_progress" : thread.status };
+    return threadWithTurnSummary({ ...thread, turns: [...thread.turns, turn], status }, turn);
   }
   const turns = thread.turns.slice();
   turns[index] = turn;
-  return { ...thread, turns, status: turn.status === "in_progress" ? "in_progress" : "idle" };
+  return threadWithTurnSummary({ ...thread, turns, status }, turn);
+}
+
+function threadWithTurnSummary(thread: Thread, turn: Turn): Thread {
+  const preview = hasText(thread.preview) ? thread.preview : turnPreview(turn);
+  return {
+    ...thread,
+    preview,
+    updated_at: laterTimestamp(thread.updated_at, turn.completed_at ?? turn.started_at)
+  };
+}
+
+function turnPreview(turn: Turn): string {
+  const userItem = turn.items.find((item) => item.type === "user_message");
+  if (!userItem) {
+    return "";
+  }
+  const text = userItem.text?.trim();
+  if (text) {
+    return text;
+  }
+  const images = userItem.images ?? [];
+  if (images.length === 1) {
+    return "[Image #1]";
+  }
+  if (images.length > 1) {
+    return `[${images.length} images]`;
+  }
+  return "";
+}
+
+function hasText(value: string): boolean {
+  return value.trim() !== "";
+}
+
+function laterTimestamp(current: string, candidate: string | null | undefined): string {
+  if (!candidate) {
+    return current;
+  }
+  const currentTime = Date.parse(current);
+  const candidateTime = Date.parse(candidate);
+  if (!Number.isFinite(candidateTime)) {
+    return current;
+  }
+  return !Number.isFinite(currentTime) || candidateTime > currentTime ? candidate : current;
 }
 
 function updateTurnItem(thread: Thread, turnID: string, itemID: string, update: (item: ThreadItem) => ThreadItem): Thread {
@@ -5987,6 +6078,7 @@ function ProjectList({
   pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelectProject,
+  onStartNewThread,
   onSelectThread,
   onSelectChildAgent,
   onToggleThreadPinned,
@@ -6000,6 +6092,7 @@ function ProjectList({
   pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelectProject: (id: string) => void;
+  onStartNewThread: (id: string) => void;
   onSelectThread: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
   onToggleThreadPinned: (thread: Thread) => void;
@@ -6018,6 +6111,15 @@ function ProjectList({
             <ChevronRight className="project-row-chevron" size={15} aria-hidden="true" />
             <Folder size={18} />
             <span>{project.name}</span>
+          </button>
+          <button
+            className="project-row-new-thread"
+            type="button"
+            aria-label={`在 ${project.name} 中新建会话`}
+            title="新建会话"
+            onClick={() => onStartNewThread(project.id)}
+          >
+            <MessageSquarePlus size={15} />
           </button>
           {project.id === activeID ? (
             <ThreadList

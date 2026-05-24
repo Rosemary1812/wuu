@@ -43,6 +43,54 @@ async function run() {
   await waitFor(win, () => Boolean(document.querySelector(".conversation-pane")), 5000);
 
   const now = new Date().toISOString();
+  const immediateTitleThread = {
+    id: "thread-immediate-title-e2e",
+    preview: "",
+    model_provider: "e2e",
+    model: "mock-stream",
+    cwd: repoRoot,
+    status: "idle",
+    created_at: now,
+    updated_at: now,
+    turns: []
+  };
+  const immediateTitleTurn = {
+    id: "turn-immediate-title-e2e",
+    items: [
+      {
+        id: "user-immediate-title-e2e",
+        type: "user_message",
+        status: "completed",
+        text: "Rename me immediately."
+      }
+    ],
+    items_view: "full",
+    status: "in_progress",
+    started_at: now
+  };
+  emitNotification(win, "thread/started", { thread: immediateTitleThread });
+  emitNotification(win, "turn/started", { thread_id: immediateTitleThread.id, turn: immediateTitleTurn });
+  const immediateTitle = await waitFor(
+    win,
+    () => {
+      const title = document.querySelector(".title-block h1")?.textContent ?? "";
+      return title.includes("Rename me immediately.") ? title : null;
+    },
+    3000
+  );
+  assert.equal(immediateTitle, "Rename me immediately.", "Fresh conversation title should update from the first user turn.");
+
+  const resetStarted = await evaluate(win, () => {
+    const button = document.querySelector(".primary-nav .nav-item");
+    if (!(button instanceof HTMLButtonElement)) {
+      return false;
+    }
+    button.click();
+    return true;
+  });
+  assert.equal(resetStarted, true, "New conversation button should be available after title update.");
+  await waitFor(win, () => (document.querySelector(".title-block h1")?.textContent ?? "") === "新对话", 3000);
+
   const thread = {
     id: "thread-streaming-e2e",
     preview: "Streaming E2E",
