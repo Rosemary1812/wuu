@@ -107,7 +107,7 @@ type AnsweredAskRequestState = AskRequestState & {
 };
 
 const ASK_USER_OTHER_VALUE = "__wuu_other__";
-const THREAD_SWITCH_LOADING_DELAY_MS = 180;
+const VIEW_SWITCH_LOADING_DELAY_MS = 180;
 
 type CodexModelLoadState = {
   provider?: string;
@@ -119,8 +119,11 @@ type CodexModelLoadState = {
 type CodexRuntimeMenu = "main" | "model" | null;
 type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
 type EnvironmentDialog = "commit" | "pull-request" | null;
-type PendingThreadSwitch = {
-  threadID: string;
+type PendingViewSwitchKind = "thread" | "project" | "runtime";
+
+type PendingViewSwitch = {
+  kind: PendingViewSwitchKind;
+  targetID: string;
   visible: boolean;
 };
 type FloatingMenuOwner = "composer-runtime" | "composer-access" | "codex-runtime";
@@ -1415,7 +1418,7 @@ export function App(): JSX.Element {
   const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
-  const [pendingThreadSwitch, setPendingThreadSwitch] = useState<PendingThreadSwitch | undefined>(undefined);
+  const [pendingViewSwitch, setPendingViewSwitch] = useState<PendingViewSwitch | undefined>(undefined);
   const [swissStyleEnabled, setSwissStyleEnabled] = useState(initialSwissStyleEnabled);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const conversationPaneRef = useRef<HTMLElement | null>(null);
@@ -1439,8 +1442,8 @@ export function App(): JSX.Element {
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
   const drainingQueueRef = useRef(false);
   const queueDrainPausedRef = useRef(false);
-  const threadSwitchRequestRef = useRef(0);
-  const threadSwitchDelayTimerRef = useRef<number | undefined>(undefined);
+  const viewSwitchRequestRef = useRef(0);
+  const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
   const runDebugEventIDRef = useRef(0);
   const runDebugDeltaSeenRef = useRef(new Set<string>());
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
@@ -1451,7 +1454,7 @@ export function App(): JSX.Element {
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
       }
-      clearThreadSwitchDelay();
+      clearViewSwitchDelay();
     };
   }, []);
 
@@ -1771,12 +1774,15 @@ export function App(): JSX.Element {
   const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
-  const visiblePendingThreadID = pendingThreadSwitch?.visible ? pendingThreadSwitch.threadID : undefined;
+  const visiblePendingThreadID =
+    pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread" ? pendingViewSwitch.targetID : undefined;
+  const visiblePendingProjectID =
+    pendingViewSwitch?.visible && pendingViewSwitch.kind === "project" ? pendingViewSwitch.targetID : undefined;
   const activeThreadReadOnly = Boolean(state.thread?.read_only);
   const activeThreadIsRunning = !activeThreadReadOnly && isStateActiveThreadRunning(state);
-  const threadSwitchPending = pendingThreadSwitch !== undefined;
+  const viewSwitchPending = pendingViewSwitch !== undefined;
   const pendingAskThreadIDs = pendingAskThreadIDsForRequests(state.askRequests);
-  const anyThreadIsRunning = isAnyThreadRunning(state);
+  const anyThreadIsRunning = isAnyThreadRunning(state) || viewSwitchPending;
   const environmentPanelCanShow = Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen);
   const environmentPanelVisible =
     environmentPanelCanShow &&
@@ -2124,7 +2130,7 @@ export function App(): JSX.Element {
         images={composerImages}
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
-        running={activeThreadIsRunning || threadSwitchPending}
+        running={activeThreadIsRunning || viewSwitchPending}
         status={activeThreadReadOnly ? "子任务会话只读" : state.status}
         readOnly={activeThreadReadOnly}
         initialized={state.initialized}
@@ -2197,44 +2203,44 @@ export function App(): JSX.Element {
     );
   }
 
-  function clearThreadSwitchDelay(): void {
-    if (threadSwitchDelayTimerRef.current === undefined) {
+  function clearViewSwitchDelay(): void {
+    if (viewSwitchDelayTimerRef.current === undefined) {
       return;
     }
-    window.clearTimeout(threadSwitchDelayTimerRef.current);
-    threadSwitchDelayTimerRef.current = undefined;
+    window.clearTimeout(viewSwitchDelayTimerRef.current);
+    viewSwitchDelayTimerRef.current = undefined;
   }
 
-  function beginThreadSwitch(threadID: string): number {
-    const requestID = threadSwitchRequestRef.current + 1;
-    threadSwitchRequestRef.current = requestID;
-    clearThreadSwitchDelay();
-    setPendingThreadSwitch({ threadID, visible: false });
-    threadSwitchDelayTimerRef.current = window.setTimeout(() => {
-      threadSwitchDelayTimerRef.current = undefined;
-      if (threadSwitchRequestRef.current !== requestID) {
+  function beginViewSwitch(kind: PendingViewSwitchKind, targetID: string): number {
+    const requestID = viewSwitchRequestRef.current + 1;
+    viewSwitchRequestRef.current = requestID;
+    clearViewSwitchDelay();
+    setPendingViewSwitch({ kind, targetID, visible: false });
+    viewSwitchDelayTimerRef.current = window.setTimeout(() => {
+      viewSwitchDelayTimerRef.current = undefined;
+      if (viewSwitchRequestRef.current !== requestID) {
         return;
       }
-      setPendingThreadSwitch((current) =>
-        current?.threadID === threadID ? { ...current, visible: true } : current
+      setPendingViewSwitch((current) =>
+        current?.kind === kind && current.targetID === targetID ? { ...current, visible: true } : current
       );
-    }, THREAD_SWITCH_LOADING_DELAY_MS);
+    }, VIEW_SWITCH_LOADING_DELAY_MS);
     return requestID;
   }
 
-  function finishThreadSwitch(requestID: number): boolean {
-    if (threadSwitchRequestRef.current !== requestID) {
+  function finishViewSwitch(requestID: number): boolean {
+    if (viewSwitchRequestRef.current !== requestID) {
       return false;
     }
-    clearThreadSwitchDelay();
-    setPendingThreadSwitch(undefined);
+    clearViewSwitchDelay();
+    setPendingViewSwitch(undefined);
     return true;
   }
 
-  function cancelThreadSwitch(): void {
-    threadSwitchRequestRef.current += 1;
-    clearThreadSwitchDelay();
-    setPendingThreadSwitch(undefined);
+  function cancelViewSwitch(): void {
+    viewSwitchRequestRef.current += 1;
+    clearViewSwitchDelay();
+    setPendingViewSwitch(undefined);
   }
 
   async function loadRuntime(
@@ -2302,26 +2308,20 @@ export function App(): JSX.Element {
       closeProjectMenus();
       return;
     }
-    cancelThreadSwitch();
+    const requestID = beginViewSwitch("project", projectId);
     closeProjectMenus();
-    clearPendingComposerMessages();
-    setState((current) => ({
-      ...current,
-      activeContext: undefined,
-      activeProjectId: projectId,
-      initialized: undefined,
-      thread: undefined,
-      threads: [],
-      running: false,
-      status: "opening",
-      askRequests: [],
-      answeredAskRequests: []
-    }));
     try {
       const projectState = await window.wuu.selectProject(projectId);
       const loadedState = await loadRuntime(projectState);
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      clearPendingComposerMessages();
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "open project failed"
@@ -2330,13 +2330,13 @@ export function App(): JSX.Element {
   }
 
   async function startNewThreadForProject(projectId: string): Promise<void> {
-    cancelThreadSwitch();
+    cancelViewSwitch();
     closeProjectMenus();
     setArchiveConfirmThreadID(undefined);
-    setPrompt("");
-    setComposerImages([]);
-    clearPendingComposerMessages();
     if (projectId === state.activeProjectId && state.activeContext?.kind === "project") {
+      setPrompt("");
+      setComposerImages([]);
+      clearPendingComposerMessages();
       setState((current) => ({
         ...current,
         thread: undefined,
@@ -2345,23 +2345,21 @@ export function App(): JSX.Element {
       }));
       return;
     }
-    setState((current) => ({
-      ...current,
-      activeContext: undefined,
-      activeProjectId: projectId,
-      initialized: undefined,
-      thread: undefined,
-      threads: [],
-      running: false,
-      status: "opening",
-      askRequests: [],
-      answeredAskRequests: []
-    }));
+    const requestID = beginViewSwitch("project", projectId);
     try {
       const projectState = await window.wuu.selectProject(projectId);
       const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      setPrompt("");
+      setComposerImages([]);
+      clearPendingComposerMessages();
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "open project failed"
@@ -2370,18 +2368,27 @@ export function App(): JSX.Element {
   }
 
   async function createBlankProject(): Promise<void> {
-    cancelThreadSwitch();
+    const requestID = beginViewSwitch("runtime", "create-project");
     closeProjectMenus();
-    clearPendingComposerMessages();
     try {
       const projectState = await window.wuu.createBlankProject();
       if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
+        if (!finishViewSwitch(requestID)) {
+          return;
+        }
         setState((current) => ({ ...current, projects: projectState.projects }));
         return;
       }
       const loadedState = await loadRuntime(projectState);
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      clearPendingComposerMessages();
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "create project failed"
@@ -2390,18 +2397,27 @@ export function App(): JSX.Element {
   }
 
   async function chooseProjectFolder(): Promise<void> {
-    cancelThreadSwitch();
+    const requestID = beginViewSwitch("runtime", "choose-project");
     closeProjectMenus();
-    clearPendingComposerMessages();
     try {
       const projectState = await window.wuu.chooseProjectFolder();
       if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
+        if (!finishViewSwitch(requestID)) {
+          return;
+        }
         setState((current) => ({ ...current, projects: projectState.projects }));
         return;
       }
       const loadedState = await loadRuntime(projectState);
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      clearPendingComposerMessages();
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "open folder failed"
@@ -2414,26 +2430,20 @@ export function App(): JSX.Element {
       closeProjectMenus();
       return;
     }
-    cancelThreadSwitch();
+    const requestID = beginViewSwitch("runtime", fresh ? "no-project:fresh" : "no-project");
     closeProjectMenus();
-    clearPendingComposerMessages();
-    setState((current) => ({
-      ...current,
-      activeContext: undefined,
-      activeProjectId: undefined,
-      initialized: undefined,
-      thread: undefined,
-      threads: [],
-      running: false,
-      status: "opening",
-      askRequests: [],
-      answeredAskRequests: []
-    }));
     try {
       const projectState = await window.wuu.selectNoProject(fresh);
       const loadedState = await loadRuntime(projectState);
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      clearPendingComposerMessages();
       setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "open no-project failed"
@@ -2599,7 +2609,7 @@ export function App(): JSX.Element {
     if (!state.activeContext) {
       return;
     }
-    cancelThreadSwitch();
+    cancelViewSwitch();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
@@ -2620,7 +2630,7 @@ export function App(): JSX.Element {
     if (!state.activeContext || !state.initialized) {
       return;
     }
-    cancelThreadSwitch();
+    cancelViewSwitch();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
@@ -2646,7 +2656,7 @@ export function App(): JSX.Element {
     if (!state.activeContext || !state.initialized) {
       return;
     }
-    cancelThreadSwitch();
+    cancelViewSwitch();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
@@ -2669,18 +2679,18 @@ export function App(): JSX.Element {
       return;
     }
     if (threadId === state.thread?.id) {
-      if (pendingThreadSwitch) {
-        cancelThreadSwitch();
+      if (pendingViewSwitch) {
+        cancelViewSwitch();
       }
       return;
     }
-    if (pendingThreadSwitch?.threadID === threadId) {
+    if (pendingViewSwitch?.kind === "thread" && pendingViewSwitch.targetID === threadId) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
     const demoThread = localDemoThreadsRef.current.get(threadId);
     if (demoThread) {
-      cancelThreadSwitch();
+      cancelViewSwitch();
       clearPendingComposerMessages();
       setState((current) => ({
         ...current,
@@ -2694,10 +2704,10 @@ export function App(): JSX.Element {
       return;
     }
     const sourceContext = state.activeContext;
-    const requestID = beginThreadSwitch(threadId);
+    const requestID = beginViewSwitch("thread", threadId);
     try {
       const thread = requireThread(await window.wuu.resumeThread(threadId), "resume did not return a thread");
-      if (!finishThreadSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
         return;
       }
       clearPendingComposerMessages();
@@ -2709,7 +2719,7 @@ export function App(): JSX.Element {
         status: "ready"
       }));
     } catch (error) {
-      if (!finishThreadSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
         return;
       }
       setState((current) => ({
@@ -2724,22 +2734,22 @@ export function App(): JSX.Element {
       return;
     }
     if (agent.id === state.thread?.id) {
-      if (pendingThreadSwitch) {
-        cancelThreadSwitch();
+      if (pendingViewSwitch) {
+        cancelViewSwitch();
       }
       return;
     }
-    if (pendingThreadSwitch?.threadID === agent.id) {
+    if (pendingViewSwitch?.kind === "thread" && pendingViewSwitch.targetID === agent.id) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
     const sourceContext = state.activeContext;
-    const requestID = beginThreadSwitch(agent.id);
+    const requestID = beginViewSwitch("thread", agent.id);
     try {
       const thread =
         localDemoThreadsRef.current.get(agent.id) ??
         requireThread(await window.wuu.resumeThread(agent.id), "resume did not return a child agent thread");
-      if (!finishThreadSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
         return;
       }
       setPrompt("");
@@ -2753,7 +2763,7 @@ export function App(): JSX.Element {
         status: "ready"
       }));
     } catch (error) {
-      if (!finishThreadSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
         return;
       }
       setState((current) => ({
@@ -2839,7 +2849,7 @@ export function App(): JSX.Element {
   }
 
   async function sendPrompt(): Promise<void> {
-    if (threadSwitchPending) {
+    if (viewSwitchPending) {
       return;
     }
     const message = createComposerMessage(prompt, composerImages);
@@ -2869,7 +2879,7 @@ export function App(): JSX.Element {
       !currentState.activeContext ||
       !currentState.initialized ||
       currentState.thread?.read_only ||
-      threadSwitchPending ||
+      viewSwitchPending ||
       isStateActiveThreadRunning(currentState)
     ) {
       return false;
@@ -3273,6 +3283,7 @@ export function App(): JSX.Element {
           <ProjectList
             projects={state.projects}
             activeID={state.activeProjectId}
+            pendingProjectID={visiblePendingProjectID}
             threads={state.threads}
             activeThreadID={state.thread?.id}
             pendingThreadID={visiblePendingThreadID}
@@ -3442,7 +3453,7 @@ export function App(): JSX.Element {
 
         {environmentPanelNode}
 
-        {pendingThreadSwitch?.visible ? <SessionSwitchLoading /> : null}
+        {pendingViewSwitch?.visible ? <ViewSwitchLoading /> : null}
 
         {state.initialized && !previewingLaunch ? (
           <div
@@ -6529,6 +6540,7 @@ function sortChildAgents(agents: Agent[]): Agent[] {
 function ProjectList({
   projects,
   activeID,
+  pendingProjectID,
   threads,
   activeThreadID,
   pendingThreadID,
@@ -6544,6 +6556,7 @@ function ProjectList({
 }: {
   projects: DesktopProject[];
   activeID?: string;
+  pendingProjectID?: string;
   threads: Thread[];
   activeThreadID?: string;
   pendingThreadID?: string;
@@ -6559,42 +6572,49 @@ function ProjectList({
 }): JSX.Element {
   return (
     <div className="projects">
-      {projects.map((project) => (
-        <div key={project.id} className="project-group">
-          <button
-            className={`project-row ${project.id === activeID ? "active" : ""}`}
-            aria-current={project.id === activeID ? "page" : undefined}
-            onClick={() => onSelectProject(project.id)}
-          >
-            <ChevronRight className="project-row-chevron" size={15} aria-hidden="true" />
-            <Folder size={18} />
-            <span>{project.name}</span>
-          </button>
-          <button
-            className="project-row-new-thread"
-            type="button"
-            aria-label={`在 ${project.name} 中新建会话`}
-            title="新建会话"
-            onClick={() => onStartNewThread(project.id)}
-          >
-            <MessageSquarePlus size={15} />
-          </button>
-          {project.id === activeID ? (
-            <ThreadList
-              threads={threads}
-              activeID={activeThreadID}
-              pendingThreadID={pendingThreadID}
-              pendingAskThreadIDs={pendingAskThreadIDs}
-              archiveConfirmThreadID={archiveConfirmThreadID}
-              onSelect={onSelectThread}
-              onSelectChildAgent={onSelectChildAgent}
-              onTogglePinned={onToggleThreadPinned}
-              onArchive={onArchiveThread}
-              onClearArchiveConfirm={onClearArchiveConfirm}
-            />
-          ) : null}
-        </div>
-      ))}
+      {projects.map((project) => {
+        const pendingProject = pendingProjectID === project.id;
+        return (
+          <div key={project.id} className="project-group">
+            <button
+              className={`project-row ${project.id === activeID ? "active" : ""}${
+                pendingProject ? " pending-switch" : ""
+              }`}
+              aria-current={project.id === activeID ? "page" : undefined}
+              aria-busy={pendingProject}
+              onClick={() => onSelectProject(project.id)}
+            >
+              <ChevronRight className="project-row-chevron" size={15} aria-hidden="true" />
+              <Folder size={18} />
+              <span>{project.name}</span>
+              {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
+            </button>
+            <button
+              className="project-row-new-thread"
+              type="button"
+              aria-label={`在 ${project.name} 中新建会话`}
+              title="新建会话"
+              onClick={() => onStartNewThread(project.id)}
+            >
+              <MessageSquarePlus size={15} />
+            </button>
+            {project.id === activeID ? (
+              <ThreadList
+                threads={threads}
+                activeID={activeThreadID}
+                pendingThreadID={pendingThreadID}
+                pendingAskThreadIDs={pendingAskThreadIDs}
+                archiveConfirmThreadID={archiveConfirmThreadID}
+                onSelect={onSelectThread}
+                onSelectChildAgent={onSelectChildAgent}
+                onTogglePinned={onToggleThreadPinned}
+                onArchive={onArchiveThread}
+                onClearArchiveConfirm={onClearArchiveConfirm}
+              />
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -8683,15 +8703,15 @@ function RuntimeLoading({
   );
 }
 
-function SessionSwitchLoading(): JSX.Element {
+function ViewSwitchLoading(): JSX.Element {
   return (
-    <div className="session-switch-loading" role="status" aria-label="正在打开会话">
-      <div className="wuu-launch-mark session-switch-mark" aria-hidden="true">
+    <div className="view-switch-loading" role="status" aria-label="正在切换">
+      <div className="wuu-launch-mark view-switch-mark" aria-hidden="true">
         <span>w</span>
         <span>u</span>
         <span>u</span>
       </div>
-      <div className="wuu-launch-rail session-switch-rail" aria-hidden="true" />
+      <div className="wuu-launch-rail view-switch-rail" aria-hidden="true" />
     </div>
   );
 }

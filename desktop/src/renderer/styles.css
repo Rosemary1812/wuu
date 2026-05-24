@@ -600,6 +600,24 @@ button:disabled {
   animation: session-active-mark-in 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.project-row.pending-switch {
+  background: rgba(255, 255, 255, 0.24);
+  color: #343a37;
+}
+
+.project-row.pending-switch::before {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--sidebar-accent);
+  content: "";
+  transform: translateY(-50%);
+  animation: session-loading-pulse 900ms ease-in-out infinite;
+}
+
 .project-row {
   color: #6b736f;
   padding-left: 8px;
@@ -640,6 +658,16 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.project-row .project-row-loading {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(95, 126, 104, 0.22);
+  border-top-color: var(--sidebar-accent);
+  border-radius: 999px;
+  animation: session-loading-spin 720ms linear infinite;
 }
 
 .project-row-new-thread {
@@ -5909,7 +5937,7 @@ pre {
   color: #22262a;
 }
 
-.session-switch-loading {
+.view-switch-loading {
   z-index: 28;
   display: grid;
   grid-column: 1;
@@ -5923,25 +5951,25 @@ pre {
   animation: menu-enter 140ms var(--menu-enter-easing) both;
 }
 
-.session-switch-mark {
+.view-switch-mark {
   gap: 2px;
   color: #303734;
   font-size: 18px;
 }
 
-.session-switch-mark::after {
+.view-switch-mark::after {
   width: 4px;
   height: 15px;
   margin-left: 3px;
   transform: translateY(2px);
 }
 
-.session-switch-rail {
+.view-switch-rail {
   width: 72px;
   height: 2px;
 }
 
-.session-switch-rail::after {
+.view-switch-rail::after {
   width: 24px;
 }
 
@@ -7181,7 +7209,9 @@ pre {
   .wuu-launch-mark::after,
   .wuu-launch-mark span,
   .wuu-launch-rail::after,
-  .session-switch-loading,
+  .view-switch-loading,
+  .project-row .project-row-loading,
+  .project-row.pending-switch::before,
   .thread-row-loading,
   .thread-row.pending-switch::before,
   .turn-progress.in_progress .turn-progress-label svg,
@@ -8293,6 +8323,7 @@ html.swiss-international .composer-action-button:focus-visible {
 }
 
 html.swiss-international .project-row.active,
+html.swiss-international .project-row.pending-switch,
 html.swiss-international .thread-row.active {
   background: #fffefa;
   color: #101820;
@@ -8303,6 +8334,7 @@ html.swiss-international .thread-row.active {
 }
 
 html.swiss-international .project-row.active::before,
+html.swiss-international .project-row.pending-switch::before,
 html.swiss-international .thread-row::before,
 html.swiss-international .thread-list::before,
 html.swiss-international .thread-child-agent-list::before {
@@ -8324,6 +8356,7 @@ html.swiss-international .thread-child-agent-row.pending-switch {
   color: #101820;
 }
 
+html.swiss-international .project-row .project-row-loading,
 html.swiss-international .thread-row-loading {
   border-color: rgba(16, 24, 32, 0.24);
   border-top-color: #ef3b2d;
@@ -8944,7 +8977,7 @@ html.swiss-international .os-theme-wuu {
   .environment-panel,
   .environment-side-menu,
   .environment-dialog,
-  .session-switch-loading,
+  .view-switch-loading,
   .thread-list,
   .thread-list::before,
   .thread-row,
