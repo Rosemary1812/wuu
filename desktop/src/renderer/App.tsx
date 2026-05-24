@@ -7767,6 +7767,7 @@ function TurnView({
 }): JSX.Element {
   const renderedItems: JSX.Element[] = [];
   let statusInserted = false;
+  const actionableAgentMessageID = turn.status === "completed" ? actionableAgentMessageItemID(turn) : undefined;
 
   for (let index = 0; index < turn.items.length; index++) {
     const item = turn.items[index];
@@ -7779,6 +7780,7 @@ function TurnView({
           item={item}
           cwd={cwd}
           streaming={false}
+          actionableAgentMessageID={actionableAgentMessageID}
           latestAgentMessageID={latestAgentMessageID}
           onStreamFrame={onStreamFrame}
           onForkMessage={onForkMessage}
@@ -7815,6 +7817,7 @@ function TurnView({
         item={item}
         cwd={cwd}
         streaming={turn.status === "in_progress" && item.status === "in_progress"}
+        actionableAgentMessageID={actionableAgentMessageID}
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
@@ -8186,12 +8189,35 @@ function latestAgentMessageItemID(turns: Turn[]): string | undefined {
   return undefined;
 }
 
+function actionableAgentMessageItemID(turn: Turn): string | undefined {
+  let latestAgentMessageID: string | undefined;
+  let latestPostToolAgentMessageID: string | undefined;
+  let hasToolCall = false;
+
+  for (const item of turn.items) {
+    if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
+      hasToolCall = true;
+      latestPostToolAgentMessageID = undefined;
+      continue;
+    }
+    if (item.type === "agent_message") {
+      latestAgentMessageID = item.id;
+      if (hasToolCall) {
+        latestPostToolAgentMessageID = item.id;
+      }
+    }
+  }
+
+  return hasToolCall ? latestPostToolAgentMessageID : latestAgentMessageID;
+}
+
 function ThreadItemView({
   turnID,
   turnStatus,
   item,
   cwd,
   streaming,
+  actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage
@@ -8201,6 +8227,7 @@ function ThreadItemView({
   item: ThreadItem;
   cwd?: string;
   streaming: boolean;
+  actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
@@ -8221,7 +8248,7 @@ function ThreadItemView({
       const streamKeyValue = streamTextKey(turnID, item.id, "text");
       const agentText = streamTextStore.has(streamKeyValue) ? streamTextStore.get(streamKeyValue) : (item.text ?? "");
       const copyable = streaming || agentText.trim() !== "";
-      const actionsVisible = turnStatus === "completed" && copyable;
+      const actionsVisible = turnStatus === "completed" && item.id === actionableAgentMessageID && copyable;
       const actionsPersistent = actionsVisible && item.id === latestAgentMessageID;
       return (
         <article
