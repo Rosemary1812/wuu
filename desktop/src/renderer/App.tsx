@@ -1405,6 +1405,7 @@ export function App(): JSX.Element {
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
+  const [workspaceToolTabs, setWorkspaceToolTabs] = useState<WorkspacePanelView[]>([]);
   const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
   const [workspaceRightPanelView, setWorkspaceRightPanelView] = useState<WorkspaceRightPanelView>("tools");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
@@ -1975,24 +1976,49 @@ export function App(): JSX.Element {
     setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
   }
 
-  function openWorkspaceTool(view: WorkspacePanelView): void {
+  function ensureWorkspaceToolTab(view: WorkspacePanelView): void {
+    setWorkspaceToolTabs((current) => (current.includes(view) ? current : [...current, view]));
+  }
+
+  function activateWorkspaceTool(view: WorkspacePanelView): void {
     setWorkspacePanelView(view);
     setWorkspaceRightPanelView(view);
-    if (view === "review" || view === "terminal") {
-      setWorkspaceMode(undefined);
-      setRightPanelOpen(true);
-      return;
-    }
-    setWorkspaceMode(view);
+    setWorkspaceMode(view === "files" ? "files" : undefined);
+  }
+
+  function openWorkspaceTool(view: WorkspacePanelView): void {
+    ensureWorkspaceToolTab(view);
+    activateWorkspaceTool(view);
     setRightPanelOpen(true);
   }
 
   function openWorkspaceFile(path: string): void {
-    setWorkspacePanelView("files");
-    setWorkspaceRightPanelView("files");
-    setWorkspaceMode("files");
+    ensureWorkspaceToolTab("files");
+    activateWorkspaceTool("files");
     setRightPanelOpen(true);
     setSelectedWorkspaceFile((current) => (current === path ? current : path));
+  }
+
+  function showWorkspaceToolPicker(): void {
+    setWorkspaceRightPanelView("tools");
+    setRightPanelOpen(true);
+  }
+
+  function closeWorkspaceToolTab(view: WorkspacePanelView): void {
+    const nextTabs = workspaceToolTabs.filter((item) => item !== view);
+    setWorkspaceToolTabs(nextTabs);
+
+    if (workspaceRightPanelView !== view) {
+      return;
+    }
+
+    const closedIndex = workspaceToolTabs.indexOf(view);
+    const fallback = nextTabs[Math.min(Math.max(closedIndex, 0), Math.max(nextTabs.length - 1, 0))];
+    if (fallback) {
+      activateWorkspaceTool(fallback);
+      return;
+    }
+    setWorkspaceRightPanelView("tools");
   }
 
   function toggleRightPanel(): void {
@@ -2000,7 +2026,9 @@ export function App(): JSX.Element {
       setRightPanelOpen(false);
       return;
     }
-    setWorkspaceRightPanelView("tools");
+    if (workspaceRightPanelView === "tools" && workspaceToolTabs.length > 0) {
+      activateWorkspaceTool(workspaceToolTabs[workspaceToolTabs.length - 1]);
+    }
     setRightPanelOpen(true);
   }
 
@@ -3556,8 +3584,8 @@ export function App(): JSX.Element {
                 gitStatus={state.gitStatus}
                 selectedFilePath={selectedWorkspaceFile}
                 onOpenRightPanel={() => {
-                  setWorkspacePanelView(workspaceMode);
-                  setWorkspaceRightPanelView(workspaceMode);
+                  ensureWorkspaceToolTab(workspaceMode);
+                  activateWorkspaceTool(workspaceMode);
                   setRightPanelOpen(true);
                 }}
               />
@@ -3631,12 +3659,13 @@ export function App(): JSX.Element {
       <WorkspaceRightPanel
         open={rightPanelOpen}
         view={workspaceRightPanelView}
-        selectedView={workspacePanelView}
+        openTabs={workspaceToolTabs}
         activeContext={state.activeContext}
         gitStatus={state.gitStatus}
         selectedFilePath={selectedWorkspaceFile}
         onSelectView={openWorkspaceTool}
-        onShowTools={() => setWorkspaceRightPanelView("tools")}
+        onShowTools={showWorkspaceToolPicker}
+        onCloseTab={closeWorkspaceToolTab}
         onOpenFile={openWorkspaceFile}
         onClose={() => setRightPanelOpen(false)}
       />
@@ -4669,57 +4698,78 @@ function PullRequestDialog({
 function WorkspaceRightPanel({
   open,
   view,
-  selectedView,
+  openTabs,
   activeContext,
   gitStatus,
   selectedFilePath,
   onSelectView,
   onShowTools,
+  onCloseTab,
   onOpenFile,
   onClose
 }: {
   open: boolean;
   view: WorkspaceRightPanelView;
-  selectedView: WorkspacePanelView;
+  openTabs: WorkspacePanelView[];
   activeContext?: RuntimeContext;
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
   onSelectView: (view: WorkspacePanelView) => void;
   onShowTools: () => void;
+  onCloseTab: (view: WorkspacePanelView) => void;
   onOpenFile: (path: string) => void;
   onClose: () => void;
 }): JSX.Element {
   const detailView = view === "tools" ? undefined : view;
-  const activeTool = detailView ? workspaceToolFor(detailView) : undefined;
 
   return (
     <aside
       className={`workspace-right-panel${detailView ? " detail" : " tools"}${detailView === "review" ? " review" : ""}`}
       aria-hidden={!open}
     >
-      <div className="workspace-panel-header">
-        <div className="workspace-panel-title">
-          {detailView ? (
-            <>
-              <button
-                className="icon-button workspace-panel-back"
-                type="button"
-                aria-label="返回工具"
-                disabled={!open}
-                onClick={onShowTools}
-              >
-                <ArrowLeft size={16} />
-              </button>
-              <WorkspaceToolIcon view={detailView} size={18} />
-              <span>{activeTool?.title}</span>
-            </>
-          ) : (
-            <>
-              <Wrench size={18} />
-              <span>工具</span>
-            </>
-          )}
+      <div className="workspace-panel-tabbar">
+        <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
+          {openTabs.map((item) => {
+            const tool = workspaceToolFor(item);
+            const active = item === detailView;
+            return (
+              <div className={`workspace-tool-tab${active ? " active" : ""}`} key={item}>
+                <button
+                  className="workspace-tool-tab-main"
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  title={tool.title}
+                  disabled={!open}
+                  onClick={() => onSelectView(item)}
+                >
+                  <WorkspaceToolIcon view={item} size={16} />
+                  <span>{tool.title}</span>
+                </button>
+                <button
+                  className="workspace-tool-tab-close"
+                  type="button"
+                  aria-label={`关闭${tool.title}`}
+                  disabled={!open}
+                  onClick={() => onCloseTab(item)}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            );
+          })}
         </div>
+        <button
+          className={`icon-button workspace-panel-add${view === "tools" ? " active" : ""}`}
+          type="button"
+          aria-label="选择工具"
+          aria-pressed={view === "tools"}
+          disabled={!open}
+          onClick={onShowTools}
+        >
+          <Plus size={19} />
+        </button>
+        <span className="workspace-panel-tabbar-spacer" />
         <button
           className="icon-button workspace-panel-close"
           type="button"
@@ -4732,26 +4782,9 @@ function WorkspaceRightPanel({
       </div>
       {open ? (
         <>
-          {detailView ? (
-            <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
-              {WORKSPACE_TOOL_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  className={item.id === detailView ? "active" : ""}
-                  type="button"
-                  role="tab"
-                  aria-selected={item.id === detailView}
-                  title={item.title}
-                  onClick={() => onSelectView(item.id)}
-                >
-                  <WorkspaceToolIcon view={item.id} size={17} />
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <div className="workspace-panel-body">
+          <div className={`workspace-panel-body${view === "tools" ? " picker" : ""}`}>
             {view === "tools" ? (
-              <WorkspaceToolMenu selectedView={selectedView} onSelectTool={onSelectView} />
+              <WorkspaceToolPicker openTabs={openTabs} onSelectTool={onSelectView} />
             ) : view === "files" ? (
               <WorkspaceFileTree
                 activeContext={activeContext}
@@ -4771,11 +4804,11 @@ function WorkspaceRightPanel({
   );
 }
 
-function WorkspaceToolMenu({
-  selectedView,
+function WorkspaceToolPicker({
+  openTabs,
   onSelectTool
 }: {
-  selectedView: WorkspacePanelView;
+  openTabs: WorkspacePanelView[];
   onSelectTool: (view: WorkspacePanelView) => void;
 }): JSX.Element {
   return (
@@ -4783,7 +4816,7 @@ function WorkspaceToolMenu({
       {WORKSPACE_TOOL_ITEMS.map((item) => (
         <button
           key={item.id}
-          className={`workspace-tool-menu-item${item.id === selectedView ? " active" : ""}`}
+          className={`workspace-tool-menu-item${openTabs.includes(item.id) ? " active" : ""}`}
           type="button"
           onClick={() => onSelectTool(item.id)}
         >
@@ -4794,7 +4827,6 @@ function WorkspaceToolMenu({
             <strong>{item.title}</strong>
             <span>{item.subtitle}</span>
           </span>
-          <ChevronRight size={17} aria-hidden="true" />
         </button>
       ))}
     </div>

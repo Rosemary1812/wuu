@@ -2085,7 +2085,7 @@ button:disabled {
 }
 
 .workspace-right-panel.detail {
-  grid-template-rows: 54px 44px minmax(0, 1fr);
+  grid-template-rows: 54px minmax(0, 1fr);
 }
 
 .bottom-panel-open .workspace-right-panel {
@@ -2101,6 +2101,15 @@ button:disabled {
 
 .workspace-right-panel.review .workspace-panel-body {
   padding: 0;
+}
+
+.workspace-panel-tabbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #ececea;
+  padding: 8px 10px;
 }
 
 .workspace-panel-header,
@@ -2147,27 +2156,97 @@ button:disabled {
 
 .workspace-panel-tabs {
   display: flex;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: calc(100% - 98px);
   align-items: center;
-  gap: 6px;
-  border-bottom: 1px solid #f0f0ee;
-  padding: 6px 12px;
+  gap: 7px;
+  overflow: hidden;
 }
 
-.workspace-panel-tabs button {
-  display: grid;
-  width: 31px;
-  height: 31px;
-  place-items: center;
+.workspace-tool-tab {
+  display: flex;
+  min-width: 0;
+  max-width: 132px;
+  height: 38px;
+  flex: 0 1 auto;
+  align-items: center;
   border-radius: 8px;
   background: transparent;
-  color: #7a8085;
+  color: #72777c;
+  overflow: hidden;
 }
 
-.workspace-panel-tabs button:hover,
-.workspace-panel-tabs button.active {
+.workspace-tool-tab.active {
+  background: #eeeeeb;
+  color: #23272b;
+}
+
+.workspace-tool-tab-main {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  color: inherit;
+  padding: 0 4px 0 10px;
+  text-align: left;
+}
+
+.workspace-tool-tab-main svg {
+  flex: 0 0 auto;
+}
+
+.workspace-tool-tab-main span {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-tool-tab-close {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: transparent;
+  color: #8b9095;
+  margin-right: 6px;
+}
+
+.workspace-tool-tab:hover,
+.workspace-tool-tab:focus-within {
+  background: #f2f2f0;
+  color: #25282b;
+}
+
+.workspace-tool-tab-close:hover {
+  background: #dededb;
+  color: #303438;
+}
+
+.workspace-panel-add {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.workspace-panel-add.active,
+.workspace-panel-add:hover {
   background: #eeeeeb;
   color: #25282b;
+}
+
+.workspace-panel-tabbar-spacer {
+  flex: 1 1 auto;
+  min-width: 6px;
 }
 
 .workspace-panel-body {
@@ -2177,47 +2256,53 @@ button:disabled {
   padding: 12px;
 }
 
+.workspace-panel-body.picker {
+  padding: 0;
+}
+
 .workspace-tool-menu {
   display: grid;
+  height: 100%;
   min-width: 0;
   align-content: start;
-  gap: 8px;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 28px 24px 34px;
 }
 
 .workspace-tool-menu-item {
   display: grid;
   width: 100%;
   min-width: 0;
-  min-height: 74px;
-  grid-template-columns: 38px minmax(0, 1fr) 18px;
-  align-items: center;
-  gap: 12px;
+  min-height: 136px;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
   border-radius: 8px;
-  background: transparent;
+  background: #f3f3f1;
   color: #25292d;
-  padding: 10px;
-  text-align: left;
+  padding: 22px 18px;
+  text-align: center;
 }
 
 .workspace-tool-menu-item:hover,
 .workspace-tool-menu-item.active {
-  background: #f0f0ee;
+  background: #ebebe8;
 }
 
 .workspace-tool-menu-icon {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   place-items: center;
-  border-radius: 8px;
-  background: #f4f4f2;
-  color: #6d7378;
+  color: #6b7075;
 }
 
 .workspace-tool-menu-copy {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  justify-items: center;
+  gap: 5px;
 }
 
 .workspace-tool-menu-copy strong,
@@ -2230,18 +2315,14 @@ button:disabled {
 
 .workspace-tool-menu-copy strong {
   color: #25292d;
-  font-size: var(--font-body);
+  font-size: var(--font-heading);
   font-weight: var(--weight-semibold);
 }
 
 .workspace-tool-menu-copy span {
-  color: #777d82;
-  font-size: var(--font-ui);
+  color: #71777c;
+  font-size: var(--font-title);
   font-weight: var(--weight-medium);
-}
-
-.workspace-tool-menu-item > svg {
-  color: #8a8f94;
 }
 
 .workspace-bottom-panel {
