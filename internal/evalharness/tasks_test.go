@@ -3,8 +3,11 @@ package evalharness
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/config"
 )
 
 func TestCatalogHasStableTaskIDs(t *testing.T) {
@@ -123,5 +126,97 @@ func TestToolSearchDeferredVerification(t *testing.T) {
 	}
 	if !passed.Passed {
 		t.Fatalf("deferred marker should pass verification: %s", passed.Reason)
+	}
+}
+
+func TestMCPReadOnlyConcurrencyVerification(t *testing.T) {
+	task, ok := ByID("mcp_readonly_concurrency")
+	if !ok {
+		t.Fatal("missing mcp_readonly_concurrency task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing marker: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing MCP marker should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "mcp_readonly_result.txt"), []byte("MCP_READONLY_CONCURRENT\n"), 0o644); err != nil {
+		t.Fatalf("write marker file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "mcp_max_concurrency.txt"), []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write concurrency file: %v", err)
+	}
+	failed, err = VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask serial MCP calls: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("serial MCP calls should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "mcp_max_concurrency.txt"), []byte("2\n"), 0o644); err != nil {
+		t.Fatalf("write concurrency file: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask concurrent MCP calls: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("concurrent MCP calls should pass verification: %s", passed.Reason)
+	}
+}
+
+func TestMCPReadOnlyConcurrencyConfiguresLocalServer(t *testing.T) {
+	task, ok := ByID("mcp_readonly_concurrency")
+	if !ok {
+		t.Fatal("missing mcp_readonly_concurrency task")
+	}
+	if task.Configure == nil {
+		t.Fatal("mcp_readonly_concurrency should configure an MCP server")
+	}
+
+	root := t.TempDir()
+	base := config.Config{
+		MCPServers: map[string]config.MCPServerConfig{
+			"existing": {Command: "existing-mcp"},
+		},
+	}
+	cfg := task.Configure(root, base)
+	if cfg.MCPServers["existing"].Command != "existing-mcp" {
+		t.Fatalf("existing MCP server not preserved: %+v", cfg.MCPServers)
+	}
+	evalServer, ok := cfg.MCPServers["eval"]
+	if !ok {
+		t.Fatalf("eval MCP server not configured: %+v", cfg.MCPServers)
+	}
+	if evalServer.Command != "go" || len(evalServer.Args) != 3 || evalServer.Args[0] != "run" {
+		t.Fatalf("unexpected eval MCP command: %+v", evalServer)
+	}
+	if _, mutated := base.MCPServers["eval"]; mutated {
+		t.Fatal("Configure must not mutate the base config map")
+	}
+}
+
+func TestMCPReadOnlyConcurrencyServerSourceCompiles(t *testing.T) {
+	task, ok := ByID("mcp_readonly_concurrency")
+	if !ok {
+		t.Fatal("missing mcp_readonly_concurrency task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	cmd := exec.Command("go", "test", filepath.Join(root, "mcp_eval_server.go"))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("MCP eval server source should compile: %v\n%s", err, output)
 	}
 }

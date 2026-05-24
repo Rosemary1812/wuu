@@ -449,11 +449,16 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		return result
 	}
 
+	runtimeConfig := cfg.Config
+	if cfg.Task.Configure != nil {
+		runtimeConfig = cfg.Task.Configure(taskRoot, runtimeConfig)
+	}
+
 	rt, err := runtime.NewSession(runtime.Options{
 		RootDir:       taskRoot,
 		HomeDir:       cfg.HomeDir,
 		ConfigPath:    cfg.ConfigPath,
-		Config:        cfg.Config,
+		Config:        runtimeConfig,
 		ProviderName:  cfg.ProviderName,
 		ModelOverride: cfg.ModelOverride,
 	})
@@ -467,6 +472,13 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	}()
 	if cfg.MaxSteps > 0 {
 		rt.StreamRunner.MaxSteps = cfg.MaxSteps
+	}
+	if rt.Toolkit != nil {
+		if err := waitForMCPRequiredTools(ctx, rt.Toolkit, cfg.Task.RequiredTools, 5*time.Second); err != nil {
+			result.Error = err.Error()
+			result.DurationMS = time.Since(started).Milliseconds()
+			return result
+		}
 	}
 
 	history := []providers.ChatMessage{}
@@ -573,6 +585,42 @@ func missingRequiredTools(required []string, used []string) []string {
 		}
 	}
 	return missing
+}
+
+func waitForMCPRequiredTools(ctx context.Context, toolkit *tools.Toolkit, required []string, timeout time.Duration) error {
+	var mcpNames []string
+	for _, name := range required {
+		if strings.HasPrefix(name, "mcp_") {
+			mcpNames = append(mcpNames, name)
+		}
+	}
+	if len(mcpNames) == 0 || toolkit == nil {
+		return nil
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		allFound := true
+		for _, name := range mcpNames {
+			if _, ok := toolkit.ToolInfo(name); !ok {
+				allFound = false
+				break
+			}
+		}
+		if allFound {
+			return nil
+		}
+
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("timed out waiting for required MCP tools: %s", strings.Join(mcpNames, ","))
+		case <-ticker.C:
+		}
+	}
 }
 
 func writeEvalReport(path string, report evalReport) error {

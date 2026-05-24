@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/config"
 )
 
 // Task is one deterministic local evaluation scenario.
@@ -20,6 +22,7 @@ type Task struct {
 	Prompt        string
 	RequiredTools []string
 	Setup         func(root string) error
+	Configure     func(root string, cfg config.Config) config.Config
 	Verify        func(ctx context.Context, root, answer string) (Verification, error)
 }
 
@@ -81,6 +84,18 @@ func Catalog() []Task {
 			RequiredTools: []string{"tool_search", "list_cron"},
 			Setup:         setupEmptyTask,
 			Verify:        verifyDeferredToolFoundFile,
+		},
+		{
+			ID:          "mcp_readonly_concurrency",
+			Name:        "Run read-only MCP tools concurrently",
+			Description: "Local MCP server exposes readOnlyHint=true slow tools; eval passes only if their calls overlap.",
+			Prompt: "Use tool_search to find the MCP eval read-only slow tools. Expose both of them, then call " +
+				"mcp_eval_slow_a and mcp_eval_slow_b together in the same assistant response before writing " +
+				"mcp_readonly_result.txt containing MCP_READONLY_CONCURRENT.",
+			RequiredTools: []string{"tool_search", "mcp_eval_slow_a", "mcp_eval_slow_b", "write_file"},
+			Setup:         setupMCPReadOnlyConcurrency,
+			Configure:     configureMCPReadOnlyConcurrency,
+			Verify:        verifyMCPReadOnlyConcurrency,
 		},
 	}
 }
@@ -194,6 +209,30 @@ func setupEmptyTask(root string) error {
 	return writeFiles(root, map[string]string{".keep": ""})
 }
 
+func setupMCPReadOnlyConcurrency(root string) error {
+	return writeFiles(root, map[string]string{
+		"mcp_eval_server.go": mcpEvalServerSource,
+		".keep":              "",
+	})
+}
+
+func configureMCPReadOnlyConcurrency(root string, cfg config.Config) config.Config {
+	servers := make(map[string]config.MCPServerConfig, len(cfg.MCPServers)+1)
+	for name, server := range cfg.MCPServers {
+		servers[name] = server
+	}
+	servers["eval"] = config.MCPServerConfig{
+		Command: "go",
+		Args: []string{
+			"run",
+			filepath.Join(root, "mcp_eval_server.go"),
+			filepath.Join(root, "mcp_max_concurrency.txt"),
+		},
+	}
+	cfg.MCPServers = servers
+	return cfg
+}
+
 func verifyGoTests(ctx context.Context, root, _ string) (Verification, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -235,6 +274,25 @@ func verifyDeferredToolFoundFile(_ context.Context, root, _ string) (Verificatio
 	return Verification{Passed: true, Reason: "observed deferred tool marker"}, nil
 }
 
+func verifyMCPReadOnlyConcurrency(_ context.Context, root, _ string) (Verification, error) {
+	data, err := os.ReadFile(filepath.Join(root, "mcp_readonly_result.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "mcp_readonly_result.txt was not written"}, nil
+	}
+	if !strings.Contains(string(data), "MCP_READONLY_CONCURRENT") {
+		return Verification{Passed: false, Reason: "mcp_readonly_result.txt does not contain MCP_READONLY_CONCURRENT"}, nil
+	}
+
+	maxData, err := os.ReadFile(filepath.Join(root, "mcp_max_concurrency.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "MCP server did not record concurrency"}, nil
+	}
+	if strings.TrimSpace(string(maxData)) != "2" {
+		return Verification{Passed: false, Reason: "MCP read-only tools did not overlap; max concurrency was " + strings.TrimSpace(string(maxData))}, nil
+	}
+	return Verification{Passed: true, Reason: "observed overlapping read-only MCP tool calls"}, nil
+}
+
 func writeFiles(root string, files map[string]string) error {
 	if strings.TrimSpace(root) == "" {
 		return errors.New("root is required")
@@ -250,3 +308,131 @@ func writeFiles(root string, files map[string]string) error {
 	}
 	return nil
 }
+
+const mcpEvalServerSource = `package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+type rpcRequest struct {
+	JSONRPC string          ` + "`json:\"jsonrpc\"`" + `
+	ID      any             ` + "`json:\"id,omitempty\"`" + `
+	Method  string          ` + "`json:\"method\"`" + `
+	Params  json.RawMessage ` + "`json:\"params,omitempty\"`" + `
+}
+
+type rpcResponse struct {
+	JSONRPC string ` + "`json:\"jsonrpc\"`" + `
+	ID      any    ` + "`json:\"id,omitempty\"`" + `
+	Result  any    ` + "`json:\"result,omitempty\"`" + `
+	Error   any    ` + "`json:\"error,omitempty\"`" + `
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "missing max concurrency path")
+		os.Exit(2)
+	}
+	maxPath := os.Args[1]
+	_ = os.WriteFile(maxPath, []byte("0\n"), 0o644)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	encoder := json.NewEncoder(os.Stdout)
+	var sendMu sync.Mutex
+	send := func(resp rpcResponse) {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		_ = encoder.Encode(resp)
+	}
+
+	var current int64
+	var maxSeen int64
+	recordMax := func(value int64) {
+		for {
+			old := atomic.LoadInt64(&maxSeen)
+			if value <= old || atomic.CompareAndSwapInt64(&maxSeen, old, value) {
+				_ = os.WriteFile(maxPath, []byte(fmt.Sprintf("%d\n", atomic.LoadInt64(&maxSeen))), 0o644)
+				return
+			}
+		}
+	}
+
+	for scanner.Scan() {
+		var req rpcRequest
+		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
+			continue
+		}
+		switch req.Method {
+		case "initialize":
+			send(rpcResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: map[string]any{
+					"protocolVersion": "2024-11-05",
+					"capabilities": map[string]any{
+						"tools": map[string]any{"listChanged": false},
+					},
+					"serverInfo": map[string]any{"name": "wuu-eval-mcp", "version": "0.1.0"},
+				},
+			})
+		case "notifications/initialized":
+			// Notification only.
+		case "tools/list":
+			send(rpcResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: map[string]any{
+					"tools": []map[string]any{
+						{
+							"name":        "slow_a",
+							"description": "MCP eval read-only slow tool A. Use with slow_b to test concurrency.",
+							"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+							"annotations": map[string]any{"readOnlyHint": true},
+						},
+						{
+							"name":        "slow_b",
+							"description": "MCP eval read-only slow tool B. Use with slow_a to test concurrency.",
+							"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+							"annotations": map[string]any{"readOnlyHint": true},
+						},
+					},
+				},
+			})
+		case "tools/call":
+			var params struct {
+				Name string ` + "`json:\"name\"`" + `
+			}
+			_ = json.Unmarshal(req.Params, &params)
+			go func(id any, name string) {
+				active := atomic.AddInt64(&current, 1)
+				recordMax(active)
+				time.Sleep(400 * time.Millisecond)
+				atomic.AddInt64(&current, -1)
+				send(rpcResponse{
+					JSONRPC: "2.0",
+					ID:      id,
+					Result: map[string]any{
+						"content": []map[string]string{{"type": "text", "text": name + "_OK"}},
+					},
+				})
+			}(req.ID, params.Name)
+		default:
+			send(rpcResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error: map[string]any{
+					"code":    -32601,
+					"message": "method not found",
+				},
+			})
+		}
+	}
+}
+`

@@ -118,7 +118,11 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "test_failure_fix") || !strings.Contains(output, "multi_file_pricing") || !strings.Contains(output, "long_process_output") || !strings.Contains(output, "tool_search_deferred") {
+	if !strings.Contains(output, "test_failure_fix") ||
+		!strings.Contains(output, "multi_file_pricing") ||
+		!strings.Contains(output, "long_process_output") ||
+		!strings.Contains(output, "tool_search_deferred") ||
+		!strings.Contains(output, "mcp_readonly_concurrency") {
 		t.Fatalf("expected built-in eval tasks, got %q", output)
 	}
 }
