@@ -357,34 +357,37 @@ func TestRunToolLoop_ConcurrentToolCompletionDoesNotReorderProviderMessages(t *t
 	}
 }
 
-func TestExecuteBatch_ConcurrentReusesInFlightPrecomputedResult(t *testing.T) {
+func TestTurnToolRuntime_ReusesStreamStartedRun(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	future := newPrecomputedToolResult()
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		future.complete(`{"cached":true}`, nil)
-	}()
-
 	tools := &fakeLoopTools{
 		results: map[string]string{
-			"live": `{"live":true}`,
+			"precomputed": `{"cached":true}`,
+			"live":        `{"live":true}`,
 		},
 	}
-	msgs := executeBatch(ctx, tools, toolBatch{
-		concurrent: true,
-		calls: []providers.ToolCall{
-			{ID: "precomputed", Name: "read_file", Arguments: `{}`},
-			{ID: "live", Name: "read_file", Arguments: `{}`},
+	runtime := NewTurnToolRuntime(tools)
+	runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
+		Type: providers.EventToolUseEnd,
+		ToolCall: &providers.ToolCall{
+			ID:        "precomputed",
+			Name:      "read_file",
+			Arguments: `{}`,
 		},
-	}, nil, map[string]*PrecomputedToolResult{
-		"precomputed": future,
 	})
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+		{ID: "precomputed", Name: "read_file", Arguments: `{}`},
+		{ID: "live", Name: "read_file", Arguments: `{}`},
+	}, nil)
 
 	calls := tools.recordedCalls()
-	if len(calls) != 1 || calls[0].ID != "live" {
-		t.Fatalf("expected only live tool execution, got %+v", calls)
+	var gotIDs []string
+	for _, call := range calls {
+		gotIDs = append(gotIDs, call.ID)
+	}
+	if got, want := strings.Join(gotIDs, ","), "precomputed,live"; got != want {
+		t.Fatalf("expected stream-started run to be reused without duplicate execution, got %s want %s", got, want)
 	}
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 tool messages, got %d", len(msgs))
@@ -394,6 +397,49 @@ func TestExecuteBatch_ConcurrentReusesInFlightPrecomputedResult(t *testing.T) {
 	}
 	if msgs[1].ToolCallID != "live" || msgs[1].Content != `{"live":true}` {
 		t.Fatalf("unexpected live message: %+v", msgs[1])
+	}
+}
+
+func TestTurnToolRuntime_ReusesInFlightStreamStartedRun(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &blockingLoopTools{
+		started: make(chan struct{}),
+		unblock: make(chan struct{}),
+	}
+	runtime := NewTurnToolRuntime(tools)
+	runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
+		Type: providers.EventToolUseEnd,
+		ToolCall: &providers.ToolCall{
+			ID:        "precomputed",
+			Name:      "read_file",
+			Arguments: `{}`,
+		},
+	})
+	<-tools.started
+
+	var msgs []providers.ChatMessage
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		msgs = runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+			{ID: "precomputed", Name: "read_file", Arguments: `{}`},
+		}, nil)
+	}()
+	time.Sleep(10 * time.Millisecond)
+	close(tools.unblock)
+	<-done
+
+	calls := tools.recordedCalls()
+	if len(calls) != 1 || calls[0].ID != "precomputed" {
+		t.Fatalf("expected in-flight stream-started run to be reused, got %+v", calls)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 tool message, got %d", len(msgs))
+	}
+	if msgs[0].ToolCallID != "precomputed" || msgs[0].Content != `{"cached":true}` {
+		t.Fatalf("unexpected precomputed message: %+v", msgs[0])
 	}
 }
 

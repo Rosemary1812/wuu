@@ -303,11 +303,6 @@ type streamStep struct {
 }
 
 func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (StepResult, error) {
-	// Streaming tool execution: collect results from tools started
-	// mid-stream. Protected by mu since goroutines write concurrently.
-	var precomputeMu sync.Mutex
-	precomputed := map[string]*PrecomputedToolResult{}
-
 	var (
 		contentBuf      strings.Builder
 		thinkingBuf     strings.Builder
@@ -318,35 +313,33 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		truncated       bool
 	)
 
-	// Wrap the event callback to intercept ToolUseEnd and kick off
-	// read-only tool execution during streaming.
-	origOnEvent := s.onEvent
+	var toolRuntime *TurnToolRuntime
 	if s.enableStreamingToolExec && s.tools != nil {
+		toolRuntime = NewTurnToolRuntime(s.tools)
+	}
+
+	// Wrap the event callback so streamed tool blocks enter the per-turn
+	// runtime as soon as they arrive.
+	origOnEvent := s.onEvent
+	if toolRuntime != nil {
 		s.onEvent = func(ev providers.StreamEvent) {
-			if ev.Type == providers.EventToolUseEnd && ev.ToolCall != nil {
-				tc := ev.ToolCall
-				if tc.ID != "" && tc.Arguments != "" && isReadOnlyTool(s.tools, tc.Name) {
-					future := newPrecomputedToolResult()
-					precomputeMu.Lock()
-					precomputed[tc.ID] = future
-					precomputeMu.Unlock()
-					go func() {
-						result, err := s.tools.Execute(ctx, providers.ToolCall{
-							ID:        tc.ID,
-							Name:      tc.Name,
-							Arguments: tc.Arguments,
-						})
-						future.complete(result, err)
-					}()
-				}
-			}
+			toolRuntime.ObserveStreamEvent(ctx, ev)
 			if origOnEvent != nil {
 				origOnEvent(ev)
 			}
 		}
 	}
 
-	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &usage, &stopReason, &truncated); err != nil {
+	resetRuntime := func() {
+		if toolRuntime != nil {
+			toolRuntime.Cancel()
+			toolRuntime = NewTurnToolRuntime(s.tools)
+		}
+	}
+	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &usage, &stopReason, &truncated, resetRuntime); err != nil {
+		if toolRuntime != nil {
+			toolRuntime.Cancel()
+		}
 		s.onEvent = origOnEvent // restore
 		return StepResult{}, fmt.Errorf("stream request failed: %w", err)
 	}
@@ -367,6 +360,9 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 	// call before giving up — this mirrors Claude Code's fallback
 	// strategy for empty SSE responses.
 	if strings.TrimSpace(contentBuf.String()) == "" && len(toolCalls) == 0 && !isNormalStop(stopReason) {
+		if toolRuntime != nil {
+			toolRuntime.Cancel()
+		}
 		providers.DebugLogf("stream returned empty content with stop_reason=%q, attempting non-streaming fallback", stopReason)
 		if s.onEvent != nil {
 			s.onEvent(providers.StreamEvent{
@@ -404,23 +400,15 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		}, nil
 	}
 
-	// Collect any precomputed results from streaming tool execution.
-	precomputeMu.Lock()
-	var pc map[string]*PrecomputedToolResult
-	if len(precomputed) > 0 {
-		pc = precomputed
-	}
-	precomputeMu.Unlock()
-
 	return StepResult{
-		Content:            contentBuf.String(),
-		ReasoningContent:   thinkingBuf.String(),
-		ReasoningBlocks:    cloneReasoningBlocks(reasoningBlocks),
-		ToolCalls:          toolCalls,
-		Usage:              usage,
-		StopReason:         stopReason,
-		Truncated:          truncated,
-		PrecomputedResults: pc,
+		Content:          contentBuf.String(),
+		ReasoningContent: thinkingBuf.String(),
+		ReasoningBlocks:  cloneReasoningBlocks(reasoningBlocks),
+		ToolCalls:        toolCalls,
+		Usage:            usage,
+		StopReason:       stopReason,
+		Truncated:        truncated,
+		ToolRuntime:      toolRuntime,
 	}, nil
 }
 
@@ -480,6 +468,7 @@ func (s *streamStep) runStreamWithReconnect(
 	usage **providers.TokenUsage,
 	stopReason *string,
 	truncated *bool,
+	onAttemptStart func(),
 ) error {
 	cfg := s.retry
 	onEvent := s.onEvent
@@ -561,6 +550,9 @@ func (s *streamStep) runStreamWithReconnect(
 		// history. Clear the map on every fresh HTTP attempt.
 		for k := range pendingTools {
 			delete(pendingTools, k)
+		}
+		if onAttemptStart != nil {
+			onAttemptStart()
 		}
 
 		emitLifecycle(providers.StreamPhaseConnecting, attempt, nil, 0)
@@ -686,17 +678,6 @@ func (s *streamStep) runStreamWithReconnect(
 		}
 		return streamErr
 	}
-}
-
-// isReadOnlyTool checks if a tool is read-only and concurrency-safe
-// via the ToolMetadataProvider interface.
-func isReadOnlyTool(executor ToolExecutor, name string) bool {
-	mp, ok := executor.(ToolMetadataProvider)
-	if !ok {
-		return false
-	}
-	meta, found := mp.ToolMetadata(name)
-	return found && meta.ReadOnly && meta.ConcurrencySafe
 }
 
 // streamReconnectConfig holds CC-aligned time-budget reconnection parameters.

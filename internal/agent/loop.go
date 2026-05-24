@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -323,21 +322,12 @@ func RunToolLoop(
 		// slice (via withHistory) so tools like spawn_agent can inherit
 		// the parent agent's current history when fork_turns is enabled.
 		toolCtx := withHistory(ctx, messages)
-		batches := partitionToolCalls(cfg.Tools, result.ToolCalls)
-		var toolMessages []providers.ChatMessage
-		var followupMessages []providers.ChatMessage
-		for _, batch := range batches {
-			batchMessages := executeBatch(toolCtx, cfg.Tools, batch, cfg.OnToolResult, result.PrecomputedResults)
-			for _, msg := range batchMessages {
-				if strings.EqualFold(msg.Role, "tool") {
-					toolMessages = append(toolMessages, msg)
-				} else {
-					followupMessages = append(followupMessages, msg)
-				}
-			}
+		toolRuntime := result.ToolRuntime
+		if toolRuntime == nil {
+			toolRuntime = NewTurnToolRuntime(cfg.Tools)
 		}
-		enforceAggregateResultBudget(toolMessages)
-		orderedToolMessages := append(toolMessages, followupMessages...)
+		orderedToolMessages := toolRuntime.ExecuteFinalCalls(toolCtx, result.ToolCalls, cfg.OnToolResult)
+		enforceAggregateResultBudget(orderedToolMessages)
 		for _, toolMsg := range orderedToolMessages {
 			appendMessage(toolMsg)
 		}
@@ -536,120 +526,6 @@ func partitionToolCalls(executor ToolExecutor, calls []providers.ToolCall) []too
 	})
 
 	return batches
-}
-
-// executeBatch runs a batch of tool calls. Concurrent batches run up
-// to maxToolConcurrency calls in parallel; serial batches run each
-// call in order. Results are returned in the original call order.
-//
-// precomputed, when non-nil, contains in-flight or completed results for
-// tools that were started during streaming. Successful results are reused
-// so the tool is not re-executed.
-func executeBatch(
-	ctx context.Context,
-	executor ToolExecutor,
-	batch toolBatch,
-	onResult func(providers.ToolCall, string),
-	precomputed map[string]*PrecomputedToolResult,
-) []providers.ChatMessage {
-	// Check if the executor supports additional context injection
-	// (e.g. HookedExecutor propagating PostToolUse hook context).
-	ctxProvider, hasCtxProvider := executor.(ToolContextProvider)
-
-	if !batch.concurrent || len(batch.calls) == 1 {
-		// Serial execution.
-		msgs := make([]providers.ChatMessage, 0, len(batch.calls))
-		followups := make([]providers.ChatMessage, 0, len(batch.calls))
-		for _, call := range batch.calls {
-			// Check for precomputed results from streaming tool execution.
-			result, ok := waitPrecomputedResult(ctx, precomputed, call.ID)
-			if !ok {
-				var err error
-				result, err = executor.Execute(ctx, call)
-				if err != nil {
-					result = errorJSON(err)
-				}
-			}
-			if onResult != nil {
-				onResult(call, result)
-			}
-			msgs = append(msgs, providers.ChatMessage{
-				Role:       "tool",
-				Name:       call.Name,
-				ToolCallID: call.ID,
-				Content:    result,
-			})
-			// Collect hook-provided additional context separately so
-			// every tool result remains contiguous after the assistant
-			// tool_calls block. Some providers reject user messages
-			// interleaved between tool results.
-			if hasCtxProvider {
-				if extra := ctxProvider.LastAdditionalContext(); extra != "" {
-					followups = append(followups, providers.ChatMessage{
-						Role:    "user",
-						Content: "[Hook context for " + call.Name + "]: " + extra,
-					})
-				}
-			}
-		}
-		return append(msgs, followups...)
-	}
-
-	// Concurrent execution with bounded parallelism.
-	type indexedResult struct {
-		idx    int
-		result string
-	}
-	results := make([]indexedResult, len(batch.calls))
-	sem := make(chan struct{}, maxToolConcurrency)
-	var wg sync.WaitGroup
-
-	for i, call := range batch.calls {
-		wg.Add(1)
-		go func(idx int, c providers.ToolCall) {
-			defer wg.Done()
-
-			res, ok := waitPrecomputedResult(ctx, precomputed, c.ID)
-			if !ok {
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				var err error
-				res, err = executor.Execute(ctx, c)
-				if err != nil {
-					res = errorJSON(err)
-				}
-			}
-			if onResult != nil {
-				onResult(c, res)
-			}
-			results[idx] = indexedResult{idx: idx, result: res}
-		}(i, call)
-	}
-	wg.Wait()
-
-	msgs := make([]providers.ChatMessage, len(batch.calls))
-	for i, call := range batch.calls {
-		msgs[i] = providers.ChatMessage{
-			Role:       "tool",
-			Name:       call.Name,
-			ToolCallID: call.ID,
-			Content:    results[i].result,
-		}
-	}
-	return msgs
-}
-
-func waitPrecomputedResult(ctx context.Context, precomputed map[string]*PrecomputedToolResult, callID string) (string, bool) {
-	future, ok := precomputed[callID]
-	if !ok || future == nil {
-		return "", false
-	}
-	result, err := future.wait(ctx)
-	if err != nil {
-		return "", false
-	}
-	return result, true
 }
 
 // maxAggregateResultChars caps the total content of all tool-role

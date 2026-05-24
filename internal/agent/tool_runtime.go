@@ -1,0 +1,421 @@
+package agent
+
+import (
+	"context"
+	"strings"
+	"sync"
+
+	"github.com/blueberrycongee/wuu/internal/providers"
+)
+
+type toolRunState int
+
+const (
+	toolRunQueued toolRunState = iota
+	toolRunRunning
+	toolRunDone
+)
+
+type toolRun struct {
+	call            providers.ToolCall
+	order           int
+	finalized       bool
+	concurrencySafe bool
+	streamSafe      bool
+	streamStarted   bool
+
+	mu     sync.Mutex
+	state  toolRunState
+	done   chan struct{}
+	cancel context.CancelFunc
+	result string
+	err    error
+}
+
+// TurnToolRuntime owns tool executions for one model turn. Streaming can
+// enqueue read-only tools early, and the loop later waits for those same runs
+// while executing any remaining final tool calls.
+type TurnToolRuntime struct {
+	executor ToolExecutor
+	sem      chan struct{}
+
+	mu       sync.Mutex
+	runs     []*toolRun
+	byID     map[string]*toolRun
+	canceled bool
+}
+
+func NewTurnToolRuntime(executor ToolExecutor) *TurnToolRuntime {
+	return &TurnToolRuntime{
+		executor: executor,
+		sem:      make(chan struct{}, maxToolConcurrency),
+		byID:     map[string]*toolRun{},
+	}
+}
+
+// ObserveStreamEvent records streamed tool blocks and starts safe prefix tools
+// as soon as their arguments are complete.
+func (r *TurnToolRuntime) ObserveStreamEvent(ctx context.Context, event providers.StreamEvent) {
+	if r == nil || r.executor == nil {
+		return
+	}
+	switch event.Type {
+	case providers.EventToolUseStart:
+		if event.ToolCall == nil || strings.TrimSpace(event.ToolCall.ID) == "" {
+			return
+		}
+		r.addStreamToolStart(event.ToolCall)
+	case providers.EventToolUseDelta:
+		r.appendStreamToolDelta(event.Content)
+	case providers.EventToolUseEnd:
+		if event.ToolCall == nil || strings.TrimSpace(event.ToolCall.ID) == "" {
+			return
+		}
+		r.finalizeStreamTool(ctx, event.ToolCall)
+	}
+}
+
+// Cancel stops any in-flight streaming-started work and prevents additional
+// stream-prefix starts for this runtime.
+func (r *TurnToolRuntime) Cancel() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.canceled = true
+	runs := append([]*toolRun(nil), r.runs...)
+	r.mu.Unlock()
+
+	for _, run := range runs {
+		run.mu.Lock()
+		cancel := run.cancel
+		run.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	}
+}
+
+func (r *TurnToolRuntime) addStreamToolStart(call *providers.ToolCall) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.canceled {
+		return
+	}
+	if existing := r.byID[call.ID]; existing != nil {
+		existing.call.Name = call.Name
+		existing.concurrencySafe = toolCanRunConcurrently(r.executor, call.Name)
+		existing.streamSafe = toolCanStartDuringStreaming(r.executor, call.Name)
+		return
+	}
+	run := &toolRun{
+		call:            providers.ToolCall{ID: call.ID, Name: call.Name},
+		order:           len(r.runs),
+		concurrencySafe: toolCanRunConcurrently(r.executor, call.Name),
+		streamSafe:      toolCanStartDuringStreaming(r.executor, call.Name),
+		done:            make(chan struct{}),
+	}
+	r.runs = append(r.runs, run)
+	r.byID[call.ID] = run
+}
+
+func (r *TurnToolRuntime) appendStreamToolDelta(delta string) {
+	if delta == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.canceled || len(r.runs) == 0 {
+		return
+	}
+	r.runs[len(r.runs)-1].call.Arguments += delta
+}
+
+func (r *TurnToolRuntime) finalizeStreamTool(ctx context.Context, call *providers.ToolCall) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.canceled {
+		return
+	}
+	run := r.byID[call.ID]
+	if run == nil {
+		run = &toolRun{
+			call:  providers.ToolCall{ID: call.ID},
+			order: len(r.runs),
+			done:  make(chan struct{}),
+		}
+		r.runs = append(r.runs, run)
+		r.byID[call.ID] = run
+	}
+	run.call.Name = call.Name
+	if call.Arguments != "" {
+		run.call.Arguments = call.Arguments
+	}
+	run.finalized = run.call.Arguments != ""
+	run.concurrencySafe = toolCanRunConcurrently(r.executor, run.call.Name)
+	run.streamSafe = toolCanStartDuringStreaming(r.executor, run.call.Name)
+	r.startReadyStreamPrefixLocked(ctx)
+}
+
+func (r *TurnToolRuntime) startReadyStreamPrefixLocked(ctx context.Context) {
+	for _, run := range r.runs {
+		if !run.finalized {
+			return
+		}
+		if !run.streamSafe {
+			return
+		}
+		r.startRunLocked(ctx, run, true)
+	}
+}
+
+func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, streamStarted bool) {
+	run.mu.Lock()
+	if run.state != toolRunQueued {
+		run.mu.Unlock()
+		return
+	}
+	run.state = toolRunRunning
+	run.streamStarted = run.streamStarted || streamStarted
+	runCtx, cancel := context.WithCancel(ctx)
+	run.cancel = cancel
+	call := run.call
+	run.mu.Unlock()
+
+	go func() {
+		select {
+		case r.sem <- struct{}{}:
+			defer func() { <-r.sem }()
+		case <-runCtx.Done():
+			run.complete("", runCtx.Err())
+			return
+		}
+		result, err := r.executor.Execute(runCtx, call)
+		run.complete(result, err)
+	}()
+}
+
+func (run *toolRun) complete(result string, err error) {
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	if run.state == toolRunDone {
+		return
+	}
+	run.result = result
+	run.err = err
+	run.state = toolRunDone
+	close(run.done)
+}
+
+func (run *toolRun) wait(ctx context.Context) (string, error) {
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-run.done:
+		run.mu.Lock()
+		defer run.mu.Unlock()
+		return run.result, run.err
+	}
+}
+
+// ExecuteFinalCalls returns tool messages in the model-requested order. Runs
+// that were already started during streaming are awaited; all other calls are
+// executed through the same runtime.
+func (r *TurnToolRuntime) ExecuteFinalCalls(
+	ctx context.Context,
+	calls []providers.ToolCall,
+	onResult func(providers.ToolCall, string),
+) []providers.ChatMessage {
+	if r == nil {
+		r = NewTurnToolRuntime(nil)
+	}
+	r.registerFinalCalls(calls)
+	batches := partitionToolCalls(r.executor, calls)
+	var toolMessages []providers.ChatMessage
+	var followupMessages []providers.ChatMessage
+	for _, batch := range batches {
+		batchMessages := r.executeBatch(ctx, batch, onResult)
+		for _, msg := range batchMessages {
+			if strings.EqualFold(msg.Role, "tool") {
+				toolMessages = append(toolMessages, msg)
+			} else {
+				followupMessages = append(followupMessages, msg)
+			}
+		}
+	}
+	return append(toolMessages, followupMessages...)
+}
+
+func (r *TurnToolRuntime) registerFinalCalls(calls []providers.ToolCall) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.byID == nil {
+		r.byID = map[string]*toolRun{}
+	}
+	ordered := make([]*toolRun, 0, len(calls))
+	seen := map[string]bool{}
+	for i, call := range calls {
+		var run *toolRun
+		if call.ID != "" && !seen[call.ID] {
+			run = r.byID[call.ID]
+			seen[call.ID] = true
+		}
+		if run == nil {
+			run = &toolRun{done: make(chan struct{})}
+		}
+		run.call = call
+		run.order = i
+		run.finalized = true
+		run.concurrencySafe = toolCanRunConcurrently(r.executor, call.Name)
+		run.streamSafe = toolCanStartDuringStreaming(r.executor, call.Name)
+		ordered = append(ordered, run)
+		if call.ID != "" {
+			r.byID[call.ID] = run
+		}
+	}
+	r.runs = ordered
+}
+
+func (r *TurnToolRuntime) executeBatch(
+	ctx context.Context,
+	batch toolBatch,
+	onResult func(providers.ToolCall, string),
+) []providers.ChatMessage {
+	ctxProvider, hasCtxProvider := r.executor.(ToolContextProvider)
+
+	if !batch.concurrent || len(batch.calls) == 1 {
+		msgs := make([]providers.ChatMessage, 0, len(batch.calls))
+		followups := make([]providers.ChatMessage, 0, len(batch.calls))
+		for _, call := range batch.calls {
+			result := r.executeOrAwaitRun(ctx, call)
+			if onResult != nil {
+				onResult(call, result)
+			}
+			msgs = append(msgs, providers.ChatMessage{
+				Role:       "tool",
+				Name:       call.Name,
+				ToolCallID: call.ID,
+				Content:    result,
+			})
+			if hasCtxProvider {
+				if extra := ctxProvider.LastAdditionalContext(); extra != "" {
+					followups = append(followups, providers.ChatMessage{
+						Role:    "user",
+						Content: "[Hook context for " + call.Name + "]: " + extra,
+					})
+				}
+			}
+		}
+		return append(msgs, followups...)
+	}
+
+	runs := make([]*toolRun, len(batch.calls))
+	r.mu.Lock()
+	for i, call := range batch.calls {
+		run := r.runForCallLocked(call)
+		r.startRunLocked(ctx, run, false)
+		runs[i] = run
+	}
+	r.mu.Unlock()
+
+	msgs := make([]providers.ChatMessage, len(batch.calls))
+	for i, call := range batch.calls {
+		result := r.awaitRunResult(ctx, runs[i], call)
+		if onResult != nil {
+			onResult(call, result)
+		}
+		msgs[i] = providers.ChatMessage{
+			Role:       "tool",
+			Name:       call.Name,
+			ToolCallID: call.ID,
+			Content:    result,
+		}
+	}
+	return msgs
+}
+
+func (r *TurnToolRuntime) executeOrAwaitRun(ctx context.Context, call providers.ToolCall) string {
+	r.mu.Lock()
+	run := r.runForCallLocked(call)
+	r.startRunLocked(ctx, run, false)
+	r.mu.Unlock()
+	return r.awaitRunResult(ctx, run, call)
+}
+
+func (r *TurnToolRuntime) runForCallLocked(call providers.ToolCall) *toolRun {
+	if r.byID == nil {
+		r.byID = map[string]*toolRun{}
+	}
+	if call.ID != "" {
+		if run := r.byID[call.ID]; run != nil {
+			return run
+		}
+	}
+	run := &toolRun{
+		call:            call,
+		order:           len(r.runs),
+		finalized:       true,
+		concurrencySafe: toolCanRunConcurrently(r.executor, call.Name),
+		streamSafe:      toolCanStartDuringStreaming(r.executor, call.Name),
+		done:            make(chan struct{}),
+	}
+	r.runs = append(r.runs, run)
+	if call.ID != "" {
+		r.byID[call.ID] = run
+	}
+	return run
+}
+
+func (r *TurnToolRuntime) awaitRunResult(ctx context.Context, run *toolRun, call providers.ToolCall) string {
+	result, err := run.wait(ctx)
+	if err == nil {
+		return result
+	}
+	run.mu.Lock()
+	streamStarted := run.streamStarted
+	run.mu.Unlock()
+	if streamStarted && ctx.Err() == nil {
+		result, err = r.executeDirect(ctx, call)
+		if err == nil {
+			return result
+		}
+	}
+	return errorJSON(err)
+}
+
+func (r *TurnToolRuntime) executeDirect(ctx context.Context, call providers.ToolCall) (string, error) {
+	if r.executor == nil {
+		return "", context.Canceled
+	}
+	select {
+	case r.sem <- struct{}{}:
+		defer func() { <-r.sem }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return r.executor.Execute(ctx, call)
+}
+
+func toolCanRunConcurrently(executor ToolExecutor, name string) bool {
+	if executor == nil {
+		return false
+	}
+	mp, ok := executor.(ToolMetadataProvider)
+	if !ok {
+		return false
+	}
+	meta, found := mp.ToolMetadata(name)
+	return found && meta.ConcurrencySafe
+}
+
+func toolCanStartDuringStreaming(executor ToolExecutor, name string) bool {
+	if executor == nil {
+		return false
+	}
+	mp, ok := executor.(ToolMetadataProvider)
+	if !ok {
+		return false
+	}
+	meta, found := mp.ToolMetadata(name)
+	return found && meta.ReadOnly && meta.ConcurrencySafe
+}
