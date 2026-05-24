@@ -3590,12 +3590,7 @@ export function App(): JSX.Element {
                 }}
               />
             ) : emptyConversation ? (
-              <EmptyConversationHome
-                title={emptyThreadTitle}
-                onOpenProject={() => void chooseProjectFolder()}
-                onCreateProject={() => void createBlankProject()}
-                onSelectNoProject={() => void useNoProject(true)}
-              >
+              <EmptyConversationHome title={emptyThreadTitle}>
                 {renderComposer("hero")}
               </EmptyConversationHome>
             ) : (
@@ -6115,45 +6110,16 @@ function desktopApiErrorMessage(error: unknown, fallback: string): string {
 
 function EmptyConversationHome({
   title,
-  children,
-  onOpenProject,
-  onCreateProject,
-  onSelectNoProject
+  children
 }: {
   title: string;
   children: JSX.Element;
-  onOpenProject: () => void;
-  onCreateProject: () => void;
-  onSelectNoProject: () => void;
 }): JSX.Element {
   return (
     <section className="empty-home">
       <div className="empty-home-inner">
         <h2>{title}</h2>
         {children}
-        <div className="empty-home-actions" aria-label="快速开始">
-          <button type="button" onClick={onOpenProject}>
-            <FolderOpen size={22} />
-            <span>
-              <strong>打开项目</strong>
-              <small>从本地文件夹开始构建</small>
-            </span>
-          </button>
-          <button type="button" onClick={onCreateProject}>
-            <FolderPlus size={22} />
-            <span>
-              <strong>新建空白项目</strong>
-              <small>为新任务准备工作区</small>
-            </span>
-          </button>
-          <button type="button" onClick={onSelectNoProject}>
-            <FolderX size={22} />
-            <span>
-              <strong>临时对话</strong>
-              <small>不绑定项目直接开始</small>
-            </span>
-          </button>
-        </div>
       </div>
     </section>
   );
