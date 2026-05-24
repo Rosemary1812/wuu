@@ -3540,7 +3540,7 @@ button:disabled {
 }
 
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-split-width {
-  padding: 28px clamp(18px, 3vw, 34px) calc(var(--dock-composer-height) + 32px);
+  padding: 28px clamp(18px, 3vw, 34px) 34px;
 }
 
 .split-scroll-region {
@@ -3561,7 +3561,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   background: #fff;
 }
 
@@ -3609,14 +3609,77 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.conversation-split-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .conversation-split-width {
   max-width: none;
   margin: 0;
-  padding: 28px clamp(18px, 3vw, 34px) calc(var(--dock-composer-height) + 32px);
+  padding: 28px clamp(18px, 3vw, 34px) 34px;
 }
 
 .conversation-split-width .message {
   max-width: min(560px, 82%);
+}
+
+.split-composer {
+  flex: 0 0 auto;
+  border-top: 1px solid #ececea;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 10px 14px 12px;
+}
+
+.split-composer-shell {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #deded9;
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px;
+  box-shadow: 0 10px 26px rgba(32, 36, 39, 0.08);
+}
+
+.split-composer textarea {
+  width: 100%;
+  min-height: 48px;
+  max-height: 130px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #202427;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.split-composer textarea::placeholder {
+  color: #9ba0a3;
+}
+
+.split-composer textarea:disabled {
+  cursor: not-allowed;
+  color: #8b9094;
+}
+
+.split-composer-bar {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.split-composer-status {
+  min-width: 0;
+  overflow: hidden;
+  color: #6f7478;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar {

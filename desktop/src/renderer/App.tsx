@@ -143,6 +143,29 @@ type ComposerImage = InputImage & {
   id: string;
 };
 
+type ComposerDraftState = {
+  prompt: string;
+  images: ComposerImage[];
+};
+
+function emptyComposerDraft(): ComposerDraftState {
+  return { prompt: "", images: [] };
+}
+
+function initialSplitComposerDrafts(): Record<ConversationPaneID, ComposerDraftState> {
+  return {
+    primary: emptyComposerDraft(),
+    secondary: emptyComposerDraft()
+  };
+}
+
+function cloneComposerDraft(draft: ComposerDraftState): ComposerDraftState {
+  return {
+    prompt: draft.prompt,
+    images: draft.images.map((image) => ({ ...image }))
+  };
+}
+
 type QueuedComposerMessage = {
   id: string;
   text: string;
@@ -1488,6 +1511,9 @@ export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
   const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+  const [splitComposerDrafts, setSplitComposerDrafts] = useState<Record<ConversationPaneID, ComposerDraftState>>(
+    initialSplitComposerDrafts
+  );
   const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
   const [guideMessages, setGuideMessages] = useState<QueuedComposerMessage[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
@@ -2240,6 +2266,52 @@ export function App(): JSX.Element {
     setComposerImages((current) => current.filter((image) => image.id !== id));
   }
 
+  function updateSplitComposerDraft(
+    pane: ConversationPaneID,
+    update: (draft: ComposerDraftState) => ComposerDraftState
+  ): void {
+    setSplitComposerDrafts((current) => {
+      const draft = current[pane] ?? emptyComposerDraft();
+      return {
+        ...current,
+        [pane]: update(draft)
+      };
+    });
+  }
+
+  function setSplitComposerPrompt(pane: ConversationPaneID, value: string): void {
+    updateSplitComposerDraft(pane, (draft) => ({ ...draft, prompt: value }));
+  }
+
+  async function attachSplitComposerImageFiles(pane: ConversationPaneID, files: File[]): Promise<void> {
+    if (files.length === 0) {
+      return;
+    }
+    try {
+      const images = await Promise.all(files.map((file) => composerImageFromFile(file)));
+      updateSplitComposerDraft(pane, (draft) => ({ ...draft, images: [...draft.images, ...images] }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "图片粘贴失败"
+      }));
+    }
+  }
+
+  function removeSplitComposerImage(pane: ConversationPaneID, id: string): void {
+    updateSplitComposerDraft(pane, (draft) => ({
+      ...draft,
+      images: draft.images.filter((image) => image.id !== id)
+    }));
+  }
+
+  function moveSplitDraftToGlobalComposer(pane: ConversationPaneID): void {
+    const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
+    setPrompt(draft.prompt);
+    setComposerImages(draft.images.map((image) => ({ ...image })));
+    setSplitComposerDrafts(initialSplitComposerDrafts());
+  }
+
   function setQueuedMessagesNow(messages: QueuedComposerMessage[]): void {
     queuedMessagesRef.current = messages;
     setQueuedMessages(messages);
@@ -2433,15 +2505,15 @@ export function App(): JSX.Element {
     );
     const active = state.activePane === pane;
     const closeLabel = pane === "secondary" ? "关闭右侧对话" : "关闭左侧对话";
+    const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
+    const paneRunning = isThreadRunning(thread);
+    const paneReadOnly = Boolean(thread.read_only);
+    const paneStatus = paneReadOnly ? "子任务会话只读" : paneRunning ? "运行中" : active && state.status !== "ready" ? state.status : "";
     return (
       <section
-        ref={(node) => {
-          splitPaneRefs.current[pane] = node;
-        }}
         className={`conversation-split-pane${active ? " active" : ""}`}
         aria-label={pane === "secondary" ? "分叉对话" : "源对话"}
         onPointerDown={() => activateConversationPane(pane)}
-        onScroll={(event) => handleConversationScroll(event.currentTarget)}
       >
         <div className="conversation-split-header">
           <div className="conversation-split-title">
@@ -2452,35 +2524,55 @@ export function App(): JSX.Element {
             <X size={16} />
           </button>
         </div>
-        <div className="conversation-width conversation-split-width">
-          {paneTurns.map((turn) => (
-            <Fragment key={turn.id}>
-              <TurnView
-                turn={turn}
-                cwd={thread.cwd ?? state.activeContext?.cwd}
-                latestAgentMessageID={paneLatestAgentMessageID}
-                onStreamFrame={scheduleStreamScroll}
-                onForkMessage={(turnID, itemID) => void forkThreadFromMessage(thread, turnID, itemID)}
+        <div
+          ref={(node) => {
+            splitPaneRefs.current[pane] = node;
+          }}
+          className="conversation-split-body"
+          onScroll={(event) => handleConversationScroll(event.currentTarget)}
+        >
+          <div className="conversation-width conversation-split-width">
+            {paneTurns.map((turn) => (
+              <Fragment key={turn.id}>
+                <TurnView
+                  turn={turn}
+                  cwd={thread.cwd ?? state.activeContext?.cwd}
+                  latestAgentMessageID={paneLatestAgentMessageID}
+                  onStreamFrame={scheduleStreamScroll}
+                  onForkMessage={(turnID, itemID) => void forkThreadFromMessage(thread, turnID, itemID)}
+                />
+                {paneAnsweredAskRequests
+                  .filter((request) => request.turnID === turn.id)
+                  .map((request) => (
+                    <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
+                  ))}
+              </Fragment>
+            ))}
+            {paneAnsweredWithoutVisibleTurn.map((request) => (
+              <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
+            ))}
+            {paneAskRequest ? (
+              <AskUserMessage
+                key={paneAskRequest.id}
+                request={paneAskRequest}
+                onCancel={(request) => respondToAskRequest(request, { answers: {}, cancelled: true })}
+                onSubmit={(request, answers) => respondToAskRequest(request, { answers })}
               />
-              {paneAnsweredAskRequests
-                .filter((request) => request.turnID === turn.id)
-                .map((request) => (
-                  <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
-                ))}
-            </Fragment>
-          ))}
-          {paneAnsweredWithoutVisibleTurn.map((request) => (
-            <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
-          ))}
-          {paneAskRequest ? (
-            <AskUserMessage
-              key={paneAskRequest.id}
-              request={paneAskRequest}
-              onCancel={(request) => respondToAskRequest(request, { answers: {}, cancelled: true })}
-              onSubmit={(request, answers) => respondToAskRequest(request, { answers })}
-            />
-          ) : null}
+            ) : null}
+          </div>
         </div>
+        <SplitPaneComposer
+          prompt={draft.prompt}
+          setPrompt={(value) => setSplitComposerPrompt(pane, value)}
+          images={draft.images}
+          running={paneRunning || viewSwitchPending}
+          readOnly={paneReadOnly}
+          status={paneStatus}
+          onPasteImageFiles={(files) => void attachSplitComposerImageFiles(pane, files)}
+          onRemoveImage={(id) => removeSplitComposerImage(pane, id)}
+          onSend={() => void sendPromptForPane(pane)}
+          onInterrupt={() => void interruptPane(pane)}
+        />
       </section>
     );
   }
@@ -3175,6 +3267,7 @@ export function App(): JSX.Element {
 
   function closeConversationPane(pane: ConversationPaneID): void {
     clearPendingComposerMessages();
+    moveSplitDraftToGlobalComposer(pane === "secondary" ? "primary" : "secondary");
     setState((current) => {
       if (pane === "secondary") {
         return {
@@ -3221,6 +3314,17 @@ export function App(): JSX.Element {
         "thread/fork did not return a thread"
       );
       conversationAutoFollowRef.current = true;
+      const currentState = appStateRef.current;
+      const sourcePane = currentState.secondaryThread?.id === sourceThread.id ? "secondary" : "primary";
+      const sourceDraft = splitConversation
+        ? cloneComposerDraft(splitComposerDrafts[sourcePane] ?? emptyComposerDraft())
+        : { prompt, images: composerImages.map((image) => ({ ...image })) };
+      setPrompt("");
+      setComposerImages([]);
+      setSplitComposerDrafts({
+        primary: sourceDraft,
+        secondary: emptyComposerDraft()
+      });
       setState((current) => {
         const source =
           current.secondaryThread?.id === sourceThread.id
@@ -3422,6 +3526,94 @@ export function App(): JSX.Element {
     return true;
   }
 
+  async function sendPromptForPane(pane: ConversationPaneID): Promise<void> {
+    if (viewSwitchPending) {
+      return;
+    }
+    const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
+    const message = createComposerMessage(draft.prompt, draft.images);
+    const currentState = appStateRef.current;
+    const targetThread = threadForPane(currentState, pane);
+    if (targetThread?.read_only) {
+      setState((current) => ({ ...current, status: "子任务会话只读" }));
+      return;
+    }
+    if (!message || !targetThread || !currentState.activeContext || !currentState.initialized) {
+      return;
+    }
+    if (isThreadRunning(targetThread)) {
+      setState((current) => ({ ...current, activePane: pane, status: "该分支正在运行" }));
+      return;
+    }
+    setSplitComposerDrafts((current) => ({
+      ...current,
+      [pane]: emptyComposerDraft()
+    }));
+    const sent = await sendComposerMessageToPane(message, pane);
+    if (!sent) {
+      setSplitComposerDrafts((current) => ({
+        ...current,
+        [pane]: {
+          prompt: message.text,
+          images: message.images.map((image) => ({ ...image }))
+        }
+      }));
+    }
+  }
+
+  async function sendComposerMessageToPane(message: QueuedComposerMessage, pane: ConversationPaneID): Promise<boolean> {
+    const currentState = appStateRef.current;
+    const targetThread = threadForPane(currentState, pane);
+    const text = message.text.trim();
+    const images = inputImagesFromComposer(message.images);
+    if (
+      (!text && images.length === 0) ||
+      !targetThread ||
+      targetThread.read_only ||
+      !currentState.activeContext ||
+      !currentState.initialized ||
+      viewSwitchPending ||
+      isThreadRunning(targetThread)
+    ) {
+      return false;
+    }
+    conversationAutoFollowRef.current = true;
+    resetRunDebugEvents({
+      source: "client",
+      method: "client/send",
+      detail: images.length > 0 ? `已提交输入，包含 ${images.length} 张图片` : "已提交输入",
+      tone: "running",
+      threadID: targetThread.id
+    });
+    appStateRef.current = { ...currentState, activePane: pane, running: true, status: "正在发送请求" };
+    setState((current) => ({ ...current, activePane: pane, running: true, status: "正在发送请求" }));
+    try {
+      const result = await window.wuu.startTurn(targetThread.id, text, images);
+      setState((current) =>
+        updateThreadByID({ ...current, activePane: pane }, targetThread.id, (thread) => upsertTurn(thread, result.turn))
+      );
+      appendRunDebugEvent({
+        source: "client",
+        method: "turn/start response",
+        detail: "服务端已接受本轮请求",
+        tone: "running",
+        threadID: targetThread.id,
+        turnID: result.turn.id
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "send failed";
+      appStateRef.current = { ...appStateRef.current, activePane: pane, running: false, status: errorMessage };
+      setState((current) => ({
+        ...current,
+        activePane: pane,
+        running: false,
+        status: errorMessage
+      }));
+      return false;
+    }
+    return true;
+  }
+
   async function drainQueuedMessages(): Promise<void> {
     if (drainingQueueRef.current || queueDrainPausedRef.current) {
       return;
@@ -3588,6 +3780,14 @@ export function App(): JSX.Element {
 
   async function interrupt(): Promise<void> {
     const thread = activeThreadForState(appStateRef.current);
+    if (!thread) {
+      return;
+    }
+    await window.wuu.interruptTurn(thread.id);
+  }
+
+  async function interruptPane(pane: ConversationPaneID): Promise<void> {
+    const thread = threadForPane(appStateRef.current, pane);
     if (!thread) {
       return;
     }
@@ -4028,7 +4228,7 @@ export function App(): JSX.Element {
           />
         )}
 
-        {state.initialized && !previewingLaunch && !emptyConversation && !showingWorkspaceMode
+        {state.initialized && !previewingLaunch && !emptyConversation && !showingWorkspaceMode && !splitConversation
           ? renderComposer("dock")
           : null}
       </main>
@@ -6838,6 +7038,10 @@ function activeThreadForState(state: AppState): Thread | undefined {
   return state.thread;
 }
 
+function threadForPane(state: AppState, pane: ConversationPaneID): Thread | undefined {
+  return pane === "secondary" ? state.secondaryThread : state.thread;
+}
+
 function activeThreadIDForState(state: AppState): string | undefined {
   return activeThreadForState(state)?.id;
 }
@@ -9518,6 +9722,94 @@ function ComposerImageStrip({
         </div>
       ))}
     </div>
+  );
+}
+
+function SplitPaneComposer({
+  prompt,
+  setPrompt,
+  images,
+  running,
+  readOnly,
+  status,
+  onPasteImageFiles,
+  onRemoveImage,
+  onSend,
+  onInterrupt
+}: {
+  prompt: string;
+  setPrompt: (value: string) => void;
+  images: ComposerImage[];
+  running: boolean;
+  readOnly: boolean;
+  status: string;
+  onPasteImageFiles: (files: File[]) => void;
+  onRemoveImage: (id: string) => void;
+  onSend: () => void;
+  onInterrupt: () => void;
+}): JSX.Element {
+  const hasDraft = prompt.trim().length > 0 || images.length > 0;
+  const statusText = status === "ready" ? "" : status;
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
+    if (readOnly || isComposerTextComposing(event)) {
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      onSend();
+    }
+  }
+
+  return (
+    <footer className="split-composer">
+      <div className="split-composer-shell">
+        {images.length > 0 ? <ComposerImageStrip images={images} onRemoveImage={onRemoveImage} /> : null}
+        <textarea
+          value={prompt}
+          placeholder={readOnly ? "子任务会话只读" : images.length > 0 ? "添加描述" : "继续这个分支"}
+          disabled={readOnly}
+          aria-readonly={readOnly}
+          onChange={(event) => setPrompt(event.target.value)}
+          onPaste={(event) => {
+            if (readOnly) {
+              return;
+            }
+            const files = clipboardImageFiles(event);
+            if (files.length === 0) {
+              return;
+            }
+            event.preventDefault();
+            onPasteImageFiles(files);
+          }}
+          onKeyDown={handleKeyDown}
+        />
+        <div className="split-composer-bar">
+          {statusText ? <span className="split-composer-status">{statusText}</span> : <span />}
+          {running ? (
+            <button
+              className="composer-action-button composer-stop-button"
+              type="button"
+              onClick={onInterrupt}
+              aria-label="停止"
+              title="停止"
+            >
+              <Square size={16} />
+            </button>
+          ) : (
+            <button
+              className="composer-action-button composer-send-button"
+              type="button"
+              onClick={onSend}
+              aria-label="发送"
+              disabled={readOnly || !hasDraft}
+            >
+              <Send size={17} />
+            </button>
+          )}
+        </div>
+      </div>
+    </footer>
   );
 }
 
