@@ -111,6 +111,7 @@ type AnsweredAskRequestState = AskRequestState & {
 
 const ASK_USER_OTHER_VALUE = "__wuu_other__";
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
+const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 
 type CodexModelLoadState = {
@@ -1537,6 +1538,7 @@ export function App(): JSX.Element {
   const [workspaceRightPanelWidth, setWorkspaceRightPanelWidth] = useState(initialWorkspaceRightPanelWidth);
   const [resizingRightPanel, setResizingRightPanel] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [collapsingProjectIDs, setCollapsingProjectIDs] = useState<Set<string>>(() => new Set());
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const [codexRuntimeMenu, setCodexRuntimeMenu] = useState<CodexRuntimeMenu>(null);
@@ -1578,6 +1580,7 @@ export function App(): JSX.Element {
   const dockComposerHeightRef = useRef(0);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
+  const projectCollapseTimersRef = useRef(new Map<string, number>());
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
   const windowResizingRef = useRef(false);
   const environmentPanelHasRoomRef = useRef(environmentPanelHasRoom);
@@ -1610,6 +1613,10 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     return () => {
+      for (const timer of projectCollapseTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      projectCollapseTimersRef.current.clear();
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
       }
@@ -2210,16 +2217,52 @@ export function App(): JSX.Element {
     setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
   }
 
+  function clearProjectCollapseTimer(projectID: string): void {
+    const timer = projectCollapseTimersRef.current.get(projectID);
+    if (timer === undefined) {
+      return;
+    }
+    window.clearTimeout(timer);
+    projectCollapseTimersRef.current.delete(projectID);
+  }
+
   function toggleProjectCollapsed(projectID: string): void {
-    setCollapsedProjectIDs((current) => {
-      const next = new Set(current);
-      if (next.has(projectID)) {
+    if (collapsedProjectIDs.has(projectID) || collapsingProjectIDs.has(projectID)) {
+      clearProjectCollapseTimer(projectID);
+      setCollapsedProjectIDs((current) => {
+        if (!current.has(projectID)) {
+          return current;
+        }
+        const next = new Set(current);
         next.delete(projectID);
-      } else {
-        next.add(projectID);
-      }
-      return next;
-    });
+        return next;
+      });
+      setCollapsingProjectIDs((current) => {
+        if (!current.has(projectID)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(projectID);
+        return next;
+      });
+      return;
+    }
+
+    setCollapsingProjectIDs((current) => (current.has(projectID) ? current : new Set(current).add(projectID)));
+    clearProjectCollapseTimer(projectID);
+    const timer = window.setTimeout(() => {
+      projectCollapseTimersRef.current.delete(projectID);
+      setCollapsedProjectIDs((current) => (current.has(projectID) ? current : new Set(current).add(projectID)));
+      setCollapsingProjectIDs((current) => {
+        if (!current.has(projectID)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(projectID);
+        return next;
+      });
+    }, PROJECT_THREAD_COLLAPSE_MS);
+    projectCollapseTimersRef.current.set(projectID, timer);
   }
 
   function ensureWorkspaceToolTab(view: WorkspacePanelView): void {
@@ -4013,6 +4056,7 @@ export function App(): JSX.Element {
             activeID={state.activeProjectId}
             pendingProjectID={visiblePendingProjectID}
             collapsedProjectIDs={collapsedProjectIDs}
+            collapsingProjectIDs={collapsingProjectIDs}
             threads={state.threads}
             activeThreadID={activeThreadID}
             pendingThreadID={visiblePendingThreadID}
@@ -7312,6 +7356,7 @@ function ProjectList({
   activeID,
   pendingProjectID,
   collapsedProjectIDs,
+  collapsingProjectIDs,
   threads,
   activeThreadID,
   pendingThreadID,
@@ -7330,6 +7375,7 @@ function ProjectList({
   activeID?: string;
   pendingProjectID?: string;
   collapsedProjectIDs: Set<string>;
+  collapsingProjectIDs: Set<string>;
   threads: Thread[];
   activeThreadID?: string;
   pendingThreadID?: string;
@@ -7349,7 +7395,10 @@ function ProjectList({
       {projects.map((project) => {
         const pendingProject = pendingProjectID === project.id;
         const activeProject = project.id === activeID;
-        const expanded = activeProject && !collapsedProjectIDs.has(project.id);
+        const collapsed = collapsedProjectIDs.has(project.id);
+        const collapsing = collapsingProjectIDs.has(project.id);
+        const expanded = activeProject && !collapsed && !collapsing;
+        const threadListMounted = activeProject && (!collapsed || collapsing);
         const projectRowClassName = `project-row ${activeProject ? "active" : ""}${expanded ? " expanded" : ""}${
           pendingProject ? " pending-switch" : ""
         }`;
@@ -7378,19 +7427,21 @@ function ProjectList({
             >
               <MessageSquarePlus size={15} />
             </button>
-            {expanded ? (
-              <ThreadList
-                threads={threads}
-                activeID={activeThreadID}
-                pendingThreadID={pendingThreadID}
-                pendingAskThreadIDs={pendingAskThreadIDs}
-                archiveConfirmThreadID={archiveConfirmThreadID}
-                onSelect={onSelectThread}
-                onSelectChildAgent={onSelectChildAgent}
-                onTogglePinned={onToggleThreadPinned}
-                onArchive={onArchiveThread}
-                onClearArchiveConfirm={onClearArchiveConfirm}
-              />
+            {threadListMounted ? (
+              <div className={`thread-list-collapse${collapsing ? " closing" : ""}`} aria-hidden={collapsing || undefined}>
+                <ThreadList
+                  threads={threads}
+                  activeID={activeThreadID}
+                  pendingThreadID={pendingThreadID}
+                  pendingAskThreadIDs={pendingAskThreadIDs}
+                  archiveConfirmThreadID={archiveConfirmThreadID}
+                  onSelect={onSelectThread}
+                  onSelectChildAgent={onSelectChildAgent}
+                  onTogglePinned={onToggleThreadPinned}
+                  onArchive={onArchiveThread}
+                  onClearArchiveConfirm={onClearArchiveConfirm}
+                />
+              </div>
             ) : null}
           </div>
         );
