@@ -121,6 +121,16 @@ import {
 import { createAgentTreeDemo, createConversationFixture, type ConversationFixtureKind } from "./ConversationFixtures";
 import { RichContent } from "./RichContent";
 import { RuntimeLoading, ViewSwitchLoading } from "./LoadingViews";
+import {
+  codexEffortLabel,
+  codexEffortOptions,
+  displayCodexModelName,
+  humanizeBranchTitle,
+  isCodexProvider,
+  normalizedEffortForModel,
+  pullRequestUnavailableReason,
+  shortCodexModelLabel
+} from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { SettingsView } from "./SettingsView";
 import { StreamingMarkdown } from "./StreamingMarkdown";
@@ -481,66 +491,6 @@ function isInsideFloatingMenu(target: Node, owner: FloatingMenuOwner): boolean {
   return Boolean(element?.closest(`[data-floating-menu-owner="${owner}"]`));
 }
 
-function isCodexProvider(initialized: InitializeResult): boolean {
-  const summary = initialized.providers?.find((provider) => provider.name === initialized.provider);
-  const type = (summary?.type ?? initialized.provider).trim().toLowerCase().replaceAll("_", "-");
-  return type === "openai-codex" || type === "codex-subscription" || type === "chatgpt-codex";
-}
-
-function displayCodexModelName(model?: CodexModelSummary): string {
-  return model?.display_name || model?.slug || "GPT";
-}
-
-function shortCodexModelLabel(model: string): string {
-  return model.replace(/^gpt-/i, "");
-}
-
-function codexEffortLabel(effort: string): string {
-  switch (effort) {
-    case "":
-      return "智能";
-    case "none":
-      return "无";
-    case "minimal":
-      return "最少";
-    case "low":
-      return "低";
-    case "medium":
-      return "中";
-    case "high":
-      return "高";
-    case "xhigh":
-    case "max":
-      return "超高";
-    default:
-      return effort;
-  }
-}
-
-function codexEffortOptions(model: CodexModelSummary | undefined, currentEffort: string): string[] {
-  const defaults = ["low", "medium", "high", "xhigh"];
-  const supported = (model?.supported_reasoning?.length ? model.supported_reasoning : defaults).filter(Boolean);
-  const options = ["", ...supported];
-  if (currentEffort && !options.includes(currentEffort)) {
-    options.push(currentEffort);
-  }
-  return options;
-}
-
-function normalizedEffortForModel(currentEffort: string, model: CodexModelSummary): string {
-  if (currentEffort === "") {
-    return "";
-  }
-  const supported = model.supported_reasoning ?? [];
-  if (supported.length === 0 || supported.includes(currentEffort)) {
-    return currentEffort;
-  }
-  if (model.default_reasoning_level && supported.includes(model.default_reasoning_level)) {
-    return model.default_reasoning_level;
-  }
-  return supported[0] ?? "";
-}
-
 function buildEnvironmentSourceItems({
   activeContext,
   activeProject,
@@ -606,33 +556,6 @@ function buildEnvironmentSourceItems({
     });
   }
   return items;
-}
-
-function pullRequestUnavailableReason(gitStatus?: GitStatusResult): string {
-  if (!gitStatus?.is_repo) {
-    return "不是 Git 仓库";
-  }
-  if (!gitStatus.gh_available) {
-    return "未安装 GitHub CLI";
-  }
-  if (gitStatus.detached || !gitStatus.branch) {
-    return "需要具名分支";
-  }
-  if (gitStatus.default_branch && gitStatus.branch === gitStatus.default_branch) {
-    return "先创建功能分支";
-  }
-  if (gitStatus.dirty_count > 0) {
-    return "先提交本地更改";
-  }
-  return "";
-}
-
-function humanizeBranchTitle(branch: string): string {
-  return branch
-    .split(/[/-]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 export function App(): JSX.Element {
