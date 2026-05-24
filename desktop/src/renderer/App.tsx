@@ -7438,7 +7438,7 @@ function ThreadItemView({
         <div className={`message user-message${copyable ? " copyable-message" : ""}`}>
           {item.images?.length ? <MessageImageGrid images={item.images} /> : null}
           {text ? <RichContent text={text} cwd={cwd} /> : null}
-          {copyable ? <MessageCopyButton getText={() => text} /> : null}
+          {copyable ? <MessageCopyButton getText={() => text} className="message-action-button" iconSize={15} /> : null}
         </div>
       );
     }

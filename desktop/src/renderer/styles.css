@@ -3514,7 +3514,7 @@ button:disabled {
 }
 
 .copyable-message.user-message {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .message-copy-button {
@@ -3576,7 +3576,7 @@ button:disabled {
 
 .copyable-message .message-copy-button {
   position: absolute;
-  top: calc(100% + 9px);
+  top: calc(100% + 8px);
   right: 10px;
   z-index: 1;
 }
