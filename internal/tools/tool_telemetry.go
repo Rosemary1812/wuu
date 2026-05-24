@@ -53,7 +53,7 @@ func (t *Toolkit) ToolTelemetry() []ToolExecutionRecord {
 }
 
 func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall, tool Tool) (string, error) {
-	info := buildToolInfo(tool, t.toolExposure(call.Name))
+	info := buildToolInfoForArgs(tool, t.toolExposure(call.Name), call.Arguments)
 	decision := t.toolPolicy.Decide(info)
 	startedAt := time.Now()
 

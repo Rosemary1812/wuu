@@ -43,10 +43,13 @@ type ToolInfo struct {
 	Risk            ToolRisk     `json:"risk"`
 	ReadOnly        bool         `json:"read_only"`
 	ConcurrencySafe bool         `json:"concurrency_safe"`
+	Destructive     bool         `json:"destructive"`
+	Reason          string       `json:"reason,omitempty"`
 }
 
 // ToolInfo returns metadata for a known tool. Disabled tools still return
-// metadata, but with hidden exposure.
+// metadata, but with hidden exposure. This is the default classification for
+// the tool without call arguments; use ToolMetadata for call-specific behavior.
 func (t *Toolkit) ToolInfo(name string) (ToolInfo, bool) {
 	tool := t.LookupTool(name)
 	if tool == nil {
@@ -66,14 +69,21 @@ func (t *Toolkit) ToolInfos() []ToolInfo {
 }
 
 func buildToolInfo(tool Tool, exposure ToolExposure) ToolInfo {
+	return buildToolInfoForArgs(tool, exposure, "")
+}
+
+func buildToolInfoForArgs(tool Tool, exposure ToolExposure, argsJSON string) ToolInfo {
 	kind := classifyToolKind(tool.Name())
+	classification := classifyToolCall(tool, kind, argsJSON)
 	return ToolInfo{
 		Name:            tool.Name(),
 		Kind:            kind,
 		Exposure:        exposure,
-		Risk:            classifyToolRisk(tool.Name(), kind, tool.IsReadOnly()),
-		ReadOnly:        tool.IsReadOnly(),
-		ConcurrencySafe: tool.IsConcurrencySafe(),
+		Risk:            classification.Risk,
+		ReadOnly:        classification.ReadOnly,
+		ConcurrencySafe: classification.ConcurrencySafe,
+		Destructive:     classification.Destructive,
+		Reason:          classification.Reason,
 	}
 }
 

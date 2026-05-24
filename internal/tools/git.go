@@ -40,6 +40,11 @@ type fileEntry struct {
 	Status string `json:"status"`
 }
 
+type gitInvocation struct {
+	Subcommand string
+	Args       []string
+}
+
 // ── subcommand whitelists ───────────────────────────────────────────
 
 // allowedGitSubcommands is the whitelist of git subcommands that need
@@ -70,14 +75,14 @@ var allowedGitSubcommands = map[string]bool{
 
 // policiedSubcommands require flag-level validation via subcommandPolicy.
 var policiedSubcommands = map[string]*subcommandPolicy{
-	"branch":        branchPolicy,
-	"tag":           tagPolicy,
-	"remote":        remotePolicy,
-	"remote show":   remoteShowPolicy,
+	"branch":           branchPolicy,
+	"tag":              tagPolicy,
+	"remote":           remotePolicy,
+	"remote show":      remoteShowPolicy,
 	"config --get":     configGetPolicy,
 	"config --get-all": configGetPolicy,
 	"config --list":    configListPolicy,
-	"status":        statusPolicy,
+	"status":           statusPolicy,
 }
 
 // ── policy definitions (ported from CC readOnlyCommandValidation.ts) ─
@@ -95,7 +100,7 @@ var branchPolicy = &subcommandPolicy{
 		"--merged": flagNone, "--no-merged": flagNone,
 		"--points-at": flagString, "--sort": flagString,
 		"--show-current": flagNone,
-		"-i": flagNone, "--ignore-case": flagNone,
+		"-i":             flagNone, "--ignore-case": flagNone,
 	},
 	isDangerous: branchIsDangerous,
 }
@@ -103,13 +108,13 @@ var branchPolicy = &subcommandPolicy{
 var tagPolicy = &subcommandPolicy{
 	safeFlags: map[string]flagArgType{
 		"-l": flagNone, "--list": flagNone,
-		"-n":            flagNumber,
-		"--contains":    flagString, "--no-contains": flagString,
-		"--merged":      flagString, "--no-merged": flagString,
-		"--sort":        flagString, "--format": flagString,
-		"--points-at":   flagString,
-		"--column":      flagNone, "--no-column": flagNone,
-		"-i":            flagNone, "--ignore-case": flagNone,
+		"-n":         flagNumber,
+		"--contains": flagString, "--no-contains": flagString,
+		"--merged": flagString, "--no-merged": flagString,
+		"--sort": flagString, "--format": flagString,
+		"--points-at": flagString,
+		"--column":    flagNone, "--no-column": flagNone,
+		"-i": flagNone, "--ignore-case": flagNone,
 	},
 	isDangerous: tagIsDangerous,
 }
@@ -155,7 +160,7 @@ var configGetPolicy = &subcommandPolicy{
 		"--bool": flagNone, "--int": flagNone,
 		"--bool-or-int": flagNone, "--path": flagNone,
 		"--expiry-date": flagNone,
-		"-z": flagNone, "--null": flagNone,
+		"-z":            flagNone, "--null": flagNone,
 		"--name-only": flagNone, "--show-origin": flagNone,
 		"--show-scope": flagNone,
 	},
@@ -170,7 +175,7 @@ var configListPolicy = &subcommandPolicy{
 		"--bool": flagNone, "--int": flagNone,
 		"--bool-or-int": flagNone, "--path": flagNone,
 		"--expiry-date": flagNone,
-		"-z": flagNone, "--null": flagNone,
+		"-z":            flagNone, "--null": flagNone,
 		"--name-only": flagNone, "--show-origin": flagNone,
 		"--show-scope": flagNone,
 	},
@@ -190,12 +195,12 @@ var statusPolicy = &subcommandPolicy{
 		"--short": flagNone, "-s": flagNone,
 		"--branch": flagNone, "-b": flagNone,
 		"--porcelain": flagNone,
-		"--long": flagNone,
-		"--verbose": flagNone, "-v": flagNone,
+		"--long":      flagNone,
+		"--verbose":   flagNone, "-v": flagNone,
 		"--untracked-files": flagString, "-u": flagString,
 		"--ignored":           flagNone,
 		"--ignore-submodules": flagString,
-		"--column": flagNone, "--no-column": flagNone,
+		"--column":            flagNone, "--no-column": flagNone,
 		"--ahead-behind": flagNone, "--no-ahead-behind": flagNone,
 		"--renames": flagNone, "--no-renames": flagNone,
 		"--find-renames": flagString, "-M": flagString,
@@ -424,15 +429,40 @@ var blockedCommitFlags = map[string]bool{
 }
 
 func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) {
+	invocation, err := parseGitInvocation(argsJSON)
+	if err != nil {
+		return "", err
+	}
+
+	// Structured output for git status.
+	if invocation.Subcommand == "status" {
+		return gitStatus(env, ctx, invocation.Args)
+	}
+
+	subcmdParts := strings.Fields(invocation.Subcommand)
+	gitArgs := append([]string{"--no-optional-locks"}, subcmdParts...)
+	gitArgs = append(gitArgs, invocation.Args...)
+	if invocation.Subcommand == "push" {
+		normalized, err := normalizePushArgs(env, ctx, invocation.Args)
+		if err != nil {
+			return "", err
+		}
+		gitArgs = append([]string{"--no-optional-locks", "push"}, normalized...)
+	}
+
+	return runGit(env, ctx, invocation.Subcommand, gitArgs)
+}
+
+func parseGitInvocation(argsJSON string) (gitInvocation, error) {
 	var args struct {
 		Subcommand string   `json:"subcommand"`
 		Args       []string `json:"args"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
+		return gitInvocation{}, err
 	}
 	if strings.TrimSpace(args.Subcommand) == "" {
-		return "", errors.New("git requires subcommand")
+		return gitInvocation{}, errors.New("git requires subcommand")
 	}
 
 	subcmd := strings.TrimSpace(args.Subcommand)
@@ -450,39 +480,23 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	// Run global arg checks (blocked prefixes + shell metacharacters)
 	// regardless of which path we take.
 	if err := validateGlobalGitArgs(subcmd, remainingArgs); err != nil {
-		return "", err
+		return gitInvocation{}, err
 	}
 
 	// Dispatch: policied → flag-level validation, allowed → legacy validation.
 	if policy := policiedSubcommands[subcmd]; policy != nil {
 		if err := validateSubcommandFlags(subcmd, policy, remainingArgs); err != nil {
-			return "", err
+			return gitInvocation{}, err
 		}
 	} else if allowedGitSubcommands[subcmd] {
 		if err := validateGitArgs(subcmd, remainingArgs); err != nil {
-			return "", err
+			return gitInvocation{}, err
 		}
 	} else {
-		return "", fmt.Errorf("git subcommand %q is not allowed in restricted mode", args.Subcommand)
+		return gitInvocation{}, fmt.Errorf("git subcommand %q is not allowed in restricted mode", args.Subcommand)
 	}
 
-	// Structured output for git status.
-	if subcmd == "status" {
-		return gitStatus(env, ctx, remainingArgs)
-	}
-
-	subcmdParts := strings.Fields(subcmd)
-	gitArgs := append([]string{"--no-optional-locks"}, subcmdParts...)
-	gitArgs = append(gitArgs, remainingArgs...)
-	if subcmd == "push" {
-		normalized, err := normalizePushArgs(env, ctx, remainingArgs)
-		if err != nil {
-			return "", err
-		}
-		gitArgs = append([]string{"--no-optional-locks", "push"}, normalized...)
-	}
-
-	return runGit(env, ctx, subcmd, gitArgs)
+	return gitInvocation{Subcommand: subcmd, Args: remainingArgs}, nil
 }
 
 // runGit executes a git command and returns the standard JSON envelope.

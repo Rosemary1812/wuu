@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -23,6 +24,34 @@ func NewShellTool(env *Env) *ShellTool { return &ShellTool{env: env} }
 func (t *ShellTool) Name() string            { return "run_shell" }
 func (t *ShellTool) IsReadOnly() bool        { return false }
 func (t *ShellTool) IsConcurrencySafe() bool { return false }
+
+func (t *ShellTool) Classify(argsJSON string) ToolClassification {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Risk:            ToolRiskHigh,
+			Reason:          "invalid shell invocation",
+		}
+	}
+	if shellCommandLooksReadOnly(args.Command) {
+		return ToolClassification{
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+			Risk:            ToolRiskLow,
+			Reason:          "simple read-only shell command",
+		}
+	}
+	return ToolClassification{
+		ReadOnly:        false,
+		ConcurrencySafe: false,
+		Risk:            ToolRiskHigh,
+		Reason:          "shell command is not proven read-only",
+	}
+}
 
 func (t *ShellTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -132,4 +161,55 @@ func tailString(value string, maxBytes int) (string, bool) {
 		return value, false
 	}
 	return stringutil.HeadTail(value, 0, maxBytes, ""), true
+}
+
+func shellCommandLooksReadOnly(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	if strings.ContainsAny(command, "\n;&|><`$()") {
+		return false
+	}
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return false
+	}
+	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
+		fields = fields[1:]
+	}
+	if len(fields) == 0 {
+		return false
+	}
+	switch fields[0] {
+	case "pwd", "ls", "cat", "head", "tail", "wc", "file", "stat", "du",
+		"rg", "grep":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeEnvAssignment(value string) bool {
+	idx := strings.IndexByte(value, '=')
+	if idx <= 0 {
+		return false
+	}
+	name := value[:idx]
+	for i, r := range name {
+		if r == '_' {
+			continue
+		}
+		if i == 0 {
+			if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')) {
+				return false
+			}
+			continue
+		}
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }

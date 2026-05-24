@@ -33,8 +33,8 @@ func (f *runtimeTestTools) Definitions() []providers.ToolDefinition {
 	}
 }
 
-func (f *runtimeTestTools) ToolMetadata(name string) (ToolMetadata, bool) {
-	meta, ok := f.metadata[name]
+func (f *runtimeTestTools) ToolMetadata(call providers.ToolCall) (ToolMetadata, bool) {
+	meta, ok := f.metadata[call.Name]
 	return meta, ok
 }
 
@@ -74,7 +74,7 @@ func (f *cancelAwareRuntimeTools) Definitions() []providers.ToolDefinition {
 	return []providers.ToolDefinition{{Name: "read_file"}}
 }
 
-func (f *cancelAwareRuntimeTools) ToolMetadata(_ string) (ToolMetadata, bool) {
+func (f *cancelAwareRuntimeTools) ToolMetadata(_ providers.ToolCall) (ToolMetadata, bool) {
 	return ToolMetadata{ReadOnly: true, ConcurrencySafe: true}, true
 }
 

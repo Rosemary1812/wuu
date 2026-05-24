@@ -14,8 +14,55 @@ type GitTool struct{ env *Env }
 func NewGitTool(env *Env) *GitTool { return &GitTool{env: env} }
 
 func (t *GitTool) Name() string            { return "git" }
-func (t *GitTool) IsReadOnly() bool         { return false } // commit, push are writes
-func (t *GitTool) IsConcurrencySafe() bool  { return false }
+func (t *GitTool) IsReadOnly() bool        { return false } // commit, push are writes
+func (t *GitTool) IsConcurrencySafe() bool { return false }
+
+func (t *GitTool) Classify(argsJSON string) ToolClassification {
+	invocation, err := parseGitInvocation(argsJSON)
+	if err != nil {
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Destructive:     false,
+			Risk:            ToolRiskHigh,
+			Reason:          "invalid restricted git invocation",
+		}
+	}
+	switch invocation.Subcommand {
+	case "commit":
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Destructive:     false,
+			Risk:            ToolRiskHigh,
+			Reason:          "git commit writes local repository state",
+		}
+	case "push":
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Destructive:     true,
+			Risk:            ToolRiskHigh,
+			Reason:          "git push writes remote repository state",
+		}
+	case "ls-remote":
+		return ToolClassification{
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+			Destructive:     false,
+			Risk:            ToolRiskMedium,
+			Reason:          "git ls-remote is read-only but may contact a remote",
+		}
+	default:
+		return ToolClassification{
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+			Destructive:     false,
+			Risk:            ToolRiskLow,
+			Reason:          "restricted git read-only command",
+		}
+	}
+}
 
 func (t *GitTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{

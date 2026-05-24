@@ -99,7 +99,7 @@ func (f *delayedConcurrentTools) Definitions() []providers.ToolDefinition {
 	return []providers.ToolDefinition{{Name: "read_file"}}
 }
 
-func (f *delayedConcurrentTools) ToolMetadata(_ string) (ToolMetadata, bool) {
+func (f *delayedConcurrentTools) ToolMetadata(_ providers.ToolCall) (ToolMetadata, bool) {
 	return ToolMetadata{ReadOnly: true, ConcurrencySafe: true}, true
 }
 
@@ -135,8 +135,43 @@ func (f *delayedConcurrentTools) completedOrder() []string {
 	return out
 }
 
+type argumentAwareMetadataTools struct{}
+
+func (argumentAwareMetadataTools) Definitions() []providers.ToolDefinition { return nil }
+func (argumentAwareMetadataTools) Execute(context.Context, providers.ToolCall) (string, error) {
+	return `{"ok":true}`, nil
+}
+func (argumentAwareMetadataTools) ToolMetadata(call providers.ToolCall) (ToolMetadata, bool) {
+	if strings.Contains(call.Arguments, "safe") {
+		return ToolMetadata{ReadOnly: true, ConcurrencySafe: true}, true
+	}
+	return ToolMetadata{ReadOnly: false, ConcurrencySafe: false}, true
+}
+
 func userMsg(content string) providers.ChatMessage {
 	return providers.ChatMessage{Role: "user", Content: content}
+}
+
+func TestPartitionToolCallsUsesCallArguments(t *testing.T) {
+	calls := []providers.ToolCall{
+		{ID: "safe_1", Name: "run_shell", Arguments: `{"kind":"safe"}`},
+		{ID: "unsafe", Name: "run_shell", Arguments: `{"kind":"write"}`},
+		{ID: "safe_2", Name: "run_shell", Arguments: `{"kind":"safe"}`},
+	}
+
+	batches := partitionToolCalls(argumentAwareMetadataTools{}, calls)
+	if len(batches) != 3 {
+		t.Fatalf("expected 3 batches, got %+v", batches)
+	}
+	if !batches[0].concurrent || batches[0].calls[0].ID != "safe_1" {
+		t.Fatalf("first call should be concurrent based on arguments, got %+v", batches[0])
+	}
+	if batches[1].concurrent || batches[1].calls[0].ID != "unsafe" {
+		t.Fatalf("second call should be serial based on arguments, got %+v", batches[1])
+	}
+	if !batches[2].concurrent || batches[2].calls[0].ID != "safe_2" {
+		t.Fatalf("third call should be concurrent based on arguments, got %+v", batches[2])
+	}
 }
 
 func TestRunToolLoop_SimpleAnswer(t *testing.T) {

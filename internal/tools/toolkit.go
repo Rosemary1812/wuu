@@ -354,16 +354,18 @@ func (t *Toolkit) LookupTool(name string) Tool {
 // ToolMetadata implements agent.ToolMetadataProvider so the loop can
 // partition tool calls into concurrent (read-only) and serial (write)
 // batches without importing the tools package.
-func (t *Toolkit) ToolMetadata(name string) (agent.ToolMetadata, bool) {
-	tool := t.LookupTool(name)
+func (t *Toolkit) ToolMetadata(call providers.ToolCall) (agent.ToolMetadata, bool) {
+	tool := t.LookupTool(call.Name)
 	if tool == nil {
 		return agent.ToolMetadata{}, false
 	}
-	info := buildToolInfo(tool, t.toolExposure(name))
+	info := buildToolInfoForArgs(tool, t.toolExposure(call.Name), call.Arguments)
 	return agent.ToolMetadata{
 		ReadOnly:        info.ReadOnly,
 		ConcurrencySafe: info.ConcurrencySafe,
+		Destructive:     info.Destructive,
 		Risk:            string(info.Risk),
+		Reason:          info.Reason,
 	}, true
 }
 

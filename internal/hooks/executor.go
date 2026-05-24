@@ -25,11 +25,11 @@ type ToolExecutor interface {
 // hooks. The agent loop injects this into the conversation so the model
 // sees hook-provided context alongside the tool result.
 type HookedExecutor struct {
-	inner              ToolExecutor
-	dispatcher         *Dispatcher
-	sessionID          string
-	cwd                string
-	lastAdditionalCtx  string // populated by PostToolUse hooks
+	inner             ToolExecutor
+	dispatcher        *Dispatcher
+	sessionID         string
+	cwd               string
+	lastAdditionalCtx string // populated by PostToolUse hooks
 }
 
 // NewHookedExecutor wraps inner with hook dispatch.
@@ -50,9 +50,9 @@ func (h *HookedExecutor) Definitions() []providers.ToolDefinition {
 // ToolMetadata forwards to the inner executor if it implements
 // agent.ToolMetadataProvider, so the loop's concurrency partitioning
 // works through the hook layer.
-func (h *HookedExecutor) ToolMetadata(name string) (agent.ToolMetadata, bool) {
+func (h *HookedExecutor) ToolMetadata(call providers.ToolCall) (agent.ToolMetadata, bool) {
 	if mp, ok := h.inner.(agent.ToolMetadataProvider); ok {
-		return mp.ToolMetadata(name)
+		return mp.ToolMetadata(call)
 	}
 	return agent.ToolMetadata{}, false
 }

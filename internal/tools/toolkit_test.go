@@ -572,6 +572,77 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolMetadata_ClassifiesGitByInput(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	meta, ok := kit.ToolMetadata(providers.ToolCall{
+		Name:      "git",
+		Arguments: `{"subcommand":"status"}`,
+	})
+	if !ok {
+		t.Fatal("git metadata not found")
+	}
+	if !meta.ReadOnly || !meta.ConcurrencySafe || meta.Risk != string(ToolRiskLow) {
+		t.Fatalf("git status metadata = %+v, want read-only low-risk concurrent", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "git",
+		Arguments: `{"subcommand":"push"}`,
+	})
+	if !ok {
+		t.Fatal("git metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || !meta.Destructive || meta.Risk != string(ToolRiskHigh) {
+		t.Fatalf("git push metadata = %+v, want destructive high-risk serial", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "git",
+		Arguments: `{"subcommand":"branch","args":["new-branch"]}`,
+	})
+	if !ok {
+		t.Fatal("git metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) {
+		t.Fatalf("invalid git branch metadata = %+v, want conservative high-risk serial", meta)
+	}
+}
+
+func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	meta, ok := kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"ls -la"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if !meta.ReadOnly || !meta.ConcurrencySafe || meta.Risk != string(ToolRiskLow) {
+		t.Fatalf("ls metadata = %+v, want read-only low-risk concurrent", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"echo hi > out.txt"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) {
+		t.Fatalf("redirecting shell metadata = %+v, want high-risk serial", meta)
+	}
+}
+
 func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -843,6 +914,36 @@ func TestToolkit_ToolPolicy_ToolOverrideBeatsRisk(t *testing.T) {
 	}
 	if records[0].PolicyAction != ToolPolicyAllow || !records[0].Success {
 		t.Fatalf("unexpected policy record: %+v", records[0])
+	}
+}
+
+func TestToolkit_ToolPolicy_UsesInputClassification(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetToolPolicy(ToolPolicy{
+		RiskActions: map[ToolRisk]ToolPolicyAction{
+			ToolRiskHigh: ToolPolicyDeny,
+		},
+	})
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-pwd",
+		Name:      "run_shell",
+		Arguments: `{"command":"pwd"}`,
+	}); err != nil {
+		t.Fatalf("read-only shell command should not be denied as high risk: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-write",
+		Name:      "run_shell",
+		Arguments: `{"command":"echo hi > out.txt"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "denied by policy") {
+		t.Fatalf("write-like shell command should be denied by high-risk policy, got %v", err)
 	}
 }
 

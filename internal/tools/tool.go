@@ -36,6 +36,39 @@ type Tool interface {
 	IsConcurrencySafe() bool
 }
 
+// ToolClassification describes the expected behavior of one concrete tool
+// invocation. Static Tool methods are the fallback; tools with argument-driven
+// behavior can implement InputClassifyingTool.
+type ToolClassification struct {
+	ReadOnly        bool
+	ConcurrencySafe bool
+	Destructive     bool
+	Risk            ToolRisk
+	Reason          string
+}
+
+// InputClassifyingTool lets tools classify a specific call from its JSON
+// arguments. This mirrors Claude Code's input-aware isReadOnly /
+// isConcurrencySafe methods while preserving Go's simple Tool interface.
+type InputClassifyingTool interface {
+	Classify(argsJSON string) ToolClassification
+}
+
+func classifyToolCall(tool Tool, kind ToolKind, argsJSON string) ToolClassification {
+	classification := ToolClassification{
+		ReadOnly:        tool.IsReadOnly(),
+		ConcurrencySafe: tool.IsConcurrencySafe(),
+		Risk:            classifyToolRisk(tool.Name(), kind, tool.IsReadOnly()),
+	}
+	if classifier, ok := tool.(InputClassifyingTool); ok {
+		classification = classifier.Classify(argsJSON)
+		if classification.Risk == "" {
+			classification.Risk = classifyToolRisk(tool.Name(), kind, classification.ReadOnly)
+		}
+	}
+	return classification
+}
+
 // Registry holds the set of available tools and provides name-based
 // lookup. It replaces the old switch-case dispatch in Toolkit.Execute.
 //

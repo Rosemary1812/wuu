@@ -19,7 +19,9 @@ type ToolExecutor interface {
 type ToolMetadata struct {
 	ReadOnly        bool
 	ConcurrencySafe bool
+	Destructive     bool
 	Risk            string
+	Reason          string
 }
 
 // ToolMetadataProvider is an optional interface a ToolExecutor can
@@ -28,7 +30,7 @@ type ToolMetadata struct {
 // run concurrently, write tools run serially. Aligned with Claude
 // Code's partitionToolCalls / runToolsConcurrently architecture.
 type ToolMetadataProvider interface {
-	ToolMetadata(name string) (ToolMetadata, bool)
+	ToolMetadata(call providers.ToolCall) (ToolMetadata, bool)
 }
 
 // ToolContextProvider is an optional interface a ToolExecutor can
