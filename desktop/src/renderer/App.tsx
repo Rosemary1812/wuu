@@ -148,7 +148,8 @@ import { WorkspaceDiffReview } from "./WorkspaceReviewPanels";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
-const SIDEBAR_MOTION_MS = 180;
+const SIDEBAR_MOTION_MS = 280;
+const RIGHT_PANEL_MOTION_MS = 280;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 
@@ -418,6 +419,7 @@ export function App(): JSX.Element {
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelAnimating, setRightPanelAnimating] = useState(false);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
   const [workspaceToolTabs, setWorkspaceToolTabs] = useState<WorkspacePanelView[]>([]);
   const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
@@ -450,6 +452,7 @@ export function App(): JSX.Element {
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const projectCollapseTimersRef = useRef(new Map<string, number>());
   const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
+  const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
   const windowResizingRef = useRef(false);
   const environmentPanelHasRoomRef = useRef(environmentPanelHasRoom);
@@ -488,6 +491,9 @@ export function App(): JSX.Element {
       projectCollapseTimersRef.current.clear();
       if (sidebarMotionTimerRef.current !== undefined) {
         window.clearTimeout(sidebarMotionTimerRef.current);
+      }
+      if (rightPanelMotionTimerRef.current !== undefined) {
+        window.clearTimeout(rightPanelMotionTimerRef.current);
       }
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
@@ -873,13 +879,14 @@ export function App(): JSX.Element {
   const environmentPanelMotionState: EnvironmentPanelMotionState = environmentPanelVisible ? "open" : "closing";
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     sidebarAnimating ? " sidebar-animating" : ""
-  }${resizingSidebar ? " resizing-sidebar" : ""}${resizingRightPanel ? " resizing-right-panel" : ""}${
-    rightPanelOpen ? " right-panel-open" : ""
-  }${bottomPanelOpen ? " bottom-panel-open" : ""}`;
+  }${rightPanelAnimating ? " right-panel-animating" : ""}${resizingSidebar ? " resizing-sidebar" : ""}${
+    resizingRightPanel ? " resizing-right-panel" : ""
+  }${rightPanelOpen ? " right-panel-open" : ""}${bottomPanelOpen ? " bottom-panel-open" : ""}`;
   const shellStyle = {
     "--sidebar-width": `${effectiveSidebarWidth}px`,
     "--sidebar-open-width": `${sidebarWidth}px`,
     "--sidebar-motion-duration": `${SIDEBAR_MOTION_MS}ms`,
+    "--workspace-panel-motion-duration": `${RIGHT_PANEL_MOTION_MS}ms`,
     "--workspace-right-panel-width": `${clampedWorkspaceRightPanelWidth}px`,
     "--environment-panel-width": "328px",
     "--environment-panel-reserved-width": "372px",
@@ -992,6 +999,24 @@ export function App(): JSX.Element {
       sidebarMotionTimerRef.current = undefined;
       setSidebarAnimating(false);
     }, SIDEBAR_MOTION_MS);
+  }
+
+  function startRightPanelMotion(): void {
+    if (rightPanelMotionTimerRef.current !== undefined) {
+      window.clearTimeout(rightPanelMotionTimerRef.current);
+    }
+    setRightPanelAnimating(true);
+    rightPanelMotionTimerRef.current = window.setTimeout(() => {
+      rightPanelMotionTimerRef.current = undefined;
+      setRightPanelAnimating(false);
+    }, RIGHT_PANEL_MOTION_MS);
+  }
+
+  function setRightPanelOpenWithMotion(open: boolean): void {
+    if (rightPanelOpen !== open) {
+      startRightPanelMotion();
+    }
+    setRightPanelOpen(open);
   }
 
   function applyWorkspaceRightPanelWidth(nextWidth: number): void {
@@ -1173,19 +1198,19 @@ export function App(): JSX.Element {
   function openWorkspaceTool(view: WorkspacePanelView): void {
     ensureWorkspaceToolTab(view);
     activateWorkspaceTool(view);
-    setRightPanelOpen(true);
+    setRightPanelOpenWithMotion(true);
   }
 
   function openWorkspaceFile(path: string): void {
     ensureWorkspaceToolTab("files");
     activateWorkspaceTool("files");
-    setRightPanelOpen(true);
+    setRightPanelOpenWithMotion(true);
     setSelectedWorkspaceFile((current) => (current === path ? current : path));
   }
 
   function showWorkspaceToolPicker(): void {
     setWorkspaceRightPanelView("tools");
-    setRightPanelOpen(true);
+    setRightPanelOpenWithMotion(true);
   }
 
   function closeWorkspaceToolTab(view: WorkspacePanelView): void {
@@ -1207,13 +1232,13 @@ export function App(): JSX.Element {
 
   function toggleRightPanel(): void {
     if (rightPanelOpen) {
-      setRightPanelOpen(false);
+      setRightPanelOpenWithMotion(false);
       return;
     }
     if (workspaceRightPanelView === "tools" && workspaceToolTabs.length > 0) {
       activateWorkspaceTool(workspaceToolTabs[workspaceToolTabs.length - 1]);
     }
-    setRightPanelOpen(true);
+    setRightPanelOpenWithMotion(true);
   }
 
   async function attachComposerImageFiles(files: File[]): Promise<void> {
@@ -2851,7 +2876,7 @@ export function App(): JSX.Element {
           setWorkspacePanelView("review");
           setWorkspaceRightPanelView("review");
           setWorkspaceMode(undefined);
-          setRightPanelOpen(true);
+          setRightPanelOpenWithMotion(true);
           setEnvironmentPanelOpen(false);
           setEnvironmentPanelDismissed(true);
           setEnvironmentPanelMenu(null);
@@ -3165,7 +3190,7 @@ export function App(): JSX.Element {
                 onOpenRightPanel={() => {
                   ensureWorkspaceToolTab(workspaceMode);
                   activateWorkspaceTool(workspaceMode);
-                  setRightPanelOpen(true);
+                  setRightPanelOpenWithMotion(true);
                 }}
               />
             ) : splitConversation && state.thread && state.secondaryThread ? (
@@ -3224,7 +3249,7 @@ export function App(): JSX.Element {
           : null}
       </main>
 
-      {rightPanelOpen ? (
+      {rightPanelOpen || rightPanelAnimating ? (
         <div
           className="workspace-right-panel-resizer"
           role="separator"
@@ -3241,6 +3266,7 @@ export function App(): JSX.Element {
       ) : null}
       <WorkspaceRightPanel
         open={rightPanelOpen}
+        present={rightPanelOpen || rightPanelAnimating}
         view={workspaceRightPanelView}
         openTabs={workspaceToolTabs}
         activeContext={state.activeContext}
@@ -3250,7 +3276,7 @@ export function App(): JSX.Element {
         onShowTools={showWorkspaceToolPicker}
         onCloseTab={closeWorkspaceToolTab}
         onOpenFile={openWorkspaceFile}
-        onClose={() => setRightPanelOpen(false)}
+        onClose={() => setRightPanelOpenWithMotion(false)}
       />
       <WorkspaceBottomPanel
         open={bottomPanelOpen}

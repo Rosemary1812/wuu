@@ -185,7 +185,11 @@ button:disabled {
 }
 
 .app-shell.sidebar-animating {
-  transition: grid-template-columns var(--sidebar-motion-duration, 180ms) cubic-bezier(0.2, 0, 0, 1);
+  transition: grid-template-columns var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+}
+
+.app-shell.right-panel-animating {
+  transition: grid-template-columns var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
 }
 
 .app-shell.right-panel-open {
@@ -214,9 +218,9 @@ button:disabled {
   backdrop-filter: blur(26px) saturate(1.45);
   -webkit-backdrop-filter: blur(26px) saturate(1.45);
   transition:
-    border-color 180ms ease,
-    background-color 180ms ease,
-    box-shadow 180ms ease;
+    border-color var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
+    background-color var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
+    box-shadow var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
 }
 
 .sidebar-animating .sidebar,
@@ -249,6 +253,18 @@ button:disabled {
   height: 100%;
   flex-direction: column;
   padding: 0 12px 16px;
+  transform: translate3d(0, 0, 0) scale(1);
+  transform-origin: left center;
+  opacity: 1;
+  transition:
+    opacity var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
+    transform var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+  will-change: opacity, transform;
+}
+
+.sidebar-collapsed .sidebar-content {
+  opacity: 0;
+  transform: translate3d(-18px, 0, 0) scale(0.988);
 }
 
 .sidebar-resizer {
@@ -298,6 +314,11 @@ button:disabled {
   transition: none;
 }
 
+.resizing-sidebar .sidebar,
+.resizing-sidebar .sidebar-content {
+  transition: none;
+}
+
 .workspace-right-panel-resizer {
   position: absolute;
   top: 0;
@@ -307,7 +328,23 @@ button:disabled {
   width: 10px;
   cursor: col-resize;
   outline: 0;
+  opacity: 0;
+  transform: translate3d(12px, 0, 0);
+  transition:
+    opacity var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
+    transform var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+  pointer-events: none;
   -webkit-app-region: no-drag;
+}
+
+.right-panel-open .workspace-right-panel-resizer {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  pointer-events: auto;
+}
+
+.right-panel-animating .workspace-right-panel-resizer {
+  pointer-events: none;
 }
 
 .workspace-right-panel-resizer::before {
@@ -335,6 +372,10 @@ button:disabled {
 }
 
 .resizing-right-panel .workspace-right-panel {
+  transition: none;
+}
+
+.resizing-right-panel .workspace-right-panel-resizer {
   transition: none;
 }
 
@@ -1341,7 +1382,7 @@ button:disabled {
   overflow: hidden;
   border-bottom: 1px solid #ececea;
   padding: 0 24px;
-  transition: padding-left var(--sidebar-motion-duration, 180ms) cubic-bezier(0.2, 0, 0, 1);
+  transition: padding-left var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
   -webkit-app-region: drag;
 }
 
@@ -2170,12 +2211,13 @@ button:disabled {
   border-left: 1px solid transparent;
   background: #fbfbfa;
   opacity: 0;
-  transform: translateX(12px);
-  will-change: transform;
+  transform: translate3d(18px, 0, 0) scale(0.988);
+  transform-origin: right center;
+  will-change: opacity, transform;
   transition:
-    border-color 180ms ease,
-    opacity 160ms ease,
-    transform 180ms cubic-bezier(0.2, 0, 0, 1);
+    border-color var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
+    opacity var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
+    transform var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
   pointer-events: none;
 }
 
@@ -2190,7 +2232,7 @@ button:disabled {
 .right-panel-open .workspace-right-panel {
   border-left-color: #ececea;
   opacity: 1;
-  transform: translateX(0);
+  transform: translate3d(0, 0, 0) scale(1);
   pointer-events: auto;
 }
 
@@ -9956,11 +9998,13 @@ html.swiss-international .os-theme-wuu {
   .app-shell,
   .sidebar,
   .sidebar::before,
+  .sidebar-content,
   .titlebar,
   .scroll-region,
   .composer-wrap,
   .dock-composer-wrap,
   .workspace-right-panel,
+  .workspace-right-panel-resizer,
   .workspace-bottom-panel,
   .nav-item,
   .project-row,

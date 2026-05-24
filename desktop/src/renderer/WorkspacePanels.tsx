@@ -21,6 +21,7 @@ const WORKSPACE_TOOL_ITEMS: Array<{
 
 export function WorkspaceRightPanel({
   open,
+  present,
   view,
   openTabs,
   activeContext,
@@ -33,6 +34,7 @@ export function WorkspaceRightPanel({
   onClose
 }: {
   open: boolean;
+  present: boolean;
   view: WorkspaceRightPanelView;
   openTabs: WorkspacePanelView[];
   activeContext?: RuntimeContext;
@@ -104,7 +106,7 @@ export function WorkspaceRightPanel({
           <X size={17} />
         </button>
       </div>
-      {open ? (
+      {present ? (
         <>
           <div className={`workspace-panel-body${view === "tools" ? " picker" : ""}`}>
             {view === "tools" ? (
