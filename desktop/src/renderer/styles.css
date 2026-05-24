@@ -3513,6 +3513,10 @@ button:disabled {
   position: relative;
 }
 
+.copyable-message.user-message {
+  margin-bottom: 18px;
+}
+
 .message-copy-button {
   --message-copy-rest-transform: translate3d(0, 2px, 0) scale(0.98);
   --message-copy-visible-transform: translate3d(0, 0, 0) scale(1);
@@ -3563,20 +3567,18 @@ button:disabled {
 
 .copyable-message::before {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -34px;
-  width: 34px;
+  right: 0;
+  bottom: -42px;
+  width: 48px;
+  height: 42px;
   content: "";
 }
 
 .copyable-message .message-copy-button {
   position: absolute;
-  top: 7px;
-  right: auto;
-  left: -31px;
+  top: calc(100% + 9px);
+  right: 10px;
   z-index: 1;
-  --message-copy-rest-transform: translate3d(3px, 0, 0) scale(0.98);
 }
 
 .copyable-message:hover .message-copy-button,
