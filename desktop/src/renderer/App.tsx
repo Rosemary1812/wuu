@@ -8237,10 +8237,16 @@ function ThreadItemView({
       const text = item.text ?? "";
       const copyable = text.trim() !== "";
       return (
-        <div className={`message user-message${copyable ? " copyable-message" : ""}`}>
-          {item.images?.length ? <MessageImageGrid images={item.images} /> : null}
-          {text ? <RichContent text={text} cwd={cwd} /> : null}
-          {copyable ? <MessageCopyButton getText={() => text} /> : null}
+        <div className={`user-message-block${copyable ? " user-message-block-with-actions" : ""}`}>
+          <div className="message user-message">
+            {item.images?.length ? <MessageImageGrid images={item.images} /> : null}
+            {text ? <RichContent text={text} cwd={cwd} /> : null}
+          </div>
+          {copyable ? (
+            <div className="message-actions user-message-actions" aria-label="用户消息操作">
+              <MessageCopyButton getText={() => text} className="message-action-button" iconSize={15} />
+            </div>
+          ) : null}
         </div>
       );
     }
@@ -8297,7 +8303,7 @@ function AgentMessageActions({ getText, onFork }: { getText: () => string; onFor
   const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
 
   return (
-    <div className="agent-message-actions" aria-label="助手消息操作">
+    <div className="message-actions agent-message-actions" aria-label="助手消息操作">
       <MessageCopyButton getText={getText} className="message-action-button" iconSize={15} />
       <button
         className="message-action-button"
