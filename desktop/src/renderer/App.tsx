@@ -2317,7 +2317,13 @@ export function App(): JSX.Element {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({ ...current, ...loadedState }));
+      setState((current) => ({
+        ...current,
+        ...loadedState,
+        thread: undefined,
+        running: false,
+        status: "ready"
+      }));
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -6197,6 +6203,9 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       if (!thread) {
         return state;
       }
+      if (!threadMatchesActiveContext(thread, state.activeContext)) {
+        return state;
+      }
       const knownThread = state.threads.some((item) => item.id === thread.id);
       const activateThread = state.thread?.id === thread.id || (!state.thread && !knownThread);
       return {
@@ -6373,6 +6382,10 @@ function sameRuntimeContext(left: RuntimeContext | undefined, right: RuntimeCont
     return left.project_id === right.project_id;
   }
   return left.cwd === right.cwd;
+}
+
+function threadMatchesActiveContext(thread: Thread, context: RuntimeContext | undefined): boolean {
+  return Boolean(context && thread.cwd === context.cwd);
 }
 
 function isThread(value: unknown): value is Thread {
