@@ -2703,7 +2703,8 @@ export function App(): JSX.Element {
   }
 
   async function archiveThread(thread: Thread): Promise<void> {
-    if (!state.activeContext || isThreadRunning(thread)) {
+    const isLocalDemoThread = localDemoThreadsRef.current.has(thread.id);
+    if (!state.activeContext || (!isLocalDemoThread && isThreadRunning(thread))) {
       return;
     }
     if (archiveConfirmThreadID !== thread.id) {
@@ -2711,7 +2712,7 @@ export function App(): JSX.Element {
       return;
     }
     clearPendingComposerMessages();
-    if (localDemoThreadsRef.current.has(thread.id)) {
+    if (isLocalDemoThread) {
       localDemoThreadsRef.current = new Map(
         [...localDemoThreadsRef.current].filter(([threadID]) => threadID !== thread.id)
       );
