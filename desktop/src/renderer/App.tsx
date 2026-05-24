@@ -1771,6 +1771,7 @@ export function App(): JSX.Element {
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
       : "我们应该在 wuu 中构建什么？";
   const turns = state.thread?.turns ?? [];
+  const latestAgentMessageID = latestAgentMessageItemID(turns);
   const visibleAskRequest = visibleAskRequestForThread(state.askRequests, state.thread?.id);
   const visibleAnsweredAskRequests = visibleAnsweredAskRequestsForThread(state.answeredAskRequests, state.thread?.id);
   const answeredAskRequestsWithoutVisibleTurn = visibleAnsweredAskRequests.filter(
@@ -3603,6 +3604,7 @@ export function App(): JSX.Element {
                     <TurnView
                       turn={turn}
                       cwd={state.thread?.cwd ?? state.activeContext?.cwd}
+                      latestAgentMessageID={latestAgentMessageID}
                       onStreamFrame={scheduleStreamScroll}
                     />
                     {visibleAnsweredAskRequests
@@ -6988,10 +6990,12 @@ function agentStatusTone(status: string | undefined): "running" | "completed" | 
 function TurnView({
   turn,
   cwd,
+  latestAgentMessageID,
   onStreamFrame
 }: {
   turn: Turn;
   cwd?: string;
+  latestAgentMessageID?: string;
   onStreamFrame: () => void;
 }): JSX.Element {
   const renderedItems: JSX.Element[] = [];
@@ -7007,6 +7011,7 @@ function TurnView({
           item={item}
           cwd={cwd}
           streaming={false}
+          latestAgentMessageID={latestAgentMessageID}
           onStreamFrame={onStreamFrame}
         />
       );
@@ -7040,6 +7045,7 @@ function TurnView({
         item={item}
         cwd={cwd}
         streaming={turn.status === "in_progress" && item.status === "in_progress"}
+        latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
       />
     );
@@ -7396,17 +7402,32 @@ function waitingDetail(elapsedMs: number, defaultDetail: string): string {
   return defaultDetail;
 }
 
+function latestAgentMessageItemID(turns: Turn[]): string | undefined {
+  for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex--) {
+    const items = turns[turnIndex].items;
+    for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex--) {
+      const item = items[itemIndex];
+      if (item.type === "agent_message") {
+        return item.id;
+      }
+    }
+  }
+  return undefined;
+}
+
 function ThreadItemView({
   turnID,
   item,
   cwd,
   streaming,
+  latestAgentMessageID,
   onStreamFrame
 }: {
   turnID: string;
   item: ThreadItem;
   cwd?: string;
   streaming: boolean;
+  latestAgentMessageID?: string;
   onStreamFrame: () => void;
 }): JSX.Element | null {
   switch (item.type) {
@@ -7425,8 +7446,13 @@ function ThreadItemView({
       const streamKeyValue = streamTextKey(turnID, item.id, "text");
       const agentText = streamTextStore.has(streamKeyValue) ? streamTextStore.get(streamKeyValue) : (item.text ?? "");
       const copyable = streaming || agentText.trim() !== "";
+      const actionsPersistent = item.id === latestAgentMessageID;
       return (
-        <article className={`agent-block${copyable ? " agent-block-with-actions" : ""}`}>
+        <article
+          className={`agent-block${
+            copyable ? ` agent-block-with-actions${actionsPersistent ? " agent-actions-persistent" : ""}` : ""
+          }`}
+        >
           <div className="agent-text">
             <AgentMessageContent
               turnID={turnID}

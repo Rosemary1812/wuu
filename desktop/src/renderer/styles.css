@@ -3625,15 +3625,37 @@ button:disabled {
 
 .agent-block-with-actions {
   display: grid;
-  gap: 12px;
+  gap: 0;
 }
 
 .agent-message-actions {
   display: flex;
-  min-height: 28px;
+  max-height: 0;
+  min-height: 0;
   align-items: center;
   gap: 10px;
   color: #8b9094;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translate3d(0, -4px, 0);
+  transition:
+    max-height 140ms ease,
+    margin-top 140ms ease,
+    opacity 120ms ease,
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.agent-block-with-actions:hover .agent-message-actions,
+.agent-block-with-actions:focus-within .agent-message-actions,
+.agent-block-with-actions.agent-actions-persistent .agent-message-actions {
+  max-height: 28px;
+  min-height: 28px;
+  margin-top: 12px;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
 }
 
 .message-action-button {
