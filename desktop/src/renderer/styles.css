@@ -1130,6 +1130,7 @@ button:disabled {
 .conversation-pane {
   --environment-panel-reserved-width: 432px;
   --environment-panel-width: 360px;
+  --conversation-readable-width: 760px;
   --conversation-scrollbar-gutter: 12px;
   --dock-composer-height: 0px;
   grid-column: 2;
@@ -3243,8 +3244,9 @@ button:disabled {
 .conversation-width {
   contain: layout style;
   width: 100%;
+  max-width: var(--conversation-readable-width);
   margin: 0 auto;
-  padding: 72px clamp(24px, 4vw, 48px) 28px;
+  padding: 72px clamp(20px, 4vw, 48px) 28px;
 }
 
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-width {
@@ -8436,8 +8438,8 @@ html.swiss-international .workspace-diff-file.active .workspace-diff-file-stats 
 }
 
 html.swiss-international .conversation-width {
-  max-width: none;
-  padding: 76px clamp(32px, 8vw, 120px) 32px;
+  max-width: calc(var(--conversation-readable-width) + 40px);
+  padding: 76px clamp(24px, 5vw, 56px) 32px;
 }
 
 html.swiss-international .turn {

@@ -170,8 +170,12 @@ async function run() {
   );
   const flowResize = await waitFor(win, () => flowSnapshot(), 1000);
   assert.ok(
-    Math.abs(flowResize.conversationRight - flowResize.scrollContentRight) <= 2,
-    "Message flow should track the live scroll region right edge during right-side window resize."
+    flowResize.conversationWidth <= 762,
+    "Message flow should keep a capped reading width during right-side window resize."
+  );
+  assert.ok(
+    Math.abs(flowResize.conversationCenter - flowResize.scrollContentCenter) <= 2,
+    "Message flow should stay centered in the live scroll region during right-side window resize."
   );
   assert.ok(
     Math.abs(flowResize.composerStackRight - flowResize.composerContentRight) <= 2,
@@ -210,10 +214,12 @@ async function run() {
   await delay(240);
   const flowProbe = await evaluate(win, () => window.__flowProbe);
   const maxFrameMs = Math.max(...flowProbe.samples.map((sample) => sample.dt));
-  const maxFlowDelta = Math.max(
-    ...flowProbe.samples.map((sample) => Math.abs(sample.conversationRight - sample.scrollContentRight))
+  const maxConversationWidth = Math.max(...flowProbe.samples.map((sample) => sample.conversationWidth));
+  const maxFlowCenterDelta = Math.max(
+    ...flowProbe.samples.map((sample) => Math.abs(sample.conversationCenter - sample.scrollContentCenter))
   );
-  assert.ok(maxFlowDelta <= 2, "Message flow should stay aligned throughout continuous right-side resize.");
+  assert.ok(maxConversationWidth <= 762, "Message flow should stay capped throughout continuous right-side resize.");
+  assert.ok(maxFlowCenterDelta <= 2, "Message flow should stay centered throughout continuous right-side resize.");
   assert.ok(maxFrameMs < 80, `Continuous right-side resize should not stall the renderer for ${Math.round(maxFrameMs)}ms.`);
 
   await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
@@ -541,7 +547,10 @@ async function evaluate(win, fn) {
         composerContentRight: composerRect.left + composer.clientWidth - composerPaddingRight,
         composerStackRight: stackRect.right,
         composerStackWidth: stackRect.width,
+        conversationCenter: conversationRect.left + conversationRect.width / 2,
         conversationRight: conversationRect.right,
+        conversationWidth: conversationRect.width,
+        scrollContentCenter: scrollRect.left + (scroll.clientWidth - scrollPaddingRight) / 2,
         scrollContentRight: scrollRect.left + scroll.clientWidth - scrollPaddingRight
       };
     };
