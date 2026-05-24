@@ -672,7 +672,7 @@ button:disabled {
 }
 
 .thread-row {
-  height: 30px;
+  height: 32px;
   min-width: 0;
   justify-content: flex-start;
   gap: 8px;
