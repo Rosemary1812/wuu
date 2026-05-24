@@ -1545,7 +1545,7 @@ button:disabled {
 
 .environment-panel-body {
   display: grid;
-  gap: 1px;
+  gap: 5px;
 }
 
 .environment-row,
@@ -1561,8 +1561,8 @@ button:disabled {
 
 .environment-row {
   grid-template-columns: 24px auto minmax(0, 1fr) 18px;
-  min-height: 40px;
-  column-gap: 10px;
+  min-height: 32px;
+  column-gap: 8px;
   padding: 0 10px;
 }
 
@@ -1622,14 +1622,14 @@ button:disabled {
 
 .environment-footer-row {
   grid-template-columns: minmax(0, 1fr) 18px;
-  height: 38px;
+  height: 32px;
   border-top: 1px solid #ececea;
   border-radius: 0;
   color: #8b9094;
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
-  margin-top: 10px;
-  padding: 9px 10px 0;
+  margin-top: 5px;
+  padding: 0 10px;
 }
 
 .environment-runtime-summary {
