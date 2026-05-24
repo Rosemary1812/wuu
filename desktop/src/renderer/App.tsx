@@ -2308,20 +2308,39 @@ export function App(): JSX.Element {
   }
 
   async function openProject(projectId: string): Promise<void> {
-    if (projectId === state.activeProjectId && state.activeContext?.kind === "project") {
+    const currentState = appStateRef.current;
+    if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
       closeProjectMenus();
+      setArchiveConfirmThreadID(undefined);
+      if (currentState.thread) {
+        clearPendingComposerMessages();
+        setState((current) => ({
+          ...current,
+          thread: undefined,
+          allowThreadAutoActivation: false,
+          running: false,
+          status: "ready"
+        }));
+      }
       return;
     }
     const requestID = beginViewSwitch("project", projectId);
     closeProjectMenus();
     try {
       const projectState = await window.wuu.selectProject(projectId);
-      const loadedState = await loadRuntime(projectState);
+      const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
       if (!finishViewSwitch(requestID)) {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({ ...current, ...loadedState }));
+      setState((current) => ({
+        ...current,
+        ...loadedState,
+        thread: undefined,
+        allowThreadAutoActivation: false,
+        running: false,
+        status: "ready"
+      }));
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
