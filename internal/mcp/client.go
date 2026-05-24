@@ -42,7 +42,7 @@ func Connect(name string, t Transport) (*Client, error) {
 		transport: t,
 		inFlight:  newInFlight(),
 	}
-	c.readLoop = newReadLoop(t, c.inFlight, nil)
+	c.readLoop = newReadLoop(t, c.inFlight, c.handleNotification)
 	c.readLoop.Start()
 
 	// Initialize handshake.
@@ -73,7 +73,7 @@ func ConnectStdio(cfg ServerConfig) (*Client, error) {
 	if cmd == "" {
 		return nil, fmt.Errorf("mcp server %q: command is required for stdio transport", cfg.Name)
 	}
-	t, err := NewStdioTransport(cmd, args...)
+	t, err := NewStdioTransportWithEnv(cmd, args, cfg.Env)
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: %w", cfg.Name, err)
 	}
@@ -121,6 +121,15 @@ func (c *Client) DiscoverTools(ctx context.Context) ([]Tool, error) {
 	c.tools = result.Tools
 	c.mu.Unlock()
 	return result.Tools, nil
+}
+
+func (c *Client) handleNotification(method string, _ json.RawMessage) {
+	switch method {
+	case "notifications/tools/list_changed", "tools/list_changed":
+		go func() {
+			_, _ = c.DiscoverTools(context.Background())
+		}()
+	}
 }
 
 // Tools returns the cached tool list.
@@ -177,7 +186,13 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	c.closed = true
 	c.mu.Unlock()
-	c.readLoop.Stop()
+	stopped := make(chan struct{})
+	go func() {
+		c.readLoop.Stop()
+		close(stopped)
+	}()
+	closeErr := c.transport.Close()
+	<-stopped
 	c.inFlight.closeAll()
-	return c.transport.Close()
+	return closeErr
 }

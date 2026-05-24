@@ -60,11 +60,11 @@ func (r *readLoop) run() {
 				continue
 			}
 		}
-		// Notifications have no ID.
-		if resp.ID == 0 && r.onNotify != nil {
-			// We can't distinguish method from Response; this is a
-			// limitation of the simple transport interface. For now,
-			// notifications are best-effort.
+		// Notifications have no ID and carry a method.
+		if resp.ID == 0 && resp.Method != "" {
+			if r.onNotify != nil {
+				r.onNotify(resp.Method, resp.Params)
+			}
 			continue
 		}
 		if !r.inFlight.resolve(resp.ID, resp) {

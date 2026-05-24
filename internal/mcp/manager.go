@@ -3,18 +3,23 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
 // Manager holds all active MCP client connections and exposes their tools.
 type Manager struct {
-	mu      sync.RWMutex
-	clients map[string]*Client
+	mu       sync.RWMutex
+	clients  map[string]*Client
+	statuses map[string]ServerStatus
 }
 
 // NewManager creates an empty MCP manager.
 func NewManager() *Manager {
-	return &Manager{clients: make(map[string]*Client)}
+	return &Manager{
+		clients:  make(map[string]*Client),
+		statuses: make(map[string]ServerStatus),
+	}
 }
 
 // Add connects and registers an MCP server. If the connection fails, the
@@ -28,12 +33,15 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		client, err = ConnectStdio(cfg)
 	}
 	if err != nil {
+		m.recordStatus(ServerStatus{Name: cfg.Name, Connected: false, Error: err.Error()})
 		return err
 	}
 	// Eagerly discover tools so the toolkit can include them.
 	if _, derr := client.DiscoverTools(ctx); derr != nil {
 		_ = client.Close()
-		return fmt.Errorf("discover tools for %q: %w", cfg.Name, derr)
+		err := fmt.Errorf("discover tools for %q: %w", cfg.Name, derr)
+		m.recordStatus(ServerStatus{Name: cfg.Name, Connected: false, Error: err.Error()})
+		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -41,6 +49,11 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		_ = old.Close()
 	}
 	m.clients[cfg.Name] = client
+	m.statuses[cfg.Name] = ServerStatus{
+		Name:      cfg.Name,
+		Connected: true,
+		ToolCount: len(client.Tools()),
+	}
 	return nil
 }
 
@@ -53,6 +66,7 @@ func (m *Manager) Remove(name string) error {
 		return fmt.Errorf("mcp server %q not found", name)
 	}
 	delete(m.clients, name)
+	delete(m.statuses, name)
 	return c.Close()
 }
 
@@ -74,13 +88,14 @@ func (m *Manager) AllTools() []*MCPTool {
 func (m *Manager) Status() map[string]ServerStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make(map[string]ServerStatus, len(m.clients))
-	for name, c := range m.clients {
-		out[name] = ServerStatus{
-			Name:      name,
-			Connected: true,
-			ToolCount: len(c.Tools()),
+	out := make(map[string]ServerStatus, len(m.statuses))
+	for name, status := range m.statuses {
+		if c, ok := m.clients[name]; ok {
+			status.Connected = true
+			status.ToolCount = len(c.Tools())
+			status.Error = ""
 		}
+		out[name] = status
 	}
 	return out
 }
@@ -96,7 +111,20 @@ func (m *Manager) Close() error {
 		}
 	}
 	m.clients = make(map[string]*Client)
+	m.statuses = make(map[string]ServerStatus)
 	return firstErr
+}
+
+func (m *Manager) recordStatus(status ServerStatus) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if strings.TrimSpace(status.Name) == "" {
+		return
+	}
+	if m.statuses == nil {
+		m.statuses = make(map[string]ServerStatus)
+	}
+	m.statuses[status.Name] = status
 }
 
 // ServerStatus describes one MCP server's runtime state.

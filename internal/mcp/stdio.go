@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,7 +27,14 @@ type StdioTransport struct {
 
 // NewStdioTransport starts command as an MCP stdio server.
 func NewStdioTransport(command string, args ...string) (*StdioTransport, error) {
+	return NewStdioTransportWithEnv(command, args, nil)
+}
+
+// NewStdioTransportWithEnv starts command as an MCP stdio server with
+// additional environment variables overlaid on the current process env.
+func NewStdioTransportWithEnv(command string, args []string, env map[string]string) (*StdioTransport, error) {
 	cmd := exec.Command(command, args...)
+	cmd.Env = mergeProcessEnv(os.Environ(), env)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
@@ -55,6 +64,38 @@ func NewStdioTransport(command string, args ...string) (*StdioTransport, error) 
 		dec:    json.NewDecoder(bufio.NewReader(stdout)),
 	}
 	return t, nil
+}
+
+func mergeProcessEnv(base []string, overlay map[string]string) []string {
+	if len(overlay) == 0 {
+		out := make([]string, len(base))
+		copy(out, base)
+		return out
+	}
+	seen := make(map[string]int, len(base)+len(overlay))
+	out := make([]string, 0, len(base)+len(overlay))
+	for _, item := range base {
+		key, _, ok := strings.Cut(item, "=")
+		if !ok {
+			out = append(out, item)
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, item)
+	}
+	for key, value := range overlay {
+		if key == "" {
+			continue
+		}
+		item := key + "=" + value
+		if idx, ok := seen[key]; ok {
+			out[idx] = item
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, item)
+	}
+	return out
 }
 
 func (t *StdioTransport) Send(ctx context.Context, req Request) error {
