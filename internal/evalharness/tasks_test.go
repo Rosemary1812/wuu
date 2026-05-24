@@ -129,6 +129,39 @@ func TestToolSearchDeferredVerification(t *testing.T) {
 	}
 }
 
+func TestStaleReadGuardVerification(t *testing.T) {
+	task, ok := ByID("stale_read_guard")
+	if !ok {
+		t.Fatal("missing stale_read_guard task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing stale marker: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing stale marker should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "target.txt"), []byte("version: final\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "stale_read_result.txt"), []byte("STALE_READ_GUARD_DONE\n"), 0o644); err != nil {
+		t.Fatalf("write stale marker: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask stale marker: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("stale marker should pass verification: %s", passed.Reason)
+	}
+}
+
 func TestMCPReadOnlyConcurrencyVerification(t *testing.T) {
 	task, ok := ByID("mcp_readonly_concurrency")
 	if !ok {

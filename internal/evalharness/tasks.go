@@ -16,14 +16,20 @@ import (
 
 // Task is one deterministic local evaluation scenario.
 type Task struct {
-	ID            string
-	Name          string
-	Description   string
-	Prompt        string
-	RequiredTools []string
-	Setup         func(root string) error
-	Configure     func(root string, cfg config.Config) config.Config
-	Verify        func(ctx context.Context, root, answer string) (Verification, error)
+	ID             string
+	Name           string
+	Description    string
+	Prompt         string
+	RequiredTools  []string
+	RequiredErrors []ToolErrorRequirement
+	Setup          func(root string) error
+	Configure      func(root string, cfg config.Config) config.Config
+	Verify         func(ctx context.Context, root, answer string) (Verification, error)
+}
+
+type ToolErrorRequirement struct {
+	ToolName      string `json:"tool_name"`
+	ErrorContains string `json:"error_contains"`
 }
 
 type Verification struct {
@@ -40,6 +46,7 @@ type Result struct {
 	ToolCalls          int      `json:"tool_calls"`
 	ToolNames          []string `json:"tool_names,omitempty"`
 	MissingTools       []string `json:"missing_tools,omitempty"`
+	MissingErrors      []string `json:"missing_errors,omitempty"`
 	InputTokens        int      `json:"input_tokens"`
 	OutputTokens       int      `json:"output_tokens"`
 	VerificationReason string   `json:"verification_reason,omitempty"`
@@ -84,6 +91,18 @@ func Catalog() []Task {
 			RequiredTools: []string{"tool_search", "list_cron"},
 			Setup:         setupEmptyTask,
 			Verify:        verifyDeferredToolFoundFile,
+		},
+		{
+			ID:          "stale_read_guard",
+			Name:        "Recover from a stale file read",
+			Description: "Simulates an external file change after read_file; eval requires edit_file to reject the stale read before recovery.",
+			Prompt: "Read target.txt, then run ./mutate_after_read.sh to simulate an external edit. Next, try to use edit_file to change " +
+				"\"version: external\" to \"version: final\". If edit_file reports that the file changed since last read, read target.txt " +
+				"again and retry the edit. Finally write stale_read_result.txt containing STALE_READ_GUARD_DONE.",
+			RequiredTools:  []string{"read_file", "run_shell", "edit_file", "write_file"},
+			RequiredErrors: []ToolErrorRequirement{{ToolName: "edit_file", ErrorContains: "changed since last read"}},
+			Setup:          setupStaleReadGuard,
+			Verify:         verifyStaleReadGuard,
 		},
 		{
 			ID:          "mcp_readonly_concurrency",
@@ -214,6 +233,20 @@ sleep 20
 	return os.Chmod(filepath.Join(root, "dev.sh"), 0o755)
 }
 
+func setupStaleReadGuard(root string) error {
+	files := map[string]string{
+		"target.txt": `version: original
+`,
+		"mutate_after_read.sh": `#!/usr/bin/env bash
+printf 'version: external\n' > target.txt
+`,
+	}
+	if err := writeFiles(root, files); err != nil {
+		return err
+	}
+	return os.Chmod(filepath.Join(root, "mutate_after_read.sh"), 0o755)
+}
+
 func setupEmptyTask(root string) error {
 	return writeFiles(root, map[string]string{".keep": ""})
 }
@@ -281,6 +314,24 @@ func verifyDeferredToolFoundFile(_ context.Context, root, _ string) (Verificatio
 		return Verification{Passed: false, Reason: "tool_search_result.txt does not contain DEFERRED_TOOL_FOUND"}, nil
 	}
 	return Verification{Passed: true, Reason: "observed deferred tool marker"}, nil
+}
+
+func verifyStaleReadGuard(_ context.Context, root, _ string) (Verification, error) {
+	target, err := os.ReadFile(filepath.Join(root, "target.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "target.txt was not readable"}, nil
+	}
+	if !strings.Contains(string(target), "version: final") {
+		return Verification{Passed: false, Reason: "target.txt does not contain final version"}, nil
+	}
+	data, err := os.ReadFile(filepath.Join(root, "stale_read_result.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "stale_read_result.txt was not written"}, nil
+	}
+	if !strings.Contains(string(data), "STALE_READ_GUARD_DONE") {
+		return Verification{Passed: false, Reason: "stale_read_result.txt does not contain STALE_READ_GUARD_DONE"}, nil
+	}
+	return Verification{Passed: true, Reason: "observed stale-read recovery marker"}, nil
 }
 
 func verifyMCPReadOnlyConcurrency(_ context.Context, root, _ string) (Verification, error) {

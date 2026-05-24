@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/evalharness"
 	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 func TestResolveTUIThemeMode_UsesAutoWhenHomeMissing(t *testing.T) {
@@ -122,6 +124,7 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 		!strings.Contains(output, "multi_file_pricing") ||
 		!strings.Contains(output, "long_process_output") ||
 		!strings.Contains(output, "tool_search_deferred") ||
+		!strings.Contains(output, "stale_read_guard") ||
 		!strings.Contains(output, "mcp_readonly_concurrency") ||
 		!strings.Contains(output, "multi_agent_worker") {
 		t.Fatalf("expected built-in eval tasks, got %q", output)
@@ -152,6 +155,25 @@ func TestMissingRequiredTools(t *testing.T) {
 	}
 	if got := missingRequiredTools([]string{"tool_search"}, []string{"tool_search"}); len(got) != 0 {
 		t.Fatalf("expected no missing tools, got %+v", got)
+	}
+}
+
+func TestMissingRequiredToolErrors(t *testing.T) {
+	required := []evalharness.ToolErrorRequirement{
+		{ToolName: "edit_file", ErrorContains: "changed since last read"},
+	}
+	records := []tools.ToolExecutionRecord{
+		{Name: "edit_file", Success: false, Error: "file changed since last read. Use read_file again before editing"},
+	}
+	if got := missingRequiredToolErrors(required, records); len(got) != 0 {
+		t.Fatalf("expected no missing errors, got %+v", got)
+	}
+
+	missing := missingRequiredToolErrors(required, []tools.ToolExecutionRecord{
+		{Name: "edit_file", Success: false, Error: "old_text not found"},
+	})
+	if len(missing) != 1 || missing[0] != "edit_file:changed since last read" {
+		t.Fatalf("unexpected missing errors: %+v", missing)
 	}
 }
 

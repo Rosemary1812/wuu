@@ -495,6 +495,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		records := rt.Toolkit.ToolTelemetry()
 		result.ToolCalls = len(records)
 		result.ToolNames = uniqueToolNames(records)
+		result.MissingErrors = missingRequiredToolErrors(cfg.Task.RequiredErrors, records)
 	}
 	result.MissingTools = missingRequiredTools(cfg.Task.RequiredTools, result.ToolNames)
 
@@ -502,7 +503,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	if verifyErr != nil {
 		result.Error = verifyErr.Error()
 	} else {
-		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0
+		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0 && len(result.MissingErrors) == 0
 		result.VerificationReason = verification.Reason
 	}
 	if runErr != nil {
@@ -587,6 +588,33 @@ func missingRequiredTools(required []string, used []string) []string {
 	return missing
 }
 
+func missingRequiredToolErrors(required []evalharness.ToolErrorRequirement, records []tools.ToolExecutionRecord) []string {
+	if len(required) == 0 {
+		return nil
+	}
+	missing := make([]string, 0, len(required))
+	for _, req := range required {
+		found := false
+		for _, record := range records {
+			if record.Name != req.ToolName || record.Success {
+				continue
+			}
+			if req.ErrorContains == "" || strings.Contains(record.Error, req.ErrorContains) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if req.ErrorContains == "" {
+				missing = append(missing, req.ToolName)
+			} else {
+				missing = append(missing, req.ToolName+":"+req.ErrorContains)
+			}
+		}
+	}
+	return missing
+}
+
 func waitForMCPRequiredTools(ctx context.Context, toolkit *tools.Toolkit, required []string, timeout time.Duration) error {
 	var mcpNames []string
 	for _, name := range required {
@@ -649,6 +677,9 @@ func printEvalReport(report evalReport) {
 		}
 		if len(result.MissingTools) > 0 {
 			fmt.Printf("  missing_tools: %s\n", strings.Join(result.MissingTools, ","))
+		}
+		if len(result.MissingErrors) > 0 {
+			fmt.Printf("  missing_errors: %s\n", strings.Join(result.MissingErrors, ","))
 		}
 		if result.Error != "" {
 			fmt.Printf("  error: %s\n", result.Error)
