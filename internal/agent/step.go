@@ -12,6 +12,35 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+type precomputedToolOutcome struct {
+	result string
+	err    error
+}
+
+// PrecomputedToolResult is a streaming-started tool result that the loop can
+// wait on instead of issuing the same tool call again.
+type PrecomputedToolResult struct {
+	done chan precomputedToolOutcome
+}
+
+func newPrecomputedToolResult() *PrecomputedToolResult {
+	return &PrecomputedToolResult{done: make(chan precomputedToolOutcome, 1)}
+}
+
+func (p *PrecomputedToolResult) complete(result string, err error) {
+	p.done <- precomputedToolOutcome{result: result, err: err}
+	close(p.done)
+}
+
+func (p *PrecomputedToolResult) wait(ctx context.Context) (string, error) {
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case outcome := <-p.done:
+		return outcome.result, outcome.err
+	}
+}
+
 // StepResult is the outcome of one model round-trip, normalized so
 // the loop doesn't care whether the response came from a one-shot
 // Chat or a fully-consumed SSE stream.
@@ -39,11 +68,11 @@ type StepResult struct {
 	// Usage is the per-round token consumption when the provider
 	// reports it. nil is allowed.
 	Usage *providers.TokenUsage
-	// PrecomputedResults maps tool call IDs to their results for
-	// tools that were started during streaming (before the model
-	// finished). The loop skips re-executing these. Populated only
-	// when StreamingToolExecution is enabled.
-	PrecomputedResults map[string]string
+	// PrecomputedResults maps tool call IDs to in-flight or completed
+	// results for tools that were started during streaming. The loop waits
+	// for successful results here instead of re-executing those tools.
+	// Populated only when StreamingToolExecution is enabled.
+	PrecomputedResults map[string]*PrecomputedToolResult
 }
 
 // Step performs exactly one model round-trip and returns the result

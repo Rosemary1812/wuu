@@ -542,15 +542,15 @@ func partitionToolCalls(executor ToolExecutor, calls []providers.ToolCall) []too
 // to maxToolConcurrency calls in parallel; serial batches run each
 // call in order. Results are returned in the original call order.
 //
-// precomputed, when non-nil, contains results for tools that were
-// already executed during streaming. These are used as-is and the
-// tool is not re-executed.
+// precomputed, when non-nil, contains in-flight or completed results for
+// tools that were started during streaming. Successful results are reused
+// so the tool is not re-executed.
 func executeBatch(
 	ctx context.Context,
 	executor ToolExecutor,
 	batch toolBatch,
 	onResult func(providers.ToolCall, string),
-	precomputed map[string]string,
+	precomputed map[string]*PrecomputedToolResult,
 ) []providers.ChatMessage {
 	// Check if the executor supports additional context injection
 	// (e.g. HookedExecutor propagating PostToolUse hook context).
@@ -562,7 +562,7 @@ func executeBatch(
 		followups := make([]providers.ChatMessage, 0, len(batch.calls))
 		for _, call := range batch.calls {
 			// Check for precomputed results from streaming tool execution.
-			result, ok := precomputed[call.ID]
+			result, ok := waitPrecomputedResult(ctx, precomputed, call.ID)
 			if !ok {
 				var err error
 				result, err = executor.Execute(ctx, call)
@@ -608,12 +608,17 @@ func executeBatch(
 		wg.Add(1)
 		go func(idx int, c providers.ToolCall) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
 
-			res, err := executor.Execute(ctx, c)
-			if err != nil {
-				res = errorJSON(err)
+			res, ok := waitPrecomputedResult(ctx, precomputed, c.ID)
+			if !ok {
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				var err error
+				res, err = executor.Execute(ctx, c)
+				if err != nil {
+					res = errorJSON(err)
+				}
 			}
 			if onResult != nil {
 				onResult(c, res)
@@ -633,6 +638,18 @@ func executeBatch(
 		}
 	}
 	return msgs
+}
+
+func waitPrecomputedResult(ctx context.Context, precomputed map[string]*PrecomputedToolResult, callID string) (string, bool) {
+	future, ok := precomputed[callID]
+	if !ok || future == nil {
+		return "", false
+	}
+	result, err := future.wait(ctx)
+	if err != nil {
+		return "", false
+	}
+	return result, true
 }
 
 // maxAggregateResultChars caps the total content of all tool-role

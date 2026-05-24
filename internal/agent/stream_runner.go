@@ -306,7 +306,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 	// Streaming tool execution: collect results from tools started
 	// mid-stream. Protected by mu since goroutines write concurrently.
 	var precomputeMu sync.Mutex
-	precomputed := map[string]string{} // tool call ID → result
+	precomputed := map[string]*PrecomputedToolResult{}
 
 	var (
 		contentBuf      strings.Builder
@@ -326,18 +326,17 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			if ev.Type == providers.EventToolUseEnd && ev.ToolCall != nil {
 				tc := ev.ToolCall
 				if tc.ID != "" && tc.Arguments != "" && isReadOnlyTool(s.tools, tc.Name) {
+					future := newPrecomputedToolResult()
+					precomputeMu.Lock()
+					precomputed[tc.ID] = future
+					precomputeMu.Unlock()
 					go func() {
 						result, err := s.tools.Execute(ctx, providers.ToolCall{
 							ID:        tc.ID,
 							Name:      tc.Name,
 							Arguments: tc.Arguments,
 						})
-						if err != nil {
-							return // skip precompute on error
-						}
-						precomputeMu.Lock()
-						precomputed[tc.ID] = result
-						precomputeMu.Unlock()
+						future.complete(result, err)
 					}()
 				}
 			}
@@ -407,7 +406,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 
 	// Collect any precomputed results from streaming tool execution.
 	precomputeMu.Lock()
-	var pc map[string]string
+	var pc map[string]*PrecomputedToolResult
 	if len(precomputed) > 0 {
 		pc = precomputed
 	}

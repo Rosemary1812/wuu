@@ -40,6 +40,7 @@ func (f *fakeStep) Execute(_ context.Context, req providers.ChatRequest) (StepRe
 
 // fakeLoopTools is a no-op ToolExecutor that records every call.
 type fakeLoopTools struct {
+	mu      sync.Mutex
 	defs    []providers.ToolDefinition
 	results map[string]string // call.ID → JSON result
 	calls   []providers.ToolCall
@@ -48,6 +49,8 @@ type fakeLoopTools struct {
 
 func (f *fakeLoopTools) Definitions() []providers.ToolDefinition { return f.defs }
 func (f *fakeLoopTools) Execute(_ context.Context, call providers.ToolCall) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls = append(f.calls, call)
 	if f.err != nil {
 		return "", f.err
@@ -56,6 +59,14 @@ func (f *fakeLoopTools) Execute(_ context.Context, call providers.ToolCall) (str
 		return r, nil
 	}
 	return `{"ok":true}`, nil
+}
+
+func (f *fakeLoopTools) recordedCalls() []providers.ToolCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]providers.ToolCall, len(f.calls))
+	copy(out, f.calls)
+	return out
 }
 
 type contextLoopTools struct {
@@ -343,6 +354,46 @@ func TestRunToolLoop_ConcurrentToolCompletionDoesNotReorderProviderMessages(t *t
 	}
 	if got, want := strings.Join(gotToolIDs, ","), "call_1,call_2"; got != want {
 		t.Fatalf("provider request tool order changed with completion order: got %s want %s", got, want)
+	}
+}
+
+func TestExecuteBatch_ConcurrentReusesInFlightPrecomputedResult(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	future := newPrecomputedToolResult()
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		future.complete(`{"cached":true}`, nil)
+	}()
+
+	tools := &fakeLoopTools{
+		results: map[string]string{
+			"live": `{"live":true}`,
+		},
+	}
+	msgs := executeBatch(ctx, tools, toolBatch{
+		concurrent: true,
+		calls: []providers.ToolCall{
+			{ID: "precomputed", Name: "read_file", Arguments: `{}`},
+			{ID: "live", Name: "read_file", Arguments: `{}`},
+		},
+	}, nil, map[string]*PrecomputedToolResult{
+		"precomputed": future,
+	})
+
+	calls := tools.recordedCalls()
+	if len(calls) != 1 || calls[0].ID != "live" {
+		t.Fatalf("expected only live tool execution, got %+v", calls)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 tool messages, got %d", len(msgs))
+	}
+	if msgs[0].ToolCallID != "precomputed" || msgs[0].Content != `{"cached":true}` {
+		t.Fatalf("unexpected precomputed message: %+v", msgs[0])
+	}
+	if msgs[1].ToolCallID != "live" || msgs[1].Content != `{"live":true}` {
+		t.Fatalf("unexpected live message: %+v", msgs[1])
 	}
 }
 
