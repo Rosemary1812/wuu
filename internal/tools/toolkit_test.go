@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -786,6 +787,54 @@ func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T)
 		return
 	}
 	t.Fatal("run_shell must be present in tool definitions")
+}
+
+func TestToolkit_ReadProcessOutputWaitsFromOffset(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	kit.SetProcessManager(manager)
+	p, err := manager.Start(context.Background(), proc.StartOptions{
+		Command:   "sleep 0.2; printf ready; sleep 1",
+		OwnerKind: proc.OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: proc.LifecycleSession,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer manager.Stop(p.ID)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_process_output",
+		Arguments: `{"process_id":"` + p.ID + `","offset_bytes":0,"wait_ms":2000}`,
+	})
+	if err != nil {
+		t.Fatalf("read_process_output: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if parsed["timed_out"].(bool) {
+		t.Fatalf("expected output before timeout: %+v", parsed)
+	}
+	if !strings.Contains(parsed["output"].(string), "ready") {
+		t.Fatalf("unexpected output: %v", parsed["output"])
+	}
+	if parsed["end_offset"].(float64) <= 0 || parsed["total_bytes"].(float64) != parsed["end_offset"].(float64) {
+		t.Fatalf("unexpected offsets: %+v", parsed)
+	}
+	if parsed["status"].(string) == "" {
+		t.Fatalf("missing status: %+v", parsed)
+	}
 }
 
 func TestToolkit_SpawnAgentDefinitionIncludesForkTurns(t *testing.T) {

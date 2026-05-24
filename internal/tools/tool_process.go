@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -128,15 +129,27 @@ func (t *ReadProcessOutputTool) IsConcurrencySafe() bool { return true }
 
 func (t *ReadProcessOutputTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "read_process_output", Description: "Read recent output from a background process log.",
-		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"process_id": map[string]any{"type": "string"}, "max_bytes": map[string]any{"type": "integer"}}, "required": []string{"process_id"}},
+		Name:        "read_process_output",
+		Description: "Read output from a managed background process log. Use offset_bytes plus wait_ms to yield until new output is available, then pass the returned end_offset in the next call for incremental polling.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"process_id":   map[string]any{"type": "string", "description": "Managed process id returned by start_process."},
+				"max_bytes":    map[string]any{"type": "integer", "description": "Maximum bytes to return. Default 32768."},
+				"offset_bytes": map[string]any{"type": "integer", "description": "Optional byte offset to read from. Use the previous end_offset to read only new output."},
+				"wait_ms":      map[string]any{"type": "integer", "description": "Optional maximum time to wait for output beyond offset_bytes before returning."},
+			},
+			"required": []string{"process_id"},
+		},
 	}
 }
 
-func (t *ReadProcessOutputTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *ReadProcessOutputTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		ProcessID string `json:"process_id"`
-		MaxBytes  int    `json:"max_bytes"`
+		ProcessID   string `json:"process_id"`
+		MaxBytes    int    `json:"max_bytes"`
+		OffsetBytes *int64 `json:"offset_bytes"`
+		WaitMS      int    `json:"wait_ms"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -145,11 +158,27 @@ func (t *ReadProcessOutputTool) Execute(_ context.Context, argsJSON string) (str
 	if err != nil {
 		return "", err
 	}
-	out, tr, err := m.ReadOutput(args.ProcessID, args.MaxBytes)
+	snapshot, err := m.ReadOutputSnapshot(ctx, args.ProcessID, proc.OutputReadOptions{
+		MaxBytes:    args.MaxBytes,
+		OffsetBytes: args.OffsetBytes,
+		Wait:        time.Duration(args.WaitMS) * time.Millisecond,
+	})
 	if err != nil {
 		return "", err
 	}
-	return mustJSON(map[string]any{"process_id": args.ProcessID, "output": out, "truncated": tr})
+	return mustJSON(map[string]any{
+		"process_id":   args.ProcessID,
+		"output":       snapshot.Output,
+		"truncated":    snapshot.Truncated,
+		"start_offset": snapshot.StartOffset,
+		"end_offset":   snapshot.EndOffset,
+		"total_bytes":  snapshot.TotalBytes,
+		"timed_out":    snapshot.TimedOut,
+		"duration_ms":  snapshot.Duration.Milliseconds(),
+		"status":       snapshot.Process.Status,
+		"exit_code":    snapshot.Process.ExitCode,
+		"process":      snapshot.Process,
+	})
 }
 
 // ---------------------------------------------------------------------------

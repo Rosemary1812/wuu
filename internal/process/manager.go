@@ -79,6 +79,23 @@ type CleanupResult struct {
 	Cleaned []Process
 }
 
+type OutputReadOptions struct {
+	MaxBytes    int
+	OffsetBytes *int64
+	Wait        time.Duration
+}
+
+type OutputSnapshot struct {
+	Process     Process
+	Output      string
+	Truncated   bool
+	StartOffset int64
+	EndOffset   int64
+	TotalBytes  int64
+	TimedOut    bool
+	Duration    time.Duration
+}
+
 type Manager struct {
 	rootDir     string
 	registryDir string
@@ -275,29 +292,122 @@ func (m *Manager) List() ([]Process, error) {
 }
 
 func (m *Manager) ReadOutput(id string, maxBytes int) (string, bool, error) {
-	if maxBytes <= 0 {
-		maxBytes = 32 * 1024
+	snapshot, err := m.ReadOutputSnapshot(context.Background(), id, OutputReadOptions{MaxBytes: maxBytes})
+	if err != nil {
+		return "", false, err
+	}
+	return snapshot.Output, snapshot.Truncated, nil
+}
+
+func (m *Manager) ReadOutputSnapshot(ctx context.Context, id string, opt OutputReadOptions) (OutputSnapshot, error) {
+	started := time.Now()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if opt.MaxBytes <= 0 {
+		opt.MaxBytes = 32 * 1024
+	}
+	if opt.Wait < 0 {
+		opt.Wait = 0
 	}
 	p, err := m.load(id)
 	if err != nil {
-		return "", false, err
+		return OutputSnapshot{}, err
 	}
-	f, err := os.Open(p.LogPath)
+	timedOut := false
+	if opt.Wait > 0 && opt.OffsetBytes != nil {
+		deadline := time.Now().Add(opt.Wait)
+		for {
+			size, sizeErr := fileSize(p.LogPath)
+			if sizeErr != nil {
+				return OutputSnapshot{}, sizeErr
+			}
+			offset := *opt.OffsetBytes
+			if offset < 0 {
+				offset = 0
+			}
+			if size > offset || !isLiveStatus(p.Status) {
+				break
+			}
+			if !time.Now().Before(deadline) {
+				timedOut = true
+				break
+			}
+			wait := 50 * time.Millisecond
+			if remaining := time.Until(deadline); remaining < wait {
+				wait = remaining
+			}
+			select {
+			case <-ctx.Done():
+				return OutputSnapshot{}, ctx.Err()
+			case <-time.After(wait):
+			}
+			if latest, loadErr := m.load(id); loadErr == nil {
+				p = latest
+			}
+		}
+	}
+	if latest, loadErr := m.load(id); loadErr == nil {
+		p = latest
+	}
+	output, truncated, startOffset, endOffset, totalBytes, err := readLogWindow(p.LogPath, opt.MaxBytes, opt.OffsetBytes)
 	if err != nil {
-		return "", false, err
+		return OutputSnapshot{}, err
+	}
+	return OutputSnapshot{
+		Process:     *p,
+		Output:      output,
+		Truncated:   truncated,
+		StartOffset: startOffset,
+		EndOffset:   endOffset,
+		TotalBytes:  totalBytes,
+		TimedOut:    timedOut,
+		Duration:    time.Since(started),
+	}, nil
+}
+
+func readLogWindow(path string, maxBytes int, offsetBytes *int64) (string, bool, int64, int64, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false, 0, 0, 0, err
 	}
 	defer f.Close()
 	info, _ := f.Stat()
 	size := info.Size()
+	end := size
 	start := int64(0)
 	truncated := false
-	if size > int64(maxBytes) {
+	if offsetBytes != nil {
+		start = *offsetBytes
+		if start < 0 {
+			start = 0
+		}
+		if start > end {
+			start = end
+		}
+		if end-start > int64(maxBytes) {
+			start = end - int64(maxBytes)
+			truncated = true
+		}
+	} else if size > int64(maxBytes) {
 		start = size - int64(maxBytes)
 		truncated = true
 	}
 	_, _ = f.Seek(start, 0)
-	b, err := io.ReadAll(f)
-	return string(b), truncated, err
+	b, err := io.ReadAll(io.LimitReader(f, end-start))
+	return string(b), truncated, start, end, size, err
+}
+
+func fileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
+func isLiveStatus(status Status) bool {
+	return status == StatusStarting || status == StatusRunning || status == StatusStopping
 }
 
 func (m *Manager) WriteStdin(id string, input string) (*Process, error) {

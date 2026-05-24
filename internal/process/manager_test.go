@@ -147,6 +147,59 @@ func TestReadOutput(t *testing.T) {
 	_, _ = m.Stop(p.ID)
 }
 
+func TestReadOutputSnapshotWaitsForNewOutputAfterOffset(t *testing.T) {
+	root := t.TempDir()
+	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
+	p, err := m.Start(context.Background(), StartOptions{Command: "sleep 0.2; printf ready; sleep 1", OwnerKind: OwnerMainAgent, OwnerID: "main", Lifecycle: LifecycleSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	offset := int64(0)
+	snapshot, err := m.ReadOutputSnapshot(context.Background(), p.ID, OutputReadOptions{
+		MaxBytes:    4096,
+		OffsetBytes: &offset,
+		Wait:        2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.TimedOut {
+		t.Fatalf("expected wait to receive output, got timeout: %+v", snapshot)
+	}
+	if snapshot.StartOffset != 0 || snapshot.EndOffset <= 0 || snapshot.TotalBytes != snapshot.EndOffset {
+		t.Fatalf("unexpected offsets: %+v", snapshot)
+	}
+	if !strings.Contains(snapshot.Output, "ready") {
+		t.Fatalf("unexpected output: %q", snapshot.Output)
+	}
+	_, _ = m.Stop(p.ID)
+}
+
+func TestReadOutputSnapshotTimesOutWhenNoNewOutput(t *testing.T) {
+	root := t.TempDir()
+	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
+	p, err := m.Start(context.Background(), StartOptions{Command: "sleep 1", OwnerKind: OwnerMainAgent, OwnerID: "main", Lifecycle: LifecycleSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	offset := int64(0)
+	snapshot, err := m.ReadOutputSnapshot(context.Background(), p.ID, OutputReadOptions{
+		MaxBytes:    4096,
+		OffsetBytes: &offset,
+		Wait:        100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.TimedOut {
+		t.Fatalf("expected timeout waiting for new output: %+v", snapshot)
+	}
+	if snapshot.Output != "" || snapshot.StartOffset != 0 || snapshot.EndOffset != 0 {
+		t.Fatalf("unexpected output after timeout: %+v", snapshot)
+	}
+	_, _ = m.Stop(p.ID)
+}
+
 func TestWriteStdin(t *testing.T) {
 	root := t.TempDir()
 	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
