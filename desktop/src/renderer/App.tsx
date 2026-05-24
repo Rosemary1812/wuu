@@ -2184,7 +2184,7 @@ export function App(): JSX.Element {
           closeProjectMenus();
           setSettingsOpen(true);
         }}
-        onSelectProject={(id) => void openProject(id)}
+        onSelectProject={(id) => void selectProjectForNewThread(id)}
         onSelectNoProject={() => void useNoProject(false)}
         onSelectGitBranch={(branch) => void checkoutBranch(branch)}
         onCreateProject={() => void createBlankProject()}
@@ -2313,6 +2313,42 @@ export function App(): JSX.Element {
     try {
       const projectState = await window.wuu.selectProject(projectId);
       const loadedState = await loadRuntime(projectState);
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      clearPendingComposerMessages();
+      setState((current) => ({ ...current, ...loadedState }));
+    } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "open project failed"
+      }));
+    }
+  }
+
+  async function selectProjectForNewThread(projectId: string): Promise<void> {
+    const currentState = appStateRef.current;
+    if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
+      closeProjectMenus();
+      return;
+    }
+    if (isAnyThreadRunning(currentState)) {
+      closeProjectMenus();
+      setState((current) => ({
+        ...current,
+        status: "任务运行中，暂不能切换项目"
+      }));
+      return;
+    }
+    const requestID = beginViewSwitch("project", projectId);
+    closeProjectMenus();
+    setArchiveConfirmThreadID(undefined);
+    try {
+      const projectState = await window.wuu.selectProject(projectId);
+      const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
       if (!finishViewSwitch(requestID)) {
         return;
       }
