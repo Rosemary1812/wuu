@@ -140,7 +140,7 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
-	baseSystemPrompt := buildBaseSystemPrompt(rootDir, cfg.Agent.SystemPrompt, memoryFiles, discoveredSkills)
+	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), cfg.Agent.UserSystemPrompt(), memoryFiles, discoveredSkills)
 
 	if toolkit != nil {
 		if err := agentcontrol.EnsureSharedDir(workspaceStateDir); err != nil {
@@ -617,9 +617,12 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 	return memory.Discover(rootDir, homeDir, memOpts)
 }
 
-func buildBaseSystemPrompt(rootDir, systemPrompt string, memoryFiles []memory.File, discoveredSkills []skills.Skill) string {
+func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles []memory.File, discoveredSkills []skills.Skill) string {
 	var pb prompt.Builder
-	pb.AddSection("base", systemPrompt, true)
+	pb.AddSection("base", basePrompt, true)
+	if strings.TrimSpace(userPrompt) != "" {
+		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
+	}
 	pb.AddMemory(memoryFiles)
 	pb.AddSkills(discoveredSkills)
 	if worktree.IsGitRepo(rootDir) {

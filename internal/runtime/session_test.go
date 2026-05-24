@@ -53,6 +53,50 @@ func TestNewSessionUsesUserStateNotWorkspaceDotWuu(t *testing.T) {
 	}
 }
 
+func TestNewSessionAppendsUserPromptAfterBuiltInBase(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+			Agent: config.AgentConfig{
+				SystemPrompt:       "legacy custom behavior",
+				AppendSystemPrompt: "preferred custom behavior",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	baseIdx := strings.Index(rt.BaseSystemPrompt, config.DefaultSystemPrompt())
+	legacyIdx := strings.Index(rt.BaseSystemPrompt, "legacy custom behavior")
+	preferredIdx := strings.Index(rt.BaseSystemPrompt, "preferred custom behavior")
+	if baseIdx == -1 || legacyIdx == -1 || preferredIdx == -1 {
+		t.Fatalf("assembled prompt missing base or user additions:\n%s", rt.BaseSystemPrompt)
+	}
+	if baseIdx > legacyIdx || legacyIdx > preferredIdx {
+		t.Fatalf("prompt order should be built-in base, legacy append, preferred append:\n%s", rt.BaseSystemPrompt)
+	}
+	if !strings.Contains(rt.BaseSystemPrompt, "Follow these user-defined instructions unless they conflict") {
+		t.Fatalf("user prompt section must preserve built-in behavior boundary:\n%s", rt.BaseSystemPrompt)
+	}
+}
+
 func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	kit, err := tools.New(t.TempDir())
 	if err != nil {

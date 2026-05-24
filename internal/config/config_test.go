@@ -101,8 +101,39 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	if cfg.Agent.MaxContextTokens != 0 {
 		t.Fatalf("expected default max_context_tokens 0 (auto), got %d", cfg.Agent.MaxContextTokens)
 	}
-	if cfg.Agent.SystemPrompt == "" {
-		t.Fatal("expected default system prompt")
+	if cfg.Agent.SystemPrompt != "" {
+		t.Fatalf("expected config system_prompt to remain user-owned, got %q", cfg.Agent.SystemPrompt)
+	}
+	if DefaultSystemPrompt() == "" {
+		t.Fatal("expected built-in default system prompt")
+	}
+}
+
+func TestTemplateJSONDoesNotSerializeBuiltInSystemPrompt(t *testing.T) {
+	cfg := Default()
+	if cfg.Agent.SystemPrompt != "" {
+		t.Fatalf("default config should not carry built-in prompt, got %q", cfg.Agent.SystemPrompt)
+	}
+	tpl, err := TemplateJSON()
+	if err != nil {
+		t.Fatalf("TemplateJSON: %v", err)
+	}
+	if strings.Contains(tpl, "You are wuu") {
+		t.Fatalf("template should not serialize built-in system prompt:\n%s", tpl)
+	}
+}
+
+func TestAgentConfig_UserSystemPromptAppendsLegacyAndPreferredFields(t *testing.T) {
+	cfg := AgentConfig{
+		SystemPrompt:       "legacy instructions",
+		AppendSystemPrompt: "preferred instructions",
+	}
+	got := cfg.UserSystemPrompt()
+	if !strings.Contains(got, "legacy instructions") || !strings.Contains(got, "preferred instructions") {
+		t.Fatalf("expected both user prompt fields, got %q", got)
+	}
+	if strings.Index(got, "legacy instructions") > strings.Index(got, "preferred instructions") {
+		t.Fatalf("legacy field should keep stable order before append field, got %q", got)
 	}
 }
 
@@ -374,7 +405,7 @@ func TestConfig_RejectsUnknownWireAPI(t *testing.T) {
 }
 
 func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
-	prompt := Default().Agent.SystemPrompt
+	prompt := DefaultSystemPrompt()
 	if !strings.Contains(prompt, "wuu") {
 		t.Fatalf("default system prompt must identify the agent: %q", prompt)
 	}
@@ -390,7 +421,7 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 }
 
 func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
-	prompt := Default().Agent.SystemPrompt
+	prompt := DefaultSystemPrompt()
 	if !strings.Contains(prompt, "in parallel") {
 		t.Fatalf("default system prompt must encourage parallel tool calls: %q", prompt)
 	}
@@ -403,9 +434,12 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 }
 
 func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
-	prompt := Default().Agent.SystemPrompt
-	if !strings.Contains(prompt, "short sentence") {
+	prompt := DefaultSystemPrompt()
+	if !strings.Contains(prompt, "Before your first tool call") || !strings.Contains(prompt, "short sentence") {
 		t.Fatalf("default system prompt must teach proactive communication: %q", prompt)
+	}
+	if !strings.Contains(prompt, "While working") || !strings.Contains(prompt, "meaningful moments") {
+		t.Fatalf("default system prompt must teach progress updates: %q", prompt)
 	}
 	if !strings.Contains(prompt, "No fluff") {
 		t.Fatalf("default system prompt must forbid fluff: %q", prompt)
@@ -413,7 +447,7 @@ func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
 }
 
 func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
-	prompt := Default().Agent.SystemPrompt
+	prompt := DefaultSystemPrompt()
 	if !strings.Contains(prompt, "spawn sub-agents") {
 		t.Fatalf("default system prompt must mention sub-agent spawning: %q", prompt)
 	}
@@ -429,7 +463,7 @@ func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 }
 
 func TestDefaultSystemPrompt_CommentDiscipline(t *testing.T) {
-	prompt := Default().Agent.SystemPrompt
+	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
 		"three comment buckets",
 		"Do not write 'what' comments",

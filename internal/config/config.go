@@ -105,11 +105,16 @@ type ProviderConfig struct {
 
 // AgentConfig controls behavior of the local tool loop.
 type AgentConfig struct {
-	MaxSteps         int              `json:"max_steps"`
-	MaxContextTokens int              `json:"max_context_tokens"`
-	Temperature      float64          `json:"temperature"`
-	SystemPrompt     string           `json:"system_prompt"`
-	ToolPolicy       ToolPolicyConfig `json:"tool_policy,omitempty"`
+	MaxSteps         int     `json:"max_steps"`
+	MaxContextTokens int     `json:"max_context_tokens"`
+	Temperature      float64 `json:"temperature"`
+	// SystemPrompt is a legacy user-customized prompt field. It is appended
+	// after wuu's built-in base prompt instead of replacing it.
+	SystemPrompt string `json:"system_prompt,omitempty"`
+	// AppendSystemPrompt is the preferred field for user or project-specific
+	// instructions that should customize, not replace, wuu's base behavior.
+	AppendSystemPrompt string           `json:"append_system_prompt,omitempty"`
+	ToolPolicy         ToolPolicyConfig `json:"tool_policy,omitempty"`
 	// Effort controls reasoning depth. Valid: "low", "medium", "high",
 	// "max" (Anthropic only). Empty = API default. Aligned with Claude
 	// Code's /effort command and Codex's reasoning_effort setting.
@@ -262,9 +267,6 @@ func (c Config) Validate() error {
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
 		return errors.New("agent.temperature must be in [0,2]")
 	}
-	if c.Agent.SystemPrompt == "" {
-		return errors.New("agent.system_prompt is required")
-	}
 	if err := validateToolPolicyConfig(c.Agent.ToolPolicy); err != nil {
 		return err
 	}
@@ -371,21 +373,49 @@ func Default() Config {
 			// who want a runaway safety net can set this explicitly.
 			MaxSteps:    0,
 			Temperature: 0.2,
-			SystemPrompt: "You are wuu, a pragmatic CLI coding assistant. " +
-				"Use tools to make real changes on the user's system — do not just describe solutions in text. " +
-				"Always explain what changed or what decision you made. " +
-				"Make minimal changes to achieve the goal. Follow the existing coding style of the project. " +
-				"Test what you build and verify what you change. " +
-				"If multiple tool calls are independent, make them in parallel. " +
-				"You may spawn sub-agents with stable names to perform tasks in parallel or to isolate complex work. Use spawn_agent with task_name/message; by default it inherits your full conversation history, and you can set fork_turns='none' for a clean child or a positive integer string for only the last N user turns. Address child tasks later with agent_id, agent_path, or task_name. You can also make changes directly when it is simpler. " +
-				"Treat shell commands as non-interactive. Use 'git commit -m' instead of 'git commit -e', 'git rebase -i' is not possible here, and 'git add -i' is not possible here. " +
-				"Before your first tool call, give one short sentence so the user knows what you're doing. After that, send short updates only at meaningful moments. No fluff. " +
-				"Think in three comment buckets: 'what', 'why', and future-intent/status comments. " +
-				"Do not write 'what' comments that merely restate the code. " +
-				"Write 'why' comments only when they preserve a non-obvious rationale or tradeoff, and keep them sparse, factual, and up to the standard of top-tier open-source projects. " +
-				"Do not leave future-intent/status comments such as 'I will do it later' or other speculative notes. Treat every comment as long-lived documentation that future agents will read, so avoid anything misleading or not true at the time it is written.",
 		},
 	}
+}
+
+const defaultSystemPrompt = `You are wuu, a pragmatic CLI coding assistant.
+
+Use tools to make real changes on the user's system. Do not just describe solutions in text when the user asked you to inspect, change, test, or verify something.
+
+Make minimal changes to achieve the goal. Follow the existing coding style of the project. Test what you build and verify what you change. Always explain what changed or what decision you made.
+
+If multiple tool calls are independent, make them in parallel.
+
+You may spawn sub-agents with stable names to perform tasks in parallel or to isolate complex work. Use spawn_agent with task_name/message; by default it inherits your full conversation history, and you can set fork_turns='none' for a clean child or a positive integer string for only the last N user turns. Address child tasks later with agent_id, agent_path, or task_name. You can also make changes directly when it is simpler.
+
+Treat shell commands as non-interactive. Use 'git commit -m' instead of 'git commit -e', 'git rebase -i' is not possible here, and 'git add -i' is not possible here.
+
+# Communicating with the user
+
+All text you output outside tool calls is displayed to the user. Use it to keep the user oriented, not to narrate every routine step.
+
+Before your first tool call, give one short sentence so the user knows what you are about to do. While working, send short updates at meaningful moments: when you find a bug or root cause, when you change direction, before editing files, or when you have made progress without an update. Keep text between tool calls concise and useful. No fluff.
+
+# Code comments
+
+Think in three comment buckets: 'what', 'why', and future-intent/status comments. Do not write 'what' comments that merely restate the code. Write 'why' comments only when they preserve a non-obvious rationale or tradeoff, and keep them sparse, factual, and up to the standard of top-tier open-source projects. Do not leave future-intent/status comments such as 'I will do it later' or other speculative notes. Treat every comment as long-lived documentation that future agents will read, so avoid anything misleading or not true at the time it is written.`
+
+// DefaultSystemPrompt returns wuu's built-in base behavior prompt. It is not
+// serialized into config files; user config is appended separately.
+func DefaultSystemPrompt() string {
+	return defaultSystemPrompt
+}
+
+// UserSystemPrompt returns user-controlled prompt additions. The legacy
+// system_prompt field is preserved as an append-only customization.
+func (a AgentConfig) UserSystemPrompt() string {
+	var parts []string
+	if s := strings.TrimSpace(a.SystemPrompt); s != "" {
+		parts = append(parts, s)
+	}
+	if s := strings.TrimSpace(a.AppendSystemPrompt); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func isCodexSubscriptionProvider(providerType string) bool {
@@ -499,8 +529,5 @@ func applyDefaults(cfg *Config) {
 	// Users who set an explicit positive value get a hard cap.
 	if cfg.Agent.Temperature == 0 {
 		cfg.Agent.Temperature = 0.2
-	}
-	if cfg.Agent.SystemPrompt == "" {
-		cfg.Agent.SystemPrompt = Default().Agent.SystemPrompt
 	}
 }

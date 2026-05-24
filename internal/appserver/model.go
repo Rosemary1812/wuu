@@ -152,6 +152,7 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if ev.ToolCall == nil {
 			return nil
 		}
+		out = append(out, th.completeActiveAgentItemLocked(turnID, now)...)
 		item := th.toolItemFromCallLocked(turnID, *ev.ToolCall, now)
 		out = append(out, itemStarted(th.ID, turnID, item, now))
 	case providers.EventToolUseDelta:
@@ -244,6 +245,9 @@ func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatM
 		if strings.TrimSpace(msg.Content) == "" {
 			return out
 		}
+		if th.activeAgentItemID == "" && th.hasAgentTextLocked(turnID, msg.Content) {
+			return out
+		}
 		item, started := th.ensureActiveAgentItemLocked(turnID, now)
 		if started {
 			out = append(out, itemStarted(th.ID, turnID, item, now))
@@ -291,6 +295,20 @@ func (th *threadState) ensureActiveAgentItemLocked(turnID string, now time.Time)
 	th.activeAgentItemID = item.ID
 	th.upsertItemLocked(turnID, item, now)
 	return item, true
+}
+
+func (th *threadState) completeActiveAgentItemLocked(turnID string, now time.Time) []outboundNotification {
+	if th.activeAgentItemID == "" {
+		return nil
+	}
+	item, ok := th.itemLocked(turnID, th.activeAgentItemID)
+	th.activeAgentItemID = ""
+	if !ok {
+		return nil
+	}
+	item.Status = ThreadItemStatusCompleted
+	th.upsertItemLocked(turnID, item, now)
+	return []outboundNotification{itemCompleted(th.ID, turnID, item, now)}
 }
 
 func (th *threadState) ensureActiveReasoningItemLocked(turnID string, now time.Time) (ThreadItem, bool) {
@@ -352,6 +370,16 @@ func (th *threadState) hasReasoningTextLocked(turnID, text string) bool {
 	turn := th.ensureTurnLocked(turnID, time.Now())
 	for _, item := range turn.Items {
 		if item.Type == ThreadItemReasoning && item.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
+func (th *threadState) hasAgentTextLocked(turnID, text string) bool {
+	turn := th.ensureTurnLocked(turnID, time.Now())
+	for _, item := range turn.Items {
+		if item.Type == ThreadItemAgentMessage && item.Text == text {
 			return true
 		}
 	}
