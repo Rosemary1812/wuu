@@ -46,6 +46,29 @@ async function run() {
   assert.equal(runDebugVisible, false, "Production desktop builds must not expose the internal run debug panel.");
   const devFixturesVisible = await evaluate(win, () => Boolean(document.querySelector(".dev-fixture-nav")));
   assert.equal(devFixturesVisible, false, "Production desktop builds must not expose development conversation fixtures.");
+  await waitFor(
+    win,
+    () => {
+      const button = document.querySelector(".settings-button");
+      if (!(button instanceof HTMLButtonElement) || button.disabled) {
+        return null;
+      }
+      button.click();
+      return true;
+    },
+    3000
+  );
+  await waitFor(win, () => Boolean(document.querySelector(".settings-shell")), 3000);
+  const debugSettingVisible = await evaluate(win, () => Boolean(document.querySelector(".settings-switch")));
+  assert.equal(debugSettingVisible, false, "Production desktop builds must not expose the debug controls setting.");
+  await evaluate(win, () => {
+    const button = document.querySelector(".settings-back-button");
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Settings back button not found.");
+    }
+    button.click();
+  });
+  await waitFor(win, () => Boolean(document.querySelector(".conversation-pane")), 3000);
 
   await evaluate(win, () => {
     const button = Array.from(document.querySelectorAll(".workspace-toggle-button")).find((candidate) =>

@@ -1129,6 +1129,15 @@ button:disabled {
   margin: 72px auto 96px;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .settings-page h1 {
   margin: 0 0 64px;
   font-size: var(--font-heading);
@@ -1138,6 +1147,10 @@ button:disabled {
 .settings-section {
   display: grid;
   gap: 24px;
+}
+
+.settings-section + .settings-section {
+  margin-top: 48px;
 }
 
 .settings-section h2 {
@@ -1170,7 +1183,11 @@ button:disabled {
   padding: 16px 18px;
 }
 
-.settings-row span {
+.settings-card > .settings-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-row > span {
   display: grid;
   gap: 6px;
 }
@@ -1201,6 +1218,46 @@ button:disabled {
 .settings-row input:focus,
 .settings-row select:focus {
   box-shadow: 0 0 0 3px rgba(31, 35, 40, 0.08);
+}
+
+.settings-switch {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  justify-self: end;
+  border-radius: 999px;
+  background: #d7d9d5;
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.settings-switch[aria-checked="true"] {
+  background: #24282c;
+}
+
+.settings-switch:hover {
+  box-shadow: 0 0 0 3px rgba(31, 35, 40, 0.06);
+}
+
+.settings-switch:focus-visible {
+  box-shadow: 0 0 0 3px rgba(31, 35, 40, 0.14);
+}
+
+.settings-switch-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(31, 35, 40, 0.18);
+  transition: transform 140ms ease;
+}
+
+.settings-switch[aria-checked="true"] .settings-switch-thumb {
+  transform: translateX(20px);
 }
 
 .settings-card-footer {
@@ -9044,6 +9101,25 @@ html.swiss-international .workspace-diff-search {
   color: #101820;
 }
 
+html.swiss-international .settings-switch {
+  border: 2px solid #101820;
+  border-radius: 0;
+  background: #fffefa;
+  box-shadow: none;
+}
+
+html.swiss-international .settings-switch[aria-checked="true"] {
+  background: #101820;
+}
+
+html.swiss-international .settings-switch-thumb {
+  top: 3px;
+  left: 3px;
+  border-radius: 0;
+  background: #ef3b2d;
+  box-shadow: none;
+}
+
 html.swiss-international .settings-shell,
 html.swiss-international .settings-main,
 html.swiss-international .settings-card,
@@ -9563,7 +9639,9 @@ html.swiss-international .os-theme-wuu {
   .thread-row-actions,
   .thread-row-action,
   .message-copy-button,
-  .settings-button {
+  .settings-button,
+  .settings-switch,
+  .settings-switch-thumb {
     transition: none;
   }
 

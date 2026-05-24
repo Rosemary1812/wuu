@@ -291,6 +291,7 @@ const WORKSPACE_REVIEW_DIFF_MIN_WIDTH = 140;
 const WORKSPACE_REVIEW_TREE_STEP = 24;
 const WORKSPACE_REVIEW_TREE_WIDTH_KEY = "wuu.desktop.reviewTreeWidth";
 const SWISS_STYLE_KEY = "wuu.desktop.swissInternationalStyle";
+const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
 const IMAGE_MAX_DIMENSION = 2000;
@@ -298,6 +299,8 @@ const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
 const RENDERER_ENV = (
   import.meta as ImportMeta & { env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string } }
 ).env;
+const ENABLE_DEBUG_CONTROL_SETTING = Boolean(RENDERER_ENV?.DEV);
+const ENABLE_DEBUG_CONTROLS = Boolean(RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true");
 const ENABLE_LAUNCH_PREVIEW = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_RUN_DEBUG_PANEL = Boolean(RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true");
 const ENABLE_SWISS_STYLE_TOGGLE = Boolean(RENDERER_ENV?.DEV);
@@ -600,6 +603,16 @@ function initialWorkspaceReviewTreeWidth(): number {
 
 function initialSwissStyleEnabled(): boolean {
   return ENABLE_SWISS_STYLE_TOGGLE && window.localStorage.getItem(SWISS_STYLE_KEY) === "true";
+}
+
+function initialDebugControlsEnabled(): boolean {
+  if (!ENABLE_DEBUG_CONTROLS) {
+    return false;
+  }
+  if (RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true") {
+    return true;
+  }
+  return window.localStorage.getItem(DEBUG_CONTROLS_KEY) === "true";
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -1430,6 +1443,7 @@ export function App(): JSX.Element {
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
   const [pendingViewSwitch, setPendingViewSwitch] = useState<PendingViewSwitch | undefined>(undefined);
+  const [debugControlsEnabled, setDebugControlsEnabled] = useState(initialDebugControlsEnabled);
   const [swissStyleEnabled, setSwissStyleEnabled] = useState(initialSwissStyleEnabled);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const conversationPaneRef = useRef<HTMLElement | null>(null);
@@ -1462,6 +1476,7 @@ export function App(): JSX.Element {
   const runDebugDeltaSeenRef = useRef(new Set<string>());
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(workspaceRightPanelWidth, effectiveSidebarWidth);
+  const debugControlsVisible = ENABLE_DEBUG_CONTROLS && debugControlsEnabled;
 
   useEffect(() => {
     return () => {
@@ -1699,15 +1714,30 @@ export function App(): JSX.Element {
   }, [state.askRequests, state.thread?.id]);
 
   useEffect(() => {
-    const enabled = ENABLE_SWISS_STYLE_TOGGLE && swissStyleEnabled;
+    const enabled = debugControlsVisible && ENABLE_SWISS_STYLE_TOGGLE && swissStyleEnabled;
     document.documentElement.classList.toggle("swiss-international", enabled);
     if (ENABLE_SWISS_STYLE_TOGGLE) {
-      window.localStorage.setItem(SWISS_STYLE_KEY, String(enabled));
+      window.localStorage.setItem(SWISS_STYLE_KEY, String(swissStyleEnabled));
     }
     return () => {
       document.documentElement.classList.remove("swiss-international");
     };
-  }, [swissStyleEnabled]);
+  }, [debugControlsVisible, swissStyleEnabled]);
+
+  useEffect(() => {
+    if (ENABLE_DEBUG_CONTROLS) {
+      window.localStorage.setItem(DEBUG_CONTROLS_KEY, String(debugControlsEnabled));
+    }
+  }, [debugControlsEnabled]);
+
+  useEffect(() => {
+    if (debugControlsVisible) {
+      return;
+    }
+    setLaunchPreviewPinned(false);
+    setRunDebugOpen(false);
+    setTurnProgressPreviewOpen(false);
+  }, [debugControlsVisible]);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
@@ -1806,7 +1836,7 @@ export function App(): JSX.Element {
     (request) => !request.turnID || !turns.some((turn) => turn.id === request.turnID)
   );
   const emptyConversation = turns.length === 0 && !visibleAskRequest && visibleAnsweredAskRequests.length === 0;
-  const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
+  const previewingLaunch = debugControlsVisible && ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
   const visiblePendingThreadID =
@@ -3316,8 +3346,11 @@ export function App(): JSX.Element {
       <SettingsView
         initialized={state.initialized}
         running={anyThreadIsRunning}
+        showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
+        debugControlsEnabled={debugControlsEnabled}
         onBack={() => setSettingsOpen(false)}
         onSave={updateRuntimeSettings}
+        onDebugControlsChange={setDebugControlsEnabled}
       />
     );
   }
@@ -3373,7 +3406,7 @@ export function App(): JSX.Element {
             <MessageSquarePlus size={18} />
             <span>新对话</span>
           </button>
-          {ENABLE_CONVERSATION_FIXTURES ? (
+          {debugControlsVisible && ENABLE_CONVERSATION_FIXTURES ? (
             <div className="dev-fixture-nav" aria-label="开发调试会话">
               <div className="dev-fixture-label">开发样例</div>
               <button
@@ -3533,7 +3566,7 @@ export function App(): JSX.Element {
             <h1>{activeTitle}</h1>
           </div>
           <div className="title-actions">
-            {ENABLE_SWISS_STYLE_TOGGLE ? (
+            {debugControlsVisible && ENABLE_SWISS_STYLE_TOGGLE ? (
               <button
                 className={`launch-preview-button style-toggle-button${swissStyleEnabled ? " active" : ""}`}
                 type="button"
@@ -3546,7 +3579,7 @@ export function App(): JSX.Element {
                 <span>Swiss</span>
               </button>
             ) : null}
-            {ENABLE_LAUNCH_PREVIEW ? (
+            {debugControlsVisible && ENABLE_LAUNCH_PREVIEW ? (
               <button
                 className="launch-preview-button"
                 type="button"
@@ -3557,7 +3590,7 @@ export function App(): JSX.Element {
                 <span>启动动画</span>
               </button>
             ) : null}
-            {ENABLE_TURN_PROGRESS_EXPERIMENT ? (
+            {debugControlsVisible && ENABLE_TURN_PROGRESS_EXPERIMENT ? (
               <button
                 className={`launch-preview-button turn-progress-preview-button${turnProgressPreviewOpen ? " active" : ""}`}
                 type="button"
@@ -3568,7 +3601,7 @@ export function App(): JSX.Element {
                 <span>完整预览</span>
               </button>
             ) : null}
-            {ENABLE_RUN_DEBUG_PANEL ? (
+            {debugControlsVisible && ENABLE_RUN_DEBUG_PANEL ? (
               <div className="run-debug-anchor" ref={runDebugRef}>
                 <button
                   className={`launch-preview-button run-debug-button${runDebugOpen ? " active" : ""}`}
@@ -3630,7 +3663,7 @@ export function App(): JSX.Element {
           </div>
         </header>
 
-        {ENABLE_TURN_PROGRESS_EXPERIMENT && turnProgressPreviewOpen ? (
+        {debugControlsVisible && ENABLE_TURN_PROGRESS_EXPERIMENT && turnProgressPreviewOpen ? (
           <TurnProgressPreviewOverlay onClose={() => setTurnProgressPreviewOpen(false)} />
         ) : null}
 
@@ -8959,13 +8992,19 @@ function ViewSwitchLoading(): JSX.Element {
 function SettingsView({
   initialized,
   running,
+  showDebugControlsSetting,
+  debugControlsEnabled,
   onBack,
-  onSave
+  onSave,
+  onDebugControlsChange
 }: {
   initialized?: InitializeResult;
   running: boolean;
+  showDebugControlsSetting: boolean;
+  debugControlsEnabled: boolean;
   onBack: () => void;
   onSave: (provider: string, model: string) => Promise<void>;
+  onDebugControlsChange: (enabled: boolean) => void;
 }): JSX.Element {
   const providers = initialized?.providers ?? [];
   const [providerDraft, setProviderDraft] = useState(initialized?.provider ?? "");
@@ -9085,6 +9124,33 @@ function SettingsView({
               </div>
             </form>
           </section>
+
+          {showDebugControlsSetting ? (
+            <section className="settings-section">
+              <div>
+                <h2>开发</h2>
+                <p>控制开发时才需要的界面入口。</p>
+              </div>
+              <div className="settings-card">
+                <div className="settings-row">
+                  <span>
+                    <strong>调试入口</strong>
+                    <small>显示启动动画、调试面板和开发样例入口</small>
+                  </span>
+                  <button
+                    className="settings-switch"
+                    type="button"
+                    role="switch"
+                    aria-checked={debugControlsEnabled}
+                    onClick={() => onDebugControlsChange(!debugControlsEnabled)}
+                  >
+                    <span className="settings-switch-thumb" aria-hidden="true" />
+                    <span className="sr-only">{debugControlsEnabled ? "关闭调试入口" : "打开调试入口"}</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
         </div>
       </OverlayScrollbarsComponent>
     </div>
