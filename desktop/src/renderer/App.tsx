@@ -107,6 +107,7 @@ type AnsweredAskRequestState = AskRequestState & {
 };
 
 const ASK_USER_OTHER_VALUE = "__wuu_other__";
+const THREAD_SWITCH_LOADING_DELAY_MS = 180;
 
 type CodexModelLoadState = {
   provider?: string;
@@ -118,6 +119,10 @@ type CodexModelLoadState = {
 type CodexRuntimeMenu = "main" | "model" | null;
 type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
 type EnvironmentDialog = "commit" | "pull-request" | null;
+type PendingThreadSwitch = {
+  threadID: string;
+  visible: boolean;
+};
 type FloatingMenuOwner = "composer-runtime" | "composer-access" | "codex-runtime";
 type FloatingMenuPlacement = "above" | "below";
 type FloatingMenuAlign = "left" | "right";
@@ -1410,6 +1415,7 @@ export function App(): JSX.Element {
   const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
+  const [pendingThreadSwitch, setPendingThreadSwitch] = useState<PendingThreadSwitch | undefined>(undefined);
   const [swissStyleEnabled, setSwissStyleEnabled] = useState(initialSwissStyleEnabled);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const conversationPaneRef = useRef<HTMLElement | null>(null);
@@ -1433,6 +1439,8 @@ export function App(): JSX.Element {
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
   const drainingQueueRef = useRef(false);
   const queueDrainPausedRef = useRef(false);
+  const threadSwitchRequestRef = useRef(0);
+  const threadSwitchDelayTimerRef = useRef<number | undefined>(undefined);
   const runDebugEventIDRef = useRef(0);
   const runDebugDeltaSeenRef = useRef(new Set<string>());
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
@@ -1443,6 +1451,7 @@ export function App(): JSX.Element {
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
       }
+      clearThreadSwitchDelay();
     };
   }, []);
 
@@ -1762,8 +1771,10 @@ export function App(): JSX.Element {
   const previewingLaunch = ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
   const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
+  const visiblePendingThreadID = pendingThreadSwitch?.visible ? pendingThreadSwitch.threadID : undefined;
   const activeThreadReadOnly = Boolean(state.thread?.read_only);
   const activeThreadIsRunning = !activeThreadReadOnly && isStateActiveThreadRunning(state);
+  const threadSwitchPending = pendingThreadSwitch !== undefined;
   const pendingAskThreadIDs = pendingAskThreadIDsForRequests(state.askRequests);
   const anyThreadIsRunning = isAnyThreadRunning(state);
   const environmentPanelCanShow = Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen);
@@ -2113,7 +2124,7 @@ export function App(): JSX.Element {
         images={composerImages}
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
-        running={activeThreadIsRunning}
+        running={activeThreadIsRunning || threadSwitchPending}
         status={activeThreadReadOnly ? "子任务会话只读" : state.status}
         readOnly={activeThreadReadOnly}
         initialized={state.initialized}
@@ -2186,6 +2197,46 @@ export function App(): JSX.Element {
     );
   }
 
+  function clearThreadSwitchDelay(): void {
+    if (threadSwitchDelayTimerRef.current === undefined) {
+      return;
+    }
+    window.clearTimeout(threadSwitchDelayTimerRef.current);
+    threadSwitchDelayTimerRef.current = undefined;
+  }
+
+  function beginThreadSwitch(threadID: string): number {
+    const requestID = threadSwitchRequestRef.current + 1;
+    threadSwitchRequestRef.current = requestID;
+    clearThreadSwitchDelay();
+    setPendingThreadSwitch({ threadID, visible: false });
+    threadSwitchDelayTimerRef.current = window.setTimeout(() => {
+      threadSwitchDelayTimerRef.current = undefined;
+      if (threadSwitchRequestRef.current !== requestID) {
+        return;
+      }
+      setPendingThreadSwitch((current) =>
+        current?.threadID === threadID ? { ...current, visible: true } : current
+      );
+    }, THREAD_SWITCH_LOADING_DELAY_MS);
+    return requestID;
+  }
+
+  function finishThreadSwitch(requestID: number): boolean {
+    if (threadSwitchRequestRef.current !== requestID) {
+      return false;
+    }
+    clearThreadSwitchDelay();
+    setPendingThreadSwitch(undefined);
+    return true;
+  }
+
+  function cancelThreadSwitch(): void {
+    threadSwitchRequestRef.current += 1;
+    clearThreadSwitchDelay();
+    setPendingThreadSwitch(undefined);
+  }
+
   async function loadRuntime(
     projectState: ProjectListResult,
     options: { resumeLatestThread?: boolean } = {}
@@ -2251,6 +2302,7 @@ export function App(): JSX.Element {
       closeProjectMenus();
       return;
     }
+    cancelThreadSwitch();
     closeProjectMenus();
     clearPendingComposerMessages();
     setState((current) => ({
@@ -2278,6 +2330,7 @@ export function App(): JSX.Element {
   }
 
   async function startNewThreadForProject(projectId: string): Promise<void> {
+    cancelThreadSwitch();
     closeProjectMenus();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
@@ -2317,6 +2370,7 @@ export function App(): JSX.Element {
   }
 
   async function createBlankProject(): Promise<void> {
+    cancelThreadSwitch();
     closeProjectMenus();
     clearPendingComposerMessages();
     try {
@@ -2336,6 +2390,7 @@ export function App(): JSX.Element {
   }
 
   async function chooseProjectFolder(): Promise<void> {
+    cancelThreadSwitch();
     closeProjectMenus();
     clearPendingComposerMessages();
     try {
@@ -2359,6 +2414,7 @@ export function App(): JSX.Element {
       closeProjectMenus();
       return;
     }
+    cancelThreadSwitch();
     closeProjectMenus();
     clearPendingComposerMessages();
     setState((current) => ({
@@ -2543,6 +2599,7 @@ export function App(): JSX.Element {
     if (!state.activeContext) {
       return;
     }
+    cancelThreadSwitch();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
@@ -2563,6 +2620,7 @@ export function App(): JSX.Element {
     if (!state.activeContext || !state.initialized) {
       return;
     }
+    cancelThreadSwitch();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
@@ -2588,6 +2646,7 @@ export function App(): JSX.Element {
     if (!state.activeContext || !state.initialized) {
       return;
     }
+    cancelThreadSwitch();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
@@ -2606,13 +2665,23 @@ export function App(): JSX.Element {
   }
 
   async function selectThread(threadId: string): Promise<void> {
-    if (!state.activeContext || threadId === state.thread?.id) {
+    if (!state.activeContext) {
+      return;
+    }
+    if (threadId === state.thread?.id) {
+      if (pendingThreadSwitch) {
+        cancelThreadSwitch();
+      }
+      return;
+    }
+    if (pendingThreadSwitch?.threadID === threadId) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
-    clearPendingComposerMessages();
     const demoThread = localDemoThreadsRef.current.get(threadId);
     if (demoThread) {
+      cancelThreadSwitch();
+      clearPendingComposerMessages();
       setState((current) => ({
         ...current,
         thread: demoThread,
@@ -2624,9 +2693,14 @@ export function App(): JSX.Element {
       }));
       return;
     }
-    setState((current) => ({ ...current, status: "loading" }));
+    const sourceContext = state.activeContext;
+    const requestID = beginThreadSwitch(threadId);
     try {
       const thread = requireThread(await window.wuu.resumeThread(threadId), "resume did not return a thread");
+      if (!finishThreadSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+        return;
+      }
+      clearPendingComposerMessages();
       setState((current) => ({
         ...current,
         thread,
@@ -2635,6 +2709,9 @@ export function App(): JSX.Element {
         status: "ready"
       }));
     } catch (error) {
+      if (!finishThreadSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+        return;
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "load failed"
@@ -2643,18 +2720,31 @@ export function App(): JSX.Element {
   }
 
   async function selectChildAgent(agent: Agent): Promise<void> {
-    if (!state.activeContext || agent.id === state.thread?.id) {
+    if (!state.activeContext) {
+      return;
+    }
+    if (agent.id === state.thread?.id) {
+      if (pendingThreadSwitch) {
+        cancelThreadSwitch();
+      }
+      return;
+    }
+    if (pendingThreadSwitch?.threadID === agent.id) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
-    setPrompt("");
-    setComposerImages([]);
-    clearPendingComposerMessages();
-    setState((current) => ({ ...current, status: "loading", running: false, askRequests: [], answeredAskRequests: [] }));
+    const sourceContext = state.activeContext;
+    const requestID = beginThreadSwitch(agent.id);
     try {
       const thread =
         localDemoThreadsRef.current.get(agent.id) ??
         requireThread(await window.wuu.resumeThread(agent.id), "resume did not return a child agent thread");
+      if (!finishThreadSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+        return;
+      }
+      setPrompt("");
+      setComposerImages([]);
+      clearPendingComposerMessages();
       setState((current) => ({
         ...current,
         thread,
@@ -2663,6 +2753,9 @@ export function App(): JSX.Element {
         status: "ready"
       }));
     } catch (error) {
+      if (!finishThreadSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+        return;
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "load child agent failed"
@@ -2746,6 +2839,9 @@ export function App(): JSX.Element {
   }
 
   async function sendPrompt(): Promise<void> {
+    if (threadSwitchPending) {
+      return;
+    }
     const message = createComposerMessage(prompt, composerImages);
     const currentState = appStateRef.current;
     if (currentState.thread?.read_only) {
@@ -2773,6 +2869,7 @@ export function App(): JSX.Element {
       !currentState.activeContext ||
       !currentState.initialized ||
       currentState.thread?.read_only ||
+      threadSwitchPending ||
       isStateActiveThreadRunning(currentState)
     ) {
       return false;
@@ -3133,6 +3230,7 @@ export function App(): JSX.Element {
             <PinnedThreadList
               threads={sidebarPinnedThreads}
               activeID={state.thread?.id}
+              pendingThreadID={visiblePendingThreadID}
               pendingAskThreadIDs={pendingAskThreadIDs}
               archiveConfirmThreadID={archiveConfirmThreadID}
               onSelect={(id) => void selectThread(id)}
@@ -3177,6 +3275,7 @@ export function App(): JSX.Element {
             activeID={state.activeProjectId}
             threads={state.threads}
             activeThreadID={state.thread?.id}
+            pendingThreadID={visiblePendingThreadID}
             pendingAskThreadIDs={pendingAskThreadIDs}
             archiveConfirmThreadID={archiveConfirmThreadID}
             onSelectProject={(id) => void openProject(id)}
@@ -3342,6 +3441,8 @@ export function App(): JSX.Element {
         ) : null}
 
         {environmentPanelNode}
+
+        {pendingThreadSwitch?.visible ? <SessionSwitchLoading /> : null}
 
         {state.initialized && !previewingLaunch ? (
           <div
@@ -6430,6 +6531,7 @@ function ProjectList({
   activeID,
   threads,
   activeThreadID,
+  pendingThreadID,
   pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelectProject,
@@ -6444,6 +6546,7 @@ function ProjectList({
   activeID?: string;
   threads: Thread[];
   activeThreadID?: string;
+  pendingThreadID?: string;
   pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelectProject: (id: string) => void;
@@ -6480,6 +6583,7 @@ function ProjectList({
             <ThreadList
               threads={threads}
               activeID={activeThreadID}
+              pendingThreadID={pendingThreadID}
               pendingAskThreadIDs={pendingAskThreadIDs}
               archiveConfirmThreadID={archiveConfirmThreadID}
               onSelect={onSelectThread}
@@ -6498,6 +6602,7 @@ function ProjectList({
 function ThreadList({
   threads,
   activeID,
+  pendingThreadID,
   pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelect,
@@ -6508,6 +6613,7 @@ function ThreadList({
 }: {
   threads: Thread[];
   activeID?: string;
+  pendingThreadID?: string;
   pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
@@ -6522,6 +6628,7 @@ function ThreadList({
       <ThreadRows
         threads={visibleThreads}
         activeID={activeID}
+        pendingThreadID={pendingThreadID}
         pendingAskThreadIDs={pendingAskThreadIDs}
         archiveConfirmThreadID={archiveConfirmThreadID}
         onSelect={onSelect}
@@ -6537,6 +6644,7 @@ function ThreadList({
 function PinnedThreadList({
   threads,
   activeID,
+  pendingThreadID,
   pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelect,
@@ -6547,6 +6655,7 @@ function PinnedThreadList({
 }: {
   threads: Thread[];
   activeID?: string;
+  pendingThreadID?: string;
   pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
@@ -6560,6 +6669,7 @@ function PinnedThreadList({
       <ThreadRows
         threads={threads}
         activeID={activeID}
+        pendingThreadID={pendingThreadID}
         pendingAskThreadIDs={pendingAskThreadIDs}
         archiveConfirmThreadID={archiveConfirmThreadID}
         onSelect={onSelect}
@@ -6575,6 +6685,7 @@ function PinnedThreadList({
 function ThreadRows({
   threads,
   activeID,
+  pendingThreadID,
   pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelect,
@@ -6585,6 +6696,7 @@ function ThreadRows({
 }: {
   threads: Thread[];
   activeID?: string;
+  pendingThreadID?: string;
   pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
@@ -6598,15 +6710,23 @@ function ThreadRows({
       {threads.map((thread, index) => {
         const archiveConfirming = archiveConfirmThreadID === thread.id;
         const pendingAsk = pendingAskThreadIDs.has(thread.id);
+        const pendingSwitch = pendingThreadID === thread.id;
         return (
           <Fragment key={thread.id}>
             <div
-              className={`thread-row ${thread.id === activeID ? "active" : ""}${pendingAsk ? " pending-ask" : ""}`}
+              className={`thread-row ${thread.id === activeID ? "active" : ""}${pendingAsk ? " pending-ask" : ""}${
+                pendingSwitch ? " pending-switch" : ""
+              }`}
               aria-current={thread.id === activeID ? "page" : undefined}
               style={{ animationDelay: `${index * 18}ms` } as CSSProperties}
               onMouseLeave={() => onClearArchiveConfirm(thread.id)}
             >
-              <button className="thread-row-main" type="button" onClick={() => onSelect(thread.id)}>
+              <button
+                className="thread-row-main"
+                type="button"
+                aria-busy={pendingSwitch}
+                onClick={() => onSelect(thread.id)}
+              >
                 <span className="thread-row-title">{thread.preview || "未命名对话"}</span>
                 {pendingAsk ? (
                   <span className="thread-row-ask-badge" title="需要你选择">
@@ -6614,6 +6734,7 @@ function ThreadRows({
                     <span>需选择</span>
                   </span>
                 ) : null}
+                {pendingSwitch ? <span className="thread-row-loading" aria-hidden="true" /> : null}
               </button>
               <div className="thread-row-actions" aria-label="对话操作">
                 <button
@@ -6637,7 +6758,12 @@ function ThreadRows({
               </div>
             </div>
             {thread.child_agents?.length ? (
-              <ThreadChildAgentRows agents={thread.child_agents} activeID={activeID} onSelect={onSelectChildAgent} />
+              <ThreadChildAgentRows
+                agents={thread.child_agents}
+                activeID={activeID}
+                pendingThreadID={pendingThreadID}
+                onSelect={onSelectChildAgent}
+              />
             ) : null}
           </Fragment>
         );
@@ -6649,10 +6775,12 @@ function ThreadRows({
 function ThreadChildAgentRows({
   agents,
   activeID,
+  pendingThreadID,
   onSelect
 }: {
   agents: Agent[];
   activeID?: string;
+  pendingThreadID?: string;
   onSelect: (agent: Agent) => void;
 }): JSX.Element {
   return (
@@ -6662,12 +6790,16 @@ function ThreadChildAgentRows({
         const label = agentLabel(agent);
         const nestedLabel = agentNestedLabel(agent);
         const active = activeID === agent.id;
+        const pendingSwitch = pendingThreadID === agent.id;
         return (
           <button
             key={agent.id}
-            className={`thread-child-agent-row ${status}${active ? " active" : ""}`}
+            className={`thread-child-agent-row ${status}${active ? " active" : ""}${
+              pendingSwitch ? " pending-switch" : ""
+            }`}
             type="button"
             aria-current={active ? "page" : undefined}
+            aria-busy={pendingSwitch}
             aria-label={`${label}，${agentStatusLabel(agent.status)}`}
             title={agentTooltip(agent)}
             onClick={() => onSelect(agent)}
@@ -6675,7 +6807,11 @@ function ThreadChildAgentRows({
             <CornerDownRight className="thread-child-agent-branch" size={13} />
             <span className="thread-child-agent-name">{label}</span>
             {nestedLabel ? <span className="thread-child-agent-nested">{nestedLabel}</span> : null}
-            <span className="thread-child-agent-status">{agentStatusLabel(agent.status)}</span>
+            {pendingSwitch ? (
+              <span className="thread-row-loading thread-child-agent-loading" aria-hidden="true" />
+            ) : (
+              <span className="thread-child-agent-status">{agentStatusLabel(agent.status)}</span>
+            )}
           </button>
         );
       })}
@@ -8543,6 +8679,19 @@ function RuntimeLoading({
           <h2>{status}</h2>
         </div>
       )}
+    </div>
+  );
+}
+
+function SessionSwitchLoading(): JSX.Element {
+  return (
+    <div className="session-switch-loading" role="status" aria-label="正在打开会话">
+      <div className="wuu-launch-mark session-switch-mark" aria-hidden="true">
+        <span>w</span>
+        <span>u</span>
+        <span>u</span>
+      </div>
+      <div className="wuu-launch-rail session-switch-rail" aria-hidden="true" />
     </div>
   );
 }

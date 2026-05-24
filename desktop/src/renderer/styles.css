@@ -113,6 +113,23 @@
   }
 }
 
+@keyframes session-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes session-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 html,
 body,
 #root {
@@ -800,6 +817,11 @@ button:disabled {
   box-shadow: inset 0 0 0 1px rgba(95, 126, 104, 0.12);
 }
 
+.thread-child-agent-row.pending-switch {
+  background: rgba(95, 126, 104, 0.08);
+  color: #303734;
+}
+
 .thread-child-agent-branch {
   flex: 0 0 auto;
   color: rgba(95, 126, 104, 0.42);
@@ -847,6 +869,13 @@ button:disabled {
   transform: scale(1);
 }
 
+.thread-row.pending-switch::before {
+  background: var(--sidebar-accent);
+  box-shadow: 0 0 0 3px rgba(95, 126, 104, 0.14);
+  transform: scale(1);
+  animation: session-loading-pulse 900ms ease-in-out infinite;
+}
+
 .thread-row-main {
   display: flex;
   min-width: 0;
@@ -888,6 +917,23 @@ button:disabled {
   flex: 0 0 auto;
   overflow: visible;
   white-space: nowrap;
+}
+
+.thread-row-loading {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  margin-left: 7px;
+  border: 2px solid rgba(95, 126, 104, 0.22);
+  border-top-color: var(--sidebar-accent);
+  border-radius: 999px;
+  animation: session-loading-spin 720ms linear infinite;
+}
+
+.thread-child-agent-loading {
+  width: 10px;
+  height: 10px;
+  margin-left: 0;
 }
 
 .thread-row-actions {
@@ -5863,6 +5909,42 @@ pre {
   color: #22262a;
 }
 
+.session-switch-loading {
+  z-index: 28;
+  display: grid;
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  justify-self: center;
+  justify-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  pointer-events: none;
+  animation: menu-enter 140ms var(--menu-enter-easing) both;
+}
+
+.session-switch-mark {
+  gap: 2px;
+  color: #303734;
+  font-size: 18px;
+}
+
+.session-switch-mark::after {
+  width: 4px;
+  height: 15px;
+  margin-left: 3px;
+  transform: translateY(2px);
+}
+
+.session-switch-rail {
+  width: 72px;
+  height: 2px;
+}
+
+.session-switch-rail::after {
+  width: 24px;
+}
+
 @keyframes wuu-mark-rise {
   0%,
   100% {
@@ -7099,6 +7181,9 @@ pre {
   .wuu-launch-mark::after,
   .wuu-launch-mark span,
   .wuu-launch-rail::after,
+  .session-switch-loading,
+  .thread-row-loading,
+  .thread-row.pending-switch::before,
   .turn-progress.in_progress .turn-progress-label svg,
   .turn-progress.in_progress .turn-progress-rule::after,
   .turn-progress-campaign,
@@ -8228,9 +8313,20 @@ html.swiss-international .thread-child-agent-list::before {
 
 html.swiss-international .thread-row.active::before,
 html.swiss-international .thread-row:hover::before,
+html.swiss-international .thread-row.pending-switch::before,
 html.swiss-international .thread-row.pending-ask::before {
   background: #ef3b2d;
   box-shadow: none;
+}
+
+html.swiss-international .thread-child-agent-row.pending-switch {
+  background: #fffefa;
+  color: #101820;
+}
+
+html.swiss-international .thread-row-loading {
+  border-color: rgba(16, 24, 32, 0.24);
+  border-top-color: #ef3b2d;
 }
 
 html.swiss-international .project-row-chevron,
@@ -8848,6 +8944,7 @@ html.swiss-international .os-theme-wuu {
   .environment-panel,
   .environment-side-menu,
   .environment-dialog,
+  .session-switch-loading,
   .thread-list,
   .thread-list::before,
   .thread-row,
