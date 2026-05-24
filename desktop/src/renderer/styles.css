@@ -3658,7 +3658,7 @@ button:disabled {
   border-radius: 7px;
   background: transparent;
   box-shadow: none;
-  color: inherit;
+  color: #8b9094;
   cursor: pointer;
   opacity: 1;
   padding: 0;
