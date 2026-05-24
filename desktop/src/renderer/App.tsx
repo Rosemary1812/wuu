@@ -8725,11 +8725,6 @@ function Composer({
       <div className="composer-shell">
         {slashMenuOpen ? (
           <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label="斜杠命令">
-            <div className="slash-command-header">
-              <span>斜杠命令</span>
-              <kbd>↑↓</kbd>
-              <kbd>Enter</kbd>
-            </div>
             {visibleSlashCommands.length > 0 ? (
               <div className="slash-command-list">
                 {visibleSlashCommands.map((command, index) => {
@@ -8752,12 +8747,14 @@ function Composer({
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => applySlashCommand(command, slashDraft)}
                     >
-                      <span className="slash-command-name">/{command.name}</span>
+                      <span className="slash-command-icon" aria-hidden="true">
+                        <SlashCommandIcon command={command} />
+                      </span>
                       <span className="slash-command-copy">
                         <strong>{command.title}</strong>
                         <small>{command.disabledReason ?? command.description}</small>
                       </span>
-                      <span className="slash-command-tag">{command.disabledReason ? "不可用" : command.tag}</span>
+                      <span className="slash-command-name">/{command.name}</span>
                     </button>
                   );
                 })}
@@ -8977,6 +8974,28 @@ function Composer({
       {content}
     </footer>
   );
+}
+
+function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.Element {
+  switch (command.action ?? command.id) {
+    case "open-review":
+    case "review":
+      return <Search size={16} />;
+    case "new-thread":
+      return <MessageSquarePlus size={16} />;
+    case "open-terminal":
+      return <Terminal size={16} />;
+    case "open-files":
+      return <FileText size={16} />;
+    case "open-project":
+      return <FolderOpen size={16} />;
+    case "no-project":
+      return <FolderX size={16} />;
+    case "settings":
+      return <Settings size={16} />;
+    default:
+      return <Wrench size={16} />;
+  }
 }
 
 function CodexRuntimePicker({
