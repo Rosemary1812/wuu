@@ -29,9 +29,7 @@
 
 - The `thirdparty/` directory contains reference implementations from related agent, CLI, and product codebases. Treat it as a local research library when the user asks for "industry best practices", "how others do this", "reference implementations", or similar guidance.
 - When investigating a best-practice question, inspect relevant `thirdparty/` code, docs, and tests with targeted searches before deciding on an implementation. Prefer close analogues over generic assumptions.
-- Use third-party code as evidence, not authority. Adapt ideas to this product's user experience, architecture, language, and constraints; do not blindly copy behavior just because another project does it.
-- Be careful with licensing and ownership boundaries. Do not paste large third-party code blocks into this repository unless the license and integration path are explicitly acceptable.
-- If third-party references conflict with the user's product intent or the current repository's constraints, explain the tradeoff and choose the implementation that best serves this product.
+- Use third-party code as evidence, not authority. Adapt useful ideas to this repository's existing patterns; do not blindly copy behavior just because another project does it.
 
 ## User-Facing Output
 
