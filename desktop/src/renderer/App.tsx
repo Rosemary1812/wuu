@@ -343,7 +343,6 @@ const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
   minWidth: 0,
   width: "100%"
 };
-const EMPTY_PROJECT_ID_SET = new Set<string>();
 const WORKSPACE_FILE_TREE_ITEM_HEIGHT = 28;
 
 type SidebarResizeSession = {
@@ -4088,7 +4087,7 @@ export function App(): JSX.Element {
               activeID={state.activeProjectId}
               pendingProjectID={visiblePendingProjectID}
               collapsedProjectIDs={collapsedProjectIDs}
-              collapsingProjectIDs={EMPTY_PROJECT_ID_SET}
+              collapsingProjectIDs={collapsingProjectIDs}
               threads={state.threads}
               activeThreadID={activeThreadID}
               pendingThreadID={visiblePendingThreadID}
@@ -8222,7 +8221,7 @@ function ThreadItemView({
       const streamKeyValue = streamTextKey(turnID, item.id, "text");
       const agentText = streamTextStore.has(streamKeyValue) ? streamTextStore.get(streamKeyValue) : (item.text ?? "");
       const copyable = streaming || agentText.trim() !== "";
-      const actionsVisible = turnStatus !== "in_progress" && copyable;
+      const actionsVisible = turnStatus === "completed" && copyable;
       const actionsPersistent = actionsVisible && item.id === latestAgentMessageID;
       return (
         <article
