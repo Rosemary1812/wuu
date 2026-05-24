@@ -1303,12 +1303,17 @@ button:disabled {
   --environment-panel-motion-easing: cubic-bezier(0.2, 0, 0, 1);
   --environment-flow-motion-duration: 280ms;
   --environment-flow-motion-delay: 22ms;
-  --conversation-readable-width: 760px;
+  --conversation-readable-width: 880px;
   --conversation-flow-width: var(--conversation-readable-width);
-  --conversation-flow-padding-inline: clamp(20px, 4vw, 48px);
+  --conversation-flow-padding-inline: clamp(24px, 4vw, 56px);
   --conversation-content-width: calc(
     var(--conversation-flow-width) - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline)
   );
+  --conversation-message-max-width: 720px;
+  --conversation-message-max-inline: 86%;
+  --conversation-split-message-max-width: 640px;
+  --conversation-split-message-max-inline: 86%;
+  --conversation-dialog-width: 800px;
   --conversation-prose-line-height: 1.64;
   --conversation-prose-block-gap: 10px;
   --conversation-scrollbar-gutter: 12px;
@@ -2037,7 +2042,7 @@ button:disabled {
 
 .environment-dialog {
   display: grid;
-  width: min(560px, calc(100vw - 48px));
+  width: min(640px, calc(100vw - 48px));
   gap: 14px;
   border: 1px solid #dededb;
   border-radius: 16px;
@@ -3626,7 +3631,7 @@ button:disabled {
 }
 
 .conversation-split-width .message {
-  max-width: min(560px, 82%);
+  max-width: min(var(--conversation-split-message-max-width), var(--conversation-split-message-max-inline));
 }
 
 .split-composer {
@@ -3733,7 +3738,7 @@ button:disabled {
 }
 
 .message {
-  max-width: min(660px, 72%);
+  max-width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
   border-radius: 22px;
   padding: 10px 16px;
   font-size: var(--font-content);
@@ -3748,7 +3753,7 @@ button:disabled {
 
 .user-message-block {
   display: grid;
-  max-width: min(660px, 72%);
+  max-width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
   align-self: flex-end;
   justify-items: end;
   gap: 8px;
@@ -3756,7 +3761,7 @@ button:disabled {
 }
 
 .conversation-split-width .user-message-block {
-  max-width: min(560px, 82%);
+  max-width: min(var(--conversation-split-message-max-width), var(--conversation-split-message-max-inline));
 }
 
 .user-message-block .user-message {
@@ -9174,13 +9179,13 @@ html.swiss-international .turn {
 }
 
 html.swiss-international .message {
-  max-width: min(720px, 68%);
+  max-width: min(760px, 78%);
   border-radius: 0;
   padding: 12px 16px;
 }
 
 html.swiss-international .user-message-block {
-  max-width: min(720px, 68%);
+  max-width: min(760px, 78%);
 }
 
 html.swiss-international .user-message {
@@ -9671,7 +9676,7 @@ html.swiss-international .os-theme-wuu {
 
 .ask-message {
   display: grid;
-  width: min(760px, 100%);
+  width: min(var(--conversation-dialog-width), 100%);
   margin: 0 0 46px;
   overflow: hidden;
   border: 1px solid #dfe2dd;
