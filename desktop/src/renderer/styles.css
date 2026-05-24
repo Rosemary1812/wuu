@@ -7716,8 +7716,8 @@ pre {
 
 .slash-command-list {
   display: grid;
-  gap: 2px;
-  max-height: 294px;
+  gap: 0;
+  max-height: 218px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -7738,14 +7738,14 @@ pre {
 
 .slash-command-item {
   display: grid;
-  min-height: 42px;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  min-height: 28px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  border-radius: 12px;
+  gap: 7px;
+  border-radius: 8px;
   background: transparent;
   color: #25292d;
-  padding: 6px 8px;
+  padding: 3px 6px;
   text-align: left;
 }
 
@@ -7764,8 +7764,8 @@ pre {
 
 .slash-command-icon {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   place-items: center;
   color: #757b80;
 }
@@ -7774,7 +7774,8 @@ pre {
   display: flex;
   min-width: 0;
   align-items: baseline;
-  gap: 8px;
+  gap: 5px;
+  line-height: 10px;
 }
 
 .slash-command-copy strong {
@@ -7783,6 +7784,7 @@ pre {
   color: #202427;
   font-size: 10px;
   font-weight: var(--weight-semibold);
+  line-height: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7793,6 +7795,7 @@ pre {
   color: #9a9da0;
   font-size: 10px;
   font-weight: var(--weight-medium);
+  line-height: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7802,6 +7805,7 @@ pre {
   color: #7b8084;
   font-size: 10px;
   font-weight: var(--weight-semibold);
+  line-height: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
