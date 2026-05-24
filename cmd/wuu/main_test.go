@@ -118,7 +118,7 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "test_failure_fix") || !strings.Contains(output, "multi_file_pricing") {
+	if !strings.Contains(output, "test_failure_fix") || !strings.Contains(output, "multi_file_pricing") || !strings.Contains(output, "long_process_output") {
 		t.Fatalf("expected built-in eval tasks, got %q", output)
 	}
 }

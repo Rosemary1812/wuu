@@ -62,3 +62,33 @@ func Add(a, b int) int {
 		t.Fatalf("fixed fixture should pass verification: %s", passed.Reason)
 	}
 }
+
+func TestLongProcessOutputVerification(t *testing.T) {
+	task, ok := ByID("long_process_output")
+	if !ok {
+		t.Fatal("missing long_process_output task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing marker: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing observed file should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "observed.txt"), []byte("READY_FOR_EVAL\n"), 0o644); err != nil {
+		t.Fatalf("write observed file: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask observed marker: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("observed marker should pass verification: %s", passed.Reason)
+	}
+}

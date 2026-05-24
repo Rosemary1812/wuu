@@ -480,7 +480,9 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	result.OutputTokens = runResult.OutputTokens
 	result.Turns = countAssistantTurns(runResult.NewMessages)
 	if rt.Toolkit != nil {
-		result.ToolCalls = len(rt.Toolkit.ToolTelemetry())
+		records := rt.Toolkit.ToolTelemetry()
+		result.ToolCalls = len(records)
+		result.ToolNames = uniqueToolNames(records)
 	}
 
 	verification, verifyErr := evalharness.VerifyTask(ctx, cfg.Task, taskRoot, runResult.Content)
@@ -542,6 +544,19 @@ func countAssistantTurns(messages []providers.ChatMessage) int {
 	return count
 }
 
+func uniqueToolNames(records []tools.ToolExecutionRecord) []string {
+	seen := map[string]bool{}
+	names := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.Name == "" || seen[record.Name] {
+			continue
+		}
+		seen[record.Name] = true
+		names = append(names, record.Name)
+	}
+	return names
+}
+
 func writeEvalReport(path string, report evalReport) error {
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -563,6 +578,9 @@ func printEvalReport(report evalReport) {
 		}
 		fmt.Printf("%s %s turns=%d tools=%d input=%d output=%d duration=%dms\n",
 			status, result.TaskID, result.Turns, result.ToolCalls, result.InputTokens, result.OutputTokens, result.DurationMS)
+		if len(result.ToolNames) > 0 {
+			fmt.Printf("  tool_names: %s\n", strings.Join(result.ToolNames, ","))
+		}
 		if result.Error != "" {
 			fmt.Printf("  error: %s\n", result.Error)
 		} else if !result.Success && result.VerificationReason != "" {

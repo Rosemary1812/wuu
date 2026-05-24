@@ -28,17 +28,18 @@ type Verification struct {
 }
 
 type Result struct {
-	TaskID             string `json:"task_id"`
-	TaskName           string `json:"task_name"`
-	Success            bool   `json:"success"`
-	DurationMS         int64  `json:"duration_ms"`
-	Turns              int    `json:"turns"`
-	ToolCalls          int    `json:"tool_calls"`
-	InputTokens        int    `json:"input_tokens"`
-	OutputTokens       int    `json:"output_tokens"`
-	VerificationReason string `json:"verification_reason,omitempty"`
-	Error              string `json:"error,omitempty"`
-	Workdir            string `json:"workdir,omitempty"`
+	TaskID             string   `json:"task_id"`
+	TaskName           string   `json:"task_name"`
+	Success            bool     `json:"success"`
+	DurationMS         int64    `json:"duration_ms"`
+	Turns              int      `json:"turns"`
+	ToolCalls          int      `json:"tool_calls"`
+	ToolNames          []string `json:"tool_names,omitempty"`
+	InputTokens        int      `json:"input_tokens"`
+	OutputTokens       int      `json:"output_tokens"`
+	VerificationReason string   `json:"verification_reason,omitempty"`
+	Error              string   `json:"error,omitempty"`
+	Workdir            string   `json:"workdir,omitempty"`
 }
 
 func Catalog() []Task {
@@ -58,6 +59,14 @@ func Catalog() []Task {
 			Prompt:      "Fix the pricing package so all tests pass. The bug spans multiple source files. Do not change tests.",
 			Setup:       setupMultiFilePricing,
 			Verify:      verifyGoTests,
+		},
+		{
+			ID:          "long_process_output",
+			Name:        "Read a long-running process log",
+			Description: "Script prints a readiness marker after a delay and keeps running.",
+			Prompt:      "Start ./dev.sh as a managed background process, read its output until READY_FOR_EVAL appears, write observed.txt containing READY_FOR_EVAL, then stop the process.",
+			Setup:       setupLongProcessOutput,
+			Verify:      verifyObservedReadyFile,
 		},
 	}
 }
@@ -153,6 +162,20 @@ func TestTotalWithTax(t *testing.T) {
 	return writeFiles(root, files)
 }
 
+func setupLongProcessOutput(root string) error {
+	files := map[string]string{
+		"dev.sh": `#!/usr/bin/env bash
+sleep 0.2
+echo READY_FOR_EVAL
+sleep 20
+`,
+	}
+	if err := writeFiles(root, files); err != nil {
+		return err
+	}
+	return os.Chmod(filepath.Join(root, "dev.sh"), 0o755)
+}
+
 func verifyGoTests(ctx context.Context, root, _ string) (Verification, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -170,6 +193,17 @@ func verifyGoTests(ctx context.Context, root, _ string) (Verification, error) {
 		return Verification{Passed: false, Reason: strings.TrimSpace(output.String())}, nil
 	}
 	return Verification{Passed: true, Reason: strings.TrimSpace(output.String())}, nil
+}
+
+func verifyObservedReadyFile(_ context.Context, root, _ string) (Verification, error) {
+	data, err := os.ReadFile(filepath.Join(root, "observed.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "observed.txt was not written"}, nil
+	}
+	if !strings.Contains(string(data), "READY_FOR_EVAL") {
+		return Verification{Passed: false, Reason: "observed.txt does not contain READY_FOR_EVAL"}, nil
+	}
+	return Verification{Passed: true, Reason: "observed readiness marker"}, nil
 }
 
 func writeFiles(root string, files map[string]string) error {
