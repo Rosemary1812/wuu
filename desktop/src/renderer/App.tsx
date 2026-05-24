@@ -343,6 +343,7 @@ const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
   minWidth: 0,
   width: "100%"
 };
+const EMPTY_PROJECT_ID_SET = new Set<string>();
 const WORKSPACE_FILE_TREE_ITEM_HEIGHT = 28;
 
 type SidebarResizeSession = {
@@ -4087,7 +4088,7 @@ export function App(): JSX.Element {
               activeID={state.activeProjectId}
               pendingProjectID={visiblePendingProjectID}
               collapsedProjectIDs={collapsedProjectIDs}
-              collapsingProjectIDs={collapsingProjectIDs}
+              collapsingProjectIDs={EMPTY_PROJECT_ID_SET}
               threads={state.threads}
               activeThreadID={activeThreadID}
               pendingThreadID={visiblePendingThreadID}
