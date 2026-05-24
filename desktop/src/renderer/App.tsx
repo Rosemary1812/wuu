@@ -7490,7 +7490,7 @@ function AgentMessageActions({ getText }: { getText: () => string }): JSX.Elemen
 
   return (
     <div className="agent-message-actions" aria-label="助手消息操作">
-      <MessageCopyButton getText={getText} className="message-action-button" iconSize={16} />
+      <MessageCopyButton getText={getText} className="message-action-button" iconSize={15} />
       <button
         className="message-action-button"
         type="button"
@@ -7499,7 +7499,7 @@ function AgentMessageActions({ getText }: { getText: () => string }): JSX.Elemen
         title="赞"
         onClick={() => setFeedback((current) => (current === "liked" ? null : "liked"))}
       >
-        <ThumbsUp size={16} />
+        <ThumbsUp size={15} />
       </button>
       <button
         className="message-action-button"
@@ -7509,10 +7509,10 @@ function AgentMessageActions({ getText }: { getText: () => string }): JSX.Elemen
         title="踩"
         onClick={() => setFeedback((current) => (current === "disliked" ? null : "disliked"))}
       >
-        <ThumbsDown size={16} />
+        <ThumbsDown size={15} />
       </button>
       <button className="message-action-button" type="button" aria-label="分叉" title="分叉">
-        <Maximize2 size={16} />
+        <Maximize2 size={15} />
       </button>
     </div>
   );
