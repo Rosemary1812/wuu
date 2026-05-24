@@ -3883,7 +3883,7 @@ button:disabled {
   pointer-events: auto;
 }
 
-.message-action-button {
+.agent-message-actions .message-action-button {
   display: inline-flex;
   width: 24px;
   height: 24px;
@@ -3905,35 +3905,35 @@ button:disabled {
     transform 120ms ease;
 }
 
-.message-action-button:hover,
-.message-action-button:focus-visible,
-.message-action-button[aria-pressed="true"] {
+.agent-message-actions .message-action-button:hover,
+.agent-message-actions .message-action-button:focus-visible,
+.agent-message-actions .message-action-button[aria-pressed="true"] {
   outline: 0;
   background: #f1f2ef;
   box-shadow: none;
   color: #202427;
 }
 
-.message-action-button:disabled {
+.agent-message-actions .message-action-button:disabled {
   cursor: default;
   opacity: 0.45;
 }
 
-.message-action-button:disabled:hover {
+.agent-message-actions .message-action-button:disabled:hover {
   background: transparent;
   color: #8b9094;
 }
 
-.message-action-button:active {
+.agent-message-actions .message-action-button:active {
   transform: scale(0.94);
 }
 
-.message-action-button.copied {
+.agent-message-actions .message-action-button.copied {
   background: #e8f5ed;
   color: #16833a;
 }
 
-.message-action-button.failed {
+.agent-message-actions .message-action-button.failed {
   background: #fceeee;
   color: #b42318;
 }
