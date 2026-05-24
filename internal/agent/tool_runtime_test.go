@@ -198,3 +198,61 @@ func TestTurnToolRuntime_StreamingErrorFallsBackToFinalExecution(t *testing.T) {
 		t.Fatal("expected the tool to execute at least once")
 	}
 }
+
+func BenchmarkTurnToolRuntimeNoStreamingOverlap(b *testing.B) {
+	benchmarkTurnToolRuntimeOverlap(b, false)
+}
+
+func BenchmarkTurnToolRuntimeStreamingOverlap(b *testing.B) {
+	benchmarkTurnToolRuntimeOverlap(b, true)
+}
+
+func benchmarkTurnToolRuntimeOverlap(b *testing.B, streaming bool) {
+	calls := []providers.ToolCall{
+		{ID: "call_1", Name: "read_file", Arguments: `{"path":"a.go"}`},
+		{ID: "call_2", Name: "read_file", Arguments: `{"path":"b.go"}`},
+		{ID: "call_3", Name: "read_file", Arguments: `{"path":"c.go"}`},
+		{ID: "call_4", Name: "read_file", Arguments: `{"path":"d.go"}`},
+	}
+	const toolDelay = time.Millisecond
+	const modelTail = time.Millisecond
+
+	var totalToolExecs int
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ctx := context.Background()
+		tools := &runtimeTestTools{
+			metadata: map[string]ToolMetadata{
+				"read_file": {ReadOnly: true, ConcurrencySafe: true},
+			},
+			delays: map[string]time.Duration{
+				"call_1": toolDelay,
+				"call_2": toolDelay,
+				"call_3": toolDelay,
+				"call_4": toolDelay,
+			},
+		}
+		runtime := NewTurnToolRuntime(tools)
+		if streaming {
+			for _, call := range calls {
+				runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
+					Type:     providers.EventToolUseStart,
+					ToolCall: &providers.ToolCall{ID: call.ID, Name: call.Name},
+				})
+				runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
+					Type:     providers.EventToolUseEnd,
+					ToolCall: &call,
+				})
+			}
+		}
+		time.Sleep(modelTail)
+		msgs := runtime.ExecuteFinalCalls(ctx, calls, nil)
+		if len(msgs) != len(calls) {
+			b.Fatalf("expected %d tool messages, got %d", len(calls), len(msgs))
+		}
+		totalToolExecs += len(tools.recordedCalls())
+	}
+	b.StopTimer()
+	b.ReportMetric(float64(totalToolExecs)/float64(b.N), "tool_execs/op")
+}
