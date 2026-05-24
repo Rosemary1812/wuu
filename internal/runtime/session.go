@@ -127,7 +127,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
 		kit.SetAskUserBridge(opts.AskBridge)
-		kit.SetToolPolicy(toolPolicyFromConfig(cfg.Agent.ToolPolicy))
+		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.SetOnFileChanged(func(absPath string) {
 			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{
 				CWD:      rootDir,
@@ -182,7 +182,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetAgentControl(agentControl)
-				wkit.SetToolPolicy(toolPolicyFromConfig(cfg.Agent.ToolPolicy))
+				wkit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
@@ -545,7 +545,7 @@ func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolO
 	return out
 }
 
-func toolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
+func ToolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
 	return tools.ToolPolicy{
 		DefaultAction: toolPolicyAction(in.DefaultAction),
 		ToolActions:   toolPolicyToolActions(in.Tools),

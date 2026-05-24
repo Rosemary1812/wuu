@@ -241,6 +241,7 @@ func runTask(args []string) error {
 		// the /coordinator slash command.
 		kit.SetStateDir(workspaceStateDir)
 		kit.SetProcessManager(processMgr)
+		kit.SetToolPolicy(runtime.ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		toolExecutor = kit
 	}
 

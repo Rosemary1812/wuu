@@ -105,7 +105,7 @@ func TestMCPToolOverridesFromConfig(t *testing.T) {
 }
 
 func TestToolPolicyFromConfig(t *testing.T) {
-	policy := toolPolicyFromConfig(config.ToolPolicyConfig{
+	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
 		DefaultAction: "allow",
 		Tools: map[string]string{
 			"run_shell": "require_approval",
