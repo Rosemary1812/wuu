@@ -14,12 +14,13 @@ import (
 
 // Task is one deterministic local evaluation scenario.
 type Task struct {
-	ID          string
-	Name        string
-	Description string
-	Prompt      string
-	Setup       func(root string) error
-	Verify      func(ctx context.Context, root, answer string) (Verification, error)
+	ID            string
+	Name          string
+	Description   string
+	Prompt        string
+	RequiredTools []string
+	Setup         func(root string) error
+	Verify        func(ctx context.Context, root, answer string) (Verification, error)
 }
 
 type Verification struct {
@@ -35,6 +36,7 @@ type Result struct {
 	Turns              int      `json:"turns"`
 	ToolCalls          int      `json:"tool_calls"`
 	ToolNames          []string `json:"tool_names,omitempty"`
+	MissingTools       []string `json:"missing_tools,omitempty"`
 	InputTokens        int      `json:"input_tokens"`
 	OutputTokens       int      `json:"output_tokens"`
 	VerificationReason string   `json:"verification_reason,omitempty"`
@@ -45,28 +47,40 @@ type Result struct {
 func Catalog() []Task {
 	return []Task{
 		{
-			ID:          "test_failure_fix",
-			Name:        "Fix a failing unit test",
-			Description: "Small Go module with one implementation bug and a failing test.",
-			Prompt:      "Run the tests, find the implementation bug, fix the source code without changing tests, and verify the tests pass.",
-			Setup:       setupTestFailureFix,
-			Verify:      verifyGoTests,
+			ID:            "test_failure_fix",
+			Name:          "Fix a failing unit test",
+			Description:   "Small Go module with one implementation bug and a failing test.",
+			Prompt:        "Run the tests, find the implementation bug, fix the source code without changing tests, and verify the tests pass.",
+			RequiredTools: []string{"run_shell"},
+			Setup:         setupTestFailureFix,
+			Verify:        verifyGoTests,
 		},
 		{
-			ID:          "multi_file_pricing",
-			Name:        "Fix behavior across two files",
-			Description: "Go package where the final behavior requires edits in two implementation files.",
-			Prompt:      "Fix the pricing package so all tests pass. The bug spans multiple source files. Do not change tests.",
-			Setup:       setupMultiFilePricing,
-			Verify:      verifyGoTests,
+			ID:            "multi_file_pricing",
+			Name:          "Fix behavior across two files",
+			Description:   "Go package where the final behavior requires edits in two implementation files.",
+			Prompt:        "Fix the pricing package so all tests pass. The bug spans multiple source files. Do not change tests.",
+			RequiredTools: []string{"run_shell"},
+			Setup:         setupMultiFilePricing,
+			Verify:        verifyGoTests,
 		},
 		{
-			ID:          "long_process_output",
-			Name:        "Read a long-running process log",
-			Description: "Script prints a readiness marker after a delay and keeps running.",
-			Prompt:      "Start ./dev.sh as a managed background process, read its output until READY_FOR_EVAL appears, write observed.txt containing READY_FOR_EVAL, then stop the process.",
-			Setup:       setupLongProcessOutput,
-			Verify:      verifyObservedReadyFile,
+			ID:            "long_process_output",
+			Name:          "Read a long-running process log",
+			Description:   "Script prints a readiness marker after a delay and keeps running.",
+			Prompt:        "Start ./dev.sh as a managed background process, read its output until READY_FOR_EVAL appears, write observed.txt containing READY_FOR_EVAL, then stop the process.",
+			RequiredTools: []string{"start_process", "read_process_output", "stop_process"},
+			Setup:         setupLongProcessOutput,
+			Verify:        verifyObservedReadyFile,
+		},
+		{
+			ID:            "tool_search_deferred",
+			Name:          "Discover and use a deferred tool",
+			Description:   "The cron listing tool starts deferred and must be exposed through tool_search.",
+			Prompt:        "Find the tool for listing scheduled tasks using tool_search, call that tool, then write tool_search_result.txt containing DEFERRED_TOOL_FOUND.",
+			RequiredTools: []string{"tool_search", "list_cron"},
+			Setup:         setupEmptyTask,
+			Verify:        verifyDeferredToolFoundFile,
 		},
 	}
 }
@@ -176,6 +190,10 @@ sleep 20
 	return os.Chmod(filepath.Join(root, "dev.sh"), 0o755)
 }
 
+func setupEmptyTask(root string) error {
+	return writeFiles(root, map[string]string{".keep": ""})
+}
+
 func verifyGoTests(ctx context.Context, root, _ string) (Verification, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -204,6 +222,17 @@ func verifyObservedReadyFile(_ context.Context, root, _ string) (Verification, e
 		return Verification{Passed: false, Reason: "observed.txt does not contain READY_FOR_EVAL"}, nil
 	}
 	return Verification{Passed: true, Reason: "observed readiness marker"}, nil
+}
+
+func verifyDeferredToolFoundFile(_ context.Context, root, _ string) (Verification, error) {
+	data, err := os.ReadFile(filepath.Join(root, "tool_search_result.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "tool_search_result.txt was not written"}, nil
+	}
+	if !strings.Contains(string(data), "DEFERRED_TOOL_FOUND") {
+		return Verification{Passed: false, Reason: "tool_search_result.txt does not contain DEFERRED_TOOL_FOUND"}, nil
+	}
+	return Verification{Passed: true, Reason: "observed deferred tool marker"}, nil
 }
 
 func writeFiles(root string, files map[string]string) error {

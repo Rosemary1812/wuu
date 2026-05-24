@@ -484,12 +484,13 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		result.ToolCalls = len(records)
 		result.ToolNames = uniqueToolNames(records)
 	}
+	result.MissingTools = missingRequiredTools(cfg.Task.RequiredTools, result.ToolNames)
 
 	verification, verifyErr := evalharness.VerifyTask(ctx, cfg.Task, taskRoot, runResult.Content)
 	if verifyErr != nil {
 		result.Error = verifyErr.Error()
 	} else {
-		result.Success = runErr == nil && verification.Passed
+		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0
 		result.VerificationReason = verification.Reason
 	}
 	if runErr != nil {
@@ -557,6 +558,23 @@ func uniqueToolNames(records []tools.ToolExecutionRecord) []string {
 	return names
 }
 
+func missingRequiredTools(required []string, used []string) []string {
+	if len(required) == 0 {
+		return nil
+	}
+	usedSet := map[string]bool{}
+	for _, name := range used {
+		usedSet[name] = true
+	}
+	missing := make([]string, 0, len(required))
+	for _, name := range required {
+		if !usedSet[name] {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
 func writeEvalReport(path string, report evalReport) error {
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -580,6 +598,9 @@ func printEvalReport(report evalReport) {
 			status, result.TaskID, result.Turns, result.ToolCalls, result.InputTokens, result.OutputTokens, result.DurationMS)
 		if len(result.ToolNames) > 0 {
 			fmt.Printf("  tool_names: %s\n", strings.Join(result.ToolNames, ","))
+		}
+		if len(result.MissingTools) > 0 {
+			fmt.Printf("  missing_tools: %s\n", strings.Join(result.MissingTools, ","))
 		}
 		if result.Error != "" {
 			fmt.Printf("  error: %s\n", result.Error)

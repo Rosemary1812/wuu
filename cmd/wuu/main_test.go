@@ -118,7 +118,7 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "test_failure_fix") || !strings.Contains(output, "multi_file_pricing") || !strings.Contains(output, "long_process_output") {
+	if !strings.Contains(output, "test_failure_fix") || !strings.Contains(output, "multi_file_pricing") || !strings.Contains(output, "long_process_output") || !strings.Contains(output, "tool_search_deferred") {
 		t.Fatalf("expected built-in eval tasks, got %q", output)
 	}
 }
@@ -137,6 +137,16 @@ func TestResolveEvalTasksRejectsUnknownTask(t *testing.T) {
 	_, err := resolveEvalTasks("missing")
 	if err == nil || !strings.Contains(err.Error(), "unknown eval task") {
 		t.Fatalf("expected unknown task error, got %v", err)
+	}
+}
+
+func TestMissingRequiredTools(t *testing.T) {
+	missing := missingRequiredTools([]string{"tool_search", "list_cron"}, []string{"tool_search", "write_file"})
+	if len(missing) != 1 || missing[0] != "list_cron" {
+		t.Fatalf("unexpected missing tools: %+v", missing)
+	}
+	if got := missingRequiredTools([]string{"tool_search"}, []string{"tool_search"}); len(got) != 0 {
+		t.Fatalf("expected no missing tools, got %+v", got)
 	}
 }
 
