@@ -34,17 +34,20 @@ import (
 var errShutdown = errors.New("app-server shutdown requested")
 
 type threadState struct {
-	ID            string
-	History       []providers.ChatMessage
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	ModelProvider string
-	Model         string
-	CWD           string
-	PinnedAt      *time.Time
-	ArchivedAt    *time.Time
-	Turns         []Turn
-	MemoryPath    string
+	ID               string
+	History          []providers.ChatMessage
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	ModelProvider    string
+	Model            string
+	CWD              string
+	ForkedFromID     string
+	ForkedFromTurnID string
+	ForkedFromItemID string
+	PinnedAt         *time.Time
+	ArchivedAt       *time.Time
+	Turns            []Turn
+	MemoryPath       string
 
 	execRuntime *runtime.ThreadRuntime
 
@@ -182,6 +185,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadStart(req)
 	case MethodThreadResume:
 		return s.handleThreadResume(req)
+	case MethodThreadFork:
+		return s.handleThreadFork(req)
 	case MethodThreadList:
 		return s.handleThreadList(req)
 	case MethodThreadPin:
@@ -489,6 +494,118 @@ func (s *Server) handleThreadResume(req Request) error {
 	})
 }
 
+type forkSourceThread struct {
+	history       []providers.ChatMessage
+	modelProvider string
+	model         string
+	cwd           string
+	thread        Thread
+}
+
+func (s *Server) handleThreadFork(req Request) error {
+	var params ThreadForkParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	sourceID := strings.TrimSpace(params.ThreadID)
+	if sourceID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+
+	now := time.Now().UTC()
+	source, err := s.loadForkSourceThread(sourceID, now)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	history, err := forkHistoryAtTarget(source.history, source.thread.ID, source.thread.Turns, params.TurnID, params.ItemID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	id := session.NewID()
+	fork := session.ForkMetadata{
+		ForkedFromID:     source.thread.ID,
+		ForkedFromTurnID: strings.TrimSpace(params.TurnID),
+		ForkedFromItemID: strings.TrimSpace(params.ItemID),
+	}
+	sess, err := session.CreateForkWithMetadata(s.rt.SessionDir, id, source.cwd, fork)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	path := session.FilePath(s.rt.SessionDir, sess.ID)
+	if err := rewriteChatHistory(path, history); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if err := session.UpdateIndex(s.rt.SessionDir, sess.ID, persistableMessageCount(history), threadPreview(history)); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	th := newThreadState(sess.ID, history, source.modelProvider, source.model, source.cwd, path, now)
+	applySessionMetadata(th, *sess)
+	s.mu.Lock()
+	s.threads[th.ID] = th
+	s.mu.Unlock()
+
+	th.mu.Lock()
+	thread := th.snapshotLocked()
+	th.mu.Unlock()
+	if err := s.writeResponse(req.ID, ThreadForkResult{Thread: thread}, nil); err != nil {
+		return err
+	}
+	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
+		Thread: thread,
+	})
+}
+
+func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThread, error) {
+	if th := s.thread(id); th != nil {
+		th.mu.Lock()
+		defer th.mu.Unlock()
+		return forkSourceThread{
+			history:       cloneHistory(th.History),
+			modelProvider: th.ModelProvider,
+			model:         th.Model,
+			cwd:           th.CWD,
+			thread:        th.snapshotLocked(),
+		}, nil
+	}
+
+	path, err := session.Load(s.rt.SessionDir, id)
+	if err != nil {
+		return forkSourceThread{}, err
+	}
+	history, err := loadChatMessages(path)
+	if err != nil {
+		return forkSourceThread{}, err
+	}
+	normalized, err := providers.NormalizeAndValidateMessages(history)
+	if err != nil {
+		return forkSourceThread{}, err
+	}
+	if !reflect.DeepEqual(normalized, history) {
+		if err := rewriteChatHistory(path, normalized); err != nil {
+			return forkSourceThread{}, err
+		}
+	}
+	history = ensureBaseSystemPrompt(normalized, s.rt.StreamRunner.SystemPrompt)
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, now)
+	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
+		return forkSourceThread{}, err
+	} else if ok {
+		applySessionMetadata(th, metadata)
+	}
+	th.mu.Lock()
+	thread := th.snapshotLocked()
+	th.mu.Unlock()
+	return forkSourceThread{
+		history:       cloneHistory(th.History),
+		modelProvider: th.ModelProvider,
+		model:         th.Model,
+		cwd:           th.CWD,
+		thread:        thread,
+	}, nil
+}
+
 func (s *Server) handleThreadList(req Request) error {
 	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, 0)
 	if err != nil {
@@ -596,6 +713,9 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	if strings.TrimSpace(metadata.CWD) != "" {
 		th.CWD = metadata.CWD
 	}
+	th.ForkedFromID = metadata.ForkedFromID
+	th.ForkedFromTurnID = metadata.ForkedFromTurnID
+	th.ForkedFromItemID = metadata.ForkedFromItemID
 	th.PinnedAt = metadata.PinnedAt
 	th.ArchivedAt = metadata.ArchivedAt
 }
@@ -604,17 +724,20 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 	updatedAt := sess.CreatedAt
 	return threadListEntry{
 		thread: Thread{
-			ID:            sess.ID,
-			Preview:       sess.Summary,
-			ModelProvider: provider,
-			Model:         model,
-			CWD:           sess.CWD,
-			Status:        ThreadStatusIdle,
-			Pinned:        sess.PinnedAt != nil,
-			Archived:      sess.ArchivedAt != nil,
-			CreatedAt:     sess.CreatedAt,
-			UpdatedAt:     updatedAt,
-			Turns:         []Turn{},
+			ID:               sess.ID,
+			Preview:          sess.Summary,
+			ModelProvider:    provider,
+			Model:            model,
+			CWD:              sess.CWD,
+			Status:           ThreadStatusIdle,
+			Pinned:           sess.PinnedAt != nil,
+			Archived:         sess.ArchivedAt != nil,
+			ForkedFromID:     sess.ForkedFromID,
+			ForkedFromTurnID: sess.ForkedFromTurnID,
+			ForkedFromItemID: sess.ForkedFromItemID,
+			CreatedAt:        sess.CreatedAt,
+			UpdatedAt:        updatedAt,
+			Turns:            []Turn{},
 		},
 		pinnedAt: sess.PinnedAt,
 	}

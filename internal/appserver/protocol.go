@@ -18,6 +18,7 @@ const (
 	MethodConfigCodexModels = "config/codex/models"
 	MethodThreadStart       = "thread/start"
 	MethodThreadResume      = "thread/resume"
+	MethodThreadFork        = "thread/fork"
 	MethodThreadList        = "thread/list"
 	MethodThreadPin         = "thread/pin"
 	MethodThreadArchive     = "thread/archive"
@@ -144,6 +145,16 @@ type ThreadResumeParams struct {
 }
 
 type ThreadResumeResult struct {
+	Thread Thread `json:"thread"`
+}
+
+type ThreadForkParams struct {
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id,omitempty"`
+	ItemID   string `json:"item_id,omitempty"`
+}
+
+type ThreadForkResult struct {
 	Thread Thread `json:"thread"`
 }
 
@@ -277,21 +288,24 @@ const (
 )
 
 type Thread struct {
-	ID            string       `json:"id"`
-	ParentID      string       `json:"parent_id,omitempty"`
-	AgentPath     string       `json:"agent_path,omitempty"`
-	Preview       string       `json:"preview"`
-	ModelProvider string       `json:"model_provider"`
-	Model         string       `json:"model"`
-	CWD           string       `json:"cwd"`
-	Status        ThreadStatus `json:"status"`
-	ReadOnly      bool         `json:"read_only,omitempty"`
-	Pinned        bool         `json:"pinned,omitempty"`
-	Archived      bool         `json:"archived,omitempty"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
-	Turns         []Turn       `json:"turns"`
-	ChildAgents   []Agent      `json:"child_agents,omitempty"`
+	ID               string       `json:"id"`
+	ParentID         string       `json:"parent_id,omitempty"`
+	AgentPath        string       `json:"agent_path,omitempty"`
+	Preview          string       `json:"preview"`
+	ModelProvider    string       `json:"model_provider"`
+	Model            string       `json:"model"`
+	CWD              string       `json:"cwd"`
+	Status           ThreadStatus `json:"status"`
+	ReadOnly         bool         `json:"read_only,omitempty"`
+	Pinned           bool         `json:"pinned,omitempty"`
+	Archived         bool         `json:"archived,omitempty"`
+	ForkedFromID     string       `json:"forked_from_id,omitempty"`
+	ForkedFromTurnID string       `json:"forked_from_turn_id,omitempty"`
+	ForkedFromItemID string       `json:"forked_from_item_id,omitempty"`
+	CreatedAt        time.Time    `json:"created_at"`
+	UpdatedAt        time.Time    `json:"updated_at"`
+	Turns            []Turn       `json:"turns"`
+	ChildAgents      []Agent      `json:"child_agents,omitempty"`
 }
 
 type Turn struct {

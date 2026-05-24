@@ -24,16 +24,24 @@ import (
 )
 
 type fakeClient struct {
-	mu       sync.Mutex
-	requests []providers.ChatRequest
-	response providers.ChatResponse
+	mu        sync.Mutex
+	requests  []providers.ChatRequest
+	responses []providers.ChatResponse
+	response  providers.ChatResponse
 }
 
 func (f *fakeClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
+	if len(f.responses) > 0 {
+		res := f.responses[0]
+		f.responses = f.responses[1:]
+		f.mu.Unlock()
+		return res, nil
+	}
+	res := f.response
 	f.mu.Unlock()
-	return f.response, nil
+	return res, nil
 }
 
 type lockedBuffer struct {
@@ -373,6 +381,123 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].ID != threadID || sessions[0].Entries != 2 || sessions[0].Summary != "hello" {
 		t.Fatalf("unexpected session index: %+v", sessions)
+	}
+}
+
+func TestServerThreadForkAtAssistantItem(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{Content: "first answer"},
+			{Content: "second answer"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	startTurn := func(id, prompt string, completedCount int) Turn {
+		t.Helper()
+		payload := map[string]any{
+			"id":     id,
+			"method": MethodTurnStart,
+			"params": TurnStartParams{ThreadID: threadID, Prompt: prompt},
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal turn request: %v", err)
+		}
+		if err := srv.handleLine(context.Background(), raw); err != nil {
+			t.Fatalf("turn/start: %v", err)
+		}
+		msgs := waitForNotificationCount(t, out, NotificationTurnCompleted, completedCount)
+		completed := notificationsByMethod(msgs, NotificationTurnCompleted)
+		return remarshal[TurnCompletedNotification](t, completed[len(completed)-1]["params"]).Turn
+	}
+
+	firstTurn := startTurn("2", "first prompt", 1)
+	var firstAgentItem ThreadItem
+	for _, item := range firstTurn.Items {
+		if item.Type == ThreadItemAgentMessage {
+			firstAgentItem = item
+			break
+		}
+	}
+	if firstAgentItem.ID == "" {
+		t.Fatalf("expected first turn to contain assistant item: %+v", firstTurn)
+	}
+	_ = startTurn("3", "second prompt", 2)
+
+	payload := map[string]any{
+		"id":     "4",
+		"method": MethodThreadFork,
+		"params": ThreadForkParams{
+			ThreadID: threadID,
+			TurnID:   firstTurn.ID,
+			ItemID:   firstAgentItem.ID,
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal fork request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/fork: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	forkResponse := responseByID(t, msgs, "4")
+	if forkResponse["error"] != nil {
+		t.Fatalf("thread/fork returned error: %+v", forkResponse["error"])
+	}
+	result := remarshal[ThreadForkResult](t, forkResponse["result"])
+	fork := result.Thread
+	if fork.ID == "" || fork.ID == threadID {
+		t.Fatalf("expected new fork thread id, got %+v", fork)
+	}
+	if fork.ForkedFromID != threadID || fork.ForkedFromTurnID != firstTurn.ID || fork.ForkedFromItemID != firstAgentItem.ID {
+		t.Fatalf("fork metadata not returned: %+v", fork)
+	}
+	if len(fork.Turns) != 1 || len(fork.Turns[0].Items) != 2 {
+		t.Fatalf("expected fork to stop at first assistant item, got %+v", fork.Turns)
+	}
+	if fork.Turns[0].Items[0].Text != "first prompt" || fork.Turns[0].Items[1].Text != "first answer" {
+		t.Fatalf("unexpected fork turn items: %+v", fork.Turns[0].Items)
+	}
+
+	forkHistory, err := loadChatMessages(session.FilePath(rt.SessionDir, fork.ID))
+	if err != nil {
+		t.Fatalf("load fork history: %v", err)
+	}
+	if len(forkHistory) != 2 || forkHistory[0].Content != "first prompt" || forkHistory[1].Content != "first answer" {
+		t.Fatalf("unexpected persisted fork history: %+v", forkHistory)
+	}
+	sourceHistory, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	if err != nil {
+		t.Fatalf("load source history: %v", err)
+	}
+	if len(sourceHistory) != 4 {
+		t.Fatalf("source history should remain intact, got %+v", sourceHistory)
+	}
+
+	metadata, ok, err := session.Find(rt.SessionDir, fork.ID)
+	if err != nil {
+		t.Fatalf("find fork metadata: %v", err)
+	}
+	if !ok || metadata.ForkedFromID != threadID || metadata.ForkedFromTurnID != firstTurn.ID || metadata.ForkedFromItemID != firstAgentItem.ID {
+		t.Fatalf("fork metadata not persisted: ok=%v metadata=%+v", ok, metadata)
+	}
+	started := notificationsByMethod(msgs, NotificationThreadStarted)
+	if len(started) < 2 {
+		t.Fatalf("expected fork to emit thread/started notification, got %+v", msgs)
+	}
+	forkStarted := remarshal[ThreadStartedNotification](t, started[len(started)-1]["params"])
+	if forkStarted.Thread.ID != fork.ID {
+		t.Fatalf("unexpected fork started notification: %+v", forkStarted)
 	}
 }
 
@@ -1174,6 +1299,20 @@ func waitForMethod(t *testing.T, out *lockedBuffer, method string) []map[string]
 	return nil
 }
 
+func waitForNotificationCount(t *testing.T, out *lockedBuffer, method string, count int) []map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		msgs := parseOutput(t, out.String())
+		if len(notificationsByMethod(msgs, method)) >= count {
+			return msgs
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %d %s notifications; output:\n%s", count, method, out.String())
+	return nil
+}
+
 func responseByID(t *testing.T, msgs []map[string]any, id string) map[string]any {
 	t.Helper()
 	for _, msg := range msgs {
@@ -1194,6 +1333,16 @@ func notificationByMethod(t *testing.T, msgs []map[string]any, method string) ma
 	}
 	t.Fatalf("notification %s not found in %+v", method, msgs)
 	return nil
+}
+
+func notificationsByMethod(msgs []map[string]any, method string) []map[string]any {
+	var out []map[string]any
+	for _, msg := range msgs {
+		if msg["method"] == method && msg["id"] == nil {
+			out = append(out, msg)
+		}
+	}
+	return out
 }
 
 func requestByMethod(t *testing.T, msgs []map[string]any, method string) map[string]any {

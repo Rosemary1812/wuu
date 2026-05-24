@@ -43,13 +43,22 @@ func withIndexLock(sessDir string, exclusive bool, fn func() error) error {
 
 // Session represents one conversation session.
 type Session struct {
-	ID         string     `json:"id"`
-	CreatedAt  time.Time  `json:"created_at"`
-	Summary    string     `json:"summary,omitempty"`
-	Entries    int        `json:"entries"`
-	CWD        string     `json:"cwd,omitempty"`
-	PinnedAt   *time.Time `json:"pinned_at,omitempty"`
-	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+	ID               string     `json:"id"`
+	CreatedAt        time.Time  `json:"created_at"`
+	Summary          string     `json:"summary,omitempty"`
+	Entries          int        `json:"entries"`
+	CWD              string     `json:"cwd,omitempty"`
+	ForkedFromID     string     `json:"forked_from_id,omitempty"`
+	ForkedFromTurnID string     `json:"forked_from_turn_id,omitempty"`
+	ForkedFromItemID string     `json:"forked_from_item_id,omitempty"`
+	PinnedAt         *time.Time `json:"pinned_at,omitempty"`
+	ArchivedAt       *time.Time `json:"archived_at,omitempty"`
+}
+
+type ForkMetadata struct {
+	ForkedFromID     string
+	ForkedFromTurnID string
+	ForkedFromItemID string
 }
 
 // NewID generates a human-readable, sortable session ID: YYYYMMDD-HHMMSS-xxxxxxxxxxxxxxxx.
@@ -90,6 +99,15 @@ func Create(sessDir string, id ...string) (*Session, error) {
 
 // CreateWithMetadata initializes a new session with thread-level metadata.
 func CreateWithMetadata(sessDir, id, cwd string) (*Session, error) {
+	return createWithMetadata(sessDir, id, cwd, ForkMetadata{})
+}
+
+// CreateForkWithMetadata initializes a forked session with source metadata.
+func CreateForkWithMetadata(sessDir, id, cwd string, fork ForkMetadata) (*Session, error) {
+	return createWithMetadata(sessDir, id, cwd, fork)
+}
+
+func createWithMetadata(sessDir, id, cwd string, fork ForkMetadata) (*Session, error) {
 	if err := os.MkdirAll(sessDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create sessions dir: %w", err)
 	}
@@ -100,9 +118,12 @@ func CreateWithMetadata(sessDir, id, cwd string) (*Session, error) {
 	}
 
 	sess := &Session{
-		ID:        sessID,
-		CreatedAt: time.Now().UTC(),
-		CWD:       normalizeCWD(cwd),
+		ID:               sessID,
+		CreatedAt:        time.Now().UTC(),
+		CWD:              normalizeCWD(cwd),
+		ForkedFromID:     strings.TrimSpace(fork.ForkedFromID),
+		ForkedFromTurnID: strings.TrimSpace(fork.ForkedFromTurnID),
+		ForkedFromItemID: strings.TrimSpace(fork.ForkedFromItemID),
 	}
 
 	// Hold the index lock for both the data-file create and the index

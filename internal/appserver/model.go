@@ -34,17 +34,20 @@ func (th *threadState) snapshotLocked() Thread {
 		status = ThreadStatusInProgress
 	}
 	return Thread{
-		ID:            th.ID,
-		Preview:       threadPreview(th.History),
-		ModelProvider: th.ModelProvider,
-		Model:         th.Model,
-		CWD:           th.CWD,
-		Status:        status,
-		Pinned:        th.PinnedAt != nil,
-		Archived:      th.ArchivedAt != nil,
-		CreatedAt:     th.CreatedAt,
-		UpdatedAt:     th.UpdatedAt,
-		Turns:         cloneTurns(th.Turns),
+		ID:               th.ID,
+		Preview:          threadPreview(th.History),
+		ModelProvider:    th.ModelProvider,
+		Model:            th.Model,
+		CWD:              th.CWD,
+		Status:           status,
+		Pinned:           th.PinnedAt != nil,
+		Archived:         th.ArchivedAt != nil,
+		ForkedFromID:     th.ForkedFromID,
+		ForkedFromTurnID: th.ForkedFromTurnID,
+		ForkedFromItemID: th.ForkedFromItemID,
+		CreatedAt:        th.CreatedAt,
+		UpdatedAt:        th.UpdatedAt,
+		Turns:            cloneTurns(th.Turns),
 	}
 }
 

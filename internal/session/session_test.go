@@ -72,6 +72,33 @@ func TestListForCWDFiltersSessions(t *testing.T) {
 	}
 }
 
+func TestCreateForkWithMetadataPersistsSource(t *testing.T) {
+	dir := t.TempDir()
+	cwd := filepath.Join(t.TempDir(), "project")
+	fork, err := CreateForkWithMetadata(dir, "forked", cwd, ForkMetadata{
+		ForkedFromID:     "source",
+		ForkedFromTurnID: "source-turn-0001",
+		ForkedFromItemID: "source-turn-0001-item-2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fork.ForkedFromID != "source" || fork.ForkedFromTurnID != "source-turn-0001" || fork.ForkedFromItemID != "source-turn-0001-item-2" {
+		t.Fatalf("fork metadata not set on create: %+v", fork)
+	}
+
+	found, ok, err := Find(dir, "forked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected fork in index")
+	}
+	if found.ForkedFromID != "source" || found.ForkedFromTurnID != "source-turn-0001" || found.ForkedFromItemID != "source-turn-0001-item-2" {
+		t.Fatalf("fork metadata not persisted: %+v", found)
+	}
+}
+
 func TestUpdateIndex(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Create(dir)
