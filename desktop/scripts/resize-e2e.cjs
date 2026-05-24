@@ -44,6 +44,8 @@ async function run() {
 
   const runDebugVisible = await evaluate(win, () => Boolean(document.querySelector(".run-debug-button")));
   assert.equal(runDebugVisible, false, "Production desktop builds must not expose the internal run debug panel.");
+  const devFixturesVisible = await evaluate(win, () => Boolean(document.querySelector(".dev-fixture-nav")));
+  assert.equal(devFixturesVisible, false, "Production desktop builds must not expose development conversation fixtures.");
 
   await evaluate(win, () => {
     const button = Array.from(document.querySelectorAll(".workspace-toggle-button")).find((candidate) =>
