@@ -220,3 +220,33 @@ func TestMCPReadOnlyConcurrencyServerSourceCompiles(t *testing.T) {
 		t.Fatalf("MCP eval server source should compile: %v\n%s", err, output)
 	}
 }
+
+func TestMultiAgentWorkerVerification(t *testing.T) {
+	task, ok := ByID("multi_agent_worker")
+	if !ok {
+		t.Fatal("missing multi_agent_worker task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing worker marker: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing worker marker should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "worker_result.txt"), []byte("SUBAGENT_EVAL_DONE\n"), 0o644); err != nil {
+		t.Fatalf("write worker marker: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask worker marker: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("worker marker should pass verification: %s", passed.Reason)
+	}
+}

@@ -97,6 +97,15 @@ func Catalog() []Task {
 			Configure:     configureMCPReadOnlyConcurrency,
 			Verify:        verifyMCPReadOnlyConcurrency,
 		},
+		{
+			ID:            "multi_agent_worker",
+			Name:          "Delegate work to a sub-agent",
+			Description:   "Main agent must spawn an async worker and wait for it to produce a marker file.",
+			Prompt:        "Spawn an async worker named eval_worker with fork_turns='none'. Ask it to write worker_result.txt containing SUBAGENT_EVAL_DONE, then call wait_agent until the worker completes. Do not write worker_result.txt yourself.",
+			RequiredTools: []string{"spawn_agent", "wait_agent"},
+			Setup:         setupEmptyTask,
+			Verify:        verifySubAgentWorkerFile,
+		},
 	}
 }
 
@@ -291,6 +300,17 @@ func verifyMCPReadOnlyConcurrency(_ context.Context, root, _ string) (Verificati
 		return Verification{Passed: false, Reason: "MCP read-only tools did not overlap; max concurrency was " + strings.TrimSpace(string(maxData))}, nil
 	}
 	return Verification{Passed: true, Reason: "observed overlapping read-only MCP tool calls"}, nil
+}
+
+func verifySubAgentWorkerFile(_ context.Context, root, _ string) (Verification, error) {
+	data, err := os.ReadFile(filepath.Join(root, "worker_result.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "worker_result.txt was not written"}, nil
+	}
+	if !strings.Contains(string(data), "SUBAGENT_EVAL_DONE") {
+		return Verification{Passed: false, Reason: "worker_result.txt does not contain SUBAGENT_EVAL_DONE"}, nil
+	}
+	return Verification{Passed: true, Reason: "observed sub-agent worker marker"}, nil
 }
 
 func writeFiles(root string, files map[string]string) error {

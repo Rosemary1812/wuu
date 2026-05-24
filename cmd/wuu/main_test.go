@@ -122,7 +122,8 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 		!strings.Contains(output, "multi_file_pricing") ||
 		!strings.Contains(output, "long_process_output") ||
 		!strings.Contains(output, "tool_search_deferred") ||
-		!strings.Contains(output, "mcp_readonly_concurrency") {
+		!strings.Contains(output, "mcp_readonly_concurrency") ||
+		!strings.Contains(output, "multi_agent_worker") {
 		t.Fatalf("expected built-in eval tasks, got %q", output)
 	}
 }
