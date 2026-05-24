@@ -7781,7 +7781,7 @@ pre {
   min-width: 0;
   overflow: hidden;
   color: #202427;
-  font-size: var(--font-title);
+  font-size: 10px;
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7791,7 +7791,7 @@ pre {
   min-width: 0;
   overflow: hidden;
   color: #9a9da0;
-  font-size: var(--font-title);
+  font-size: 10px;
   font-weight: var(--weight-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7800,7 +7800,7 @@ pre {
 .slash-command-name {
   overflow: hidden;
   color: #7b8084;
-  font-size: var(--font-title);
+  font-size: 10px;
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7808,7 +7808,7 @@ pre {
 
 .slash-command-empty {
   color: #777d82;
-  font-size: var(--font-ui);
+  font-size: 10px;
   padding: 18px 12px 20px;
   text-align: center;
 }
