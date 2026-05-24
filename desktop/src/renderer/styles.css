@@ -7048,6 +7048,7 @@ pre {
   border-radius: 18px;
   background: #fff;
   box-shadow: 0 8px 26px rgba(20, 24, 28, 0.08);
+  overflow: visible;
 }
 
 .composer-shell::after {
@@ -7264,6 +7265,17 @@ pre {
 .composer-tool-button:hover {
   background: #f1f2ef;
   color: #22262a;
+}
+
+.composer-tool-button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.composer-slash-button span {
+  transform: translateY(-1px);
+  font-size: 19px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
 }
 
 .permission-menu-anchor {
@@ -7539,6 +7551,146 @@ pre {
   --menu-enter-y: -4px;
 }
 
+.slash-command-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 35;
+  display: grid;
+  max-height: min(390px, calc(100vh - 190px));
+  overflow: hidden;
+  border: 1px solid var(--menu-border);
+  border-radius: 16px;
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 7px;
+  backdrop-filter: blur(18px);
+  transform-origin: bottom center;
+}
+
+.hero-composer-wrap .slash-command-menu {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform-origin: top center;
+}
+
+.slash-command-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8a8f92;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  padding: 5px 7px 7px;
+}
+
+.slash-command-header span {
+  flex: 1;
+}
+
+.slash-command-header kbd {
+  min-width: 22px;
+  border: 1px solid #e3e3df;
+  border-radius: 6px;
+  background: #f7f7f5;
+  color: #7a7f82;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 5px;
+  text-align: center;
+}
+
+.slash-command-list {
+  display: grid;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.slash-command-item {
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-radius: 11px;
+  background: transparent;
+  color: #25292d;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.slash-command-item:hover:not(:disabled),
+.slash-command-item.selected:not(:disabled) {
+  background: #f2f3f0;
+}
+
+.slash-command-item:active:not(:disabled) {
+  transform: scale(0.992);
+}
+
+.slash-command-item:disabled {
+  opacity: 0.55;
+}
+
+.slash-command-name {
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f4f4f1;
+  color: #d45214;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  padding: 7px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-item.selected:not(:disabled) .slash-command-name,
+.slash-command-item:hover:not(:disabled) .slash-command-name {
+  background: #fff;
+}
+
+.slash-command-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.slash-command-copy strong {
+  overflow: hidden;
+  color: #202427;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-copy small {
+  overflow: hidden;
+  color: #6f7478;
+  font-size: var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-tag {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #ecece8;
+  color: #74797d;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  padding: 4px 8px;
+}
+
+.slash-command-empty {
+  color: #777d82;
+  font-size: var(--font-ui);
+  padding: 18px 12px 20px;
+  text-align: center;
+}
+
 .permission-menu-anchor .access-menu,
 .hero-composer-wrap .permission-menu-anchor .access-menu {
   top: auto;
@@ -7717,6 +7869,7 @@ pre {
   .codex-runtime-menu,
   .composer-project-menu,
   .composer-context-menu,
+  .slash-command-menu,
   .run-debug-panel,
   .environment-panel,
   .environment-side-menu,
