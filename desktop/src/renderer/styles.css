@@ -7126,7 +7126,7 @@ pre {
 .composer-wrap {
   width: 100%;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   padding: 14px 0 22px;
   background: #fff;
 }
@@ -7705,9 +7705,9 @@ pre {
 }
 
 .hero-composer-wrap .slash-command-menu {
-  top: calc(100% + 8px);
-  bottom: auto;
-  transform-origin: top center;
+  top: auto;
+  bottom: calc(100% + 10px);
+  transform-origin: bottom center;
 }
 
 .slash-command-header {
@@ -8378,6 +8378,7 @@ html.swiss-international .empty-home h2 {
 }
 
 html.swiss-international .hero-composer-wrap {
+  z-index: 2;
   grid-column: 1 / -1;
 }
 
