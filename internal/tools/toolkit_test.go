@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,34 +47,54 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	}
 }
 
-func TestToolkit_ReadFileSizeSemantics(t *testing.T) {
+func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	big := strings.Repeat("x", defaultMaxFileBytes+64)
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "write_file",
-		Arguments: `{"path":"big.txt","content":"` + big + `"}`,
-	}); err != nil {
-		t.Fatalf("write_file: %v", err)
+	var big strings.Builder
+	for i := 1; i <= 5000; i++ {
+		fmt.Fprintf(&big, "line-%04d %s\n", i, strings.Repeat("x", 80))
+	}
+	if big.Len() <= defaultMaxFileBytes {
+		t.Fatalf("fixture must exceed max file bytes: got %d", big.Len())
+	}
+	if err := os.WriteFile(filepath.Join(root, "big.txt"), []byte(big.String()), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
 	}
 
-	// New behavior: read_file rejects files > 256KB at stat time with guidance.
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
-		Arguments: `{"path":"big.txt"}`,
+		Arguments: `{"path":"big.txt","offset":3001,"limit":3}`,
 	})
-	if err == nil {
-		t.Fatal("expected error for oversized file")
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
 	}
-	if !strings.Contains(err.Error(), "too large") {
-		t.Fatalf("expected 'too large' error, got: %v", err)
+
+	var parsed struct {
+		Content    string `json:"content"`
+		NumLines   int    `json:"num_lines"`
+		StartLine  int    `json:"start_line"`
+		TotalLines int    `json:"total_lines"`
+		Truncated  bool   `json:"truncated"`
 	}
-	if !strings.Contains(err.Error(), "offset and limit") {
-		t.Fatalf("expected guidance about offset/limit, got: %v", err)
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if parsed.NumLines != 3 || parsed.StartLine != 3001 || parsed.TotalLines != 5000 || !parsed.Truncated {
+		t.Fatalf("unexpected metadata: %+v", parsed)
+	}
+	for _, want := range []string{"  3001\tline-3001", "  3002\tline-3002", "  3003\tline-3003"} {
+		if !strings.Contains(parsed.Content, want) {
+			t.Fatalf("expected content to include %q, got: %q", want, parsed.Content)
+		}
+	}
+	for _, unwanted := range []string{"line-3000", "line-3004"} {
+		if strings.Contains(parsed.Content, unwanted) {
+			t.Fatalf("content included line outside requested range %q: %q", unwanted, parsed.Content)
+		}
 	}
 }
 

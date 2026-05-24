@@ -1,11 +1,13 @@
 package tools
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +37,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"- The path parameter is relative to the workspace root\n" +
 			"- Returns content with cat -n style line number prefixes (number + tab)\n" +
 			"- Use offset (1-based line) and limit (default 2000) to paginate large files\n" +
-			"- Files >256KB are rejected at stat time — use offset and limit to read portions\n" +
+			"- Large files are read as a line stream; reduce limit if the selected range is too large\n" +
 			"- Repeated reads of the same file/range return a stub if the file is unchanged\n" +
 			"- This tool can only read files, not directories — use list_files for directories\n" +
 			"- Binary files are not supported; use run_shell for binary inspection",
@@ -99,15 +101,12 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	if info.IsDir() {
 		return "", fmt.Errorf("path is a directory: %s. Use list_files to inspect directories or read_file on a file inside it", args.Path)
 	}
-	if info.Size() > int64(defaultMaxFileBytes) {
-		return "", fmt.Errorf("file too large (%d bytes, max %d). Use offset and limit to read portions", info.Size(), defaultMaxFileBytes)
-	}
 
-	content, err := os.ReadFile(resolved)
+	readResult, err := readFileLineRange(resolved, args.Offset, args.Limit, defaultMaxFileBytes)
 	if err != nil {
-		return "", fmt.Errorf("read file: %w", err)
+		return "", err
 	}
-	contentHash := sha256Hex(content)
+	contentHash := readResult.ContentSHA256
 
 	// Dedup check: same file, same range, same content → return stub.
 	if entry, ok := t.env.GetReadEntry(resolved); ok {
@@ -127,28 +126,10 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 		}
 	}
 
-	allLines := strings.Split(string(content), "\n")
-	// Remove trailing empty element from final newline.
-	if len(allLines) > 0 && allLines[len(allLines)-1] == "" {
-		allLines = allLines[:len(allLines)-1]
-	}
-	totalLines := len(allLines)
-
-	// Slice to requested range.
-	startIdx := args.Offset - 1 // 0-based
-	if startIdx > totalLines {
-		startIdx = totalLines
-	}
-	endIdx := startIdx + args.Limit
-	if endIdx > totalLines {
-		endIdx = totalLines
-	}
-	sliced := allLines[startIdx:endIdx]
-
 	// Format with line numbers (right-aligned to 6 chars + tab).
 	var buf strings.Builder
-	for i, line := range sliced {
-		lineNum := startIdx + i + 1 // 1-based
+	for i, line := range readResult.Lines {
+		lineNum := args.Offset + i
 		fmt.Fprintf(&buf, "%6d\t%s\n", lineNum, line)
 	}
 
@@ -165,12 +146,95 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	result := map[string]any{
 		"path":        t.env.NormalizeDisplayPath(resolved),
 		"content":     buf.String(),
-		"num_lines":   len(sliced),
+		"num_lines":   len(readResult.Lines),
 		"start_line":  args.Offset,
-		"total_lines": totalLines,
-		"truncated":   endIdx < totalLines,
+		"total_lines": readResult.TotalLines,
+		"truncated":   args.Offset <= readResult.TotalLines && args.Offset-1+len(readResult.Lines) < readResult.TotalLines,
 	}
 	return mustJSON(result)
+}
+
+type readFileLineRangeResult struct {
+	Lines         []string
+	TotalLines    int
+	ContentSHA256 string
+}
+
+func readFileLineRange(path string, offset, limit, maxSelectedBytes int) (readFileLineRangeResult, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return readFileLineRangeResult{}, fmt.Errorf("read file: %w", err)
+	}
+	defer f.Close()
+
+	reader := bufio.NewReaderSize(f, 64*1024)
+	hasher := sha256.New()
+	endLine := offset + limit
+	currentLine := 1
+	selected := make([]string, 0, min(limit, 128))
+	var line strings.Builder
+	selectedBytes := 0
+
+	appendSelected := func(fragment []byte) error {
+		if len(fragment) == 0 {
+			return nil
+		}
+		if maxSelectedBytes > 0 && selectedBytes+len(fragment) > maxSelectedBytes {
+			return fmt.Errorf("selected read range too large (over %d bytes). Use a lower limit or a later offset to read a smaller portion", maxSelectedBytes)
+		}
+		if _, err := line.Write(fragment); err != nil {
+			return fmt.Errorf("buffer selected line: %w", err)
+		}
+		selectedBytes += len(fragment)
+		return nil
+	}
+
+	for {
+		fragment, readErr := reader.ReadSlice('\n')
+		if len(fragment) > 0 {
+			_, _ = hasher.Write(fragment)
+		}
+		if readErr != nil && readErr != bufio.ErrBufferFull && readErr != io.EOF {
+			return readFileLineRangeResult{}, fmt.Errorf("read file: %w", readErr)
+		}
+		if len(fragment) == 0 && readErr == io.EOF {
+			break
+		}
+
+		completeLine := readErr != bufio.ErrBufferFull
+		endedWithNewline := completeLine && len(fragment) > 0 && fragment[len(fragment)-1] == '\n'
+		lineFragment := fragment
+		if endedWithNewline {
+			lineFragment = lineFragment[:len(lineFragment)-1]
+			if len(lineFragment) > 0 && lineFragment[len(lineFragment)-1] == '\r' {
+				lineFragment = lineFragment[:len(lineFragment)-1]
+			}
+		}
+
+		if currentLine >= offset && currentLine < endLine {
+			if err := appendSelected(lineFragment); err != nil {
+				return readFileLineRangeResult{}, err
+			}
+		}
+
+		if completeLine {
+			if currentLine >= offset && currentLine < endLine {
+				lineText := line.String()
+				if endedWithNewline && strings.HasSuffix(lineText, "\r") {
+					lineText = lineText[:len(lineText)-1]
+				}
+				selected = append(selected, lineText)
+				line.Reset()
+			}
+			currentLine++
+		}
+	}
+
+	return readFileLineRangeResult{
+		Lines:         selected,
+		TotalLines:    currentLine - 1,
+		ContentSHA256: hex.EncodeToString(hasher.Sum(nil)),
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
