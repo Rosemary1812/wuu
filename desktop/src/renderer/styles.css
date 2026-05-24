@@ -1228,6 +1228,10 @@ button:disabled {
   --environment-panel-width: 360px;
   --conversation-readable-width: 760px;
   --conversation-flow-width: var(--conversation-readable-width);
+  --conversation-flow-padding-inline: clamp(20px, 4vw, 48px);
+  --conversation-content-width: calc(
+    var(--conversation-flow-width) - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline)
+  );
   --conversation-scrollbar-gutter: 12px;
   --dock-composer-height: 0px;
   grid-column: 2;
@@ -3357,7 +3361,7 @@ button:disabled {
   width: 100%;
   max-width: var(--conversation-flow-width);
   margin: 0 auto;
-  padding: 72px clamp(20px, 4vw, 48px) 28px;
+  padding: 72px var(--conversation-flow-padding-inline) 28px;
 }
 
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-width {
@@ -7320,7 +7324,10 @@ pre {
 
 .composer-stack {
   display: flex;
-  width: min(var(--conversation-flow-width), calc(100% - 32px));
+  width: min(
+    var(--conversation-content-width),
+    calc(100% - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline))
+  );
   min-width: 0;
   flex-direction: column;
   margin: 0 auto;
@@ -8602,11 +8609,12 @@ html.swiss-international .workspace-diff-file.active .workspace-diff-file-stats 
 
 html.swiss-international .conversation-pane {
   --conversation-flow-width: calc(var(--conversation-readable-width) + 40px);
+  --conversation-flow-padding-inline: clamp(24px, 5vw, 56px);
 }
 
 html.swiss-international .conversation-width {
   max-width: var(--conversation-flow-width);
-  padding: 76px clamp(24px, 5vw, 56px) 32px;
+  padding: 76px var(--conversation-flow-padding-inline) 32px;
 }
 
 html.swiss-international .turn {

@@ -180,12 +180,12 @@ async function run() {
     "Message flow should stay centered in the live scroll region during right-side window resize."
   );
   assert.ok(
-    Math.abs(flowResize.composerStackCenter - flowResize.conversationCenter) <= 2,
-    "Dock composer should stay centered with the message flow during right-side window resize."
+    Math.abs(flowResize.composerStackCenter - flowResize.conversationContentCenter) <= 2,
+    "Dock composer should stay centered with the message content during right-side window resize."
   );
   assert.ok(
-    Math.abs(flowResize.composerStackWidth - flowResize.conversationWidth) <= 2,
-    "Dock composer should use the same width as the message flow."
+    Math.abs(flowResize.composerStackWidth - flowResize.conversationContentWidth) <= 2,
+    "Dock composer should use the same width as the message content."
   );
 
   await delay(300);
@@ -221,15 +221,15 @@ async function run() {
     ...flowProbe.samples.map((sample) => Math.abs(sample.conversationCenter - sample.scrollContentCenter))
   );
   const maxComposerCenterDelta = Math.max(
-    ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackCenter - sample.conversationCenter))
+    ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackCenter - sample.conversationContentCenter))
   );
   const maxComposerWidthDelta = Math.max(
-    ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackWidth - sample.conversationWidth))
+    ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackWidth - sample.conversationContentWidth))
   );
   assert.ok(maxConversationWidth <= 762, "Message flow should stay capped throughout continuous right-side resize.");
   assert.ok(maxFlowCenterDelta <= 2, "Message flow should stay centered throughout continuous right-side resize.");
-  assert.ok(maxComposerCenterDelta <= 2, "Dock composer should stay centered with the message flow throughout resize.");
-  assert.ok(maxComposerWidthDelta <= 2, "Dock composer should stay the same width as the message flow throughout resize.");
+  assert.ok(maxComposerCenterDelta <= 2, "Dock composer should stay centered with the message content throughout resize.");
+  assert.ok(maxComposerWidthDelta <= 2, "Dock composer should stay the same width as the message content throughout resize.");
   assert.ok(maxFrameMs < 80, `Continuous right-side resize should not stall the renderer for ${Math.round(maxFrameMs)}ms.`);
 
   await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
@@ -594,15 +594,22 @@ async function evaluate(win, fn) {
       const conversationRect = conversation.getBoundingClientRect();
       const composerRect = composer.getBoundingClientRect();
       const stackRect = stack.getBoundingClientRect();
+      const conversationStyle = getComputedStyle(conversation);
       const scrollStyle = getComputedStyle(scroll);
       const composerStyle = getComputedStyle(composer);
+      const conversationPaddingLeft = Number.parseFloat(conversationStyle.paddingLeft || "0");
+      const conversationPaddingRight = Number.parseFloat(conversationStyle.paddingRight || "0");
       const scrollPaddingRight = Number.parseFloat(scrollStyle.paddingRight || "0");
       const composerPaddingRight = Number.parseFloat(composerStyle.paddingRight || "0");
+      const conversationContentLeft = conversationRect.left + conversationPaddingLeft;
+      const conversationContentRight = conversationRect.right - conversationPaddingRight;
       return {
         composerContentRight: composerRect.left + composer.clientWidth - composerPaddingRight,
         composerStackCenter: stackRect.left + stackRect.width / 2,
         composerStackRight: stackRect.right,
         composerStackWidth: stackRect.width,
+        conversationContentCenter: conversationContentLeft + (conversationContentRight - conversationContentLeft) / 2,
+        conversationContentWidth: conversationContentRight - conversationContentLeft,
         conversationCenter: conversationRect.left + conversationRect.width / 2,
         conversationRight: conversationRect.right,
         conversationWidth: conversationRect.width,
