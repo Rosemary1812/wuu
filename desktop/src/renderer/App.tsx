@@ -24,9 +24,6 @@ import {
   MessageSquarePlus,
   MoreHorizontal,
   PanelBottomOpen,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightOpen,
   Pencil,
   Pin,
   Plus,
@@ -165,6 +162,35 @@ type PendingViewSwitch = {
 type ConversationPaneID = "primary" | "secondary";
 type RunDebugEventSource = "client" | "server";
 type RunDebugEventTone = "info" | "running" | "success" | "warning" | "error";
+
+function SidePanelToggleIcon({
+  side,
+  open,
+  size = 18
+}: {
+  side: "left" | "right";
+  open: boolean;
+  size?: number;
+}): JSX.Element {
+  const paneX = side === "left" ? 4.6 : 10.4;
+  const dividerX = side === "left" ? 8.7 : 9.3;
+  return (
+    <svg
+      className="side-panel-toggle-icon"
+      data-open={open}
+      width={size}
+      height={size}
+      viewBox="0 0 18 18"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect className="side-panel-toggle-frame" x="3.25" y="3.75" width="11.5" height="10.5" rx="2.4" />
+      <path className="side-panel-toggle-divider" d={`M${dividerX} 4.25v9.5`} />
+      <rect className="side-panel-toggle-pane" x={paneX} y="5.25" width="3" height="7.5" rx="1" />
+    </svg>
+  );
+}
+
 type RunDebugPhaseTone = "idle" | "running" | "success" | "warning" | "error";
 
 type ComposerDraftState = {
@@ -3057,13 +3083,13 @@ export function App(): JSX.Element {
         <header className="titlebar">
           <div className="title-block">
             <button
-              className={`icon-button sidebar-toggle-button${sidebarCollapsed ? "" : " active"}`}
+              className="icon-button side-panel-toggle-button sidebar-toggle-button"
               type="button"
               aria-label={sidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
               aria-pressed={!sidebarCollapsed}
               onClick={toggleSidebar}
             >
-              {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
             </button>
             {workspaceMode ? (
               <span className="workspace-title-icon" aria-hidden="true">
@@ -3159,13 +3185,13 @@ export function App(): JSX.Element {
               <PanelBottomOpen size={18} />
             </button>
             <button
-              className={`icon-button workspace-toggle-button${rightPanelOpen ? " active" : ""}`}
+              className="icon-button side-panel-toggle-button"
               type="button"
               aria-label={rightPanelOpen ? "关闭右侧栏" : "打开右侧栏"}
               aria-pressed={rightPanelOpen}
               onClick={toggleRightPanel}
             >
-              <PanelRightOpen size={18} />
+              <SidePanelToggleIcon side="right" open={rightPanelOpen} />
             </button>
           </div>
         </header>
