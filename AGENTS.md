@@ -3,10 +3,19 @@
 - Must complete tasks end-to-end without asking the user for confirmation on small or medium-sized implementation decisions.
 - Must make local naming, refactoring, implementation, and routine workflow decisions independently when they are reversible and do not change security, architecture, or product scope.
 - Must create atomic commits during multi-step work as each independent step is completed and verified. Must not bundle unrelated steps into one final commit.
-- Default to developing directly on the current main branch in this repository. Do not create a new branch, worktree, or detached work area unless the user explicitly asks for one, the user asks for parallel isolated work, or an irreversible safety concern requires isolation.
-- When developing on main, still use atomic development: commit each independent verified step as soon as it is complete. Do not accumulate unrelated changes for one large final commit.
 - Must apply existing knowledge, tacit engineering knowledge, and established best practices directly. Must not ask about standard implementation details that a competent engineer should already know.
 - Must not interrupt execution for trivial questions, obvious choices, or routine best-practice decisions. Ask only when the choice is irreversible or materially affects security, architecture, or product behavior.
+
+## Product Stage and Development Bias
+
+- This project is in a high-velocity product iteration stage. Optimize for quickly shipping coherent user-facing behavior, not for preserving existing implementation details by default.
+- Product intent from the user is the primary source of truth. Existing behavior is evidence, not authority; if the current behavior conflicts with the intended user experience, change the behavior directly.
+- Default to developing directly on the current `main` branch in this repository. Do not create a new branch, worktree, or detached work area unless the user explicitly asks for one, the user asks for parallel isolated work, or a concrete safety reason requires isolation.
+- Work in small, atomic steps on `main`: each independent behavior change should be implemented, verified, and committed separately. Do not accumulate unrelated changes for one large final commit.
+- Prefer decisive product fixes over narrow patches that only silence the immediate symptom. If the root problem is a mismatched product model, fix the model rather than adding local guardrails around the symptom.
+- Avoid unrelated changes, not necessary product changes. If the intended behavior requires changing a broader product model, do that directly and keep unrelated refactors out of the commit.
+- Keep engineering discipline proportional to risk: inspect the relevant code first, preserve data safety, avoid avoidable regressions, and verify the actual running product path before claiming completion.
+- When validation matters, verify against the real app or runtime the user is using, not only an isolated worktree, stale build, or inferred code path.
 
 ## Intent First
 
