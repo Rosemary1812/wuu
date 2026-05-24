@@ -111,6 +111,7 @@ type AnsweredAskRequestState = AskRequestState & {
 
 const ASK_USER_OTHER_VALUE = "__wuu_other__";
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
+const SIDEBAR_MOTION_MS = 180;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 
@@ -1535,6 +1536,7 @@ export function App(): JSX.Element {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(initialCollapsedProjectIDs);
   const [resizingSidebar, setResizingSidebar] = useState(false);
+  const [sidebarAnimating, setSidebarAnimating] = useState(false);
   const [workspaceRightPanelWidth, setWorkspaceRightPanelWidth] = useState(initialWorkspaceRightPanelWidth);
   const [resizingRightPanel, setResizingRightPanel] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -1581,6 +1583,7 @@ export function App(): JSX.Element {
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const projectCollapseTimersRef = useRef(new Map<string, number>());
+  const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
   const windowResizingRef = useRef(false);
   const environmentPanelHasRoomRef = useRef(environmentPanelHasRoom);
@@ -1617,6 +1620,9 @@ export function App(): JSX.Element {
         window.clearTimeout(timer);
       }
       projectCollapseTimersRef.current.clear();
+      if (sidebarMotionTimerRef.current !== undefined) {
+        window.clearTimeout(sidebarMotionTimerRef.current);
+      }
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
       }
@@ -2000,12 +2006,14 @@ export function App(): JSX.Element {
   const environmentPanelVisible = environmentPanelTargetVisible;
   const environmentPanelMotionState: EnvironmentPanelMotionState = environmentPanelVisible ? "open" : "closing";
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
-    resizingSidebar ? " resizing-sidebar" : ""
-  }${resizingRightPanel ? " resizing-right-panel" : ""}${
+    sidebarAnimating ? " sidebar-animating" : ""
+  }${resizingSidebar ? " resizing-sidebar" : ""}${resizingRightPanel ? " resizing-right-panel" : ""}${
     rightPanelOpen ? " right-panel-open" : ""
   }${bottomPanelOpen ? " bottom-panel-open" : ""}`;
   const shellStyle = {
     "--sidebar-width": `${effectiveSidebarWidth}px`,
+    "--sidebar-open-width": `${sidebarWidth}px`,
+    "--sidebar-motion-duration": `${SIDEBAR_MOTION_MS}ms`,
     "--workspace-right-panel-width": `${clampedWorkspaceRightPanelWidth}px`,
     "--environment-panel-width": "328px",
     "--environment-panel-reserved-width": "372px",
@@ -2095,11 +2103,29 @@ export function App(): JSX.Element {
 
   function applySidebarWidth(nextWidth: number): void {
     if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+      if (!sidebarCollapsed && !resizingSidebar) {
+        startSidebarMotion();
+      }
+      setProjectMenuOpen(false);
       setSidebarCollapsed(true);
       return;
     }
+    if (sidebarCollapsed && !resizingSidebar) {
+      startSidebarMotion();
+    }
     setSidebarCollapsed(false);
     setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+  }
+
+  function startSidebarMotion(): void {
+    if (sidebarMotionTimerRef.current !== undefined) {
+      window.clearTimeout(sidebarMotionTimerRef.current);
+    }
+    setSidebarAnimating(true);
+    sidebarMotionTimerRef.current = window.setTimeout(() => {
+      sidebarMotionTimerRef.current = undefined;
+      setSidebarAnimating(false);
+    }, SIDEBAR_MOTION_MS);
   }
 
   function applyWorkspaceRightPanelWidth(nextWidth: number): void {
@@ -2177,6 +2203,7 @@ export function App(): JSX.Element {
       startX: event.clientX,
       startWidth: sidebarCollapsed ? 0 : sidebarWidth
     };
+    setProjectMenuOpen(false);
     setResizingSidebar(true);
   }
 
@@ -2213,6 +2240,8 @@ export function App(): JSX.Element {
   }
 
   function toggleSidebar(): void {
+    setProjectMenuOpen(false);
+    startSidebarMotion();
     setSidebarCollapsed((collapsed) => !collapsed);
     setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
   }
@@ -2478,6 +2507,7 @@ export function App(): JSX.Element {
     if (event.key === "ArrowRight") {
       event.preventDefault();
       if (sidebarCollapsed) {
+        startSidebarMotion();
         setSidebarCollapsed(false);
         setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
         return;
@@ -3952,143 +3982,145 @@ export function App(): JSX.Element {
   return (
     <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
-        <div className="traffic-spacer" />
-        <nav className="primary-nav" aria-label="主导航">
-          <button className="nav-item" onClick={() => void startNewThread()} disabled={!state.activeContext}>
-            <MessageSquarePlus size={18} />
-            <span>新对话</span>
-          </button>
-          {debugControlsVisible && ENABLE_CONVERSATION_FIXTURES ? (
-            <div className="dev-fixture-nav" aria-label="开发调试会话">
-              <div className="dev-fixture-label">开发样例</div>
-              <button
-                className="nav-item dev-fixture-button"
-                onClick={() => seedConversationFixture("long")}
-                disabled={!state.activeContext || !state.initialized}
-              >
-                <FileText size={17} />
-                <span>长对话</span>
-              </button>
-              <button
-                className="nav-item dev-fixture-button"
-                onClick={() => seedConversationFixture("rich")}
-                disabled={!state.activeContext || !state.initialized}
-              >
-                <ListIcon size={17} />
-                <span>富内容</span>
-              </button>
-              <button
-                className="nav-item dev-fixture-button"
-                onClick={() => seedConversationFixture("running")}
-                disabled={!state.activeContext || !state.initialized}
-              >
-                <Clock size={17} />
-                <span>运行中</span>
-              </button>
-              <button
-                className="nav-item dev-fixture-button"
-                onClick={() => seedConversationFixture("compact")}
-                disabled={!state.activeContext || !state.initialized}
-              >
-                <Archive size={17} />
-                <span>上下文压缩</span>
-              </button>
-              <button
-                className="nav-item dev-fixture-button"
-                onClick={seedAgentTreeDemo}
-                disabled={!state.activeContext || !state.initialized}
-              >
-                <CornerDownRight size={17} />
-                <span>子任务</span>
-              </button>
-            </div>
-          ) : null}
-        </nav>
+        <div className="sidebar-content">
+          <div className="traffic-spacer" />
+          <nav className="primary-nav" aria-label="主导航">
+            <button className="nav-item" onClick={() => void startNewThread()} disabled={!state.activeContext}>
+              <MessageSquarePlus size={18} />
+              <span>新对话</span>
+            </button>
+            {debugControlsVisible && ENABLE_CONVERSATION_FIXTURES ? (
+              <div className="dev-fixture-nav" aria-label="开发调试会话">
+                <div className="dev-fixture-label">开发样例</div>
+                <button
+                  className="nav-item dev-fixture-button"
+                  onClick={() => seedConversationFixture("long")}
+                  disabled={!state.activeContext || !state.initialized}
+                >
+                  <FileText size={17} />
+                  <span>长对话</span>
+                </button>
+                <button
+                  className="nav-item dev-fixture-button"
+                  onClick={() => seedConversationFixture("rich")}
+                  disabled={!state.activeContext || !state.initialized}
+                >
+                  <ListIcon size={17} />
+                  <span>富内容</span>
+                </button>
+                <button
+                  className="nav-item dev-fixture-button"
+                  onClick={() => seedConversationFixture("running")}
+                  disabled={!state.activeContext || !state.initialized}
+                >
+                  <Clock size={17} />
+                  <span>运行中</span>
+                </button>
+                <button
+                  className="nav-item dev-fixture-button"
+                  onClick={() => seedConversationFixture("compact")}
+                  disabled={!state.activeContext || !state.initialized}
+                >
+                  <Archive size={17} />
+                  <span>上下文压缩</span>
+                </button>
+                <button
+                  className="nav-item dev-fixture-button"
+                  onClick={seedAgentTreeDemo}
+                  disabled={!state.activeContext || !state.initialized}
+                >
+                  <CornerDownRight size={17} />
+                  <span>子任务</span>
+                </button>
+              </div>
+            ) : null}
+          </nav>
 
-        {sidebarPinnedThreads.length > 0 ? (
-          <section className="pinned-thread-section" aria-label="置顶">
-            <div className="section-label pinned-thread-label">置顶</div>
-            <PinnedThreadList
-              threads={sidebarPinnedThreads}
-              activeID={activeThreadID}
+          {sidebarPinnedThreads.length > 0 ? (
+            <section className="pinned-thread-section" aria-label="置顶">
+              <div className="section-label pinned-thread-label">置顶</div>
+              <PinnedThreadList
+                threads={sidebarPinnedThreads}
+                activeID={activeThreadID}
+                pendingThreadID={visiblePendingThreadID}
+                pendingAskThreadIDs={pendingAskThreadIDs}
+                archiveConfirmThreadID={archiveConfirmThreadID}
+                onSelect={(id) => void selectThread(id)}
+                onSelectChildAgent={(agent) => void selectChildAgent(agent)}
+                onTogglePinned={(thread) => void toggleThreadPinned(thread)}
+                onArchive={(thread) => void archiveThread(thread)}
+                onClearArchiveConfirm={(id) =>
+                  setArchiveConfirmThreadID((current) => (current === id ? undefined : current))
+                }
+              />
+            </section>
+          ) : null}
+
+          <section className="project-list" aria-label="项目">
+            <div className="project-section-header" ref={projectMenuRef}>
+              <div className="section-label">项目</div>
+              <button
+                className="project-add-button"
+                aria-label="添加项目"
+                aria-haspopup="menu"
+                aria-expanded={projectMenuOpen}
+                onClick={() => setProjectMenuOpen((open) => !open)}
+              >
+                <FolderPlus size={20} />
+              </button>
+              {projectMenuOpen ? (
+                <div className="project-add-menu" role="menu">
+                  <button role="menuitem" onClick={() => void createBlankProject()}>
+                    <FolderPlus size={22} />
+                    <span>新建空白项目</span>
+                  </button>
+                  <button role="menuitem" onClick={() => void chooseProjectFolder()}>
+                    <FolderOpen size={22} />
+                    <span>使用现有文件夹</span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {state.projects.length === 0 ? <div className="project-empty-note">还没有项目</div> : null}
+            <ProjectList
+              projects={state.projects}
+              activeID={state.activeProjectId}
+              pendingProjectID={visiblePendingProjectID}
+              collapsedProjectIDs={collapsedProjectIDs}
+              collapsingProjectIDs={collapsingProjectIDs}
+              threads={state.threads}
+              activeThreadID={activeThreadID}
               pendingThreadID={visiblePendingThreadID}
               pendingAskThreadIDs={pendingAskThreadIDs}
               archiveConfirmThreadID={archiveConfirmThreadID}
-              onSelect={(id) => void selectThread(id)}
+              onSelectProject={(id) => void openProject(id)}
+              onToggleProjectCollapsed={toggleProjectCollapsed}
+              onStartNewThread={(id) => void startNewThreadForProject(id)}
+              onSelectThread={(id) => void selectThread(id)}
               onSelectChildAgent={(agent) => void selectChildAgent(agent)}
-              onTogglePinned={(thread) => void toggleThreadPinned(thread)}
-              onArchive={(thread) => void archiveThread(thread)}
+              onToggleThreadPinned={(thread) => void toggleThreadPinned(thread)}
+              onArchiveThread={(thread) => void archiveThread(thread)}
               onClearArchiveConfirm={(id) =>
                 setArchiveConfirmThreadID((current) => (current === id ? undefined : current))
               }
             />
           </section>
-        ) : null}
-
-        <section className="project-list" aria-label="项目">
-          <div className="project-section-header" ref={projectMenuRef}>
-            <div className="section-label">项目</div>
+          <div className="sidebar-settings">
             <button
-              className="project-add-button"
-              aria-label="添加项目"
-              aria-haspopup="menu"
-              aria-expanded={projectMenuOpen}
-              onClick={() => setProjectMenuOpen((open) => !open)}
+              className="settings-button"
+              type="button"
+              disabled={!state.initialized}
+              onClick={() => {
+                setProjectMenuOpen(false);
+                setRuntimeMenuOpen(false);
+                setCodexRuntimeMenu(null);
+                setSettingsOpen(true);
+              }}
             >
-              <FolderPlus size={20} />
+              <Settings size={18} />
+              <span>设置</span>
             </button>
-            {projectMenuOpen ? (
-              <div className="project-add-menu" role="menu">
-                <button role="menuitem" onClick={() => void createBlankProject()}>
-                  <FolderPlus size={22} />
-                  <span>新建空白项目</span>
-                </button>
-                <button role="menuitem" onClick={() => void chooseProjectFolder()}>
-                  <FolderOpen size={22} />
-                  <span>使用现有文件夹</span>
-                </button>
-              </div>
-            ) : null}
           </div>
-          {state.projects.length === 0 ? <div className="project-empty-note">还没有项目</div> : null}
-          <ProjectList
-            projects={state.projects}
-            activeID={state.activeProjectId}
-            pendingProjectID={visiblePendingProjectID}
-            collapsedProjectIDs={collapsedProjectIDs}
-            collapsingProjectIDs={collapsingProjectIDs}
-            threads={state.threads}
-            activeThreadID={activeThreadID}
-            pendingThreadID={visiblePendingThreadID}
-            pendingAskThreadIDs={pendingAskThreadIDs}
-            archiveConfirmThreadID={archiveConfirmThreadID}
-            onSelectProject={(id) => void openProject(id)}
-            onToggleProjectCollapsed={toggleProjectCollapsed}
-            onStartNewThread={(id) => void startNewThreadForProject(id)}
-            onSelectThread={(id) => void selectThread(id)}
-            onSelectChildAgent={(agent) => void selectChildAgent(agent)}
-            onToggleThreadPinned={(thread) => void toggleThreadPinned(thread)}
-            onArchiveThread={(thread) => void archiveThread(thread)}
-            onClearArchiveConfirm={(id) =>
-              setArchiveConfirmThreadID((current) => (current === id ? undefined : current))
-            }
-          />
-        </section>
-        <div className="sidebar-settings">
-          <button
-            className="settings-button"
-            type="button"
-            disabled={!state.initialized}
-            onClick={() => {
-              setProjectMenuOpen(false);
-              setRuntimeMenuOpen(false);
-              setCodexRuntimeMenu(null);
-              setSettingsOpen(true);
-            }}
-          >
-            <Settings size={18} />
-            <span>设置</span>
-          </button>
         </div>
       </aside>
 
