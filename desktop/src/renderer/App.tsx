@@ -7743,6 +7743,7 @@ function TurnView({
         <ThreadItemView
           key={item.id}
           turnID={turn.id}
+          turnStatus={turn.status}
           item={item}
           cwd={cwd}
           streaming={false}
@@ -7778,6 +7779,7 @@ function TurnView({
       <ThreadItemView
         key={item.id}
         turnID={turn.id}
+        turnStatus={turn.status}
         item={item}
         cwd={cwd}
         streaming={turn.status === "in_progress" && item.status === "in_progress"}
@@ -8154,6 +8156,7 @@ function latestAgentMessageItemID(turns: Turn[]): string | undefined {
 
 function ThreadItemView({
   turnID,
+  turnStatus,
   item,
   cwd,
   streaming,
@@ -8162,6 +8165,7 @@ function ThreadItemView({
   onForkMessage
 }: {
   turnID: string;
+  turnStatus: Turn["status"];
   item: ThreadItem;
   cwd?: string;
   streaming: boolean;
@@ -8185,11 +8189,12 @@ function ThreadItemView({
       const streamKeyValue = streamTextKey(turnID, item.id, "text");
       const agentText = streamTextStore.has(streamKeyValue) ? streamTextStore.get(streamKeyValue) : (item.text ?? "");
       const copyable = streaming || agentText.trim() !== "";
-      const actionsPersistent = item.id === latestAgentMessageID;
+      const actionsVisible = turnStatus !== "in_progress" && copyable;
+      const actionsPersistent = actionsVisible && item.id === latestAgentMessageID;
       return (
         <article
           className={`agent-block${
-            copyable ? ` agent-block-with-actions${actionsPersistent ? " agent-actions-persistent" : ""}` : ""
+            actionsVisible ? ` agent-block-with-actions${actionsPersistent ? " agent-actions-persistent" : ""}` : ""
           }`}
         >
           <div className="agent-text">
@@ -8201,7 +8206,7 @@ function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
-          {copyable ? (
+          {actionsVisible ? (
             <AgentMessageActions
               getText={() => streamFieldValue(turnID, item, "text")}
               onFork={onForkMessage ? () => onForkMessage(turnID, item.id) : undefined}
