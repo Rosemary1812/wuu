@@ -147,6 +147,34 @@ func TestReadOutput(t *testing.T) {
 	_, _ = m.Stop(p.ID)
 }
 
+func TestWriteStdin(t *testing.T) {
+	root := t.TempDir()
+	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
+	p, err := m.Start(context.Background(), StartOptions{Command: "read line; echo got:$line; sleep 1", OwnerKind: OwnerMainAgent, OwnerID: "main", Lifecycle: LifecycleSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.WriteStdin(p.ID, "hello\n"); err != nil {
+		t.Fatalf("WriteStdin: %v", err)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		out, _, err := m.ReadOutput(p.ID, 4096)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "got:hello") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for stdin echo; output=%q", out)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	_, _ = m.Stop(p.ID)
+}
+
 func TestManagerPublishesLifecycleEventsAndCleanupSkipsManaged(t *testing.T) {
 	root := t.TempDir()
 	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))

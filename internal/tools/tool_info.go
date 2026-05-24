@@ -109,7 +109,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindUserInteraction
 	case "spawn_agent", "send_message", "followup_task", "wait_agent", "close_agent", "list_agents":
 		return ToolKindAgent
-	case "start_process", "list_processes", "stop_process", "read_process_output":
+	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin":
 		return ToolKindProcess
 	case "schedule_cron", "cancel_cron", "list_cron":
 		return ToolKindSchedule

@@ -17,8 +17,8 @@ type StartProcessTool struct{ env *Env }
 func NewStartProcessTool(env *Env) *StartProcessTool { return &StartProcessTool{env: env} }
 
 func (t *StartProcessTool) Name() string            { return "start_process" }
-func (t *StartProcessTool) IsReadOnly() bool         { return false }
-func (t *StartProcessTool) IsConcurrencySafe() bool  { return false }
+func (t *StartProcessTool) IsReadOnly() bool        { return false }
+func (t *StartProcessTool) IsConcurrencySafe() bool { return false }
 
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -53,8 +53,8 @@ type ListProcessesTool struct{ env *Env }
 func NewListProcessesTool(env *Env) *ListProcessesTool { return &ListProcessesTool{env: env} }
 
 func (t *ListProcessesTool) Name() string            { return "list_processes" }
-func (t *ListProcessesTool) IsReadOnly() bool         { return true }
-func (t *ListProcessesTool) IsConcurrencySafe() bool  { return true }
+func (t *ListProcessesTool) IsReadOnly() bool        { return true }
+func (t *ListProcessesTool) IsConcurrencySafe() bool { return true }
 
 func (t *ListProcessesTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -84,8 +84,8 @@ type StopProcessTool struct{ env *Env }
 func NewStopProcessTool(env *Env) *StopProcessTool { return &StopProcessTool{env: env} }
 
 func (t *StopProcessTool) Name() string            { return "stop_process" }
-func (t *StopProcessTool) IsReadOnly() bool         { return false }
-func (t *StopProcessTool) IsConcurrencySafe() bool  { return true }
+func (t *StopProcessTool) IsReadOnly() bool        { return false }
+func (t *StopProcessTool) IsConcurrencySafe() bool { return true }
 
 func (t *StopProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -123,8 +123,8 @@ func NewReadProcessOutputTool(env *Env) *ReadProcessOutputTool {
 }
 
 func (t *ReadProcessOutputTool) Name() string            { return "read_process_output" }
-func (t *ReadProcessOutputTool) IsReadOnly() bool         { return true }
-func (t *ReadProcessOutputTool) IsConcurrencySafe() bool  { return true }
+func (t *ReadProcessOutputTool) IsReadOnly() bool        { return true }
+func (t *ReadProcessOutputTool) IsConcurrencySafe() bool { return true }
 
 func (t *ReadProcessOutputTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -150,4 +150,50 @@ func (t *ReadProcessOutputTool) Execute(_ context.Context, argsJSON string) (str
 		return "", err
 	}
 	return mustJSON(map[string]any{"process_id": args.ProcessID, "output": out, "truncated": tr})
+}
+
+// ---------------------------------------------------------------------------
+// write_stdin
+// ---------------------------------------------------------------------------
+
+type WriteStdinTool struct{ env *Env }
+
+func NewWriteStdinTool(env *Env) *WriteStdinTool { return &WriteStdinTool{env: env} }
+
+func (t *WriteStdinTool) Name() string            { return "write_stdin" }
+func (t *WriteStdinTool) IsReadOnly() bool        { return false }
+func (t *WriteStdinTool) IsConcurrencySafe() bool { return true }
+
+func (t *WriteStdinTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{
+		Name:        "write_stdin",
+		Description: "Write text to stdin for a running managed background process.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"process_id": map[string]any{"type": "string", "description": "Managed process id returned by start_process."},
+				"input":      map[string]any{"type": "string", "description": "Text to write to stdin. Include a trailing newline when the process is waiting for a line."},
+			},
+			"required": []string{"process_id", "input"},
+		},
+	}
+}
+
+func (t *WriteStdinTool) Execute(_ context.Context, argsJSON string) (string, error) {
+	var args struct {
+		ProcessID string `json:"process_id"`
+		Input     string `json:"input"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return "", err
+	}
+	m, err := t.env.ProcessManager()
+	if err != nil {
+		return "", err
+	}
+	p, err := m.WriteStdin(args.ProcessID, args.Input)
+	if err != nil {
+		return "", err
+	}
+	return mustJSON(map[string]any{"process_id": args.ProcessID, "bytes_written": len(args.Input), "process": p})
 }

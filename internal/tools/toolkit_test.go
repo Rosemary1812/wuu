@@ -461,6 +461,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
 		{name: "wait_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: true, concurrencySafe: true},
 		{name: "close_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
+		{name: "write_stdin", kind: ToolKindProcess, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
 		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, readOnly: false, concurrencySafe: false},
 		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
 	}

@@ -85,7 +85,13 @@ type Manager struct {
 	logDir      string
 	mu          sync.Mutex
 	subMu       sync.Mutex
+	handles     map[string]*processHandle
 	subscribers []chan<- Event
+}
+
+type processHandle struct {
+	mu    sync.Mutex
+	stdin io.WriteCloser
 }
 
 func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
@@ -115,7 +121,12 @@ func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &Manager{rootDir: abs, registryDir: filepath.Join(runtimeDir, "processes"), logDir: filepath.Join(runtimeDir, "logs")}
+	m := &Manager{
+		rootDir:     abs,
+		registryDir: filepath.Join(runtimeDir, "processes"),
+		logDir:      filepath.Join(runtimeDir, "logs"),
+		handles:     make(map[string]*processHandle),
+	}
 	if err := os.MkdirAll(m.registryDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -173,10 +184,21 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	cmd := exec.Command("bash", "-lc", opt.Command)
 	cmd.Dir = cwd
 	cmd.Env = os.Environ()
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		_ = logf.Close()
+		p.Status = StatusFailed
+		p.LastError = err.Error()
+		p.UpdatedAt = time.Now()
+		_ = m.save(p)
+		m.publish(Event{Type: EventFailed, Process: *p})
+		return p, fmt.Errorf("stdin pipe: %w", err)
+	}
 	cmd.Stdout = logf
 	cmd.Stderr = logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
 		_ = logf.Close()
 		p.Status = StatusFailed
 		p.LastError = err.Error()
@@ -194,6 +216,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	p.Status = StatusRunning
 	p.UpdatedAt = time.Now()
 	_ = m.save(p)
+	m.handles[id] = &processHandle{stdin: stdin}
 	m.publish(Event{Type: EventStarted, Process: *p})
 	go m.wait(id, cmd, logf)
 	return p, nil
@@ -204,6 +227,7 @@ func (m *Manager) wait(id string, cmd *exec.Cmd, logf *os.File) {
 	_ = logf.Close()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	delete(m.handles, id)
 	p, rerr := m.load(id)
 	if rerr != nil {
 		return
@@ -274,6 +298,30 @@ func (m *Manager) ReadOutput(id string, maxBytes int) (string, bool, error) {
 	_, _ = f.Seek(start, 0)
 	b, err := io.ReadAll(f)
 	return string(b), truncated, err
+}
+
+func (m *Manager) WriteStdin(id string, input string) (*Process, error) {
+	m.mu.Lock()
+	p, err := m.load(id)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	if p.Status != StatusRunning && p.Status != StatusStarting {
+		m.mu.Unlock()
+		return p, fmt.Errorf("process %q is not running", id)
+	}
+	handle := m.handles[id]
+	m.mu.Unlock()
+	if handle == nil || handle.stdin == nil {
+		return p, fmt.Errorf("stdin is not available for process %q", id)
+	}
+	handle.mu.Lock()
+	defer handle.mu.Unlock()
+	if _, err := io.WriteString(handle.stdin, input); err != nil {
+		return p, fmt.Errorf("write stdin: %w", err)
+	}
+	return p, nil
 }
 
 func (m *Manager) Stop(id string) (*Process, error) {
