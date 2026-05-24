@@ -540,7 +540,7 @@ button:disabled {
 
 .project-row.active {
   background: rgba(255, 255, 255, 0.3);
-  color: #202427;
+  color: #343a37;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.38),
     0 1px 1px rgba(31, 35, 40, 0.02);
@@ -562,6 +562,7 @@ button:disabled {
 }
 
 .project-row {
+  color: #6b736f;
   padding-left: 8px;
   padding-right: 40px;
   font-weight: var(--weight-medium);
@@ -677,7 +678,7 @@ button:disabled {
   gap: 8px;
   border-radius: 7px;
   color: #646c68;
-  font-size: var(--font-ui);
+  font-size: var(--font-body);
   padding: 0 9px 0 8px;
   animation: session-row-enter 170ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
