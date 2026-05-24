@@ -456,11 +456,12 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		concurrencySafe bool
 	}{
 		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, readOnly: true, concurrencySafe: true},
+		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
 		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
 		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
 		{name: "wait_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: true, concurrencySafe: true},
 		{name: "close_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
-		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
+		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, readOnly: false, concurrencySafe: false},
 		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
 	}
 	for _, tt := range tests {
@@ -513,6 +514,98 @@ func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
 		if d.Name == "run_shell" {
 			t.Fatal("hidden disabled tool should not appear in definitions")
 		}
+	}
+}
+
+func TestToolkit_DefersLowFrequencyAndMCPToolsFromDefinitions(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewReadFileTool(kit.env),
+		NewToolSearchTool(kit),
+		NewScheduleCronTool(kit.env),
+		&stubTool{
+			name: "mcp_docs_search",
+			def:  providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search docs through MCP"},
+		},
+	)
+
+	defs := definitionNames(kit.Definitions())
+	for _, name := range []string{"read_file", "tool_search"} {
+		if !defs[name] {
+			t.Fatalf("%s should be directly exposed", name)
+		}
+	}
+	for _, name := range []string{"schedule_cron", "mcp_docs_search"} {
+		if defs[name] {
+			t.Fatalf("%s should be deferred from definitions", name)
+		}
+		info, ok := kit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		}
+		if info.Exposure != ToolExposureDeferred {
+			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureDeferred)
+		}
+	}
+}
+
+func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name: "mcp_docs_search",
+			def:  providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search docs through MCP"},
+		},
+	)
+
+	if definitionNames(kit.Definitions())["mcp_docs_search"] {
+		t.Fatal("mcp_docs_search should start deferred")
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "mcp_docs_search",
+		Arguments: `{}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("expected deferred execution error, got %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"docs search"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var parsed struct {
+		ExposedTools []string `json:"exposed_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse tool_search response: %v", err)
+	}
+	if !reflect.DeepEqual(parsed.ExposedTools, []string{"mcp_docs_search"}) {
+		t.Fatalf("exposed tools = %+v, want mcp_docs_search", parsed.ExposedTools)
+	}
+	if !definitionNames(kit.Definitions())["mcp_docs_search"] {
+		t.Fatal("mcp_docs_search should be exposed after tool_search")
+	}
+	info, ok := kit.ToolInfo("mcp_docs_search")
+	if !ok {
+		t.Fatal("ToolInfo(mcp_docs_search) not found")
+	}
+	if info.Exposure != ToolExposureDirect {
+		t.Fatalf("mcp_docs_search exposure = %s, want %s", info.Exposure, ToolExposureDirect)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`}); err != nil {
+		t.Fatalf("activated deferred tool should execute: %v", err)
 	}
 }
 
@@ -799,6 +892,14 @@ func TestTruncateHistoryToLastUserTurnsPreservesSystemPrefix(t *testing.T) {
 	if got[0].Role != "system" || got[1].Content != "u2" || got[3].Content != "u3" {
 		t.Fatalf("unexpected truncated history: %+v", got)
 	}
+}
+
+func definitionNames(defs []providers.ToolDefinition) map[string]bool {
+	out := make(map[string]bool, len(defs))
+	for _, def := range defs {
+		out[def.Name] = true
+	}
+	return out
 }
 
 func TestToolkit_DisableTools_HidesDefinitionsAndBlocksExecute(t *testing.T) {

@@ -42,9 +42,11 @@ const (
 // (all registered tools). The old switch-case dispatch is replaced by
 // registry lookup.
 type Toolkit struct {
-	env           *Env
-	registry      *Registry
-	disabledTools map[string]struct{}
+	env                    *Env
+	registry               *Registry
+	disabledTools          map[string]struct{}
+	exposureMu             sync.RWMutex
+	activatedDeferredTools map[string]struct{}
 	// mcpManager, when set, exposes MCP server tools alongside built-in
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
@@ -113,6 +115,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 			clone.disabledTools[name] = struct{}{}
 		}
 	}
+	clone.activatedDeferredTools = t.cloneActivatedDeferredTools()
 	clone.rebuildRegistry()
 	return clone, nil
 }
@@ -159,6 +162,8 @@ func (t *Toolkit) rebuildRegistry() {
 		NewScheduleCronTool(e),
 		NewCancelCronTool(e),
 		NewListCronTool(e),
+		// Deferred tool discovery
+		NewToolSearchTool(t),
 	)
 }
 
@@ -276,19 +281,18 @@ func (t *Toolkit) isToolDisabled(name string) bool {
 // tool the agent can call.
 func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	all := t.registry.Definitions()
-	// Append MCP tools after built-ins to preserve prompt cache stability.
-	if t.mcpManager != nil {
-		for _, tool := range t.mcpManager.AllTools() {
-			all = append(all, tool.Definition())
-		}
-	}
-	if len(t.disabledTools) == 0 {
-		return all
-	}
 	out := make([]providers.ToolDefinition, 0, len(all))
 	for _, d := range all {
-		if !t.isToolDisabled(d.Name) {
+		if t.toolExposure(d.Name) == ToolExposureDirect {
 			out = append(out, d)
+		}
+	}
+	// Append direct MCP tools after built-ins to preserve prompt cache stability.
+	if t.mcpManager != nil {
+		for _, tool := range t.mcpManager.AllTools() {
+			if t.toolExposure(tool.Name()) == ToolExposureDirect {
+				out = append(out, tool.Definition())
+			}
 		}
 	}
 	return out
@@ -303,6 +307,9 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
 	if t.isToolDisabled(call.Name) {
 		return "", fmt.Errorf("tool %q is disabled in this session", call.Name)
+	}
+	if t.toolExposure(call.Name) == ToolExposureDeferred {
+		return "", fmt.Errorf("tool %q is deferred; call tool_search first to expose it", call.Name)
 	}
 	tool := t.registry.Lookup(call.Name)
 	if tool == nil {

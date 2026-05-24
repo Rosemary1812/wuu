@@ -10,6 +10,7 @@ type ToolKind string
 const (
 	ToolKindFile            ToolKind = "file"
 	ToolKindSearch          ToolKind = "search"
+	ToolKindDiscovery       ToolKind = "discovery"
 	ToolKindShell           ToolKind = "shell"
 	ToolKindGit             ToolKind = "git"
 	ToolKindWeb             ToolKind = "web"
@@ -55,12 +56,7 @@ func (t *Toolkit) ToolInfo(name string) (ToolInfo, bool) {
 
 // ToolInfos returns metadata for every known tool, including hidden tools.
 func (t *Toolkit) ToolInfos() []ToolInfo {
-	all := t.registry.All()
-	if t.mcpManager != nil {
-		for _, tool := range t.mcpManager.AllTools() {
-			all = append(all, tool)
-		}
-	}
+	all := t.allKnownTools()
 	out := make([]ToolInfo, 0, len(all))
 	for _, tool := range all {
 		out = append(out, buildToolInfo(tool, t.toolExposure(tool.Name())))
@@ -82,6 +78,12 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if t.isToolDisabled(name) {
 		return ToolExposureHidden
 	}
+	if t.isDeferredToolActive(name) {
+		return ToolExposureDirect
+	}
+	if isDeferredByDefault(name) {
+		return ToolExposureDeferred
+	}
 	return ToolExposureDirect
 }
 
@@ -91,6 +93,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindFile
 	case "grep", "glob":
 		return ToolKindSearch
+	case "tool_search":
+		return ToolKindDiscovery
 	case "run_shell":
 		return ToolKindShell
 	case "git":
@@ -114,5 +118,17 @@ func classifyToolKind(name string) ToolKind {
 			return ToolKindMCP
 		}
 		return ToolKindUnknown
+	}
+}
+
+func isDeferredByDefault(name string) bool {
+	if strings.HasPrefix(name, "mcp_") {
+		return true
+	}
+	switch name {
+	case "schedule_cron", "cancel_cron", "list_cron":
+		return true
+	default:
+		return false
 	}
 }
