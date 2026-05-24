@@ -1314,7 +1314,8 @@ button:disabled {
   --conversation-split-message-max-width: 640px;
   --conversation-split-message-max-inline: 86%;
   --conversation-dialog-width: 800px;
-  --conversation-prose-line-height: 1.64;
+  --conversation-message-font-size: 15px;
+  --conversation-prose-line-height: 1.66;
   --conversation-prose-block-gap: 10px;
   --conversation-scrollbar-gutter: 12px;
   --dock-composer-height: 0px;
@@ -3741,7 +3742,7 @@ button:disabled {
   max-width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
   border-radius: 22px;
   padding: 10px 16px;
-  font-size: var(--font-content);
+  font-size: var(--conversation-message-font-size);
   line-height: var(--conversation-prose-line-height);
 }
 
@@ -3854,7 +3855,7 @@ button:disabled {
 .agent-block {
   display: block;
   color: #202427;
-  font-size: var(--font-content);
+  font-size: var(--conversation-message-font-size);
   line-height: var(--conversation-prose-line-height);
 }
 
@@ -6178,6 +6179,7 @@ button:disabled {
   grid-template-columns: 20px minmax(0, 1fr);
   gap: 10px;
   color: #8b8f93;
+  font-size: var(--conversation-message-font-size);
   line-height: var(--conversation-prose-line-height);
   white-space: pre-wrap;
 }
