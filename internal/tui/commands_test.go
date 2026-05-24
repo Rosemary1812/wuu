@@ -261,6 +261,83 @@ func TestHandleSlashNewClearsChatHistoryWithoutSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestHandleSlashForkCreatesForkSessionMetadata(t *testing.T) {
+	dir := t.TempDir()
+	workspace := filepath.Join(t.TempDir(), "project")
+	var sessionIDs []string
+	m := NewModel(Config{
+		Provider:      "test",
+		Model:         "test-model",
+		ConfigPath:    filepath.Join(workspace, ".wuu.json"),
+		WorkspaceRoot: workspace,
+		SessionDir:    dir,
+		OnSessionID: func(id string) {
+			sessionIDs = append(sessionIDs, id)
+		},
+		StreamRunner: &agent.StreamRunner{
+			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
+			Model:  "test-model",
+		},
+	})
+	m.entries = []transcriptEntry{
+		{Role: "USER", Content: "hello"},
+		{Role: "ASSISTANT", Content: "world"},
+	}
+	m.chatHistory = []providers.ChatMessage{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "world"},
+	}
+	m.ensureSessionFile()
+	sourceID := m.sessionID
+	if err := rewriteChatHistory(m.memoryPath, m.chatHistory); err != nil {
+		t.Fatalf("write source history: %v", err)
+	}
+
+	msg, handled := m.handleSlash("/fork")
+	if !handled {
+		t.Fatal("expected /fork to be handled")
+	}
+	if !strings.Contains(msg, "session forked") {
+		t.Fatalf("unexpected fork message: %q", msg)
+	}
+	if m.sessionID == "" || m.sessionID == sourceID {
+		t.Fatalf("expected /fork to switch to new session, source=%q current=%q", sourceID, m.sessionID)
+	}
+	if !m.sessionCreated {
+		t.Fatal("expected forked session to be marked created")
+	}
+	if len(sessionIDs) == 0 || sessionIDs[len(sessionIDs)-1] != m.sessionID {
+		t.Fatalf("expected OnSessionID to receive fork id, got %v current=%s", sessionIDs, m.sessionID)
+	}
+
+	forkMetadata, ok, err := session.Find(dir, m.sessionID)
+	if err != nil {
+		t.Fatalf("find fork metadata: %v", err)
+	}
+	if !ok || forkMetadata.ForkedFromID != sourceID {
+		t.Fatalf("fork metadata not persisted: ok=%v metadata=%+v", ok, forkMetadata)
+	}
+	if forkMetadata.CWD != filepath.Clean(workspace) {
+		t.Fatalf("expected fork cwd %q, got %+v", filepath.Clean(workspace), forkMetadata)
+	}
+
+	forkHistory, err := loadChatHistory(m.memoryPath)
+	if err != nil {
+		t.Fatalf("load fork history: %v", err)
+	}
+	if len(forkHistory) != 2 || forkHistory[0].Content != "hello" || forkHistory[1].Content != "world" {
+		t.Fatalf("unexpected fork history: %+v", forkHistory)
+	}
+	sourceMetadata, ok, err := session.Find(dir, sourceID)
+	if err != nil {
+		t.Fatalf("find source metadata: %v", err)
+	}
+	if !ok || sourceMetadata.Entries != len(m.entries) || sourceMetadata.Summary != "hello" {
+		t.Fatalf("source metadata not updated: ok=%v metadata=%+v", ok, sourceMetadata)
+	}
+}
+
 func TestHandleSlashRespectsTaskAvailability(t *testing.T) {
 	m := NewModel(Config{
 		Provider:   "test",

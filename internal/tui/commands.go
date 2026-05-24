@@ -825,22 +825,35 @@ func cmdResume(args string, m *Model) string {
 
 func cmdFork(_ string, m *Model) string {
 	if m.sessionDir != "" {
-		// Session-based fork: copy current session file to new session.
-		newSess, err := session.Create(m.sessionDir)
+		sourceID := strings.TrimSpace(m.sessionID)
+		if sourceID == "" {
+			return "fork: no active session"
+		}
+		if m.sessionCreated {
+			summary := firstUserSummary(m.entries)
+			_ = session.UpdateIndex(m.sessionDir, sourceID, len(m.entries), summary)
+		}
+
+		newSess, err := session.CreateForkWithMetadata(m.sessionDir, "", m.workspaceRoot, session.ForkMetadata{
+			ForkedFromID: sourceID,
+		})
 		if err != nil {
 			return fmt.Sprintf("fork: failed to create new session: %v", err)
 		}
-		srcPath := session.FilePath(m.sessionDir, m.sessionID)
 		dstPath := session.FilePath(m.sessionDir, newSess.ID)
-		if err := copyFile(srcPath, dstPath); err != nil {
-			return fmt.Sprintf("fork: failed to copy session data: %v", err)
+		history := append([]providers.ChatMessage(nil), m.chatHistory...)
+		if err := rewriteChatHistory(dstPath, history); err != nil {
+			return fmt.Sprintf("fork: failed to write fork history: %v", err)
 		}
-		// Update old session index.
 		summary := firstUserSummary(m.entries)
-		session.UpdateIndex(m.sessionDir, m.sessionID, len(m.entries), summary)
-		// Switch to new session.
+		_ = session.UpdateIndex(m.sessionDir, newSess.ID, len(m.entries), summary)
+
 		m.sessionID = newSess.ID
 		m.memoryPath = dstPath
+		m.sessionCreated = true
+		if m.onSessionID != nil {
+			m.onSessionID(m.sessionID)
+		}
 		return fmt.Sprintf("fork: session forked to %s (%d entries)", newSess.ID, len(m.entries))
 	}
 
