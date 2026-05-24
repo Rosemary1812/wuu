@@ -22,6 +22,7 @@ import {
   Info,
   Laptop,
   List as ListIcon,
+  Maximize2,
   MessageSquarePlus,
   MoreHorizontal,
   PanelBottomOpen,
@@ -37,6 +38,8 @@ import {
   ShieldCheck,
   Square,
   Terminal,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   Wrench,
   X
@@ -7423,7 +7426,7 @@ function ThreadItemView({
       const agentText = streamTextStore.has(streamKeyValue) ? streamTextStore.get(streamKeyValue) : (item.text ?? "");
       const copyable = streaming || agentText.trim() !== "";
       return (
-        <article className={`agent-block${copyable ? " copyable-agent-block" : ""}`}>
+        <article className={`agent-block${copyable ? " agent-block-with-actions" : ""}`}>
           <div className="agent-text">
             <AgentMessageContent
               turnID={turnID}
@@ -7433,7 +7436,7 @@ function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
-          {copyable ? <MessageCopyButton getText={() => streamFieldValue(turnID, item, "text")} /> : null}
+          {copyable ? <AgentMessageActions getText={() => streamFieldValue(turnID, item, "text")} /> : null}
         </article>
       );
     }
@@ -7456,7 +7459,48 @@ function ThreadItemView({
   }
 }
 
-function MessageCopyButton({ getText }: { getText: () => string }): JSX.Element {
+function AgentMessageActions({ getText }: { getText: () => string }): JSX.Element {
+  const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
+
+  return (
+    <div className="agent-message-actions" aria-label="助手消息操作">
+      <MessageCopyButton getText={getText} className="message-action-button" iconSize={16} />
+      <button
+        className="message-action-button"
+        type="button"
+        aria-label="赞"
+        aria-pressed={feedback === "liked"}
+        title="赞"
+        onClick={() => setFeedback((current) => (current === "liked" ? null : "liked"))}
+      >
+        <ThumbsUp size={16} />
+      </button>
+      <button
+        className="message-action-button"
+        type="button"
+        aria-label="踩"
+        aria-pressed={feedback === "disliked"}
+        title="踩"
+        onClick={() => setFeedback((current) => (current === "disliked" ? null : "disliked"))}
+      >
+        <ThumbsDown size={16} />
+      </button>
+      <button className="message-action-button" type="button" aria-label="分叉" title="分叉">
+        <Maximize2 size={16} />
+      </button>
+    </div>
+  );
+}
+
+function MessageCopyButton({
+  getText,
+  className = "",
+  iconSize = 14
+}: {
+  getText: () => string;
+  className?: string;
+  iconSize?: number;
+}): JSX.Element {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const resetTimerRef = useRef<number | undefined>(undefined);
   const label = copyState === "copied" ? "已复制消息" : copyState === "failed" ? "复制失败" : "复制消息";
@@ -7500,13 +7544,19 @@ function MessageCopyButton({ getText }: { getText: () => string }): JSX.Element 
 
   return (
     <button
-      className={`message-copy-button ${copyState}`}
+      className={`message-copy-button ${className} ${copyState}`}
       type="button"
       aria-label={label}
       title={label}
       onClick={() => void handleCopy()}
     >
-      {copyState === "copied" ? <Check size={14} /> : copyState === "failed" ? <AlertCircle size={14} /> : <Copy size={14} />}
+      {copyState === "copied" ? (
+        <Check size={iconSize} />
+      ) : copyState === "failed" ? (
+        <AlertCircle size={iconSize} />
+      ) : (
+        <Copy size={iconSize} />
+      )}
     </button>
   );
 }

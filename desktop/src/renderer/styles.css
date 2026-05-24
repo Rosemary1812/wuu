@@ -3583,8 +3583,6 @@ button:disabled {
 
 .copyable-message:hover .message-copy-button,
 .copyable-message:focus-within .message-copy-button,
-.copyable-agent-block:hover .message-copy-button,
-.copyable-agent-block:focus-within .message-copy-button,
 .message-copy-button.copied,
 .message-copy-button.failed {
   opacity: 1;
@@ -3625,19 +3623,62 @@ button:disabled {
   line-height: var(--line-body);
 }
 
-.copyable-agent-block {
+.agent-block-with-actions {
   display: grid;
-  position: relative;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 10px;
+  gap: 12px;
 }
 
-.copyable-agent-block .message-copy-button {
-  position: sticky;
-  top: 64px;
-  flex: 0 0 auto;
-  margin-top: -1px;
+.agent-message-actions {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 10px;
+  color: #8b9094;
+}
+
+.message-action-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 1;
+  padding: 0;
+  pointer-events: auto;
+  transform: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.message-action-button:hover,
+.message-action-button:focus-visible,
+.message-action-button[aria-pressed="true"] {
+  outline: 0;
+  background: #f1f2ef;
+  box-shadow: none;
+  color: #202427;
+}
+
+.message-action-button:active {
+  transform: scale(0.94);
+}
+
+.message-action-button.copied {
+  background: #e8f5ed;
+  color: #16833a;
+}
+
+.message-action-button.failed {
+  background: #fceeee;
+  color: #b42318;
 }
 
 .agent-text {
