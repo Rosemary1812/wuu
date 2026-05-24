@@ -249,6 +249,7 @@ type AppState = {
   activeProjectId?: string;
   gitStatus?: GitStatusResult;
   thread?: Thread;
+  allowThreadAutoActivation: boolean;
   threads: Thread[];
   running: boolean;
   status: string;
@@ -258,6 +259,7 @@ type AppState = {
 
 const initialState: AppState = {
   projects: [],
+  allowThreadAutoActivation: false,
   threads: [],
   running: false,
   status: "connecting",
@@ -2267,6 +2269,7 @@ export function App(): JSX.Element {
       activeProjectId: activeProjectID(projectState.active_context),
       gitStatus,
       thread,
+      allowThreadAutoActivation: Boolean(thread),
       threads: thread ? upsertThread(listedThreads, thread) : listedThreads,
       running: isThreadRunning(thread),
       status: "ready",
@@ -2283,6 +2286,7 @@ export function App(): JSX.Element {
       activeProjectId: undefined,
       gitStatus: undefined,
       thread: undefined,
+      allowThreadAutoActivation: false,
       threads: [],
       running: false,
       status: "no-runtime",
@@ -2317,13 +2321,7 @@ export function App(): JSX.Element {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({
-        ...current,
-        ...loadedState,
-        thread: undefined,
-        running: false,
-        status: "ready"
-      }));
+      setState((current) => ({ ...current, ...loadedState }));
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -2339,6 +2337,17 @@ export function App(): JSX.Element {
     const currentState = appStateRef.current;
     if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
       closeProjectMenus();
+      setArchiveConfirmThreadID(undefined);
+      if (currentState.thread) {
+        clearPendingComposerMessages();
+        setState((current) => ({
+          ...current,
+          thread: undefined,
+          allowThreadAutoActivation: false,
+          running: false,
+          status: "ready"
+        }));
+      }
       return;
     }
     if (isAnyThreadRunning(currentState)) {
@@ -2359,7 +2368,14 @@ export function App(): JSX.Element {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({ ...current, ...loadedState }));
+      setState((current) => ({
+        ...current,
+        ...loadedState,
+        thread: undefined,
+        allowThreadAutoActivation: false,
+        running: false,
+        status: "ready"
+      }));
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -2382,6 +2398,7 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread: undefined,
+        allowThreadAutoActivation: false,
         running: false,
         status: "ready"
       }));
@@ -2663,6 +2680,7 @@ export function App(): JSX.Element {
     setState((current) => ({
       ...current,
       thread: undefined,
+      allowThreadAutoActivation: false,
       running: false,
       status: "ready"
     }));
@@ -2686,6 +2704,7 @@ export function App(): JSX.Element {
     setState((current) => ({
       ...current,
       thread: demo.parent,
+      allowThreadAutoActivation: true,
       threads: upsertThread(current.threads, demo.parent),
       running: false,
       status: "ready",
@@ -2708,6 +2727,7 @@ export function App(): JSX.Element {
     setState((current) => ({
       ...current,
       thread,
+      allowThreadAutoActivation: true,
       threads: upsertThread(current.threads, thread),
       running: isThreadRunning(thread),
       status: "ready",
@@ -2737,6 +2757,7 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread: demoThread,
+        allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, demoThread),
         running: isThreadRunning(demoThread),
         status: "ready",
@@ -2756,6 +2777,7 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread,
+        allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, thread),
         running: isThreadRunning(thread),
         status: "ready"
@@ -2800,6 +2822,7 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread,
+        allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, thread),
         running: false,
         status: "ready"
@@ -2942,11 +2965,13 @@ export function App(): JSX.Element {
       appStateRef.current = {
         ...appStateRef.current,
         thread,
+        allowThreadAutoActivation: true,
         threads: upsertThread(appStateRef.current.threads, thread)
       };
       setState((current) => ({
         ...current,
         thread,
+        allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, thread)
       }));
       const result = await window.wuu.startTurn(thread.id, text, images);
@@ -6207,10 +6232,11 @@ function reduceNotification(state: AppState, notification: AppServerNotification
         return state;
       }
       const knownThread = state.threads.some((item) => item.id === thread.id);
-      const activateThread = state.thread?.id === thread.id || (!state.thread && !knownThread);
+      const activateThread = state.thread?.id === thread.id || (state.allowThreadAutoActivation && !state.thread && !knownThread);
       return {
         ...state,
         thread: activateThread ? thread : state.thread,
+        allowThreadAutoActivation: activateThread ? true : state.allowThreadAutoActivation,
         threads: upsertThread(state.threads, thread),
         status: activateThread ? "ready" : state.status
       };
