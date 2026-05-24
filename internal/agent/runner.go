@@ -15,10 +15,11 @@ type ToolExecutor interface {
 	Execute(ctx context.Context, call providers.ToolCall) (string, error)
 }
 
-// ToolMetadata describes a tool's concurrency characteristics.
+// ToolMetadata describes a tool's scheduling and policy characteristics.
 type ToolMetadata struct {
 	ReadOnly        bool
 	ConcurrencySafe bool
+	Risk            string
 }
 
 // ToolMetadataProvider is an optional interface a ToolExecutor can

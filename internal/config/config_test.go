@@ -194,6 +194,91 @@ func TestConfig_MCPToolOverrides(t *testing.T) {
 	}
 }
 
+func TestConfig_ToolPolicy(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test",
+    "tool_policy": {
+      "default_action": "allow",
+      "tools": {
+        "run_shell": "require_approval"
+      },
+      "kinds": {
+        "web": "allow"
+      },
+      "risks": {
+        "high": "deny"
+      }
+    }
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if cfg.Agent.ToolPolicy.DefaultAction != "allow" {
+		t.Fatalf("default_action = %q, want allow", cfg.Agent.ToolPolicy.DefaultAction)
+	}
+	if cfg.Agent.ToolPolicy.Tools["run_shell"] != "require_approval" {
+		t.Fatalf("run_shell action = %q, want require_approval", cfg.Agent.ToolPolicy.Tools["run_shell"])
+	}
+	if cfg.Agent.ToolPolicy.Kinds["web"] != "allow" {
+		t.Fatalf("web action = %q, want allow", cfg.Agent.ToolPolicy.Kinds["web"])
+	}
+	if cfg.Agent.ToolPolicy.Risks["high"] != "deny" {
+		t.Fatalf("high risk action = %q, want deny", cfg.Agent.ToolPolicy.Risks["high"])
+	}
+}
+
+func TestConfig_ToolPolicyRejectsInvalidAction(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test",
+    "tool_policy": {
+      "risks": {
+        "high": "maybe"
+      }
+    }
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, _, err := LoadFrom(workdir, "")
+	if err == nil || !strings.Contains(err.Error(), "agent.tool_policy.risks.high") {
+		t.Fatalf("expected invalid policy action error, got %v", err)
+	}
+}
+
 func TestConfig_CodexSubscriptionAllowsDefaultBaseURL(t *testing.T) {
 	workdir := t.TempDir()
 	home := t.TempDir()

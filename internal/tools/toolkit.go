@@ -47,6 +47,7 @@ type Toolkit struct {
 	disabledTools          map[string]struct{}
 	exposureMu             sync.RWMutex
 	activatedDeferredTools map[string]struct{}
+	toolPolicy             ToolPolicy
 	// mcpManager, when set, exposes MCP server tools alongside built-in
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
@@ -107,6 +108,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 
 	clone := &Toolkit{
 		env:        &env,
+		toolPolicy: t.toolPolicy,
 		mcpManager: t.mcpManager,
 	}
 	if len(t.disabledTools) > 0 {
@@ -236,6 +238,11 @@ func (t *Toolkit) SetMCPManager(m *mcp.Manager) {
 	t.mcpManager = m
 }
 
+// SetToolPolicy installs the runtime policy used before executing known tools.
+func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
+	t.toolPolicy = policy
+}
+
 // AgentControl returns the attached agent control runtime, or nil.
 func (t *Toolkit) AgentControl() *agentcontrol.AgentControl {
 	return t.env.AgentControl
@@ -352,9 +359,11 @@ func (t *Toolkit) ToolMetadata(name string) (agent.ToolMetadata, bool) {
 	if tool == nil {
 		return agent.ToolMetadata{}, false
 	}
+	info := buildToolInfo(tool, t.toolExposure(name))
 	return agent.ToolMetadata{
-		ReadOnly:        tool.IsReadOnly(),
-		ConcurrencySafe: tool.IsConcurrencySafe(),
+		ReadOnly:        info.ReadOnly,
+		ConcurrencySafe: info.ConcurrencySafe,
+		Risk:            string(info.Risk),
 	}, true
 }
 

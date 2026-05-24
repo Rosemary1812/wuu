@@ -452,28 +452,29 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		name            string
 		kind            ToolKind
 		exposure        ToolExposure
+		risk            ToolRisk
 		readOnly        bool
 		concurrencySafe bool
 	}{
-		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, readOnly: true, concurrencySafe: true},
-		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
-		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
-		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
-		{name: "wait_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: true, concurrencySafe: true},
-		{name: "close_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
-		{name: "write_stdin", kind: ToolKindProcess, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: true},
-		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, readOnly: false, concurrencySafe: false},
-		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, readOnly: false, concurrencySafe: false},
+		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
+		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
+		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
+		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
+		{name: "wait_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: true, concurrencySafe: true},
+		{name: "close_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
+		{name: "write_stdin", kind: ToolKindProcess, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
+		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
+		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 	}
 	for _, tt := range tests {
 		info, ok := kit.ToolInfo(tt.name)
 		if !ok {
 			t.Fatalf("ToolInfo(%q) not found", tt.name)
 		}
-		if info.Name != tt.name || info.Kind != tt.kind || info.Exposure != tt.exposure ||
+		if info.Name != tt.name || info.Kind != tt.kind || info.Exposure != tt.exposure || info.Risk != tt.risk ||
 			info.ReadOnly != tt.readOnly || info.ConcurrencySafe != tt.concurrencySafe {
-			t.Fatalf("ToolInfo(%q) = %+v, want kind=%s exposure=%s readOnly=%t concurrencySafe=%t",
-				tt.name, info, tt.kind, tt.exposure, tt.readOnly, tt.concurrencySafe)
+			t.Fatalf("ToolInfo(%q) = %+v, want kind=%s exposure=%s risk=%s readOnly=%t concurrencySafe=%t",
+				tt.name, info, tt.kind, tt.exposure, tt.risk, tt.readOnly, tt.concurrencySafe)
 		}
 	}
 
@@ -640,6 +641,9 @@ func TestToolkit_ToolTelemetry_RecordsSuccess(t *testing.T) {
 	if record.Kind != ToolKindFile || record.Exposure != ToolExposureDirect {
 		t.Fatalf("unexpected record classification: %+v", record)
 	}
+	if record.Risk != ToolRiskLow || record.PolicyAction != ToolPolicyAllow {
+		t.Fatalf("unexpected policy metadata: %+v", record)
+	}
 	if !record.ReadOnly || !record.ConcurrencySafe || !record.Success || record.Error != "" {
 		t.Fatalf("unexpected record status: %+v", record)
 	}
@@ -680,6 +684,76 @@ func TestToolkit_ToolTelemetry_RecordsToolError(t *testing.T) {
 	}
 	if record.RawOutputBytes != 0 || record.ReturnedOutputBytes != 0 || record.ResultBudgeted {
 		t.Fatalf("unexpected failed output sizing: %+v", record)
+	}
+}
+
+func TestToolkit_ToolPolicy_DeniesByRisk(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetToolPolicy(ToolPolicy{
+		RiskActions: map[ToolRisk]ToolPolicyAction{
+			ToolRiskHigh: ToolPolicyDeny,
+		},
+	})
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-shell",
+		Name:      "run_shell",
+		Arguments: `{"command":"printf hi"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "denied by policy") {
+		t.Fatalf("expected policy denial, got %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	record := records[0]
+	if record.Name != "run_shell" || record.Risk != ToolRiskHigh || record.PolicyAction != ToolPolicyDeny {
+		t.Fatalf("unexpected policy record: %+v", record)
+	}
+	if record.Success || record.Error == "" || record.RawOutputBytes != 0 || record.ReturnedOutputBytes != 0 {
+		t.Fatalf("denied tool should be recorded as failed without output: %+v", record)
+	}
+}
+
+func TestToolkit_ToolPolicy_ToolOverrideBeatsRisk(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetToolPolicy(ToolPolicy{
+		ToolActions: map[string]ToolPolicyAction{
+			"run_shell": ToolPolicyAllow,
+		},
+		RiskActions: map[ToolRisk]ToolPolicyAction{
+			ToolRiskHigh: ToolPolicyDeny,
+		},
+	})
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-shell",
+		Name:      "run_shell",
+		Arguments: `{"command":"printf hi"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_shell: %v", err)
+	}
+	if !strings.Contains(resp, "hi") {
+		t.Fatalf("unexpected response: %s", resp)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	if records[0].PolicyAction != ToolPolicyAllow || !records[0].Success {
+		t.Fatalf("unexpected policy record: %+v", records[0])
 	}
 }
 

@@ -105,10 +105,11 @@ type ProviderConfig struct {
 
 // AgentConfig controls behavior of the local tool loop.
 type AgentConfig struct {
-	MaxSteps         int     `json:"max_steps"`
-	MaxContextTokens int     `json:"max_context_tokens"`
-	Temperature      float64 `json:"temperature"`
-	SystemPrompt     string  `json:"system_prompt"`
+	MaxSteps         int              `json:"max_steps"`
+	MaxContextTokens int              `json:"max_context_tokens"`
+	Temperature      float64          `json:"temperature"`
+	SystemPrompt     string           `json:"system_prompt"`
+	ToolPolicy       ToolPolicyConfig `json:"tool_policy,omitempty"`
 	// Effort controls reasoning depth. Valid: "low", "medium", "high",
 	// "max" (Anthropic only). Empty = API default. Aligned with Claude
 	// Code's /effort command and Codex's reasoning_effort setting.
@@ -133,6 +134,15 @@ type AgentConfig struct {
 	// user-facing contract is still unclear: the main agent loses some
 	// direct write tools but not every mutating capability.
 	ExperimentalCoordinatorMode bool `json:"experimental_coordinator_mode,omitempty"`
+}
+
+// ToolPolicyConfig configures the runtime policy layer that runs before tool
+// execution. Empty means local high-trust mode: allow all tools.
+type ToolPolicyConfig struct {
+	DefaultAction string            `json:"default_action,omitempty"`
+	Tools         map[string]string `json:"tools,omitempty"`
+	Kinds         map[string]string `json:"kinds,omitempty"`
+	Risks         map[string]string `json:"risks,omitempty"`
 }
 
 // Load reads config with priority: .wuu.json, wuu.json, ~/.config/wuu/config.json.
@@ -255,8 +265,64 @@ func (c Config) Validate() error {
 	if c.Agent.SystemPrompt == "" {
 		return errors.New("agent.system_prompt is required")
 	}
+	if err := validateToolPolicyConfig(c.Agent.ToolPolicy); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func validateToolPolicyConfig(policy ToolPolicyConfig) error {
+	if err := validateToolPolicyAction("agent.tool_policy.default_action", policy.DefaultAction); err != nil {
+		return err
+	}
+	for name, action := range policy.Tools {
+		if strings.TrimSpace(name) == "" {
+			return errors.New("agent.tool_policy.tools contains an empty tool name")
+		}
+		if err := validateToolPolicyAction(fmt.Sprintf("agent.tool_policy.tools.%s", name), action); err != nil {
+			return err
+		}
+	}
+	for kind, action := range policy.Kinds {
+		if strings.TrimSpace(kind) == "" {
+			return errors.New("agent.tool_policy.kinds contains an empty kind")
+		}
+		if err := validateToolPolicyAction(fmt.Sprintf("agent.tool_policy.kinds.%s", kind), action); err != nil {
+			return err
+		}
+	}
+	for risk, action := range policy.Risks {
+		risk = strings.TrimSpace(risk)
+		if risk == "" {
+			return errors.New("agent.tool_policy.risks contains an empty risk")
+		}
+		if err := validateToolPolicyRisk(risk); err != nil {
+			return err
+		}
+		if err := validateToolPolicyAction(fmt.Sprintf("agent.tool_policy.risks.%s", risk), action); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateToolPolicyAction(path, action string) error {
+	switch strings.TrimSpace(action) {
+	case "", "allow", "deny", "require_approval":
+		return nil
+	default:
+		return fmt.Errorf("%s must be one of allow, deny, require_approval", path)
+	}
+}
+
+func validateToolPolicyRisk(risk string) error {
+	switch risk {
+	case "low", "medium", "high":
+		return nil
+	default:
+		return fmt.Errorf("agent.tool_policy.risks.%s is not a known risk", risk)
+	}
 }
 
 // Default returns a practical starter config.

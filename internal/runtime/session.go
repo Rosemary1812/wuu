@@ -127,6 +127,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
 		kit.SetAskUserBridge(opts.AskBridge)
+		kit.SetToolPolicy(toolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.SetOnFileChanged(func(absPath string) {
 			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{
 				CWD:      rootDir,
@@ -181,6 +182,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetAgentControl(agentControl)
+				wkit.SetToolPolicy(toolPolicyFromConfig(cfg.Agent.ToolPolicy))
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
@@ -541,6 +543,61 @@ func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolO
 		}
 	}
 	return out
+}
+
+func toolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
+	return tools.ToolPolicy{
+		DefaultAction: toolPolicyAction(in.DefaultAction),
+		ToolActions:   toolPolicyToolActions(in.Tools),
+		KindActions:   toolPolicyKindActions(in.Kinds),
+		RiskActions:   toolPolicyRiskActions(in.Risks),
+	}
+}
+
+func toolPolicyToolActions(in map[string]string) map[string]tools.ToolPolicyAction {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]tools.ToolPolicyAction, len(in))
+	for name, action := range in {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			out[name] = toolPolicyAction(action)
+		}
+	}
+	return out
+}
+
+func toolPolicyKindActions(in map[string]string) map[tools.ToolKind]tools.ToolPolicyAction {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[tools.ToolKind]tools.ToolPolicyAction, len(in))
+	for kind, action := range in {
+		kind = strings.TrimSpace(kind)
+		if kind != "" {
+			out[tools.ToolKind(kind)] = toolPolicyAction(action)
+		}
+	}
+	return out
+}
+
+func toolPolicyRiskActions(in map[string]string) map[tools.ToolRisk]tools.ToolPolicyAction {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[tools.ToolRisk]tools.ToolPolicyAction, len(in))
+	for risk, action := range in {
+		risk = strings.TrimSpace(risk)
+		if risk != "" {
+			out[tools.ToolRisk(risk)] = toolPolicyAction(action)
+		}
+	}
+	return out
+}
+
+func toolPolicyAction(action string) tools.ToolPolicyAction {
+	return tools.ToolPolicyAction(strings.TrimSpace(action))
 }
 
 func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.File {

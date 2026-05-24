@@ -104,6 +104,34 @@ func TestMCPToolOverridesFromConfig(t *testing.T) {
 	}
 }
 
+func TestToolPolicyFromConfig(t *testing.T) {
+	policy := toolPolicyFromConfig(config.ToolPolicyConfig{
+		DefaultAction: "allow",
+		Tools: map[string]string{
+			"run_shell": "require_approval",
+		},
+		Kinds: map[string]string{
+			"web": "allow",
+		},
+		Risks: map[string]string{
+			"high": "deny",
+		},
+	})
+
+	if policy.DefaultAction != tools.ToolPolicyAllow {
+		t.Fatalf("DefaultAction = %s, want allow", policy.DefaultAction)
+	}
+	if policy.ToolActions["run_shell"] != tools.ToolPolicyRequireApproval {
+		t.Fatalf("run_shell action = %s, want require_approval", policy.ToolActions["run_shell"])
+	}
+	if policy.KindActions[tools.ToolKindWeb] != tools.ToolPolicyAllow {
+		t.Fatalf("web action = %s, want allow", policy.KindActions[tools.ToolKindWeb])
+	}
+	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyDeny {
+		t.Fatalf("high risk action = %s, want deny", policy.RiskActions[tools.ToolRiskHigh])
+	}
+}
+
 func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

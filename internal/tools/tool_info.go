@@ -40,6 +40,7 @@ type ToolInfo struct {
 	Name            string       `json:"name"`
 	Kind            ToolKind     `json:"kind"`
 	Exposure        ToolExposure `json:"exposure"`
+	Risk            ToolRisk     `json:"risk"`
 	ReadOnly        bool         `json:"read_only"`
 	ConcurrencySafe bool         `json:"concurrency_safe"`
 }
@@ -65,10 +66,12 @@ func (t *Toolkit) ToolInfos() []ToolInfo {
 }
 
 func buildToolInfo(tool Tool, exposure ToolExposure) ToolInfo {
+	kind := classifyToolKind(tool.Name())
 	return ToolInfo{
 		Name:            tool.Name(),
-		Kind:            classifyToolKind(tool.Name()),
+		Kind:            kind,
 		Exposure:        exposure,
+		Risk:            classifyToolRisk(tool.Name(), kind, tool.IsReadOnly()),
 		ReadOnly:        tool.IsReadOnly(),
 		ConcurrencySafe: tool.IsConcurrencySafe(),
 	}
