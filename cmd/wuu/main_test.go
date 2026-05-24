@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -126,6 +127,7 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 		!strings.Contains(output, "tool_search_deferred") ||
 		!strings.Contains(output, "stale_read_guard") ||
 		!strings.Contains(output, "mcp_readonly_concurrency") ||
+		!strings.Contains(output, "mcp_live_discovery") ||
 		!strings.Contains(output, "multi_agent_worker") {
 		t.Fatalf("expected built-in eval tasks, got %q", output)
 	}
@@ -145,6 +147,22 @@ func TestResolveEvalTasksRejectsUnknownTask(t *testing.T) {
 	_, err := resolveEvalTasks("missing")
 	if err == nil || !strings.Contains(err.Error(), "unknown eval task") {
 		t.Fatalf("expected unknown task error, got %v", err)
+	}
+}
+
+func TestRunEvalLiveCodexOAuthSkipsWithoutCredentials(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex-missing"))
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"eval", "--live-codex-oauth"}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "SKIP live Codex OAuth eval") {
+		t.Fatalf("expected skip output, got %q", output)
 	}
 }
 

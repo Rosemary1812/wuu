@@ -97,6 +97,56 @@ func TestOAuthSourceExplicitAPIKey(t *testing.T) {
 	}
 }
 
+func TestLocalOAuthStatusUsesCodexCLIAuth(t *testing.T) {
+	home := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	token := fakeJWT(t, time.Now().Add(time.Hour), "acct_status")
+	writeCodexCLIAuth(t, codexHome, token, "refresh-token")
+
+	source, err := LocalOAuthStatus(home)
+	if err != nil {
+		t.Fatalf("LocalOAuthStatus: %v", err)
+	}
+	if source != "codex-cli" {
+		t.Fatalf("source = %q, want codex-cli", source)
+	}
+}
+
+func TestLocalOAuthStatusUsesRefreshableWuuAuth(t *testing.T) {
+	home := t.TempDir()
+	stale := fakeJWT(t, time.Now().Add(-time.Hour), "acct_status_wuu")
+	if err := config.SaveCodexOAuth(home, config.CodexOAuthState{
+		Tokens: config.CodexOAuthTokens{
+			AccessToken:  stale,
+			RefreshToken: "refresh-token",
+		},
+	}); err != nil {
+		t.Fatalf("SaveCodexOAuth: %v", err)
+	}
+
+	source, err := LocalOAuthStatus(home)
+	if err != nil {
+		t.Fatalf("LocalOAuthStatus: %v", err)
+	}
+	if source != "wuu-auth-store" {
+		t.Fatalf("source = %q, want wuu-auth-store", source)
+	}
+}
+
+func TestLocalOAuthStatusReportsMissingCredentials(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex-missing"))
+
+	_, err := LocalOAuthStatus(home)
+	if err == nil {
+		t.Fatal("expected missing credentials error")
+	}
+	if !strings.Contains(err.Error(), "Codex CLI OAuth credentials not found") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestClientRefreshesStoredWuuCodexOAuth(t *testing.T) {
 	home := t.TempDir()
 	stale := fakeJWT(t, time.Now().Add(-time.Hour), "acct_old")

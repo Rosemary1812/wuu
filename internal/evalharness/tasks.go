@@ -117,6 +117,17 @@ func Catalog() []Task {
 			Verify:        verifyMCPReadOnlyConcurrency,
 		},
 		{
+			ID:          "mcp_live_discovery",
+			Name:        "Discover and call an MCP tool",
+			Description: "Live-friendly MCP task: model discovers a deferred MCP tool, calls it, and writes a marker.",
+			Prompt: "Use tool_search to find the MCP eval read-only slow tool A. Call mcp_eval_slow_a, then write " +
+				"mcp_live_result.txt containing MCP_LIVE_DISCOVERY_DONE and the tool result text.",
+			RequiredTools: []string{"tool_search", "mcp_eval_slow_a", "write_file"},
+			Setup:         setupMCPReadOnlyConcurrency,
+			Configure:     configureMCPReadOnlyConcurrency,
+			Verify:        verifyMCPLiveDiscovery,
+		},
+		{
 			ID:            "multi_agent_worker",
 			Name:          "Delegate work to a sub-agent",
 			Description:   "Main agent must spawn an async worker and wait for it to produce a marker file.",
@@ -351,6 +362,21 @@ func verifyMCPReadOnlyConcurrency(_ context.Context, root, _ string) (Verificati
 		return Verification{Passed: false, Reason: "MCP read-only tools did not overlap; max concurrency was " + strings.TrimSpace(string(maxData))}, nil
 	}
 	return Verification{Passed: true, Reason: "observed overlapping read-only MCP tool calls"}, nil
+}
+
+func verifyMCPLiveDiscovery(_ context.Context, root, _ string) (Verification, error) {
+	data, err := os.ReadFile(filepath.Join(root, "mcp_live_result.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "mcp_live_result.txt was not written"}, nil
+	}
+	text := string(data)
+	if !strings.Contains(text, "MCP_LIVE_DISCOVERY_DONE") {
+		return Verification{Passed: false, Reason: "mcp_live_result.txt does not contain MCP_LIVE_DISCOVERY_DONE"}, nil
+	}
+	if !strings.Contains(text, "slow_a_OK") {
+		return Verification{Passed: false, Reason: "mcp_live_result.txt does not contain the MCP tool result"}, nil
+	}
+	return Verification{Passed: true, Reason: "observed live MCP discovery marker"}, nil
 }
 
 func verifySubAgentWorkerFile(_ context.Context, root, _ string) (Verification, error) {

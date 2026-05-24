@@ -129,6 +129,32 @@ func (s *OAuthSource) Credentials(ctx context.Context, forceRefresh bool) (crede
 	}, nil
 }
 
+// LocalOAuthStatus reports whether wuu can use local ChatGPT/Codex OAuth
+// credentials without performing a network refresh.
+func LocalOAuthStatus(home string) (string, error) {
+	home = strings.TrimSpace(home)
+	if home == "" {
+		home = os.Getenv("HOME")
+	}
+	if home == "" {
+		return "", errors.New("home directory is required for Codex OAuth")
+	}
+	if state, err := config.LoadCodexOAuth(home); err == nil {
+		if strings.TrimSpace(state.Tokens.AccessToken) != "" &&
+			(!tokenExpiring(state.Tokens.AccessToken, 0) || strings.TrimSpace(state.Tokens.RefreshToken) != "") {
+			return "wuu-auth-store", nil
+		}
+	}
+	cliState, err := loadCodexCLIAuth(home)
+	if err != nil {
+		return "", fmt.Errorf("Codex CLI OAuth credentials not found: %w", err)
+	}
+	if tokenExpiring(cliState.Tokens.AccessToken, 0) {
+		return "", errors.New("Codex CLI OAuth credentials are expired; run `codex` to refresh them")
+	}
+	return "codex-cli", nil
+}
+
 type refreshResult struct {
 	accessToken  string
 	refreshToken string

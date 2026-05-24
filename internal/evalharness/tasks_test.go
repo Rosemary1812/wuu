@@ -206,6 +206,47 @@ func TestMCPReadOnlyConcurrencyVerification(t *testing.T) {
 	}
 }
 
+func TestMCPLiveDiscoveryVerification(t *testing.T) {
+	task, ok := ByID("mcp_live_discovery")
+	if !ok {
+		t.Fatal("missing mcp_live_discovery task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing marker: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing live MCP marker should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "mcp_live_result.txt"), []byte("MCP_LIVE_DISCOVERY_DONE\n"), 0o644); err != nil {
+		t.Fatalf("write incomplete marker file: %v", err)
+	}
+	failed, err = VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing MCP result text: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing MCP tool result should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "mcp_live_result.txt"), []byte("MCP_LIVE_DISCOVERY_DONE\nslow_a_OK\n"), 0o644); err != nil {
+		t.Fatalf("write marker file: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask live MCP marker: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("live MCP marker should pass verification: %s", passed.Reason)
+	}
+}
+
 func TestMCPReadOnlyConcurrencyConfiguresLocalServer(t *testing.T) {
 	task, ok := ByID("mcp_readonly_concurrency")
 	if !ok {

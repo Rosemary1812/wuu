@@ -326,6 +326,7 @@ func runEval(args []string) error {
 	jsonOutput := fs.Bool("json", false, "output eval report as JSON")
 	outputPath := fs.String("output", "", "write eval report JSON to this path")
 	keepWorkdirs := fs.Bool("keep-workdirs", false, "keep temporary task workdirs")
+	liveCodexOAuth := fs.Bool("live-codex-oauth", false, "run live Codex OAuth E2E eval using local Codex CLI or wuu OAuth credentials")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -337,11 +338,24 @@ func runEval(args []string) error {
 		return nil
 	}
 
+	homeDir := os.Getenv("HOME")
+	if *liveCodexOAuth {
+		return runLiveCodexOAuthEval(liveCodexOAuthEvalConfig{
+			ModelOverride: *modelOverride,
+			TaskFilter:    *taskFilter,
+			MaxSteps:      *maxSteps,
+			Timeout:       *timeout,
+			JSONOutput:    *jsonOutput,
+			OutputPath:    *outputPath,
+			KeepWorkdirs:  *keepWorkdirs,
+			HomeDir:       homeDir,
+		})
+	}
+
 	configRoot, err := resolveWorkdir(*workdir)
 	if err != nil {
 		return err
 	}
-	homeDir := os.Getenv("HOME")
 	cfg, configPath, err := config.LoadFrom(configRoot, homeDir)
 	if err != nil {
 		return err
@@ -401,6 +415,118 @@ func runEval(args []string) error {
 	}
 	if report.Summary.Failed > 0 {
 		return fmt.Errorf("eval failed: %d/%d passed", report.Summary.Passed, report.Summary.Total)
+	}
+	return nil
+}
+
+type liveCodexOAuthEvalConfig struct {
+	ModelOverride string
+	TaskFilter    string
+	MaxSteps      int
+	Timeout       time.Duration
+	JSONOutput    bool
+	OutputPath    string
+	KeepWorkdirs  bool
+	HomeDir       string
+}
+
+func runLiveCodexOAuthEval(cfg liveCodexOAuthEvalConfig) error {
+	homeDir := strings.TrimSpace(cfg.HomeDir)
+	if homeDir == "" {
+		homeDir = os.Getenv("HOME")
+	}
+	source, authErr := codex.LocalOAuthStatus(homeDir)
+	if authErr != nil {
+		msg := fmt.Sprintf("SKIP live Codex OAuth eval: %v", authErr)
+		if cfg.JSONOutput {
+			report := evalReport{
+				StartedAt:  time.Now(),
+				DurationMS: 0,
+				Provider:   "openai-codex",
+				Model:      cfg.ModelOverride,
+				Config:     "live-codex-oauth",
+				Summary:    evalSummary{Total: 0},
+			}
+			if cfg.OutputPath != "" {
+				if err := writeEvalReport(cfg.OutputPath, report); err != nil {
+					return err
+				}
+			}
+			data, err := json.MarshalIndent(map[string]any{
+				"skipped": true,
+				"reason":  msg,
+				"report":  report,
+			}, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(data))
+			return nil
+		}
+		fmt.Println(msg)
+		return nil
+	}
+
+	taskFilter := strings.TrimSpace(cfg.TaskFilter)
+	if taskFilter == "" || taskFilter == "all" {
+		taskFilter = "mcp_live_discovery"
+	}
+	tasks, err := resolveEvalTasks(taskFilter)
+	if err != nil {
+		return err
+	}
+
+	runtimeConfig := config.Default()
+	runtimeConfig.DefaultProvider = "openai-codex"
+	providerCfg := runtimeConfig.Providers["openai-codex"]
+	if cfg.ModelOverride != "" {
+		providerCfg.Model = cfg.ModelOverride
+		runtimeConfig.Providers["openai-codex"] = providerCfg
+	}
+
+	reportStarted := time.Now()
+	results := make([]evalharness.Result, 0, len(tasks))
+	for _, task := range tasks {
+		result := runEvalTask(evalTaskRunConfig{
+			Task:          task,
+			Config:        runtimeConfig,
+			ConfigPath:    "live-codex-oauth",
+			ProviderName:  "openai-codex",
+			ModelOverride: cfg.ModelOverride,
+			MaxSteps:      cfg.MaxSteps,
+			Timeout:       cfg.Timeout,
+			HomeDir:       homeDir,
+			KeepWorkdir:   cfg.KeepWorkdirs,
+		})
+		results = append(results, result)
+	}
+
+	report := evalReport{
+		StartedAt:  reportStarted,
+		DurationMS: time.Since(reportStarted).Milliseconds(),
+		Provider:   "openai-codex",
+		Model:      providerCfg.Model,
+		Config:     "live-codex-oauth:" + source,
+		Summary:    summarizeEvalResults(results),
+		Results:    results,
+	}
+	if cfg.OutputPath != "" {
+		if err := writeEvalReport(cfg.OutputPath, report); err != nil {
+			return err
+		}
+	}
+	if cfg.JSONOutput {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+	} else {
+		fmt.Printf("live Codex OAuth source: %s\n", source)
+		printEvalReport(report)
+	}
+	if report.Summary.Failed > 0 {
+		return fmt.Errorf("live Codex OAuth eval failed: %d/%d passed", report.Summary.Passed, report.Summary.Total)
 	}
 	return nil
 }
@@ -1096,6 +1222,8 @@ Eval flags:
   --max-steps       max tool loop steps per task
   --timeout         timeout per task (default 10m)
   --keep-workdirs   keep temporary task workdirs
+  --live-codex-oauth
+                   run live MCP E2E with local Codex OAuth
 
 TUI flags:
   --provider        provider name from config
