@@ -363,6 +363,115 @@ async function run() {
   assert.equal(settled.hasTable, true, "Final assistant content should render GFM tables.");
   assert.equal(settled.code, "const answer = 42;", "Final assistant content should render fenced code blocks.");
 
+  const cancelledUserItem = {
+    id: "user-cancelled-error-e2e",
+    type: "user_message",
+    status: "completed",
+    text: "Start then stop."
+  };
+  const cancelledAgentItem = {
+    id: "agent-cancelled-error-e2e",
+    type: "agent_message",
+    status: "completed",
+    text: "Partial answer stays visible."
+  };
+  const cancelledTurn = {
+    id: "turn-cancelled-error-e2e",
+    items: [cancelledUserItem, cancelledAgentItem],
+    items_view: "full",
+    status: "in_progress",
+    started_at: now
+  };
+  const rawCancelledError =
+    'stream request failed: request failed: Post "https://chatgpt.com/backend-api/codex/responses": context canceled';
+  emitNotification(win, "turn/started", { thread_id: thread.id, turn: cancelledTurn });
+  emitNotification(win, "turn/error", {
+    thread_id: thread.id,
+    turn_id: cancelledTurn.id,
+    error: rawCancelledError,
+    turn: {
+      ...cancelledTurn,
+      status: "interrupted",
+      error: { message: rawCancelledError },
+      completed_at: new Date().toISOString(),
+      duration_ms: 240,
+      items: [cancelledUserItem]
+    }
+  });
+  const cancelledNotice = await waitFor(
+    win,
+    () => {
+      const notice = document.querySelector(".turn-notice");
+      const text = document.querySelector(".conversation-width")?.textContent ?? "";
+      return notice
+        ? {
+            noticeClass: notice.className,
+            noticeText: notice.textContent ?? "",
+            conversationText: text,
+            hasRedError: Boolean(document.querySelector(".turn-error"))
+          }
+        : null;
+    },
+    3000
+  );
+  assert.match(cancelledNotice.noticeClass, /neutral/, "Cancelled turns should use the neutral notice tone.");
+  assert.equal(
+    cancelledNotice.conversationText.includes("Partial answer stays visible."),
+    true,
+    "Cancelled turns should preserve partial assistant output."
+  );
+  assert.match(cancelledNotice.noticeText, /回复已中断/, "Cancelled turns should render a neutral interrupted notice.");
+  assert.equal(cancelledNotice.hasRedError, false, "Cancelled turns should not render the red error block.");
+  assert.equal(cancelledNotice.conversationText.includes("chatgpt.com/backend-api"), false, "Cancelled UI should hide backend URLs.");
+  assert.equal(cancelledNotice.conversationText.includes("context canceled"), false, "Cancelled UI should hide raw cancellation text.");
+
+  const failedUserItem = {
+    id: "user-real-error-e2e",
+    type: "user_message",
+    status: "completed",
+    text: "Trigger a real failure."
+  };
+  const failedTurn = {
+    id: "turn-real-error-e2e",
+    items: [failedUserItem],
+    items_view: "full",
+    status: "in_progress",
+    started_at: now
+  };
+  const rawNetworkError =
+    'stream request failed: request failed: Post "https://chatgpt.com/backend-api/codex/responses": dial tcp: no such host';
+  emitNotification(win, "turn/started", { thread_id: thread.id, turn: failedTurn });
+  emitNotification(win, "turn/error", {
+    thread_id: thread.id,
+    turn_id: failedTurn.id,
+    error: rawNetworkError,
+    turn: {
+      ...failedTurn,
+      status: "failed",
+      error: { message: rawNetworkError },
+      completed_at: new Date().toISOString(),
+      duration_ms: 180,
+      items: [failedUserItem]
+    }
+  });
+  const failedNotice = await waitFor(
+    win,
+    () => {
+      const notice = document.querySelector(".turn-notice.error");
+      const text = document.querySelector(".conversation-width")?.textContent ?? "";
+      return notice
+        ? {
+            noticeText: notice.textContent ?? "",
+            conversationText: text
+          }
+        : null;
+    },
+    3000
+  );
+  assert.match(failedNotice.noticeText, /连接暂时不可用/, "Real network failures should render an error notice.");
+  assert.equal(failedNotice.conversationText.includes("chatgpt.com/backend-api"), false, "Failure UI should hide backend URLs.");
+  assert.equal(failedNotice.conversationText.includes("stream request failed"), false, "Failure UI should hide wrapped internal errors.");
+
   const staleTurn = {
     id: "turn-stale-thread",
     items: [{ id: "stale-user", type: "user_message", status: "completed", text: "stale user should stay hidden" }],

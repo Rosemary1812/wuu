@@ -7504,8 +7504,32 @@ function upsertTurn(thread: Thread, turn: Turn): Thread {
     return threadWithTurnSummary({ ...thread, turns: [...thread.turns, turn], status }, turn);
   }
   const turns = thread.turns.slice();
-  turns[index] = turn;
+  turns[index] = { ...turn, items: mergeTurnItems(turns[index], turn) };
   return threadWithTurnSummary({ ...thread, turns, status }, turn);
+}
+
+function mergeTurnItems(previous: Turn, next: Turn): ThreadItem[] {
+  const nextByID = new Map(next.items.map((item) => [item.id, item]));
+  const used = new Set<string>();
+  const merged: ThreadItem[] = [];
+  for (const item of previous.items) {
+    const nextItem = nextByID.get(item.id);
+    if (nextItem) {
+      merged.push(nextItem);
+      used.add(nextItem.id);
+      continue;
+    }
+    if (item.type !== "user_message") {
+      merged.push(item);
+      used.add(item.id);
+    }
+  }
+  for (const item of next.items) {
+    if (!used.has(item.id)) {
+      merged.push(item);
+    }
+  }
+  return merged;
 }
 
 function threadWithTurnSummary(thread: Thread, turn: Turn): Thread {
