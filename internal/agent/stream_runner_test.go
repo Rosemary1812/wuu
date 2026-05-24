@@ -1060,3 +1060,60 @@ func TestStreamRunner_NoFallbackOnNormalStop(t *testing.T) {
 		t.Fatalf("expected 0 Chat() calls (no fallback), got %d", client.chatCallCount)
 	}
 }
+
+func TestStreamRunner_CancelsOrphanStreamingToolWhenNoFinalToolCalls(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{
+			{
+				Type: providers.EventToolUseEnd,
+				ToolCall: &providers.ToolCall{
+					ID:        "orphan",
+					Name:      "read_file",
+					Arguments: `{"path":"orphan.go"}`,
+				},
+			},
+			{Type: providers.EventContentDelta, Content: "done"},
+			{Type: providers.EventDone, StopReason: "stop"},
+		},
+	}
+	tools := &cancelAwareRuntimeTools{
+		started:  make(chan struct{}),
+		canceled: make(chan struct{}),
+	}
+	runner := &StreamRunner{
+		Client:                 client,
+		Model:                  "test",
+		Tools:                  tools,
+		StreamingToolExecution: true,
+		OnEvent: func(event providers.StreamEvent) {
+			if event.Type != providers.EventToolUseEnd {
+				return
+			}
+			select {
+			case <-tools.started:
+			case <-time.After(time.Second):
+				t.Fatal("expected orphan tool to start during streaming")
+			}
+		},
+	}
+	result, err := runner.Run(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("expected final content, got %q", result)
+	}
+	select {
+	case <-tools.canceled:
+	case <-tools.started:
+		select {
+		case <-tools.canceled:
+		case <-time.After(time.Second):
+			t.Fatal("expected started orphan streaming tool to be canceled")
+		}
+	case <-time.After(50 * time.Millisecond):
+		if calls := tools.recordedCalls(); len(calls) != 0 {
+			t.Fatalf("orphan tool entered executor without completing cancellation: %+v", calls)
+		}
+	}
+}

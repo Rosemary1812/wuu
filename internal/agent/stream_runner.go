@@ -399,6 +399,10 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			Truncated:        resp.Truncated,
 		}, nil
 	}
+	if len(toolCalls) == 0 && toolRuntime != nil {
+		toolRuntime.Cancel()
+		toolRuntime = nil
+	}
 
 	return StepResult{
 		Content:          contentBuf.String(),

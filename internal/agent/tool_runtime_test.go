@@ -17,6 +17,15 @@ type runtimeTestTools struct {
 	calls    []providers.ToolCall
 }
 
+type cancelAwareRuntimeTools struct {
+	started  chan struct{}
+	canceled chan struct{}
+	once     sync.Once
+
+	mu    sync.Mutex
+	calls []providers.ToolCall
+}
+
 func (f *runtimeTestTools) Definitions() []providers.ToolDefinition {
 	return []providers.ToolDefinition{
 		{Name: "read_file"},
@@ -54,6 +63,39 @@ func (f *runtimeTestTools) Execute(ctx context.Context, call providers.ToolCall)
 }
 
 func (f *runtimeTestTools) recordedCalls() []providers.ToolCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]providers.ToolCall, len(f.calls))
+	copy(out, f.calls)
+	return out
+}
+
+func (f *cancelAwareRuntimeTools) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{Name: "read_file"}}
+}
+
+func (f *cancelAwareRuntimeTools) ToolMetadata(_ string) (ToolMetadata, bool) {
+	return ToolMetadata{ReadOnly: true, ConcurrencySafe: true}, true
+}
+
+func (f *cancelAwareRuntimeTools) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, call)
+	f.mu.Unlock()
+	if call.ID != "orphan" {
+		return `{"ok":"` + call.ID + `"}`, nil
+	}
+	f.once.Do(func() { close(f.started) })
+	select {
+	case <-ctx.Done():
+		close(f.canceled)
+		return "", ctx.Err()
+	case <-time.After(time.Second):
+		return "", context.DeadlineExceeded
+	}
+}
+
+func (f *cancelAwareRuntimeTools) recordedCalls() []providers.ToolCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]providers.ToolCall, len(f.calls))
@@ -196,6 +238,54 @@ func TestTurnToolRuntime_StreamingErrorFallsBackToFinalExecution(t *testing.T) {
 	}
 	if calls := tools.recordedCalls(); len(calls) == 0 {
 		t.Fatal("expected the tool to execute at least once")
+	}
+}
+
+func TestTurnToolRuntime_CancelsStreamingRunsMissingFromFinalCalls(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &cancelAwareRuntimeTools{
+		started:  make(chan struct{}),
+		canceled: make(chan struct{}),
+	}
+	runtime := NewTurnToolRuntime(tools)
+	runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
+		Type:     providers.EventToolUseStart,
+		ToolCall: &providers.ToolCall{ID: "orphan", Name: "read_file"},
+	})
+	runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
+		Type: providers.EventToolUseEnd,
+		ToolCall: &providers.ToolCall{
+			ID:        "orphan",
+			Name:      "read_file",
+			Arguments: `{"path":"orphan.go"}`,
+		},
+	})
+
+	select {
+	case <-tools.started:
+	case <-time.After(time.Second):
+		t.Fatal("expected orphan streaming run to start")
+	}
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+		{ID: "kept", Name: "read_file", Arguments: `{"path":"kept.go"}`},
+	}, nil)
+	if len(msgs) != 1 || msgs[0].ToolCallID != "kept" {
+		t.Fatalf("expected only final kept result, got %+v", msgs)
+	}
+	select {
+	case <-tools.canceled:
+	case <-time.After(time.Second):
+		t.Fatal("expected missing streaming run to be canceled")
+	}
+
+	runtime.mu.Lock()
+	_, stillRegistered := runtime.byID["orphan"]
+	runtime.mu.Unlock()
+	if stillRegistered {
+		t.Fatal("expected missing streaming run to be dropped from runtime registry")
 	}
 }
 

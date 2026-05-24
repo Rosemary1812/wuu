@@ -184,11 +184,23 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 
 	go func() {
 		select {
+		case <-runCtx.Done():
+			run.complete("", runCtx.Err())
+			return
+		default:
+		}
+		select {
 		case r.sem <- struct{}{}:
 			defer func() { <-r.sem }()
 		case <-runCtx.Done():
 			run.complete("", runCtx.Err())
 			return
+		}
+		select {
+		case <-runCtx.Done():
+			run.complete("", runCtx.Err())
+			return
+		default:
 		}
 		result, err := r.executor.Execute(runCtx, call)
 		run.complete(result, err)
@@ -248,9 +260,26 @@ func (r *TurnToolRuntime) ExecuteFinalCalls(
 
 func (r *TurnToolRuntime) registerFinalCalls(calls []providers.ToolCall) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.byID == nil {
 		r.byID = map[string]*toolRun{}
+	}
+	finalIDs := map[string]bool{}
+	for _, call := range calls {
+		if call.ID != "" {
+			finalIDs[call.ID] = true
+		}
+	}
+	var orphanCancels []context.CancelFunc
+	for id, run := range r.byID {
+		if finalIDs[id] {
+			continue
+		}
+		delete(r.byID, id)
+		run.mu.Lock()
+		if run.streamStarted && run.cancel != nil {
+			orphanCancels = append(orphanCancels, run.cancel)
+		}
+		run.mu.Unlock()
 	}
 	ordered := make([]*toolRun, 0, len(calls))
 	seen := map[string]bool{}
@@ -274,6 +303,11 @@ func (r *TurnToolRuntime) registerFinalCalls(calls []providers.ToolCall) {
 		}
 	}
 	r.runs = ordered
+	r.mu.Unlock()
+
+	for _, cancel := range orphanCancels {
+		cancel()
+	}
 }
 
 func (r *TurnToolRuntime) executeBatch(
