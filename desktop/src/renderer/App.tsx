@@ -7558,7 +7558,7 @@ function ThreadRows({
 }): JSX.Element {
   return (
     <>
-      {threads.map((thread, index) => {
+      {threads.map((thread) => {
         const archiveConfirming = archiveConfirmThreadID === thread.id;
         const pendingAsk = pendingAskThreadIDs.has(thread.id);
         const pendingSwitch = pendingThreadID === thread.id;
@@ -7569,7 +7569,6 @@ function ThreadRows({
                 pendingSwitch ? " pending-switch" : ""
               }`}
               aria-current={thread.id === activeID ? "page" : undefined}
-              style={{ animationDelay: `${index * 18}ms` } as CSSProperties}
               onMouseLeave={() => onClearArchiveConfirm(thread.id)}
             >
               <button
