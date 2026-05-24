@@ -18,11 +18,11 @@ import {
   FolderPlus,
   Github,
   GitBranch,
+  GitFork,
   Image as ImageIcon,
   Info,
   Laptop,
   List as ListIcon,
-  Maximize2,
   MessageSquarePlus,
   MoreHorizontal,
   PanelBottomOpen,
@@ -7512,7 +7512,7 @@ function AgentMessageActions({ getText }: { getText: () => string }): JSX.Elemen
         <ThumbsDown size={15} />
       </button>
       <button className="message-action-button" type="button" aria-label="分叉" title="分叉">
-        <Maximize2 size={15} />
+        <GitFork size={15} />
       </button>
     </div>
   );
