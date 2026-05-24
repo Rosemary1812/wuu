@@ -5766,7 +5766,7 @@ button:disabled {
   min-height: 0;
   overflow: hidden;
   gap: 8px;
-  padding: 3px 0 1px 8px;
+  padding: 3px 0 1px;
 }
 
 .turn-process-group.collapsed + .agent-block {
