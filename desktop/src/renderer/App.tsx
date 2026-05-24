@@ -128,6 +128,14 @@ import { SettingsView } from "./SettingsView";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore, type StreamTextField } from "./StreamText";
 import {
+  agentLabel,
+  agentNestedLabel,
+  agentStatusLabel,
+  agentStatusTone,
+  agentTooltip,
+  sortChildAgents
+} from "./ThreadAgents";
+import {
   isCancellationMessage,
   rawErrorMessage,
   statusMessageForError,
@@ -4125,17 +4133,6 @@ function mergeAgentSummary(current: Agent | undefined, incoming: Agent): Agent {
   };
 }
 
-function sortChildAgents(agents: Agent[]): Agent[] {
-  return agents.slice().sort((left, right) => {
-    const leftTime = Date.parse(left.started_at ?? "");
-    const rightTime = Date.parse(right.started_at ?? "");
-    if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
-      return leftTime - rightTime;
-    }
-    return agentLabel(left).localeCompare(agentLabel(right), "zh-CN");
-  });
-}
-
 function ProjectList({
   projects,
   activeID,
@@ -4452,57 +4449,6 @@ function ThreadChildAgentRows({
       })}
     </div>
   );
-}
-
-function agentLabel(agent: Agent): string {
-  const pathParts = agent.agent_path?.split("/").filter(Boolean) ?? [];
-  return agent.task_name || agent.description || pathParts[pathParts.length - 1] || agent.id;
-}
-
-function agentTooltip(agent: Agent): string {
-  const path = agent.agent_path ? ` · ${agent.agent_path}` : "";
-  return `${agentLabel(agent)} · ${agentStatusLabel(agent.status)}${path}`;
-}
-
-function agentNestedLabel(agent: Agent): string | undefined {
-  const total = agent.nested_count ?? 0;
-  if (total <= 0) {
-    return undefined;
-  }
-  const running = agent.nested_running_count ?? 0;
-  return running > 0 ? `${running}/${total}` : `+${total}`;
-}
-
-function agentStatusLabel(status: string | undefined): string {
-  switch (status) {
-    case "pending":
-      return "等待";
-    case "running":
-      return "运行中";
-    case "completed":
-      return "完成";
-    case "failed":
-      return "失败";
-    case "cancelled":
-      return "已停止";
-    default:
-      return status?.trim() || "未知";
-  }
-}
-
-function agentStatusTone(status: string | undefined): "running" | "completed" | "failed" | "cancelled" | "pending" {
-  switch (status) {
-    case "running":
-      return "running";
-    case "completed":
-      return "completed";
-    case "failed":
-      return "failed";
-    case "cancelled":
-      return "cancelled";
-    default:
-      return "pending";
-  }
 }
 
 function turnNoticeDisplay(turn: Turn, hasAssistantOutput: boolean): UserFacingErrorDisplay | undefined {
