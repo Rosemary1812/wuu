@@ -7415,7 +7415,7 @@ pre {
 }
 
 .hero-composer-wrap .composer-stack {
-  width: 100%;
+  width: min(var(--conversation-content-width), 100%);
 }
 
 .composer-shell {
@@ -8780,7 +8780,7 @@ html.swiss-international .composer-stack {
 }
 
 html.swiss-international .hero-composer-wrap .composer-stack {
-  width: 100%;
+  width: min(var(--conversation-content-width), 100%);
 }
 
 html.swiss-international .composer-shell,
