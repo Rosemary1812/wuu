@@ -131,6 +131,7 @@ type PendingViewSwitch = {
   targetID: string;
   visible: boolean;
 };
+type ConversationPaneID = "primary" | "secondary";
 type FloatingMenuOwner = "composer-runtime" | "composer-access" | "codex-runtime";
 type FloatingMenuPlacement = "above" | "below";
 type FloatingMenuAlign = "left" | "right";
@@ -254,6 +255,8 @@ type AppState = {
   activeProjectId?: string;
   gitStatus?: GitStatusResult;
   thread?: Thread;
+  secondaryThread?: Thread;
+  activePane: ConversationPaneID;
   allowThreadAutoActivation: boolean;
   threads: Thread[];
   running: boolean;
@@ -264,6 +267,7 @@ type AppState = {
 
 const initialState: AppState = {
   projects: [],
+  activePane: "primary",
   allowThreadAutoActivation: false,
   threads: [],
   running: false,
@@ -1446,6 +1450,7 @@ export function App(): JSX.Element {
   const [debugControlsEnabled, setDebugControlsEnabled] = useState(initialDebugControlsEnabled);
   const [swissStyleEnabled, setSwissStyleEnabled] = useState(initialSwissStyleEnabled);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({ primary: null, secondary: null });
   const conversationPaneRef = useRef<HTMLElement | null>(null);
   const dockComposerRef = useRef<HTMLElement>(null);
   const dockComposerHeightRef = useRef(0);
@@ -1477,6 +1482,9 @@ export function App(): JSX.Element {
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(workspaceRightPanelWidth, effectiveSidebarWidth);
   const debugControlsVisible = ENABLE_DEBUG_CONTROLS && debugControlsEnabled;
+  const activeThread = activeThreadForState(state);
+  const activeThreadID = activeThread?.id;
+  const splitConversation = Boolean(state.thread && state.secondaryThread && !workspaceMode);
 
   useEffect(() => {
     return () => {
@@ -1576,9 +1584,13 @@ export function App(): JSX.Element {
     state.initialized?.model,
     state.initialized?.provider,
     state.running,
+    state.activePane,
     state.thread?.id,
     state.thread?.status,
-    state.thread?.turns
+    state.thread?.turns,
+    state.secondaryThread?.id,
+    state.secondaryThread?.status,
+    state.secondaryThread?.turns
   ]);
 
   useEffect(() => {
@@ -1697,21 +1709,21 @@ export function App(): JSX.Element {
   useLayoutEffect(() => {
     conversationAutoFollowRef.current = true;
     scrollConversationToBottom({ force: true });
-  }, [state.thread?.id]);
+  }, [activeThreadID]);
 
   useEffect(() => {
     scheduleStreamScroll();
-  }, [state.thread?.turns]);
+  }, [state.thread?.turns, state.secondaryThread?.turns]);
 
   useEffect(() => {
-    if (!visibleAskRequestForThread(state.askRequests, state.thread?.id)) {
+    if (!visibleAskRequestForThread(state.askRequests, activeThreadID)) {
       return;
     }
     setSettingsOpen(false);
     setWorkspaceMode(undefined);
     conversationAutoFollowRef.current = true;
     window.requestAnimationFrame(() => scrollConversationToBottom({ force: true }));
-  }, [state.askRequests, state.thread?.id]);
+  }, [activeThreadID, state.askRequests]);
 
   useEffect(() => {
     const enabled = debugControlsVisible && ENABLE_SWISS_STYLE_TOGGLE && swissStyleEnabled;
@@ -1823,15 +1835,15 @@ export function App(): JSX.Element {
     () => state.projects.find((project) => project.id === state.activeProjectId),
     [state.activeProjectId, state.projects]
   );
-  const activeTitle = workspaceMode ? workspaceModeTitle(workspaceMode) : state.thread?.preview || "新对话";
+  const activeTitle = workspaceMode ? workspaceModeTitle(workspaceMode) : activeThread?.preview || "新对话";
   const emptyThreadTitle =
     state.activeContext?.kind === "project"
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
       : "我们应该在 wuu 中构建什么？";
-  const turns = state.thread?.turns ?? [];
+  const turns = activeThread?.turns ?? [];
   const latestAgentMessageID = latestAgentMessageItemID(turns);
-  const visibleAskRequest = visibleAskRequestForThread(state.askRequests, state.thread?.id);
-  const visibleAnsweredAskRequests = visibleAnsweredAskRequestsForThread(state.answeredAskRequests, state.thread?.id);
+  const visibleAskRequest = visibleAskRequestForThread(state.askRequests, activeThreadID);
+  const visibleAnsweredAskRequests = visibleAnsweredAskRequestsForThread(state.answeredAskRequests, activeThreadID);
   const answeredAskRequestsWithoutVisibleTurn = visibleAnsweredAskRequests.filter(
     (request) => !request.turnID || !turns.some((turn) => turn.id === request.turnID)
   );
@@ -1843,7 +1855,7 @@ export function App(): JSX.Element {
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread" ? pendingViewSwitch.targetID : undefined;
   const visiblePendingProjectID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "project" ? pendingViewSwitch.targetID : undefined;
-  const activeThreadReadOnly = Boolean(state.thread?.read_only);
+  const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = !activeThreadReadOnly && isStateActiveThreadRunning(state);
   const viewSwitchPending = pendingViewSwitch !== undefined;
   const pendingAskThreadIDs = pendingAskThreadIDsForRequests(state.askRequests);
@@ -1974,8 +1986,8 @@ export function App(): JSX.Element {
     });
   }
 
-  function handleConversationScroll(): void {
-    const node = conversationViewport();
+  function handleConversationScroll(scrolledNode?: HTMLElement): void {
+    const node = scrolledNode ?? conversationViewport();
     if (!node) {
       return;
     }
@@ -2012,6 +2024,9 @@ export function App(): JSX.Element {
   }
 
   function conversationViewport(): HTMLElement | undefined {
+    if (splitConversation) {
+      return splitPaneRefs.current[state.activePane] ?? undefined;
+    }
     return conversationScrollRef.current ?? undefined;
   }
 
@@ -2205,11 +2220,12 @@ export function App(): JSX.Element {
       void drainQueuedMessages();
       return;
     }
-    if (!currentState.thread) {
+    const targetThread = activeThreadForState(currentState);
+    if (!targetThread) {
       return;
     }
     try {
-      await window.wuu.interruptTurn(currentState.thread.id);
+      await window.wuu.interruptTurn(targetThread.id);
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -2326,6 +2342,68 @@ export function App(): JSX.Element {
     );
   }
 
+  function renderThreadConversation(thread: Thread, pane: ConversationPaneID): JSX.Element {
+    const paneTurns = thread.turns ?? [];
+    const paneLatestAgentMessageID = latestAgentMessageItemID(paneTurns);
+    const paneAskRequest = visibleAskRequestForThread(state.askRequests, thread.id);
+    const paneAnsweredAskRequests = visibleAnsweredAskRequestsForThread(state.answeredAskRequests, thread.id);
+    const paneAnsweredWithoutVisibleTurn = paneAnsweredAskRequests.filter(
+      (request) => !request.turnID || !paneTurns.some((turn) => turn.id === request.turnID)
+    );
+    const active = state.activePane === pane;
+    const closeLabel = pane === "secondary" ? "关闭右侧对话" : "关闭左侧对话";
+    return (
+      <section
+        ref={(node) => {
+          splitPaneRefs.current[pane] = node;
+        }}
+        className={`conversation-split-pane${active ? " active" : ""}`}
+        aria-label={pane === "secondary" ? "分叉对话" : "源对话"}
+        onPointerDown={() => activateConversationPane(pane)}
+        onScroll={(event) => handleConversationScroll(event.currentTarget)}
+      >
+        <div className="conversation-split-header">
+          <div className="conversation-split-title">
+            <span>{pane === "secondary" ? "分叉" : "源会话"}</span>
+            <strong>{thread.preview || "新对话"}</strong>
+          </div>
+          <button className="icon-button conversation-split-close" type="button" aria-label={closeLabel} title={closeLabel} onClick={() => closeConversationPane(pane)}>
+            <X size={16} />
+          </button>
+        </div>
+        <div className="conversation-width conversation-split-width">
+          {paneTurns.map((turn) => (
+            <Fragment key={turn.id}>
+              <TurnView
+                turn={turn}
+                cwd={thread.cwd ?? state.activeContext?.cwd}
+                latestAgentMessageID={paneLatestAgentMessageID}
+                onStreamFrame={scheduleStreamScroll}
+                onForkMessage={(turnID, itemID) => void forkThreadFromMessage(thread, turnID, itemID)}
+              />
+              {paneAnsweredAskRequests
+                .filter((request) => request.turnID === turn.id)
+                .map((request) => (
+                  <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
+                ))}
+            </Fragment>
+          ))}
+          {paneAnsweredWithoutVisibleTurn.map((request) => (
+            <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
+          ))}
+          {paneAskRequest ? (
+            <AskUserMessage
+              key={paneAskRequest.id}
+              request={paneAskRequest}
+              onCancel={(request) => respondToAskRequest(request, { answers: {}, cancelled: true })}
+              onSubmit={(request, answers) => respondToAskRequest(request, { answers })}
+            />
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
   function clearViewSwitchDelay(): void {
     if (viewSwitchDelayTimerRef.current === undefined) {
       return;
@@ -2390,6 +2468,8 @@ export function App(): JSX.Element {
       activeProjectId: activeProjectID(projectState.active_context),
       gitStatus,
       thread,
+      secondaryThread: undefined,
+      activePane: "primary",
       allowThreadAutoActivation: Boolean(thread),
       threads: thread ? upsertThread(listedThreads, thread) : listedThreads,
       running: isThreadRunning(thread),
@@ -2407,6 +2487,8 @@ export function App(): JSX.Element {
       activeProjectId: undefined,
       gitStatus: undefined,
       thread: undefined,
+      secondaryThread: undefined,
+      activePane: "primary",
       allowThreadAutoActivation: false,
       threads: [],
       running: false,
@@ -2433,11 +2515,13 @@ export function App(): JSX.Element {
     if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
       closeProjectMenus();
       setArchiveConfirmThreadID(undefined);
-      if (currentState.thread) {
+      if (currentState.thread || currentState.secondaryThread) {
         clearPendingComposerMessages();
         setState((current) => ({
           ...current,
           thread: undefined,
+          secondaryThread: undefined,
+          activePane: "primary",
           allowThreadAutoActivation: false,
           running: false,
           status: "ready"
@@ -2458,6 +2542,8 @@ export function App(): JSX.Element {
         ...current,
         ...loadedState,
         thread: undefined,
+        secondaryThread: undefined,
+        activePane: "primary",
         allowThreadAutoActivation: false,
         running: false,
         status: "ready"
@@ -2478,11 +2564,13 @@ export function App(): JSX.Element {
     if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
       closeProjectMenus();
       setArchiveConfirmThreadID(undefined);
-      if (currentState.thread) {
+      if (currentState.thread || currentState.secondaryThread) {
         clearPendingComposerMessages();
         setState((current) => ({
           ...current,
           thread: undefined,
+          secondaryThread: undefined,
+          activePane: "primary",
           allowThreadAutoActivation: false,
           running: false,
           status: "ready"
@@ -2512,6 +2600,8 @@ export function App(): JSX.Element {
         ...current,
         ...loadedState,
         thread: undefined,
+        secondaryThread: undefined,
+        activePane: "primary",
         allowThreadAutoActivation: false,
         running: false,
         status: "ready"
@@ -2538,6 +2628,8 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread: undefined,
+        secondaryThread: undefined,
+        activePane: "primary",
         allowThreadAutoActivation: false,
         running: false,
         status: "ready"
@@ -2813,13 +2905,15 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
-    if (state.activeContext.kind === "no_project" && state.thread) {
+    if (state.activeContext.kind === "no_project" && (state.thread || state.secondaryThread)) {
       await useNoProject(true);
       return;
     }
     setState((current) => ({
       ...current,
       thread: undefined,
+      secondaryThread: undefined,
+      activePane: "primary",
       allowThreadAutoActivation: false,
       running: false,
       status: "ready"
@@ -2844,6 +2938,8 @@ export function App(): JSX.Element {
     setState((current) => ({
       ...current,
       thread: demo.parent,
+      secondaryThread: undefined,
+      activePane: "primary",
       allowThreadAutoActivation: true,
       threads: upsertThread(current.threads, demo.parent),
       running: false,
@@ -2867,6 +2963,8 @@ export function App(): JSX.Element {
     setState((current) => ({
       ...current,
       thread,
+      secondaryThread: undefined,
+      activePane: "primary",
       allowThreadAutoActivation: true,
       threads: upsertThread(current.threads, thread),
       running: isThreadRunning(thread),
@@ -2880,7 +2978,7 @@ export function App(): JSX.Element {
     if (!state.activeContext) {
       return;
     }
-    if (threadId === state.thread?.id) {
+    if (threadId === activeThreadID) {
       if (pendingViewSwitch) {
         cancelViewSwitch();
       }
@@ -2897,6 +2995,8 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread: demoThread,
+        secondaryThread: undefined,
+        activePane: "primary",
         allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, demoThread),
         running: isThreadRunning(demoThread),
@@ -2917,6 +3017,8 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread,
+        secondaryThread: undefined,
+        activePane: "primary",
         allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, thread),
         running: isThreadRunning(thread),
@@ -2937,7 +3039,7 @@ export function App(): JSX.Element {
     if (!state.activeContext) {
       return;
     }
-    if (agent.id === state.thread?.id) {
+    if (agent.id === activeThreadID) {
       if (pendingViewSwitch) {
         cancelViewSwitch();
       }
@@ -2962,6 +3064,8 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread,
+        secondaryThread: undefined,
+        activePane: "primary",
         allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, thread),
         running: false,
@@ -2978,6 +3082,90 @@ export function App(): JSX.Element {
     }
   }
 
+  function activateConversationPane(pane: ConversationPaneID): void {
+    setState((current) => {
+      if (pane === "secondary" && !current.secondaryThread) {
+        return current;
+      }
+      const thread = pane === "secondary" ? current.secondaryThread : current.thread;
+      return { ...current, activePane: pane, running: isThreadRunning(thread) };
+    });
+  }
+
+  function closeConversationPane(pane: ConversationPaneID): void {
+    clearPendingComposerMessages();
+    setState((current) => {
+      if (pane === "secondary") {
+        return {
+          ...current,
+          secondaryThread: undefined,
+          activePane: "primary",
+          running: isThreadRunning(current.thread),
+          status: "ready"
+        };
+      }
+      if (current.secondaryThread) {
+        return {
+          ...current,
+          thread: current.secondaryThread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          running: isThreadRunning(current.secondaryThread),
+          status: "ready"
+        };
+      }
+      return {
+        ...current,
+        thread: undefined,
+        activePane: "primary",
+        running: false,
+        status: "ready"
+      };
+    });
+  }
+
+  async function forkThreadFromMessage(sourceThread: Thread, turnID: string, itemID: string): Promise<void> {
+    if (!state.activeContext || sourceThread.read_only) {
+      return;
+    }
+    if (localDemoThreadsRef.current.has(sourceThread.id)) {
+      setState((current) => ({ ...current, status: "示例会话不能分叉" }));
+      return;
+    }
+    setArchiveConfirmThreadID(undefined);
+    setState((current) => ({ ...current, status: "正在分叉会话" }));
+    try {
+      const fork = requireThread(
+        await window.wuu.forkThread(sourceThread.id, turnID, itemID),
+        "thread/fork did not return a thread"
+      );
+      conversationAutoFollowRef.current = true;
+      setState((current) => {
+        const source =
+          current.secondaryThread?.id === sourceThread.id
+            ? current.secondaryThread
+            : current.thread?.id === sourceThread.id
+              ? current.thread
+              : sourceThread;
+        return {
+          ...current,
+          thread: source,
+          secondaryThread: fork,
+          activePane: "secondary",
+          allowThreadAutoActivation: true,
+          threads: upsertThread(upsertThread(current.threads, source), fork),
+          running: isThreadRunning(fork),
+          status: "ready"
+        };
+      });
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "fork failed"
+      }));
+    }
+  }
+
   async function toggleThreadPinned(thread: Thread): Promise<void> {
     if (!state.activeContext) {
       return;
@@ -2989,6 +3177,7 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread: current.thread?.id === thread.id ? nextThread : current.thread,
+        secondaryThread: current.secondaryThread?.id === thread.id ? nextThread : current.secondaryThread,
         threads: upsertThread(current.threads, nextThread),
         status: current.status === "ready" ? "ready" : current.status
       }));
@@ -2999,6 +3188,7 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread: current.thread?.id === thread.id ? result.thread : current.thread,
+        secondaryThread: current.secondaryThread?.id === thread.id ? result.thread : current.secondaryThread,
         threads: upsertThread(current.threads, result.thread),
         status: current.status === "ready" ? "ready" : current.status
       }));
@@ -3028,8 +3218,10 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread: current.thread?.id === thread.id ? undefined : current.thread,
+        secondaryThread: current.secondaryThread?.id === thread.id ? undefined : current.secondaryThread,
+        activePane: current.activePane === "secondary" && current.secondaryThread?.id === thread.id ? "primary" : current.activePane,
         threads: current.threads.filter((candidate) => candidate.id !== thread.id),
-        running: current.thread?.id === thread.id ? false : current.running,
+        running: activeThreadIDForState(current) === thread.id ? false : current.running,
         status: "ready"
       }));
       return;
@@ -3040,8 +3232,10 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         thread: current.thread?.id === thread.id ? undefined : current.thread,
+        secondaryThread: current.secondaryThread?.id === thread.id ? undefined : current.secondaryThread,
+        activePane: current.activePane === "secondary" && current.secondaryThread?.id === thread.id ? "primary" : current.activePane,
         threads: current.threads.filter((candidate) => candidate.id !== result.thread.id),
-        running: false,
+        running: activeThreadIDForState(current) === thread.id ? false : current.running,
         status: "ready"
       }));
     } catch (error) {
@@ -3059,7 +3253,8 @@ export function App(): JSX.Element {
     }
     const message = createComposerMessage(prompt, composerImages);
     const currentState = appStateRef.current;
-    if (currentState.thread?.read_only) {
+    const targetThread = activeThreadForState(currentState);
+    if (targetThread?.read_only) {
       setState((current) => ({ ...current, status: "子任务会话只读" }));
       return;
     }
@@ -3077,13 +3272,16 @@ export function App(): JSX.Element {
 
   async function sendComposerMessage(message: QueuedComposerMessage, restoreDraftOnError = false): Promise<boolean> {
     const currentState = appStateRef.current;
+    const targetThread = activeThreadForState(currentState);
+    const targetPane: ConversationPaneID =
+      currentState.activePane === "secondary" && currentState.secondaryThread ? "secondary" : "primary";
     const text = message.text.trim();
     const images = inputImagesFromComposer(message.images);
     if (
       (!text && images.length === 0) ||
       !currentState.activeContext ||
       !currentState.initialized ||
-      currentState.thread?.read_only ||
+      targetThread?.read_only ||
       viewSwitchPending ||
       isStateActiveThreadRunning(currentState)
     ) {
@@ -3095,31 +3293,29 @@ export function App(): JSX.Element {
       method: "client/send",
       detail: images.length > 0 ? `已提交输入，包含 ${images.length} 张图片` : "已提交输入",
       tone: "running",
-      threadID: currentState.thread?.id
+      threadID: targetThread?.id
     });
     appStateRef.current = { ...currentState, running: true, status: "正在发送请求" };
     setState((current) => ({ ...current, running: true, status: "正在发送请求" }));
     try {
       const thread =
-        currentState.thread ?? requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
+        targetThread ?? requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
       appStateRef.current = {
-        ...appStateRef.current,
-        thread,
+        ...setThreadForPane(appStateRef.current, targetPane, thread),
+        activePane: targetPane,
         allowThreadAutoActivation: true,
         threads: upsertThread(appStateRef.current.threads, thread)
       };
       setState((current) => ({
-        ...current,
-        thread,
+        ...setThreadForPane(current, targetPane, thread),
+        activePane: targetPane,
         allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, thread)
       }));
       const result = await window.wuu.startTurn(thread.id, text, images);
-      setState((current) =>
-        updateThread({ ...current, thread: current.thread?.id === thread.id ? current.thread : thread }, (currentThread) =>
-          upsertTurn(currentThread, result.turn)
-        )
-      );
+      setState((current) => updateThreadByID(setThreadForPane(current, targetPane, thread), thread.id, (currentThread) =>
+        upsertTurn(currentThread, result.turn)
+      ));
       appendRunDebugEvent({
         source: "client",
         method: "turn/start response",
@@ -3150,7 +3346,7 @@ export function App(): JSX.Element {
       return;
     }
     const currentState = appStateRef.current;
-    if (isStateActiveThreadRunning(currentState) || !currentState.activeContext || !currentState.initialized) {
+    if (isAnyThreadRunning(currentState) || !currentState.activeContext || !currentState.initialized) {
       return;
     }
 
@@ -3310,16 +3506,17 @@ export function App(): JSX.Element {
   }
 
   async function interrupt(): Promise<void> {
-    if (!state.thread) {
+    const thread = activeThreadForState(appStateRef.current);
+    if (!thread) {
       return;
     }
-    await window.wuu.interruptTurn(state.thread.id);
+    await window.wuu.interruptTurn(thread.id);
   }
 
   async function respondToAskRequest(request: AskRequestState, response: AskUserResponse): Promise<void> {
     try {
       await window.wuu.respondToServerRequest(request.id, response);
-      const currentThread = appStateRef.current.thread;
+      const currentThread = activeThreadForState(appStateRef.current);
       const answeredRequest: AnsweredAskRequestState = {
         ...request,
         threadID: request.threadID ?? currentThread?.id,
@@ -3450,7 +3647,7 @@ export function App(): JSX.Element {
             <div className="section-label pinned-thread-label">置顶</div>
             <PinnedThreadList
               threads={sidebarPinnedThreads}
-              activeID={state.thread?.id}
+              activeID={activeThreadID}
               pendingThreadID={visiblePendingThreadID}
               pendingAskThreadIDs={pendingAskThreadIDs}
               archiveConfirmThreadID={archiveConfirmThreadID}
@@ -3496,7 +3693,7 @@ export function App(): JSX.Element {
             activeID={state.activeProjectId}
             pendingProjectID={visiblePendingProjectID}
             threads={state.threads}
-            activeThreadID={state.thread?.id}
+            activeThreadID={activeThreadID}
             pendingThreadID={visiblePendingThreadID}
             pendingAskThreadIDs={pendingAskThreadIDs}
             archiveConfirmThreadID={archiveConfirmThreadID}
@@ -3675,8 +3872,8 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation && !showingWorkspaceMode ? " empty-scroll-region" : ""}${
               showingWorkspaceMode ? " workspace-scroll-region" : ""
-            }`}
-            onScroll={handleConversationScroll}
+            }${splitConversation ? " split-scroll-region" : ""}`}
+            onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
             {workspaceMode ? (
@@ -3691,6 +3888,11 @@ export function App(): JSX.Element {
                   setRightPanelOpen(true);
                 }}
               />
+            ) : splitConversation && state.thread && state.secondaryThread ? (
+              <div className="conversation-split">
+                {renderThreadConversation(state.thread, "primary")}
+                {renderThreadConversation(state.secondaryThread, "secondary")}
+              </div>
             ) : emptyConversation ? (
               <EmptyConversationHome title={emptyThreadTitle}>
                 {renderComposer("hero")}
@@ -3701,9 +3903,12 @@ export function App(): JSX.Element {
                   <Fragment key={turn.id}>
                     <TurnView
                       turn={turn}
-                      cwd={state.thread?.cwd ?? state.activeContext?.cwd}
+                      cwd={activeThread?.cwd ?? state.activeContext?.cwd}
                       latestAgentMessageID={latestAgentMessageID}
                       onStreamFrame={scheduleStreamScroll}
+                      onForkMessage={
+                        activeThread ? (turnID, itemID) => void forkThreadFromMessage(activeThread, turnID, itemID) : undefined
+                      }
                     />
                     {visibleAnsweredAskRequests
                       .filter((request) => request.turnID === turn.id)
@@ -3816,8 +4021,8 @@ function RunDebugPanel({
   onCopy: () => void;
   onClose: () => void;
 }): JSX.Element {
-  const turn = phase.turn ?? activeDebugTurn(state.thread);
-  const thread = state.thread;
+  const thread = activeThreadForState(state);
+  const turn = phase.turn ?? activeDebugTurn(thread);
   const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
   const turnStartedAt = turn ? parseTurnTimestampMs(turn.started_at) : NaN;
   const model = state.initialized
@@ -6311,7 +6516,7 @@ function handleStreamingNotification(event: ServerEvent, state: AppState): Strea
 
 function notificationTargetsActiveThread(params: Record<string, unknown> | undefined, state: AppState): boolean {
   const threadID = threadIDFromParams(params);
-  return !threadID || threadID === state.thread?.id;
+  return !threadID || threadID === state.thread?.id || threadID === state.secondaryThread?.id;
 }
 
 function appendStreamDelta(params: Record<string, unknown> | undefined, field: StreamTextField): void {
@@ -6359,13 +6564,15 @@ function reduceNotification(state: AppState, notification: AppServerNotification
         return state;
       }
       const knownThread = state.threads.some((item) => item.id === thread.id);
+      const updatesVisibleThread = state.thread?.id === thread.id || state.secondaryThread?.id === thread.id;
       const activateThread = state.thread?.id === thread.id || (state.allowThreadAutoActivation && !state.thread && !knownThread);
       return {
         ...state,
         thread: activateThread ? thread : state.thread,
+        secondaryThread: state.secondaryThread?.id === thread.id ? thread : state.secondaryThread,
         allowThreadAutoActivation: activateThread ? true : state.allowThreadAutoActivation,
         threads: upsertThread(state.threads, thread),
-        status: activateThread ? "ready" : state.status
+        status: activateThread || updatesVisibleThread ? "ready" : state.status
       };
     }
     case "agent/updated": {
@@ -6407,7 +6614,7 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       const turn = params?.turn as Turn | undefined;
       const threadID = threadIDFromParams(params);
       if (!turn) {
-        return threadID === state.thread?.id ? { ...state, running: false } : state;
+        return threadID === activeThreadIDForState(state) ? { ...state, running: false } : state;
       }
       return updateThreadByID(state, threadID, (thread) => upsertTurn(thread, turn), {
         running: false,
@@ -6449,10 +6656,22 @@ function updateThreadByID(
   if (!threadID) {
     return state;
   }
-  const active = state.thread?.id === threadID;
-  if (active && state.thread) {
-    const thread = update(state.thread);
-    return { ...state, ...activePatch, thread, threads: upsertThread(state.threads, thread) };
+  const primaryActive = state.thread?.id === threadID;
+  const secondaryActive = state.secondaryThread?.id === threadID;
+  if ((primaryActive && state.thread) || (secondaryActive && state.secondaryThread)) {
+    const currentThread = primaryActive ? state.thread : state.secondaryThread;
+    if (!currentThread) {
+      return state;
+    }
+    const thread = update(currentThread);
+    const patch = activeThreadIDForState(state) === threadID || activePatch.running === false ? activePatch : {};
+    return {
+      ...state,
+      ...patch,
+      thread: primaryActive ? thread : state.thread,
+      secondaryThread: secondaryActive ? thread : state.secondaryThread,
+      threads: upsertThread(state.threads, thread)
+    };
   }
   let updated = false;
   const threads = state.threads.map((thread) => {
@@ -6523,6 +6742,24 @@ function requireThread(result: { thread?: Thread }, message: string): Thread {
   return result.thread;
 }
 
+function activeThreadForState(state: AppState): Thread | undefined {
+  if (state.activePane === "secondary" && state.secondaryThread) {
+    return state.secondaryThread;
+  }
+  return state.thread;
+}
+
+function activeThreadIDForState(state: AppState): string | undefined {
+  return activeThreadForState(state)?.id;
+}
+
+function setThreadForPane(state: AppState, pane: ConversationPaneID, thread: Thread | undefined): AppState {
+  if (pane === "secondary") {
+    return { ...state, secondaryThread: thread };
+  }
+  return { ...state, thread };
+}
+
 function activeProjectID(context: RuntimeContext | undefined): string | undefined {
   return context?.kind === "project" ? context.project_id : undefined;
 }
@@ -6553,11 +6790,16 @@ function isThreadRunning(thread: Thread | undefined): boolean {
 }
 
 function isStateActiveThreadRunning(state: AppState): boolean {
-  return Boolean(state.running || isThreadRunning(state.thread));
+  return Boolean(state.running || isThreadRunning(activeThreadForState(state)));
 }
 
 function isAnyThreadRunning(state: AppState): boolean {
-  return Boolean(state.running || isThreadRunning(state.thread) || state.threads.some(isThreadRunning));
+  return Boolean(
+    state.running ||
+      isThreadRunning(state.thread) ||
+      isThreadRunning(state.secondaryThread) ||
+      state.threads.some(isThreadRunning)
+  );
 }
 
 function visibleAskRequestForThread(requests: AskRequestState[], threadID: string | undefined): AskRequestState | undefined {
@@ -7096,12 +7338,14 @@ function TurnView({
   turn,
   cwd,
   latestAgentMessageID,
-  onStreamFrame
+  onStreamFrame,
+  onForkMessage
 }: {
   turn: Turn;
   cwd?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
+  onForkMessage?: (turnID: string, itemID: string) => void;
 }): JSX.Element {
   const renderedItems: JSX.Element[] = [];
   let statusInserted = false;
@@ -7118,6 +7362,7 @@ function TurnView({
           streaming={false}
           latestAgentMessageID={latestAgentMessageID}
           onStreamFrame={onStreamFrame}
+          onForkMessage={onForkMessage}
         />
       );
       continue;
@@ -7152,6 +7397,7 @@ function TurnView({
         streaming={turn.status === "in_progress" && item.status === "in_progress"}
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
+        onForkMessage={onForkMessage}
       />
     );
   }
@@ -7526,7 +7772,8 @@ function ThreadItemView({
   cwd,
   streaming,
   latestAgentMessageID,
-  onStreamFrame
+  onStreamFrame,
+  onForkMessage
 }: {
   turnID: string;
   item: ThreadItem;
@@ -7534,6 +7781,7 @@ function ThreadItemView({
   streaming: boolean;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
+  onForkMessage?: (turnID: string, itemID: string) => void;
 }): JSX.Element | null {
   switch (item.type) {
     case "user_message": {
@@ -7567,7 +7815,12 @@ function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
-          {copyable ? <AgentMessageActions getText={() => streamFieldValue(turnID, item, "text")} /> : null}
+          {copyable ? (
+            <AgentMessageActions
+              getText={() => streamFieldValue(turnID, item, "text")}
+              onFork={onForkMessage ? () => onForkMessage(turnID, item.id) : undefined}
+            />
+          ) : null}
         </article>
       );
     }
@@ -7590,7 +7843,7 @@ function ThreadItemView({
   }
 }
 
-function AgentMessageActions({ getText }: { getText: () => string }): JSX.Element {
+function AgentMessageActions({ getText, onFork }: { getText: () => string; onFork?: () => void }): JSX.Element {
   const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
 
   return (
@@ -7616,7 +7869,7 @@ function AgentMessageActions({ getText }: { getText: () => string }): JSX.Elemen
       >
         <ThumbsDown size={15} />
       </button>
-      <button className="message-action-button" type="button" aria-label="分叉" title="分叉">
+      <button className="message-action-button" type="button" aria-label="分叉" title="分叉" disabled={!onFork} onClick={onFork}>
         <GitFork size={15} />
       </button>
     </div>
@@ -7787,8 +8040,9 @@ type DiffStats = {
 type JsonRecord = Record<string, unknown>;
 
 function runDebugPhaseForState(state: AppState): RunDebugPhase {
-  const turn = activeDebugTurn(state.thread);
-  const askRequest = visibleAskRequestForThread(state.askRequests, state.thread?.id);
+  const thread = activeThreadForState(state);
+  const turn = activeDebugTurn(thread);
+  const askRequest = visibleAskRequestForThread(state.askRequests, thread?.id);
   if (askRequest) {
     return {
       label: "等待用户选择",
@@ -8265,7 +8519,7 @@ function buildRunDebugSnapshot({
   composerImages: ComposerImage[];
 }): string {
   const phase = runDebugPhaseForState(state);
-  const thread = state.thread;
+  const thread = activeThreadForState(state);
   const turn = phase.turn ?? activeDebugTurn(thread);
   const lines = [
     `phase: ${phase.label} (${phase.detail})`,

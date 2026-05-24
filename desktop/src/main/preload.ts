@@ -27,6 +27,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:config-model-update", provider, model, effort),
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) => ipcRenderer.invoke("wuu:thread-resume", sessionId),
+  forkThread: (threadId: string, turnId?: string, itemId?: string) =>
+    ipcRenderer.invoke("wuu:thread-fork", threadId, turnId, itemId),
   listThreads: () => ipcRenderer.invoke("wuu:thread-list"),
   pinThread: (threadId: string, pinned: boolean) => ipcRenderer.invoke("wuu:thread-pin", threadId, pinned),
   archiveThread: (threadId: string, archived: boolean) => ipcRenderer.invoke("wuu:thread-archive", threadId, archived),

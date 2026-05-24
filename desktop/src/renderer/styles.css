@@ -3539,6 +3539,86 @@ button:disabled {
   padding-bottom: calc(var(--dock-composer-height) + 32px);
 }
 
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-split-width {
+  padding: 28px clamp(18px, 3vw, 34px) calc(var(--dock-composer-height) + 32px);
+}
+
+.split-scroll-region {
+  overflow: hidden;
+}
+
+.conversation-split {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
+  background: #ececea;
+}
+
+.conversation-split-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.conversation-split-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #ececea;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 8px 14px 8px 18px;
+  backdrop-filter: blur(12px);
+}
+
+.conversation-split-pane.active .conversation-split-header {
+  box-shadow: inset 0 -2px 0 #202427;
+}
+
+.conversation-split-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.conversation-split-title span {
+  color: #8b9094;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.conversation-split-title strong {
+  overflow: hidden;
+  color: #202427;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-split-close {
+  flex: 0 0 auto;
+}
+
+.conversation-split-width {
+  max-width: none;
+  margin: 0;
+  padding: 28px clamp(18px, 3vw, 34px) calc(var(--dock-composer-height) + 32px);
+}
+
+.conversation-split-width .message {
+  max-width: min(560px, 82%);
+}
+
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar {
   width: 10px;
   background: transparent;
@@ -3767,6 +3847,16 @@ button:disabled {
   background: #f1f2ef;
   box-shadow: none;
   color: #202427;
+}
+
+.message-action-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.message-action-button:disabled:hover {
+  background: transparent;
+  color: #8b9094;
 }
 
 .message-action-button:active {
@@ -9247,6 +9337,11 @@ html.swiss-international .os-theme-wuu {
   html.swiss-international .empty-home-inner {
     width: min(720px, calc(100% - 48px));
     grid-template-columns: 1fr;
+  }
+
+  .conversation-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 

@@ -265,6 +265,9 @@ export type Thread = {
   read_only?: boolean;
   pinned?: boolean;
   archived?: boolean;
+  forked_from_id?: string;
+  forked_from_turn_id?: string;
+  forked_from_item_id?: string;
   created_at: string;
   updated_at: string;
   turns: Turn[];
@@ -352,6 +355,7 @@ export type WuuDesktopApi = {
   updateRuntimeSettings: (provider: string, model: string, effort?: string) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
+  forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;
   listThreads: () => Promise<{ threads: Thread[] }>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;

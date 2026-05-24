@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld("wuu", {
   }),
   startThread: async () => ({ thread: null }),
   resumeThread: async () => ({ thread: null }),
+  forkThread: async () => ({ thread: null }),
   listThreads: async () => ({ threads: [] }),
   startTurn: async () => ({ turn: null }),
   interruptTurn: async () => ({ ok: true }),

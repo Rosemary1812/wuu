@@ -1569,6 +1569,13 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:thread-resume", (_event, sessionId?: string) =>
     serverClient().request<{ thread: Thread }>("thread/resume", { session_id: sessionId ?? "" })
   );
+  ipcMain.handle("wuu:thread-fork", (_event, threadId: string, turnId?: string, itemId?: string) =>
+    serverClient().request<{ thread: Thread }>("thread/fork", {
+      thread_id: threadId,
+      turn_id: turnId ?? "",
+      item_id: itemId ?? ""
+    })
+  );
   ipcMain.handle("wuu:thread-list", () => serverClient().request<{ threads: Thread[] }>("thread/list"));
   ipcMain.handle("wuu:thread-pin", (_event, threadId: string, pinned: boolean) =>
     serverClient().request<{ thread: Thread }>("thread/pin", { thread_id: threadId, pinned })
