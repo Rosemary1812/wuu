@@ -112,7 +112,7 @@ func NewProviderStreamError(code, message string) *StreamError {
 		Message: strings.TrimSpace(msg),
 		Code:    strings.TrimSpace(code),
 	}
-	if DetectContextOverflow(err.Message) {
+	if isContextOverflowCode(err.Code) || DetectContextOverflow(err.Message) {
 		err.ContextOverflow = true
 		return err
 	}
@@ -227,11 +227,17 @@ func DetectContextOverflow(body string) bool {
 	msg := strings.ToLower(body)
 	return strings.Contains(msg, "context_length_exceeded") ||
 		strings.Contains(msg, "context length exceeded") ||
+		strings.Contains(msg, "exceeds the context window") ||
 		strings.Contains(msg, "maximum context length") ||
 		strings.Contains(msg, "prompt is too long") ||
 		strings.Contains(msg, "input is too long") ||
 		strings.Contains(msg, "request too large") ||
+		strings.Contains(msg, "request buffer limit") ||
 		strings.Contains(msg, "too many tokens")
+}
+
+func isContextOverflowCode(code string) bool {
+	return strings.EqualFold(strings.TrimSpace(code), "context_length_exceeded")
 }
 
 // overflowTokenRe extracts (actual, limit) token counts from provider

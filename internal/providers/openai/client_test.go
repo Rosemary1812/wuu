@@ -1066,6 +1066,33 @@ func TestResponsesChat_ParsesMessageContent(t *testing.T) {
 	}
 }
 
+func TestResponsesChat_ContextLengthExceededClassified(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "status": "failed",
+  "error": {
+    "code": "context_length_exceeded",
+    "message": "Your input exceeds the context window of this model. Please adjust your input and try again."
+  }
+}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if !providers.IsContextOverflow(err) {
+		t.Fatalf("expected context overflow error, got %T (%v)", err, err)
+	}
+}
+
 func TestResponsesStreamChat_SSE(t *testing.T) {
 	ssePayload := "event: response.output_text.delta\n" +
 		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n" +
@@ -1148,6 +1175,46 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 	}
 	if done.Usage == nil || done.Usage.InputTokens != 5 || done.Usage.OutputTokens != 2 {
 		t.Fatalf("unexpected usage: %+v", done.Usage)
+	}
+}
+
+func TestResponsesStreamChat_ContextLengthExceededClassified(t *testing.T) {
+	rawError := `{"type":"response.failed","response":{"status":"failed","error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}}`
+	ssePayload := "event: response.failed\n" +
+		"data: " + rawError + "\n\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ssePayload))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var got error
+	for ev := range ch {
+		if ev.Type == providers.EventError {
+			got = ev.Error
+			break
+		}
+	}
+	if !providers.IsContextOverflow(got) {
+		t.Fatalf("expected context overflow stream error, got %T (%v)", got, got)
 	}
 }
 

@@ -88,6 +88,30 @@ func TestNewProviderStreamError_ContextOverflow(t *testing.T) {
 	}
 }
 
+func TestNewProviderStreamError_ContextOverflowCode(t *testing.T) {
+	err := NewProviderStreamError("context_length_exceeded", "")
+	if !IsContextOverflow(err) {
+		t.Fatal("expected context_length_exceeded code to be classified as context overflow")
+	}
+	if IsRetryable(err) {
+		t.Fatal("expected context overflow stream error to not be retryable")
+	}
+}
+
+func TestDetectContextOverflow_OpenAIResponsesMessage(t *testing.T) {
+	msg := "Your input exceeds the context window of this model. Please adjust your input and try again."
+	if !DetectContextOverflow(msg) {
+		t.Fatal("expected Responses context-window message to be detected")
+	}
+}
+
+func TestDetectContextOverflow_RequestBufferLimit(t *testing.T) {
+	msg := "HTTP 507: 507 Insufficient Storage: exceeded request buffer limit while retrying upstream"
+	if !DetectContextOverflow(msg) {
+		t.Fatal("expected request buffer limit to be detected as context overflow")
+	}
+}
+
 func TestNewProviderStreamError_Auth(t *testing.T) {
 	err := NewProviderStreamError("authentication_error", "invalid api key")
 	if !IsAuthError(err) {

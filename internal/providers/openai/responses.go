@@ -742,11 +742,8 @@ func (e *responsesError) asError() error {
 	if e == nil {
 		return errors.New("response error")
 	}
-	if e.Message != "" {
-		return errors.New(e.Message)
-	}
-	if e.Code != "" {
-		return fmt.Errorf("response error: %s", e.Code)
+	if e.Code != "" || e.Message != "" {
+		return providers.NewProviderStreamError(e.Code, e.Message)
 	}
 	if e.Type != "" {
 		return fmt.Errorf("response error: %s", e.Type)
