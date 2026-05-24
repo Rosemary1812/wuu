@@ -2,11 +2,27 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const cwd = process.env.WUU_STREAM_E2E_CWD || process.cwd();
 const runtimeContext = { kind: "no_project", cwd };
+let startedThreadCount = 0;
 
 function projectList() {
   return {
     projects: [],
     active_context: runtimeContext
+  };
+}
+
+function mockThread(id) {
+  const now = new Date().toISOString();
+  return {
+    id,
+    preview: "",
+    model_provider: "e2e",
+    model: "mock-stream",
+    cwd,
+    status: "idle",
+    created_at: now,
+    updated_at: now,
+    turns: []
   };
 }
 
@@ -54,11 +70,39 @@ contextBridge.exposeInMainWorld("wuu", {
     model,
     providers: [{ name: provider, type: "mock", model }]
   }),
-  startThread: async () => ({ thread: null }),
+  startThread: async () => {
+    startedThreadCount += 1;
+    const id =
+      startedThreadCount === 1
+        ? "thread-immediate-title-e2e"
+        : startedThreadCount === 2
+          ? "thread-streaming-e2e"
+          : `thread-started-e2e-${startedThreadCount}`;
+    return { thread: mockThread(id) };
+  },
   resumeThread: async () => ({ thread: null }),
   forkThread: async () => ({ thread: null }),
   listThreads: async () => ({ threads: [] }),
-  startTurn: async () => ({ turn: null }),
+  startTurn: async (threadId, text, images = []) => {
+    const now = new Date().toISOString();
+    return {
+      turn: {
+        id: `turn-${threadId}`,
+        items: [
+          {
+            id: `user-${threadId}`,
+            type: "user_message",
+            status: "completed",
+            text,
+            images
+          }
+        ],
+        items_view: "full",
+        status: "in_progress",
+        started_at: now
+      }
+    };
+  },
   interruptTurn: async () => ({ ok: true }),
   respondToServerRequest: async () => undefined,
   rejectServerRequest: async () => undefined,

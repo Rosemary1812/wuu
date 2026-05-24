@@ -76,34 +76,29 @@ async function run() {
   assert.equal(imeEnter.plainPrevented, true, "Plain Enter should still trigger the composer send shortcut.");
   assert.equal(imeEnter.plainDispatchResult, false, "Plain Enter should be consumed by the composer send shortcut.");
 
-  const now = new Date().toISOString();
-  const immediateTitleThread = {
-    id: "thread-immediate-title-e2e",
-    preview: "",
-    model_provider: "e2e",
-    model: "mock-stream",
-    cwd: repoRoot,
-    status: "idle",
-    created_at: now,
-    updated_at: now,
-    turns: []
-  };
-  const immediateTitleTurn = {
-    id: "turn-immediate-title-e2e",
-    items: [
-      {
-        id: "user-immediate-title-e2e",
-        type: "user_message",
-        status: "completed",
-        text: "Rename me immediately."
+  const immediateSendStarted = await waitFor(
+    win,
+    () => {
+      const textarea = document.querySelector(".composer textarea");
+      if (!(textarea instanceof HTMLTextAreaElement)) {
+        return false;
       }
-    ],
-    items_view: "full",
-    status: "in_progress",
-    started_at: now
-  };
-  emitNotification(win, "thread/started", { thread: immediateTitleThread });
-  emitNotification(win, "turn/started", { thread_id: immediateTitleThread.id, turn: immediateTitleTurn });
+      textarea.focus();
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      valueSetter?.call(textarea, "Rename me immediately.");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      const enter = new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        bubbles: true,
+        cancelable: true
+      });
+      textarea.dispatchEvent(enter);
+      return enter.defaultPrevented;
+    },
+    3000
+  );
+  assert.equal(immediateSendStarted, true, "Composer send should start an e2e thread.");
   const immediateTitle = await waitFor(
     win,
     () => {
@@ -114,6 +109,7 @@ async function run() {
   );
   assert.equal(immediateTitle, "Rename me immediately.", "Fresh conversation title should update from the first user turn.");
 
+  const now = new Date().toISOString();
   const resetStarted = await evaluate(win, () => {
     const button = document.querySelector(".primary-nav .nav-item");
     if (!(button instanceof HTMLButtonElement)) {
@@ -124,6 +120,35 @@ async function run() {
   });
   assert.equal(resetStarted, true, "New conversation button should be available after title update.");
   await waitFor(win, () => (document.querySelector(".title-block h1")?.textContent ?? "") === "新对话", 3000);
+
+  const streamingThreadStarted = await waitFor(
+    win,
+    () => {
+      const textarea = document.querySelector(".composer textarea");
+      if (!(textarea instanceof HTMLTextAreaElement)) {
+        return false;
+      }
+      textarea.focus();
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      valueSetter?.call(textarea, "Write a long streaming response.");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      const enter = new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        bubbles: true,
+        cancelable: true
+      });
+      textarea.dispatchEvent(enter);
+      return enter.defaultPrevented;
+    },
+    3000
+  );
+  assert.equal(streamingThreadStarted, true, "Streaming e2e should create an active thread before server events.");
+  await waitFor(
+    win,
+    () => (document.querySelector(".title-block h1")?.textContent ?? "").includes("Write a long streaming response."),
+    3000
+  );
 
   const thread = {
     id: "thread-streaming-e2e",
@@ -147,6 +172,20 @@ async function run() {
     type: "agent_message",
     status: "in_progress",
     text: ""
+  };
+  const reasoningItem = {
+    id: "reasoning-streaming-e2e",
+    type: "reasoning",
+    status: "completed",
+    text: "Check the live turn state before producing the final answer."
+  };
+  const toolItem = {
+    id: "tool-streaming-e2e",
+    type: "tool_call",
+    status: "completed",
+    name: "grep",
+    arguments: '{"pattern":"streaming-word","path":"desktop/src/renderer"}',
+    result: "desktop/src/renderer/App.tsx: streaming-word"
   };
   const turn = {
     id: "turn-streaming-e2e",
@@ -177,6 +216,8 @@ async function run() {
 
   emitNotification(win, "thread/resumed", { thread });
   emitNotification(win, "turn/started", { thread_id: thread.id, turn });
+  emitNotification(win, "item/completed", { thread_id: thread.id, turn_id: turn.id, item: reasoningItem });
+  emitNotification(win, "item/completed", { thread_id: thread.id, turn_id: turn.id, item: toolItem });
   emitNotification(win, "item/started", { thread_id: thread.id, turn_id: turn.id, item: agentItem });
   emitNotification(win, "item/agentMessage/delta", { thread_id: thread.id, turn_id: turn.id, item_id: agentItem.id, delta: fullText });
 
@@ -237,7 +278,7 @@ async function run() {
       status: "completed",
       completed_at: new Date().toISOString(),
       duration_ms: 100,
-      items: [userItem, { ...agentItem, status: "completed", text: fullText }]
+      items: [userItem, reasoningItem, toolItem, { ...agentItem, status: "completed", text: fullText }]
     }
   });
 
@@ -253,6 +294,54 @@ async function run() {
   assert.equal(final.hasStaticFallback, false, "Assistant content should remain on StreamingMarkdown after settling.");
   assert.ok(final.text.includes("streaming-word-119"), "StreamingMarkdown should eventually show the complete response.");
   assert.match(final.streamState, /^(settling|settled)$/, "Final text should be in a completion visual state.");
+
+  const collapsedProcess = await waitFor(
+    win,
+    () => {
+      const group = document.querySelector(".turn-process-group");
+      const toggle = group?.querySelector(".turn-process-toggle");
+      const details = group?.querySelector(".turn-process-details");
+      const activity = group?.querySelector(".activity-group");
+      if (!(group instanceof HTMLElement) || !(toggle instanceof HTMLButtonElement) || !(details instanceof HTMLElement)) {
+        return null;
+      }
+      if (toggle.getAttribute("aria-expanded") !== "false" || details.getAttribute("aria-hidden") !== "true") {
+        return null;
+      }
+      return {
+        text: group.textContent ?? "",
+        activityExpanded: activity?.classList.contains("expanded") ?? false
+      };
+    },
+    3000
+  );
+  assert.match(collapsedProcess.text, /过程记录/, "Completed process records should be summarized behind a compact toggle.");
+  assert.equal(collapsedProcess.activityExpanded, false, "Completed tool activity details should be folded by default.");
+
+  const expandedProcess = await waitFor(
+    win,
+    () => {
+      const button = document.querySelector(".turn-process-toggle");
+      if (!(button instanceof HTMLButtonElement)) {
+        return null;
+      }
+      if (button.getAttribute("aria-expanded") !== "true") {
+        button.click();
+        return null;
+      }
+      const group = document.querySelector(".turn-process-group");
+      const details = group?.querySelector(".turn-process-details");
+      return {
+        expanded: button.getAttribute("aria-expanded"),
+        hidden: details?.getAttribute("aria-hidden"),
+        text: group?.textContent ?? ""
+      };
+    },
+    3000
+  );
+  assert.equal(expandedProcess.expanded, "true", "Process records should be expandable after auto-collapse.");
+  assert.equal(expandedProcess.hidden, "false", "Expanded process records should expose their details.");
+  assert.match(expandedProcess.text, /搜索 1 次/, "Expanded process records should include the folded tool activity summary.");
 
   const settled = await waitFor(
     win,

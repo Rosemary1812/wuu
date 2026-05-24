@@ -226,6 +226,24 @@ type TurnProgressContent = {
   detail?: string;
 };
 
+type UserFacingErrorCategory =
+  | "cancelled"
+  | "network"
+  | "auth"
+  | "provider"
+  | "tool"
+  | "local"
+  | "internal";
+type UserFacingErrorTone = "neutral" | "warning" | "auth" | "error";
+type UserFacingErrorContext = "turn" | "tool" | "status";
+
+type UserFacingErrorDisplay = {
+  category: UserFacingErrorCategory;
+  tone: UserFacingErrorTone;
+  title: string;
+  detail: string;
+};
+
 type TurnProgressEra =
   | "sticks"
   | "swords"
@@ -3614,7 +3632,15 @@ export function App(): JSX.Element {
         turnID: result.turn.id
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "send failed";
+      const rawMessage = rawErrorMessage(error, "send failed");
+      const errorMessage = statusMessageForError(rawMessage, "send failed");
+      appendRunDebugEvent({
+        source: "client",
+        method: "turn/start failed",
+        detail: rawMessage,
+        tone: "error",
+        threadID: targetThread?.id
+      });
       appStateRef.current = { ...appStateRef.current, running: false, status: errorMessage };
       setState((current) => ({
         ...current,
@@ -3705,7 +3731,15 @@ export function App(): JSX.Element {
         turnID: result.turn.id
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "send failed";
+      const rawMessage = rawErrorMessage(error, "send failed");
+      const errorMessage = statusMessageForError(rawMessage, "send failed");
+      appendRunDebugEvent({
+        source: "client",
+        method: "turn/start failed",
+        detail: rawMessage,
+        tone: "error",
+        threadID: targetThread.id
+      });
       appStateRef.current = { ...appStateRef.current, activePane: pane, running: false, status: errorMessage };
       setState((current) => ({
         ...current,
@@ -4550,10 +4584,22 @@ function RunDebugItem({ turnID, item }: { turnID: string; item: ThreadItem }): J
         <DebugFieldLength turnID={turnID} item={item} field="text" label="text" />
         <DebugFieldLength turnID={turnID} item={item} field="arguments" label="args" />
         <DebugFieldLength turnID={turnID} item={item} field="result" label="result" />
-        {item.error ? <span className="error">error</span> : null}
+        {item.error ? (
+          <span className="error" title={item.error}>
+            error: {shortDebugError(item.error)}
+          </span>
+        ) : null}
       </div>
     </div>
   );
+}
+
+function shortDebugError(message: string): string {
+  const trimmed = message.trim();
+  if (trimmed.length <= 48) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 45)}...`;
 }
 
 function DebugFieldLength({
@@ -6821,6 +6867,199 @@ function desktopApiErrorMessage(error: unknown, fallback: string): string {
   return message || fallback;
 }
 
+function rawErrorMessage(error: unknown, fallback = ""): string {
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+  if (typeof error === "string") {
+    return error || fallback;
+  }
+  return fallback;
+}
+
+function userFacingErrorForMessage(rawMessage: string | undefined, context: UserFacingErrorContext): UserFacingErrorDisplay {
+  const message = (rawMessage ?? "").trim();
+  const category = classifyUserFacingError(message, context);
+  switch (category) {
+    case "cancelled":
+      return { category, tone: "neutral", title: "已停止", detail: "这次请求已停止，可以继续发送消息。" };
+    case "network":
+      return { category, tone: "error", title: "连接暂时不可用", detail: "没有完成这次请求。请稍后重试。" };
+    case "auth":
+      return {
+        category,
+        tone: "auth",
+        title: "需要重新登录或检查权限",
+        detail: "当前凭据或权限不足，处理没有完成。"
+      };
+    case "provider":
+      return {
+        category,
+        tone: "error",
+        title: "模型没有完成请求",
+        detail: "可以调整输入、切换模型，或稍后重试。"
+      };
+    case "tool":
+      return {
+        category,
+        tone: "error",
+        title: "工具调用失败",
+        detail: "某个工具没有完成。原始错误已留在调试信息中。"
+      };
+    case "local":
+      return {
+        category,
+        tone: "error",
+        title: "本地操作失败",
+        detail: "无法完成本地文件、命令或权限相关操作。"
+      };
+    case "internal":
+    default:
+      return {
+        category: "internal",
+        tone: "error",
+        title: "wuu 遇到内部错误",
+        detail: "请重试；如果反复出现，可以复制调试信息排查。"
+      };
+  }
+}
+
+function classifyUserFacingError(message: string, context: UserFacingErrorContext): UserFacingErrorCategory {
+  const normalized = message.toLowerCase();
+  if (isCancellationMessage(normalized)) {
+    return "cancelled";
+  }
+  if (isLocalOperationError(normalized)) {
+    return "local";
+  }
+  if (isAuthOrPermissionError(normalized)) {
+    return "auth";
+  }
+  if (isNetworkOrUpstreamError(normalized)) {
+    return "network";
+  }
+  if (isProviderBusinessError(normalized)) {
+    return "provider";
+  }
+  return context === "tool" ? "tool" : "internal";
+}
+
+function isCancellationMessage(message: string): boolean {
+  return (
+    message.includes("context canceled") ||
+    message.includes("context cancelled") ||
+    message.includes("user canceled") ||
+    message.includes("user cancelled") ||
+    message.includes("request canceled") ||
+    message.includes("request cancelled") ||
+    message.includes("operation was aborted") ||
+    message.includes("aborterror")
+  );
+}
+
+function isAuthOrPermissionError(message: string): boolean {
+  return (
+    /\b(401|403)\b/.test(message) ||
+    message.includes("unauthorized") ||
+    message.includes("unauthenticated") ||
+    message.includes("forbidden") ||
+    message.includes("permission denied") ||
+    message.includes("api key") ||
+    message.includes("access token") ||
+    message.includes("invalid token") ||
+    message.includes("oauth") ||
+    message.includes("login required") ||
+    message.includes("log in")
+  );
+}
+
+function isNetworkOrUpstreamError(message: string): boolean {
+  return (
+    /\b(429|500|502|503|504|529)\b/.test(message) ||
+    message.includes("network") ||
+    message.includes("stream request failed") ||
+    message.includes("request failed") ||
+    message.includes("connection refused") ||
+    message.includes("connection reset") ||
+    message.includes("connection dropped") ||
+    message.includes("no such host") ||
+    message.includes("dial tcp") ||
+    message.includes("dns") ||
+    message.includes("timeout") ||
+    message.includes("deadline exceeded") ||
+    message.includes("temporarily unavailable") ||
+    message.includes("overloaded") ||
+    message.includes("too many requests") ||
+    message.includes("rate limit") ||
+    message.includes("eof")
+  );
+}
+
+function isProviderBusinessError(message: string): boolean {
+  return (
+    message.includes("context_length_exceeded") ||
+    message.includes("context window") ||
+    message.includes("maximum context length") ||
+    message.includes("too many tokens") ||
+    message.includes("empty response") ||
+    message.includes("empty answer") ||
+    message.includes("model returned") ||
+    message.includes("provider") ||
+    message.includes("response failed") ||
+    message.includes("response error") ||
+    message.includes("content policy") ||
+    message.includes("invalid_request_error")
+  );
+}
+
+function isLocalOperationError(message: string): boolean {
+  const hasLocalPermission =
+    (message.includes("permission denied") || message.includes("operation not permitted")) &&
+    (message.includes("file") ||
+      message.includes("path") ||
+      message.includes("directory") ||
+      message.includes("command") ||
+      message.includes("git") ||
+      message.includes("gh") ||
+      message.includes("eacces") ||
+      message.includes("eperm"));
+  return (
+    hasLocalPermission ||
+    message.includes("enoent") ||
+    message.includes("eacces") ||
+    message.includes("eperm") ||
+    message.includes("no such file") ||
+    message.includes("not a directory") ||
+    message.includes("is a directory") ||
+    message.includes("outside the current workspace") ||
+    message.includes("outside the current git repository") ||
+    message.includes("selected path") ||
+    message.includes("git ") ||
+    message.includes("github cli") ||
+    message.includes("exit status") ||
+    message.includes("command failed")
+  );
+}
+
+function statusMessageForError(error: unknown, fallback: string): string {
+  const display = userFacingErrorForMessage(rawErrorMessage(error, fallback), "status");
+  return `${display.title}。${display.detail}`;
+}
+
+function statusToneClass(status: string): string {
+  const trimmed = status.trim();
+  if (!trimmed || trimmed === "ready" || trimmed === "connecting" || trimmed === "opening" || trimmed.startsWith("正在")) {
+    return "";
+  }
+  if (trimmed.includes("权限") || trimmed.includes("登录")) {
+    return " auth";
+  }
+  if (trimmed.includes("失败") || trimmed.includes("错误") || trimmed.includes("不可用") || trimmed.includes("内部")) {
+    return " error";
+  }
+  return "";
+}
+
 function EmptyConversationHome({
   title,
   children
@@ -6860,9 +7099,9 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
       };
     }
     case "server-error":
-      return { ...state, status: event.message };
+      return { ...state, status: statusMessageForError(event.message, "server error") };
     case "server-exit":
-      return { ...state, running: false, status: "app-server exited" };
+      return { ...state, running: false, status: "wuu 遇到内部错误。后台服务已退出，请重启桌面端。" };
   }
 }
 
@@ -7752,6 +7991,69 @@ function agentStatusTone(status: string | undefined): "running" | "completed" | 
   }
 }
 
+function turnNoticeDisplay(turn: Turn, hasAssistantOutput: boolean): UserFacingErrorDisplay | undefined {
+  const rawMessage = turn.error?.message;
+  const baseDisplay =
+    turn.status === "interrupted"
+      ? userFacingErrorForMessage("context canceled", "turn")
+      : isCancellationMessage((rawMessage ?? "").toLowerCase())
+        ? userFacingErrorForMessage(rawMessage, "turn")
+        : turn.status === "failed"
+          ? userFacingErrorForMessage(rawMessage, "turn")
+          : undefined;
+  if (!baseDisplay) {
+    return undefined;
+  }
+  if (baseDisplay.category === "cancelled") {
+    return {
+      ...baseDisplay,
+      title: hasAssistantOutput ? "回复已中断" : "已停止",
+      detail: hasAssistantOutput ? "已保留已生成内容，可以继续发送消息。" : "这次请求已停止，没有生成回复内容。"
+    };
+  }
+  return {
+    ...baseDisplay,
+    detail: hasAssistantOutput ? `${baseDisplay.detail} 已保留已生成内容。` : baseDisplay.detail
+  };
+}
+
+function turnHasAssistantOutput(turn: Turn): boolean {
+  return turn.items.some((item) => {
+    if (item.type !== "agent_message") {
+      return false;
+    }
+    return streamFieldValue(turn.id, item, "text").trim().length > 0;
+  });
+}
+
+function TurnNotice({ display }: { display: UserFacingErrorDisplay }): JSX.Element {
+  const Icon = turnNoticeIcon(display);
+  return (
+    <aside className={`turn-notice ${display.tone}`} role={display.tone === "error" || display.tone === "auth" ? "alert" : "status"}>
+      <span className="turn-notice-icon" aria-hidden="true">
+        <Icon size={17} />
+      </span>
+      <span className="turn-notice-copy">
+        <strong>{display.title}</strong>
+        <span>{display.detail}</span>
+      </span>
+    </aside>
+  );
+}
+
+function turnNoticeIcon(display: UserFacingErrorDisplay): typeof AlertCircle {
+  if (display.category === "cancelled") {
+    return Square;
+  }
+  if (display.tone === "auth") {
+    return ShieldCheck;
+  }
+  if (display.tone === "warning") {
+    return Info;
+  }
+  return AlertCircle;
+}
+
 function TurnView({
   turn,
   cwd,
@@ -7766,32 +8068,84 @@ function TurnView({
   onForkMessage?: (turnID: string, itemID: string) => void;
 }): JSX.Element {
   const renderedItems: JSX.Element[] = [];
+  let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
   const actionableAgentMessageID = turn.status === "completed" ? actionableAgentMessageItemID(turn) : undefined;
+  const primaryAgentMessageID =
+    actionableAgentMessageID ??
+    (turn.status === "in_progress" || turn.status === "failed" || turn.status === "interrupted"
+      ? latestAgentMessageItemIDForTurn(turn)
+      : undefined);
+  const processAutoCollapse = turn.status === "completed" && actionableAgentMessageID !== undefined;
+
+  function renderThreadItem(item: ThreadItem, streaming: boolean): JSX.Element | null {
+    return (
+      <ThreadItemView
+        key={item.id}
+        turnID={turn.id}
+        turnStatus={turn.status}
+        item={item}
+        cwd={cwd}
+        streaming={streaming}
+        actionableAgentMessageID={actionableAgentMessageID}
+        latestAgentMessageID={latestAgentMessageID}
+        onStreamFrame={onStreamFrame}
+        onForkMessage={onForkMessage}
+      />
+    );
+  }
+
+  function insertStatus(): void {
+    if (statusInserted) {
+      return;
+    }
+    processEntries.push({
+      key: `${turn.id}-status`,
+      kind: "status",
+      element: <TurnStatusLine key={`${turn.id}-status`} turn={turn} />
+    });
+    statusInserted = true;
+  }
+
+  function appendProcessEntry(entry: TurnProcessEntry | null): void {
+    if (entry) {
+      processEntries.push(entry);
+    }
+  }
+
+  function flushProcessEntries(): void {
+    if (processEntries.length === 0) {
+      return;
+    }
+    const entries = processEntries;
+    processEntries = [];
+    const onlyCompletedStatus = processAutoCollapse && entries.every((entry) => entry.kind === "status");
+    if (onlyCompletedStatus) {
+      return;
+    }
+    if (!processAutoCollapse && entries.length === 1 && entries[0].kind === "status") {
+      renderedItems.push(entries[0].element);
+      return;
+    }
+    renderedItems.push(
+      <TurnProcessGroup key={`${turn.id}-process-${renderedItems.length}`} turn={turn} entries={entries} autoCollapse={processAutoCollapse} />
+    );
+  }
 
   for (let index = 0; index < turn.items.length; index++) {
     const item = turn.items[index];
     if (item.type === "user_message") {
-      renderedItems.push(
-        <ThreadItemView
-          key={item.id}
-          turnID={turn.id}
-          turnStatus={turn.status}
-          item={item}
-          cwd={cwd}
-          streaming={false}
-          actionableAgentMessageID={actionableAgentMessageID}
-          latestAgentMessageID={latestAgentMessageID}
-          onStreamFrame={onStreamFrame}
-          onForkMessage={onForkMessage}
-        />
-      );
+      flushProcessEntries();
+      const rendered = renderThreadItem(item, false);
+      if (rendered) {
+        renderedItems.push(rendered);
+      }
       continue;
     }
 
-    if (!statusInserted) {
-      renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
-      statusInserted = true;
+    const isPrimaryAgentMessage = item.id === primaryAgentMessageID;
+    if (!isPrimaryAgentMessage) {
+      insertStatus();
     }
 
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
@@ -7804,37 +8158,118 @@ function TurnView({
         group.push(turn.items[nextIndex]);
         nextIndex++;
       }
-      renderedItems.push(<ToolActivityRow key={`${item.id}-activity`} items={group} />);
+      appendProcessEntry({
+        key: `${item.id}-activity`,
+        kind: "activity",
+        element: <ToolActivityRow key={`${item.id}-activity`} items={group} collapseWhenIdle={processAutoCollapse} />
+      });
       index = nextIndex - 1;
       continue;
     }
 
-    renderedItems.push(
-      <ThreadItemView
-        key={item.id}
-        turnID={turn.id}
-        turnStatus={turn.status}
-        item={item}
-        cwd={cwd}
-        streaming={turn.status === "in_progress" && item.status === "in_progress"}
-        actionableAgentMessageID={actionableAgentMessageID}
-        latestAgentMessageID={latestAgentMessageID}
-        onStreamFrame={onStreamFrame}
-        onForkMessage={onForkMessage}
-      />
-    );
+    const rendered = renderThreadItem(item, turn.status === "in_progress" && item.status === "in_progress");
+    if (!rendered) {
+      continue;
+    }
+    if (isPrimaryAgentMessage) {
+      insertStatus();
+      flushProcessEntries();
+      renderedItems.push(rendered);
+    } else {
+      appendProcessEntry({ key: item.id, kind: "item", element: rendered });
+    }
   }
 
   if (!statusInserted && turn.status === "in_progress") {
-    renderedItems.push(<TurnStatusLine key={`${turn.id}-status`} turn={turn} />);
+    insertStatus();
   }
+  flushProcessEntries();
+  const notice = turnNoticeDisplay(turn, turnHasAssistantOutput(turn));
 
   return (
     <section className="turn">
       {renderedItems}
-      {turn.error ? <div className="turn-error">{turn.error.message}</div> : null}
+      {notice ? <TurnNotice display={notice} /> : null}
     </section>
   );
+}
+
+type TurnProcessEntry = {
+  key: string;
+  kind: "status" | "activity" | "item";
+  element: JSX.Element;
+};
+
+function TurnProcessGroup({
+  turn,
+  entries,
+  autoCollapse
+}: {
+  turn: Turn;
+  entries: TurnProcessEntry[];
+  autoCollapse: boolean;
+}): JSX.Element {
+  const [expanded, setExpanded] = useState(!autoCollapse);
+  const previousAutoCollapseRef = useRef(autoCollapse);
+  const detailsID = `${turn.id}-process-details`;
+  const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
+    turn.status === "in_progress" ? " running" : ""
+  }`;
+  const processCount = entries.filter((entry) => entry.kind !== "status").length;
+  const metaParts = turnProcessMetaParts(turn, processCount);
+
+  useEffect(() => {
+    const previousAutoCollapse = previousAutoCollapseRef.current;
+    previousAutoCollapseRef.current = autoCollapse;
+    if (autoCollapse && !previousAutoCollapse) {
+      setExpanded(false);
+    }
+    if (!autoCollapse && previousAutoCollapse) {
+      setExpanded(true);
+    }
+  }, [autoCollapse]);
+
+  return (
+    <div className={className}>
+      <button
+        className="turn-process-toggle"
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={detailsID}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <ListIcon size={15} />
+        <span className="turn-process-copy">
+          <span>过程记录</span>
+          {metaParts.map((part) => (
+            <span key={part}>{part}</span>
+          ))}
+        </span>
+        <ChevronDown className="turn-process-chevron" size={15} />
+      </button>
+      <div className="turn-process-details" id={detailsID} aria-hidden={!expanded}>
+        <div className="turn-process-stack">{entries.map((entry) => entry.element)}</div>
+      </div>
+    </div>
+  );
+}
+
+function turnProcessMetaParts(turn: Turn, processCount: number): string[] {
+  const parts: string[] = [];
+  if (processCount > 0) {
+    parts.push(`${processCount} 项`);
+  }
+  if (turn.status === "in_progress") {
+    parts.push("运行中");
+  } else if (turn.status === "failed") {
+    parts.push("失败");
+  } else if (turn.status === "interrupted") {
+    parts.push("已停止");
+  }
+  if (typeof turn.duration_ms === "number") {
+    parts.push(formatDuration(turn.duration_ms));
+  }
+  return parts;
 }
 
 function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
@@ -8115,10 +8550,11 @@ function LiveDuration({ startedAtMs }: { startedAtMs: number }): JSX.Element {
 
 function turnProgressContent(turn: Turn, elapsedMs: number): TurnProgressContent {
   if (turn.status === "failed") {
-    return { label: "处理失败", detail: turn.error?.message ?? "请求没有完成" };
+    const display = userFacingErrorForMessage(turn.error?.message, "turn");
+    return { label: display.title, detail: display.detail };
   }
   if (turn.status === "interrupted") {
-    return { label: "已停止", detail: "本轮请求已取消" };
+    return { label: "已停止", detail: "这次请求已停止" };
   }
   if (turn.status !== "in_progress") {
     return { label: "已处理" };
@@ -8178,12 +8614,19 @@ function waitingDetail(elapsedMs: number, defaultDetail: string): string {
 
 function latestAgentMessageItemID(turns: Turn[]): string | undefined {
   for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex--) {
-    const items = turns[turnIndex].items;
-    for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex--) {
-      const item = items[itemIndex];
-      if (item.type === "agent_message") {
-        return item.id;
-      }
+    const itemID = latestAgentMessageItemIDForTurn(turns[turnIndex]);
+    if (itemID) {
+      return itemID;
+    }
+  }
+  return undefined;
+}
+
+function latestAgentMessageItemIDForTurn(turn: Turn): string | undefined {
+  for (let itemIndex = turn.items.length - 1; itemIndex >= 0; itemIndex--) {
+    const item = turn.items[itemIndex];
+    if (item.type === "agent_message") {
+      return item.id;
     }
   }
   return undefined;
@@ -8293,7 +8736,7 @@ function ThreadItemView({
     case "context_compaction":
       return <div className="system-line">{item.text}</div>;
     case "error":
-      return <div className="turn-error">{item.error}</div>;
+      return <TurnNotice display={userFacingErrorForMessage(item.error, "turn")} />;
     default:
       return null;
   }
@@ -8988,6 +9431,7 @@ function buildRunDebugSnapshot({
     `thread: ${thread?.id ?? ""}`,
     `turn: ${turn?.id ?? ""}`,
     `turn_status: ${turn?.status ?? ""}`,
+    `turn_error: ${turn?.error?.message ?? ""}`,
     `queued_messages: ${queuedMessages.length}`,
     `guide_messages: ${guideMessages.length}`,
     `composer_images: ${composerImages.length}`
@@ -9002,7 +9446,9 @@ function buildRunDebugSnapshot({
           turn.id,
           item,
           "text"
-        )} args=${debugStreamFieldLength(turn.id, item, "arguments")} result=${debugStreamFieldLength(turn.id, item, "result")}`
+        )} args=${debugStreamFieldLength(turn.id, item, "arguments")} result=${debugStreamFieldLength(turn.id, item, "result")} error=${
+          item.error ?? ""
+        }`
       );
     }
   } else {
@@ -9021,20 +9467,25 @@ function buildRunDebugSnapshot({
   return lines.join("\n");
 }
 
-function ToolActivityRow({ items }: { items: ThreadItem[] }): JSX.Element {
+function ToolActivityRow({ items, collapseWhenIdle = false }: { items: ThreadItem[]; collapseWhenIdle?: boolean }): JSX.Element {
   const summary = summarizeToolActivity(items);
   const sections = buildToolActivitySections(items);
   const summaryText = activitySummaryText(sections, summary);
-  const [expanded, setExpanded] = useState(summary.running || summary.failed);
+  const shouldExpandForStatus = summary.running || summary.failed;
+  const [expanded, setExpanded] = useState(!collapseWhenIdle && shouldExpandForStatus);
   const className = `activity-group${expanded ? " expanded" : ""}${summary.running ? " running" : ""}${
     summary.failed ? " failed" : ""
   }`;
 
   useEffect(() => {
-    if (summary.running || summary.failed) {
+    if (shouldExpandForStatus) {
       setExpanded(true);
+      return;
     }
-  }, [summary.failed, summary.running]);
+    if (collapseWhenIdle) {
+      setExpanded(false);
+    }
+  }, [collapseWhenIdle, shouldExpandForStatus]);
 
   return (
     <article className={className}>
@@ -9051,7 +9502,7 @@ function ToolActivityRow({ items }: { items: ThreadItem[] }): JSX.Element {
           {summary.additions > 0 ? <span className="activity-add">+{summary.additions}</span> : null}
           {summary.deletions > 0 ? <span className="activity-delete">-{summary.deletions}</span> : null}
         </span>
-        <ChevronDown className="activity-chevron" size={16} />
+        <ChevronDown className="activity-chevron" size={13} />
       </button>
       <div className="activity-details" aria-hidden={!expanded}>
         <div className="activity-details-inner">
@@ -9080,7 +9531,7 @@ function ToolActivitySectionView({ section }: { section: ToolActivitySection }):
   return (
     <section className="activity-detail">
       <div className="activity-detail-marker">
-        <ActivityIcon kind={section.kind} failed={section.status === "failed"} />
+        <ActivityIcon kind={section.kind} failed={section.status === "failed"} size={13} />
       </div>
       <div className="activity-detail-body">
         <div className="activity-detail-title">
@@ -9243,7 +9694,12 @@ function combinedToolStatus(items: ThreadItem[]): ToolActivitySectionStatus {
 }
 
 function firstToolError(items: ThreadItem[]): string | undefined {
-  return items.find((item) => item.error)?.error;
+  const item = items.find((item) => item.error);
+  if (!item?.error) {
+    return undefined;
+  }
+  const display = userFacingErrorForMessage(item.error, "tool");
+  return `${display.title}。${display.detail}`;
 }
 
 function compactToolTargets(items: ThreadItem[]): string[] {
@@ -9371,26 +9827,26 @@ function uniqueStrings(values: string[]): string[] {
   return out;
 }
 
-function ActivityIcon({ kind, failed }: { kind: ToolActivityKind; failed: boolean }): JSX.Element {
+function ActivityIcon({ kind, failed, size = 14 }: { kind: ToolActivityKind; failed: boolean; size?: number }): JSX.Element {
   if (failed) {
-    return <AlertCircle size={18} />;
+    return <AlertCircle size={size} />;
   }
   switch (kind) {
     case "edit":
     case "create":
-      return <Pencil size={18} />;
+      return <Pencil size={size} />;
     case "search":
-      return <Search size={18} />;
+      return <Search size={size} />;
     case "read":
-      return <FileText size={18} />;
+      return <FileText size={size} />;
     case "list":
-      return <ListIcon size={18} />;
+      return <ListIcon size={size} />;
     case "command":
-      return <Terminal size={18} />;
+      return <Terminal size={size} />;
     case "agent":
-      return <MessageSquarePlus size={18} />;
+      return <MessageSquarePlus size={size} />;
     default:
-      return <Wrench size={18} />;
+      return <Wrench size={size} />;
   }
 }
 
