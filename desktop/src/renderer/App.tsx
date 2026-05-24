@@ -275,6 +275,7 @@ const WORKSPACE_REVIEW_TREE_MAX_WIDTH = 520;
 const WORKSPACE_REVIEW_DIFF_MIN_WIDTH = 140;
 const WORKSPACE_REVIEW_TREE_STEP = 24;
 const WORKSPACE_REVIEW_TREE_WIDTH_KEY = "wuu.desktop.reviewTreeWidth";
+const SWISS_STYLE_KEY = "wuu.desktop.swissInternationalStyle";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
 const IMAGE_MAX_DIMENSION = 2000;
@@ -284,6 +285,7 @@ const RENDERER_ENV = (
 ).env;
 const ENABLE_LAUNCH_PREVIEW = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_RUN_DEBUG_PANEL = Boolean(RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true");
+const ENABLE_SWISS_STYLE_TOGGLE = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_AGENT_TREE_DEMO = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
@@ -573,6 +575,10 @@ function initialWorkspaceReviewTreeWidth(): number {
     return WORKSPACE_REVIEW_TREE_DEFAULT_WIDTH;
   }
   return clamp(stored, WORKSPACE_REVIEW_TREE_MIN_WIDTH, WORKSPACE_REVIEW_TREE_MAX_WIDTH);
+}
+
+function initialSwissStyleEnabled(): boolean {
+  return ENABLE_SWISS_STYLE_TOGGLE && window.localStorage.getItem(SWISS_STYLE_KEY) === "true";
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -1144,6 +1150,7 @@ export function App(): JSX.Element {
   const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
+  const [swissStyleEnabled, setSwissStyleEnabled] = useState(initialSwissStyleEnabled);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const conversationPaneRef = useRef<HTMLElement | null>(null);
   const dockComposerRef = useRef<HTMLElement>(null);
@@ -1384,6 +1391,17 @@ export function App(): JSX.Element {
     conversationAutoFollowRef.current = true;
     window.requestAnimationFrame(() => scrollConversationToBottom({ force: true }));
   }, [state.askRequests, state.thread?.id]);
+
+  useEffect(() => {
+    const enabled = ENABLE_SWISS_STYLE_TOGGLE && swissStyleEnabled;
+    document.documentElement.classList.toggle("swiss-international", enabled);
+    if (ENABLE_SWISS_STYLE_TOGGLE) {
+      window.localStorage.setItem(SWISS_STYLE_KEY, String(enabled));
+    }
+    return () => {
+      document.documentElement.classList.remove("swiss-international");
+    };
+  }, [swissStyleEnabled]);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
@@ -2821,6 +2839,19 @@ export function App(): JSX.Element {
             <h1>{activeTitle}</h1>
           </div>
           <div className="title-actions">
+            {ENABLE_SWISS_STYLE_TOGGLE ? (
+              <button
+                className={`launch-preview-button style-toggle-button${swissStyleEnabled ? " active" : ""}`}
+                type="button"
+                aria-label={swissStyleEnabled ? "关闭瑞士国际主义风格" : "开启瑞士国际主义风格"}
+                aria-pressed={swissStyleEnabled}
+                title="开发专用：切换瑞士国际主义风格"
+                onClick={() => setSwissStyleEnabled((enabled) => !enabled)}
+              >
+                <Square size={15} />
+                <span>Swiss</span>
+              </button>
+            ) : null}
             {ENABLE_LAUNCH_PREVIEW ? (
               <button
                 className="launch-preview-button"
