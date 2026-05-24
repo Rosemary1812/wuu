@@ -3513,11 +3513,10 @@ button:disabled {
   position: relative;
 }
 
-.copyable-message.user-message {
-  padding-right: 42px;
-}
-
 .message-copy-button {
+  --message-copy-rest-transform: translate3d(0, 2px, 0) scale(0.98);
+  --message-copy-visible-transform: translate3d(0, 0, 0) scale(1);
+  --message-copy-active-transform: translate3d(0, 0, 0) scale(0.96);
   display: inline-flex;
   width: 28px;
   height: 28px;
@@ -3535,7 +3534,7 @@ button:disabled {
   opacity: 0;
   padding: 0;
   pointer-events: none;
-  transform: translate3d(0, 2px, 0) scale(0.98);
+  transform: var(--message-copy-rest-transform);
   transition:
     background-color 120ms ease,
     box-shadow 120ms ease,
@@ -3552,10 +3551,6 @@ button:disabled {
   color: #202427;
 }
 
-.message-copy-button:active {
-  transform: scale(0.96);
-}
-
 .message-copy-button.copied {
   background: #e8f5ed;
   color: #16833a;
@@ -3566,10 +3561,22 @@ button:disabled {
   color: #b42318;
 }
 
+.copyable-message::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -34px;
+  width: 34px;
+  content: "";
+}
+
 .copyable-message .message-copy-button {
   position: absolute;
   top: 7px;
-  right: 8px;
+  right: auto;
+  left: -31px;
+  z-index: 1;
+  --message-copy-rest-transform: translate3d(3px, 0, 0) scale(0.98);
 }
 
 .copyable-message:hover .message-copy-button,
@@ -3580,7 +3587,11 @@ button:disabled {
 .message-copy-button.failed {
   opacity: 1;
   pointer-events: auto;
-  transform: translate3d(0, 0, 0) scale(1);
+  transform: var(--message-copy-visible-transform);
+}
+
+.message-copy-button:active {
+  transform: var(--message-copy-active-transform);
 }
 
 .message-images {
