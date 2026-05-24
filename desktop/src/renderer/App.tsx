@@ -369,6 +369,11 @@ function parseComposerSlashDraft(value: string): ComposerSlashDraft | undefined 
   };
 }
 
+function isComposerTextComposing<T extends Element>(event: ReactKeyboardEvent<T>): boolean {
+  // Chromium reports keyCode 229 for some active IME key events even when isComposing is unreliable.
+  return event.nativeEvent.isComposing || event.keyCode === 229;
+}
+
 function buildComposerSlashCommands({
   activeContext,
   initialized,
@@ -8681,6 +8686,9 @@ function Composer({
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
     if (readOnly) {
+      return;
+    }
+    if (isComposerTextComposing(event)) {
       return;
     }
     if (slashMenuOpen) {

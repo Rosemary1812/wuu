@@ -41,6 +41,40 @@ async function run() {
 
   await loadFile(win, rendererHtml);
   await waitFor(win, () => Boolean(document.querySelector(".conversation-pane")), 5000);
+  await waitFor(win, () => Boolean(document.querySelector(".composer textarea")), 5000);
+
+  const imeEnter = await evaluate(win, () => {
+    const textarea = document.querySelector(".composer textarea");
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      throw new Error("Composer textarea not found.");
+    }
+    textarea.focus();
+    const composingEnter = new KeyboardEvent("keydown", {
+      key: "Enter",
+      code: "Enter",
+      bubbles: true,
+      cancelable: true,
+      isComposing: true
+    });
+    const composingDispatchResult = textarea.dispatchEvent(composingEnter);
+    const plainEnter = new KeyboardEvent("keydown", {
+      key: "Enter",
+      code: "Enter",
+      bubbles: true,
+      cancelable: true
+    });
+    const plainDispatchResult = textarea.dispatchEvent(plainEnter);
+    return {
+      composingPrevented: composingEnter.defaultPrevented,
+      composingDispatchResult,
+      plainPrevented: plainEnter.defaultPrevented,
+      plainDispatchResult
+    };
+  });
+  assert.equal(imeEnter.composingPrevented, false, "IME Enter should not be intercepted by the composer.");
+  assert.equal(imeEnter.composingDispatchResult, true, "IME Enter should remain available to the input method.");
+  assert.equal(imeEnter.plainPrevented, true, "Plain Enter should still trigger the composer send shortcut.");
+  assert.equal(imeEnter.plainDispatchResult, false, "Plain Enter should be consumed by the composer send shortcut.");
 
   const now = new Date().toISOString();
   const immediateTitleThread = {
