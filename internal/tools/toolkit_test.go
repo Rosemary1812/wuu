@@ -966,6 +966,54 @@ func TestToolkit_RunShell(t *testing.T) {
 	if !strings.Contains(parsed["output"].(string), "hi") {
 		t.Fatalf("unexpected output: %v", parsed["output"])
 	}
+	if !strings.Contains(parsed["stdout_tail"].(string), "hi") {
+		t.Fatalf("unexpected stdout tail: %v", parsed["stdout_tail"])
+	}
+	if parsed["stderr_tail"].(string) != "" {
+		t.Fatalf("unexpected stderr tail: %v", parsed["stderr_tail"])
+	}
+	if parsed["duration_ms"].(float64) < 0 {
+		t.Fatalf("unexpected duration: %v", parsed["duration_ms"])
+	}
+}
+
+func TestToolkit_RunShellStructuredFailureOutput(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"printf out; printf err >&2; exit 7"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_shell: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if parsed["exit_code"].(float64) != 7 {
+		t.Fatalf("unexpected exit code: %v", parsed["exit_code"])
+	}
+	if got := parsed["stdout_tail"].(string); got != "out" {
+		t.Fatalf("stdout_tail = %q, want out", got)
+	}
+	if got := parsed["stderr_tail"].(string); got != "err" {
+		t.Fatalf("stderr_tail = %q, want err", got)
+	}
+	if got := parsed["stdout_bytes"].(float64); got != 3 {
+		t.Fatalf("stdout_bytes = %v, want 3", got)
+	}
+	if got := parsed["stderr_bytes"].(float64); got != 3 {
+		t.Fatalf("stderr_bytes = %v, want 3", got)
+	}
+	if parsed["stdout_tail_truncated"].(bool) || parsed["stderr_tail_truncated"].(bool) {
+		t.Fatalf("short output should not be tail-truncated: %+v", parsed)
+	}
 }
 
 func TestToolkit_RunShellSetsNonInteractiveEnv(t *testing.T) {

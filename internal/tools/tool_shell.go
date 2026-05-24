@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
+
+const maxShellTailBytes = 8 * 1024
 
 // ShellTool executes non-interactive shell commands.
 type ShellTool struct{ env *Env }
@@ -18,8 +21,8 @@ type ShellTool struct{ env *Env }
 func NewShellTool(env *Env) *ShellTool { return &ShellTool{env: env} }
 
 func (t *ShellTool) Name() string            { return "run_shell" }
-func (t *ShellTool) IsReadOnly() bool         { return false }
-func (t *ShellTool) IsConcurrencySafe() bool  { return false }
+func (t *ShellTool) IsReadOnly() bool        { return false }
+func (t *ShellTool) IsConcurrencySafe() bool { return false }
 
 func (t *ShellTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -32,6 +35,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"Instructions:\n" +
 			"- Commands must be non-interactive; never rely on editors, pagers, or terminal prompts\n" +
 			"- Default timeout is 300s, max 3600s\n" +
+			"- Results include exit_code, duration_ms, combined output, and stdout/stderr tails\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
 			"- For git operations, prefer the git tool over run_shell",
@@ -84,7 +88,9 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	startedAt := time.Now()
 	err := cmd.Run()
+	durationMS := time.Since(startedAt).Milliseconds()
 	exitCode := 0
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -97,15 +103,33 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 		}
 	}
 
-	output := stdout.String() + stderr.String()
+	stdoutText := stdout.String()
+	stderrText := stderr.String()
+	output := stdoutText + stderrText
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
+	stdoutTail, stdoutTailTruncated := tailString(stdoutText, maxShellTailBytes)
+	stderrTail, stderrTailTruncated := tailString(stderrText, maxShellTailBytes)
 
 	result := map[string]any{
-		"command":   args.Command,
-		"exit_code": exitCode,
-		"timed_out": errors.Is(runCtx.Err(), context.DeadlineExceeded),
-		"truncated": truncated,
-		"output":    trimmed,
+		"command":               args.Command,
+		"exit_code":             exitCode,
+		"duration_ms":           durationMS,
+		"timed_out":             errors.Is(runCtx.Err(), context.DeadlineExceeded),
+		"truncated":             truncated,
+		"output":                trimmed,
+		"stdout_tail":           stdoutTail,
+		"stderr_tail":           stderrTail,
+		"stdout_bytes":          len(stdoutText),
+		"stderr_bytes":          len(stderrText),
+		"stdout_tail_truncated": stdoutTailTruncated,
+		"stderr_tail_truncated": stderrTailTruncated,
 	}
 	return mustJSON(result)
+}
+
+func tailString(value string, maxBytes int) (string, bool) {
+	if maxBytes <= 0 || len(value) <= maxBytes {
+		return value, false
+	}
+	return stringutil.HeadTail(value, 0, maxBytes, ""), true
 }
