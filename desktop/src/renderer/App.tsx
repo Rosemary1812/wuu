@@ -24,6 +24,7 @@ import {
   MessageSquarePlus,
   MoreHorizontal,
   PanelBottomOpen,
+  PanelLeftClose,
   PanelLeftOpen,
   PanelRightOpen,
   Pencil,
@@ -3055,11 +3056,15 @@ export function App(): JSX.Element {
       >
         <header className="titlebar">
           <div className="title-block">
-            {sidebarCollapsed ? (
-              <button className="icon-button sidebar-toggle-button" aria-label="展开侧边栏" onClick={toggleSidebar}>
-                <PanelLeftOpen size={18} />
-              </button>
-            ) : null}
+            <button
+              className={`icon-button sidebar-toggle-button${sidebarCollapsed ? "" : " active"}`}
+              type="button"
+              aria-label={sidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
+              aria-pressed={!sidebarCollapsed}
+              onClick={toggleSidebar}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
             {workspaceMode ? (
               <span className="workspace-title-icon" aria-hidden="true">
                 <WorkspaceToolIcon view={workspaceMode} size={18} />
