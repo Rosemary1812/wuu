@@ -19,8 +19,6 @@ import (
 // read_file
 // ---------------------------------------------------------------------------
 
-const defaultReadLineLimit = 2000
-
 type ReadFileTool struct{ env *Env }
 
 func NewReadFileTool(env *Env) *ReadFileTool { return &ReadFileTool{env: env} }
@@ -36,8 +34,8 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"Usage:\n" +
 			"- The path parameter is relative to the workspace root\n" +
 			"- Returns content with cat -n style line number prefixes (number + tab)\n" +
-			"- Use offset (1-based line) and limit (default 2000) to paginate large files\n" +
-			"- Large files are read as a line stream; reduce limit if the selected range is too large\n" +
+			"- Use offset (1-based line) and limit to read specific portions of large files\n" +
+			"- Files >256KB are rejected unless limit is provided\n" +
 			"- Repeated reads of the same file/range return a stub if the file is unchanged\n" +
 			"- This tool can only read files, not directories — use list_files for directories\n" +
 			"- Binary files are not supported; use run_shell for binary inspection",
@@ -54,7 +52,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "Max lines to return. Default 2000.",
+					"description": "Max lines to return. Omit to read the whole file when it fits size limits.",
 				},
 			},
 			"required": []string{"path"},
@@ -66,7 +64,7 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	var args struct {
 		Path   string `json:"path"`
 		Offset int    `json:"offset"`
-		Limit  int    `json:"limit"`
+		Limit  *int   `json:"limit"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -77,8 +75,12 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	if args.Offset <= 0 {
 		args.Offset = 1
 	}
-	if args.Limit <= 0 {
-		args.Limit = defaultReadLineLimit
+	limit := 0
+	if args.Limit != nil {
+		if *args.Limit <= 0 {
+			return "", errors.New("read_file limit must be positive")
+		}
+		limit = *args.Limit
 	}
 
 	resolved, err := t.env.ResolvePath(args.Path)
@@ -101,8 +103,15 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	if info.IsDir() {
 		return "", fmt.Errorf("path is a directory: %s. Use list_files to inspect directories or read_file on a file inside it", args.Path)
 	}
+	if args.Limit == nil && info.Size() > int64(defaultMaxFileBytes) {
+		return "", fmt.Errorf("file too large (%d bytes, max %d). Use offset and limit to read portions", info.Size(), defaultMaxFileBytes)
+	}
 
-	readResult, err := readFileLineRange(resolved, args.Offset, args.Limit, defaultMaxFileBytes)
+	maxSelectedBytes := defaultMaxFileBytes
+	if args.Limit != nil {
+		maxSelectedBytes = 0
+	}
+	readResult, err := readFileLineRange(resolved, args.Offset, limit, maxSelectedBytes)
 	if err != nil {
 		return "", err
 	}
@@ -110,7 +119,7 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 
 	// Dedup check: same file, same range, same content → return stub.
 	if entry, ok := t.env.GetReadEntry(resolved); ok {
-		if entry.Offset == args.Offset && entry.Limit == args.Limit {
+		if entry.Offset == args.Offset && entry.Limit == limit {
 			unchanged := entry.ContentSHA256 != "" && entry.ContentSHA256 == contentHash
 			if entry.ContentSHA256 == "" {
 				unchanged = readEntryMatchesInfo(entry, info)
@@ -140,7 +149,7 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 		Size:          info.Size(),
 		ContentSHA256: contentHash,
 		Offset:        args.Offset,
-		Limit:         args.Limit,
+		Limit:         limit,
 	})
 
 	result := map[string]any{
@@ -169,7 +178,10 @@ func readFileLineRange(path string, offset, limit, maxSelectedBytes int) (readFi
 
 	reader := bufio.NewReaderSize(f, 64*1024)
 	hasher := sha256.New()
-	endLine := offset + limit
+	endLine := 0
+	if limit > 0 {
+		endLine = offset + limit
+	}
 	currentLine := 1
 	selected := make([]string, 0, min(limit, 128))
 	var line strings.Builder
@@ -211,14 +223,15 @@ func readFileLineRange(path string, offset, limit, maxSelectedBytes int) (readFi
 			}
 		}
 
-		if currentLine >= offset && currentLine < endLine {
+		inSelectedRange := currentLine >= offset && (limit <= 0 || currentLine < endLine)
+		if inSelectedRange {
 			if err := appendSelected(lineFragment); err != nil {
 				return readFileLineRangeResult{}, err
 			}
 		}
 
 		if completeLine {
-			if currentLine >= offset && currentLine < endLine {
+			if inSelectedRange {
 				lineText := line.String()
 				if endedWithNewline && strings.HasSuffix(lineText, "\r") {
 					lineText = lineText[:len(lineText)-1]

@@ -65,6 +65,17 @@ func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"big.txt"}`,
+	})
+	if err == nil {
+		t.Fatal("expected no-limit read to reject oversized file")
+	}
+	if !strings.Contains(err.Error(), "too large") || !strings.Contains(err.Error(), "offset and limit") {
+		t.Fatalf("expected oversized guidance, got: %v", err)
+	}
+
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
 		Arguments: `{"path":"big.txt","offset":3001,"limit":3}`,
