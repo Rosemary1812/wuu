@@ -1244,8 +1244,11 @@ button:disabled {
 
 .titlebar {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
+  overflow: hidden;
   border-bottom: 1px solid #ececea;
   padding: 0 24px;
   transition: padding-left 180ms cubic-bezier(0.2, 0, 0, 1);
@@ -1255,12 +1258,23 @@ button:disabled {
 .title-block,
 .title-actions {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 10px;
 }
 
+.title-block {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.title-actions {
+  flex: 0 0 auto;
+}
+
 .title-block h1 {
-  max-width: 58vw;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

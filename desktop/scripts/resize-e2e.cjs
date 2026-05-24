@@ -322,6 +322,45 @@ async function run() {
     rightPanelWidthAfter >= rightPanelWidthBefore + 72,
     `Dragging the right panel resizer should increase width. Before: ${rightPanelWidthBefore}, after: ${rightPanelWidthAfter}.`
   );
+  const titlebarAfterRightPanelResize = await evaluate(win, () => {
+    const titlebar = document.querySelector(".titlebar");
+    const title = document.querySelector(".title-block h1");
+    const actions = document.querySelector(".title-actions");
+    const rightPanel = document.querySelector(".workspace-right-panel");
+    if (
+      !(titlebar instanceof HTMLElement) ||
+      !(title instanceof HTMLElement) ||
+      !(actions instanceof HTMLElement) ||
+      !(rightPanel instanceof HTMLElement)
+    ) {
+      throw new Error("Titlebar or right panel elements not found.");
+    }
+    const titlebarRect = titlebar.getBoundingClientRect();
+    const titleRect = title.getBoundingClientRect();
+    const actionsRect = actions.getBoundingClientRect();
+    const rightPanelRect = rightPanel.getBoundingClientRect();
+    return {
+      actionsLeft: actionsRect.left,
+      actionsRight: actionsRect.right,
+      rightPanelLeft: rightPanelRect.left,
+      titleRight: titleRect.right,
+      titlebarClientWidth: titlebar.clientWidth,
+      titlebarRight: titlebarRect.right,
+      titlebarScrollWidth: titlebar.scrollWidth
+    };
+  });
+  assert.ok(
+    titlebarAfterRightPanelResize.actionsRight <= titlebarAfterRightPanelResize.rightPanelLeft + 1,
+    "Right panel resize should squeeze the active session title before covering titlebar action buttons."
+  );
+  assert.ok(
+    titlebarAfterRightPanelResize.titleRight <= titlebarAfterRightPanelResize.actionsLeft - 8,
+    "Long active session titles should truncate before the titlebar action group."
+  );
+  assert.ok(
+    titlebarAfterRightPanelResize.titlebarScrollWidth <= titlebarAfterRightPanelResize.titlebarClientWidth + 1,
+    "Active session titlebar should not overflow its squeezed main column."
+  );
 
   await evaluate(win, () => {
     const terminalTool = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item")).find(

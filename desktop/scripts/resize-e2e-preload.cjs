@@ -51,7 +51,7 @@ const turns = Array.from({ length: 36 }, (_value, index) => ({
 }));
 const resizeThread = {
   id: "resize-thread",
-  preview: "Resize fixture",
+  preview: "Resize fixture with a long active session title that must truncate before title actions",
   model_provider: "e2e",
   model: "mock-resize",
   cwd,
