@@ -1309,6 +1309,8 @@ button:disabled {
   --conversation-content-width: calc(
     var(--conversation-flow-width) - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline)
   );
+  --conversation-prose-line-height: 1.64;
+  --conversation-prose-block-gap: 10px;
   --conversation-scrollbar-gutter: 12px;
   --dock-composer-height: 0px;
   grid-column: 2;
@@ -3735,7 +3737,7 @@ button:disabled {
   border-radius: 22px;
   padding: 10px 16px;
   font-size: var(--font-content);
-  line-height: var(--line-body);
+  line-height: var(--conversation-prose-line-height);
 }
 
 .user-message {
@@ -3848,7 +3850,7 @@ button:disabled {
   display: block;
   color: #202427;
   font-size: var(--font-content);
-  line-height: var(--line-body);
+  line-height: var(--conversation-prose-line-height);
 }
 
 .agent-block-with-actions {
@@ -5957,8 +5959,8 @@ button:disabled {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 10px;
-  line-height: var(--line-body);
+  gap: var(--conversation-prose-block-gap, 10px);
+  line-height: var(--conversation-prose-line-height, var(--line-body));
   white-space: normal;
 }
 
@@ -5989,6 +5991,7 @@ button:disabled {
 }
 
 .rich-paragraph {
+  line-height: var(--conversation-prose-line-height, inherit);
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
@@ -6170,7 +6173,7 @@ button:disabled {
   grid-template-columns: 20px minmax(0, 1fr);
   gap: 10px;
   color: #8b8f93;
-  line-height: 1.55;
+  line-height: var(--conversation-prose-line-height);
   white-space: pre-wrap;
 }
 
