@@ -1645,7 +1645,7 @@ export function App(): JSX.Element {
     runtimeMenuOpen
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     conversationAutoFollowRef.current = true;
     scrollConversationToBottom({ force: true });
   }, [state.thread?.id]);
