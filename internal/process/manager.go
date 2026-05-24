@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/creack/pty"
+
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
@@ -52,6 +54,7 @@ type Process struct {
 	Status    Status    `json:"status"`
 	PID       int       `json:"pid"`
 	PGID      int       `json:"pgid"`
+	TTY       bool      `json:"tty,omitempty"`
 	LogPath   string    `json:"log_path"`
 	Command   string    `json:"command"`
 	CWD       string    `json:"cwd"`
@@ -68,6 +71,7 @@ type StartOptions struct {
 	OwnerKind OwnerKind
 	OwnerID   string
 	Lifecycle Lifecycle
+	TTY       bool
 }
 
 type Event struct {
@@ -175,7 +179,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	}
 	cwd, _ = filepath.Abs(cwd)
 	id := "proc-" + randomHex(4)
-	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, Status: StatusStarting, Command: opt.Command, CWD: cwd, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1}
+	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.save(p); err != nil {
@@ -198,31 +202,45 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		m.publish(Event{Type: EventFailed, Process: *p})
 		return p, err
 	}
-	cmd := exec.Command("bash", "-lc", opt.Command)
-	cmd.Dir = cwd
-	cmd.Env = os.Environ()
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		_ = logf.Close()
-		p.Status = StatusFailed
-		p.LastError = err.Error()
-		p.UpdatedAt = time.Now()
-		_ = m.save(p)
-		m.publish(Event{Type: EventFailed, Process: *p})
-		return p, fmt.Errorf("stdin pipe: %w", err)
-	}
-	cmd.Stdout = logf
-	cmd.Stderr = logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
-		_ = logf.Close()
-		p.Status = StatusFailed
-		p.LastError = err.Error()
-		p.UpdatedAt = time.Now()
-		_ = m.save(p)
-		m.publish(Event{Type: EventFailed, Process: *p})
-		return p, fmt.Errorf("start process: %w", err)
+	cmd := managedCommand(opt.Command, cwd)
+	var stdin io.WriteCloser
+	var ptyFile *os.File
+	if opt.TTY {
+		ptyFile, err = pty.StartWithAttrs(cmd, &pty.Winsize{Rows: 24, Cols: 80}, &syscall.SysProcAttr{Setsid: true, Setctty: true})
+		if err != nil {
+			_ = logf.Close()
+			p.Status = StatusFailed
+			p.LastError = err.Error()
+			p.UpdatedAt = time.Now()
+			_ = m.save(p)
+			m.publish(Event{Type: EventFailed, Process: *p})
+			return p, fmt.Errorf("start pty process: %w", err)
+		}
+		stdin = ptyFile
+	} else {
+		stdin, err = cmd.StdinPipe()
+		if err != nil {
+			_ = logf.Close()
+			p.Status = StatusFailed
+			p.LastError = err.Error()
+			p.UpdatedAt = time.Now()
+			_ = m.save(p)
+			m.publish(Event{Type: EventFailed, Process: *p})
+			return p, fmt.Errorf("stdin pipe: %w", err)
+		}
+		cmd.Stdout = logf
+		cmd.Stderr = logf
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			_ = stdin.Close()
+			_ = logf.Close()
+			p.Status = StatusFailed
+			p.LastError = err.Error()
+			p.UpdatedAt = time.Now()
+			_ = m.save(p)
+			m.publish(Event{Type: EventFailed, Process: *p})
+			return p, fmt.Errorf("start process: %w", err)
+		}
 	}
 	p.PID = cmd.Process.Pid
 	if pgid, err := syscall.Getpgid(p.PID); err == nil {
@@ -235,13 +253,41 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	_ = m.save(p)
 	m.handles[id] = &processHandle{stdin: stdin}
 	m.publish(Event{Type: EventStarted, Process: *p})
-	go m.wait(id, cmd, logf)
+	if opt.TTY {
+		go m.waitPTY(id, cmd, logf, ptyFile)
+	} else {
+		go m.wait(id, cmd, logf)
+	}
 	return p, nil
+}
+
+func managedCommand(command, cwd string) *exec.Cmd {
+	cmd := exec.Command("bash", "-lc", command)
+	cmd.Dir = cwd
+	cmd.Env = os.Environ()
+	return cmd
 }
 
 func (m *Manager) wait(id string, cmd *exec.Cmd, logf *os.File) {
 	err := cmd.Wait()
 	_ = logf.Close()
+	m.finishWait(id, cmd, err)
+}
+
+func (m *Manager) waitPTY(id string, cmd *exec.Cmd, logf *os.File, ptyFile *os.File) {
+	copyDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(logf, ptyFile)
+		close(copyDone)
+	}()
+	err := cmd.Wait()
+	_ = ptyFile.Close()
+	<-copyDone
+	_ = logf.Close()
+	m.finishWait(id, cmd, err)
+}
+
+func (m *Manager) finishWait(id string, cmd *exec.Cmd, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.handles, id)

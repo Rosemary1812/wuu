@@ -147,6 +147,76 @@ func TestReadOutput(t *testing.T) {
 	_, _ = m.Stop(p.ID)
 }
 
+func TestStartTTYProvidesTerminalSemantics(t *testing.T) {
+	root := t.TempDir()
+	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
+	ttyProc, err := m.Start(context.Background(), StartOptions{
+		Command:   "if test -t 1; then echo MODE_TTY; else echo MODE_PIPE; fi; sleep 1",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: LifecycleSession,
+		TTY:       true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Stop(ttyProc.ID)
+	pipeProc, err := m.Start(context.Background(), StartOptions{
+		Command:   "if test -t 1; then echo MODE_TTY; else echo MODE_PIPE; fi; sleep 1",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: LifecycleSession,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Stop(pipeProc.ID)
+
+	ttyOffset := int64(0)
+	ttyOut, err := m.ReadOutputSnapshot(context.Background(), ttyProc.ID, OutputReadOptions{OffsetBytes: &ttyOffset, Wait: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ttyOut.Process.TTY || !strings.Contains(ttyOut.Output, "MODE_TTY") {
+		t.Fatalf("expected tty process output, got %+v output=%q", ttyOut.Process, ttyOut.Output)
+	}
+	pipeOffset := int64(0)
+	pipeOut, err := m.ReadOutputSnapshot(context.Background(), pipeProc.ID, OutputReadOptions{OffsetBytes: &pipeOffset, Wait: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pipeOut.Process.TTY || !strings.Contains(pipeOut.Output, "MODE_PIPE") {
+		t.Fatalf("expected pipe process output, got %+v output=%q", pipeOut.Process, pipeOut.Output)
+	}
+}
+
+func TestWriteStdinToTTY(t *testing.T) {
+	root := t.TempDir()
+	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
+	p, err := m.Start(context.Background(), StartOptions{
+		Command:   "read line; echo GOT_TTY:$line; sleep 1",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: LifecycleSession,
+		TTY:       true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Stop(p.ID)
+	if _, err := m.WriteStdin(p.ID, "hello\n"); err != nil {
+		t.Fatalf("WriteStdin: %v", err)
+	}
+	offset := int64(0)
+	snapshot, err := m.ReadOutputSnapshot(context.Background(), p.ID, OutputReadOptions{OffsetBytes: &offset, Wait: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(snapshot.Output, "GOT_TTY:hello") {
+		t.Fatalf("unexpected tty stdin output: %q", snapshot.Output)
+	}
+}
+
 func TestReadOutputSnapshotWaitsForNewOutputAfterOffset(t *testing.T) {
 	root := t.TempDir()
 	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))

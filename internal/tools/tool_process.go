@@ -24,12 +24,19 @@ func (t *StartProcessTool) IsConcurrencySafe() bool { return false }
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "start_process", Description: "Start a managed background OS process in the workspace.",
-		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "cwd": map[string]any{"type": "string"}, "owner_kind": map[string]any{"type": "string", "enum": []string{"main_agent", "subagent"}}, "owner_id": map[string]any{"type": "string"}, "lifecycle": map[string]any{"type": "string", "enum": []string{"session", "managed"}}}, "required": []string{"command", "owner_kind"}},
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "cwd": map[string]any{"type": "string"}, "owner_kind": map[string]any{"type": "string", "enum": []string{"main_agent", "subagent"}}, "owner_id": map[string]any{"type": "string"}, "lifecycle": map[string]any{"type": "string", "enum": []string{"session", "managed"}}, "tty": map[string]any{"type": "boolean", "description": "Run the command inside a pseudo-terminal. Use for commands that require terminal semantics."}}, "required": []string{"command", "owner_kind"}},
 	}
 }
 
 func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	var args struct{ Command, CWD, OwnerKind, OwnerID, Lifecycle string }
+	var args struct {
+		Command   string `json:"command"`
+		CWD       string `json:"cwd"`
+		OwnerKind string `json:"owner_kind"`
+		OwnerID   string `json:"owner_id"`
+		Lifecycle string `json:"lifecycle"`
+		TTY       bool   `json:"tty"`
+	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
@@ -37,7 +44,7 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
-	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle)})
+	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY})
 	out, _ := json.Marshal(p)
 	if startErr != nil {
 		return string(out), startErr

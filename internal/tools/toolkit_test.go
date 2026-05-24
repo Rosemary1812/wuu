@@ -837,6 +837,54 @@ func TestToolkit_ReadProcessOutputWaitsFromOffset(t *testing.T) {
 	}
 }
 
+func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	kit.SetProcessManager(manager)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"if test -t 1; then echo MODE_TTY; else echo MODE_PIPE; fi; sleep 1","owner_kind":"main_agent","lifecycle":"session","tty":true}`,
+	})
+	if err != nil {
+		t.Fatalf("start_process: %v", err)
+	}
+	var started proc.Process
+	if err := json.Unmarshal([]byte(resp), &started); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	defer manager.Stop(started.ID)
+	if !started.TTY {
+		t.Fatalf("expected tty process metadata: %+v", started)
+	}
+
+	outResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_process_output",
+		Arguments: `{"process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":2000}`,
+	})
+	if err != nil {
+		t.Fatalf("read_process_output: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(outResp), &parsed); err != nil {
+		t.Fatalf("parse output response: %v", err)
+	}
+	if !strings.Contains(parsed["output"].(string), "MODE_TTY") {
+		t.Fatalf("expected TTY output, got %+v", parsed)
+	}
+	processMeta := parsed["process"].(map[string]any)
+	if processMeta["tty"] != true {
+		t.Fatalf("expected nested process tty metadata: %+v", processMeta)
+	}
+}
+
 func TestToolkit_SpawnAgentDefinitionIncludesForkTurns(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
