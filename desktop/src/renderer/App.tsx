@@ -305,6 +305,7 @@ const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_STEP = 24;
 const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
 const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
+const PROJECT_COLLAPSED_IDS_KEY = "wuu.desktop.collapsedProjectIDs";
 const WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH = 360;
 const WORKSPACE_RIGHT_PANEL_MIN_WIDTH = 300;
 const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
@@ -610,6 +611,19 @@ function initialSidebarWidth(): number {
 
 function initialSidebarCollapsed(): boolean {
   return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+}
+
+function initialCollapsedProjectIDs(): Set<string> {
+  try {
+    const stored = window.localStorage.getItem(PROJECT_COLLAPSED_IDS_KEY);
+    const parsed: unknown = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(parsed)) {
+      return new Set();
+    }
+    return new Set(parsed.filter((id): id is string => typeof id === "string" && id.length > 0));
+  } catch {
+    return new Set();
+  }
 }
 
 function initialWorkspaceRightPanelWidth(): number {
@@ -1518,6 +1532,7 @@ export function App(): JSX.Element {
   const [guideMessages, setGuideMessages] = useState<QueuedComposerMessage[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
+  const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(initialCollapsedProjectIDs);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [workspaceRightPanelWidth, setWorkspaceRightPanelWidth] = useState(initialWorkspaceRightPanelWidth);
   const [resizingRightPanel, setResizingRightPanel] = useState(false);
@@ -1864,6 +1879,10 @@ export function App(): JSX.Element {
   }, [sidebarWidth, sidebarCollapsed]);
 
   useEffect(() => {
+    window.localStorage.setItem(PROJECT_COLLAPSED_IDS_KEY, JSON.stringify([...collapsedProjectIDs]));
+  }, [collapsedProjectIDs]);
+
+  useEffect(() => {
     window.localStorage.setItem(WORKSPACE_RIGHT_PANEL_WIDTH_KEY, String(workspaceRightPanelWidth));
   }, [workspaceRightPanelWidth]);
 
@@ -2189,6 +2208,18 @@ export function App(): JSX.Element {
   function toggleSidebar(): void {
     setSidebarCollapsed((collapsed) => !collapsed);
     setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
+  }
+
+  function toggleProjectCollapsed(projectID: string): void {
+    setCollapsedProjectIDs((current) => {
+      const next = new Set(current);
+      if (next.has(projectID)) {
+        next.delete(projectID);
+      } else {
+        next.add(projectID);
+      }
+      return next;
+    });
   }
 
   function ensureWorkspaceToolTab(view: WorkspacePanelView): void {
@@ -3981,12 +4012,14 @@ export function App(): JSX.Element {
             projects={state.projects}
             activeID={state.activeProjectId}
             pendingProjectID={visiblePendingProjectID}
+            collapsedProjectIDs={collapsedProjectIDs}
             threads={state.threads}
             activeThreadID={activeThreadID}
             pendingThreadID={visiblePendingThreadID}
             pendingAskThreadIDs={pendingAskThreadIDs}
             archiveConfirmThreadID={archiveConfirmThreadID}
             onSelectProject={(id) => void openProject(id)}
+            onToggleProjectCollapsed={toggleProjectCollapsed}
             onStartNewThread={(id) => void startNewThreadForProject(id)}
             onSelectThread={(id) => void selectThread(id)}
             onSelectChildAgent={(agent) => void selectChildAgent(agent)}
@@ -7278,12 +7311,14 @@ function ProjectList({
   projects,
   activeID,
   pendingProjectID,
+  collapsedProjectIDs,
   threads,
   activeThreadID,
   pendingThreadID,
   pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelectProject,
+  onToggleProjectCollapsed,
   onStartNewThread,
   onSelectThread,
   onSelectChildAgent,
@@ -7294,12 +7329,14 @@ function ProjectList({
   projects: DesktopProject[];
   activeID?: string;
   pendingProjectID?: string;
+  collapsedProjectIDs: Set<string>;
   threads: Thread[];
   activeThreadID?: string;
   pendingThreadID?: string;
   pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelectProject: (id: string) => void;
+  onToggleProjectCollapsed: (id: string) => void;
   onStartNewThread: (id: string) => void;
   onSelectThread: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
@@ -7311,18 +7348,24 @@ function ProjectList({
     <div className="projects">
       {projects.map((project) => {
         const pendingProject = pendingProjectID === project.id;
+        const activeProject = project.id === activeID;
+        const expanded = activeProject && !collapsedProjectIDs.has(project.id);
+        const projectRowClassName = `project-row ${activeProject ? "active" : ""}${expanded ? " expanded" : ""}${
+          pendingProject ? " pending-switch" : ""
+        }`;
         return (
           <div key={project.id} className="project-group">
             <button
-              className={`project-row ${project.id === activeID ? "active" : ""}${
-                pendingProject ? " pending-switch" : ""
-              }`}
-              aria-current={project.id === activeID ? "page" : undefined}
+              className={projectRowClassName}
+              aria-label={activeProject ? `${expanded ? "收起" : "展开"} ${project.name} 的会话` : `打开 ${project.name}`}
+              aria-current={activeProject ? "page" : undefined}
+              aria-expanded={activeProject ? expanded : undefined}
               aria-busy={pendingProject}
-              onClick={() => onSelectProject(project.id)}
+              title={activeProject ? (expanded ? "收起会话" : "展开会话") : "打开项目"}
+              onClick={() => (activeProject ? onToggleProjectCollapsed(project.id) : onSelectProject(project.id))}
             >
               <ChevronRight className="project-row-chevron" size={15} aria-hidden="true" />
-              <Folder size={18} />
+              {expanded ? <FolderOpen size={18} /> : <Folder size={18} />}
               <span>{project.name}</span>
               {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
             </button>
@@ -7335,7 +7378,7 @@ function ProjectList({
             >
               <MessageSquarePlus size={15} />
             </button>
-            {project.id === activeID ? (
+            {expanded ? (
               <ThreadList
                 threads={threads}
                 activeID={activeThreadID}

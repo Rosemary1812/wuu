@@ -646,7 +646,7 @@ button:disabled {
     transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.project-row.active .project-row-chevron {
+.project-row.expanded .project-row-chevron {
   color: #63726a;
   transform: rotate(90deg);
 }
