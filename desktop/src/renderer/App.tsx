@@ -332,7 +332,7 @@ type RightPanelResizeSession = {
 type ComposerVariant = "dock" | "hero";
 type WorkspacePanelView = "files" | "review" | "terminal";
 type WorkspaceRightPanelView = "tools" | WorkspacePanelView;
-type ConversationFixtureKind = "long" | "rich" | "running";
+type ConversationFixtureKind = "long" | "rich" | "running" | "compact";
 type ComposerSlashCommandAction =
   | "new-thread"
   | "open-review"
@@ -1128,6 +1128,8 @@ function createConversationFixture(kind: ConversationFixtureKind, cwd: string, i
       return createRichContentFixture(cwd, initialized);
     case "running":
       return createRunningFixture(cwd, initialized);
+    case "compact":
+      return createContextCompactionFixture(cwd, initialized);
     default:
       return createLongReadingFixture(cwd, initialized);
   }
@@ -1311,6 +1313,85 @@ function createRichContentFixture(cwd: string, initialized?: InitializeResult): 
             type: "error",
             status: "failed",
             error: "模拟错误：用于检查错误块在阅读列内的视觉效果。"
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function createContextCompactionFixture(cwd: string, initialized?: InitializeResult): Thread {
+  const base = Date.now();
+  const at = (offsetMs: number): string => new Date(base + offsetMs).toISOString();
+  const { provider, model } = fixtureRuntime(initialized);
+  const threadID = `demo-context-compaction-${base}`;
+  const beforeTurnID = `${threadID}-turn-0001`;
+  const compactTurnID = `${threadID}-turn-0002`;
+
+  return {
+    id: threadID,
+    preview: "模拟：上下文压缩",
+    model_provider: provider,
+    model,
+    cwd,
+    status: "idle",
+    created_at: at(-32_000),
+    updated_at: at(2000),
+    turns: [
+      {
+        id: beforeTurnID,
+        items_view: "full",
+        status: "completed",
+        started_at: at(-32_000),
+        completed_at: at(-24_000),
+        duration_ms: 8000,
+        items: [
+          {
+            id: `${beforeTurnID}-item-1`,
+            type: "user_message",
+            status: "completed",
+            role: "user",
+            text:
+              "假设这个会话已经很长，模型上下文快满了。继续执行之前，wuu 会先把较早的历史压缩成摘要。"
+          },
+          {
+            id: `${beforeTurnID}-item-2`,
+            type: "agent_message",
+            status: "completed",
+            role: "assistant",
+            text:
+              "这个调试样例只用来观察界面效果，不会真的触发模型压缩，也不会写入后端会话。\n\n真实流程里，压缩完成后 GUI 会收到一个 `context_compaction` item，并把它显示成一条系统线。"
+          }
+        ]
+      },
+      {
+        id: compactTurnID,
+        items_view: "full",
+        status: "completed",
+        started_at: at(-20_000),
+        completed_at: at(2000),
+        duration_ms: 22_000,
+        items: [
+          {
+            id: `${compactTurnID}-item-1`,
+            type: "user_message",
+            status: "completed",
+            role: "user",
+            text: "继续刚才的任务。"
+          },
+          {
+            id: `${compactTurnID}-item-2`,
+            type: "context_compaction",
+            status: "completed",
+            text: "✦ Compacted history: 18 → 5 messages (was ~12k tokens)"
+          },
+          {
+            id: `${compactTurnID}-item-3`,
+            type: "agent_message",
+            status: "completed",
+            role: "assistant",
+            text:
+              "压缩完成后，对话会继续正常显示后续回复。用户能看到的主要变化就是中间这条灰色系统提示线；调试面板里也会把它标成“上下文压缩”。"
           }
         ]
       }
@@ -3629,6 +3710,14 @@ export function App(): JSX.Element {
               >
                 <Clock size={17} />
                 <span>运行中</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => seedConversationFixture("compact")}
+                disabled={!state.activeContext || !state.initialized}
+              >
+                <Archive size={17} />
+                <span>上下文压缩</span>
               </button>
               <button
                 className="nav-item dev-fixture-button"
