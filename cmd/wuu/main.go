@@ -17,8 +17,10 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/evalharness"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -47,6 +49,8 @@ func run(args []string) error {
 		return runModels(args[1:])
 	case "run":
 		return runTask(args[1:])
+	case "eval":
+		return runEval(args[1:])
 	case "tui":
 		return runTUI(args[1:])
 	case "app-server":
@@ -290,6 +294,292 @@ func runTask(args []string) error {
 	fmt.Printf("provider: %s\nmodel: %s\nconfig: %s\n\n", resolvedName, providerCfg.Model, configPath)
 	fmt.Println(answer)
 	return nil
+}
+
+type evalReport struct {
+	StartedAt  time.Time            `json:"started_at"`
+	DurationMS int64                `json:"duration_ms"`
+	Provider   string               `json:"provider,omitempty"`
+	Model      string               `json:"model,omitempty"`
+	Config     string               `json:"config,omitempty"`
+	Summary    evalSummary          `json:"summary"`
+	Results    []evalharness.Result `json:"results"`
+}
+
+type evalSummary struct {
+	Total  int `json:"total"`
+	Passed int `json:"passed"`
+	Failed int `json:"failed"`
+}
+
+func runEval(args []string) error {
+	fs := flag.NewFlagSet("eval", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	providerName := fs.String("provider", "", "provider name in config")
+	modelOverride := fs.String("model", "", "model override")
+	workdir := fs.String("workdir", "", "workspace directory containing wuu config")
+	taskFilter := fs.String("task", "all", "task id or comma-separated task ids")
+	maxSteps := fs.Int("max-steps", 0, "max tool loop steps per task")
+	timeout := fs.Duration("timeout", 10*time.Minute, "timeout per task")
+	list := fs.Bool("list", false, "list built-in eval tasks")
+	jsonOutput := fs.Bool("json", false, "output eval report as JSON")
+	outputPath := fs.String("output", "", "write eval report JSON to this path")
+	keepWorkdirs := fs.Bool("keep-workdirs", false, "keep temporary task workdirs")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *list {
+		for _, task := range evalharness.Catalog() {
+			fmt.Printf("%s\t%s\t%s\n", task.ID, task.Name, task.Description)
+		}
+		return nil
+	}
+
+	configRoot, err := resolveWorkdir(*workdir)
+	if err != nil {
+		return err
+	}
+	homeDir := os.Getenv("HOME")
+	cfg, configPath, err := config.LoadFrom(configRoot, homeDir)
+	if err != nil {
+		return err
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(*providerName)
+	if err != nil {
+		return err
+	}
+	if *modelOverride != "" {
+		providerCfg.Model = *modelOverride
+	}
+
+	tasks, err := resolveEvalTasks(*taskFilter)
+	if err != nil {
+		return err
+	}
+
+	reportStarted := time.Now()
+	results := make([]evalharness.Result, 0, len(tasks))
+	for _, task := range tasks {
+		result := runEvalTask(evalTaskRunConfig{
+			Task:          task,
+			Config:        cfg,
+			ConfigPath:    configPath,
+			ProviderName:  resolvedName,
+			ModelOverride: *modelOverride,
+			MaxSteps:      *maxSteps,
+			Timeout:       *timeout,
+			HomeDir:       homeDir,
+			KeepWorkdir:   *keepWorkdirs,
+		})
+		results = append(results, result)
+	}
+
+	report := evalReport{
+		StartedAt:  reportStarted,
+		DurationMS: time.Since(reportStarted).Milliseconds(),
+		Provider:   resolvedName,
+		Model:      providerCfg.Model,
+		Config:     configPath,
+		Summary:    summarizeEvalResults(results),
+		Results:    results,
+	}
+	if *outputPath != "" {
+		if err := writeEvalReport(*outputPath, report); err != nil {
+			return err
+		}
+	}
+	if *jsonOutput {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+	} else {
+		printEvalReport(report)
+	}
+	if report.Summary.Failed > 0 {
+		return fmt.Errorf("eval failed: %d/%d passed", report.Summary.Passed, report.Summary.Total)
+	}
+	return nil
+}
+
+type evalTaskRunConfig struct {
+	Task          evalharness.Task
+	Config        config.Config
+	ConfigPath    string
+	ProviderName  string
+	ModelOverride string
+	MaxSteps      int
+	Timeout       time.Duration
+	HomeDir       string
+	KeepWorkdir   bool
+}
+
+func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
+	started := time.Now()
+	result := evalharness.Result{
+		TaskID:   cfg.Task.ID,
+		TaskName: cfg.Task.Name,
+	}
+
+	taskRoot, err := os.MkdirTemp("", "wuu-eval-"+cfg.Task.ID+"-*")
+	if err != nil {
+		result.Error = err.Error()
+		result.DurationMS = time.Since(started).Milliseconds()
+		return result
+	}
+	if cfg.KeepWorkdir {
+		result.Workdir = taskRoot
+	} else {
+		defer os.RemoveAll(taskRoot)
+	}
+
+	ctx := context.Background()
+	if cfg.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cfg.Timeout)
+		defer cancel()
+	}
+
+	if err := evalharness.SetupTask(cfg.Task, taskRoot); err != nil {
+		result.Error = err.Error()
+		result.DurationMS = time.Since(started).Milliseconds()
+		return result
+	}
+
+	rt, err := runtime.NewSession(runtime.Options{
+		RootDir:       taskRoot,
+		HomeDir:       cfg.HomeDir,
+		ConfigPath:    cfg.ConfigPath,
+		Config:        cfg.Config,
+		ProviderName:  cfg.ProviderName,
+		ModelOverride: cfg.ModelOverride,
+	})
+	if err != nil {
+		result.Error = err.Error()
+		result.DurationMS = time.Since(started).Milliseconds()
+		return result
+	}
+	defer func() {
+		_, _ = rt.Cleanup()
+	}()
+	if cfg.MaxSteps > 0 {
+		rt.StreamRunner.MaxSteps = cfg.MaxSteps
+	}
+
+	history := []providers.ChatMessage{}
+	if strings.TrimSpace(rt.StreamRunner.SystemPrompt) != "" {
+		history = append(history, providers.ChatMessage{Role: "system", Content: rt.StreamRunner.SystemPrompt})
+	}
+	history = append(history, providers.ChatMessage{Role: "user", Content: cfg.Task.Prompt})
+
+	runResult, runErr := rt.StreamRunner.RunWithCallback(ctx, history, nil)
+	result.InputTokens = runResult.InputTokens
+	result.OutputTokens = runResult.OutputTokens
+	result.Turns = countAssistantTurns(runResult.NewMessages)
+	if rt.Toolkit != nil {
+		result.ToolCalls = len(rt.Toolkit.ToolTelemetry())
+	}
+
+	verification, verifyErr := evalharness.VerifyTask(ctx, cfg.Task, taskRoot, runResult.Content)
+	if verifyErr != nil {
+		result.Error = verifyErr.Error()
+	} else {
+		result.Success = runErr == nil && verification.Passed
+		result.VerificationReason = verification.Reason
+	}
+	if runErr != nil {
+		result.Error = runErr.Error()
+	}
+	result.DurationMS = time.Since(started).Milliseconds()
+	return result
+}
+
+func resolveEvalTasks(input string) ([]evalharness.Task, error) {
+	input = strings.TrimSpace(input)
+	if input == "" || input == "all" {
+		return evalharness.Catalog(), nil
+	}
+	parts := strings.Split(input, ",")
+	tasks := make([]evalharness.Task, 0, len(parts))
+	for _, part := range parts {
+		id := strings.TrimSpace(part)
+		if id == "" {
+			continue
+		}
+		task, ok := evalharness.ByID(id)
+		if !ok {
+			return nil, fmt.Errorf("unknown eval task %q", id)
+		}
+		tasks = append(tasks, task)
+	}
+	if len(tasks) == 0 {
+		return nil, errors.New("no eval tasks selected")
+	}
+	return tasks, nil
+}
+
+func summarizeEvalResults(results []evalharness.Result) evalSummary {
+	summary := evalSummary{Total: len(results)}
+	for _, result := range results {
+		if result.Success {
+			summary.Passed++
+		}
+	}
+	summary.Failed = summary.Total - summary.Passed
+	return summary
+}
+
+func countAssistantTurns(messages []providers.ChatMessage) int {
+	count := 0
+	for _, msg := range messages {
+		if msg.Role == "assistant" {
+			count++
+		}
+	}
+	return count
+}
+
+func writeEvalReport(path string, report evalReport) error {
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return err
+	}
+	resolved, err := resolveRuntimePath("", path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(resolved, append(data, '\n'), 0o644)
+}
+
+func printEvalReport(report evalReport) {
+	fmt.Printf("eval: %d/%d passed in %dms\n", report.Summary.Passed, report.Summary.Total, report.DurationMS)
+	for _, result := range report.Results {
+		status := "FAIL"
+		if result.Success {
+			status = "PASS"
+		}
+		fmt.Printf("%s %s turns=%d tools=%d input=%d output=%d duration=%dms\n",
+			status, result.TaskID, result.Turns, result.ToolCalls, result.InputTokens, result.OutputTokens, result.DurationMS)
+		if result.Error != "" {
+			fmt.Printf("  error: %s\n", result.Error)
+		} else if !result.Success && result.VerificationReason != "" {
+			fmt.Printf("  verify: %s\n", firstLine(result.VerificationReason))
+		}
+		if result.Workdir != "" {
+			fmt.Printf("  workdir: %s\n", result.Workdir)
+		}
+	}
+}
+
+func firstLine(value string) string {
+	value = strings.TrimSpace(value)
+	if idx := strings.IndexByte(value, '\n'); idx >= 0 {
+		return value[:idx]
+	}
+	return value
 }
 
 func runTUI(args []string) error {
@@ -657,6 +947,7 @@ Usage:
   wuu init [--force]
   wuu models [flags]
   wuu run [flags] "your coding task"
+  wuu eval [flags]
   wuu tui [flags]
   wuu app-server [flags]
   wuu version [--long|--json]
@@ -675,6 +966,18 @@ Run flags:
   --workdir         workspace directory
   --no-tools        disable local tools
   --timeout         total timeout (default 10m)
+
+Eval flags:
+  --provider        provider name from config
+  --model           model override
+  --workdir         workspace directory containing wuu config
+  --task            task id, comma-separated ids, or all
+  --list            list built-in eval tasks
+  --json            output eval report as JSON
+  --output          write eval report JSON to path
+  --max-steps       max tool loop steps per task
+  --timeout         timeout per task (default 10m)
+  --keep-workdirs   keep temporary task workdirs
 
 TUI flags:
   --provider        provider name from config

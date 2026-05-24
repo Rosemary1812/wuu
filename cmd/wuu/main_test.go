@@ -111,6 +111,35 @@ func TestRunModelsRejectsUnsupportedProvider(t *testing.T) {
 	}
 }
 
+func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
+	output := captureStdout(t, func() {
+		if err := run([]string{"eval", "--list"}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "test_failure_fix") || !strings.Contains(output, "multi_file_pricing") {
+		t.Fatalf("expected built-in eval tasks, got %q", output)
+	}
+}
+
+func TestResolveEvalTasksSelectsCommaSeparatedIDs(t *testing.T) {
+	tasks, err := resolveEvalTasks("test_failure_fix,multi_file_pricing")
+	if err != nil {
+		t.Fatalf("resolveEvalTasks: %v", err)
+	}
+	if len(tasks) != 2 || tasks[0].ID != "test_failure_fix" || tasks[1].ID != "multi_file_pricing" {
+		t.Fatalf("unexpected tasks: %+v", tasks)
+	}
+}
+
+func TestResolveEvalTasksRejectsUnknownTask(t *testing.T) {
+	_, err := resolveEvalTasks("missing")
+	if err == nil || !strings.Contains(err.Error(), "unknown eval task") {
+		t.Fatalf("expected unknown task error, got %v", err)
+	}
+}
+
 func TestResolveContextWindow_PrefersProviderOverride(t *testing.T) {
 	if got := runtime.ResolveContextWindow("gpt-5.4", 777, 555); got != 777 {
 		t.Fatalf("expected provider override, got %d", got)
