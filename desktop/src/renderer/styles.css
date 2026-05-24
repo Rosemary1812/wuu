@@ -7997,21 +7997,21 @@ pre {
 .slash-command-menu {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 10px);
+  bottom: calc(100% + 8px);
   left: 0;
   z-index: 35;
   display: grid;
-  max-height: min(310px, calc(100vh - 190px));
+  max-height: min(360px, calc(100vh - 190px));
   overflow: hidden;
-  border: 1px solid rgba(31, 35, 40, 0.12);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(31, 35, 40, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
   box-shadow:
-    0 22px 60px rgba(20, 24, 28, 0.13),
-    0 2px 10px rgba(20, 24, 28, 0.07);
-  padding: 8px;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+    0 14px 38px rgba(20, 24, 28, 0.08),
+    0 1px 4px rgba(20, 24, 28, 0.06);
+  padding: 6px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   transform-origin: bottom center;
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
@@ -8024,8 +8024,8 @@ pre {
 
 .slash-command-list {
   display: grid;
-  gap: 0;
-  max-height: 218px;
+  gap: 1px;
+  max-height: 320px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -8046,20 +8046,20 @@ pre {
 
 .slash-command-item {
   display: grid;
-  min-height: 40px;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  min-height: 34px;
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: #25292d;
-  padding: 6px 8px;
+  padding: 0 10px;
   text-align: left;
 }
 
 .slash-command-item:hover:not(:disabled),
 .slash-command-item.selected:not(:disabled) {
-  background: #f1f1ef;
+  background: #f2f2f0;
 }
 
 .slash-command-item:active:not(:disabled) {
@@ -8067,62 +8067,58 @@ pre {
 }
 
 .slash-command-item:disabled {
-  opacity: 0.55;
+  opacity: 0.48;
 }
 
 .slash-command-icon {
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   place-items: center;
-  color: #757b80;
+  color: #6f7478;
 }
 
 .slash-command-copy {
   display: flex;
   min-width: 0;
   align-items: baseline;
-  gap: 5px;
-  line-height: var(--line-body);
+  gap: 8px;
+  line-height: 18px;
 }
 
 .slash-command-copy strong {
-  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 46%;
   overflow: hidden;
-  color: #202427;
+  color: #202327;
   font-size: var(--font-content);
-  font-weight: var(--weight-semibold);
-  line-height: var(--line-body);
+  font-weight: var(--weight-medium);
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .slash-command-copy small {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: #9a9da0;
+  color: #8d9296;
   font-size: var(--font-content);
-  font-weight: var(--weight-medium);
-  line-height: var(--line-body);
+  font-weight: 400;
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .slash-command-name {
-  overflow: hidden;
-  color: #7b8084;
-  font-size: var(--font-content);
-  font-weight: var(--weight-semibold);
-  line-height: var(--line-body);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: none;
 }
 
 .slash-command-empty {
   color: #777d82;
   font-size: var(--font-content);
-  line-height: var(--line-body);
-  padding: 18px 12px 20px;
+  line-height: 18px;
+  padding: 16px 12px 18px;
   text-align: center;
 }
 
