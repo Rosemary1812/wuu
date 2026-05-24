@@ -6671,16 +6671,23 @@ function ThreadItemView({
   onStreamFrame: () => void;
 }): JSX.Element | null {
   switch (item.type) {
-    case "user_message":
+    case "user_message": {
+      const text = item.text ?? "";
+      const copyable = text.trim() !== "";
       return (
-        <div className="message user-message">
+        <div className={`message user-message${copyable ? " copyable-message" : ""}`}>
           {item.images?.length ? <MessageImageGrid images={item.images} /> : null}
-          {item.text ? <RichContent text={item.text} cwd={cwd} /> : null}
+          {text ? <RichContent text={text} cwd={cwd} /> : null}
+          {copyable ? <MessageCopyButton getText={() => text} /> : null}
         </div>
       );
-    case "agent_message":
+    }
+    case "agent_message": {
+      const streamKeyValue = streamTextKey(turnID, item.id, "text");
+      const agentText = streamTextStore.has(streamKeyValue) ? streamTextStore.get(streamKeyValue) : (item.text ?? "");
+      const copyable = streaming || agentText.trim() !== "";
       return (
-        <article className="agent-block">
+        <article className={`agent-block${copyable ? " copyable-agent-block" : ""}`}>
           <div className="agent-text">
             <AgentMessageContent
               turnID={turnID}
@@ -6690,8 +6697,10 @@ function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
+          {copyable ? <MessageCopyButton getText={() => streamFieldValue(turnID, item, "text")} /> : null}
         </article>
       );
+    }
     case "reasoning":
       return (
         <article className="reasoning-block">
@@ -6709,6 +6718,61 @@ function ThreadItemView({
     default:
       return null;
   }
+}
+
+function MessageCopyButton({ getText }: { getText: () => string }): JSX.Element {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const resetTimerRef = useRef<number | undefined>(undefined);
+  const label = copyState === "copied" ? "已复制消息" : copyState === "failed" ? "复制失败" : "复制消息";
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current !== undefined) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
+  function showCopyState(nextState: "copied" | "failed"): void {
+    if (resetTimerRef.current !== undefined) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+    setCopyState(nextState);
+    resetTimerRef.current = window.setTimeout(() => {
+      setCopyState("idle");
+      resetTimerRef.current = undefined;
+    }, 1200);
+  }
+
+  async function handleCopy(): Promise<void> {
+    const text = getText();
+    if (text.trim() === "") {
+      showCopyState("failed");
+      return;
+    }
+    try {
+      const clipboard = navigator.clipboard;
+      if (!clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+      await clipboard.writeText(text);
+      showCopyState("copied");
+    } catch {
+      showCopyState("failed");
+    }
+  }
+
+  return (
+    <button
+      className={`message-copy-button ${copyState}`}
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={() => void handleCopy()}
+    >
+      {copyState === "copied" ? <Check size={14} /> : copyState === "failed" ? <AlertCircle size={14} /> : <Copy size={14} />}
+    </button>
+  );
 }
 
 function MessageImageGrid({ images }: { images: InputImage[] }): JSX.Element {
@@ -6953,10 +7017,13 @@ function latestDebugItem(turn: Turn): ThreadItem | undefined {
   return undefined;
 }
 
-function debugStreamFieldLength(turnID: string, item: ThreadItem, field: StreamTextField): number {
+function streamFieldValue(turnID: string, item: ThreadItem, field: StreamTextField): string {
   const key = streamTextKey(turnID, item.id, field);
-  const value = streamTextStore.has(key) ? streamTextStore.get(key) : item[field] ?? "";
-  return value.length;
+  return streamTextStore.has(key) ? streamTextStore.get(key) : (item[field] ?? "");
+}
+
+function debugStreamFieldLength(turnID: string, item: ThreadItem, field: StreamTextField): number {
+  return streamFieldValue(turnID, item, field).length;
 }
 
 function runDebugEventFromServerEvent(

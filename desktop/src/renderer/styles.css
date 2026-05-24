@@ -3264,6 +3264,80 @@ button:disabled {
   color: #1f2328;
 }
 
+.copyable-message {
+  position: relative;
+}
+
+.copyable-message.user-message {
+  padding-right: 42px;
+}
+
+.message-copy-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(31, 35, 40, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  color: #6f7478;
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  transform: translate3d(0, 2px, 0) scale(0.98);
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease,
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.message-copy-button:hover,
+.message-copy-button:focus-visible {
+  outline: 0;
+  box-shadow: 0 4px 12px rgba(31, 35, 40, 0.1);
+  background: #fff;
+  color: #202427;
+}
+
+.message-copy-button:active {
+  transform: scale(0.96);
+}
+
+.message-copy-button.copied {
+  background: #e8f5ed;
+  color: #16833a;
+}
+
+.message-copy-button.failed {
+  background: #fceeee;
+  color: #b42318;
+}
+
+.copyable-message .message-copy-button {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+}
+
+.copyable-message:hover .message-copy-button,
+.copyable-message:focus-within .message-copy-button,
+.copyable-agent-block:hover .message-copy-button,
+.copyable-agent-block:focus-within .message-copy-button,
+.message-copy-button.copied,
+.message-copy-button.failed {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
 .message-images {
   display: flex;
   flex-wrap: wrap;
@@ -3293,7 +3367,23 @@ button:disabled {
   line-height: var(--line-body);
 }
 
+.copyable-agent-block {
+  display: grid;
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.copyable-agent-block .message-copy-button {
+  position: sticky;
+  top: 64px;
+  flex: 0 0 auto;
+  margin-top: -1px;
+}
+
 .agent-text {
+  min-width: 0;
   word-break: break-word;
 }
 
@@ -8251,6 +8341,7 @@ pre {
   .thread-row::before,
   .thread-row-actions,
   .thread-row-action,
+  .message-copy-button,
   .settings-button {
     transition: none;
   }
