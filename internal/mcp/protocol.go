@@ -69,9 +69,15 @@ type InitializeResult struct {
 
 // Tool represents an MCP tool definition.
 type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	InputSchema json.RawMessage  `json:"inputSchema"`
+	Annotations *ToolAnnotations `json:"annotations,omitempty"`
+}
+
+// ToolAnnotations carries MCP server-provided behavioral hints for a tool.
+type ToolAnnotations struct {
+	ReadOnlyHint *bool `json:"readOnlyHint,omitempty"`
 }
 
 // ListToolsResult is returned by tools/list.
@@ -105,9 +111,9 @@ func nextRequestID() int64 {
 
 // inFlight tracks pending requests.
 type inFlight struct {
-	mu       sync.Mutex
-	pending  map[int64]chan Response
-	closed   bool
+	mu      sync.Mutex
+	pending map[int64]chan Response
+	closed  bool
 }
 
 func newInFlight() *inFlight {

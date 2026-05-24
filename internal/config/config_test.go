@@ -138,6 +138,62 @@ func TestConfig_ProviderWireAPI(t *testing.T) {
 	}
 }
 
+func TestConfig_MCPToolOverrides(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  },
+  "mcp_servers": {
+    "docs": {
+      "command": "docs-mcp",
+      "tool_overrides": {
+        "search": {
+          "read_only": true
+        },
+        "write": {
+          "read_only": false,
+          "concurrency_safe": false
+        }
+      }
+    }
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	search := cfg.MCPServers["docs"].ToolOverrides["search"]
+	if search.ReadOnly == nil || *search.ReadOnly != true {
+		t.Fatalf("search.read_only = %v, want true", search.ReadOnly)
+	}
+	if search.ConcurrencySafe != nil {
+		t.Fatalf("search.concurrency_safe = %v, want nil", search.ConcurrencySafe)
+	}
+	write := cfg.MCPServers["docs"].ToolOverrides["write"]
+	if write.ReadOnly == nil || *write.ReadOnly != false {
+		t.Fatalf("write.read_only = %v, want false", write.ReadOnly)
+	}
+	if write.ConcurrencySafe == nil || *write.ConcurrencySafe != false {
+		t.Fatalf("write.concurrency_safe = %v, want false", write.ConcurrencySafe)
+	}
+}
+
 func TestConfig_CodexSubscriptionAllowsDefaultBaseURL(t *testing.T) {
 	workdir := t.TempDir()
 	home := t.TempDir()

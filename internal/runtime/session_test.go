@@ -81,6 +81,29 @@ func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	}
 }
 
+func TestMCPToolOverridesFromConfig(t *testing.T) {
+	readOnly := true
+	concurrencySafe := false
+
+	out := mcpToolOverrides(map[string]config.MCPToolOverride{
+		"search": {
+			ReadOnly:        &readOnly,
+			ConcurrencySafe: &concurrencySafe,
+		},
+	})
+
+	override, ok := out["search"]
+	if !ok {
+		t.Fatal("missing converted override")
+	}
+	if override.ReadOnly == nil || *override.ReadOnly != true {
+		t.Fatalf("ReadOnly = %v, want true", override.ReadOnly)
+	}
+	if override.ConcurrencySafe == nil || *override.ConcurrencySafe != false {
+		t.Fatalf("ConcurrencySafe = %v, want false", override.ConcurrencySafe)
+	}
+}
+
 func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

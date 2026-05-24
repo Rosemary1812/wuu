@@ -9,11 +9,18 @@ import (
 
 // ServerConfig describes one MCP server connection.
 type ServerConfig struct {
-	Name    string            `json:"name"`
-	Command string            `json:"command,omitempty"`
-	Args    []string          `json:"args,omitempty"`
-	URL     string            `json:"url,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
+	Name          string                  `json:"name"`
+	Command       string                  `json:"command,omitempty"`
+	Args          []string                `json:"args,omitempty"`
+	URL           string                  `json:"url,omitempty"`
+	Env           map[string]string       `json:"env,omitempty"`
+	ToolOverrides map[string]ToolOverride `json:"tool_overrides,omitempty"`
+}
+
+// ToolOverride lets local config correct or supplement MCP tool metadata.
+type ToolOverride struct {
+	ReadOnly        *bool `json:"read_only,omitempty"`
+	ConcurrencySafe *bool `json:"concurrency_safe,omitempty"`
 }
 
 // Client is a connected MCP server session.
@@ -24,6 +31,7 @@ type Client struct {
 	readLoop  *readLoop
 	mu        sync.RWMutex
 	tools     []Tool
+	overrides map[string]ToolOverride
 	closed    bool
 }
 
@@ -74,6 +82,7 @@ func ConnectStdio(cfg ServerConfig) (*Client, error) {
 		_ = t.Close()
 		return nil, err
 	}
+	c.SetToolOverrides(cfg.ToolOverrides)
 	return c, nil
 }
 
@@ -91,6 +100,7 @@ func ConnectSSE(cfg ServerConfig) (*Client, error) {
 		_ = t.Close()
 		return nil, err
 	}
+	c.SetToolOverrides(cfg.ToolOverrides)
 	return c, nil
 }
 
@@ -119,6 +129,32 @@ func (c *Client) Tools() []Tool {
 	defer c.mu.RUnlock()
 	out := make([]Tool, len(c.tools))
 	copy(out, c.tools)
+	return out
+}
+
+// SetToolOverrides replaces local metadata overrides for this server.
+func (c *Client) SetToolOverrides(overrides map[string]ToolOverride) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.overrides = cloneToolOverrides(overrides)
+}
+
+// ToolOverride returns the local metadata override for a tool, when present.
+func (c *Client) ToolOverride(toolName string) (ToolOverride, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	override, ok := c.overrides[toolName]
+	return override, ok
+}
+
+func cloneToolOverrides(in map[string]ToolOverride) map[string]ToolOverride {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]ToolOverride, len(in))
+	for name, override := range in {
+		out[name] = override
+	}
 	return out
 }
 

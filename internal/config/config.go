@@ -35,10 +35,17 @@ type HookEntry struct {
 
 // MCPServerConfig configures one MCP server connection.
 type MCPServerConfig struct {
-	Command string            `json:"command,omitempty"`
-	Args    []string          `json:"args,omitempty"`
-	URL     string            `json:"url,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
+	Command       string                     `json:"command,omitempty"`
+	Args          []string                   `json:"args,omitempty"`
+	URL           string                     `json:"url,omitempty"`
+	Env           map[string]string          `json:"env,omitempty"`
+	ToolOverrides map[string]MCPToolOverride `json:"tool_overrides,omitempty"`
+}
+
+// MCPToolOverride corrects or supplements server-provided MCP tool metadata.
+type MCPToolOverride struct {
+	ReadOnly        *bool `json:"read_only,omitempty"`
+	ConcurrencySafe *bool `json:"concurrency_safe,omitempty"`
 }
 
 // Config holds CLI runtime settings.

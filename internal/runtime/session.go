@@ -513,11 +513,12 @@ func connectMCPServers(cfg config.Config, toolkit *tools.Toolkit) {
 		ctx := context.Background()
 		for name, mcpCfg := range cfg.MCPServers {
 			serverCfg := mcp.ServerConfig{
-				Name:    name,
-				Command: mcpCfg.Command,
-				Args:    mcpCfg.Args,
-				URL:     mcpCfg.URL,
-				Env:     mcpCfg.Env,
+				Name:          name,
+				Command:       mcpCfg.Command,
+				Args:          mcpCfg.Args,
+				URL:           mcpCfg.URL,
+				Env:           mcpCfg.Env,
+				ToolOverrides: mcpToolOverrides(mcpCfg.ToolOverrides),
 			}
 			if err := mcpMgr.Add(ctx, serverCfg); err != nil {
 				providers.DebugLogf("mcp server %q failed to connect: %v", name, err)
@@ -526,6 +527,20 @@ func connectMCPServers(cfg config.Config, toolkit *tools.Toolkit) {
 			}
 		}
 	}()
+}
+
+func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolOverride {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]mcp.ToolOverride, len(in))
+	for name, override := range in {
+		out[name] = mcp.ToolOverride{
+			ReadOnly:        override.ReadOnly,
+			ConcurrencySafe: override.ConcurrencySafe,
+		}
+	}
+	return out
 }
 
 func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.File {
