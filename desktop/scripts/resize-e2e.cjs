@@ -132,8 +132,29 @@ async function run() {
   );
   assert.equal(scrollbarHiddenAfterIdle, true, "Conversation scrollbar should hide after scrolling stops.");
 
-  const beforeEnvironmentResize = await waitFor(win, () => environmentSnapshot(), 5000);
-  assert.equal(beforeEnvironmentResize.visible, true, "Environment panel should start visible above the wide-window breakpoint.");
+  const defaultEnvironment = await waitFor(win, () => environmentSnapshot(), 5000);
+  assert.equal(defaultEnvironment.visible, true, "Environment panel should start visible above the wide-window breakpoint.");
+  assert.equal(typeof defaultEnvironment.panelRightGap, "number", "Environment panel right gap should be measurable.");
+  assert.equal(typeof defaultEnvironment.panelMessageGap, "number", "Environment panel message gap should be measurable.");
+  assert.ok(defaultEnvironment.panelRightGap <= 24, "Environment panel should sit near the right edge on wide windows.");
+
+  win.setSize(1720, 860);
+  await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
+  const beforeEnvironmentResize = await waitFor(
+    win,
+    () => {
+      const snapshot = environmentSnapshot();
+      return snapshot && snapshot.visible && !snapshot.resizing ? snapshot : null;
+    },
+    1000
+  );
+  assert.equal(typeof beforeEnvironmentResize.panelRightGap, "number", "Wide environment panel right gap should be measurable.");
+  assert.equal(typeof beforeEnvironmentResize.panelMessageGap, "number", "Wide environment panel message gap should be measurable.");
+  assert.ok(beforeEnvironmentResize.panelRightGap <= 24, "Environment panel should keep a stable right edge as width grows.");
+  assert.ok(
+    beforeEnvironmentResize.panelMessageGap > defaultEnvironment.panelMessageGap + 120,
+    "Extra width should increase the gap between the message flow and the environment panel."
+  );
   assert.ok(
     beforeEnvironmentResize.scrollPaddingRight > 300,
     "Scroll region should reserve inline environment panel space before resize."
@@ -148,7 +169,9 @@ async function run() {
     win,
     () => {
       const snapshot = environmentSnapshot();
-      return snapshot && snapshot.scrollPaddingRight <= 1 && snapshot.composerPaddingRight <= 1 ? snapshot : null;
+      return snapshot && snapshot.resizing && snapshot.scrollPaddingRight > 300 && snapshot.composerPaddingRight > 300
+        ? snapshot
+        : null;
     },
     120
   );
@@ -163,12 +186,31 @@ async function run() {
     "Composer padding must not depend on a resize marker to avoid animation."
   );
   assert.ok(
-    duringEnvironmentResize.scrollPaddingRight <= 1,
-    "Scroll region should release inline environment panel space before resize end."
+    duringEnvironmentResize.scrollPaddingRight > 300,
+    "Scroll region should keep the previous environment panel space during live resize."
   );
   assert.ok(
-    duringEnvironmentResize.composerPaddingRight <= 1,
-    "Composer should release inline environment panel space before resize end."
+    duringEnvironmentResize.composerPaddingRight > 300,
+    "Composer should keep the previous environment panel space during live resize."
+  );
+  await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
+  const afterEnvironmentResize = await waitFor(
+    win,
+    () => {
+      const snapshot = environmentSnapshot();
+      return snapshot && !snapshot.visible && snapshot.scrollPaddingRight <= 1 && snapshot.composerPaddingRight <= 1
+        ? snapshot
+        : null;
+    },
+    1200
+  );
+  assert.ok(
+    afterEnvironmentResize.scrollPaddingRight <= 1,
+    "Scroll region should release inline environment panel space after resize settles."
+  );
+  assert.ok(
+    afterEnvironmentResize.composerPaddingRight <= 1,
+    "Composer should release inline environment panel space after resize settles."
   );
   const flowResize = await waitFor(win, () => flowSnapshot(), 1000);
   assert.ok(
@@ -566,14 +608,20 @@ async function evaluate(win, fn) {
       const pane = document.querySelector(".conversation-pane");
       const scroll = document.querySelector(".scroll-region");
       const composer = document.querySelector(".dock-composer-wrap");
+      const panel = document.querySelector(".environment-panel");
       if (!pane || !scroll || !composer) {
         return null;
       }
+      const paneRect = pane.getBoundingClientRect();
+      const panelRect = panel instanceof HTMLElement ? panel.getBoundingClientRect() : undefined;
+      const flow = window.flowSnapshot?.();
       const scrollStyle = getComputedStyle(scroll);
       const composerStyle = getComputedStyle(composer);
       return {
         visible: pane.classList.contains("environment-panel-visible"),
         resizing: document.documentElement.classList.contains("window-resizing"),
+        panelMessageGap: panelRect && flow ? panelRect.left - flow.conversationContentRight : null,
+        panelRightGap: panelRect ? paneRect.right - panelRect.right : null,
         scrollPaddingRight: Number.parseFloat(scrollStyle.paddingRight || "0"),
         composerPaddingRight: Number.parseFloat(composerStyle.paddingRight || "0"),
         scrollTransitionProperty: scrollStyle.transitionProperty,
@@ -609,6 +657,8 @@ async function evaluate(win, fn) {
         composerStackRight: stackRect.right,
         composerStackWidth: stackRect.width,
         conversationContentCenter: conversationContentLeft + (conversationContentRight - conversationContentLeft) / 2,
+        conversationContentLeft,
+        conversationContentRight,
         conversationContentWidth: conversationContentRight - conversationContentLeft,
         conversationCenter: conversationRect.left + conversationRect.width / 2,
         conversationRight: conversationRect.right,

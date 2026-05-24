@@ -111,6 +111,7 @@ type AnsweredAskRequestState = AskRequestState & {
 
 const ASK_USER_OTHER_VALUE = "__wuu_other__";
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
+const ENVIRONMENT_PANEL_MOTION_MS = 260;
 
 type CodexModelLoadState = {
   provider?: string;
@@ -122,6 +123,7 @@ type CodexModelLoadState = {
 type CodexRuntimeMenu = "main" | "model" | null;
 type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
 type EnvironmentDialog = "commit" | "pull-request" | null;
+type EnvironmentPanelMotionState = "open" | "closing";
 type PendingViewSwitchKind = "thread" | "project" | "runtime";
 
 type PendingViewSwitch = {
@@ -1418,6 +1420,9 @@ export function App(): JSX.Element {
   const [environmentPanelHasRoom, setEnvironmentPanelHasRoom] = useState(() =>
     typeof window === "undefined" ? false : window.matchMedia("(min-width: 1320px) and (min-height: 680px)").matches
   );
+  const [environmentPanelMounted, setEnvironmentPanelMounted] = useState(false);
+  const [environmentPanelClosing, setEnvironmentPanelClosing] = useState(false);
+  const [environmentPanelReserved, setEnvironmentPanelReserved] = useState(false);
   const [environmentPanelMenu, setEnvironmentPanelMenu] = useState<EnvironmentPanelMenu>(null);
   const [environmentDialog, setEnvironmentDialog] = useState<EnvironmentDialog>(null);
   const [runDebugOpen, setRunDebugOpen] = useState(false);
@@ -1433,6 +1438,9 @@ export function App(): JSX.Element {
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
+  const windowResizingRef = useRef(false);
+  const environmentPanelHasRoomRef = useRef(environmentPanelHasRoom);
+  const pendingEnvironmentPanelHasRoomRef = useRef<boolean | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
@@ -1474,7 +1482,16 @@ export function App(): JSX.Element {
         return;
       }
       resizing = nextResizing;
+      windowResizingRef.current = nextResizing;
       root.classList.toggle("window-resizing", nextResizing);
+      if (!nextResizing && pendingEnvironmentPanelHasRoomRef.current !== undefined) {
+        const pendingHasRoom = pendingEnvironmentPanelHasRoomRef.current;
+        pendingEnvironmentPanelHasRoomRef.current = undefined;
+        if (environmentPanelHasRoomRef.current !== pendingHasRoom) {
+          environmentPanelHasRoomRef.current = pendingHasRoom;
+          setEnvironmentPanelHasRoom(pendingHasRoom);
+        }
+      }
     }
 
     function scheduleResizeEnd(delay = 140): void {
@@ -1508,13 +1525,24 @@ export function App(): JSX.Element {
       if (resizeEndTimer !== undefined) {
         window.clearTimeout(resizeEndTimer);
       }
+      windowResizingRef.current = false;
+      pendingEnvironmentPanelHasRoomRef.current = undefined;
       setResizeState(false);
     };
   }, []);
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 1320px) and (min-height: 680px)");
-    const update = (): void => setEnvironmentPanelHasRoom(query.matches);
+    const update = (): void => {
+      const nextHasRoom = query.matches;
+      if (windowResizingRef.current || document.documentElement.classList.contains("window-resizing")) {
+        pendingEnvironmentPanelHasRoomRef.current = nextHasRoom;
+        return;
+      }
+      pendingEnvironmentPanelHasRoomRef.current = undefined;
+      environmentPanelHasRoomRef.current = nextHasRoom;
+      setEnvironmentPanelHasRoom(nextHasRoom);
+    };
     update();
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
@@ -1791,9 +1819,11 @@ export function App(): JSX.Element {
   const pendingAskThreadIDs = pendingAskThreadIDsForRequests(state.askRequests);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewSwitchPending;
   const environmentPanelCanShow = Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen);
-  const environmentPanelVisible =
+  const environmentPanelTargetVisible =
     environmentPanelCanShow &&
     (environmentPanelOpen || (environmentPanelHasRoom && !environmentPanelDismissed && !emptyConversation));
+  const environmentPanelVisible = environmentPanelTargetVisible;
+  const environmentPanelMotionState: EnvironmentPanelMotionState = environmentPanelVisible ? "open" : "closing";
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     resizingSidebar ? " resizing-sidebar" : ""
   }${resizingRightPanel ? " resizing-right-panel" : ""}${
@@ -1802,8 +1832,10 @@ export function App(): JSX.Element {
   const shellStyle = {
     "--sidebar-width": `${effectiveSidebarWidth}px`,
     "--workspace-right-panel-width": `${clampedWorkspaceRightPanelWidth}px`,
-    "--environment-panel-width": "360px",
-    "--environment-panel-reserved-width": "432px",
+    "--environment-panel-width": "328px",
+    "--environment-panel-reserved-width": "372px",
+    "--environment-panel-edge-gap": "18px",
+    "--environment-panel-motion-duration": `${ENVIRONMENT_PANEL_MOTION_MS}ms`,
     "--workspace-bottom-panel-height": "238px"
   } as CSSProperties;
   const environmentSourceItems = useMemo(
@@ -1820,6 +1852,33 @@ export function App(): JSX.Element {
   );
   const pullRequestDisabledReason = pullRequestUnavailableReason(state.gitStatus);
   const runDebugPhase = runDebugPhaseForState(state);
+
+  useLayoutEffect(() => {
+    if (environmentPanelVisible) {
+      setEnvironmentPanelMounted(true);
+      setEnvironmentPanelClosing(false);
+      setEnvironmentPanelReserved(environmentPanelHasRoom);
+      return;
+    }
+    if (!environmentPanelMounted) {
+      setEnvironmentPanelReserved(false);
+      return;
+    }
+
+    setEnvironmentPanelClosing(true);
+    const timer = window.setTimeout(() => {
+      setEnvironmentPanelMounted(false);
+      setEnvironmentPanelClosing(false);
+      setEnvironmentPanelReserved(false);
+    }, ENVIRONMENT_PANEL_MOTION_MS);
+    return () => window.clearTimeout(timer);
+  }, [environmentPanelHasRoom, environmentPanelMounted, environmentPanelVisible]);
+
+  useEffect(() => {
+    if (!environmentPanelVisible && environmentPanelMenu) {
+      setEnvironmentPanelMenu(null);
+    }
+  }, [environmentPanelMenu, environmentPanelVisible]);
 
   useEffect(() => {
     if (visibleAnsweredAskRequests.length === 0) {
@@ -3264,9 +3323,10 @@ export function App(): JSX.Element {
   }
 
   const environmentPanelNode =
-    environmentPanelVisible && state.initialized ? (
+    (environmentPanelVisible || environmentPanelMounted) && state.initialized ? (
       <EnvironmentPanel
         panelRef={environmentPanelRef}
+        motionState={environmentPanelClosing ? "closing" : environmentPanelMotionState}
         initialized={state.initialized}
         gitStatus={state.gitStatus}
         activeContext={state.activeContext}
@@ -3452,7 +3512,12 @@ export function App(): JSX.Element {
         />
       )}
 
-      <main className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}`} ref={conversationPaneRef}>
+      <main
+        className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
+          environmentPanelReserved ? " environment-panel-reserved" : ""
+        }`}
+        ref={conversationPaneRef}
+      >
         <header className="titlebar">
           <div className="title-block">
             {sidebarCollapsed ? (
@@ -3905,6 +3970,7 @@ function LiveSince({ atMs }: { atMs: number }): JSX.Element {
 
 function EnvironmentPanel({
   panelRef,
+  motionState,
   initialized,
   gitStatus,
   activeContext,
@@ -3926,6 +3992,7 @@ function EnvironmentPanel({
   onOpenPullRequest
 }: {
   panelRef: RefObject<HTMLDivElement>;
+  motionState: EnvironmentPanelMotionState;
   initialized: InitializeResult;
   gitStatus?: GitStatusResult;
   activeContext?: RuntimeContext;
@@ -3958,7 +4025,12 @@ function EnvironmentPanel({
   }
 
   return (
-    <aside className="environment-panel" ref={panelRef} aria-label="环境信息">
+    <aside
+      className={`environment-panel ${motionState}`}
+      ref={panelRef}
+      aria-label="环境信息"
+      aria-hidden={motionState === "closing" ? true : undefined}
+    >
       <div className="environment-panel-header">
         <h2>环境信息</h2>
         <div className="environment-panel-actions">
