@@ -1227,6 +1227,7 @@ button:disabled {
   --environment-panel-reserved-width: 432px;
   --environment-panel-width: 360px;
   --conversation-readable-width: 760px;
+  --conversation-flow-width: var(--conversation-readable-width);
   --conversation-scrollbar-gutter: 12px;
   --dock-composer-height: 0px;
   grid-column: 2;
@@ -3354,7 +3355,7 @@ button:disabled {
 .conversation-width {
   contain: layout style;
   width: 100%;
-  max-width: var(--conversation-readable-width);
+  max-width: var(--conversation-flow-width);
   margin: 0 auto;
   padding: 72px clamp(20px, 4vw, 48px) 28px;
 }
@@ -7308,8 +7309,6 @@ pre {
 .dock-composer-wrap .composer-stack {
   position: relative;
   z-index: 1;
-  width: 100%;
-  padding: 0 clamp(24px, 4vw, 48px);
   pointer-events: auto;
 }
 
@@ -7321,7 +7320,7 @@ pre {
 
 .composer-stack {
   display: flex;
-  width: min(760px, calc(100% - 32px));
+  width: min(var(--conversation-flow-width), calc(100% - 32px));
   min-width: 0;
   flex-direction: column;
   margin: 0 auto;
@@ -8601,8 +8600,12 @@ html.swiss-international .workspace-diff-file.active .workspace-diff-file-stats 
   color: #fffefa;
 }
 
+html.swiss-international .conversation-pane {
+  --conversation-flow-width: calc(var(--conversation-readable-width) + 40px);
+}
+
 html.swiss-international .conversation-width {
-  max-width: calc(var(--conversation-readable-width) + 40px);
+  max-width: var(--conversation-flow-width);
   padding: 76px clamp(24px, 5vw, 56px) 32px;
 }
 
@@ -8684,7 +8687,7 @@ html.swiss-international .run-debug-phase.error {
 }
 
 html.swiss-international .composer-stack {
-  width: min(820px, calc(100% - 32px));
+  width: min(var(--conversation-flow-width), calc(100% - 32px));
 }
 
 html.swiss-international .hero-composer-wrap .composer-stack {

@@ -180,12 +180,12 @@ async function run() {
     "Message flow should stay centered in the live scroll region during right-side window resize."
   );
   assert.ok(
-    Math.abs(flowResize.composerStackRight - flowResize.composerContentRight) <= 2,
-    "Dock composer should track the live composer region right edge during right-side window resize."
+    Math.abs(flowResize.composerStackCenter - flowResize.conversationCenter) <= 2,
+    "Dock composer should stay centered with the message flow during right-side window resize."
   );
   assert.ok(
-    flowResize.composerStackWidth > 840,
-    "Dock composer should use the resized message flow width instead of staying capped at the old centered width."
+    Math.abs(flowResize.composerStackWidth - flowResize.conversationWidth) <= 2,
+    "Dock composer should use the same width as the message flow."
   );
 
   await delay(300);
@@ -220,8 +220,16 @@ async function run() {
   const maxFlowCenterDelta = Math.max(
     ...flowProbe.samples.map((sample) => Math.abs(sample.conversationCenter - sample.scrollContentCenter))
   );
+  const maxComposerCenterDelta = Math.max(
+    ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackCenter - sample.conversationCenter))
+  );
+  const maxComposerWidthDelta = Math.max(
+    ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackWidth - sample.conversationWidth))
+  );
   assert.ok(maxConversationWidth <= 762, "Message flow should stay capped throughout continuous right-side resize.");
   assert.ok(maxFlowCenterDelta <= 2, "Message flow should stay centered throughout continuous right-side resize.");
+  assert.ok(maxComposerCenterDelta <= 2, "Dock composer should stay centered with the message flow throughout resize.");
+  assert.ok(maxComposerWidthDelta <= 2, "Dock composer should stay the same width as the message flow throughout resize.");
   assert.ok(maxFrameMs < 80, `Continuous right-side resize should not stall the renderer for ${Math.round(maxFrameMs)}ms.`);
 
   await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
@@ -403,10 +411,16 @@ async function run() {
 
   await evaluate(win, () => {
     const back = document.querySelector(".workspace-panel-back");
-    if (!(back instanceof HTMLButtonElement)) {
-      throw new Error("Right panel back button not found.");
+    if (back instanceof HTMLButtonElement) {
+      back.click();
+      return;
     }
-    back.click();
+    const picker = document.querySelector(".workspace-panel-add");
+    if (picker instanceof HTMLButtonElement) {
+      picker.click();
+      return;
+    }
+    throw new Error("Right panel tool picker button not found.");
   });
   await evaluate(win, () => {
     const fileTool = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item"))
@@ -586,6 +600,7 @@ async function evaluate(win, fn) {
       const composerPaddingRight = Number.parseFloat(composerStyle.paddingRight || "0");
       return {
         composerContentRight: composerRect.left + composer.clientWidth - composerPaddingRight,
+        composerStackCenter: stackRect.left + stackRect.width / 2,
         composerStackRight: stackRect.right,
         composerStackWidth: stackRect.width,
         conversationCenter: conversationRect.left + conversationRect.width / 2,
