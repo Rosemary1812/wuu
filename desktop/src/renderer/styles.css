@@ -55,8 +55,8 @@
 
 @keyframes environment-panel-enter {
   from {
-    opacity: 1;
-    transform: translate3d(0, -2px, 0) scale(0.996);
+    opacity: 0;
+    transform: translate3d(14px, -4px, 0) scale(0.982);
   }
 
   to {
@@ -1513,7 +1513,7 @@ button:disabled {
   padding: 14px;
   backdrop-filter: blur(18px);
   transform-origin: top right;
-  animation: environment-panel-enter 120ms var(--menu-enter-easing) both;
+  animation: environment-panel-enter 180ms var(--menu-enter-easing) both;
 }
 
 .environment-panel-header {
@@ -3237,6 +3237,7 @@ button:disabled {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  transition: padding-right 180ms var(--menu-enter-easing);
 }
 
 .conversation-width {
@@ -7140,6 +7141,7 @@ pre {
   align-self: end;
   background: transparent;
   pointer-events: none;
+  transition: padding-right 180ms var(--menu-enter-easing);
 }
 
 .dock-composer-wrap::before {
@@ -9189,6 +9191,7 @@ html.swiss-international .os-theme-wuu {
   .titlebar,
   .scroll-region,
   .composer-wrap,
+  .dock-composer-wrap,
   .workspace-right-panel,
   .workspace-bottom-panel,
   .nav-item,
