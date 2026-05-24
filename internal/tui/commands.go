@@ -155,6 +155,7 @@ func init() {
 		commandSpec(SlashCommandSpec{Name: "effort", Group: "Config", Description: "Set reasoning effort level", ArgHint: "[low|medium|high|max]", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindConfig, Execute: cmdEffort}),
 
 		// ── Output ─────────────────────────────────────────────────
+		commandSpec(SlashCommandSpec{Name: "review", Group: "Output", Description: "Review current changes and find issues", ArgHint: "[instructions]", ArgMode: slashArgOptional, AvailableDuringTask: false, Kind: slashCommandKindPrompt, Execute: cmdReview}),
 		commandSpec(SlashCommandSpec{Name: "diff", Group: "Output", Description: "Show git diff", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdDiff}),
 		commandSpec(SlashCommandSpec{Name: "copy", Group: "Output", Description: "Copy last output to clipboard", AvailableDuringTask: true, Kind: slashCommandKindLocal, Execute: cmdCopy}),
 
@@ -884,6 +885,32 @@ func cmdNew(_ string, m *Model) string {
 
 	m.refreshViewport(true)
 	return fmt.Sprintf("new conversation started (session: %s)", m.sessionID)
+}
+
+const defaultReviewPrompt = "Review the current code changes (staged, unstaged, and untracked files) and provide prioritized findings."
+
+func cmdReview(args string, m *Model) string {
+	if m == nil {
+		return "review: no active session"
+	}
+	if m.streamRunner == nil {
+		return "review: no stream runner configured"
+	}
+
+	prompt := buildReviewPrompt(args)
+	m.messageQueue = append(m.messageQueue, queuedMessage{Text: prompt})
+	if strings.TrimSpace(args) == "" {
+		return "review queued: current changes"
+	}
+	return "review queued: custom instructions"
+}
+
+func buildReviewPrompt(args string) string {
+	instructions := strings.TrimSpace(args)
+	if instructions == "" {
+		return defaultReviewPrompt
+	}
+	return defaultReviewPrompt + "\n\nAdditional review instructions:\n" + instructions
 }
 
 func cmdDiff(_ string, m *Model) string {

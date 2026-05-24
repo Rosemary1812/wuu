@@ -128,6 +128,78 @@ func TestInsightsAliasRemainsSupported(t *testing.T) {
 	}
 }
 
+func TestReviewCommandQueuesDefaultCodexPrompt(t *testing.T) {
+	m := NewModel(Config{
+		Provider:   "test",
+		Model:      "test-model",
+		ConfigPath: "/tmp/.wuu.json",
+		StreamRunner: &agent.StreamRunner{
+			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
+			Model:  "test-model",
+		},
+	})
+
+	msg, handled := m.handleSlash("/review")
+	if !handled {
+		t.Fatal("expected /review to be handled")
+	}
+	if msg != "review queued: current changes" {
+		t.Fatalf("unexpected /review response: %q", msg)
+	}
+	if len(m.messageQueue) != 1 {
+		t.Fatalf("expected one queued review prompt, got %d", len(m.messageQueue))
+	}
+	if m.messageQueue[0].Text != defaultReviewPrompt {
+		t.Fatalf("unexpected review prompt: %q", m.messageQueue[0].Text)
+	}
+}
+
+func TestReviewCommandQueuesCustomInstructions(t *testing.T) {
+	m := NewModel(Config{
+		Provider:   "test",
+		Model:      "test-model",
+		ConfigPath: "/tmp/.wuu.json",
+		StreamRunner: &agent.StreamRunner{
+			Client: &echoStreamClient{answer: func(_ []providers.ChatMessage) string { return "" }},
+			Model:  "test-model",
+		},
+	})
+
+	msg, handled := m.handleSlash("/review check regressions")
+	if !handled {
+		t.Fatal("expected /review with instructions to be handled")
+	}
+	if msg != "review queued: custom instructions" {
+		t.Fatalf("unexpected /review response: %q", msg)
+	}
+	if len(m.messageQueue) != 1 {
+		t.Fatalf("expected one queued review prompt, got %d", len(m.messageQueue))
+	}
+	prompt := m.messageQueue[0].Text
+	if !strings.HasPrefix(prompt, defaultReviewPrompt) {
+		t.Fatalf("review prompt should start with Codex default prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "Additional review instructions:\ncheck regressions") {
+		t.Fatalf("review prompt missing custom instructions: %q", prompt)
+	}
+}
+
+func TestReviewCommandSpec(t *testing.T) {
+	cmd, ok := findCommandSpec("review")
+	if !ok {
+		t.Fatal("expected /review command to be registered")
+	}
+	if cmd.ArgMode != slashArgOptional {
+		t.Fatalf("expected optional args for /review, got %q", cmd.ArgMode)
+	}
+	if cmd.Kind != slashCommandKindPrompt {
+		t.Fatalf("expected prompt command kind for /review, got %q", cmd.Kind)
+	}
+	if cmd.AvailableDuringTask {
+		t.Fatal("/review should be disabled while a task is in progress")
+	}
+}
+
 func TestHandleSlashNewResetsChatHistoryButKeepsSystemPrompt(t *testing.T) {
 	m := NewModel(Config{
 		Provider:   "test",
