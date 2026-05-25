@@ -7,6 +7,8 @@ import { describe, expect, it, mock } from 'bun:test'
 import { createBrowserBridgeRoutes } from '../../../src/api/routes/browser-bridge'
 import type { CdpTarget } from '../../../src/browser/backends/types'
 
+type FakeBrowser = Parameters<typeof createBrowserBridgeRoutes>[0]['browser']
+
 const firstTarget: CdpTarget = {
   id: 'target-1',
   type: 'page',
@@ -25,10 +27,29 @@ const secondTarget: CdpTarget = {
   windowId: 7,
 }
 
+function createBrowser(overrides: Partial<FakeBrowser> = {}): FakeBrowser {
+  return {
+    isCdpConnected: mock(() => true),
+    listTargets: mock(async () => [firstTarget, secondTarget]),
+    getActiveTarget: mock(async () => firstTarget),
+    createTargetTab: mock(async () => secondTarget),
+    navigateTarget: mock(async () => {}),
+    screenshotTarget: mock(async () => ({
+      data: '',
+      mimeType: 'image/png',
+      devicePixelRatio: 1,
+    })),
+    contentTarget: mock(async () => 'Example'),
+    clickTargetAt: mock(async () => {}),
+    typeTargetAt: mock(async () => {}),
+    scrollTarget: mock(async () => {}),
+    ...overrides,
+  }
+}
+
 describe('createBrowserBridgeRoutes', () => {
   it('returns browser tab state from CDP targets', async () => {
-    const browser = {
-      isCdpConnected: mock(() => true),
+    const browser = createBrowser({
       listTargets: mock(async () => [
         firstTarget,
         secondTarget,
@@ -41,15 +62,7 @@ describe('createBrowserBridgeRoutes', () => {
           windowId: 7,
         },
       ]),
-      getActiveTarget: mock(async () => firstTarget),
-      createTargetTab: mock(async () => firstTarget),
-      navigateTarget: mock(async () => {}),
-      screenshotTarget: mock(async () => ({
-        data: '',
-        mimeType: 'image/png',
-        devicePixelRatio: 1,
-      })),
-    }
+    })
     const route = createBrowserBridgeRoutes({ browser })
 
     const response = await route.request('/tabs')
@@ -89,18 +102,9 @@ describe('createBrowserBridgeRoutes', () => {
   })
 
   it('returns the active browser tab directly', async () => {
-    const browser = {
-      isCdpConnected: mock(() => true),
-      listTargets: mock(async () => [firstTarget, secondTarget]),
+    const browser = createBrowser({
       getActiveTarget: mock(async () => secondTarget),
-      createTargetTab: mock(async () => firstTarget),
-      navigateTarget: mock(async () => {}),
-      screenshotTarget: mock(async () => ({
-        data: '',
-        mimeType: 'image/png',
-        devicePixelRatio: 1,
-      })),
-    }
+    })
     const route = createBrowserBridgeRoutes({ browser })
 
     const response = await route.request('/active-tab')
@@ -120,18 +124,11 @@ describe('createBrowserBridgeRoutes', () => {
   })
 
   it('does not query pages when CDP is disconnected', async () => {
-    const browser = {
+    const browser = createBrowser({
       isCdpConnected: mock(() => false),
       listTargets: mock(async () => [firstTarget]),
       getActiveTarget: mock(async () => firstTarget),
-      createTargetTab: mock(async () => firstTarget),
-      navigateTarget: mock(async () => {}),
-      screenshotTarget: mock(async () => ({
-        data: '',
-        mimeType: 'image/png',
-        devicePixelRatio: 1,
-      })),
-    }
+    })
     const route = createBrowserBridgeRoutes({ browser })
 
     const response = await route.request('/tabs')
@@ -145,18 +142,9 @@ describe('createBrowserBridgeRoutes', () => {
   })
 
   it('creates a background browser tab', async () => {
-    const browser = {
-      isCdpConnected: mock(() => true),
+    const browser = createBrowser({
       listTargets: mock(async () => [firstTarget]),
-      getActiveTarget: mock(async () => firstTarget),
-      createTargetTab: mock(async () => secondTarget),
-      navigateTarget: mock(async () => {}),
-      screenshotTarget: mock(async () => ({
-        data: '',
-        mimeType: 'image/png',
-        devicePixelRatio: 1,
-      })),
-    }
+    })
     const route = createBrowserBridgeRoutes({ browser })
 
     const response = await route.request('/tabs', {
@@ -186,23 +174,15 @@ describe('createBrowserBridgeRoutes', () => {
       title: 'Bridge',
     }
     let navigated = false
-    const browser = {
-      isCdpConnected: mock(() => true),
+    const browser = createBrowser({
       listTargets: mock(async () => [
         firstTarget,
         navigated ? navigatedTarget : secondTarget,
       ]),
-      getActiveTarget: mock(async () => firstTarget),
-      createTargetTab: mock(async () => secondTarget),
       navigateTarget: mock(async () => {
         navigated = true
       }),
-      screenshotTarget: mock(async () => ({
-        data: '',
-        mimeType: 'image/png',
-        devicePixelRatio: 1,
-      })),
-    }
+    })
     const route = createBrowserBridgeRoutes({ browser })
 
     const response = await route.request('/tabs/target-2/navigate', {
@@ -226,18 +206,15 @@ describe('createBrowserBridgeRoutes', () => {
   })
 
   it('captures a screenshot for an existing browser tab target', async () => {
-    const browser = {
-      isCdpConnected: mock(() => true),
+    const browser = createBrowser({
       listTargets: mock(async () => [secondTarget]),
       getActiveTarget: mock(async () => secondTarget),
-      createTargetTab: mock(async () => secondTarget),
-      navigateTarget: mock(async () => {}),
       screenshotTarget: mock(async () => ({
         data: 'iVBORw0KGgo=',
         mimeType: 'image/png',
         devicePixelRatio: 2,
       })),
-    }
+    })
     const route = createBrowserBridgeRoutes({ browser })
 
     const response = await route.request('/tabs/target-2/screenshot?fullPage=1')
@@ -254,19 +231,65 @@ describe('createBrowserBridgeRoutes', () => {
     })
   })
 
-  it('rejects navigation without an absolute URL', async () => {
-    const browser = {
-      isCdpConnected: mock(() => true),
+  it('returns text content for an existing browser tab target', async () => {
+    const browser = createBrowser({
       listTargets: mock(async () => [secondTarget]),
-      getActiveTarget: mock(async () => secondTarget),
-      createTargetTab: mock(async () => secondTarget),
-      navigateTarget: mock(async () => {}),
-      screenshotTarget: mock(async () => ({
-        data: '',
-        mimeType: 'image/png',
-        devicePixelRatio: 1,
-      })),
-    }
+      contentTarget: mock(async () => 'Bridge ready'),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request(
+      '/tabs/target-2/content?selector=%23status',
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ text: 'Bridge ready' })
+    expect(browser.contentTarget).toHaveBeenCalledWith('target-2', '#status')
+  })
+
+  it('clicks, types, and scrolls an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const clickResponse = await route.request('/tabs/target-2/click', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ x: 40, y: 60, clickCount: 2 }),
+    })
+    const typeResponse = await route.request('/tabs/target-2/type', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ x: 40, y: 60, text: 'hello', clear: true }),
+    })
+    const scrollResponse = await route.request('/tabs/target-2/scroll', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ direction: 'down', amount: 2 }),
+    })
+
+    expect(clickResponse.status).toBe(200)
+    expect(typeResponse.status).toBe(200)
+    expect(scrollResponse.status).toBe(200)
+    expect(browser.clickTargetAt).toHaveBeenCalledWith('target-2', 40, 60, {
+      button: 'left',
+      clickCount: 2,
+    })
+    expect(browser.typeTargetAt).toHaveBeenCalledWith(
+      'target-2',
+      40,
+      60,
+      'hello',
+      true,
+    )
+    expect(browser.scrollTarget).toHaveBeenCalledWith('target-2', 'down', 2)
+  })
+
+  it('rejects navigation without an absolute URL', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+    })
     const route = createBrowserBridgeRoutes({ browser })
 
     const response = await route.request('/tabs/target-2/navigate', {
@@ -280,5 +303,22 @@ describe('createBrowserBridgeRoutes', () => {
       error: 'A valid absolute URL is required',
     })
     expect(browser.navigateTarget).not.toHaveBeenCalled()
+  })
+
+  it('rejects click coordinates without numbers', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request('/tabs/target-2/click', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ x: 40 }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'x and y are required' })
+    expect(browser.clickTargetAt).not.toHaveBeenCalled()
   })
 })

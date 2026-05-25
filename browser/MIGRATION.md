@@ -202,6 +202,10 @@ Current first bridge:
 - `POST /browser-bridge/tabs` creates a new tab.
 - `POST /browser-bridge/tabs/:targetId/navigate` navigates a tab target.
 - `GET /browser-bridge/tabs/:targetId/screenshot` captures a tab screenshot.
+- `GET /browser-bridge/tabs/:targetId/content` reads tab text content.
+- `POST /browser-bridge/tabs/:targetId/click` clicks a coordinate.
+- `POST /browser-bridge/tabs/:targetId/type` clicks and types into a coordinate.
+- `POST /browser-bridge/tabs/:targetId/scroll` scrolls a tab.
 - `make browser-verify-dev ARGS="--require-browser-bridge"` checks this against
   a running Wuu Browser Dev instance.
 

@@ -85,6 +85,11 @@ version_json="$(fetch "${cdp_base}/json/version")" || {
   echo "CDP endpoint is not reachable. Is Wuu Browser Dev running?" >&2
   exit 1
 }
+if ! printf '%s' "${version_json}" | grep -q '"webSocketDebuggerUrl"'; then
+  echo "CDP endpoint returned an unexpected response. Is port ${cdp_port} already in use?" >&2
+  echo "Response: ${version_json}" >&2
+  exit 1
+fi
 echo "  CDP version: ok"
 
 health_json="$(fetch "${server_base}/health")" || {
@@ -97,7 +102,7 @@ pages_json="$(fetch "${cdp_base}/json/list")" || {
   echo "CDP page list is not reachable." >&2
   exit 1
 }
-page_count="$(printf '%s' "${pages_json}" | grep -o '"id"' | wc -l | tr -d ' ')"
+page_count="$( (printf '%s' "${pages_json}" | grep -o '"id"' || true) | wc -l | tr -d ' ')"
 echo "  CDP pages: ${page_count}"
 
 if [[ "${require_wuu_tab}" == "true" ]]; then
@@ -295,9 +300,68 @@ if (screenshot.mimeType !== 'image/png' || typeof screenshot.data !== 'string' |
   })}`)
 }
 
+const interactionHtml = encodeURIComponent(`
+<!doctype html>
+<meta charset="utf-8">
+<title>Wuu Bridge Interaction Verify</title>
+<style>
+  body { margin: 0; font: 16px system-ui, sans-serif; }
+  input { position: absolute; left: 40px; top: 40px; width: 260px; height: 32px; font: inherit; }
+  button { position: absolute; left: 40px; top: 90px; width: 160px; height: 36px; font: inherit; }
+  #status { position: absolute; left: 40px; top: 145px; }
+  #spacer { height: 1800px; }
+</style>
+<input id="q" value="">
+<button id="apply" onclick="document.getElementById('status').textContent = 'typed:' + document.getElementById('q').value">Apply</button>
+<main id="status">ready</main>
+<div id="spacer"></div>
+<script>
+  window.addEventListener('scroll', () => {
+    const status = document.getElementById('status')
+    const base = status.textContent.replace(/ scroll:.*/, '')
+    status.textContent = base + ' scroll:' + Math.round(window.scrollY)
+  })
+</script>
+`)
+const interaction = await fetchJson('/browser-bridge/tabs', {
+  method: 'POST',
+  body: JSON.stringify({
+    url: `data:text/html;charset=utf-8,${interactionHtml}`,
+    background: false,
+  }),
+})
+if (!interaction.tab?.targetId) {
+  throw new Error(`Browser Bridge did not create interaction tab: ${JSON.stringify(interaction)}`)
+}
+
+const interactionPath = `/browser-bridge/tabs/${encodeURIComponent(interaction.tab.targetId)}`
+await fetchJson(`${interactionPath}/type`, {
+  method: 'POST',
+  body: JSON.stringify({ x: 80, y: 56, text: 'typed-by-bridge', clear: true }),
+})
+await fetchJson(`${interactionPath}/click`, {
+  method: 'POST',
+  body: JSON.stringify({ x: 80, y: 108 }),
+})
+const typedContent = await fetchJson(`${interactionPath}/content?selector=%23status`)
+if (!typedContent.text?.includes('typed:typed-by-bridge')) {
+  throw new Error(`Browser Bridge type/click did not update page content: ${JSON.stringify(typedContent)}`)
+}
+
+await fetchJson(`${interactionPath}/scroll`, {
+  method: 'POST',
+  body: JSON.stringify({ direction: 'down', amount: 5 }),
+})
+await new Promise((resolve) => setTimeout(resolve, 200))
+const scrolledContent = await fetchJson(`${interactionPath}/content?selector=%23status`)
+if (!/scroll:[1-9][0-9]*/.test(scrolledContent.text ?? '')) {
+  throw new Error(`Browser Bridge scroll did not update page scroll state: ${JSON.stringify(scrolledContent)}`)
+}
+
 console.log(JSON.stringify({
   initialTabs: initial.tabs.length,
   createdTargetId: created.tab.targetId,
+  interactionTargetId: interaction.tab.targetId,
   screenshotChars: screenshot.data.length,
 }))
 JS

@@ -917,6 +917,18 @@ export class Browser {
 
   async content(page: number, selector?: string): Promise<string> {
     const session = await this.resolveSession(page)
+    return this.contentFromSession(session, selector)
+  }
+
+  async contentTarget(targetId: string, selector?: string): Promise<string> {
+    const session = await this.resolveTargetSession(targetId)
+    return this.contentFromSession(session, selector)
+  }
+
+  private async contentFromSession(
+    session: ProtocolApi,
+    selector?: string,
+  ): Promise<string> {
     const expression = selector
       ? `(document.querySelector(${JSON.stringify(selector)})?.innerText ?? '')`
       : `(document.body?.innerText ?? '')`
@@ -1161,6 +1173,25 @@ export class Browser {
     opts?: { button?: string; clickCount?: number },
   ): Promise<void> {
     const session = await this.resolveSession(page)
+    await this.clickSessionAt(session, x, y, opts)
+  }
+
+  async clickTargetAt(
+    targetId: string,
+    x: number,
+    y: number,
+    opts?: { button?: string; clickCount?: number },
+  ): Promise<void> {
+    const session = await this.resolveTargetSession(targetId)
+    await this.clickSessionAt(session, x, y, opts)
+  }
+
+  private async clickSessionAt(
+    session: ProtocolApi,
+    x: number,
+    y: number,
+    opts?: { button?: string; clickCount?: number },
+  ): Promise<void> {
     await mouse.dispatchClick(
       session,
       x,
@@ -1184,6 +1215,27 @@ export class Browser {
     clear = false,
   ): Promise<void> {
     const session = await this.resolveSession(page)
+    await this.typeSessionAt(session, x, y, text, clear)
+  }
+
+  async typeTargetAt(
+    targetId: string,
+    x: number,
+    y: number,
+    text: string,
+    clear = false,
+  ): Promise<void> {
+    const session = await this.resolveTargetSession(targetId)
+    await this.typeSessionAt(session, x, y, text, clear)
+  }
+
+  private async typeSessionAt(
+    session: ProtocolApi,
+    x: number,
+    y: number,
+    text: string,
+    clear = false,
+  ): Promise<void> {
     await mouse.dispatchClick(session, x, y, 'left', 1, 0)
     if (clear) await keyboard.clearField(session)
     await keyboard.typeText(session, text)
@@ -1294,6 +1346,24 @@ export class Browser {
     element?: number,
   ): Promise<void> {
     const session = await this.resolveSession(page)
+    await this.scrollSession(session, direction, amount, element)
+  }
+
+  async scrollTarget(
+    targetId: string,
+    direction: string,
+    amount: number,
+  ): Promise<void> {
+    const session = await this.resolveTargetSession(targetId)
+    await this.scrollSession(session, direction, amount)
+  }
+
+  private async scrollSession(
+    session: ProtocolApi,
+    direction: string,
+    amount: number,
+    element?: number,
+  ): Promise<void> {
     const pixels = amount * 120
     const deltaX =
       direction === 'left' ? -pixels : direction === 'right' ? pixels : 0

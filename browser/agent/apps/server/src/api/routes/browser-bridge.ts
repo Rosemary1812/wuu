@@ -17,6 +17,10 @@ type BrowserBridgeDeps = {
     | 'createTargetTab'
     | 'navigateTarget'
     | 'screenshotTarget'
+    | 'contentTarget'
+    | 'clickTargetAt'
+    | 'typeTargetAt'
+    | 'scrollTarget'
   >
 }
 
@@ -83,6 +87,43 @@ async function readJson(c: Context): Promise<unknown> {
   } catch {
     return null
   }
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
+function readFiniteNumber(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readPoint(record: Record<string, unknown>) {
+  const x = readFiniteNumber(record, 'x')
+  const y = readFiniteNumber(record, 'y')
+  return x === null || y === null ? null : { x, y }
+}
+
+function readPositiveAmount(record: Record<string, unknown>): number {
+  const value = readFiniteNumber(record, 'amount')
+  if (value === null) return 3
+  return Math.max(1, Math.min(20, Math.round(value)))
+}
+
+function readDirection(value: unknown): string | null {
+  if (
+    value === 'up' ||
+    value === 'down' ||
+    value === 'left' ||
+    value === 'right'
+  ) {
+    return value
+  }
+  return null
 }
 
 export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
@@ -206,6 +247,83 @@ export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
       })
 
       return c.json(screenshot)
+    })
+    .get('/tabs/:targetId/content', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const selector = c.req.query('selector')?.trim() || undefined
+      const text = await browser.contentTarget(target.id, selector)
+      return c.json({ text })
+    })
+    .post('/tabs/:targetId/click', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const body = readRecord(await readJson(c))
+      const point = readPoint(body)
+      if (!point) return c.json({ error: 'x and y are required' }, 400)
+
+      const clickCount = readFiniteNumber(body, 'clickCount')
+      const button = body.button === 'right' || body.button === 'middle'
+        ? body.button
+        : 'left'
+
+      await browser.clickTargetAt(target.id, point.x, point.y, {
+        button,
+        clickCount: clickCount === null ? 1 : Math.max(1, Math.round(clickCount)),
+      })
+
+      return c.json({ ok: true })
+    })
+    .post('/tabs/:targetId/type', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const body = readRecord(await readJson(c))
+      const point = readPoint(body)
+      if (!point) return c.json({ error: 'x and y are required' }, 400)
+
+      const text = body.text
+      if (typeof text !== 'string') {
+        return c.json({ error: 'text is required' }, 400)
+      }
+
+      await browser.typeTargetAt(
+        target.id,
+        point.x,
+        point.y,
+        text,
+        body.clear === true,
+      )
+
+      return c.json({ ok: true })
+    })
+    .post('/tabs/:targetId/scroll', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const body = readRecord(await readJson(c))
+      const direction = readDirection(body.direction)
+      if (!direction) {
+        return c.json({ error: 'direction must be up, down, left, or right' }, 400)
+      }
+
+      await browser.scrollTarget(target.id, direction, readPositiveAmount(body))
+
+      return c.json({ ok: true })
     })
     .get('/active-tab', async (c) => {
       if (!browser.isCdpConnected()) return cdpUnavailable(c)

@@ -116,5 +116,5 @@ the BrowserOS build order. It refuses to mutate a dirty Chromium checkout unless
    runtime capabilities.
 4. Keep OpenClaw/Hermes/Lima VM startup disabled on the default Wuu Browser path.
 5. Keep one-command development launch, runtime/CDP verification, and the first
-   Browser Bridge tab create/navigate/screenshot path green.
+   Browser Bridge tab create/navigate/screenshot/click/type/scroll path green.
 6. Add packaging paths for macOS and Windows installers.
