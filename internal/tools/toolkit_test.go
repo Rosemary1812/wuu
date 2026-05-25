@@ -549,7 +549,7 @@ func TestToolkit_UpdatePlan_RejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestToolkit_UpdatePlan_StoresCurrentPlan(t *testing.T) {
+func TestToolkit_UpdatePlan_ReturnsConciseResult(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -570,11 +570,11 @@ func TestToolkit_UpdatePlan_StoresCurrentPlan(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse response: %v", err)
 	}
-	if parsed.Status != "updated" || parsed.Explanation != "starting work" {
+	if parsed.Status != "updated" || parsed.Explanation != "" {
 		t.Fatalf("unexpected response metadata: %+v", parsed)
 	}
-	if len(parsed.Plan) != 2 || parsed.Plan[1].Status != "in_progress" {
-		t.Fatalf("unexpected plan: %+v", parsed.Plan)
+	if len(parsed.Plan) != 0 {
+		t.Fatalf("tool result should not echo plan: %+v", parsed.Plan)
 	}
 }
 

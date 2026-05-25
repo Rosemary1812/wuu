@@ -100,15 +100,8 @@ func (t *UpdatePlanTool) Execute(_ context.Context, argsJSON string) (string, er
 	if err := validatePlan(args); err != nil {
 		return "", err
 	}
-	snapshot := t.env.planState.set(args)
-	result := map[string]any{
-		"status": "updated",
-		"plan":   snapshot.Plan,
-	}
-	if snapshot.Explanation != "" {
-		result["explanation"] = snapshot.Explanation
-	}
-	return mustJSON(result)
+	t.env.planState.set(args)
+	return mustJSON(map[string]string{"status": "updated"})
 }
 
 func decodePlanSnapshot(raw string) (PlanSnapshot, error) {
