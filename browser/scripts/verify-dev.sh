@@ -11,7 +11,7 @@ Checks:
   1. Chrome DevTools Protocol endpoint responds.
   2. BrowserOS server health endpoint responds.
   3. DevTools page list is readable.
-  4. Optionally, chrome://browseros/wuu is open.
+  4. Optionally, the Wuu workbench extension route is open.
 
 Environment overrides:
   WUU_BROWSER_CDP_PORT     Defaults to 9100.
@@ -82,10 +82,10 @@ page_count="$(printf '%s' "${pages_json}" | grep -o '"id"' | wc -l | tr -d ' ')"
 echo "  CDP pages: ${page_count}"
 
 if [[ "${require_wuu_tab}" == "true" ]]; then
-  if printf '%s' "${pages_json}" | grep -q 'chrome://browseros/wuu'; then
+  if printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://browseros/wuu'; then
     echo "  Wuu tab: present"
   else
-    echo "Wuu tab chrome://browseros/wuu was not found in CDP page list." >&2
+    echo "Wuu workbench tab was not found in CDP page list." >&2
     exit 1
   fi
 fi

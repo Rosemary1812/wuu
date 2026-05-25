@@ -11,9 +11,9 @@ Environment overrides:
   WUU_BROWSEROS_REPO       BrowserOS reference checkout.
   WUU_CHROMIUM_SRC         Chromium source checkout.
   WUU_BROWSER_APP          Built BrowserOS/Wuu Browser .app path on macOS.
-  WUU_BROWSER_EXTENSION    BrowserOS agent extension directory.
+  WUU_BROWSER_EXTENSION    Wuu/BrowserOS agent extension directory.
   WUU_BROWSER_PROFILE_DIR  Browser profile directory.
-  WUU_BROWSER_START_URL    Initial URL. Defaults to chrome://browseros/wuu.
+  WUU_BROWSER_START_URL    Initial URL. Defaults to chrome://newtab.
 
 Port overrides:
   WUU_BROWSER_CDP_PORT        Defaults to 9100.
@@ -25,7 +25,7 @@ USAGE
 
 dry_run=false
 profile_dir="${WUU_BROWSER_PROFILE_DIR:-}"
-start_url="${WUU_BROWSER_START_URL:-chrome://browseros/wuu}"
+start_url="${WUU_BROWSER_START_URL:-chrome://newtab}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -94,7 +94,17 @@ if [[ -z "${app_path}" ]]; then
   done
 fi
 
-extension_dir="${WUU_BROWSER_EXTENSION:-${browseros_repo}/packages/browseros-agent/apps/agent/dist/chrome-mv3-dev}"
+extension_dir="${WUU_BROWSER_EXTENSION:-}"
+if [[ -z "${extension_dir}" ]]; then
+  for candidate in \
+    "${repo_root}/browser/agent/apps/agent/dist/chrome-mv3-dev" \
+    "${browseros_repo}/packages/browseros-agent/apps/agent/dist/chrome-mv3-dev"; do
+    if [[ -d "${candidate}" ]]; then
+      extension_dir="${candidate}"
+      break
+    fi
+  done
+fi
 
 if [[ -z "${app_path}" || ! -d "${app_path}" ]]; then
   echo "Browser app not found." >&2
@@ -103,8 +113,8 @@ if [[ -z "${app_path}" || ! -d "${app_path}" ]]; then
 fi
 
 if [[ ! -d "${extension_dir}" ]]; then
-  echo "BrowserOS agent extension not found: ${extension_dir}" >&2
-  echo "Build the BrowserOS agent extension or set WUU_BROWSER_EXTENSION." >&2
+  echo "Wuu/BrowserOS agent extension not found." >&2
+  echo "Build browser/agent/apps/agent or set WUU_BROWSER_EXTENSION." >&2
   exit 1
 fi
 

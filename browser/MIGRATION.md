@@ -134,14 +134,15 @@ Migration rule:
 
 Current verification gap:
 
-- `browser/scripts/launch-dev.sh` can launch a separate BrowserOS Dev profile
-  with `chrome://browseros/wuu` as the requested start URL.
-- `browser/scripts/verify-dev.sh --require-wuu-tab` proves that the fresh
-  profile still lands on BrowserOS extension onboarding/newtab instead of the
-  Wuu route.
-- This means the product requirement is not satisfied by command-line URL
-  launch alone. The BrowserOS extension/browser first-run route must be changed
-  so Wuu Browser's default tab is the Wuu workbench.
+- `browser/agent/apps/agent/entrypoints/background/index.ts` now opens
+  `app.html#/home` on extension install, so the source default points at the
+  Wuu workbench instead of BrowserOS onboarding.
+- `browser/scripts/launch-dev.sh` now starts at `chrome://newtab` and prefers
+  the current repository's built extension before falling back to the external
+  BrowserOS reference dist.
+- Runtime verification still requires rebuilding the extension from
+  `browser/agent/apps/agent` and launching a fresh profile that loads that
+  built extension.
 
 ## Phase 4: Remove Misaligned Runtime Defaults
 
