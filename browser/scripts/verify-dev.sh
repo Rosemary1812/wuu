@@ -168,6 +168,10 @@ async function evaluate(expression) {
 }
 
 const result = await evaluate(`(async () => {
+  const deadline = Date.now() + 15000;
+  while (!window.wuu && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   if (!window.wuu) throw new Error('window.wuu is not installed');
   const project = await window.wuu.selectNoProject(false);
   const initialized = await window.wuu.initialize();
