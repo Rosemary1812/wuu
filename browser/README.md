@@ -73,6 +73,12 @@ WUU_CHROMIUM_SRC=/path/to/chromium/src \
 make browser-status
 ```
 
+Verify stable product defaults in tracked browser patches and launch scripts:
+
+```bash
+make browser-verify-product-defaults
+```
+
 ## Patch Workflow
 
 Inspect the current Chromium checkout without changing it:

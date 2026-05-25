@@ -1,4 +1,4 @@
-.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status browser-patch-status browser-patch-check browser-patch-apply browser-launch-dev browser-verify-dev browser-import-browseros browser-import-agent
+.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status browser-verify-product-defaults browser-patch-status browser-patch-check browser-patch-apply browser-launch-dev browser-verify-dev browser-import-browseros browser-import-agent
 
 VERSION_FILE := VERSION
 BASE_VERSION := $(shell cat $(VERSION_FILE) 2>/dev/null || echo "0.1.0")
@@ -33,6 +33,9 @@ clean:
 
 browser-status:
 	bash browser/scripts/status.sh
+
+browser-verify-product-defaults:
+	bash browser/scripts/verify-product-defaults.sh
 
 browser-patch-status:
 	bash browser/scripts/patch-checkout.sh status $(ARGS)

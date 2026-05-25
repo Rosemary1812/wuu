@@ -137,10 +137,12 @@ Current verification gap:
 - `browser/agent/apps/agent/entrypoints/background/index.ts` now opens
   `app.html#/home` on extension install, so the source default points at the
   Wuu workbench instead of BrowserOS onboarding.
-- `browser/scripts/launch-dev.sh` now starts directly at the deterministic
-  Wuu workbench extension route, `app.html#/home`, and prefers the current
-  repository's built extension before falling back to the external BrowserOS
-  reference dist.
+- `browser/scripts/launch-dev.sh` now starts directly at the product route,
+  `chrome://browseros/wuu`, and prefers the current repository's built
+  extension before falling back to the external BrowserOS reference dist.
+- `make browser-verify-product-defaults` guards stable defaults: first-run
+  Chromium patches and dev launch must open the Wuu workbench route instead of
+  BrowserOS welcome.
 - Runtime verification requires rebuilding the extension from
   `browser/agent/apps/agent` and launching a fresh profile that loads that
   built extension.

@@ -35,8 +35,7 @@ USAGE
 
 dry_run=false
 profile_dir="${WUU_BROWSER_PROFILE_DIR:-}"
-default_extension_id="bflpfmnmnokmjhmgnolecpppdbdophmk"
-start_url="${WUU_BROWSER_START_URL:-chrome-extension://${default_extension_id}/app.html#/home}"
+start_url="${WUU_BROWSER_START_URL:-chrome://browseros/wuu}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
