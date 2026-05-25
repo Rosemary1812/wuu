@@ -837,11 +837,14 @@ if (typeof dom.html !== 'string' || !dom.html.includes('id="status"')) {
   throw new Error(`Browser Bridge DOM returned unexpected data: ${JSON.stringify(dom)}`)
 }
 
+await fetchJson(`${interactionPath}/network?clear=1`)
+const missingNetworkUrl = `${serverBase}/__wuu_bridge_missing_${Date.now()}`
 const evaluation = await fetchJson(`${interactionPath}/evaluate`, {
   method: 'POST',
   body: JSON.stringify({
     expression: `(() => {
       console.error('wuu-bridge-console-error')
+      fetch(${JSON.stringify(missingNetworkUrl)}).catch(() => {})
       return { debugReady: true, title: document.title }
     })()`,
   }),
@@ -857,6 +860,18 @@ if (
   !consoleLogs.entries.some((entry) => entry.text?.includes('wuu-bridge-console-error'))
 ) {
   throw new Error(`Browser Bridge console returned unexpected data: ${JSON.stringify(consoleLogs)}`)
+}
+
+await new Promise((resolve) => setTimeout(resolve, 200))
+const networkEntries = await fetchJson(`${interactionPath}/network?search=__wuu_bridge_missing&limit=10`)
+if (
+  !Array.isArray(networkEntries.entries) ||
+  !networkEntries.entries.some((entry) =>
+    entry.url?.includes('__wuu_bridge_missing') &&
+    (entry.failed === true || (typeof entry.status === 'number' && entry.status >= 400))
+  )
+) {
+  throw new Error(`Browser Bridge network returned unexpected data: ${JSON.stringify(networkEntries)}`)
 }
 
 await fetchJson(`${interactionPath}/type`, {
@@ -890,6 +905,7 @@ console.log(JSON.stringify({
   snapshotChars: snapshot.snapshot.length,
   domChars: dom.html.length,
   consoleEntries: consoleLogs.entries.length,
+  networkEntries: networkEntries.entries.length,
 }))
 JS
 )" || {

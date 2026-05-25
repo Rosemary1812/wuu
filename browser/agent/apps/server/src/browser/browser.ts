@@ -19,6 +19,11 @@ import type { HistoryEntry } from './history'
 import * as history from './history'
 import * as keyboard from './keyboard'
 import * as mouse from './mouse'
+import {
+  type GetNetworkEntriesOptions,
+  type GetNetworkEntriesResult,
+  NetworkCollector,
+} from './network-collector'
 import type { AXNode } from './snapshot'
 import * as snapshot from './snapshot'
 import type { TabGroup } from './tab-groups'
@@ -113,15 +118,17 @@ const ACTIONABLE_SELECTOR = [
 export class Browser {
   private cdp: CdpBackend
   private consoleCollector: ConsoleCollector
+  private networkCollector: NetworkCollector
   private pages = new Map<number, PageInfo>()
   private sessions = new Map<string, string>()
-  private targetConsolePageIds = new Map<string, number>()
+  private observedTargetPageIds = new Map<string, number>()
   private nextPageId = 1
-  private nextTargetConsolePageId = -1
+  private nextObservedTargetPageId = -1
 
   constructor(cdp: CdpBackend) {
     this.cdp = cdp
     this.consoleCollector = new ConsoleCollector(cdp)
+    this.networkCollector = new NetworkCollector(cdp)
     this.setupEventHandlers()
   }
 
@@ -185,10 +192,11 @@ export class Browser {
         for (const [targetId, sid] of this.sessions) {
           if (sid === params.sessionId) {
             this.sessions.delete(targetId)
-            const consolePageId = this.targetConsolePageIds.get(targetId)
-            if (consolePageId !== undefined) {
-              this.consoleCollector.detach(consolePageId)
-              this.targetConsolePageIds.delete(targetId)
+            const observedPageId = this.observedTargetPageIds.get(targetId)
+            if (observedPageId !== undefined) {
+              this.consoleCollector.detach(observedPageId)
+              this.networkCollector.detach(observedPageId)
+              this.observedTargetPageIds.delete(targetId)
             }
             break
           }
@@ -226,7 +234,10 @@ export class Browser {
   ): Promise<string> {
     const cached = this.sessions.get(targetId)
     if (cached) {
-      if (pageId !== undefined) this.consoleCollector.attach(pageId, cached)
+      if (pageId !== undefined) {
+        this.consoleCollector.attach(pageId, cached)
+        this.networkCollector.attach(pageId, cached)
+      }
       return cached
     }
 
@@ -244,11 +255,13 @@ export class Browser {
       session.Runtime.enable(),
       session.Log.enable(),
       session.Accessibility.enable(),
+      session.Network.enable(),
     ])
 
     this.sessions.set(targetId, sessionId)
     if (pageId !== undefined) {
       this.consoleCollector.attach(pageId, sessionId)
+      this.networkCollector.attach(pageId, sessionId)
     }
 
     return sessionId
@@ -262,16 +275,16 @@ export class Browser {
   private async resolveObservedTargetSession(
     targetId: string,
   ): Promise<ProtocolApi> {
-    const consolePageId = this.getTargetConsolePageId(targetId)
-    const sessionId = await this.attachToTarget(targetId, consolePageId)
+    const pageId = this.getObservedTargetPageId(targetId)
+    const sessionId = await this.attachToTarget(targetId, pageId)
     return this.cdp.session(sessionId)
   }
 
-  private getTargetConsolePageId(targetId: string): number {
-    let pageId = this.targetConsolePageIds.get(targetId)
+  private getObservedTargetPageId(targetId: string): number {
+    let pageId = this.observedTargetPageIds.get(targetId)
     if (pageId === undefined) {
-      pageId = this.nextTargetConsolePageId--
-      this.targetConsolePageIds.set(targetId, pageId)
+      pageId = this.nextObservedTargetPageId--
+      this.observedTargetPageIds.set(targetId, pageId)
     }
     return pageId
   }
@@ -1925,7 +1938,18 @@ export class Browser {
   ): Promise<GetConsoleLogsResult> {
     await this.resolveObservedTargetSession(targetId)
     return this.consoleCollector.getLogs(
-      this.getTargetConsolePageId(targetId),
+      this.getObservedTargetPageId(targetId),
+      opts,
+    )
+  }
+
+  async getNetworkEntriesTarget(
+    targetId: string,
+    opts?: GetNetworkEntriesOptions,
+  ): Promise<GetNetworkEntriesResult> {
+    await this.resolveObservedTargetSession(targetId)
+    return this.networkCollector.getEntries(
+      this.getObservedTargetPageId(targetId),
       opts,
     )
   }

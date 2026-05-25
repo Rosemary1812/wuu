@@ -24,6 +24,7 @@ type BrowserBridgeDeps = {
     | 'domTarget'
     | 'evaluateTarget'
     | 'getConsoleLogsTarget'
+    | 'getNetworkEntriesTarget'
     | 'clickTargetAt'
     | 'typeTargetAt'
     | 'scrollTarget'
@@ -335,6 +336,32 @@ export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
       const result = await browser.getConsoleLogsTarget(target.id, {
         level,
         search,
+        ...(limit !== undefined ? { limit } : {}),
+        clear,
+      })
+      return c.json({
+        ...result,
+        returnedCount: result.entries.length,
+      })
+    })
+    .get('/tabs/:targetId/network', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const search = c.req.query('search')?.trim() || undefined
+      const limitParam = Number(c.req.query('limit'))
+      const limit = Number.isFinite(limitParam)
+        ? Math.max(1, Math.min(200, Math.round(limitParam)))
+        : undefined
+      const failedOnly = c.req.query('failed') === '1'
+      const clear = c.req.query('clear') === '1'
+
+      const result = await browser.getNetworkEntriesTarget(target.id, {
+        search,
+        failedOnly,
         ...(limit !== undefined ? { limit } : {}),
         clear,
       })

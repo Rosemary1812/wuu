@@ -159,6 +159,11 @@ check_contains \
   "Browser Bridge exposes target console logs"
 
 check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/network" \
+  "Browser Bridge exposes target network entries"
+
+check_contains \
   "${dev_verify_script}" \
   "/snapshot?enhanced=1" \
   "dev verification checks Browser Bridge enhanced snapshots"
@@ -177,6 +182,11 @@ check_contains \
   "${dev_verify_script}" \
   "/console?level=error" \
   "dev verification checks Browser Bridge console reads"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/network?search=__wuu_bridge_missing" \
+  "dev verification checks Browser Bridge network reads"
 
 check_contains \
   "${server_main}" \

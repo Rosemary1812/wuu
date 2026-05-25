@@ -222,6 +222,8 @@ Current first bridge:
   context for targeted inspection and debugging.
 - `GET /browser-bridge/tabs/:targetId/console` reads console logs, warnings,
   and errors captured from the tab target.
+- `GET /browser-bridge/tabs/:targetId/network` reads recent network requests,
+  HTTP statuses, and failed loads captured from the tab target.
 - `POST /browser-bridge/tabs/:targetId/click` clicks a coordinate.
 - `POST /browser-bridge/tabs/:targetId/type` clicks and types into a coordinate.
 - `POST /browser-bridge/tabs/:targetId/scroll` scrolls a tab.

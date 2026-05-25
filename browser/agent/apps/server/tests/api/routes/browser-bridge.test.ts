@@ -48,6 +48,10 @@ function createBrowser(overrides: Partial<FakeBrowser> = {}): FakeBrowser {
       entries: [],
       totalCount: 0,
     })),
+    getNetworkEntriesTarget: mock(async () => ({
+      entries: [],
+      totalCount: 0,
+    })),
     clickTargetAt: mock(async () => {}),
     typeTargetAt: mock(async () => {}),
     scrollTarget: mock(async () => {}),
@@ -359,6 +363,56 @@ describe('createBrowserBridgeRoutes', () => {
       level: 'error',
       search: 'Bridge',
       limit: 5,
+      clear: true,
+    })
+  })
+
+  it('returns network entries for an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+      getNetworkEntriesTarget: mock(async () => ({
+        entries: [
+          {
+            requestId: 'request-1',
+            url: 'https://example.test/api/missing',
+            method: 'GET',
+            type: 'Fetch',
+            status: 404,
+            statusText: 'Not Found',
+            failed: true,
+            timestamp: 1234,
+          },
+        ],
+        totalCount: 1,
+      })),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request(
+      '/tabs/target-2/network?failed=1&limit=10&search=missing&clear=1',
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      entries: [
+        {
+          requestId: 'request-1',
+          url: 'https://example.test/api/missing',
+          method: 'GET',
+          type: 'Fetch',
+          status: 404,
+          statusText: 'Not Found',
+          failed: true,
+          timestamp: 1234,
+        },
+      ],
+      totalCount: 1,
+      returnedCount: 1,
+    })
+    expect(browser.getNetworkEntriesTarget).toHaveBeenCalledWith('target-2', {
+      search: 'missing',
+      failedOnly: true,
+      limit: 10,
       clear: true,
     })
   })
