@@ -146,6 +146,37 @@ export class Browser {
     }
   }
 
+  async createTargetTab(
+    url: string,
+    opts?: { background?: boolean; windowId?: number },
+  ): Promise<CdpTarget> {
+    const createResult = await this.cdp.Browser.createTab({
+      url,
+      ...(opts?.background !== undefined && { background: opts.background }),
+      ...(opts?.windowId !== undefined && { windowId: opts.windowId }),
+    })
+
+    const tabId = (createResult.tab as TabInfo).tabId
+    for (let i = 0; i < 10; i++) {
+      try {
+        const result = await this.cdp.Browser.getTabInfo({ tabId })
+        const tab = result.tab as TabInfo
+        return {
+          id: tab.targetId,
+          type: 'page',
+          title: tab.title,
+          url: tab.url || url,
+          tabId: tab.tabId,
+          windowId: tab.windowId,
+        }
+      } catch {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    }
+
+    throw new Error(`Tab ${tabId} not found after creation`)
+  }
+
   private setupEventHandlers(): void {
     this.cdp.Target.on('detachedFromTarget', (params) => {
       if (params.sessionId) {
@@ -179,6 +210,13 @@ export class Browser {
     targetId: string,
     pageId: number,
   ): Promise<string> {
+    return this.attachToTarget(targetId, pageId)
+  }
+
+  private async attachToTarget(
+    targetId: string,
+    pageId?: number,
+  ): Promise<string> {
     const cached = this.sessions.get(targetId)
     if (cached) return cached
 
@@ -199,9 +237,16 @@ export class Browser {
     ])
 
     this.sessions.set(targetId, sessionId)
-    this.consoleCollector.attach(pageId, sessionId)
+    if (pageId !== undefined) {
+      this.consoleCollector.attach(pageId, sessionId)
+    }
 
     return sessionId
+  }
+
+  private async resolveTargetSession(targetId: string): Promise<ProtocolApi> {
+    const sessionId = await this.attachToTarget(targetId)
+    return this.cdp.session(sessionId)
   }
 
   // --- Pages ---
@@ -656,6 +701,12 @@ export class Browser {
     await this.waitForLoad(session)
   }
 
+  async navigateTarget(targetId: string, url: string): Promise<void> {
+    const session = await this.resolveTargetSession(targetId)
+    await session.Page.navigate({ url })
+    await this.waitForLoad(session)
+  }
+
   async goBack(page: number): Promise<void> {
     const session = await this.resolveSession(page)
     await session.Runtime.evaluate({
@@ -903,7 +954,21 @@ export class Browser {
     opts: { format: string; quality?: number; fullPage: boolean },
   ): Promise<{ data: string; mimeType: string; devicePixelRatio: number }> {
     const session = await this.resolveSession(page)
+    return this.captureScreenshot(session, opts)
+  }
 
+  async screenshotTarget(
+    targetId: string,
+    opts: { format: string; quality?: number; fullPage: boolean },
+  ): Promise<{ data: string; mimeType: string; devicePixelRatio: number }> {
+    const session = await this.resolveTargetSession(targetId)
+    return this.captureScreenshot(session, opts)
+  }
+
+  private async captureScreenshot(
+    session: ProtocolApi,
+    opts: { format: string; quality?: number; fullPage: boolean },
+  ): Promise<{ data: string; mimeType: string; devicePixelRatio: number }> {
     const params: Record<string, unknown> = {
       format: opts.format,
       captureBeyondViewport: opts.fullPage,

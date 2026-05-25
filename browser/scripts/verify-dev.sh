@@ -231,22 +231,82 @@ if [[ "${require_no_vm_agents}" == "true" ]]; then
 fi
 
 if [[ "${require_browser_bridge}" == "true" ]]; then
-  bridge_json="$(fetch "${server_base}/browser-bridge/tabs")" || {
-    echo "Browser Bridge tab endpoint is not reachable." >&2
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required for Browser Bridge verification" >&2
+    exit 2
+  fi
+
+  bridge_json="$(SERVER_BASE="${server_base}" REQUIRE_WUU_TAB="${require_wuu_tab}" bun - <<'JS'
+const serverBase = process.env.SERVER_BASE
+const requireWuuTab = process.env.REQUIRE_WUU_TAB === 'true'
+const origin = serverBase
+
+async function fetchJson(path, init = {}) {
+  const response = await fetch(`${serverBase}${path}`, {
+    ...init,
+    headers: {
+      Origin: origin,
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...(init.headers ?? {}),
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`${path} failed with ${response.status}: ${await response.text()}`)
+  }
+  return response.json()
+}
+
+const initial = await fetchJson('/browser-bridge/tabs')
+if (!Array.isArray(initial.tabs)) {
+  throw new Error(`Browser Bridge returned no tabs array: ${JSON.stringify(initial)}`)
+}
+
+if (
+  requireWuuTab &&
+  !initial.tabs.some((tab) => /chrome:\/\/browseros\/wuu|app\.html#\/home/.test(tab.url))
+) {
+  throw new Error(`Browser Bridge did not report the Wuu workbench tab: ${JSON.stringify(initial)}`)
+}
+
+const createUrl = 'data:text/html,<title>Wuu%20Bridge%20Verify</title><main>Wuu%20Browser%20Bridge%20created%20this%20tab</main>'
+const created = await fetchJson('/browser-bridge/tabs', {
+  method: 'POST',
+  body: JSON.stringify({ url: createUrl, background: true }),
+})
+if (!created.tab?.targetId) {
+  throw new Error(`Browser Bridge did not create a tab target: ${JSON.stringify(created)}`)
+}
+
+const navigateUrl = 'data:text/html,<title>Wuu%20Bridge%20Navigate%20Verify</title><main>Wuu%20Browser%20Bridge%20navigation%20works</main>'
+const targetPath = `/browser-bridge/tabs/${encodeURIComponent(created.tab.targetId)}`
+const navigated = await fetchJson(`${targetPath}/navigate`, {
+  method: 'POST',
+  body: JSON.stringify({ url: navigateUrl }),
+})
+if (!navigated.tab?.url?.startsWith('data:text/html')) {
+  throw new Error(`Browser Bridge navigation returned unexpected tab: ${JSON.stringify(navigated)}`)
+}
+
+const screenshot = await fetchJson(`${targetPath}/screenshot?format=png`)
+if (screenshot.mimeType !== 'image/png' || typeof screenshot.data !== 'string' || screenshot.data.length < 100) {
+  throw new Error(`Browser Bridge screenshot returned unexpected data: ${JSON.stringify({
+    mimeType: screenshot.mimeType,
+    dataLength: typeof screenshot.data === 'string' ? screenshot.data.length : null,
+  })}`)
+}
+
+console.log(JSON.stringify({
+  initialTabs: initial.tabs.length,
+  createdTargetId: created.tab.targetId,
+  screenshotChars: screenshot.data.length,
+}))
+JS
+)" || {
+    echo "Browser Bridge verification failed." >&2
     exit 1
   }
 
-  if ! printf '%s' "${bridge_json}" | grep -q '"tabs"'; then
-    echo "Browser Bridge returned unexpected output: ${bridge_json}" >&2
-    exit 1
-  fi
-
-  if [[ "${require_wuu_tab}" == "true" ]] && ! printf '%s' "${bridge_json}" | grep -Eq 'chrome://browseros/wuu|app\.html#/home'; then
-    echo "Browser Bridge did not report the Wuu workbench tab: ${bridge_json}" >&2
-    exit 1
-  fi
-
-  echo "  Browser Bridge tabs: ok"
+  echo "  Browser Bridge: ${bridge_json}"
 fi
 
 if printf '%s' "${version_json}" | grep -q '"Browser"'; then

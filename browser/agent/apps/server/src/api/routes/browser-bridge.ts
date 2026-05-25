@@ -9,7 +9,15 @@ import type { Browser } from '../../browser/browser'
 import type { CdpTarget } from '../../browser/backends/types'
 
 type BrowserBridgeDeps = {
-  browser: Pick<Browser, 'isCdpConnected' | 'listTargets' | 'getActiveTarget'>
+  browser: Pick<
+    Browser,
+    | 'isCdpConnected'
+    | 'listTargets'
+    | 'getActiveTarget'
+    | 'createTargetTab'
+    | 'navigateTarget'
+    | 'screenshotTarget'
+  >
 }
 
 type BrowserBridgeTab = {
@@ -56,6 +64,27 @@ function cdpUnavailable(c: Context) {
   return c.json({ error: 'Browser CDP is not connected' }, 503)
 }
 
+function readUrl(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const url = (value as { url?: unknown }).url
+  if (typeof url !== 'string' || !url.trim()) return null
+
+  try {
+    new URL(url)
+    return url
+  } catch {
+    return null
+  }
+}
+
+async function readJson(c: Context): Promise<unknown> {
+  try {
+    return await c.req.json()
+  } catch {
+    return null
+  }
+}
+
 export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
   const pageIdsByTargetId = new Map<string, number>()
   let nextPageId = 1
@@ -76,7 +105,41 @@ export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
     }
   }
 
+  async function findBridgeTarget(targetId: string): Promise<CdpTarget | null> {
+    const pageTargets = (await browser.listTargets()).filter(isBridgeTarget)
+    forgetMissingTargets(pageTargets)
+    return pageTargets.find((target) => target.id === targetId) ?? null
+  }
+
   return new Hono()
+    .post('/tabs', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const body = await readJson(c)
+      const url = readUrl(body)
+      if (!url) return c.json({ error: 'A valid absolute URL is required' }, 400)
+
+      const record = body as { background?: unknown; windowId?: unknown }
+      const target = await browser.createTargetTab(url, {
+        background:
+          typeof record.background === 'boolean' ? record.background : true,
+        ...(typeof record.windowId === 'number'
+          ? { windowId: record.windowId }
+          : {}),
+      })
+
+      const activeTarget = await browser.getActiveTarget()
+      return c.json(
+        {
+          tab: toBridgeTab(
+            target,
+            getPageId(target.id),
+            activeTarget?.id ?? null,
+          ),
+        },
+        201,
+      )
+    })
     .get('/tabs', async (c) => {
       if (!browser.isCdpConnected()) return cdpUnavailable(c)
 
@@ -94,6 +157,55 @@ export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
       const activeTab = tabs.find((tab) => tab.isActive) ?? null
 
       return c.json({ tabs, activeTab })
+    })
+    .post('/tabs/:targetId/navigate', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const url = readUrl(await readJson(c))
+      if (!url) return c.json({ error: 'A valid absolute URL is required' }, 400)
+
+      await browser.navigateTarget(target.id, url)
+
+      const updated = (await findBridgeTarget(target.id)) ?? {
+        ...target,
+        url,
+      }
+      const activeTarget = await browser.getActiveTarget()
+
+      return c.json({
+        tab: toBridgeTab(
+          updated,
+          getPageId(updated.id),
+          activeTarget?.id ?? null,
+        ),
+      })
+    })
+    .get('/tabs/:targetId/screenshot', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const format = c.req.query('format') === 'jpeg' ? 'jpeg' : 'png'
+      const fullPage = c.req.query('fullPage') === '1'
+      const qualityParam = Number(c.req.query('quality'))
+      const quality =
+        format === 'jpeg' && Number.isFinite(qualityParam)
+          ? Math.max(1, Math.min(100, Math.round(qualityParam)))
+          : undefined
+
+      const screenshot = await browser.screenshotTarget(target.id, {
+        format,
+        fullPage,
+        ...(quality !== undefined ? { quality } : {}),
+      })
+
+      return c.json(screenshot)
     })
     .get('/active-tab', async (c) => {
       if (!browser.isCdpConnected()) return cdpUnavailable(c)

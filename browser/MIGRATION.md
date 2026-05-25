@@ -199,6 +199,9 @@ Current first bridge:
 - `GET /browser-bridge/tabs` returns the current CDP-backed tab list and active
   tab metadata using stable Wuu page IDs and Chromium tab IDs.
 - `GET /browser-bridge/active-tab` returns the active tab metadata directly.
+- `POST /browser-bridge/tabs` creates a new tab.
+- `POST /browser-bridge/tabs/:targetId/navigate` navigates a tab target.
+- `GET /browser-bridge/tabs/:targetId/screenshot` captures a tab screenshot.
 - `make browser-verify-dev ARGS="--require-browser-bridge"` checks this against
   a running Wuu Browser Dev instance.
 
