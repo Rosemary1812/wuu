@@ -123,6 +123,10 @@ Current agent/workbench asset path:
 - `make browser-launch-dev` now auto-builds the repo-owned extension when the
   dist is missing and `WUU_BROWSER_EXTENSION` is not set, so the normal dev
   launch path does not require an external BrowserOS extension checkout.
+- `make browser-launch-dev` also stages server resources through
+  `browser-build-agent --server` using the host target or
+  `WUU_BROWSER_SERVER_TARGET`, instead of hardcoding a single macOS ARM64
+  BrowserOS server archive.
 
 ## Phase 3: Wuu Workbench Integration
 

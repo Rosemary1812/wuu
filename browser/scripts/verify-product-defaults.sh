@@ -188,6 +188,31 @@ check_contains \
   "dev launch points missing extension errors at the repo-owned build command"
 
 check_contains \
+  "${launch_script}" \
+  "WUU_BROWSER_SERVER_TARGET" \
+  "dev launch can select the server resource target"
+
+check_contains \
+  "${launch_script}" \
+  'server_build_args=(--server --server-target "${server_target}")' \
+  "dev launch stages server resources through the repo-owned agent build entry point"
+
+check_contains \
+  "${launch_script}" \
+  'browseros-server-resources-${server_target}.zip' \
+  "dev launch uses the selected server resource target archive"
+
+check_not_contains \
+  "${launch_script}" \
+  'bun run build:server:test' \
+  "dev launch no longer bypasses browser-build-agent for server resources"
+
+check_not_contains \
+  "${launch_script}" \
+  'browseros-server-resources-darwin-arm64.zip' \
+  "dev launch no longer hardcodes the macOS ARM64 server resource archive"
+
+check_contains \
   "${package_dev_macos_script}" \
   'plutil -replace CFBundleDisplayName -string "Wuu Browser Dev"' \
   "macOS dev packaging applies Wuu Browser visible app name"

@@ -119,7 +119,10 @@ The extension build produces
 `browser/agent/apps/agent/dist/chrome-mv3-dev`, which is the default extension
 loaded by `make browser-launch-dev`. If that repo-owned dist is missing and
 `WUU_BROWSER_EXTENSION` is not set, `browser-launch-dev` builds it before
-launching instead of requiring the external BrowserOS checkout.
+launching instead of requiring the external BrowserOS checkout. The same launch
+path stages server resources through `browser-build-agent --server`, with
+`WUU_BROWSER_SERVER_TARGET` available when the host target needs to be
+overridden.
 
 Stage the local macOS development app under this repository:
 

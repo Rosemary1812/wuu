@@ -19,6 +19,8 @@ Environment overrides:
   WUU_BROWSER_SERVER_RESOURCES
                            BrowserOS server resources directory. Defaults to
                            the bundled resources inside WUU_BROWSER_APP.
+  WUU_BROWSER_SERVER_TARGET
+                           Server resource target. Defaults to the host target.
   WUU_BROWSER_STAGE_SERVER_RESOURCES
                            Build and stage local server resources before launch.
                            Defaults to 1 when WUU_BROWSER_SERVER_RESOURCES is not set.
@@ -95,6 +97,17 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 2
 fi
 
+host_server_target() {
+  case "$(uname -m)" in
+    arm64|aarch64) printf 'darwin-arm64' ;;
+    x86_64|amd64) printf 'darwin-x64' ;;
+    *)
+      echo "Unsupported host architecture for server resources: $(uname -m)" >&2
+      exit 2
+      ;;
+  esac
+}
+
 app_path="${WUU_BROWSER_APP:-}"
 if [[ -z "${app_path}" ]]; then
   for candidate in \
@@ -158,6 +171,7 @@ if [[ ! -d "${extension_dir}" && ! ( "${dry_run}" == "true" && "${stage_extensio
 fi
 
 server_resources_dir="${WUU_BROWSER_SERVER_RESOURCES:-${app_path}/Contents/Resources/BrowserOSServer/default/resources}"
+server_target="${WUU_BROWSER_SERVER_TARGET:-$(host_server_target)}"
 stage_server_resources="${WUU_BROWSER_STAGE_SERVER_RESOURCES:-}"
 if [[ -z "${stage_server_resources}" ]]; then
   if [[ -z "${WUU_BROWSER_SERVER_RESOURCES:-}" ]]; then
@@ -167,28 +181,30 @@ if [[ -z "${stage_server_resources}" ]]; then
   fi
 fi
 
-if [[ "${stage_server_resources}" == "1" && "${dry_run}" != "true" ]]; then
-  if ! command -v bun >/dev/null 2>&1; then
-    echo "bun is required to build BrowserOS server resources." >&2
-    exit 2
-  fi
-  if ! command -v unzip >/dev/null 2>&1; then
-    echo "unzip is required to stage BrowserOS server resources." >&2
-    exit 2
+if [[ "${stage_server_resources}" == "1" ]]; then
+  server_build_args=(--server --server-target "${server_target}")
+  if [[ "${dry_run}" == "true" ]]; then
+    server_build_args+=(--dry-run)
   fi
 
-  echo "Building BrowserOS server resources for browser dev..."
-  (cd "${repo_root}/browser/agent" && bun run build:server:test)
+  bash "${repo_root}/browser/scripts/build-agent.sh" "${server_build_args[@]}"
 
-  server_resource_archive="${repo_root}/browser/agent/dist/prod/server/browseros-server-resources-darwin-arm64.zip"
-  if [[ ! -f "${server_resource_archive}" ]]; then
+  server_resource_archive="${repo_root}/browser/agent/dist/prod/server/browseros-server-resources-${server_target}.zip"
+  if [[ "${dry_run}" == "true" ]]; then
+    :
+  elif [[ ! -f "${server_resource_archive}" ]]; then
     echo "BrowserOS server resource archive was not produced: ${server_resource_archive}" >&2
     exit 1
-  fi
+  else
+    if ! command -v unzip >/dev/null 2>&1; then
+      echo "unzip is required to stage BrowserOS server resources." >&2
+      exit 2
+    fi
 
-  server_resources_root="$(dirname "${server_resources_dir}")"
-  unzip -oq "${server_resource_archive}" -d "${server_resources_root}"
-  chmod +x "${server_resources_dir}/bin/browseros_server"
+    server_resources_root="$(dirname "${server_resources_dir}")"
+    unzip -oq "${server_resource_archive}" -d "${server_resources_root}"
+    chmod +x "${server_resources_dir}/bin/browseros_server"
+  fi
 fi
 
 if [[ "${dry_run}" != "true" && ! -x "${server_resources_dir}/bin/browseros_server" ]]; then
@@ -249,6 +265,7 @@ echo "  app:       ${app_path}"
 echo "  extension: ${extension_dir}"
 echo "  stage ext: ${stage_extension}"
 echo "  server:    ${server_resources_dir}"
+echo "  srv target:${server_target}"
 echo "  stage srv: ${stage_server_resources}"
 echo "  profile:   ${profile_dir}"
 echo "  start URL: ${start_url}"
