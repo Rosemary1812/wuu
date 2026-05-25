@@ -211,7 +211,7 @@ Current first bridge:
 
 ## Phase 6: Installable Product
 
-Status: pending.
+Status: in progress.
 
 Goals:
 
@@ -227,3 +227,20 @@ Completion evidence:
 - The default tab is the Wuu workbench.
 - At least one real local project flow and one real agent turn work from the
   packaged app or a packaging-equivalent build.
+
+Current packaging path:
+
+- `make browser-package-dev-macos` stages `browser/out/Wuu Browser Dev.app`
+  from the current Chromium dev build and applies Wuu Browser visible app
+  metadata, bundles component-build `.dylib` files into the staged app, then
+  ad-hoc signs it for local launch.
+- `make browser-package-dev-macos ARGS="--dmg"` creates a local development
+  DMG from the staged app.
+- `make browser-launch-dev` prefers the repo-staged Wuu Browser Dev app before
+  falling back to the external BrowserOS Chromium build.
+
+Remaining gap:
+
+- This is a development staging path, not the final signed/notarized release
+  pipeline. The internal executable/framework names can still inherit BrowserOS
+  until the Chromium branding patches are fully renamed.

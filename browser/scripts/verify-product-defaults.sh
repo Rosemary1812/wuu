@@ -36,6 +36,7 @@ check_not_contains() {
 first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_main.cc"
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
+package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
 server_main="${browser_dir}/agent/apps/server/src/main.ts"
 
 echo "Wuu Browser product default verification"
@@ -62,8 +63,33 @@ check_contains \
 
 check_contains \
   "${launch_script}" \
+  '${repo_root}/browser/out/Wuu Browser Dev.app' \
+  "dev launch prefers the repo-staged Wuu Browser app"
+
+check_contains \
+  "${launch_script}" \
   '"--disable-browseros-server-updater"' \
   "dev launch keeps BrowserOS server updater disabled"
+
+check_contains \
+  "${package_dev_macos_script}" \
+  'plutil -replace CFBundleDisplayName -string "Wuu Browser Dev"' \
+  "macOS dev packaging applies Wuu Browser visible app name"
+
+check_contains \
+  "${package_dev_macos_script}" \
+  'plutil -replace CFBundleIdentifier -string "com.wuu.browser.dev"' \
+  "macOS dev packaging applies Wuu Browser bundle id"
+
+check_contains \
+  "${package_dev_macos_script}" \
+  'codesign --force --deep --sign - "${output_app}"' \
+  "macOS dev packaging ad-hoc signs the staged app"
+
+check_contains \
+  "${package_dev_macos_script}" \
+  "find \"\${source_build_dir}\" -maxdepth 1 -type f -name '*.dylib' -print0" \
+  "macOS dev packaging bundles Chromium component-build dylibs"
 
 check_contains \
   "${server_main}" \

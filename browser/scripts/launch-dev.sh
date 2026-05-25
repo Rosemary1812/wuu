@@ -10,7 +10,7 @@ Launch the local Wuu Browser development build.
 Environment overrides:
   WUU_BROWSEROS_REPO       BrowserOS reference checkout.
   WUU_CHROMIUM_SRC         Chromium source checkout.
-  WUU_BROWSER_APP          Built BrowserOS/Wuu Browser .app path on macOS.
+  WUU_BROWSER_APP          Built or staged BrowserOS/Wuu Browser .app path on macOS.
   WUU_BROWSER_EXTENSION    Wuu/BrowserOS agent extension directory.
   WUU_BROWSER_SERVER_RESOURCES
                            BrowserOS server resources directory. Defaults to
@@ -86,7 +86,7 @@ if [[ ! -d "${chromium_src}" && -d "${HOME}/browseros-chromium/src" ]]; then
 fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "launch-dev currently supports macOS BrowserOS Dev app launches only." >&2
+  echo "launch-dev currently supports macOS Wuu Browser Dev app launches only." >&2
   echo "Windows/Linux launch scripts should be added with the packaging work." >&2
   exit 2
 fi
@@ -94,9 +94,13 @@ fi
 app_path="${WUU_BROWSER_APP:-}"
 if [[ -z "${app_path}" ]]; then
   for candidate in \
+    "${repo_root}/browser/out/Wuu Browser Dev.app" \
     "${chromium_src}/out/Default_arm64/BrowserOS Dev.app" \
     "${chromium_src}/out/Default/BrowserOS Dev.app" \
-    "${chromium_src}/out/Default_x64/BrowserOS Dev.app"; do
+    "${chromium_src}/out/Default_x64/BrowserOS Dev.app" \
+    "${chromium_src}/out/Default_arm64/Wuu Browser Dev.app" \
+    "${chromium_src}/out/Default/Wuu Browser Dev.app" \
+    "${chromium_src}/out/Default_x64/Wuu Browser Dev.app"; do
     if [[ -d "${candidate}" ]]; then
       app_path="${candidate}"
       break
@@ -118,7 +122,7 @@ fi
 
 if [[ -z "${app_path}" || ! -d "${app_path}" ]]; then
   echo "Browser app not found." >&2
-  echo "Set WUU_BROWSER_APP or build BrowserOS Dev under the Chromium checkout." >&2
+  echo "Run make browser-package-dev-macos, set WUU_BROWSER_APP, or build BrowserOS Dev under the Chromium checkout." >&2
   exit 1
 fi
 

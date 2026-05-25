@@ -82,6 +82,20 @@ make browser-verify-product-defaults
 The default Wuu Browser path does not start OpenClaw, Hermes, or Lima. VM-backed
 agents are opt-in for future sandbox/runtime work through `WUU_ENABLE_VM_AGENTS=1`.
 
+Stage the local macOS development app under this repository:
+
+```bash
+make browser-package-dev-macos
+```
+
+This creates `browser/out/Wuu Browser Dev.app` from the current Chromium dev
+build, applies Wuu Browser visible bundle metadata, and ad-hoc signs the staged
+app for local launch. For component-build Chromium outputs, the required build
+root `.dylib` files are copied into the staged app bundle so it can launch
+outside the original Chromium `out/` directory. Add `ARGS="--dmg"` to also
+create a local development DMG. The internal executable name may still be
+inherited from BrowserOS until the Chromium branding patches are fully renamed.
+
 Verify the running dev browser, Wuu native runtime, and first Browser Bridge
 tab operation path:
 
@@ -117,4 +131,5 @@ the BrowserOS build order. It refuses to mutate a dirty Chromium checkout unless
 4. Keep OpenClaw/Hermes/Lima VM startup disabled on the default Wuu Browser path.
 5. Keep one-command development launch, runtime/CDP verification, and the first
    Browser Bridge tab create/navigate/screenshot/click/type/scroll path green.
-6. Add packaging paths for macOS and Windows installers.
+6. Replace the temporary macOS dev staging path with signed release `.dmg`
+   packaging and add Windows installer outputs.
