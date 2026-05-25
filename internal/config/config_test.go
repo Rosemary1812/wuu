@@ -409,6 +409,9 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 	if !strings.Contains(prompt, "wuu") {
 		t.Fatalf("default system prompt must identify the agent: %q", prompt)
 	}
+	if !strings.Contains(prompt, "GUI-first") || !strings.Contains(prompt, "local coding agent") {
+		t.Fatalf("default system prompt must reflect GUI-first local agent positioning: %q", prompt)
+	}
 	if !strings.Contains(prompt, "make real changes") {
 		t.Fatalf("default system prompt must encourage tool use: %q", prompt)
 	}
@@ -417,6 +420,9 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 	}
 	if strings.Contains(prompt, "read-oriented") {
 		t.Fatalf("default system prompt still describes main agent as read-oriented: %q", prompt)
+	}
+	if strings.Contains(prompt, "CLI coding assistant") {
+		t.Fatalf("default system prompt still describes main agent as CLI-first: %q", prompt)
 	}
 }
 
@@ -430,6 +436,22 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "git commit -e") {
 		t.Fatalf("default system prompt must forbid interactive git: %q", prompt)
+	}
+}
+
+func TestDefaultSystemPrompt_UpdatePlanDiscipline(t *testing.T) {
+	prompt := DefaultSystemPrompt()
+	for _, want := range []string{
+		"multi-step work",
+		"visible checklist",
+		"update_plan",
+		"exactly one item in_progress",
+		"mark every item completed",
+		"trivial one-step tasks",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("default system prompt must include update_plan guidance %q: %q", want, prompt)
+		}
 	}
 }
 
