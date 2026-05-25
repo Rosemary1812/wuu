@@ -111,6 +111,24 @@ func TestOperationsFromChangesNormalizesOldPath(t *testing.T) {
 	}
 }
 
+func TestOperationsFromChangesNormalizesRepoSubdirPatchPath(t *testing.T) {
+	ops := operationsFromChanges(nil, []git.FileChange{{
+		Status:  "R",
+		Path:    "browser/chromium_patches/chrome/new.cc",
+		OldPath: "browser/chromium_patches/chrome/old.cc",
+	}}, nil)
+
+	if len(ops) != 1 {
+		t.Fatalf("expected 1 operation, got %d", len(ops))
+	}
+	if ops[0].ChromiumPath != "chrome/new.cc" {
+		t.Fatalf("unexpected chromium path: %q", ops[0].ChromiumPath)
+	}
+	if ops[0].OldPath != "chrome/old.cc" {
+		t.Fatalf("unexpected old path: %q", ops[0].OldPath)
+	}
+}
+
 func TestApplyReportsPatchProgress(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

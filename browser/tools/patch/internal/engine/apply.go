@@ -409,7 +409,14 @@ func rejectPath(workspacePath string, op resolve.Operation) string {
 }
 
 func normalizeChangedPatchPath(path string) string {
-	return strings.TrimPrefix(patch.NormalizeChromiumPath(path), "chromium_patches/")
+	rel := patch.NormalizeChromiumPath(path)
+	if strings.HasPrefix(rel, "chromium_patches/") {
+		return strings.TrimPrefix(rel, "chromium_patches/")
+	}
+	if idx := strings.Index(rel, "/chromium_patches/"); idx >= 0 {
+		return rel[idx+len("/chromium_patches/"):]
+	}
+	return rel
 }
 
 func clearResolveState(workspacePath string) error {
