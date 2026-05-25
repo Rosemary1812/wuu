@@ -90,7 +90,7 @@ Current import policy:
 
 ## Phase 3: Wuu Workbench Integration
 
-Status: pending.
+Status: in progress.
 
 Goals:
 
@@ -104,12 +104,24 @@ Goals:
 Known source material:
 
 - Wuu desktop renderer under `desktop/src/`.
-- BrowserOS reference Wuu integration under
-  `packages/browseros-agent/apps/agent/entrypoints/app/wuu-desktop/`.
-- BrowserOS reference Wuu server route under
-  `packages/browseros-agent/apps/server/src/api/routes/wuu.ts`.
-- BrowserOS reference Wuu desktop runtime service under
-  `packages/browseros-agent/apps/server/src/api/services/wuu/desktop-runtime.ts`.
+- Imported BrowserOS agent baseline under `browser/agent/`.
+- Imported BrowserOS reference Wuu integration under
+  `browser/agent/apps/agent/entrypoints/app/wuu-desktop/`.
+- Imported BrowserOS reference Wuu server route under
+  `browser/agent/apps/server/src/api/routes/wuu.ts`.
+- Imported BrowserOS reference Wuu desktop runtime service under
+  `browser/agent/apps/server/src/api/services/wuu/desktop-runtime.ts`.
+
+Current import policy:
+
+- BrowserOS agent/server assets are imported with `make browser-import-agent`.
+- The import includes the extension app, BrowserOS server source, shared
+  packages, development scripts, BrowserOS CLI source, and the Wuu bridge code.
+- The import excludes `node_modules`, extension/browser build outputs, local env
+  files, dogfood tooling, and eval benchmark data.
+- The imported baseline is not the final product behavior. Wuu Browser still
+  needs route/default startup changes, native Wuu runtime alignment, and VM
+  default removal.
 
 Migration rule:
 

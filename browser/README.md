@@ -39,13 +39,14 @@ browser/
   chromium_patches/      Wuu Browser patches applied to Chromium source.
   series_patches/        Ordered patch series when individual file patches are insufficient.
   resources/             Browser branding, entitlements, and packaged resources.
+  agent/                 BrowserOS agent/server source used by the browser UI and bridge.
   scripts/               Local sync, status, build, launch, and verification entry points.
 ```
 
-The first migration step is intentionally small: make the browser product model
-explicit in the Wuu repository. Later steps should move or adapt the proven
-BrowserOS patch/build flow and the existing Wuu BrowserOS integration into this
-directory.
+The first migration steps make the browser product model explicit and bring the
+BrowserOS patch/build/agent baselines into this repository. Later steps should
+adapt those baselines so the default tab is the Wuu workbench backed by the Wuu
+native runtime.
 
 ## Local Checkouts
 
@@ -74,9 +75,9 @@ make browser-status
 
 ## Near-Term Milestones
 
-1. Bring BrowserOS-like patch/build tooling into this product directory.
-2. Migrate or replace the Wuu integration currently proven in the BrowserOS
-   reference checkout.
+1. Apply the imported BrowserOS patch/build baseline from this repository.
+2. Migrate or replace the imported Wuu integration from the BrowserOS agent
+   baseline.
 3. Make the browser default tab render the full Wuu workbench with real native
    runtime capabilities.
 4. Disable OpenClaw/Hermes/Lima VM startup on the default Wuu Browser path.

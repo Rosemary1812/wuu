@@ -1,4 +1,4 @@
-.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status browser-launch-dev browser-verify-dev browser-import-browseros
+.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status browser-launch-dev browser-verify-dev browser-import-browseros browser-import-agent
 
 VERSION_FILE := VERSION
 BASE_VERSION := $(shell cat $(VERSION_FILE) 2>/dev/null || echo "0.1.0")
@@ -42,6 +42,9 @@ browser-verify-dev:
 
 browser-import-browseros:
 	bash browser/scripts/import-browseros-assets.sh $(ARGS)
+
+browser-import-agent:
+	bash browser/scripts/import-browseros-agent.sh $(ARGS)
 
 release-dry:
 	goreleaser check

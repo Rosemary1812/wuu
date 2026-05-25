@@ -1,6 +1,6 @@
 # Build artifacts
-wuu
-bin/
+/wuu
+/bin/
 dist/
 node_modules/
 desktop/dist/
@@ -21,8 +21,8 @@ CLAUDE.md
 AGENTS.md
 
 # Local docs/notes
-doc/
-docs/
+/doc/
+/docs/
 
 # Worktrees
 .worktrees/
