@@ -165,6 +165,30 @@ func TestInferSyncStateUsesActualDriftBeforeHistory(t *testing.T) {
 	}
 }
 
+func TestLoadSeriesPatchSetReadsQuiltSeries(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeFile(t, filepath.Join(repoRoot, "series_patches", "series"), `
+# comment
+ungoogled/example.patch # inline comment
+`)
+	writeFile(t, filepath.Join(repoRoot, "series_patches", "ungoogled", "example.patch"), `diff --git a/chrome/example.cc b/chrome/example.cc
+index 111..222 100644
+--- a/chrome/example.cc
++++ b/chrome/example.cc
+@@ -1 +1 @@
+-old
++new
+`)
+
+	set, err := loadSeriesPatchSet(repoRoot)
+	if err != nil {
+		t.Fatalf("loadSeriesPatchSet: %v", err)
+	}
+	if _, ok := set["chrome/example.cc"]; !ok {
+		t.Fatalf("expected series patch to be loaded, got %#v", set)
+	}
+}
+
 func TestApplyReportsPatchProgress(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

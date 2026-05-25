@@ -2,6 +2,10 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/git"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/patch"
@@ -47,6 +51,15 @@ func InspectWorkspace(ctx context.Context, opts InspectWorkspaceOptions) (*Works
 	if err != nil {
 		return nil, err
 	}
+	seriesSet, err := loadSeriesPatchSet(opts.Repo.Root)
+	if err != nil {
+		return nil, err
+	}
+	for rel, seriesPatch := range seriesSet {
+		if _, exists := repoSet[rel]; !exists {
+			repoSet[rel] = seriesPatch
+		}
+	}
 	reportProgress(opts.Progress, "Building workspace patch set")
 	localSet, err := patch.BuildWorkingTreePatchSet(ctx, opts.Workspace.Path, opts.Repo.BaseCommit, nil)
 	if err != nil {
@@ -68,6 +81,9 @@ func InspectWorkspace(ctx context.Context, opts InspectWorkspaceOptions) (*Works
 		case patch.NeedsUpdate:
 			status.NeedsUpdate = append(status.NeedsUpdate, delta.Path)
 		case patch.Orphaned:
+			if delta.Local != nil && patch.IsGitlinkPatch(*delta.Local) {
+				continue
+			}
 			status.Orphaned = append(status.Orphaned, delta.Path)
 		case patch.UpToDate:
 			status.UpToDate = append(status.UpToDate, delta.Path)
@@ -93,4 +109,69 @@ func inferSyncState(status *WorkspaceStatus) string {
 	default:
 		return "synced"
 	}
+}
+
+func loadSeriesPatchSet(repoRoot string) (patch.PatchSet, error) {
+	set := patch.PatchSet{}
+	for _, seriesFile := range seriesFiles(repoRoot) {
+		entries, err := readSeriesEntries(seriesFile)
+		if err != nil {
+			return nil, err
+		}
+		for _, rel := range entries {
+			body, err := os.ReadFile(filepath.Join(repoRoot, "series_patches", filepath.FromSlash(rel)))
+			if err != nil {
+				return nil, err
+			}
+			parsed, err := patch.ParseDiffOutput(string(body))
+			if err != nil {
+				return nil, err
+			}
+			for path, filePatch := range parsed {
+				set[path] = filePatch
+			}
+		}
+	}
+	return set, nil
+}
+
+func seriesFiles(repoRoot string) []string {
+	seriesDir := filepath.Join(repoRoot, "series_patches")
+	files := []string{filepath.Join(seriesDir, "series")}
+	switch runtime.GOOS {
+	case "darwin":
+		files = append(files, filepath.Join(seriesDir, "series.macos"))
+	case "linux":
+		files = append(files, filepath.Join(seriesDir, "series.linux"))
+	case "windows":
+		files = append(files, filepath.Join(seriesDir, "series.windows"))
+	}
+	existing := files[:0]
+	for _, file := range files {
+		if _, err := os.Stat(file); err == nil {
+			existing = append(existing, file)
+		}
+	}
+	return existing
+}
+
+func readSeriesEntries(seriesFile string) ([]string, error) {
+	body, err := os.ReadFile(seriesFile)
+	if err != nil {
+		return nil, err
+	}
+	var entries []string
+	for _, raw := range strings.Split(string(body), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if idx := strings.Index(line, " #"); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		if line != "" {
+			entries = append(entries, line)
+		}
+	}
+	return entries, nil
 }

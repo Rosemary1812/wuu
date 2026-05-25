@@ -113,6 +113,25 @@ func TestPathMatchesSkipsInternalState(t *testing.T) {
 	}
 }
 
+func TestIsGitlinkPatchDetectsSubprojectDiff(t *testing.T) {
+	patchFile := FilePatch{
+		Path: "third_party/depot_tools",
+		Op:   OpModify,
+		Content: []byte(`diff --git a/third_party/depot_tools b/third_party/depot_tools
+index 42786f6e46c25c30dd58f69283ab6fcd0c959f58..b40fa9470ee3eb0cb32307834fc5d80181f3ccfb 160000
+--- a/third_party/depot_tools
++++ b/third_party/depot_tools
+@@ -1 +1 @@
+-Subproject commit 42786f6e46c25c30dd58f69283ab6fcd0c959f58
++Subproject commit b40fa9470ee3eb0cb32307834fc5d80181f3ccfb
+`),
+	}
+
+	if !IsGitlinkPatch(patchFile) {
+		t.Fatalf("expected gitlink patch to be detected")
+	}
+}
+
 func TestCompareIgnoresHunkOffsetDrift(t *testing.T) {
 	repo := PatchSet{
 		"chrome/browser.cc": {

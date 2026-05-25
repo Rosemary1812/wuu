@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -45,6 +46,8 @@ type Delta struct {
 	Local *FilePatch `json:"local,omitempty"`
 }
 
+var gitlinkIndexLine = regexp.MustCompile(`(?m)^index [0-9a-f]+\.\.[0-9a-f]+ 160000$`)
+
 func NormalizeChromiumPath(raw string) string {
 	clean := filepath.ToSlash(raw)
 	return strings.TrimPrefix(path.Clean(clean), "./")
@@ -70,6 +73,13 @@ func PathMatches(rel string, filters []string) bool {
 func IsInternalPath(rel string) bool {
 	candidate := NormalizeChromiumPath(rel)
 	return candidate == ".browseros-patch" || strings.HasPrefix(candidate, ".browseros-patch/")
+}
+
+func IsGitlinkPatch(p FilePatch) bool {
+	body := string(p.Content)
+	return gitlinkIndexLine.MatchString(body) ||
+		strings.Contains(body, "\nnew file mode 160000\n") ||
+		strings.Contains(body, "\ndeleted file mode 160000\n")
 }
 
 func (p FilePatch) IsPureRename() bool {
