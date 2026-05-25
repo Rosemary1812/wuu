@@ -19,7 +19,7 @@ import {
   X
 } from "lucide-react";
 import { type FormEvent as ReactFormEvent, type RefObject, useState } from "react";
-import type { DesktopProject, GitStatusResult, InitializeResult, RuntimeContext } from "../shared/protocol";
+import type { DesktopProject, GitStatusResult, InitializeResult, PlanUpdate, RuntimeContext } from "../shared/protocol";
 import type { ComposerImage, QueuedComposerMessage } from "./ComposerMessages";
 import { shortCodexModelLabel } from "./RuntimeHelpers";
 
@@ -107,6 +107,7 @@ export function EnvironmentPanel({
   gitStatus,
   activeContext,
   activeProject,
+  planUpdate,
   sourceItems,
   activeMenu,
   running,
@@ -129,6 +130,7 @@ export function EnvironmentPanel({
   gitStatus?: GitStatusResult;
   activeContext?: RuntimeContext;
   activeProject?: DesktopProject;
+  planUpdate?: PlanUpdate;
   sourceItems: EnvironmentSourceItem[];
   activeMenu: EnvironmentPanelMenu;
   running: boolean;
@@ -160,11 +162,11 @@ export function EnvironmentPanel({
     <aside
       className={`environment-panel ${motionState}`}
       ref={panelRef}
-      aria-label="环境信息"
+      aria-label={planUpdate ? "进度与环境信息" : "环境信息"}
       aria-hidden={motionState === "closing" ? true : undefined}
     >
       <div className="environment-panel-header">
-        <h2>环境信息</h2>
+        <h2>{planUpdate ? "进度" : "环境信息"}</h2>
         <div className="environment-panel-actions">
           <button className="icon-button" type="button" aria-label="刷新 Git 状态" onClick={onRefreshGit}>
             <RefreshCw size={16} />
@@ -177,6 +179,10 @@ export function EnvironmentPanel({
           </button>
         </div>
       </div>
+
+      {planUpdate ? <EnvironmentPlanSection planUpdate={planUpdate} /> : null}
+
+      {planUpdate ? <div className="environment-section-heading">环境信息</div> : null}
 
       <div className="environment-panel-body">
         <button
@@ -277,6 +283,30 @@ export function EnvironmentPanel({
       ) : null}
       {activeMenu === "sources" ? <EnvironmentSourcesMenu items={sourceItems} /> : null}
     </aside>
+  );
+}
+
+function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX.Element {
+  const total = planUpdate.plan.length;
+  const completed = planUpdate.plan.filter((item) => item.status === "completed").length;
+
+  return (
+    <section className="environment-plan-section" aria-label="任务进度">
+      <div className="environment-plan-meta">
+        <span>{completed}/{total}</span>
+      </div>
+      {planUpdate.explanation ? <p className="environment-plan-explanation">{planUpdate.explanation}</p> : null}
+      <ol className="environment-plan-list">
+        {planUpdate.plan.map((item, index) => (
+          <li className={`environment-plan-item ${item.status}`} key={`${index}-${item.step}`}>
+            <span className="environment-plan-marker" aria-hidden="true">
+              {item.status === "completed" ? <Check size={11} strokeWidth={3} /> : null}
+            </span>
+            <span>{item.step}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

@@ -298,6 +298,18 @@ export type ThreadItem = {
   error?: string;
 };
 
+export type PlanStepStatus = "pending" | "in_progress" | "completed";
+
+export type PlanStep = {
+  step: string;
+  status: PlanStepStatus;
+};
+
+export type PlanUpdate = {
+  explanation?: string;
+  plan: PlanStep[];
+};
+
 export type InputImage = {
   media_type: string;
   data: string;

@@ -65,6 +65,7 @@ import type {
   GitStatusResult,
   InputImage,
   InitializeResult,
+  PlanUpdate,
   ProjectListResult,
   RuntimeContext,
   ServerEvent,
@@ -508,6 +509,7 @@ export function App(): JSX.Element {
   const debugControlsVisible = ENABLE_DEBUG_CONTROLS && debugControlsEnabled;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const activePlanUpdate = latestPlanUpdateForThread(activeThread);
   const splitConversation = Boolean(state.thread && state.secondaryThread && !workspaceMode);
 
   useEffect(() => {
@@ -2880,6 +2882,7 @@ export function App(): JSX.Element {
         gitStatus={state.gitStatus}
         activeContext={state.activeContext}
         activeProject={activeProject}
+        planUpdate={activePlanUpdate}
         sourceItems={environmentSourceItems}
         activeMenu={environmentPanelMenu}
         running={anyThreadIsRunning}
@@ -3919,6 +3922,56 @@ function threadForPane(state: AppState, pane: ConversationPaneID): Thread | unde
 
 function activeThreadIDForState(state: AppState): string | undefined {
   return activeThreadForState(state)?.id;
+}
+
+function latestPlanUpdateForThread(thread: Thread | undefined): PlanUpdate | undefined {
+  if (!thread) {
+    return undefined;
+  }
+  for (let turnIndex = thread.turns.length - 1; turnIndex >= 0; turnIndex--) {
+    const turn = thread.turns[turnIndex];
+    for (let itemIndex = turn.items.length - 1; itemIndex >= 0; itemIndex--) {
+      const item = turn.items[itemIndex];
+      if (item.name !== "update_plan" || !item.arguments) {
+        continue;
+      }
+      const update = parsePlanUpdateArguments(item.arguments);
+      if (update) {
+        return update;
+      }
+    }
+  }
+  return undefined;
+}
+
+function parsePlanUpdateArguments(argumentsJSON: string): PlanUpdate | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(argumentsJSON);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.plan)) {
+    return undefined;
+  }
+  const plan = parsed.plan
+    .map((raw): PlanUpdate["plan"][number] | undefined => {
+      if (!isRecord(raw)) {
+        return undefined;
+      }
+      const step = stringValue(raw, "step")?.trim();
+      const status = stringValue(raw, "status");
+      if (!step || (status !== "pending" && status !== "in_progress" && status !== "completed")) {
+        return undefined;
+      }
+      return { step, status };
+    })
+    .filter((item): item is PlanUpdate["plan"][number] => Boolean(item));
+  if (plan.length === 0) {
+    return undefined;
+  }
+  const explanation = stringValue(parsed, "explanation")?.trim();
+  return explanation ? { explanation, plan } : { plan };
 }
 
 function setThreadForPane(state: AppState, pane: ConversationPaneID, thread: Thread | undefined): AppState {

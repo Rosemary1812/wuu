@@ -1840,6 +1840,92 @@ button:disabled {
   gap: 3px;
 }
 
+.environment-plan-section {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid #ececea;
+  margin-bottom: 10px;
+  padding: 3px 8px 13px;
+}
+
+.environment-plan-meta {
+  display: flex;
+  justify-content: flex-end;
+  color: #9a9ea1;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.environment-plan-explanation {
+  margin: 0;
+  color: #7f8488;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.35;
+}
+
+.environment-plan-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.environment-plan-item {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 19px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  color: #676c70;
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
+  line-height: 1.32;
+}
+
+.environment-plan-item > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.environment-plan-marker {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 2px solid #9aa0a3;
+  border-radius: 50%;
+  color: #fff;
+  margin-top: 2px;
+}
+
+.environment-plan-item.in_progress {
+  color: #202427;
+}
+
+.environment-plan-item.in_progress .environment-plan-marker {
+  border-color: #202427;
+  box-shadow: inset 0 0 0 3px #fff;
+  background: #202427;
+}
+
+.environment-plan-item.completed {
+  color: #8a8f94;
+}
+
+.environment-plan-item.completed .environment-plan-marker {
+  border-color: #09933d;
+  background: #09933d;
+}
+
+.environment-section-heading {
+  color: #8a8f92;
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
+  padding: 0 8px 8px;
+}
+
 .environment-row,
 .environment-footer-row {
   display: grid;
