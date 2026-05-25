@@ -24,6 +24,10 @@ docs/
 
 # Worktrees
 .worktrees/
+browser/.cache/
+browser/chromium_src/
+browser/chromium_src_bak/
+browser/out/
 
 # MCP plugin caches
 .playwright-mcp/
