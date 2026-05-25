@@ -1,4 +1,4 @@
-.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status
+.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status browser-launch-dev
 
 VERSION_FILE := VERSION
 BASE_VERSION := $(shell cat $(VERSION_FILE) 2>/dev/null || echo "0.1.0")
@@ -33,6 +33,9 @@ clean:
 
 browser-status:
 	bash browser/scripts/status.sh
+
+browser-launch-dev:
+	bash browser/scripts/launch-dev.sh $(ARGS)
 
 release-dry:
 	goreleaser check
