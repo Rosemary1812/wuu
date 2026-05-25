@@ -83,6 +83,45 @@ func TestPathMatchesSkipsInternalState(t *testing.T) {
 	}
 }
 
+func TestCompareIgnoresHunkOffsetDrift(t *testing.T) {
+	repo := PatchSet{
+		"chrome/browser.cc": {
+			Path: "chrome/browser.cc",
+			Op:   OpModify,
+			Content: []byte(`diff --git a/chrome/browser.cc b/chrome/browser.cc
+index 111..222 100644
+--- a/chrome/browser.cc
++++ b/chrome/browser.cc
+@@ -10,6 +10,7 @@ void Start()
+ context
++change
+`),
+		},
+	}
+	local := PatchSet{
+		"chrome/browser.cc": {
+			Path: "chrome/browser.cc",
+			Op:   OpModify,
+			Content: []byte(`diff --git a/chrome/browser.cc b/chrome/browser.cc
+index aaa..bbb 100644
+--- a/chrome/browser.cc
++++ b/chrome/browser.cc
+@@ -25,6 +25,7 @@ void Start()
+ context
++change
+`),
+		},
+	}
+
+	deltas := Compare(repo, local)
+	if len(deltas) != 1 {
+		t.Fatalf("expected 1 delta, got %d", len(deltas))
+	}
+	if deltas[0].Kind != UpToDate {
+		t.Fatalf("expected up-to-date delta, got %s", deltas[0].Kind)
+	}
+}
+
 func TestBuildRangePatchSetUsesLatestBaseScopedPatch(t *testing.T) {
 	ctx := context.Background()
 	repoDir := t.TempDir()

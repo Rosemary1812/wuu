@@ -53,10 +53,22 @@ func signature(p FilePatch) string {
 			if strings.HasPrefix(line, "index ") {
 				continue
 			}
-			normalized = append(normalized, strings.TrimRight(line, " \t"))
+			normalized = append(normalized, normalizePatchSignatureLine(line))
 		}
 		return strings.Join(append([]string{string(p.Op), NormalizeChromiumPath(p.Path), NormalizeChromiumPath(p.OldPath)}, normalized...), "\n")
 	}
+}
+
+func normalizePatchSignatureLine(line string) string {
+	line = strings.TrimRight(line, " \t")
+	if !strings.HasPrefix(line, "@@ ") {
+		return line
+	}
+	end := strings.Index(line[3:], " @@")
+	if end == -1 {
+		return "@@"
+	}
+	return "@@" + line[3+end+3:]
 }
 
 func ptr(p FilePatch) *FilePatch {
