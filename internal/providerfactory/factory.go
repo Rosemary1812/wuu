@@ -16,8 +16,7 @@ import (
 // BuildClient constructs a provider client from config using the
 // default HTTP retry policy (3 attempts). providerName is the key
 // under which this provider lives in the config map; it's needed so
-// resolveAPIKey can fall back to the global auth store (where the
-// onboarding flow stashes keys via SaveAuthKey).
+// resolveAPIKey can fall back to the global auth store.
 func BuildClient(provider config.ProviderConfig, providerName string) (providers.Client, error) {
 	return BuildClientWithRetry(provider, providerName, nil)
 }

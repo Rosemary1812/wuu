@@ -18,7 +18,7 @@ const (
 
 // ErrConfigNotFound is returned by LoadFrom when none of the candidate
 // config files exist on disk. Callers should use errors.Is to
-// distinguish a missing config (where running onboarding is the right
+// distinguish a missing config (where initializing defaults is the right
 // recovery) from a present-but-broken config (where overwriting it
 // would silently destroy the user's work).
 var ErrConfigNotFound = errors.New("config not found")

@@ -1,7 +1,7 @@
 {
   "name": "@blueberrycongee/wuu",
   "version": "0.0.0",
-  "description": "AI coding agent for the terminal",
+  "description": "GUI-first AI coding agent backend and CLI tools",
   "license": "MIT",
   "bin": {
     "wuu": "bin/wuu"
@@ -17,8 +17,9 @@
     "ai",
     "coding",
     "agent",
-    "cli",
-    "terminal"
+    "gui",
+    "desktop",
+    "cli"
   ],
   "os": [
     "darwin",

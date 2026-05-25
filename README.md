@@ -2,7 +2,7 @@
 
 [中文](README_zh.md)
 
-Terminal-native AI coding agent. Written in Go.
+GUI-first AI coding agent with a Go backend and desktop app.
 
 Named after its author (Wu) — the goal is to build a coding companion so good that every developer goes *wuuuuu!*
 
@@ -25,12 +25,14 @@ go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ## Quick Start
 
 ```bash
-wuu                        # launch interactive TUI
-wuu init                   # generate config template
-wuu run "describe this repo"  # one-shot task
+wuu init                         # write .wuu.json
+wuu run "describe this repo"     # one-shot CLI task
+wuu app-server --workdir .       # backend used by the desktop GUI
+cd desktop && npm install && npm run dev  # local desktop GUI
 ```
 
-On first launch, `wuu` walks you through provider setup (API key, model, theme).
+Interactive work now lives in the desktop GUI. The `wuu` binary provides the
+app-server backend plus non-interactive CLI tools.
 
 ## Versioning
 
@@ -57,7 +59,8 @@ When a `v*` tag is pushed, GitHub Actions + GoReleaser publishes release artifac
 
 ## What It Does
 
-- Interactive TUI with streaming markdown rendering, slash commands, and session memory
+- Desktop GUI backed by the Go app-server for conversations, workspace context, and session streaming
+- One-shot CLI task runner for non-interactive use
 - Agentic tool-calling loop — reads, writes, edits, searches, and runs shell commands in your repo
 - Supports OpenAI-compatible APIs (OpenAI / OpenRouter / one-api / etc.) and Anthropic Messages API
 - Built-in tools: `run_shell`, `git`, `read_file`, `write_file`, `edit_file`, `list_files`, `grep`, `glob`, `web_search`, `web_fetch`
@@ -65,7 +68,7 @@ When a `v*` tag is pushed, GitHub Actions + GoReleaser publishes release artifac
 - Managed process tools: `start_process`, `list_processes`, `stop_process`, `read_process_output`
 - Scheduling tools: `schedule_cron`, `cancel_cron`, `list_cron`
 - Tool availability model:
-  - Main interactive agent (TUI session): full tool set
+  - Main GUI/app-server session: full tool set
   - Sub-agents: no `ask_user` and no orchestration tools (`spawn_agent`, `fork_agent`, `send_message`, `followup_task`, `wait_agent`, `close_agent`, `list_agents`)
 - Follow-up control: `send_message` queues short instructions for workers; `followup_task` starts a new worker turn from saved history when a task is idle
 - File tools are sandboxed to the current workspace
