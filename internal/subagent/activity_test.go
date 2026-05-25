@@ -57,8 +57,8 @@ func TestDeriveWorkerActivity_ToolTransitions(t *testing.T) {
 
 func TestSnapshotPropagatesActivity(t *testing.T) {
 	// Snapshot() is the only observer surface; if the new fields weren't
-	// copied, the TUI would never see activity updates even though the
-	// runner wrote them.
+	// copied, interactive clients would never see activity updates even
+	// though the runner wrote them.
 	sa := &SubAgent{
 		ID:       "w1",
 		Activity: "→ read_file",

@@ -76,8 +76,8 @@ const (
 )
 
 // CompactInfo describes a compact pass that just ran. Surfaced via
-// LoopConfig.OnCompact so callers (e.g. the TUI) can let the user
-// know what just happened.
+// LoopConfig.OnCompact so interactive clients can let the user know
+// what just happened.
 type CompactInfo struct {
 	Reason         CompactReason
 	TokensBefore   int
@@ -131,10 +131,10 @@ type LoopConfig struct {
 	OnMessage func(msg providers.ChatMessage)
 	// OnToolResult is invoked after each tool execution with the
 	// (call, JSON result) pair. Used by streaming callers to feed
-	// live tool-result rendering into the TUI.
+	// live tool-result rendering into clients.
 	OnToolResult func(call providers.ToolCall, result string)
 	// OnCompact is invoked once per compact pass (proactive or
-	// reactive). Optional; the TUI uses it to render a status line.
+	// reactive). Optional; clients can use it to render a status line.
 	OnCompact func(info CompactInfo)
 	// UsageTracker, when non-nil, is the caller-owned conversation
 	// usage state to reuse across runs. This lets the loop make the

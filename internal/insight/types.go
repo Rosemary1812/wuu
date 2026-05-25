@@ -101,7 +101,7 @@ type Report struct {
 	HTMLPath    string           `json:"-"` // path to generated HTML report file
 }
 
-// ProgressEvent is sent from the insight goroutine to the TUI.
+// ProgressEvent is sent from the insight goroutine to interested clients.
 type ProgressEvent struct {
 	Phase  string  // "scanning", "extracting", "generating", "synthesizing", "done", "error"
 	Detail string  // human-readable progress message

@@ -12,12 +12,11 @@ import (
 // the tool handler calls AskUser, and the returned AskUserResponse
 // is marshaled back to the model as the tool result.
 //
-// The actual implementation lives in internal/tui (so it can render
-// a modal dialog in the Bubble Tea app), but the Toolkit only ever
-// touches this interface. Workers — which receive a Toolkit without
-// a bridge set — get a clear "bridge not configured" error if they
-// try to call ask_user, which is the intended isolation: only the
-// main agent talking to a live TUI is allowed to interrupt the human.
+// GUI/app-server clients implement this interface to render the prompt
+// and return the user's answer. Workers — which receive a Toolkit
+// without a bridge set — get a clear "bridge not configured" error if
+// they try to call ask_user, which is the intended isolation: only the
+// main agent connected to an interactive client may interrupt the human.
 type AskUserBridge interface {
 	AskUser(ctx context.Context, req AskUserRequest) (AskUserResponse, error)
 }
@@ -29,8 +28,8 @@ type AskUserRequest struct {
 }
 
 // AskUserQuestion is one multiple-choice question. The ask_user tool
-// accepts 1-4 questions per call, each with 2-4 options. An "Other"
-// escape hatch is appended by the TUI for single-select questions so
+// accepts 1-4 questions per call, each with 2-4 options. Interactive
+// clients append an "Other" escape hatch for single-select questions so
 // the user is never forced into the model's preselected option space.
 type AskUserQuestion struct {
 	// Question is the full question text the user reads.
@@ -41,7 +40,7 @@ type AskUserQuestion struct {
 	Header string `json:"header"`
 
 	// Options is the choice list (2-4 items). "Other" is NOT part
-	// of this slice — the TUI appends it automatically for
+	// of this slice — interactive clients append it automatically for
 	// single-select questions.
 	Options []AskUserOption `json:"options"`
 

@@ -243,7 +243,7 @@ func TestToolkit_PathEscapeBlocked(t *testing.T) {
 }
 
 // fakeAskBridge is a stub AskUserBridge for tests — it returns a
-// canned response for any request without involving a TUI.
+// canned response for any request without involving a GUI client.
 type fakeAskBridge struct {
 	resp tools_internal_response // sentinel; set by helper below
 }

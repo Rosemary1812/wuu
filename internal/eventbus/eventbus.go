@@ -1,10 +1,10 @@
 // Package eventbus provides a typed publish-subscribe event bus for decoupling
-// the agent core from UI frontends (TUI, headless, web, etc.).
+// the agent core from UI frontends (GUI, headless, web, etc.).
 //
 // Design aligned with Kimi CLI's Wire protocol and Codex's JSON-RPC app-server:
 // the core agent loop emits events; any number of subscribers consume them.
-// This lets the same core drive interactive TUI, headless CI runs, or future
-// remote clients without code changes to the loop.
+// This lets the same core drive GUI sessions, headless CI runs, or remote
+// clients without code changes to the loop.
 package eventbus
 
 import (
@@ -19,21 +19,21 @@ type EventType string
 
 const (
 	// Control flow
-	TurnBegin  EventType = "turn_begin"
-	TurnEnd    EventType = "turn_end"
-	StepBegin  EventType = "step_begin"
-	StepEnd    EventType = "step_end"
+	TurnBegin   EventType = "turn_begin"
+	TurnEnd     EventType = "turn_end"
+	StepBegin   EventType = "step_begin"
+	StepEnd     EventType = "step_end"
 	StreamStart EventType = "stream_start"
 	StreamEnd   EventType = "stream_end"
 
 	// Content
-	TextDelta      EventType = "text_delta"
-	ThinkingDelta  EventType = "thinking_delta"
-	ThinkingDone   EventType = "thinking_done"
-	ToolCallStart  EventType = "tool_call_start"
-	ToolCallDelta  EventType = "tool_call_delta"
-	ToolCallEnd    EventType = "tool_call_end"
-	Message        EventType = "message"
+	TextDelta     EventType = "text_delta"
+	ThinkingDelta EventType = "thinking_delta"
+	ThinkingDone  EventType = "thinking_done"
+	ToolCallStart EventType = "tool_call_start"
+	ToolCallDelta EventType = "tool_call_delta"
+	ToolCallEnd   EventType = "tool_call_end"
+	Message       EventType = "message"
 
 	// Lifecycle / system
 	Lifecycle EventType = "lifecycle"
@@ -85,9 +85,9 @@ type Handler func(ev Event)
 // Bus is a simple in-memory pub-sub event bus.
 // It is safe for concurrent use.
 type Bus struct {
-	mu        sync.RWMutex
-	handlers  []Handler
-	closed    bool
+	mu       sync.RWMutex
+	handlers []Handler
+	closed   bool
 }
 
 // New creates a new event bus.
@@ -162,7 +162,7 @@ func AdaptStreamEvent(se providers.StreamEvent) Event {
 }
 
 // ToStreamEvent converts an eventbus.Event back into a providers.StreamEvent.
-// Useful for backwards compatibility with existing TUI code during migration.
+// Useful for compatibility with stream-based clients during migration.
 func ToStreamEvent(ev Event) providers.StreamEvent {
 	switch ev.Type {
 	case TextDelta:

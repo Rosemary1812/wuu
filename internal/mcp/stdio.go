@@ -47,7 +47,7 @@ func NewStdioTransportWithEnv(command string, args []string, env map[string]stri
 	if err != nil {
 		return nil, fmt.Errorf("stderr pipe: %w", err)
 	}
-	// Forward stderr to a log file so it doesn't corrupt the TUI.
+	// Drain stderr so it does not corrupt the stdout protocol stream.
 	go func() {
 		// Best-effort drain; if logging isn't set up, discard.
 		io.Copy(io.Discard, stderr)

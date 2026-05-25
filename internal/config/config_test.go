@@ -681,7 +681,7 @@ func TestLoadFrom_NotFound(t *testing.T) {
 }
 
 // A present-but-broken config must NOT look like ErrConfigNotFound,
-// otherwise the TUI's onboarding fallback would silently overwrite
+// otherwise callers that recover missing config could silently overwrite
 // the user's existing .wuu.json.
 func TestLoadFrom_BrokenConfigIsNotNotFound(t *testing.T) {
 	workdir := t.TempDir()

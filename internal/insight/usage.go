@@ -26,7 +26,7 @@ func BuildUsageReport(sessDir string, maxSessions int) (*UsageReport, error) {
 	}, nil
 }
 
-// FormatUsageReport renders local usage stats for the TUI.
+// FormatUsageReport renders local usage stats for text-based clients.
 func FormatUsageReport(r *UsageReport) string {
 	if r == nil || r.Stats.TotalSessions == 0 {
 		return "Usage\n\nNo substantive local sessions found yet."

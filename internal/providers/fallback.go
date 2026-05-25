@@ -69,7 +69,7 @@ func (f *FallbackClient) StreamChat(ctx context.Context, req ChatRequest) (<-cha
 }
 
 // IsFallbackActive reports whether the client is currently using the
-// fallback model. Callers (e.g. TUI) can use this for status display.
+// fallback model. Callers can use this for status display.
 func (f *FallbackClient) IsFallbackActive() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

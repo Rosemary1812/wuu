@@ -28,8 +28,8 @@ import (
 )
 
 // Options describes the shared agent runtime needed by interactive clients.
-// The TUI is the first client, but the shape is intentionally UI-neutral so a
-// future desktop app can attach a protocol bridge without rebuilding the agent.
+// The shape is intentionally UI-neutral so desktop and protocol clients can
+// attach without rebuilding the agent.
 type Options struct {
 	RootDir       string
 	HomeDir       string
@@ -240,7 +240,7 @@ func NewSession(opts Options) (*Session, error) {
 // NewThreadRuntime creates a per-conversation execution runtime from the
 // shared workspace runtime. It intentionally does not mutate Session.Toolkit or
 // Session.AgentControl; those remain the legacy single-session runtime used by
-// the TUI and older call sites.
+// CLI and older call sites.
 func (s *Session) NewThreadRuntime(sessionID string, askBridge tools.AskUserBridge) (*ThreadRuntime, error) {
 	if s == nil {
 		return nil, fmt.Errorf("runtime session is required")

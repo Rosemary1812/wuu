@@ -187,7 +187,7 @@ func Run(ctx context.Context, cfg RunConfig, progress chan<- ProgressEvent) {
 	}
 }
 
-// FormatReport renders the report as markdown for display in the TUI.
+// FormatReport renders the report as markdown for display in clients.
 func FormatReport(r *Report) string {
 	var b strings.Builder
 

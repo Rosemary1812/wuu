@@ -101,7 +101,7 @@ func (t *AskUserTool) Definition() providers.ToolDefinition {
 
 func (t *AskUserTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	if t.env.AskBridge == nil {
-		return "", errors.New("ask_user is only available to the main agent in an interactive TUI session (sub-agents cannot interrupt the human)")
+		return "", errors.New("ask_user is only available to the main agent in an interactive GUI session (sub-agents cannot interrupt the human)")
 	}
 	var req AskUserRequest
 	if err := decodeArgs(argsJSON, &req); err != nil {

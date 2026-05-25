@@ -116,7 +116,7 @@ func (r *Registry) Lookup(name string) Tool {
 // NewRegistry. The returned slice (and the definitions within) MUST
 // be treated as read-only by callers — a downstream mutation would be
 // observed by every future caller. Current callers (agent/loop.go,
-// tui/commands.go, hooks/executor.go, toolkit.go) only read.
+// hooks/executor.go, toolkit.go) only read.
 func (r *Registry) Definitions() []providers.ToolDefinition {
 	r.defsOnce.Do(func() {
 		r.cachedDefs = make([]providers.ToolDefinition, len(r.tools))

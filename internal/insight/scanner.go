@@ -14,7 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
-// memoryRecord mirrors the JSONL schema used by tui/memory.go.
+// memoryRecord mirrors the session history JSONL schema.
 type memoryRecord struct {
 	Role         string        `json:"role"`
 	Content      string        `json:"content"`

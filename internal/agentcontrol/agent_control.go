@@ -125,7 +125,7 @@ func (c *AgentControl) Manager() *subagent.Manager {
 }
 
 // SetSessionInfo updates the coordinator's session ID and history dir
-// after the TUI has generated them. Safe to call once at startup.
+// after the session runtime has assigned them. Safe to call once at startup.
 func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ...string) {
 	c.sessionID = sessionID
 	c.historyDir = historyDir

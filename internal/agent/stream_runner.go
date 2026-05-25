@@ -18,7 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
-// StreamCallback receives streaming events for TUI rendering.
+// StreamCallback receives streaming events for live clients.
 type StreamCallback func(event providers.StreamEvent)
 
 // StreamRunner manages one multi-step coding turn with streaming.
@@ -180,7 +180,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			return compact.Compact(ctx, messages, r.Client, r.Model)
 		},
 		// Forward each tool result through the streaming callback so
-		// the TUI can render the tool card live (the loop itself only
+		// clients can render tool output live (the loop itself only
 		// records the tool message into the history).
 		OnToolResult: func(call providers.ToolCall, result string) {
 			if effectiveOnEvent == nil {
@@ -198,10 +198,8 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				})
 			}
 		},
-		// Surface auto-compact events as a stream event so the TUI
-		// can render a system line like "✦ Compacted history: 18 → 5
-		// messages (~12k tokens)". The loop fires this for both the
-		// proactive and the reactive overflow path.
+		// Surface auto-compact events as stream events. The loop fires
+		// this for both the proactive and the reactive overflow path.
 		OnCompact: func(info CompactInfo) {
 			if effectiveOnEvent == nil {
 				return
@@ -401,7 +399,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		fbToolCalls := make([]providers.ToolCall, len(resp.ToolCalls))
 		copy(fbToolCalls, resp.ToolCalls)
 		// Emit the fallback content through the streaming callback so
-		// the TUI can render it.
+		// live clients can render it.
 		if s.onEvent != nil && strings.TrimSpace(resp.Content) != "" {
 			s.onEvent(providers.StreamEvent{
 				Type:    providers.EventContentDelta,
