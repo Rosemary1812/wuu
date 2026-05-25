@@ -15,7 +15,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Settings,
   X
 } from "lucide-react";
 import { type FormEvent as ReactFormEvent, type RefObject, useState } from "react";
@@ -114,7 +113,6 @@ export function EnvironmentPanel({
   pullRequestDisabledReason,
   onSetActiveMenu,
   onClose,
-  onOpenSettings,
   onRefreshGit,
   onOpenProject,
   onSelectNoProject,
@@ -137,7 +135,6 @@ export function EnvironmentPanel({
   pullRequestDisabledReason: string;
   onSetActiveMenu: (menu: EnvironmentPanelMenu) => void;
   onClose: () => void;
-  onOpenSettings: () => void;
   onRefreshGit: () => void;
   onOpenProject: () => void;
   onSelectNoProject: () => void;
@@ -170,9 +167,6 @@ export function EnvironmentPanel({
         <div className="environment-panel-actions">
           <button className="icon-button" type="button" aria-label="刷新 Git 状态" onClick={onRefreshGit}>
             <RefreshCw size={16} />
-          </button>
-          <button className="icon-button" type="button" aria-label="打开设置" onClick={onOpenSettings}>
-            <Settings size={16} />
           </button>
           <button className="icon-button" type="button" aria-label="关闭环境信息" onClick={onClose}>
             <X size={16} />

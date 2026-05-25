@@ -2906,10 +2906,6 @@ export function App(): JSX.Element {
           setEnvironmentPanelDismissed(true);
           setEnvironmentPanelMenu(null);
         }}
-        onOpenSettings={() => {
-          setEnvironmentPanelMenu(null);
-          setSettingsOpen(true);
-        }}
         onRefreshGit={() => void refreshGitStatus()}
         onOpenProject={() => void chooseProjectFolder()}
         onSelectNoProject={() => void useNoProject(false)}
