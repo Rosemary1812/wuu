@@ -107,10 +107,34 @@ read_first_metadata_value() {
   sed -n "s/^${label}: *//p" "${file}" | head -n 1 | tr -d '\r'
 }
 
+read_chromium_version() {
+  local file="$1"
+  local major=""
+  local minor=""
+  local build=""
+  local patch=""
+
+  while IFS='=' read -r key value; do
+    case "${key}" in
+      MAJOR) major="${value}" ;;
+      MINOR) minor="${value}" ;;
+      BUILD) build="${value}" ;;
+      PATCH) patch="${value}" ;;
+    esac
+  done < "${file}"
+
+  if [[ -n "${major}" && -n "${minor}" && -n "${build}" && -n "${patch}" ]]; then
+    printf '%s.%s.%s.%s\n' "${major}" "${minor}" "${build}" "${patch}"
+    return
+  fi
+
+  tr '\n' ' ' < "${file}" | sed 's/[[:space:]]*$//'
+}
+
 browseros_commit="$(read_first_metadata_value "commit" "${browser_dir}/BROWSEROS_SOURCE.md")"
 browseros_branch="$(read_first_metadata_value "branch" "${browser_dir}/BROWSEROS_SOURCE.md")"
 base_commit="$(tr -d '[:space:]' < "${browser_dir}/BASE_COMMIT")"
-chromium_version="$(tr -d '[:space:]' < "${browser_dir}/CHROMIUM_VERSION")"
+chromium_version="$(read_chromium_version "${browser_dir}/CHROMIUM_VERSION")"
 
 if [[ -z "${base_commit}" || -z "${chromium_version}" ]]; then
   echo "Missing Chromium pin files under ${browser_dir}" >&2
@@ -141,6 +165,17 @@ run_in() {
   fi
 }
 
+try_run_in() {
+  local cwd="$1"
+  shift
+  printf '+ cd %q &&' "${cwd}"
+  printf ' %q' "$@"
+  printf '\n'
+  if [[ "${dry_run}" != "true" ]]; then
+    (cd "${cwd}" && "$@")
+  fi
+}
+
 is_dirty() {
   local dir="$1"
   [[ -n "$(git -C "${dir}" status --porcelain 2>/dev/null)" ]]
@@ -160,6 +195,22 @@ require_clean_or_allowed() {
     echo "Commit, clean, or rerun with --allow-dirty." >&2
     exit 1
   fi
+}
+
+ensure_chromium_base_available() {
+  if git -C "${chromium_src}" rev-parse --verify "${base_commit}^{commit}" >/dev/null 2>&1; then
+    return
+  fi
+
+  if [[ -n "${chromium_version}" ]]; then
+    try_run_in "${chromium_src}" git fetch origin "refs/tags/${chromium_version}:refs/tags/${chromium_version}" || true
+  fi
+
+  if git -C "${chromium_src}" rev-parse --verify "${base_commit}^{commit}" >/dev/null 2>&1; then
+    return
+  fi
+
+  run_in "${chromium_src}" git fetch origin "${base_commit}"
 }
 
 prepare_browseros() {
@@ -219,7 +270,7 @@ prepare_chromium() {
   fi
 
   require_clean_or_allowed "${chromium_src}" "Chromium"
-  run_in "${chromium_src}" git fetch origin "${base_commit}"
+  ensure_chromium_base_available
   run_in "${chromium_src}" git checkout "${base_commit}"
 
   if [[ "${skip_sync}" != "true" ]]; then
