@@ -53,7 +53,7 @@ Non-goals:
 
 ## Phase 2: BrowserOS Build and Patch Tooling
 
-Status: pending.
+Status: in progress.
 
 Goals:
 
@@ -75,6 +75,18 @@ Expected outcome:
 - A developer can start from this repository, prepare the browser checkout, and
   build or launch the Wuu Browser development app without relying on hidden
   manual notes.
+
+Current import policy:
+
+- BrowserOS browser-layer assets are imported with
+  `make browser-import-browseros`.
+- The import includes BrowserOS build scripts, Chromium patches, replacement
+  files, resources, series patches, and patch tooling.
+- The import excludes full Chromium source checkouts, virtual environments,
+  local logs, build outputs, and downloaded runtime caches.
+- Imported code is the starting point for Wuu Browser. Product defaults that
+  conflict with Wuu Browser, such as first-run onboarding and VM prewarm, should
+  be changed after import rather than treated as final behavior.
 
 ## Phase 3: Wuu Workbench Integration
 

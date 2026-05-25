@@ -6,6 +6,8 @@ node_modules/
 desktop/dist/
 desktop/node_modules/
 desktop/out/
+__pycache__/
+*.pyc
 
 # Local runtime config
 .wuu.json

@@ -1,0 +1,14 @@
+diff --git a/components/remote_cocoa/common/native_widget_ns_window.mojom b/components/remote_cocoa/common/native_widget_ns_window.mojom
+index 7387ef1852678..482f63d9f7f12 100644
+--- a/components/remote_cocoa/common/native_widget_ns_window.mojom
++++ b/components/remote_cocoa/common/native_widget_ns_window.mojom
+@@ -90,6 +90,9 @@ struct NativeWidgetNSWindowInitParams {
+   // If true, this window is functionally a tooltip, and shouldn't be presented
+   // as a new window to the accessibility system.
+   bool is_tooltip;
++  // If true, InitWindow installs the per-window headless swizzler so the
++  // NSWindow never appears in Dock, Mission Control, or Cmd-Tab.
++  bool is_headless;
+ };
+ 
+ // The visibility style of the toolbar in immersive fullscreen.

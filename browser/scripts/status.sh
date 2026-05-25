@@ -39,6 +39,12 @@ printf 'browser dir:      %s\n' "${browser_dir}"
 printf 'chromium version: %s\n' "$(tr '\n' ' ' < "${browser_dir}/CHROMIUM_VERSION" | sed 's/[[:space:]]*$//')"
 printf 'base commit:      %s\n' "$(cat "${browser_dir}/BASE_COMMIT")"
 
+print_heading "Imported browser assets"
+printf 'build scripts:    %s\n' "$([[ -d "${browser_dir}/build" ]] && echo yes || echo no)"
+printf 'chromium patches: %s\n' "$([[ -d "${browser_dir}/chromium_patches" ]] && echo yes || echo no)"
+printf 'series patches:   %s\n' "$([[ -f "${browser_dir}/series_patches/series" ]] && echo yes || echo no)"
+printf 'patch tool:       %s\n' "$([[ -f "${browser_dir}/tools/patch/go.mod" ]] && echo yes || echo no)"
+
 print_heading "BrowserOS reference checkout"
 printf 'path:             %s\n' "${browseros_repo}"
 if [[ -d "${browseros_repo}/.git" ]]; then
@@ -84,7 +90,7 @@ else
 fi
 
 print_heading "Next migration steps"
-printf '1. Import or adapt BrowserOS patch/build tooling under browser/.\n'
-printf '2. Move the proven Wuu BrowserOS workbench integration into this repo.\n'
+printf '1. Apply the imported BrowserOS patch/build baseline from this repo to Chromium.\n'
+printf '2. Move the proven Wuu workbench integration into the default browser tab path.\n'
 printf '3. Disable default OpenClaw/Hermes/Lima VM startup on the Wuu Browser path.\n'
-printf '4. Add launch and runtime verification scripts for the real browser dev build.\n'
+printf '4. Verify the real Wuu tab with CDP, screenshots, and native runtime actions.\n'
