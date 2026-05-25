@@ -88,6 +88,18 @@ Current import policy:
   conflict with Wuu Browser, such as first-run onboarding and VM prewarm, should
   be changed after import rather than treated as final behavior.
 
+Current checkout preparation path:
+
+- `make browser-prepare-checkouts` is the repository-owned entry point for
+  preparing local BrowserOS and Chromium checkouts.
+- It creates or updates `.worktrees/browseros` and `.worktrees/chromium/src` by
+  default, using `browser/BROWSEROS_SOURCE.md`, `browser/CHROMIUM_VERSION`, and
+  `browser/BASE_COMMIT` as the source of truth.
+- It checks out the pinned Chromium `BASE_COMMIT`, runs `gclient sync`, and can
+  apply the Wuu Browser patch stack with `ARGS="--apply-patches"`.
+- The command intentionally keeps large source checkouts outside tracked Git
+  history while making the setup path explicit from this repository.
+
 ## Phase 3: Wuu Workbench Integration
 
 Status: in progress.

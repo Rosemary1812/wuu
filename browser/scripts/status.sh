@@ -90,7 +90,8 @@ else
 fi
 
 print_heading "Next migration steps"
-printf '1. Keep browser-patch-check/apply green against the target Chromium checkout.\n'
-printf '2. Move more Wuu Browser product changes from manual checkout state into repo-owned patches/resources.\n'
-printf '3. Continue replacing imported BrowserOS product surface with Wuu Browser product behavior.\n'
-printf '4. Add packaging paths for macOS .dmg and Windows installer outputs.\n'
+printf '1. Use browser-prepare-checkouts to create or refresh local BrowserOS/Chromium checkouts.\n'
+printf '2. Keep browser-patch-check/apply green against the target Chromium checkout.\n'
+printf '3. Move more Wuu Browser product changes from manual checkout state into repo-owned patches/resources.\n'
+printf '4. Continue replacing imported BrowserOS product surface with Wuu Browser product behavior.\n'
+printf '5. Add packaging paths for macOS .dmg and Windows installer outputs.\n'

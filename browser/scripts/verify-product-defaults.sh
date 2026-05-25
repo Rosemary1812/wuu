@@ -35,6 +35,8 @@ check_not_contains() {
 
 first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_main.cc"
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
+makefile="${repo_root}/Makefile"
+prepare_checkouts_script="${browser_dir}/scripts/prepare-checkouts.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
@@ -72,6 +74,46 @@ check_contains \
   "${launch_script}" \
   '"--disable-browseros-server-updater"' \
   "dev launch keeps BrowserOS server updater disabled"
+
+check_contains \
+  "${makefile}" \
+  "browser-prepare-checkouts:" \
+  "Makefile exposes the BrowserOS/Chromium checkout preparation entry point"
+
+check_contains \
+  "${makefile}" \
+  'bash browser/scripts/prepare-checkouts.sh $(ARGS)' \
+  "checkout preparation can receive explicit script arguments"
+
+check_contains \
+  "${prepare_checkouts_script}" \
+  "WUU_BROWSEROS_GIT_URL" \
+  "checkout preparation can clone the pinned BrowserOS reference"
+
+check_contains \
+  "${prepare_checkouts_script}" \
+  '.worktrees/chromium/src' \
+  "checkout preparation defaults Chromium source to ignored .worktrees"
+
+check_contains \
+  "${prepare_checkouts_script}" \
+  "fetch --nohooks chromium" \
+  "checkout preparation can create a Chromium checkout with depot_tools"
+
+check_contains \
+  "${prepare_checkouts_script}" \
+  "gclient sync -D --no-history --shallow" \
+  "checkout preparation syncs Chromium dependencies"
+
+check_contains \
+  "${prepare_checkouts_script}" \
+  'patch-checkout.sh" "${patch_args[@]}"' \
+  "checkout preparation can apply Wuu Browser patches after setup"
+
+check_contains \
+  "${prepare_checkouts_script}" \
+  '[[ "${dry_run}" == "true" ]]' \
+  "checkout preparation supports dry-run planning"
 
 check_contains \
   "${package_dev_macos_script}" \

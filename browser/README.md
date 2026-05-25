@@ -57,6 +57,19 @@ By default, scripts look for local source checkouts in:
 .worktrees/chromium/src
 ```
 
+Prepare or refresh those local checkouts from the repository-owned pins:
+
+```bash
+make browser-prepare-checkouts ARGS="--dry-run"
+make browser-prepare-checkouts ARGS="--apply-patches"
+```
+
+The prepare command clones or updates the BrowserOS reference checkout, checks
+out the pinned Chromium `BASE_COMMIT`, runs `gclient sync`, and can immediately
+apply the tracked Wuu Browser patches. The checkouts stay under ignored
+`.worktrees/` paths so the product repository carries the patch/build system
+without committing the full Chromium source tree.
+
 During the current migration, the scripts also recognize the existing local
 reference checkouts if present:
 
