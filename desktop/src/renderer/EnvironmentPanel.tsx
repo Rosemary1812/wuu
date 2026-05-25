@@ -13,7 +13,6 @@ import {
   Laptop,
   MessageSquarePlus,
   Plus,
-  RefreshCw,
   Search,
   X
 } from "lucide-react";
@@ -113,7 +112,6 @@ export function EnvironmentPanel({
   pullRequestDisabledReason,
   onSetActiveMenu,
   onClose,
-  onRefreshGit,
   onOpenProject,
   onSelectNoProject,
   onSelectBranch,
@@ -135,7 +133,6 @@ export function EnvironmentPanel({
   pullRequestDisabledReason: string;
   onSetActiveMenu: (menu: EnvironmentPanelMenu) => void;
   onClose: () => void;
-  onRefreshGit: () => void;
   onOpenProject: () => void;
   onSelectNoProject: () => void;
   onSelectBranch: (branch: string) => void;
@@ -165,9 +162,6 @@ export function EnvironmentPanel({
       <div className="environment-panel-header">
         <h2>{planUpdate ? "进度" : "环境信息"}</h2>
         <div className="environment-panel-actions">
-          <button className="icon-button" type="button" aria-label="刷新 Git 状态" onClick={onRefreshGit}>
-            <RefreshCw size={16} />
-          </button>
           <button className="icon-button" type="button" aria-label="关闭环境信息" onClick={onClose}>
             <X size={16} />
           </button>

@@ -489,6 +489,9 @@ export function App(): JSX.Element {
   const pendingEnvironmentPanelHasRoomRef = useRef<boolean | undefined>(undefined);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(null);
+  const gitRefreshTimerRef = useRef<number | undefined>(undefined);
+  const gitRefreshInFlightRef = useRef(false);
+  const gitRefreshQueuedRef = useRef(false);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
@@ -646,6 +649,9 @@ export function App(): JSX.Element {
       if (handling === "skip") {
         return;
       }
+      if (serverEventShouldRefreshGit(event)) {
+        scheduleGitStatusRefresh(600);
+      }
       setState((current) => reduceServerEvent(current, event));
     });
 
@@ -678,6 +684,10 @@ export function App(): JSX.Element {
       if (streamScrollFrameRef.current !== undefined) {
         window.cancelAnimationFrame(streamScrollFrameRef.current);
         streamScrollFrameRef.current = undefined;
+      }
+      if (gitRefreshTimerRef.current !== undefined) {
+        window.clearTimeout(gitRefreshTimerRef.current);
+        gitRefreshTimerRef.current = undefined;
       }
     };
   }, []);
@@ -805,6 +815,19 @@ export function App(): JSX.Element {
   useEffect(() => {
     setSelectedWorkspaceFile(undefined);
   }, [state.activeContext?.cwd]);
+
+  useEffect(() => {
+    scheduleGitStatusRefresh(0);
+  }, [state.activeContext?.cwd]);
+
+  useEffect(() => {
+    function handleFocus(): void {
+      scheduleGitStatusRefresh(0);
+    }
+
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
   useEffect(() => {
     if (!resizingSidebar) {
@@ -945,6 +968,7 @@ export function App(): JSX.Element {
       setEnvironmentPanelMounted(true);
       setEnvironmentPanelClosing(false);
       setEnvironmentPanelReserved(environmentPanelHasRoom);
+      scheduleGitStatusRefresh(0);
       return;
     }
     if (!environmentPanelMounted) {
@@ -1962,11 +1986,19 @@ export function App(): JSX.Element {
   }
 
   async function refreshGitStatus(): Promise<void> {
-    if (!state.activeContext) {
+    if (!appStateRef.current.activeContext) {
       return;
     }
+    if (gitRefreshInFlightRef.current) {
+      gitRefreshQueuedRef.current = true;
+      return;
+    }
+    gitRefreshInFlightRef.current = true;
     try {
       const gitStatus = await window.wuu.gitStatus();
+      if (!appStateRef.current.activeContext) {
+        return;
+      }
       setState((current) => ({
         ...current,
         gitStatus,
@@ -1977,7 +2009,26 @@ export function App(): JSX.Element {
         ...current,
         status: error instanceof Error ? error.message : "refresh git status failed"
       }));
+    } finally {
+      gitRefreshInFlightRef.current = false;
+      if (gitRefreshQueuedRef.current) {
+        gitRefreshQueuedRef.current = false;
+        scheduleGitStatusRefresh(150);
+      }
     }
+  }
+
+  function scheduleGitStatusRefresh(delayMs: number): void {
+    if (!appStateRef.current.activeContext) {
+      return;
+    }
+    if (gitRefreshTimerRef.current !== undefined) {
+      window.clearTimeout(gitRefreshTimerRef.current);
+    }
+    gitRefreshTimerRef.current = window.setTimeout(() => {
+      gitRefreshTimerRef.current = undefined;
+      void refreshGitStatus();
+    }, delayMs);
   }
 
   async function createAndCheckoutBranch(branch: string): Promise<void> {
@@ -2906,7 +2957,6 @@ export function App(): JSX.Element {
           setEnvironmentPanelDismissed(true);
           setEnvironmentPanelMenu(null);
         }}
-        onRefreshGit={() => void refreshGitStatus()}
         onOpenProject={() => void chooseProjectFolder()}
         onSelectNoProject={() => void useNoProject(false)}
         onSelectBranch={(branch) => void checkoutBranch(branch)}
@@ -3699,6 +3749,13 @@ function handleStreamingNotification(event: ServerEvent, state: AppState): Strea
     default:
       return "state";
   }
+}
+
+function serverEventShouldRefreshGit(event: ServerEvent): boolean {
+  if (event.kind !== "notification") {
+    return false;
+  }
+  return event.message.method === "turn/completed" || event.message.method === "turn/error";
 }
 
 function notificationTargetsActiveThread(params: Record<string, unknown> | undefined, state: AppState): boolean {
