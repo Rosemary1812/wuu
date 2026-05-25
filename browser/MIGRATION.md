@@ -105,6 +105,17 @@ Migration rule:
   clear build reason. Prefer a shared workbench package or generated adapter so
   the browser workbench and desktop transition path do not drift silently.
 
+Current verification gap:
+
+- `browser/scripts/launch-dev.sh` can launch a separate BrowserOS Dev profile
+  with `chrome://browseros/wuu` as the requested start URL.
+- `browser/scripts/verify-dev.sh --require-wuu-tab` proves that the fresh
+  profile still lands on BrowserOS extension onboarding/newtab instead of the
+  Wuu route.
+- This means the product requirement is not satisfied by command-line URL
+  launch alone. The BrowserOS extension/browser first-run route must be changed
+  so Wuu Browser's default tab is the Wuu workbench.
+
 ## Phase 4: Remove Misaligned Runtime Defaults
 
 Status: pending.
