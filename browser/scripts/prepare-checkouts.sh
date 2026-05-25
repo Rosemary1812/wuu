@@ -16,6 +16,9 @@ Options:
   --skip-chromium       Do not prepare the Chromium checkout.
   --skip-fetch          Require an existing Chromium checkout; do not run fetch.
   --skip-sync           Do not run gclient sync after checking out Chromium.
+  --force-sync          Force gclient to refresh dependencies, useful after
+                        interrupted or incomplete syncs.
+  --gclient-jobs N      Limit parallel gclient SCM jobs.
   --apply-patches       Apply Wuu Browser patches after Chromium setup.
   --allow-dirty         Allow operating on dirty existing checkouts.
   --dry-run             Print commands without executing them.
@@ -24,6 +27,7 @@ Environment:
   WUU_BROWSEROS_REPO       BrowserOS reference checkout override.
   WUU_CHROMIUM_SRC         Chromium src checkout override.
   WUU_BROWSEROS_GIT_URL    BrowserOS repository URL.
+  WUU_GCLIENT_JOBS         Parallel gclient SCM jobs.
 USAGE
 }
 
@@ -32,8 +36,10 @@ skip_browseros=false
 skip_chromium=false
 skip_fetch=false
 skip_sync=false
+force_sync=false
 apply_patches=false
 allow_dirty=false
+gclient_jobs="${WUU_GCLIENT_JOBS:-}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
@@ -76,6 +82,18 @@ while [[ $# -gt 0 ]]; do
     --skip-sync)
       skip_sync=true
       shift
+      ;;
+    --force-sync)
+      force_sync=true
+      shift
+      ;;
+    --gclient-jobs)
+      gclient_jobs="${2:-}"
+      if [[ -z "${gclient_jobs}" ]]; then
+        echo "--gclient-jobs requires a positive integer" >&2
+        exit 2
+      fi
+      shift 2
       ;;
     --apply-patches)
       apply_patches=true
@@ -139,6 +157,11 @@ chromium_version="$(read_chromium_version "${browser_dir}/CHROMIUM_VERSION")"
 if [[ -z "${base_commit}" || -z "${chromium_version}" ]]; then
   echo "Missing Chromium pin files under ${browser_dir}" >&2
   exit 1
+fi
+
+if [[ -n "${gclient_jobs}" && ! "${gclient_jobs}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "gclient jobs must be a positive integer: ${gclient_jobs}" >&2
+  exit 2
 fi
 
 print_cmd() {
@@ -213,6 +236,51 @@ ensure_chromium_base_available() {
   run_in "${chromium_src}" git fetch origin "${base_commit}"
 }
 
+gclient_sync_args() {
+  local args=(sync -D --no-history --shallow)
+  if [[ "${force_sync}" == "true" ]]; then
+    args+=(--force)
+  fi
+  if [[ -n "${gclient_jobs}" ]]; then
+    args+=(-j "${gclient_jobs}")
+  fi
+  printf '%s\0' "${args[@]}"
+}
+
+run_gclient_sync() {
+  if [[ "${force_sync}" != "true" && -z "${gclient_jobs}" ]]; then
+    if [[ "${dry_run}" == "true" ]]; then
+      run_in "${chromium_src}" gclient sync -D --no-history --shallow
+    elif command -v gclient >/dev/null 2>&1; then
+      run_in "${chromium_src}" gclient sync -D --no-history --shallow
+    elif command -v gclient.bat >/dev/null 2>&1; then
+      run_in "${chromium_src}" gclient.bat sync -D --no-history --shallow
+    else
+      echo "gclient is required to sync Chromium dependencies." >&2
+      echo "Install depot_tools and put it on PATH, or rerun with --skip-sync." >&2
+      exit 2
+    fi
+    return
+  fi
+
+  local sync_args=()
+  while IFS= read -r -d '' arg; do
+    sync_args+=("${arg}")
+  done < <(gclient_sync_args)
+
+  if [[ "${dry_run}" == "true" ]]; then
+    run_in "${chromium_src}" gclient "${sync_args[@]}"
+  elif command -v gclient >/dev/null 2>&1; then
+    run_in "${chromium_src}" gclient "${sync_args[@]}"
+  elif command -v gclient.bat >/dev/null 2>&1; then
+    run_in "${chromium_src}" gclient.bat "${sync_args[@]}"
+  else
+    echo "gclient is required to sync Chromium dependencies." >&2
+    echo "Install depot_tools and put it on PATH, or rerun with --skip-sync." >&2
+    exit 2
+  fi
+}
+
 prepare_browseros() {
   if [[ "${skip_browseros}" == "true" ]]; then
     return
@@ -274,17 +342,7 @@ prepare_chromium() {
   run_in "${chromium_src}" git checkout "${base_commit}"
 
   if [[ "${skip_sync}" != "true" ]]; then
-    if [[ "${dry_run}" == "true" ]]; then
-      run_in "${chromium_src}" gclient sync -D --no-history --shallow
-    elif command -v gclient >/dev/null 2>&1; then
-      run_in "${chromium_src}" gclient sync -D --no-history --shallow
-    elif command -v gclient.bat >/dev/null 2>&1; then
-      run_in "${chromium_src}" gclient.bat sync -D --no-history --shallow
-    else
-      echo "gclient is required to sync Chromium dependencies." >&2
-      echo "Install depot_tools and put it on PATH, or rerun with --skip-sync." >&2
-      exit 2
-    fi
+    run_gclient_sync
   fi
 
   if [[ "${apply_patches}" == "true" ]]; then
