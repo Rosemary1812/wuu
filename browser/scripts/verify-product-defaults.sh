@@ -277,7 +277,22 @@ check_contains \
 
 check_contains \
   "${build_dev_script}" \
-  'build_modules="${WUU_BROWSER_BUILD_MODULES:-resources,bundled_extensions,chromium_replace,configure,compile}"' \
+  'build_modules="${WUU_BROWSER_BUILD_MODULES:-}"' \
+  "dev build accepts explicit module overrides from the environment"
+
+check_contains \
+  "${build_dev_script}" \
+  'build_modules="$(default_build_modules)"' \
+  "dev build uses platform-aware default build modules"
+
+check_contains \
+  "${build_dev_script}" \
+  'Darwin) modules="sparkle_setup,${modules}"' \
+  "dev build prepares Sparkle for macOS browser builds"
+
+check_contains \
+  "${build_dev_script}" \
+  'resources,bundled_extensions,chromium_replace,configure,compile' \
   "dev build uses repository-owned resources, bundled extensions, and Chromium replacement files"
 
 check_contains \

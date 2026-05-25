@@ -108,9 +108,10 @@ make browser-build-dev ARGS="--prepare --package-macos"
 
 The dev build command runs the repository-owned BrowserOS build modules against
 the selected Chromium checkout. By default it expects patches to already be
-applied and runs `resources,bundled_extensions,chromium_replace,configure,compile`; pass
-`--prepare` when starting from a clean checkout. On macOS, `--package-macos`
-then stages `browser/out/Wuu Browser Dev.app`.
+applied and runs `resources,bundled_extensions,chromium_replace,configure,compile`
+plus `sparkle_setup` on macOS; pass `--prepare` when starting from a clean
+checkout. On macOS, `--package-macos` then stages
+`browser/out/Wuu Browser Dev.app`.
 
 Build the repo-owned Wuu workbench extension and local server resources:
 

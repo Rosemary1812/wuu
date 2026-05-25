@@ -137,14 +137,29 @@ class SparkleSetupModule(CommandModule):
         log_info("\n✨ Setting up Sparkle framework...")
 
         sparkle_dir = ctx.get_sparkle_dir()
+        sparkle_dir.mkdir(parents=True, exist_ok=True)
 
-        if sparkle_dir.exists():
-            safe_rmtree(sparkle_dir)
-
-        sparkle_dir.mkdir(parents=True)
+        for name in [
+            "Sparkle.framework",
+            "sparkle.app",
+            "Sparkle Test App.app",
+            "bin",
+            "Symbols",
+            "SampleAppcast.xml",
+            "INSTALL",
+            "LICENSE",
+            "CHANGELOG",
+        ]:
+            path = sparkle_dir / name
+            if path.is_dir():
+                safe_rmtree(path)
+            elif path.exists():
+                path.unlink()
 
         sparkle_url = ctx.get_sparkle_url()
         sparkle_archive = sparkle_dir / "sparkle.tar.xz"
+        if sparkle_archive.exists():
+            sparkle_archive.unlink()
 
         log_info(f"Downloading Sparkle from {sparkle_url}...")
         urllib.request.urlretrieve(sparkle_url, sparkle_archive)

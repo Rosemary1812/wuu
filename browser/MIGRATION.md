@@ -106,7 +106,8 @@ Current dev build path:
   and compiling a local development browser from the selected Chromium checkout.
 - By default it expects a prepared checkout and runs the build modules needed
   for local iteration: resources, bundled extensions, Chromium replacement
-  files, GN configure, and compile.
+  files, GN configure, and compile. macOS also runs Sparkle setup because the
+  BrowserOS Chromium patches link and bundle `Sparkle.framework`.
 - `ARGS="--prepare"` makes it call the checkout preparation path first, including
   Wuu Browser patch application.
 - `ARGS="--package-macos"` stages the compiled app as
