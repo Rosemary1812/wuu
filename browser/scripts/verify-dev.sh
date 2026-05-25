@@ -823,6 +823,20 @@ if (!interaction.tab?.targetId) {
 }
 
 const interactionPath = `/browser-bridge/tabs/${encodeURIComponent(interaction.tab.targetId)}`
+const snapshot = await fetchJson(`${interactionPath}/snapshot?enhanced=1`)
+if (
+  snapshot.enhanced !== true ||
+  typeof snapshot.snapshot !== 'string' ||
+  !snapshot.snapshot.includes('Apply')
+) {
+  throw new Error(`Browser Bridge snapshot returned unexpected data: ${JSON.stringify(snapshot)}`)
+}
+
+const dom = await fetchJson(`${interactionPath}/dom?selector=%23status`)
+if (typeof dom.html !== 'string' || !dom.html.includes('id="status"')) {
+  throw new Error(`Browser Bridge DOM returned unexpected data: ${JSON.stringify(dom)}`)
+}
+
 await fetchJson(`${interactionPath}/type`, {
   method: 'POST',
   body: JSON.stringify({ x: 80, y: 56, text: 'typed-by-bridge', clear: true }),
@@ -851,6 +865,8 @@ console.log(JSON.stringify({
   createdTargetId: created.tab.targetId,
   interactionTargetId: interaction.tab.targetId,
   screenshotChars: screenshot.data.length,
+  snapshotChars: snapshot.snapshot.length,
+  domChars: dom.html.length,
 }))
 JS
 )" || {

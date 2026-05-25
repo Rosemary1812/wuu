@@ -17,7 +17,10 @@ type BrowserBridgeDeps = {
     | 'createTargetTab'
     | 'navigateTarget'
     | 'screenshotTarget'
+    | 'snapshotTarget'
+    | 'enhancedSnapshotTarget'
     | 'contentTarget'
+    | 'domTarget'
     | 'clickTargetAt'
     | 'typeTargetAt'
     | 'scrollTarget'
@@ -258,6 +261,30 @@ export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
       const selector = c.req.query('selector')?.trim() || undefined
       const text = await browser.contentTarget(target.id, selector)
       return c.json({ text })
+    })
+    .get('/tabs/:targetId/snapshot', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const enhanced = c.req.query('enhanced') === '1'
+      const snapshot = enhanced
+        ? await browser.enhancedSnapshotTarget(target.id)
+        : await browser.snapshotTarget(target.id)
+      return c.json({ snapshot, enhanced })
+    })
+    .get('/tabs/:targetId/dom', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const selector = c.req.query('selector')?.trim() || undefined
+      const html = await browser.domTarget(target.id, { selector })
+      return c.json({ html })
     })
     .post('/tabs/:targetId/click', async (c) => {
       if (!browser.isCdpConnected()) return cdpUnavailable(c)

@@ -39,7 +39,10 @@ function createBrowser(overrides: Partial<FakeBrowser> = {}): FakeBrowser {
       mimeType: 'image/png',
       devicePixelRatio: 1,
     })),
+    snapshotTarget: mock(async () => '[42] button "Apply"'),
+    enhancedSnapshotTarget: mock(async () => '[42] button "Apply"'),
     contentTarget: mock(async () => 'Example'),
+    domTarget: mock(async () => '<main id="status">Example</main>'),
     clickTargetAt: mock(async () => {}),
     typeTargetAt: mock(async () => {}),
     scrollTarget: mock(async () => {}),
@@ -245,6 +248,51 @@ describe('createBrowserBridgeRoutes', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ text: 'Bridge ready' })
     expect(browser.contentTarget).toHaveBeenCalledWith('target-2', '#status')
+  })
+
+  it('returns accessibility snapshots for an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+      snapshotTarget: mock(async () => '[88] textbox "Search"'),
+      enhancedSnapshotTarget: mock(async () => 'heading "Bridge"\n[88] textbox "Search"'),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const normalResponse = await route.request('/tabs/target-2/snapshot')
+    const enhancedResponse = await route.request(
+      '/tabs/target-2/snapshot?enhanced=1',
+    )
+
+    expect(normalResponse.status).toBe(200)
+    expect(enhancedResponse.status).toBe(200)
+    expect(await normalResponse.json()).toEqual({
+      snapshot: '[88] textbox "Search"',
+      enhanced: false,
+    })
+    expect(await enhancedResponse.json()).toEqual({
+      snapshot: 'heading "Bridge"\n[88] textbox "Search"',
+      enhanced: true,
+    })
+    expect(browser.snapshotTarget).toHaveBeenCalledWith('target-2')
+    expect(browser.enhancedSnapshotTarget).toHaveBeenCalledWith('target-2')
+  })
+
+  it('returns DOM HTML for an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+      domTarget: mock(async () => '<main id="status">Bridge ready</main>'),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request('/tabs/target-2/dom?selector=%23status')
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      html: '<main id="status">Bridge ready</main>',
+    })
+    expect(browser.domTarget).toHaveBeenCalledWith('target-2', {
+      selector: '#status',
+    })
   })
 
   it('clicks, types, and scrolls an existing browser tab target', async () => {

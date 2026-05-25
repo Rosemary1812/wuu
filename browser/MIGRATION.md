@@ -214,6 +214,10 @@ Current first bridge:
 - `POST /browser-bridge/tabs/:targetId/navigate` navigates a tab target.
 - `GET /browser-bridge/tabs/:targetId/screenshot` captures a tab screenshot.
 - `GET /browser-bridge/tabs/:targetId/content` reads tab text content.
+- `GET /browser-bridge/tabs/:targetId/snapshot` reads a concise or enhanced
+  accessibility snapshot for interaction planning.
+- `GET /browser-bridge/tabs/:targetId/dom` reads DOM HTML, optionally scoped by
+  CSS selector.
 - `POST /browser-bridge/tabs/:targetId/click` clicks a coordinate.
 - `POST /browser-bridge/tabs/:targetId/type` clicks and types into a coordinate.
 - `POST /browser-bridge/tabs/:targetId/scroll` scrolls a tab.

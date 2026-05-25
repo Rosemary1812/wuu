@@ -810,6 +810,15 @@ export class Browser {
 
   async snapshot(page: number): Promise<string> {
     const session = await this.resolveSession(page)
+    return this.snapshotFromSession(session)
+  }
+
+  async snapshotTarget(targetId: string): Promise<string> {
+    const session = await this.resolveTargetSession(targetId)
+    return this.snapshotFromSession(session)
+  }
+
+  private async snapshotFromSession(session: ProtocolApi): Promise<string> {
     const nodes = await this.fetchAXTree(session)
     if (nodes.length === 0) return ''
 
@@ -877,6 +886,17 @@ export class Browser {
 
   async enhancedSnapshot(page: number): Promise<string> {
     const session = await this.resolveSession(page)
+    return this.enhancedSnapshotFromSession(session)
+  }
+
+  async enhancedSnapshotTarget(targetId: string): Promise<string> {
+    const session = await this.resolveTargetSession(targetId)
+    return this.enhancedSnapshotFromSession(session)
+  }
+
+  private async enhancedSnapshotFromSession(
+    session: ProtocolApi,
+  ): Promise<string> {
     const nodes = await this.fetchAXTree(session)
     if (nodes.length === 0) return ''
 
@@ -1045,6 +1065,21 @@ export class Browser {
 
   async getDom(page: number, opts?: { selector?: string }): Promise<string> {
     const session = await this.resolveSession(page)
+    return this.domFromSession(session, opts)
+  }
+
+  async domTarget(
+    targetId: string,
+    opts?: { selector?: string },
+  ): Promise<string> {
+    const session = await this.resolveTargetSession(targetId)
+    return this.domFromSession(session, opts)
+  }
+
+  private async domFromSession(
+    session: ProtocolApi,
+    opts?: { selector?: string },
+  ): Promise<string> {
     const doc = await session.DOM.getDocument({ depth: 0 })
 
     let nodeId = doc.root.nodeId

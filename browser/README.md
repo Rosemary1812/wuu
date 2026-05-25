@@ -98,7 +98,7 @@ inherited from BrowserOS until the Chromium branding patches are fully renamed.
 
 Verify the running dev browser, Wuu native runtime, prompt-to-turn startup,
 native project folder selection wiring, selected-project local file/Git/terminal
-operations, and first Browser Bridge tab operation path:
+operations, and first Browser Bridge tab observation/action path:
 
 ```bash
 make browser-verify-dev ARGS="--require-wuu-runtime --require-wuu-turn-start --require-project-folder-picker --require-project-local-ops --require-no-vm-agents --require-browser-bridge"
@@ -131,6 +131,7 @@ the BrowserOS build order. It refuses to mutate a dirty Chromium checkout unless
    runtime capabilities.
 4. Keep OpenClaw/Hermes/Lima VM startup disabled on the default Wuu Browser path.
 5. Keep one-command development launch, runtime/CDP verification, and the first
-   Browser Bridge tab create/navigate/screenshot/click/type/scroll path green.
+   Browser Bridge tab create/navigate/screenshot/snapshot/DOM/click/type/scroll
+   path green.
 6. Replace the temporary macOS dev staging path with signed release `.dmg`
    packaging and add Windows installer outputs.

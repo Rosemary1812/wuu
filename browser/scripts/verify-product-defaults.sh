@@ -39,6 +39,7 @@ launch_script="${browser_dir}/scripts/launch-dev.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
 server_main="${browser_dir}/agent/apps/server/src/main.ts"
+browser_bridge_route="${browser_dir}/agent/apps/server/src/api/routes/browser-bridge.ts"
 
 echo "Wuu Browser product default verification"
 
@@ -136,6 +137,26 @@ check_contains \
   "${dev_verify_script}" \
   "window.wuu.startTerminalSession" \
   "dev verification checks Wuu terminal startup in the selected project"
+
+check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/snapshot" \
+  "Browser Bridge exposes target accessibility snapshots"
+
+check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/dom" \
+  "Browser Bridge exposes target DOM HTML"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/snapshot?enhanced=1" \
+  "dev verification checks Browser Bridge enhanced snapshots"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/dom?selector=%23status" \
+  "dev verification checks Browser Bridge DOM reads"
 
 check_contains \
   "${server_main}" \
