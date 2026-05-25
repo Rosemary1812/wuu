@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: browser/scripts/verify-dev.sh [--require-wuu-tab]
+Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime]
 
 Verify a running Wuu Browser development instance.
 
@@ -12,6 +12,7 @@ Checks:
   2. BrowserOS server health endpoint responds.
   3. DevTools page list is readable.
   4. Optionally, the Wuu workbench extension route is open.
+  5. Optionally, the Wuu workbench can call the real native runtime.
 
 Environment overrides:
   WUU_BROWSER_CDP_PORT     Defaults to 9100.
@@ -20,11 +21,17 @@ USAGE
 }
 
 require_wuu_tab=false
+require_wuu_runtime=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --require-wuu-tab)
       require_wuu_tab=true
+      shift
+      ;;
+    --require-wuu-runtime)
+      require_wuu_tab=true
+      require_wuu_runtime=true
       shift
       ;;
     -h|--help)
@@ -88,6 +95,113 @@ if [[ "${require_wuu_tab}" == "true" ]]; then
     echo "Wuu workbench tab was not found in CDP page list." >&2
     exit 1
   fi
+fi
+
+if [[ "${require_wuu_runtime}" == "true" ]]; then
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required for Wuu runtime verification" >&2
+    exit 2
+  fi
+
+  runtime_json="$(CDP_BASE="${cdp_base}" bun - <<'JS'
+const cdpBase = process.env.CDP_BASE
+
+async function fetchJson(url) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`${url} failed with ${response.status}`)
+  }
+  return response.json()
+}
+
+const pages = await fetchJson(`${cdpBase}/json/list`)
+const page = pages.find((candidate) => {
+  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/browseros\/wuu/.test(candidate.url)
+})
+if (!page) {
+  throw new Error('Wuu workbench page was not found')
+}
+
+const ws = new WebSocket(page.webSocketDebuggerUrl)
+let nextId = 0
+const pending = new Map()
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data)
+  if (!message.id || !pending.has(message.id)) return
+  const { resolve, reject } = pending.get(message.id)
+  pending.delete(message.id)
+  if (message.error) {
+    reject(new Error(JSON.stringify(message.error)))
+    return
+  }
+  resolve(message.result)
+}
+
+await new Promise((resolve, reject) => {
+  ws.onopen = resolve
+  ws.onerror = reject
+})
+
+function send(method, params = {}) {
+  const id = ++nextId
+  ws.send(JSON.stringify({ id, method, params }))
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject })
+  })
+}
+
+async function evaluate(expression) {
+  const result = await send('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+    timeout: 60000,
+  })
+  if (result.exceptionDetails) {
+    throw new Error(JSON.stringify(result.exceptionDetails))
+  }
+  if (result.result?.subtype === 'error') {
+    throw new Error(result.result.description || 'Runtime evaluation failed')
+  }
+  return result.result?.value
+}
+
+const result = await evaluate(`(async () => {
+  if (!window.wuu) throw new Error('window.wuu is not installed');
+  const project = await window.wuu.selectNoProject(false);
+  const initialized = await window.wuu.initialize();
+  const threadResult = await window.wuu.startThread();
+  const terminal = await window.wuu.startTerminalSession({ cols: 80, rows: 24 });
+  await window.wuu.stopTerminalSession(terminal.id);
+  return {
+    cwd: project.active_context?.cwd,
+    workspaceRoot: initialized.workspace_root,
+    provider: initialized.provider,
+    model: initialized.model,
+    threadId: threadResult.thread?.id,
+    terminalId: terminal.id,
+  };
+})()`)
+
+if (!result?.cwd || !result?.workspaceRoot || !result?.threadId || !result?.terminalId) {
+  throw new Error(`Wuu runtime returned incomplete data: ${JSON.stringify(result)}`)
+}
+
+console.log(JSON.stringify(result))
+ws.close()
+JS
+)" || {
+    echo "Wuu native runtime verification failed." >&2
+    exit 1
+  }
+
+  if ! printf '%s' "${runtime_json}" | grep -q '"threadId"'; then
+    echo "Wuu native runtime verification returned unexpected output: ${runtime_json}" >&2
+    exit 1
+  fi
+
+  echo "  Wuu runtime: ${runtime_json}"
 fi
 
 if printf '%s' "${version_json}" | grep -q '"Browser"'; then

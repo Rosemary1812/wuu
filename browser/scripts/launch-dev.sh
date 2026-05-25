@@ -15,6 +15,9 @@ Environment overrides:
   WUU_BROWSER_SERVER_RESOURCES
                            BrowserOS server resources directory. Defaults to
                            the bundled resources inside WUU_BROWSER_APP.
+  WUU_BROWSER_STAGE_SERVER_RESOURCES
+                           Build and stage local server resources before launch.
+                           Defaults to 1 when WUU_BROWSER_SERVER_RESOURCES is not set.
   WUU_BROWSER_PROFILE_DIR  Browser profile directory.
   WUU_BROWSER_START_URL    Initial URL. Defaults to the Wuu workbench tab.
   WUU_BIN                  Wuu native runtime binary used by the browser tab.
@@ -127,7 +130,40 @@ if [[ ! -d "${extension_dir}" ]]; then
 fi
 
 server_resources_dir="${WUU_BROWSER_SERVER_RESOURCES:-${app_path}/Contents/Resources/BrowserOSServer/default/resources}"
-if [[ ! -x "${server_resources_dir}/bin/browseros_server" ]]; then
+stage_server_resources="${WUU_BROWSER_STAGE_SERVER_RESOURCES:-}"
+if [[ -z "${stage_server_resources}" ]]; then
+  if [[ -z "${WUU_BROWSER_SERVER_RESOURCES:-}" ]]; then
+    stage_server_resources=1
+  else
+    stage_server_resources=0
+  fi
+fi
+
+if [[ "${stage_server_resources}" == "1" && "${dry_run}" != "true" ]]; then
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required to build BrowserOS server resources." >&2
+    exit 2
+  fi
+  if ! command -v unzip >/dev/null 2>&1; then
+    echo "unzip is required to stage BrowserOS server resources." >&2
+    exit 2
+  fi
+
+  echo "Building BrowserOS server resources for browser dev..."
+  (cd "${repo_root}/browser/agent" && bun run build:server:test)
+
+  server_resource_archive="${repo_root}/browser/agent/dist/prod/server/browseros-server-resources-darwin-arm64.zip"
+  if [[ ! -f "${server_resource_archive}" ]]; then
+    echo "BrowserOS server resource archive was not produced: ${server_resource_archive}" >&2
+    exit 1
+  fi
+
+  server_resources_root="$(dirname "${server_resources_dir}")"
+  unzip -oq "${server_resource_archive}" -d "${server_resources_root}"
+  chmod +x "${server_resources_dir}/bin/browseros_server"
+fi
+
+if [[ "${dry_run}" != "true" && ! -x "${server_resources_dir}/bin/browseros_server" ]]; then
   echo "BrowserOS server binary not found or not executable: ${server_resources_dir}/bin/browseros_server" >&2
   echo "Build browser/agent server resources or set WUU_BROWSER_SERVER_RESOURCES." >&2
   exit 1
@@ -184,6 +220,7 @@ echo "Wuu Browser Dev launch"
 echo "  app:       ${app_path}"
 echo "  extension: ${extension_dir}"
 echo "  server:    ${server_resources_dir}"
+echo "  stage srv: ${stage_server_resources}"
 echo "  profile:   ${profile_dir}"
 echo "  start URL: ${start_url}"
 echo "  Wuu source:${WUU_SOURCE_ROOT}"
