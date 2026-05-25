@@ -16,8 +16,15 @@ const config = {
   aiSdkDevtoolsEnabled: false,
 }
 
+const originalVmAgentsEnv = process.env.WUU_ENABLE_VM_AGENTS
+
 describe('Application.start', () => {
   afterEach(() => {
+    if (originalVmAgentsEnv === undefined) {
+      delete process.env.WUU_ENABLE_VM_AGENTS
+    } else {
+      process.env.WUU_ENABLE_VM_AGENTS = originalVmAgentsEnv
+    }
     mock.restore()
     mock.clearAllMocks()
   })
@@ -31,6 +38,9 @@ describe('Application.start', () => {
       loggerError,
       loggerInfo,
       loggerWarn,
+      configureOpenClawService,
+      configureVmRuntime,
+      startHermesRuntimeBestEffort,
     } = await setupApplicationTest()
     const app = new Application(config)
 
@@ -44,14 +54,27 @@ describe('Application.start', () => {
       }),
     )
     expect(createHttpServer.mock.calls[0]?.[0]).not.toHaveProperty('controller')
+    expect(configureVmRuntime).not.toHaveBeenCalled()
+    expect(configureOpenClawService).not.toHaveBeenCalled()
+    expect(startHermesRuntimeBestEffort).not.toHaveBeenCalled()
     expect(loggerInfo).toHaveBeenCalled()
+    expect(loggerInfo).toHaveBeenCalledWith(
+      'VM-backed agents are disabled by default; set WUU_ENABLE_VM_AGENTS=1 to enable OpenClaw/Hermes',
+    )
     expect(loggerWarn).not.toHaveBeenCalled()
     expect(loggerError).not.toHaveBeenCalled()
   })
 
-  it('starts OpenClaw prewarm without blocking HTTP startup', async () => {
-    const { Application, createHttpServer, openClawService } =
-      await setupApplicationTest()
+  it('starts VM-backed agents without blocking HTTP startup when explicitly enabled', async () => {
+    process.env.WUU_ENABLE_VM_AGENTS = '1'
+    const {
+      Application,
+      createHttpServer,
+      openClawService,
+      configureOpenClawService,
+      configureVmRuntime,
+      startHermesRuntimeBestEffort,
+    } = await setupApplicationTest()
     let resolvePrewarm: () => void = () => {}
     const pendingPrewarm = new Promise<void>((resolve) => {
       resolvePrewarm = resolve
@@ -69,11 +92,20 @@ describe('Application.start', () => {
 
     expect(completedBeforePrewarm).toBe(true)
     expect(createHttpServer).toHaveBeenCalledTimes(1)
+    expect(configureVmRuntime).not.toHaveBeenCalled()
+    expect(configureOpenClawService).toHaveBeenCalledWith({
+      browserosServerPort: config.serverPort,
+      resourcesDir: config.resourcesDir,
+    })
     expect(openClawService.prewarm).toHaveBeenCalledTimes(1)
     expect(openClawService.tryAutoStart).toHaveBeenCalledTimes(1)
+    expect(startHermesRuntimeBestEffort).toHaveBeenCalledWith({
+      resourcesDir: config.resourcesDir,
+    })
   })
 
   it('logs and continues when OpenClaw prewarm fails', async () => {
+    process.env.WUU_ENABLE_VM_AGENTS = '1'
     const { Application, createHttpServer, loggerWarn, openClawService } =
       await setupApplicationTest()
     openClawService.prewarm.mockImplementation(async () => {
@@ -192,14 +224,20 @@ async function setupApplicationTest() {
   const prewarm = mock(async () => {})
   const tryAutoStart = mock(async () => {})
 
-  spyOn(openclawService, 'configureVmRuntime').mockImplementation(
+  const configureVmRuntime = spyOn(
+    openclawService,
+    'configureVmRuntime',
+  ).mockImplementation(
     () =>
       ({
         prewarm,
         tryAutoStart,
       }) as never,
   )
-  spyOn(openclawService, 'configureOpenClawService').mockImplementation(
+  const configureOpenClawService = spyOn(
+    openclawService,
+    'configureOpenClawService',
+  ).mockImplementation(
     () =>
       ({
         prewarm,
@@ -209,6 +247,10 @@ async function setupApplicationTest() {
 
   const hermesExecuteAction = mock(async () => {})
   const fakeHermesRuntime = { executeAction: hermesExecuteAction } as never
+  const startHermesRuntimeBestEffort = spyOn(
+    runtimeModule,
+    'startHermesRuntimeBestEffort',
+  ).mockImplementation(() => fakeHermesRuntime)
   spyOn(runtimeModule, 'configureHermesRuntime').mockImplementation(
     () => fakeHermesRuntime,
   )
@@ -232,6 +274,9 @@ async function setupApplicationTest() {
     loggerInfo,
     loggerWarn,
     initializeDb,
+    configureVmRuntime,
+    configureOpenClawService,
+    startHermesRuntimeBestEffort,
     openClawService: { prewarm, tryAutoStart },
     hermesService: { executeAction: hermesExecuteAction },
   }

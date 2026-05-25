@@ -36,6 +36,7 @@ check_not_contains() {
 first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_main.cc"
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
+server_main="${browser_dir}/agent/apps/server/src/main.ts"
 
 echo "Wuu Browser product default verification"
 
@@ -63,6 +64,16 @@ check_contains \
   "${launch_script}" \
   '"--disable-browseros-server-updater"' \
   "dev launch keeps BrowserOS server updater disabled"
+
+check_contains \
+  "${server_main}" \
+  "process.env.WUU_ENABLE_VM_AGENTS === '1'" \
+  "server only enables VM-backed agents through explicit opt-in"
+
+check_not_contains \
+  "${server_main}" \
+  'configureVmRuntime({ resourcesDir })' \
+  "server default startup does not configure the VM runtime"
 
 if [[ "${failures}" -ne 0 ]]; then
   echo "Product default verification failed." >&2

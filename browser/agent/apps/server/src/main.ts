@@ -14,8 +14,7 @@ import { EXIT_CODES } from '@browseros/shared/constants/exit-codes'
 import { createHttpServer } from './api/server'
 import {
   configureOpenClawService,
-  configureVmRuntime,
-  getOpenClawService,
+  getConfiguredOpenClawService,
 } from './api/services/openclaw/openclaw-service'
 import { CdpBackend } from './browser/backends/cdp'
 import { Browser } from './browser/browser'
@@ -65,7 +64,6 @@ export class Application {
     })
 
     const resourcesDir = path.resolve(this.config.resourcesDir)
-    configureVmRuntime({ resourcesDir })
     configureClaudeRuntime()
     configureCodexRuntime()
     await this.initCoreServices()
@@ -133,6 +131,8 @@ export class Application {
     startSkillSync()
 
     if (process.env.WUU_ENABLE_VM_AGENTS === '1') {
+      logger.info('VM-backed agents are enabled')
+
       // OpenClaw is best-effort — a failure here must not crash the server.
       // The container runtime constructor throws synchronously on non-darwin
       // (e.g. Linux CI runners), and the .catch() on tryAutoStart() only
@@ -161,7 +161,9 @@ export class Application {
 
       startHermesRuntimeBestEffort({ resourcesDir })
     } else {
-      logger.info('VM-backed agents are disabled by default')
+      logger.info(
+        'VM-backed agents are disabled by default; set WUU_ENABLE_VM_AGENTS=1 to enable OpenClaw/Hermes',
+      )
     }
 
     metrics.log('http_server.started', { version: VERSION })
@@ -170,8 +172,8 @@ export class Application {
   stop(reason?: string): void {
     logger.info('Shutting down server...', { reason })
     stopSkillSync()
-    getOpenClawService()
-      .shutdown()
+    getConfiguredOpenClawService()
+      ?.shutdown()
       .catch(() => {})
     getHermesRuntime()
       ?.executeAction({ type: 'stop' })

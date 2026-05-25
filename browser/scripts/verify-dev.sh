@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime]
+Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-no-vm-agents]
 
 Verify a running Wuu Browser development instance.
 
@@ -13,6 +13,7 @@ Checks:
   3. DevTools page list is readable.
   4. Optionally, the Wuu workbench extension route is open.
   5. Optionally, the Wuu workbench can call the real native runtime.
+  6. Optionally, no BrowserOS VM/OpenClaw process is running.
 
 Environment overrides:
   WUU_BROWSER_CDP_PORT     Defaults to 9100.
@@ -22,6 +23,7 @@ USAGE
 
 require_wuu_tab=false
 require_wuu_runtime=false
+require_no_vm_agents=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,6 +34,10 @@ while [[ $# -gt 0 ]]; do
     --require-wuu-runtime)
       require_wuu_tab=true
       require_wuu_runtime=true
+      shift
+      ;;
+    --require-no-vm-agents)
+      require_no_vm_agents=true
       shift
       ;;
     -h|--help)
@@ -206,6 +212,16 @@ JS
   fi
 
   echo "  Wuu runtime: ${runtime_json}"
+fi
+
+if [[ "${require_no_vm_agents}" == "true" ]]; then
+  vm_matches="$(ps -axo pid=,command= | grep -E 'browseros-vm|openclaw|limactl' | grep -v -E 'grep|verify-dev.sh' || true)"
+  if [[ -n "${vm_matches}" ]]; then
+    echo "VM-backed agent processes are running unexpectedly:" >&2
+    printf '%s\n' "${vm_matches}" >&2
+    exit 1
+  fi
+  echo "  VM-backed agents: not running"
 fi
 
 if printf '%s' "${version_json}" | grep -q '"Browser"'; then

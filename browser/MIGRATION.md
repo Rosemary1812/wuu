@@ -149,7 +149,7 @@ Current verification gap:
 
 ## Phase 4: Remove Misaligned Runtime Defaults
 
-Status: pending.
+Status: in progress.
 
 Goals:
 
@@ -162,6 +162,16 @@ Product invariant:
 
 - Normal Wuu Browser startup should not launch a VM.
 - Normal Wuu project/file/terminal work should not require a VM.
+
+Current default:
+
+- Browser server startup configures only host process agent runtimes by default.
+- OpenClaw/Hermes/Lima setup and prewarm require `WUU_ENABLE_VM_AGENTS=1`.
+- `make browser-verify-product-defaults` statically checks that the default
+  server path does not configure the VM runtime.
+- `make browser-verify-dev ARGS="--require-wuu-runtime --require-no-vm-agents"`
+  verifies the running dev browser uses the Wuu runtime without VM-backed agent
+  processes.
 
 ## Phase 5: Browser Bridge
 

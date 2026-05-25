@@ -1768,3 +1768,7 @@ export function getOpenClawService(): OpenClawService {
   if (!service) service = new OpenClawService()
   return service
 }
+
+export function getConfiguredOpenClawService(): OpenClawService | null {
+  return service
+}

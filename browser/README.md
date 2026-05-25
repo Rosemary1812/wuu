@@ -79,6 +79,9 @@ Verify stable product defaults in tracked browser patches and launch scripts:
 make browser-verify-product-defaults
 ```
 
+The default Wuu Browser path does not start OpenClaw, Hermes, or Lima. VM-backed
+agents are opt-in for future sandbox/runtime work through `WUU_ENABLE_VM_AGENTS=1`.
+
 ## Patch Workflow
 
 Inspect the current Chromium checkout without changing it:
