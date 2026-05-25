@@ -177,6 +177,9 @@ Current verification gap:
 - `browser/agent/apps/agent/entrypoints/background/index.ts` now opens
   `app.html#/home` on extension install, so the source default points at the
   Wuu workbench instead of BrowserOS onboarding.
+- `browser/agent/apps/agent/wxt.config.ts` now exposes the repo-owned extension
+  as Wuu Browser/Wuu Assistant instead of the imported generic
+  Assistant/BrowserOS labels.
 - `browser/scripts/launch-dev.sh` now starts directly at the product route,
   `chrome://browseros/wuu`, and prefers the current repository's built
   extension before falling back to the external BrowserOS reference dist.

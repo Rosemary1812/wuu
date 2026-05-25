@@ -42,6 +42,8 @@ build_agent_script="${browser_dir}/scripts/build-agent.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
+agent_wxt_config="${browser_dir}/agent/apps/agent/wxt.config.ts"
+agent_app_html="${browser_dir}/agent/apps/agent/entrypoints/app/index.html"
 server_main="${browser_dir}/agent/apps/server/src/main.ts"
 browser_bridge_route="${browser_dir}/agent/apps/server/src/api/routes/browser-bridge.ts"
 
@@ -61,6 +63,41 @@ check_contains \
   "${routes_patch}" \
   '{"/wuu", kAgentExtensionId, "app.html", "/home"},' \
   "chrome://browseros/wuu routes to the Wuu workbench extension page"
+
+check_contains \
+  "${agent_wxt_config}" \
+  "name: 'Wuu Browser'" \
+  "repo-owned extension manifest uses Wuu Browser as the visible product name"
+
+check_contains \
+  "${agent_wxt_config}" \
+  "description: 'Wuu Browser workbench and assistant.'" \
+  "repo-owned extension manifest describes the Wuu workbench"
+
+check_contains \
+  "${agent_wxt_config}" \
+  "default_title: 'Wuu Assistant'" \
+  "repo-owned extension action uses Wuu Assistant as the visible command"
+
+check_not_contains \
+  "${agent_wxt_config}" \
+  "name: 'Assistant'" \
+  "repo-owned extension manifest no longer exposes the generic Assistant name"
+
+check_not_contains \
+  "${agent_wxt_config}" \
+  "default_title: 'Ask BrowserOS'" \
+  "repo-owned extension action no longer exposes Ask BrowserOS"
+
+check_contains \
+  "${agent_app_html}" \
+  '<title>Wuu Browser</title>' \
+  "Wuu workbench tab title uses Wuu Browser"
+
+check_not_contains \
+  "${agent_app_html}" \
+  '<title>BrowserOS</title>' \
+  "Wuu workbench tab title no longer uses BrowserOS"
 
 check_contains \
   "${launch_script}" \
