@@ -143,10 +143,9 @@ function resolveWuuCommand(): WuuCommand {
 
   const sourceRoot = process.env.WUU_SOURCE_ROOT?.trim()
   if (sourceRoot && existsSync(resolve(sourceRoot, 'cmd', 'wuu'))) {
-    return {
-      command: 'go',
-      args: ['run', './cmd/wuu'],
-      cwd: sourceRoot,
+    const devBinary = resolve(sourceRoot, 'browser', '.cache', 'wuu-dev')
+    if (existsSync(devBinary)) {
+      return { command: devBinary, args: [], cwd: sourceRoot }
     }
   }
 

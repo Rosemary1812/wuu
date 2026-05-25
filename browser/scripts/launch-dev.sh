@@ -12,8 +12,15 @@ Environment overrides:
   WUU_CHROMIUM_SRC         Chromium source checkout.
   WUU_BROWSER_APP          Built BrowserOS/Wuu Browser .app path on macOS.
   WUU_BROWSER_EXTENSION    Wuu/BrowserOS agent extension directory.
+  WUU_BROWSER_SERVER_RESOURCES
+                           BrowserOS server resources directory. Defaults to
+                           the bundled resources inside WUU_BROWSER_APP.
   WUU_BROWSER_PROFILE_DIR  Browser profile directory.
   WUU_BROWSER_START_URL    Initial URL. Defaults to the Wuu workbench tab.
+  WUU_BIN                  Wuu native runtime binary used by the browser tab.
+                           Defaults to a dev build under browser/.cache.
+  WUU_SOURCE_ROOT          Wuu source tree used by the browser-hosted app-server.
+                           Defaults to this repository root.
 
 Port overrides:
   WUU_BROWSER_CDP_PORT        Defaults to 9100.
@@ -119,6 +126,13 @@ if [[ ! -d "${extension_dir}" ]]; then
   exit 1
 fi
 
+server_resources_dir="${WUU_BROWSER_SERVER_RESOURCES:-${app_path}/Contents/Resources/BrowserOSServer/default/resources}"
+if [[ ! -x "${server_resources_dir}/bin/browseros_server" ]]; then
+  echo "BrowserOS server binary not found or not executable: ${server_resources_dir}/bin/browseros_server" >&2
+  echo "Build browser/agent server resources or set WUU_BROWSER_SERVER_RESOURCES." >&2
+  exit 1
+fi
+
 if [[ -z "${profile_dir}" ]]; then
   profile_dir="$(mktemp -d -t wuu-browser-dev.XXXXXX)"
 fi
@@ -128,7 +142,22 @@ server_port="${WUU_BROWSER_SERVER_PORT:-9105}"
 proxy_port="${WUU_BROWSER_PROXY_PORT:-9205}"
 extension_port="${WUU_BROWSER_EXTENSION_PORT:-9305}"
 
+export WUU_SOURCE_ROOT="${WUU_SOURCE_ROOT:-${repo_root}}"
+wuu_bin="${WUU_BIN:-${repo_root}/browser/.cache/wuu-dev}"
+
 mkdir -p "${repo_root}/browser/.cache"
+
+if [[ -z "${WUU_BIN:-}" && "${dry_run}" != "true" ]]; then
+  echo "Building Wuu native runtime for browser dev..."
+  (cd "${repo_root}" && go build -o "${wuu_bin}" ./cmd/wuu)
+fi
+
+if [[ "${dry_run}" != "true" && ! -x "${wuu_bin}" ]]; then
+  echo "Wuu native runtime binary not found or not executable: ${wuu_bin}" >&2
+  exit 1
+fi
+
+export WUU_BIN="${wuu_bin}"
 printf '%s\n' "${profile_dir}" > "${repo_root}/browser/.cache/last-profile"
 
 args=(
@@ -137,6 +166,8 @@ args=(
   "--use-mock-keychain"
   "--show-component-extension-options"
   "--disable-browseros-extensions"
+  "--disable-browseros-server-updater"
+  "--browseros-server-resources-dir=${server_resources_dir}"
   "--remote-debugging-port=${cdp_port}"
   "--browseros-cdp-port=${cdp_port}"
   "--browseros-server-port=${server_port}"
@@ -152,10 +183,13 @@ cmd=(open -na "${app_path}" --args "${args[@]}")
 echo "Wuu Browser Dev launch"
 echo "  app:       ${app_path}"
 echo "  extension: ${extension_dir}"
+echo "  server:    ${server_resources_dir}"
 echo "  profile:   ${profile_dir}"
 echo "  start URL: ${start_url}"
+echo "  Wuu source:${WUU_SOURCE_ROOT}"
+echo "  Wuu binary:${WUU_BIN}"
 echo "  CDP:       http://127.0.0.1:${cdp_port}"
-echo "  server:    http://127.0.0.1:${server_port}"
+echo "  API:       http://127.0.0.1:${server_port}"
 
 if [[ "${dry_run}" == "true" ]]; then
   printf 'dry-run command:'

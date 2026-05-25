@@ -280,6 +280,10 @@ function validateInlinedEnv(): ConfigResult<void> {
     return { ok: true, value: undefined }
   }
 
+  if (process.env.BROWSEROS_ALLOW_MISSING_PROD_ENV === '1') {
+    return { ok: true, value: undefined }
+  }
+
   const missing: string[] = []
   for (const varName of REQUIRED_FOR_PRODUCTION) {
     if (!INLINED_ENV[varName]) {

@@ -15,6 +15,7 @@ const INLINED_ENV_VARS = [
   ...REQUIRED_PROD_VARS,
   'NODE_ENV',
   'LOG_LEVEL',
+  'BROWSEROS_ALLOW_MISSING_PROD_ENV',
 ] as const
 const PROD_ENV_PATH = join('apps', 'server', '.env.production')
 const PROD_ENV_TEMPLATE_PATH = join('apps', 'server', '.env.production.example')
@@ -33,9 +34,15 @@ function pickEnv(name: string, fileEnv: Record<string, string>): string {
   return value
 }
 
-function loadProdEnv(rootDir: string): Record<string, string> {
+function loadProdEnv(
+  rootDir: string,
+  options: { allowMissing?: boolean } = {},
+): Record<string, string> {
   const prodEnvPath = join(rootDir, PROD_ENV_PATH)
   if (!existsSync(prodEnvPath)) {
+    if (options.allowMissing) {
+      return {}
+    }
     const prodEnvTemplatePath = join(rootDir, PROD_ENV_TEMPLATE_PATH)
     if (existsSync(prodEnvTemplatePath)) {
       throw new Error(
@@ -53,7 +60,11 @@ function buildInlineEnv(
   fileEnv: Record<string, string>,
 ): Record<string, string> {
   const inlineEnv: Record<string, string> = {}
+  inlineEnv.NODE_ENV = process.env.NODE_ENV ?? fileEnv.NODE_ENV ?? 'production'
   for (const key of INLINED_ENV_VARS) {
+    if (key === 'NODE_ENV') {
+      continue
+    }
     const value = process.env[key] ?? fileEnv[key]
     if (value !== undefined) {
       inlineEnv[key] = value
@@ -82,7 +93,7 @@ export function loadBuildConfig(
   rootDir: string,
   options: LoadBuildConfigOptions = {},
 ): BuildConfig {
-  const fileEnv = loadProdEnv(rootDir)
+  const fileEnv = loadProdEnv(rootDir, { allowMissing: options.ci })
   const envVars = buildInlineEnv(fileEnv)
   if (!options.ci) {
     validateProductionEnv(envVars)
@@ -95,6 +106,8 @@ export function loadBuildConfig(
   }
 
   if (options.ci) {
+    envVars.BROWSEROS_ALLOW_MISSING_PROD_ENV =
+      process.env.BROWSEROS_ALLOW_MISSING_PROD_ENV ?? '1'
     return { version: readServerVersion(rootDir), envVars, processEnv }
   }
 
