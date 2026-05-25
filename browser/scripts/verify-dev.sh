@@ -837,6 +837,28 @@ if (typeof dom.html !== 'string' || !dom.html.includes('id="status"')) {
   throw new Error(`Browser Bridge DOM returned unexpected data: ${JSON.stringify(dom)}`)
 }
 
+const evaluation = await fetchJson(`${interactionPath}/evaluate`, {
+  method: 'POST',
+  body: JSON.stringify({
+    expression: `(() => {
+      console.error('wuu-bridge-console-error')
+      return { debugReady: true, title: document.title }
+    })()`,
+  }),
+})
+if (evaluation.error || evaluation.value?.debugReady !== true) {
+  throw new Error(`Browser Bridge evaluate returned unexpected data: ${JSON.stringify(evaluation)}`)
+}
+
+await new Promise((resolve) => setTimeout(resolve, 100))
+const consoleLogs = await fetchJson(`${interactionPath}/console?level=error&search=wuu-bridge-console-error&limit=5`)
+if (
+  !Array.isArray(consoleLogs.entries) ||
+  !consoleLogs.entries.some((entry) => entry.text?.includes('wuu-bridge-console-error'))
+) {
+  throw new Error(`Browser Bridge console returned unexpected data: ${JSON.stringify(consoleLogs)}`)
+}
+
 await fetchJson(`${interactionPath}/type`, {
   method: 'POST',
   body: JSON.stringify({ x: 80, y: 56, text: 'typed-by-bridge', clear: true }),
@@ -867,6 +889,7 @@ console.log(JSON.stringify({
   screenshotChars: screenshot.data.length,
   snapshotChars: snapshot.snapshot.length,
   domChars: dom.html.length,
+  consoleEntries: consoleLogs.entries.length,
 }))
 JS
 )" || {

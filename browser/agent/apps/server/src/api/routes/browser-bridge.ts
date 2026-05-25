@@ -7,6 +7,7 @@
 import { type Context, Hono } from 'hono'
 import type { Browser } from '../../browser/browser'
 import type { CdpTarget } from '../../browser/backends/types'
+import type { ConsoleLevel } from '../../browser/console-collector'
 
 type BrowserBridgeDeps = {
   browser: Pick<
@@ -21,6 +22,8 @@ type BrowserBridgeDeps = {
     | 'enhancedSnapshotTarget'
     | 'contentTarget'
     | 'domTarget'
+    | 'evaluateTarget'
+    | 'getConsoleLogsTarget'
     | 'clickTargetAt'
     | 'typeTargetAt'
     | 'scrollTarget'
@@ -123,6 +126,18 @@ function readDirection(value: unknown): string | null {
     value === 'down' ||
     value === 'left' ||
     value === 'right'
+  ) {
+    return value
+  }
+  return null
+}
+
+function readConsoleLevel(value: unknown): ConsoleLevel | null {
+  if (
+    value === 'error' ||
+    value === 'warning' ||
+    value === 'info' ||
+    value === 'debug'
   ) {
     return value
   }
@@ -285,6 +300,48 @@ export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
       const selector = c.req.query('selector')?.trim() || undefined
       const html = await browser.domTarget(target.id, { selector })
       return c.json({ html })
+    })
+    .post('/tabs/:targetId/evaluate', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const body = readRecord(await readJson(c))
+      const expression = body.expression
+      if (typeof expression !== 'string' || !expression.trim()) {
+        return c.json({ error: 'expression is required' }, 400)
+      }
+
+      const result = await browser.evaluateTarget(target.id, expression)
+      return c.json(result)
+    })
+    .get('/tabs/:targetId/console', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const level = readConsoleLevel(c.req.query('level')) ?? 'info'
+      const search = c.req.query('search')?.trim() || undefined
+      const limitParam = Number(c.req.query('limit'))
+      const limit = Number.isFinite(limitParam)
+        ? Math.max(1, Math.min(200, Math.round(limitParam)))
+        : undefined
+      const clear = c.req.query('clear') === '1'
+
+      const result = await browser.getConsoleLogsTarget(target.id, {
+        level,
+        search,
+        ...(limit !== undefined ? { limit } : {}),
+        clear,
+      })
+      return c.json({
+        ...result,
+        returnedCount: result.entries.length,
+      })
     })
     .post('/tabs/:targetId/click', async (c) => {
       if (!browser.isCdpConnected()) return cdpUnavailable(c)

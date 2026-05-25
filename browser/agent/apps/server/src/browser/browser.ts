@@ -115,7 +115,9 @@ export class Browser {
   private consoleCollector: ConsoleCollector
   private pages = new Map<number, PageInfo>()
   private sessions = new Map<string, string>()
+  private targetConsolePageIds = new Map<string, number>()
   private nextPageId = 1
+  private nextTargetConsolePageId = -1
 
   constructor(cdp: CdpBackend) {
     this.cdp = cdp
@@ -183,6 +185,11 @@ export class Browser {
         for (const [targetId, sid] of this.sessions) {
           if (sid === params.sessionId) {
             this.sessions.delete(targetId)
+            const consolePageId = this.targetConsolePageIds.get(targetId)
+            if (consolePageId !== undefined) {
+              this.consoleCollector.detach(consolePageId)
+              this.targetConsolePageIds.delete(targetId)
+            }
             break
           }
         }
@@ -218,7 +225,10 @@ export class Browser {
     pageId?: number,
   ): Promise<string> {
     const cached = this.sessions.get(targetId)
-    if (cached) return cached
+    if (cached) {
+      if (pageId !== undefined) this.consoleCollector.attach(pageId, cached)
+      return cached
+    }
 
     const result = await this.cdp.Target.attachToTarget({
       targetId,
@@ -247,6 +257,23 @@ export class Browser {
   private async resolveTargetSession(targetId: string): Promise<ProtocolApi> {
     const sessionId = await this.attachToTarget(targetId)
     return this.cdp.session(sessionId)
+  }
+
+  private async resolveObservedTargetSession(
+    targetId: string,
+  ): Promise<ProtocolApi> {
+    const consolePageId = this.getTargetConsolePageId(targetId)
+    const sessionId = await this.attachToTarget(targetId, consolePageId)
+    return this.cdp.session(sessionId)
+  }
+
+  private getTargetConsolePageId(targetId: string): number {
+    let pageId = this.targetConsolePageIds.get(targetId)
+    if (pageId === undefined) {
+      pageId = this.nextTargetConsolePageId--
+      this.targetConsolePageIds.set(targetId, pageId)
+    }
+    return pageId
   }
 
   // --- Pages ---
@@ -1042,7 +1069,29 @@ export class Browser {
     description?: string
   }> {
     const session = await this.resolveSession(page)
+    return this.evaluateInSession(session, expression)
+  }
 
+  async evaluateTarget(
+    targetId: string,
+    expression: string,
+  ): Promise<{
+    value?: unknown
+    error?: string
+    description?: string
+  }> {
+    const session = await this.resolveObservedTargetSession(targetId)
+    return this.evaluateInSession(session, expression)
+  }
+
+  private async evaluateInSession(
+    session: ProtocolApi,
+    expression: string,
+  ): Promise<{
+    value?: unknown
+    error?: string
+    description?: string
+  }> {
     const result = await session.Runtime.evaluate({
       expression,
       returnByValue: true,
@@ -1868,5 +1917,16 @@ export class Browser {
   ): Promise<GetConsoleLogsResult> {
     await this.resolveSession(page)
     return this.consoleCollector.getLogs(page, opts)
+  }
+
+  async getConsoleLogsTarget(
+    targetId: string,
+    opts?: GetConsoleLogsOptions,
+  ): Promise<GetConsoleLogsResult> {
+    await this.resolveObservedTargetSession(targetId)
+    return this.consoleCollector.getLogs(
+      this.getTargetConsolePageId(targetId),
+      opts,
+    )
   }
 }

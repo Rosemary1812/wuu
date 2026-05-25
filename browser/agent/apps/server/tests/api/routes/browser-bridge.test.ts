@@ -43,6 +43,11 @@ function createBrowser(overrides: Partial<FakeBrowser> = {}): FakeBrowser {
     enhancedSnapshotTarget: mock(async () => '[42] button "Apply"'),
     contentTarget: mock(async () => 'Example'),
     domTarget: mock(async () => '<main id="status">Example</main>'),
+    evaluateTarget: mock(async () => ({ value: 'ok' })),
+    getConsoleLogsTarget: mock(async () => ({
+      entries: [],
+      totalCount: 0,
+    })),
     clickTargetAt: mock(async () => {}),
     typeTargetAt: mock(async () => {}),
     scrollTarget: mock(async () => {}),
@@ -295,6 +300,69 @@ describe('createBrowserBridgeRoutes', () => {
     })
   })
 
+  it('evaluates JavaScript for an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+      evaluateTarget: mock(async () => ({ value: { ready: true } })),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request('/tabs/target-2/evaluate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ expression: '({ ready: true })' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ value: { ready: true } })
+    expect(browser.evaluateTarget).toHaveBeenCalledWith(
+      'target-2',
+      '({ ready: true })',
+    )
+  })
+
+  it('returns console logs for an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+      getConsoleLogsTarget: mock(async () => ({
+        entries: [
+          {
+            source: 'console',
+            level: 'error',
+            text: 'Bridge console error',
+            timestamp: 1234,
+          },
+        ],
+        totalCount: 1,
+      })),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request(
+      '/tabs/target-2/console?level=error&limit=5&search=Bridge&clear=1',
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      entries: [
+        {
+          source: 'console',
+          level: 'error',
+          text: 'Bridge console error',
+          timestamp: 1234,
+        },
+      ],
+      totalCount: 1,
+      returnedCount: 1,
+    })
+    expect(browser.getConsoleLogsTarget).toHaveBeenCalledWith('target-2', {
+      level: 'error',
+      search: 'Bridge',
+      limit: 5,
+      clear: true,
+    })
+  })
+
   it('clicks, types, and scrolls an existing browser tab target', async () => {
     const browser = createBrowser({
       listTargets: mock(async () => [secondTarget]),
@@ -351,6 +419,23 @@ describe('createBrowserBridgeRoutes', () => {
       error: 'A valid absolute URL is required',
     })
     expect(browser.navigateTarget).not.toHaveBeenCalled()
+  })
+
+  it('rejects evaluate requests without an expression', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request('/tabs/target-2/evaluate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ expression: '' }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'expression is required' })
+    expect(browser.evaluateTarget).not.toHaveBeenCalled()
   })
 
   it('rejects click coordinates without numbers', async () => {

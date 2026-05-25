@@ -149,6 +149,16 @@ check_contains \
   "Browser Bridge exposes target DOM HTML"
 
 check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/evaluate" \
+  "Browser Bridge exposes target JavaScript evaluation"
+
+check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/console" \
+  "Browser Bridge exposes target console logs"
+
+check_contains \
   "${dev_verify_script}" \
   "/snapshot?enhanced=1" \
   "dev verification checks Browser Bridge enhanced snapshots"
@@ -157,6 +167,16 @@ check_contains \
   "${dev_verify_script}" \
   "/dom?selector=%23status" \
   "dev verification checks Browser Bridge DOM reads"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/evaluate" \
+  "dev verification checks Browser Bridge JavaScript evaluation"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/console?level=error" \
+  "dev verification checks Browser Bridge console reads"
 
 check_contains \
   "${server_main}" \

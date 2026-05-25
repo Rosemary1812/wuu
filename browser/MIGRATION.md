@@ -218,6 +218,10 @@ Current first bridge:
   accessibility snapshot for interaction planning.
 - `GET /browser-bridge/tabs/:targetId/dom` reads DOM HTML, optionally scoped by
   CSS selector.
+- `POST /browser-bridge/tabs/:targetId/evaluate` runs JavaScript in the page
+  context for targeted inspection and debugging.
+- `GET /browser-bridge/tabs/:targetId/console` reads console logs, warnings,
+  and errors captured from the tab target.
 - `POST /browser-bridge/tabs/:targetId/click` clicks a coordinate.
 - `POST /browser-bridge/tabs/:targetId/type` clicks and types into a coordinate.
 - `POST /browser-bridge/tabs/:targetId/scroll` scrolls a tab.
