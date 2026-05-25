@@ -1565,6 +1565,9 @@ func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
 	if ev.ToolResult != "" {
 		out.ToolResult = ev.ToolResult
 	}
+	if ev.PlanUpdate != nil {
+		out.PlanUpdate = ev.PlanUpdate
+	}
 	if ev.Usage != nil {
 		out.Usage = ev.Usage
 	}

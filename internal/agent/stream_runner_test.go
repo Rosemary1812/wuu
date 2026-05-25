@@ -127,6 +127,66 @@ func TestStreamRunner_SimpleContent(t *testing.T) {
 	}
 }
 
+func TestStreamRunner_EmitsPlanUpdateEventAfterUpdatePlan(t *testing.T) {
+	client := &mockStreamClient{
+		attempts: []mockStreamAttempt{
+			{
+				events: []providers.StreamEvent{
+					{
+						Type: providers.EventToolUseStart,
+						ToolCall: &providers.ToolCall{
+							ID:   "call-plan",
+							Name: "update_plan",
+						},
+					},
+					{
+						Type: providers.EventToolUseEnd,
+						ToolCall: &providers.ToolCall{
+							ID:        "call-plan",
+							Name:      "update_plan",
+							Arguments: `{"explanation":"start","plan":[{"step":"inspect","status":"completed"},{"step":"report","status":"in_progress"}]}`,
+						},
+					},
+					{Type: providers.EventDone},
+				},
+			},
+			{
+				events: []providers.StreamEvent{
+					{Type: providers.EventContentDelta, Content: "done"},
+					{Type: providers.EventDone},
+				},
+			},
+		},
+	}
+	tools := &fakeLoopTools{
+		defs: []providers.ToolDefinition{{Name: "update_plan"}},
+		results: map[string]string{
+			"call-plan": `{"status":"updated"}`,
+		},
+	}
+	var planUpdate *providers.PlanUpdate
+	runner := StreamRunner{
+		Client: client,
+		Model:  "test-model",
+		Tools:  tools,
+		OnEvent: func(ev providers.StreamEvent) {
+			if ev.Type == providers.EventPlanUpdate {
+				planUpdate = ev.PlanUpdate
+			}
+		},
+	}
+	result, err := runner.Run(context.Background(), "plan")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("unexpected result: %q", result)
+	}
+	if planUpdate == nil || planUpdate.Explanation != "start" || len(planUpdate.Plan) != 2 || planUpdate.Plan[1].Status != "in_progress" {
+		t.Fatalf("unexpected plan update event: %+v", planUpdate)
+	}
+}
+
 func TestStreamRunner_AllowsNaturalEmptyCompletionWithoutPersistingAssistantMessage(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{

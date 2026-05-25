@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -190,6 +191,12 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				ToolCall:   &providers.ToolCall{ID: call.ID, Name: call.Name},
 				ToolResult: truncateLog(result, 2000),
 			})
+			if update, ok := planUpdateEventFromToolResult(call, result); ok {
+				effectiveOnEvent(providers.StreamEvent{
+					Type:       providers.EventPlanUpdate,
+					PlanUpdate: update,
+				})
+			}
 		},
 		// Surface auto-compact events as a stream event so the TUI
 		// can render a system line like "✦ Compacted history: 18 → 5
@@ -220,6 +227,23 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	}
 	r.commitUsageTracker(runUsage, finalHistoryLen)
 	return res, nil
+}
+
+func planUpdateEventFromToolResult(call providers.ToolCall, result string) (*providers.PlanUpdate, bool) {
+	if call.Name != "update_plan" {
+		return nil, false
+	}
+	var status struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(result), &status); err != nil || status.Status != "updated" {
+		return nil, false
+	}
+	var update providers.PlanUpdate
+	if err := json.Unmarshal([]byte(call.Arguments), &update); err != nil || len(update.Plan) == 0 {
+		return nil, false
+	}
+	return &update, true
 }
 
 // prepareUsageTracker snapshots the runner's shared conversation

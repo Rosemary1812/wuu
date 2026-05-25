@@ -414,6 +414,7 @@ type StreamEventPayload struct {
 	Message    *providers.ChatMessage    `json:"message,omitempty"`
 	ToolCall   *providers.ToolCall       `json:"tool_call,omitempty"`
 	ToolResult string                    `json:"tool_result,omitempty"`
+	PlanUpdate *providers.PlanUpdate     `json:"plan_update,omitempty"`
 	Usage      *providers.TokenUsage     `json:"usage,omitempty"`
 	StopReason string                    `json:"stop_reason,omitempty"`
 	Truncated  bool                      `json:"truncated,omitempty"`

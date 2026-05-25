@@ -134,6 +134,7 @@ const (
 	EventToolUseStart  StreamEventType = "tool_use_start"
 	EventToolUseDelta  StreamEventType = "tool_use_delta"
 	EventToolUseEnd    StreamEventType = "tool_use_end"
+	EventPlanUpdate    StreamEventType = "plan_update"
 	EventMessage       StreamEventType = "message"
 	EventLifecycle     StreamEventType = "lifecycle"
 	EventReconnect     StreamEventType = "reconnect"
@@ -192,6 +193,18 @@ type TokenUsage struct {
 	CacheReadTokens int
 }
 
+// PlanStep is one item in an update_plan snapshot.
+type PlanStep struct {
+	Step   string `json:"step"`
+	Status string `json:"status"`
+}
+
+// PlanUpdate carries the latest update_plan snapshot as a stream event.
+type PlanUpdate struct {
+	Explanation string     `json:"explanation,omitempty"`
+	Plan        []PlanStep `json:"plan"`
+}
+
 // TotalContextTokens returns the number of tokens this call actually
 // consumed against the model's context window. Equals InputTokens +
 // CacheReadTokens + OutputTokens. CacheCreationTokens are NOT
@@ -212,6 +225,7 @@ type StreamEvent struct {
 	ReasoningBlock *ReasoningBlock
 	ToolCall       *ToolCall
 	ToolResult     string
+	PlanUpdate     *PlanUpdate
 	Lifecycle      *StreamLifecycle
 	Error          error
 	Usage          *TokenUsage
