@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
   Info,
   Laptop,
+  ListChecks,
   List as ListIcon,
   MessageSquarePlus,
   MoreHorizontal,
@@ -343,6 +344,7 @@ const ENABLE_LAUNCH_PREVIEW = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_RUN_DEBUG_PANEL = Boolean(RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true");
 const ENABLE_SWISS_STYLE_TOGGLE = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
+const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 
 type SidebarResizeSession = {
@@ -2171,6 +2173,17 @@ export function App(): JSX.Element {
     }));
   }
 
+  function seedPlanPanelDebug(): void {
+    if (!state.activeContext || !state.initialized) {
+      return;
+    }
+    seedConversationFixture("plan");
+    setRunDebugOpen(false);
+    setEnvironmentPanelOpen(true);
+    setEnvironmentPanelDismissed(false);
+    setEnvironmentPanelMenu(null);
+  }
+
   async function selectThread(threadId: string): Promise<void> {
     if (!state.activeContext) {
       return;
@@ -3135,6 +3148,17 @@ export function App(): JSX.Element {
               >
                 <Film size={15} />
                 <span>完整预览</span>
+              </button>
+            ) : null}
+            {debugControlsVisible && ENABLE_PLAN_PANEL_DEBUG ? (
+              <button
+                className="launch-preview-button plan-panel-debug-button"
+                type="button"
+                disabled={!state.activeContext || !state.initialized}
+                onClick={seedPlanPanelDebug}
+              >
+                <ListChecks size={15} />
+                <span>计划面板</span>
               </button>
             ) : null}
             {debugControlsVisible && ENABLE_RUN_DEBUG_PANEL ? (

@@ -46,6 +46,8 @@ async function run() {
   assert.equal(runDebugVisible, false, "Production desktop builds must not expose the internal run debug panel.");
   const devFixturesVisible = await evaluate(win, () => Boolean(document.querySelector(".dev-fixture-nav")));
   assert.equal(devFixturesVisible, false, "Production desktop builds must not expose development conversation fixtures.");
+  const planPanelDebugVisible = await evaluate(win, () => Boolean(document.querySelector(".plan-panel-debug-button")));
+  assert.equal(planPanelDebugVisible, false, "Production desktop builds must not expose the plan panel debug button.");
   await waitFor(
     win,
     () => {

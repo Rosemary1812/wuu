@@ -1,6 +1,6 @@
 import type { InitializeResult, Thread } from "../shared/protocol";
 
-export type ConversationFixtureKind = "long" | "rich" | "running" | "compact";
+export type ConversationFixtureKind = "long" | "rich" | "running" | "compact" | "plan";
 
 export function createAgentTreeDemo(cwd: string, initialized?: InitializeResult): { parent: Thread; children: Thread[] } {
   const base = Date.now();
@@ -177,6 +177,8 @@ export function createConversationFixture(kind: ConversationFixtureKind, cwd: st
       return createRunningFixture(cwd, initialized);
     case "compact":
       return createContextCompactionFixture(cwd, initialized);
+    case "plan":
+      return createPlanPanelFixture(cwd, initialized);
     default:
       return createLongReadingFixture(cwd, initialized);
   }
@@ -360,6 +362,66 @@ function createRichContentFixture(cwd: string, initialized?: InitializeResult): 
             type: "error",
             status: "failed",
             error: "模拟错误：用于检查错误块在阅读列内的视觉效果。"
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function createPlanPanelFixture(cwd: string, initialized?: InitializeResult): Thread {
+  const base = Date.now();
+  const at = (offsetMs: number): string => new Date(base + offsetMs).toISOString();
+  const { provider, model } = fixtureRuntime(initialized);
+  const threadID = `demo-plan-panel-${base}`;
+  const turnID = `${threadID}-turn-0001`;
+
+  return {
+    id: threadID,
+    preview: "模拟：信息面板进度",
+    model_provider: provider,
+    model,
+    cwd,
+    status: "idle",
+    created_at: at(-6000),
+    updated_at: at(1000),
+    turns: [
+      {
+        id: turnID,
+        items_view: "full",
+        status: "completed",
+        started_at: at(-6000),
+        completed_at: at(1000),
+        duration_ms: 7000,
+        items: [
+          {
+            id: `${turnID}-item-1`,
+            type: "user_message",
+            status: "completed",
+            role: "user",
+            text: "看看信息面板里的 update_plan 进度样式。"
+          },
+          {
+            id: `${turnID}-item-2`,
+            type: "tool_call",
+            status: "completed",
+            name: "update_plan",
+            arguments: JSON.stringify({
+              plan: [
+                { step: "定位信息面板和 plan_update 数据流", status: "completed" },
+                { step: "设计并接入任务计划 UI", status: "completed" },
+                { step: "验证桌面构建和类型检查", status: "in_progress" },
+                { step: "原子提交改动", status: "pending" }
+              ]
+            }),
+            result: `{"status":"updated"}`
+          },
+          {
+            id: `${turnID}-item-3`,
+            type: "agent_message",
+            status: "completed",
+            role: "assistant",
+            text: "已注入一个本地调试计划。打开右上角信息面板可以看到顶部的进度清单。"
           }
         ]
       }
