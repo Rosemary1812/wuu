@@ -266,6 +266,46 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     }
   }
 
+  if (loadingChanges && !changes) {
+    return (
+      <div className="workspace-main-empty">
+        <GitBranch size={36} />
+        <strong>正在读取变更</strong>
+        <span>正在检查当前工作区的本地代码差异。</span>
+      </div>
+    );
+  }
+
+  if (error && !changes) {
+    return (
+      <div className="workspace-main-empty">
+        <AlertCircle size={36} />
+        <strong>读取失败</strong>
+        <span>{error}</span>
+      </div>
+    );
+  }
+
+  if (changes && !changes.is_repo) {
+    return (
+      <div className="workspace-main-empty">
+        <FolderX size={36} />
+        <strong>不是 Git 仓库</strong>
+        <span>当前项目没有可查看的 Git 变更。</span>
+      </div>
+    );
+  }
+
+  if (changes && files.length === 0) {
+    return (
+      <div className="workspace-main-empty">
+        <Check size={36} />
+        <strong>工作区干净</strong>
+        <span>当前没有待审查的代码差异。</span>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`workspace-review-panel${selectedFile ? " has-diff" : ""}${
@@ -309,11 +349,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
           onSelectFile={setSelectedPath}
           onTogglePath={toggleTreePath}
         />
-        {loadingChanges ? <div className="workspace-review-overlay">正在读取变更...</div> : null}
         {error && !selectedFile ? <div className="workspace-review-overlay error">{error}</div> : null}
-        {!loadingChanges && changes?.is_repo && files.length === 0 ? (
-          <div className="workspace-review-overlay">工作区干净</div>
-        ) : null}
       </div>
     </div>
   );
