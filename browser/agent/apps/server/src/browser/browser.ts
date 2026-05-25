@@ -1,7 +1,7 @@
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import type { ElementProperties } from '@browseros/shared/types/acl'
 import { logger } from '../lib/logger'
-import type { CdpBackend } from './backends/types'
+import type { CdpBackend, CdpTarget } from './backends/types'
 import type { BookmarkNode } from './bookmarks'
 import * as bookmarks from './bookmarks'
 import {
@@ -125,6 +125,25 @@ export class Browser {
 
   isCdpConnected(): boolean {
     return this.cdp.isConnected()
+  }
+
+  async listTargets(): Promise<CdpTarget[]> {
+    return this.cdp.getTargets()
+  }
+
+  async getActiveTarget(): Promise<CdpTarget | null> {
+    const result = await this.cdp.Browser.getActiveTab()
+    if (!result.tab) return null
+
+    const tab = result.tab as TabInfo
+    return {
+      id: tab.targetId,
+      type: 'page',
+      title: tab.title,
+      url: tab.url,
+      tabId: tab.tabId,
+      windowId: tab.windowId,
+    }
   }
 
   private setupEventHandlers(): void {

@@ -25,6 +25,7 @@ import { Sentry } from '../lib/sentry'
 import { getLimaHomeDir, resolveBundledLimactl, VM_NAME } from '../lib/vm'
 import { createAclRoutes } from './routes/acl'
 import { createAgentRoutes } from './routes/agents'
+import { createBrowserBridgeRoutes } from './routes/browser-bridge'
 import { createChatRoutes } from './routes/chat'
 import { createCreditsRoutes } from './routes/credits'
 import { createHealthRoute } from './routes/health'
@@ -130,6 +131,10 @@ export async function createHttpServer(config: HttpServerConfig) {
     .use('/*', requireTrustedAppOrigin())
     .route('/', createMonitoringRoutes())
 
+  const browserBridgeRoutes = new Hono<Env>()
+    .use('/*', requireTrustedAppOrigin())
+    .route('/', createBrowserBridgeRoutes({ browser }))
+
   const wuuRoutes = new Hono<Env>()
     .use('/*', requireTrustedAppOrigin())
     .route('/', createWuuRoutes())
@@ -203,6 +208,7 @@ export async function createHttpServer(config: HttpServerConfig) {
     .route('/memory', createMemoryRoutes())
     .route('/skills', createSkillsRoutes())
     .route('/monitoring', monitoringRoutes)
+    .route('/browser-bridge', browserBridgeRoutes)
     .route('/wuu', wuuRoutes)
     .route('/acl-rules', aclRoutes)
     .route('/test-provider', createProviderRoutes({ browserosId }))

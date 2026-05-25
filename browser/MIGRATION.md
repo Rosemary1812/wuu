@@ -175,7 +175,7 @@ Current default:
 
 ## Phase 5: Browser Bridge
 
-Status: pending.
+Status: in progress.
 
 Goals:
 
@@ -193,6 +193,14 @@ Non-goal:
 
 - Do not design a broad agent abstraction before the browser operations work in
   a real running Wuu Browser build.
+
+Current first bridge:
+
+- `GET /browser-bridge/tabs` returns the current CDP-backed tab list and active
+  tab metadata using stable Wuu page IDs and Chromium tab IDs.
+- `GET /browser-bridge/active-tab` returns the active tab metadata directly.
+- `make browser-verify-dev ARGS="--require-browser-bridge"` checks this against
+  a running Wuu Browser Dev instance.
 
 ## Phase 6: Installable Product
 

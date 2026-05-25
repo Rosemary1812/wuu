@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-no-vm-agents]
+Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-no-vm-agents] [--require-browser-bridge]
 
 Verify a running Wuu Browser development instance.
 
@@ -14,6 +14,7 @@ Checks:
   4. Optionally, the Wuu workbench extension route is open.
   5. Optionally, the Wuu workbench can call the real native runtime.
   6. Optionally, no BrowserOS VM/OpenClaw process is running.
+  7. Optionally, the server Browser Bridge can read real tab metadata.
 
 Environment overrides:
   WUU_BROWSER_CDP_PORT     Defaults to 9100.
@@ -24,6 +25,7 @@ USAGE
 require_wuu_tab=false
 require_wuu_runtime=false
 require_no_vm_agents=false
+require_browser_bridge=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -38,6 +40,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --require-no-vm-agents)
       require_no_vm_agents=true
+      shift
+      ;;
+    --require-browser-bridge)
+      require_browser_bridge=true
       shift
       ;;
     -h|--help)
@@ -222,6 +228,25 @@ if [[ "${require_no_vm_agents}" == "true" ]]; then
     exit 1
   fi
   echo "  VM-backed agents: not running"
+fi
+
+if [[ "${require_browser_bridge}" == "true" ]]; then
+  bridge_json="$(fetch "${server_base}/browser-bridge/tabs")" || {
+    echo "Browser Bridge tab endpoint is not reachable." >&2
+    exit 1
+  }
+
+  if ! printf '%s' "${bridge_json}" | grep -q '"tabs"'; then
+    echo "Browser Bridge returned unexpected output: ${bridge_json}" >&2
+    exit 1
+  fi
+
+  if [[ "${require_wuu_tab}" == "true" ]] && ! printf '%s' "${bridge_json}" | grep -Eq 'chrome://browseros/wuu|app\.html#/home'; then
+    echo "Browser Bridge did not report the Wuu workbench tab: ${bridge_json}" >&2
+    exit 1
+  fi
+
+  echo "  Browser Bridge tabs: ok"
 fi
 
 if printf '%s' "${version_json}" | grep -q '"Browser"'; then
