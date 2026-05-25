@@ -111,6 +111,9 @@ Current dev build path:
   Wuu Browser patch application.
 - `ARGS="--package-macos"` stages the compiled app as
   `browser/out/Wuu Browser Dev.app` for local launch.
+- Chromium replacement branding now uses Wuu Browser product names and
+  `com.wuu.browser` bundle identifiers for the app/updater/enterprise companion
+  visible surfaces, instead of BrowserOS product names.
 
 Current agent/workbench asset path:
 

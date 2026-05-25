@@ -35,6 +35,11 @@ check_not_contains() {
 
 first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_main.cc"
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
+chromium_branding_debug="${browser_dir}/chromium_files/chrome/app/theme/chromium/BRANDING.debug"
+chromium_branding_release="${browser_dir}/chromium_files/chrome/app/theme/chromium/BRANDING.release"
+chromium_updater_branding="${browser_dir}/chromium_files/chrome/updater/branding.gni"
+chromium_enterprise_branding="${browser_dir}/chromium_files/chrome/enterprise_companion/branding.gni"
+macos_info_additions="${browser_dir}/resources/entitlements/Info.plist.additions"
 makefile="${repo_root}/Makefile"
 prepare_checkouts_script="${browser_dir}/scripts/prepare-checkouts.sh"
 build_dev_script="${browser_dir}/scripts/build-dev.sh"
@@ -63,6 +68,76 @@ check_contains \
   "${routes_patch}" \
   '{"/wuu", kAgentExtensionId, "app.html", "/home"},' \
   "chrome://browseros/wuu routes to the Wuu workbench extension page"
+
+check_contains \
+  "${chromium_branding_debug}" \
+  "PRODUCT_FULLNAME=Wuu Browser Dev" \
+  "debug Chromium branding uses Wuu Browser Dev"
+
+check_contains \
+  "${chromium_branding_debug}" \
+  "MAC_BUNDLE_ID=com.wuu.browser.dev" \
+  "debug Chromium branding uses the Wuu dev bundle id"
+
+check_not_contains \
+  "${chromium_branding_debug}" \
+  "BrowserOS" \
+  "debug Chromium branding no longer uses BrowserOS"
+
+check_contains \
+  "${chromium_branding_release}" \
+  "PRODUCT_FULLNAME=Wuu Browser" \
+  "release Chromium branding uses Wuu Browser"
+
+check_contains \
+  "${chromium_branding_release}" \
+  "MAC_BUNDLE_ID=com.wuu.browser" \
+  "release Chromium branding uses the Wuu bundle id"
+
+check_not_contains \
+  "${chromium_branding_release}" \
+  "BrowserOS" \
+  "release Chromium branding no longer uses BrowserOS"
+
+check_contains \
+  "${chromium_updater_branding}" \
+  'browser_product_name = "Wuu Browser"' \
+  "Chromium updater branding uses Wuu Browser"
+
+check_contains \
+  "${chromium_updater_branding}" \
+  'mac_updater_bundle_identifier = "com.wuu.browser.Updater"' \
+  "Chromium updater branding uses the Wuu updater bundle id"
+
+check_not_contains \
+  "${chromium_updater_branding}" \
+  "BrowserOS" \
+  "Chromium updater branding no longer uses BrowserOS"
+
+check_contains \
+  "${chromium_enterprise_branding}" \
+  'enterprise_companion_product_full_name = "WuuBrowserEnterpriseCompanion"' \
+  "Chromium enterprise companion branding uses Wuu Browser"
+
+check_contains \
+  "${chromium_enterprise_branding}" \
+  '"com.wuu.browser.EnterpriseCompanion"' \
+  "Chromium enterprise companion branding uses the Wuu bundle id"
+
+check_not_contains \
+  "${chromium_enterprise_branding}" \
+  "BrowserOS" \
+  "Chromium enterprise companion branding no longer uses BrowserOS"
+
+check_contains \
+  "${macos_info_additions}" \
+  "<string>Wuu Browser</string>" \
+  "macOS Chromium plist additions use Wuu Browser product dir"
+
+check_not_contains \
+  "${macos_info_additions}" \
+  "BrowserOS" \
+  "macOS Chromium plist additions no longer use BrowserOS product dir"
 
 check_contains \
   "${agent_wxt_config}" \

@@ -135,8 +135,8 @@ build, applies Wuu Browser visible bundle metadata, and ad-hoc signs the staged
 app for local launch. For component-build Chromium outputs, the required build
 root `.dylib` files are copied into the staged app bundle so it can launch
 outside the original Chromium `out/` directory. Add `ARGS="--dmg"` to also
-create a local development DMG. The internal executable name may still be
-inherited from BrowserOS until the Chromium branding patches are fully renamed.
+create a local development DMG. Some internal build-system executable/framework
+names may still inherit BrowserOS until the remaining build modules are renamed.
 
 Verify the running dev browser, Wuu native runtime, prompt-to-turn startup,
 native project folder selection wiring, selected-project local file/Git/terminal
