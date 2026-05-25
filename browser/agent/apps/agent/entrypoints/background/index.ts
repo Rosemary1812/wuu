@@ -57,9 +57,7 @@ export default defineBackground(() => {
 
   chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
-      chrome.tabs.create({
-        url: chrome.runtime.getURL('app.html#/home'),
-      })
+      openHomeTabIfMissing()
     }
 
     if (details.reason === chrome.runtime.OnInstalledReason.UPDATE) {
@@ -147,3 +145,22 @@ export default defineBackground(() => {
     }
   })
 })
+
+function openHomeTabIfMissing() {
+  const homeUrl = chrome.runtime.getURL('app.html#/home')
+  const appUrlPattern = chrome.runtime.getURL('app.html*')
+
+  setTimeout(() => {
+    chrome.tabs.query({ url: appUrlPattern }, (tabs) => {
+      if (chrome.runtime.lastError) return
+
+      const existingTabId = tabs[0]?.id
+      if (existingTabId) {
+        chrome.tabs.update(existingTabId, { url: homeUrl })
+        return
+      }
+
+      chrome.tabs.create({ url: homeUrl })
+    })
+  }, 500)
+}

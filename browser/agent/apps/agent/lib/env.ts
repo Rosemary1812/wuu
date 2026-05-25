@@ -9,7 +9,10 @@ const EnvSchema = z.object({
   VITE_PUBLIC_POSTHOG_KEY: z.string().optional(),
   VITE_PUBLIC_POSTHOG_HOST: z.string().optional(),
   VITE_PUBLIC_SENTRY_DSN: z.string().optional(),
-  VITE_PUBLIC_BROWSEROS_API: z.string().optional(),
+  VITE_PUBLIC_BROWSEROS_API: z
+    .string()
+    .optional()
+    .default('https://api.browseros.com'),
   PROD: z.boolean().optional().default(false),
 })
 

@@ -137,10 +137,11 @@ Current verification gap:
 - `browser/agent/apps/agent/entrypoints/background/index.ts` now opens
   `app.html#/home` on extension install, so the source default points at the
   Wuu workbench instead of BrowserOS onboarding.
-- `browser/scripts/launch-dev.sh` now starts at `chrome://newtab` and prefers
-  the current repository's built extension before falling back to the external
-  BrowserOS reference dist.
-- Runtime verification still requires rebuilding the extension from
+- `browser/scripts/launch-dev.sh` now starts directly at the deterministic
+  Wuu workbench extension route, `app.html#/home`, and prefers the current
+  repository's built extension before falling back to the external BrowserOS
+  reference dist.
+- Runtime verification requires rebuilding the extension from
   `browser/agent/apps/agent` and launching a fresh profile that loads that
   built extension.
 

@@ -13,7 +13,7 @@ Environment overrides:
   WUU_BROWSER_APP          Built BrowserOS/Wuu Browser .app path on macOS.
   WUU_BROWSER_EXTENSION    Wuu/BrowserOS agent extension directory.
   WUU_BROWSER_PROFILE_DIR  Browser profile directory.
-  WUU_BROWSER_START_URL    Initial URL. Defaults to chrome://newtab.
+  WUU_BROWSER_START_URL    Initial URL. Defaults to the Wuu workbench tab.
 
 Port overrides:
   WUU_BROWSER_CDP_PORT        Defaults to 9100.
@@ -25,7 +25,8 @@ USAGE
 
 dry_run=false
 profile_dir="${WUU_BROWSER_PROFILE_DIR:-}"
-start_url="${WUU_BROWSER_START_URL:-chrome://newtab}"
+default_extension_id="bflpfmnmnokmjhmgnolecpppdbdophmk"
+start_url="${WUU_BROWSER_START_URL:-chrome-extension://${default_extension_id}/app.html#/home}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

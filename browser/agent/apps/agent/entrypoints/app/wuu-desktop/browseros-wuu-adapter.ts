@@ -61,6 +61,7 @@ type WuuRpcResponse<T> = {
 
 const PROJECTS_KEY = 'wuu.browseros.projects'
 const ACTIVE_CONTEXT_KEY = 'wuu.browseros.activeContext'
+const WUU_FETCH_RETRY_DELAYS_MS = [200, 500, 1000, 1500]
 
 let installed = false
 let activeContext: RuntimeContext | undefined = loadActiveContext()
@@ -299,7 +300,7 @@ async function desktopRpc<T>(
   requireActiveWorkdir = true,
 ): Promise<T> {
   const serverUrl = await getAgentServerUrl()
-  const response = await fetch(`${serverUrl}/wuu/desktop`, {
+  const response = await fetchWuu(`${serverUrl}/wuu/desktop`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -323,7 +324,7 @@ async function desktopRpc<T>(
 
 async function wuuRpc<T>(method: string, params?: unknown): Promise<T> {
   const serverUrl = await getAgentServerUrl()
-  const response = await fetch(`${serverUrl}/wuu/rpc`, {
+  const response = await fetchWuu(`${serverUrl}/wuu/rpc`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -365,7 +366,7 @@ async function rejectServerRequest(id: string, message: string): Promise<void> {
 }
 
 async function postClientResponse(url: string, body: unknown): Promise<void> {
-  const response = await fetch(url, {
+  const response = await fetchWuu(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -376,6 +377,38 @@ async function postClientResponse(url: string, body: unknown): Promise<void> {
     const data = (await response.json().catch(() => ({}))) as { error?: string }
     throw new Error(data.error || `Wuu response failed: ${response.status}`)
   }
+}
+
+async function fetchWuu(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  let lastError: unknown
+
+  for (const delayMs of [0, ...WUU_FETCH_RETRY_DELAYS_MS]) {
+    if (delayMs > 0) {
+      await sleep(delayMs)
+    }
+
+    try {
+      return await fetch(input, init)
+    } catch (error) {
+      lastError = error
+      if (!isTransientFetchError(error)) {
+        throw error
+      }
+    }
+  }
+
+  throw lastError
+}
+
+function isTransientFetchError(error: unknown): boolean {
+  return error instanceof TypeError && /fetch/i.test(error.message)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function requireWorkdir(): string {
