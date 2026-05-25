@@ -233,6 +233,12 @@ func (t *Toolkit) SetOnFileChanged(fn func(absPath string)) {
 	t.env.OnFileChanged = fn
 }
 
+// SetOnPlanUpdated sets the callback fired after update_plan successfully
+// stores a new snapshot.
+func (t *Toolkit) SetOnPlanUpdated(fn func(snapshot PlanSnapshot)) {
+	t.env.OnPlanUpdated = fn
+}
+
 // SetMCPManager attaches the MCP manager so its tools are exposed to the agent.
 func (t *Toolkit) SetMCPManager(m *mcp.Manager) {
 	t.mcpManager = m
@@ -246,6 +252,14 @@ func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
 // AgentControl returns the attached agent control runtime, or nil.
 func (t *Toolkit) AgentControl() *agentcontrol.AgentControl {
 	return t.env.AgentControl
+}
+
+// CurrentPlan returns the latest update_plan snapshot stored by this toolkit.
+func (t *Toolkit) CurrentPlan() (PlanSnapshot, bool) {
+	if t == nil || t.env == nil {
+		return PlanSnapshot{}, false
+	}
+	return t.env.planState.get()
 }
 
 // ── Tool disabling ─────────────────────────────────────────────────

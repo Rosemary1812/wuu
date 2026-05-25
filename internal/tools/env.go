@@ -74,6 +74,10 @@ type Env struct {
 	// modifies a file. Enables FileChanged hook dispatch without
 	// coupling the tools package to the hooks package.
 	OnFileChanged func(absPath string)
+	// OnPlanUpdated is called after update_plan successfully stores a
+	// new snapshot. Consumers can bridge it to runtime events or UI
+	// notifications without coupling the plan tool to either layer.
+	OnPlanUpdated func(snapshot PlanSnapshot)
 
 	readState *readFileState
 	planState planState

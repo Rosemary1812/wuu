@@ -578,6 +578,55 @@ func TestToolkit_UpdatePlan_ReturnsConciseResult(t *testing.T) {
 	}
 }
 
+func TestToolkit_UpdatePlan_StoresCurrentPlan(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "update_plan",
+		Arguments: `{"explanation":"starting work","plan":[{"step":"inspect","status":"completed"},{"step":"edit","status":"in_progress"}]}`,
+	})
+	if err != nil {
+		t.Fatalf("update_plan: %v", err)
+	}
+	got, ok := kit.CurrentPlan()
+	if !ok {
+		t.Fatal("expected stored plan")
+	}
+	if got.Explanation != "starting work" || len(got.Plan) != 2 || got.Plan[1].Status != PlanStatusInProgress {
+		t.Fatalf("unexpected stored plan: %+v", got)
+	}
+	got.Plan[1].Status = PlanStatusCompleted
+	gotAgain, ok := kit.CurrentPlan()
+	if !ok || gotAgain.Plan[1].Status != PlanStatusInProgress {
+		t.Fatalf("current plan should return a defensive copy: %+v", gotAgain)
+	}
+}
+
+func TestToolkit_UpdatePlan_NotifiesPlanUpdated(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	var notified PlanSnapshot
+	kit.SetOnPlanUpdated(func(snapshot PlanSnapshot) {
+		notified = snapshot
+	})
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "update_plan",
+		Arguments: `{"plan":[{"step":"inspect","status":"in_progress"},{"step":"report","status":"pending"}]}`,
+	})
+	if err != nil {
+		t.Fatalf("update_plan: %v", err)
+	}
+	if len(notified.Plan) != 2 || notified.Plan[0].Status != PlanStatusInProgress {
+		t.Fatalf("unexpected notification: %+v", notified)
+	}
+}
+
 func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

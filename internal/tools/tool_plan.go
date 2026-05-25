@@ -38,8 +38,27 @@ type planState struct {
 func (s *planState) set(snapshot PlanSnapshot) PlanSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.snapshot = snapshot
-	return s.snapshot
+	s.snapshot = clonePlanSnapshot(snapshot)
+	return clonePlanSnapshot(s.snapshot)
+}
+
+func (s *planState) get() (PlanSnapshot, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.snapshot.Plan) == 0 {
+		return PlanSnapshot{}, false
+	}
+	return clonePlanSnapshot(s.snapshot), true
+}
+
+func clonePlanSnapshot(snapshot PlanSnapshot) PlanSnapshot {
+	out := PlanSnapshot{
+		Explanation: snapshot.Explanation,
+	}
+	if len(snapshot.Plan) > 0 {
+		out.Plan = append([]PlanItem(nil), snapshot.Plan...)
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +119,10 @@ func (t *UpdatePlanTool) Execute(_ context.Context, argsJSON string) (string, er
 	if err := validatePlan(args); err != nil {
 		return "", err
 	}
-	t.env.planState.set(args)
+	snapshot := t.env.planState.set(args)
+	if t.env.OnPlanUpdated != nil {
+		t.env.OnPlanUpdated(snapshot)
+	}
 	return mustJSON(map[string]string{"status": "updated"})
 }
 
