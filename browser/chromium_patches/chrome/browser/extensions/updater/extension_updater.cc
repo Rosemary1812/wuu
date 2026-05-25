@@ -1,11 +1,11 @@
 diff --git a/chrome/browser/extensions/updater/extension_updater.cc b/chrome/browser/extensions/updater/extension_updater.cc
-index fb3182b3a431c..d63fbc9af10c6 100644
+index 564e5ab12c..87db98fe42 100644
 --- a/chrome/browser/extensions/updater/extension_updater.cc
 +++ b/chrome/browser/extensions/updater/extension_updater.cc
-@@ -629,7 +629,89 @@ void ExtensionUpdater::CheckNow(CheckParams params) {
+@@ -628,6 +628,88 @@ void ExtensionUpdater::CheckNow(CheckParams params) {
    }
  }
- 
+
 +void ExtensionUpdater::InstallPendingNow(CheckParams params) {
 +  CHECK(enabled_);
 +
@@ -91,4 +91,3 @@ index fb3182b3a431c..d63fbc9af10c6 100644
  void ExtensionUpdater::OnExtensionDownloadStageChanged(const ExtensionId& id,
                                                         Stage stage) {
    InstallStageTrackerFactory::GetForBrowserContext(profile_)
-       ->ReportDownloadingStage(id, stage);

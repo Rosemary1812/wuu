@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/chrome_browser_application_mac.mm b/chrome/browser/chrome_browser_application_mac.mm
-index 0e91128e6ed16..0145e63e89cbc 100644
+index 0e91128e6e..0145e63e89 100644
 --- a/chrome/browser/chrome_browser_application_mac.mm
 +++ b/chrome/browser/chrome_browser_application_mac.mm
 @@ -9,13 +9,16 @@
@@ -20,9 +20,9 @@ index 0e91128e6ed16..0145e63e89cbc 100644
  #include "chrome/common/chrome_switches.h"
  #include "components/crash/core/common/crash_key.h"
 @@ -51,6 +54,46 @@ void CancelTerminate() {
- 
+
  namespace {
- 
+
 +struct BrowserOSDockIconVariant {
 +  const char* name;
 +  int rgb;
@@ -66,12 +66,12 @@ index 0e91128e6ed16..0145e63e89cbc 100644
  // Calling -[NSEvent description] is rather slow to build up the event
  // description. The description is stored in a crash key to aid debugging, so
  // this helper function constructs a shorter, but still useful, description.
-@@ -188,6 +231,8 @@ std::string DescriptionForNSEvent(NSEvent* event) {
+@@ -188,6 +231,8 @@ - (void)finishLaunching {
        base::mac::MacOSVersion() >= 14'00'00 &&
        base::FeatureList::IsEnabled(
            features::kSonomaAccessibilityActivationRefinements);
 +
 +  ApplyBrowserOSDockIconVariant();
  }
- 
+
  - (void)observeValueForKeyPath:(NSString*)keyPath
