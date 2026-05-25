@@ -208,12 +208,24 @@ func TestWriteStdinToTTY(t *testing.T) {
 		t.Fatalf("WriteStdin: %v", err)
 	}
 	offset := int64(0)
-	snapshot, err := m.ReadOutputSnapshot(context.Background(), p.ID, OutputReadOptions{OffsetBytes: &offset, Wait: 2 * time.Second})
-	if err != nil {
-		t.Fatal(err)
+	deadline := time.Now().Add(2 * time.Second)
+	var output strings.Builder
+	for time.Now().Before(deadline) {
+		snapshot, err := m.ReadOutputSnapshot(context.Background(), p.ID, OutputReadOptions{
+			OffsetBytes: &offset,
+			Wait:        200 * time.Millisecond,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		output.WriteString(snapshot.Output)
+		offset = snapshot.EndOffset
+		if strings.Contains(output.String(), "GOT_TTY:hello") {
+			return
+		}
 	}
-	if !strings.Contains(snapshot.Output, "GOT_TTY:hello") {
-		t.Fatalf("unexpected tty stdin output: %q", snapshot.Output)
+	if !strings.Contains(output.String(), "GOT_TTY:hello") {
+		t.Fatalf("unexpected tty stdin output: %q", output.String())
 	}
 }
 
