@@ -37,6 +37,7 @@ first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_m
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
 makefile="${repo_root}/Makefile"
 prepare_checkouts_script="${browser_dir}/scripts/prepare-checkouts.sh"
+build_dev_script="${browser_dir}/scripts/build-dev.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
@@ -114,6 +115,36 @@ check_contains \
   "${prepare_checkouts_script}" \
   '[[ "${dry_run}" == "true" ]]' \
   "checkout preparation supports dry-run planning"
+
+check_contains \
+  "${makefile}" \
+  "browser-build-dev:" \
+  "Makefile exposes the Wuu Browser dev build entry point"
+
+check_contains \
+  "${makefile}" \
+  'bash browser/scripts/build-dev.sh $(ARGS)' \
+  "dev build can receive explicit script arguments"
+
+check_contains \
+  "${build_dev_script}" \
+  'build_modules="${WUU_BROWSER_BUILD_MODULES:-resources,chromium_replace,configure,compile}"' \
+  "dev build uses repository-owned resources and Chromium replacement files"
+
+check_contains \
+  "${build_dev_script}" \
+  'prepare_args=(--chromium-src "${chromium_src}" --apply-patches)' \
+  "dev build can prepare and patch the checkout before compiling"
+
+check_contains \
+  "${build_dev_script}" \
+  '-m build.browseros' \
+  "dev build runs the imported BrowserOS build system from this repository"
+
+check_contains \
+  "${build_dev_script}" \
+  "--package-macos" \
+  "dev build can stage the macOS Wuu Browser Dev app after compiling"
 
 check_contains \
   "${package_dev_macos_script}" \

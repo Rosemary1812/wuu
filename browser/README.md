@@ -95,6 +95,19 @@ make browser-verify-product-defaults
 The default Wuu Browser path does not start OpenClaw, Hermes, or Lima. VM-backed
 agents are opt-in for future sandbox/runtime work through `WUU_ENABLE_VM_AGENTS=1`.
 
+Build the local development browser from a prepared checkout:
+
+```bash
+make browser-build-dev ARGS="--dry-run"
+make browser-build-dev ARGS="--prepare --package-macos"
+```
+
+The dev build command runs the repository-owned BrowserOS build modules against
+the selected Chromium checkout. By default it expects patches to already be
+applied and runs `resources,chromium_replace,configure,compile`; pass
+`--prepare` when starting from a clean checkout. On macOS, `--package-macos`
+then stages `browser/out/Wuu Browser Dev.app`.
+
 Stage the local macOS development app under this repository:
 
 ```bash
