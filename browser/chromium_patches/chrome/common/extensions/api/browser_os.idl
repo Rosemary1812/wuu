@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000000..c6044b5071033
 --- /dev/null
 +++ b/chrome/common/extensions/api/browser_os.idl
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,181 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -29,9 +29,14 @@ index 0000000000000..c6044b5071033
 +    // Default: OS-provided default title
 +    DOMString? title;
 +
-+    // Starting directory for the dialog.
-+    // If invalid or not provided, falls back to OS default.
++    // Starting directory hint for the dialog.
++    // If invalid or not provided, the OS picker may fall back to its default.
 +    DOMString? startingDirectory;
++
++    // Whether folder selection should allow creating directories.
++    // Only applies when type is folder.
++    // Default: true
++    boolean? canCreateDirectories;
 +  };
 +
 +  // Result from choosePath

@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000000..7a9f8d92f7668
 --- /dev/null
 +++ b/chrome/browser/extensions/api/browser_os/browser_os_api.cc
-@@ -0,0 +1,492 @@
+@@ -0,0 +1,498 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -403,8 +403,12 @@ index 0000000000000..7a9f8d92f7668
 +    "Could not show file dialog";
 +
 +ui::SelectFileDialog::Type GetDialogType(
-+    const std::optional<browser_os::SelectionType>& type) {
++    const std::optional<browser_os::SelectionType>& type,
++    const std::optional<bool>& can_create_directories) {
 +  if (type.has_value() && *type == browser_os::SelectionType::kFolder) {
++    if (can_create_directories.has_value() && !*can_create_directories) {
++      return ui::SelectFileDialog::SELECT_EXISTING_FOLDER;
++    }
 +    return ui::SelectFileDialog::SELECT_FOLDER;
 +  }
 +  // Default: file
@@ -438,7 +442,9 @@ index 0000000000000..7a9f8d92f7668
 +  base::FilePath starting_path;
 +
 +  if (params->options) {
-+    dialog_type = GetDialogType(params->options->type);
++    dialog_type =
++        GetDialogType(params->options->type,
++                      params->options->can_create_directories);
 +
 +    if (params->options->title) {
 +      title = base::UTF8ToUTF16(*params->options->title);
@@ -447,10 +453,6 @@ index 0000000000000..7a9f8d92f7668
 +    if (params->options->starting_directory) {
 +      starting_path =
 +          base::FilePath::FromUTF8Unsafe(*params->options->starting_directory);
-+      // Validate path exists; if not, use empty path (OS default)
-+      if (!base::DirectoryExists(starting_path)) {
-+        starting_path = base::FilePath();
-+      }
 +    }
 +  }
 +
@@ -478,6 +480,8 @@ index 0000000000000..7a9f8d92f7668
 +
 +void BrowserOSChoosePathFunction::FileSelected(const ui::SelectedFileInfo& file,
 +                                               int index) {
++  select_file_dialog_.reset();
++
 +  browser_os::SelectedPath result;
 +  result.path = file.path().AsUTF8Unsafe();
 +  result.name = file.path().BaseName().AsUTF8Unsafe();
@@ -487,6 +491,8 @@ index 0000000000000..7a9f8d92f7668
 +}
 +
 +void BrowserOSChoosePathFunction::FileSelectionCanceled() {
++  select_file_dialog_.reset();
++
 +  // Return null to indicate cancellation (not an error)
 +  base::ListValue results;
 +  results.Append(base::Value());
