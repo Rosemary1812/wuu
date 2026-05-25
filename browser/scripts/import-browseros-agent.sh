@@ -97,6 +97,7 @@ excludes=(
   --exclude '.env.production'
   --exclude 'CLAUDE.md'
   --exclude 'AGENTS.md'
+  --exclude 'apps/agent/entrypoints/background/index.ts'
   --exclude 'apps/server/.gitignore'
   --exclude 'apps/eval/'
   --exclude 'tools/dogfood/'

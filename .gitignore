@@ -6,6 +6,7 @@ node_modules/
 desktop/dist/
 desktop/node_modules/
 desktop/out/
+npm/bin/
 __pycache__/
 *.pyc
 

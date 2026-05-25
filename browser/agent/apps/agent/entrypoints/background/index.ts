@@ -58,7 +58,7 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
       chrome.tabs.create({
-        url: chrome.runtime.getURL('app.html#/onboarding'),
+        url: chrome.runtime.getURL('app.html#/home'),
       })
     }
 

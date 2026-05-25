@@ -119,6 +119,9 @@ Current import policy:
   packages, development scripts, BrowserOS CLI source, and the Wuu bridge code.
 - The import excludes `node_modules`, extension/browser build outputs, local env
   files, dogfood tooling, and eval benchmark data.
+- Wuu-owned adaptations such as the default background install route and server
+  source ignore rules are preserved during refresh instead of overwritten by
+  the BrowserOS baseline.
 - The imported baseline is not the final product behavior. Wuu Browser still
   needs route/default startup changes, native Wuu runtime alignment, and VM
   default removal.
