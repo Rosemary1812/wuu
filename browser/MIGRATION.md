@@ -153,6 +153,10 @@ Current verification gap:
 - `make browser-verify-dev ARGS="--require-project-local-ops"` verifies that
   the selected browser-hosted Wuu project drives real file tree, file read,
   Git status, and terminal startup operations in the selected local directory.
+- `make browser-verify-dev ARGS="--require-wuu-turn-start"` verifies that the
+  browser-hosted Wuu workbench can submit a prompt to the local app-server,
+  receive a real running turn, and interrupt it without waiting for model
+  completion.
 
 ## Phase 4: Remove Misaligned Runtime Defaults
 

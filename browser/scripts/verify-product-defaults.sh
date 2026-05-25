@@ -104,6 +104,21 @@ check_contains \
 
 check_contains \
   "${dev_verify_script}" \
+  "--require-wuu-turn-start" \
+  "dev verification can require prompt-to-turn startup"
+
+check_contains \
+  "${dev_verify_script}" \
+  "window.wuu.startTurn" \
+  "dev verification checks Wuu prompt submission"
+
+check_contains \
+  "${dev_verify_script}" \
+  "window.wuu.interruptTurn" \
+  "dev verification interrupts the running Wuu turn"
+
+check_contains \
+  "${dev_verify_script}" \
   "--require-project-local-ops" \
   "dev verification can require selected-project local operations"
 

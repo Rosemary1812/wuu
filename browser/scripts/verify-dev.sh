@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-project-folder-picker] [--require-project-local-ops] [--require-no-vm-agents] [--require-browser-bridge]
+Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-wuu-turn-start] [--require-project-folder-picker] [--require-project-local-ops] [--require-no-vm-agents] [--require-browser-bridge]
 
 Verify a running Wuu Browser development instance.
 
@@ -13,10 +13,11 @@ Checks:
   3. DevTools page list is readable.
   4. Optionally, the Wuu workbench extension route is open.
   5. Optionally, the Wuu workbench can call the real native runtime.
-  6. Optionally, the Wuu workbench project picker uses native browserOS.choosePath.
-  7. Optionally, the selected Wuu project can drive file, Git, and terminal operations.
-  8. Optionally, no BrowserOS VM/OpenClaw process is running.
-  9. Optionally, the server Browser Bridge can read real tab metadata.
+  6. Optionally, the Wuu workbench can send a prompt and start a real local turn.
+  7. Optionally, the Wuu workbench project picker uses native browserOS.choosePath.
+  8. Optionally, the selected Wuu project can drive file, Git, and terminal operations.
+  9. Optionally, no BrowserOS VM/OpenClaw process is running.
+  10. Optionally, the server Browser Bridge can read real tab metadata.
 
 Environment overrides:
   WUU_BROWSER_CDP_PORT     Defaults to 9100.
@@ -26,6 +27,7 @@ USAGE
 
 require_wuu_tab=false
 require_wuu_runtime=false
+require_wuu_turn_start=false
 require_project_folder_picker=false
 require_project_local_ops=false
 require_no_vm_agents=false
@@ -40,6 +42,11 @@ while [[ $# -gt 0 ]]; do
     --require-wuu-runtime)
       require_wuu_tab=true
       require_wuu_runtime=true
+      shift
+      ;;
+    --require-wuu-turn-start)
+      require_wuu_tab=true
+      require_wuu_turn_start=true
       shift
       ;;
     --require-project-folder-picker)
@@ -248,6 +255,128 @@ JS
   fi
 
   echo "  Wuu runtime: ${runtime_json}"
+fi
+
+if [[ "${require_wuu_turn_start}" == "true" ]]; then
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required for Wuu turn start verification" >&2
+    exit 2
+  fi
+
+  turn_json="$(CDP_BASE="${cdp_base}" bun - <<'JS'
+const cdpBase = process.env.CDP_BASE
+
+async function fetchJson(url) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`${url} failed with ${response.status}`)
+  }
+  return response.json()
+}
+
+const pages = await fetchJson(`${cdpBase}/json/list`)
+const page = pages.find((candidate) => {
+  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/browseros\/wuu/.test(candidate.url)
+})
+if (!page) {
+  throw new Error('Wuu workbench page was not found')
+}
+
+const ws = new WebSocket(page.webSocketDebuggerUrl)
+let nextId = 0
+const pending = new Map()
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data)
+  if (!message.id || !pending.has(message.id)) return
+  const { resolve, reject } = pending.get(message.id)
+  pending.delete(message.id)
+  if (message.error) {
+    reject(new Error(JSON.stringify(message.error)))
+    return
+  }
+  resolve(message.result)
+}
+
+await new Promise((resolve, reject) => {
+  ws.onopen = resolve
+  ws.onerror = reject
+})
+
+function send(method, params = {}) {
+  const id = ++nextId
+  ws.send(JSON.stringify({ id, method, params }))
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject })
+  })
+}
+
+async function evaluate(expression) {
+  const result = await send('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+    timeout: 60000,
+  })
+  if (result.exceptionDetails) {
+    throw new Error(JSON.stringify(result.exceptionDetails))
+  }
+  if (result.result?.subtype === 'error') {
+    throw new Error(result.result.description || 'Runtime evaluation failed')
+  }
+  return result.result?.value
+}
+
+const result = await evaluate(`(async () => {
+  const deadline = Date.now() + 15000;
+  while (!window.wuu && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!window.wuu) throw new Error('window.wuu is not installed');
+
+  const project = await window.wuu.selectNoProject(true);
+  const initialized = await window.wuu.initialize();
+  const thread = (await window.wuu.startThread()).thread;
+  const prompt = 'Wuu Browser verifier prompt: confirm turn/start wiring, then this turn will be interrupted.';
+  const started = await window.wuu.startTurn(thread.id, prompt);
+  const turn = started.turn;
+  const userItem = turn.items?.find((item) => item.type === 'user_message');
+  if (!turn.id || turn.status !== 'in_progress') {
+    throw new Error('turn/start did not return a running turn');
+  }
+  if (!userItem || userItem.text !== prompt) {
+    throw new Error('turn/start did not preserve the submitted prompt');
+  }
+
+  const interrupted = await window.wuu.interruptTurn(thread.id);
+  if (!interrupted?.ok) {
+    throw new Error('turn/interrupt did not acknowledge the running turn');
+  }
+
+  return {
+    cwd: project.active_context?.cwd,
+    workspaceRoot: initialized.workspace_root,
+    threadId: thread.id,
+    turnId: turn.id,
+    status: turn.status,
+    promptText: userItem.text,
+    interrupted: interrupted.ok,
+  };
+})()`)
+
+if (!result?.threadId || !result?.turnId || result.status !== 'in_progress' || result.interrupted !== true) {
+  throw new Error(`Wuu turn start returned unexpected data: ${JSON.stringify(result)}`)
+}
+
+console.log(JSON.stringify(result))
+ws.close()
+JS
+)" || {
+    echo "Wuu turn start verification failed." >&2
+    exit 1
+  }
+
+  echo "  Wuu turn start: ${turn_json}"
 fi
 
 if [[ "${require_project_folder_picker}" == "true" ]]; then
