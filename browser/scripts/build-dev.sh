@@ -17,7 +17,7 @@ Options:
   --build-type TYPE    Build type passed to the BrowserOS build system.
                        Defaults to debug.
   --modules LIST       Comma-separated BrowserOS build modules.
-                       Defaults to resources,chromium_replace,configure,compile.
+                       Defaults to resources,bundled_extensions,chromium_replace,configure,compile.
   --prepare            Prepare checkout and apply patches before building.
   --allow-dirty        Allow prepare/apply against a dirty checkout.
   --package-macos      Stage browser/out/Wuu Browser Dev.app after building.
@@ -43,7 +43,7 @@ browser_dir="${repo_root}/browser"
 chromium_src="${WUU_CHROMIUM_SRC:-${repo_root}/.worktrees/chromium/src}"
 build_arch="${WUU_BROWSER_BUILD_ARCH:-}"
 build_type="${WUU_BROWSER_BUILD_TYPE:-debug}"
-build_modules="${WUU_BROWSER_BUILD_MODULES:-resources,chromium_replace,configure,compile}"
+build_modules="${WUU_BROWSER_BUILD_MODULES:-resources,bundled_extensions,chromium_replace,configure,compile}"
 
 host_arch() {
   case "$(uname -m)" in

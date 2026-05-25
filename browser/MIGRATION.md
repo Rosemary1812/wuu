@@ -105,8 +105,8 @@ Current dev build path:
 - `make browser-build-dev` is the repository-owned entry point for configuring
   and compiling a local development browser from the selected Chromium checkout.
 - By default it expects a prepared checkout and runs the build modules needed
-  for local iteration: resources, Chromium replacement files, GN configure, and
-  compile.
+  for local iteration: resources, bundled extensions, Chromium replacement
+  files, GN configure, and compile.
 - `ARGS="--prepare"` makes it call the checkout preparation path first, including
   Wuu Browser patch application.
 - `ARGS="--package-macos"` stages the compiled app as

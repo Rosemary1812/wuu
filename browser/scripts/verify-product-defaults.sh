@@ -277,8 +277,8 @@ check_contains \
 
 check_contains \
   "${build_dev_script}" \
-  'build_modules="${WUU_BROWSER_BUILD_MODULES:-resources,chromium_replace,configure,compile}"' \
-  "dev build uses repository-owned resources and Chromium replacement files"
+  'build_modules="${WUU_BROWSER_BUILD_MODULES:-resources,bundled_extensions,chromium_replace,configure,compile}"' \
+  "dev build uses repository-owned resources, bundled extensions, and Chromium replacement files"
 
 check_contains \
   "${build_dev_script}" \
