@@ -73,6 +73,7 @@ func WriteRepoPatchSet(patchesDir string, set PatchSet, scope []string) ([]strin
 			return nil, nil, err
 		}
 		target, body := patchWriteTarget(patchesDir, patchFile)
+		body = normalizeStoredPatchBody(body)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return nil, nil, err
 		}
@@ -142,6 +143,19 @@ func removePatchVariants(patchesDir string, rel string) error {
 		}
 	}
 	return nil
+}
+
+func normalizeStoredPatchBody(body []byte) []byte {
+	lines := strings.SplitAfter(string(body), "\n")
+	for idx, line := range lines {
+		switch line {
+		case " \n":
+			lines[idx] = "\n"
+		case " ":
+			lines[idx] = ""
+		}
+	}
+	return []byte(strings.Join(lines, ""))
 }
 
 func parseRenameMarker(rel string, body string) (FilePatch, error) {

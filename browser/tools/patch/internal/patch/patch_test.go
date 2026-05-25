@@ -77,6 +77,36 @@ rename to chrome/new.cc
 	}
 }
 
+func TestWriteRepoPatchSetNormalizesBlankContextLines(t *testing.T) {
+	patchesDir := t.TempDir()
+	set := PatchSet{
+		"chrome/browser.cc": {
+			Path: "chrome/browser.cc",
+			Op:   OpModify,
+			Content: []byte("diff --git a/chrome/browser.cc b/chrome/browser.cc\n" +
+				"index 111..222 100644\n" +
+				"--- a/chrome/browser.cc\n" +
+				"+++ b/chrome/browser.cc\n" +
+				"@@ -1,3 +1,4 @@\n" +
+				" context\n" +
+				" \n" +
+				"+change\n" +
+				" context\n"),
+		},
+	}
+
+	if _, _, err := WriteRepoPatchSet(patchesDir, set, nil); err != nil {
+		t.Fatalf("WriteRepoPatchSet: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(patchesDir, "chrome", "browser.cc"))
+	if err != nil {
+		t.Fatalf("read patch: %v", err)
+	}
+	if strings.Contains(string(body), "\n \n") {
+		t.Fatalf("expected blank context line to be stored without trailing whitespace:\n%s", body)
+	}
+}
+
 func TestPathMatchesSkipsInternalState(t *testing.T) {
 	if PathMatches(".browseros-patch/state.yaml", nil) {
 		t.Fatalf("expected internal state path to be ignored")
