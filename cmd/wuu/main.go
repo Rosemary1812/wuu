@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
@@ -23,10 +21,8 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
-	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
-	"github.com/blueberrycongee/wuu/internal/tui"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
 
@@ -39,7 +35,8 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return runTUI(nil)
+		printUsage()
+		return nil
 	}
 
 	switch args[0] {
@@ -52,7 +49,7 @@ func run(args []string) error {
 	case "eval":
 		return runEval(args[1:])
 	case "tui":
-		return runTUI(args[1:])
+		return errors.New("the TUI has been removed; use the desktop GUI or `wuu run` for one-shot CLI tasks")
 	case "app-server":
 		return runAppServer(args[1:])
 	case "version", "-v", "--version":
@@ -64,8 +61,7 @@ func run(args []string) error {
 		printUsage()
 		return nil
 	default:
-		// No subcommand → default to TUI.
-		return runTUI(args)
+		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
@@ -116,16 +112,16 @@ func runInit(args []string) error {
 		}
 	}
 
-	result, err := runOnboarding()
+	cfg := config.Default()
+	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	if !result.Completed {
-		fmt.Println("setup cancelled")
-		return nil
+	if err := os.WriteFile(configPath, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write config: %w", err)
 	}
-
-	return writeOnboardingResult(workdir, os.Getenv("HOME"), result)
+	fmt.Printf("created %s\n", configPath)
+	return nil
 }
 
 func runModels(args []string) error {
@@ -826,173 +822,6 @@ func firstLine(value string) string {
 	return value
 }
 
-func runTUI(args []string) error {
-	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
-	providerName := fs.String("provider", "", "provider name in config")
-	modelOverride := fs.String("model", "", "model override")
-	maxSteps := fs.Int("max-steps", 0, "max tool loop steps")
-	temperature := fs.Float64("temperature", -1, "sampling temperature override")
-	systemPrompt := fs.String("system-prompt", "", "system prompt override")
-	themeMode := fs.String("theme", "", "theme override: auto|dark|light")
-	workdir := fs.String("workdir", "", "workspace directory")
-	noTools := fs.Bool("no-tools", false, "disable local tools")
-	requestTimeout := fs.Duration("request-timeout", 0, "turn timeout (e.g. 2m, 0 disables)")
-	memoryFile := fs.String("memory-file", "", "session memory file path (deprecated, use sessions)")
-	resumeID := fs.String("resume", "", "resume session by ID (empty with flag = most recent)")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	rootDir, err := resolveWorkdir(*workdir)
-	if err != nil {
-		return err
-	}
-
-	homeDir := os.Getenv("HOME")
-
-	resolvedTheme, err := resolveTUIThemeMode(homeDir, strings.TrimSpace(*themeMode))
-	if err != nil {
-		return err
-	}
-	if err := tui.SetThemeMode(resolvedTheme); err != nil {
-		if strings.TrimSpace(*themeMode) != "" {
-			return err
-		}
-		// Invalid persisted preference should never block startup.
-		if fallbackErr := tui.SetThemeMode("auto"); fallbackErr != nil {
-			return fallbackErr
-		}
-	}
-
-	cfg, configPath, err := config.LoadFrom(rootDir, homeDir)
-	if err != nil {
-		// Only enter onboarding when the config genuinely does not
-		// exist. A present-but-broken config (parse error, failed
-		// validation, etc.) must surface so the user can fix it —
-		// otherwise onboarding would silently overwrite their
-		// existing .wuu.json with a fresh template.
-		if !errors.Is(err, config.ErrConfigNotFound) {
-			return err
-		}
-		result, onboardErr := runOnboarding()
-		if onboardErr != nil {
-			return onboardErr
-		}
-		if !result.Completed {
-			return nil // user cancelled
-		}
-
-		if writeErr := writeOnboardingResult(rootDir, homeDir, result); writeErr != nil {
-			return writeErr
-		}
-
-		// Reload config.
-		cfg, configPath, err = config.LoadFrom(rootDir, homeDir)
-		if err != nil {
-			return fmt.Errorf("config still invalid after onboarding: %w", err)
-		}
-	}
-
-	askBridge := tui.NewAskUserBridge()
-	rt, err := runtime.NewSession(runtime.Options{
-		RootDir:       rootDir,
-		HomeDir:       homeDir,
-		ConfigPath:    configPath,
-		Config:        cfg,
-		ProviderName:  *providerName,
-		ModelOverride: *modelOverride,
-		NoTools:       *noTools,
-		AskBridge:     askBridge,
-	})
-	if err != nil {
-		return err
-	}
-	if *maxSteps > 0 {
-		rt.StreamRunner.MaxSteps = *maxSteps
-	}
-	if *temperature >= 0 {
-		rt.StreamRunner.Temperature = *temperature
-	}
-	if strings.TrimSpace(*systemPrompt) != "" {
-		// CLI --system-prompt overrides everything, including base and
-		// coordinator preamble. It becomes the new base for both modes.
-		rt.StreamRunner.SystemPrompt = *systemPrompt
-		rt.BaseSystemPrompt = *systemPrompt
-	}
-
-	resolvedMemoryPath, err := resolveRuntimePath(rootDir, *memoryFile)
-	if err != nil {
-		return err
-	}
-
-	sessDir := rt.SessionDir
-
-	// Handle --resume flag.
-	resolvedResumeID := strings.TrimSpace(*resumeID)
-	// Check if --resume was passed without a value (flag present but empty).
-	for _, a := range args {
-		if a == "--resume" && resolvedResumeID == "" {
-			// Resume most recent session.
-			recent, err := session.MostRecentForCWD(sessDir, rootDir)
-			if err == nil && recent != "" {
-				resolvedResumeID = recent
-			}
-			break
-		}
-	}
-
-	cfgUI := tui.Config{
-		Provider:            rt.ProviderName,
-		Model:               rt.Model,
-		WorkspaceRoot:       rootDir,
-		ConfigPath:          configPath,
-		MemoryPath:          resolvedMemoryPath,
-		StateDir:            rt.StateDir,
-		SessionDir:          sessDir,
-		ResumeID:            resolvedResumeID,
-		RequestTimeout:      *requestTimeout,
-		StreamRunner:        rt.StreamRunner,
-		HookDispatcher:      rt.HookDispatcher,
-		Skills:              rt.Skills,
-		Memory:              rt.Memory,
-		AgentControl:        rt.AgentControl,
-		AskUserBridge:       askBridge,
-		ProcessManager:      rt.ProcessManager,
-		Toolkit:             rt.Toolkit,
-		BaseSystemPrompt:    rt.BaseSystemPrompt,
-		CoordinatorPreamble: rt.CoordinatorPreamble,
-	}
-	if rt.Toolkit != nil {
-		cfgUI.OnSessionID = rt.SetSessionID
-	}
-	var cleanupSummary processruntime.CleanupResult
-	defer func() {
-		if rt.AgentControl != nil {
-			_ = rt.AgentControl.CleanupSession()
-		}
-	}()
-	if err := tui.Run(cfgUI); err != nil {
-		return err
-	}
-	if rt.ProcessManager != nil {
-		result, err := rt.ProcessManager.CleanupSessionWithResult()
-		if err != nil {
-			return err
-		}
-		cleanupSummary = result
-	}
-	if len(cleanupSummary.Cleaned) > 0 {
-		fmt.Println()
-		fmt.Printf("Cleaned up %d session process(es):\n", len(cleanupSummary.Cleaned))
-		for _, proc := range cleanupSummary.Cleaned {
-			fmt.Printf("  - %s (%s)\n", proc.Command, proc.ID)
-		}
-	}
-	return nil
-}
-
 func runAppServer(args []string) error {
 	fs := flag.NewFlagSet("app-server", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -1032,24 +861,6 @@ func runAppServer(args []string) error {
 	}()
 
 	return appserver.RunStdio(context.Background(), rt, os.Stdin, os.Stdout)
-}
-
-func resolveTUIThemeMode(homeDir, override string) (string, error) {
-	if override != "" {
-		return override, nil
-	}
-	if strings.TrimSpace(homeDir) == "" {
-		return "auto", nil
-	}
-	globalCfg, err := config.LoadGlobalConfig(homeDir)
-	if err != nil {
-		return "", fmt.Errorf("load global preferences: %w", err)
-	}
-	resolvedTheme := strings.TrimSpace(globalCfg.Theme)
-	if resolvedTheme == "" {
-		return "auto", nil
-	}
-	return resolvedTheme, nil
 }
 
 func resolveWorkdir(input string) (string, error) {
@@ -1126,73 +937,14 @@ func stdinHasInput() bool {
 	return info.Mode()&os.ModeCharDevice == 0
 }
 
-func runOnboarding() (tui.OnboardingResult, error) {
-	m := tui.NewOnboardingModel()
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return tui.OnboardingResult{}, fmt.Errorf("onboarding: %w", err)
-	}
-	om, ok := finalModel.(tui.OnboardingModel)
-	if !ok {
-		return tui.OnboardingResult{}, fmt.Errorf("unexpected model type")
-	}
-	return om.Result(), nil
-}
-
-func writeOnboardingResult(rootDir, home string, r tui.OnboardingResult) error {
-	// 1. Save API key to global auth store.
-	providerName := r.ProviderType
-	if providerName == "openai-compatible" {
-		providerName = "custom"
-	}
-	if strings.TrimSpace(r.APIKey) != "" {
-		if err := config.SaveAuthKey(home, providerName, r.APIKey); err != nil {
-			return fmt.Errorf("save auth key: %w", err)
-		}
-	}
-
-	// 2. Write .wuu.json (no API key stored in project config).
-	cfg := config.Default()
-	cfg.DefaultProvider = providerName
-	cfg.Providers = map[string]config.ProviderConfig{
-		providerName: {
-			Type:    r.ProviderType,
-			BaseURL: r.BaseURL,
-			Model:   r.Model,
-		},
-	}
-	if r.ProviderType == "openai-codex" {
-		p := cfg.Providers[providerName]
-		p.WireAPI = "responses"
-		cfg.Providers[providerName] = p
-	}
-	configPath := filepath.Join(rootDir, ".wuu.json")
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(configPath, append(data, '\n'), 0o644); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	// 3. Save global preferences.
-	gc := config.GlobalConfig{
-		Theme:                  r.Theme,
-		HasCompletedOnboarding: true,
-	}
-	return config.SaveGlobalConfig(home, gc)
-}
-
 func printUsage() {
-	fmt.Println(`wuu - coding agent CLI (MVP)
+	fmt.Println(`wuu - GUI-first coding agent backend and CLI tools
 
 Usage:
   wuu init [--force]
   wuu models [flags]
   wuu run [flags] "your coding task"
   wuu eval [flags]
-  wuu tui [flags]
   wuu app-server [flags]
   wuu version [--long|--json]
 
@@ -1224,18 +976,6 @@ Eval flags:
   --keep-workdirs   keep temporary task workdirs
   --live-codex-oauth
                    run live MCP E2E with local Codex OAuth
-
-TUI flags:
-  --provider        provider name from config
-  --model           model override
-  --theme           theme override: auto|dark|light
-  --max-steps       max tool loop steps
-  --temperature     temperature override
-  --system-prompt   system prompt override
-  --workdir         workspace directory
-  --no-tools        disable local tools
-  --memory-file     session memory file path
-  --request-timeout turn timeout (default disabled)
 
 App server flags:
   --provider        provider name from config

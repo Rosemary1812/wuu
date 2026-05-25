@@ -9,49 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
-
-func TestResolveTUIThemeMode_UsesAutoWhenHomeMissing(t *testing.T) {
-	theme, err := resolveTUIThemeMode("", "")
-	if err != nil {
-		t.Fatalf("resolveTUIThemeMode returned error: %v", err)
-	}
-	if theme != "auto" {
-		t.Fatalf("expected auto theme when HOME is missing, got %q", theme)
-	}
-}
-
-func TestResolveTUIThemeMode_PrefersOverrideWhenHomeMissing(t *testing.T) {
-	theme, err := resolveTUIThemeMode("", "dark")
-	if err != nil {
-		t.Fatalf("resolveTUIThemeMode returned error: %v", err)
-	}
-	if theme != "dark" {
-		t.Fatalf("expected override theme, got %q", theme)
-	}
-}
-
-func TestResolveTUIThemeMode_ReturnsLoadErrorsWhenHomePresent(t *testing.T) {
-	home := t.TempDir()
-	prefsPath := home + "/.config/wuu/preferences.json"
-	if err := os.MkdirAll(home+"/.config/wuu", 0o755); err != nil {
-		t.Fatalf("mkdir prefs dir: %v", err)
-	}
-	if err := os.WriteFile(prefsPath, []byte("{"), 0o644); err != nil {
-		t.Fatalf("write prefs: %v", err)
-	}
-
-	_, err := resolveTUIThemeMode(home, "")
-	if err == nil {
-		t.Fatal("expected invalid global preferences to return an error")
-	}
-	if !strings.Contains(err.Error(), "load global preferences") {
-		t.Fatalf("expected load global preferences error, got %v", err)
-	}
-}
 
 func TestRunVersionAliasForwardsJSONFlag(t *testing.T) {
 	output := captureStdout(t, func() {
@@ -81,6 +43,48 @@ func TestRunVersionAliasForwardsLongFlag(t *testing.T) {
 	}
 	if !strings.Contains(output, "commit:") {
 		t.Fatalf("expected long version output to include commit, got %q", output)
+	}
+}
+
+func TestRunWithoutArgsPrintsUsage(t *testing.T) {
+	output := captureStdout(t, func() {
+		if err := run(nil); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+	if !strings.Contains(output, "GUI-first") || strings.Contains(output, "wuu tui") {
+		t.Fatalf("unexpected usage output: %q", output)
+	}
+}
+
+func TestRunTUICommandIsRemoved(t *testing.T) {
+	err := run([]string{"tui"})
+	if err == nil || !strings.Contains(err.Error(), "TUI has been removed") {
+		t.Fatalf("expected removed TUI error, got %v", err)
+	}
+}
+
+func TestRunInitWritesDefaultConfig(t *testing.T) {
+	workdir := t.TempDir()
+	t.Chdir(workdir)
+	output := captureStdout(t, func() {
+		if err := run([]string{"init", "--force"}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+	if !strings.Contains(output, "created") {
+		t.Fatalf("expected created output, got %q", output)
+	}
+	data, err := os.ReadFile(filepath.Join(workdir, ".wuu.json"))
+	if err != nil {
+		t.Fatalf("expected config file: %v", err)
+	}
+	var cfg config.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("expected JSON config: %v", err)
+	}
+	if cfg.DefaultProvider == "" || len(cfg.Providers) == 0 {
+		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }
 
