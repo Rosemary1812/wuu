@@ -138,16 +138,15 @@ function sortGitChangeTreeNodes(nodes: GitChangeTreeNode[]): void {
   }
 }
 
-export function collectGitChangeTreeDirectoryPaths(nodes: GitChangeTreeNode[]): string[] {
-  const paths: string[] = [];
-  for (const node of nodes) {
-    if (node.kind !== "directory") {
-      continue;
-    }
-    paths.push(node.path);
-    paths.push(...collectGitChangeTreeDirectoryPaths(node.children));
+export function selectGitChangePath(files: GitChangeFile[], preferredPath?: string): string | undefined {
+  if (preferredPath && files.some((file) => file.path === preferredPath)) {
+    return preferredPath;
   }
-  return paths;
+  return files[0]?.path;
+}
+
+export function expandedGitChangeTreePathsForSelection(path?: string): Set<string> {
+  return new Set(path ? gitPathAncestors(path) : []);
 }
 
 export function gitPathAncestors(path: string): string[] {

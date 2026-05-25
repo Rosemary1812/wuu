@@ -25,15 +25,16 @@ import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { formatWorkspaceRoot } from "./WorkspaceFiles";
 import {
   buildGitChangeTree,
-  collectGitChangeTreeDirectoryPaths,
   desktopApiErrorMessage,
   desktopApiSupportsGitReview,
+  expandedGitChangeTreePathsForSelection,
   filterGitChangeFiles,
   gitChangeFilePathLabel,
   gitChangeStatusDescription,
   gitChangeStatusLabel,
   gitDiffDisplayLines,
   gitPathAncestors,
+  selectGitChangePath,
   summarizeGitChangeFiles,
   type GitChangeTreeNode
 } from "./WorkspaceReviewHelpers";
@@ -107,14 +108,10 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
         if (cancelled) {
           return;
         }
+        const nextSelectedPath = selectGitChangePath(result.files, selectedPath);
         setChanges(result);
-        setExpandedPaths(new Set(collectGitChangeTreeDirectoryPaths(buildGitChangeTree(result.files))));
-        setSelectedPath((current) => {
-          if (current && result.files.some((file) => file.path === current)) {
-            return current;
-          }
-          return result.files[0]?.path;
-        });
+        setSelectedPath(nextSelectedPath);
+        setExpandedPaths(expandedGitChangeTreePathsForSelection(nextSelectedPath));
       })
       .catch((nextError) => {
         if (!cancelled) {
@@ -462,14 +459,10 @@ export function WorkspaceDiffReview({
         if (cancelled) {
           return;
         }
+        const nextSelectedPath = selectGitChangePath(result.files, selectedPath);
         setChanges(result);
-        setExpandedPaths(new Set(collectGitChangeTreeDirectoryPaths(buildGitChangeTree(result.files))));
-        setSelectedPath((current) => {
-          if (current && result.files.some((file) => file.path === current)) {
-            return current;
-          }
-          return result.files[0]?.path;
-        });
+        setSelectedPath(nextSelectedPath);
+        setExpandedPaths(expandedGitChangeTreePathsForSelection(nextSelectedPath));
       })
       .catch((nextError) => {
         if (!cancelled) {
