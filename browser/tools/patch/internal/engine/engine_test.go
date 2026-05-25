@@ -129,6 +129,42 @@ func TestOperationsFromChangesNormalizesRepoSubdirPatchPath(t *testing.T) {
 	}
 }
 
+func TestInferSyncStateUsesActualDriftBeforeHistory(t *testing.T) {
+	status := &WorkspaceStatus{
+		RepoHead:     "repo-head",
+		LastApplyRev: "older-repo-head",
+		Orphaned:     []string{"third_party/dependency"},
+	}
+	if got := inferSyncState(status); got != "local-changes" {
+		t.Fatalf("expected local-changes for orphaned paths, got %q", got)
+	}
+
+	status = &WorkspaceStatus{
+		RepoHead:     "repo-head",
+		LastApplyRev: "older-repo-head",
+	}
+	if got := inferSyncState(status); got != "synced" {
+		t.Fatalf("expected synced when patch sets match, got %q", got)
+	}
+
+	status = &WorkspaceStatus{
+		RepoHead:   "repo-head",
+		NeedsApply: []string{"chrome/browser.cc"},
+	}
+	if got := inferSyncState(status); got != "never-synced" {
+		t.Fatalf("expected never-synced with no history and pending patches, got %q", got)
+	}
+
+	status = &WorkspaceStatus{
+		RepoHead:      "repo-head",
+		ActiveResolve: true,
+		NeedsApply:    []string{"chrome/browser.cc"},
+	}
+	if got := inferSyncState(status); got != "conflicted" {
+		t.Fatalf("expected conflicted active resolve state, got %q", got)
+	}
+}
+
 func TestApplyReportsPatchProgress(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

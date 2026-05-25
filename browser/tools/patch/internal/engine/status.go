@@ -81,14 +81,15 @@ func inferSyncState(status *WorkspaceStatus) string {
 	switch {
 	case status.ActiveResolve:
 		return "conflicted"
-	case status.LastSyncRev == "":
-		return "never-synced"
-	case status.LastSyncRev != status.RepoHead:
-		return "needs-sync"
 	case len(status.NeedsApply) > 0:
+		if status.LastSyncRev == "" && status.LastApplyRev == "" && status.LastExtractRev == "" {
+			return "never-synced"
+		}
 		return "drifted"
 	case len(status.NeedsUpdate) > 0 || len(status.Orphaned) > 0:
 		return "local-changes"
+	case status.LastSyncRev == "" && status.LastApplyRev == "" && status.LastExtractRev == "":
+		return "never-synced"
 	default:
 		return "synced"
 	}
