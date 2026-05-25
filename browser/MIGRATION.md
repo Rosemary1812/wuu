@@ -150,6 +150,9 @@ Current verification gap:
   that the browser-hosted Wuu workbench has the native
   `chrome.browserOS.choosePath` folder picker API and that the project picker
   path adds the selected folder as the active Wuu project.
+- `make browser-verify-dev ARGS="--require-project-local-ops"` verifies that
+  the selected browser-hosted Wuu project drives real file tree, file read,
+  Git status, and terminal startup operations in the selected local directory.
 
 ## Phase 4: Remove Misaligned Runtime Defaults
 

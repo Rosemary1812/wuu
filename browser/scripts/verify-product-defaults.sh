@@ -103,6 +103,26 @@ check_contains \
   "dev verification checks the native BrowserOS choosePath API"
 
 check_contains \
+  "${dev_verify_script}" \
+  "--require-project-local-ops" \
+  "dev verification can require selected-project local operations"
+
+check_contains \
+  "${dev_verify_script}" \
+  "window.wuu.listWorkspaceFiles" \
+  "dev verification checks Wuu file tree operations in the selected project"
+
+check_contains \
+  "${dev_verify_script}" \
+  "window.wuu.gitStatus" \
+  "dev verification checks Wuu Git operations in the selected project"
+
+check_contains \
+  "${dev_verify_script}" \
+  "window.wuu.startTerminalSession" \
+  "dev verification checks Wuu terminal startup in the selected project"
+
+check_contains \
   "${server_main}" \
   "process.env.WUU_ENABLE_VM_AGENTS === '1'" \
   "server only enables VM-backed agents through explicit opt-in"

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-project-folder-picker] [--require-no-vm-agents] [--require-browser-bridge]
+Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-project-folder-picker] [--require-project-local-ops] [--require-no-vm-agents] [--require-browser-bridge]
 
 Verify a running Wuu Browser development instance.
 
@@ -14,8 +14,9 @@ Checks:
   4. Optionally, the Wuu workbench extension route is open.
   5. Optionally, the Wuu workbench can call the real native runtime.
   6. Optionally, the Wuu workbench project picker uses native browserOS.choosePath.
-  7. Optionally, no BrowserOS VM/OpenClaw process is running.
-  8. Optionally, the server Browser Bridge can read real tab metadata.
+  7. Optionally, the selected Wuu project can drive file, Git, and terminal operations.
+  8. Optionally, no BrowserOS VM/OpenClaw process is running.
+  9. Optionally, the server Browser Bridge can read real tab metadata.
 
 Environment overrides:
   WUU_BROWSER_CDP_PORT     Defaults to 9100.
@@ -26,6 +27,7 @@ USAGE
 require_wuu_tab=false
 require_wuu_runtime=false
 require_project_folder_picker=false
+require_project_local_ops=false
 require_no_vm_agents=false
 require_browser_bridge=false
 
@@ -43,6 +45,11 @@ while [[ $# -gt 0 ]]; do
     --require-project-folder-picker)
       require_wuu_tab=true
       require_project_folder_picker=true
+      shift
+      ;;
+    --require-project-local-ops)
+      require_wuu_tab=true
+      require_project_local_ops=true
       shift
       ;;
     --require-no-vm-agents)
@@ -80,6 +87,17 @@ need_curl() {
 fetch() {
   local url="$1"
   curl -fsS --max-time 3 "${url}"
+}
+
+wait_for_wuu_tab() {
+  for _ in {1..50}; do
+    pages_json="$(fetch "${cdp_base}/json/list")" || true
+    if printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://browseros/wuu'; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  return 1
 }
 
 need_curl
@@ -311,6 +329,10 @@ const result = await evaluate(`(async () => {
   const previousProjects = window.localStorage.getItem(projectsKey);
   const previousActiveContext = window.localStorage.getItem(activeContextKey);
 
+  const deadline = Date.now() + 15000;
+  while (!window.wuu && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   if (!window.wuu) throw new Error('window.wuu is not installed');
   if (!chrome?.browserOS || typeof chrome.browserOS.choosePath !== 'function') {
     throw new Error('chrome.browserOS.choosePath is not installed');
@@ -366,16 +388,197 @@ JS
   echo "  Wuu project folder picker: ${picker_json}"
 
   if [[ "${require_browser_bridge}" == "true" ]]; then
-    for _ in {1..50}; do
-      pages_json="$(fetch "${cdp_base}/json/list")" || true
-      if printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://browseros/wuu'; then
-        break
-      fi
-      sleep 0.2
-    done
-
-    if ! printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://browseros/wuu'; then
+    if ! wait_for_wuu_tab; then
       echo "Wuu workbench tab did not reload after project folder picker verification." >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [[ "${require_project_local_ops}" == "true" ]]; then
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required for Wuu project local operations verification" >&2
+    exit 2
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    echo "git is required for Wuu project local operations verification" >&2
+    exit 2
+  fi
+
+  local_ops_dir="$(mktemp -d -t wuu-local-ops-verify.XXXXXX)"
+  mkdir -p "${local_ops_dir}/src"
+  printf 'Wuu Browser local operations verification\n' > "${local_ops_dir}/README.md"
+  printf 'selected project file tree entry\n' > "${local_ops_dir}/src/main.txt"
+  (cd "${local_ops_dir}" && git init -q && git add README.md)
+
+  local_ops_json="$(CDP_BASE="${cdp_base}" WUU_LOCAL_OPS_VERIFY_DIR="${local_ops_dir}" bun - <<'JS'
+const cdpBase = process.env.CDP_BASE
+const projectDir = process.env.WUU_LOCAL_OPS_VERIFY_DIR
+const projectName = projectDir.split(/[\\/]/).filter(Boolean).at(-1) ?? projectDir
+
+async function fetchJson(url) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`${url} failed with ${response.status}`)
+  }
+  return response.json()
+}
+
+const pages = await fetchJson(`${cdpBase}/json/list`)
+const page = pages.find((candidate) => {
+  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/browseros\/wuu/.test(candidate.url)
+})
+if (!page) {
+  throw new Error('Wuu workbench page was not found')
+}
+
+const ws = new WebSocket(page.webSocketDebuggerUrl)
+let nextId = 0
+const pending = new Map()
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data)
+  if (!message.id || !pending.has(message.id)) return
+  const { resolve, reject } = pending.get(message.id)
+  pending.delete(message.id)
+  if (message.error) {
+    reject(new Error(JSON.stringify(message.error)))
+    return
+  }
+  resolve(message.result)
+}
+
+await new Promise((resolve, reject) => {
+  ws.onopen = resolve
+  ws.onerror = reject
+})
+
+function send(method, params = {}) {
+  const id = ++nextId
+  ws.send(JSON.stringify({ id, method, params }))
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject })
+  })
+}
+
+async function evaluate(expression) {
+  const result = await send('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+    timeout: 60000,
+  })
+  if (result.exceptionDetails) {
+    throw new Error(JSON.stringify(result.exceptionDetails))
+  }
+  if (result.result?.subtype === 'error') {
+    throw new Error(result.result.description || 'Runtime evaluation failed')
+  }
+  return result.result?.value
+}
+
+const result = await evaluate(`(async () => {
+  const projectsKey = 'wuu.browseros.projects';
+  const activeContextKey = 'wuu.browseros.activeContext';
+  const previousProjects = window.localStorage.getItem(projectsKey);
+  const previousActiveContext = window.localStorage.getItem(activeContextKey);
+
+  const deadline = Date.now() + 15000;
+  while (!window.wuu && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!window.wuu) throw new Error('window.wuu is not installed');
+  if (!chrome?.browserOS || typeof chrome.browserOS.choosePath !== 'function') {
+    throw new Error('chrome.browserOS.choosePath is not installed');
+  }
+
+  const originalChoosePath = chrome.browserOS.choosePath;
+  const calls = [];
+  chrome.browserOS.choosePath = (options, callback) => {
+    calls.push(options);
+    callback({ path: ${JSON.stringify(projectDir)}, name: ${JSON.stringify(projectName)} });
+  };
+
+  let terminalId;
+  try {
+    const projects = await window.wuu.chooseProjectFolder();
+    const active = projects.active_context;
+    if (!calls.length || calls[0]?.type !== 'folder') {
+      throw new Error('project selection did not use browserOS.choosePath in folder mode');
+    }
+    if (active?.kind !== 'project' || active.cwd !== ${JSON.stringify(projectDir)}) {
+      throw new Error('selected project did not become active');
+    }
+
+    const tree = await window.wuu.listWorkspaceFiles();
+    if (tree.root !== ${JSON.stringify(projectDir)} || !tree.paths.includes('README.md')) {
+      throw new Error('file tree did not read from the selected project');
+    }
+
+    const readme = await window.wuu.readWorkspaceFile('README.md');
+    if (readme.root !== ${JSON.stringify(projectDir)} || !readme.text?.includes('local operations verification')) {
+      throw new Error('file read did not read README.md from the selected project');
+    }
+
+    const gitStatus = await window.wuu.gitStatus();
+    if (!gitStatus.is_repo || gitStatus.dirty_count < 1) {
+      throw new Error('git status did not inspect the selected Git worktree');
+    }
+
+    const terminal = await window.wuu.startTerminalSession({ cols: 80, rows: 24 });
+    terminalId = terminal.id;
+    if (terminal.cwd !== ${JSON.stringify(projectDir)}) {
+      throw new Error('terminal did not start in the selected project');
+    }
+    await window.wuu.stopTerminalSession(terminal.id);
+    terminalId = undefined;
+
+    return {
+      project: active.cwd,
+      filesRoot: tree.root,
+      readPath: readme.path,
+      gitDirtyCount: gitStatus.dirty_count,
+      terminalCwd: terminal.cwd,
+    };
+  } finally {
+    if (terminalId) {
+      await window.wuu.stopTerminalSession(terminalId).catch(() => undefined);
+    }
+    chrome.browserOS.choosePath = originalChoosePath;
+    if (previousProjects === null) window.localStorage.removeItem(projectsKey);
+    else window.localStorage.setItem(projectsKey, previousProjects);
+    if (previousActiveContext === null) window.localStorage.removeItem(activeContextKey);
+    else window.localStorage.setItem(activeContextKey, previousActiveContext);
+    setTimeout(() => window.location.reload(), 0);
+  }
+})()`)
+
+if (
+  result?.project !== projectDir ||
+  result?.filesRoot !== projectDir ||
+  result?.terminalCwd !== projectDir ||
+  result?.readPath !== 'README.md' ||
+  typeof result?.gitDirtyCount !== 'number' ||
+  result.gitDirtyCount < 1
+) {
+  throw new Error(`Project local operations returned unexpected data: ${JSON.stringify(result)}`)
+}
+
+console.log(JSON.stringify(result))
+ws.close()
+JS
+)" || {
+    rm -rf "${local_ops_dir}"
+    echo "Wuu project local operations verification failed." >&2
+    exit 1
+  }
+  rm -rf "${local_ops_dir}"
+
+  echo "  Wuu project local ops: ${local_ops_json}"
+
+  if [[ "${require_browser_bridge}" == "true" ]]; then
+    if ! wait_for_wuu_tab; then
+      echo "Wuu workbench tab did not reload after project local operations verification." >&2
       exit 1
     fi
   fi
