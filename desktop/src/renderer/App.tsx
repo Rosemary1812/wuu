@@ -3,7 +3,6 @@ import {
   Archive,
   Brain,
   Bug,
-  Check,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -16,7 +15,6 @@ import {
   FolderOpen,
   FolderPlus,
   GitBranch,
-  GitFork,
   Image as ImageIcon,
   Info,
   Laptop,
@@ -34,8 +32,6 @@ import {
   ShieldCheck,
   Square,
   Terminal,
-  ThumbsDown,
-  ThumbsUp,
   Trash2,
   Wrench,
   X
@@ -63,7 +59,6 @@ import type {
   GitCommitResult,
   GitPullRequestResult,
   GitStatusResult,
-  InputImage,
   InitializeResult,
   PlanUpdate,
   ProjectListResult,
@@ -82,7 +77,6 @@ import {
 import {
   composerImageFromFile,
   createComposerMessage,
-  imageSource,
   inputImagesFromComposer,
   mergeGuideMessages,
   type ComposerImage,
@@ -107,6 +101,7 @@ import {
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
 import { RichContent } from "./RichContent";
 import { EmptyConversationHome, RuntimeLoading, ViewSwitchLoading } from "./LoadingViews";
+import { AgentMessageActions, MessageCopyButton, MessageImageGrid } from "./MessageActions";
 import {
   isCodexProvider,
   normalizedEffortForModel,
@@ -4711,118 +4706,6 @@ function ThreadItemView({
     default:
       return null;
   }
-}
-
-function AgentMessageActions({ getText, onFork }: { getText: () => string; onFork?: () => void }): JSX.Element {
-  const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
-
-  return (
-    <div className="message-actions agent-message-actions" aria-label="助手消息操作">
-      <MessageCopyButton getText={getText} className="message-action-button" iconSize={15} />
-      <button
-        className="message-action-button"
-        type="button"
-        aria-label="赞"
-        aria-pressed={feedback === "liked"}
-        title="赞"
-        onClick={() => setFeedback((current) => (current === "liked" ? null : "liked"))}
-      >
-        <ThumbsUp size={15} />
-      </button>
-      <button
-        className="message-action-button"
-        type="button"
-        aria-label="踩"
-        aria-pressed={feedback === "disliked"}
-        title="踩"
-        onClick={() => setFeedback((current) => (current === "disliked" ? null : "disliked"))}
-      >
-        <ThumbsDown size={15} />
-      </button>
-      <button className="message-action-button" type="button" aria-label="分叉" title="分叉" disabled={!onFork} onClick={onFork}>
-        <GitFork size={15} />
-      </button>
-    </div>
-  );
-}
-
-function MessageCopyButton({
-  getText,
-  className = "",
-  iconSize = 14
-}: {
-  getText: () => string;
-  className?: string;
-  iconSize?: number;
-}): JSX.Element {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const resetTimerRef = useRef<number | undefined>(undefined);
-  const label = copyState === "copied" ? "已复制消息" : copyState === "failed" ? "复制失败" : "复制消息";
-
-  useEffect(() => {
-    return () => {
-      if (resetTimerRef.current !== undefined) {
-        window.clearTimeout(resetTimerRef.current);
-      }
-    };
-  }, []);
-
-  function showCopyState(nextState: "copied" | "failed"): void {
-    if (resetTimerRef.current !== undefined) {
-      window.clearTimeout(resetTimerRef.current);
-    }
-    setCopyState(nextState);
-    resetTimerRef.current = window.setTimeout(() => {
-      setCopyState("idle");
-      resetTimerRef.current = undefined;
-    }, 1200);
-  }
-
-  async function handleCopy(): Promise<void> {
-    const text = getText();
-    if (text.trim() === "") {
-      showCopyState("failed");
-      return;
-    }
-    try {
-      const clipboard = navigator.clipboard;
-      if (!clipboard?.writeText) {
-        throw new Error("Clipboard API unavailable");
-      }
-      await clipboard.writeText(text);
-      showCopyState("copied");
-    } catch {
-      showCopyState("failed");
-    }
-  }
-
-  return (
-    <button
-      className={`message-copy-button ${className} ${copyState}`}
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={() => void handleCopy()}
-    >
-      {copyState === "copied" ? (
-        <Check size={iconSize} />
-      ) : copyState === "failed" ? (
-        <AlertCircle size={iconSize} />
-      ) : (
-        <Copy size={iconSize} />
-      )}
-    </button>
-  );
-}
-
-function MessageImageGrid({ images }: { images: InputImage[] }): JSX.Element {
-  return (
-    <div className="message-images">
-      {images.map((image, index) => (
-        <img className="message-image" key={`${image.media_type}-${index}`} src={imageSource(image)} alt={`Image ${index + 1}`} />
-      ))}
-    </div>
-  );
 }
 
 function AgentMessageContent({
