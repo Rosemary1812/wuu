@@ -34,6 +34,11 @@ function createBrowser(overrides: Partial<FakeBrowser> = {}): FakeBrowser {
     getActiveTarget: mock(async () => firstTarget),
     createTargetTab: mock(async () => secondTarget),
     navigateTarget: mock(async () => {}),
+    activateTargetTab: mock(async () => secondTarget),
+    closeTargetTab: mock(async () => {}),
+    reloadTarget: mock(async () => {}),
+    goBackTarget: mock(async () => {}),
+    goForwardTarget: mock(async () => {}),
     screenshotTarget: mock(async () => ({
       data: '',
       mimeType: 'image/png',
@@ -215,6 +220,66 @@ describe('createBrowserBridgeRoutes', () => {
       'target-2',
       navigatedTarget.url,
     )
+  })
+
+  it('activates an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [firstTarget, secondTarget]),
+      activateTargetTab: mock(async () => secondTarget),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request('/tabs/target-2/activate', {
+      method: 'POST',
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      tab: {
+        targetId: 'target-2',
+        isActive: true,
+      },
+    })
+    expect(browser.activateTargetTab).toHaveBeenCalledWith('target-2')
+  })
+
+  it('reloads and moves through history for an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const reloadResponse = await route.request('/tabs/target-2/reload', {
+      method: 'POST',
+    })
+    const backResponse = await route.request('/tabs/target-2/back', {
+      method: 'POST',
+    })
+    const forwardResponse = await route.request('/tabs/target-2/forward', {
+      method: 'POST',
+    })
+
+    expect(reloadResponse.status).toBe(200)
+    expect(backResponse.status).toBe(200)
+    expect(forwardResponse.status).toBe(200)
+    expect(browser.reloadTarget).toHaveBeenCalledWith('target-2')
+    expect(browser.goBackTarget).toHaveBeenCalledWith('target-2')
+    expect(browser.goForwardTarget).toHaveBeenCalledWith('target-2')
+  })
+
+  it('closes an existing browser tab target', async () => {
+    const browser = createBrowser({
+      listTargets: mock(async () => [secondTarget]),
+    })
+    const route = createBrowserBridgeRoutes({ browser })
+
+    const response = await route.request('/tabs/target-2', {
+      method: 'DELETE',
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
+    expect(browser.closeTargetTab).toHaveBeenCalledWith('target-2')
   })
 
   it('captures a screenshot for an existing browser tab target', async () => {

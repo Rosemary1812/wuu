@@ -289,6 +289,18 @@ export class Browser {
     return pageId
   }
 
+  private forgetTarget(targetId: string): void {
+    const sessionId = this.sessions.get(targetId)
+    if (sessionId) this.sessions.delete(targetId)
+
+    const observedPageId = this.observedTargetPageIds.get(targetId)
+    if (observedPageId !== undefined) {
+      this.consoleCollector.detach(observedPageId)
+      this.networkCollector.detach(observedPageId)
+      this.observedTargetPageIds.delete(targetId)
+    }
+  }
+
   // --- Pages ---
 
   async listPages(): Promise<PageInfo[]> {
@@ -747,8 +759,36 @@ export class Browser {
     await this.waitForLoad(session)
   }
 
+  async activateTargetTab(targetId: string): Promise<CdpTarget> {
+    await this.cdp.Browser.activateTab({ targetId })
+    const result = await this.cdp.Browser.getTabInfo({ targetId })
+    const tab = result.tab as TabInfo
+    return {
+      id: tab.targetId,
+      type: 'page',
+      title: tab.title,
+      url: tab.url,
+      tabId: tab.tabId,
+      windowId: tab.windowId,
+    }
+  }
+
+  async closeTargetTab(targetId: string): Promise<void> {
+    await this.cdp.Browser.closeTab({ targetId })
+    this.forgetTarget(targetId)
+  }
+
   async goBack(page: number): Promise<void> {
     const session = await this.resolveSession(page)
+    await session.Runtime.evaluate({
+      expression: 'history.back()',
+      awaitPromise: true,
+    })
+    await this.waitForLoad(session)
+  }
+
+  async goBackTarget(targetId: string): Promise<void> {
+    const session = await this.resolveTargetSession(targetId)
     await session.Runtime.evaluate({
       expression: 'history.back()',
       awaitPromise: true,
@@ -765,8 +805,23 @@ export class Browser {
     await this.waitForLoad(session)
   }
 
+  async goForwardTarget(targetId: string): Promise<void> {
+    const session = await this.resolveTargetSession(targetId)
+    await session.Runtime.evaluate({
+      expression: 'history.forward()',
+      awaitPromise: true,
+    })
+    await this.waitForLoad(session)
+  }
+
   async reload(page: number): Promise<void> {
     const session = await this.resolveSession(page)
+    await session.Page.reload()
+    await this.waitForLoad(session)
+  }
+
+  async reloadTarget(targetId: string): Promise<void> {
+    const session = await this.resolveTargetSession(targetId)
     await session.Page.reload()
     await this.waitForLoad(session)
   }

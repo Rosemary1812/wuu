@@ -164,6 +164,31 @@ check_contains \
   "Browser Bridge exposes target network entries"
 
 check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/activate" \
+  "Browser Bridge exposes target activation"
+
+check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/back" \
+  "Browser Bridge exposes target history back"
+
+check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/forward" \
+  "Browser Bridge exposes target history forward"
+
+check_contains \
+  "${browser_bridge_route}" \
+  "/tabs/:targetId/reload" \
+  "Browser Bridge exposes target reload"
+
+check_contains \
+  "${browser_bridge_route}" \
+  ".delete('/tabs/:targetId'" \
+  "Browser Bridge exposes target close"
+
+check_contains \
   "${dev_verify_script}" \
   "/snapshot?enhanced=1" \
   "dev verification checks Browser Bridge enhanced snapshots"
@@ -187,6 +212,31 @@ check_contains \
   "${dev_verify_script}" \
   "/network?search=__wuu_bridge_missing" \
   "dev verification checks Browser Bridge network reads"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/active-tab" \
+  "dev verification checks Browser Bridge tab activation"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/back" \
+  "dev verification checks Browser Bridge history back"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/forward" \
+  "dev verification checks Browser Bridge history forward"
+
+check_contains \
+  "${dev_verify_script}" \
+  "/reload" \
+  "dev verification checks Browser Bridge reload"
+
+check_contains \
+  "${dev_verify_script}" \
+  "closedCreatedTab" \
+  "dev verification checks Browser Bridge tab close"
 
 check_contains \
   "${server_main}" \

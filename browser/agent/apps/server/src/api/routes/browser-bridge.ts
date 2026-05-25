@@ -17,6 +17,11 @@ type BrowserBridgeDeps = {
     | 'getActiveTarget'
     | 'createTargetTab'
     | 'navigateTarget'
+    | 'activateTargetTab'
+    | 'closeTargetTab'
+    | 'reloadTarget'
+    | 'goBackTarget'
+    | 'goForwardTarget'
     | 'screenshotTarget'
     | 'snapshotTarget'
     | 'enhancedSnapshotTarget'
@@ -243,6 +248,86 @@ export function createBrowserBridgeRoutes({ browser }: BrowserBridgeDeps) {
           activeTarget?.id ?? null,
         ),
       })
+    })
+    .post('/tabs/:targetId/activate', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      const activated = await browser.activateTargetTab(target.id)
+      return c.json({
+        tab: toBridgeTab(activated, getPageId(activated.id), activated.id),
+      })
+    })
+    .post('/tabs/:targetId/reload', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      await browser.reloadTarget(target.id)
+      const updated = (await findBridgeTarget(target.id)) ?? target
+      const activeTarget = await browser.getActiveTarget()
+
+      return c.json({
+        tab: toBridgeTab(
+          updated,
+          getPageId(updated.id),
+          activeTarget?.id ?? null,
+        ),
+      })
+    })
+    .post('/tabs/:targetId/back', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      await browser.goBackTarget(target.id)
+      const updated = (await findBridgeTarget(target.id)) ?? target
+      const activeTarget = await browser.getActiveTarget()
+
+      return c.json({
+        tab: toBridgeTab(
+          updated,
+          getPageId(updated.id),
+          activeTarget?.id ?? null,
+        ),
+      })
+    })
+    .post('/tabs/:targetId/forward', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      await browser.goForwardTarget(target.id)
+      const updated = (await findBridgeTarget(target.id)) ?? target
+      const activeTarget = await browser.getActiveTarget()
+
+      return c.json({
+        tab: toBridgeTab(
+          updated,
+          getPageId(updated.id),
+          activeTarget?.id ?? null,
+        ),
+      })
+    })
+    .delete('/tabs/:targetId', async (c) => {
+      if (!browser.isCdpConnected()) return cdpUnavailable(c)
+
+      const targetId = c.req.param('targetId')
+      const target = await findBridgeTarget(targetId)
+      if (!target) return c.json({ error: 'Tab target not found' }, 404)
+
+      await browser.closeTargetTab(target.id)
+      pageIdsByTargetId.delete(target.id)
+      return c.json({ ok: true })
     })
     .get('/tabs/:targetId/screenshot', async (c) => {
       if (!browser.isCdpConnected()) return cdpUnavailable(c)

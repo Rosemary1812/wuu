@@ -788,6 +788,24 @@ if (screenshot.mimeType !== 'image/png' || typeof screenshot.data !== 'string' |
   })}`)
 }
 
+await fetchJson(`${targetPath}/back`, { method: 'POST' })
+const backContent = await fetchJson(`${targetPath}/content`)
+if (!backContent.text?.includes('created this tab')) {
+  throw new Error(`Browser Bridge back did not restore the previous tab content: ${JSON.stringify(backContent)}`)
+}
+
+await fetchJson(`${targetPath}/forward`, { method: 'POST' })
+const forwardContent = await fetchJson(`${targetPath}/content`)
+if (!forwardContent.text?.includes('navigation works')) {
+  throw new Error(`Browser Bridge forward did not restore navigated tab content: ${JSON.stringify(forwardContent)}`)
+}
+
+await fetchJson(`${targetPath}/reload`, { method: 'POST' })
+const reloadedContent = await fetchJson(`${targetPath}/content`)
+if (!reloadedContent.text?.includes('navigation works')) {
+  throw new Error(`Browser Bridge reload did not preserve navigated tab content: ${JSON.stringify(reloadedContent)}`)
+}
+
 const interactionHtml = encodeURIComponent(`
 <!doctype html>
 <meta charset="utf-8">
@@ -823,6 +841,15 @@ if (!interaction.tab?.targetId) {
 }
 
 const interactionPath = `/browser-bridge/tabs/${encodeURIComponent(interaction.tab.targetId)}`
+const activated = await fetchJson(`${interactionPath}/activate`, { method: 'POST' })
+if (activated.tab?.isActive !== true) {
+  throw new Error(`Browser Bridge activate returned unexpected tab: ${JSON.stringify(activated)}`)
+}
+const activeAfterActivate = await fetchJson('/browser-bridge/active-tab')
+if (activeAfterActivate.activeTab?.targetId !== interaction.tab.targetId) {
+  throw new Error(`Browser Bridge active-tab did not reflect activation: ${JSON.stringify(activeAfterActivate)}`)
+}
+
 const snapshot = await fetchJson(`${interactionPath}/snapshot?enhanced=1`)
 if (
   snapshot.enhanced !== true ||
@@ -897,6 +924,12 @@ if (!/scroll:[1-9][0-9]*/.test(scrolledContent.text ?? '')) {
   throw new Error(`Browser Bridge scroll did not update page scroll state: ${JSON.stringify(scrolledContent)}`)
 }
 
+await fetchJson(targetPath, { method: 'DELETE' })
+const afterClose = await fetchJson('/browser-bridge/tabs')
+if (afterClose.tabs?.some((tab) => tab.targetId === created.tab.targetId)) {
+  throw new Error(`Browser Bridge close did not remove created tab: ${JSON.stringify(afterClose)}`)
+}
+
 console.log(JSON.stringify({
   initialTabs: initial.tabs.length,
   createdTargetId: created.tab.targetId,
@@ -906,6 +939,7 @@ console.log(JSON.stringify({
   domChars: dom.html.length,
   consoleEntries: consoleLogs.entries.length,
   networkEntries: networkEntries.entries.length,
+  closedCreatedTab: true,
 }))
 JS
 )" || {

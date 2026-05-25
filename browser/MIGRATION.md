@@ -211,7 +211,14 @@ Current first bridge:
   tab metadata using stable Wuu page IDs and Chromium tab IDs.
 - `GET /browser-bridge/active-tab` returns the active tab metadata directly.
 - `POST /browser-bridge/tabs` creates a new tab.
+- `POST /browser-bridge/tabs/:targetId/activate` activates a tab target.
 - `POST /browser-bridge/tabs/:targetId/navigate` navigates a tab target.
+- `POST /browser-bridge/tabs/:targetId/back` navigates a tab target backward
+  through browser history.
+- `POST /browser-bridge/tabs/:targetId/forward` navigates a tab target forward
+  through browser history.
+- `POST /browser-bridge/tabs/:targetId/reload` reloads a tab target.
+- `DELETE /browser-bridge/tabs/:targetId` closes a tab target.
 - `GET /browser-bridge/tabs/:targetId/screenshot` captures a tab screenshot.
 - `GET /browser-bridge/tabs/:targetId/content` reads tab text content.
 - `GET /browser-bridge/tabs/:targetId/snapshot` reads a concise or enhanced
