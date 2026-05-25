@@ -107,7 +107,7 @@ import {
 } from "./EnvironmentPanel";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
 import { RichContent } from "./RichContent";
-import { RuntimeLoading, ViewSwitchLoading } from "./LoadingViews";
+import { EmptyConversationHome, RuntimeLoading, ViewSwitchLoading } from "./LoadingViews";
 import {
   isCodexProvider,
   normalizedEffortForModel,
@@ -135,16 +135,15 @@ import {
   userFacingErrorForMessage,
   type UserFacingErrorDisplay
 } from "./UserFacingErrors";
-import { WorkspaceFilePreview } from "./WorkspaceFiles";
 import {
   WorkspaceBottomPanel,
+  WorkspaceMainPanel,
   WorkspaceRightPanel,
   WorkspaceToolIcon,
   workspaceModeTitle,
   type WorkspacePanelView,
   type WorkspaceRightPanelView
 } from "./WorkspacePanels";
-import { WorkspaceDiffReview } from "./WorkspaceReviewPanels";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
@@ -3629,53 +3628,6 @@ function LiveSince({ atMs }: { atMs: number }): JSX.Element {
 }
 
 
-
-function WorkspaceMainPanel({
-  view,
-  activeContext,
-  gitStatus,
-  selectedFilePath,
-  onOpenRightPanel
-}: {
-  view: WorkspacePanelView;
-  activeContext?: RuntimeContext;
-  gitStatus?: GitStatusResult;
-  selectedFilePath?: string;
-  onOpenRightPanel: () => void;
-}): JSX.Element | null {
-  if (view === "files") {
-    return (
-      <WorkspaceFilePreview
-        activeContext={activeContext}
-        selectedFilePath={selectedFilePath}
-        onOpenRightPanel={onOpenRightPanel}
-      />
-    );
-  }
-
-  if (view === "review") {
-    return <WorkspaceDiffReview activeContext={activeContext} gitStatus={gitStatus} />;
-  }
-
-  return null;
-}
-
-function EmptyConversationHome({
-  title,
-  children
-}: {
-  title: string;
-  children: JSX.Element;
-}): JSX.Element {
-  return (
-    <section className="empty-home">
-      <div className="empty-home-inner">
-        <h2>{title}</h2>
-        {children}
-      </div>
-    </section>
-  );
-}
 
 function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
   switch (event.kind) {

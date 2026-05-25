@@ -2,12 +2,42 @@ import { FolderOpen, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
-import { WorkspaceFileTree } from "./WorkspaceFiles";
-import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
+import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
+import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 
 export type WorkspacePanelView = "files" | "review" | "terminal";
 export type WorkspaceRightPanelView = "tools" | WorkspacePanelView;
+
+export function WorkspaceMainPanel({
+  view,
+  activeContext,
+  gitStatus,
+  selectedFilePath,
+  onOpenRightPanel
+}: {
+  view: WorkspacePanelView;
+  activeContext?: RuntimeContext;
+  gitStatus?: GitStatusResult;
+  selectedFilePath?: string;
+  onOpenRightPanel: () => void;
+}): JSX.Element | null {
+  if (view === "files") {
+    return (
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath={selectedFilePath}
+        onOpenRightPanel={onOpenRightPanel}
+      />
+    );
+  }
+
+  if (view === "review") {
+    return <WorkspaceDiffReview activeContext={activeContext} gitStatus={gitStatus} />;
+  }
+
+  return null;
+}
 
 const WORKSPACE_TOOL_ITEMS: Array<{
   id: WorkspacePanelView;

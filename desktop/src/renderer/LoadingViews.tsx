@@ -45,3 +45,20 @@ export function ViewSwitchLoading(): JSX.Element {
     </div>
   );
 }
+
+export function EmptyConversationHome({
+  title,
+  children
+}: {
+  title: string;
+  children: JSX.Element;
+}): JSX.Element {
+  return (
+    <section className="empty-home">
+      <div className="empty-home-inner">
+        <h2>{title}</h2>
+        {children}
+      </div>
+    </section>
+  );
+}
