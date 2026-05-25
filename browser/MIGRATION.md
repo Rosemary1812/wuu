@@ -112,6 +112,18 @@ Current dev build path:
 - `ARGS="--package-macos"` stages the compiled app as
   `browser/out/Wuu Browser Dev.app` for local launch.
 
+Current agent/workbench asset path:
+
+- `make browser-build-agent` is the repository-owned entry point for building
+  the browser-hosted Wuu workbench extension and local server resource bundles.
+- It builds the Wuu workbench extension to
+  `browser/agent/apps/agent/dist/chrome-mv3-dev`.
+- It can also build server resource bundles with
+  `ARGS="--server"` or `ARGS="--all"`, using the host target by default.
+- `make browser-launch-dev` now auto-builds the repo-owned extension when the
+  dist is missing and `WUU_BROWSER_EXTENSION` is not set, so the normal dev
+  launch path does not require an external BrowserOS extension checkout.
+
 ## Phase 3: Wuu Workbench Integration
 
 Status: in progress.

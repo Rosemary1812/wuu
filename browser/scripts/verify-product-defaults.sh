@@ -38,6 +38,7 @@ routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/brow
 makefile="${repo_root}/Makefile"
 prepare_checkouts_script="${browser_dir}/scripts/prepare-checkouts.sh"
 build_dev_script="${browser_dir}/scripts/build-dev.sh"
+build_agent_script="${browser_dir}/scripts/build-agent.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
@@ -145,6 +146,46 @@ check_contains \
   "${build_dev_script}" \
   "--package-macos" \
   "dev build can stage the macOS Wuu Browser Dev app after compiling"
+
+check_contains \
+  "${makefile}" \
+  "browser-build-agent:" \
+  "Makefile exposes the Wuu Browser agent asset build entry point"
+
+check_contains \
+  "${makefile}" \
+  'bash browser/scripts/build-agent.sh $(ARGS)' \
+  "agent asset build can receive explicit script arguments"
+
+check_contains \
+  "${build_agent_script}" \
+  "bun run build:agent:dev" \
+  "agent asset build can produce the browser-hosted Wuu workbench extension"
+
+check_contains \
+  "${build_agent_script}" \
+  'bun scripts/build/server.ts --target="${server_target}" --no-upload --ci' \
+  "agent asset build can produce local server resource bundles without upload"
+
+check_contains \
+  "${build_agent_script}" \
+  'browser/agent/node_modules is missing.' \
+  "agent asset build fails clearly when dependencies are not installed"
+
+check_contains \
+  "${launch_script}" \
+  "WUU_BROWSER_STAGE_EXTENSION" \
+  "dev launch can auto-build the repo-owned extension"
+
+check_contains \
+  "${launch_script}" \
+  'bash "${repo_root}/browser/scripts/build-agent.sh" "${extension_build_args[@]}"' \
+  "dev launch uses the repo-owned agent asset build entry point"
+
+check_contains \
+  "${launch_script}" \
+  'Run make browser-build-agent ARGS=\"--extension\" or set WUU_BROWSER_EXTENSION.' \
+  "dev launch points missing extension errors at the repo-owned build command"
 
 check_contains \
   "${package_dev_macos_script}" \

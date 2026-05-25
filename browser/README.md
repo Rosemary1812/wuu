@@ -108,6 +108,19 @@ applied and runs `resources,chromium_replace,configure,compile`; pass
 `--prepare` when starting from a clean checkout. On macOS, `--package-macos`
 then stages `browser/out/Wuu Browser Dev.app`.
 
+Build the repo-owned Wuu workbench extension and local server resources:
+
+```bash
+make browser-build-agent ARGS="--dry-run --all"
+make browser-build-agent ARGS="--extension"
+```
+
+The extension build produces
+`browser/agent/apps/agent/dist/chrome-mv3-dev`, which is the default extension
+loaded by `make browser-launch-dev`. If that repo-owned dist is missing and
+`WUU_BROWSER_EXTENSION` is not set, `browser-launch-dev` builds it before
+launching instead of requiring the external BrowserOS checkout.
+
 Stage the local macOS development app under this repository:
 
 ```bash

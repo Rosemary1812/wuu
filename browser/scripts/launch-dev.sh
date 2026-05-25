@@ -12,6 +12,10 @@ Environment overrides:
   WUU_CHROMIUM_SRC         Chromium source checkout.
   WUU_BROWSER_APP          Built or staged BrowserOS/Wuu Browser .app path on macOS.
   WUU_BROWSER_EXTENSION    Wuu/BrowserOS agent extension directory.
+  WUU_BROWSER_STAGE_EXTENSION
+                           Build the repo-owned extension before launch.
+                           Defaults to 1 when WUU_BROWSER_EXTENSION is unset
+                           and the repo extension dist is missing.
   WUU_BROWSER_SERVER_RESOURCES
                            BrowserOS server resources directory. Defaults to
                            the bundled resources inside WUU_BROWSER_APP.
@@ -108,10 +112,31 @@ if [[ -z "${app_path}" ]]; then
   done
 fi
 
+repo_extension_dir="${repo_root}/browser/agent/apps/agent/dist/chrome-mv3-dev"
 extension_dir="${WUU_BROWSER_EXTENSION:-}"
+stage_extension="${WUU_BROWSER_STAGE_EXTENSION:-}"
+if [[ -z "${stage_extension}" ]]; then
+  if [[ -n "${WUU_BROWSER_EXTENSION:-}" || -d "${repo_extension_dir}" ]]; then
+    stage_extension=0
+  else
+    stage_extension=1
+  fi
+fi
+
+if [[ "${stage_extension}" == "1" ]]; then
+  extension_build_args=(--extension)
+  if [[ "${dry_run}" == "true" ]]; then
+    extension_build_args+=(--dry-run)
+  fi
+  bash "${repo_root}/browser/scripts/build-agent.sh" "${extension_build_args[@]}"
+  if [[ -z "${extension_dir}" ]]; then
+    extension_dir="${repo_extension_dir}"
+  fi
+fi
+
 if [[ -z "${extension_dir}" ]]; then
   for candidate in \
-    "${repo_root}/browser/agent/apps/agent/dist/chrome-mv3-dev" \
+    "${repo_extension_dir}" \
     "${browseros_repo}/packages/browseros-agent/apps/agent/dist/chrome-mv3-dev"; do
     if [[ -d "${candidate}" ]]; then
       extension_dir="${candidate}"
@@ -126,9 +151,9 @@ if [[ -z "${app_path}" || ! -d "${app_path}" ]]; then
   exit 1
 fi
 
-if [[ ! -d "${extension_dir}" ]]; then
+if [[ ! -d "${extension_dir}" && ! ( "${dry_run}" == "true" && "${stage_extension}" == "1" ) ]]; then
   echo "Wuu/BrowserOS agent extension not found." >&2
-  echo "Build browser/agent/apps/agent or set WUU_BROWSER_EXTENSION." >&2
+  echo "Run make browser-build-agent ARGS=\"--extension\" or set WUU_BROWSER_EXTENSION." >&2
   exit 1
 fi
 
@@ -222,6 +247,7 @@ cmd=(open -na "${app_path}" --args "${args[@]}")
 echo "Wuu Browser Dev launch"
 echo "  app:       ${app_path}"
 echo "  extension: ${extension_dir}"
+echo "  stage ext: ${stage_extension}"
 echo "  server:    ${server_resources_dir}"
 echo "  stage srv: ${stage_server_resources}"
 echo "  profile:   ${profile_dir}"

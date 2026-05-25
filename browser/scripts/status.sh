@@ -44,6 +44,8 @@ printf 'build scripts:    %s\n' "$([[ -d "${browser_dir}/build" ]] && echo yes |
 printf 'chromium patches: %s\n' "$([[ -d "${browser_dir}/chromium_patches" ]] && echo yes || echo no)"
 printf 'series patches:   %s\n' "$([[ -f "${browser_dir}/series_patches/series" ]] && echo yes || echo no)"
 printf 'patch tool:       %s\n' "$([[ -f "${browser_dir}/tools/patch/go.mod" ]] && echo yes || echo no)"
+printf 'agent extension:  %s\n' "$([[ -d "${browser_dir}/agent/apps/agent/dist/chrome-mv3-dev" ]] && echo yes || echo no)"
+printf 'server resources: %s\n' "$([[ -d "${browser_dir}/agent/dist/prod/server" ]] && echo yes || echo no)"
 
 print_heading "BrowserOS reference checkout"
 printf 'path:             %s\n' "${browseros_repo}"
@@ -93,6 +95,7 @@ print_heading "Next migration steps"
 printf '1. Use browser-prepare-checkouts to create or refresh local BrowserOS/Chromium checkouts.\n'
 printf '2. Keep browser-patch-check/apply green against the target Chromium checkout.\n'
 printf '3. Use browser-build-dev to compile the prepared checkout from this repository.\n'
-printf '4. Move more Wuu Browser product changes from manual checkout state into repo-owned patches/resources.\n'
-printf '5. Continue replacing imported BrowserOS product surface with Wuu Browser product behavior.\n'
-printf '6. Add packaging paths for macOS .dmg and Windows installer outputs.\n'
+printf '4. Use browser-build-agent to build repo-owned Wuu workbench/server assets.\n'
+printf '5. Move more Wuu Browser product changes from manual checkout state into repo-owned patches/resources.\n'
+printf '6. Continue replacing imported BrowserOS product surface with Wuu Browser product behavior.\n'
+printf '7. Add packaging paths for macOS .dmg and Windows installer outputs.\n'

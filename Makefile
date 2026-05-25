@@ -1,4 +1,4 @@
-.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status browser-verify-product-defaults browser-prepare-checkouts browser-build-dev browser-patch-status browser-patch-check browser-patch-apply browser-package-dev-macos browser-launch-dev browser-verify-dev browser-import-browseros browser-import-agent
+.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status browser-verify-product-defaults browser-prepare-checkouts browser-build-dev browser-build-agent browser-patch-status browser-patch-check browser-patch-apply browser-package-dev-macos browser-launch-dev browser-verify-dev browser-import-browseros browser-import-agent
 
 VERSION_FILE := VERSION
 BASE_VERSION := $(shell cat $(VERSION_FILE) 2>/dev/null || echo "0.1.0")
@@ -42,6 +42,9 @@ browser-prepare-checkouts:
 
 browser-build-dev:
 	bash browser/scripts/build-dev.sh $(ARGS)
+
+browser-build-agent:
+	bash browser/scripts/build-agent.sh $(ARGS)
 
 browser-patch-status:
 	bash browser/scripts/patch-checkout.sh status $(ARGS)
