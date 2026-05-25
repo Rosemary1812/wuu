@@ -56,18 +56,25 @@ index 0000000000000..fdeee36f8cc70
 +inline constexpr char kBrowserOSAlphaUpdateUrl[] =
 +    "https://cdn.browseros.com/extensions/update-manifest.alpha.xml";
 +
-+// chrome://browseros host constant
++// Wuu Browser product host and legacy BrowserOS host.
++inline constexpr char kWuuBrowserHost[] = "wuu";
 +inline constexpr char kBrowserOSHost[] = "browseros";
 +
-+// URL route mapping for chrome://browseros/* virtual URLs
++inline bool IsWuuBrowserProductHost(std::string_view host) {
++  return host == kWuuBrowserHost || host == kBrowserOSHost;
++}
++
++// URL route mapping for Wuu Browser virtual URLs.
 +struct BrowserOSURLRoute {
-+  const char* virtual_path;    // Path in chrome://browseros/*, e.g., "/ai"
++  const char* virtual_path;    // Path in chrome://wuu/*, e.g., "/settings"
 +  const char* extension_id;    // Extension that handles this route
 +  const char* extension_page;  // Page within extension, e.g., "options.html"
 +  const char* extension_hash;  // Hash/fragment without #, e.g., "ai" (empty if none)
 +};
 +
 +inline constexpr BrowserOSURLRoute kBrowserOSURLRoutes[] = {
++    {"", kAgentExtensionId, "app.html", "/home"},
++    {"/", kAgentExtensionId, "app.html", "/home"},
 +    {"/wuu", kAgentExtensionId, "app.html", "/home"},
 +    {"/settings", kAgentExtensionId, "app.html", "/settings"},
 +    {"/mcp", kAgentExtensionId, "app.html", "/mcp"},
@@ -77,7 +84,7 @@ index 0000000000000..fdeee36f8cc70
 +inline constexpr size_t kBrowserOSURLRoutesCount =
 +    sizeof(kBrowserOSURLRoutes) / sizeof(kBrowserOSURLRoutes[0]);
 +
-+// Find a route for a given virtual path (e.g., "/ai")
++// Find a route for a given virtual path (e.g., "/settings")
 +// Returns nullptr if no matching route found
 +inline const BrowserOSURLRoute* FindBrowserOSRoute(std::string_view path) {
 +  for (const auto& route : kBrowserOSURLRoutes) {
@@ -88,9 +95,9 @@ index 0000000000000..fdeee36f8cc70
 +  return nullptr;
 +}
 +
-+// Get the extension URL for a chrome://browseros/* path
++// Get the extension URL for a chrome://wuu/* or legacy chrome://browseros/* path.
 +// Returns empty string if no matching route or if URL overrides are disabled
-+// Example: "/ai" -> "chrome-extension://bflp.../options.html#ai"
++// Example: "/settings" -> "chrome-extension://bflp.../app.html#/settings"
 +inline std::string GetBrowserOSExtensionURL(std::string_view virtual_path) {
 +  if (IsURLOverridesDisabled()) {
 +    return std::string();
@@ -109,7 +116,7 @@ index 0000000000000..fdeee36f8cc70
 +}
 +
 +// Check if an extension URL matches a BrowserOS route
-+// If matched, returns the virtual URL (chrome://browseros/...)
++// If matched, returns the product virtual URL (chrome://wuu/...)
 +// Returns empty string if not a BrowserOS extension URL
 +// Parameters:
 +//   extension_id: from url.host()
@@ -148,7 +155,7 @@ index 0000000000000..fdeee36f8cc70
 +      normalized_hash = normalized_hash.substr(1);
 +    }
 +    if (normalized_ref == normalized_hash) {
-+      return std::string("chrome://") + kBrowserOSHost + route.virtual_path;
++      return std::string("chrome://") + kWuuBrowserHost + route.virtual_path;
 +    }
 +
 +    // Track fallback: route with empty hash for same page
@@ -159,7 +166,7 @@ index 0000000000000..fdeee36f8cc70
 +
 +  // No exact match - use fallback if available
 +  if (fallback_route) {
-+    return std::string("chrome://") + kBrowserOSHost + fallback_route->virtual_path;
++    return std::string("chrome://") + kWuuBrowserHost + fallback_route->virtual_path;
 +  }
 +
 +  return std::string();

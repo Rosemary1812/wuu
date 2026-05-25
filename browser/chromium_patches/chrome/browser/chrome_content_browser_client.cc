@@ -23,12 +23,12 @@ index 90eec90d4ef45..da7beb4a4547e 100644
               prefs.root_scrollbar_theme_color;
  }
  
-+// Handles chrome://browseros/* URLs by rewriting to extension URLs.
-+// Forward handler: chrome://browseros/ai -> chrome-extension://[id]/options.html
++// Handles chrome://wuu/* and legacy chrome://browseros/* URLs by rewriting to extension URLs.
++// Forward handler: chrome://wuu/settings -> chrome-extension://[id]/app.html#/settings
 +static bool HandleBrowserOSURL(GURL* url,
 +                               content::BrowserContext* browser_context) {
 +  if (!url->SchemeIs(content::kChromeUIScheme) ||
-+      url->host() != browseros::kBrowserOSHost) {
++      !browseros::IsWuuBrowserProductHost(url->host())) {
 +    return false;
 +  }
 +
@@ -42,7 +42,7 @@ index 90eec90d4ef45..da7beb4a4547e 100644
 +  return true;
 +}
 +
-+// Reverse handler: chrome-extension://[id]/options.html#ai -> chrome://browseros/ai
++// Reverse handler: chrome-extension://[id]/app.html#/settings -> chrome://wuu/settings
 +// This ensures the virtual URL is shown in the address bar.
 +static bool ReverseBrowserOSURL(GURL* url,
 +                                content::BrowserContext* browser_context) {

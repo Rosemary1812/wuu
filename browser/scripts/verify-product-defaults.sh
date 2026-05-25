@@ -35,6 +35,7 @@ check_not_contains() {
 
 first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_main.cc"
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
+content_browser_client_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_content_browser_client.cc"
 chromium_branding_debug="${browser_dir}/chromium_files/chrome/app/theme/chromium/BRANDING.debug"
 chromium_branding_release="${browser_dir}/chromium_files/chrome/app/theme/chromium/BRANDING.release"
 chromium_updater_branding="${browser_dir}/chromium_files/chrome/updater/branding.gni"
@@ -56,8 +57,13 @@ echo "Wuu Browser product default verification"
 
 check_contains \
   "${first_run_patch}" \
+  'browser_creator_->AddFirstRunTabs({GURL("chrome://wuu")});' \
+  "first-run Chromium patch opens the Wuu product URL"
+
+check_not_contains \
+  "${first_run_patch}" \
   'browser_creator_->AddFirstRunTabs({GURL("chrome://browseros/wuu")});' \
-  "first-run Chromium patch opens the Wuu workbench"
+  "first-run Chromium patch no longer defaults to the BrowserOS URL"
 
 check_not_contains \
   "${first_run_patch}" \
@@ -66,8 +72,33 @@ check_not_contains \
 
 check_contains \
   "${routes_patch}" \
+  'inline constexpr char kWuuBrowserHost[] = "wuu";' \
+  "Chromium virtual URL host uses the Wuu product name"
+
+check_contains \
+  "${routes_patch}" \
+  '{"", kAgentExtensionId, "app.html", "/home"},' \
+  "chrome://wuu routes to the Wuu workbench extension page"
+
+check_contains \
+  "${routes_patch}" \
+  '{"/", kAgentExtensionId, "app.html", "/home"},' \
+  "chrome://wuu/ routes to the Wuu workbench extension page"
+
+check_contains \
+  "${routes_patch}" \
   '{"/wuu", kAgentExtensionId, "app.html", "/home"},' \
-  "chrome://browseros/wuu routes to the Wuu workbench extension page"
+  "legacy chrome://browseros/wuu route remains compatible"
+
+check_contains \
+  "${routes_patch}" \
+  'return std::string("chrome://") + kWuuBrowserHost + route.virtual_path;' \
+  "extension URL reverse mapping shows chrome://wuu"
+
+check_contains \
+  "${content_browser_client_patch}" \
+  '!browseros::IsWuuBrowserProductHost(url->host())' \
+  "Chromium URL handler accepts Wuu and legacy BrowserOS hosts"
 
 check_contains \
   "${chromium_branding_debug}" \
@@ -176,8 +207,13 @@ check_not_contains \
 
 check_contains \
   "${launch_script}" \
+  'start_url="${WUU_BROWSER_START_URL:-chrome://wuu}"' \
+  "dev launch defaults to the Wuu product URL"
+
+check_not_contains \
+  "${launch_script}" \
   'start_url="${WUU_BROWSER_START_URL:-chrome://browseros/wuu}"' \
-  "dev launch defaults to the product Wuu route"
+  "dev launch no longer defaults to the BrowserOS URL"
 
 check_contains \
   "${launch_script}" \

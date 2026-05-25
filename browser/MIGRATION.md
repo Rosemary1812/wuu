@@ -183,12 +183,14 @@ Current verification gap:
 - `browser/agent/apps/agent/wxt.config.ts` now exposes the repo-owned extension
   as Wuu Browser/Wuu Assistant instead of the imported generic
   Assistant/BrowserOS labels.
-- `browser/scripts/launch-dev.sh` now starts directly at the product route,
-  `chrome://browseros/wuu`, and prefers the current repository's built
-  extension before falling back to the external BrowserOS reference dist.
+- `browser/scripts/launch-dev.sh` now starts directly at the Wuu product URL,
+  `chrome://wuu`, and prefers the current repository's built extension before
+  falling back to the external BrowserOS reference dist.
+- `chrome://browseros/wuu` remains a legacy compatibility route, but extension
+  URL reverse mapping should show the Wuu product URL in the address bar.
 - `make browser-verify-product-defaults` guards stable defaults: first-run
-  Chromium patches and dev launch must open the Wuu workbench route instead of
-  BrowserOS welcome.
+  Chromium patches and dev launch must open the Wuu product URL instead of
+  BrowserOS welcome or legacy BrowserOS routes.
 - Runtime verification requires rebuilding the extension from
   `browser/agent/apps/agent` and launching a fresh profile that loads that
   built extension.

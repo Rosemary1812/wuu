@@ -92,6 +92,10 @@ Verify stable product defaults in tracked browser patches and launch scripts:
 make browser-verify-product-defaults
 ```
 
+The default internal product URL is `chrome://wuu`. The old
+`chrome://browseros/wuu` route is kept only as a compatibility alias while the
+BrowserOS-derived patch namespace is still being migrated.
+
 The default Wuu Browser path does not start OpenClaw, Hermes, or Lima. VM-backed
 agents are opt-in for future sandbox/runtime work through `WUU_ENABLE_VM_AGENTS=1`.
 

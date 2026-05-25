@@ -99,7 +99,7 @@ fetch() {
 wait_for_wuu_tab() {
   for _ in {1..50}; do
     pages_json="$(fetch "${cdp_base}/json/list")" || true
-    if printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://browseros/wuu'; then
+    if printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://wuu/?|chrome://browseros/wuu'; then
       return 0
     fi
     sleep 0.2
@@ -138,7 +138,7 @@ page_count="$( (printf '%s' "${pages_json}" | grep -o '"id"' || true) | wc -l | 
 echo "  CDP pages: ${page_count}"
 
 if [[ "${require_wuu_tab}" == "true" ]]; then
-  if printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://browseros/wuu'; then
+  if printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://wuu/?|chrome://browseros/wuu'; then
     echo "  Wuu tab: present"
   else
     echo "Wuu workbench tab was not found in CDP page list." >&2
@@ -165,7 +165,7 @@ async function fetchJson(url) {
 
 const pages = await fetchJson(`${cdpBase}/json/list`)
 const page = pages.find((candidate) => {
-  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/browseros\/wuu/.test(candidate.url)
+  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/wuu\/?$|chrome:\/\/browseros\/wuu/.test(candidate.url)
 })
 if (!page) {
   throw new Error('Wuu workbench page was not found')
@@ -276,7 +276,7 @@ async function fetchJson(url) {
 
 const pages = await fetchJson(`${cdpBase}/json/list`)
 const page = pages.find((candidate) => {
-  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/browseros\/wuu/.test(candidate.url)
+  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/wuu\/?$|chrome:\/\/browseros\/wuu/.test(candidate.url)
 })
 if (!page) {
   throw new Error('Wuu workbench page was not found')
@@ -401,7 +401,7 @@ async function fetchJson(url) {
 
 const pages = await fetchJson(`${cdpBase}/json/list`)
 const page = pages.find((candidate) => {
-  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/browseros\/wuu/.test(candidate.url)
+  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/wuu\/?$|chrome:\/\/browseros\/wuu/.test(candidate.url)
 })
 if (!page) {
   throw new Error('Wuu workbench page was not found')
@@ -555,7 +555,7 @@ async function fetchJson(url) {
 
 const pages = await fetchJson(`${cdpBase}/json/list`)
 const page = pages.find((candidate) => {
-  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/browseros\/wuu/.test(candidate.url)
+  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/wuu\/?$|chrome:\/\/browseros\/wuu/.test(candidate.url)
 })
 if (!page) {
   throw new Error('Wuu workbench page was not found')
@@ -756,7 +756,7 @@ if (!Array.isArray(initial.tabs)) {
 
 if (
   requireWuuTab &&
-  !initial.tabs.some((tab) => /chrome:\/\/browseros\/wuu|app\.html#\/home/.test(tab.url))
+  !initial.tabs.some((tab) => /chrome:\/\/wuu\/?$|chrome:\/\/browseros\/wuu|app\.html#\/home/.test(tab.url))
 ) {
   throw new Error(`Browser Bridge did not report the Wuu workbench tab: ${JSON.stringify(initial)}`)
 }

@@ -41,7 +41,7 @@ USAGE
 
 dry_run=false
 profile_dir="${WUU_BROWSER_PROFILE_DIR:-}"
-start_url="${WUU_BROWSER_START_URL:-chrome://browseros/wuu}"
+start_url="${WUU_BROWSER_START_URL:-chrome://wuu}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
