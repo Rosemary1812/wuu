@@ -512,6 +512,43 @@ func TestToolkit_UpdatePlan_ValidatesSingleInProgress(t *testing.T) {
 	}
 }
 
+func TestToolkit_UpdatePlan_RequiresInProgressUntilComplete(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "update_plan",
+		Arguments: `{"plan":[{"step":"one","status":"pending"},{"step":"two","status":"pending"}]}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "must be in_progress") {
+		t.Fatalf("expected required in_progress validation error, got: %v", err)
+	}
+
+	if _, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "update_plan",
+		Arguments: `{"plan":[{"step":"one","status":"completed"},{"step":"two","status":"completed"}]}`,
+	}); err != nil {
+		t.Fatalf("completed plan should allow zero in_progress: %v", err)
+	}
+}
+
+func TestToolkit_UpdatePlan_RejectsUnknownFields(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "update_plan",
+		Arguments: `{"plan":[{"step":"one","status":"in_progress","extra":true}]}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("expected unknown field validation error, got: %v", err)
+	}
+}
+
 func TestToolkit_UpdatePlan_StoresCurrentPlan(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

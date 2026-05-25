@@ -2,8 +2,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -11,14 +13,22 @@ import (
 )
 
 type PlanItem struct {
-	Step   string `json:"step"`
-	Status string `json:"status"`
+	Step   string     `json:"step"`
+	Status PlanStatus `json:"status"`
 }
 
 type PlanSnapshot struct {
 	Explanation string     `json:"explanation,omitempty"`
 	Plan        []PlanItem `json:"plan"`
 }
+
+type PlanStatus string
+
+const (
+	PlanStatusPending    PlanStatus = "pending"
+	PlanStatusInProgress PlanStatus = "in_progress"
+	PlanStatusCompleted  PlanStatus = "completed"
+)
 
 type planState struct {
 	mu       sync.RWMutex
@@ -48,7 +58,7 @@ func (t *UpdatePlanTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "update_plan",
 		Description: "Update the current task plan. Use this for multi-step work so the user can see what is pending, in progress, and completed. " +
-			"Provide the full current plan every time. Exactly zero or one item may be in_progress.",
+			"Provide the full current plan every time. Exactly one item must be in_progress until all plan items are completed.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -83,8 +93,8 @@ func (t *UpdatePlanTool) Definition() providers.ToolDefinition {
 }
 
 func (t *UpdatePlanTool) Execute(_ context.Context, argsJSON string) (string, error) {
-	var args PlanSnapshot
-	if err := decodeArgs(argsJSON, &args); err != nil {
+	args, err := decodePlanSnapshot(argsJSON)
+	if err != nil {
 		return "", err
 	}
 	if err := validatePlan(args); err != nil {
@@ -101,18 +111,38 @@ func (t *UpdatePlanTool) Execute(_ context.Context, argsJSON string) (string, er
 	return mustJSON(result)
 }
 
+func decodePlanSnapshot(raw string) (PlanSnapshot, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		trimmed = "{}"
+	}
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.DisallowUnknownFields()
+	var snapshot PlanSnapshot
+	if err := decoder.Decode(&snapshot); err != nil {
+		return PlanSnapshot{}, fmt.Errorf("invalid tool arguments: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return PlanSnapshot{}, errors.New("invalid tool arguments: multiple JSON values")
+	}
+	return snapshot, nil
+}
+
 func validatePlan(snapshot PlanSnapshot) error {
 	if len(snapshot.Plan) == 0 {
 		return errors.New("update_plan requires at least one plan item")
 	}
 	inProgress := 0
+	completed := 0
 	for i, item := range snapshot.Plan {
 		if strings.TrimSpace(item.Step) == "" {
 			return fmt.Errorf("plan item %d requires step", i)
 		}
 		switch item.Status {
-		case "pending", "completed":
-		case "in_progress":
+		case PlanStatusPending:
+		case PlanStatusCompleted:
+			completed++
+		case PlanStatusInProgress:
 			inProgress++
 		default:
 			return fmt.Errorf("plan item %d has invalid status %q", i, item.Status)
@@ -120,6 +150,9 @@ func validatePlan(snapshot PlanSnapshot) error {
 	}
 	if inProgress > 1 {
 		return errors.New("only one plan item may be in_progress")
+	}
+	if completed < len(snapshot.Plan) && inProgress == 0 {
+		return errors.New("one plan item must be in_progress until all items are completed")
 	}
 	return nil
 }
