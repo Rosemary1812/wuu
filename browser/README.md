@@ -73,13 +73,31 @@ WUU_CHROMIUM_SRC=/path/to/chromium/src \
 make browser-status
 ```
 
+## Patch Workflow
+
+Inspect the current Chromium checkout without changing it:
+
+```bash
+make browser-patch-check
+```
+
+Apply the repository-owned patches to a clean checkout:
+
+```bash
+make browser-patch-apply ARGS="--src /path/to/chromium/src --reset"
+```
+
+The apply command runs `series_patches/` first, then `chromium_patches/`, matching
+the BrowserOS build order. It refuses to mutate a dirty Chromium checkout unless
+`--allow-dirty` is passed explicitly.
+
 ## Near-Term Milestones
 
-1. Apply the imported BrowserOS patch/build baseline from this repository.
+1. Keep the BrowserOS patch/build baseline applyable from this repository.
 2. Migrate or replace the imported Wuu integration from the BrowserOS agent
    baseline.
-3. Make the browser default tab render the full Wuu workbench with real native
+3. Keep the browser default tab rendering the full Wuu workbench with real native
    runtime capabilities.
-4. Disable OpenClaw/Hermes/Lima VM startup on the default Wuu Browser path.
-5. Add one-command development launch and screenshot/CDP verification.
+4. Keep OpenClaw/Hermes/Lima VM startup disabled on the default Wuu Browser path.
+5. Keep one-command development launch and runtime/CDP verification green.
 6. Add packaging paths for macOS and Windows installers.

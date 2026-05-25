@@ -90,7 +90,7 @@ else
 fi
 
 print_heading "Next migration steps"
-printf '1. Apply the imported BrowserOS patch/build baseline from this repo to Chromium.\n'
-printf '2. Move the proven Wuu workbench integration into the default browser tab path.\n'
-printf '3. Disable default OpenClaw/Hermes/Lima VM startup on the Wuu Browser path.\n'
-printf '4. Verify the real Wuu tab with CDP, screenshots, and native runtime actions.\n'
+printf '1. Keep browser-patch-check/apply green against the target Chromium checkout.\n'
+printf '2. Move more Wuu Browser product changes from manual checkout state into repo-owned patches/resources.\n'
+printf '3. Continue replacing imported BrowserOS product surface with Wuu Browser product behavior.\n'
+printf '4. Add packaging paths for macOS .dmg and Windows installer outputs.\n'
