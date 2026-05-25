@@ -61,6 +61,37 @@ func clonePlanSnapshot(snapshot PlanSnapshot) PlanSnapshot {
 	return out
 }
 
+// RestorePlanFromHistory restores the latest valid update_plan snapshot from
+// persisted assistant tool calls. It does not call OnPlanUpdated because
+// recovery is state hydration, not a fresh tool update.
+func (t *Toolkit) RestorePlanFromHistory(history []providers.ChatMessage) (bool, error) {
+	if t == nil || t.env == nil {
+		return false, nil
+	}
+	for i := len(history) - 1; i >= 0; i-- {
+		msg := history[i]
+		if msg.Role != "assistant" {
+			continue
+		}
+		for j := len(msg.ToolCalls) - 1; j >= 0; j-- {
+			call := msg.ToolCalls[j]
+			if call.Name != "update_plan" {
+				continue
+			}
+			snapshot, err := decodePlanSnapshot(call.Arguments)
+			if err != nil {
+				return false, fmt.Errorf("restore update_plan arguments: %w", err)
+			}
+			if err := validatePlan(snapshot); err != nil {
+				return false, fmt.Errorf("restore update_plan snapshot: %w", err)
+			}
+			t.env.planState.set(snapshot)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // ---------------------------------------------------------------------------
 // update_plan
 // ---------------------------------------------------------------------------

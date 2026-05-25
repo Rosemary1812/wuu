@@ -1265,6 +1265,7 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	}
 	th.mu.Lock()
 	existing := th.execRuntime
+	history := cloneHistory(th.History)
 	th.mu.Unlock()
 	if existing != nil {
 		return existing, nil
@@ -1275,6 +1276,11 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	threadRuntime, err := s.rt.NewThreadRuntime(th.ID, s)
 	if err != nil {
 		return nil, err
+	}
+	if threadRuntime.Toolkit != nil {
+		if _, restoreErr := threadRuntime.Toolkit.RestorePlanFromHistory(history); restoreErr != nil {
+			providers.DebugLogf("restore update_plan for thread %q: %v", th.ID, restoreErr)
+		}
 	}
 	th.mu.Lock()
 	if th.execRuntime == nil {

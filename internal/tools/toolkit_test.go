@@ -627,6 +627,72 @@ func TestToolkit_UpdatePlan_NotifiesPlanUpdated(t *testing.T) {
 	}
 }
 
+func TestToolkit_RestorePlanFromHistory(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	history := []providers.ChatMessage{
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call-old",
+				Name:      "update_plan",
+				Arguments: `{"plan":[{"step":"old","status":"in_progress"}]}`,
+			}},
+		},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call-new",
+				Name:      "update_plan",
+				Arguments: `{"explanation":"latest","plan":[{"step":"inspect","status":"completed"},{"step":"report","status":"in_progress"}]}`,
+			}},
+		},
+	}
+	restored, err := kit.RestorePlanFromHistory(history)
+	if err != nil {
+		t.Fatalf("RestorePlanFromHistory: %v", err)
+	}
+	if !restored {
+		t.Fatal("expected plan to be restored")
+	}
+	got, ok := kit.CurrentPlan()
+	if !ok || got.Explanation != "latest" || len(got.Plan) != 2 || got.Plan[1].Step != "report" {
+		t.Fatalf("unexpected restored plan: ok=%v plan=%+v", ok, got)
+	}
+}
+
+func TestToolkit_RestorePlanFromHistoryDoesNotNotify(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	notified := false
+	kit.SetOnPlanUpdated(func(snapshot PlanSnapshot) {
+		notified = true
+	})
+	restored, err := kit.RestorePlanFromHistory([]providers.ChatMessage{{
+		Role: "assistant",
+		ToolCalls: []providers.ToolCall{{
+			ID:        "call-plan",
+			Name:      "update_plan",
+			Arguments: `{"plan":[{"step":"inspect","status":"in_progress"}]}`,
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("RestorePlanFromHistory: %v", err)
+	}
+	if !restored {
+		t.Fatal("expected plan to be restored")
+	}
+	if notified {
+		t.Fatal("restore should not fire fresh plan update notification")
+	}
+}
+
 func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
