@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-no-vm-agents] [--require-browser-bridge]
+Usage: browser/scripts/verify-dev.sh [--require-wuu-tab] [--require-wuu-runtime] [--require-project-folder-picker] [--require-no-vm-agents] [--require-browser-bridge]
 
 Verify a running Wuu Browser development instance.
 
@@ -13,8 +13,9 @@ Checks:
   3. DevTools page list is readable.
   4. Optionally, the Wuu workbench extension route is open.
   5. Optionally, the Wuu workbench can call the real native runtime.
-  6. Optionally, no BrowserOS VM/OpenClaw process is running.
-  7. Optionally, the server Browser Bridge can read real tab metadata.
+  6. Optionally, the Wuu workbench project picker uses native browserOS.choosePath.
+  7. Optionally, no BrowserOS VM/OpenClaw process is running.
+  8. Optionally, the server Browser Bridge can read real tab metadata.
 
 Environment overrides:
   WUU_BROWSER_CDP_PORT     Defaults to 9100.
@@ -24,6 +25,7 @@ USAGE
 
 require_wuu_tab=false
 require_wuu_runtime=false
+require_project_folder_picker=false
 require_no_vm_agents=false
 require_browser_bridge=false
 
@@ -36,6 +38,11 @@ while [[ $# -gt 0 ]]; do
     --require-wuu-runtime)
       require_wuu_tab=true
       require_wuu_runtime=true
+      shift
+      ;;
+    --require-project-folder-picker)
+      require_wuu_tab=true
+      require_project_folder_picker=true
       shift
       ;;
     --require-no-vm-agents)
@@ -223,6 +230,155 @@ JS
   fi
 
   echo "  Wuu runtime: ${runtime_json}"
+fi
+
+if [[ "${require_project_folder_picker}" == "true" ]]; then
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required for Wuu project folder picker verification" >&2
+    exit 2
+  fi
+
+  picker_dir="$(mktemp -d -t wuu-picker-verify.XXXXXX)"
+  picker_json="$(CDP_BASE="${cdp_base}" WUU_PICKER_VERIFY_DIR="${picker_dir}" bun - <<'JS'
+const cdpBase = process.env.CDP_BASE
+const pickerDir = process.env.WUU_PICKER_VERIFY_DIR
+const pickerName = pickerDir.split(/[\\/]/).filter(Boolean).at(-1) ?? pickerDir
+
+async function fetchJson(url) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`${url} failed with ${response.status}`)
+  }
+  return response.json()
+}
+
+const pages = await fetchJson(`${cdpBase}/json/list`)
+const page = pages.find((candidate) => {
+  return candidate.type === 'page' && /app\.html#\/home|chrome:\/\/browseros\/wuu/.test(candidate.url)
+})
+if (!page) {
+  throw new Error('Wuu workbench page was not found')
+}
+
+const ws = new WebSocket(page.webSocketDebuggerUrl)
+let nextId = 0
+const pending = new Map()
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data)
+  if (!message.id || !pending.has(message.id)) return
+  const { resolve, reject } = pending.get(message.id)
+  pending.delete(message.id)
+  if (message.error) {
+    reject(new Error(JSON.stringify(message.error)))
+    return
+  }
+  resolve(message.result)
+}
+
+await new Promise((resolve, reject) => {
+  ws.onopen = resolve
+  ws.onerror = reject
+})
+
+function send(method, params = {}) {
+  const id = ++nextId
+  ws.send(JSON.stringify({ id, method, params }))
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject })
+  })
+}
+
+async function evaluate(expression) {
+  const result = await send('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+    timeout: 60000,
+  })
+  if (result.exceptionDetails) {
+    throw new Error(JSON.stringify(result.exceptionDetails))
+  }
+  if (result.result?.subtype === 'error') {
+    throw new Error(result.result.description || 'Runtime evaluation failed')
+  }
+  return result.result?.value
+}
+
+const result = await evaluate(`(async () => {
+  const projectsKey = 'wuu.browseros.projects';
+  const activeContextKey = 'wuu.browseros.activeContext';
+  const previousProjects = window.localStorage.getItem(projectsKey);
+  const previousActiveContext = window.localStorage.getItem(activeContextKey);
+
+  if (!window.wuu) throw new Error('window.wuu is not installed');
+  if (!chrome?.browserOS || typeof chrome.browserOS.choosePath !== 'function') {
+    throw new Error('chrome.browserOS.choosePath is not installed');
+  }
+
+  const originalChoosePath = chrome.browserOS.choosePath;
+  const calls = [];
+  chrome.browserOS.choosePath = (options, callback) => {
+    calls.push(options);
+    callback({ path: ${JSON.stringify(pickerDir)}, name: ${JSON.stringify(pickerName)} });
+  };
+
+  try {
+    const projects = await window.wuu.chooseProjectFolder();
+    const active = projects.active_context;
+    const selected = projects.projects.find((project) => project.path === ${JSON.stringify(pickerDir)});
+    if (!calls.length) throw new Error('chooseProjectFolder did not call chrome.browserOS.choosePath');
+    if (calls[0]?.type !== 'folder') throw new Error('choosePath was not called in folder mode');
+    if (!selected) throw new Error('selected folder was not added to the project list');
+    if (active?.kind !== 'project' || active.cwd !== ${JSON.stringify(pickerDir)}) {
+      throw new Error('selected folder did not become the active project');
+    }
+    return {
+      choosePathAvailable: true,
+      call: calls[0],
+      active,
+      projectName: selected.name,
+    };
+  } finally {
+    chrome.browserOS.choosePath = originalChoosePath;
+    if (previousProjects === null) window.localStorage.removeItem(projectsKey);
+    else window.localStorage.setItem(projectsKey, previousProjects);
+    if (previousActiveContext === null) window.localStorage.removeItem(activeContextKey);
+    else window.localStorage.setItem(activeContextKey, previousActiveContext);
+    setTimeout(() => window.location.reload(), 0);
+  }
+})()`)
+
+if (!result?.choosePathAvailable || result.call?.type !== 'folder') {
+  throw new Error(`Project folder picker returned unexpected data: ${JSON.stringify(result)}`)
+}
+
+console.log(JSON.stringify(result))
+ws.close()
+JS
+)" || {
+    rm -rf "${picker_dir}"
+    echo "Wuu project folder picker verification failed." >&2
+    exit 1
+  }
+  rm -rf "${picker_dir}"
+
+  echo "  Wuu project folder picker: ${picker_json}"
+
+  if [[ "${require_browser_bridge}" == "true" ]]; then
+    for _ in {1..50}; do
+      pages_json="$(fetch "${cdp_base}/json/list")" || true
+      if printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://browseros/wuu'; then
+        break
+      fi
+      sleep 0.2
+    done
+
+    if ! printf '%s' "${pages_json}" | grep -Eq 'app\.html#/home|chrome://browseros/wuu'; then
+      echo "Wuu workbench tab did not reload after project folder picker verification." >&2
+      exit 1
+    fi
+  fi
 fi
 
 if [[ "${require_no_vm_agents}" == "true" ]]; then

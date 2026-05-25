@@ -146,6 +146,10 @@ Current verification gap:
 - Runtime verification requires rebuilding the extension from
   `browser/agent/apps/agent` and launching a fresh profile that loads that
   built extension.
+- `make browser-verify-dev ARGS="--require-project-folder-picker"` verifies
+  that the browser-hosted Wuu workbench has the native
+  `chrome.browserOS.choosePath` folder picker API and that the project picker
+  path adds the selected folder as the active Wuu project.
 
 ## Phase 4: Remove Misaligned Runtime Defaults
 

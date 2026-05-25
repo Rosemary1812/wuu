@@ -11,7 +11,7 @@ check_contains() {
   local file="$1"
   local pattern="$2"
   local label="$3"
-  if grep -Fq "${pattern}" "${file}"; then
+  if grep -Fq -- "${pattern}" "${file}"; then
     printf 'ok: %s\n' "${label}"
     return
   fi
@@ -24,7 +24,7 @@ check_not_contains() {
   local file="$1"
   local pattern="$2"
   local label="$3"
-  if grep -Fq "${pattern}" "${file}"; then
+  if grep -Fq -- "${pattern}" "${file}"; then
     printf 'fail: %s\n' "${label}" >&2
     printf '  forbidden pattern: %s\n' "${pattern}" >&2
     failures=$((failures + 1))
@@ -36,6 +36,7 @@ check_not_contains() {
 first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_main.cc"
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
+dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
 server_main="${browser_dir}/agent/apps/server/src/main.ts"
 
@@ -90,6 +91,16 @@ check_contains \
   "${package_dev_macos_script}" \
   "find \"\${source_build_dir}\" -maxdepth 1 -type f -name '*.dylib' -print0" \
   "macOS dev packaging bundles Chromium component-build dylibs"
+
+check_contains \
+  "${dev_verify_script}" \
+  "--require-project-folder-picker" \
+  "dev verification can require native project folder picker wiring"
+
+check_contains \
+  "${dev_verify_script}" \
+  "chrome.browserOS.choosePath" \
+  "dev verification checks the native BrowserOS choosePath API"
 
 check_contains \
   "${server_main}" \

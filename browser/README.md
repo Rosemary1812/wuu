@@ -96,11 +96,11 @@ outside the original Chromium `out/` directory. Add `ARGS="--dmg"` to also
 create a local development DMG. The internal executable name may still be
 inherited from BrowserOS until the Chromium branding patches are fully renamed.
 
-Verify the running dev browser, Wuu native runtime, and first Browser Bridge
-tab operation path:
+Verify the running dev browser, Wuu native runtime, native project folder
+selection wiring, and first Browser Bridge tab operation path:
 
 ```bash
-make browser-verify-dev ARGS="--require-wuu-runtime --require-no-vm-agents --require-browser-bridge"
+make browser-verify-dev ARGS="--require-wuu-runtime --require-project-folder-picker --require-no-vm-agents --require-browser-bridge"
 ```
 
 ## Patch Workflow
