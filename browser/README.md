@@ -123,8 +123,9 @@ make browser-build-dev ARGS="--modules compile --ninja-targets libchrome_dll.dyl
 
 This is the fast path for C++ browser-chrome changes such as toolbar, sidebar,
 bookmark bar, or tab strip behavior. The compile module falls back to the
-Chromium checkout's bundled `autoninja` when `autoninja` is not on `PATH`, so a
-prepared checkout can build without a separate shell setup step.
+Chromium checkout's bundled `ninja` when `autoninja` is not on `PATH` or the
+checkout's `depot_tools` wrapper is not bootstrapped, so a prepared checkout can
+build without a separate shell setup step.
 
 Build the repo-owned Wuu workbench extension and local server resources:
 

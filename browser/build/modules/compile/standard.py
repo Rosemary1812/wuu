@@ -117,7 +117,10 @@ def _ninja_command(ctx: Context) -> str:
         return path_cmd
 
     depot_tools_cmd = ctx.chromium_src / "third_party" / "depot_tools" / default_cmd
-    if depot_tools_cmd.exists():
+    depot_tools_python = (
+        ctx.chromium_src / "third_party" / "depot_tools" / "python3_bin_reldir.txt"
+    )
+    if depot_tools_cmd.exists() and depot_tools_python.exists():
         log_info(f"Using Chromium checkout autoninja: {depot_tools_cmd}")
         return str(depot_tools_cmd)
 
@@ -125,7 +128,8 @@ def _ninja_command(ctx: Context) -> str:
     bundled_ninja = ctx.chromium_src / "third_party" / "ninja" / ninja_name
     if bundled_ninja.exists():
         log_warning(
-            f"autoninja not found; using Chromium checkout ninja: {bundled_ninja}"
+            "autoninja not found or checkout depot_tools is not bootstrapped; "
+            f"using Chromium checkout ninja: {bundled_ninja}"
         )
         return str(bundled_ninja)
 
