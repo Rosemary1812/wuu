@@ -102,25 +102,41 @@ export function useAgentConversation(
     () => {},
   )
 
-  const updateCurrentTurnParts = (
-    updater: (parts: AssistantPart[]) => AssistantPart[],
+  const updateCurrentTurn = (
+    updater: (turn: AgentConversationTurn) => AgentConversationTurn,
   ) => {
     setTurns((prev) => {
       const last = prev[prev.length - 1]
       if (!last) return prev
-      return [...prev.slice(0, -1), { ...last, parts: updater(last.parts) }]
+      return [...prev.slice(0, -1), updater(last)]
     })
+  }
+
+  const updateCurrentTurnParts = (
+    updater: (parts: AssistantPart[]) => AssistantPart[],
+  ) => {
+    updateCurrentTurn((turn) => ({ ...turn, parts: updater(turn.parts) }))
   }
 
   const appendTextDelta = (delta: string) => {
     textAccRef.current += delta
     const text = textAccRef.current
-    updateCurrentTurnParts((parts) => {
+    const now = Date.now()
+    updateCurrentTurn((turn) => {
+      const parts = turn.parts
       const last = parts[parts.length - 1]
       if (last?.kind === 'text') {
-        return [...parts.slice(0, -1), { ...last, text }]
+        return {
+          ...turn,
+          lastTextDeltaAt: now,
+          parts: [...parts.slice(0, -1), { ...last, text }],
+        }
       }
-      return [...parts, { kind: 'text', text }]
+      return {
+        ...turn,
+        lastTextDeltaAt: now,
+        parts: [...parts, { kind: 'text', text }],
+      }
     })
   }
 
@@ -178,12 +194,17 @@ export function useAgentConversation(
       rawName,
       event.text ? { description: event.text } : undefined,
     )
+    const input = event.text ? { description: event.text } : undefined
     const tool: ToolEntry = {
       id: event.id ?? crypto.randomUUID(),
       name: rawName,
       label,
       subject,
       status: mapAgentHarnessToolStatus(event.status),
+      ...(input ? { input } : {}),
+    }
+    if (tool.status === 'error' && event.text) {
+      tool.error = event.text
     }
 
     updateCurrentTurnParts((parts) => {

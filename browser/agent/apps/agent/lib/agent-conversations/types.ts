@@ -15,6 +15,8 @@ export interface ToolEntry {
   label: string
   subject?: string
   status: 'running' | 'completed' | 'error'
+  input?: unknown
+  error?: string
   durationMs?: number
 }
 
@@ -70,6 +72,8 @@ export interface AgentConversationTurn {
   parts: AssistantPart[]
   /** Files produced during this turn (openclaw only in v1). */
   producedFiles?: ConversationTurnFile[]
+  /** Updated when output text advances; drives long-token-stall UI. */
+  lastTextDeltaAt?: number
   done: boolean
   timestamp: number
 }
