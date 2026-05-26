@@ -239,14 +239,14 @@ function ProcessToolRow({ tool }: { tool: ProcessTool }) {
   const failed = isFailedTool(tool.status)
   return (
     <div className="space-y-1 text-xs leading-5">
-      <code
+      <div
         className={cn(
-          'block whitespace-pre-wrap break-words font-mono text-muted-foreground/75',
+          'whitespace-pre-wrap break-words text-muted-foreground/75',
           failed && 'text-destructive/85',
         )}
       >
         {formatToolCommand(tool)}
-      </code>
+      </div>
       {tool.error ? (
         <div className="text-destructive/85">{tool.error}</div>
       ) : null}

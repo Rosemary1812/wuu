@@ -13,7 +13,7 @@ describe('agent-message-flow', () => {
         status: 'completed',
         input: { path: 'package.json' },
       }),
-    ).toBe('read_file {"path":"package.json"}')
+    ).toBe('Read file package.json')
   })
 
   it('marks the latest readable text tail during a stalled stream', () => {

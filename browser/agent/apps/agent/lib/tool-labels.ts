@@ -65,6 +65,13 @@ const VERB_OVERRIDES: Record<string, string> = {
   read_file: 'Read file',
   write_file: 'Wrote file',
   find_files: 'Searched files',
+  filesystem_read: 'Read file',
+  filesystem_write: 'Wrote file',
+  filesystem_edit: 'Edited file',
+  filesystem_find: 'Searched files',
+  filesystem_grep: 'Searched code',
+  filesystem_bash: 'Ran',
+  filesystem_ls: 'Listed files',
 
   // Memory
   read_soul: 'Read soul memory',
@@ -252,6 +259,13 @@ const SUBJECT_EXTRACTORS: Record<string, SubjectExtractor> = {
   // Filesystem
   read_file: (i) => basename(stringField(i, 'path')),
   write_file: (i) => basename(stringField(i, 'path')),
+  filesystem_read: (i) => basename(stringField(i, 'path')),
+  filesystem_write: (i) => basename(stringField(i, 'path')),
+  filesystem_edit: (i) => basename(stringField(i, 'path')),
+  filesystem_find: (i) => truncate(stringField(i, 'pattern', 'query'), 60),
+  filesystem_grep: (i) => truncate(stringField(i, 'pattern', 'query'), 60),
+  filesystem_bash: (i) => truncate(stringField(i, 'command', 'cmd'), 80),
+  filesystem_ls: (i) => basename(stringField(i, 'path')) ?? '.',
 
   // Memory writes — show first chars of content
   write_memory: (i) => truncate(stringField(i, 'content', 'text'), 40),

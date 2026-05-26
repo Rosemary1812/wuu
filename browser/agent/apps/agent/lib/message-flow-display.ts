@@ -75,17 +75,52 @@ export function formatMessageFlowCommand({
   label,
 }: MessageFlowCommandInput): string {
   const toolName = name?.trim() || 'tool'
+  const displayLabel = formatDisplayLabel(label, toolName)
+  const displayDetail = subject?.trim() || formatInputDetail(input)
+
+  if (displayLabel) {
+    if (displayDetail && !isDuplicateDetail(displayLabel, displayDetail)) {
+      return `${displayLabel} ${displayDetail}`
+    }
+    return displayLabel
+  }
+
+  if (displayDetail) {
+    return `${toolName} ${displayDetail}`
+  }
+
   const formattedInput = formatUnknownInput(input)
   if (formattedInput) {
     return `${toolName} ${formattedInput}`
   }
-  if (subject?.trim()) {
-    return `${toolName} ${subject.trim()}`
-  }
-  if (label?.trim() && label.trim() !== toolName) {
-    return `${toolName} ${label.trim()}`
-  }
   return toolName
+}
+
+function formatDisplayLabel(
+  label: string | undefined,
+  toolName: string,
+): string {
+  const trimmed = label?.trim()
+  if (!trimmed) return ''
+  if (trimmed === toolName && /^[a-z_]+$/.test(trimmed)) return ''
+  return trimmed
+}
+
+function formatInputDetail(value: unknown): string {
+  if (typeof value === 'string') return truncate(value.trim(), 90)
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+
+  const input = value as Record<string, unknown>
+  const command = stringField(input, 'command', 'cmd')
+  if (command) return truncate(command, 90)
+
+  const path = stringField(input, 'path', 'file', 'filename')
+  if (path) return basename(path)
+
+  const query = stringField(input, 'pattern', 'query', 'q')
+  if (query) return truncate(query, 70)
+
+  return ''
 }
 
 function formatUnknownInput(value: unknown): string {
@@ -100,4 +135,41 @@ function formatUnknownInput(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+function stringField(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): string {
+  for (const key of keys) {
+    const value = input[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+function basename(path: string): string {
+  const parts = path.split(/[/\\]/).filter(Boolean)
+  return truncate(parts[parts.length - 1] ?? path, 90)
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+function isDuplicateDetail(label: string, detail: string): boolean {
+  const normalizedLabel = normalizeDisplayText(label)
+  const normalizedDetail = normalizeDisplayText(detail)
+  return (
+    normalizedDetail === normalizedLabel ||
+    normalizedDetail.startsWith(`${normalizedLabel} `)
+  )
+}
+
+function normalizeDisplayText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
 }

@@ -71,21 +71,38 @@ test('messageFlowStatusLabel keeps browser and desktop labels in one model', () 
   ).toBe('过程失败')
 })
 
-test('formatMessageFlowCommand prefers raw input and falls back predictably', () => {
+test('formatMessageFlowCommand prefers readable activity text', () => {
   expect(
     formatMessageFlowCommand({
       name: 'read_file',
+      label: 'Read file',
       input: { path: 'package.json' },
     }),
-  ).toBe('read_file {"path":"package.json"}')
+  ).toBe('Read file package.json')
   expect(
-    formatMessageFlowCommand({ name: 'run_shell', input: 'bun test' }),
-  ).toBe('run_shell bun test')
+    formatMessageFlowCommand({
+      name: 'filesystem_bash',
+      label: 'Ran',
+      input: { command: 'npm run typecheck' },
+    }),
+  ).toBe('Ran npm run typecheck')
+  expect(
+    formatMessageFlowCommand({
+      name: 'filesystem_grep',
+      label: 'Searched code',
+      subject: 'ThreadItemView',
+    }),
+  ).toBe('Searched code ThreadItemView')
+})
+
+test('formatMessageFlowCommand falls back predictably', () => {
+  expect(formatMessageFlowCommand({ name: 'run_shell', input: 'bun test' }))
+    .toBe('run_shell bun test')
   expect(
     formatMessageFlowCommand({ name: 'grep', subject: 'message-flow' }),
   ).toBe('grep message-flow')
   expect(formatMessageFlowCommand({ name: 'tool', label: 'Tool' })).toBe(
-    'tool Tool',
+    'Tool',
   )
   expect(formatMessageFlowCommand({ name: 'tool', label: 'tool' })).toBe('tool')
 })
