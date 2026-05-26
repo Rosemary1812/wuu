@@ -202,6 +202,11 @@ func listLocked(sessDir string, limit int) ([]Session, error) {
 		if err := json.Unmarshal([]byte(line), &s); err != nil {
 			continue // skip corrupt lines
 		}
+		if s.UpdatedAt.IsZero() {
+			if info, err := os.Stat(FilePath(sessDir, s.ID)); err == nil {
+				s.UpdatedAt = info.ModTime().UTC()
+			}
+		}
 		sessions = append(sessions, s)
 	}
 	if err := scanner.Err(); err != nil {

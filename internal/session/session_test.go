@@ -159,6 +159,38 @@ func TestListOrdersPinnedGroupsByActivity(t *testing.T) {
 	}
 }
 
+func TestListBackfillsActivityFromSessionFileModTime(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	older, err := CreateWithMetadata(dir, "older", "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer, err := CreateWithMetadata(dir, "newer", "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setSessionUpdatedAt(t, dir, older.ID, time.Time{})
+	setSessionUpdatedAt(t, dir, newer.ID, time.Time{})
+	if err := os.Chtimes(FilePath(dir, older.ID), base, base); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(FilePath(dir, newer.ID), base.Add(time.Hour), base.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := List(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 2 || sessions[0].ID != newer.ID || sessions[1].ID != older.ID {
+		t.Fatalf("expected sessions by file activity fallback, got %+v", sessions)
+	}
+	if sessions[0].UpdatedAt.IsZero() || sessions[1].UpdatedAt.IsZero() {
+		t.Fatalf("expected updated_at fallback to be populated, got %+v", sessions)
+	}
+}
+
 func TestPinAndArchiveMetadata(t *testing.T) {
 	dir := t.TempDir()
 	first, err := CreateWithMetadata(dir, "first", "/tmp/project")
