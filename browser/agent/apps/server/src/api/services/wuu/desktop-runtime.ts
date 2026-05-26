@@ -11,8 +11,17 @@ import {
   readSync,
   realpathSync,
   statSync,
+  writeFileSync,
 } from 'node:fs'
-import { basename, isAbsolute, join, relative, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from 'node:path'
 
 type JsonValue =
   | null
@@ -75,6 +84,30 @@ type LocalTerminalSession = {
   startedAt: number
 }
 
+type DesktopProject = {
+  id: string
+  name: string
+  path: string
+  created_at: string
+  updated_at: string
+}
+
+type RuntimeContext =
+  | {
+      kind: 'project'
+      project_id: string
+      cwd: string
+    }
+  | {
+      kind: 'no_project'
+      cwd: string
+    }
+
+type ProjectStore = {
+  projects: DesktopProject[]
+  active_context?: RuntimeContext
+}
+
 const FILE_TREE_MAX_PATHS = 4000
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024
 const GIT_DIFF_PREVIEW_MAX_BYTES = 512 * 1024
@@ -111,6 +144,17 @@ export async function handleWuuDesktopRpc(
   params: unknown,
 ): Promise<JsonValue> {
   switch (method) {
+    case 'project/list':
+      return projectListResult(asRecord(params)) as JsonValue
+    case 'project/add':
+      return addProject(
+        stringParam(params, 'path'),
+        stringParam(params, 'name'),
+      ) as JsonValue
+    case 'project/select':
+      return selectProject(stringParam(params, 'project_id')) as JsonValue
+    case 'project/select-none':
+      return selectNoProject(Boolean(asRecord(params).fresh)) as JsonValue
     case 'workspace/no-project':
       return { cwd: allocateNoProjectCwd() }
     case 'git/status':
@@ -177,6 +221,210 @@ function stringParam(value: unknown, key: string): string {
 function numberParam(value: unknown, key: string): number | undefined {
   const item = asRecord(value)[key]
   return typeof item === 'number' && Number.isFinite(item) ? item : undefined
+}
+
+function projectListResult(params: Record<string, unknown>) {
+  const store = loadProjectStore(projectStoreMigration(params))
+  const context = normalizeRuntimeContext(store.active_context, store.projects)
+  return {
+    projects: store.projects,
+    active_context: context,
+    active_project_id:
+      context?.kind === 'project' ? context.project_id : undefined,
+  }
+}
+
+function addProject(projectPath: string, fallbackName?: string) {
+  const store = loadProjectStore()
+  const resolvedPath = resolve(projectPath)
+  if (!isDirectory(resolvedPath)) {
+    throw new Error('selected project is not a directory')
+  }
+
+  const now = new Date().toISOString()
+  const id = projectID(resolvedPath)
+  const existingIndex = store.projects.findIndex((project) => project.id === id)
+  const project: DesktopProject = {
+    id,
+    name: fallbackName || projectName(resolvedPath),
+    path: resolvedPath,
+    created_at:
+      existingIndex >= 0 ? store.projects[existingIndex].created_at : now,
+    updated_at: now,
+  }
+
+  if (existingIndex >= 0) {
+    store.projects[existingIndex] = project
+  } else {
+    store.projects = [project, ...store.projects]
+  }
+  store.active_context = { kind: 'project', project_id: id, cwd: resolvedPath }
+  saveProjectStore(store)
+  return projectListResult({})
+}
+
+function selectProject(projectIDToSelect: string) {
+  const store = loadProjectStore()
+  const project = store.projects.find(
+    (candidate) => candidate.id === projectIDToSelect,
+  )
+  if (!project) {
+    throw new Error('project not found')
+  }
+
+  store.active_context = {
+    kind: 'project',
+    project_id: project.id,
+    cwd: project.path,
+  }
+  saveProjectStore(store)
+  return projectListResult({})
+}
+
+function selectNoProject(fresh: boolean) {
+  const store = loadProjectStore()
+  if (fresh || store.active_context?.kind !== 'no_project') {
+    store.active_context = { kind: 'no_project', cwd: allocateNoProjectCwd() }
+  }
+  saveProjectStore(store)
+  return projectListResult({})
+}
+
+function loadProjectStore(migration?: ProjectStore): ProjectStore {
+  const loaded = readProjectStoreFile(projectStorePath()) ?? { projects: [] }
+  const { store, changed } = mergeProjectStores(loaded, migration)
+  if (changed) {
+    saveProjectStore(store)
+  }
+  return store
+}
+
+function projectStoreMigration(
+  params: Record<string, unknown>,
+): ProjectStore | undefined {
+  const projects = Array.isArray(params.migration_projects)
+    ? params.migration_projects.filter(isDesktopProject)
+    : []
+  const activeContext = normalizeRuntimeContext(
+    params.migration_active_context,
+    projects,
+  )
+  if (projects.length === 0 && !activeContext) {
+    return undefined
+  }
+  return { projects, active_context: activeContext }
+}
+
+function readProjectStoreFile(path: string): ProjectStore | undefined {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(path, 'utf8'),
+    ) as Partial<ProjectStore>
+    const projects = Array.isArray(parsed.projects)
+      ? parsed.projects.filter(isDesktopProject)
+      : []
+    return {
+      projects,
+      active_context: normalizeRuntimeContext(parsed.active_context, projects),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function mergeProjectStores(
+  base: ProjectStore,
+  incoming: ProjectStore | undefined,
+): { store: ProjectStore; changed: boolean } {
+  if (!incoming) {
+    return { store: base, changed: false }
+  }
+
+  let changed = false
+  const projects = [...base.projects]
+  for (const project of incoming.projects) {
+    if (projects.some((candidate) => candidate.id === project.id)) {
+      continue
+    }
+    projects.push(project)
+    changed = true
+  }
+
+  let activeContext = base.active_context
+  if (!activeContext && incoming.active_context) {
+    activeContext = normalizeRuntimeContext(incoming.active_context, projects)
+    changed = Boolean(activeContext)
+  }
+
+  return { store: { projects, active_context: activeContext }, changed }
+}
+
+function saveProjectStore(store: ProjectStore): void {
+  const path = projectStorePath()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`)
+}
+
+function projectStorePath(): string {
+  return join(wuuHomePath(), 'projects.json')
+}
+
+function wuuHomePath(): string {
+  const override = process.env.WUU_HOME?.trim()
+  if (override) {
+    return resolve(override)
+  }
+  return join(homedir(), '.wuu')
+}
+
+function normalizeRuntimeContext(
+  value: unknown,
+  projects: DesktopProject[],
+): RuntimeContext | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const context = value as Partial<RuntimeContext>
+  if (context.kind === 'project' && typeof context.project_id === 'string') {
+    const project = projects.find(
+      (candidate) => candidate.id === context.project_id,
+    )
+    return project
+      ? { kind: 'project', project_id: project.id, cwd: project.path }
+      : undefined
+  }
+  if (context.kind === 'no_project' && typeof context.cwd === 'string') {
+    const cwd = resolve(context.cwd)
+    mkdirSync(cwd, { recursive: true })
+    return { kind: 'no_project', cwd }
+  }
+  return undefined
+}
+
+function isDesktopProject(value: unknown): value is DesktopProject {
+  if (!value || typeof value !== 'object') return false
+  const project = value as Partial<DesktopProject>
+  return (
+    typeof project.id === 'string' &&
+    typeof project.name === 'string' &&
+    typeof project.path === 'string' &&
+    typeof project.created_at === 'string' &&
+    typeof project.updated_at === 'string'
+  )
+}
+
+function projectID(projectPath: string): string {
+  return Buffer.from(resolve(projectPath)).toString('base64url')
+}
+
+function projectName(projectPath: string): string {
+  return basename(projectPath) || projectPath
+}
+
+function isDirectory(projectPath: string): boolean {
+  try {
+    return statSync(projectPath).isDirectory()
+  } catch {
+    return false
+  }
 }
 
 function gitStatusResult(workdir: string) {
@@ -1029,8 +1277,12 @@ function collectFileTreePaths(
 }
 
 function allocateNoProjectCwd(): string {
-  const home = process.env.HOME || process.cwd()
-  const baseDir = join(home, 'Documents', 'Wuu', formatLocalDate(new Date()))
+  const baseDir = join(
+    homedir(),
+    'Documents',
+    'Wuu',
+    formatLocalDate(new Date()),
+  )
   mkdirSync(baseDir, { recursive: true })
   for (let index = 0; index < 1000; index += 1) {
     const name = index === 0 ? 'new-chat' : `new-chat-${index + 1}`

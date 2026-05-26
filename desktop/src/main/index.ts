@@ -17,6 +17,7 @@ import {
   type Dirent
 } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as pty from "node-pty";
@@ -295,12 +296,34 @@ type TerminalSession = {
 };
 
 function projectStorePath(): string {
+  return join(wuuHomePath(), "projects.json");
+}
+
+function legacyProjectStorePath(): string {
   return join(app.getPath("userData"), "projects.json");
 }
 
+function wuuHomePath(): string {
+  const override = process.env.WUU_HOME?.trim();
+  if (override) {
+    return resolve(override);
+  }
+  return join(homedir(), ".wuu");
+}
+
 function loadProjectStore(): ProjectStore {
+  const loaded = readProjectStoreFile(projectStorePath());
+  const legacy = readProjectStoreFile(legacyProjectStorePath());
+  const { store, changed } = mergeProjectStores(loaded ?? { projects: [] }, legacy);
+  if (!loaded || changed) {
+    writeProjectStoreFile(projectStorePath(), store);
+  }
+  return store;
+}
+
+function readProjectStoreFile(path: string): ProjectStore | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(projectStorePath(), "utf8")) as Partial<ProjectStore> & {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ProjectStore> & {
       active_project_id?: unknown;
     };
     const projects = Array.isArray(parsed.projects)
@@ -312,8 +335,32 @@ function loadProjectStore(): ProjectStore {
       active_context: activeContext
     };
   } catch {
-    return { projects: [] };
+    return undefined;
   }
+}
+
+function mergeProjectStores(base: ProjectStore, incoming: ProjectStore | undefined): { store: ProjectStore; changed: boolean } {
+  if (!incoming) {
+    return { store: base, changed: false };
+  }
+
+  let changed = false;
+  const projects = [...base.projects];
+  for (const project of incoming.projects) {
+    if (projects.some((candidate) => candidate.id === project.id)) {
+      continue;
+    }
+    projects.push(project);
+    changed = true;
+  }
+
+  let activeContext = base.active_context;
+  if (!activeContext && incoming.active_context) {
+    activeContext = normalizeRuntimeContext(incoming.active_context, projects);
+    changed = Boolean(activeContext);
+  }
+
+  return { store: { projects, active_context: activeContext }, changed };
 }
 
 function isDesktopProject(value: unknown): value is DesktopProject {
@@ -356,11 +403,16 @@ function legacyProjectContext(value: unknown, projects: DesktopProject[]): Runti
 }
 
 function saveProjectStore(): void {
-  mkdirSync(dirname(projectStorePath()), { recursive: true });
-  writeFileSync(projectStorePath(), `${JSON.stringify(projectStore, null, 2)}\n`);
+  writeProjectStoreFile(projectStorePath(), projectStore);
+}
+
+function writeProjectStoreFile(path: string, store: ProjectStore): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function projectListResult(): ProjectListResult {
+  projectStore = loadProjectStore();
   const context = ensureRuntimeContext();
   return {
     projects: projectStore.projects,
@@ -1161,6 +1213,7 @@ function isDirectory(projectPath: string): boolean {
 }
 
 function addProject(projectPath: string): ProjectListResult {
+  projectStore = loadProjectStore();
   const resolvedPath = resolve(projectPath);
   if (!isDirectory(resolvedPath)) {
     throw new Error("selected project is not a directory");
@@ -1187,6 +1240,7 @@ function addProject(projectPath: string): ProjectListResult {
 }
 
 function selectProject(projectIDToSelect: string): ProjectListResult {
+  projectStore = loadProjectStore();
   const project = projectStore.projects.find((candidate) => candidate.id === projectIDToSelect);
   if (!project) {
     throw new Error("project not found");
@@ -1198,6 +1252,7 @@ function selectProject(projectIDToSelect: string): ProjectListResult {
 }
 
 function selectNoProject(fresh: boolean): ProjectListResult {
+  projectStore = loadProjectStore();
   if (fresh || projectStore.active_context?.kind !== "no_project") {
     projectStore.active_context = createNoProjectContext();
   }

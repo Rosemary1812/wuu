@@ -219,12 +219,15 @@ function setRenderableFileUrl(serverUrl: string): void {
 }
 
 async function listProjects(): Promise<ProjectListResult> {
-  const projects = loadProjects()
-  activeContext = normalizeStoredContext(activeContext, projects)
-  saveActiveContext(activeContext)
-  await serverEventHub.setWorkdir(activeContext?.cwd)
-  await terminalEventHub.ensureConnected()
-  return projectListResult(projects, activeContext)
+  const result = await desktopRpc<ProjectListResult>(
+    'project/list',
+    {
+      migration_projects: loadProjects(),
+      migration_active_context: activeContext,
+    },
+    false,
+  )
+  return applyProjectList(result)
 }
 
 async function chooseProjectFolder(): Promise<ProjectListResult> {
@@ -255,84 +258,41 @@ async function chooseAndAddProject(options: {
     return listProjects()
   }
 
-  return addProject(selected.path, selected.name)
+  const result = await desktopRpc<ProjectListResult>(
+    'project/add',
+    { path: selected.path, name: selected.name },
+    false,
+  )
+  return applyProjectList(result)
 }
 
 async function selectProject(projectId: string): Promise<ProjectListResult> {
-  const projects = loadProjects()
-  const project = projects.find((candidate) => candidate.id === projectId)
-  if (!project) {
-    throw new Error('project not found')
-  }
-
-  activeContext = {
-    kind: 'project',
-    project_id: project.id,
-    cwd: project.path,
-  }
-  saveActiveContext(activeContext)
-  await serverEventHub.setWorkdir(activeContext.cwd)
-  return projectListResult(projects, activeContext)
+  const result = await desktopRpc<ProjectListResult>(
+    'project/select',
+    { project_id: projectId },
+    false,
+  )
+  return applyProjectList(result)
 }
 
 async function selectNoProject(fresh = false): Promise<ProjectListResult> {
-  if (fresh || activeContext?.kind !== 'no_project') {
-    const result = await desktopRpc<{ cwd: string }>(
-      'workspace/no-project',
-      { fresh },
-      false,
-    )
-    activeContext = { kind: 'no_project', cwd: result.cwd }
-  }
+  const result = await desktopRpc<ProjectListResult>(
+    'project/select-none',
+    { fresh },
+    false,
+  )
+  return applyProjectList(result)
+}
 
+async function applyProjectList(
+  result: ProjectListResult,
+): Promise<ProjectListResult> {
+  activeContext = result.active_context
+  saveProjects(result.projects)
   saveActiveContext(activeContext)
   await serverEventHub.setWorkdir(activeContext?.cwd)
-  return projectListResult(loadProjects(), activeContext)
-}
-
-async function addProject(
-  projectPath: string,
-  fallbackName?: string,
-): Promise<ProjectListResult> {
-  const projects = loadProjects()
-  const id = projectId(projectPath)
-  const now = new Date().toISOString()
-  const existingIndex = projects.findIndex((project) => project.id === id)
-  const project: DesktopProject = {
-    id,
-    name: fallbackName || projectName(projectPath),
-    path: projectPath,
-    created_at: existingIndex >= 0 ? projects[existingIndex].created_at : now,
-    updated_at: now,
-  }
-
-  if (existingIndex >= 0) {
-    projects[existingIndex] = project
-  } else {
-    projects.unshift(project)
-  }
-
-  saveProjects(projects)
-  activeContext = {
-    kind: 'project',
-    project_id: project.id,
-    cwd: project.path,
-  }
-  saveActiveContext(activeContext)
-  await serverEventHub.setWorkdir(activeContext.cwd)
-  return projectListResult(projects, activeContext)
-}
-
-function projectListResult(
-  projects: DesktopProject[],
-  context?: RuntimeContext,
-): ProjectListResult {
-  return {
-    projects,
-    active_context: context,
-    active_project_id:
-      context?.kind === 'project' ? context.project_id : undefined,
-  }
+  await terminalEventHub.ensureConnected()
+  return result
 }
 
 async function desktopRpc<T>(
@@ -497,13 +457,6 @@ function saveActiveContext(context: RuntimeContext | undefined): void {
   window.localStorage.setItem(ACTIVE_CONTEXT_KEY, JSON.stringify(context))
 }
 
-function normalizeStoredContext(
-  context: RuntimeContext | undefined,
-  projects: DesktopProject[],
-): RuntimeContext | undefined {
-  return normalizeRuntimeContext(context, projects)
-}
-
 function normalizeRuntimeContext(
   value: unknown,
   projects: DesktopProject[],
@@ -534,26 +487,6 @@ function isDesktopProject(value: unknown): value is DesktopProject {
     typeof project.created_at === 'string' &&
     typeof project.updated_at === 'string'
   )
-}
-
-function projectId(projectPath: string): string {
-  return base64Url(projectPath)
-}
-
-function projectName(projectPath: string): string {
-  return projectPath.split(/[\\/]/).filter(Boolean).at(-1) || projectPath
-}
-
-function base64Url(value: string): string {
-  const bytes = new TextEncoder().encode(value)
-  let binary = ''
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte)
-  }
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
 }
 
 class ServerEventHub {
