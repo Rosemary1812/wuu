@@ -434,9 +434,10 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	}
 
 	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
-		Outcome:  "completed",
-		Summary:  "Submitted the missing structured report.",
-		WorkDone: []string{"Closed the handoff contract."},
+		Outcome:      "completed",
+		Summary:      "Submitted the missing structured report.",
+		ChangedFiles: []string{"internal/agentcontrol/await.go"},
+		WorkDone:     []string{"Closed the handoff contract."},
 	})
 	if err != nil {
 		t.Fatalf("RecordAgentReport: %v", err)
@@ -445,10 +446,54 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AwaitFrom after report: %v", err)
 	}
-	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || awaited.Results[0].ReportPath != report.ReportPath {
+	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || awaited.Results[0].ReportPath != report.ReportPath || len(awaited.Results[0].ChangedFiles) != 1 {
 		t.Fatalf("expected completed result with report path, got %+v", awaited)
 	}
 	waitForHarnessEvent(t, c.HarnessStore(), harness.EventRunCompleted, res.AgentID)
+}
+
+func TestAwaitFromWarnsOnOverlappingChangedFiles(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-await-conflict",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-await-conflict", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-await-conflict", "harness"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := c.Spawn(context.Background(), SpawnRequest{Type: "worker", TaskName: "edit_one", Prompt: "one", Synchronous: true})
+	if err != nil {
+		t.Fatalf("Spawn first: %v", err)
+	}
+	second, err := c.Spawn(context.Background(), SpawnRequest{Type: "worker", TaskName: "edit_two", Prompt: "two", Synchronous: true})
+	if err != nil {
+		t.Fatalf("Spawn second: %v", err)
+	}
+	for _, res := range []*SpawnResult{first, second} {
+		if _, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+			Outcome:      "completed",
+			Summary:      "Edited shared file.",
+			ChangedFiles: []string{"internal/shared.go"},
+		}); err != nil {
+			t.Fatalf("RecordAgentReport: %v", err)
+		}
+		waitForHarnessEvent(t, c.HarnessStore(), harness.EventRunCompleted, res.AgentID)
+	}
+	awaited, err := c.AwaitFrom(agentthread.RootPath, context.Background(), []string{first.AgentID, second.AgentID})
+	if err != nil {
+		t.Fatalf("AwaitFrom: %v", err)
+	}
+	if len(awaited.Warnings) != 1 || !strings.Contains(awaited.Warnings[0], "internal/shared.go") {
+		t.Fatalf("expected changed-file overlap warning, got %+v", awaited)
+	}
 }
 
 func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {

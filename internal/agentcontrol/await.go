@@ -15,6 +15,7 @@ import (
 
 type AwaitAgentsResult struct {
 	TimedOut bool               `json:"timed_out"`
+	Warnings []string           `json:"warnings,omitempty"`
 	Results  []AwaitAgentResult `json:"results"`
 }
 
@@ -25,6 +26,7 @@ type AwaitAgentResult struct {
 	Status        string   `json:"status"`
 	Result        string   `json:"result,omitempty"`
 	Error         string   `json:"error,omitempty"`
+	ChangedFiles  []string `json:"changed_files,omitempty"`
 	ReportPath    string   `json:"report_path,omitempty"`
 	ReportMissing bool     `json:"report_missing,omitempty"`
 	Artifacts     []string `json:"artifacts,omitempty"`
@@ -189,7 +191,7 @@ func (c *AgentControl) awaitSnapshot(targets []awaitTarget) AwaitAgentsResult {
 	for _, target := range targets {
 		results = append(results, c.awaitResultForTarget(target))
 	}
-	return AwaitAgentsResult{Results: results}
+	return AwaitAgentsResult{Warnings: changedFileOverlapWarnings(results), Results: results}
 }
 
 func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult {
@@ -218,6 +220,9 @@ func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult
 	reportPath, artifacts := c.harnessReportForTask(meta.ID)
 	out.ReportPath = reportPath
 	out.Artifacts = artifacts
+	if report, ok := c.harnessReportDetailsForTask(meta.ID); ok {
+		out.ChangedFiles = trimStringSlice(report.ChangedFiles)
+	}
 	if out.Status == string(subagent.StatusCompleted) && reportPath == "" {
 		out.Status = string(harness.TaskStatusAwaitingReport)
 		out.ReportMissing = true
@@ -226,6 +231,17 @@ func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult
 		out.ReportMissing = true
 	}
 	return out
+}
+
+func (c *AgentControl) harnessReportDetailsForTask(taskID string) (harness.Report, bool) {
+	if c == nil || c.harnessStore == nil {
+		return harness.Report{}, false
+	}
+	report, ok, err := c.harnessStore.ReportForTask(taskID)
+	if err != nil || !ok {
+		return harness.Report{}, false
+	}
+	return report, true
 }
 
 func (c *AgentControl) snapshotByID(id string) *subagent.SubAgentSnapshot {
@@ -316,6 +332,27 @@ func awaitComplete(results []AwaitAgentResult) bool {
 		}
 	}
 	return true
+}
+
+func changedFileOverlapWarnings(results []AwaitAgentResult) []string {
+	owners := map[string][]string{}
+	for _, result := range results {
+		label := result.AgentPath
+		if label == "" {
+			label = result.AgentID
+		}
+		for _, file := range trimStringSlice(result.ChangedFiles) {
+			owners[file] = append(owners[file], label)
+		}
+	}
+	warnings := make([]string, 0)
+	for file, labels := range owners {
+		if len(labels) < 2 {
+			continue
+		}
+		warnings = append(warnings, "changed_file_overlap: "+file+" touched by "+strings.Join(labels, ", "))
+	}
+	return warnings
 }
 
 func isAwaitActiveStatus(status string) bool {

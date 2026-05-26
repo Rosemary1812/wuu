@@ -572,7 +572,8 @@ func (t *AwaitAgentsTool) Definition() providers.ToolDefinition {
 			"only when you intentionally want to await all active descendant agents under the current " +
 			"agent path. Results can include status='awaiting_report' when a worker produced final " +
 			"text without the required agent_report; treat that as an incomplete handoff and follow up " +
-			"or verify before relying on it.",
+			"or verify before relying on it. Results also include changed_files from structured reports " +
+			"and warnings when multiple awaited agents report overlapping changed files.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
