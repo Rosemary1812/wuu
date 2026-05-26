@@ -488,22 +488,28 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, false)
 }
 
 // UpdateProviderSelectionAndEffort changes the default provider, selected
 // provider's model, and global reasoning effort in the config file at configPath.
 func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, false)
 }
 
 // UpdateProviderRuntime changes the default provider and editable connection
 // fields for that provider. A nil apiKey keeps the existing key configuration.
 func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort)
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, false)
 }
 
-func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort *string) error {
+// CreateProviderRuntime creates a new OpenAI-compatible provider, selects it,
+// and persists its editable runtime fields.
+func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, true)
+}
+
+func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort *string, createProvider bool) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -519,7 +525,26 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 		return fmt.Errorf("providers section not found")
 	}
 	provider, ok := providers[providerName].(map[string]any)
-	if !ok {
+	if createProvider {
+		if ok {
+			return fmt.Errorf("provider %q already exists", providerName)
+		}
+		if strings.TrimSpace(providerName) == "" {
+			return fmt.Errorf("provider name is required")
+		}
+		if baseURL == nil || strings.TrimSpace(*baseURL) == "" {
+			return fmt.Errorf("base_url is required")
+		}
+		if apiKey == nil || strings.TrimSpace(*apiKey) == "" {
+			return fmt.Errorf("api_key is required")
+		}
+		provider = map[string]any{
+			"type":     "openai-compatible",
+			"base_url": strings.TrimSpace(*baseURL),
+			"api_key":  strings.TrimSpace(*apiKey),
+		}
+		providers[providerName] = provider
+	} else if !ok {
 		return fmt.Errorf("provider %q not found", providerName)
 	}
 	raw["default_provider"] = providerName

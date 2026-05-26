@@ -908,3 +908,44 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 		t.Fatalf("old provider changed: %+v", old)
 	}
 }
+
+func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "old",
+  "providers": {
+    "old": {
+      "type": "openai-compatible",
+      "base_url": "https://old.example.com",
+      "api_key": "old-key",
+      "model": "old-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	baseURL := "https://custom.example.com/v1"
+	apiKey := "sk-custom"
+	if err := CreateProviderRuntime(path, "custom-1", "custom-model", &baseURL, &apiKey, nil); err != nil {
+		t.Fatalf("CreateProviderRuntime: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.DefaultProvider != "custom-1" {
+		t.Fatalf("expected default provider custom-1, got %q", cfg.DefaultProvider)
+	}
+	custom, _, _ := cfg.ResolveProvider("custom-1")
+	if custom.Type != "openai-compatible" || custom.Model != "custom-model" || custom.BaseURL != baseURL || custom.APIKey != apiKey {
+		t.Fatalf("new provider not persisted: %+v", custom)
+	}
+	old, _, _ := cfg.ResolveProvider("old")
+	if old.Model != "old-model" || old.BaseURL != "https://old.example.com" {
+		t.Fatalf("old provider changed: %+v", old)
+	}
+}

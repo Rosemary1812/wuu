@@ -2767,10 +2767,12 @@ export function App(): JSX.Element {
         ? undefined
         : {
             ...(connection.base_url === undefined ? {} : { base_url: connection.base_url.trim() }),
-            ...(connection.api_key === undefined ? {} : { api_key: connection.api_key.trim() })
+            ...(connection.api_key === undefined ? {} : { api_key: connection.api_key.trim() }),
+            ...(connection.create_provider ? { create_provider: true } : {})
           };
     const currentProvider = state.initialized?.providers?.find((item) => item.name === nextProvider);
     const connectionChanged =
+      Boolean(nextConnection?.create_provider) ||
       Boolean(nextConnection?.api_key) ||
       (nextConnection?.base_url !== undefined && nextConnection.base_url !== (currentProvider?.base_url ?? ""));
     if (

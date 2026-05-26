@@ -494,12 +494,39 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	providerCfg, resolvedName, err := cfg.ResolveProvider(providerName)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
+	var providerCfg config.ProviderConfig
+	var resolvedName string
+	creatingProvider := params.CreateProvider
+	if creatingProvider {
+		if providerName == "" {
+			return s.writeResponse(req.ID, nil, errors.New("provider is required"))
+		}
+		if _, _, err := cfg.ResolveProvider(providerName); err == nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("provider %q already exists", providerName))
+		}
+		baseURL := strings.TrimSpace(stringValue(params.BaseURL))
+		apiKey := strings.TrimSpace(stringValue(params.APIKey))
+		if baseURL == "" {
+			return s.writeResponse(req.ID, nil, errors.New("base_url is required"))
+		}
+		if apiKey == "" {
+			return s.writeResponse(req.ID, nil, errors.New("api_key is required"))
+		}
+		providerCfg = config.ProviderConfig{
+			Type:    "openai-compatible",
+			BaseURL: baseURL,
+			APIKey:  apiKey,
+			Model:   model,
+		}
+		resolvedName = providerName
+	} else {
+		providerCfg, resolvedName, err = cfg.ResolveProvider(providerName)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
 	}
 	providerCfg.Model = model
-	connectionChanged := false
+	connectionChanged := creatingProvider
 	connectionLocked := isCodexProviderType(providerCfg.Type)
 	if connectionLocked && (params.BaseURL != nil || strings.TrimSpace(stringValue(params.APIKey)) != "") {
 		return s.writeResponse(req.ID, nil, errors.New("connection settings are managed by OpenAI OAuth for this provider"))
@@ -537,7 +564,12 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
-	if err := config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, params.Effort); err != nil {
+	if creatingProvider {
+		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, params.Effort)
+	} else {
+		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, params.Effort)
+	}
+	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 

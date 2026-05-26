@@ -56,6 +56,7 @@ export type ProviderSummary = {
 export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
+  create_provider?: boolean;
 };
 
 export type CodexModelSummary = {

@@ -101,6 +101,7 @@ export function installWuuBrowserOSAdapter(): void {
         ...(connection?.api_key === undefined
           ? {}
           : { api_key: connection.api_key }),
+        ...(connection?.create_provider ? { create_provider: true } : {}),
         ...(effort === undefined ? {} : { effort }),
       }),
     startThread: () => wuuRpc<{ thread: Thread }>('thread/start'),

@@ -839,7 +839,7 @@ func runAppServer(args []string) error {
 		return err
 	}
 	homeDir := os.Getenv("HOME")
-	cfg, configPath, err := config.LoadFrom(rootDir, homeDir)
+	cfg, configPath, err := loadOrCreateAppServerConfig(rootDir, homeDir)
 	if err != nil {
 		return err
 	}
@@ -861,6 +861,44 @@ func runAppServer(args []string) error {
 	}()
 
 	return appserver.RunStdio(context.Background(), rt, os.Stdin, os.Stdout)
+}
+
+func loadOrCreateAppServerConfig(rootDir, homeDir string) (config.Config, string, error) {
+	cfg, configPath, err := config.LoadFrom(rootDir, homeDir)
+	if err == nil {
+		return cfg, configPath, nil
+	}
+	if !errors.Is(err, config.ErrConfigNotFound) {
+		return config.Config{}, "", err
+	}
+
+	configPath = filepath.Join(rootDir, ".wuu.json")
+	if strings.TrimSpace(homeDir) != "" {
+		configPath = filepath.Join(homeDir, ".config", "wuu", "config.json")
+	}
+	cfg = appServerStarterConfig()
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return config.Config{}, "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		return config.Config{}, "", fmt.Errorf("create config directory: %w", err)
+	}
+	if err := os.WriteFile(configPath, append(data, '\n'), 0o600); err != nil {
+		return config.Config{}, "", fmt.Errorf("write starter config: %w", err)
+	}
+	return cfg, configPath, nil
+}
+
+func appServerStarterConfig() config.Config {
+	cfg := config.Default()
+	if provider, ok := cfg.Providers["openai-codex"]; ok {
+		cfg.DefaultProvider = "openai-codex"
+		cfg.Providers = map[string]config.ProviderConfig{
+			"openai-codex": provider,
+		}
+	}
+	return cfg
 }
 
 func resolveWorkdir(input string) (string, error) {

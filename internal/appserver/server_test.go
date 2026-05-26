@@ -296,6 +296,66 @@ func TestServerConfigModelUpdatePersistsProviderConnection(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdateCreatesProvider(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key": "old-key",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldClient := rt.StreamRunner.Client
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/model/update","params":{"provider":"custom-1","model":"custom-model","base_url":"https://custom.example.test/v1","api_key":"new-key","create_provider":true}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Provider != "custom-1" || result.Model != "custom-model" {
+		t.Fatalf("unexpected update result: %+v", result)
+	}
+	if len(result.Providers) != 2 {
+		t.Fatalf("expected two provider summaries, got %+v", result.Providers)
+	}
+	var customSummary ProviderSummary
+	for _, summary := range result.Providers {
+		if summary.Name == "custom-1" {
+			customSummary = summary
+			break
+		}
+	}
+	if customSummary.BaseURL != "https://custom.example.test/v1" || !customSummary.APIKeyConfigured {
+		t.Fatalf("unexpected custom provider summary: %+v", result.Providers)
+	}
+	if rt.ProviderName != "custom-1" || rt.Model != "custom-model" || rt.StreamRunner.Model != "custom-model" {
+		t.Fatalf("runtime provider/model not updated: provider=%q runtime=%q runner=%q", rt.ProviderName, rt.Model, rt.StreamRunner.Model)
+	}
+	if rt.StreamRunner.Client == oldClient {
+		t.Fatal("expected stream runner client to be rebuilt")
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"custom-1"`) ||
+		!strings.Contains(string(data), `"base_url": "https://custom.example.test/v1"`) ||
+		!strings.Contains(string(data), `"api_key": "new-key"`) ||
+		!strings.Contains(string(data), `"default_provider": "custom-1"`) {
+		t.Fatalf("new provider was not persisted: %s", data)
+	}
+}
+
 func TestServerConfigModelUpdateRejectsOAuthConnectionChanges(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{

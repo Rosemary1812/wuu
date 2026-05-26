@@ -1306,6 +1306,52 @@ button:disabled {
   box-shadow: 0 0 0 3px rgba(31, 35, 40, 0.08);
 }
 
+.settings-provider-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-new-provider-label {
+  display: flex;
+  height: 38px;
+  align-items: center;
+  border-radius: 8px;
+  background: #f0f0ee;
+  color: #5f666b;
+  padding: 0 12px;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+}
+
+.settings-inline-button {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 8px;
+  background: #eeeeeb;
+  color: #4f565b;
+  padding: 0 10px;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.settings-inline-button:hover:not(:disabled) {
+  background: #e4e4e1;
+  color: #202428;
+}
+
+.settings-inline-button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(31, 35, 40, 0.08);
+}
+
 .settings-switch {
   position: relative;
   width: 48px;
@@ -9289,6 +9335,7 @@ html.swiss-international .title-actions {
 html.swiss-international .launch-preview-button,
 html.swiss-international .primary-button,
 html.swiss-international .secondary-button,
+html.swiss-international .settings-inline-button,
 html.swiss-international .settings-card-footer button,
 html.swiss-international .project-empty-actions button,
 html.swiss-international .empty-home-actions button,
@@ -9309,6 +9356,7 @@ html.swiss-international .run-debug-button.active,
 html.swiss-international .run-debug-button[aria-expanded="true"],
 html.swiss-international .style-toggle-button[aria-pressed="true"],
 html.swiss-international .primary-button,
+html.swiss-international .settings-inline-button:hover:not(:disabled),
 html.swiss-international .settings-card-footer button,
 html.swiss-international .composer-send-button,
 html.swiss-international .workspace-terminal-restart:hover {
@@ -9665,6 +9713,7 @@ html.swiss-international .project-search,
 html.swiss-international .environment-search,
 html.swiss-international .settings-row input,
 html.swiss-international .settings-row select,
+html.swiss-international .settings-new-provider-label,
 html.swiss-international .environment-field input,
 html.swiss-international .environment-field textarea,
 html.swiss-international .workspace-diff-search {

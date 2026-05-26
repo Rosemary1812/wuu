@@ -1,4 +1,4 @@
-import { ArrowLeft, Settings } from "lucide-react";
+import { ArrowLeft, Plus, Settings, X } from "lucide-react";
 import {
   type CSSProperties,
   type FormEvent as ReactFormEvent,
@@ -48,12 +48,13 @@ export function SettingsView({
   const [modelDraft, setModelDraft] = useState(initialized?.model ?? "");
   const [baseURLDraft, setBaseURLDraft] = useState("");
   const [apiKeyDraft, setAPIKeyDraft] = useState("");
+  const [addingProvider, setAddingProvider] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
-  const selectedProvider = providers.find((item) => item.name === providerDraft);
+  const selectedProvider = addingProvider ? undefined : providers.find((item) => item.name === providerDraft);
   const providerLabels = useMemo(() => providerDisplayLabels(providers), [providers]);
   const selectedBaseURL = selectedProvider?.base_url ?? "";
-  const connectionLocked = selectedProvider?.connection_locked ?? false;
+  const connectionLocked = !addingProvider && (selectedProvider?.connection_locked ?? false);
 
   useEffect(() => {
     setProviderDraft(initialized?.provider ?? "");
@@ -61,11 +62,13 @@ export function SettingsView({
     const summary = initialized?.providers?.find((item) => item.name === initialized.provider);
     setBaseURLDraft(summary?.base_url ?? "");
     setAPIKeyDraft("");
+    setAddingProvider(false);
     setError("");
     setSaved(false);
   }, [initialized?.provider, initialized?.model, initialized?.providers]);
 
   function changeProvider(provider: string): void {
+    setAddingProvider(false);
     setProviderDraft(provider);
     setSaved(false);
     const summary = providers.find((item) => item.name === provider);
@@ -76,13 +79,40 @@ export function SettingsView({
     }
   }
 
+  function startAddingProvider(): void {
+    setAddingProvider(true);
+    setProviderDraft(nextCustomProviderName(providers));
+    setModelDraft("");
+    setBaseURLDraft("");
+    setAPIKeyDraft("");
+    setError("");
+    setSaved(false);
+  }
+
+  function cancelAddingProvider(): void {
+    setAddingProvider(false);
+    setProviderDraft(initialized?.provider ?? "");
+    setModelDraft(initialized?.model ?? "");
+    const summary = initialized?.providers?.find((item) => item.name === initialized.provider);
+    setBaseURLDraft(summary?.base_url ?? "");
+    setAPIKeyDraft("");
+    setError("");
+    setSaved(false);
+  }
+
   async function submit(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError("");
     setSaved(false);
     try {
       let connection: RuntimeConnectionUpdate | undefined;
-      if (!connectionLocked) {
+      if (addingProvider) {
+        connection = {
+          base_url: baseURLDraft.trim(),
+          api_key: apiKeyDraft.trim(),
+          create_provider: true
+        };
+      } else if (!connectionLocked) {
         connection = {
           base_url: baseURLDraft.trim()
         };
@@ -92,6 +122,7 @@ export function SettingsView({
         }
       }
       await onSave(providerDraft, modelDraft, undefined, connection);
+      setAddingProvider(false);
       setAPIKeyDraft("");
       setSaved(true);
     } catch (saveError) {
@@ -104,7 +135,9 @@ export function SettingsView({
     !providerDraft.trim() ||
     !modelDraft.trim() ||
     (!connectionLocked && !baseURLDraft.trim()) ||
-    (providerDraft === initialized?.provider &&
+    (addingProvider && !apiKeyDraft.trim()) ||
+    (!addingProvider &&
+      providerDraft === initialized?.provider &&
       modelDraft === initialized?.model &&
       (connectionLocked || baseURLDraft.trim() === selectedBaseURL) &&
       (connectionLocked || !apiKeyDraft.trim()));
@@ -156,30 +189,39 @@ export function SettingsView({
               <p>选择请求要发送到哪个模型服务，以及传给服务的模型名称。</p>
             </div>
             <form className="settings-card" onSubmit={submit}>
-              <label className="settings-row">
+              <div className="settings-row">
                 <span>
                   <strong>模型服务</strong>
-                  <small>选择当前会话使用的连接方式</small>
+                  <small>{addingProvider ? "添加一个新的 OpenAI-compatible 服务" : "选择当前会话使用的连接方式"}</small>
                 </span>
-                {providers.length > 0 ? (
-                  <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
-                    {providers.map((provider) => (
-                      <option key={provider.name} value={provider.name}>
-                        {providerLabels.get(provider.name) ?? provider.name}
-                      </option>
-                    ))}
-                  </select>
+                {addingProvider ? (
+                  <div className="settings-provider-control">
+                    <div className="settings-new-provider-label">新的模型服务</div>
+                    <button className="settings-inline-button" type="button" onClick={cancelAddingProvider} disabled={running}>
+                      <X size={15} />
+                      <span>取消</span>
+                    </button>
+                  </div>
                 ) : (
-                  <input
-                    value={providerDraft}
-                    onChange={(event) => {
-                      setProviderDraft(event.target.value);
-                      setSaved(false);
-                    }}
-                    disabled={running}
-                  />
+                  <div className="settings-provider-control">
+                    {providers.length > 0 ? (
+                      <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
+                        {providers.map((provider) => (
+                          <option key={provider.name} value={provider.name}>
+                            {providerLabels.get(provider.name) ?? provider.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="settings-new-provider-label">暂无模型服务</div>
+                    )}
+                    <button className="settings-inline-button" type="button" onClick={startAddingProvider} disabled={running}>
+                      <Plus size={15} />
+                      <span>添加</span>
+                    </button>
+                  </div>
                 )}
-              </label>
+              </div>
               <label className="settings-row">
                 <span>
                   <strong>模型名称</strong>
@@ -215,7 +257,9 @@ export function SettingsView({
                   <small>
                     {connectionLocked
                       ? "由 OpenAI OAuth 管理"
-                      : selectedProvider?.api_key_configured
+                      : addingProvider
+                        ? "保存时写入这个服务"
+                        : selectedProvider?.api_key_configured
                         ? "已配置，留空不修改"
                         : "用于访问这个 Provider"}
                   </small>
@@ -227,7 +271,9 @@ export function SettingsView({
                   placeholder={
                     connectionLocked
                       ? "不需要 API key"
-                      : selectedProvider?.api_key_configured
+                      : addingProvider
+                        ? "输入 API key"
+                        : selectedProvider?.api_key_configured
                         ? "留空保持当前密钥"
                         : "输入 API key"
                   }
@@ -242,7 +288,7 @@ export function SettingsView({
                 {error ? <div className="settings-error">{error}</div> : null}
                 {saved ? <div className="settings-saved">已保存</div> : null}
                 <button type="submit" disabled={disabled}>
-                  保存
+                  {addingProvider ? "添加" : "保存"}
                 </button>
               </div>
             </form>
@@ -297,6 +343,15 @@ function providerDisplayLabels(providers: ProviderSummary[]): Map<string, string
       return [provider.name, label];
     })
   );
+}
+
+function nextCustomProviderName(providers: ProviderSummary[]): string {
+  const existing = new Set(providers.map((provider) => provider.name));
+  let index = 1;
+  while (existing.has(`custom-${index}`)) {
+    index += 1;
+  }
+  return `custom-${index}`;
 }
 
 function providerBaseLabel(provider: ProviderSummary): string {

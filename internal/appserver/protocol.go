@@ -101,11 +101,12 @@ type ConfigReadResult struct {
 }
 
 type ConfigModelUpdateParams struct {
-	Provider string  `json:"provider,omitempty"`
-	Model    string  `json:"model"`
-	Effort   *string `json:"effort,omitempty"`
-	BaseURL  *string `json:"base_url,omitempty"`
-	APIKey   *string `json:"api_key,omitempty"`
+	Provider       string  `json:"provider,omitempty"`
+	Model          string  `json:"model"`
+	Effort         *string `json:"effort,omitempty"`
+	BaseURL        *string `json:"base_url,omitempty"`
+	APIKey         *string `json:"api_key,omitempty"`
+	CreateProvider bool    `json:"create_provider,omitempty"`
 }
 
 type ConfigModelUpdateResult struct {

@@ -88,6 +88,38 @@ func TestRunInitWritesDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestLoadOrCreateAppServerConfigCreatesStarterConfig(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+
+	cfg, configPath, err := loadOrCreateAppServerConfig(root, home)
+	if err != nil {
+		t.Fatalf("loadOrCreateAppServerConfig: %v", err)
+	}
+
+	expectedPath := filepath.Join(home, ".config", "wuu", "config.json")
+	if configPath != expectedPath {
+		t.Fatalf("expected config path %q, got %q", expectedPath, configPath)
+	}
+	if cfg.DefaultProvider != "openai-codex" {
+		t.Fatalf("expected openai-codex default provider, got %q", cfg.DefaultProvider)
+	}
+	if len(cfg.Providers) != 1 {
+		t.Fatalf("expected one starter provider, got %+v", cfg.Providers)
+	}
+	if _, ok := cfg.Providers["openai-codex"]; !ok {
+		t.Fatalf("starter config missing openai-codex provider: %+v", cfg.Providers)
+	}
+
+	loaded, loadedPath, err := config.LoadFrom(root, home)
+	if err != nil {
+		t.Fatalf("reload starter config: %v", err)
+	}
+	if loadedPath != configPath || loaded.DefaultProvider != "openai-codex" {
+		t.Fatalf("unexpected reloaded config: path=%q cfg=%+v", loadedPath, loaded)
+	}
+}
+
 func TestRunModelsRejectsUnsupportedProvider(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := workdir + "/.wuu.json"
