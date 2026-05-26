@@ -3834,6 +3834,8 @@ button:disabled {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .conversation-split-width {
@@ -3903,18 +3905,22 @@ button:disabled {
   white-space: nowrap;
 }
 
-.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar {
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar,
+.conversation-split-body::-webkit-scrollbar {
   width: 10px;
   background: transparent;
 }
 
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-track,
-.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-track-piece {
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-track-piece,
+.conversation-split-body::-webkit-scrollbar-track,
+.conversation-split-body::-webkit-scrollbar-track-piece {
   border: 0;
   background: transparent;
 }
 
-.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb {
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb,
+.conversation-split-body::-webkit-scrollbar-thumb {
   min-height: 42px;
   border: 1px solid transparent;
   border-left-width: 4px;
@@ -3924,19 +3930,23 @@ button:disabled {
   transition: background-color 160ms ease;
 }
 
-.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb {
+.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb,
+.conversation-split-body.scrollbar-visible::-webkit-scrollbar-thumb {
   background-color: rgba(82, 88, 94, 0.32);
 }
 
-.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:hover {
+.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:hover,
+.conversation-split-body.scrollbar-visible::-webkit-scrollbar-thumb:hover {
   background-color: rgba(56, 88, 118, 0.48);
 }
 
-.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:active {
+.scroll-region.scrollbar-visible:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-thumb:active,
+.conversation-split-body.scrollbar-visible::-webkit-scrollbar-thumb:active {
   background-color: rgba(38, 70, 98, 0.64);
 }
 
-.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-corner {
+.scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region)::-webkit-scrollbar-corner,
+.conversation-split-body::-webkit-scrollbar-corner {
   background: transparent;
 }
 
