@@ -18,27 +18,9 @@ export const SidebarUserFooter: FC<SidebarUserFooterProps> = ({
   expanded = true,
   onOpenShortcuts,
 }) => {
-  // const signInButton = (
-  //   <Button
-  //     variant="outline"
-  //     className="h-9 w-full justify-start gap-2 overflow-hidden whitespace-nowrap px-3"
-  //     disabled
-  //   >
-  //     <LogIn className="size-4 shrink-0" />
-  //     <span
-  //       className={cn(
-  //         'truncate transition-opacity duration-200',
-  //         expanded ? 'opacity-100' : 'opacity-0',
-  //       )}
-  //     >
-  //       Sign in to BrowserOS
-  //     </span>
-  //   </Button>
-  // )
-
   const aboutLink = (
     <a
-      href="https://docs.browseros.com/"
+      href="https://github.com/blueberrycongee/wuu"
       target="_blank"
       rel="noopener noreferrer"
       className="flex h-9 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md px-3 font-medium text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -50,7 +32,7 @@ export const SidebarUserFooter: FC<SidebarUserFooterProps> = ({
           expanded ? 'opacity-100' : 'opacity-0',
         )}
       >
-        About BrowserOS
+        About Wuu
       </span>
     </a>
   )
@@ -90,7 +72,7 @@ export const SidebarUserFooter: FC<SidebarUserFooterProps> = ({
         ) : (
           <Tooltip>
             <TooltipTrigger asChild>{aboutLink}</TooltipTrigger>
-            <TooltipContent side="right">About BrowserOS</TooltipContent>
+            <TooltipContent side="right">About Wuu</TooltipContent>
           </Tooltip>
         )}
       </div>

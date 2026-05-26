@@ -83,6 +83,12 @@ dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
 agent_wxt_config="${browser_dir}/agent/apps/agent/wxt.config.ts"
 agent_app_html="${browser_dir}/agent/apps/agent/entrypoints/app/index.html"
+agent_app_routes="${browser_dir}/agent/apps/agent/entrypoints/app/App.tsx"
+agent_background="${browser_dir}/agent/apps/agent/entrypoints/background/index.ts"
+agent_sidebar_layout="${browser_dir}/agent/apps/agent/entrypoints/app/layout/SidebarLayout.tsx"
+agent_sidebar_navigation="${browser_dir}/agent/apps/agent/components/sidebar/SidebarNavigation.tsx"
+agent_sidebar_branding="${browser_dir}/agent/apps/agent/components/sidebar/SidebarBranding.tsx"
+agent_sidebar_footer="${browser_dir}/agent/apps/agent/components/sidebar/SidebarUserFooter.tsx"
 server_main="${browser_dir}/agent/apps/server/src/main.ts"
 server_api="${browser_dir}/agent/apps/server/src/api/server.ts"
 request_auth="${browser_dir}/agent/apps/server/src/api/utils/request-auth.ts"
@@ -233,6 +239,121 @@ check_not_contains \
   "${agent_wxt_config}" \
   "default_title: 'Ask BrowserOS'" \
   "repo-owned extension action no longer exposes Ask BrowserOS"
+
+check_contains \
+  "${agent_wxt_config}" \
+  "page: 'app.html#/home'" \
+  "extension options page opens the Wuu workbench"
+
+check_not_contains \
+  "${agent_wxt_config}" \
+  "page: 'app.html#/settings'" \
+  "extension options page no longer opens legacy BrowserOS AI settings"
+
+check_contains \
+  "${agent_app_routes}" \
+  'path="settings/*" element={<WuuHomeRedirect />}' \
+  "legacy settings routes redirect to the Wuu workbench"
+
+check_contains \
+  "${agent_app_routes}" \
+  'path="agents/*" element={<WuuHomeRedirect />}' \
+  "legacy agents routes redirect to the Wuu workbench"
+
+check_contains \
+  "${agent_app_routes}" \
+  'path="connect-apps" element={<WuuHomeRedirect />}' \
+  "legacy connect-apps route redirects to the Wuu workbench"
+
+check_contains \
+  "${agent_app_routes}" \
+  'path="scheduled" element={<WuuHomeRedirect />}' \
+  "legacy scheduled tasks route redirects to the Wuu workbench"
+
+check_not_contains \
+  "${agent_app_routes}" \
+  "NewTabChat" \
+  "Wuu Browser app routes no longer mount legacy new-tab chat"
+
+check_not_contains \
+  "${agent_app_routes}" \
+  "AgentCommandHome" \
+  "Wuu Browser app routes no longer mount legacy BrowserOS agent home"
+
+check_not_contains \
+  "${agent_app_routes}" \
+  "AISettingsPage" \
+  "Wuu Browser app routes no longer mount legacy BrowserOS AI settings"
+
+check_not_contains \
+  "${agent_background}" \
+  "toggleSidePanel" \
+  "extension action no longer toggles the legacy side panel"
+
+check_not_contains \
+  "${agent_background}" \
+  "onOpenSidePanelWithSearch" \
+  "background script no longer opens the legacy search side panel"
+
+check_not_contains \
+  "${agent_background}" \
+  "setupLlmProvidersSyncToBackend" \
+  "background script no longer syncs legacy BrowserOS AI providers"
+
+check_not_contains \
+  "${agent_background}" \
+  "scheduledJobRuns" \
+  "background script no longer runs legacy BrowserOS scheduled AI jobs"
+
+check_contains \
+  "${agent_sidebar_layout}" \
+  "Wuu Browser" \
+  "mobile shell branding uses Wuu Browser"
+
+check_not_contains \
+  "${agent_sidebar_layout}" \
+  "BrowserOS" \
+  "mobile shell branding no longer uses BrowserOS"
+
+check_not_contains \
+  "${agent_sidebar_navigation}" \
+  "Connect Apps" \
+  "sidebar no longer exposes legacy connect-apps navigation"
+
+check_not_contains \
+  "${agent_sidebar_navigation}" \
+  "Scheduled Tasks" \
+  "sidebar no longer exposes legacy scheduled task navigation"
+
+check_not_contains \
+  "${agent_sidebar_navigation}" \
+  "Agents" \
+  "sidebar no longer exposes legacy BrowserOS agents navigation"
+
+check_not_contains \
+  "${agent_sidebar_navigation}" \
+  "Settings" \
+  "sidebar no longer exposes legacy BrowserOS settings navigation"
+
+check_not_contains \
+  "${agent_sidebar_branding}" \
+  "BrowserOS" \
+  "sidebar branding no longer uses BrowserOS"
+
+check_contains \
+  "${agent_sidebar_branding}" \
+  "Wuu Browser" \
+  "sidebar branding uses Wuu Browser"
+
+check_not_contains \
+  "${agent_sidebar_footer}" \
+  "About BrowserOS" \
+  "sidebar footer no longer links BrowserOS help"
+
+check_contains \
+  "${agent_sidebar_footer}" \
+  "About Wuu" \
+  "sidebar footer points at Wuu"
 
 check_nearby_contains \
   "${ui_features_patch}" \

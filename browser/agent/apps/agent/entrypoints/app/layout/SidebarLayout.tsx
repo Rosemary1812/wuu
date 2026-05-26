@@ -73,7 +73,7 @@ export const SidebarLayout: FC = () => {
             >
               <Menu className="size-4" />
             </Button>
-            <span className="font-semibold">BrowserOS</span>
+            <span className="font-semibold">Wuu Browser</span>
           </header>
           <main className="flex-1 overflow-y-auto">
             <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
@@ -108,17 +108,11 @@ export const SidebarLayout: FC = () => {
           <AppSidebar expanded={sidebarOpen} onOpenShortcuts={openShortcuts} />
         </div>
 
-        {location.pathname === '/home/chat' ? (
-          <main className="relative h-dvh overflow-hidden">
+        <main className="min-h-screen overflow-y-auto">
+          <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
             <Outlet />
-          </main>
-        ) : (
-          <main className="min-h-screen overflow-y-auto">
-            <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-              <Outlet />
-            </div>
-          </main>
-        )}
+          </div>
+        </main>
       </div>
       <ShortcutsDialog
         open={shortcutsDialogOpen}

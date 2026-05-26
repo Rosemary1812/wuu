@@ -42,7 +42,7 @@ export default defineConfig({
       newtab: 'app.html',
     },
     options_ui: {
-      page: 'app.html#/settings',
+      page: 'app.html#/home',
       open_in_tab: true,
     },
     action: {

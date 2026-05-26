@@ -1,58 +1,21 @@
 import { sessionStorage } from '@/lib/auth/sessionStorage'
 import { Capabilities } from '@/lib/browseros/capabilities'
 import { getHealthCheckUrl, getMcpServerUrl } from '@/lib/browseros/helpers'
-import { openSidePanel, toggleSidePanel } from '@/lib/browseros/toggleSidePanel'
 import { checkAndShowChangelog } from '@/lib/changelog/changelog-notifier'
-import {
-  setupLlmProvidersBackupToBrowserOS,
-  setupLlmProvidersSyncToBackend,
-  syncLlmProviders,
-} from '@/lib/llm-providers/storage'
 import { fetchMcpTools } from '@/lib/mcp/client'
 import { onServerMessage } from '@/lib/messaging/server/serverMessages'
-import { onOpenSidePanelWithSearch } from '@/lib/messaging/sidepanel/openSidepanelWithSearch'
 import { authRedirectPathStorage } from '@/lib/onboarding/onboardingStorage'
 import { syncOnboardingProfile } from '@/lib/onboarding/syncOnboardingProfile'
-import {
-  setupScheduledJobsSyncToBackend,
-  syncScheduledJobs,
-} from '@/lib/schedules/scheduleStorage'
-import { searchActionsStorage } from '@/lib/search-actions/searchActionsStorage'
 import { selectedTextStorage } from '@/lib/selected-text/selectedTextStorage'
 import { stopAgentStorage } from '@/lib/stop-agent/stop-agent-storage'
-import { scheduledJobRuns } from './scheduledJobRuns'
 
 export default defineBackground(() => {
   chrome.sidePanel.setOptions({ enabled: false })
 
   Capabilities.initialize().catch(() => null)
-  setupLlmProvidersBackupToBrowserOS()
-  setupLlmProvidersSyncToBackend()
-  setupScheduledJobsSyncToBackend()
 
-  scheduledJobRuns()
-
-  chrome.action.onClicked.addListener(async (tab) => {
-    if (tab.id) {
-      await toggleSidePanel(tab.id)
-    }
-  })
-
-  onOpenSidePanelWithSearch('open', async (messageData) => {
-    const currentTabsList = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    })
-    const currentTab = currentTabsList?.[0]?.id
-    if (currentTab) {
-      const { opened } = await openSidePanel(currentTab)
-
-      if (opened) {
-        setTimeout(() => {
-          searchActionsStorage.setValue(messageData.data)
-        }, 500)
-      }
-    }
+  chrome.action.onClicked.addListener(() => {
+    openHomeTabIfMissing()
   })
 
   chrome.runtime.onInstalled.addListener((details) => {
@@ -110,12 +73,6 @@ export default defineBackground(() => {
 
   sessionStorage.watch(async (newSession) => {
     if (newSession?.user?.id) {
-      try {
-        await syncLlmProviders()
-      } catch {}
-      try {
-        await syncScheduledJobs()
-      } catch {}
       try {
         await syncOnboardingProfile(newSession.user.id)
       } catch {}

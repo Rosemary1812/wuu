@@ -1,15 +1,4 @@
-import {
-  Brain,
-  CalendarClock,
-  Cpu,
-  Laptop,
-  type LucideIcon,
-  PlugZap,
-  Settings,
-  Shield,
-  Sparkles,
-  Wand2,
-} from 'lucide-react'
+import { Laptop, type LucideIcon } from 'lucide-react'
 import type { FC } from 'react'
 import { NavLink, useLocation } from 'react-router'
 import {
@@ -18,8 +7,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { Feature } from '@/lib/browseros/capabilities'
-import { useCapabilities } from '@/lib/browseros/useCapabilities'
 import { cn } from '@/lib/utils'
 
 interface SidebarNavigationProps {
@@ -30,60 +17,13 @@ type NavItem = {
   name: string
   to: string
   icon: LucideIcon
-  feature?: Feature
 }
 
 const primaryNavItems: NavItem[] = [
   { name: 'Workbench', to: '/home', icon: Laptop },
-  {
-    name: 'Connect Apps',
-    to: '/connect-apps',
-    icon: PlugZap,
-    feature: Feature.MANAGED_MCP_SUPPORT,
-  },
-  { name: 'Scheduled Tasks', to: '/scheduled', icon: CalendarClock },
-  {
-    name: 'Agents',
-    to: '/agents',
-    icon: Cpu,
-    feature: Feature.ALPHA_FEATURES_SUPPORT,
-  },
-  {
-    name: 'Skills',
-    to: '/home/skills',
-    icon: Wand2,
-    feature: Feature.SKILLS_SUPPORT,
-  },
-  {
-    name: 'Memory',
-    to: '/home/memory',
-    icon: Brain,
-    feature: Feature.MEMORY_SUPPORT,
-  },
-  {
-    name: 'Soul',
-    to: '/home/soul',
-    icon: Sparkles,
-    feature: Feature.SOUL_SUPPORT,
-  },
-  {
-    name: 'Governance',
-    to: '/admin',
-    icon: Shield,
-    feature: Feature.ALPHA_FEATURES_SUPPORT,
-  },
-  { name: 'Settings', to: '/settings/ai', icon: Settings },
 ]
 
 function isNavItemActive(item: NavItem, pathname: string): boolean {
-  if (item.to === '/settings/ai') {
-    return pathname.startsWith('/settings')
-  }
-
-  if (item.to === '/agents') {
-    return pathname === '/agents' || pathname.startsWith('/agents/')
-  }
-
   return pathname === item.to
 }
 
@@ -91,17 +31,12 @@ export const SidebarNavigation: FC<SidebarNavigationProps> = ({
   expanded = true,
 }) => {
   const location = useLocation()
-  const { supports } = useCapabilities()
-
-  const filteredItems = primaryNavItems.filter(
-    (item) => !item.feature || supports(item.feature),
-  )
 
   return (
     <TooltipProvider delayDuration={0}>
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-2">
         <nav className="space-y-1">
-          {filteredItems.map((item) => {
+          {primaryNavItems.map((item) => {
             const Icon = item.icon
             const isActive = isNavItemActive(item, location.pathname)
 
