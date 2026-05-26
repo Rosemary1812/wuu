@@ -4251,13 +4251,17 @@ function TurnView({
   const renderedItems: JSX.Element[] = [];
   let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
-  const actionableAgentMessageID = turn.status === "completed" ? actionableAgentMessageItemID(turn) : undefined;
+  const explicitFinalAgentMessageID = explicitFinalAgentMessageItemID(turn);
+  const liveFinalAgentMessageID = turn.status === "in_progress" ? explicitFinalAgentMessageID : undefined;
+  const actionableAgentMessageID =
+    turn.status === "completed" ? explicitFinalAgentMessageID ?? actionableAgentMessageItemID(turn) : undefined;
   const primaryAgentMessageID =
+    liveFinalAgentMessageID ??
     actionableAgentMessageID ??
     (turn.status === "in_progress" || turn.status === "failed" || turn.status === "interrupted"
       ? latestAgentMessageItemIDForTurn(turn)
       : undefined);
-  const processAutoCollapse = turn.status === "completed" && actionableAgentMessageID !== undefined;
+  const processAutoCollapse = liveFinalAgentMessageID !== undefined || (turn.status === "completed" && actionableAgentMessageID !== undefined);
 
   function renderThreadItem(item: ThreadItem, streaming: boolean): JSX.Element | null {
     return (
@@ -4403,11 +4407,13 @@ function TurnProcessGroup({
     const previousAutoCollapse = previousAutoCollapseRef.current;
     previousAutoCollapseRef.current = autoCollapse;
     if (autoCollapse && !previousAutoCollapse) {
-      setExpanded(false);
+      const timer = window.setTimeout(() => setExpanded(false), 140);
+      return () => window.clearTimeout(timer);
     }
     if (!autoCollapse && previousAutoCollapse) {
       setExpanded(true);
     }
+    return undefined;
   }, [autoCollapse]);
 
   return (
@@ -4591,6 +4597,19 @@ function actionableAgentMessageItemID(turn: Turn): string | undefined {
   }
 
   return hasToolCall ? latestPostToolAgentMessageID : latestAgentMessageID;
+}
+
+function explicitFinalAgentMessageItemID(turn: Turn): string | undefined {
+  for (let itemIndex = turn.items.length - 1; itemIndex >= 0; itemIndex--) {
+    const item = turn.items[itemIndex];
+    if (item.type !== "agent_message" || item.phase !== "final_answer") {
+      continue;
+    }
+    if (streamFieldValue(turn.id, item, "text").trim().length > 0) {
+      return item.id;
+    }
+  }
+  return undefined;
 }
 
 function ThreadItemView({
