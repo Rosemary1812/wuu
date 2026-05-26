@@ -788,7 +788,7 @@
           </div>
           <div class="constraint-list">
             <strong>已编码约束：</strong><br />
-            final text 无容器；过程无背景；运行态文字慢扫光；支持 token 流式和长停顿提示；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
+            final text 无容器；过程无背景；摘要状态按阶段聚合；运行态文字慢扫光；支持 token 流式和长停顿提示；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
           </div>
         </aside>
 
@@ -826,6 +826,11 @@
       let processExpanded = true;
       let processItemCount = 0;
       let runID = 0;
+      const statusText = {
+        processing: "正在处理",
+        replying: "正在回复",
+        stalled: "仍在生成"
+      };
 
       const wait = (ms) => new Promise((resolve) => {
         const timer = window.setTimeout(resolve, ms);
@@ -957,7 +962,7 @@
           <article class="final-text" id="finalText"></article>
         `;
         document.querySelector("#processToggle").addEventListener("click", toggleProcess);
-        setStatus("正在思考", "running");
+        setStatus(statusText.processing, "running");
         startTicker();
         return runID;
       }
@@ -1083,6 +1088,7 @@
         const id = createTurn("我们重构中间消息流：发送后少展示信息，运行中展开过程，完成后只突出最后回复。");
         await playCommonProcess(id);
         if (!isActiveRun(id)) return;
+        setStatus(statusText.replying, "running");
         await streamFinalMarkdown(successMarkdown, id);
         if (!isActiveRun(id)) return;
         await waitStep(540);
@@ -1094,7 +1100,7 @@
         const id = createTurn("模拟真实流式输出忽快忽慢，并在某个 token 上短暂停住。");
         await playCommonProcess(id);
         if (!isActiveRun(id)) return;
-        setStatus("正在生成回复", "running");
+        setStatus(statusText.replying, "running");
         await streamFinalMarkdown(successMarkdown, id, {
           jitter: true,
           stall: {
@@ -1115,7 +1121,6 @@
         addProcessItem("thought", "我先确认消息流里哪些内容属于最终回复，哪些属于中间过程。");
         await waitStep(650);
         if (!isActiveRun(id)) return;
-        setStatus("正在查看代码", "running");
         addProcessItem("action", "搜索 ThreadItemView");
         await waitStep(520);
         if (!isActiveRun(id)) return;
@@ -1128,7 +1133,6 @@
         addProcessItem("thought", "代码已经把 agent_message、reasoning 和 tool_call 分成不同 item，UI 可以按类型组织。");
         await waitStep(700);
         if (!isActiveRun(id)) return;
-        setStatus("正在整理回复", "running");
         addProcessItem("action", "运行 npm run typecheck");
         await waitStep(400);
       }
@@ -1156,9 +1160,9 @@
             document.querySelectorAll("[data-choice]").forEach((item) => {
               item.disabled = true;
             });
-            setStatus("正在继续处理", "running");
             addProcessItem("action", `收到选择：${button.textContent.trim()}`);
             await waitStep(500);
+            setStatus(statusText.replying, "running");
             await streamFinalMarkdown("已按你的选择继续。等待用户选择时仍然使用同一条状态行，只是状态更明确，不需要额外做大卡片。", runID);
             await waitStep(420);
             completeProcess({ status: "completed", elapsed: 11 });
@@ -1173,7 +1177,6 @@
         addProcessItem("thought", "我会保留同一条状态行体系，只把失败态的文字调成轻红色。");
         await waitStep(520);
         if (!isActiveRun(id)) return;
-        setStatus("正在运行检查", "running");
         addProcessItem("action", "运行 npm run typecheck");
         await waitStep(700);
         if (!isActiveRun(id)) return;
@@ -1188,7 +1191,6 @@
         addProcessItem("thought", "我已经开始分析消息流，但这个 turn 会在中途被停止。");
         await waitStep(520);
         if (!isActiveRun(id)) return;
-        setStatus("正在查看代码", "running");
         addProcessItem("action", "读取 App.tsx");
         await waitStep(650);
         if (!isActiveRun(id)) return;
@@ -1235,7 +1237,7 @@
             if (!isActiveRun(id)) {
               return;
             }
-            setStatus("正在生成回复", "running");
+            setStatus(statusText.replying, "running");
           }
           await wait(streamTokenDelay(index, Boolean(options.jitter)));
         }
@@ -1261,7 +1263,7 @@
             return;
           }
           tailVisible = true;
-          setStatus("仍在生成", "running");
+          setStatus(statusText.stalled, "running");
           finalText.classList.add("is-stalled");
           markStalledTextTail(finalText);
         }, thresholdMs);
