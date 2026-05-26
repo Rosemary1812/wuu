@@ -460,6 +460,13 @@
         animation: finalBlockIn 240ms var(--timing) forwards;
       }
 
+      .semantic-block {
+        opacity: 0;
+        transform: translateY(5px);
+        filter: blur(2px);
+        animation: semanticBlockIn 420ms var(--timing) forwards;
+      }
+
       .final-text p {
         margin: 0 0 12px;
       }
@@ -468,7 +475,7 @@
         margin-top: 0;
       }
 
-      .final-text.is-streaming > * {
+      .final-text.is-streaming:not(.semantic-streaming) > * {
         animation: none;
       }
 
@@ -653,6 +660,14 @@
         }
       }
 
+      @keyframes semanticBlockIn {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+          filter: blur(0);
+        }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         *,
         *::before,
@@ -700,6 +715,7 @@
           <p class="debug-note">调试按钮会模拟真实 turn：运行中展开过程，完成后折叠，只突出最后一段 final text。</p>
           <div class="debug-actions">
             <button type="button" data-run="success">播放完整成功流</button>
+            <button type="button" data-run="semantic">播放语义块渐显流</button>
             <button type="button" data-run="waiting">模拟等待用户选择</button>
             <button type="button" data-run="failed">模拟处理失败</button>
             <button type="button" data-run="stopped">模拟中途停止</button>
@@ -739,7 +755,7 @@
           </div>
           <div class="constraint-list">
             <strong>已编码约束：</strong><br />
-            final text 无容器；过程无背景；运行态文字慢扫光；final text 按 token 流式增量渲染；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
+            final text 无容器；过程无背景；运行态文字慢扫光；支持 token 流式和语义块渐显对比；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
           </div>
         </aside>
 
@@ -1022,6 +1038,27 @@
 
       async function runSuccess() {
         const id = createTurn("我们重构中间消息流：发送后少展示信息，运行中展开过程，完成后只突出最后回复。");
+        await playCommonProcess(id);
+        if (!isActiveRun(id)) return;
+        await streamFinalMarkdown(successMarkdown, id);
+        if (!isActiveRun(id)) return;
+        await waitStep(540);
+        if (!isActiveRun(id)) return;
+        completeProcess({ status: "completed", elapsed: 18 });
+      }
+
+      async function runSemanticReveal() {
+        const id = createTurn("对比另一种 final text 出现方式：不要逐 token 重绘，而是按语义块渐显。");
+        await playCommonProcess(id);
+        if (!isActiveRun(id)) return;
+        await streamFinalSemantic(successMarkdown, id);
+        if (!isActiveRun(id)) return;
+        await waitStep(540);
+        if (!isActiveRun(id)) return;
+        completeProcess({ status: "completed", elapsed: 18 });
+      }
+
+      async function playCommonProcess(id) {
         await waitStep(350);
         if (!isActiveRun(id)) return;
         addProcessItem("thought", "我先确认消息流里哪些内容属于最终回复，哪些属于中间过程。");
@@ -1043,12 +1080,6 @@
         setStatus("正在整理回复", "running");
         addProcessItem("action", "运行 npm run typecheck");
         await waitStep(400);
-        if (!isActiveRun(id)) return;
-        await streamFinalMarkdown(successMarkdown, id);
-        if (!isActiveRun(id)) return;
-        await waitStep(540);
-        if (!isActiveRun(id)) return;
-        completeProcess({ status: "completed", elapsed: 18 });
       }
 
       async function runWaiting() {
@@ -1136,6 +1167,7 @@
         if (!finalText) {
           return;
         }
+        finalText.classList.remove("semantic-streaming");
         finalText.classList.add("is-streaming");
         let buffer = "";
         const tokens = tokenizeStream(markdown);
@@ -1148,6 +1180,124 @@
           await wait(1000 / currentTokenRate());
         }
         finalText.classList.remove("is-streaming");
+      }
+
+      async function streamFinalSemantic(markdown, id) {
+        const finalText = document.querySelector("#finalText");
+        if (!finalText) {
+          return;
+        }
+        finalText.classList.add("is-streaming", "semantic-streaming");
+        finalText.innerHTML = "";
+        const blocks = splitMarkdownBlocks(markdown);
+        for (const block of blocks) {
+          if (!isActiveRun(id)) {
+            return;
+          }
+          appendSemanticBlock(renderMarkdown(block));
+          const tokenCount = Math.max(1, tokenizeStream(block).filter((token) => token.trim()).length);
+          const delay = Math.min(900, Math.max(180, (tokenCount / currentTokenRate()) * 1000));
+          await wait(delay);
+        }
+        finalText.classList.remove("is-streaming", "semantic-streaming");
+      }
+
+      function appendSemanticBlock(html) {
+        const finalText = document.querySelector("#finalText");
+        if (!finalText || !html.trim()) {
+          return;
+        }
+        const block = document.createElement("div");
+        block.className = "final-block semantic-block";
+        block.innerHTML = html;
+        finalText.appendChild(block);
+      }
+
+      function splitMarkdownBlocks(markdown) {
+        const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+        const blocks = [];
+        let index = 0;
+        while (index < lines.length) {
+          if (/^\s*$/.test(lines[index])) {
+            index += 1;
+            continue;
+          }
+
+          if (/^```/.test(lines[index])) {
+            const block = [lines[index]];
+            index += 1;
+            while (index < lines.length) {
+              block.push(lines[index]);
+              const done = /^```/.test(lines[index]);
+              index += 1;
+              if (done) {
+                break;
+              }
+            }
+            blocks.push(block.join("\n"));
+            continue;
+          }
+
+          if (isTableStart(lines, index)) {
+            const block = [lines[index], lines[index + 1]];
+            index += 2;
+            while (index < lines.length && /\|/.test(lines[index]) && !/^\s*$/.test(lines[index])) {
+              block.push(lines[index]);
+              index += 1;
+            }
+            blocks.push(block.join("\n"));
+            continue;
+          }
+
+          if (/^(#{1,6})\s+/.test(lines[index])) {
+            blocks.push(lines[index]);
+            index += 1;
+            continue;
+          }
+
+          if (/^>\s?/.test(lines[index])) {
+            const block = [];
+            while (index < lines.length && /^>\s?/.test(lines[index])) {
+              block.push(lines[index]);
+              index += 1;
+            }
+            blocks.push(block.join("\n"));
+            continue;
+          }
+
+          if (/^\s*((?:[-*])|(?:\d+\.))\s+/.test(lines[index])) {
+            const first = lines[index].match(/^\s*((?:[-*])|(?:\d+\.))\s+/);
+            const ordered = Boolean(first && /\d+\./.test(first[1]));
+            const block = [];
+            while (index < lines.length) {
+              const item = lines[index].match(/^\s*((?:[-*])|(?:\d+\.))\s+/);
+              if (!item || /\d+\./.test(item[1]) !== ordered) {
+                break;
+              }
+              block.push(lines[index]);
+              index += 1;
+            }
+            blocks.push(block.join("\n"));
+            continue;
+          }
+
+          const block = [lines[index]];
+          index += 1;
+          while (
+            index < lines.length &&
+            !/^\s*$/.test(lines[index]) &&
+            !/^```/.test(lines[index]) &&
+            !/^(#{1,6})\s+/.test(lines[index]) &&
+            !/^>\s?/.test(lines[index]) &&
+            !/^\s*((?:[-*])|(?:\d+\.))\s+/.test(lines[index]) &&
+            !isTableStart(lines, index)
+          ) {
+            block.push(lines[index]);
+            index += 1;
+          }
+          blocks.push(block.join("\n"));
+        }
+        return blocks;
       }
 
       function renderFinalMarkdown(markdown) {
@@ -1329,6 +1479,8 @@
           const run = button.dataset.run;
           if (run === "success") {
             void runSuccess();
+          } else if (run === "semantic") {
+            void runSemanticReveal();
           } else if (run === "waiting") {
             void runWaiting();
           } else if (run === "failed") {
