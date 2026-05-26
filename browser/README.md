@@ -188,10 +188,15 @@ make browser-launch-product
 
 The product preview launch disables the app bundle's bundled BrowserOS
 extensions, loads `browser/agent/apps/agent/dist/chrome-mv3-dev`, stages local
-server resources, and opens `chrome://wuu`. Double-clicking the local preview
-app directly uses the resources already embedded in that app bundle, so it can
-lag behind repository changes until a full Chromium rebuild/package refresh
-embeds those assets.
+server resources, and opens `chrome://wuu`. It uses the persistent product
+profile at `~/Library/Application Support/Wuu Browser` with the real macOS
+keychain by default, so migrated cookies, bookmarks, history, and passwords are
+visible while the local Agent/Workbench assets still update from this
+repository. Use `WUU_BROWSER_PRODUCT_TEMP_PROFILE=1 make browser-launch-product`
+when you intentionally need an isolated clean profile. Double-clicking the
+local preview app directly uses the resources already embedded in that app
+bundle, so it can lag behind repository changes until a full Chromium
+rebuild/package refresh embeds those assets.
 
 Do not treat auto-update as enabled unless the package command succeeds with
 `ARGS="--update-enabled"`. That gate intentionally fails while browser,

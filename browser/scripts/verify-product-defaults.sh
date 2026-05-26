@@ -520,6 +520,21 @@ check_contains \
   "dev launch stages Wuu macOS icons before opening the app"
 
 check_contains \
+  "${launch_script}" \
+  'profile_mode="${WUU_BROWSER_PROFILE_MODE:-temp}"' \
+  "dev launch defaults to isolated temporary profiles"
+
+check_contains \
+  "${launch_script}" \
+  '--product-profile|--persistent-profile)' \
+  "dev launch exposes a persistent Wuu Browser profile mode"
+
+check_contains \
+  "${launch_script}" \
+  'use_mock_keychain=0' \
+  "persistent profile mode can use the real macOS keychain"
+
+check_contains \
   "${makefile}" \
   "browser-prepare-checkouts:" \
   "Makefile exposes the BrowserOS/Chromium checkout preparation entry point"
@@ -718,6 +733,21 @@ check_contains \
   "${launch_product_script}" \
   'WUU_BROWSER_STAGE_SERVER_RESOURCES="${WUU_BROWSER_STAGE_SERVER_RESOURCES:-1}"' \
   "product preview launch stages the latest repo-owned server resources by default"
+
+check_contains \
+  "${launch_product_script}" \
+  'WUU_BROWSER_PRODUCT_PROFILE_DIR="${WUU_BROWSER_PRODUCT_PROFILE_DIR:-${HOME}/Library/Application Support/Wuu Browser}"' \
+  "product preview launch targets the persistent Wuu Browser profile by default"
+
+check_contains \
+  "${launch_product_script}" \
+  'WUU_BROWSER_PROFILE_MODE="${WUU_BROWSER_PROFILE_MODE:-product}"' \
+  "product preview launch defaults to persistent product profile mode"
+
+check_contains \
+  "${launch_product_script}" \
+  'WUU_BROWSER_PRODUCT_TEMP_PROFILE' \
+  "product preview launch keeps temporary profiles as an explicit opt-in"
 
 check_not_contains \
   "${launch_script}" \

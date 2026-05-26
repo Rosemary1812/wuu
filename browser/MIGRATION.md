@@ -328,15 +328,20 @@ Current packaging path:
   gate. It fails while browser, extension, or server update feeds still point at
   BrowserOS infrastructure or release signing inputs are missing.
 - `make browser-launch-product` runs the production-named local app while
-  forcing the latest repo-owned Workbench extension and server resources. This
-  avoids accidentally testing stale bundled BrowserOS resources from the copied
-  Chromium app.
+  forcing the latest repo-owned Workbench extension and server resources. It
+  uses the persistent product profile at
+  `~/Library/Application Support/Wuu Browser` and the real macOS keychain by
+  default, so migrated browser state remains visible while local Agent assets
+  keep updating from the repository. This avoids accidentally testing stale
+  bundled BrowserOS resources from the copied Chromium app.
+- `WUU_BROWSER_PRODUCT_TEMP_PROFILE=1 make browser-launch-product` keeps the
+  old isolated temporary profile behavior for clean smoke tests.
 - `make browser-launch-dev` prefers the repo-staged Wuu Browser Dev app before
   falling back to the external BrowserOS Chromium build.
 - `make browser-launch-dev` and `make browser-launch-product` now default to a
   single active local browser by stopping previous Wuu Browser Dev/Wuu Browser/
-  BrowserOS Dev launches that use repository-managed temporary profiles and
-  deleting stale temporary profile directories before opening a new instance.
+  BrowserOS Dev launches from local build paths and deleting stale temporary
+  profile directories before opening a new instance.
 
 Remaining gap:
 

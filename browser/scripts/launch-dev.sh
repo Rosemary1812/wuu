@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: browser/scripts/launch-dev.sh [--dry-run] [--profile-dir DIR] [--url URL] [--no-cleanup-existing]
+Usage: browser/scripts/launch-dev.sh [--dry-run] [--profile-dir DIR] [--profile-mode temp|product] [--url URL] [--no-cleanup-existing]
 
 Launch the local Wuu Browser build with repository-owned agent assets.
 
@@ -25,6 +25,16 @@ Environment overrides:
                            Build and stage local server resources before launch.
                            Defaults to 1 when WUU_BROWSER_SERVER_RESOURCES is not set.
   WUU_BROWSER_PROFILE_DIR  Browser profile directory.
+  WUU_BROWSER_PROFILE_MODE Profile mode. Use "temp" for an isolated dev
+                           profile, or "product" to use the persistent Wuu
+                           Browser profile and the real macOS keychain.
+                           Defaults to temp.
+  WUU_BROWSER_PRODUCT_PROFILE_DIR
+                           Persistent product profile directory. Defaults to
+                           ~/Library/Application Support/Wuu Browser.
+  WUU_BROWSER_USE_MOCK_KEYCHAIN
+                           Use Chromium's mock keychain on macOS. Defaults to
+                           1 in temp mode and 0 in product mode.
   WUU_BROWSER_START_URL    Initial URL. Defaults to the Wuu workbench tab.
   WUU_BIN                  Wuu native runtime binary used by the browser tab.
                            Defaults to a dev build under browser/.cache.
@@ -49,6 +59,9 @@ USAGE
 
 dry_run=false
 profile_dir="${WUU_BROWSER_PROFILE_DIR:-}"
+profile_mode="${WUU_BROWSER_PROFILE_MODE:-temp}"
+product_profile_dir="${WUU_BROWSER_PRODUCT_PROFILE_DIR:-${HOME}/Library/Application Support/Wuu Browser}"
+use_mock_keychain="${WUU_BROWSER_USE_MOCK_KEYCHAIN:-}"
 start_url="${WUU_BROWSER_START_URL:-chrome://wuu}"
 cleanup_existing="${WUU_BROWSER_CLEANUP_EXISTING:-1}"
 profile_prefix="${WUU_BROWSER_PROFILE_PREFIX:-wuu-browser-dev}"
@@ -67,6 +80,30 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       shift 2
+      ;;
+    --profile-mode)
+      profile_mode="${2:-}"
+      if [[ -z "${profile_mode}" ]]; then
+        echo "--profile-mode requires temp or product" >&2
+        exit 2
+      fi
+      shift 2
+      ;;
+    --product-profile|--persistent-profile)
+      profile_mode=product
+      shift
+      ;;
+    --temp-profile)
+      profile_mode=temp
+      shift
+      ;;
+    --use-mock-keychain)
+      use_mock_keychain=1
+      shift
+      ;;
+    --no-mock-keychain)
+      use_mock_keychain=0
+      shift
       ;;
     --url)
       start_url="${2:-}"
@@ -94,6 +131,39 @@ done
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
+
+if [[ "${profile_mode}" == "persistent" ]]; then
+  profile_mode=product
+fi
+
+case "${profile_mode}" in
+  temp|product) ;;
+  *)
+    echo "Unsupported profile mode: ${profile_mode}" >&2
+    echo "Use temp or product." >&2
+    exit 2
+    ;;
+esac
+
+case "${use_mock_keychain}" in
+  ""|0|1) ;;
+  *)
+    echo "WUU_BROWSER_USE_MOCK_KEYCHAIN must be 0 or 1." >&2
+    exit 2
+    ;;
+esac
+
+if [[ "${profile_mode}" == "product" && -z "${profile_dir}" ]]; then
+  profile_dir="${product_profile_dir}"
+fi
+
+if [[ -z "${use_mock_keychain}" ]]; then
+  if [[ "${profile_mode}" == "product" ]]; then
+    use_mock_keychain=0
+  else
+    use_mock_keychain=1
+  fi
+fi
 
 browseros_repo="${WUU_BROWSEROS_REPO:-${repo_root}/.worktrees/browseros}"
 chromium_src="${WUU_CHROMIUM_SRC:-${repo_root}/.worktrees/chromium/src}"
@@ -299,6 +369,8 @@ if [[ -z "${profile_dir}" ]]; then
   else
     profile_dir="$(mktemp -d -t "${profile_prefix}.XXXXXX")"
   fi
+elif [[ "${dry_run}" != "true" ]]; then
+  mkdir -p "${profile_dir}"
 fi
 
 cdp_port="${WUU_BROWSER_CDP_PORT:-9100}"
@@ -329,7 +401,13 @@ fi
 args=(
   "--no-first-run"
   "--no-default-browser-check"
-  "--use-mock-keychain"
+)
+
+if [[ "${use_mock_keychain}" == "1" ]]; then
+  args+=("--use-mock-keychain")
+fi
+
+args+=(
   "--show-component-extension-options"
   "--disable-browseros-extensions"
   "--disable-browseros-server-updater"
@@ -345,6 +423,10 @@ args=(
 )
 
 cmd=(open -na "${app_path}" --args "${args[@]}")
+keychain_mode=system
+if [[ "${use_mock_keychain}" == "1" ]]; then
+  keychain_mode=mock
+fi
 
 echo "${launch_label}"
 echo "  app:       ${app_path}"
@@ -354,6 +436,8 @@ echo "  server:    ${server_resources_dir}"
 echo "  srv target:${server_target}"
 echo "  stage srv: ${stage_server_resources}"
 echo "  profile:   ${profile_dir}"
+echo "  profile mode:${profile_mode}"
+echo "  keychain:  ${keychain_mode}"
 echo "  cleanup:   ${cleanup_existing}"
 echo "  start URL: ${start_url}"
 echo "  Wuu source:${WUU_SOURCE_ROOT}"
