@@ -205,3 +205,11 @@ type Notification struct {
 	Status   Status
 	Snapshot SubAgentSnapshot
 }
+
+// StreamNotification is sent to listeners for every model/tool stream event
+// emitted by a sub-agent turn.
+type StreamNotification struct {
+	AgentID  string
+	Snapshot SubAgentSnapshot
+	Event    providers.StreamEvent
+}

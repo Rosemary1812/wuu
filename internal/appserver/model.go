@@ -35,11 +35,14 @@ func (th *threadState) snapshotLocked() Thread {
 	}
 	return Thread{
 		ID:               th.ID,
+		ParentID:         th.ParentID,
+		AgentPath:        th.AgentPath,
 		Preview:          threadPreview(th.History),
 		ModelProvider:    th.ModelProvider,
 		Model:            th.Model,
 		CWD:              th.CWD,
 		Status:           status,
+		ReadOnly:         th.ReadOnly,
 		Pinned:           th.PinnedAt != nil,
 		Archived:         th.ArchivedAt != nil,
 		ForkedFromID:     th.ForkedFromID,
@@ -72,6 +75,51 @@ func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMess
 	return turn
 }
 
+func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
+	if th.running && th.currentTurn != "" {
+		turn := th.ensureTurnLocked(th.currentTurn, now)
+		th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
+		return turn, false
+	}
+
+	if len(th.Turns) == 0 {
+		turnID := fmt.Sprintf("%s-turn-%04d", th.ID, 1)
+		turn := Turn{
+			ID:        turnID,
+			ItemsView: TurnItemsViewFull,
+			Status:    TurnStatusInProgress,
+			StartedAt: &now,
+		}
+		th.Turns = append(th.Turns, turn)
+		th.currentTurn = turnID
+		th.running = true
+		th.nextItemIndex = 0
+		return turn, true
+	}
+
+	index := len(th.Turns) - 1
+	turn := th.Turns[index]
+	started := turn.Status != TurnStatusInProgress
+	turn.Status = TurnStatusInProgress
+	if turn.StartedAt == nil {
+		startedAt := th.CreatedAt
+		if startedAt.IsZero() {
+			startedAt = now
+		}
+		turn.StartedAt = &startedAt
+	}
+	turn.CompletedAt = nil
+	turn.Error = nil
+	th.Turns[index] = turn
+	th.currentTurn = turn.ID
+	th.running = true
+	th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
+	if th.toolItems == nil {
+		th.toolItems = make(map[string]string)
+	}
+	return turn, started
+}
+
 func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err error, now time.Time) Turn {
 	th.running = false
 	th.currentTurn = ""
@@ -93,6 +141,21 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 	}
 	th.replaceTurnLocked(turn)
 	return turn
+}
+
+func maxTurnItemIndex(turn Turn) int {
+	maxIndex := len(turn.Items)
+	for _, item := range turn.Items {
+		_, suffix, ok := strings.Cut(item.ID, "-item-")
+		if !ok {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(suffix, "%d", &n); err == nil && n > maxIndex {
+			maxIndex = n
+		}
+	}
+	return maxIndex
 }
 
 func (th *threadState) applyStreamEventLocked(turnID string, ev providers.StreamEvent, now time.Time) []outboundNotification {

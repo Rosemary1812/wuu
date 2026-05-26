@@ -872,6 +872,10 @@ func (c *AgentControl) Subscribe(ch chan<- subagent.Notification) {
 	c.manager.Subscribe(ch)
 }
 
+func (c *AgentControl) SubscribeStream(ch chan<- subagent.StreamNotification) {
+	c.manager.SubscribeStream(ch)
+}
+
 func (c *AgentControl) registerRootThread() {
 	if c == nil || c.threads == nil {
 		return
@@ -1317,6 +1321,14 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 	if n.Snapshot.Error != nil {
 		errText = n.Snapshot.Error.Error()
 	}
+	if task, ok := c.harnessTask(n.AgentID); ok {
+		if isActiveHarnessStatus(status) && (task.Status == harness.TaskStatusAwaitingReport || isTerminalHarnessStatus(task.Status)) {
+			return
+		}
+		if isTerminalHarnessStatus(status) && task.Status == status && task.InputTokens == n.Snapshot.InputTokens && task.OutputTokens == n.Snapshot.OutputTokens && strings.TrimSpace(task.Error) == strings.TrimSpace(errText) {
+			return
+		}
+	}
 	completedAt := n.Snapshot.CompletedAt
 	if isFinalSubAgentStatus(n.Status) && completedAt.IsZero() {
 		completedAt = time.Now().UTC()
@@ -1559,8 +1571,16 @@ func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
 		if c == nil || c.threads == nil {
 			continue
 		}
-		c.recordHarnessStatus(n)
 		status := threadStatusFromSubAgent(n.Status)
+		if current, ok := c.threads.Resolve(n.AgentID); ok {
+			if isActiveAgentThreadStatus(status) && isFinalAgentThreadStatus(current.Status) {
+				continue
+			}
+			if isFinalAgentThreadStatus(status) && current.Status == status {
+				continue
+			}
+		}
+		c.recordHarnessStatus(n)
 		meta, ok := c.threads.UpdateStatus(n.AgentID, status, time.Now().UTC())
 		if !ok {
 			continue
@@ -1659,6 +1679,24 @@ func parentPathForSnapshot(snap subagent.SubAgentSnapshot) string {
 func isFinalSubAgentStatus(status subagent.Status) bool {
 	switch status {
 	case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func isActiveAgentThreadStatus(status agentthread.Status) bool {
+	switch status {
+	case agentthread.StatusPending, agentthread.StatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+func isFinalAgentThreadStatus(status agentthread.Status) bool {
+	switch status {
+	case agentthread.StatusCompleted, agentthread.StatusFailed, agentthread.StatusCancelled:
 		return true
 	default:
 		return false

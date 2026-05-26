@@ -23,6 +23,7 @@ type Manager struct {
 	mu        sync.Mutex
 	agents    map[string]*SubAgent
 	listeners []chan<- Notification
+	streams   []chan<- StreamNotification
 }
 
 // NewManager constructs a Manager backed by the given streaming LLM
@@ -51,6 +52,27 @@ func (m *Manager) Unsubscribe(ch chan<- Notification) {
 	for i, listener := range m.listeners {
 		if listener == ch {
 			m.listeners = append(m.listeners[:i], m.listeners[i+1:]...)
+			return
+		}
+	}
+}
+
+// SubscribeStream registers a channel that receives every stream event emitted
+// by sub-agent turns. The receiver must keep draining the channel; stream
+// notifications are not dropped because dropping deltas would corrupt the
+// visible child-agent transcript.
+func (m *Manager) SubscribeStream(ch chan<- StreamNotification) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.streams = append(m.streams, ch)
+}
+
+func (m *Manager) UnsubscribeStream(ch chan<- StreamNotification) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, listener := range m.streams {
+		if listener == ch {
+			m.streams = append(m.streams[:i], m.streams[i+1:]...)
 			return
 		}
 	}
@@ -160,6 +182,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	// UI, so the callback short-circuits when the derived phrase
 	// matches what's already set — the observer only sees changes.
 	onEvent := func(ev providers.StreamEvent) {
+		m.notifyStream(sa, ev)
 		act := deriveWorkerActivity(ev)
 		if act == "" {
 			return
@@ -183,7 +206,6 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		MaxSteps:     maxSteps,
 		Temperature:  0.2,
 		OnUsage:      onUsage,
-		OnEvent:      onEvent,
 	}
 
 	beforeStep := func() []providers.ChatMessage {
@@ -191,7 +213,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	}
 
 	runner.BeforeStep = beforeStep
-	res, err := runner.RunWithCallback(ctx, history, nil)
+	res, err := runner.RunWithCallback(ctx, history, onEvent)
 	content := res.Content
 	nextHistory := append([]providers.ChatMessage(nil), history...)
 	if res.HistoryRewritten {
@@ -252,6 +274,25 @@ func (m *Manager) BroadcastSnapshot(sa *SubAgent) {
 		return
 	}
 	m.notify(sa, sa.Snapshot().Status)
+}
+
+func (m *Manager) notifyStream(sa *SubAgent, ev providers.StreamEvent) {
+	if sa == nil {
+		return
+	}
+	n := StreamNotification{
+		AgentID:  sa.ID,
+		Snapshot: sa.Snapshot(),
+		Event:    cloneStreamEvent(ev),
+	}
+
+	m.mu.Lock()
+	streams := append([]chan<- StreamNotification(nil), m.streams...)
+	m.mu.Unlock()
+
+	for _, ch := range streams {
+		ch <- n
+	}
 }
 
 // Get returns the sub-agent with the given ID, or nil if unknown.
@@ -499,6 +540,56 @@ func initialTurnHistory(opts SpawnOptions) []providers.ChatMessage {
 	}
 	history = append(history, providers.ChatMessage{Role: "user", Content: opts.Prompt})
 	return history
+}
+
+func cloneStreamEvent(ev providers.StreamEvent) providers.StreamEvent {
+	out := ev
+	if ev.Message != nil {
+		msg := cloneChatMessage(*ev.Message)
+		out.Message = &msg
+	}
+	if ev.ReasoningBlock != nil {
+		block := *ev.ReasoningBlock
+		out.ReasoningBlock = &block
+	}
+	if ev.ToolCall != nil {
+		call := cloneToolCall(*ev.ToolCall)
+		out.ToolCall = &call
+	}
+	if ev.PlanUpdate != nil {
+		update := *ev.PlanUpdate
+		update.Plan = append([]providers.PlanStep(nil), ev.PlanUpdate.Plan...)
+		out.PlanUpdate = &update
+	}
+	if ev.Lifecycle != nil {
+		lifecycle := *ev.Lifecycle
+		out.Lifecycle = &lifecycle
+	}
+	if ev.Usage != nil {
+		usage := *ev.Usage
+		out.Usage = &usage
+	}
+	return out
+}
+
+func cloneChatMessage(msg providers.ChatMessage) providers.ChatMessage {
+	msg.Images = append([]providers.InputImage(nil), msg.Images...)
+	msg.ReasoningBlocks = append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...)
+	if len(msg.ToolCalls) > 0 {
+		msg.ToolCalls = make([]providers.ToolCall, len(msg.ToolCalls))
+		for i, call := range msg.ToolCalls {
+			msg.ToolCalls[i] = cloneToolCall(call)
+		}
+	}
+	return msg
+}
+
+func cloneToolCall(call providers.ToolCall) providers.ToolCall {
+	if call.Display != nil {
+		display := *call.Display
+		call.Display = &display
+	}
+	return call
 }
 
 func snapshotLocked(s *SubAgent) SubAgentSnapshot {

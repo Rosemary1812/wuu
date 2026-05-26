@@ -45,6 +45,50 @@ func (f *fakeClient) Chat(_ context.Context, req providers.ChatRequest) (provide
 	return res, nil
 }
 
+type blockingStreamClient struct {
+	started chan struct{}
+	release chan struct{}
+	content string
+	once    sync.Once
+}
+
+func newBlockingStreamClient(content string) *blockingStreamClient {
+	return &blockingStreamClient{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		content: content,
+	}
+}
+
+func (c *blockingStreamClient) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	<-c.started
+	select {
+	case <-c.release:
+	case <-ctx.Done():
+		return providers.ChatResponse{}, ctx.Err()
+	}
+	return providers.ChatResponse{Content: c.content}, nil
+}
+
+func (c *blockingStreamClient) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	ch := make(chan providers.StreamEvent, 4)
+	c.once.Do(func() { close(c.started) })
+	go func() {
+		defer close(ch)
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+			return
+		}
+		if c.content != "" {
+			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: c.content}
+		}
+		ch <- providers.StreamEvent{Type: providers.EventDone}
+	}()
+	return ch, nil
+}
+
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -938,6 +982,97 @@ func TestServerThreadResumeLoadsChildAgentSession(t *testing.T) {
 	resumed := remarshal[ThreadResumedNotification](t, notificationByMethod(t, msgs, NotificationThreadResumed)["params"])
 	if resumed.Thread.ID != "worker-1" || !resumed.Thread.ReadOnly {
 		t.Fatalf("unexpected resumed notification: %+v", resumed)
+	}
+}
+
+func TestServerChildAgentSessionIsLiveWhileRunning(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu", "state")
+	rootID := "root-live"
+	artifactDir := statepath.SessionArtifactDir(rt.StateDir, rootID)
+	workerClient := newBlockingStreamClient("child live result")
+	coord, err := agentcontrol.New(agentcontrol.Config{
+		Client:       workerClient,
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    rootID,
+		HistoryDir:   filepath.Join(artifactDir, "workers"),
+		ThreadDir:    filepath.Join(artifactDir, "threads"),
+		HarnessDir:   filepath.Join(artifactDir, "harness"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return noopToolExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("coordinator: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	rootThread := newThreadState(rootID, nil, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	rootThread.execRuntime = &runtime.ThreadRuntime{AgentControl: coord}
+	srv.mu.Lock()
+	srv.threads[rootID] = rootThread
+	srv.mu.Unlock()
+	srv.subscribeThreadRuntime(rootID, rootThread.execRuntime)
+
+	spawned, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        "worker",
+		TaskName:    "live_child",
+		Description: "live child",
+		Prompt:      "do it live",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	select {
+	case <-workerClient.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not start streaming")
+	}
+
+	waitForMethod(t, out, NotificationTurnStarted)
+	payload, err := json.Marshal(map[string]any{
+		"id":     "resume-child",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: spawned.AgentID},
+	})
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), payload); err != nil {
+		t.Fatalf("thread/resume child: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadResumeResult](t, responseByID(t, msgs, "resume-child")["result"])
+	if result.Thread.ID != spawned.AgentID || !result.Thread.ReadOnly || result.Thread.Status != ThreadStatusInProgress {
+		t.Fatalf("unexpected live child thread: %+v", result.Thread)
+	}
+	if len(result.Thread.Turns) != 1 || result.Thread.Turns[0].Status != TurnStatusInProgress {
+		t.Fatalf("expected running child turn, got %+v", result.Thread.Turns)
+	}
+
+	close(workerClient.release)
+	msgs = waitForMethod(t, out, NotificationTurnCompleted)
+	var childCompleted bool
+	var childDelta bool
+	for _, msg := range msgs {
+		if msg["method"] == NotificationAgentMessageDelta {
+			params := msg["params"].(map[string]any)
+			if params["thread_id"] == spawned.AgentID && params["delta"] == "child live result" {
+				childDelta = true
+			}
+		}
+		if msg["method"] == NotificationTurnCompleted {
+			params := msg["params"].(map[string]any)
+			if params["thread_id"] == spawned.AgentID {
+				childCompleted = true
+			}
+		}
+	}
+	if !childDelta || !childCompleted {
+		t.Fatalf("expected child delta and completion notifications, delta=%v completed=%v output:\n%s", childDelta, childCompleted, out.String())
 	}
 }
 

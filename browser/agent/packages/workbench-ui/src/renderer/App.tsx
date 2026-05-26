@@ -864,7 +864,7 @@ export function App(): JSX.Element {
   const visiblePendingProjectID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "project" ? pendingViewSwitch.targetID : undefined;
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
-  const activeThreadIsRunning = !activeThreadReadOnly && isStateActiveThreadRunning(state);
+  const activeThreadIsRunning = isStateActiveThreadRunning(state);
   const viewSwitchPending = pendingViewSwitch !== undefined;
   const pendingAskThreadIDs = pendingAskThreadIDsForRequests(state.askRequests);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewSwitchPending;
@@ -1461,8 +1461,8 @@ export function App(): JSX.Element {
         images={composerImages}
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
-        running={activeThreadIsRunning || viewSwitchPending}
-        status={activeThreadReadOnly ? "子任务会话只读" : state.status}
+        running={(!activeThreadReadOnly && activeThreadIsRunning) || viewSwitchPending}
+        status={activeThreadReadOnly ? (activeThreadIsRunning ? "子任务运行中" : "子任务会话只读") : state.status}
         readOnly={activeThreadReadOnly}
         initialized={state.initialized}
         gitStatus={state.gitStatus}
@@ -1547,7 +1547,7 @@ export function App(): JSX.Element {
     const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
     const paneRunning = isThreadRunning(thread);
     const paneReadOnly = Boolean(thread.read_only);
-    const paneStatus = paneReadOnly ? "子任务会话只读" : paneRunning ? "运行中" : active && state.status !== "ready" ? state.status : "";
+    const paneStatus = paneReadOnly ? (paneRunning ? "子任务运行中" : "子任务会话只读") : paneRunning ? "运行中" : active && state.status !== "ready" ? state.status : "";
     return (
       <section
         className={`conversation-split-pane${active ? " active" : ""}`}
@@ -1604,7 +1604,7 @@ export function App(): JSX.Element {
           prompt={draft.prompt}
           setPrompt={(value) => setSplitComposerPrompt(pane, value)}
           images={draft.images}
-          running={paneRunning || viewSwitchPending}
+          running={(!paneReadOnly && paneRunning) || viewSwitchPending}
           readOnly={paneReadOnly}
           status={paneStatus}
           onPasteImageFiles={(files) => void attachSplitComposerImageFiles(pane, files)}
@@ -2318,7 +2318,7 @@ export function App(): JSX.Element {
         activePane: "primary",
         allowThreadAutoActivation: true,
         threads: upsertThread(current.threads, thread),
-        running: false,
+        running: isThreadRunning(thread),
         status: "ready"
       }));
     } catch (error) {
@@ -4089,9 +4089,6 @@ function isThread(value: unknown): value is Thread {
 }
 
 function isThreadRunning(thread: Thread | undefined): boolean {
-  if (thread?.read_only) {
-    return false;
-  }
   return Boolean(thread?.status === "in_progress" || thread?.turns.some((turn) => turn.status === "in_progress"));
 }
 

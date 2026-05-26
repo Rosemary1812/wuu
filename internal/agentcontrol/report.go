@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/harness"
 )
 
@@ -153,6 +154,11 @@ func (c *AgentControl) updateHarnessStatusFromReport(taskID, outcome string, sub
 		errText = strings.Join(trimStringSlice(blockers), "; ")
 	}
 	_, _ = c.harnessStore.UpdateTaskStatus(taskID, status, completedAt, task.InputTokens, task.OutputTokens, errText)
+	if threadStatus := agentThreadStatusFromHarness(status); threadStatus != "" {
+		if meta, ok := c.threads.UpdateStatus(taskID, threadStatus, submittedAt); ok {
+			_ = c.threadStore.RecordStatus(meta)
+		}
+	}
 	runID := harnessRunID(taskID)
 	runTokensIn, runTokensOut, runErr := task.InputTokens, task.OutputTokens, errText
 	if runs, err := c.harnessStore.ListRuns(); err == nil {
@@ -167,7 +173,31 @@ func (c *AgentControl) updateHarnessStatusFromReport(taskID, outcome string, sub
 			}
 		}
 	}
-	_, _ = c.harnessStore.UpdateRunStatus(runID, status, completedAt, runTokensIn, runTokensOut, runErr)
+	if _, err := c.harnessStore.UpdateRunStatus(runID, status, completedAt, runTokensIn, runTokensOut, runErr); err == nil && isTerminalHarnessStatus(status) {
+		_ = c.harnessStore.AppendEvent(harness.Event{
+			Type:      harness.EventRunCompleted,
+			TaskID:    taskID,
+			RunID:     runID,
+			AgentID:   taskID,
+			Path:      task.Path,
+			Status:    string(status),
+			Message:   runErr,
+			CreatedAt: submittedAt,
+		})
+	}
+}
+
+func agentThreadStatusFromHarness(status harness.TaskStatus) agentthread.Status {
+	switch status {
+	case harness.TaskStatusCompleted:
+		return agentthread.StatusCompleted
+	case harness.TaskStatusFailed:
+		return agentthread.StatusFailed
+	case harness.TaskStatusCancelled:
+		return agentthread.StatusCancelled
+	default:
+		return ""
+	}
 }
 
 func harnessStatusFromReportOutcome(outcome string) harness.TaskStatus {
