@@ -467,6 +467,53 @@
         animation: semanticBlockIn 420ms var(--timing) forwards;
       }
 
+      .stream-tail {
+        display: inline;
+        border-radius: 3px;
+      }
+
+      .stream-tail.soft-append {
+        animation: streamSoftAppend 240ms var(--timing) both;
+      }
+
+      .stream-tail.text-mask {
+        color: transparent;
+        background:
+          linear-gradient(
+            90deg,
+            color-mix(in srgb, var(--text), transparent 74%) 0%,
+            var(--text) 42%,
+            color-mix(in srgb, var(--text), var(--accent) 18%) 58%,
+            transparent 100%
+          );
+        background-size: 220% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        animation: streamTextMask 520ms var(--timing) both;
+      }
+
+      .stream-tail.tail-glow {
+        color: color-mix(in srgb, var(--text), var(--accent) 16%);
+        text-shadow: 0 0 10px color-mix(in srgb, var(--accent), transparent 58%);
+        animation: streamTailGlow 520ms var(--timing) both;
+      }
+
+      .stream-tail.muted-solid {
+        animation: streamMutedSolid 520ms var(--timing) both;
+      }
+
+      .stream-tail.ink-reveal {
+        animation: streamInkReveal 360ms var(--timing) both;
+      }
+
+      .final-text.line-settle-streaming > :last-child {
+        color: color-mix(in srgb, var(--text), var(--muted) 34%);
+        transform: translateY(1px);
+        transition:
+          color 360ms var(--timing),
+          transform 360ms var(--timing);
+      }
+
       .final-text p {
         margin: 0 0 12px;
       }
@@ -668,6 +715,65 @@
         }
       }
 
+      @keyframes streamSoftAppend {
+        from {
+          opacity: 0;
+          transform: translateY(2px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes streamTextMask {
+        from {
+          background-position: 130% 0;
+          opacity: 0.42;
+        }
+        to {
+          background-position: 0 0;
+          opacity: 1;
+        }
+      }
+
+      @keyframes streamTailGlow {
+        0% {
+          opacity: 0.45;
+          text-shadow: 0 0 0 color-mix(in srgb, var(--accent), transparent 100%);
+        }
+        45% {
+          opacity: 1;
+          text-shadow: 0 0 11px color-mix(in srgb, var(--accent), transparent 52%);
+        }
+        100% {
+          opacity: 1;
+          text-shadow: 0 0 4px color-mix(in srgb, var(--accent), transparent 82%);
+        }
+      }
+
+      @keyframes streamMutedSolid {
+        from {
+          color: var(--muted);
+        }
+        to {
+          color: var(--text);
+        }
+      }
+
+      @keyframes streamInkReveal {
+        from {
+          opacity: 0;
+          filter: blur(3px);
+          transform: translateY(2px);
+        }
+        to {
+          opacity: 1;
+          filter: blur(0);
+          transform: translateY(0);
+        }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         *,
         *::before,
@@ -716,6 +822,12 @@
           <div class="debug-actions">
             <button type="button" data-run="success">播放完整成功流</button>
             <button type="button" data-run="semantic">播放语义块渐显流</button>
+            <button type="button" data-run="soft-append">Soft Append 流式</button>
+            <button type="button" data-run="text-mask">Text Mask Reveal</button>
+            <button type="button" data-run="tail-glow">Tail Glow 流式</button>
+            <button type="button" data-run="muted-solid">Muted To Solid</button>
+            <button type="button" data-run="line-settle">Line Settle</button>
+            <button type="button" data-run="ink-reveal">Ink Reveal</button>
             <button type="button" data-run="waiting">模拟等待用户选择</button>
             <button type="button" data-run="failed">模拟处理失败</button>
             <button type="button" data-run="stopped">模拟中途停止</button>
@@ -755,7 +867,7 @@
           </div>
           <div class="constraint-list">
             <strong>已编码约束：</strong><br />
-            final text 无容器；过程无背景；运行态文字慢扫光；支持 token 流式和语义块渐显对比；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
+            final text 无容器；过程无背景；运行态文字慢扫光；支持 token 流式、语义块渐显和 6 种前端文字动效对比；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
           </div>
         </aside>
 
@@ -1058,6 +1170,37 @@
         completeProcess({ status: "completed", elapsed: 18 });
       }
 
+      async function runEffectDemo(effect) {
+        const label = streamEffectLabel(effect);
+        const id = createTurn(`对比 ${label}：同样的 token 流，只替换前端文字进入动效。`);
+        await playCommonProcess(id);
+        if (!isActiveRun(id)) return;
+        await streamFinalMarkdown(successMarkdown, id, effect);
+        if (!isActiveRun(id)) return;
+        await waitStep(540);
+        if (!isActiveRun(id)) return;
+        completeProcess({ status: "completed", elapsed: 18 });
+      }
+
+      function streamEffectLabel(effect) {
+        switch (effect) {
+          case "soft-append":
+            return "Soft Append";
+          case "text-mask":
+            return "Text Mask Reveal";
+          case "tail-glow":
+            return "Tail Glow";
+          case "muted-solid":
+            return "Muted To Solid";
+          case "line-settle":
+            return "Line Settle";
+          case "ink-reveal":
+            return "Ink Reveal";
+          default:
+            return "Token";
+        }
+      }
+
       async function playCommonProcess(id) {
         await waitStep(350);
         if (!isActiveRun(id)) return;
@@ -1162,13 +1305,16 @@
         return id === runID;
       }
 
-      async function streamFinalMarkdown(markdown, id) {
+      async function streamFinalMarkdown(markdown, id, effect = "token") {
         const finalText = document.querySelector("#finalText");
         if (!finalText) {
           return;
         }
-        finalText.classList.remove("semantic-streaming");
+        finalText.classList.remove("semantic-streaming", "line-settle-streaming");
         finalText.classList.add("is-streaming");
+        if (effect === "line-settle") {
+          finalText.classList.add("line-settle-streaming");
+        }
         let buffer = "";
         const tokens = tokenizeStream(markdown);
         for (const token of tokens) {
@@ -1176,10 +1322,11 @@
             return;
           }
           buffer += token;
-          renderFinalMarkdown(buffer);
+          renderFinalMarkdown(buffer, effect);
           await wait(1000 / currentTokenRate());
         }
-        finalText.classList.remove("is-streaming");
+        finalText.classList.remove("is-streaming", "line-settle-streaming");
+        renderFinalMarkdown(markdown);
       }
 
       async function streamFinalSemantic(markdown, id) {
@@ -1300,12 +1447,73 @@
         return blocks;
       }
 
-      function renderFinalMarkdown(markdown) {
+      function renderFinalMarkdown(markdown, effect = "token") {
         const finalText = document.querySelector("#finalText");
         if (!finalText) {
           return;
         }
         finalText.innerHTML = renderMarkdown(markdown);
+        decorateStreamEffect(finalText, effect);
+      }
+
+      function decorateStreamEffect(root, effect) {
+        if (effect === "token" || effect === "line-settle") {
+          return;
+        }
+        const textNode = latestDecoratableTextNode(root);
+        if (!textNode || !textNode.nodeValue) {
+          return;
+        }
+        const raw = textNode.nodeValue;
+        const trimmedEnd = raw.search(/\s*$/);
+        const end = trimmedEnd < 0 ? raw.length : trimmedEnd;
+        if (end <= 0) {
+          return;
+        }
+        const length = effect === "tail-glow" ? 16 : effect === "text-mask" ? 24 : 10;
+        const start = Math.max(0, end - length);
+        const before = raw.slice(0, start);
+        const tail = raw.slice(start, end);
+        const after = raw.slice(end);
+        const parent = textNode.parentNode;
+        if (!parent || !tail) {
+          return;
+        }
+        const span = document.createElement("span");
+        span.className = `stream-tail ${effect}`;
+        span.textContent = tail;
+        const fragment = document.createDocumentFragment();
+        if (before) {
+          fragment.appendChild(document.createTextNode(before));
+        }
+        fragment.appendChild(span);
+        if (after) {
+          fragment.appendChild(document.createTextNode(after));
+        }
+        parent.replaceChild(fragment, textNode);
+      }
+
+      function latestDecoratableTextNode(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            const text = node.nodeValue ?? "";
+            const parent = node.parentElement;
+            if (!text.trim() || !parent) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            if (parent.closest("code, pre, .code-card, .table-wrap, .copy-button")) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        });
+        let current = walker.nextNode();
+        let latest = null;
+        while (current) {
+          latest = current;
+          current = walker.nextNode();
+        }
+        return latest;
       }
 
       function tokenizeStream(text) {
@@ -1481,6 +1689,15 @@
             void runSuccess();
           } else if (run === "semantic") {
             void runSemanticReveal();
+          } else if (
+            run === "soft-append" ||
+            run === "text-mask" ||
+            run === "tail-glow" ||
+            run === "muted-solid" ||
+            run === "line-settle" ||
+            run === "ink-reveal"
+          ) {
+            void runEffectDemo(run);
           } else if (run === "waiting") {
             void runWaiting();
           } else if (run === "failed") {
