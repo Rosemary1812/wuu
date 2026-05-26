@@ -529,6 +529,14 @@
         opacity: 1;
       }
 
+      .final-text.is-streaming .copy-button,
+      .final-text.is-streaming .code-card:hover .copy-button,
+      .final-text.is-streaming .code-card:focus-within .copy-button {
+        opacity: 0;
+        pointer-events: none;
+        transition: none;
+      }
+
       pre {
         margin: 0;
         padding: 13px 14px 15px;
