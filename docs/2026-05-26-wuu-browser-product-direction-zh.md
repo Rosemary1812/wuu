@@ -317,6 +317,8 @@ BrowserOS 代码量大，里面有很多功能和 Wuu 目标无关。不能无�
 
 BrowserOS 相关代码使用 AGPL。Wuu 根项目现在标的是 MIT。最终怎么发布、哪些代码属于哪个许可证，需要单独确认，不能到发布前才处理。
 
+当前边界记录在 [browser/BROWSEROS_SOURCE.md](/Users/blueberrycongee/wuu/browser/BROWSEROS_SOURCE.md)：Wuu core 仍按根项目许可证判断；包含 BrowserOS 派生代码的 Wuu Browser 发布物，不能按 MIT-only 发布。
+
 ## 成功标准
 
 这个方向成功，不是因为我们做了一个“AI 浏览器”，而是因为它让开发者少切换上下文。

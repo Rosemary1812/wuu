@@ -37,3 +37,26 @@ make browser-import-agent
 After import, inspect the diff before committing. Do not blindly preserve
 BrowserOS defaults that conflict with Wuu Browser's product model, especially
 default VM startup and first-run onboarding.
+
+## License and release boundary
+
+The Wuu root project remains MIT unless a file or package declares a different
+license.
+
+The `browser/` tree is different. It includes BrowserOS-derived browser-layer
+and agent/server assets. Those imported BrowserOS assets are AGPL-3.0-or-later,
+as recorded by `browser/agent/package.json` and the imported source headers.
+
+Treat Wuu Browser release artifacts as BrowserOS-derived browser releases when
+they include code from this tree. Do not describe those artifacts as MIT-only
+releases just because the Wuu root project is MIT.
+
+Before a Wuu Browser release:
+
+- Preserve imported SPDX headers and license files.
+- Keep this BrowserOS baseline section up to date.
+- Include the corresponding source for BrowserOS-derived code in the release
+  process.
+- Keep Wuu Desktop release notes separate from Wuu Browser license obligations.
+- Review newly imported BrowserOS code before exposing it as Wuu product
+  behavior.

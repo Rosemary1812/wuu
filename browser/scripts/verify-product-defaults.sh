@@ -97,6 +97,7 @@ browser_bridge_route="${browser_dir}/agent/apps/server/src/api/routes/browser-br
 wuu_tool="${repo_root}/internal/tools/tool_browser.go"
 wuu_toolkit="${repo_root}/internal/tools/toolkit.go"
 wuu_prompt="${repo_root}/internal/config/config.go"
+browseros_source="${browser_dir}/BROWSEROS_SOURCE.md"
 
 echo "Wuu Browser product default verification"
 
@@ -814,6 +815,26 @@ check_contains \
   "${wuu_prompt}" \
   "When the browser tool is available in Wuu Browser" \
   "Wuu system prompt teaches when to use browser validation"
+
+check_contains \
+  "${browseros_source}" \
+  "License and release boundary" \
+  "BrowserOS source documentation defines the release boundary"
+
+check_contains \
+  "${browseros_source}" \
+  "AGPL-3.0-or-later" \
+  "BrowserOS-derived assets keep their AGPL license boundary visible"
+
+check_contains \
+  "${browseros_source}" \
+  "Do not describe those artifacts as MIT-only" \
+  "Wuu Browser releases are not documented as MIT-only artifacts"
+
+check_contains \
+  "${browseros_source}" \
+  "Keep Wuu Desktop release notes separate" \
+  "Wuu Desktop and Wuu Browser release obligations stay separate"
 
 check_not_contains \
   "${server_main}" \
