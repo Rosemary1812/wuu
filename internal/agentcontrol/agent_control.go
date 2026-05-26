@@ -12,6 +12,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -939,6 +941,7 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 	}
 	if isFinalSubAgentStatus(n.Status) {
 		c.ensureHarnessCompletionReport(n.Snapshot)
+		c.recordWorktreeArtifacts(n.Snapshot)
 	}
 }
 
@@ -980,24 +983,104 @@ func (c *AgentControl) harnessReportForTask(taskID string) (string, []string) {
 	if c == nil || c.harnessStore == nil {
 		return "", nil
 	}
+	var taskArtifactPaths []string
+	tasks, err := c.harnessStore.ListTasks()
+	if err == nil {
+		for _, task := range tasks {
+			if task.ID == taskID {
+				taskArtifactPaths = append(taskArtifactPaths, task.ArtifactPaths...)
+				break
+			}
+		}
+	}
 	report, ok, err := c.harnessStore.ReportForTask(taskID)
 	if err == nil && ok {
 		paths := append([]string(nil), report.Artifacts...)
 		if report.ReportPath != "" && !stringSliceContains(paths, report.ReportPath) {
 			paths = append(paths, report.ReportPath)
 		}
+		for _, path := range taskArtifactPaths {
+			if path != "" && !stringSliceContains(paths, path) {
+				paths = append(paths, path)
+			}
+		}
 		return report.ReportPath, paths
+	}
+	return "", taskArtifactPaths
+}
+
+func (c *AgentControl) recordWorktreeArtifacts(snap subagent.SubAgentSnapshot) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	task, ok := c.harnessTask(snap.ID)
+	if !ok || task.Workspace.Mode != harness.WorkspaceWorktree || strings.TrimSpace(task.Workspace.Root) == "" {
+		return
+	}
+	root := task.Workspace.Root
+	statusOut, err := gitOutput(root, "status", "--porcelain")
+	if err != nil || strings.TrimSpace(statusOut) == "" {
+		return
+	}
+	artifactDir := filepath.Join(c.harnessDir, "artifacts", snap.ID)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		return
+	}
+	statusPath := filepath.Join(artifactDir, "git-status.txt")
+	if err := os.WriteFile(statusPath, []byte(statusOut), 0o644); err == nil {
+		_ = c.harnessStore.AddArtifact(harness.Artifact{
+			ID:        snap.ID + "-git-status",
+			TaskID:    snap.ID,
+			RunID:     harnessRunID(snap.ID),
+			Kind:      harness.ArtifactEvidence,
+			Path:      statusPath,
+			Summary:   "worktree git status",
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+	patchOut, err := gitOutput(root, "diff", "--binary", "HEAD", "--")
+	if err != nil || strings.TrimSpace(patchOut) == "" {
+		return
+	}
+	patchPath := filepath.Join(artifactDir, "changes.patch")
+	if err := os.WriteFile(patchPath, []byte(patchOut), 0o644); err != nil {
+		return
+	}
+	_ = c.harnessStore.AddArtifact(harness.Artifact{
+		ID:        snap.ID + "-patch",
+		TaskID:    snap.ID,
+		RunID:     harnessRunID(snap.ID),
+		Kind:      harness.ArtifactPatch,
+		Path:      patchPath,
+		Summary:   "worktree diff against base HEAD",
+		CreatedAt: time.Now().UTC(),
+	})
+}
+
+func (c *AgentControl) harnessTask(taskID string) (harness.Task, bool) {
+	if c == nil || c.harnessStore == nil {
+		return harness.Task{}, false
 	}
 	tasks, err := c.harnessStore.ListTasks()
 	if err != nil {
-		return "", nil
+		return harness.Task{}, false
 	}
 	for _, task := range tasks {
 		if task.ID == taskID {
-			return task.ReportPath, append([]string(nil), task.ArtifactPaths...)
+			return task, true
 		}
 	}
-	return "", nil
+	return harness.Task{}, false
+}
+
+func gitOutput(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {

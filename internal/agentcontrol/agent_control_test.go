@@ -386,6 +386,73 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
 
+func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:       &fakeClient{resp: providers.ChatResponse{Content: "changed readme"}},
+		DefaultModel: "fake-model",
+		ParentRepo:   dir,
+		WorktreeRoot: filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:    "sess-patch-artifact",
+		ThreadDir:    filepath.Join(dir, ".wuu", "sessions", "sess-patch-artifact", "threads"),
+		HarnessDir:   filepath.Join(dir, ".wuu", "sessions", "sess-patch-artifact", "harness"),
+		WorkerFactory: func(root string, _ WorkerType, _ agentthread.Metadata) (agent.ToolExecutor, error) {
+			if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("changed\n"), 0o644); err != nil {
+				return nil, err
+			}
+			return fakeToolkit{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        "worker",
+		TaskName:    "patch_artifact",
+		Prompt:      "change readme",
+		Isolation:   "worktree",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	var patchPath string
+	var artifacts []harness.Artifact
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		artifacts, err = c.HarnessStore().ListArtifacts()
+		if err != nil {
+			t.Fatalf("ListArtifacts: %v", err)
+		}
+		for _, artifact := range artifacts {
+			if artifact.TaskID == res.AgentID && artifact.Kind == harness.ArtifactPatch {
+				patchPath = artifact.Path
+				break
+			}
+		}
+		if patchPath != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if patchPath == "" {
+		t.Fatalf("expected patch artifact, got %+v", artifacts)
+	}
+	data, err := os.ReadFile(patchPath)
+	if err != nil {
+		t.Fatalf("read patch: %v", err)
+	}
+	if !strings.Contains(string(data), "README.md") || !strings.Contains(string(data), "+changed") {
+		t.Fatalf("patch does not include README change:\n%s", data)
+	}
+	reportPath, paths := c.harnessReportForTask(res.AgentID)
+	if reportPath == "" || !stringSliceContains(paths, patchPath) {
+		t.Fatalf("mailbox artifact lookup should include report and patch, report=%q paths=%+v", reportPath, paths)
+	}
+}
+
 func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
