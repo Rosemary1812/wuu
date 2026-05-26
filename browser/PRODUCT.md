@@ -1,14 +1,24 @@
 # Wuu Browser Product Direction
 
-This document records stable product constraints for the Wuu Browser migration.
-Implementation details may change as the code moves, but these product
-constraints should not be weakened without an explicit product decision.
+This document records stable product constraints for the Wuu Browser migration
+inside Wuu's dual-surface product model. Implementation details may change as
+the code moves, but these product constraints should not be weakened without an
+explicit product decision.
 
 ## Final Product
 
-Wuu Browser should be an installable Chromium-based browser product. The final
-artifact should be a normal browser application, such as a macOS `.app`/`.dmg`
-and a Windows installer, with Linux packages as a later extension.
+Wuu's future product has two first-class app surfaces:
+
+- Electron desktop.
+- Wuu Browser.
+
+Both surfaces must use one shared core workbench and native runtime path. The
+Electron app remains the desktop-focused surface; Wuu Browser becomes the
+Chromium-based browser surface.
+
+Wuu Browser should be an installable Chromium-based browser product. The
+browser artifact should be a normal browser application, such as a macOS
+`.app`/`.dmg` and a Windows installer, with Linux packages as a later extension.
 
 The browser must preserve standard Chrome-level browsing expectations:
 
@@ -18,13 +28,16 @@ The browser must preserve standard Chrome-level browsing expectations:
 - Normal browsing performance and startup behavior.
 - Platform packaging, signing, updates, and permissions.
 
-The first/default product tab is the Wuu workbench. It must feel like a native
-part of the browser product, not like an external website or a temporary demo.
+The first/default browser product tab is the Wuu workbench. It must feel like a
+native part of the browser product, not like an external website or a temporary
+demo. It must also stay aligned with the Electron desktop surface because both
+surfaces are views over the same core product flow.
 
 ## Wuu Workbench Requirements
 
-The Wuu workbench inside the browser must use the real Wuu UI and the real Wuu
-native runtime. It should preserve the current Electron desktop product shape:
+The Wuu workbench inside both Electron desktop and Wuu Browser must use the real
+Wuu UI and the real Wuu native runtime. The browser surface should preserve the
+current Electron desktop product shape:
 
 - Project list and project switching.
 - Native folder selection and project creation.
@@ -43,8 +56,9 @@ available.
 
 ## Runtime Model
 
-The default local capability layer is the Wuu native runtime running on the
-host machine.
+The default local capability layer is the Wuu native runtime running on the host
+machine. Electron desktop and Wuu Browser must call into the same core runtime
+path instead of growing separate local capability implementations.
 
 Wuu Browser should not depend on OpenClaw, Hermes, Lima, or any VM/container
 runtime for its default startup path or for normal local workbench behavior.
@@ -98,8 +112,8 @@ layers that cannot be tested against a running browser.
 ## Migration Policy
 
 The current repository remains the active work directory during migration.
-Long-term, the repository may be renamed or reshaped as `wuu-browser`, with Wuu
-runtime/workbench becoming packages inside the browser product repository.
+Long-term, the repository may be reshaped around shared Wuu core packages plus
+two app surfaces: Electron desktop and Wuu Browser.
 
 Every migration step should move the current state closer to the installable
 browser product:
@@ -107,7 +121,9 @@ browser product:
 - Product code and build entry points should move into this repository.
 - Local reference work in external checkouts should be migrated, not left as
   undocumented manual state.
-- The default tab should converge on the complete Wuu workbench.
+- The browser default tab should converge on the complete Wuu workbench.
+- Electron desktop and Wuu Browser should converge on one shared workbench and
+  runtime path instead of separate product flows.
 - Default startup should become lighter by removing unnecessary VM prewarm from
   the main path.
 - Verification should use real browser runtime behavior, not only static code
@@ -115,7 +131,10 @@ browser product:
 
 ## Non-Goals
 
-- Do not build a standalone Electron product as the final browser.
+- Do not fork the workbench or native runtime into separate Electron-only and
+  browser-only core implementations.
+- Do not let Electron desktop and Wuu Browser drift into different product
+  flows for the same user task.
 - Do not ship a Chrome extension as the primary product shell.
 - Do not commit the full vanilla Chromium checkout into Wuu's Git history.
 - Do not make OpenClaw/Hermes/Lima VM the default Wuu runtime.

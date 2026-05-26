@@ -1,15 +1,18 @@
 # Wuu Browser
 
-This directory is the product entry point for Wuu Browser.
+This directory is the product entry point for Wuu Browser, one of Wuu's two
+first-class app surfaces.
 
-Wuu Browser is intended to become an installable Chromium-based AI browser, not
-an Electron shell, a browser extension, or a developer-only assembly of local
-parts. The product combines:
+Wuu's future product model is dual-surface: Electron desktop and Wuu Browser
+both stay first-class, but they must share one core workbench and native runtime
+path. Wuu Browser is intended to become an installable Chromium-based AI
+browser, not a browser extension or a developer-only assembly of local parts.
+The browser surface combines:
 
 - Chrome-level browser experience: tabs, omnibox, navigation, extensions,
   downloads, settings, DevTools, and platform packaging.
-- The full Wuu workbench as the default product tab, backed by the real Wuu
-  native runtime.
+- The full Wuu workbench as the default product tab, backed by the same real
+  Wuu native runtime and core flow used by Electron desktop.
 - A future browser bridge that lets the Wuu agent inspect and operate browser
   tabs, web pages, DevTools/CDP state, and local development servers.
 
@@ -45,8 +48,8 @@ browser/
 
 The first migration steps make the browser product model explicit and bring the
 BrowserOS patch/build/agent baselines into this repository. Later steps should
-adapt those baselines so the default tab is the Wuu workbench backed by the Wuu
-native runtime.
+adapt those baselines so the default tab is the Wuu workbench backed by the same
+Wuu native runtime path as the Electron desktop app.
 
 ## Local Checkouts
 

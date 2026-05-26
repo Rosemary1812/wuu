@@ -2,7 +2,8 @@
 
 [中文](README_zh.md)
 
-GUI-first AI coding agent with a Go backend and desktop app.
+GUI-first AI coding agent with a Go backend, one shared core workbench/runtime
+path, and two app surfaces: Electron desktop and Wuu Browser.
 
 Named after its author (Wu) — the goal is to build a coding companion so good that every developer goes *wuuuuu!*
 
@@ -31,7 +32,9 @@ wuu app-server --workdir .       # backend used by the desktop GUI
 cd desktop && npm install && npm run dev  # local desktop GUI
 ```
 
-Interactive work now lives in the desktop GUI. The `wuu` binary provides the
+Interactive work currently runs through the Electron desktop GUI. The future
+product keeps Electron desktop and Wuu Browser as first-class app surfaces over
+the same core workbench and native runtime path. The `wuu` binary provides the
 app-server backend plus non-interactive CLI tools.
 
 ## Versioning
@@ -59,7 +62,9 @@ When a `v*` tag is pushed, GitHub Actions + GoReleaser publishes release artifac
 
 ## What It Does
 
-- Desktop GUI backed by the Go app-server for conversations, workspace context, and session streaming
+- Shared workbench and native runtime core used by both Electron desktop and Wuu Browser
+- Electron desktop GUI backed by the Go app-server for conversations, workspace context, and session streaming
+- Chromium-based Wuu Browser surface that uses the same core workbench/runtime path
 - One-shot CLI task runner for non-interactive use
 - Agentic tool-calling loop — reads, writes, edits, searches, and runs shell commands in your repo
 - Supports OpenAI-compatible APIs (OpenAI / OpenRouter / one-api / etc.) and Anthropic Messages API
