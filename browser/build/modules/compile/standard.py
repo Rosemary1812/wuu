@@ -76,11 +76,18 @@ class CompileModule(CommandModule):
             f"PATCH={parts[3]}"
         )
 
+        chrome_version_path = join_paths(ctx.chromium_src, "chrome", "VERSION")
+        if (
+            chrome_version_path.exists()
+            and chrome_version_path.read_text() == version_content
+        ):
+            log_info(f"VERSION file already current: {ctx.browseros_chromium_version}")
+            return
+
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp_file:
             temp_file.write(version_content)
             temp_path = temp_file.name
 
-        chrome_version_path = join_paths(ctx.chromium_src, "chrome", "VERSION")
         shutil.copy2(temp_path, chrome_version_path)
         Path(temp_path).unlink()
 
