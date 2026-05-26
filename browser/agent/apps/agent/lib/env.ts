@@ -13,6 +13,8 @@ const EnvSchema = z.object({
     .string()
     .optional()
     .default('https://api.browseros.com'),
+  VITE_WUU_AGENT_CHANNEL: z.string().optional(),
+  MODE: z.string().optional().default('production'),
   PROD: z.boolean().optional().default(false),
 })
 
