@@ -460,25 +460,21 @@
         animation: finalBlockIn 240ms var(--timing) forwards;
       }
 
-      .stream-stall-cue {
-        display: inline-block;
-        width: 1.55em;
-        height: 1px;
-        margin-left: 5px;
-        border-radius: 999px;
-        vertical-align: 0.22em;
+      .stream-stall-tail {
+        color: transparent;
         background:
           linear-gradient(
-            90deg,
-            transparent 0%,
-            color-mix(in srgb, var(--muted), transparent 65%) 28%,
-            color-mix(in srgb, var(--text), var(--accent) 18%) 50%,
-            color-mix(in srgb, var(--muted), transparent 65%) 72%,
-            transparent 100%
+            100deg,
+            color-mix(in srgb, var(--text), var(--muted) 28%) 0%,
+            color-mix(in srgb, var(--text), var(--accent) 20%) 38%,
+            color-mix(in srgb, var(--text), white 18%) 50%,
+            color-mix(in srgb, var(--text), var(--accent) 20%) 62%,
+            color-mix(in srgb, var(--text), var(--muted) 28%) 100%
           );
-        background-size: 240% 100%;
-        opacity: 0;
-        animation: stalledTokenCue 1.7s ease-in-out infinite;
+        background-size: 260% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        animation: stalledTokenTail 1.85s ease-in-out infinite;
       }
 
       .final-text p {
@@ -674,17 +670,17 @@
         }
       }
 
-      @keyframes stalledTokenCue {
+      @keyframes stalledTokenTail {
         0% {
           background-position: 150% 0;
-          opacity: 0.18;
+          opacity: 0.68;
         }
-        38% {
+        46% {
           opacity: 0.82;
         }
         100% {
           background-position: -150% 0;
-          opacity: 0.18;
+          opacity: 0.68;
         }
       }
 
@@ -1249,22 +1245,22 @@
       async function holdDuringTokenStall(id, finalText, stall) {
         const thresholdMs = Math.max(0, Number(stall.thresholdMs ?? 3000));
         const durationMs = Math.max(thresholdMs, Number(stall.durationMs ?? thresholdMs + 3000));
-        let cueVisible = false;
-        const cueTimer = window.setTimeout(() => {
+        let tailVisible = false;
+        const tailTimer = window.setTimeout(() => {
           if (!isActiveRun(id)) {
             return;
           }
-          cueVisible = true;
+          tailVisible = true;
           setStatus("仍在生成", "running");
           finalText.classList.add("is-stalled");
-          appendStallCue(finalText);
+          markStalledTextTail(finalText);
         }, thresholdMs);
-        timers.push(cueTimer);
+        timers.push(tailTimer);
         await wait(durationMs);
-        window.clearTimeout(cueTimer);
-        if (cueVisible && isActiveRun(id)) {
+        window.clearTimeout(tailTimer);
+        if (tailVisible && isActiveRun(id)) {
           finalText.classList.remove("is-stalled");
-          removeStallCue(finalText);
+          clearStalledTextTail(finalText);
         }
       }
 
@@ -1276,22 +1272,40 @@
         finalText.innerHTML = renderMarkdown(markdown);
       }
 
-      function appendStallCue(root) {
-        removeStallCue(root);
-        const span = document.createElement("span");
-        span.className = "stream-stall-cue";
-        span.setAttribute("aria-hidden", "true");
+      function markStalledTextTail(root) {
+        clearStalledTextTail(root);
         const textNode = latestReadableTextNode(root);
-        const target = textNode?.parentElement?.closest("p, li, blockquote, h2, h3") ?? textNode?.parentElement;
-        if (target) {
-          target.appendChild(span);
-        } else {
-          root.appendChild(span);
+        if (!textNode?.nodeValue || !textNode.parentNode) {
+          return;
         }
+        const raw = textNode.nodeValue;
+        const end = raw.search(/\s*$/);
+        const tailEnd = end < 0 ? raw.length : end;
+        if (tailEnd <= 0) {
+          return;
+        }
+        const tailStart = Math.max(0, tailEnd - 8);
+        const before = raw.slice(0, tailStart);
+        const tail = raw.slice(tailStart, tailEnd);
+        const after = raw.slice(tailEnd);
+        const span = document.createElement("span");
+        span.className = "stream-stall-tail";
+        span.textContent = tail;
+        const fragment = document.createDocumentFragment();
+        if (before) {
+          fragment.appendChild(document.createTextNode(before));
+        }
+        fragment.appendChild(span);
+        if (after) {
+          fragment.appendChild(document.createTextNode(after));
+        }
+        textNode.parentNode.replaceChild(fragment, textNode);
       }
 
-      function removeStallCue(root) {
-        root.querySelectorAll(".stream-stall-cue").forEach((cue) => cue.remove());
+      function clearStalledTextTail(root) {
+        root.querySelectorAll(".stream-stall-tail").forEach((tail) => {
+          tail.replaceWith(document.createTextNode(tail.textContent ?? ""));
+        });
       }
 
       function latestReadableTextNode(root) {
