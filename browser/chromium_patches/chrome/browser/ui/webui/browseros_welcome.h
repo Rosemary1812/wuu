@@ -57,7 +57,7 @@ index 0000000000000..89503c57538ad
 +<!DOCTYPE html>
 +<html lang="en">
 +<head>
-+<title>BrowserOS — Welcome</title>
++<title>Wuu Browser — Welcome</title>
 +<meta charset="UTF-8">
 + <meta name="color-scheme" content="light dark">
 +<style>
@@ -195,13 +195,13 @@ index 0000000000000..89503c57538ad
 +<body>
 +<section class="hero">
 + <h1>The Open Source <span class="accent">Agentic</span> <span class="accent">Browser</span></h1>
-+ <p>BrowserOS is an AI-powered browser that lets you build and run agents to automate tedious tasks. It looks like Chrome but reimagined for the AI era.</p>
++ <p>Wuu Browser is an AI-powered browser that connects local agents, browsing, and workspace workflows in one calm workbench.</p>
 +</section>
 +
 +<section>
 + <div class="section-head"><span class="label">🚀 Getting Started</span></div>
 + <div style="text-align:center;">
-+  <a class="btn btn-outline" href="https://github.com/browseros-ai/BrowserOS">
++  <a class="btn btn-outline" href="https://github.com/blueberrycongee/wuu">
 +   <span class="icon" aria-hidden="true">
 +    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#eac54f"><path d="m354-287 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143ZM233-120l65-281L80-590l288-25 112-265 112 265 288 25-218 189 65 281-247-149-247 149Zm247-350Z"/></svg>
 +   </span>
@@ -235,7 +235,7 @@ index 0000000000000..89503c57538ad
 +    Step 2: BYOK (Bring Your Own Keys)
 +   </h3>
 +   <p class="muted">You have full control over your AI models!</p>
-+   <p class="muted" style="margin-top:.35rem">Once setup completes (~1–2 min), visit <code>chrome://browseros/settings</code> to configure your API keys.</p>
++   <p class="muted" style="margin-top:.35rem">Once setup completes (~1–2 min), visit <code>chrome://wuu</code> to configure your agent and model settings.</p>
 +   <div class="note">Note: You can even run everything locally using Ollama!</div>
 +  </div>
 + </div>
@@ -247,7 +247,7 @@ index 0000000000000..89503c57538ad
 +   </span>
 +   Step 3: All done!
 +  </div>
-+  <div class="muted" style="margin-top:.4rem">You're ready to use BrowserOS, have fun! This page can be always accessed again at <a href="chrome://browseros-welcome"><code>chrome://browseros-welcome</code></a></div>
++  <div class="muted" style="margin-top:.4rem">You're ready to use Wuu Browser.</div>
 + </div>
 +</section>
 +
@@ -306,7 +306,7 @@ index 0000000000000..89503c57538ad
 +   </span>
 +   Discord
 +  </a>
-+  <a href="https://github.com/browseros-ai/BrowserOS">
++  <a href="https://github.com/blueberrycongee/wuu">
 +   <span class="icon" aria-hidden="true">
 +    <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
 +     <title>GitHub</title>
@@ -315,7 +315,7 @@ index 0000000000000..89503c57538ad
 +   </span>
 +   GitHub
 +  </a>
-+  <a href="https://dub.sh/browserOS-slack">
++  <a href="https://github.com/blueberrycongee/wuu">
 +   <span class="icon" aria-hidden="true">
 +    <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
 +     <title>Slack</title>
@@ -324,7 +324,7 @@ index 0000000000000..89503c57538ad
 +   </span>
 +   Slack
 +  </a>
-+  <a href="https://x.com/browserOS_ai">
++  <a href="https://github.com/blueberrycongee/wuu">
 +   <span class="icon" aria-hidden="true">
 +    <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
 +     <title>X</title>

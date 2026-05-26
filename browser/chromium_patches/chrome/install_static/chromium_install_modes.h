@@ -7,7 +7,7 @@ index ee62888f89705..7ec72d302bc4b 100644
  // The brand-specific product name to be included as a component of the install
  // and user data directory paths.
 -inline constexpr wchar_t kProductPathName[] = L"Chromium";
-+inline constexpr wchar_t kProductPathName[] = L"BrowserOS";
++inline constexpr wchar_t kProductPathName[] = L"Wuu Browser";
  
  // The brand-specific safe browsing client name.
  inline constexpr char kSafeBrowsingName[] = "chromium";
@@ -19,20 +19,20 @@ index ee62888f89705..7ec72d302bc4b 100644
 -        .base_app_name = L"Chromium",              // A distinct base_app_name.
 -        .base_app_id = L"Chromium",                // A distinct base_app_id.
 -        .browser_prog_id_prefix = L"ChromiumHTM",  // Browser ProgID prefix.
-+            L"{CF887152-7CB8-4393-84CC-1BACF0EDE1D1}",  // BrowserOS app GUID.
-+        .base_app_name = L"BrowserOS",              // A distinct base_app_name.
-+        .base_app_id = L"BrowserOS",                // A distinct base_app_id.
++            L"{CF887152-7CB8-4393-84CC-1BACF0EDE1D1}",  // Wuu Browser app GUID.
++        .base_app_name = L"Wuu Browser",              // A distinct base_app_name.
++        .base_app_id = L"WuuBrowser",                // A distinct base_app_id.
 +        .browser_prog_id_prefix = L"BOSHTML",  // Browser ProgID prefix.
          .browser_prog_id_description =
 -            L"Chromium HTML Document",  // Browser ProgID description.
 -        .direct_launch_url_scheme = "chromium",
 -        .pdf_prog_id_prefix = L"ChromiumPDF",  // PDF ProgID prefix.
-+            L"BrowserOS HTML Document",  // Browser ProgID description.
++            L"Wuu Browser HTML Document",  // Browser ProgID description.
 +        .direct_launch_url_scheme = "browseros",
 +        .pdf_prog_id_prefix = L"BOSPDF",  // PDF ProgID prefix.
          .pdf_prog_id_description =
 -            L"Chromium PDF Document",  // PDF ProgID description.
-+            L"BrowserOS PDF Document",  // PDF ProgID description.
++            L"Wuu Browser PDF Document",  // PDF ProgID description.
          .active_setup_guid =
 -            L"{7D2B3E1D-D096-4594-9D8F-A6667F12E0AC}",  // Active Setup
 +            L"{0EF5669B-7FD7-4138-A91F-E466631ADE97}",  // Active Setup
@@ -67,7 +67,7 @@ index ee62888f89705..7ec72d302bc4b 100644
 -                                0x4075,
 -                                {0x91, 0x74, 0x75, 0xd0, 0xb1, 0x99, 0xd3,
 -                                 0xcb}},  // ISystemTraceSessionChromium IID and
-+        // BrowserOS: custom CLSIDs for Windows integration
++        // Wuu Browser: custom CLSIDs for Windows integration
 +        .toast_activator_clsid = {0xE76CCE76,
 +                                  0x27A7,
 +                                  0x46D3,
