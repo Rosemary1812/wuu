@@ -4355,12 +4355,12 @@ function TurnView({
   const renderedItems: JSX.Element[] = [];
   let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
-  const actionableAgentMessageID = turn.status === "completed" ? actionableAgentMessageItemID(turn) : undefined;
+  const flowAgentMessageID =
+    turn.status === "completed" || turn.status === "in_progress" ? messageFlowAgentMessageItemID(turn) : undefined;
+  const actionableAgentMessageID = turn.status === "completed" ? flowAgentMessageID : undefined;
   const primaryAgentMessageID =
-    actionableAgentMessageID ??
-    (turn.status === "in_progress" || turn.status === "failed" || turn.status === "interrupted"
-      ? latestAgentMessageItemIDForTurn(turn)
-      : undefined);
+    flowAgentMessageID ??
+    (turn.status === "failed" || turn.status === "interrupted" ? latestAgentMessageItemIDForTurn(turn) : undefined);
   const processAutoCollapse = turn.status === "completed" && actionableAgentMessageID !== undefined;
 
   function renderThreadItem(item: ThreadItem, streaming: boolean): JSX.Element | null {
@@ -4408,15 +4408,21 @@ function TurnView({
     if (onlyCompletedStatus) {
       return;
     }
-    if (!processAutoCollapse && entries.length === 1 && entries[0].kind === "status") {
-      renderedItems.push(entries[0].element);
+    const detailEntries = entries.filter((entry) => entry.kind !== "status");
+    if (detailEntries.length === 0) {
+      if (!processAutoCollapse) {
+        const statusEntry = entries.find((entry) => entry.kind === "status");
+        if (statusEntry) {
+          renderedItems.push(statusEntry.element);
+        }
+      }
       return;
     }
     renderedItems.push(
       <TurnProcessGroup
         key={`${turn.id}-process-${renderedItems.length}`}
         turn={turn}
-        entries={entries}
+        entries={detailEntries}
         autoCollapse={processAutoCollapse}
         hasFinalText={turnHasAssistantOutput(turn)}
       />
@@ -4675,7 +4681,7 @@ function latestAgentMessageItemIDForTurn(turn: Turn): string | undefined {
   return undefined;
 }
 
-function actionableAgentMessageItemID(turn: Turn): string | undefined {
+function messageFlowAgentMessageItemID(turn: Turn): string | undefined {
   const finalIndex = messageFlowFinalTextIndex(turn.items, (item) => {
     if (item.type === "agent_message") {
       return streamFieldValue(turn.id, item, "text").trim().length > 0 ? "text" : "ignore";
