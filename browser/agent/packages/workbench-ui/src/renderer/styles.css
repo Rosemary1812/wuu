@@ -6127,12 +6127,19 @@ button:disabled {
 
 .activity-command {
   display: block;
-  color: #74797e;
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: var(--font-sm);
-  line-height: 1.45;
+  color: #8f9498;
+  font-size: var(--font-ui);
+  line-height: 1.5;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.activity-command.running {
+  color: #c0c3c7;
+}
+
+.activity-command.failed {
+  color: #b42318;
 }
 
 .activity-detail-title {
@@ -6410,9 +6417,7 @@ button:disabled {
 }
 
 .reasoning-block {
-  display: inline-grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 10px;
+  display: block;
   color: #8b8f93;
   font-size: var(--conversation-message-font-size);
   line-height: var(--conversation-prose-line-height);

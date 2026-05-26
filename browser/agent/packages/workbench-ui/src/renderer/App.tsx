@@ -3,7 +3,6 @@
 import {
   AlertCircle,
   Archive,
-  Brain,
   Bug,
   ChevronDown,
   ChevronRight,
@@ -4531,7 +4530,13 @@ function TurnProcessGroup({
     hasDetails ? "" : " no-details"
   }`;
   const processCount = entries.filter((entry) => entry.kind !== "status").length;
-  const metaParts = turnProcessMetaParts(turn, processCount);
+  const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
+  const startedAt = parseTurnTimestampMs(turn.started_at);
+  const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
+  const liveNow = useLiveNow(liveDuration);
+  const elapsedMs = completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
+  const processStatus = turnProgressContent(turn, elapsedMs, turnHasAssistantOutput(turn));
+  const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs);
 
   useEffect(() => {
     const previousAutoCollapse = previousAutoCollapseRef.current;
@@ -4549,7 +4554,7 @@ function TurnProcessGroup({
   const toggleContent = (
     <>
       <span className="turn-process-copy">
-        <span>过程记录</span>
+        <span>{processStatus.label}</span>
         {metaParts.map((part) => (
           <span key={part}>{part}</span>
         ))}
@@ -4582,8 +4587,12 @@ function TurnProcessGroup({
   );
 }
 
-function turnProcessMetaParts(turn: Turn, processCount: number): string[] {
+function turnProcessMetaParts(turn: Turn, processCount: number, elapsedMs: number): string[] {
   const parts: string[] = [];
+  if (turn.status === "in_progress") {
+    parts.push(formatDuration(elapsedMs));
+    return parts;
+  }
   if (processCount > 0) {
     parts.push(`${processCount} 项`);
   }
@@ -4811,7 +4820,6 @@ function ThreadItemView({
     case "reasoning":
       return (
         <article className="reasoning-block">
-          <Brain size={16} />
           <ReasoningContent turnID={turnID} item={item} streaming={streaming} onStreamFrame={onStreamFrame} />
         </article>
       );

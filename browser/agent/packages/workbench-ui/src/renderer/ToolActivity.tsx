@@ -1,6 +1,5 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatMessageFlowCommand } from "../message-flow-display";
 import type { ThreadItem } from "../shared/protocol";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
 
@@ -75,6 +74,11 @@ export function ToolActivityRow({ items, collapseWhenIdle = false }: { items: Th
 
 type ToolActivitySectionStatus = "running" | "completed" | "failed";
 
+type ToolActivityCommand = {
+  text: string;
+  status: ToolActivitySectionStatus;
+};
+
 type ToolActivitySection = {
   id: string;
   kind: ToolActivityKind;
@@ -82,7 +86,7 @@ type ToolActivitySection = {
   subtitle?: string;
   detail?: string;
   status: ToolActivitySectionStatus;
-  commands: string[];
+  commands: ToolActivityCommand[];
   error?: string;
 };
 
@@ -92,9 +96,9 @@ function ToolActivitySectionView({ section }: { section: ToolActivitySection }):
       <div className="activity-detail-body">
         <div className="activity-command-list">
           {section.commands.map((command, index) => (
-            <code className="activity-command" key={`${section.id}-${index}`}>
-              {command}
-            </code>
+            <div className={`activity-command ${command.status}`} key={`${section.id}-${index}`}>
+              {command.text}
+            </div>
           ))}
         </div>
         {section.error ? <div className="activity-detail-error">{section.error}</div> : null}
@@ -127,8 +131,77 @@ function sectionSummaryText(section: ToolActivitySection): string {
   return section.title;
 }
 
-function toolCommands(items: ThreadItem[]): string[] {
-  return items.map((item) => formatMessageFlowCommand({ name: item.name, input: item.arguments }));
+function toolCommands(items: ThreadItem[]): ToolActivityCommand[] {
+  return items.map((item) => ({
+    text: readableToolActivityCommand(item),
+    status: itemToolStatus(item)
+  }));
+}
+
+function itemToolStatus(item: ThreadItem): ToolActivitySectionStatus {
+  if (item.status === "failed" || item.error) {
+    return "failed";
+  }
+  if ((item.status ?? "in_progress") === "in_progress") {
+    return "running";
+  }
+  return "completed";
+}
+
+export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arguments" | "result">): string {
+  const args = parseJSONRecord(item.arguments);
+  const result = parseJSONRecord(item.result);
+  const name = (item.name ?? "").trim();
+  const path = stringValue(result, "path") ?? stringValue(args, "path") ?? stringValue(args, "file");
+  const command = stringValue(result, "command") ?? stringValue(args, "command") ?? "";
+  const pattern = stringValue(args, "pattern") ?? stringValue(args, "query") ?? stringValue(args, "q");
+
+  switch (name) {
+    case "read_file":
+      return `读取 ${formatPathTarget(path, "文件")}`;
+    case "list_files":
+      return `查看 ${formatDirectoryTarget(path)}`;
+    case "grep":
+    case "glob":
+      return `搜索 ${formatSearchTarget(pattern)}`;
+    case "web_search":
+      return pattern ? `搜索网页 ${formatSearchTarget(pattern)}` : "搜索网页";
+    case "web_fetch": {
+      const url = stringValue(args, "url") ?? stringValue(result, "url");
+      return url ? `读取网页 ${truncateText(url, 90)}` : "读取网页";
+    }
+    case "git":
+      return readableCommandLabel(item);
+    case "run_shell":
+      return command ? `运行 ${truncateText(command, 100)}` : "运行命令";
+    case "start_process":
+      return command ? `启动 ${truncateText(command, 100)}` : "启动后台任务";
+    case "read_process_output":
+      return "读取后台输出";
+    case "stop_process":
+      return "停止后台任务";
+    case "edit_file":
+      return `编辑 ${formatPathTarget(path, "文件")}`;
+    case "write_file":
+      return `写入 ${formatPathTarget(path, "文件")}`;
+    case "spawn_agent":
+    case "followup_task": {
+      const task = stringValue(args, "task_name") ?? stringValue(args, "message");
+      return task ? `启动子任务 ${truncateText(task, 70)}` : "启动子任务";
+    }
+    case "send_message": {
+      const task = stringValue(args, "task_name") ?? stringValue(args, "message");
+      return task ? `发送给子任务 ${truncateText(task, 70)}` : "发送给子任务";
+    }
+    case "wait_agent":
+      return "等待子任务";
+    case "close_agent":
+      return "关闭子任务";
+    case "list_agents":
+      return "查看子任务";
+    default:
+      return readableToolName(name);
+  }
 }
 
 function toolActivitySectionKey(item: ThreadItem): string {
@@ -291,7 +364,35 @@ function compactDetailText(values: string[]): string | undefined {
   return values.length > 4 ? `${shown} 等 ${values.length} 项` : shown;
 }
 
-function readableCommandLabel(item: ThreadItem): string {
+function formatPathTarget(path: string | undefined, fallback: string): string {
+  if (!path) {
+    return fallback;
+  }
+  if (path === ".") {
+    return "当前目录";
+  }
+  return fileBaseName(path);
+}
+
+function formatDirectoryTarget(path: string | undefined): string {
+  if (!path || path === ".") {
+    return "当前目录";
+  }
+  return fileBaseName(path);
+}
+
+function formatSearchTarget(pattern: string | undefined): string {
+  if (!pattern) {
+    return "内容";
+  }
+  return truncateText(pattern.replace(/^\*\*\//, ""), 90);
+}
+
+function truncateText(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function readableCommandLabel(item: Pick<ThreadItem, "name" | "arguments" | "result">): string {
   const args = parseJSONRecord(item.arguments);
   const result = parseJSONRecord(item.result);
   const name = (item.name ?? "").trim();
