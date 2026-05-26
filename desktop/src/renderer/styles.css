@@ -799,6 +799,42 @@ button:disabled {
   transform-origin: top;
 }
 
+.thread-list-more {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #78817c;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  padding: 0 9px 0 8px;
+  text-align: left;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.thread-list-more:hover,
+.thread-list-more:focus-visible {
+  outline: 0;
+  background: rgba(95, 126, 104, 0.08);
+  color: #303734;
+}
+
+.thread-list-more-count {
+  flex: 0 0 auto;
+  color: #a0a7a3;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
 .thread-row {
   height: 32px;
   min-width: 0;
@@ -10133,6 +10169,7 @@ html.swiss-international .os-theme-wuu {
   .thread-row::before,
   .thread-row-actions,
   .thread-row-action,
+  .thread-list-more,
   .turn-process-chevron,
   .turn-process-details,
   .activity-chevron,

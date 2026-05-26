@@ -1,5 +1,5 @@
 import { Archive, ChevronRight, CornerDownRight, Folder, FolderOpen, MessageSquarePlus, Pin } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import type { Agent, DesktopProject, Thread } from "../shared/protocol";
 import {
   agentLabel,
@@ -13,6 +13,9 @@ import {
 function projectThreads(threads: Thread[]): Thread[] {
   return threads.filter((thread) => !thread.pinned);
 }
+
+const PROJECT_THREAD_INITIAL_VISIBLE_COUNT = 8;
+const PROJECT_THREAD_VISIBLE_INCREMENT = 10;
 
 export function ProjectList({
   projects,
@@ -53,6 +56,19 @@ export function ProjectList({
   onArchiveThread: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
+  const [visibleThreadCountsByProjectID, setVisibleThreadCountsByProjectID] = useState<Record<string, number>>({});
+
+  function visibleThreadCountForProject(projectID: string): number {
+    return visibleThreadCountsByProjectID[projectID] ?? PROJECT_THREAD_INITIAL_VISIBLE_COUNT;
+  }
+
+  function showMoreProjectThreads(projectID: string): void {
+    setVisibleThreadCountsByProjectID((current) => ({
+      ...current,
+      [projectID]: (current[projectID] ?? PROJECT_THREAD_INITIAL_VISIBLE_COUNT) + PROJECT_THREAD_VISIBLE_INCREMENT
+    }));
+  }
+
   return (
     <div className="projects">
       {projects.map((project) => {
@@ -98,11 +114,13 @@ export function ProjectList({
                   pendingThreadID={pendingThreadID}
                   pendingAskThreadIDs={pendingAskThreadIDs}
                   archiveConfirmThreadID={archiveConfirmThreadID}
+                  visibleCount={visibleThreadCountForProject(project.id)}
                   onSelect={onSelectThread}
                   onSelectChildAgent={onSelectChildAgent}
                   onTogglePinned={onToggleThreadPinned}
                   onArchive={onArchiveThread}
                   onClearArchiveConfirm={onClearArchiveConfirm}
+                  onShowMore={() => showMoreProjectThreads(project.id)}
                 />
               </div>
             ) : null}
@@ -119,28 +137,35 @@ function ThreadList({
   pendingThreadID,
   pendingAskThreadIDs,
   archiveConfirmThreadID,
+  visibleCount,
   onSelect,
   onSelectChildAgent,
   onTogglePinned,
   onArchive,
-  onClearArchiveConfirm
+  onClearArchiveConfirm,
+  onShowMore
 }: {
   threads: Thread[];
   activeID?: string;
   pendingThreadID?: string;
   pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
+  visibleCount: number;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: Thread) => void;
   onArchive: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
+  onShowMore: () => void;
 }): JSX.Element {
   const visibleThreads = projectThreads(threads);
+  const limitedThreads = limitedProjectThreads(visibleThreads, visibleCount, activeID, pendingThreadID, pendingAskThreadIDs);
+  const hiddenCount = visibleThreads.length - limitedThreads.length;
+  const showMoreCount = Math.min(PROJECT_THREAD_VISIBLE_INCREMENT, hiddenCount);
   return (
     <div className="thread-list">
       <ThreadRows
-        threads={visibleThreads}
+        threads={limitedThreads}
         activeID={activeID}
         pendingThreadID={pendingThreadID}
         pendingAskThreadIDs={pendingAskThreadIDs}
@@ -151,7 +176,43 @@ function ThreadList({
         onArchive={onArchive}
         onClearArchiveConfirm={onClearArchiveConfirm}
       />
+      {hiddenCount > 0 ? (
+        <button className="thread-list-more" type="button" onClick={onShowMore}>
+          <span>{hiddenCount > PROJECT_THREAD_VISIBLE_INCREMENT ? `再显示 ${showMoreCount} 条` : `显示剩余 ${hiddenCount} 条`}</span>
+          <span className="thread-list-more-count">剩余 {hiddenCount} 条</span>
+        </button>
+      ) : null}
     </div>
+  );
+}
+
+function limitedProjectThreads(
+  threads: Thread[],
+  visibleCount: number,
+  activeID: string | undefined,
+  pendingThreadID: string | undefined,
+  pendingAskThreadIDs: Set<string>
+): Thread[] {
+  const visibleIDs = new Set(threads.slice(0, Math.max(0, visibleCount)).map((thread) => thread.id));
+  return threads.filter((thread) => {
+    if (visibleIDs.has(thread.id) || importantThreadVisible(thread, activeID, pendingThreadID, pendingAskThreadIDs)) {
+      return true;
+    }
+    return false;
+  });
+}
+
+function importantThreadVisible(
+  thread: Thread,
+  activeID: string | undefined,
+  pendingThreadID: string | undefined,
+  pendingAskThreadIDs: Set<string>
+): boolean {
+  if (thread.id === activeID || thread.id === pendingThreadID || pendingAskThreadIDs.has(thread.id)) {
+    return true;
+  }
+  return (thread.child_agents ?? []).some(
+    (agent) => agent.id === activeID || agent.id === pendingThreadID || pendingAskThreadIDs.has(agent.id)
   );
 }
 
