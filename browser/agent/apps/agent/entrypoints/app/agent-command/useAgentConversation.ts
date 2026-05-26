@@ -18,6 +18,10 @@ import { useInvalidateAgentOutputs } from '@/lib/agent-files'
 import type { ServerAttachmentPayload } from '@/lib/attachments'
 import { consumeSSEStream } from '@/lib/sse'
 import { buildToolLabel } from '@/lib/tool-labels'
+import {
+  appendAssistantTextDelta,
+  appendAssistantThinkingDelta,
+} from './agent-conversation-parts'
 import { mapAgentHarnessToolStatus } from './agent-stream-events'
 
 export interface SendInput {
@@ -63,8 +67,6 @@ export function useAgentConversation(
   invalidateAgentOutputsRef.current = invalidateAgentOutputs
   const sessionKeyRef = useRef(options.sessionKey ?? '')
   const historyRef = useRef<OpenClawChatHistoryMessage[]>(options.history ?? [])
-  const textAccRef = useRef('')
-  const thinkAccRef = useRef('')
   const streamAbortRef = useRef<AbortController | null>(null)
   const onCompleteRef = useRef(options.onComplete)
   const onSessionKeyChangeRef = useRef(options.onSessionKeyChange)
@@ -119,41 +121,20 @@ export function useAgentConversation(
   }
 
   const appendTextDelta = (delta: string) => {
-    textAccRef.current += delta
-    const text = textAccRef.current
     const now = Date.now()
     updateCurrentTurn((turn) => {
-      const parts = turn.parts
-      const last = parts[parts.length - 1]
-      if (last?.kind === 'text') {
-        return {
-          ...turn,
-          lastTextDeltaAt: now,
-          parts: [...parts.slice(0, -1), { ...last, text }],
-        }
-      }
       return {
         ...turn,
         lastTextDeltaAt: now,
-        parts: [...parts, { kind: 'text', text }],
+        parts: appendAssistantTextDelta(turn.parts, delta),
       }
     })
   }
 
   const appendThinkingDelta = (delta: string) => {
-    thinkAccRef.current += delta
-    const text = thinkAccRef.current
-    updateCurrentTurnParts((parts) => {
-      const idx = parts.findIndex((p) => p.kind === 'thinking' && !p.done)
-      if (idx >= 0) {
-        return [
-          ...parts.slice(0, idx),
-          { ...parts[idx], text, done: false },
-          ...parts.slice(idx + 1),
-        ]
-      }
-      return [...parts, { kind: 'thinking', text, done: false }]
-    })
+    updateCurrentTurnParts((parts) =>
+      appendAssistantThinkingDelta(parts, delta),
+    )
   }
 
   const appendErrorText = (message: string) => {
@@ -309,8 +290,6 @@ export function useAgentConversation(
             timestamp: active.startedAt,
           },
         ])
-        textAccRef.current = ''
-        thinkAccRef.current = ''
         turnIdRef.current = active.turnId
         lastSeqRef.current = null
         streamAbortRef.current = abortController
@@ -443,8 +422,6 @@ export function useAgentConversation(
     }
     setTurns((prev) => [...prev, turn])
     setStreaming(true)
-    textAccRef.current = ''
-    thinkAccRef.current = ''
     const abortController = new AbortController()
     streamAbortRef.current = abortController
 
