@@ -24,6 +24,10 @@ Environment overrides:
   WUU_BROWSER_STAGE_SERVER_RESOURCES
                            Build and stage local server resources before launch.
                            Defaults to 1 when WUU_BROWSER_SERVER_RESOURCES is not set.
+  WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS
+                           Disable extensions already installed in the selected
+                           profile and allow only the repo-owned Workbench
+                           extension. Defaults to 0.
   WUU_BROWSER_PROFILE_DIR  Browser profile directory.
   WUU_BROWSER_PROFILE_MODE Profile mode. Use "temp" for an isolated dev
                            profile, or "product" to use the persistent Wuu
@@ -66,6 +70,7 @@ start_url="${WUU_BROWSER_START_URL:-chrome://wuu}"
 cleanup_existing="${WUU_BROWSER_CLEANUP_EXISTING:-1}"
 profile_prefix="${WUU_BROWSER_PROFILE_PREFIX:-wuu-browser-dev}"
 launch_label="${WUU_BROWSER_LAUNCH_LABEL:-Wuu Browser Dev launch}"
+disable_profile_extensions="${WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -418,6 +423,13 @@ args+=(
   "--browseros-proxy-port=${proxy_port}"
   "--browseros-extension-port=${extension_port}"
   "--user-data-dir=${profile_dir}"
+)
+
+if [[ "${disable_profile_extensions}" == "1" ]]; then
+  args+=("--disable-extensions-except=${extension_dir}")
+fi
+
+args+=(
   "--load-extension=${extension_dir}"
   "${start_url}"
 )
@@ -438,6 +450,7 @@ echo "  stage srv: ${stage_server_resources}"
 echo "  profile:   ${profile_dir}"
 echo "  profile mode:${profile_mode}"
 echo "  keychain:  ${keychain_mode}"
+echo "  profile extensions:$(if [[ "${disable_profile_extensions}" == "1" ]]; then echo "only Wuu"; else echo "enabled"; fi)"
 echo "  cleanup:   ${cleanup_existing}"
 echo "  start URL: ${start_url}"
 echo "  Wuu source:${WUU_SOURCE_ROOT}"

@@ -192,8 +192,11 @@ server resources, and opens `chrome://wuu`. It uses the persistent product
 profile at `~/Library/Application Support/Wuu Browser` with the real macOS
 keychain by default, so migrated cookies, bookmarks, history, and passwords are
 visible while the local Agent/Workbench assets still update from this
-repository. Use `WUU_BROWSER_PRODUCT_TEMP_PROFILE=1 make browser-launch-product`
-when you intentionally need an isolated clean profile. Double-clicking the
+repository. Use `WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS=1 make
+browser-launch-product` when you intentionally need to suppress profile
+extensions for focused Workbench testing, or
+`WUU_BROWSER_PRODUCT_TEMP_PROFILE=1 make browser-launch-product` when you need
+an isolated clean profile. Double-clicking the
 local preview app directly uses the resources already embedded in that app
 bundle, so it can lag behind repository changes until a full Chromium
 rebuild/package refresh embeds those assets.

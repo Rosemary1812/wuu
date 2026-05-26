@@ -773,6 +773,11 @@ check_contains \
 
 check_contains \
   "${launch_script}" \
+  '"--disable-extensions-except=${extension_dir}"' \
+  "local launch can suppress profile extensions while keeping Wuu"
+
+check_contains \
+  "${launch_script}" \
   'cleanup_matching_processes "${repo_root}/browser/out/Wuu Browser.app"' \
   "local launch stops stale product preview browser instances"
 
@@ -805,6 +810,11 @@ check_contains \
   "${launch_product_script}" \
   'WUU_BROWSER_PRODUCT_TEMP_PROFILE' \
   "product preview launch keeps temporary profiles as an explicit opt-in"
+
+check_contains \
+  "${launch_product_script}" \
+  'WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS="${WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS:-0}"' \
+  "product preview launch keeps migrated profile extensions unless explicitly disabled"
 
 check_not_contains \
   "${launch_script}" \

@@ -334,6 +334,8 @@ Current packaging path:
   default, so migrated browser state remains visible while local Agent assets
   keep updating from the repository. This avoids accidentally testing stale
   bundled BrowserOS resources from the copied Chromium app.
+- `WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS=1 make browser-launch-product`
+  suppresses migrated profile extensions for focused Workbench testing.
 - `WUU_BROWSER_PRODUCT_TEMP_PROFILE=1 make browser-launch-product` keeps the
   old isolated temporary profile behavior for clean smoke tests.
 - `make browser-migrate-doubao-profile` dry-runs the local Doubao credential

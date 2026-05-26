@@ -14,7 +14,9 @@ Environment overrides are the same as browser/scripts/launch-dev.sh.
 By default this uses the persistent Wuu Browser profile at
 ~/Library/Application Support/Wuu Browser and the real macOS keychain, so
 migrated cookies, bookmarks, history, and passwords are visible. Set
-WUU_BROWSER_PRODUCT_TEMP_PROFILE=1 for an isolated temporary profile.
+WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS=1 to suppress profile extensions for
+focused Workbench testing, or WUU_BROWSER_PRODUCT_TEMP_PROFILE=1 for an
+isolated temporary profile.
 USAGE
 }
 
@@ -32,6 +34,7 @@ export WUU_BROWSER_STAGE_SERVER_RESOURCES="${WUU_BROWSER_STAGE_SERVER_RESOURCES:
 export WUU_BROWSER_PROFILE_PREFIX="${WUU_BROWSER_PROFILE_PREFIX:-wuu-browser-product}"
 export WUU_BROWSER_PRODUCT_PROFILE_DIR="${WUU_BROWSER_PRODUCT_PROFILE_DIR:-${HOME}/Library/Application Support/Wuu Browser}"
 export WUU_BROWSER_LAUNCH_LABEL="${WUU_BROWSER_LAUNCH_LABEL:-Wuu Browser product preview launch}"
+export WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS="${WUU_BROWSER_DISABLE_PROFILE_EXTENSIONS:-0}"
 
 if [[ "${WUU_BROWSER_PRODUCT_TEMP_PROFILE:-0}" == "1" ]]; then
   export WUU_BROWSER_PROFILE_MODE="${WUU_BROWSER_PROFILE_MODE:-temp}"
