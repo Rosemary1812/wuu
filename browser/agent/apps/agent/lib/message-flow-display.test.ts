@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   formatMessageFlowCommand,
   isMessageFlowFailedStatus,
+  messageFlowFinalTextIndex,
   messageFlowStatusLabel,
 } from './message-flow-display'
 
@@ -87,6 +88,23 @@ test('formatMessageFlowCommand prefers raw input and falls back predictably', ()
     'tool Tool',
   )
   expect(formatMessageFlowCommand({ name: 'tool', label: 'tool' })).toBe('tool')
+})
+
+test('messageFlowFinalTextIndex selects text after the last process item', () => {
+  const parts = [
+    { role: 'text' },
+    { role: 'process' },
+    { role: 'text' },
+    { role: 'ignore' },
+  ] as const
+
+  expect(messageFlowFinalTextIndex(parts, (part) => part.role)).toBe(2)
+})
+
+test('messageFlowFinalTextIndex rejects text before later process work', () => {
+  const parts = [{ role: 'text' }, { role: 'process' }] as const
+
+  expect(messageFlowFinalTextIndex(parts, (part) => part.role)).toBe(-1)
 })
 
 test('isMessageFlowFailedStatus recognizes failed tool states', () => {

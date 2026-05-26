@@ -9,6 +9,7 @@ import type {
   AgentConversationTurn,
   ToolEntry,
 } from '@/lib/agent-conversations/types'
+import { messageFlowFinalTextIndex } from '@/lib/message-flow-display'
 import { FileCardStrip } from './agent-conversation.file-card-strip'
 import {
   AssistantProcess,
@@ -51,7 +52,9 @@ function buildAssistantRenderPlan(
   turn: AgentConversationTurn,
 ): AssistantRenderPlan {
   const processItems: ProcessItem[] = []
-  const lastTextIndex = findLastTextPartIndex(turn)
+  const finalTextIndex = messageFlowFinalTextIndex(turn.parts, (part) =>
+    part.kind === 'text' ? 'text' : 'process',
+  )
   let finalText = ''
 
   turn.parts.forEach((part, partIndex) => {
@@ -66,7 +69,7 @@ function buildAssistantRenderPlan(
     }
 
     if (part.kind === 'text') {
-      if (partIndex === lastTextIndex) {
+      if (partIndex === finalTextIndex) {
         finalText = part.text
       } else {
         processItems.push({
@@ -91,15 +94,6 @@ function buildAssistantRenderPlan(
   })
 
   return { processItems, finalText }
-}
-
-function findLastTextPartIndex(turn: AgentConversationTurn): number {
-  for (let index = turn.parts.length - 1; index >= 0; index -= 1) {
-    if (turn.parts[index]?.kind === 'text') {
-      return index
-    }
-  }
-  return -1
 }
 
 function toProcessTool(tool: ToolEntry) {

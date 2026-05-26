@@ -70,7 +70,10 @@ import type {
   ThreadItem,
   Turn
 } from "../shared/protocol";
-import { messageFlowStatusLabel } from "@/lib/message-flow-display";
+import {
+  messageFlowFinalTextIndex,
+  messageFlowStatusLabel
+} from "@/lib/message-flow-display";
 import {
   AnsweredAskUserMessage,
   AskUserMessage,
@@ -4673,25 +4676,22 @@ function latestAgentMessageItemIDForTurn(turn: Turn): string | undefined {
 }
 
 function actionableAgentMessageItemID(turn: Turn): string | undefined {
-  let latestAgentMessageID: string | undefined;
-  let latestPostToolAgentMessageID: string | undefined;
-  let hasToolCall = false;
-
-  for (const item of turn.items) {
-    if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
-      hasToolCall = true;
-      latestPostToolAgentMessageID = undefined;
-      continue;
-    }
+  const finalIndex = messageFlowFinalTextIndex(turn.items, (item) => {
     if (item.type === "agent_message") {
-      latestAgentMessageID = item.id;
-      if (hasToolCall) {
-        latestPostToolAgentMessageID = item.id;
-      }
+      return streamFieldValue(turn.id, item, "text").trim().length > 0 ? "text" : "ignore";
     }
-  }
+    if (
+      item.type === "reasoning" ||
+      item.type === "tool_call" ||
+      item.type === "collab_agent_tool_call" ||
+      item.type === "context_compaction"
+    ) {
+      return "process";
+    }
+    return "ignore";
+  });
 
-  return hasToolCall ? latestPostToolAgentMessageID : latestAgentMessageID;
+  return finalIndex >= 0 ? turn.items[finalIndex]?.id : undefined;
 }
 
 function ThreadItemView({

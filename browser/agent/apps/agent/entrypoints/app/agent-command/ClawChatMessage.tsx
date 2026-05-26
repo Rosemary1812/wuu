@@ -10,6 +10,7 @@ import {
   MessageResponse,
   MessageToolbar,
 } from '@/components/ai-elements/message'
+import { messageFlowFinalTextIndex } from '@/lib/message-flow-display'
 import { cn } from '@/lib/utils'
 import {
   AssistantProcess,
@@ -42,7 +43,15 @@ function buildAssistantRenderPlan(
   const attachments: AttachmentPart[] = []
   const processItems: ProcessItem[] = []
   const metaParts: MetaPart[] = []
-  const lastTextIndex = findLastTextPartIndex(parts)
+  const finalTextIndex = messageFlowFinalTextIndex(parts, (part) => {
+    if (part.type === 'text') {
+      return 'text'
+    }
+    if (part.type === 'reasoning' || part.type === 'tool-call') {
+      return 'process'
+    }
+    return 'ignore'
+  })
   let finalText = ''
 
   parts.forEach((part, partIndex) => {
@@ -67,7 +76,7 @@ function buildAssistantRenderPlan(
     }
 
     if (part.type === 'text') {
-      if (partIndex === lastTextIndex) {
+      if (partIndex === finalTextIndex) {
         finalText = part.text
       } else {
         processItems.push({
@@ -99,13 +108,6 @@ function buildAssistantRenderPlan(
   })
 
   return { attachments, processItems, finalText, metaParts }
-}
-
-function findLastTextPartIndex(parts: ClawChatMessagePart[]): number {
-  for (let index = parts.length - 1; index >= 0; index -= 1) {
-    if (parts[index]?.type === 'text') return index
-  }
-  return -1
 }
 
 interface ClawChatMessageProps {

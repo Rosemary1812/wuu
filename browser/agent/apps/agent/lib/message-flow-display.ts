@@ -15,6 +15,29 @@ export type MessageFlowCommandInput = {
   label?: string
 }
 
+export type MessageFlowPartRole = 'text' | 'process' | 'ignore'
+
+export function messageFlowFinalTextIndex<T>(
+  parts: readonly T[],
+  roleForPart: (part: T, index: number) => MessageFlowPartRole,
+): number {
+  let finalTextIndex = -1
+  let lastProcessIndex = -1
+
+  parts.forEach((part, index) => {
+    const role = roleForPart(part, index)
+    if (role === 'process') {
+      lastProcessIndex = index
+      return
+    }
+    if (role === 'text') {
+      finalTextIndex = index
+    }
+  })
+
+  return finalTextIndex > lastProcessIndex ? finalTextIndex : -1
+}
+
 export function messageFlowStatusLabel({
   done,
   failed,
