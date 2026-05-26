@@ -24,6 +24,7 @@
         --shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
         --radius-control: 8px;
         --timing: cubic-bezier(0.2, 0, 0, 1);
+        --sweep-duration: 3s;
       }
 
       @media (prefers-color-scheme: dark) {
@@ -82,10 +83,10 @@
       }
 
       .shell {
-        width: min(1120px, 100%);
+        width: min(1180px, 100%);
         margin: 0 auto;
         display: grid;
-        grid-template-columns: 300px minmax(0, 1fr);
+        grid-template-columns: 320px minmax(0, 1fr);
         gap: 22px;
         align-items: start;
       }
@@ -122,6 +123,64 @@
       .debug-actions {
         display: grid;
         gap: 8px;
+      }
+
+      .debug-section {
+        margin: 16px 0 0;
+        padding: 14px 0 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .debug-section-title {
+        margin: 0 0 10px;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .control-stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .control-row {
+        display: grid;
+        gap: 6px;
+      }
+
+      .control-row-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .control-row label,
+      .toggle-row span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .control-row output {
+        color: var(--text);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .control-row input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .toggle-row input {
+        accent-color: var(--accent);
       }
 
       .debug-actions button,
@@ -287,7 +346,7 @@
         background-size: 260% 100%;
         -webkit-background-clip: text;
         background-clip: text;
-        animation: textSweep 3s ease-in-out infinite;
+        animation: textSweep var(--sweep-duration) ease-in-out infinite;
       }
 
       .state-label.failed {
@@ -387,6 +446,7 @@
 
       .final-text {
         max-width: 720px;
+        min-height: 1px;
         color: var(--text);
         font-size: 14.5px;
         line-height: 1.72;
@@ -400,6 +460,14 @@
 
       .final-text p {
         margin: 0 0 12px;
+      }
+
+      .final-text > :first-child {
+        margin-top: 0;
+      }
+
+      .final-text.is-streaming > * {
+        animation: none;
       }
 
       .final-text h2,
@@ -629,9 +697,39 @@
             <button type="button" data-run="toggle">展开/收起过程</button>
             <button type="button" data-run="reset">重置</button>
           </div>
+          <div class="debug-section" aria-label="模拟参数">
+            <h2 class="debug-section-title">参数</h2>
+            <div class="control-stack">
+              <div class="control-row">
+                <div class="control-row-header">
+                  <label for="tokenRate">token 速率</label>
+                  <output id="tokenRateValue" for="tokenRate">22 token/s</output>
+                </div>
+                <input id="tokenRate" type="range" min="3" max="80" step="1" value="22" />
+              </div>
+              <div class="control-row">
+                <div class="control-row-header">
+                  <label for="stepSpeed">过程步进速度</label>
+                  <output id="stepSpeedValue" for="stepSpeed">1.0x</output>
+                </div>
+                <input id="stepSpeed" type="range" min="0.35" max="2.5" step="0.05" value="1" />
+              </div>
+              <div class="control-row">
+                <div class="control-row-header">
+                  <label for="sweepSpeed">文字扫光周期</label>
+                  <output id="sweepSpeedValue" for="sweepSpeed">3.0s</output>
+                </div>
+                <input id="sweepSpeed" type="range" min="1.6" max="5" step="0.1" value="3" />
+              </div>
+              <label class="toggle-row">
+                <span>完成后自动折叠过程</span>
+                <input id="autoCollapse" type="checkbox" checked />
+              </label>
+            </div>
+          </div>
           <div class="constraint-list">
             <strong>已编码约束：</strong><br />
-            final text 无容器；过程无背景；运行态文字慢扫光；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
+            final text 无容器；过程无背景；运行态文字慢扫光；final text 按 token 流式增量渲染；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
           </div>
         </aside>
 
@@ -652,6 +750,13 @@
     <script>
       const turn = document.querySelector("#turn");
       const buttons = document.querySelectorAll("[data-run]");
+      const tokenRateControl = document.querySelector("#tokenRate");
+      const stepSpeedControl = document.querySelector("#stepSpeed");
+      const sweepSpeedControl = document.querySelector("#sweepSpeed");
+      const autoCollapseControl = document.querySelector("#autoCollapse");
+      const tokenRateValue = document.querySelector("#tokenRateValue");
+      const stepSpeedValue = document.querySelector("#stepSpeedValue");
+      const sweepSpeedValue = document.querySelector("#sweepSpeedValue");
 
       let timers = [];
       let ticker = 0;
@@ -659,11 +764,54 @@
       let elapsedOverride = null;
       let processExpanded = true;
       let processItemCount = 0;
+      let runID = 0;
 
       const wait = (ms) => new Promise((resolve) => {
         const timer = window.setTimeout(resolve, ms);
         timers.push(timer);
       });
+
+      const successMarkdown = [
+        "我建议把中间消息流改成一个 text-first 的任务 turn：运行时让过程保持可见，完成后把过程整体折叠，只让最后一段回复成为主内容。",
+        "",
+        "## 核心规则",
+        "",
+        "1. 最终内容只取最后一段模型回复。",
+        "2. 中间过程可以包含思考正文和工具动作，但完成后统一折叠。",
+        "3. 状态变化靠文字本身的慢扫光表达，不使用图标、进度条或 spinner。",
+        "",
+        "> 过程不是隐藏掉，而是在完成后降级成可回看的上下文。",
+        "",
+        "```tsx",
+        "const finalText = lastAgentMessage(turn.items);",
+        "const processItems = itemsBefore(finalText);",
+        "",
+        "return (",
+        "  <Turn>",
+        "    <ProcessSummary items={processItems} collapsed={turn.done} />",
+        "    <FinalText text={finalText.text} />",
+        "  </Turn>",
+        ");",
+        "```",
+        "",
+        "| 内容 | 运行中 | 完成后 |",
+        "| --- | --- | --- |",
+        "| 思考正文 | 淡灰正文可见 | 折叠进过程 |",
+        "| 工具动作 | 动作 + 对象 | 折叠进过程 |",
+        "| 最终回复 | 自然流式出现 | 纯文字主显示 |",
+        "",
+        "这样做的结果是：用户能确认系统正在推进，也能在需要时回看过程，但阅读焦点始终落在真正的最终回复上。"
+      ].join("\n");
+
+      const completedMarkdown = [
+        "这是完成态：过程已经折叠，最终回复是纯文字，没有容器。只有代码块、表格这类需要边界的内容才有轻容器。",
+        "",
+        "## 完成态展示",
+        "",
+        "- 过程行只显示 `过程记录 · N 项 · 18s`。",
+        "- 展开后可以回看淡灰过程正文和工具动作。",
+        "- 最终回复不显示助手标题、不显示头像、不包卡片。"
+      ].join("\n");
 
       function clearTimers() {
         for (const timer of timers) {
@@ -676,7 +824,36 @@
         }
       }
 
+      function currentTokenRate() {
+        return Math.max(1, Number(tokenRateControl?.value ?? 22));
+      }
+
+      function currentStepSpeed() {
+        return Math.max(0.1, Number(stepSpeedControl?.value ?? 1));
+      }
+
+      function waitStep(ms) {
+        return wait(ms / currentStepSpeed());
+      }
+
+      function syncControls() {
+        const tokenRate = currentTokenRate();
+        const stepSpeed = currentStepSpeed();
+        const sweepSpeed = Math.max(0.5, Number(sweepSpeedControl?.value ?? 3));
+        if (tokenRateValue) {
+          tokenRateValue.textContent = `${tokenRate} token/s`;
+        }
+        if (stepSpeedValue) {
+          stepSpeedValue.textContent = `${stepSpeed.toFixed(2).replace(/\.00$/, ".0")}x`;
+        }
+        if (sweepSpeedValue) {
+          sweepSpeedValue.textContent = `${sweepSpeed.toFixed(1)}s`;
+        }
+        document.documentElement.style.setProperty("--sweep-duration", `${sweepSpeed}s`);
+      }
+
       function resetTurn() {
+        runID += 1;
         clearTimers();
         startedAt = 0;
         elapsedOverride = null;
@@ -686,6 +863,7 @@
       }
 
       function createTurn(userText) {
+        runID += 1;
         clearTimers();
         startedAt = Date.now();
         elapsedOverride = null;
@@ -712,6 +890,7 @@
         document.querySelector("#processToggle").addEventListener("click", toggleProcess);
         setStatus("正在思考", "running");
         startTicker();
+        return runID;
       }
 
       function startTicker() {
@@ -816,10 +995,10 @@
         process.classList.add(status);
         if (status === "completed") {
           setStatus("过程记录", "");
-          setProcessExpanded(false);
+          setProcessExpanded(Boolean(autoCollapseControl?.checked) ? false : processExpanded);
         } else if (status === "stopped") {
           setStatus("已停止", "");
-          setProcessExpanded(false);
+          setProcessExpanded(Boolean(autoCollapseControl?.checked) ? false : processExpanded);
         } else if (status === "failed") {
           setStatus("处理失败", "failed");
           setProcessExpanded(true);
@@ -832,66 +1011,43 @@
       }
 
       async function runSuccess() {
-        createTurn("我们重构中间消息流：发送后少展示信息，运行中展开过程，完成后只突出最后回复。");
-        await wait(350);
+        const id = createTurn("我们重构中间消息流：发送后少展示信息，运行中展开过程，完成后只突出最后回复。");
+        await waitStep(350);
+        if (!isActiveRun(id)) return;
         addProcessItem("thought", "我先确认消息流里哪些内容属于最终回复，哪些属于中间过程。");
-        await wait(650);
+        await waitStep(650);
+        if (!isActiveRun(id)) return;
         setStatus("正在查看代码", "running");
         addProcessItem("action", "搜索 ThreadItemView");
-        await wait(520);
+        await waitStep(520);
+        if (!isActiveRun(id)) return;
         addProcessItem("action", "读取 App.tsx");
-        await wait(520);
+        await waitStep(520);
+        if (!isActiveRun(id)) return;
         addProcessItem("action", "读取 model.go");
-        await wait(600);
+        await waitStep(600);
+        if (!isActiveRun(id)) return;
         addProcessItem("thought", "代码已经把 agent_message、reasoning 和 tool_call 分成不同 item，UI 可以按类型组织。");
-        await wait(700);
+        await waitStep(700);
+        if (!isActiveRun(id)) return;
         setStatus("正在整理回复", "running");
         addProcessItem("action", "运行 npm run typecheck");
-        await wait(400);
-        appendFinalBlock("<p>我建议把中间消息流改成一个 text-first 的任务 turn：运行时让过程保持可见，完成后把过程整体折叠，只让最后一段回复成为主内容。</p>");
-        await wait(620);
-        appendFinalBlock("<h2>核心规则</h2><ol><li>最终内容只取最后一段模型回复。</li><li>中间过程可以包含思考正文和工具动作，但完成后统一折叠。</li><li>状态变化靠文字本身的慢扫光表达，不使用图标、进度条或 spinner。</li></ol>");
-        await wait(620);
-        appendFinalBlock("<blockquote>过程不是隐藏掉，而是在完成后降级成可回看的上下文。</blockquote>");
-        await wait(620);
-        appendFinalBlock(`
-          <div class="code-card">
-            <div class="code-toolbar"><span>tsx</span><button class="copy-button" type="button">复制</button></div>
-            <pre><code>const finalText = lastAgentMessage(turn.items);
-const processItems = itemsBefore(finalText);
-
-return (
-  &lt;Turn&gt;
-    &lt;ProcessSummary items={processItems} collapsed={turn.done} /&gt;
-    &lt;FinalText text={finalText.text} /&gt;
-  &lt;/Turn&gt;
-);</code></pre>
-          </div>
-        `);
-        await wait(620);
-        appendFinalBlock(`
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>内容</th><th>运行中</th><th>完成后</th></tr></thead>
-              <tbody>
-                <tr><td>思考正文</td><td>淡灰正文可见</td><td>折叠进过程</td></tr>
-                <tr><td>工具动作</td><td>动作 + 对象</td><td>折叠进过程</td></tr>
-                <tr><td>最终回复</td><td>自然流式出现</td><td>纯文字主显示</td></tr>
-              </tbody>
-            </table>
-          </div>
-        `);
-        await wait(620);
-        appendFinalBlock("<p>这样做的结果是：用户能确认系统正在推进，也能在需要时回看过程，但阅读焦点始终落在真正的最终回复上。</p>");
-        await wait(540);
+        await waitStep(400);
+        if (!isActiveRun(id)) return;
+        await streamFinalMarkdown(successMarkdown, id);
+        if (!isActiveRun(id)) return;
+        await waitStep(540);
+        if (!isActiveRun(id)) return;
         completeProcess({ status: "completed", elapsed: 18 });
       }
 
       async function runWaiting() {
-        createTurn("如果 agent 中间需要我选择，消息流应该怎么显示？");
-        await wait(320);
+        const id = createTurn("如果 agent 中间需要我选择，消息流应该怎么显示？");
+        await waitStep(320);
+        if (!isActiveRun(id)) return;
         addProcessItem("thought", "我先收敛两个可行方向，然后让用户选择一个更符合产品气质的方案。");
-        await wait(600);
+        await waitStep(600);
+        if (!isActiveRun(id)) return;
         setStatus("等待你选择", "waiting");
         const choices = `
           <div class="choice-inline">
@@ -910,36 +1066,43 @@ return (
             });
             setStatus("正在继续处理", "running");
             addProcessItem("action", `收到选择：${button.textContent.trim()}`);
-            await wait(500);
-            appendFinalBlock("<p>已按你的选择继续。等待用户选择时仍然使用同一条状态行，只是状态更明确，不需要额外做大卡片。</p>");
-            await wait(420);
+            await waitStep(500);
+            await streamFinalMarkdown("已按你的选择继续。等待用户选择时仍然使用同一条状态行，只是状态更明确，不需要额外做大卡片。", runID);
+            await waitStep(420);
             completeProcess({ status: "completed", elapsed: 11 });
           });
         });
       }
 
       async function runFailed() {
-        createTurn("如果模型或工具失败了，消息流应该怎么处理？");
-        await wait(320);
+        const id = createTurn("如果模型或工具失败了，消息流应该怎么处理？");
+        await waitStep(320);
+        if (!isActiveRun(id)) return;
         addProcessItem("thought", "我会保留同一条状态行体系，只把失败态的文字调成轻红色。");
-        await wait(520);
+        await waitStep(520);
+        if (!isActiveRun(id)) return;
         setStatus("正在运行检查", "running");
         addProcessItem("action", "运行 npm run typecheck");
-        await wait(700);
+        await waitStep(700);
+        if (!isActiveRun(id)) return;
         addProcessItem("error", "检查失败：存在 2 个类型错误，需要用户修正或让我继续处理。");
         completeProcess({ status: "failed", elapsed: 7 });
       }
 
       async function runStopped() {
-        createTurn("如果我中途点了停止，过程应该怎么收束？");
-        await wait(300);
+        const id = createTurn("如果我中途点了停止，过程应该怎么收束？");
+        await waitStep(300);
+        if (!isActiveRun(id)) return;
         addProcessItem("thought", "我已经开始分析消息流，但这个 turn 会在中途被停止。");
-        await wait(520);
+        await waitStep(520);
+        if (!isActiveRun(id)) return;
         setStatus("正在查看代码", "running");
         addProcessItem("action", "读取 App.tsx");
-        await wait(650);
+        await waitStep(650);
+        if (!isActiveRun(id)) return;
         addProcessItem("action", "搜索 process group");
-        await wait(460);
+        await waitStep(460);
+        if (!isActiveRun(id)) return;
         completeProcess({ status: "stopped", elapsed: 6 });
       }
 
@@ -950,9 +1113,180 @@ return (
         addProcessItem("action", "读取 App.tsx");
         addProcessItem("action", "读取 model.go");
         addProcessItem("thought", "完成后过程整体折叠，只保留一行轻量入口。");
-        appendFinalBlock("<p>这是完成态：过程已经折叠，最终回复是纯文字，没有容器。只有代码块、表格这类需要边界的内容才有轻容器。</p>");
-        appendFinalBlock("<h2>完成态展示</h2><ul><li>过程行只显示 <span class=\"inline-code\">过程记录 · N 项 · 18s</span></li><li>展开后可以回看淡灰过程正文和工具动作</li><li>最终回复不显示助手标题、不显示头像、不包卡片</li></ul>");
+        renderFinalMarkdown(completedMarkdown);
         completeProcess({ status: "completed", elapsed: 18 });
+      }
+
+      function isActiveRun(id) {
+        return id === runID;
+      }
+
+      async function streamFinalMarkdown(markdown, id) {
+        const finalText = document.querySelector("#finalText");
+        if (!finalText) {
+          return;
+        }
+        finalText.classList.add("is-streaming");
+        let buffer = "";
+        const tokens = tokenizeStream(markdown);
+        for (const token of tokens) {
+          if (!isActiveRun(id)) {
+            return;
+          }
+          buffer += token;
+          renderFinalMarkdown(buffer);
+          await wait(1000 / currentTokenRate());
+        }
+        finalText.classList.remove("is-streaming");
+      }
+
+      function renderFinalMarkdown(markdown) {
+        const finalText = document.querySelector("#finalText");
+        if (!finalText) {
+          return;
+        }
+        finalText.innerHTML = renderMarkdown(markdown);
+      }
+
+      function tokenizeStream(text) {
+        const tokens = text.match(/[\u4e00-\u9fff]|[A-Za-z0-9_]+|[^\sA-Za-z0-9_\u4e00-\u9fff]|\s+/gu);
+        return tokens ?? [];
+      }
+
+      function renderMarkdown(markdown) {
+        const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+        const out = [];
+        let index = 0;
+        while (index < lines.length) {
+          const line = lines[index];
+          if (/^\s*$/.test(line)) {
+            index += 1;
+            continue;
+          }
+
+          const fence = line.match(/^```([\w-]*)/);
+          if (fence) {
+            const language = fence[1] || "text";
+            const code = [];
+            index += 1;
+            while (index < lines.length && !/^```/.test(lines[index])) {
+              code.push(lines[index]);
+              index += 1;
+            }
+            if (index < lines.length && /^```/.test(lines[index])) {
+              index += 1;
+            }
+            out.push(renderCodeCard(language, code.join("\n")));
+            continue;
+          }
+
+          if (isTableStart(lines, index)) {
+            const headers = splitTableCells(lines[index]);
+            index += 2;
+            const rows = [];
+            while (index < lines.length && /\|/.test(lines[index]) && !/^\s*$/.test(lines[index])) {
+              rows.push(splitTableCells(lines[index]));
+              index += 1;
+            }
+            out.push(renderTable(headers, rows));
+            continue;
+          }
+
+          const heading = line.match(/^(#{1,6})\s+(.+)$/);
+          if (heading) {
+            out.push(`<h2>${renderInline(heading[2])}</h2>`);
+            index += 1;
+            continue;
+          }
+
+          if (/^>\s?/.test(line)) {
+            const quote = [];
+            while (index < lines.length && /^>\s?/.test(lines[index])) {
+              quote.push(lines[index].replace(/^>\s?/, ""));
+              index += 1;
+            }
+            out.push(`<blockquote>${quote.map(renderInline).join("<br />")}</blockquote>`);
+            continue;
+          }
+
+          const listMatch = line.match(/^\s*((?:[-*])|(?:\d+\.))\s+(.+)$/);
+          if (listMatch) {
+            const ordered = /\d+\./.test(listMatch[1]);
+            const items = [];
+            while (index < lines.length) {
+              const itemMatch = lines[index].match(/^\s*((?:[-*])|(?:\d+\.))\s+(.+)$/);
+              if (!itemMatch || /\d+\./.test(itemMatch[1]) !== ordered) {
+                break;
+              }
+              items.push(itemMatch[2]);
+              index += 1;
+            }
+            const tag = ordered ? "ol" : "ul";
+            out.push(`<${tag}>${items.map((item) => `<li>${renderInline(item)}</li>`).join("")}</${tag}>`);
+            continue;
+          }
+
+          const paragraph = [line];
+          index += 1;
+          while (
+            index < lines.length &&
+            !/^\s*$/.test(lines[index]) &&
+            !/^```/.test(lines[index]) &&
+            !/^(#{1,6})\s+/.test(lines[index]) &&
+            !/^>\s?/.test(lines[index]) &&
+            !/^\s*((?:[-*])|(?:\d+\.))\s+/.test(lines[index]) &&
+            !isTableStart(lines, index)
+          ) {
+            paragraph.push(lines[index]);
+            index += 1;
+          }
+          out.push(`<p>${renderInline(paragraph.join(" "))}</p>`);
+        }
+        return out.join("");
+      }
+
+      function isTableStart(lines, index) {
+        return Boolean(lines[index]?.includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1] ?? ""));
+      }
+
+      function splitTableCells(line) {
+        let value = line.trim();
+        if (value.startsWith("|")) {
+          value = value.slice(1);
+        }
+        if (value.endsWith("|")) {
+          value = value.slice(0, -1);
+        }
+        return value.split("|").map((cell) => cell.trim());
+      }
+
+      function renderTable(headers, rows) {
+        const head = headers.map((cell) => `<th>${renderInline(cell)}</th>`).join("");
+        const body = rows
+          .map((row) => `<tr>${headers.map((_, cellIndex) => `<td>${renderInline(row[cellIndex] ?? "")}</td>`).join("")}</tr>`)
+          .join("");
+        return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+      }
+
+      function renderCodeCard(language, code) {
+        return `
+          <div class="code-card">
+            <div class="code-toolbar"><span>${escapeHTML(language || "text")}</span><button class="copy-button" type="button">复制</button></div>
+            <pre><code>${escapeHTML(code)}</code></pre>
+          </div>
+        `;
+      }
+
+      function renderInline(text) {
+        return String(text)
+          .split(/(`[^`]*`)/g)
+          .map((part) => {
+            if (part.startsWith("`") && part.endsWith("`") && part.length >= 2) {
+              return `<span class="inline-code">${escapeHTML(part.slice(1, -1))}</span>`;
+            }
+            return escapeHTML(part).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+          })
+          .join("");
       }
 
       function escapeHTML(value) {
@@ -963,6 +1297,22 @@ return (
           .replaceAll('"', "&quot;")
           .replaceAll("'", "&#039;");
       }
+
+      document.addEventListener("click", (event) => {
+        const button = event.target instanceof Element ? event.target.closest(".copy-button") : null;
+        if (!button) {
+          return;
+        }
+        const code = button.closest(".code-card")?.querySelector("code")?.textContent ?? "";
+        if (!code) {
+          return;
+        }
+        void navigator.clipboard?.writeText(code);
+        button.textContent = "已复制";
+        window.setTimeout(() => {
+          button.textContent = "复制";
+        }, 900);
+      });
 
       buttons.forEach((button) => {
         button.addEventListener("click", () => {
@@ -984,6 +1334,11 @@ return (
           }
         });
       });
+
+      [tokenRateControl, stepSpeedControl, sweepSpeedControl].forEach((control) => {
+        control?.addEventListener("input", syncControls);
+      });
+      syncControls();
     </script>
   </body>
 </html>
