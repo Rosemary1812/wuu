@@ -1,10 +1,10 @@
-# Wuu Browser 产品方向与迁移计划
+# Wuu 双端产品方向与 Wuu Browser 迁移计划
 
 ## 一句话方向
 
-Wuu Browser 要做的不是“浏览器里塞一个聊天机器人”，而是把 Wuu 变成一个真正运行在浏览器旁边的本地 coding agent。
+Wuu 要做的不是“浏览器里塞一个聊天机器人”，也不是用浏览器替代桌面端，而是把同一个 Wuu 本机 coding agent 同时运行在 Electron Desktop 和 Chromium Browser 两个产品外壳里。
 
-最终产品应该是一个可安装的 Chromium 浏览器。用户一边正常上网、查文档、登录网页、调试本地应用，一边让 Wuu 读项目、改代码、跑命令、看页面、操作标签页，并把这些动作组织成一个完整的开发工作流。
+Wuu Desktop 继续承担稳定的本地 coding agent 体验。Wuu Browser 则成为一个可安装的 Chromium 浏览器，让用户一边正常上网、查文档、登录网页、调试本地应用，一边让 Wuu 读项目、改代码、跑命令、看页面、操作标签页，并把这些动作组织成一个完整的开发工作流。
 
 ## 我们为什么要做这个
 
@@ -17,20 +17,57 @@ Wuu Browser 要做的不是“浏览器里塞一个聊天机器人”，而是�
 - 让 agent 修改代码、跑测试、修 bug。
 - 回到浏览器确认行为是否真的变好。
 
-如果 Wuu 只是一个桌面聊天窗口，它可以写代码，但浏览器仍然像外部世界。我们要把浏览器变成 Wuu 的工作环境，让 agent 可以在同一个产品里看见网页、理解网页、操作网页，同时保留本地开发权限。
+如果 Wuu 只有桌面端，它可以写代码，但浏览器仍然像外部世界。如果 Wuu 只有浏览器端，又会丢掉当前桌面端已经形成的稳定本地工作流。正确做法是保留双端：让桌面端继续服务本地 coding，让浏览器端把真实网页纳入 Wuu 的工作环境。
 
 ## 产品判断
 
 正确路线是：
 
-**Wuu Browser = Chromium 浏览器 + 浏览器操作桥 + Wuu 本机 runtime + Wuu workbench**
+**Wuu = 一个 Wuu core + 两个产品外壳**
+
+两个产品外壳是：
+
+- **Wuu Desktop**：Electron shell，面向稳定的本地 coding agent 工作流。
+- **Wuu Browser**：Chromium shell，面向带真实网页操作和网页验证能力的 coding agent 工作流。
+
+Wuu Browser 的组成是：
+
+**Chromium 浏览器 + 浏览器操作桥 + Wuu 本机 runtime + Wuu workbench**
 
 不应该走的路线：
 
 - 不做纯网页 coding agent，因为纯网页拿不到完整本地开发能力。
-- 不把最终产品停留在 Electron 桌面壳，因为用户真正需要的是浏览器和 coding agent 融在一起。
+- 不把浏览器端做成 Electron 桌面端的替代品；两端应该长期共存。
 - 不继续保留 BrowserOS 原本的 AI 产品层，否则产品里会同时存在两套 agent 心智。
 - 不把 Chrome 扩展当最终主产品，因为扩展权限、入口和体验都不够完整。
+
+## 双端产品边界
+
+双端共存的前提是：**一套 Wuu core，两个 shell adapter**。
+
+Wuu core 负责：
+
+- agent loop。
+- 项目、会话、历史和恢复。
+- 文件读写、diff、Git、终端、进程。
+- 工具调用、权限提示、错误解释。
+- 模型/provider 设置。
+- 子 agent 和任务活动。
+
+Electron adapter 负责：
+
+- 桌面窗口、菜单、托盘、文件选择器。
+- 桌面端本地 API 和系统集成。
+- 当前 Wuu Desktop 的稳定本地工作流。
+
+Browser adapter 负责：
+
+- `chrome://wuu` 产品入口。
+- 浏览器 tab、地址栏上下文和当前页面信息。
+- Browser Bridge，包括截图、DOM、console、network、点击、输入、滚动和导航。
+- Chromium 与本机 runtime 的连接。
+
+两端可以有不同的外壳能力，但不能有两套 AI 大脑。Electron 端和 Browser 端都应该调用同一个 Wuu runtime protocol。
 
 ## BrowserOS 里应该保留什么
 
@@ -80,13 +117,15 @@ Wuu 应该负责：
 - 用户确认、权限提示、错误解释。
 - coding 任务的完整闭环：理解目标、改代码、跑验证、看结果、继续修。
 
-浏览器能力应该作为 Wuu 的工具，而不是另起一套 BrowserOS agent。
+浏览器能力应该作为 Wuu 的工具，而不是另起一套 BrowserOS agent。桌面端和浏览器端都应该复用同一套 Wuu agent 能力，只是在不同 shell 里暴露不同工具。
 
 ## 最终用户体验
 
-用户打开 Wuu Browser 后，默认看到 Wuu workbench。
+用户打开 Wuu Desktop 后，看到的是熟悉的本地 Wuu workbench，可以继续选择项目、写代码、跑命令、管理会话。
 
-用户可以：
+用户打开 Wuu Browser 后，默认看到浏览器里的 Wuu workbench。
+
+在 Wuu Browser 里，用户可以：
 
 - 像普通浏览器一样打开任意网页。
 - 在 Wuu workbench 里选择本地项目。
@@ -104,6 +143,14 @@ Wuu 应该负责：
 **Wuu 是一个能写代码、能看浏览器、能操作浏览器的本地开发助手。**
 
 ## 产品原则
+
+### 一个 Wuu core，两个产品外壳
+
+Wuu Desktop 和 Wuu Browser 应该共享同一套 Wuu core。
+
+共享的是 agent、项目、会话、工具、权限、终端、Git 和模型设置。分开的只是 shell adapter：Electron adapter 处理桌面能力，Browser adapter 处理浏览器能力。
+
+如果两个端各自实现 agent loop、设置、工具注册和会话模型，产品会很快分叉，后续维护成本也会失控。
 
 ### 一个主助手
 
@@ -146,7 +193,7 @@ Wuu Browser 首先仍然应该是一个好用的浏览器。
 
 ### 阶段 1：统一产品心智
 
-目标：用户只看到 Wuu，不再看到 BrowserOS 的 AI 产品层。
+目标：Electron 和 Browser 两端都只表达 Wuu，不再让用户看到 BrowserOS 的 AI 产品层。
 
 要做：
 
@@ -155,12 +202,14 @@ Wuu Browser 首先仍然应该是一个好用的浏览器。
 - 保留浏览器基础功能和浏览器 bridge。
 - 保留 BrowserOS 能力层里必要的设置和权限能力。
 - 文案、品牌、设置页逐步替换为 Wuu Browser。
+- 明确 Wuu Desktop 不是被替代的旧产品，而是长期共存的桌面 shell。
 
 验收：
 
 - 新用户打开产品时，不会看到两个 AI 助手。
 - 用户不会被要求理解 BrowserOS agent、OpenClaw、Hermes 或 Lima。
 - 默认工作流从选择项目开始，而不是从 BrowserOS AI chat 开始。
+- 桌面端和浏览器端都指向同一个 Wuu agent 心智。
 
 ### 阶段 2：让 Wuu 控制浏览器
 
@@ -183,7 +232,7 @@ Wuu Browser 首先仍然应该是一个好用的浏览器。
 
 ### 阶段 3：形成开发闭环
 
-目标：Wuu 能完成真实 coding 任务，而不是只做局部网页自动化。
+目标：Wuu 能在双端完成真实 coding 任务，而不是只做局部网页自动化。
 
 要做：
 
@@ -192,6 +241,7 @@ Wuu Browser 首先仍然应该是一个好用的浏览器。
 - 支持把浏览器证据放进任务上下文，例如截图、DOM 片段、console 错误。
 - 支持本地 dev server 的启动、检测和复用。
 - 做一套稳定的任务完成判断：代码是否改了、测试是否跑了、页面是否验证了。
+- 确保 Wuu Desktop 可以继续完成纯本地任务，Wuu Browser 可以额外完成网页验证任务。
 
 验收：
 
@@ -211,6 +261,7 @@ Wuu Browser 首先仍然应该是一个好用的浏览器。
 - 生产构建隐藏所有开发调试入口。
 - 清理 BrowserOS 残留品牌、残留 AI 设置和无用菜单。
 - 明确许可证和发布策略。
+- 明确 Wuu Desktop 和 Wuu Browser 的发布节奏、设置迁移和兼容边界。
 
 验收：
 
@@ -225,12 +276,16 @@ Wuu Browser 首先仍然应该是一个好用的浏览器。
 
 - 不做一个新的通用 AI 浏览器。
 - 不继续维护 BrowserOS 自己的 agent 产品。
+- 不砍掉 Wuu Desktop。
+- 不把 Wuu Browser 当成 Wuu Desktop 的替代品。
 - 不把 VM 当默认开发环境。
 - 不把 Wuu 做成普通 Chrome 扩展。
 - 不优先做大量第三方 app 连接。
 - 不为了保留 BrowserOS 现有功能而牺牲 Wuu 的 coding 主线。
 
 这些可以以后再评估，但当前目标应该集中在“浏览器里的本地 coding agent”。
+
+更准确地说，当前目标不是把所有体验都迁到浏览器里，而是让 Wuu Browser 成为 Wuu 双端体系里的浏览器 shell。
 
 ## 主要风险
 
@@ -245,6 +300,12 @@ Wuu 同时能操作本地文件和浏览器页面，权限比普通网页大得�
 如果 BrowserOS AI 和 Wuu AI 同时存在，用户会不知道该用哪个。更严重的是，开发团队也会维护两套 agent 逻辑。
 
 必须尽早把 BrowserOS AI 产品层降级为内部能力或移除。
+
+### 双端分叉风险
+
+如果 Electron 端和 Browser 端各自实现一套 agent、设置、工具和权限逻辑，短期看起来进展快，长期会变成两个产品。
+
+必须把共同能力放进 Wuu core，把端差异限制在 adapter 层。两端 UI 可以不同，但任务模型、权限模型和工具语义应该一致。
 
 ### 迁移成本风险
 
@@ -266,26 +327,31 @@ BrowserOS 相关代码使用 AGPL。Wuu 根项目现在标的是 MIT。最终怎
 - 用户能选择本地项目并让 Wuu 正常开始 coding 任务。
 - Wuu 能读取和操作真实浏览器 tab。
 - Wuu 能用浏览器结果继续修本地代码。
+- Wuu Desktop 的现有本地 coding agent 路径继续成立。
 
 中期成功标准：
 
-- 常见前端任务可以在一个产品里完成：改代码、跑服务、看页面、读错误、再修改。
+- 常见前端任务可以在 Wuu Browser 里完成：改代码、跑服务、看页面、读错误、再修改。
+- 常见本地 coding 任务可以继续在 Wuu Desktop 里完成。
 - 用户不需要知道 BrowserOS 的存在。
 - 用户对 Wuu 的浏览器操作有清楚的可见性和控制感。
+- 两端共享同一个 Wuu core，不出现两套 agent 心智。
 
 长期成功标准：
 
-- Wuu Browser 成为开发者默认用来写代码和调试网页的浏览器。
-- 浏览器不是外部工具，而是 Wuu agent 的一部分工作环境。
+- Wuu Desktop 成为稳定的本地 coding agent。
+- Wuu Browser 成为开发者写代码和调试网页时的浏览器工作环境。
+- 浏览器不是外部工具，而是 Wuu agent 的一个 shell 和工具集合。
 
 ## 下一步建议
 
 接下来应该先做一轮产品收敛，而不是继续扩散功能：
 
-1. 清点 BrowserOS AI 产品入口，决定隐藏、删除或替换。
-2. 明确 Wuu Browser 的默认导航结构，只保留 Wuu 主体验。
-3. 把 Browser Bridge 作为 Wuu agent 的工具接入。
-4. 收紧本地 server 的安全边界。
-5. 做一个端到端样例：Wuu 修改前端代码，然后用浏览器验证页面结果。
+1. 明确 Wuu core、Electron adapter、Browser adapter 的产品边界。
+2. 清点 BrowserOS AI 产品入口，决定隐藏、删除或替换。
+3. 明确 Wuu Browser 的默认导航结构，只保留 Wuu 主体验。
+4. 把 Browser Bridge 作为 Wuu agent 的工具接入。
+5. 收紧本地 server 的安全边界。
+6. 做一个端到端样例：Wuu 修改前端代码，然后用浏览器验证页面结果。
 
-这五件事完成后，Wuu Browser 的产品方向就会从“迁移中的浏览器项目”变成“浏览器里的本地 coding agent”。
+这六件事完成后，Wuu Browser 的产品方向就会从“迁移中的浏览器项目”变成“浏览器里的本地 coding agent”。
