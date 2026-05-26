@@ -4804,6 +4804,8 @@ function AgentMessageContent({
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
   const liveStream = streaming || hasBufferedStream;
+  const [keepStreamSurface, setKeepStreamSurface] = useState(false);
+  const settleMode = liveStream || keepStreamSurface ? "stream" : "rich";
 
   return (
     <StreamingMarkdown
@@ -4812,8 +4814,10 @@ function AgentMessageContent({
       cwd={cwd}
       final={!streaming}
       live={liveStream}
+      settleMode={settleMode}
       onFrame={onStreamFrame}
       onSettled={() => {
+        setKeepStreamSurface(true);
         streamTextStore.clearItem(turnID, item.id);
         onStreamFrame();
       }}
@@ -4835,6 +4839,8 @@ function ReasoningContent({
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
   const liveStream = streaming || hasBufferedStream;
+  const [keepStreamSurface, setKeepStreamSurface] = useState(false);
+  const settleMode = liveStream || keepStreamSurface ? "stream" : "rich";
 
   return (
     <StreamingMarkdown
@@ -4843,8 +4849,10 @@ function ReasoningContent({
       className="streaming-markdown reasoning-stream"
       final={!streaming}
       live={liveStream}
+      settleMode={settleMode}
       onFrame={onStreamFrame}
       onSettled={() => {
+        setKeepStreamSurface(true);
         streamTextStore.clearItem(turnID, item.id);
         onStreamFrame();
       }}

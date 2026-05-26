@@ -15,6 +15,7 @@ type StreamingMarkdownProps = {
   className?: string;
   final?: boolean;
   live?: boolean;
+  settleMode?: "rich" | "stream";
   onFrame?: () => void;
   onSettled?: () => void;
 };
@@ -48,30 +49,38 @@ export function StreamingMarkdown({
   className = "streaming-markdown rich-content",
   final = false,
   live = !final,
+  settleMode = "rich",
   onFrame,
   onSettled
 }: StreamingMarkdownProps): JSX.Element {
+  const useRichSettledView = settleMode === "rich";
   const [settled, setSettled] = useState<SettledMarkdown | undefined>(() =>
-    !live && final ? { streamKey, text: initialText } : undefined
+    useRichSettledView && !live && final ? { streamKey, text: initialText } : undefined
   );
 
   useEffect(() => {
+    if (!useRichSettledView) {
+      setSettled(undefined);
+      return;
+    }
     if (!live && final) {
       setSettled({ streamKey, text: initialText });
       return;
     }
     setSettled(undefined);
-  }, [final, initialText, live, streamKey]);
+  }, [final, initialText, live, streamKey, useRichSettledView]);
 
   const handleSettled = useCallback(
     (text: string) => {
-      setSettled({ streamKey, text });
+      if (useRichSettledView) {
+        setSettled({ streamKey, text });
+      }
       onSettled?.();
     },
-    [onSettled, streamKey]
+    [onSettled, streamKey, useRichSettledView]
   );
 
-  if (final && settled?.streamKey === streamKey) {
+  if (useRichSettledView && final && settled?.streamKey === streamKey) {
     return (
       <div className={className} data-stream-state="settled">
         <MarkdownContent text={settled.text} cwd={cwd} />
@@ -255,7 +264,8 @@ function StreamingMarkdownSurface({
     };
   }, [initialText, live, startFrameLoop, streamKey, syncImmediate]);
 
-  return <div ref={rootRef} className={className} data-stream-state={final ? "settling" : "streaming"} />;
+  const streamState = final ? (live ? "settling" : "settled") : "streaming";
+  return <div ref={rootRef} className={className} data-stream-state={streamState} />;
 }
 
 function renderStreamingBlocks(

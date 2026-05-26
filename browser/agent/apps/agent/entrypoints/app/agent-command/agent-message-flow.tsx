@@ -115,7 +115,6 @@ export function FinalAssistantText({
 
   return (
     <MessageResponse
-      key={`${streaming ? 'streaming' : 'static'}-${hasDecoratedTail}`}
       mode={streaming ? 'streaming' : 'static'}
       parseIncompleteMarkdown={streaming}
       isAnimating={streaming}
@@ -147,7 +146,12 @@ export const AssistantProcess: FC<AssistantProcessProps> = ({
   )
 
   useEffect(() => {
-    setOpen(!done)
+    if (!done) {
+      setOpen(true)
+      return
+    }
+    const timer = window.setTimeout(() => setOpen(false), 140)
+    return () => window.clearTimeout(timer)
   }, [done])
 
   const statusLabel = processStatusLabel({
@@ -191,7 +195,7 @@ export const AssistantProcess: FC<AssistantProcessProps> = ({
         ) : null}
         <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" />
       </CollapsibleTrigger>
-      <CollapsibleContent className="data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-1 data-[state=open]:slide-in-from-top-1 outline-none data-[state=closed]:animate-out data-[state=open]:animate-in">
+      <CollapsibleContent className="max-h-[1600px] overflow-hidden opacity-100 outline-none transition-[max-height,opacity,transform] duration-[260ms] ease-[cubic-bezier(0.16,1,0.3,1)] data-[state=closed]:max-h-0 data-[state=closed]:-translate-y-1 data-[state=open]:translate-y-0 data-[state=closed]:opacity-0">
         <div className="mt-2 space-y-2.5">
           {items.map((item) => {
             if (item.kind === 'text') {

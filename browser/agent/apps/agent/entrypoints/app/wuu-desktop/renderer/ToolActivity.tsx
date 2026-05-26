@@ -40,8 +40,10 @@ export function ToolActivityRow({ items, collapseWhenIdle = false }: { items: Th
       return;
     }
     if (collapseWhenIdle) {
-      setExpanded(false);
+      const timer = window.setTimeout(() => setExpanded(false), 140);
+      return () => window.clearTimeout(timer);
     }
+    return undefined;
   }, [collapseWhenIdle, shouldExpandForStatus]);
 
   return (
