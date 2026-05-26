@@ -1,6 +1,6 @@
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
-import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
+import { CHROME_PREFS } from '@/lib/browseros/prefs'
 import { env } from '@/lib/env'
 import type {
   AppServerNotification,
@@ -163,7 +163,7 @@ export function installWuuBrowserOSAdapter(): void {
 async function loadBrowserSettings(): Promise<BrowserSettingsResult> {
   try {
     const verticalTabsPref = await getBrowserOSAdapter().getPref(
-      BROWSEROS_PREFS.VERTICAL_TABS_ENABLED,
+      CHROME_PREFS.VERTICAL_TABS_ENABLED,
     )
     return {
       vertical_tabs_supported: true,
@@ -182,7 +182,7 @@ async function updateBrowserSettings(
 ): Promise<BrowserSettingsResult> {
   if (settings.vertical_tabs_enabled !== undefined) {
     const success = await getBrowserOSAdapter().setPref(
-      BROWSEROS_PREFS.VERTICAL_TABS_ENABLED,
+      CHROME_PREFS.VERTICAL_TABS_ENABLED,
       settings.vertical_tabs_enabled,
     )
     if (!success) {

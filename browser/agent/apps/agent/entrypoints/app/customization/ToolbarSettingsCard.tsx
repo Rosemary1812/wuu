@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { Capabilities, Feature } from '@/lib/browseros/capabilities'
-import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
+import { BROWSEROS_PREFS, CHROME_PREFS } from '@/lib/browseros/prefs'
 
 export const ToolbarSettingsCard: FC = () => {
   const [showLlmChat, setShowLlmChat] = useState(true)
@@ -34,7 +34,7 @@ export const ToolbarSettingsCard: FC = () => {
 
         if (hasVerticalTabsSupport) {
           const verticalTabsPref = await adapter.getPref(
-            BROWSEROS_PREFS.VERTICAL_TABS_ENABLED,
+            CHROME_PREFS.VERTICAL_TABS_ENABLED,
           )
           setVerticalTabsEnabled(verticalTabsPref?.value !== false)
         }
@@ -156,7 +156,7 @@ export const ToolbarSettingsCard: FC = () => {
               checked={verticalTabsEnabled}
               onCheckedChange={(checked) =>
                 handleToggle(
-                  BROWSEROS_PREFS.VERTICAL_TABS_ENABLED,
+                  CHROME_PREFS.VERTICAL_TABS_ENABLED,
                   checked,
                   setVerticalTabsEnabled,
                 )
