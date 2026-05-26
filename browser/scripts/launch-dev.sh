@@ -118,7 +118,7 @@ cleanup_matching_processes() {
   sleep 1
 
   local remaining
-  remaining="$(ps -p ${pids} -o pid= 2>/dev/null | tr '\n' ' ')"
+  remaining="$(ps -p ${pids} -o pid= 2>/dev/null | tr '\n' ' ' || true)"
   if [[ -n "${remaining}" ]]; then
     kill -KILL ${remaining} 2>/dev/null || true
   fi
@@ -135,7 +135,7 @@ cleanup_wuu_dev_profile_processes() {
   sleep 1
 
   local remaining
-  remaining="$(ps -p ${pids} -o pid= 2>/dev/null | tr '\n' ' ')"
+  remaining="$(ps -p ${pids} -o pid= 2>/dev/null | tr '\n' ' ' || true)"
   if [[ -n "${remaining}" ]]; then
     kill -KILL ${remaining} 2>/dev/null || true
   fi
