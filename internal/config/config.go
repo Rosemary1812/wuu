@@ -488,16 +488,22 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil)
 }
 
 // UpdateProviderSelectionAndEffort changes the default provider, selected
 // provider's model, and global reasoning effort in the config file at configPath.
 func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, &effort)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort)
 }
 
-func updateProviderSelection(configPath, providerName, newModel string, effort *string) error {
+// UpdateProviderRuntime changes the default provider and editable connection
+// fields for that provider. A nil apiKey keeps the existing key configuration.
+func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort)
+}
+
+func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort *string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -518,6 +524,15 @@ func updateProviderSelection(configPath, providerName, newModel string, effort *
 	}
 	raw["default_provider"] = providerName
 	provider["model"] = newModel
+	if baseURL != nil {
+		provider["base_url"] = strings.TrimSpace(*baseURL)
+	}
+	if apiKey != nil {
+		if key := strings.TrimSpace(*apiKey); key != "" {
+			provider["api_key"] = key
+			delete(provider, "api_key_env")
+		}
+	}
 	if effort != nil {
 		agent, _ := raw["agent"].(map[string]any)
 		if agent == nil {

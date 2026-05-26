@@ -104,6 +104,8 @@ type ConfigModelUpdateParams struct {
 	Provider string  `json:"provider,omitempty"`
 	Model    string  `json:"model"`
 	Effort   *string `json:"effort,omitempty"`
+	BaseURL  *string `json:"base_url,omitempty"`
+	APIKey   *string `json:"api_key,omitempty"`
 }
 
 type ConfigModelUpdateResult struct {
@@ -133,9 +135,11 @@ type CodexModelSummary struct {
 }
 
 type ProviderSummary struct {
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-	Model string `json:"model"`
+	Name             string `json:"name"`
+	Type             string `json:"type"`
+	Model            string `json:"model"`
+	BaseURL          string `json:"base_url,omitempty"`
+	APIKeyConfigured bool   `json:"api_key_configured,omitempty"`
 }
 
 type ThreadStartResult struct {

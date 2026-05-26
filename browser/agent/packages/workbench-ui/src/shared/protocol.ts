@@ -48,6 +48,13 @@ export type ProviderSummary = {
   name: string;
   type: string;
   model: string;
+  base_url?: string;
+  api_key_configured?: boolean;
+};
+
+export type RuntimeConnectionUpdate = {
+  base_url?: string;
+  api_key?: string;
 };
 
 export type CodexModelSummary = {
@@ -366,7 +373,12 @@ export type WuuDesktopApi = {
   stopTerminalSession: (id: string) => Promise<TerminalSessionActionResult>;
   initialize: () => Promise<InitializeResult>;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
-  updateRuntimeSettings: (provider: string, model: string, effort?: string) => Promise<ConfigModelUpdateResult>;
+  updateRuntimeSettings: (
+    provider: string,
+    model: string,
+    effort?: string,
+    connection?: RuntimeConnectionUpdate
+  ) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

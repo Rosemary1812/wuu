@@ -64,6 +64,7 @@ import type {
   InitializeResult,
   PlanUpdate,
   ProjectListResult,
+  RuntimeConnectionUpdate,
   RuntimeContext,
   ServerEvent,
   Thread,
@@ -2752,10 +2753,26 @@ export function App(): JSX.Element {
     }
   }
 
-  async function updateRuntimeSettings(provider: string, model: string, effort?: string): Promise<void> {
+  async function updateRuntimeSettings(
+    provider: string,
+    model: string,
+    effort?: string,
+    connection?: RuntimeConnectionUpdate
+  ): Promise<void> {
     const nextProvider = provider.trim();
     const nextModel = model.trim();
     const nextEffort = effort === undefined ? undefined : effort.trim();
+    const nextConnection =
+      connection === undefined
+        ? undefined
+        : {
+            ...(connection.base_url === undefined ? {} : { base_url: connection.base_url.trim() }),
+            ...(connection.api_key === undefined ? {} : { api_key: connection.api_key.trim() })
+          };
+    const currentProvider = state.initialized?.providers?.find((item) => item.name === nextProvider);
+    const connectionChanged =
+      Boolean(nextConnection?.api_key) ||
+      (nextConnection?.base_url !== undefined && nextConnection.base_url !== (currentProvider?.base_url ?? ""));
     if (
       !nextProvider ||
       !nextModel ||
@@ -2763,12 +2780,13 @@ export function App(): JSX.Element {
       anyThreadIsRunning ||
       (nextProvider === state.initialized.provider &&
         nextModel === state.initialized.model &&
-        (nextEffort === undefined || nextEffort === (state.initialized.effort ?? "")))
+        (nextEffort === undefined || nextEffort === (state.initialized.effort ?? "")) &&
+        !connectionChanged)
     ) {
       return;
     }
     try {
-      const updated = await window.wuu.updateRuntimeSettings(nextProvider, nextModel, nextEffort);
+      const updated = await window.wuu.updateRuntimeSettings(nextProvider, nextModel, nextEffort, nextConnection);
       setState((current) => {
         const initialized = current.initialized
           ? {

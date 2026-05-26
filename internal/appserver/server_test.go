@@ -193,6 +193,54 @@ func TestServerConfigModelUpdateSwitchesProvider(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdatePersistsProviderConnection(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key": "old-key",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldClient := rt.StreamRunner.Client
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/model/update","params":{"provider":"fake-provider","model":"new-model","base_url":"https://custom.example.test/v1","api_key":"new-key"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Provider != "fake-provider" || result.Model != "new-model" {
+		t.Fatalf("unexpected update result: %+v", result)
+	}
+	if len(result.Providers) != 1 ||
+		result.Providers[0].BaseURL != "https://custom.example.test/v1" ||
+		!result.Providers[0].APIKeyConfigured {
+		t.Fatalf("unexpected provider summaries: %+v", result.Providers)
+	}
+	if rt.StreamRunner.Client == oldClient {
+		t.Fatal("expected stream runner client to be rebuilt")
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"base_url": "https://custom.example.test/v1"`) ||
+		!strings.Contains(string(data), `"api_key": "new-key"`) ||
+		!strings.Contains(string(data), `"model": "new-model"`) {
+		t.Fatalf("provider connection was not persisted: %s", data)
+	}
+}
+
 func TestServerConfigModelUpdatePersistsEffort(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StreamRunner.Effort = "medium"

@@ -277,23 +277,41 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	providerCfg.Model = model
+	connectionChanged := false
+	if params.BaseURL != nil {
+		baseURL := strings.TrimSpace(*params.BaseURL)
+		if baseURL == "" {
+			return s.writeResponse(req.ID, nil, errors.New("base_url is required"))
+		}
+		if baseURL != strings.TrimSpace(providerCfg.BaseURL) {
+			connectionChanged = true
+		}
+		providerCfg.BaseURL = baseURL
+	}
+	apiKeyForConfig := params.APIKey
+	if params.APIKey != nil {
+		apiKey := strings.TrimSpace(*params.APIKey)
+		if apiKey != "" {
+			connectionChanged = true
+			providerCfg.APIKey = apiKey
+			providerCfg.APIKeyEnv = ""
+		} else {
+			apiKeyForConfig = nil
+		}
+	}
 	effort := s.currentEffort()
 	if params.Effort != nil {
 		effort = strings.TrimSpace(*params.Effort)
 	}
 
 	var client providers.StreamClient
-	if resolvedName != s.rt.ProviderName {
+	if resolvedName != s.rt.ProviderName || connectionChanged {
 		client, err = providerfactory.BuildStreamClient(providerCfg, resolvedName)
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
-	if params.Effort != nil {
-		if err := config.UpdateProviderSelectionAndEffort(s.rt.ConfigPath, resolvedName, model, effort); err != nil {
-			return s.writeResponse(req.ID, nil, err)
-		}
-	} else if err := config.UpdateProviderSelection(s.rt.ConfigPath, resolvedName, model); err != nil {
+	if err := config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, params.Effort); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
@@ -1177,9 +1195,11 @@ func providerSummariesFromConfig(cfg config.Config) []ProviderSummary {
 	for _, name := range names {
 		provider := cfg.Providers[name]
 		out = append(out, ProviderSummary{
-			Name:  name,
-			Type:  provider.Type,
-			Model: provider.Model,
+			Name:             name,
+			Type:             provider.Type,
+			Model:            provider.Model,
+			BaseURL:          provider.BaseURL,
+			APIKeyConfigured: provider.APIKey != "" || provider.APIKeyEnv != "" || provider.AuthToken != "" || provider.AuthTokenEnv != "",
 		})
 	}
 	return out

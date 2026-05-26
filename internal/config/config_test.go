@@ -859,3 +859,52 @@ func TestUpdateProviderSelection(t *testing.T) {
 		t.Fatalf("old provider model changed: %s", old.Model)
 	}
 }
+
+func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "old",
+  "providers": {
+    "old": {
+      "type": "openai-compatible",
+      "base_url": "https://old.example.com",
+      "api_key_env": "OLD_KEY",
+      "model": "old-model"
+    },
+    "next": {
+      "type": "openai-compatible",
+      "base_url": "https://next.example.com",
+      "model": "next-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	baseURL := "https://custom.example.com/v1"
+	apiKey := "sk-custom"
+	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil); err != nil {
+		t.Fatalf("UpdateProviderRuntime: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.DefaultProvider != "next" {
+		t.Fatalf("expected default provider next, got %q", cfg.DefaultProvider)
+	}
+	next, _, _ := cfg.ResolveProvider("next")
+	if next.Model != "custom-model" || next.BaseURL != baseURL || next.APIKey != apiKey {
+		t.Fatalf("provider runtime fields not persisted: %+v", next)
+	}
+	if next.APIKeyEnv != "" {
+		t.Fatalf("expected explicit api_key to clear api_key_env, got %q", next.APIKeyEnv)
+	}
+	old, _, _ := cfg.ResolveProvider("old")
+	if old.Model != "old-model" || old.BaseURL != "https://old.example.com" {
+		t.Fatalf("old provider changed: %+v", old)
+	}
+}

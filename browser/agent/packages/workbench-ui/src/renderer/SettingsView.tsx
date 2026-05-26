@@ -8,7 +8,7 @@ import {
   useState
 } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import type { InitializeResult } from "../shared/protocol";
+import type { InitializeResult, RuntimeConnectionUpdate } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
 export function SettingsView({
@@ -36,7 +36,7 @@ export function SettingsView({
   sidebarMaxWidth: number;
   resizingSidebar: boolean;
   onBack: () => void;
-  onSave: (provider: string, model: string) => Promise<void>;
+  onSave: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate) => Promise<void>;
   onDebugControlsChange: (enabled: boolean) => void;
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
@@ -45,15 +45,22 @@ export function SettingsView({
   const providers = initialized?.providers ?? [];
   const [providerDraft, setProviderDraft] = useState(initialized?.provider ?? "");
   const [modelDraft, setModelDraft] = useState(initialized?.model ?? "");
+  const [baseURLDraft, setBaseURLDraft] = useState("");
+  const [apiKeyDraft, setAPIKeyDraft] = useState("");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const selectedProvider = providers.find((item) => item.name === providerDraft);
+  const selectedBaseURL = selectedProvider?.base_url ?? "";
 
   useEffect(() => {
     setProviderDraft(initialized?.provider ?? "");
     setModelDraft(initialized?.model ?? "");
+    const summary = initialized?.providers?.find((item) => item.name === initialized.provider);
+    setBaseURLDraft(summary?.base_url ?? "");
+    setAPIKeyDraft("");
     setError("");
     setSaved(false);
-  }, [initialized?.provider, initialized?.model]);
+  }, [initialized?.provider, initialized?.model, initialized?.providers]);
 
   function changeProvider(provider: string): void {
     setProviderDraft(provider);
@@ -61,6 +68,8 @@ export function SettingsView({
     const summary = providers.find((item) => item.name === provider);
     if (summary) {
       setModelDraft(summary.model);
+      setBaseURLDraft(summary.base_url ?? "");
+      setAPIKeyDraft("");
     }
   }
 
@@ -69,7 +78,15 @@ export function SettingsView({
     setError("");
     setSaved(false);
     try {
-      await onSave(providerDraft, modelDraft);
+      const connection: RuntimeConnectionUpdate = {
+        base_url: baseURLDraft.trim()
+      };
+      const apiKey = apiKeyDraft.trim();
+      if (apiKey) {
+        connection.api_key = apiKey;
+      }
+      await onSave(providerDraft, modelDraft, undefined, connection);
+      setAPIKeyDraft("");
       setSaved(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "保存失败");
@@ -80,7 +97,11 @@ export function SettingsView({
     running ||
     !providerDraft.trim() ||
     !modelDraft.trim() ||
-    (providerDraft === initialized?.provider && modelDraft === initialized?.model);
+    !baseURLDraft.trim() ||
+    (providerDraft === initialized?.provider &&
+      modelDraft === initialized?.model &&
+      baseURLDraft.trim() === selectedBaseURL &&
+      !apiKeyDraft.trim());
   const shellStyle = {
     "--sidebar-width": `${sidebarWidth}px`
   } as CSSProperties;
@@ -162,6 +183,38 @@ export function SettingsView({
                   value={modelDraft}
                   onChange={(event) => {
                     setModelDraft(event.target.value);
+                    setSaved(false);
+                  }}
+                  disabled={running}
+                />
+              </label>
+              <label className="settings-row">
+                <span>
+                  <strong>Base URL</strong>
+                  <small>模型服务的 API 地址</small>
+                </span>
+                <input
+                  value={baseURLDraft}
+                  placeholder="https://api.openai.com/v1"
+                  onChange={(event) => {
+                    setBaseURLDraft(event.target.value);
+                    setSaved(false);
+                  }}
+                  disabled={running}
+                />
+              </label>
+              <label className="settings-row">
+                <span>
+                  <strong>API key</strong>
+                  <small>{selectedProvider?.api_key_configured ? "已配置，留空不修改" : "用于访问这个 Provider"}</small>
+                </span>
+                <input
+                  value={apiKeyDraft}
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={selectedProvider?.api_key_configured ? "留空保持当前密钥" : "输入 API key"}
+                  onChange={(event) => {
+                    setAPIKeyDraft(event.target.value);
                     setSaved(false);
                   }}
                   disabled={running}
