@@ -315,6 +315,10 @@ Current packaging path:
   DMG from the staged app.
 - `make browser-launch-dev` prefers the repo-staged Wuu Browser Dev app before
   falling back to the external BrowserOS Chromium build.
+- `make browser-launch-dev` now defaults to a single active dev browser by
+  stopping previous Wuu Browser Dev/BrowserOS Dev launches that use temporary
+  `wuu-browser-dev` profiles and deleting stale temporary profile directories
+  before opening a new instance.
 
 Remaining gap:
 

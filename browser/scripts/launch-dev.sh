@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: browser/scripts/launch-dev.sh [--dry-run] [--profile-dir DIR] [--url URL]
+Usage: browser/scripts/launch-dev.sh [--dry-run] [--profile-dir DIR] [--url URL] [--no-cleanup-existing]
 
 Launch the local Wuu Browser development build.
 
@@ -30,6 +30,10 @@ Environment overrides:
                            Defaults to a dev build under browser/.cache.
   WUU_SOURCE_ROOT          Wuu source tree used by the browser-hosted app-server.
                            Defaults to this repository root.
+  WUU_BROWSER_CLEANUP_EXISTING
+                           Stop existing Wuu Browser Dev/BrowserOS Dev launches
+                           that use temporary wuu-browser-dev profiles before
+                           starting a new one. Defaults to 1.
 
 Port overrides:
   WUU_BROWSER_CDP_PORT        Defaults to 9100.
@@ -42,6 +46,7 @@ USAGE
 dry_run=false
 profile_dir="${WUU_BROWSER_PROFILE_DIR:-}"
 start_url="${WUU_BROWSER_START_URL:-chrome://wuu}"
+cleanup_existing="${WUU_BROWSER_CLEANUP_EXISTING:-1}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,6 +69,10 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       shift 2
+      ;;
+    --no-cleanup-existing)
+      cleanup_existing=0
+      shift
       ;;
     -h|--help)
       usage
@@ -96,6 +105,51 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "Windows/Linux launch scripts should be added with the packaging work." >&2
   exit 2
 fi
+
+cleanup_matching_processes() {
+  local pattern="$1"
+  local pids
+  pids="$(ps -axo pid=,args= | awk -v pattern="${pattern}" 'index($0, pattern) && $0 !~ /awk -v pattern/ {print $1}')"
+  if [[ -z "${pids}" ]]; then
+    return 0
+  fi
+
+  kill -TERM ${pids} 2>/dev/null || true
+  sleep 1
+
+  local remaining
+  remaining="$(ps -p ${pids} -o pid= 2>/dev/null | tr '\n' ' ')"
+  if [[ -n "${remaining}" ]]; then
+    kill -KILL ${remaining} 2>/dev/null || true
+  fi
+}
+
+cleanup_wuu_dev_profile_processes() {
+  local pids
+  pids="$(ps -axo pid=,args= | awk '/--user-data-dir=[^ ]*wuu-browser-dev\.XXXXXX\./ && $0 !~ /awk/ {print $1}')"
+  if [[ -z "${pids}" ]]; then
+    return 0
+  fi
+
+  kill -TERM ${pids} 2>/dev/null || true
+  sleep 1
+
+  local remaining
+  remaining="$(ps -p ${pids} -o pid= 2>/dev/null | tr '\n' ' ')"
+  if [[ -n "${remaining}" ]]; then
+    kill -KILL ${remaining} 2>/dev/null || true
+  fi
+}
+
+cleanup_dev_browsers() {
+  cleanup_wuu_dev_profile_processes
+  cleanup_matching_processes "${repo_root}/browser/out/Wuu Browser Dev.app"
+  cleanup_matching_processes "${chromium_src}/out/Default_arm64/BrowserOS Dev.app"
+  cleanup_matching_processes "${chromium_src}/out/Default/BrowserOS Dev.app"
+  cleanup_matching_processes "${chromium_src}/out/Default_x64/BrowserOS Dev.app"
+
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -type d -name 'wuu-browser-dev.XXXXXX.*' -exec rm -rf {} + 2>/dev/null || true
+}
 
 host_server_target() {
   case "$(uname -m)" in
@@ -213,8 +267,21 @@ if [[ "${dry_run}" != "true" && ! -x "${server_resources_dir}/bin/browseros_serv
   exit 1
 fi
 
+if [[ "${cleanup_existing}" == "1" ]]; then
+  if [[ "${dry_run}" == "true" ]]; then
+    echo "Would stop existing Wuu Browser Dev instances and remove stale wuu-browser-dev temp profiles."
+  else
+    cleanup_dev_browsers
+  fi
+fi
+
 if [[ -z "${profile_dir}" ]]; then
-  profile_dir="$(mktemp -d -t wuu-browser-dev.XXXXXX)"
+  if [[ "${dry_run}" == "true" ]]; then
+    tmp_root="${TMPDIR:-/tmp}"
+    profile_dir="${tmp_root%/}/wuu-browser-dev.XXXXXX.dry-run"
+  else
+    profile_dir="$(mktemp -d -t wuu-browser-dev.XXXXXX)"
+  fi
 fi
 
 cdp_port="${WUU_BROWSER_CDP_PORT:-9100}"
@@ -238,7 +305,9 @@ if [[ "${dry_run}" != "true" && ! -x "${wuu_bin}" ]]; then
 fi
 
 export WUU_BIN="${wuu_bin}"
-printf '%s\n' "${profile_dir}" > "${repo_root}/browser/.cache/last-profile"
+if [[ "${dry_run}" != "true" ]]; then
+  printf '%s\n' "${profile_dir}" > "${repo_root}/browser/.cache/last-profile"
+fi
 
 args=(
   "--no-first-run"
@@ -268,6 +337,7 @@ echo "  server:    ${server_resources_dir}"
 echo "  srv target:${server_target}"
 echo "  stage srv: ${stage_server_resources}"
 echo "  profile:   ${profile_dir}"
+echo "  cleanup:   ${cleanup_existing}"
 echo "  start URL: ${start_url}"
 echo "  Wuu source:${WUU_SOURCE_ROOT}"
 echo "  Wuu binary:${WUU_BIN}"

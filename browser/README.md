@@ -127,7 +127,12 @@ loaded by `make browser-launch-dev`. If that repo-owned dist is missing and
 launching instead of requiring the external BrowserOS checkout. The same launch
 path stages server resources through `browser-build-agent --server`, with
 `WUU_BROWSER_SERVER_TARGET` available when the host target needs to be
-overridden.
+overridden. `browser-launch-dev` also stops existing Wuu Browser Dev/BrowserOS
+Dev launches that use temporary `wuu-browser-dev` profiles before starting a
+new instance, so repeated verification does not leave stacks of browser
+processes behind. Pass `ARGS="--no-cleanup-existing"` or set
+`WUU_BROWSER_CLEANUP_EXISTING=0` when debugging multiple dev instances
+intentionally.
 
 Stage the local macOS development app under this repository:
 
