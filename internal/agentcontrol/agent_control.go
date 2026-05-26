@@ -21,6 +21,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/worktree"
@@ -42,6 +43,8 @@ type AgentControl struct {
 	threadDir     string
 	threads       *agentthread.Registry
 	threadStore   *agentthread.Store
+	harnessDir    string
+	harnessStore  *harness.Store
 	rootThreadID  string
 	rootThreadDir string
 	workerFact    WorkerToolkitFactory
@@ -61,6 +64,7 @@ type Config struct {
 	WorktreeRoot    string // workspace-state worktrees directory (only used when workspace is a git repo)
 	HistoryDir      string // session artifact workers directory
 	ThreadDir       string // session artifact threads directory
+	HarnessDir      string // session artifact harness directory
 	SessionID       string
 	WorkerSysPrompt string
 	WorkerFactory   WorkerToolkitFactory
@@ -97,6 +101,10 @@ func New(cfg Config) (*AgentControl, error) {
 	if maxP <= 0 {
 		maxP = 5
 	}
+	harnessDir := strings.TrimSpace(cfg.HarnessDir)
+	if harnessDir == "" && strings.TrimSpace(cfg.ThreadDir) != "" {
+		harnessDir = filepath.Join(filepath.Dir(cfg.ThreadDir), "harness")
+	}
 	c := &AgentControl{
 		manager:      mgr,
 		worktrees:    wt,
@@ -107,6 +115,8 @@ func New(cfg Config) (*AgentControl, error) {
 		threadDir:    cfg.ThreadDir,
 		threads:      threadRegistry,
 		threadStore:  agentthread.NewStore(cfg.ThreadDir),
+		harnessDir:   harnessDir,
+		harnessStore: harness.NewStore(harnessDir),
 		workerFact:   cfg.WorkerFactory,
 		defaultSys:   cfg.WorkerSysPrompt,
 		maxParallel:  maxP,
@@ -124,6 +134,14 @@ func (c *AgentControl) Manager() *subagent.Manager {
 	return c.manager
 }
 
+// HarnessStore exposes the durable task graph store for tests and UI adapters.
+func (c *AgentControl) HarnessStore() *harness.Store {
+	if c == nil {
+		return nil
+	}
+	return c.harnessStore
+}
+
 // SetSessionInfo updates the coordinator's session ID and history dir
 // after the session runtime has assigned them. Safe to call once at startup.
 func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ...string) {
@@ -136,7 +154,15 @@ func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ..
 		c.threadDir = filepath.Join(filepath.Dir(historyDir), "threads")
 		c.threadStore = agentthread.NewStore(c.threadDir)
 	}
+	if c.threadDir != "" {
+		c.setHarnessDir(filepath.Join(filepath.Dir(c.threadDir), "harness"))
+	}
 	c.registerRootThread()
+}
+
+func (c *AgentControl) setHarnessDir(dir string) {
+	c.harnessDir = strings.TrimSpace(dir)
+	c.harnessStore = harness.NewStore(c.harnessDir)
 }
 
 // SessionID returns the bound session ID, or "session-pending" if
@@ -239,6 +265,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		}
 		return nil, err
 	}
+	c.recordHarnessTaskStart(threadMeta, wtype, req.Prompt, workerRoot, isolation, req.BaseRepo)
 
 	// 3. Build worker's toolkit rooted at the chosen working directory.
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
@@ -246,6 +273,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
 			_ = c.threadStore.RecordStatus(failed)
 		}
+		c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
 		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
 			_ = c.threadStore.RecordEdgeStatus(closed)
 		}
@@ -288,6 +316,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
+		c.recordHarnessTaskFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
 	}
 
@@ -421,12 +450,14 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		}
 		return nil, err
 	}
+	c.recordHarnessTaskStart(threadMeta, wt.Name, req.Prompt, workerRoot, isolation, req.BaseRepo)
 
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
 	if err != nil {
 		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
 			_ = c.threadStore.RecordStatus(failed)
 		}
+		c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
 		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
 			_ = c.threadStore.RecordEdgeStatus(closed)
 		}
@@ -465,6 +496,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
+		c.recordHarnessTaskFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
 	}
 
@@ -762,11 +794,218 @@ func (c *AgentControl) registerChildThread(id, taskName, role, message string, s
 	return meta, nil
 }
 
+func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, intent, workerRoot string, isolation IsolationMode, baseRepo string) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	now := time.Now().UTC()
+	workspaceMode := harness.WorkspaceShared
+	if isolation == IsolationWorktree {
+		workspaceMode = harness.WorkspaceWorktree
+	}
+	runID := harnessRunID(meta.ID)
+	task := harness.Task{
+		ID:         meta.ID,
+		SessionID:  c.sessionID,
+		ParentID:   meta.ParentID,
+		ParentPath: meta.Source.ParentPath,
+		Path:       meta.Path,
+		Name:       meta.TaskName,
+		Role:       role,
+		Intent:     intent,
+		Workspace: harness.WorkspaceLease{
+			Mode:      workspaceMode,
+			Root:      workerRoot,
+			BaseRepo:  strings.TrimSpace(baseRepo),
+			CreatedAt: now,
+		},
+		Status:    harness.TaskStatusRunning,
+		LastRunID: runID,
+		CreatedAt: meta.CreatedAt,
+		UpdatedAt: now,
+		StartedAt: now,
+	}
+	if task.CreatedAt.IsZero() {
+		task.CreatedAt = now
+	}
+	run := harness.AgentRun{
+		ID:        runID,
+		TaskID:    meta.ID,
+		AgentID:   meta.ID,
+		Role:      role,
+		Status:    harness.TaskStatusRunning,
+		StartedAt: now,
+	}
+	_ = c.harnessStore.UpsertTask(task)
+	_ = c.harnessStore.UpsertRun(run)
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventTaskCreated,
+		TaskID:    meta.ID,
+		RunID:     runID,
+		AgentID:   meta.ID,
+		Path:      meta.Path,
+		Status:    string(harness.TaskStatusRunning),
+		CreatedAt: now,
+	})
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventWorkspaceAssigned,
+		TaskID:    meta.ID,
+		RunID:     runID,
+		AgentID:   meta.ID,
+		Path:      workerRoot,
+		Status:    string(workspaceMode),
+		CreatedAt: now,
+	})
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventRunStarted,
+		TaskID:    meta.ID,
+		RunID:     runID,
+		AgentID:   meta.ID,
+		Path:      meta.Path,
+		Status:    string(harness.TaskStatusRunning),
+		CreatedAt: now,
+	})
+}
+
+func (c *AgentControl) recordHarnessTaskFailure(taskID string, err error) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	errText := ""
+	if err != nil {
+		errText = err.Error()
+	}
+	now := time.Now().UTC()
+	runID := harnessRunID(taskID)
+	_, _ = c.harnessStore.UpdateTaskStatus(taskID, harness.TaskStatusFailed, now, 0, 0, errText)
+	_, _ = c.harnessStore.UpdateRunStatus(runID, harness.TaskStatusFailed, now, 0, 0, errText)
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventTaskStatusChanged,
+		TaskID:    taskID,
+		RunID:     runID,
+		AgentID:   taskID,
+		Status:    string(harness.TaskStatusFailed),
+		Message:   errText,
+		CreatedAt: now,
+	})
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventRunCompleted,
+		TaskID:    taskID,
+		RunID:     runID,
+		AgentID:   taskID,
+		Status:    string(harness.TaskStatusFailed),
+		Message:   errText,
+		CreatedAt: now,
+	})
+}
+
+func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	status := harnessStatusFromSubAgent(n.Status)
+	errText := ""
+	if n.Snapshot.Error != nil {
+		errText = n.Snapshot.Error.Error()
+	}
+	completedAt := n.Snapshot.CompletedAt
+	if isFinalSubAgentStatus(n.Status) && completedAt.IsZero() {
+		completedAt = time.Now().UTC()
+	}
+	runID := harnessRunID(n.AgentID)
+	if _, err := c.harnessStore.UpdateTaskStatus(n.AgentID, status, completedAt, n.Snapshot.InputTokens, n.Snapshot.OutputTokens, errText); err == nil {
+		_ = c.harnessStore.AppendEvent(harness.Event{
+			Type:      harness.EventTaskStatusChanged,
+			TaskID:    n.AgentID,
+			RunID:     runID,
+			AgentID:   n.AgentID,
+			Path:      n.Snapshot.AgentPath,
+			Status:    string(status),
+			Message:   errText,
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+	if _, err := c.harnessStore.UpdateRunStatus(runID, status, completedAt, n.Snapshot.InputTokens, n.Snapshot.OutputTokens, errText); err == nil && isFinalSubAgentStatus(n.Status) {
+		_ = c.harnessStore.AppendEvent(harness.Event{
+			Type:      harness.EventRunCompleted,
+			TaskID:    n.AgentID,
+			RunID:     runID,
+			AgentID:   n.AgentID,
+			Path:      n.Snapshot.AgentPath,
+			Status:    string(status),
+			Message:   errText,
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+	if isFinalSubAgentStatus(n.Status) {
+		c.ensureHarnessCompletionReport(n.Snapshot)
+	}
+}
+
+func (c *AgentControl) ensureHarnessCompletionReport(snap subagent.SubAgentSnapshot) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	if _, ok, err := c.harnessStore.ReportForTask(snap.ID); err == nil && ok {
+		return
+	}
+	outcome := "completed"
+	if snap.Status == subagent.StatusFailed {
+		outcome = "error"
+	} else if snap.Status == subagent.StatusCancelled {
+		outcome = "cancelled"
+	}
+	blockers := []string(nil)
+	errText := ""
+	if snap.Error != nil {
+		errText = snap.Error.Error()
+		blockers = append(blockers, errText)
+	}
+	report := harness.Report{
+		ID:          snap.ID + "-completion-report",
+		TaskID:      snap.ID,
+		RunID:       harnessRunID(snap.ID),
+		AgentID:     snap.ID,
+		AgentPath:   snap.AgentPath,
+		Outcome:     outcome,
+		Summary:     firstNonEmptyLine(snap.Result, errText),
+		Blockers:    blockers,
+		RawResult:   snap.Result,
+		SubmittedAt: time.Now().UTC(),
+	}
+	_, _ = c.harnessStore.SubmitReport(report)
+}
+
+func (c *AgentControl) harnessReportForTask(taskID string) (string, []string) {
+	if c == nil || c.harnessStore == nil {
+		return "", nil
+	}
+	report, ok, err := c.harnessStore.ReportForTask(taskID)
+	if err == nil && ok {
+		paths := append([]string(nil), report.Artifacts...)
+		if report.ReportPath != "" && !stringSliceContains(paths, report.ReportPath) {
+			paths = append(paths, report.ReportPath)
+		}
+		return report.ReportPath, paths
+	}
+	tasks, err := c.harnessStore.ListTasks()
+	if err != nil {
+		return "", nil
+	}
+	for _, task := range tasks {
+		if task.ID == taskID {
+			return task.ReportPath, append([]string(nil), task.ArtifactPaths...)
+		}
+	}
+	return "", nil
+}
+
 func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
 	for n := range ch {
 		if c == nil || c.threads == nil {
 			continue
 		}
+		c.recordHarnessStatus(n)
 		status := threadStatusFromSubAgent(n.Status)
 		meta, ok := c.threads.UpdateStatus(n.AgentID, status, time.Now().UTC())
 		if !ok {
@@ -775,7 +1014,7 @@ func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
 		_ = c.threadStore.RecordStatus(meta)
 		if isFinalSubAgentStatus(n.Status) {
 			if !c.deliverNestedResultToParent(context.Background(), n.Snapshot) && c.isRootChildSnapshot(n.Snapshot) {
-				_ = c.threadStore.RecordCommunication(c.rootThreadID, newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath))
+				_ = c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath))
 			}
 		}
 	}
@@ -796,7 +1035,7 @@ func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap sub
 	if meta, ok := c.threads.Resolve(parentID); ok && strings.TrimSpace(meta.Path) != "" {
 		parentPath = meta.Path
 	}
-	communication := newAgentCompletionCommunication(snap, parentPath)
+	communication := c.newAgentCompletionCommunication(snap, parentPath)
 	_, err := c.manager.Followup(ctx, parentID, communication.String())
 	if err == nil {
 		_ = c.threadStore.RecordCommunication(parentID, communication)
@@ -814,10 +1053,19 @@ func formatAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipien
 }
 
 func newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
+	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, NewAgentMailboxMessage(snap))
+}
+
+func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
+	reportPath, artifacts := c.harnessReportForTask(snap.ID)
+	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, NewAgentMailboxMessageWithReport(snap, reportPath, artifacts))
+}
+
+func newAgentCompletionCommunicationWithMessage(snap subagent.SubAgentSnapshot, recipientPath string, message AgentMailboxMessage) agentthread.InterAgentCommunication {
 	if strings.TrimSpace(recipientPath) == "" {
 		recipientPath = agentthread.RootPath
 	}
-	content := agentthread.SubagentNotificationContent(snap.AgentPath, NewAgentMailboxMessage(snap))
+	content := agentthread.SubagentNotificationContent(snap.AgentPath, message)
 	return agentthread.NewInterAgentCommunication(parseAgentPathOrRoot(snap.AgentPath), parseAgentPathOrRoot(recipientPath), content, false)
 }
 
@@ -897,6 +1145,48 @@ func threadStatusFromSubAgent(status subagent.Status) agentthread.Status {
 	default:
 		return agentthread.Status(status)
 	}
+}
+
+func harnessStatusFromSubAgent(status subagent.Status) harness.TaskStatus {
+	switch status {
+	case subagent.StatusPending:
+		return harness.TaskStatusPending
+	case subagent.StatusRunning:
+		return harness.TaskStatusRunning
+	case subagent.StatusCompleted:
+		return harness.TaskStatusCompleted
+	case subagent.StatusFailed:
+		return harness.TaskStatusFailed
+	case subagent.StatusCancelled:
+		return harness.TaskStatusCancelled
+	default:
+		return harness.TaskStatus(status)
+	}
+}
+
+func harnessRunID(taskID string) string {
+	return strings.TrimSpace(taskID) + "-run-1"
+}
+
+func firstNonEmptyLine(values ...string) string {
+	for _, value := range values {
+		for _, line := range strings.Split(value, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				return line
+			}
+		}
+	}
+	return ""
+}
+
+func stringSliceContains(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 // SystemPromptPreamble returns the instructions prepended to the

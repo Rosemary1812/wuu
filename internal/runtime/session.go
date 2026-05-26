@@ -287,6 +287,7 @@ func (s *Session) NewThreadRuntime(sessionID string, askBridge tools.AskUserBrid
 				SessionID:       id,
 				HistoryDir:      filepath.Join(artifactDir, "workers"),
 				ThreadDir:       filepath.Join(artifactDir, "threads"),
+				HarnessDir:      filepath.Join(artifactDir, "harness"),
 				WorkerSysPrompt: s.BaseSystemPrompt,
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 					workerKit, err := s.Toolkit.CloneForRoot(workerRoot)

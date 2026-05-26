@@ -10,6 +10,7 @@ import (
 
 type AgentMailboxMessage struct {
 	Type         string    `json:"type"`
+	TaskID       string    `json:"task_id,omitempty"`
 	AgentID      string    `json:"agent_id"`
 	AgentPath    string    `json:"agent_path,omitempty"`
 	ParentID     string    `json:"parent_id,omitempty"`
@@ -22,14 +23,21 @@ type AgentMailboxMessage struct {
 	ErrorClass   string    `json:"error_class,omitempty"`
 	InputTokens  int       `json:"input_tokens,omitempty"`
 	OutputTokens int       `json:"output_tokens,omitempty"`
+	ReportPath   string    `json:"report_path,omitempty"`
+	Artifacts    []string  `json:"artifacts,omitempty"`
 	StartedAt    time.Time `json:"started_at,omitempty"`
 	CompletedAt  time.Time `json:"completed_at,omitempty"`
 	DurationMS   int64     `json:"duration_ms,omitempty"`
 }
 
 func NewAgentMailboxMessage(snap subagent.SubAgentSnapshot) AgentMailboxMessage {
+	return NewAgentMailboxMessageWithReport(snap, "", nil)
+}
+
+func NewAgentMailboxMessageWithReport(snap subagent.SubAgentSnapshot, reportPath string, artifacts []string) AgentMailboxMessage {
 	msg := AgentMailboxMessage{
 		Type:         "agent_result",
+		TaskID:       snap.ID,
 		AgentID:      snap.ID,
 		AgentPath:    snap.AgentPath,
 		ParentID:     snap.ParentID,
@@ -40,6 +48,8 @@ func NewAgentMailboxMessage(snap subagent.SubAgentSnapshot) AgentMailboxMessage 
 		Result:       snap.Result,
 		InputTokens:  snap.InputTokens,
 		OutputTokens: snap.OutputTokens,
+		ReportPath:   reportPath,
+		Artifacts:    artifacts,
 		StartedAt:    snap.StartedAt,
 		CompletedAt:  snap.CompletedAt,
 	}

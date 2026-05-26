@@ -14,6 +14,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -228,6 +229,95 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 	}
 	if len(events) < 3 {
 		t.Fatalf("expected root, child, and status events, got %+v", events)
+	}
+}
+
+func TestSpawn_RecordsHarnessTaskRunAndReport(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	harnessDir := filepath.Join(dir, ".wuu", "sessions", "sess-harness", "harness")
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "task done\n\nEvidence: go test ./internal/harness"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-harness",
+		HistoryDir:    filepath.Join(dir, ".wuu", "sessions", "sess-harness", "workers"),
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-harness", "threads"),
+		HarnessDir:    harnessDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        "worker",
+		TaskName:    "record_harness",
+		Description: "record harness",
+		Prompt:      "record durable task",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	store := c.HarnessStore()
+	if store == nil || store.Dir() != harnessDir {
+		t.Fatalf("unexpected harness store: %#v", store)
+	}
+	var tasks []harness.Task
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		tasks, err = store.ListTasks()
+		if err != nil {
+			t.Fatalf("ListTasks: %v", err)
+		}
+		if len(tasks) == 1 && tasks[0].Status == harness.TaskStatusCompleted && tasks[0].ReportPath != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one harness task, got %+v", tasks)
+	}
+	task := tasks[0]
+	if task.ID != res.AgentID || task.Path != res.AgentPath || task.Name != "record_harness" || task.Role != "worker" {
+		t.Fatalf("unexpected task: %+v", task)
+	}
+	if task.Workspace.Mode != harness.WorkspaceShared || task.Workspace.Root != dir {
+		t.Fatalf("unexpected workspace lease: %+v", task.Workspace)
+	}
+	if task.LastRunID != res.AgentID+"-run-1" || task.InputTokens != 0 || task.OutputTokens != 0 {
+		t.Fatalf("unexpected run linkage/usage: %+v", task)
+	}
+	if _, err := os.Stat(task.ReportPath); err != nil {
+		t.Fatalf("completion report missing: %v", err)
+	}
+	runs, err := store.ListRuns()
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(runs) != 1 || runs[0].TaskID != res.AgentID || runs[0].Status != harness.TaskStatusCompleted {
+		t.Fatalf("unexpected runs: %+v", runs)
+	}
+	reports, err := store.ListReports()
+	if err != nil {
+		t.Fatalf("ListReports: %v", err)
+	}
+	if len(reports) != 1 || reports[0].Outcome != "completed" || reports[0].RawResult == "" {
+		t.Fatalf("unexpected reports: %+v", reports)
+	}
+	events, err := store.ReadEvents()
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if len(events) < 6 {
+		t.Fatalf("expected lifecycle events, got %+v", events)
+	}
+	if events[0].Type != harness.EventTaskCreated || events[len(events)-1].Type != harness.EventReportSubmitted {
+		t.Fatalf("unexpected event sequence: %+v", events)
 	}
 }
 
