@@ -24,12 +24,9 @@ index 0000000000000..0adfaa4a8ac83
 +
 +namespace browseros {
 +
-+// Native action IDs for legacy BrowserOS panels that need special treatment
-+// when explicitly enabled for compatibility.
-+// These actions will:
-+// - Always be pinned (unless disabled via pref)
-+// - Show text labels (when enabled via pref)
-+// - Have high flex priority (always visible)
++// Legacy BrowserOS native actions are kept here only so existing pinned states
++// can be removed by their visibility prefs. The actions themselves are not
++// registered in BrowserActions while Wuu redesigns the entry points.
 +constexpr auto kBrowserOSNativeActionIds =
 +    base::MakeFixedFlatSet<actions::ActionId>({
 +        kActionSidePanelShowThirdPartyLlm,
