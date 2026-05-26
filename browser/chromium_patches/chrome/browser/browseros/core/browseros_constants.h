@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/core/browseros_constants.h b/chrome/browser/browseros/core/browseros_constants.h
 new file mode 100644
-index 0000000000..063640bc0e
+index 0000000000..19e428d2f6
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_constants.h
-@@ -0,0 +1,235 @@
+@@ -0,0 +1,236 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -59,6 +59,7 @@ index 0000000000..063640bc0e
 +// Wuu Browser product host and legacy BrowserOS host.
 +inline constexpr char kWuuBrowserHost[] = "wuu";
 +inline constexpr char kBrowserOSHost[] = "browseros";
++inline constexpr char kWuuBrowserURL[] = "chrome://wuu";
 +
 +inline bool IsWuuBrowserProductHost(std::string_view host) {
 +  return host == kWuuBrowserHost || host == kBrowserOSHost;

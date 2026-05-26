@@ -64,6 +64,16 @@ first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_m
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
 content_browser_client_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_content_browser_client.cc"
 browser_actions_patch="${browser_dir}/chromium_patches/chrome/browser/ui/browser_actions.cc"
+browser_commands_patch="${browser_dir}/chromium_patches/chrome/browser/ui/browser_commands.cc"
+startup_creator_patch="${browser_dir}/chromium_patches/chrome/browser/ui/startup/startup_browser_creator_impl.cc"
+extension_registrar_patch="${browser_dir}/chromium_patches/chrome/browser/extensions/chrome_extension_registrar_delegate.cc"
+tab_renderer_data_header_patch="${browser_dir}/chromium_patches/chrome/browser/ui/tabs/tab_renderer_data.h"
+tab_renderer_data_patch="${browser_dir}/chromium_patches/chrome/browser/ui/tabs/tab_renderer_data.cc"
+tab_strip_model_patch="${browser_dir}/chromium_patches/chrome/browser/ui/tabs/tab_strip_model.cc"
+browser_tab_strip_controller_patch="${browser_dir}/chromium_patches/chrome/browser/ui/views/tabs/browser_tab_strip_controller.cc"
+horizontal_tab_view_patch="${browser_dir}/chromium_patches/chrome/browser/ui/views/tabs/tab.cc"
+vertical_tab_view_patch="${browser_dir}/chromium_patches/chrome/browser/ui/views/tabs/vertical/vertical_tab_view.cc"
+web_app_tabbed_utils_patch="${browser_dir}/chromium_patches/chrome/browser/ui/web_applications/web_app_tabbed_utils.cc"
 browseros_action_utils_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_action_utils.h"
 browseros_prefs_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_prefs.cc"
 ui_features_patch="${browser_dir}/chromium_patches/chrome/browser/ui/ui_features.cc"
@@ -124,6 +134,11 @@ check_contains \
 
 check_contains \
   "${routes_patch}" \
+  'inline constexpr char kWuuBrowserURL[] = "chrome://wuu";' \
+  "Chromium default workbench URL uses the Wuu product URL"
+
+check_contains \
+  "${routes_patch}" \
   '{"", kAgentExtensionId, "app.html", "/home"},' \
   "chrome://wuu routes to the Wuu workbench extension page"
 
@@ -146,6 +161,56 @@ check_contains \
   "${content_browser_client_patch}" \
   '!browseros::IsWuuBrowserProductHost(url->host())' \
   "Chromium URL handler accepts Wuu and legacy BrowserOS hosts"
+
+check_contains \
+  "${browser_commands_patch}" \
+  'GURL(browseros::kWuuBrowserURL)' \
+  "empty browser windows open the Wuu workbench tab"
+
+check_contains \
+  "${startup_creator_patch}" \
+  'StartupTab(GURL(browseros::kWuuBrowserURL))' \
+  "default startup opens the Wuu workbench tab"
+
+check_contains \
+  "${extension_registrar_patch}" \
+  'ReloadPendingWuuWorkbenchTabs(profile_);' \
+  "Workbench tabs recover after the agent extension activates"
+
+check_contains \
+  "${tab_renderer_data_header_patch}" \
+  'bool can_close = true;' \
+  "tab renderer data carries close eligibility"
+
+check_contains \
+  "${tab_renderer_data_patch}" \
+  'can_close == other.can_close' \
+  "tab renderer data refreshes when close eligibility changes"
+
+check_contains \
+  "${tab_strip_model_patch}" \
+  'IsProtectedWuuWorkbenchTab(this, index) && !closing_all_' \
+  "the first Workbench tab cannot be closed individually"
+
+check_contains \
+  "${browser_tab_strip_controller_patch}" \
+  'data.can_close = web_app::IsTabClosable(model_, model_index);' \
+  "tab strip propagates close eligibility to tab views"
+
+check_contains \
+  "${horizontal_tab_view_patch}" \
+  'const bool should_show_close_button = data_.can_close;' \
+  "horizontal tabs hide the close affordance for protected tabs"
+
+check_contains \
+  "${vertical_tab_view_patch}" \
+  'if (!tab_data_.can_close || pinned_) {' \
+  "vertical tabs hide the close affordance for protected tabs"
+
+check_contains \
+  "${web_app_tabbed_utils_patch}" \
+  'return tab_strip_model->closing_all();' \
+  "protected Workbench tabs still close during whole-window shutdown"
 
 check_contains \
   "${chromium_branding_debug}" \
@@ -249,8 +314,18 @@ check_contains \
 
 check_not_contains \
   "${agent_wxt_config}" \
+  "chrome_url_overrides" \
+  "new tabs use Chromium's native new tab page"
+
+check_not_contains \
+  "${agent_wxt_config}" \
   "page: 'app.html#/settings'" \
   "extension options page no longer opens legacy BrowserOS AI settings"
+
+check_not_contains \
+  "${agent_background}" \
+  "details.reason === chrome.runtime.OnInstalledReason.INSTALL" \
+  "extension install no longer creates an extra Workbench tab"
 
 check_contains \
   "${agent_app_routes}" \

@@ -19,10 +19,6 @@ export default defineBackground(() => {
   })
 
   chrome.runtime.onInstalled.addListener((details) => {
-    if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
-      openHomeTabIfMissing()
-    }
-
     if (details.reason === chrome.runtime.OnInstalledReason.UPDATE) {
       checkAndShowChangelog().catch(() => null)
     }
