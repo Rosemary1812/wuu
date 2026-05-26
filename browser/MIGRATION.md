@@ -341,6 +341,10 @@ Current packaging path:
   profile and Wuu Browser Safe Storage keychain item, copies Doubao
   cookie/password databases, and aligns the local Wuu Browser Safe Storage
   keychain item with Doubao Safe Storage without printing the keychain secret.
+- `make browser-import-doubao-cookies ARGS="--apply"` runs after Wuu Browser is
+  launched and imports non-expired Doubao cookies through the local CDP endpoint,
+  so Chromium writes them into the active Wuu Browser profile instead of relying
+  only on an offline cookie database copy.
 - `make browser-launch-dev` prefers the repo-staged Wuu Browser Dev app before
   falling back to the external BrowserOS Chromium build.
 - `make browser-launch-dev` and `make browser-launch-product` now default to a

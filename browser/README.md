@@ -215,6 +215,13 @@ without printing the secret:
 make browser-migrate-doubao-profile ARGS="--apply"
 ```
 
+After Wuu Browser is running, import the non-expired Doubao cookies through the
+local CDP endpoint so Chromium writes them back in the active Wuu profile:
+
+```bash
+make browser-import-doubao-cookies ARGS="--apply"
+```
+
 Do not treat auto-update as enabled unless the package command succeeds with
 `ARGS="--update-enabled"`. That gate intentionally fails while browser,
 extension, or server update feeds still point at BrowserOS infrastructure, or

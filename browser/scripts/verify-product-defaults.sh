@@ -91,6 +91,7 @@ build_agent_script="${browser_dir}/scripts/build-agent.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
 launch_product_script="${browser_dir}/scripts/launch-product.sh"
 migrate_doubao_profile_script="${browser_dir}/scripts/migrate-doubao-profile.sh"
+import_doubao_cookies_script="${browser_dir}/scripts/import-doubao-cookies-cdp.mjs"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
 package_macos_script="${browser_dir}/scripts/package-macos.sh"
@@ -679,6 +680,31 @@ check_contains \
   "${migrate_doubao_profile_script}" \
   'keychain_backup_service="${target_service} Backup"' \
   "Doubao credential recovery backs up the target Wuu Browser keychain item"
+
+check_contains \
+  "${makefile}" \
+  "browser-import-doubao-cookies:" \
+  "Makefile exposes the Doubao cookie CDP import entry point"
+
+check_contains \
+  "${makefile}" \
+  'node browser/scripts/import-doubao-cookies-cdp.mjs $(ARGS)' \
+  "Doubao cookie CDP import can receive explicit script arguments"
+
+check_contains \
+  "${import_doubao_cookies_script}" \
+  'mode = "dry-run"' \
+  "Doubao cookie CDP import is dry-run by default"
+
+check_contains \
+  "${import_doubao_cookies_script}" \
+  'Storage.setCookies' \
+  "Doubao cookie CDP import writes cookies through Chromium"
+
+check_contains \
+  "${import_doubao_cookies_script}" \
+  'sourceService = "Doubao Safe Storage"' \
+  "Doubao cookie CDP import decrypts with the Doubao keychain item"
 
 check_contains \
   "${makefile}" \
