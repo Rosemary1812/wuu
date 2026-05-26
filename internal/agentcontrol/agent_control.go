@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"crypto/rand"
@@ -52,6 +53,8 @@ type AgentControl struct {
 	workerFact    WorkerToolkitFactory
 	defaultSys    string // base system prompt prefix added to every worker
 	maxParallel   int
+	queueMu       sync.Mutex
+	queued        []preparedSpawn
 }
 
 // Config holds the dependencies needed to build an AgentControl.
@@ -205,15 +208,23 @@ type SpawnResult struct {
 	DurationMS   int64  `json:"duration_ms,omitempty"`
 }
 
+type preparedSpawn struct {
+	WorkerID      string
+	WorkerType    WorkerType
+	ThreadMeta    agentthread.Metadata
+	Description   string
+	Prompt        string
+	Isolation     IsolationMode
+	BaseRepo      string
+	IsFork        bool
+	ForkMode      string
+	ParentHistory []providers.ChatMessage
+}
+
 // Spawn launches a sub-agent. In synchronous mode it blocks until
 // the sub-agent finishes; in async mode it returns immediately with
 // status "running" and the agent_id the orchestrator can poll.
 func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, error) {
-	// Concurrency cap.
-	if c.manager.CountRunning() >= c.maxParallel {
-		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or close one with close_agent.", c.maxParallel)
-	}
-
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, errors.New("prompt is required")
 	}
@@ -236,6 +247,34 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	// BaseRepo only makes sense for chained worktree spawns.
 	if isolation == IsolationInplace && strings.TrimSpace(req.BaseRepo) != "" {
 		return nil, errors.New("base_repo is only supported with isolation=worktree")
+	}
+
+	if c.manager.CountRunning() >= c.maxParallel {
+		if req.Synchronous {
+			return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
+		}
+		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, agentthread.StatusPending)
+		if err != nil {
+			return nil, err
+		}
+		prepared := preparedSpawn{
+			WorkerID:    workerID,
+			WorkerType:  wt,
+			ThreadMeta:  threadMeta,
+			Description: req.Description,
+			Prompt:      req.Prompt,
+			Isolation:   isolation,
+			BaseRepo:    req.BaseRepo,
+		}
+		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo)
+		c.enqueuePreparedSpawn(prepared)
+		return &SpawnResult{
+			AgentID:   workerID,
+			TaskName:  threadMeta.TaskName,
+			AgentPath: threadMeta.Path,
+			Status:    "queued",
+			Isolation: string(isolation),
+		}, nil
 	}
 
 	// 1. Determine the worker's working directory.
@@ -395,9 +434,6 @@ type ForkRequest struct {
 // in-flight spawn_agent
 // assistant turn before passing it through.
 func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory []providers.ChatMessage) (*SpawnResult, error) {
-	if c.manager.CountRunning() >= c.maxParallel {
-		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or close one with close_agent.", c.maxParallel)
-	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, errors.New("prompt is required")
 	}
@@ -421,6 +457,37 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	}
 	if isolation == IsolationInplace && strings.TrimSpace(req.BaseRepo) != "" {
 		return nil, errors.New("base_repo is only supported with isolation=worktree")
+	}
+
+	if c.manager.CountRunning() >= c.maxParallel {
+		if req.Synchronous {
+			return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
+		}
+		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, agentthread.StatusPending)
+		if err != nil {
+			return nil, err
+		}
+		prepared := preparedSpawn{
+			WorkerID:      workerID,
+			WorkerType:    wt,
+			ThreadMeta:    threadMeta,
+			Description:   req.Description,
+			Prompt:        req.Prompt,
+			Isolation:     isolation,
+			BaseRepo:      req.BaseRepo,
+			IsFork:        true,
+			ForkMode:      req.ForkMode,
+			ParentHistory: append([]providers.ChatMessage(nil), parentHistory...),
+		}
+		c.recordHarnessTaskQueued(threadMeta, wt.Name, req.Prompt, isolation, req.BaseRepo)
+		c.enqueuePreparedSpawn(prepared)
+		return &SpawnResult{
+			AgentID:   workerID,
+			TaskName:  threadMeta.TaskName,
+			AgentPath: threadMeta.Path,
+			Status:    "queued",
+			Isolation: string(isolation),
+		}, nil
 	}
 
 	var (
@@ -761,6 +828,10 @@ func (c *AgentControl) registerRootThread() {
 }
 
 func (c *AgentControl) registerChildThread(id, taskName, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string) (agentthread.Metadata, error) {
+	return c.registerChildThreadWithStatus(id, taskName, role, message, source, forkMode, parentID, parentPath, agentthread.StatusRunning)
+}
+
+func (c *AgentControl) registerChildThreadWithStatus(id, taskName, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string, status agentthread.Status) (agentthread.Metadata, error) {
 	if c == nil || c.threads == nil {
 		return agentthread.Metadata{}, errors.New("thread registry is not configured")
 	}
@@ -784,7 +855,7 @@ func (c *AgentControl) registerChildThread(id, taskName, role, message string, s
 		CWD:             c.parentRepo,
 		SourceKind:      source,
 		ForkMode:        strings.TrimSpace(forkMode),
-		Status:          agentthread.StatusRunning,
+		Status:          status,
 		Now:             time.Now().UTC(),
 	})
 	if err != nil {
@@ -801,6 +872,7 @@ func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, i
 		return
 	}
 	now := time.Now().UTC()
+	_, existed := c.harnessTask(meta.ID)
 	workspaceMode := harness.WorkspaceShared
 	if isolation == IsolationWorktree {
 		workspaceMode = harness.WorkspaceWorktree
@@ -840,8 +912,12 @@ func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, i
 	}
 	_ = c.harnessStore.UpsertTask(task)
 	_ = c.harnessStore.UpsertRun(run)
+	eventType := harness.EventTaskCreated
+	if existed {
+		eventType = harness.EventTaskStatusChanged
+	}
 	_ = c.harnessStore.AppendEvent(harness.Event{
-		Type:      harness.EventTaskCreated,
+		Type:      eventType,
 		TaskID:    meta.ID,
 		RunID:     runID,
 		AgentID:   meta.ID,
@@ -867,6 +943,161 @@ func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, i
 		Status:    string(harness.TaskStatusRunning),
 		CreatedAt: now,
 	})
+}
+
+func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, intent string, isolation IsolationMode, baseRepo string) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	now := time.Now().UTC()
+	workspaceMode := harness.WorkspaceShared
+	if isolation == IsolationWorktree {
+		workspaceMode = harness.WorkspaceWorktree
+	}
+	runID := harnessRunID(meta.ID)
+	task := harness.Task{
+		ID:         meta.ID,
+		SessionID:  c.sessionID,
+		ParentID:   meta.ParentID,
+		ParentPath: meta.Source.ParentPath,
+		Path:       meta.Path,
+		Name:       meta.TaskName,
+		Role:       role,
+		Intent:     intent,
+		Workspace: harness.WorkspaceLease{
+			Mode:     workspaceMode,
+			BaseRepo: strings.TrimSpace(baseRepo),
+		},
+		Status:    harness.TaskStatusQueued,
+		LastRunID: runID,
+		CreatedAt: meta.CreatedAt,
+		UpdatedAt: now,
+	}
+	if task.CreatedAt.IsZero() {
+		task.CreatedAt = now
+	}
+	_ = c.harnessStore.UpsertTask(task)
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventTaskCreated,
+		TaskID:    meta.ID,
+		RunID:     runID,
+		AgentID:   meta.ID,
+		Path:      meta.Path,
+		Status:    string(harness.TaskStatusQueued),
+		CreatedAt: now,
+	})
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventTaskStatusChanged,
+		TaskID:    meta.ID,
+		RunID:     runID,
+		AgentID:   meta.ID,
+		Path:      meta.Path,
+		Status:    string(harness.TaskStatusQueued),
+		CreatedAt: now,
+	})
+}
+
+func (c *AgentControl) enqueuePreparedSpawn(prepared preparedSpawn) {
+	c.queueMu.Lock()
+	defer c.queueMu.Unlock()
+	c.queued = append(c.queued, prepared)
+}
+
+func (c *AgentControl) maybeStartQueued(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	for {
+		if c.manager.CountRunning() >= c.maxParallel {
+			return
+		}
+		prepared, ok := c.popQueuedSpawn()
+		if !ok {
+			return
+		}
+		if err := c.startQueuedSpawn(ctx, prepared); err != nil {
+			c.recordHarnessTaskFailure(prepared.WorkerID, err)
+			if failed, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusFailed, time.Now().UTC()); ok {
+				_ = c.threadStore.RecordStatus(failed)
+			}
+			if closed, ok := c.threads.UpdateEdgeStatus(prepared.WorkerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
+				_ = c.threadStore.RecordEdgeStatus(closed)
+			}
+		}
+	}
+}
+
+func (c *AgentControl) popQueuedSpawn() (preparedSpawn, bool) {
+	c.queueMu.Lock()
+	defer c.queueMu.Unlock()
+	if len(c.queued) == 0 {
+		return preparedSpawn{}, false
+	}
+	prepared := c.queued[0]
+	c.queued[0] = preparedSpawn{}
+	c.queued = c.queued[1:]
+	return prepared, true
+}
+
+func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSpawn) error {
+	workerRoot := c.parentRepo
+	var worktreeRef *worktree.Worktree
+	var err error
+	if prepared.Isolation == IsolationWorktree {
+		if c.worktrees == nil {
+			return errors.New("isolation=worktree requires a git repository (this workspace is not a git repo)")
+		}
+		worktreeRef, err = c.worktrees.Create(c.sessionID, prepared.WorkerID, prepared.BaseRepo)
+		if err != nil {
+			return fmt.Errorf("worktree create: %w", err)
+		}
+		workerRoot = worktreeRef.Path
+	}
+	if running, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusRunning, time.Now().UTC()); ok {
+		_ = c.threadStore.RecordStatus(running)
+	}
+	c.recordHarnessTaskStart(prepared.ThreadMeta, prepared.WorkerType.Name, prepared.Prompt, workerRoot, prepared.Isolation, prepared.BaseRepo)
+	workerKit, err := c.workerFact(workerRoot, prepared.WorkerType, prepared.ThreadMeta)
+	if err != nil {
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
+		return fmt.Errorf("worker toolkit: %w", err)
+	}
+	prompt := prepared.Prompt
+	systemPrompt := composeWorkerSystemPrompt(c.defaultSys, prepared.WorkerType, workerRoot, prepared.Isolation)
+	var initialHistory []providers.ChatMessage
+	if prepared.IsFork {
+		initialHistory = append([]providers.ChatMessage(nil), prepared.ParentHistory...)
+		systemPrompt = ""
+		if prepared.Isolation == IsolationWorktree {
+			prompt = appendForkWorktreeReminder(prompt, workerRoot, prepared.Isolation)
+		}
+	}
+	historyPath := ""
+	if c.historyDir != "" {
+		historyPath = filepath.Join(c.historyDir, prepared.WorkerID+".json")
+	}
+	_, err = c.manager.Spawn(context.WithoutCancel(ctx), subagent.SpawnOptions{
+		ID:             prepared.WorkerID,
+		Type:           prepared.WorkerType.Name,
+		TaskName:       prepared.ThreadMeta.TaskName,
+		AgentPath:      prepared.ThreadMeta.Path,
+		ParentID:       prepared.ThreadMeta.ParentID,
+		Description:    prepared.Description,
+		Prompt:         prompt,
+		SystemPrompt:   systemPrompt,
+		Toolkit:        workerKit,
+		HistoryPath:    historyPath,
+		InitialHistory: initialHistory,
+	})
+	if err != nil {
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
+		return fmt.Errorf("spawn: %w", err)
+	}
+	return nil
 }
 
 func (c *AgentControl) recordHarnessTaskFailure(taskID string, err error) {
@@ -1099,6 +1330,7 @@ func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
 			if !c.deliverNestedResultToParent(context.Background(), n.Snapshot) && c.isRootChildSnapshot(n.Snapshot) {
 				_ = c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath))
 			}
+			go c.maybeStartQueued(context.Background())
 		}
 	}
 }

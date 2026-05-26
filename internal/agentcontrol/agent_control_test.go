@@ -904,28 +904,67 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess",
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess", "harness"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 		MaxParallel:   2,
 	})
 
 	// Fire 2 async spawns to fill the cap.
+	var firstID string
 	for i := 0; i < 2; i++ {
-		_, err := c.Spawn(context.Background(), SpawnRequest{
+		res, err := c.Spawn(context.Background(), SpawnRequest{
 			Type: "worker", TaskName: fmt.Sprintf("slow_%d", i), Description: "x", Prompt: "p",
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
+		if i == 0 {
+			firstID = res.AgentID
+		}
 	}
 
-	// 3rd spawn should be rejected.
-	_, err := c.Spawn(context.Background(), SpawnRequest{
+	// 3rd async spawn should be durably queued instead of dropping
+	// the parent agent's intent.
+	queued, err := c.Spawn(context.Background(), SpawnRequest{
 		Type: "worker", TaskName: "slow_2", Description: "x", Prompt: "p",
 	})
-	if err == nil {
-		t.Fatal("expected concurrency cap error")
+	if err != nil {
+		t.Fatalf("queued spawn should not fail: %v", err)
+	}
+	if queued.Status != "queued" || queued.AgentID == "" || queued.AgentPath != "/root/slow_2" {
+		t.Fatalf("unexpected queued result: %+v", queued)
+	}
+	tasks, err := c.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	var foundQueued bool
+	for _, task := range tasks {
+		if task.ID == queued.AgentID {
+			foundQueued = task.Status == harness.TaskStatusQueued
+			break
+		}
+	}
+	if !foundQueued {
+		t.Fatalf("queued task not persisted: %+v", tasks)
+	}
+	if !c.Stop(firstID) {
+		t.Fatalf("expected to stop %s", firstID)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		sa := c.Manager().Get(queued.AgentID)
+		if sa != nil && sa.Snapshot().Status == subagent.StatusRunning {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	sa := c.Manager().Get(queued.AgentID)
+	if sa == nil || sa.Snapshot().Status != subagent.StatusRunning {
+		t.Fatalf("queued task did not start after capacity freed: %+v", sa)
 	}
 	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
 
 // slowClient never returns until context is cancelled.
