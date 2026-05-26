@@ -1,4 +1,4 @@
-import { Check, MessageSquarePlus, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { AskUserQuestion } from "../shared/protocol";
 
@@ -21,7 +21,6 @@ export function AnsweredAskUserMessage({ request }: { request: AnsweredAskReques
     <article className={`ask-message ask-message-answered${request.cancelled ? " cancelled" : ""}`} aria-live="polite">
       <div className="ask-header">
         <div className="ask-title">
-          <Check size={17} />
           <span>{request.cancelled ? "已取消回答" : "你已回答"}</span>
         </div>
       </div>
@@ -127,7 +126,6 @@ export function AskUserMessage({
     <article className="ask-message" aria-live="polite">
       <div className="ask-header">
         <div className="ask-title">
-          <MessageSquarePlus size={17} />
           <span>需要你选择</span>
         </div>
         <button
@@ -167,13 +165,13 @@ export function AskUserMessage({
                       disabled={submitting}
                       onClick={() => select(question, option.label)}
                     >
-                      <span className="ask-option-check" aria-hidden="true">
-                        {selected ? <Check size={15} /> : null}
-                      </span>
                       <span className="ask-option-copy">
                         <strong>{option.label}</strong>
                         {option.description ? <span>{option.description}</span> : null}
                         {option.preview ? <span className="ask-option-preview">{option.preview}</span> : null}
+                      </span>
+                      <span className="ask-option-mark" aria-hidden="true">
+                        {selected ? <Check size={15} /> : null}
                       </span>
                     </button>
                   );
@@ -187,11 +185,11 @@ export function AskUserMessage({
                     disabled={submitting}
                     onClick={() => select(question, ASK_USER_OTHER_VALUE)}
                   >
-                    <span className="ask-option-check" aria-hidden="true">
-                      {selectedAnswers.includes(ASK_USER_OTHER_VALUE) ? <Check size={15} /> : null}
-                    </span>
                     <span className="ask-option-copy">
                       <strong>其他</strong>
+                    </span>
+                    <span className="ask-option-mark" aria-hidden="true">
+                      {selectedAnswers.includes(ASK_USER_OTHER_VALUE) ? <Check size={15} /> : null}
                     </span>
                   </button>
                   {selectedAnswers.includes(ASK_USER_OTHER_VALUE) ? (
