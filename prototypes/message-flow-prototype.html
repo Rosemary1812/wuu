@@ -326,7 +326,7 @@
       }
 
       .state-label.running {
-        color: color-mix(in srgb, var(--muted), var(--text) 8%);
+        color: color-mix(in srgb, var(--muted), var(--text) 14%);
       }
 
       .state-label.running::after {
@@ -338,12 +338,14 @@
           linear-gradient(
             100deg,
             transparent 0%,
-            transparent 36%,
-            color-mix(in srgb, var(--text) 82%, white 18%) 50%,
-            transparent 64%,
+            transparent 28%,
+            color-mix(in srgb, var(--text) 70%, var(--accent) 30%) 43%,
+            color-mix(in srgb, var(--text) 92%, white 8%) 50%,
+            color-mix(in srgb, var(--text) 70%, var(--accent) 30%) 57%,
+            transparent 72%,
             transparent 100%
           );
-        background-size: 260% 100%;
+        background-size: 220% 100%;
         -webkit-background-clip: text;
         background-clip: text;
         animation: textSweep var(--sweep-duration) ease-in-out infinite;
@@ -603,11 +605,11 @@
         18% {
           opacity: 0;
         }
-        46% {
-          opacity: 0.92;
+        38% {
+          opacity: 1;
         }
-        78% {
-          opacity: 0.92;
+        82% {
+          opacity: 1;
         }
         100% {
           background-position: -160% 0;
