@@ -277,6 +277,7 @@ const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 type SidebarResizeSession = {
   startX: number;
   startWidth: number;
+  allowCollapse: boolean;
 };
 
 type RightPanelResizeSession = {
@@ -766,7 +767,12 @@ export function App(): JSX.Element {
       if (!session) {
         return;
       }
-      applySidebarWidth(session.startWidth + event.clientX - session.startX);
+      const nextWidth = session.startWidth + event.clientX - session.startX;
+      if (session.allowCollapse) {
+        applySidebarWidth(nextWidth);
+        return;
+      }
+      applySettingsSidebarWidth(nextWidth);
     }
 
     function handlePointerUp(): void {
@@ -972,6 +978,10 @@ export function App(): JSX.Element {
     setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
   }
 
+  function applySettingsSidebarWidth(nextWidth: number): void {
+    setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+  }
+
   function startSidebarMotion(): void {
     if (sidebarMotionTimerRef.current !== undefined) {
       window.clearTimeout(sidebarMotionTimerRef.current);
@@ -1074,7 +1084,22 @@ export function App(): JSX.Element {
     event.preventDefault();
     resizeSessionRef.current = {
       startX: event.clientX,
-      startWidth: sidebarCollapsed ? 0 : sidebarWidth
+      startWidth: sidebarCollapsed ? 0 : sidebarWidth,
+      allowCollapse: true
+    };
+    setProjectMenuOpen(false);
+    setResizingSidebar(true);
+  }
+
+  function startSettingsSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    resizeSessionRef.current = {
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+      allowCollapse: false
     };
     setProjectMenuOpen(false);
     setResizingSidebar(true);
@@ -1387,6 +1412,32 @@ export function App(): JSX.Element {
       }
       applySidebarWidth(sidebarWidth + SIDEBAR_STEP);
     }
+  }
+
+  function handleSettingsSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      applySettingsSidebarWidth(sidebarWidth - SIDEBAR_STEP);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      applySettingsSidebarWidth(sidebarWidth + SIDEBAR_STEP);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      applySettingsSidebarWidth(SIDEBAR_MIN_WIDTH);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      applySettingsSidebarWidth(SIDEBAR_MAX_WIDTH);
+    }
+  }
+
+  function resetSettingsSidebarWidth(): void {
+    applySettingsSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
   }
 
   function renderComposer(variant: ComposerVariant): JSX.Element {
@@ -2857,9 +2908,16 @@ export function App(): JSX.Element {
         running={anyThreadIsRunning}
         showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
         debugControlsEnabled={debugControlsEnabled}
+        sidebarWidth={sidebarWidth}
+        sidebarMinWidth={SIDEBAR_MIN_WIDTH}
+        sidebarMaxWidth={SIDEBAR_MAX_WIDTH}
+        resizingSidebar={resizingSidebar}
         onBack={() => setSettingsOpen(false)}
         onSave={updateRuntimeSettings}
         onDebugControlsChange={setDebugControlsEnabled}
+        onSidebarResizeStart={startSettingsSidebarResize}
+        onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}
+        onSidebarSeparatorDoubleClick={resetSettingsSidebarWidth}
       />
     );
   }

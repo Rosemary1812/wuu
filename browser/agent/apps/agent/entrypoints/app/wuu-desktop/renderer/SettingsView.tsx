@@ -1,5 +1,12 @@
 import { ArrowLeft, Settings } from "lucide-react";
-import { type FormEvent as ReactFormEvent, useEffect, useState } from "react";
+import {
+  type CSSProperties,
+  type FormEvent as ReactFormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useState
+} from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { InitializeResult } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
@@ -9,17 +16,31 @@ export function SettingsView({
   running,
   showDebugControlsSetting,
   debugControlsEnabled,
+  sidebarWidth,
+  sidebarMinWidth,
+  sidebarMaxWidth,
+  resizingSidebar,
   onBack,
   onSave,
-  onDebugControlsChange
+  onDebugControlsChange,
+  onSidebarResizeStart,
+  onSidebarSeparatorKey,
+  onSidebarSeparatorDoubleClick
 }: {
   initialized?: InitializeResult;
   running: boolean;
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
+  sidebarWidth: number;
+  sidebarMinWidth: number;
+  sidebarMaxWidth: number;
+  resizingSidebar: boolean;
   onBack: () => void;
   onSave: (provider: string, model: string) => Promise<void>;
   onDebugControlsChange: (enabled: boolean) => void;
+  onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  onSidebarSeparatorDoubleClick: () => void;
 }): JSX.Element {
   const providers = initialized?.providers ?? [];
   const [providerDraft, setProviderDraft] = useState(initialized?.provider ?? "");
@@ -60,9 +81,12 @@ export function SettingsView({
     !providerDraft.trim() ||
     !modelDraft.trim() ||
     (providerDraft === initialized?.provider && modelDraft === initialized?.model);
+  const shellStyle = {
+    "--sidebar-width": `${sidebarWidth}px`
+  } as CSSProperties;
 
   return (
-    <div className="settings-shell">
+    <div className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
       <aside className="settings-sidebar">
         <div className="traffic-spacer" />
         <button className="settings-back-button" type="button" onClick={onBack}>
@@ -76,6 +100,19 @@ export function SettingsView({
           </button>
         </nav>
       </aside>
+      <div
+        className="sidebar-resizer settings-sidebar-resizer"
+        role="separator"
+        aria-label="调整设置侧边栏宽度"
+        aria-orientation="vertical"
+        aria-valuemin={sidebarMinWidth}
+        aria-valuemax={sidebarMaxWidth}
+        aria-valuenow={sidebarWidth}
+        tabIndex={0}
+        onPointerDown={onSidebarResizeStart}
+        onDoubleClick={onSidebarSeparatorDoubleClick}
+        onKeyDown={onSidebarSeparatorKey}
+      />
       <OverlayScrollbarsComponent
         element="main"
         className="settings-main"
