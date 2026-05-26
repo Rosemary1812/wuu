@@ -4,11 +4,7 @@ import {
   MessageResponse,
   type MessageResponseProps,
 } from '@/components/ai-elements/message'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   formatMessageFlowCommand,
   isMessageFlowFailedStatus,
@@ -195,7 +191,11 @@ export const AssistantProcess: FC<AssistantProcessProps> = ({
         ) : null}
         <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" />
       </CollapsibleTrigger>
-      <CollapsibleContent className="max-h-[1600px] overflow-hidden opacity-100 outline-none transition-[max-height,opacity,transform] duration-[260ms] ease-[cubic-bezier(0.16,1,0.3,1)] data-[state=closed]:max-h-0 data-[state=closed]:-translate-y-1 data-[state=open]:translate-y-0 data-[state=closed]:opacity-0">
+      <div
+        aria-hidden={!open}
+        className="max-h-[1600px] overflow-hidden opacity-100 outline-none transition-[max-height,opacity,transform] duration-[260ms] ease-[cubic-bezier(0.16,1,0.3,1)] data-[state=closed]:max-h-0 data-[state=closed]:-translate-y-1 data-[state=open]:translate-y-0 data-[state=closed]:opacity-0"
+        data-state={open ? 'open' : 'closed'}
+      >
         <div className="mt-2 space-y-2.5">
           {items.map((item) => {
             if (item.kind === 'text') {
@@ -212,7 +212,7 @@ export const AssistantProcess: FC<AssistantProcessProps> = ({
             return <ProcessToolRow key={item.id} tool={item.tool} />
           })}
         </div>
-      </CollapsibleContent>
+      </div>
     </Collapsible>
   )
 }

@@ -4410,6 +4410,18 @@ function TurnView({
     }
     const detailEntries = entries.filter((entry) => entry.kind !== "status");
     if (detailEntries.length === 0) {
+      if (!processAutoCollapse && turn.status === "in_progress") {
+        renderedItems.push(
+          <TurnProcessGroup
+            key={`${turn.id}-process-${renderedItems.length}`}
+            turn={turn}
+            entries={[]}
+            autoCollapse={false}
+            hasFinalText={turnHasAssistantOutput(turn)}
+          />
+        );
+        return;
+      }
       if (!processAutoCollapse) {
         const statusEntry = entries.find((entry) => entry.kind === "status");
         if (statusEntry) {
@@ -4511,9 +4523,10 @@ function TurnProcessGroup({
   const [expanded, setExpanded] = useState(!autoCollapse);
   const previousAutoCollapseRef = useRef(autoCollapse);
   const detailsID = `${turn.id}-process-details`;
+  const hasDetails = entries.length > 0;
   const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
     turn.status === "in_progress" ? " running" : ""
-  }`;
+  }${hasDetails ? "" : " no-details"}`;
   const processCount = entries.filter((entry) => entry.kind !== "status").length;
   const metaParts = turnProcessMetaParts(turn, processCount);
   const statusLabel =
@@ -4530,33 +4543,47 @@ function TurnProcessGroup({
     const previousAutoCollapse = previousAutoCollapseRef.current;
     previousAutoCollapseRef.current = autoCollapse;
     if (autoCollapse && !previousAutoCollapse) {
-      setExpanded(false);
+      const timer = window.setTimeout(() => setExpanded(false), 140);
+      return () => window.clearTimeout(timer);
     }
     if (!autoCollapse && previousAutoCollapse) {
       setExpanded(true);
     }
+    return undefined;
   }, [autoCollapse]);
+
+  const toggleContent = (
+    <>
+      <span className="turn-process-copy">
+        <span>{statusLabel}</span>
+        {metaParts.map((part) => (
+          <span key={part}>{part}</span>
+        ))}
+      </span>
+      {hasDetails ? <ChevronDown className="turn-process-chevron" size={15} /> : null}
+    </>
+  );
 
   return (
     <div className={className}>
-      <button
-        className="turn-process-toggle"
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={detailsID}
-        onClick={() => setExpanded((open) => !open)}
-      >
-        <span className="turn-process-copy">
-          <span>{statusLabel}</span>
-          {metaParts.map((part) => (
-            <span key={part}>{part}</span>
-          ))}
-        </span>
-        <ChevronDown className="turn-process-chevron" size={15} />
-      </button>
-      <div className="turn-process-details" id={detailsID} aria-hidden={!expanded}>
-        <div className="turn-process-stack">{entries.map((entry) => entry.element)}</div>
-      </div>
+      {hasDetails ? (
+        <button
+          className="turn-process-toggle"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={detailsID}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          {toggleContent}
+        </button>
+      ) : (
+        <div className="turn-process-toggle turn-process-toggle-static">{toggleContent}</div>
+      )}
+      {hasDetails ? (
+        <div className="turn-process-details" id={detailsID} aria-hidden={!expanded}>
+          <div className="turn-process-stack">{entries.map((entry) => entry.element)}</div>
+        </div>
+      ) : null}
     </div>
   );
 }

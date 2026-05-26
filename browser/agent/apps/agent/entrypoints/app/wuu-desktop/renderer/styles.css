@@ -5906,6 +5906,14 @@ button:disabled {
   outline: 0;
 }
 
+.turn-process-toggle-static {
+  cursor: default;
+}
+
+.turn-process-toggle-static:hover {
+  color: inherit;
+}
+
 .turn-process-toggle svg {
   flex: 0 0 auto;
   color: currentColor;
