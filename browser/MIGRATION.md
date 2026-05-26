@@ -336,6 +336,11 @@ Current packaging path:
   bundled BrowserOS resources from the copied Chromium app.
 - `WUU_BROWSER_PRODUCT_TEMP_PROFILE=1 make browser-launch-product` keeps the
   old isolated temporary profile behavior for clean smoke tests.
+- `make browser-migrate-doubao-profile` dry-runs the local Doubao credential
+  recovery path. `ARGS="--apply"` stops Wuu Browser, backs up the Wuu Browser
+  profile, copies Doubao cookie/password databases, and aligns the local Wuu
+  Browser Safe Storage keychain item with Doubao Safe Storage without printing
+  the keychain secret.
 - `make browser-launch-dev` prefers the repo-staged Wuu Browser Dev app before
   falling back to the external BrowserOS Chromium build.
 - `make browser-launch-dev` and `make browser-launch-product` now default to a

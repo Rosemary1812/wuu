@@ -198,6 +198,22 @@ local preview app directly uses the resources already embedded in that app
 bundle, so it can lag behind repository changes until a full Chromium
 rebuild/package refresh embeds those assets.
 
+If the local Doubao profile has browser login state that did not survive the
+current migration, inspect the recovery plan with:
+
+```bash
+make browser-migrate-doubao-profile
+```
+
+That command is dry-run by default. Applying it stops Wuu Browser, backs up the
+current Wuu Browser profile, copies Doubao's encrypted cookie/password
+databases, and copies the local Doubao Safe Storage keychain secret to Wuu
+Browser Safe Storage without printing the secret:
+
+```bash
+make browser-migrate-doubao-profile ARGS="--apply"
+```
+
 Do not treat auto-update as enabled unless the package command succeeds with
 `ARGS="--update-enabled"`. That gate intentionally fails while browser,
 extension, or server update feeds still point at BrowserOS infrastructure, or

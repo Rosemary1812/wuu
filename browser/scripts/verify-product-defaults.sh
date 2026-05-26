@@ -90,6 +90,7 @@ build_dev_script="${browser_dir}/scripts/build-dev.sh"
 build_agent_script="${browser_dir}/scripts/build-agent.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
 launch_product_script="${browser_dir}/scripts/launch-product.sh"
+migrate_doubao_profile_script="${browser_dir}/scripts/migrate-doubao-profile.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
 package_macos_script="${browser_dir}/scripts/package-macos.sh"
@@ -648,6 +649,31 @@ check_contains \
   "${makefile}" \
   'bash browser/scripts/launch-product.sh $(ARGS)' \
   "product preview launch can receive explicit script arguments"
+
+check_contains \
+  "${makefile}" \
+  "browser-migrate-doubao-profile:" \
+  "Makefile exposes the Doubao credential recovery entry point"
+
+check_contains \
+  "${makefile}" \
+  'bash browser/scripts/migrate-doubao-profile.sh $(ARGS)' \
+  "Doubao credential recovery can receive explicit script arguments"
+
+check_contains \
+  "${migrate_doubao_profile_script}" \
+  'mode=dry-run' \
+  "Doubao credential recovery is dry-run by default"
+
+check_contains \
+  "${migrate_doubao_profile_script}" \
+  'copy_keychain_secret' \
+  "Doubao credential recovery copies keychain data through a local helper"
+
+check_contains \
+  "${migrate_doubao_profile_script}" \
+  'cp -pR "${target_profile}" "${backup_profile}"' \
+  "Doubao credential recovery backs up the target Wuu Browser profile"
 
 check_contains \
   "${makefile}" \
