@@ -120,6 +120,14 @@ elif [[ "${dry_run}" == "true" ]]; then
   echo "Wuu macOS icon resources already match: ${app_path}"
 fi
 
+if [[ "${dry_run}" != "true" ]]; then
+  touch "${app_path}"
+  lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  if [[ -x "${lsregister}" ]]; then
+    "${lsregister}" -f "${app_path}" >/dev/null 2>&1 || true
+  fi
+fi
+
 if [[ "${sign_app}" == "true" && "${dry_run}" != "true" ]]; then
   if ! command -v codesign >/dev/null 2>&1; then
     echo "codesign is required to sign the staged app." >&2
