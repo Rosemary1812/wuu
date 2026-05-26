@@ -91,6 +91,7 @@ build_agent_script="${browser_dir}/scripts/build-agent.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
+package_macos_script="${browser_dir}/scripts/package-macos.sh"
 stage_macos_icons_script="${browser_dir}/scripts/stage-wuu-mac-icons.sh"
 agent_wxt_config="${browser_dir}/agent/apps/agent/wxt.config.ts"
 agent_app_html="${browser_dir}/agent/apps/agent/entrypoints/app/index.html"
@@ -614,6 +615,16 @@ check_contains \
 
 check_contains \
   "${makefile}" \
+  "browser-package-macos:" \
+  "Makefile exposes the Wuu Browser product package entry point"
+
+check_contains \
+  "${makefile}" \
+  'bash browser/scripts/package-macos.sh $(ARGS)' \
+  "product package can receive explicit script arguments"
+
+check_contains \
+  "${makefile}" \
   "browser-build-agent:" \
   "Makefile exposes the Wuu Browser agent asset build entry point"
 
@@ -701,6 +712,41 @@ check_contains \
   "${package_dev_macos_script}" \
   'stage-wuu-mac-icons.sh" "${output_app}"' \
   "macOS dev packaging stages Wuu icon resources"
+
+check_contains \
+  "${package_macos_script}" \
+  'plutil -replace CFBundleDisplayName -string "Wuu Browser"' \
+  "macOS product packaging applies Wuu Browser visible app name"
+
+check_contains \
+  "${package_macos_script}" \
+  'plutil -replace CFBundleIdentifier -string "com.wuu.browser"' \
+  "macOS product packaging applies Wuu Browser bundle id"
+
+check_contains \
+  "${package_macos_script}" \
+  '--allow-dev-source' \
+  "macOS product packaging requires an explicit flag for dev-source previews"
+
+check_contains \
+  "${package_macos_script}" \
+  '--update-enabled' \
+  "macOS product packaging has an explicit update-ready gate"
+
+check_contains \
+  "${package_macos_script}" \
+  'codesign_checked "codesign verification"' \
+  "macOS product packaging keeps successful signing output concise"
+
+check_contains \
+  "${package_macos_script}" \
+  'Move browser, extension, and server update feeds to Wuu-owned endpoints before using --update-enabled.' \
+  "macOS product packaging blocks BrowserOS update feeds for update-ready releases"
+
+check_contains \
+  "${package_macos_script}" \
+  'hdiutil create' \
+  "macOS product packaging can create a product DMG"
 
 check_contains \
   "${stage_macos_icons_script}" \

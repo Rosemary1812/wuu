@@ -318,6 +318,15 @@ Current packaging path:
   ad-hoc signs it for local launch.
 - `make browser-package-dev-macos ARGS="--dmg"` creates a local development
   DMG from the staged app.
+- `make browser-package-macos` stages `browser/out/Wuu Browser.app` with the
+  production bundle identifier `com.wuu.browser`. It refuses to use a dev source
+  app unless `ARGS="--allow-dev-source"` is passed, so production-named local
+  previews are explicit.
+- `make browser-package-macos ARGS="--dmg"` creates
+  `browser/out/Wuu Browser.dmg` for local install testing.
+- `make browser-package-macos ARGS="--update-enabled"` is the release readiness
+  gate. It fails while browser, extension, or server update feeds still point at
+  BrowserOS infrastructure or release signing inputs are missing.
 - `make browser-launch-dev` prefers the repo-staged Wuu Browser Dev app before
   falling back to the external BrowserOS Chromium build.
 - `make browser-launch-dev` now defaults to a single active dev browser by
@@ -327,6 +336,9 @@ Current packaging path:
 
 Remaining gap:
 
-- This is a development staging path, not the final signed/notarized release
-  pipeline. The internal executable/framework names can still inherit BrowserOS
-  until the Chromium branding patches are fully renamed.
+- The local production-named package is not the final update-ready release
+  pipeline by itself. A public release still needs Wuu-owned update feeds,
+  Sparkle-signed artifacts, Developer ID signing, and notarization. Internal
+  executable/framework names can still inherit BrowserOS or Dev from the source
+  Chromium build until the remaining Chromium branding patches are fully
+  renamed and rebuilt.

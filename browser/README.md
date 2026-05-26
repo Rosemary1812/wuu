@@ -165,6 +165,26 @@ outside the original Chromium `out/` directory. Add `ARGS="--dmg"` to also
 create a local development DMG. Some internal build-system executable/framework
 names may still inherit BrowserOS until the remaining build modules are renamed.
 
+Stage a production-named local macOS app:
+
+```bash
+make browser-package-macos
+make browser-package-macos ARGS="--dmg"
+```
+
+This creates `browser/out/Wuu Browser.app` and, with `--dmg`,
+`browser/out/Wuu Browser.dmg`. The default signing mode is ad-hoc, so the
+artifact is suitable for local install and smoke testing but is not a signed,
+notarized public release. If the only available Chromium source app is a dev
+build, pass `ARGS="--allow-dev-source"` to make that local preview explicit.
+
+Do not treat auto-update as enabled unless the package command succeeds with
+`ARGS="--update-enabled"`. That gate intentionally fails while browser,
+extension, or server update feeds still point at BrowserOS infrastructure, or
+while release signing inputs are missing. A true update-ready release needs
+Wuu-owned Sparkle appcasts, extension update manifests, server OTA feeds, and
+Developer ID signing/notarization.
+
 Verify the running dev browser, Wuu native runtime, prompt-to-turn startup,
 native project folder selection wiring, selected-project local file/Git/terminal
 operations, and first Browser Bridge tab observation/debug/action path:
@@ -203,5 +223,5 @@ the BrowserOS build order. It refuses to mutate a dirty Chromium checkout unless
    Browser Bridge tab create/activate/navigate/back/forward/reload/close/
    screenshot/snapshot/DOM/evaluate/console/network/click/type/scroll path
    green.
-6. Replace the temporary macOS dev staging path with signed release `.dmg`
-   packaging and add Windows installer outputs.
+6. Finish Wuu-owned update publishing, signed/notarized macOS release
+   packaging, and Windows installer outputs.
