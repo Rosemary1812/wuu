@@ -24,7 +24,8 @@ index 0000000000000..0adfaa4a8ac83
 +
 +namespace browseros {
 +
-+// Native action IDs for BrowserOS panels that need special treatment.
++// Native action IDs for legacy BrowserOS panels that need special treatment
++// when explicitly enabled for compatibility.
 +// These actions will:
 +// - Always be pinned (unless disabled via pref)
 +// - Show text labels (when enabled via pref)
@@ -33,7 +34,6 @@ index 0000000000000..0adfaa4a8ac83
 +    base::MakeFixedFlatSet<actions::ActionId>({
 +        kActionSidePanelShowThirdPartyLlm,
 +        kActionSidePanelShowClashOfGpts,
-+        kActionBrowserOSAgent,
 +    });
 +
 +// Check if an action ID is a BrowserOS action (native or extension).

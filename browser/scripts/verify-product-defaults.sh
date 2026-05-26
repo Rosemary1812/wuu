@@ -33,9 +33,42 @@ check_not_contains() {
   printf 'ok: %s\n' "${label}"
 }
 
+check_nearby_contains() {
+  local file="$1"
+  local anchor="$2"
+  local pattern="$3"
+  local label="$4"
+  if grep -F -A 4 -- "${anchor}" "${file}" | grep -Fq -- "${pattern}"; then
+    printf 'ok: %s\n' "${label}"
+    return
+  fi
+  printf 'fail: %s\n' "${label}" >&2
+  printf '  anchor: %s\n' "${anchor}" >&2
+  printf '  missing nearby pattern: %s\n' "${pattern}" >&2
+  failures=$((failures + 1))
+}
+
+check_file_absent() {
+  local file="$1"
+  local label="$2"
+  if [[ -e "${file}" ]]; then
+    printf 'fail: %s\n' "${label}" >&2
+    printf '  unexpected file: %s\n' "${file}" >&2
+    failures=$((failures + 1))
+    return
+  fi
+  printf 'ok: %s\n' "${label}"
+}
+
 first_run_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_browser_main.cc"
 routes_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_constants.h"
 content_browser_client_patch="${browser_dir}/chromium_patches/chrome/browser/chrome_content_browser_client.cc"
+browser_actions_patch="${browser_dir}/chromium_patches/chrome/browser/ui/browser_actions.cc"
+browseros_action_utils_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_action_utils.h"
+browseros_prefs_patch="${browser_dir}/chromium_patches/chrome/browser/browseros/core/browseros_prefs.cc"
+ui_features_patch="${browser_dir}/chromium_patches/chrome/browser/ui/ui_features.cc"
+customize_toolbar_handler_patch="${browser_dir}/chromium_patches/chrome/browser/ui/webui/side_panel/customize_chrome/customize_toolbar/customize_toolbar_handler.cc"
+customize_toolbar_mojom_patch="${browser_dir}/chromium_patches/chrome/browser/ui/webui/side_panel/customize_chrome/customize_toolbar/customize_toolbar.mojom"
 chromium_branding_debug="${browser_dir}/chromium_files/chrome/app/theme/chromium/BRANDING.debug"
 chromium_branding_release="${browser_dir}/chromium_files/chrome/app/theme/chromium/BRANDING.release"
 chromium_updater_branding="${browser_dir}/chromium_files/chrome/updater/branding.gni"
@@ -194,6 +227,56 @@ check_not_contains \
   "${agent_wxt_config}" \
   "default_title: 'Ask BrowserOS'" \
   "repo-owned extension action no longer exposes Ask BrowserOS"
+
+check_nearby_contains \
+  "${ui_features_patch}" \
+  "BASE_FEATURE(kThirdPartyLlmPanel," \
+  "base::FEATURE_DISABLED_BY_DEFAULT" \
+  "legacy BrowserOS Chat native toolbar feature is disabled by default"
+
+check_nearby_contains \
+  "${ui_features_patch}" \
+  "BASE_FEATURE(kClashOfGpts," \
+  "base::FEATURE_DISABLED_BY_DEFAULT" \
+  "legacy BrowserOS Council native toolbar feature is disabled by default"
+
+check_not_contains \
+  "${browser_actions_patch}" \
+  "kActionBrowserOSAgent" \
+  "Chromium native toolbar no longer registers the BrowserOS Assistant action"
+
+check_not_contains \
+  "${browser_actions_patch}" \
+  'SetText(u"Assistant")' \
+  "Chromium native toolbar no longer exposes Assistant text"
+
+check_not_contains \
+  "${browser_actions_patch}" \
+  "Ask BrowserOS" \
+  "Chromium native toolbar no longer exposes Ask BrowserOS tooltip"
+
+check_not_contains \
+  "${browseros_action_utils_patch}" \
+  "kActionBrowserOSAgent" \
+  "BrowserOS native action treatment no longer includes Assistant"
+
+check_contains \
+  "${browseros_prefs_patch}" \
+  "registry->RegisterBooleanPref(prefs::kShowLLMChat, false);" \
+  "legacy BrowserOS Chat toolbar visibility pref defaults off"
+
+check_contains \
+  "${browseros_prefs_patch}" \
+  "registry->RegisterBooleanPref(prefs::kShowLLMHub, false);" \
+  "legacy BrowserOS Council toolbar visibility pref defaults off"
+
+check_file_absent \
+  "${customize_toolbar_handler_patch}" \
+  "Chromium customize toolbar no longer exposes BrowserOS AI actions"
+
+check_file_absent \
+  "${customize_toolbar_mojom_patch}" \
+  "Chromium customize toolbar mojo no longer exposes BrowserOS AI action ids"
 
 check_contains \
   "${agent_app_html}" \

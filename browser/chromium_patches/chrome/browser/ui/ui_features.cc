@@ -8,11 +8,11 @@ index 45501ce4b433d..347348bcc362d 100644
  
 +BASE_FEATURE(kThirdPartyLlmPanel,
 +             "ThirdPartyLlmPanel",
-+             base::FEATURE_ENABLED_BY_DEFAULT);
++             base::FEATURE_DISABLED_BY_DEFAULT);
 +
 +BASE_FEATURE(kClashOfGpts,
 +             "ClashOfGpts",
-+             base::FEATURE_ENABLED_BY_DEFAULT);
++             base::FEATURE_DISABLED_BY_DEFAULT);
 +
  BASE_FEATURE(kTabDuplicateMetrics, base::FEATURE_ENABLED_BY_DEFAULT);
  

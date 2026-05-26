@@ -23,10 +23,10 @@ index 0000000000000..a94b14e0664ca
 +namespace prefs {
 +
 +// Toolbar visibility prefs
-+// Boolean: Show LLM Chat in toolbar (default: true)
++// Boolean: Show legacy BrowserOS LLM Chat in toolbar (default: false)
 +inline constexpr char kShowLLMChat[] = "browseros.show_llm_chat";
 +
-+// Boolean: Show LLM Hub in toolbar (default: true)
++// Boolean: Show legacy BrowserOS LLM Hub in toolbar (default: false)
 +inline constexpr char kShowLLMHub[] = "browseros.show_llm_hub";
 +
 +// Boolean: Show labels on BrowserOS toolbar actions (default: true)
@@ -76,7 +76,7 @@ index 0000000000000..a94b14e0664ca
 +
 +// Check if a toolbar action should be shown based on its visibility pref.
 +// Returns true if:
-+//   - Action has no visibility pref (e.g., Assistant - always visible)
++//   - Action has no visibility pref
 +//   - Action's visibility pref is true
 +// Returns false if action's visibility pref is false.
 +bool ShouldShowToolbarAction(actions::ActionId id, PrefService* pref_service);
