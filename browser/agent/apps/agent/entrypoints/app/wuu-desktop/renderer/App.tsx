@@ -4519,7 +4519,6 @@ function TurnProcessGroup({
         aria-controls={detailsID}
         onClick={() => setExpanded((open) => !open)}
       >
-        <ListIcon size={15} />
         <span className="turn-process-copy">
           <span>过程记录</span>
           {metaParts.map((part) => (
@@ -4559,30 +4558,15 @@ function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
   const liveNow = useLiveNow(liveDuration);
   const elapsedMs = completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
-  const showDuration = completedDuration !== undefined || liveDuration;
   const content = turnProgressContent(turn, elapsedMs);
-  const campaign =
-    ENABLE_TURN_PROGRESS_EXPERIMENT && liveDuration ? turnProgressCampaign(turn.id, elapsedMs) : undefined;
 
   return (
     <div
-      className={`turn-progress ${turn.status}${campaign ? " has-campaign" : ""}`}
+      className={`turn-progress ${turn.status}`}
       role={liveDuration ? "status" : undefined}
       aria-live={liveDuration ? "polite" : undefined}
     >
-      <div className="turn-progress-header">
-        <div className="turn-progress-label">
-          <Clock size={17} />
-          <span className="turn-progress-copy">
-            <span className="turn-progress-title">
-              <span>{content.label}</span>
-              {showDuration ? <span className="turn-progress-duration">{formatDuration(elapsedMs)}</span> : null}
-            </span>
-            {content.detail ? <span className="turn-progress-detail">{content.detail}</span> : null}
-          </span>
-        </div>
-      </div>
-      <div className="turn-progress-rule">{campaign ? <TurnProgressCampaignScene campaign={campaign} /> : null}</div>
+      <span className="turn-progress-title">{content.label}</span>
     </div>
   );
 }
@@ -4605,37 +4589,28 @@ function turnProgressContent(turn: Turn, elapsedMs: number): TurnProgressContent
       (item.status ?? "in_progress") === "in_progress"
   );
   if (runningTool) {
-    return { label: "正在处理", detail: `正在调用 ${readableToolName(runningTool.name)}` };
+    return { label: "正在处理" };
   }
 
   const latestItem = latestDebugItem(turn);
   if (!latestItem) {
-    return {
-      label: "正在思考",
-      detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应")
-    };
+    return { label: "正在思考", detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应") };
   }
   if (latestItem.type === "agent_message") {
     const hasText = debugStreamFieldLength(turn.id, latestItem, "text") > 0;
-    return {
-      label: hasText ? "正在生成回复" : "正在思考",
-      detail: hasText ? "正在输出回答" : waitingDetail(elapsedMs, "正在组织回答")
-    };
+    return { label: hasText ? "正在生成回复" : "正在思考", detail: hasText ? undefined : waitingDetail(elapsedMs, "正在组织回答") };
   }
   if (latestItem.type === "reasoning") {
-    return {
-      label: "正在思考",
-      detail: waitingDetail(elapsedMs, "正在组织回答")
-    };
+    return { label: "正在思考", detail: waitingDetail(elapsedMs, "正在组织回答") };
   }
   if (latestItem.type === "tool_call" || latestItem.type === "collab_agent_tool_call") {
-    return { label: "正在处理", detail: "工具已返回，正在整理结果" };
+    return { label: "正在处理" };
   }
   if (latestItem.type === "context_compaction") {
-    return { label: "正在处理", detail: "正在整理上下文" };
+    return { label: "正在处理" };
   }
   if (latestItem.type === "error") {
-    return { label: "正在处理", detail: "收到错误信息，正在收尾" };
+    return { label: "正在处理" };
   }
 
   return { label: "正在处理", detail: waitingDetail(elapsedMs, "请求正在处理中") };

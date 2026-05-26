@@ -4151,10 +4151,25 @@ button:disabled {
   animation: none;
 }
 
+@keyframes turn-text-sweep {
+  0% {
+    background-position: 160% 50%;
+  }
+
+  100% {
+    background-position: -60% 50%;
+  }
+}
+
 .turn-progress {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  margin: 6px 0 -2px;
+  color: #8d9296;
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+  line-height: 1.35;
 }
 
 .turn-progress-header {
@@ -4189,11 +4204,8 @@ button:disabled {
 }
 
 .turn-progress-title {
-  display: flex;
+  display: inline-block;
   min-width: 0;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 7px;
 }
 
 .turn-progress-duration {
@@ -4215,13 +4227,13 @@ button:disabled {
   background: #dedfdd;
 }
 
-.turn-progress.in_progress .turn-progress-label svg {
-  color: #718f86;
-  animation: thinking-icon-breathe 2200ms ease-in-out infinite;
-}
-
 .turn-progress.in_progress .turn-progress-title {
-  color: #5f746e;
+  background: linear-gradient(100deg, #7b8580 0%, #7b8580 34%, #202724 49%, #7b8580 64%, #7b8580 100%);
+  background-size: 220% 100%;
+  color: transparent;
+  animation: turn-text-sweep 2800ms linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
 }
 
 .turn-progress.in_progress.has-campaign .turn-progress-rule {
@@ -5920,6 +5932,15 @@ button:disabled {
 
 .turn-process-group.expanded .turn-process-chevron {
   transform: rotate(180deg);
+}
+
+.turn-process-group.running .turn-process-copy > span:first-child {
+  background: linear-gradient(100deg, #8f9498 0%, #8f9498 34%, #3f4744 49%, #8f9498 64%, #8f9498 100%);
+  background-size: 220% 100%;
+  color: transparent;
+  animation: turn-text-sweep 2800ms linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
 }
 
 .turn-process-details {
@@ -7953,6 +7974,8 @@ pre {
   .thread-row-loading,
   .thread-row.pending-switch::before,
   .turn-progress.in_progress .turn-progress-label svg,
+  .turn-progress.in_progress .turn-progress-title,
+  .turn-process-group.running .turn-process-copy > span:first-child,
   .turn-progress.in_progress .turn-progress-rule::after,
   .turn-progress-campaign,
   .turn-progress-scene,
@@ -7975,6 +7998,12 @@ pre {
   .turn-progress-campaign,
   .turn-progress-scene {
     display: none;
+  }
+
+  .turn-progress.in_progress .turn-progress-title,
+  .turn-process-group.running .turn-process-copy > span:first-child {
+    background: none;
+    color: #6f7478;
   }
 }
 
