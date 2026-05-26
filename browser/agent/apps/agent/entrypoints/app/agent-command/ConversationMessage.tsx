@@ -39,27 +39,52 @@ interface ConversationMessageProps {
 }
 
 interface AssistantRenderPlan {
-  processItems: ProcessItem[]
+  blocks: AssistantRenderBlock[]
   finalText: string
+  hasText: boolean
+  latestTextBlockId?: string
 }
 
-/**
- * Build the render plan for an assistant turn. Only the final text part is
- * treated as the answer; all reasoning, tools, and earlier text stay in the
- * collapsible process record.
- */
-function buildAssistantRenderPlan(
+type AssistantRenderBlock =
+  | {
+      id: string
+      kind: 'process'
+      items: ProcessItem[]
+    }
+  | {
+      id: string
+      kind: 'text'
+      text: string
+    }
+
+export function buildAssistantRenderPlan(
   turn: AgentConversationTurn,
+  liveTimeline: boolean,
 ): AssistantRenderPlan {
-  const processItems: ProcessItem[] = []
-  const finalTextIndex = messageFlowFinalTextIndex(turn.parts, (part) =>
-    part.kind === 'text' ? 'text' : 'process',
-  )
+  const blocks: AssistantRenderBlock[] = []
+  let pendingProcessItems: ProcessItem[] = []
+  const finalTextIndex = liveTimeline
+    ? -1
+    : messageFlowFinalTextIndex(turn.parts, (part) =>
+        part.kind === 'text' ? 'text' : 'process',
+      )
   let finalText = ''
+  let hasText = false
+  let latestTextBlockId: string | undefined
+
+  const flushProcessItems = () => {
+    if (pendingProcessItems.length === 0) return
+    blocks.push({
+      id: `${pendingProcessItems[0]?.id ?? blocks.length}-process`,
+      kind: 'process',
+      items: pendingProcessItems,
+    })
+    pendingProcessItems = []
+  }
 
   turn.parts.forEach((part, partIndex) => {
     if (part.kind === 'thinking') {
-      processItems.push({
+      pendingProcessItems.push({
         id: `${partIndex}-thinking`,
         kind: 'text',
         text: part.text,
@@ -69,10 +94,17 @@ function buildAssistantRenderPlan(
     }
 
     if (part.kind === 'text') {
+      hasText = hasText || part.text.trim().length > 0
+      if (liveTimeline || partIndex === finalTextIndex) {
+        flushProcessItems()
+        const id = `${partIndex}-text`
+        blocks.push({ id, kind: 'text', text: part.text })
+        latestTextBlockId = id
+      }
       if (partIndex === finalTextIndex) {
         finalText = part.text
-      } else {
-        processItems.push({
+      } else if (!liveTimeline) {
+        pendingProcessItems.push({
           id: `${partIndex}-text`,
           kind: 'text',
           text: part.text,
@@ -83,7 +115,7 @@ function buildAssistantRenderPlan(
     }
 
     if (part.kind === 'tool-batch') {
-      processItems.push(
+      pendingProcessItems.push(
         ...part.tools.map((tool) => ({
           id: `${partIndex}-${tool.id}`,
           kind: 'tool' as const,
@@ -93,7 +125,9 @@ function buildAssistantRenderPlan(
     }
   })
 
-  return { processItems, finalText }
+  flushProcessItems()
+
+  return { blocks, finalText, hasText, latestTextBlockId }
 }
 
 function toProcessTool(tool: ToolEntry) {
@@ -115,18 +149,25 @@ export const ConversationMessage: FC<ConversationMessageProps> = ({
   onOpenOutputsRail,
   stripOnly,
 }) => {
-  const { processItems, finalText } = useMemo(
-    () => buildAssistantRenderPlan(turn),
-    [turn],
-  )
   const isLiveStreaming = streaming && !turn.done
+  const { blocks, finalText, hasText, latestTextBlockId } = useMemo(
+    () => buildAssistantRenderPlan(turn, isLiveStreaming),
+    [isLiveStreaming, turn],
+  )
+  const latestText = useMemo(() => {
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const block = blocks[index]
+      if (block.kind === 'text') return block.text
+    }
+    return finalText
+  }, [blocks, finalText])
   const stalled = useStalledTextIndicator({
-    text: finalText,
+    text: latestText,
     streaming: isLiveStreaming,
     lastTextDeltaAt: turn.lastTextDeltaAt,
   })
   const hasAssistantContent =
-    !turn.done || processItems.length > 0 || finalText.trim().length > 0
+    !turn.done || blocks.length > 0 || finalText.trim().length > 0
 
   if (stripOnly) {
     if (!turn.producedFiles || turn.producedFiles.length === 0) return null
@@ -169,18 +210,34 @@ export const ConversationMessage: FC<ConversationMessageProps> = ({
       {hasAssistantContent ? (
         <Message from="assistant">
           <MessageContent className="w-full gap-3">
-            <AssistantProcess
-              done={turn.done}
-              hasFinalText={finalText.trim().length > 0}
-              items={processItems}
-              stalled={stalled}
-              streaming={isLiveStreaming}
-            />
-            <FinalAssistantText
-              stalled={stalled}
-              streaming={isLiveStreaming}
-              text={finalText}
-            />
+            {blocks.length === 0 && !turn.done ? (
+              <AssistantProcess
+                done={false}
+                hasFinalText={false}
+                items={[]}
+                stalled={stalled}
+                streaming={isLiveStreaming}
+              />
+            ) : null}
+            {blocks.map((block) =>
+              block.kind === 'process' ? (
+                <AssistantProcess
+                  key={block.id}
+                  done={turn.done}
+                  hasFinalText={hasText || finalText.trim().length > 0}
+                  items={block.items}
+                  stalled={stalled}
+                  streaming={isLiveStreaming}
+                />
+              ) : (
+                <FinalAssistantText
+                  key={block.id}
+                  stalled={stalled && block.id === latestTextBlockId}
+                  streaming={isLiveStreaming && block.id === latestTextBlockId}
+                  text={block.text}
+                />
+              ),
+            )}
           </MessageContent>
         </Message>
       ) : null}

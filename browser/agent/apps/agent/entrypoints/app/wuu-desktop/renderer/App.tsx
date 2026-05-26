@@ -4355,8 +4355,9 @@ function TurnView({
   const renderedItems: JSX.Element[] = [];
   let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
+  const liveTimeline = turn.status === "in_progress";
   const flowAgentMessageID =
-    turn.status === "completed" || turn.status === "in_progress" ? messageFlowAgentMessageItemID(turn) : undefined;
+    turn.status === "completed" ? messageFlowAgentMessageItemID(turn) : undefined;
   const actionableAgentMessageID = turn.status === "completed" ? flowAgentMessageID : undefined;
   const primaryAgentMessageID =
     flowAgentMessageID ??
@@ -4446,6 +4447,16 @@ function TurnView({
     if (item.type === "user_message") {
       flushProcessEntries();
       const rendered = renderThreadItem(item, false);
+      if (rendered) {
+        renderedItems.push(rendered);
+      }
+      continue;
+    }
+
+    if (liveTimeline && item.type === "agent_message") {
+      insertStatus();
+      flushProcessEntries();
+      const rendered = renderThreadItem(item, item.status === "in_progress");
       if (rendered) {
         renderedItems.push(rendered);
       }
