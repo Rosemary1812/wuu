@@ -343,10 +343,18 @@ const (
 	ThreadItemStatusFailed     ThreadItemStatus = "failed"
 )
 
+type ThreadItemPhase string
+
+const (
+	ThreadItemPhaseCommentary  ThreadItemPhase = "commentary"
+	ThreadItemPhaseFinalAnswer ThreadItemPhase = "final_answer"
+)
+
 type ThreadItem struct {
 	ID        string            `json:"id"`
 	Type      ThreadItemType    `json:"type"`
 	Status    ThreadItemStatus  `json:"status,omitempty"`
+	Phase     ThreadItemPhase   `json:"phase,omitempty"`
 	Role      string            `json:"role,omitempty"`
 	Text      string            `json:"text,omitempty"`
 	Images    []ThreadItemImage `json:"images,omitempty"`

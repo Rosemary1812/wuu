@@ -4355,14 +4355,16 @@ function TurnView({
   const renderedItems: JSX.Element[] = [];
   let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
-  const liveTimeline = turn.status === "in_progress";
+  const explicitFinalAgentMessageID = explicitFinalAgentMessageItemID(turn);
+  const liveFinalAgentMessageID = turn.status === "in_progress" ? explicitFinalAgentMessageID : undefined;
+  const liveTimeline = turn.status === "in_progress" && liveFinalAgentMessageID === undefined;
   const flowAgentMessageID =
-    turn.status === "completed" ? messageFlowAgentMessageItemID(turn) : undefined;
+    liveFinalAgentMessageID ?? (turn.status === "completed" ? messageFlowAgentMessageItemID(turn) : undefined);
   const actionableAgentMessageID = turn.status === "completed" ? flowAgentMessageID : undefined;
   const primaryAgentMessageID =
     flowAgentMessageID ??
     (turn.status === "failed" || turn.status === "interrupted" ? latestAgentMessageItemIDForTurn(turn) : undefined);
-  const processAutoCollapse = turn.status === "completed" && actionableAgentMessageID !== undefined;
+  const processAutoCollapse = liveFinalAgentMessageID !== undefined || (turn.status === "completed" && actionableAgentMessageID !== undefined);
 
   function renderThreadItem(item: ThreadItem, streaming: boolean): JSX.Element | null {
     return (
@@ -4720,6 +4722,11 @@ function latestAgentMessageItemIDForTurn(turn: Turn): string | undefined {
 }
 
 function messageFlowAgentMessageItemID(turn: Turn): string | undefined {
+  const explicitFinalID = explicitFinalAgentMessageItemID(turn);
+  if (explicitFinalID) {
+    return explicitFinalID;
+  }
+
   const finalIndex = messageFlowFinalTextIndex(turn.items, (item) => {
     if (item.type === "agent_message") {
       return streamFieldValue(turn.id, item, "text").trim().length > 0 ? "text" : "ignore";
@@ -4736,6 +4743,19 @@ function messageFlowAgentMessageItemID(turn: Turn): string | undefined {
   });
 
   return finalIndex >= 0 ? turn.items[finalIndex]?.id : undefined;
+}
+
+function explicitFinalAgentMessageItemID(turn: Turn): string | undefined {
+  for (let itemIndex = turn.items.length - 1; itemIndex >= 0; itemIndex--) {
+    const item = turn.items[itemIndex];
+    if (item.type !== "agent_message" || item.phase !== "final_answer") {
+      continue;
+    }
+    if (streamFieldValue(turn.id, item, "text").trim().length > 0) {
+      return item.id;
+    }
+  }
+  return undefined;
 }
 
 function ThreadItemView({

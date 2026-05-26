@@ -234,6 +234,7 @@ export type ThreadItemType =
   | "context_compaction"
   | "error";
 export type ThreadItemStatus = "in_progress" | "completed" | "failed";
+export type ThreadItemPhase = "commentary" | "final_answer";
 
 export type Agent = {
   id: string;
@@ -289,6 +290,7 @@ export type ThreadItem = {
   id: string;
   type: ThreadItemType;
   status?: ThreadItemStatus;
+  phase?: ThreadItemPhase;
   role?: string;
   text?: string;
   images?: InputImage[];
