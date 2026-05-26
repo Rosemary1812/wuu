@@ -128,19 +128,21 @@ type Client interface {
 type StreamEventType string
 
 const (
-	EventContentDelta  StreamEventType = "content_delta"
-	EventThinkingDelta StreamEventType = "thinking_delta"
-	EventThinkingDone  StreamEventType = "thinking_done"
-	EventToolUseStart  StreamEventType = "tool_use_start"
-	EventToolUseDelta  StreamEventType = "tool_use_delta"
-	EventToolUseEnd    StreamEventType = "tool_use_end"
-	EventPlanUpdate    StreamEventType = "plan_update"
-	EventMessage       StreamEventType = "message"
-	EventLifecycle     StreamEventType = "lifecycle"
-	EventReconnect     StreamEventType = "reconnect"
-	EventCompact       StreamEventType = "compact"
-	EventDone          StreamEventType = "done"
-	EventError         StreamEventType = "error"
+	EventContentDelta    StreamEventType = "content_delta"
+	EventContentReplace  StreamEventType = "content_replace"
+	EventThinkingDelta   StreamEventType = "thinking_delta"
+	EventThinkingReplace StreamEventType = "thinking_replace"
+	EventThinkingDone    StreamEventType = "thinking_done"
+	EventToolUseStart    StreamEventType = "tool_use_start"
+	EventToolUseDelta    StreamEventType = "tool_use_delta"
+	EventToolUseEnd      StreamEventType = "tool_use_end"
+	EventPlanUpdate      StreamEventType = "plan_update"
+	EventMessage         StreamEventType = "message"
+	EventLifecycle       StreamEventType = "lifecycle"
+	EventReconnect       StreamEventType = "reconnect"
+	EventCompact         StreamEventType = "compact"
+	EventDone            StreamEventType = "done"
+	EventError           StreamEventType = "error"
 )
 
 // StreamLifecyclePhase is the structured state of the live response transport.

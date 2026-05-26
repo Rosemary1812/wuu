@@ -1,29 +1,23 @@
 import { describe, expect, it } from "bun:test";
-import { mergeStreamDelta } from "./StreamText";
+import { streamTextKey, streamTextStore } from "./StreamText";
 
-describe("mergeStreamDelta", () => {
-  it("keeps plain incremental deltas intact", () => {
-    expect(mergeStreamDelta("中国", "国旗").value).toBe("中国国旗");
+describe("streamTextStore", () => {
+  it("appends plain incremental deltas", () => {
+    const key = streamTextKey("turn-append", "item", "text");
+    streamTextStore.set(key, "");
+    streamTextStore.append(key, "中国");
+    streamTextStore.append(key, "国旗");
+
+    expect(streamTextStore.get(key)).toBe("中国国旗");
   });
 
-  it("replaces the buffer when the delta is a cumulative snapshot", () => {
-    expect(mergeStreamDelta("午后", "午后的光")).toEqual({
-      value: "午后的光",
-      mode: "overlap"
-    });
-  });
+  it("uses explicit replacement events to reset streamed text", () => {
+    const key = streamTextKey("turn-replace", "item", "text");
+    streamTextStore.set(key, "");
+    streamTextStore.append(key, "old partial");
+    streamTextStore.set(key, "");
+    streamTextStore.append(key, "new response");
 
-  it("deduplicates overlapping cumulative fragments during a stream", () => {
-    let merged = mergeStreamDelta("", "午后的光落在窗");
-    merged = mergeStreamDelta(merged.value, "后的光落在窗边，", merged.mode);
-    merged = mergeStreamDelta(merged.value, "边，杯里的", merged.mode);
-    merged = mergeStreamDelta(merged.value, "里的茶", merged.mode);
-    merged = mergeStreamDelta(merged.value, "茶慢慢", merged.mode);
-    merged = mergeStreamDelta(merged.value, "慢慢变凉。", merged.mode);
-
-    expect(merged).toEqual({
-      value: "午后的光落在窗边，杯里的茶慢慢变凉。",
-      mode: "overlap"
-    });
+    expect(streamTextStore.get(key)).toBe("new response");
   });
 });

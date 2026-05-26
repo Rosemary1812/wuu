@@ -535,6 +535,33 @@ func (s *streamStep) runStreamWithReconnect(
 		})
 	}
 
+	resetPartialOutput := func() {
+		hadContent := contentBuf.Len() > 0
+		hadThinking := thinkingBuf.Len() > 0
+		if !hadContent && !hadThinking && len(*reasoningBlocks) == 0 {
+			return
+		}
+		contentBuf.Reset()
+		thinkingBuf.Reset()
+		*reasoningBlocks = nil
+		*usage = nil
+		*stopReason = ""
+		*truncated = false
+		if onEvent == nil {
+			return
+		}
+		if hadContent {
+			onEvent(providers.StreamEvent{
+				Type: providers.EventContentReplace,
+			})
+		}
+		if hadThinking {
+			onEvent(providers.StreamEvent{
+				Type: providers.EventThinkingReplace,
+			})
+		}
+	}
+
 	reconnect := func(err error) (delay time.Duration, ok bool) {
 		if reconnectStart.IsZero() {
 			reconnectStart = time.Now()
@@ -602,6 +629,7 @@ func (s *streamStep) runStreamWithReconnect(
 					if waitErr := waitWithContext(ctx, delay); waitErr != nil {
 						return waitErr
 					}
+					resetPartialOutput()
 					continue
 				}
 			}
@@ -697,6 +725,7 @@ func (s *streamStep) runStreamWithReconnect(
 				if waitErr := waitWithContext(ctx, delay); waitErr != nil {
 					return waitErr
 				}
+				resetPartialOutput()
 				continue
 			}
 		}

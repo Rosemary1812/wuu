@@ -121,6 +121,29 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 				Delta:    ev.Content,
 			},
 		})
+	case providers.EventContentReplace:
+		if th.activeAgentItemID == "" && ev.Content == "" {
+			return nil
+		}
+		phase := ThreadItemPhase("")
+		if th.turnHasPriorProcessLocked(turnID) {
+			phase = ThreadItemPhaseFinalAnswer
+		}
+		item, started := th.ensureActiveAgentItemLocked(turnID, now, phase)
+		if started {
+			out = append(out, itemStarted(th.ID, turnID, item, now))
+		}
+		item.Text = ev.Content
+		th.upsertItemLocked(turnID, item, now)
+		out = append(out, outboundNotification{
+			method: NotificationAgentMessageReplace,
+			params: AgentMessageReplaceNotification{
+				ThreadID: th.ID,
+				TurnID:   turnID,
+				ItemID:   item.ID,
+				Text:     ev.Content,
+			},
+		})
 	case providers.EventThinkingDelta:
 		if ev.Content == "" {
 			return nil
@@ -138,6 +161,25 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 				TurnID:   turnID,
 				ItemID:   item.ID,
 				Delta:    ev.Content,
+			},
+		})
+	case providers.EventThinkingReplace:
+		if th.activeReasoningItemID == "" && ev.Content == "" {
+			return nil
+		}
+		item, started := th.ensureActiveReasoningItemLocked(turnID, now)
+		if started {
+			out = append(out, itemStarted(th.ID, turnID, item, now))
+		}
+		item.Text = ev.Content
+		th.upsertItemLocked(turnID, item, now)
+		out = append(out, outboundNotification{
+			method: NotificationReasoningReplace,
+			params: ReasoningReplaceNotification{
+				ThreadID: th.ID,
+				TurnID:   turnID,
+				ItemID:   item.ID,
+				Text:     ev.Content,
 			},
 		})
 	case providers.EventThinkingDone:

@@ -27,13 +27,15 @@ const (
 	StreamEnd   EventType = "stream_end"
 
 	// Content
-	TextDelta     EventType = "text_delta"
-	ThinkingDelta EventType = "thinking_delta"
-	ThinkingDone  EventType = "thinking_done"
-	ToolCallStart EventType = "tool_call_start"
-	ToolCallDelta EventType = "tool_call_delta"
-	ToolCallEnd   EventType = "tool_call_end"
-	Message       EventType = "message"
+	TextDelta       EventType = "text_delta"
+	TextReplace     EventType = "text_replace"
+	ThinkingDelta   EventType = "thinking_delta"
+	ThinkingReplace EventType = "thinking_replace"
+	ThinkingDone    EventType = "thinking_done"
+	ToolCallStart   EventType = "tool_call_start"
+	ToolCallDelta   EventType = "tool_call_delta"
+	ToolCallEnd     EventType = "tool_call_end"
+	Message         EventType = "message"
 
 	// Lifecycle / system
 	Lifecycle EventType = "lifecycle"
@@ -134,8 +136,12 @@ func AdaptStreamEvent(se providers.StreamEvent) Event {
 	switch se.Type {
 	case providers.EventContentDelta:
 		return Event{Type: TextDelta, Content: se.Content}
+	case providers.EventContentReplace:
+		return Event{Type: TextReplace, Content: se.Content}
 	case providers.EventThinkingDelta:
 		return Event{Type: ThinkingDelta, Content: se.Content}
+	case providers.EventThinkingReplace:
+		return Event{Type: ThinkingReplace, Content: se.Content}
 	case providers.EventThinkingDone:
 		return Event{Type: ThinkingDone, Content: se.Content}
 	case providers.EventToolUseStart:
@@ -167,8 +173,12 @@ func ToStreamEvent(ev Event) providers.StreamEvent {
 	switch ev.Type {
 	case TextDelta:
 		return providers.StreamEvent{Type: providers.EventContentDelta, Content: ev.Content}
+	case TextReplace:
+		return providers.StreamEvent{Type: providers.EventContentReplace, Content: ev.Content}
 	case ThinkingDelta:
 		return providers.StreamEvent{Type: providers.EventThinkingDelta, Content: ev.Content}
+	case ThinkingReplace:
+		return providers.StreamEvent{Type: providers.EventThinkingReplace, Content: ev.Content}
 	case ThinkingDone:
 		return providers.StreamEvent{Type: providers.EventThinkingDone, Content: ev.Content}
 	case ToolCallStart:

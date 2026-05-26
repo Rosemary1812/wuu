@@ -3,49 +3,10 @@ import { useEffect, useRef } from "react";
 export type StreamTextField = "text" | "arguments" | "result";
 
 type StreamTextListener = (value: string) => void;
-type StreamDeltaMode = "overlap";
-
-export function mergeStreamDelta(
-  current: string,
-  delta: string,
-  mode?: StreamDeltaMode
-): { value: string; mode?: StreamDeltaMode } {
-  if (!delta) {
-    return { value: current, mode };
-  }
-  if (!current) {
-    return { value: delta, mode };
-  }
-  if (delta.startsWith(current)) {
-    return { value: delta, mode: "overlap" };
-  }
-  if (mode === "overlap" && current.startsWith(delta)) {
-    return { value: current, mode };
-  }
-
-  const overlap = longestSuffixPrefixOverlap(current, delta);
-  const minimumOverlap = mode === "overlap" ? 1 : 2;
-  if (overlap >= minimumOverlap && overlap < delta.length) {
-    return { value: `${current}${delta.slice(overlap)}`, mode: "overlap" };
-  }
-
-  return { value: `${current}${delta}`, mode };
-}
-
-function longestSuffixPrefixOverlap(current: string, delta: string): number {
-  const max = Math.min(current.length, delta.length);
-  for (let length = max; length > 0; length -= 1) {
-    if (current.endsWith(delta.slice(0, length))) {
-      return length;
-    }
-  }
-  return 0;
-}
 
 class StreamTextStore {
   private values = new Map<string, string>();
   private seeds = new Map<string, string>();
-  private deltaModes = new Map<string, StreamDeltaMode>();
   private listeners = new Map<string, Set<StreamTextListener>>();
 
   key(turnID: string, itemID: string, field: StreamTextField): string {
@@ -74,7 +35,6 @@ class StreamTextStore {
 
   set(key: string, value: string): void {
     this.ensureSeed(key);
-    this.deltaModes.delete(key);
     this.values.set(key, value);
     this.notify(key, value);
   }
@@ -84,11 +44,7 @@ class StreamTextStore {
       return;
     }
     this.ensureSeed(key);
-    const merged = mergeStreamDelta(this.values.get(key) ?? "", delta, this.deltaModes.get(key));
-    if (merged.mode) {
-      this.deltaModes.set(key, merged.mode);
-    }
-    const value = merged.value;
+    const value = `${this.values.get(key) ?? ""}${delta}`;
     this.values.set(key, value);
     this.notify(key, value);
   }
@@ -98,7 +54,6 @@ class StreamTextStore {
       const key = this.key(turnID, itemID, field);
       this.values.delete(key);
       this.seeds.delete(key);
-      this.deltaModes.delete(key);
       this.listeners.delete(key);
     }
   }

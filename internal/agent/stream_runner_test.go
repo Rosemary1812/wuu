@@ -333,8 +333,7 @@ func TestStreamRunner_RetryOnMidStreamError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	// Content from both attempts is accumulated (no truncation on retry).
-	if result != "partialrecovered" {
+	if result != "recovered" {
 		t.Fatalf("unexpected result: %q", result)
 	}
 	if len(reconnectMsgs) != 1 {
@@ -575,13 +574,22 @@ func TestStreamRunner_RetryAfterPartialOutput(t *testing.T) {
 		StreamRetryInitialDelay: time.Millisecond,
 		StreamRetryMaxDelay:     2 * time.Millisecond,
 	}
+	var contentEvents []providers.StreamEvent
+	runner.OnEvent = func(event providers.StreamEvent) {
+		if event.Type == providers.EventContentDelta || event.Type == providers.EventContentReplace {
+			contentEvents = append(contentEvents, event)
+		}
+	}
 
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != "partialsecond" {
+	if result != "second" {
 		t.Fatalf("unexpected result: %q", result)
+	}
+	if got := streamContentEventSummary(contentEvents); got != "content_delta:partial,content_replace:,content_delta:second" {
+		t.Fatalf("unexpected content event sequence: %s", got)
 	}
 	if client.callCount != 2 {
 		t.Fatalf("expected reconnect after partial output, got %d attempts", client.callCount)
@@ -612,17 +620,34 @@ func TestStreamRunner_RetryIncompleteStreamAfterPartialOutput(t *testing.T) {
 		StreamRetryInitialDelay: time.Millisecond,
 		StreamRetryMaxDelay:     2 * time.Millisecond,
 	}
+	var contentEvents []providers.StreamEvent
+	runner.OnEvent = func(event providers.StreamEvent) {
+		if event.Type == providers.EventContentDelta || event.Type == providers.EventContentReplace {
+			contentEvents = append(contentEvents, event)
+		}
+	}
 
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != "partialsecond" {
+	if result != "second" {
 		t.Fatalf("unexpected result: %q", result)
+	}
+	if got := streamContentEventSummary(contentEvents); got != "content_delta:partial,content_replace:,content_delta:second" {
+		t.Fatalf("unexpected content event sequence: %s", got)
 	}
 	if client.callCount != 2 {
 		t.Fatalf("expected reconnect after partial output, got %d attempts", client.callCount)
 	}
+}
+
+func streamContentEventSummary(events []providers.StreamEvent) string {
+	parts := make([]string, 0, len(events))
+	for _, event := range events {
+		parts = append(parts, fmt.Sprintf("%s:%s", event.Type, event.Content))
+	}
+	return strings.Join(parts, ",")
 }
 
 func TestStreamRunner_AcceptsHistory(t *testing.T) {

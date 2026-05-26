@@ -3669,11 +3669,23 @@ function handleStreamingNotification(event: ServerEvent, state: AppState): Strea
       }
       appendStreamDelta(params, "text");
       return "stream";
+    case "item/agentMessage/replace":
+      if (!notificationTargetsActiveThread(params, state)) {
+        return "skip";
+      }
+      replaceStreamText(params, "text");
+      return "stream";
     case "item/reasoning/delta":
       if (!notificationTargetsActiveThread(params, state)) {
         return "skip";
       }
       appendStreamDelta(params, "text");
+      return "stream";
+    case "item/reasoning/replace":
+      if (!notificationTargetsActiveThread(params, state)) {
+        return "skip";
+      }
+      replaceStreamText(params, "text");
       return "stream";
     case "item/toolCall/delta":
       if (!notificationTargetsActiveThread(params, state)) {
@@ -3720,6 +3732,16 @@ function appendStreamDelta(params: Record<string, unknown> | undefined, field: S
     return;
   }
   streamTextStore.append(streamTextKey(turnID, itemID, field), delta);
+}
+
+function replaceStreamText(params: Record<string, unknown> | undefined, field: StreamTextField): void {
+  const turnID = params?.turn_id as string | undefined;
+  const itemID = params?.item_id as string | undefined;
+  const text = params?.text;
+  if (!turnID || !itemID || typeof text !== "string") {
+    return;
+  }
+  streamTextStore.set(streamTextKey(turnID, itemID, field), text);
 }
 
 function syncStreamItem(params: Record<string, unknown> | undefined): void {
@@ -3796,8 +3818,12 @@ function reduceNotification(state: AppState, notification: AppServerNotification
     }
     case "item/agentMessage/delta":
       return applyDelta(state, params, "text");
+    case "item/agentMessage/replace":
+      return applyReplace(state, params, "text");
     case "item/reasoning/delta":
       return applyDelta(state, params, "text");
+    case "item/reasoning/replace":
+      return applyReplace(state, params, "text");
     case "item/toolCall/delta":
       return applyDelta(state, params, "arguments");
     case "item/toolCall/outputDelta":
@@ -3831,6 +3857,22 @@ function applyDelta(state: AppState, params: Record<string, unknown> | undefined
     updateTurnItem(thread, turnID, itemID, (item) => ({
       ...item,
       [field]: `${item[field] ?? ""}${delta}`
+    }))
+  );
+}
+
+function applyReplace(state: AppState, params: Record<string, unknown> | undefined, field: "text" | "arguments" | "result"): AppState {
+  const threadID = threadIDFromParams(params);
+  const turnID = params?.turn_id as string | undefined;
+  const itemID = params?.item_id as string | undefined;
+  const text = params?.text;
+  if (!turnID || !itemID || typeof text !== "string") {
+    return state;
+  }
+  return updateThreadByID(state, threadID, (thread) =>
+    updateTurnItem(thread, turnID, itemID, (item) => ({
+      ...item,
+      [field]: text
     }))
   );
 }

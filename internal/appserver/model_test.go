@@ -62,6 +62,39 @@ func TestThreadStateCompletesPreambleBeforeToolStart(t *testing.T) {
 	}
 }
 
+func TestThreadStateReplacesActiveAgentMessageText(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:    providers.EventContentDelta,
+		Content: "stale partial",
+	}, now)
+	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventContentReplace,
+	}, now)
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:    providers.EventContentDelta,
+		Content: "fresh answer",
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 {
+		t.Fatalf("expected user and active assistant item, got %+v", turn.Items)
+	}
+	if turn.Items[1].Text != "fresh answer" {
+		t.Fatalf("expected stale text to be replaced before new deltas, got %q", turn.Items[1].Text)
+	}
+	if len(out) != 1 || out[0].method != NotificationAgentMessageReplace {
+		t.Fatalf("expected replace notification, got %+v", out)
+	}
+	params, ok := out[0].params.(AgentMessageReplaceNotification)
+	if !ok || params.Text != "" || params.ItemID != turn.Items[1].ID {
+		t.Fatalf("unexpected replace params: %#v", out[0].params)
+	}
+}
+
 func TestThreadStateMarksPostToolTextAsFinalPhaseOnFirstDelta(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)

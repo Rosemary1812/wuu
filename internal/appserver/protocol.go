@@ -35,14 +35,16 @@ const (
 	NotificationTurnError     = "turn/error"
 	NotificationTurnCompleted = "turn/completed"
 
-	NotificationItemStarted       = "item/started"
-	NotificationItemCompleted     = "item/completed"
-	NotificationAgentMessageDelta = "item/agentMessage/delta"
-	NotificationReasoningDelta    = "item/reasoning/delta"
-	NotificationToolCallDelta     = "item/toolCall/delta"
-	NotificationToolCallOutput    = "item/toolCall/outputDelta"
-	NotificationAgentUpdated      = "agent/updated"
-	NotificationAgentMailbox      = "agent/mailbox"
+	NotificationItemStarted         = "item/started"
+	NotificationItemCompleted       = "item/completed"
+	NotificationAgentMessageDelta   = "item/agentMessage/delta"
+	NotificationAgentMessageReplace = "item/agentMessage/replace"
+	NotificationReasoningDelta      = "item/reasoning/delta"
+	NotificationReasoningReplace    = "item/reasoning/replace"
+	NotificationToolCallDelta       = "item/toolCall/delta"
+	NotificationToolCallOutput      = "item/toolCall/outputDelta"
+	NotificationAgentUpdated        = "agent/updated"
+	NotificationAgentMailbox        = "agent/mailbox"
 )
 
 type Request struct {
@@ -390,11 +392,25 @@ type AgentMessageDeltaNotification struct {
 	Delta    string `json:"delta"`
 }
 
+type AgentMessageReplaceNotification struct {
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id"`
+	ItemID   string `json:"item_id"`
+	Text     string `json:"text"`
+}
+
 type ReasoningDeltaNotification struct {
 	ThreadID string `json:"thread_id"`
 	TurnID   string `json:"turn_id"`
 	ItemID   string `json:"item_id"`
 	Delta    string `json:"delta"`
+}
+
+type ReasoningReplaceNotification struct {
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id"`
+	ItemID   string `json:"item_id"`
+	Text     string `json:"text"`
 }
 
 type ToolCallDeltaNotification struct {
