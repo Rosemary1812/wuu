@@ -15,7 +15,7 @@ index 0490e6c682dfd..6060a47048cac 100644
  
    html_source->AddString("aboutBrowserVersion", browser_version);
 +  html_source->AddString(
-+      "aboutBrowserOSVersion",
++      "aboutWuuVersion",
 +      base::UTF8ToUTF16(
 +          std::string(version_info::GetBrowserOSVersionNumber())));
    html_source->AddString(
