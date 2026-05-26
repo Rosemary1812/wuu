@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ServerEvent, WindowResizeState, WuuDesktopApi } from "../shared/protocol";
+import type { ServerEvent, WindowResizeState, WuuDesktopApi } from "../../../browser/agent/packages/workbench-ui/src/shared/protocol";
 
 const api: WuuDesktopApi = {
   listProjects: () => ipcRenderer.invoke("wuu:project-list"),

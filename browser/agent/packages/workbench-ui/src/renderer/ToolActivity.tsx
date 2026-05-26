@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatMessageFlowCommand } from "../../../../lib/message-flow-display";
+import { formatMessageFlowCommand } from "../message-flow-display";
 import type { ThreadItem } from "../shared/protocol";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
 

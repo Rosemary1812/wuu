@@ -10,8 +10,8 @@
     "includes": [
       "**",
       "!**/apps/eval/src/dashboard/index.html",
-      "!apps/agent/entrypoints/app/wuu-desktop/renderer",
-      "!apps/agent/entrypoints/app/wuu-desktop/shared/protocol.ts"
+      "!packages/workbench-ui/src/renderer",
+      "!packages/workbench-ui/src/shared/protocol.ts"
     ]
   },
   "formatter": {

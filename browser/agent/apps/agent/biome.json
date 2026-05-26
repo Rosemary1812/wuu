@@ -9,11 +9,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": [
-      "**",
-      "!entrypoints/app/wuu-desktop/renderer",
-      "!entrypoints/app/wuu-desktop/shared/protocol.ts"
-    ]
+    "includes": ["**"]
   },
   "formatter": {
     "enabled": true,

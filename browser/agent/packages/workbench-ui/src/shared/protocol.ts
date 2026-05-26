@@ -65,6 +65,15 @@ export type ConfigCodexModelsResult = {
   models: CodexModelSummary[];
 };
 
+export type BrowserSettingsResult = {
+  vertical_tabs_supported: boolean;
+  vertical_tabs_enabled: boolean;
+};
+
+export type BrowserSettingsUpdate = {
+  vertical_tabs_enabled?: boolean;
+};
+
 export type DesktopProject = {
   id: string;
   name: string;
@@ -367,6 +376,8 @@ export type WuuDesktopApi = {
   initialize: () => Promise<InitializeResult>;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
   updateRuntimeSettings: (provider: string, model: string, effort?: string) => Promise<ConfigModelUpdateResult>;
+  loadBrowserSettings?: () => Promise<BrowserSettingsResult>;
+  updateBrowserSettings?: (settings: BrowserSettingsUpdate) => Promise<BrowserSettingsResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

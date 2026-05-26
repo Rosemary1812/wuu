@@ -69,6 +69,10 @@ import type {
   Turn
 } from "../shared/protocol";
 import {
+  messageFlowFinalTextIndex,
+  messageFlowStatusLabel
+} from "../message-flow-display";
+import {
   AnsweredAskUserMessage,
   AskUserMessage,
   type AnsweredAskRequestState,
@@ -277,6 +281,7 @@ const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 type SidebarResizeSession = {
   startX: number;
   startWidth: number;
+  allowCollapse: boolean;
 };
 
 type RightPanelResizeSession = {
@@ -766,7 +771,12 @@ export function App(): JSX.Element {
       if (!session) {
         return;
       }
-      applySidebarWidth(session.startWidth + event.clientX - session.startX);
+      const nextWidth = session.startWidth + event.clientX - session.startX;
+      if (session.allowCollapse) {
+        applySidebarWidth(nextWidth);
+        return;
+      }
+      applySettingsSidebarWidth(nextWidth);
     }
 
     function handlePointerUp(): void {
@@ -972,6 +982,10 @@ export function App(): JSX.Element {
     setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
   }
 
+  function applySettingsSidebarWidth(nextWidth: number): void {
+    setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+  }
+
   function startSidebarMotion(): void {
     if (sidebarMotionTimerRef.current !== undefined) {
       window.clearTimeout(sidebarMotionTimerRef.current);
@@ -1074,7 +1088,22 @@ export function App(): JSX.Element {
     event.preventDefault();
     resizeSessionRef.current = {
       startX: event.clientX,
-      startWidth: sidebarCollapsed ? 0 : sidebarWidth
+      startWidth: sidebarCollapsed ? 0 : sidebarWidth,
+      allowCollapse: true
+    };
+    setProjectMenuOpen(false);
+    setResizingSidebar(true);
+  }
+
+  function startSettingsSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    resizeSessionRef.current = {
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+      allowCollapse: false
     };
     setProjectMenuOpen(false);
     setResizingSidebar(true);
@@ -1387,6 +1416,32 @@ export function App(): JSX.Element {
       }
       applySidebarWidth(sidebarWidth + SIDEBAR_STEP);
     }
+  }
+
+  function handleSettingsSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      applySettingsSidebarWidth(sidebarWidth - SIDEBAR_STEP);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      applySettingsSidebarWidth(sidebarWidth + SIDEBAR_STEP);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      applySettingsSidebarWidth(SIDEBAR_MIN_WIDTH);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      applySettingsSidebarWidth(SIDEBAR_MAX_WIDTH);
+    }
+  }
+
+  function resetSettingsSidebarWidth(): void {
+    applySettingsSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
   }
 
   function renderComposer(variant: ComposerVariant): JSX.Element {
@@ -2857,9 +2912,16 @@ export function App(): JSX.Element {
         running={anyThreadIsRunning}
         showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
         debugControlsEnabled={debugControlsEnabled}
+        sidebarWidth={sidebarWidth}
+        sidebarMinWidth={SIDEBAR_MIN_WIDTH}
+        sidebarMaxWidth={SIDEBAR_MAX_WIDTH}
+        resizingSidebar={resizingSidebar}
         onBack={() => setSettingsOpen(false)}
         onSave={updateRuntimeSettings}
         onDebugControlsChange={setDebugControlsEnabled}
+        onSidebarResizeStart={startSettingsSidebarResize}
+        onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}
+        onSidebarSeparatorDoubleClick={resetSettingsSidebarWidth}
       />
     );
   }
@@ -4251,14 +4313,13 @@ function TurnView({
   const renderedItems: JSX.Element[] = [];
   let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
-  const explicitFinalAgentMessageID = turn.status === "completed" ? explicitFinalAgentMessageItemID(turn) : undefined;
-  const actionableAgentMessageID =
-    turn.status === "completed" ? explicitFinalAgentMessageID ?? actionableAgentMessageItemID(turn) : undefined;
+  const liveTimeline = turn.status === "in_progress";
+  const flowAgentMessageID =
+    turn.status === "completed" ? messageFlowAgentMessageItemID(turn) : undefined;
+  const actionableAgentMessageID = turn.status === "completed" ? flowAgentMessageID : undefined;
   const primaryAgentMessageID =
-    actionableAgentMessageID ??
-    (turn.status === "in_progress" || turn.status === "failed" || turn.status === "interrupted"
-      ? latestAgentMessageItemIDForTurn(turn)
-      : undefined);
+    flowAgentMessageID ??
+    (turn.status === "failed" || turn.status === "interrupted" ? latestAgentMessageItemIDForTurn(turn) : undefined);
   const processAutoCollapse = turn.status === "completed" && actionableAgentMessageID !== undefined;
 
   function renderThreadItem(item: ThreadItem, streaming: boolean): JSX.Element | null {
@@ -4306,12 +4367,23 @@ function TurnView({
     if (onlyCompletedStatus) {
       return;
     }
-    if (!processAutoCollapse && entries.length === 1 && entries[0].kind === "status") {
-      renderedItems.push(entries[0].element);
+    const detailEntries = entries.filter((entry) => entry.kind !== "status");
+    if (detailEntries.length === 0) {
+      if (!processAutoCollapse) {
+        const statusEntry = entries.find((entry) => entry.kind === "status");
+        if (statusEntry) {
+          renderedItems.push(statusEntry.element);
+        }
+      }
       return;
     }
     renderedItems.push(
-      <TurnProcessGroup key={`${turn.id}-process-${renderedItems.length}`} turn={turn} entries={entries} autoCollapse={processAutoCollapse} />
+      <TurnProcessGroup
+        key={`${turn.id}-process-${renderedItems.length}`}
+        turn={turn}
+        entries={detailEntries}
+        autoCollapse={processAutoCollapse}
+      />
     );
   }
 
@@ -4320,6 +4392,16 @@ function TurnView({
     if (item.type === "user_message") {
       flushProcessEntries();
       const rendered = renderThreadItem(item, false);
+      if (rendered) {
+        renderedItems.push(rendered);
+      }
+      continue;
+    }
+
+    if (liveTimeline && item.type === "agent_message") {
+      insertStatus();
+      flushProcessEntries();
+      const rendered = renderThreadItem(item, item.status === "in_progress");
       if (rendered) {
         renderedItems.push(rendered);
       }
@@ -4395,7 +4477,10 @@ function TurnProcessGroup({
   const [expanded, setExpanded] = useState(!autoCollapse);
   const previousAutoCollapseRef = useRef(autoCollapse);
   const detailsID = `${turn.id}-process-details`;
-  const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}`;
+  const hasDetails = entries.length > 0;
+  const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
+    hasDetails ? "" : " no-details"
+  }`;
   const processCount = entries.filter((entry) => entry.kind !== "status").length;
   const metaParts = turnProcessMetaParts(turn, processCount);
 
@@ -4412,27 +4497,38 @@ function TurnProcessGroup({
     return undefined;
   }, [autoCollapse]);
 
+  const toggleContent = (
+    <>
+      <span className="turn-process-copy">
+        <span>过程记录</span>
+        {metaParts.map((part) => (
+          <span key={part}>{part}</span>
+        ))}
+      </span>
+      {hasDetails ? <ChevronDown className="turn-process-chevron" size={15} /> : null}
+    </>
+  );
+
   return (
     <div className={className}>
-      <button
-        className="turn-process-toggle"
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={detailsID}
-        onClick={() => setExpanded((open) => !open)}
-      >
-        <ListIcon size={15} />
-        <span className="turn-process-copy">
-          <span>过程记录</span>
-          {metaParts.map((part) => (
-            <span key={part}>{part}</span>
-          ))}
-        </span>
-        <ChevronDown className="turn-process-chevron" size={15} />
-      </button>
-      <div className="turn-process-details" id={detailsID} aria-hidden={!expanded}>
-        <div className="turn-process-stack">{entries.map((entry) => entry.element)}</div>
-      </div>
+      {hasDetails ? (
+        <button
+          className="turn-process-toggle"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={detailsID}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          {toggleContent}
+        </button>
+      ) : (
+        <div className="turn-process-toggle turn-process-toggle-static">{toggleContent}</div>
+      )}
+      {hasDetails ? (
+        <div className="turn-process-details" id={detailsID} aria-hidden={!expanded}>
+          <div className="turn-process-stack">{entries.map((entry) => entry.element)}</div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4454,44 +4550,32 @@ function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
   const liveNow = useLiveNow(liveDuration);
   const elapsedMs = completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
-  const showDuration = completedDuration !== undefined || liveDuration;
-  const content = turnProgressContent(turn, elapsedMs);
-  const campaign =
-    ENABLE_TURN_PROGRESS_EXPERIMENT && liveDuration ? turnProgressCampaign(turn.id, elapsedMs) : undefined;
+  const content = turnProgressContent(turn, elapsedMs, turnHasAssistantOutput(turn));
 
   return (
     <div
-      className={`turn-progress ${turn.status}${campaign ? " has-campaign" : ""}`}
+      className={`turn-progress ${turn.status}`}
       role={liveDuration ? "status" : undefined}
       aria-live={liveDuration ? "polite" : undefined}
     >
-      <div className="turn-progress-header">
-        <div className="turn-progress-label">
-          <Clock size={17} />
-          <span className="turn-progress-copy">
-            <span className="turn-progress-title">
-              <span>{content.label}</span>
-              {showDuration ? <span className="turn-progress-duration">{formatDuration(elapsedMs)}</span> : null}
-            </span>
-            {content.detail ? <span className="turn-progress-detail">{content.detail}</span> : null}
-          </span>
-        </div>
-      </div>
-      <div className="turn-progress-rule">{campaign ? <TurnProgressCampaignScene campaign={campaign} /> : null}</div>
+      <span className="turn-progress-title">{content.label}</span>
     </div>
   );
 }
 
-function turnProgressContent(turn: Turn, elapsedMs: number): TurnProgressContent {
-  if (turn.status === "failed") {
-    const display = userFacingErrorForMessage(turn.error?.message, "turn");
-    return { label: display.title, detail: display.detail };
-  }
+function turnProgressContent(turn: Turn, elapsedMs: number, hasFinalText: boolean): TurnProgressContent {
   if (turn.status === "interrupted") {
     return { label: "已停止", detail: "这次请求已停止" };
   }
   if (turn.status !== "in_progress") {
-    return { label: "已处理" };
+    return {
+      label: messageFlowStatusLabel({
+        done: true,
+        failed: turn.status === "failed",
+        hasFinalText,
+        locale: "zh"
+      })
+    };
   }
 
   const runningTool = turn.items.find(
@@ -4500,40 +4584,43 @@ function turnProgressContent(turn: Turn, elapsedMs: number): TurnProgressContent
       (item.status ?? "in_progress") === "in_progress"
   );
   if (runningTool) {
-    return { label: "正在处理", detail: `正在调用 ${readableToolName(runningTool.name)}` };
+    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
   }
 
   const latestItem = latestDebugItem(turn);
   if (!latestItem) {
     return {
-      label: "正在思考",
+      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
       detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应")
     };
   }
   if (latestItem.type === "agent_message") {
-    const hasText = debugStreamFieldLength(turn.id, latestItem, "text") > 0;
+    const hasText = hasFinalText || debugStreamFieldLength(turn.id, latestItem, "text") > 0;
     return {
-      label: hasText ? "正在生成回复" : "正在思考",
-      detail: hasText ? "正在输出回答" : waitingDetail(elapsedMs, "正在组织回答")
+      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText: hasText, locale: "zh" }),
+      detail: hasText ? undefined : waitingDetail(elapsedMs, "正在组织回答")
     };
   }
   if (latestItem.type === "reasoning") {
     return {
-      label: "正在思考",
+      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
       detail: waitingDetail(elapsedMs, "正在组织回答")
     };
   }
   if (latestItem.type === "tool_call" || latestItem.type === "collab_agent_tool_call") {
-    return { label: "正在处理", detail: "工具已返回，正在整理结果" };
+    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
   }
   if (latestItem.type === "context_compaction") {
-    return { label: "正在处理", detail: "正在整理上下文" };
+    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
   }
   if (latestItem.type === "error") {
-    return { label: "正在处理", detail: "收到错误信息，正在收尾" };
+    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
   }
 
-  return { label: "正在处理", detail: waitingDetail(elapsedMs, "请求正在处理中") };
+  return {
+    label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
+    detail: waitingDetail(elapsedMs, "请求正在处理中")
+  };
 }
 
 function waitingDetail(elapsedMs: number, defaultDetail: string): string {
@@ -4566,26 +4653,28 @@ function latestAgentMessageItemIDForTurn(turn: Turn): string | undefined {
   return undefined;
 }
 
-function actionableAgentMessageItemID(turn: Turn): string | undefined {
-  let latestAgentMessageID: string | undefined;
-  let latestPostToolAgentMessageID: string | undefined;
-  let hasToolCall = false;
-
-  for (const item of turn.items) {
-    if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
-      hasToolCall = true;
-      latestPostToolAgentMessageID = undefined;
-      continue;
-    }
-    if (item.type === "agent_message") {
-      latestAgentMessageID = item.id;
-      if (hasToolCall) {
-        latestPostToolAgentMessageID = item.id;
-      }
-    }
+function messageFlowAgentMessageItemID(turn: Turn): string | undefined {
+  const explicitFinalID = explicitFinalAgentMessageItemID(turn);
+  if (explicitFinalID) {
+    return explicitFinalID;
   }
 
-  return hasToolCall ? latestPostToolAgentMessageID : latestAgentMessageID;
+  const finalIndex = messageFlowFinalTextIndex(turn.items, (item) => {
+    if (item.type === "agent_message") {
+      return streamFieldValue(turn.id, item, "text").trim().length > 0 ? "text" : "ignore";
+    }
+    if (
+      item.type === "reasoning" ||
+      item.type === "tool_call" ||
+      item.type === "collab_agent_tool_call" ||
+      item.type === "context_compaction"
+    ) {
+      return "process";
+    }
+    return "ignore";
+  });
+
+  return finalIndex >= 0 ? turn.items[finalIndex]?.id : undefined;
 }
 
 function explicitFinalAgentMessageItemID(turn: Turn): string | undefined {
@@ -4705,6 +4794,8 @@ function AgentMessageContent({
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
   const liveStream = streaming || hasBufferedStream;
+  const [keepStreamSurface, setKeepStreamSurface] = useState(false);
+  const settleMode = liveStream || keepStreamSurface ? "stream" : "rich";
 
   return (
     <StreamingMarkdown
@@ -4713,8 +4804,10 @@ function AgentMessageContent({
       cwd={cwd}
       final={!streaming}
       live={liveStream}
+      settleMode={settleMode}
       onFrame={onStreamFrame}
       onSettled={() => {
+        setKeepStreamSurface(true);
         streamTextStore.clearItem(turnID, item.id);
         onStreamFrame();
       }}
@@ -4736,6 +4829,8 @@ function ReasoningContent({
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
   const liveStream = streaming || hasBufferedStream;
+  const [keepStreamSurface, setKeepStreamSurface] = useState(false);
+  const settleMode = liveStream || keepStreamSurface ? "stream" : "rich";
 
   return (
     <StreamingMarkdown
@@ -4744,8 +4839,10 @@ function ReasoningContent({
       className="streaming-markdown reasoning-stream"
       final={!streaming}
       live={liveStream}
+      settleMode={settleMode}
       onFrame={onStreamFrame}
       onSettled={() => {
+        setKeepStreamSurface(true);
         streamTextStore.clearItem(turnID, item.id);
         onStreamFrame();
       }}

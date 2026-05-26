@@ -332,15 +332,15 @@ function createRichContentFixture(cwd: string, initialized?: InitializeResult): 
             type: "tool_call",
             status: "completed",
             name: "rg",
-            arguments: `{"pattern":"conversation-width","path":"desktop/src/renderer/styles.css"}`,
-            result: "desktop/src/renderer/styles.css:3244:.conversation-width"
+            arguments: `{"pattern":"conversation-width","path":"browser/agent/packages/workbench-ui/src/renderer/styles.css"}`,
+            result: "browser/agent/packages/workbench-ui/src/renderer/styles.css:3244:.conversation-width"
           },
           {
             id: `${turnID}-item-4`,
             type: "tool_call",
             status: "completed",
             name: "apply_patch",
-            arguments: `{"file":"desktop/src/renderer/styles.css","summary":"constrain readable width"}`,
+            arguments: `{"file":"browser/agent/packages/workbench-ui/src/renderer/styles.css","summary":"constrain readable width"}`,
             result: "Patch applied."
           },
           {

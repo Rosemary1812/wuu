@@ -32,7 +32,7 @@ import type {
   Turn,
   WorkspaceFileReadResult,
   WuuDesktopApi,
-} from './shared/protocol'
+} from '../../../../../packages/workbench-ui/src/shared/protocol'
 
 type WuuBridgeEvent =
   | {

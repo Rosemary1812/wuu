@@ -1,0 +1,37 @@
+{
+  "name": "@browseros/workbench-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@pierre/trees": "^1.0.0-beta.4",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "lucide-react": "^0.562.0",
+    "mermaid": "^11.15.0",
+    "overlayscrollbars": "^2.16.0",
+    "overlayscrollbars-react": "^0.5.6",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9"
+  },
+  "exports": {
+    "./renderer/App": {
+      "types": "./src/renderer/App.tsx",
+      "default": "./src/renderer/App.tsx"
+    },
+    "./renderer/styles.css": "./src/renderer/styles.css",
+    "./shared/protocol": {
+      "types": "./src/shared/protocol.ts",
+      "default": "./src/shared/protocol.ts"
+    }
+  }
+}
