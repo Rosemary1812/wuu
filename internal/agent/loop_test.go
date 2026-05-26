@@ -733,6 +733,30 @@ func TestRunToolLoop_BeforeStepInjectsMessages(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_BeforeRequestInjectsTransientMessages(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	cfg := LoopConfig{
+		Model: "m",
+		BeforeRequest: func() []providers.ChatMessage {
+			return []providers.ChatMessage{{Role: "user", Content: "runtime status"}}
+		},
+	}
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(step.calls) != 1 {
+		t.Fatalf("expected one step call, got %d", len(step.calls))
+	}
+	msgs := step.calls[0].Messages
+	if len(msgs) != 2 || msgs[1].Content != "runtime status" {
+		t.Fatalf("expected transient request message, got %+v", msgs)
+	}
+	if len(res.NewMessages) != 1 || res.NewMessages[0].Content != "ok" {
+		t.Fatalf("transient request context should not persist, got %+v", res.NewMessages)
+	}
+}
+
 func TestRunToolLoop_EmptyAnswerWithoutStopReasonIsError(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "  "}}}
 	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, LoopConfig{Model: "m"}, step)

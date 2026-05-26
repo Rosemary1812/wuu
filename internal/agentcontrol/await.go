@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,6 +69,58 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 			return result, ctx.Err()
 		}
 	}
+}
+
+func (c *AgentControl) ActiveTaskReminder(currentPath string) string {
+	targets := c.activeDescendantTargets(currentPath)
+	if len(targets) == 0 {
+		return ""
+	}
+	results := c.awaitSnapshot(targets).Results
+	if len(results) == 0 {
+		return ""
+	}
+	const maxReminderTasks = 8
+	var b strings.Builder
+	b.WriteString("<subagent_status>\n")
+	b.WriteString("Child-agent tasks that are still active or missing a structured report:\n")
+	limit := len(results)
+	if limit > maxReminderTasks {
+		limit = maxReminderTasks
+	}
+	for i := 0; i < limit; i++ {
+		result := results[i]
+		label := result.AgentPath
+		if label == "" {
+			label = result.AgentID
+		}
+		b.WriteString("- ")
+		b.WriteString(label)
+		if result.TaskName != "" {
+			b.WriteString(" (")
+			b.WriteString(result.TaskName)
+			b.WriteString(")")
+		}
+		b.WriteString(": ")
+		b.WriteString(result.Status)
+		if result.ReportMissing {
+			b.WriteString(", missing agent_report")
+		}
+		if result.WorktreePath != "" {
+			b.WriteString(", worktree=")
+			b.WriteString(result.WorktreePath)
+		}
+		b.WriteString("\n")
+	}
+	if len(results) > limit {
+		b.WriteString("- ... ")
+		b.WriteString(strconv.Itoa(len(results) - limit))
+		b.WriteString(" more\n")
+	}
+	b.WriteString("\nUse await_agents with explicit targets when your next step depends on these outputs. ")
+	b.WriteString("If a task is awaiting_report, treat its handoff as incomplete until you follow up or verify the raw result.\n")
+	b.WriteString("</subagent_status>")
+	return b.String()
 }
 
 func (c *AgentControl) resolveAwaitTargets(currentPath string, targets []string) []awaitTarget {

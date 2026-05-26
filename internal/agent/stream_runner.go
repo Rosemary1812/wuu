@@ -69,6 +69,11 @@ type StreamRunner struct {
 	// messages are appended to history for that round.
 	BeforeStep func() []providers.ChatMessage
 
+	// BeforeRequest, when set, is called right before each provider
+	// request. Returned messages are sent for that request only and
+	// are not appended to saved conversation history.
+	BeforeRequest func() []providers.ChatMessage
+
 	// Effort controls reasoning depth. See ChatRequest.Effort.
 	Effort string
 
@@ -165,6 +170,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		MaxSteps:         r.MaxSteps,
 		MaxContextTokens: maxCtx,
 		BeforeStep:       beforeStep,
+		BeforeRequest:    r.BeforeRequest,
 		OnUsage:          r.OnUsage,
 		OnMessage: func(msg providers.ChatMessage) {
 			if effectiveOnEvent == nil || isEphemeralHistoryMessage(msg) {

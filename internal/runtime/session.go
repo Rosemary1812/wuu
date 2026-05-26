@@ -212,7 +212,7 @@ func NewSession(opts Options) (*Session, error) {
 			cfg.Agent.MaxContextTokens,
 		),
 		DisableAutoCompact: cfg.Agent.DisableAutoCompact,
-		BeforeStep:         EnvContextInjector(rootDir),
+		BeforeRequest:      EnvContextInjector(rootDir, agentControl, agentthread.RootPath),
 	}
 
 	return &Session{
@@ -332,8 +332,11 @@ func (s *Session) NewThreadRuntime(sessionID string, askBridge tools.AskUserBrid
 		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", s.RootDir)
 	}
 
+	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
+	runner.BeforeRequest = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath)
+
 	return &ThreadRuntime{
-		StreamRunner: cloneStreamRunnerForThread(s.StreamRunner, toolExecutor),
+		StreamRunner: runner,
 		Toolkit:      kit,
 		AgentControl: agentControl,
 	}, nil
@@ -357,6 +360,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		DisableAutoCompact:      base.DisableAutoCompact,
 		StreamingToolExecution:  base.StreamingToolExecution,
 		BeforeStep:              base.BeforeStep,
+		BeforeRequest:           base.BeforeRequest,
 		Effort:                  base.Effort,
 		StreamReconnectBudget:   base.StreamReconnectBudget,
 		StreamRetryInitialDelay: base.StreamRetryInitialDelay,
@@ -446,12 +450,17 @@ func ResolveContextWindow(model string, providerOverride, agentOverride int) int
 	return providers.ContextWindowFor(model)
 }
 
-// EnvContextInjector returns dynamic environment context injected before each
-// model round.
-func EnvContextInjector(rootDir string) func() []providers.ChatMessage {
+// EnvContextInjector returns dynamic runtime context injected into each model
+// request without persisting it in conversation history.
+func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, currentPath string) func() []providers.ChatMessage {
 	return func() []providers.ChatMessage {
 		env := wuucontext.Snapshot(rootDir)
 		reminder := wuucontext.FormatSystemReminder(env)
+		if control != nil {
+			if agentReminder := control.ActiveTaskReminder(currentPath); agentReminder != "" {
+				reminder += "\n\n" + agentReminder
+			}
+		}
 		return []providers.ChatMessage{{
 			Role:    "user",
 			Name:    wuucontext.SystemReminderMessageName,

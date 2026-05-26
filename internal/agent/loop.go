@@ -168,12 +168,31 @@ func RunToolLoop(
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
 		}
+		requestMessages := messages
+		if cfg.BeforeRequest != nil {
+			transient := cfg.BeforeRequest()
+			if len(transient) > 0 {
+				requestMessages = make([]providers.ChatMessage, 0, len(messages)+len(transient))
+				requestMessages = append(requestMessages, messages...)
+				requestMessages = append(requestMessages, transient...)
+				if normalized, _, nerr := normalizeLiveMessages(requestMessages); nerr != nil {
+					return LoopResult{
+						NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
+						HistoryRewritten: historyRewritten,
+						InputTokens:      totalIn,
+						OutputTokens:     totalOut,
+					}, nerr
+				} else {
+					requestMessages = normalized
+				}
+			}
+		}
 		req := providers.ChatRequest{
 			Model:       cfg.Model,
-			Messages:    messages,
+			Messages:    requestMessages,
 			Temperature: cfg.Temperature,
 			MaxTokens:   currentMaxTokens,
-			CacheHint:   buildCacheHint(messages),
+			CacheHint:   buildCacheHint(requestMessages),
 			Effort:      cfg.Effort,
 		}
 		if cfg.Tools != nil {

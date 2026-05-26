@@ -448,6 +448,7 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || awaited.Results[0].ReportPath != report.ReportPath {
 		t.Fatalf("expected completed result with report path, got %+v", awaited)
 	}
+	waitForHarnessEvent(t, c.HarnessStore(), harness.EventRunCompleted, res.AgentID)
 }
 
 func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
@@ -483,6 +484,39 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 	}
 	if !awaited.TimedOut || len(awaited.Results) != 1 || awaited.Results[0].Status != string(subagent.StatusRunning) {
 		t.Fatalf("expected timed out running result, got %+v", awaited)
+	}
+	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
+func TestActiveTaskReminderListsIncompleteChildren(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-active-reminder",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-active-reminder", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-active-reminder", "harness"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "worker",
+		TaskName: "active_child",
+		Prompt:   "stay active",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	reminder := c.ActiveTaskReminder(agentthread.RootPath)
+	if !strings.Contains(reminder, res.AgentPath) || !strings.Contains(reminder, "await_agents") {
+		t.Fatalf("active reminder should name the child and await tool, got %q", reminder)
 	}
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
@@ -1581,6 +1615,24 @@ func waitForRunningWorkersToStop(t *testing.T, mgr *subagent.Manager, timeout ti
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("expected workers to stop within %s, still have %d running", timeout, mgr.CountRunning())
+}
+
+func waitForHarnessEvent(t *testing.T, store *harness.Store, eventType harness.EventType, taskID string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		events, err := store.ReadEvents()
+		if err != nil {
+			t.Fatalf("ReadEvents: %v", err)
+		}
+		for _, event := range events {
+			if event.Type == eventType && event.TaskID == taskID {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected harness event %s for %s", eventType, taskID)
 }
 
 func TestAgentMailboxMessage_IncludesErrorClass(t *testing.T) {
