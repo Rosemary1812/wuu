@@ -233,7 +233,7 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 	}
 }
 
-func TestSpawn_RecordsHarnessTaskRunAndReport(t *testing.T) {
+func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
@@ -275,7 +275,7 @@ func TestSpawn_RecordsHarnessTaskRunAndReport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListTasks: %v", err)
 		}
-		if len(tasks) == 1 && tasks[0].Status == harness.TaskStatusCompleted && tasks[0].ReportPath != "" {
+		if len(tasks) == 1 && tasks[0].Status == harness.TaskStatusAwaitingReport {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -293,21 +293,21 @@ func TestSpawn_RecordsHarnessTaskRunAndReport(t *testing.T) {
 	if task.LastRunID != res.AgentID+"-run-1" || task.InputTokens != 0 || task.OutputTokens != 0 {
 		t.Fatalf("unexpected run linkage/usage: %+v", task)
 	}
-	if _, err := os.Stat(task.ReportPath); err != nil {
-		t.Fatalf("completion report missing: %v", err)
+	if task.ReportPath != "" {
+		t.Fatalf("worker completion without agent_report must not create a synthetic report: %+v", task)
 	}
 	runs, err := store.ListRuns()
 	if err != nil {
 		t.Fatalf("ListRuns: %v", err)
 	}
-	if len(runs) != 1 || runs[0].TaskID != res.AgentID || runs[0].Status != harness.TaskStatusCompleted {
+	if len(runs) != 1 || runs[0].TaskID != res.AgentID || runs[0].Status != harness.TaskStatusAwaitingReport {
 		t.Fatalf("unexpected runs: %+v", runs)
 	}
 	reports, err := store.ListReports()
 	if err != nil {
 		t.Fatalf("ListReports: %v", err)
 	}
-	if len(reports) != 1 || reports[0].Outcome != "completed" || reports[0].RawResult == "" {
+	if len(reports) != 0 {
 		t.Fatalf("unexpected reports: %+v", reports)
 	}
 	events, err := store.ReadEvents()
@@ -317,7 +317,7 @@ func TestSpawn_RecordsHarnessTaskRunAndReport(t *testing.T) {
 	if len(events) < 6 {
 		t.Fatalf("expected lifecycle events, got %+v", events)
 	}
-	if events[0].Type != harness.EventTaskCreated || events[len(events)-1].Type != harness.EventReportSubmitted {
+	if events[0].Type != harness.EventTaskCreated || events[len(events)-1].Status != string(harness.TaskStatusAwaitingReport) {
 		t.Fatalf("unexpected event sequence: %+v", events)
 	}
 }
@@ -327,7 +327,7 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	initRepo(t, dir)
 
 	c, err := New(Config{
-		Client:        &slowClient{},
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "reportable result"}},
 		DefaultModel:  "fake-model",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
@@ -340,18 +340,22 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type:     "worker",
-		TaskName: "structured_report",
-		Prompt:   "inspect code",
+		Type:        "worker",
+		TaskName:    "structured_report",
+		Prompt:      "inspect code",
+		Synchronous: true,
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
 
 	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
-		Outcome:  "completed",
-		Summary:  "Inspected the harness path and found the spawn lifecycle.",
-		WorkDone: []string{"Read agentcontrol spawn code."},
+		Outcome:      "completed",
+		Summary:      "Inspected the harness path and found the spawn lifecycle.",
+		ChangedFiles: []string{"internal/agentcontrol/agent_control.go"},
+		WorkDone:     []string{"Read agentcontrol spawn code."},
+		Risks:        []string{"No code changes were made."},
+		Verification: []string{"Not run; read-only inspection."},
 		Evidence: []ReportEvidence{{
 			Type: "file",
 			Path: "internal/agentcontrol/agent_control.go",
@@ -373,8 +377,15 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListReports: %v", err)
 	}
-	if len(reports) != 1 || reports[0].Summary == "" || len(reports[0].Evidence) != 1 {
+	if len(reports) != 1 || reports[0].Summary == "" || len(reports[0].Evidence) != 1 || len(reports[0].ChangedFiles) != 1 || len(reports[0].Verification) != 1 {
 		t.Fatalf("unexpected persisted reports: %+v", reports)
+	}
+	tasks, err := c.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].Status != harness.TaskStatusCompleted {
+		t.Fatalf("agent_report should close the harness task as completed: %+v", tasks)
 	}
 	artifacts, err := c.HarnessStore().ListArtifacts()
 	if err != nil {
@@ -474,8 +485,8 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 		t.Fatalf("archive does not include untracked file %q", archivePath)
 	}
 	reportPath, paths := c.harnessReportForTask(res.AgentID)
-	if reportPath == "" || !stringSliceContains(paths, patchPath) || !stringSliceContains(paths, archivePath) {
-		t.Fatalf("mailbox artifact lookup should include report, patch, and archive, report=%q paths=%+v", reportPath, paths)
+	if reportPath != "" || !stringSliceContains(paths, patchPath) || !stringSliceContains(paths, archivePath) {
+		t.Fatalf("mailbox artifact lookup should expose patch and archive without a synthetic report, report=%q paths=%+v", reportPath, paths)
 	}
 }
 

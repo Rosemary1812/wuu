@@ -19,13 +19,16 @@ type ReportEvidence struct {
 }
 
 type AgentReportRequest struct {
-	Outcome   string           `json:"outcome"`
-	Summary   string           `json:"summary"`
-	WorkDone  []string         `json:"work_done,omitempty"`
-	Blockers  []string         `json:"blockers,omitempty"`
-	NextSteps []string         `json:"next_steps,omitempty"`
-	Evidence  []ReportEvidence `json:"evidence,omitempty"`
-	Artifacts []string         `json:"artifacts,omitempty"`
+	Outcome      string           `json:"outcome"`
+	Summary      string           `json:"summary"`
+	ChangedFiles []string         `json:"changed_files,omitempty"`
+	WorkDone     []string         `json:"work_done,omitempty"`
+	Blockers     []string         `json:"blockers,omitempty"`
+	Risks        []string         `json:"risks,omitempty"`
+	Verification []string         `json:"verification,omitempty"`
+	NextSteps    []string         `json:"next_steps,omitempty"`
+	Evidence     []ReportEvidence `json:"evidence,omitempty"`
+	Artifacts    []string         `json:"artifacts,omitempty"`
 }
 
 type AgentReportResult struct {
@@ -78,23 +81,27 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 	}
 	artifacts := trimStringSlice(req.Artifacts)
 	report, err := c.harnessStore.SubmitReport(harness.Report{
-		ID:          id + "-agent-report",
-		TaskID:      id,
-		RunID:       harnessRunID(id),
-		AgentID:     id,
-		AgentPath:   path,
-		Outcome:     outcome,
-		Summary:     summary,
-		WorkDone:    trimStringSlice(req.WorkDone),
-		Blockers:    trimStringSlice(req.Blockers),
-		NextSteps:   trimStringSlice(req.NextSteps),
-		Evidence:    evidence,
-		Artifacts:   artifacts,
-		SubmittedAt: time.Now().UTC(),
+		ID:           id + "-agent-report",
+		TaskID:       id,
+		RunID:        harnessRunID(id),
+		AgentID:      id,
+		AgentPath:    path,
+		Outcome:      outcome,
+		Summary:      summary,
+		ChangedFiles: trimStringSlice(req.ChangedFiles),
+		WorkDone:     trimStringSlice(req.WorkDone),
+		Blockers:     trimStringSlice(req.Blockers),
+		Risks:        trimStringSlice(req.Risks),
+		Verification: trimStringSlice(req.Verification),
+		NextSteps:    trimStringSlice(req.NextSteps),
+		Evidence:     evidence,
+		Artifacts:    artifacts,
+		SubmittedAt:  time.Now().UTC(),
 	})
 	if err != nil {
 		return AgentReportResult{}, err
 	}
+	c.updateHarnessStatusFromReport(id, outcome, report.SubmittedAt, report.Blockers)
 	if report.ReportPath != "" && !stringSliceContains(artifacts, report.ReportPath) {
 		artifacts = append(artifacts, report.ReportPath)
 	}
@@ -117,6 +124,78 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 		ReportPath: report.ReportPath,
 		Artifacts:  artifacts,
 	}, nil
+}
+
+func (c *AgentControl) updateHarnessStatusFromReport(taskID, outcome string, submittedAt time.Time, blockers []string) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	status := harnessStatusFromReportOutcome(outcome)
+	if status == "" {
+		return
+	}
+	task, ok := c.harnessTask(taskID)
+	if !ok {
+		return
+	}
+	if task.Status != harness.TaskStatusAwaitingReport && isActiveHarnessStatus(task.Status) {
+		return
+	}
+	completedAt := task.CompletedAt
+	if completedAt.IsZero() && isTerminalHarnessStatus(status) {
+		completedAt = submittedAt
+	}
+	errText := task.Error
+	if status == harness.TaskStatusFailed && strings.TrimSpace(errText) == "" {
+		errText = strings.Join(trimStringSlice(blockers), "; ")
+	}
+	_, _ = c.harnessStore.UpdateTaskStatus(taskID, status, completedAt, task.InputTokens, task.OutputTokens, errText)
+	runID := harnessRunID(taskID)
+	runTokensIn, runTokensOut, runErr := task.InputTokens, task.OutputTokens, errText
+	if runs, err := c.harnessStore.ListRuns(); err == nil {
+		for _, run := range runs {
+			if run.ID == runID {
+				runTokensIn = run.InputTokens
+				runTokensOut = run.OutputTokens
+				if strings.TrimSpace(runErr) == "" {
+					runErr = run.Error
+				}
+				break
+			}
+		}
+	}
+	_, _ = c.harnessStore.UpdateRunStatus(runID, status, completedAt, runTokensIn, runTokensOut, runErr)
+}
+
+func harnessStatusFromReportOutcome(outcome string) harness.TaskStatus {
+	switch strings.ToLower(strings.TrimSpace(outcome)) {
+	case "completed":
+		return harness.TaskStatusCompleted
+	case "cancelled":
+		return harness.TaskStatusCancelled
+	case "stuck", "error":
+		return harness.TaskStatusFailed
+	default:
+		return ""
+	}
+}
+
+func isTerminalHarnessStatus(status harness.TaskStatus) bool {
+	switch status {
+	case harness.TaskStatusCompleted, harness.TaskStatusFailed, harness.TaskStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func isActiveHarnessStatus(status harness.TaskStatus) bool {
+	switch status {
+	case harness.TaskStatusPending, harness.TaskStatusQueued, harness.TaskStatusRunning:
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeReportOutcome(outcome string) (string, error) {

@@ -403,8 +403,9 @@ This system-reminder OVERRIDES the parent's system prompt for you:
   all captured in the history above. You do not need to re-classify
   the task or ask for clarification — just execute the task below.
 - Before your final answer, call agent_report exactly once with outcome,
-  summary, concrete work_done, blockers when any, next_steps when useful,
-  and evidence/artifact paths that let the parent verify the handoff.
+  summary, changed_files when relevant, concrete work_done, blockers when
+  any, risks when any, verification performed or skipped, next_steps when
+  useful, and evidence/artifact paths that let the parent verify the handoff.
 - When you finish, return a concise result summary and stop. Do not loop,
   do not ask follow-ups.
 
@@ -670,6 +671,11 @@ func (t *AgentReportTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Short handoff summary. Include the user's intent you preserved and the important result.",
 				},
+				"changed_files": map[string]any{
+					"type":        "array",
+					"description": "Files changed or inspected as primary evidence, using repo-relative paths when possible.",
+					"items":       map[string]any{"type": "string"},
+				},
 				"work_done": map[string]any{
 					"type":        "array",
 					"description": "Concrete work completed.",
@@ -678,6 +684,16 @@ func (t *AgentReportTool) Definition() providers.ToolDefinition {
 				"blockers": map[string]any{
 					"type":        "array",
 					"description": "Problems that prevented completion, with exact errors when relevant.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"risks": map[string]any{
+					"type":        "array",
+					"description": "Known risks, uncertain assumptions, or conflict areas the parent should consider.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"verification": map[string]any{
+					"type":        "array",
+					"description": "Verification performed or intentionally not performed, with command names or reasons.",
 					"items":       map[string]any{"type": "string"},
 				},
 				"next_steps": map[string]any{

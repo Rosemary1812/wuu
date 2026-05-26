@@ -9,12 +9,13 @@ import (
 type TaskStatus string
 
 const (
-	TaskStatusPending   TaskStatus = "pending"
-	TaskStatusQueued    TaskStatus = "queued"
-	TaskStatusRunning   TaskStatus = "running"
-	TaskStatusCompleted TaskStatus = "completed"
-	TaskStatusFailed    TaskStatus = "failed"
-	TaskStatusCancelled TaskStatus = "cancelled"
+	TaskStatusPending        TaskStatus = "pending"
+	TaskStatusQueued         TaskStatus = "queued"
+	TaskStatusRunning        TaskStatus = "running"
+	TaskStatusAwaitingReport TaskStatus = "awaiting_report"
+	TaskStatusCompleted      TaskStatus = "completed"
+	TaskStatusFailed         TaskStatus = "failed"
+	TaskStatusCancelled      TaskStatus = "cancelled"
 )
 
 // WorkspaceMode records where a task is allowed to execute.
@@ -124,21 +125,24 @@ type EvidenceRef struct {
 
 // Report is the structured handoff packet submitted by an agent.
 type Report struct {
-	ID          string        `json:"id"`
-	TaskID      string        `json:"task_id"`
-	RunID       string        `json:"run_id,omitempty"`
-	AgentID     string        `json:"agent_id,omitempty"`
-	AgentPath   string        `json:"agent_path,omitempty"`
-	Outcome     string        `json:"outcome"`
-	Summary     string        `json:"summary,omitempty"`
-	WorkDone    []string      `json:"work_done,omitempty"`
-	Blockers    []string      `json:"blockers,omitempty"`
-	NextSteps   []string      `json:"next_steps,omitempty"`
-	Evidence    []EvidenceRef `json:"evidence,omitempty"`
-	Artifacts   []string      `json:"artifacts,omitempty"`
-	RawResult   string        `json:"raw_result,omitempty"`
-	ReportPath  string        `json:"report_path,omitempty"`
-	SubmittedAt time.Time     `json:"submitted_at"`
+	ID           string        `json:"id"`
+	TaskID       string        `json:"task_id"`
+	RunID        string        `json:"run_id,omitempty"`
+	AgentID      string        `json:"agent_id,omitempty"`
+	AgentPath    string        `json:"agent_path,omitempty"`
+	Outcome      string        `json:"outcome"`
+	Summary      string        `json:"summary,omitempty"`
+	ChangedFiles []string      `json:"changed_files,omitempty"`
+	WorkDone     []string      `json:"work_done,omitempty"`
+	Blockers     []string      `json:"blockers,omitempty"`
+	Risks        []string      `json:"risks,omitempty"`
+	Verification []string      `json:"verification,omitempty"`
+	NextSteps    []string      `json:"next_steps,omitempty"`
+	Evidence     []EvidenceRef `json:"evidence,omitempty"`
+	Artifacts    []string      `json:"artifacts,omitempty"`
+	RawResult    string        `json:"raw_result,omitempty"`
+	ReportPath   string        `json:"report_path,omitempty"`
+	SubmittedAt  time.Time     `json:"submitted_at"`
 }
 
 // Event is one append-only fact in the task graph.

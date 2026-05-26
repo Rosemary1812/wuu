@@ -1304,6 +1304,17 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 		return
 	}
 	status := harnessStatusFromSubAgent(n.Status)
+	reportMissing := false
+	if n.Status == subagent.StatusCompleted {
+		if report, ok, err := c.harnessStore.ReportForTask(n.AgentID); err == nil && ok {
+			if reportStatus := harnessStatusFromReportOutcome(report.Outcome); reportStatus != "" {
+				status = reportStatus
+			}
+		} else if err == nil && !ok {
+			status = harness.TaskStatusAwaitingReport
+			reportMissing = true
+		}
+	}
 	errText := ""
 	if n.Snapshot.Error != nil {
 		errText = n.Snapshot.Error.Error()
@@ -1338,43 +1349,27 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 		})
 	}
 	if isFinalSubAgentStatus(n.Status) {
-		c.ensureHarnessCompletionReport(n.Snapshot)
 		c.recordWorktreeArtifacts(n.Snapshot)
+		if reportMissing {
+			c.recordMissingReportEvent(n.Snapshot)
+		}
 	}
 }
 
-func (c *AgentControl) ensureHarnessCompletionReport(snap subagent.SubAgentSnapshot) {
+func (c *AgentControl) recordMissingReportEvent(snap subagent.SubAgentSnapshot) {
 	if c == nil || c.harnessStore == nil {
 		return
 	}
-	if _, ok, err := c.harnessStore.ReportForTask(snap.ID); err == nil && ok {
-		return
-	}
-	outcome := "completed"
-	if snap.Status == subagent.StatusFailed {
-		outcome = "error"
-	} else if snap.Status == subagent.StatusCancelled {
-		outcome = "cancelled"
-	}
-	blockers := []string(nil)
-	errText := ""
-	if snap.Error != nil {
-		errText = snap.Error.Error()
-		blockers = append(blockers, errText)
-	}
-	report := harness.Report{
-		ID:          snap.ID + "-completion-report",
-		TaskID:      snap.ID,
-		RunID:       harnessRunID(snap.ID),
-		AgentID:     snap.ID,
-		AgentPath:   snap.AgentPath,
-		Outcome:     outcome,
-		Summary:     firstNonEmptyLine(snap.Result, errText),
-		Blockers:    blockers,
-		RawResult:   snap.Result,
-		SubmittedAt: time.Now().UTC(),
-	}
-	_, _ = c.harnessStore.SubmitReport(report)
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventTaskStatusChanged,
+		TaskID:    snap.ID,
+		RunID:     harnessRunID(snap.ID),
+		AgentID:   snap.ID,
+		Path:      snap.AgentPath,
+		Status:    string(harness.TaskStatusAwaitingReport),
+		Message:   "worker completed without submitting agent_report",
+		CreatedAt: time.Now().UTC(),
+	})
 }
 
 func (c *AgentControl) harnessReportForTask(taskID string) (string, []string) {
@@ -1751,18 +1746,6 @@ func harnessStatusFromSubAgent(status subagent.Status) harness.TaskStatus {
 
 func harnessRunID(taskID string) string {
 	return strings.TrimSpace(taskID) + "-run-1"
-}
-
-func firstNonEmptyLine(values ...string) string {
-	for _, value := range values {
-		for _, line := range strings.Split(value, "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				return line
-			}
-		}
-	}
-	return ""
 }
 
 func stringSliceContains(values []string, needle string) bool {

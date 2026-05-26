@@ -657,8 +657,11 @@ func renderReportMarkdown(report Report) string {
 			fmt.Fprintf(&b, "- %s\n", strings.TrimSpace(value))
 		}
 	}
+	writeList("Changed Files", report.ChangedFiles)
 	writeList("Work Done", report.WorkDone)
 	writeList("Blockers", report.Blockers)
+	writeList("Risks", report.Risks)
+	writeList("Verification", report.Verification)
 	writeList("Next Steps", report.NextSteps)
 	if len(report.Evidence) > 0 {
 		fmt.Fprintf(&b, "\n## Evidence\n\n")

@@ -43,7 +43,7 @@ CRITICAL RULES:
 - If your task prompt starts with a "VERIFICATION mode" or "READ-ONLY RESEARCH mode" preamble, treat that preamble as authoritative and follow its rules — it overrides the generic guidance above.
 
 OUTPUT FORMAT:
-Before your final message, call agent_report with a structured handoff packet. Include the outcome, a concise summary, concrete work_done, blockers when any, next_steps when useful, and evidence entries that point to files, commands, or artifacts. Your final message should match the structure below and may summarize the same report.
+Before your final message, call agent_report with a structured handoff packet. Include the outcome, a concise summary, changed_files when relevant, concrete work_done, blockers when any, risks when any, verification performed or skipped, next_steps when useful, and evidence entries that point to files, commands, or artifacts. Your final message should match the structure below and may summarize the same report.
 
 When you finish, produce a final message with this exact structure:
 1. VERDICT — exactly one of: COMPLETE, PARTIAL, or STUCK.
