@@ -25,6 +25,11 @@
     0 2px 8px rgba(20, 24, 28, 0.08);
   --menu-enter-duration: 140ms;
   --menu-enter-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --collapse-motion-duration: 260ms;
+  --collapse-opacity-duration: 180ms;
+  --collapse-chevron-duration: 140ms;
+  --collapse-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --collapse-enter-offset-y: -2px;
   --sidebar-glass-bg: linear-gradient(180deg, rgba(250, 251, 248, 0.82), rgba(241, 244, 239, 0.68));
   --sidebar-glass-border: rgba(68, 76, 70, 0.13);
   --sidebar-glass-highlight: rgba(255, 255, 255, 0.62);
@@ -5935,26 +5940,29 @@ button:disabled {
 
 .turn-process-chevron {
   margin-left: auto;
-  transition: transform 140ms ease;
+  transition: transform var(--collapse-chevron-duration) ease;
 }
 
-.turn-process-group.expanded .turn-process-chevron {
+.turn-process-group.expanded .turn-process-chevron,
+.activity-group.expanded .activity-chevron {
   transform: rotate(180deg);
 }
 
-.turn-process-details {
+.turn-process-details,
+.activity-details {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
-  transform: translateY(-2px);
+  transform: translateY(var(--collapse-enter-offset-y));
   transition:
-    grid-template-rows 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 180ms ease,
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    grid-template-rows var(--collapse-motion-duration) var(--collapse-motion-easing),
+    opacity var(--collapse-opacity-duration) ease,
+    transform var(--collapse-motion-duration) var(--collapse-motion-easing);
   will-change: grid-template-rows, opacity, transform;
 }
 
-.turn-process-group.expanded .turn-process-details {
+.turn-process-group.expanded .turn-process-details,
+.activity-group.expanded .activity-details {
   grid-template-rows: 1fr;
   opacity: 1;
   transform: translateY(0);
@@ -6025,30 +6033,11 @@ button:disabled {
 .activity-chevron {
   flex: 0 0 auto;
   margin-left: 0;
-  transition: transform 140ms ease;
-}
-
-.activity-group.expanded .activity-chevron {
-  transform: rotate(180deg);
+  transition: transform var(--collapse-chevron-duration) ease;
 }
 
 .activity-details {
-  display: grid;
-  grid-template-rows: 0fr;
   margin: 0 0 1px;
-  opacity: 0;
-  transform: translateY(-2px);
-  transition:
-    grid-template-rows 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 180ms ease,
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: grid-template-rows, opacity, transform;
-}
-
-.activity-group.expanded .activity-details {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .activity-details-inner {
@@ -10169,6 +10158,10 @@ html.swiss-international .os-theme-wuu {
   .thread-row::before,
   .thread-row-actions,
   .thread-row-action,
+  .turn-process-chevron,
+  .turn-process-details,
+  .activity-chevron,
+  .activity-details,
   .message-copy-button,
   .ask-option,
   .ask-other-toggle,
