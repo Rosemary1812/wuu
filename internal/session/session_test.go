@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestCreateAndList(t *testing.T) {
@@ -105,6 +106,7 @@ func TestUpdateIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	setSessionUpdatedAt(t, dir, s.ID, time.Time{})
 	if err := UpdateIndex(dir, s.ID, 42, "hello"); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +116,46 @@ func TestUpdateIndex(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].Entries != 42 || sessions[0].Summary != "hello" {
 		t.Fatalf("update not persisted: %+v", sessions)
+	}
+	if sessions[0].UpdatedAt.IsZero() {
+		t.Fatalf("expected updated timestamp: %+v", sessions[0])
+	}
+}
+
+func TestListOrdersPinnedGroupsByActivity(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	older, err := CreateWithMetadata(dir, "older", "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer, err := CreateWithMetadata(dir, "newer", "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setSessionUpdatedAt(t, dir, older.ID, base)
+	setSessionUpdatedAt(t, dir, newer.ID, base.Add(time.Hour))
+
+	sessions, err := List(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 2 || sessions[0].ID != newer.ID || sessions[1].ID != older.ID {
+		t.Fatalf("expected active sessions by updated_at desc, got %+v", sessions)
+	}
+
+	if _, err := UpdatePinned(dir, older.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpdatePinned(dir, newer.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err = List(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 2 || sessions[0].ID != newer.ID || sessions[1].ID != older.ID {
+		t.Fatalf("expected pinned sessions by updated_at desc, got %+v", sessions)
 	}
 }
 
@@ -225,5 +267,14 @@ func TestLockFileIsCreated(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".index.lock")); err != nil {
 		t.Fatalf("expected lock file to exist: %v", err)
+	}
+}
+
+func setSessionUpdatedAt(t *testing.T, dir, id string, at time.Time) {
+	t.Helper()
+	if _, err := updateMetadata(dir, id, false, func(s *Session) {
+		s.UpdatedAt = at
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

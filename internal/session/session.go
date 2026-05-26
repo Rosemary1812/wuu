@@ -45,6 +45,7 @@ func withIndexLock(sessDir string, exclusive bool, fn func() error) error {
 type Session struct {
 	ID               string     `json:"id"`
 	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at,omitempty"`
 	Summary          string     `json:"summary,omitempty"`
 	Entries          int        `json:"entries"`
 	CWD              string     `json:"cwd,omitempty"`
@@ -117,9 +118,11 @@ func createWithMetadata(sessDir, id, cwd string, fork ForkMetadata) (*Session, e
 		sessID = strings.TrimSpace(id)
 	}
 
+	now := time.Now().UTC()
 	sess := &Session{
 		ID:               sessID,
-		CreatedAt:        time.Now().UTC(),
+		CreatedAt:        now,
+		UpdatedAt:        now,
 		CWD:              normalizeCWD(cwd),
 		ForkedFromID:     strings.TrimSpace(fork.ForkedFromID),
 		ForkedFromTurnID: strings.TrimSpace(fork.ForkedFromTurnID),
@@ -211,10 +214,12 @@ func listLocked(sessDir string, limit int) ([]Session, error) {
 		if leftPinned != rightPinned {
 			return leftPinned
 		}
-		if leftPinned && rightPinned && !sessions[i].PinnedAt.Equal(*sessions[j].PinnedAt) {
-			return sessions[i].PinnedAt.After(*sessions[j].PinnedAt)
+		leftTime := sessionActivityAt(sessions[i])
+		rightTime := sessionActivityAt(sessions[j])
+		if !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
 		}
-		return sessions[i].CreatedAt.After(sessions[j].CreatedAt)
+		return sessions[i].ID > sessions[j].ID
 	})
 
 	if limit > 0 && len(sessions) > limit {
@@ -255,8 +260,10 @@ func Find(sessDir, id string) (Session, bool, error) {
 
 // UpdateIndex updates the entries count and summary for a session in the index.
 func UpdateIndex(sessDir string, id string, entries int, summary string) error {
+	now := time.Now().UTC()
 	_, err := updateMetadata(sessDir, id, true, func(s *Session) {
 		s.Entries = entries
+		s.UpdatedAt = now
 		if summary != "" && s.Summary == "" {
 			s.Summary = summary
 		}
@@ -347,6 +354,13 @@ func updateMetadata(sessDir, id string, missingOK bool, update func(*Session)) (
 		return Session{}, err
 	}
 	return updated, nil
+}
+
+func sessionActivityAt(s Session) time.Time {
+	if !s.UpdatedAt.IsZero() {
+		return s.UpdatedAt
+	}
+	return s.CreatedAt
 }
 
 // MostRecent returns the most recent session ID, or empty string if none.

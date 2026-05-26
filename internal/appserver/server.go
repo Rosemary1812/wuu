@@ -710,6 +710,11 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	if !metadata.CreatedAt.IsZero() {
 		th.CreatedAt = metadata.CreatedAt
 	}
+	if !metadata.UpdatedAt.IsZero() {
+		th.UpdatedAt = metadata.UpdatedAt
+	} else if !metadata.CreatedAt.IsZero() {
+		th.UpdatedAt = metadata.CreatedAt
+	}
 	if strings.TrimSpace(metadata.CWD) != "" {
 		th.CWD = metadata.CWD
 	}
@@ -721,7 +726,10 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 }
 
 func threadEntryFromSession(sess session.Session, provider, model string) threadListEntry {
-	updatedAt := sess.CreatedAt
+	updatedAt := sess.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = sess.CreatedAt
+	}
 	return threadListEntry{
 		thread: Thread{
 			ID:               sess.ID,
@@ -1066,9 +1074,6 @@ func sortThreadListEntries(entries []threadListEntry) {
 		if leftPinned != rightPinned {
 			return leftPinned
 		}
-		if leftPinned && rightPinned && !entries[i].pinnedAt.Equal(*entries[j].pinnedAt) {
-			return entries[i].pinnedAt.After(*entries[j].pinnedAt)
-		}
 		leftTime := entries[i].thread.UpdatedAt
 		if leftTime.IsZero() {
 			leftTime = entries[i].thread.CreatedAt
@@ -1077,7 +1082,10 @@ func sortThreadListEntries(entries []threadListEntry) {
 		if rightTime.IsZero() {
 			rightTime = entries[j].thread.CreatedAt
 		}
-		return leftTime.After(rightTime)
+		if !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
+		}
+		return entries[i].thread.ID > entries[j].thread.ID
 	})
 }
 

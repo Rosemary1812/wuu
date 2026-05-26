@@ -622,6 +622,44 @@ func TestServerThreadListUsesSessionIndexMetadata(t *testing.T) {
 	}
 }
 
+func TestServerThreadListOrdersSessionsByUpdatedAt(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "first-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, "first-thread", 2, "first summary"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "second-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, "second-thread", 2, "second summary"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if err := session.UpdateIndex(rt.SessionDir, "first-thread", 4, "ignored later summary"); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/list"}`)); err != nil {
+		t.Fatalf("thread/list: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadListResult](t, responseByID(t, msgs, "1")["result"])
+	if len(result.Threads) != 2 {
+		t.Fatalf("expected two visible workspace threads, got %+v", result.Threads)
+	}
+	if result.Threads[0].ID != "first-thread" || result.Threads[1].ID != "second-thread" {
+		t.Fatalf("expected recently updated thread first, got %+v", result.Threads)
+	}
+	if !result.Threads[0].UpdatedAt.After(result.Threads[1].UpdatedAt) {
+		t.Fatalf("expected first thread updated_at to be newer, got %+v", result.Threads)
+	}
+}
+
 func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu", "state")
