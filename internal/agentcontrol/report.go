@@ -1,0 +1,166 @@
+package agentcontrol
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/blueberrycongee/wuu/internal/harness"
+)
+
+type ReportEvidence struct {
+	Type    string `json:"type,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Command string `json:"command,omitempty"`
+	Output  string `json:"output,omitempty"`
+	Note    string `json:"note,omitempty"`
+}
+
+type AgentReportRequest struct {
+	Outcome   string           `json:"outcome"`
+	Summary   string           `json:"summary"`
+	WorkDone  []string         `json:"work_done,omitempty"`
+	Blockers  []string         `json:"blockers,omitempty"`
+	NextSteps []string         `json:"next_steps,omitempty"`
+	Evidence  []ReportEvidence `json:"evidence,omitempty"`
+	Artifacts []string         `json:"artifacts,omitempty"`
+}
+
+type AgentReportResult struct {
+	TaskID     string   `json:"task_id"`
+	AgentID    string   `json:"agent_id"`
+	AgentPath  string   `json:"agent_path,omitempty"`
+	Outcome    string   `json:"outcome"`
+	ReportPath string   `json:"report_path,omitempty"`
+	Artifacts  []string `json:"artifacts,omitempty"`
+}
+
+func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentReportRequest) (AgentReportResult, error) {
+	if c == nil || c.harnessStore == nil {
+		return AgentReportResult{}, errors.New("agent_report: harness store not configured")
+	}
+	id := strings.TrimSpace(agentID)
+	if id == "" {
+		id = c.agentIDForPath(agentPath)
+	}
+	if id == "" || id == c.sessionID || id == c.rootThreadID {
+		return AgentReportResult{}, errors.New("agent_report is only available to child agents")
+	}
+	if c.manager.Get(id) == nil {
+		return AgentReportResult{}, fmt.Errorf("agent_report: agent %q not found", id)
+	}
+	outcome, err := normalizeReportOutcome(req.Outcome)
+	if err != nil {
+		return AgentReportResult{}, err
+	}
+	summary := strings.TrimSpace(req.Summary)
+	if summary == "" {
+		return AgentReportResult{}, errors.New("agent_report: summary is required")
+	}
+	path := strings.TrimSpace(agentPath)
+	if path == "" {
+		if meta, ok := c.threads.Resolve(id); ok {
+			path = meta.Path
+		}
+	}
+	evidence := make([]harness.EvidenceRef, 0, len(req.Evidence))
+	for _, ref := range req.Evidence {
+		evidence = append(evidence, harness.EvidenceRef{
+			Type:    strings.TrimSpace(ref.Type),
+			Path:    strings.TrimSpace(ref.Path),
+			Line:    ref.Line,
+			Command: strings.TrimSpace(ref.Command),
+			Output:  strings.TrimSpace(ref.Output),
+			Note:    strings.TrimSpace(ref.Note),
+		})
+	}
+	artifacts := trimStringSlice(req.Artifacts)
+	report, err := c.harnessStore.SubmitReport(harness.Report{
+		ID:          id + "-agent-report",
+		TaskID:      id,
+		RunID:       harnessRunID(id),
+		AgentID:     id,
+		AgentPath:   path,
+		Outcome:     outcome,
+		Summary:     summary,
+		WorkDone:    trimStringSlice(req.WorkDone),
+		Blockers:    trimStringSlice(req.Blockers),
+		NextSteps:   trimStringSlice(req.NextSteps),
+		Evidence:    evidence,
+		Artifacts:   artifacts,
+		SubmittedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return AgentReportResult{}, err
+	}
+	if report.ReportPath != "" && !stringSliceContains(artifacts, report.ReportPath) {
+		artifacts = append(artifacts, report.ReportPath)
+	}
+	for _, path := range trimStringSlice(req.Artifacts) {
+		_ = c.harnessStore.AddArtifact(harness.Artifact{
+			ID:        id + "-artifact-" + sanitizeArtifactID(path),
+			TaskID:    id,
+			RunID:     harnessRunID(id),
+			Kind:      harness.ArtifactEvidence,
+			Path:      path,
+			Summary:   "agent-reported artifact",
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+	return AgentReportResult{
+		TaskID:     id,
+		AgentID:    id,
+		AgentPath:  path,
+		Outcome:    outcome,
+		ReportPath: report.ReportPath,
+		Artifacts:  artifacts,
+	}, nil
+}
+
+func normalizeReportOutcome(outcome string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(outcome)) {
+	case "completed", "complete":
+		return "completed", nil
+	case "stuck":
+		return "stuck", nil
+	case "error", "failed":
+		return "error", nil
+	case "cancelled", "canceled":
+		return "cancelled", nil
+	default:
+		return "", errors.New("agent_report: outcome must be completed, stuck, error, or cancelled")
+	}
+}
+
+func trimStringSlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func sanitizeArtifactID(path string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(path) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + ('a' - 'A'))
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	id := strings.Trim(b.String(), "_")
+	if id == "" {
+		return "artifact"
+	}
+	return id
+}

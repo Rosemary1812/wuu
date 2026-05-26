@@ -321,6 +321,71 @@ func TestSpawn_RecordsHarnessTaskRunAndReport(t *testing.T) {
 	}
 }
 
+func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-agent-report",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report", "harness"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "worker",
+		TaskName: "structured_report",
+		Prompt:   "inspect code",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+		Outcome:  "completed",
+		Summary:  "Inspected the harness path and found the spawn lifecycle.",
+		WorkDone: []string{"Read agentcontrol spawn code."},
+		Evidence: []ReportEvidence{{
+			Type: "file",
+			Path: "internal/agentcontrol/agent_control.go",
+			Line: 180,
+			Note: "spawn entry point",
+		}},
+		Artifacts: []string{"reports/notes.md"},
+	})
+	if err != nil {
+		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	if report.TaskID != res.AgentID || report.ReportPath == "" || len(report.Artifacts) != 2 {
+		t.Fatalf("unexpected report result: %+v", report)
+	}
+	if _, err := os.Stat(report.ReportPath); err != nil {
+		t.Fatalf("report file missing: %v", err)
+	}
+	reports, err := c.HarnessStore().ListReports()
+	if err != nil {
+		t.Fatalf("ListReports: %v", err)
+	}
+	if len(reports) != 1 || reports[0].Summary == "" || len(reports[0].Evidence) != 1 {
+		t.Fatalf("unexpected persisted reports: %+v", reports)
+	}
+	artifacts, err := c.HarnessStore().ListArtifacts()
+	if err != nil {
+		t.Fatalf("ListArtifacts: %v", err)
+	}
+	if len(artifacts) != 2 {
+		t.Fatalf("expected report artifact and explicit artifact, got %+v", artifacts)
+	}
+	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
 func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

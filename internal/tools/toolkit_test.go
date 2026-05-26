@@ -449,6 +449,7 @@ func TestToolkit_TaskAddressedAgentTools_RegisteredInDefinitions(t *testing.T) {
 		"followup_task": false,
 		"wait_agent":    false,
 		"close_agent":   false,
+		"agent_report":  false,
 	}
 	defs := kit.Definitions()
 	for _, d := range defs {

@@ -628,6 +628,100 @@ func (t *ListAgentsTool) Execute(_ context.Context, argsJSON string) (string, er
 	return string(out), nil
 }
 
+// ---------------------------------------------------------------------------
+// agent_report
+// ---------------------------------------------------------------------------
+
+type AgentReportTool struct{ env *Env }
+
+func NewAgentReportTool(env *Env) *AgentReportTool { return &AgentReportTool{env: env} }
+
+func (t *AgentReportTool) Name() string            { return "agent_report" }
+func (t *AgentReportTool) IsReadOnly() bool        { return false }
+func (t *AgentReportTool) IsConcurrencySafe() bool { return false }
+
+func (t *AgentReportTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{
+		Name: "agent_report",
+		Description: "Submit a structured handoff report for the current child agent. " +
+			"Use this before your final answer so parent and later agents receive a durable " +
+			"summary with constraints, work done, blockers, evidence references, and artifact paths. " +
+			"Do not use this for casual messages; use send_message for interim communication.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"outcome": map[string]any{
+					"type":        "string",
+					"enum":        []string{"completed", "stuck", "error", "cancelled"},
+					"description": "Final task outcome.",
+				},
+				"summary": map[string]any{
+					"type":        "string",
+					"description": "Short handoff summary. Include the user's intent you preserved and the important result.",
+				},
+				"work_done": map[string]any{
+					"type":        "array",
+					"description": "Concrete work completed.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"blockers": map[string]any{
+					"type":        "array",
+					"description": "Problems that prevented completion, with exact errors when relevant.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"next_steps": map[string]any{
+					"type":        "array",
+					"description": "Specific next actions for the parent or a later agent.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"evidence": map[string]any{
+					"type":        "array",
+					"description": "Pointers to raw evidence that let later agents verify the report instead of trusting prose.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"type":    map[string]any{"type": "string", "description": "file, command, diff, log, screenshot, or note."},
+							"path":    map[string]any{"type": "string", "description": "File or artifact path."},
+							"line":    map[string]any{"type": "integer", "description": "Optional 1-based line number."},
+							"command": map[string]any{"type": "string", "description": "Command that produced the evidence."},
+							"output":  map[string]any{"type": "string", "description": "Important output excerpt."},
+							"note":    map[string]any{"type": "string", "description": "Why this evidence matters."},
+						},
+					},
+				},
+				"artifacts": map[string]any{
+					"type":        "array",
+					"description": "Paths to durable artifacts such as patch files, reports, logs, or test output.",
+					"items":       map[string]any{"type": "string"},
+				},
+			},
+			"required": []string{"outcome", "summary"},
+		},
+	}
+}
+
+func (t *AgentReportTool) Execute(_ context.Context, argsJSON string) (string, error) {
+	if t.env.AgentControl == nil {
+		return "", errors.New("agent_report: agent control not configured")
+	}
+	if strings.TrimSpace(t.env.AgentID) == "" || currentAgentPath(t.env) == agentthread.RootPath {
+		return "", errors.New("agent_report is only available to child agents")
+	}
+	var req agentcontrol.AgentReportRequest
+	if err := decodeArgs(argsJSON, &req); err != nil {
+		return "", err
+	}
+	result, err := t.env.AgentControl.RecordAgentReport(t.env.AgentID, currentAgentPath(t.env), req)
+	if err != nil {
+		return "", err
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 func targetMessageSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
