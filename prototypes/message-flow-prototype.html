@@ -1,0 +1,989 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wuu Message Flow Prototype</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #f5f5f7;
+        --surface: rgba(255, 255, 255, 0.82);
+        --text: #1d1d1f;
+        --muted: #75757a;
+        --muted-2: #9a9aa0;
+        --faint: #c7c7cc;
+        --line: rgba(60, 60, 67, 0.14);
+        --soft: rgba(60, 60, 67, 0.06);
+        --soft-hover: rgba(60, 60, 67, 0.09);
+        --accent: #007aff;
+        --danger: #c53b3b;
+        --danger-soft: #a64b4b;
+        --code-bg: rgba(118, 118, 128, 0.09);
+        --code-line: rgba(60, 60, 67, 0.12);
+        --shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+        --radius-control: 8px;
+        --timing: cubic-bezier(0.2, 0, 0, 1);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #111113;
+          --surface: rgba(28, 28, 30, 0.82);
+          --text: #f5f5f7;
+          --muted: #a6a6ad;
+          --muted-2: #7d7d86;
+          --faint: #5d5d66;
+          --line: rgba(235, 235, 245, 0.14);
+          --soft: rgba(235, 235, 245, 0.07);
+          --soft-hover: rgba(235, 235, 245, 0.11);
+          --danger: #ff6b65;
+          --danger-soft: #ff8a82;
+          --code-bg: rgba(235, 235, 245, 0.08);
+          --code-line: rgba(235, 235, 245, 0.12);
+          --shadow: 0 20px 70px rgba(0, 0, 0, 0.34);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 12% 0%, rgba(0, 122, 255, 0.08), transparent 28%),
+          radial-gradient(circle at 95% 8%, rgba(88, 86, 214, 0.08), transparent 24%),
+          var(--page);
+        color: var(--text);
+        font-family:
+          -apple-system,
+          BlinkMacSystemFont,
+          "SF Pro Text",
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      textarea {
+        font: inherit;
+      }
+
+      .app {
+        min-height: 100vh;
+        padding: 28px;
+      }
+
+      .shell {
+        width: min(1120px, 100%);
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+        gap: 22px;
+        align-items: start;
+      }
+
+      .debug-panel,
+      .conversation-shell {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+      }
+
+      .debug-panel {
+        position: sticky;
+        top: 28px;
+        border-radius: 18px;
+        padding: 16px;
+      }
+
+      .debug-title {
+        margin: 0 0 4px;
+        font-size: 15px;
+        font-weight: 650;
+      }
+
+      .debug-note {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .debug-actions {
+        display: grid;
+        gap: 8px;
+      }
+
+      .debug-actions button,
+      .choice-button,
+      .copy-button {
+        border: 1px solid var(--line);
+        background: var(--soft);
+        color: var(--text);
+        border-radius: var(--radius-control);
+        cursor: pointer;
+        transition:
+          background 160ms var(--timing),
+          border-color 160ms var(--timing),
+          transform 160ms var(--timing);
+      }
+
+      .debug-actions button {
+        min-height: 34px;
+        padding: 7px 10px;
+        text-align: left;
+        font-size: 13px;
+      }
+
+      .debug-actions button:hover,
+      .choice-button:hover,
+      .copy-button:hover {
+        background: var(--soft-hover);
+        border-color: color-mix(in srgb, var(--line) 60%, var(--muted));
+      }
+
+      .debug-actions button:active,
+      .choice-button:active,
+      .copy-button:active {
+        transform: scale(0.99);
+      }
+
+      .constraint-list {
+        margin: 16px 0 0;
+        padding: 12px 0 0;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .constraint-list strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .conversation-shell {
+        border-radius: 22px;
+        min-height: 780px;
+        overflow: hidden;
+      }
+
+      .conversation-header {
+        height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .conversation-header strong {
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .conversation-header span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .conversation {
+        width: min(760px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 38px 0 80px;
+      }
+
+      .turn {
+        display: grid;
+        gap: 18px;
+      }
+
+      .user-message-block {
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .user-message {
+        max-width: min(560px, 86%);
+        padding: 10px 13px;
+        border-radius: 15px;
+        background: var(--soft);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.58;
+      }
+
+      .process {
+        margin: 2px 0 0;
+        color: var(--muted);
+      }
+
+      .process-toggle {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 26px;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .process-toggle:focus-visible {
+        outline: 2px solid color-mix(in srgb, var(--accent), transparent 38%);
+        outline-offset: 3px;
+        border-radius: var(--radius-control);
+      }
+
+      .status-viewport {
+        display: inline-grid;
+        grid-template-areas: "stack";
+        align-items: center;
+        min-width: 0;
+        height: 1.4em;
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 540;
+      }
+
+      .state-label {
+        grid-area: stack;
+        display: inline-block;
+        position: relative;
+        white-space: nowrap;
+      }
+
+      .state-label.running {
+        color: color-mix(in srgb, var(--muted), var(--text) 8%);
+      }
+
+      .state-label.running::after {
+        content: attr(data-label);
+        position: absolute;
+        inset: 0;
+        color: transparent;
+        background:
+          linear-gradient(
+            100deg,
+            transparent 0%,
+            transparent 36%,
+            color-mix(in srgb, var(--text) 82%, white 18%) 50%,
+            transparent 64%,
+            transparent 100%
+          );
+        background-size: 260% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        animation: textSweep 3s ease-in-out infinite;
+      }
+
+      .state-label.failed {
+        color: var(--danger);
+      }
+
+      .state-label.waiting {
+        color: color-mix(in srgb, var(--text), var(--accent) 22%);
+      }
+
+      .state-label.entering {
+        animation: stateTextIn 220ms var(--timing) both;
+      }
+
+      .state-label.leaving {
+        animation: stateTextOut 180ms var(--timing) both;
+      }
+
+      .process-meta {
+        color: var(--muted-2);
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .chevron {
+        margin-left: auto;
+        color: var(--muted-2);
+        font-size: 14px;
+        line-height: 1;
+        transform: rotate(0deg);
+        transition: transform 220ms var(--timing);
+      }
+
+      .process.expanded .chevron {
+        transform: rotate(90deg);
+      }
+
+      .process-details {
+        display: grid;
+        grid-template-rows: 0fr;
+        opacity: 0;
+        transition:
+          grid-template-rows 260ms var(--timing),
+          opacity 180ms var(--timing);
+      }
+
+      .process.expanded .process-details {
+        grid-template-rows: 1fr;
+        opacity: 1;
+      }
+
+      .process-details-inner {
+        overflow: hidden;
+      }
+
+      .process-list {
+        padding: 7px 0 2px 18px;
+        display: grid;
+        gap: 5px;
+      }
+
+      .process-item {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+        opacity: 0;
+        transform: translateY(3px);
+        animation: processItemIn 240ms var(--timing) forwards;
+      }
+
+      .process-item.thought {
+        max-width: 660px;
+        color: color-mix(in srgb, var(--muted), var(--text) 8%);
+      }
+
+      .process-item.action {
+        color: var(--muted-2);
+      }
+
+      .process-item.error {
+        color: var(--danger-soft);
+      }
+
+      .choice-inline {
+        margin-top: 4px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .choice-button {
+        min-height: 30px;
+        padding: 5px 10px;
+        font-size: 12px;
+        color: var(--text);
+      }
+
+      .final-text {
+        max-width: 720px;
+        color: var(--text);
+        font-size: 14.5px;
+        line-height: 1.72;
+      }
+
+      .final-block {
+        opacity: 0;
+        transform: translateY(3px);
+        animation: finalBlockIn 240ms var(--timing) forwards;
+      }
+
+      .final-text p {
+        margin: 0 0 12px;
+      }
+
+      .final-text h2,
+      .final-text h3 {
+        margin: 20px 0 8px;
+        font-size: 15.5px;
+        line-height: 1.4;
+        font-weight: 650;
+        letter-spacing: 0;
+      }
+
+      .final-text ul,
+      .final-text ol {
+        margin: 0 0 13px;
+        padding-left: 20px;
+      }
+
+      .final-text li {
+        margin: 3px 0;
+      }
+
+      .final-text blockquote {
+        margin: 14px 0;
+        padding: 0 0 0 12px;
+        border-left: 2px solid var(--line);
+        color: var(--muted);
+      }
+
+      .code-card,
+      .table-wrap {
+        border: 1px solid var(--code-line);
+        background: var(--code-bg);
+        border-radius: 10px;
+        overflow: hidden;
+        margin: 14px 0;
+      }
+
+      .code-toolbar {
+        min-height: 32px;
+        padding: 0 10px;
+        border-bottom: 1px solid var(--code-line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .copy-button {
+        min-height: 24px;
+        padding: 3px 8px;
+        opacity: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .code-card:hover .copy-button,
+      .code-card:focus-within .copy-button {
+        opacity: 1;
+      }
+
+      pre {
+        margin: 0;
+        padding: 13px 14px 15px;
+        overflow-x: auto;
+      }
+
+      code,
+      pre {
+        font-family:
+          "SF Mono",
+          ui-monospace,
+          Menlo,
+          Consolas,
+          monospace;
+        font-size: 12.5px;
+        line-height: 1.62;
+      }
+
+      .inline-code {
+        font-family:
+          "SF Mono",
+          ui-monospace,
+          Menlo,
+          Consolas,
+          monospace;
+        font-size: 0.92em;
+        color: color-mix(in srgb, var(--text), var(--accent) 16%);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 9px 10px;
+        border-bottom: 1px solid var(--code-line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .empty-hint {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      @keyframes textSweep {
+        0% {
+          background-position: 160% 0;
+          opacity: 0;
+        }
+        18% {
+          opacity: 0;
+        }
+        46% {
+          opacity: 0.92;
+        }
+        78% {
+          opacity: 0.92;
+        }
+        100% {
+          background-position: -160% 0;
+          opacity: 0;
+        }
+      }
+
+      @keyframes stateTextIn {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes stateTextOut {
+        from {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        to {
+          opacity: 0;
+          transform: translateY(-5px);
+        }
+      }
+
+      @keyframes processItemIn {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes finalBlockIn {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+          transition-duration: 1ms !important;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .app {
+          padding: 16px;
+        }
+
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .debug-panel {
+          position: static;
+        }
+
+        .debug-actions {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .conversation-shell {
+          min-height: 680px;
+        }
+
+        .conversation {
+          width: min(100% - 32px, 760px);
+          padding-top: 28px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <div class="shell">
+        <aside class="debug-panel" aria-label="消息流调试按钮">
+          <h1 class="debug-title">消息流原型</h1>
+          <p class="debug-note">调试按钮会模拟真实 turn：运行中展开过程，完成后折叠，只突出最后一段 final text。</p>
+          <div class="debug-actions">
+            <button type="button" data-run="success">播放完整成功流</button>
+            <button type="button" data-run="waiting">模拟等待用户选择</button>
+            <button type="button" data-run="failed">模拟处理失败</button>
+            <button type="button" data-run="stopped">模拟中途停止</button>
+            <button type="button" data-run="completed">加载完成态</button>
+            <button type="button" data-run="toggle">展开/收起过程</button>
+            <button type="button" data-run="reset">重置</button>
+          </div>
+          <div class="constraint-list">
+            <strong>已编码约束：</strong><br />
+            final text 无容器；过程无背景；运行态文字慢扫光；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
+          </div>
+        </aside>
+
+        <section class="conversation-shell" aria-label="消息流预览">
+          <header class="conversation-header">
+            <strong>中间消息流</strong>
+            <span>Apple-like text-first prototype</span>
+          </header>
+          <div class="conversation">
+            <article class="turn" id="turn">
+              <div class="empty-hint" id="emptyHint">点击左侧调试按钮开始模拟。</div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const turn = document.querySelector("#turn");
+      const buttons = document.querySelectorAll("[data-run]");
+
+      let timers = [];
+      let ticker = 0;
+      let startedAt = 0;
+      let elapsedOverride = null;
+      let processExpanded = true;
+      let processItemCount = 0;
+
+      const wait = (ms) => new Promise((resolve) => {
+        const timer = window.setTimeout(resolve, ms);
+        timers.push(timer);
+      });
+
+      function clearTimers() {
+        for (const timer of timers) {
+          window.clearTimeout(timer);
+        }
+        timers = [];
+        if (ticker) {
+          window.clearInterval(ticker);
+          ticker = 0;
+        }
+      }
+
+      function resetTurn() {
+        clearTimers();
+        startedAt = 0;
+        elapsedOverride = null;
+        processExpanded = true;
+        processItemCount = 0;
+        turn.innerHTML = '<div class="empty-hint" id="emptyHint">点击左侧调试按钮开始模拟。</div>';
+      }
+
+      function createTurn(userText) {
+        clearTimers();
+        startedAt = Date.now();
+        elapsedOverride = null;
+        processExpanded = true;
+        processItemCount = 0;
+        turn.innerHTML = `
+          <div class="user-message-block">
+            <div class="user-message">${escapeHTML(userText)}</div>
+          </div>
+          <section class="process expanded running" id="process">
+            <button class="process-toggle" id="processToggle" type="button" aria-expanded="true">
+              <span class="status-viewport" id="statusViewport"></span>
+              <span class="process-meta" id="processMeta">· 0s</span>
+              <span class="chevron" aria-hidden="true">›</span>
+            </button>
+            <div class="process-details">
+              <div class="process-details-inner">
+                <div class="process-list" id="processList"></div>
+              </div>
+            </div>
+          </section>
+          <article class="final-text" id="finalText"></article>
+        `;
+        document.querySelector("#processToggle").addEventListener("click", toggleProcess);
+        setStatus("正在思考", "running");
+        startTicker();
+      }
+
+      function startTicker() {
+        updateMeta();
+        ticker = window.setInterval(updateMeta, 1000);
+      }
+
+      function updateMeta() {
+        const meta = document.querySelector("#processMeta");
+        if (!meta || !startedAt) {
+          return;
+        }
+        const elapsed = elapsedOverride ?? Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+        if (isCompleted()) {
+          meta.textContent = `· ${processItemCount} 项 · ${elapsed}s`;
+          return;
+        }
+        meta.textContent = `· ${elapsed}s`;
+      }
+
+      function isCompleted() {
+        const process = document.querySelector("#process");
+        return Boolean(process?.classList.contains("completed") || process?.classList.contains("stopped") || process?.classList.contains("failed"));
+      }
+
+      function setStatus(text, mode) {
+        const viewport = document.querySelector("#statusViewport");
+        if (!viewport) {
+          return;
+        }
+        const current = viewport.querySelector(".state-label.current");
+        if (current && current.dataset.label === text && current.dataset.mode === mode) {
+          return;
+        }
+        if (current) {
+          current.classList.remove("current", "entering");
+          current.classList.add("leaving");
+          window.setTimeout(() => current.remove(), 190);
+        }
+        const next = document.createElement("span");
+        next.className = `state-label current entering ${mode || ""}`.trim();
+        next.textContent = text;
+        next.dataset.label = text;
+        next.dataset.mode = mode || "";
+        viewport.appendChild(next);
+      }
+
+      function toggleProcess() {
+        const process = document.querySelector("#process");
+        const toggle = document.querySelector("#processToggle");
+        if (!process || !toggle) {
+          return;
+        }
+        processExpanded = !process.classList.contains("expanded");
+        process.classList.toggle("expanded", processExpanded);
+        toggle.setAttribute("aria-expanded", String(processExpanded));
+      }
+
+      function setProcessExpanded(expanded) {
+        const process = document.querySelector("#process");
+        const toggle = document.querySelector("#processToggle");
+        if (!process || !toggle) {
+          return;
+        }
+        processExpanded = expanded;
+        process.classList.toggle("expanded", expanded);
+        toggle.setAttribute("aria-expanded", String(expanded));
+      }
+
+      function addProcessItem(kind, text, extraHTML = "") {
+        const list = document.querySelector("#processList");
+        if (!list) {
+          return;
+        }
+        processItemCount += 1;
+        const item = document.createElement("div");
+        item.className = `process-item ${kind}`;
+        item.style.animationDelay = `${Math.min(120, processItemCount * 18)}ms`;
+        item.innerHTML = `${escapeHTML(text)}${extraHTML}`;
+        list.appendChild(item);
+        updateMeta();
+      }
+
+      function appendFinalBlock(html) {
+        const finalText = document.querySelector("#finalText");
+        if (!finalText) {
+          return;
+        }
+        const block = document.createElement("div");
+        block.className = "final-block";
+        block.innerHTML = html;
+        finalText.appendChild(block);
+      }
+
+      function completeProcess({ status = "completed", elapsed = 18 } = {}) {
+        const process = document.querySelector("#process");
+        if (!process) {
+          return;
+        }
+        elapsedOverride = elapsed;
+        process.classList.remove("running", "waiting");
+        process.classList.add(status);
+        if (status === "completed") {
+          setStatus("过程记录", "");
+          setProcessExpanded(false);
+        } else if (status === "stopped") {
+          setStatus("已停止", "");
+          setProcessExpanded(false);
+        } else if (status === "failed") {
+          setStatus("处理失败", "failed");
+          setProcessExpanded(true);
+        }
+        updateMeta();
+        if (ticker && status !== "failed") {
+          window.clearInterval(ticker);
+          ticker = 0;
+        }
+      }
+
+      async function runSuccess() {
+        createTurn("我们重构中间消息流：发送后少展示信息，运行中展开过程，完成后只突出最后回复。");
+        await wait(350);
+        addProcessItem("thought", "我先确认消息流里哪些内容属于最终回复，哪些属于中间过程。");
+        await wait(650);
+        setStatus("正在查看代码", "running");
+        addProcessItem("action", "搜索 ThreadItemView");
+        await wait(520);
+        addProcessItem("action", "读取 App.tsx");
+        await wait(520);
+        addProcessItem("action", "读取 model.go");
+        await wait(600);
+        addProcessItem("thought", "代码已经把 agent_message、reasoning 和 tool_call 分成不同 item，UI 可以按类型组织。");
+        await wait(700);
+        setStatus("正在整理回复", "running");
+        addProcessItem("action", "运行 npm run typecheck");
+        await wait(400);
+        appendFinalBlock("<p>我建议把中间消息流改成一个 text-first 的任务 turn：运行时让过程保持可见，完成后把过程整体折叠，只让最后一段回复成为主内容。</p>");
+        await wait(620);
+        appendFinalBlock("<h2>核心规则</h2><ol><li>最终内容只取最后一段模型回复。</li><li>中间过程可以包含思考正文和工具动作，但完成后统一折叠。</li><li>状态变化靠文字本身的慢扫光表达，不使用图标、进度条或 spinner。</li></ol>");
+        await wait(620);
+        appendFinalBlock("<blockquote>过程不是隐藏掉，而是在完成后降级成可回看的上下文。</blockquote>");
+        await wait(620);
+        appendFinalBlock(`
+          <div class="code-card">
+            <div class="code-toolbar"><span>tsx</span><button class="copy-button" type="button">复制</button></div>
+            <pre><code>const finalText = lastAgentMessage(turn.items);
+const processItems = itemsBefore(finalText);
+
+return (
+  &lt;Turn&gt;
+    &lt;ProcessSummary items={processItems} collapsed={turn.done} /&gt;
+    &lt;FinalText text={finalText.text} /&gt;
+  &lt;/Turn&gt;
+);</code></pre>
+          </div>
+        `);
+        await wait(620);
+        appendFinalBlock(`
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>内容</th><th>运行中</th><th>完成后</th></tr></thead>
+              <tbody>
+                <tr><td>思考正文</td><td>淡灰正文可见</td><td>折叠进过程</td></tr>
+                <tr><td>工具动作</td><td>动作 + 对象</td><td>折叠进过程</td></tr>
+                <tr><td>最终回复</td><td>自然流式出现</td><td>纯文字主显示</td></tr>
+              </tbody>
+            </table>
+          </div>
+        `);
+        await wait(620);
+        appendFinalBlock("<p>这样做的结果是：用户能确认系统正在推进，也能在需要时回看过程，但阅读焦点始终落在真正的最终回复上。</p>");
+        await wait(540);
+        completeProcess({ status: "completed", elapsed: 18 });
+      }
+
+      async function runWaiting() {
+        createTurn("如果 agent 中间需要我选择，消息流应该怎么显示？");
+        await wait(320);
+        addProcessItem("thought", "我先收敛两个可行方向，然后让用户选择一个更符合产品气质的方案。");
+        await wait(600);
+        setStatus("等待你选择", "waiting");
+        const choices = `
+          <div class="choice-inline">
+            <button class="choice-button" type="button" data-choice="minimal">极简过程</button>
+            <button class="choice-button" type="button" data-choice="detailed">详细过程</button>
+          </div>
+        `;
+        addProcessItem("thought", "选择过程默认展示的密度。", choices);
+        document.querySelectorAll("[data-choice]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            if (button.disabled) {
+              return;
+            }
+            document.querySelectorAll("[data-choice]").forEach((item) => {
+              item.disabled = true;
+            });
+            setStatus("正在继续处理", "running");
+            addProcessItem("action", `收到选择：${button.textContent.trim()}`);
+            await wait(500);
+            appendFinalBlock("<p>已按你的选择继续。等待用户选择时仍然使用同一条状态行，只是状态更明确，不需要额外做大卡片。</p>");
+            await wait(420);
+            completeProcess({ status: "completed", elapsed: 11 });
+          });
+        });
+      }
+
+      async function runFailed() {
+        createTurn("如果模型或工具失败了，消息流应该怎么处理？");
+        await wait(320);
+        addProcessItem("thought", "我会保留同一条状态行体系，只把失败态的文字调成轻红色。");
+        await wait(520);
+        setStatus("正在运行检查", "running");
+        addProcessItem("action", "运行 npm run typecheck");
+        await wait(700);
+        addProcessItem("error", "检查失败：存在 2 个类型错误，需要用户修正或让我继续处理。");
+        completeProcess({ status: "failed", elapsed: 7 });
+      }
+
+      async function runStopped() {
+        createTurn("如果我中途点了停止，过程应该怎么收束？");
+        await wait(300);
+        addProcessItem("thought", "我已经开始分析消息流，但这个 turn 会在中途被停止。");
+        await wait(520);
+        setStatus("正在查看代码", "running");
+        addProcessItem("action", "读取 App.tsx");
+        await wait(650);
+        addProcessItem("action", "搜索 process group");
+        await wait(460);
+        completeProcess({ status: "stopped", elapsed: 6 });
+      }
+
+      function loadCompleted() {
+        createTurn("加载一个完成态，直接看最终效果。");
+        addProcessItem("thought", "我检查了现有事件流，确认 final text 和过程 item 已经分离。");
+        addProcessItem("action", "搜索 ThreadItemView");
+        addProcessItem("action", "读取 App.tsx");
+        addProcessItem("action", "读取 model.go");
+        addProcessItem("thought", "完成后过程整体折叠，只保留一行轻量入口。");
+        appendFinalBlock("<p>这是完成态：过程已经折叠，最终回复是纯文字，没有容器。只有代码块、表格这类需要边界的内容才有轻容器。</p>");
+        appendFinalBlock("<h2>完成态展示</h2><ul><li>过程行只显示 <span class=\"inline-code\">过程记录 · N 项 · 18s</span></li><li>展开后可以回看淡灰过程正文和工具动作</li><li>最终回复不显示助手标题、不显示头像、不包卡片</li></ul>");
+        completeProcess({ status: "completed", elapsed: 18 });
+      }
+
+      function escapeHTML(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const run = button.dataset.run;
+          if (run === "success") {
+            void runSuccess();
+          } else if (run === "waiting") {
+            void runWaiting();
+          } else if (run === "failed") {
+            void runFailed();
+          } else if (run === "stopped") {
+            void runStopped();
+          } else if (run === "completed") {
+            loadCompleted();
+          } else if (run === "toggle") {
+            toggleProcess();
+          } else {
+            resetTurn();
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
