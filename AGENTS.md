@@ -31,6 +31,10 @@
 - When investigating a best-practice question, inspect relevant `thirdparty/` code, docs, and tests with targeted searches before deciding on an implementation. Prefer close analogues over generic assumptions.
 - Use third-party code as evidence, not authority. Adapt useful ideas to this repository's existing patterns; do not blindly copy behavior just because another project does it.
 
+## Agent Design Methodology
+
+- When modifying or reviewing core agent behavior, evaluate the design as a closed loop: if an LLM-facing tool is added or changed, verify that prompts teach the model when to use it and when not to use it, and verify that the tool implementation cannot break provider API invariants such as message ordering, tool-call/result pairing, or other protocol rules that would prevent the API from returning a valid response.
+
 ## User-Facing Output
 
 - Must use plain and common words. Must not use obscure words, inflated wording, or needless jargon.
