@@ -667,13 +667,18 @@ check_contains \
 
 check_contains \
   "${migrate_doubao_profile_script}" \
-  'copy_keychain_secret' \
+  'copy_keychain_item' \
   "Doubao credential recovery copies keychain data through a local helper"
 
 check_contains \
   "${migrate_doubao_profile_script}" \
   'cp -pR "${target_profile}" "${backup_profile}"' \
   "Doubao credential recovery backs up the target Wuu Browser profile"
+
+check_contains \
+  "${migrate_doubao_profile_script}" \
+  'keychain_backup_service="${target_service} Backup"' \
+  "Doubao credential recovery backs up the target Wuu Browser keychain item"
 
 check_contains \
   "${makefile}" \

@@ -206,9 +206,10 @@ make browser-migrate-doubao-profile
 ```
 
 That command is dry-run by default. Applying it stops Wuu Browser, backs up the
-current Wuu Browser profile, copies Doubao's encrypted cookie/password
-databases, and copies the local Doubao Safe Storage keychain secret to Wuu
-Browser Safe Storage without printing the secret:
+current Wuu Browser profile, backs up the current Wuu Browser Safe Storage
+keychain item, copies Doubao's encrypted cookie/password databases, and copies
+the local Doubao Safe Storage keychain secret to Wuu Browser Safe Storage
+without printing the secret:
 
 ```bash
 make browser-migrate-doubao-profile ARGS="--apply"

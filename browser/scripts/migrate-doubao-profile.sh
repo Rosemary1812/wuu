@@ -8,10 +8,11 @@ Usage: browser/scripts/migrate-doubao-profile.sh [--dry-run] [--apply] [--source
 Recover Doubao browser login state into the local Wuu Browser product profile.
 
 This is a local recovery tool for the current macOS migration path. It copies
-Doubao's encrypted cookie/password databases into the Wuu Browser profile and
+Doubao's encrypted cookie/password databases into the Wuu Browser profile,
+backs up the current Wuu Browser Safe Storage keychain item when present, and
 copies the Doubao Safe Storage keychain secret to Wuu Browser Safe Storage using
-macOS Security APIs. The secret is never printed or passed as a command-line
-argument.
+macOS Security APIs. Secrets are never printed or passed as command-line
+arguments.
 
 Environment overrides:
   WUU_DOUBAO_PROFILE_DIR   Source profile root. Defaults to
@@ -172,7 +173,11 @@ print_profile_summary() {
   fi
 }
 
-copy_keychain_secret() {
+copy_keychain_item() {
+  local from_service="$1"
+  local from_account="$2"
+  local to_service="$3"
+  local to_account="$4"
   local tmp_dir
   local swift_file
   tmp_dir="$(mktemp -d -t wuu-copy-keychain.XXXXXX)"
@@ -241,7 +246,7 @@ if updateStatus == errSecItemNotFound {
 die("failed to update target keychain item: \(updateStatus)")
 SWIFT
 
-  swift "${swift_file}" "${source_service}" "${source_account}" "${target_service}" "${target_account}" >/dev/null
+  swift "${swift_file}" "${from_service}" "${from_account}" "${to_service}" "${to_account}" >/dev/null
 }
 
 echo "Wuu Browser Doubao profile migration"
@@ -276,6 +281,8 @@ fi
 
 timestamp="$(date +%Y%m%d-%H%M%S)"
 backup_profile="${target_profile}.backup-${timestamp}"
+keychain_backup_service="${target_service} Backup"
+keychain_backup_account="${target_account} ${timestamp}"
 
 echo "Stopping Wuu Browser processes that use the target profile..."
 stop_wuu_browser
@@ -288,8 +295,23 @@ else
   mkdir -p "${target_profile}"
 fi
 
+if keychain_entry_exists "${target_service}" "${target_account}"; then
+  echo "Backing up Wuu Browser Safe Storage keychain item..."
+  copy_keychain_item \
+    "${target_service}" \
+    "${target_account}" \
+    "${keychain_backup_service}" \
+    "${keychain_backup_account}"
+  echo "  keychain backup service: ${keychain_backup_service}"
+  echo "  keychain backup account: ${keychain_backup_account}"
+fi
+
 echo "Copying Doubao Safe Storage key to Wuu Browser Safe Storage..."
-copy_keychain_secret
+copy_keychain_item \
+  "${source_service}" \
+  "${source_account}" \
+  "${target_service}" \
+  "${target_account}"
 
 echo "Copying credential databases..."
 for file in "${credential_files[@]}"; do
