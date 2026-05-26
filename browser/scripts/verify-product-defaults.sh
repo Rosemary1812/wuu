@@ -282,6 +282,11 @@ check_contains \
 
 check_contains \
   "${build_dev_script}" \
+  'ninja_targets="${WUU_BROWSER_NINJA_TARGETS:-}"' \
+  "dev build accepts explicit Ninja target overrides from the environment"
+
+check_contains \
+  "${build_dev_script}" \
   'build_modules="$(default_build_modules)"' \
   "dev build uses platform-aware default build modules"
 
@@ -309,6 +314,11 @@ check_contains \
   "${build_dev_script}" \
   "--package-macos" \
   "dev build can stage the macOS Wuu Browser Dev app after compiling"
+
+check_contains \
+  "${build_dev_script}" \
+  "--ninja-targets" \
+  "dev build exposes narrow Ninja target selection for local Chromium iteration"
 
 check_contains \
   "${makefile}" \

@@ -113,6 +113,19 @@ plus `sparkle_setup` on macOS; pass `--prepare` when starting from a clean
 checkout. On macOS, `--package-macos` then stages
 `browser/out/Wuu Browser Dev.app`.
 
+For native Chromium UI iteration after a full dev app has already been built,
+prefer a narrow Ninja target instead of rebuilding the default `chrome` and
+`chromedriver` targets:
+
+```bash
+make browser-build-dev ARGS="--modules compile --ninja-targets libchrome_dll.dylib --package-macos"
+```
+
+This is the fast path for C++ browser-chrome changes such as toolbar, sidebar,
+bookmark bar, or tab strip behavior. The compile module falls back to the
+Chromium checkout's bundled `autoninja` when `autoninja` is not on `PATH`, so a
+prepared checkout can build without a separate shell setup step.
+
 Build the repo-owned Wuu workbench extension and local server resources:
 
 ```bash

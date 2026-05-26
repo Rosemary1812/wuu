@@ -20,6 +20,9 @@ Options:
                        Defaults to sparkle_setup,resources,bundled_extensions,
                        chromium_replace,configure,compile on macOS and omits
                        sparkle_setup on other platforms.
+  --ninja-targets LIST Comma-separated Ninja targets for the compile module.
+                       Defaults to chrome,chromedriver. Use narrow targets for
+                       local native UI iteration, such as libchrome_dll.dylib.
   --prepare            Prepare checkout and apply patches before building.
   --allow-dirty        Allow prepare/apply against a dirty checkout.
   --package-macos      Stage browser/out/Wuu Browser Dev.app after building.
@@ -30,6 +33,7 @@ Environment:
   WUU_BROWSER_BUILD_ARCH    Build architecture override.
   WUU_BROWSER_BUILD_TYPE    Build type override.
   WUU_BROWSER_BUILD_MODULES Build module list override.
+  WUU_BROWSER_NINJA_TARGETS Compile-module Ninja target override.
 USAGE
 }
 
@@ -46,6 +50,7 @@ chromium_src="${WUU_CHROMIUM_SRC:-${repo_root}/.worktrees/chromium/src}"
 build_arch="${WUU_BROWSER_BUILD_ARCH:-}"
 build_type="${WUU_BROWSER_BUILD_TYPE:-debug}"
 build_modules="${WUU_BROWSER_BUILD_MODULES:-}"
+ninja_targets="${WUU_BROWSER_NINJA_TARGETS:-}"
 
 host_arch() {
   case "$(uname -m)" in
@@ -120,6 +125,14 @@ while [[ $# -gt 0 ]]; do
       build_modules="${2:-}"
       if [[ -z "${build_modules}" ]]; then
         echo "--modules requires a comma-separated module list" >&2
+        exit 2
+      fi
+      shift 2
+      ;;
+    --ninja-targets)
+      ninja_targets="${2:-}"
+      if [[ -z "${ninja_targets}" ]]; then
+        echo "--ninja-targets requires a comma-separated target list" >&2
         exit 2
       fi
       shift 2
@@ -210,6 +223,7 @@ echo "  chromium src: ${chromium_src}"
 echo "  arch:         ${build_arch}"
 echo "  build type:   ${build_type}"
 echo "  modules:      ${build_modules}"
+echo "  ninja targets:${ninja_targets:-chrome,chromedriver}"
 echo "  prepare:      ${prepare}"
 echo "  package mac:  ${package_macos}"
 echo "  mode:         $([[ "${dry_run}" == "true" ]] && echo dry-run || echo execute)"
@@ -217,6 +231,8 @@ echo "  mode:         $([[ "${dry_run}" == "true" ]] && echo dry-run || echo exe
 if [[ "${prepare}" == "true" ]]; then
   run bash "${browser_dir}/scripts/prepare-checkouts.sh" "${prepare_args[@]}"
 fi
+
+export WUU_BROWSER_NINJA_TARGETS="${ninja_targets}"
 
 run_in "${browser_dir}" "${python_runner[@]}" "${build_args[@]}"
 
