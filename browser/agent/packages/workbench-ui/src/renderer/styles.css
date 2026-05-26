@@ -4036,6 +4036,16 @@ button:disabled {
   max-width: 100%;
 }
 
+.agent-handoff-line {
+  align-self: center;
+  max-width: min(760px, 88%);
+  margin: 2px auto 18px;
+  color: #7a7f84;
+  font-size: var(--font-sm);
+  line-height: 1.45;
+  text-align: center;
+}
+
 .message-copy-button {
   --message-copy-rest-transform: translate3d(0, 2px, 0) scale(0.98);
   --message-copy-visible-transform: translate3d(0, 0, 0) scale(1);

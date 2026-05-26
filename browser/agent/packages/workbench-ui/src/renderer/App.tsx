@@ -105,6 +105,7 @@ import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState
 } from "./EnvironmentPanel";
+import { agentHandoffDisplay } from "./AgentHandoff";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
 import { RichContent } from "./RichContent";
 import { EmptyConversationHome, RuntimeLoading, ViewSwitchLoading } from "./LoadingViews";
@@ -4789,6 +4790,14 @@ function ThreadItemView({
   switch (item.type) {
     case "user_message": {
       const text = item.text ?? "";
+      const handoff = agentHandoffDisplay(text);
+      if (handoff) {
+        return (
+          <div className="agent-handoff-line" role="status">
+            {handoff.label}
+          </div>
+        );
+      }
       const copyable = text.trim() !== "";
       return (
         <div className={`user-message-block${copyable ? " user-message-block-with-actions" : ""}`}>
