@@ -165,6 +165,18 @@ while IFS= read -r -d '' companion; do
   companion_dylibs=$((companion_dylibs + 1))
 done < <(find "${source_build_dir}" -maxdepth 1 -type f -name '*.dylib' -print0)
 
+repacked_resources_dir="${source_build_dir}/gen/repack"
+resource_packs=0
+if [[ -d "${repacked_resources_dir}" ]]; then
+  while IFS= read -r -d '' resource_pack; do
+    pack_name="$(basename "${resource_pack}")"
+    while IFS= read -r -d '' staged_pack; do
+      ditto "${resource_pack}" "${staged_pack}"
+      resource_packs=$((resource_packs + 1))
+    done < <(find "${output_app}/Contents/Frameworks" -type f -name "${pack_name}" -print0)
+  done < <(find "${repacked_resources_dir}" -maxdepth 1 -type f -name '*.pak' -print0)
+fi
+
 plist="${output_app}/Contents/Info.plist"
 plutil -replace CFBundleDisplayName -string "Wuu Browser Dev" "${plist}"
 plutil -replace CFBundleName -string "Wuu Browser Dev" "${plist}"
@@ -184,6 +196,7 @@ echo "  display name: $(plutil -extract CFBundleDisplayName raw -o - "${plist}")
 echo "  bundle id:    $(plutil -extract CFBundleIdentifier raw -o - "${plist}")"
 echo "  executable:   $(plutil -extract CFBundleExecutable raw -o - "${plist}")"
 echo "  dylibs:       ${companion_dylibs} component build libraries bundled"
+echo "  resource paks:${resource_packs} Chromium resource packs refreshed"
 
 if [[ "${create_dmg}" == "true" ]]; then
   if ! command -v hdiutil >/dev/null 2>&1; then
