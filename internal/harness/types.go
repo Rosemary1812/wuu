@@ -31,8 +31,10 @@ type ArtifactKind string
 const (
 	ArtifactReport       ArtifactKind = "report"
 	ArtifactPatch        ArtifactKind = "patch"
+	ArtifactArchive      ArtifactKind = "archive"
 	ArtifactCommand      ArtifactKind = "command_output"
 	ArtifactLog          ArtifactKind = "log"
+	ArtifactManifest     ArtifactKind = "manifest"
 	ArtifactEvidence     ArtifactKind = "evidence"
 	ArtifactConversation ArtifactKind = "conversation"
 )

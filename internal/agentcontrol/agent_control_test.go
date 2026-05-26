@@ -1,6 +1,7 @@
 package agentcontrol
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -402,6 +403,12 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("changed\n"), 0o644); err != nil {
 				return nil, err
 			}
+			if err := os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(filepath.Join(root, "notes", "new_file.txt"), []byte("new\n"), 0o644); err != nil {
+				return nil, err
+			}
 			return fakeToolkit{}, nil
 		},
 	})
@@ -419,6 +426,8 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 		t.Fatalf("Spawn: %v", err)
 	}
 	var patchPath string
+	var manifestPath string
+	var archivePath string
 	var artifacts []harness.Artifact
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
@@ -427,12 +436,19 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 			t.Fatalf("ListArtifacts: %v", err)
 		}
 		for _, artifact := range artifacts {
-			if artifact.TaskID == res.AgentID && artifact.Kind == harness.ArtifactPatch {
+			if artifact.TaskID != res.AgentID {
+				continue
+			}
+			switch artifact.Kind {
+			case harness.ArtifactPatch:
 				patchPath = artifact.Path
-				break
+			case harness.ArtifactManifest:
+				manifestPath = artifact.Path
+			case harness.ArtifactArchive:
+				archivePath = artifact.Path
 			}
 		}
-		if patchPath != "" {
+		if patchPath != "" && manifestPath != "" && archivePath != "" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -447,9 +463,38 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 	if !strings.Contains(string(data), "README.md") || !strings.Contains(string(data), "+changed") {
 		t.Fatalf("patch does not include README change:\n%s", data)
 	}
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read untracked manifest: %v", err)
+	}
+	if !strings.Contains(string(manifest), "notes/new_file.txt") {
+		t.Fatalf("manifest does not include untracked file:\n%s", manifest)
+	}
+	if !tarContainsFile(t, archivePath, "notes/new_file.txt") {
+		t.Fatalf("archive does not include untracked file %q", archivePath)
+	}
 	reportPath, paths := c.harnessReportForTask(res.AgentID)
-	if reportPath == "" || !stringSliceContains(paths, patchPath) {
-		t.Fatalf("mailbox artifact lookup should include report and patch, report=%q paths=%+v", reportPath, paths)
+	if reportPath == "" || !stringSliceContains(paths, patchPath) || !stringSliceContains(paths, archivePath) {
+		t.Fatalf("mailbox artifact lookup should include report, patch, and archive, report=%q paths=%+v", reportPath, paths)
+	}
+}
+
+func tarContainsFile(t *testing.T, path, want string) bool {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open tar: %v", err)
+	}
+	defer file.Close()
+	reader := tar.NewReader(file)
+	for {
+		header, err := reader.Next()
+		if err != nil {
+			return false
+		}
+		if header.Name == want {
+			return true
+		}
 	}
 }
 

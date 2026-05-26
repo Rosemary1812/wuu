@@ -9,10 +9,13 @@
 package agentcontrol
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1434,22 +1437,48 @@ func (c *AgentControl) recordWorktreeArtifacts(snap subagent.SubAgentSnapshot) {
 		})
 	}
 	patchOut, err := gitOutput(root, "diff", "--binary", "HEAD", "--")
-	if err != nil || strings.TrimSpace(patchOut) == "" {
+	if err == nil && strings.TrimSpace(patchOut) != "" {
+		patchPath := filepath.Join(artifactDir, "changes.patch")
+		if err := os.WriteFile(patchPath, []byte(patchOut), 0o644); err == nil {
+			_ = c.harnessStore.AddArtifact(harness.Artifact{
+				ID:        snap.ID + "-patch",
+				TaskID:    snap.ID,
+				RunID:     harnessRunID(snap.ID),
+				Kind:      harness.ArtifactPatch,
+				Path:      patchPath,
+				Summary:   "worktree diff against base HEAD",
+				CreatedAt: time.Now().UTC(),
+			})
+		}
+	}
+	untracked, err := gitUntrackedFiles(root)
+	if err != nil || len(untracked) == 0 {
 		return
 	}
-	patchPath := filepath.Join(artifactDir, "changes.patch")
-	if err := os.WriteFile(patchPath, []byte(patchOut), 0o644); err != nil {
-		return
+	manifestPath := filepath.Join(artifactDir, "untracked-files.txt")
+	if err := os.WriteFile(manifestPath, []byte(strings.Join(untracked, "\n")+"\n"), 0o644); err == nil {
+		_ = c.harnessStore.AddArtifact(harness.Artifact{
+			ID:        snap.ID + "-untracked-manifest",
+			TaskID:    snap.ID,
+			RunID:     harnessRunID(snap.ID),
+			Kind:      harness.ArtifactManifest,
+			Path:      manifestPath,
+			Summary:   "untracked files created by worktree task",
+			CreatedAt: time.Now().UTC(),
+		})
 	}
-	_ = c.harnessStore.AddArtifact(harness.Artifact{
-		ID:        snap.ID + "-patch",
-		TaskID:    snap.ID,
-		RunID:     harnessRunID(snap.ID),
-		Kind:      harness.ArtifactPatch,
-		Path:      patchPath,
-		Summary:   "worktree diff against base HEAD",
-		CreatedAt: time.Now().UTC(),
-	})
+	archivePath := filepath.Join(artifactDir, "untracked-files.tar")
+	if err := writeUntrackedArchive(root, archivePath, untracked); err == nil {
+		_ = c.harnessStore.AddArtifact(harness.Artifact{
+			ID:        snap.ID + "-untracked-archive",
+			TaskID:    snap.ID,
+			RunID:     harnessRunID(snap.ID),
+			Kind:      harness.ArtifactArchive,
+			Path:      archivePath,
+			Summary:   "archive of untracked files created by worktree task",
+			CreatedAt: time.Now().UTC(),
+		})
+	}
 }
 
 func (c *AgentControl) harnessTask(taskID string) (harness.Task, bool) {
@@ -1476,6 +1505,79 @@ func gitOutput(dir string, args ...string) (string, error) {
 		return "", err
 	}
 	return string(out), nil
+}
+
+func gitUntrackedFiles(dir string) ([]string, error) {
+	cmd := exec.Command("git", "ls-files", "--others", "--exclude-standard", "-z")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	parts := bytes.Split(out, []byte{0})
+	files := make([]string, 0, len(parts))
+	for _, part := range parts {
+		name := strings.TrimSpace(string(part))
+		if name == "" {
+			continue
+		}
+		if filepath.IsAbs(name) || name == "." || strings.HasPrefix(name, "../") || strings.Contains(name, "/../") {
+			continue
+		}
+		files = append(files, filepath.ToSlash(name))
+	}
+	return files, nil
+}
+
+func writeUntrackedArchive(root, archivePath string, files []string) error {
+	if err := os.MkdirAll(filepath.Dir(archivePath), 0o755); err != nil {
+		return err
+	}
+	out, err := os.Create(archivePath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	tw := tar.NewWriter(out)
+	defer tw.Close()
+	for _, rel := range files {
+		cleanRel := filepath.Clean(rel)
+		if cleanRel == "." || filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		absPath := filepath.Join(root, cleanRel)
+		info, err := os.Lstat(absPath)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		link := ""
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, _ = os.Readlink(absPath)
+		}
+		header, err := tar.FileInfoHeader(info, link)
+		if err != nil {
+			return err
+		}
+		header.Name = filepath.ToSlash(cleanRel)
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		in, err := os.Open(absPath)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(tw, in); err != nil {
+			in.Close()
+			return err
+		}
+		if err := in.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
