@@ -275,6 +275,10 @@ if [[ "${cleanup_existing}" == "1" ]]; then
   fi
 fi
 
+if [[ "${dry_run}" != "true" ]]; then
+  bash "${repo_root}/browser/scripts/stage-wuu-mac-icons.sh" --sign "${app_path}"
+fi
+
 if [[ -z "${profile_dir}" ]]; then
   if [[ "${dry_run}" == "true" ]]; then
     tmp_root="${TMPDIR:-/tmp}"

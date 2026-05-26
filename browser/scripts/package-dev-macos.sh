@@ -173,6 +173,8 @@ plutil -replace CrProductDirName -string "Wuu Browser" "${plist}"
 
 plutil -lint "${plist}" >/dev/null
 
+bash "${repo_root}/browser/scripts/stage-wuu-mac-icons.sh" "${output_app}"
+
 echo "Ad-hoc signing Wuu Browser Dev app for local launch..."
 codesign --force --deep --sign - "${output_app}" >/dev/null
 codesign --verify --deep --strict --verbose=2 "${output_app}" >/dev/null
