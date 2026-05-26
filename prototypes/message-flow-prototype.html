@@ -460,58 +460,25 @@
         animation: finalBlockIn 240ms var(--timing) forwards;
       }
 
-      .semantic-block {
-        opacity: 0;
-        transform: translateY(5px);
-        filter: blur(2px);
-        animation: semanticBlockIn 420ms var(--timing) forwards;
-      }
-
-      .stream-tail {
-        display: inline;
-        border-radius: 3px;
-      }
-
-      .stream-tail.soft-append {
-        animation: streamSoftAppend 240ms var(--timing) both;
-      }
-
-      .stream-tail.text-mask {
-        color: transparent;
+      .stream-stall-cue {
+        display: inline-block;
+        width: 1.55em;
+        height: 1px;
+        margin-left: 5px;
+        border-radius: 999px;
+        vertical-align: 0.22em;
         background:
           linear-gradient(
             90deg,
-            color-mix(in srgb, var(--text), transparent 74%) 0%,
-            var(--text) 42%,
-            color-mix(in srgb, var(--text), var(--accent) 18%) 58%,
+            transparent 0%,
+            color-mix(in srgb, var(--muted), transparent 65%) 28%,
+            color-mix(in srgb, var(--text), var(--accent) 18%) 50%,
+            color-mix(in srgb, var(--muted), transparent 65%) 72%,
             transparent 100%
           );
-        background-size: 220% 100%;
-        -webkit-background-clip: text;
-        background-clip: text;
-        animation: streamTextMask 520ms var(--timing) both;
-      }
-
-      .stream-tail.tail-glow {
-        color: color-mix(in srgb, var(--text), var(--accent) 16%);
-        text-shadow: 0 0 10px color-mix(in srgb, var(--accent), transparent 58%);
-        animation: streamTailGlow 520ms var(--timing) both;
-      }
-
-      .stream-tail.muted-solid {
-        animation: streamMutedSolid 520ms var(--timing) both;
-      }
-
-      .stream-tail.ink-reveal {
-        animation: streamInkReveal 360ms var(--timing) both;
-      }
-
-      .final-text.line-settle-streaming > :last-child {
-        color: color-mix(in srgb, var(--text), var(--muted) 34%);
-        transform: translateY(1px);
-        transition:
-          color 360ms var(--timing),
-          transform 360ms var(--timing);
+        background-size: 240% 100%;
+        opacity: 0;
+        animation: stalledTokenCue 1.7s ease-in-out infinite;
       }
 
       .final-text p {
@@ -522,7 +489,7 @@
         margin-top: 0;
       }
 
-      .final-text.is-streaming:not(.semantic-streaming) > * {
+      .final-text.is-streaming > * {
         animation: none;
       }
 
@@ -707,70 +674,17 @@
         }
       }
 
-      @keyframes semanticBlockIn {
-        to {
-          opacity: 1;
-          transform: translateY(0);
-          filter: blur(0);
-        }
-      }
-
-      @keyframes streamSoftAppend {
-        from {
-          opacity: 0;
-          transform: translateY(2px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      @keyframes streamTextMask {
-        from {
-          background-position: 130% 0;
-          opacity: 0.42;
-        }
-        to {
-          background-position: 0 0;
-          opacity: 1;
-        }
-      }
-
-      @keyframes streamTailGlow {
+      @keyframes stalledTokenCue {
         0% {
-          opacity: 0.45;
-          text-shadow: 0 0 0 color-mix(in srgb, var(--accent), transparent 100%);
+          background-position: 150% 0;
+          opacity: 0.18;
         }
-        45% {
-          opacity: 1;
-          text-shadow: 0 0 11px color-mix(in srgb, var(--accent), transparent 52%);
+        38% {
+          opacity: 0.82;
         }
         100% {
-          opacity: 1;
-          text-shadow: 0 0 4px color-mix(in srgb, var(--accent), transparent 82%);
-        }
-      }
-
-      @keyframes streamMutedSolid {
-        from {
-          color: var(--muted);
-        }
-        to {
-          color: var(--text);
-        }
-      }
-
-      @keyframes streamInkReveal {
-        from {
-          opacity: 0;
-          filter: blur(3px);
-          transform: translateY(2px);
-        }
-        to {
-          opacity: 1;
-          filter: blur(0);
-          transform: translateY(0);
+          background-position: -150% 0;
+          opacity: 0.18;
         }
       }
 
@@ -821,13 +735,7 @@
           <p class="debug-note">调试按钮会模拟真实 turn：运行中展开过程，完成后折叠，只突出最后一段 final text。</p>
           <div class="debug-actions">
             <button type="button" data-run="success">播放完整成功流</button>
-            <button type="button" data-run="semantic">播放语义块渐显流</button>
-            <button type="button" data-run="soft-append">Soft Append 流式</button>
-            <button type="button" data-run="text-mask">Text Mask Reveal</button>
-            <button type="button" data-run="tail-glow">Tail Glow 流式</button>
-            <button type="button" data-run="muted-solid">Muted To Solid</button>
-            <button type="button" data-run="line-settle">Line Settle</button>
-            <button type="button" data-run="ink-reveal">Ink Reveal</button>
+            <button type="button" data-run="stall">模拟 token 卡顿</button>
             <button type="button" data-run="waiting">模拟等待用户选择</button>
             <button type="button" data-run="failed">模拟处理失败</button>
             <button type="button" data-run="stopped">模拟中途停止</button>
@@ -859,6 +767,13 @@
                 </div>
                 <input id="sweepSpeed" type="range" min="1.6" max="5" step="0.1" value="3" />
               </div>
+              <div class="control-row">
+                <div class="control-row-header">
+                  <label for="stallThreshold">停顿提示阈值</label>
+                  <output id="stallThresholdValue" for="stallThreshold">3.0s</output>
+                </div>
+                <input id="stallThreshold" type="range" min="1.5" max="6" step="0.5" value="3" />
+              </div>
               <label class="toggle-row">
                 <span>完成后自动折叠过程</span>
                 <input id="autoCollapse" type="checkbox" checked />
@@ -867,7 +782,7 @@
           </div>
           <div class="constraint-list">
             <strong>已编码约束：</strong><br />
-            final text 无容器；过程无背景；运行态文字慢扫光；支持 token 流式、语义块渐显和 6 种前端文字动效对比；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
+            final text 无容器；过程无背景；运行态文字慢扫光；支持 token 流式和长停顿提示；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
           </div>
         </aside>
 
@@ -891,10 +806,12 @@
       const tokenRateControl = document.querySelector("#tokenRate");
       const stepSpeedControl = document.querySelector("#stepSpeed");
       const sweepSpeedControl = document.querySelector("#sweepSpeed");
+      const stallThresholdControl = document.querySelector("#stallThreshold");
       const autoCollapseControl = document.querySelector("#autoCollapse");
       const tokenRateValue = document.querySelector("#tokenRateValue");
       const stepSpeedValue = document.querySelector("#stepSpeedValue");
       const sweepSpeedValue = document.querySelector("#sweepSpeedValue");
+      const stallThresholdValue = document.querySelector("#stallThresholdValue");
 
       let timers = [];
       let ticker = 0;
@@ -970,6 +887,10 @@
         return Math.max(0.1, Number(stepSpeedControl?.value ?? 1));
       }
 
+      function currentStallThreshold() {
+        return Math.max(0.5, Number(stallThresholdControl?.value ?? 3));
+      }
+
       function waitStep(ms) {
         return wait(ms / currentStepSpeed());
       }
@@ -978,6 +899,7 @@
         const tokenRate = currentTokenRate();
         const stepSpeed = currentStepSpeed();
         const sweepSpeed = Math.max(0.5, Number(sweepSpeedControl?.value ?? 3));
+        const stallThreshold = currentStallThreshold();
         if (tokenRateValue) {
           tokenRateValue.textContent = `${tokenRate} token/s`;
         }
@@ -986,6 +908,9 @@
         }
         if (sweepSpeedValue) {
           sweepSpeedValue.textContent = `${sweepSpeed.toFixed(1)}s`;
+        }
+        if (stallThresholdValue) {
+          stallThresholdValue.textContent = `${stallThreshold.toFixed(1)}s`;
         }
         document.documentElement.style.setProperty("--sweep-duration", `${sweepSpeed}s`);
       }
@@ -1159,46 +1084,23 @@
         completeProcess({ status: "completed", elapsed: 18 });
       }
 
-      async function runSemanticReveal() {
-        const id = createTurn("对比另一种 final text 出现方式：不要逐 token 重绘，而是按语义块渐显。");
+      async function runStalledToken() {
+        const id = createTurn("模拟真实流式输出忽快忽慢，并在某个 token 上短暂停住。");
         await playCommonProcess(id);
         if (!isActiveRun(id)) return;
-        await streamFinalSemantic(successMarkdown, id);
+        setStatus("正在生成回复", "running");
+        await streamFinalMarkdown(successMarkdown, id, {
+          jitter: true,
+          stall: {
+            afterTokenIndex: 150,
+            durationMs: currentStallThreshold() * 1000 + 3600,
+            thresholdMs: currentStallThreshold() * 1000
+          }
+        });
         if (!isActiveRun(id)) return;
         await waitStep(540);
         if (!isActiveRun(id)) return;
-        completeProcess({ status: "completed", elapsed: 18 });
-      }
-
-      async function runEffectDemo(effect) {
-        const label = streamEffectLabel(effect);
-        const id = createTurn(`对比 ${label}：同样的 token 流，只替换前端文字进入动效。`);
-        await playCommonProcess(id);
-        if (!isActiveRun(id)) return;
-        await streamFinalMarkdown(successMarkdown, id, effect);
-        if (!isActiveRun(id)) return;
-        await waitStep(540);
-        if (!isActiveRun(id)) return;
-        completeProcess({ status: "completed", elapsed: 18 });
-      }
-
-      function streamEffectLabel(effect) {
-        switch (effect) {
-          case "soft-append":
-            return "Soft Append";
-          case "text-mask":
-            return "Text Mask Reveal";
-          case "tail-glow":
-            return "Tail Glow";
-          case "muted-solid":
-            return "Muted To Solid";
-          case "line-settle":
-            return "Line Settle";
-          case "ink-reveal":
-            return "Ink Reveal";
-          default:
-            return "Token";
-        }
+        completeProcess({ status: "completed", elapsed: 24 });
       }
 
       async function playCommonProcess(id) {
@@ -1305,195 +1207,94 @@
         return id === runID;
       }
 
-      async function streamFinalMarkdown(markdown, id, effect = "token") {
+      async function streamFinalMarkdown(markdown, id, options = {}) {
         const finalText = document.querySelector("#finalText");
         if (!finalText) {
           return;
         }
-        finalText.classList.remove("semantic-streaming", "line-settle-streaming");
+        finalText.classList.remove("is-stalled");
         finalText.classList.add("is-streaming");
-        if (effect === "line-settle") {
-          finalText.classList.add("line-settle-streaming");
-        }
         let buffer = "";
         const tokens = tokenizeStream(markdown);
-        for (const token of tokens) {
+        let didStall = false;
+        for (let index = 0; index < tokens.length; index += 1) {
           if (!isActiveRun(id)) {
             return;
           }
-          buffer += token;
-          renderFinalMarkdown(buffer, effect);
-          await wait(1000 / currentTokenRate());
+          buffer += tokens[index];
+          renderFinalMarkdown(buffer);
+          if (options.stall && !didStall && index === options.stall.afterTokenIndex) {
+            didStall = true;
+            await holdDuringTokenStall(id, finalText, options.stall);
+            if (!isActiveRun(id)) {
+              return;
+            }
+            setStatus("正在生成回复", "running");
+          }
+          await wait(streamTokenDelay(index, Boolean(options.jitter)));
         }
-        finalText.classList.remove("is-streaming", "line-settle-streaming");
+        finalText.classList.remove("is-streaming", "is-stalled");
         renderFinalMarkdown(markdown);
       }
 
-      async function streamFinalSemantic(markdown, id) {
-        const finalText = document.querySelector("#finalText");
-        if (!finalText) {
-          return;
+      function streamTokenDelay(index, jitter) {
+        const baseDelay = 1000 / currentTokenRate();
+        if (!jitter) {
+          return baseDelay;
         }
-        finalText.classList.add("is-streaming", "semantic-streaming");
-        finalText.innerHTML = "";
-        const blocks = splitMarkdownBlocks(markdown);
-        for (const block of blocks) {
+        const multipliers = [0.45, 0.82, 1.28, 0.6, 1.95, 0.72, 1.42, 0.54, 1.68, 0.9];
+        return Math.min(920, Math.max(18, baseDelay * multipliers[index % multipliers.length]));
+      }
+
+      async function holdDuringTokenStall(id, finalText, stall) {
+        const thresholdMs = Math.max(0, Number(stall.thresholdMs ?? 3000));
+        const durationMs = Math.max(thresholdMs, Number(stall.durationMs ?? thresholdMs + 3000));
+        let cueVisible = false;
+        const cueTimer = window.setTimeout(() => {
           if (!isActiveRun(id)) {
             return;
           }
-          appendSemanticBlock(renderMarkdown(block));
-          const tokenCount = Math.max(1, tokenizeStream(block).filter((token) => token.trim()).length);
-          const delay = Math.min(900, Math.max(180, (tokenCount / currentTokenRate()) * 1000));
-          await wait(delay);
+          cueVisible = true;
+          setStatus("仍在生成", "running");
+          finalText.classList.add("is-stalled");
+          appendStallCue(finalText);
+        }, thresholdMs);
+        timers.push(cueTimer);
+        await wait(durationMs);
+        window.clearTimeout(cueTimer);
+        if (cueVisible && isActiveRun(id)) {
+          finalText.classList.remove("is-stalled");
+          removeStallCue(finalText);
         }
-        finalText.classList.remove("is-streaming", "semantic-streaming");
       }
 
-      function appendSemanticBlock(html) {
-        const finalText = document.querySelector("#finalText");
-        if (!finalText || !html.trim()) {
-          return;
-        }
-        const block = document.createElement("div");
-        block.className = "final-block semantic-block";
-        block.innerHTML = html;
-        finalText.appendChild(block);
-      }
-
-      function splitMarkdownBlocks(markdown) {
-        const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-        const blocks = [];
-        let index = 0;
-        while (index < lines.length) {
-          if (/^\s*$/.test(lines[index])) {
-            index += 1;
-            continue;
-          }
-
-          if (/^```/.test(lines[index])) {
-            const block = [lines[index]];
-            index += 1;
-            while (index < lines.length) {
-              block.push(lines[index]);
-              const done = /^```/.test(lines[index]);
-              index += 1;
-              if (done) {
-                break;
-              }
-            }
-            blocks.push(block.join("\n"));
-            continue;
-          }
-
-          if (isTableStart(lines, index)) {
-            const block = [lines[index], lines[index + 1]];
-            index += 2;
-            while (index < lines.length && /\|/.test(lines[index]) && !/^\s*$/.test(lines[index])) {
-              block.push(lines[index]);
-              index += 1;
-            }
-            blocks.push(block.join("\n"));
-            continue;
-          }
-
-          if (/^(#{1,6})\s+/.test(lines[index])) {
-            blocks.push(lines[index]);
-            index += 1;
-            continue;
-          }
-
-          if (/^>\s?/.test(lines[index])) {
-            const block = [];
-            while (index < lines.length && /^>\s?/.test(lines[index])) {
-              block.push(lines[index]);
-              index += 1;
-            }
-            blocks.push(block.join("\n"));
-            continue;
-          }
-
-          if (/^\s*((?:[-*])|(?:\d+\.))\s+/.test(lines[index])) {
-            const first = lines[index].match(/^\s*((?:[-*])|(?:\d+\.))\s+/);
-            const ordered = Boolean(first && /\d+\./.test(first[1]));
-            const block = [];
-            while (index < lines.length) {
-              const item = lines[index].match(/^\s*((?:[-*])|(?:\d+\.))\s+/);
-              if (!item || /\d+\./.test(item[1]) !== ordered) {
-                break;
-              }
-              block.push(lines[index]);
-              index += 1;
-            }
-            blocks.push(block.join("\n"));
-            continue;
-          }
-
-          const block = [lines[index]];
-          index += 1;
-          while (
-            index < lines.length &&
-            !/^\s*$/.test(lines[index]) &&
-            !/^```/.test(lines[index]) &&
-            !/^(#{1,6})\s+/.test(lines[index]) &&
-            !/^>\s?/.test(lines[index]) &&
-            !/^\s*((?:[-*])|(?:\d+\.))\s+/.test(lines[index]) &&
-            !isTableStart(lines, index)
-          ) {
-            block.push(lines[index]);
-            index += 1;
-          }
-          blocks.push(block.join("\n"));
-        }
-        return blocks;
-      }
-
-      function renderFinalMarkdown(markdown, effect = "token") {
+      function renderFinalMarkdown(markdown) {
         const finalText = document.querySelector("#finalText");
         if (!finalText) {
           return;
         }
         finalText.innerHTML = renderMarkdown(markdown);
-        decorateStreamEffect(finalText, effect);
       }
 
-      function decorateStreamEffect(root, effect) {
-        if (effect === "token" || effect === "line-settle") {
-          return;
-        }
-        const textNode = latestDecoratableTextNode(root);
-        if (!textNode || !textNode.nodeValue) {
-          return;
-        }
-        const raw = textNode.nodeValue;
-        const trimmedEnd = raw.search(/\s*$/);
-        const end = trimmedEnd < 0 ? raw.length : trimmedEnd;
-        if (end <= 0) {
-          return;
-        }
-        const length = effect === "tail-glow" ? 16 : effect === "text-mask" ? 24 : 10;
-        const start = Math.max(0, end - length);
-        const before = raw.slice(0, start);
-        const tail = raw.slice(start, end);
-        const after = raw.slice(end);
-        const parent = textNode.parentNode;
-        if (!parent || !tail) {
-          return;
-        }
+      function appendStallCue(root) {
+        removeStallCue(root);
         const span = document.createElement("span");
-        span.className = `stream-tail ${effect}`;
-        span.textContent = tail;
-        const fragment = document.createDocumentFragment();
-        if (before) {
-          fragment.appendChild(document.createTextNode(before));
+        span.className = "stream-stall-cue";
+        span.setAttribute("aria-hidden", "true");
+        const textNode = latestReadableTextNode(root);
+        const target = textNode?.parentElement?.closest("p, li, blockquote, h2, h3") ?? textNode?.parentElement;
+        if (target) {
+          target.appendChild(span);
+        } else {
+          root.appendChild(span);
         }
-        fragment.appendChild(span);
-        if (after) {
-          fragment.appendChild(document.createTextNode(after));
-        }
-        parent.replaceChild(fragment, textNode);
       }
 
-      function latestDecoratableTextNode(root) {
+      function removeStallCue(root) {
+        root.querySelectorAll(".stream-stall-cue").forEach((cue) => cue.remove());
+      }
+
+      function latestReadableTextNode(root) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
           acceptNode(node) {
             const text = node.nodeValue ?? "";
@@ -1687,17 +1488,8 @@
           const run = button.dataset.run;
           if (run === "success") {
             void runSuccess();
-          } else if (run === "semantic") {
-            void runSemanticReveal();
-          } else if (
-            run === "soft-append" ||
-            run === "text-mask" ||
-            run === "tail-glow" ||
-            run === "muted-solid" ||
-            run === "line-settle" ||
-            run === "ink-reveal"
-          ) {
-            void runEffectDemo(run);
+          } else if (run === "stall") {
+            void runStalledToken();
           } else if (run === "waiting") {
             void runWaiting();
           } else if (run === "failed") {
@@ -1714,7 +1506,7 @@
         });
       });
 
-      [tokenRateControl, stepSpeedControl, sweepSpeedControl].forEach((control) => {
+      [tokenRateControl, stepSpeedControl, sweepSpeedControl, stallThresholdControl].forEach((control) => {
         control?.addEventListener("input", syncControls);
       });
       syncControls();
