@@ -398,6 +398,96 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
 
+func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "plain final text"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-await-report",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-await-report", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-await-report", "harness"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        "worker",
+		TaskName:    "await_report",
+		Prompt:      "finish without report",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	awaited, err := c.AwaitFrom(agentthread.RootPath, context.Background(), []string{res.AgentID})
+	if err != nil {
+		t.Fatalf("AwaitFrom: %v", err)
+	}
+	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusAwaitingReport) || !awaited.Results[0].ReportMissing {
+		t.Fatalf("expected awaiting_report result, got %+v", awaited)
+	}
+
+	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+		Outcome:  "completed",
+		Summary:  "Submitted the missing structured report.",
+		WorkDone: []string{"Closed the handoff contract."},
+	})
+	if err != nil {
+		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	awaited, err = c.AwaitFrom(agentthread.RootPath, context.Background(), []string{res.AgentID})
+	if err != nil {
+		t.Fatalf("AwaitFrom after report: %v", err)
+	}
+	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || awaited.Results[0].ReportPath != report.ReportPath {
+		t.Fatalf("expected completed result with report path, got %+v", awaited)
+	}
+}
+
+func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-await-timeout",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-await-timeout", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-await-timeout", "harness"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "worker",
+		TaskName: "await_timeout",
+		Prompt:   "keep running",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	awaited, err := c.AwaitFrom(agentthread.RootPath, ctx, []string{res.AgentID})
+	if err != nil {
+		t.Fatalf("AwaitFrom: %v", err)
+	}
+	if !awaited.TimedOut || len(awaited.Results) != 1 || awaited.Results[0].Status != string(subagent.StatusRunning) {
+		t.Fatalf("expected timed out running result, got %+v", awaited)
+	}
+	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
 func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

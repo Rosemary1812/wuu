@@ -139,7 +139,10 @@ func (c *AgentControl) updateHarnessStatusFromReport(taskID, outcome string, sub
 		return
 	}
 	if task.Status != harness.TaskStatusAwaitingReport && isActiveHarnessStatus(task.Status) {
-		return
+		snap := c.snapshotByID(taskID)
+		if snap == nil || !isFinalSubAgentStatus(snap.Status) {
+			return
+		}
 	}
 	completedAt := task.CompletedAt
 	if completedAt.IsZero() && isTerminalHarnessStatus(status) {

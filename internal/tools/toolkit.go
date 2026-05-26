@@ -153,6 +153,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewSendAgentMessageTool(e),
 		NewFollowupTaskTool(e),
 		NewWaitAgentTool(e),
+		NewAwaitAgentsTool(e),
 		NewCloseAgentTool(e),
 		NewListAgentsTool(e),
 		NewAgentReportTool(e),

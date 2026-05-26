@@ -65,6 +65,7 @@ func TestSystemPromptPreamble_ContainsOrchestrationRules(t *testing.T) {
 		"fork_turns",
 		"send_message",
 		"followup_task",
+		"await_agents",
 		"parallel",
 	} {
 		if !strings.Contains(preamble, want) {

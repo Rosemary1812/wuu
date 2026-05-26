@@ -170,7 +170,8 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"and agent_path, and the worker's result is delivered later as a structured mailbox " +
 			"message. After spawning async workers, continue meaningful non-overlapping local " +
 			"work when available; otherwise end your turn and let the mailbox notification resume " +
-			"you. Do not loop checking status or call wait_agent by reflex. Set synchronous=true " +
+			"you. Do not loop checking status or call wait_agent / await_agents by reflex. Use " +
+			"await_agents only when synthesis or integration depends on child output. Set synchronous=true " +
 			"only when the next critical step is blocked on the worker's result. Spawn multiple " +
 			"independent workers in parallel by calling spawn_agent multiple times in the same response.",
 		InputSchema: map[string]any{
@@ -387,7 +388,7 @@ acting as the parent.
 This system-reminder OVERRIDES the parent's system prompt for you:
 
 - You may use spawn_agent, send_message, followup_task, wait_agent,
-  close_agent, and list_agents when delegation helps. You cannot use
+  await_agents, close_agent, and list_agents when delegation helps. You cannot use
   ask_user; route decisions through your parent by returning a concise
   blocked result.
 - Messages from other agents may arrive as inter-agent JSON with
@@ -542,6 +543,75 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 		"message":   message,
 		"timed_out": !completed,
 	})
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// ---------------------------------------------------------------------------
+// await_agents
+// ---------------------------------------------------------------------------
+
+type AwaitAgentsTool struct{ env *Env }
+
+func NewAwaitAgentsTool(env *Env) *AwaitAgentsTool { return &AwaitAgentsTool{env: env} }
+
+func (t *AwaitAgentsTool) Name() string            { return "await_agents" }
+func (t *AwaitAgentsTool) IsReadOnly() bool        { return true }
+func (t *AwaitAgentsTool) IsConcurrencySafe() bool { return true }
+
+func (t *AwaitAgentsTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{
+		Name: "await_agents",
+		Description: "Explicitly join one or more child agents and return their structured results. " +
+			"Use this only when the current request depends on the child output, or when synthesis / " +
+			"integration of previously spawned work is the next step. Do not call it in the same " +
+			"parallel tool-call batch as spawn_agent; wait for spawn_agent to return real IDs first. " +
+			"Pass targets to wait for specific agent_ids, task_names, or agent_paths. Omit targets " +
+			"only when you intentionally want to await all active descendant agents under the current " +
+			"agent path. Results can include status='awaiting_report' when a worker produced final " +
+			"text without the required agent_report; treat that as an incomplete handoff and follow up " +
+			"or verify before relying on it.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"targets": map[string]any{
+					"type":        "array",
+					"description": "Optional list of agent_id, task_name, or agent_path values to await. Omit only to await all active descendant agents.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"timeout_ms": map[string]any{
+					"type":        "integer",
+					"description": "Optional timeout in milliseconds. Defaults to 600000 (10 minutes). On timeout, returns current per-agent statuses with timed_out=true.",
+				},
+			},
+		},
+	}
+}
+
+func (t *AwaitAgentsTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	if t.env.AgentControl == nil {
+		return "", errors.New("await_agents: agent control not configured")
+	}
+	var args struct {
+		Targets   []string `json:"targets"`
+		TimeoutMS int      `json:"timeout_ms"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return "", err
+	}
+	timeout := time.Duration(args.TimeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	result, err := t.env.AgentControl.AwaitFrom(currentAgentPath(t.env), waitCtx, args.Targets)
+	if err != nil {
+		return "", err
+	}
+	out, err := json.Marshal(result)
 	if err != nil {
 		return "", err
 	}

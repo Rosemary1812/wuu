@@ -1304,7 +1304,6 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 		return
 	}
 	status := harnessStatusFromSubAgent(n.Status)
-	reportMissing := false
 	if n.Status == subagent.StatusCompleted {
 		if report, ok, err := c.harnessStore.ReportForTask(n.AgentID); err == nil && ok {
 			if reportStatus := harnessStatusFromReportOutcome(report.Outcome); reportStatus != "" {
@@ -1312,7 +1311,6 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 			}
 		} else if err == nil && !ok {
 			status = harness.TaskStatusAwaitingReport
-			reportMissing = true
 		}
 	}
 	errText := ""
@@ -1350,26 +1348,7 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 	}
 	if isFinalSubAgentStatus(n.Status) {
 		c.recordWorktreeArtifacts(n.Snapshot)
-		if reportMissing {
-			c.recordMissingReportEvent(n.Snapshot)
-		}
 	}
-}
-
-func (c *AgentControl) recordMissingReportEvent(snap subagent.SubAgentSnapshot) {
-	if c == nil || c.harnessStore == nil {
-		return
-	}
-	_ = c.harnessStore.AppendEvent(harness.Event{
-		Type:      harness.EventTaskStatusChanged,
-		TaskID:    snap.ID,
-		RunID:     harnessRunID(snap.ID),
-		AgentID:   snap.ID,
-		Path:      snap.AgentPath,
-		Status:    string(harness.TaskStatusAwaitingReport),
-		Message:   "worker completed without submitting agent_report",
-		CreatedAt: time.Now().UTC(),
-	})
 }
 
 func (c *AgentControl) harnessReportForTask(taskID string) (string, []string) {
@@ -1785,7 +1764,8 @@ func SystemPromptPreamble() string {
 - spawn_agent — start a new worker. By default it inherits your full conversation history; set fork_turns="none" for a clean slate, or a positive integer string for only the last N user turns.
 - send_message — queue a message for an existing worker without triggering a new turn.
 - followup_task — send a follow-up task message and trigger the target worker's next turn.
-- wait_agent — wait for any mailbox update only when agent output blocks your next step.
+- wait_agent — wait for any mailbox update only when an agent notification blocks your next step.
+- await_agents — explicitly join specific child agents, or all active descendant agents, and return structured per-agent results.
 - close_agent — stop a running worker that is stuck or off-track.
 - list_agents — see active workers and their status.
 
@@ -1815,6 +1795,8 @@ Good worker prompts are self-contained: specific file paths, line numbers, exact
 Launch independent workers in parallel whenever possible. Research tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts.
 
 After spawning async workers, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let mailbox notifications resume you. Do not repeatedly wait by reflex.
+
+Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks. If await_agents returns awaiting_report, the worker finished without a durable handoff; follow up or verify before relying on the result.
 
 ## Working with Worker Results
 
