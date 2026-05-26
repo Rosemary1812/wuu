@@ -50,9 +50,9 @@ index 0000000000000..9050130727fc8
 +net::NetworkTrafficAnnotationTag GetAppcastTrafficAnnotation() {
 +  return net::DefineNetworkTrafficAnnotation("browseros_server_appcast", R"(
 +    semantics {
-+      sender: "BrowserOS Server Updater"
++      sender: "Wuu Browser Server Updater"
 +      description:
-+        "Checks for updates to the BrowserOS server component by fetching "
++        "Checks for updates to the Wuu Browser server component by fetching "
 +        "an appcast XML feed."
 +      trigger: "Periodic check every 15 minutes while browser is running."
 +      data: "No user data sent, just an HTTP GET request."
@@ -67,16 +67,16 @@ index 0000000000000..9050130727fc8
 +      cookies_allowed: NO
 +      setting: "This feature can be disabled via --disable-browseros-server or --disable-browseros-server-updater."
 +      policy_exception_justification:
-+        "Essential for keeping BrowserOS server component up to date."
++        "Essential for keeping Wuu Browser server component up to date."
 +    })");
 +}
 +
 +net::NetworkTrafficAnnotationTag GetDownloadTrafficAnnotation() {
 +  return net::DefineNetworkTrafficAnnotation("browseros_server_download", R"(
 +    semantics {
-+      sender: "BrowserOS Server Updater"
++      sender: "Wuu Browser Server Updater"
 +      description:
-+        "Downloads a new version of the BrowserOS server component."
++        "Downloads a new version of the Wuu Browser server component."
 +      trigger: "When a newer version is available in the appcast feed."
 +      data: "No user data sent, just an HTTP GET request for the ZIP package."
 +      destination: OTHER
@@ -90,16 +90,16 @@ index 0000000000000..9050130727fc8
 +      cookies_allowed: NO
 +      setting: "This feature can be disabled via --disable-browseros-server or --disable-browseros-server-updater."
 +      policy_exception_justification:
-+        "Essential for keeping BrowserOS server component up to date."
++        "Essential for keeping Wuu Browser server component up to date."
 +    })");
 +}
 +
 +net::NetworkTrafficAnnotationTag GetStatusTrafficAnnotation() {
 +  return net::DefineNetworkTrafficAnnotation("browseros_server_status", R"(
 +    semantics {
-+      sender: "BrowserOS Server Updater"
++      sender: "Wuu Browser Server Updater"
 +      description:
-+        "Checks if the local BrowserOS server is ready for hot-swap update."
++        "Checks if the local Wuu Browser server is ready for hot-swap update."
 +      trigger: "When a new version is downloaded and ready to install."
 +      data: "No user data sent, just an HTTP GET to localhost."
 +      destination: LOCAL
@@ -113,7 +113,7 @@ index 0000000000000..9050130727fc8
 +      cookies_allowed: NO
 +      setting: "This feature can be disabled via --disable-browseros-server or --disable-browseros-server-updater."
 +      policy_exception_justification:
-+        "Essential for coordinating BrowserOS server updates."
++        "Essential for coordinating Wuu Browser server updates."
 +    })");
 +}
 +

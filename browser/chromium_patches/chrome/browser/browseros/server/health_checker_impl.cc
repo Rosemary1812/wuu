@@ -43,9 +43,9 @@ index 0000000000000..73ef5eaf9e8e3
 +  net::NetworkTrafficAnnotationTag traffic_annotation =
 +      net::DefineNetworkTrafficAnnotation("browseros_health_check", R"(
 +        semantics {
-+          sender: "BrowserOS Server Manager"
++          sender: "Wuu Browser Server Manager"
 +          description:
-+            "Checks if the BrowserOS MCP server is healthy by querying its "
++            "Checks if the Wuu Browser MCP server is healthy by querying its "
 +            "/health endpoint."
 +          trigger: "Periodic health check every 30 seconds while server is running."
 +          data: "No user data sent, just an HTTP GET request."
@@ -55,7 +55,7 @@ index 0000000000000..73ef5eaf9e8e3
 +          cookies_allowed: NO
 +          setting: "This feature cannot be disabled by settings."
 +          policy_exception_justification:
-+            "Internal health check for BrowserOS server functionality."
++            "Internal health check for Wuu Browser server functionality."
 +        })");
 +
 +  // Create resource request
@@ -91,9 +91,9 @@ index 0000000000000..73ef5eaf9e8e3
 +  net::NetworkTrafficAnnotationTag traffic_annotation =
 +      net::DefineNetworkTrafficAnnotation("browseros_shutdown_request", R"(
 +        semantics {
-+          sender: "BrowserOS Server Manager"
++          sender: "Wuu Browser Server Manager"
 +          description:
-+            "Requests graceful shutdown of the BrowserOS server via POST to "
++            "Requests graceful shutdown of the Wuu Browser server via POST to "
 +            "/shutdown endpoint."
 +          trigger: "Browser shutdown or server restart."
 +          data: "No user data sent, just an HTTP POST request."
@@ -103,7 +103,7 @@ index 0000000000000..73ef5eaf9e8e3
 +          cookies_allowed: NO
 +          setting: "This feature cannot be disabled by settings."
 +          policy_exception_justification:
-+            "Internal shutdown request for BrowserOS server functionality."
++            "Internal shutdown request for Wuu Browser server functionality."
 +        })");
 +
 +  // Create resource request

@@ -39,7 +39,7 @@ index 0000000000000..17560c9a2c55a
 +net::NetworkTrafficAnnotationTag GetProxyTrafficAnnotation() {
 +  return net::DefineNetworkTrafficAnnotation("browseros_mcp_proxy", R"(
 +    semantics {
-+      sender: "BrowserOS MCP Proxy"
++      sender: "Wuu Browser MCP Proxy"
 +      description:
 +        "Forwards MCP requests from the stable proxy port to the sidecar's "
 +        "ephemeral backend port."
@@ -51,7 +51,7 @@ index 0000000000000..17560c9a2c55a
 +      cookies_allowed: NO
 +      setting: "This feature cannot be disabled by settings."
 +      policy_exception_justification:
-+        "Internal proxy for BrowserOS MCP server functionality."
++        "Internal proxy for Wuu Browser MCP server functionality."
 +    })");
 +}
 +
