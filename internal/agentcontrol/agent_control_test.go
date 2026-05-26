@@ -1650,6 +1650,44 @@ func TestAgentMailboxChatMessage(t *testing.T) {
 	}
 }
 
+func TestAgentCompletionChatMessageTriggersRootTurn(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, _ := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "found bug at line 42"}},
+		DefaultModel:  "fake",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, "wt"),
+		SessionID:     "sess",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+
+	res, _ := c.Spawn(context.Background(), SpawnRequest{
+		Type:        "worker",
+		TaskName:    "find_bug",
+		Description: "find the bug",
+		Prompt:      "look for it",
+		Synchronous: true,
+	})
+
+	snap := c.Manager().Get(res.AgentID).Snapshot()
+	msg := c.AgentCompletionChatMessage(snap, agentthread.RootPath)
+	if msg.Role != "user" || msg.Name != "" {
+		t.Fatalf("unexpected completion chat message envelope: %+v", msg)
+	}
+	var communication agentthread.InterAgentCommunication
+	if err := json.Unmarshal([]byte(msg.Content), &communication); err != nil {
+		t.Fatalf("completion payload is not JSON: %v\n%s", err, msg.Content)
+	}
+	if communication.Author != agentthread.AgentPath(snap.AgentPath) || communication.Recipient != agentthread.RootAgentPath() || !communication.TriggerTurn {
+		t.Fatalf("unexpected inter-agent envelope: %+v", communication)
+	}
+	if !strings.Contains(communication.Content, "found bug at line 42") {
+		t.Fatalf("completion content missing result: %s", communication.Content)
+	}
+}
+
 func waitForRunningWorkersToStop(t *testing.T, mgr *subagent.Manager, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

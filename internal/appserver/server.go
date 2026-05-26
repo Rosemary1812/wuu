@@ -76,6 +76,10 @@ type Server struct {
 	pendingMu       sync.Mutex
 	nextServerReqID int64
 	pendingRequests map[string]chan clientResponse
+
+	agentCompletionMu            sync.Mutex
+	pendingAgentCompletionTurns  map[string][]providers.ChatMessage
+	drainingAgentCompletionTurns map[string]bool
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
@@ -84,6 +88,9 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		out:             out,
 		threads:         make(map[string]*threadState),
 		pendingRequests: make(map[string]chan clientResponse),
+
+		pendingAgentCompletionTurns:  make(map[string][]providers.ChatMessage),
+		drainingAgentCompletionTurns: make(map[string]bool),
 	}
 	if rt != nil && rt.Toolkit != nil {
 		rt.Toolkit.SetAskUserBridge(s)
@@ -116,6 +123,9 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 					ThreadID: threadID,
 					Message:  agentcontrol.NewAgentMailboxMessage(n.Snapshot),
 				})
+				if control != nil {
+					s.enqueueAgentCompletionTurn(threadID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath))
+				}
 			}
 		}
 	}
@@ -1721,6 +1731,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 			Error:    err.Error(),
 			Turn:     turn,
 		})
+		s.kickAgentCompletionDrain(th.ID)
 		return
 	}
 	notify(NotificationTurnCompleted, TurnCompletedNotification{
@@ -1730,6 +1741,213 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		InputTokens:  res.InputTokens,
 		OutputTokens: res.OutputTokens,
 	})
+	s.kickAgentCompletionDrain(th.ID)
+}
+
+func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatMessage) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" || (strings.TrimSpace(msg.Content) == "" && len(msg.Images) == 0) {
+		return
+	}
+	th := s.thread(threadID)
+	if th == nil || !canResumeAgentCompletionThread(th) {
+		return
+	}
+	if strings.TrimSpace(msg.Role) == "" {
+		msg.Role = "user"
+	}
+
+	s.agentCompletionMu.Lock()
+	if s.pendingAgentCompletionTurns == nil {
+		s.pendingAgentCompletionTurns = make(map[string][]providers.ChatMessage)
+	}
+	s.pendingAgentCompletionTurns[threadID] = append(s.pendingAgentCompletionTurns[threadID], msg)
+	s.agentCompletionMu.Unlock()
+
+	s.kickAgentCompletionDrain(threadID)
+}
+
+func (s *Server) kickAgentCompletionDrain(threadID string) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return
+	}
+
+	s.agentCompletionMu.Lock()
+	if len(s.pendingAgentCompletionTurns[threadID]) == 0 || s.drainingAgentCompletionTurns[threadID] {
+		s.agentCompletionMu.Unlock()
+		return
+	}
+	if s.drainingAgentCompletionTurns == nil {
+		s.drainingAgentCompletionTurns = make(map[string]bool)
+	}
+	s.drainingAgentCompletionTurns[threadID] = true
+	s.agentCompletionMu.Unlock()
+
+	go s.drainAgentCompletionTurns(threadID)
+}
+
+func (s *Server) drainAgentCompletionTurns(threadID string) {
+	th := s.thread(threadID)
+	if th == nil || !canResumeAgentCompletionThread(th) {
+		s.discardPendingAgentCompletionTurns(threadID)
+		s.clearAgentCompletionDrain(threadID)
+		return
+	}
+	if threadIsRunning(th) {
+		s.clearAgentCompletionDrain(threadID)
+		return
+	}
+
+	pending := s.takePendingAgentCompletionTurns(threadID)
+	if len(pending) == 0 {
+		s.clearAgentCompletionDrain(threadID)
+		return
+	}
+
+	started, err := s.startSyntheticTurn(context.Background(), threadID, combineAgentCompletionMessages(pending))
+	if err != nil {
+		providers.DebugLogf("start agent completion turn for thread %q: %v", threadID, err)
+	}
+	requeued := false
+	if !started && err == nil {
+		s.prependPendingAgentCompletionTurns(threadID, pending)
+		requeued = true
+	}
+	s.clearAgentCompletionDrain(threadID)
+	if requeued {
+		s.kickAgentCompletionDrain(threadID)
+	}
+}
+
+func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMsg providers.ChatMessage) (bool, error) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return false, errors.New("thread_id is required")
+	}
+	if strings.TrimSpace(userMsg.Role) == "" {
+		userMsg.Role = "user"
+	}
+	if strings.TrimSpace(userMsg.Content) == "" && len(userMsg.Images) == 0 {
+		return false, nil
+	}
+
+	th := s.thread(threadID)
+	if th == nil {
+		return false, fmt.Errorf("thread %q not found", threadID)
+	}
+	if !canResumeAgentCompletionThread(th) {
+		return false, nil
+	}
+	threadRuntime, err := s.ensureThreadRuntime(th)
+	if err != nil {
+		return false, err
+	}
+
+	turnID := session.NewID()
+	turnCtx, cancel := context.WithCancel(ctx)
+	turnCtx = withAskUserThreadID(turnCtx, th.ID)
+	now := time.Now().UTC()
+
+	th.mu.Lock()
+	if th.running {
+		th.mu.Unlock()
+		cancel()
+		return false, nil
+	}
+	if th.ReadOnly {
+		th.mu.Unlock()
+		cancel()
+		return false, nil
+	}
+	if err := appendChatMessage(th.MemoryPath, userMsg); err != nil {
+		th.mu.Unlock()
+		cancel()
+		return false, err
+	}
+	history := append([]providers.ChatMessage(nil), th.History...)
+	history = append(history, userMsg)
+	th.History = history
+	th.cancel = cancel
+	turn := th.startTurnLocked(turnID, userMsg, now)
+	th.mu.Unlock()
+
+	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+		ThreadID: threadID,
+		Turn:     turn,
+	})
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
+	return true, nil
+}
+
+func canResumeAgentCompletionThread(th *threadState) bool {
+	if th == nil {
+		return false
+	}
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	return !th.ReadOnly
+}
+
+func threadIsRunning(th *threadState) bool {
+	if th == nil {
+		return false
+	}
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	return th.running
+}
+
+func (s *Server) takePendingAgentCompletionTurns(threadID string) []providers.ChatMessage {
+	s.agentCompletionMu.Lock()
+	defer s.agentCompletionMu.Unlock()
+	pending := append([]providers.ChatMessage(nil), s.pendingAgentCompletionTurns[threadID]...)
+	delete(s.pendingAgentCompletionTurns, threadID)
+	return pending
+}
+
+func (s *Server) prependPendingAgentCompletionTurns(threadID string, msgs []providers.ChatMessage) {
+	if len(msgs) == 0 {
+		return
+	}
+	s.agentCompletionMu.Lock()
+	defer s.agentCompletionMu.Unlock()
+	if s.pendingAgentCompletionTurns == nil {
+		s.pendingAgentCompletionTurns = make(map[string][]providers.ChatMessage)
+	}
+	existing := append([]providers.ChatMessage(nil), s.pendingAgentCompletionTurns[threadID]...)
+	s.pendingAgentCompletionTurns[threadID] = append(append([]providers.ChatMessage(nil), msgs...), existing...)
+}
+
+func (s *Server) discardPendingAgentCompletionTurns(threadID string) {
+	s.agentCompletionMu.Lock()
+	defer s.agentCompletionMu.Unlock()
+	delete(s.pendingAgentCompletionTurns, threadID)
+}
+
+func (s *Server) clearAgentCompletionDrain(threadID string) {
+	s.agentCompletionMu.Lock()
+	defer s.agentCompletionMu.Unlock()
+	delete(s.drainingAgentCompletionTurns, threadID)
+}
+
+func combineAgentCompletionMessages(msgs []providers.ChatMessage) providers.ChatMessage {
+	if len(msgs) == 0 {
+		return providers.ChatMessage{Role: "user"}
+	}
+	if len(msgs) == 1 {
+		return msgs[0]
+	}
+	contents := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		if content := strings.TrimSpace(msg.Content); content != "" {
+			contents = append(contents, content)
+		}
+	}
+	return providers.ChatMessage{
+		Role:    "user",
+		Content: strings.Join(contents, "\n\n"),
+	}
 }
 
 func (s *Server) thread(id string) *threadState {

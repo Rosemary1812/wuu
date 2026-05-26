@@ -1636,12 +1636,32 @@ func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSna
 	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, NewAgentMailboxMessageWithReport(snap, reportPath, artifacts))
 }
 
+// AgentCompletionChatMessage returns the user-role handoff that should resume
+// the recipient agent after a child agent finishes.
+func (c *AgentControl) AgentCompletionChatMessage(snap subagent.SubAgentSnapshot, recipientPath string) providers.ChatMessage {
+	reportPath, artifacts := c.harnessReportForTask(snap.ID)
+	communication := newAgentCompletionCommunicationWithMessageAndTrigger(
+		snap,
+		recipientPath,
+		NewAgentMailboxMessageWithReport(snap, reportPath, artifacts),
+		true,
+	)
+	return providers.ChatMessage{
+		Role:    "user",
+		Content: communication.String(),
+	}
+}
+
 func newAgentCompletionCommunicationWithMessage(snap subagent.SubAgentSnapshot, recipientPath string, message AgentMailboxMessage) agentthread.InterAgentCommunication {
+	return newAgentCompletionCommunicationWithMessageAndTrigger(snap, recipientPath, message, false)
+}
+
+func newAgentCompletionCommunicationWithMessageAndTrigger(snap subagent.SubAgentSnapshot, recipientPath string, message AgentMailboxMessage, triggerTurn bool) agentthread.InterAgentCommunication {
 	if strings.TrimSpace(recipientPath) == "" {
 		recipientPath = agentthread.RootPath
 	}
 	content := agentthread.SubagentNotificationContent(snap.AgentPath, message)
-	return agentthread.NewInterAgentCommunication(parseAgentPathOrRoot(snap.AgentPath), parseAgentPathOrRoot(recipientPath), content, false)
+	return agentthread.NewInterAgentCommunication(parseAgentPathOrRoot(snap.AgentPath), parseAgentPathOrRoot(recipientPath), content, triggerTurn)
 }
 
 func formatInterAgentCommunication(authorPath, recipientPath, content string, triggerTurn bool) string {
@@ -1832,13 +1852,13 @@ Good worker prompts are self-contained: specific file paths, line numbers, exact
 
 Launch independent workers in parallel whenever possible. Research tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts.
 
-After spawning async workers, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let mailbox notifications resume you. Do not repeatedly wait by reflex.
+After spawning async workers, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let mailbox notifications automatically resume you. Do not repeatedly wait by reflex.
 
 Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks. If await_agents returns awaiting_report, the worker finished without a durable handoff; follow up or verify before relying on the result.
 
 ## Working with Worker Results
 
-Agent messages arrive as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the actual instruction or result. When a worker finishes, its result arrives as a notification in your next turn.
+Agent messages arrive as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the actual instruction or result. When a worker finishes, its result automatically arrives as a notification in your next turn.
 
 Before launching follow-up work, read the returned content yourself and do your own synthesis. Never chain workers by implication with phrases like "based on your findings" or "based on the research".
 

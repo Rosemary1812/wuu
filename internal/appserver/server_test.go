@@ -1523,6 +1523,152 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 	}
 }
 
+func TestServerAutoResumesRootAgentOnAgentCompletion(t *testing.T) {
+	mainClient := &fakeClient{response: providers.ChatResponse{Content: "integrated result"}}
+	rt := newTestRuntime(t, mainClient)
+	workerClient := &fakeClient{response: providers.ChatResponse{Content: "agent done"}}
+	coord, err := agentcontrol.New(agentcontrol.Config{
+		Client:       providers.AdaptStreamClient(workerClient),
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    "sess-agents",
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return noopToolExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("coordinator: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	threadID := "sess-agents"
+	threadRuntime := &runtime.ThreadRuntime{
+		StreamRunner: rt.StreamRunner,
+		AgentControl: coord,
+	}
+	rootThread := newThreadState(threadID, []providers.ChatMessage{
+		{Role: "user", Content: "please inspect"},
+	}, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	rootThread.execRuntime = threadRuntime
+	srv.mu.Lock()
+	srv.threads[threadID] = rootThread
+	srv.mu.Unlock()
+	srv.subscribeThreadRuntime(threadID, threadRuntime)
+
+	res, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        "worker",
+		TaskName:    "check_bridge",
+		Description: "check bridge",
+		Prompt:      "do it",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	msgs := waitForTurnCompletedForThread(t, out, threadID)
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethodForThread(t, msgs, NotificationTurnCompleted, threadID)["params"])
+	if completed.Content != "integrated result" {
+		t.Fatalf("unexpected root turn completion: %+v", completed)
+	}
+
+	mainClient.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), mainClient.requests...)
+	mainClient.mu.Unlock()
+	if len(requests) != 1 {
+		t.Fatalf("expected one main agent request, got %d", len(requests))
+	}
+	var handoff providers.ChatMessage
+	for _, msg := range requests[0].Messages {
+		if msg.Role == "user" && strings.Contains(msg.Content, res.AgentID) && strings.Contains(msg.Content, "agent done") {
+			handoff = msg
+			break
+		}
+	}
+	if handoff.Content == "" {
+		t.Fatalf("main agent request missing worker completion handoff: %+v", requests[0].Messages)
+	}
+	var communication agentthread.InterAgentCommunication
+	if err := json.Unmarshal([]byte(handoff.Content), &communication); err != nil {
+		t.Fatalf("handoff is not inter-agent JSON: %v\n%s", err, handoff.Content)
+	}
+	if !communication.TriggerTurn || communication.Recipient != agentthread.RootAgentPath() {
+		t.Fatalf("unexpected handoff envelope: %+v", communication)
+	}
+}
+
+func TestServerQueuesAgentCompletionWhileRootTurnIsRunning(t *testing.T) {
+	mainClient := newBlockingStreamClient("root turn done")
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Client = mainClient
+	workerClient := &fakeClient{response: providers.ChatResponse{Content: "agent done"}}
+	coord, err := agentcontrol.New(agentcontrol.Config{
+		Client:       providers.AdaptStreamClient(workerClient),
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    "sess-agents",
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return noopToolExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("coordinator: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	threadID := "sess-agents"
+	threadRuntime := &runtime.ThreadRuntime{
+		StreamRunner: rt.StreamRunner,
+		AgentControl: coord,
+	}
+	rootThread := newThreadState(threadID, []providers.ChatMessage{
+		{Role: "user", Content: "please inspect"},
+	}, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	rootThread.execRuntime = threadRuntime
+	srv.mu.Lock()
+	srv.threads[threadID] = rootThread
+	srv.mu.Unlock()
+	srv.subscribeThreadRuntime(threadID, threadRuntime)
+
+	req := fmt.Sprintf(`{"id":"1","method":"turn/start","params":{"thread_id":%q,"prompt":"keep working"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	<-mainClient.started
+
+	if _, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        "worker",
+		TaskName:    "check_bridge",
+		Description: "check bridge",
+		Prompt:      "do it",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	waitForMethod(t, out, NotificationAgentMailbox)
+
+	close(mainClient.release)
+	waitForTurnCompletedCountForThread(t, out, threadID, 2)
+
+	rootThread.mu.Lock()
+	history := append([]providers.ChatMessage(nil), rootThread.History...)
+	rootThread.mu.Unlock()
+	var foundHandoff bool
+	for _, msg := range history {
+		if msg.Role == "user" && strings.Contains(msg.Content, "agent done") && strings.Contains(msg.Content, `"trigger_turn":true`) {
+			foundHandoff = true
+			break
+		}
+	}
+	if !foundHandoff {
+		t.Fatalf("root history missing queued worker completion handoff: %+v", history)
+	}
+}
+
 func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 	t.Helper()
 	root := t.TempDir()
@@ -1573,6 +1719,50 @@ func waitForMethod(t *testing.T, out *lockedBuffer, method string) []map[string]
 	return nil
 }
 
+func waitForTurnCompletedForThread(t *testing.T, out *lockedBuffer, threadID string) []map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		msgs := parseOutput(t, out.String())
+		for _, msg := range msgs {
+			if msg["method"] != NotificationTurnCompleted || msg["id"] != nil {
+				continue
+			}
+			params := remarshal[TurnCompletedNotification](t, msg["params"])
+			if params.ThreadID == threadID {
+				return msgs
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for completed turn on %s; output:\n%s", threadID, out.String())
+	return nil
+}
+
+func waitForTurnCompletedCountForThread(t *testing.T, out *lockedBuffer, threadID string, count int) []map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		msgs := parseOutput(t, out.String())
+		seen := 0
+		for _, msg := range msgs {
+			if msg["method"] != NotificationTurnCompleted || msg["id"] != nil {
+				continue
+			}
+			params := remarshal[TurnCompletedNotification](t, msg["params"])
+			if params.ThreadID == threadID {
+				seen++
+			}
+		}
+		if seen >= count {
+			return msgs
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %d completed turns on %s; output:\n%s", count, threadID, out.String())
+	return nil
+}
+
 func waitForNotificationCount(t *testing.T, out *lockedBuffer, method string, count int) []map[string]any {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -1606,6 +1796,29 @@ func notificationByMethod(t *testing.T, msgs []map[string]any, method string) ma
 		}
 	}
 	t.Fatalf("notification %s not found in %+v", method, msgs)
+	return nil
+}
+
+func notificationByMethodForThread(t *testing.T, msgs []map[string]any, method, threadID string) map[string]any {
+	t.Helper()
+	for _, msg := range msgs {
+		if msg["method"] != method || msg["id"] != nil {
+			continue
+		}
+		switch method {
+		case NotificationTurnCompleted:
+			params := remarshal[TurnCompletedNotification](t, msg["params"])
+			if params.ThreadID == threadID {
+				return msg
+			}
+		case NotificationTurnStarted:
+			params := remarshal[TurnStartedNotification](t, msg["params"])
+			if params.ThreadID == threadID {
+				return msg
+			}
+		}
+	}
+	t.Fatalf("notification %s for thread %s not found in %+v", method, threadID, msgs)
 	return nil
 }
 
