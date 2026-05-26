@@ -84,6 +84,8 @@ package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
 agent_wxt_config="${browser_dir}/agent/apps/agent/wxt.config.ts"
 agent_app_html="${browser_dir}/agent/apps/agent/entrypoints/app/index.html"
 server_main="${browser_dir}/agent/apps/server/src/main.ts"
+server_api="${browser_dir}/agent/apps/server/src/api/server.ts"
+request_auth="${browser_dir}/agent/apps/server/src/api/utils/request-auth.ts"
 browser_bridge_route="${browser_dir}/agent/apps/server/src/api/routes/browser-bridge.ts"
 
 echo "Wuu Browser product default verification"
@@ -637,6 +639,31 @@ check_contains \
   "${server_main}" \
   "process.env.WUU_ENABLE_VM_AGENTS === '1'" \
   "server only enables VM-backed agents through explicit opt-in"
+
+check_contains \
+  "${server_main}" \
+  "host: '127.0.0.1'" \
+  "server application binds the local HTTP server to loopback"
+
+check_not_contains \
+  "${server_main}" \
+  "host: '0.0.0.0'" \
+  "server application no longer binds the local HTTP server to all interfaces"
+
+check_contains \
+  "${server_api}" \
+  "host = '127.0.0.1'" \
+  "HTTP server default host is loopback"
+
+check_not_contains \
+  "${server_api}" \
+  "host = '0.0.0.0'" \
+  "HTTP server default host no longer exposes all interfaces"
+
+check_contains \
+  "${request_auth}" \
+  "return isLocalhost && isTrustedAppOrigin(origin)" \
+  "trusted app origins also require a loopback client socket"
 
 check_not_contains \
   "${server_main}" \

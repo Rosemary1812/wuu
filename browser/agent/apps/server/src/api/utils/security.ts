@@ -8,6 +8,15 @@ import type { Context } from 'hono'
 import type { Env } from '../types'
 
 const LOCALHOST_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+const LOCALHOST_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+
+function readHostHeaderHostname(host: string): string {
+  if (host.startsWith('[')) {
+    const end = host.indexOf(']')
+    return end === -1 ? host : host.slice(0, end + 1)
+  }
+  return host.split(':')[0] ?? ''
+}
 
 /**
  * Check if request originates from localhost.
@@ -21,10 +30,12 @@ const LOCALHOST_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
  * @returns true if request is from localhost, false otherwise
  */
 export function isLocalhostRequest(c: Context<Env>): boolean {
-  const server = c.env.server
+  const server = c.env?.server
   const request = c.req.raw
 
   // 1. CHECK ACTUAL TCP CONNECTION IP (cannot be spoofed)
+  if (!server?.requestIP) return false
+
   const socketAddr = server.requestIP(request)
   if (!socketAddr || !LOCALHOST_ADDRESSES.has(socketAddr.address)) {
     return false
@@ -33,17 +44,15 @@ export function isLocalhostRequest(c: Context<Env>): boolean {
   // 2. Also check Host header (defense in depth)
   const host = c.req.header('host')
   if (!host) return false
-  const hostname = host.split(':')[0]
-  if (hostname !== '127.0.0.1' && hostname !== 'localhost') return false
+  const hostname = readHostHeaderHostname(host)
+  if (!LOCALHOST_HOSTNAMES.has(hostname)) return false
 
   // 3. Check referer if present (defense in depth)
   const referer = c.req.header('referer')
   if (referer) {
     try {
       const url = new URL(referer)
-      if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
-        return false
-      }
+      if (!LOCALHOST_HOSTNAMES.has(url.hostname)) return false
     } catch {
       return false
     }

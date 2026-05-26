@@ -54,7 +54,10 @@ import type { Env, HttpServerConfig } from './types'
 import { defaultCorsConfig } from './utils/cors'
 import { requireTrustedAppOrigin } from './utils/request-auth'
 
-async function assertPortAvailable(port: number): Promise<void> {
+async function assertPortAvailable(
+  port: number,
+  host = '127.0.0.1',
+): Promise<void> {
   const net = await import('node:net')
   return new Promise((resolve, reject) => {
     const probe = net.createServer()
@@ -71,7 +74,7 @@ async function assertPortAvailable(port: number): Promise<void> {
       }
     })
 
-    probe.listen({ port, host: '127.0.0.1', exclusive: true }, () => {
+    probe.listen({ port, host, exclusive: true }, () => {
       probe.close(() => resolve())
     })
   })
@@ -80,7 +83,7 @@ async function assertPortAvailable(port: number): Promise<void> {
 export async function createHttpServer(config: HttpServerConfig) {
   const {
     port,
-    host = '0.0.0.0',
+    host = '127.0.0.1',
     browserosId,
     executionDir,
     resourcesDir,
@@ -294,7 +297,7 @@ export async function createHttpServer(config: HttpServerConfig) {
     )
   })
 
-  await assertPortAvailable(port)
+  await assertPortAvailable(port, host)
 
   app.route('/terminal', terminalRoutes)
 

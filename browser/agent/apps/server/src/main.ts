@@ -89,7 +89,7 @@ export class Application {
     try {
       await createHttpServer({
         port: this.config.serverPort,
-        host: '0.0.0.0',
+        host: '127.0.0.1',
         version: VERSION,
         browser,
         registry,

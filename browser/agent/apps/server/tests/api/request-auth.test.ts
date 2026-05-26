@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { Hono } from 'hono'
 import {
   isTrustedAppOrigin,
+  isTrustedAppRequest,
   requireTrustedAppOrigin,
 } from '../../src/api/utils/request-auth'
 
@@ -32,16 +33,55 @@ describe('request auth', () => {
     expect(await res.json()).toEqual({ error: 'Forbidden' })
   })
 
-  it('allows requests from trusted origins', async () => {
-    const app = new Hono()
-      .use('/*', requireTrustedAppOrigin())
-      .get('/claw/status', (c) => c.json({ ok: true }))
+  it('trusts accepted origins only from loopback sockets', () => {
+    expect(
+      isTrustedAppRequest({
+        origin: 'chrome-extension://browseros',
+        method: 'POST',
+        isLocalhost: true,
+      }),
+    ).toBe(true)
+    expect(
+      isTrustedAppRequest({
+        origin: 'chrome-extension://browseros',
+        method: 'POST',
+        isLocalhost: false,
+      }),
+    ).toBe(false)
+    expect(
+      isTrustedAppRequest({
+        origin: 'http://127.0.0.1:9105',
+        method: 'POST',
+        isLocalhost: true,
+      }),
+    ).toBe(true)
+    expect(
+      isTrustedAppRequest({
+        origin: 'http://127.0.0.1:9105',
+        method: 'POST',
+        isLocalhost: false,
+      }),
+    ).toBe(false)
+  })
 
-    const res = await app.request('http://localhost/claw/status', {
-      headers: { Origin: 'chrome-extension://browseros' },
-    })
-
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
+  it('allows missing origins only for safe loopback reads', () => {
+    expect(
+      isTrustedAppRequest({
+        method: 'GET',
+        isLocalhost: true,
+      }),
+    ).toBe(true)
+    expect(
+      isTrustedAppRequest({
+        method: 'POST',
+        isLocalhost: true,
+      }),
+    ).toBe(false)
+    expect(
+      isTrustedAppRequest({
+        method: 'GET',
+        isLocalhost: false,
+      }),
+    ).toBe(false)
   })
 })

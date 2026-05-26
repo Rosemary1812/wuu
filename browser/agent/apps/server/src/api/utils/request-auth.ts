@@ -3,6 +3,13 @@ import { isLocalhostRequest } from './security'
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
 const EXTENSION_PROTOCOLS = new Set(['chrome-extension:', 'moz-extension:'])
+const SAFE_MISSING_ORIGIN_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+export type TrustedAppRequestInput = {
+  origin?: string
+  method: string
+  isLocalhost: boolean
+}
 
 export function isTrustedAppOrigin(origin: string | undefined): boolean {
   if (!origin) return false
@@ -23,21 +30,26 @@ export function isTrustedAppOrigin(origin: string | undefined): boolean {
   }
 }
 
+export function isTrustedAppRequest({
+  origin,
+  method,
+  isLocalhost,
+}: TrustedAppRequestInput): boolean {
+  if (origin) {
+    return isLocalhost && isTrustedAppOrigin(origin)
+  }
+
+  return SAFE_MISSING_ORIGIN_METHODS.has(method) && isLocalhost
+}
+
 export function requireTrustedAppOrigin(): MiddlewareHandler {
   return async (c, next) => {
-    const origin = c.req.header('origin')
-    if (origin) {
-      if (!isTrustedAppOrigin(origin)) {
-        return c.json({ error: 'Forbidden' }, 403)
-      }
-      return next()
-    }
-
-    // Some local reads arrive without an Origin header. Allow those only when
-    // the actual client socket is loopback. This avoids Host-header spoofing.
     if (
-      ['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) &&
-      isLocalhostRequest(c)
+      isTrustedAppRequest({
+        origin: c.req.header('origin'),
+        method: c.req.method,
+        isLocalhost: isLocalhostRequest(c),
+      })
     ) {
       return next()
     }
