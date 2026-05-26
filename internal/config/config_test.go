@@ -482,6 +482,22 @@ func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 	if strings.Contains(prompt, "fork_agent") {
 		t.Fatalf("default system prompt must not mention removed fork_agent tool: %q", prompt)
 	}
+	for _, want := range []string{
+		"delegation materially improves",
+		"Keep work local",
+		"Context:",
+		"Workspace:",
+		"Waiting:",
+		"fork_turns='all'",
+		"fork_turns='none'",
+		"isolation='inplace'",
+		"isolation='worktree'",
+		"acceptance criteria",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("default system prompt must include sub-agent decision guidance %q: %q", want, prompt)
+		}
+	}
 }
 
 func TestDefaultSystemPrompt_CommentDiscipline(t *testing.T) {

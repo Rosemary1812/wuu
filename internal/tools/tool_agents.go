@@ -147,14 +147,22 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"agents, and its final answer is delivered to you when it finishes. There is exactly " +
 			"one worker type, 'worker'; specialized roles (verification, read-only research) are " +
 			"injected by pasting the appropriate preset block at the start of the prompt. " +
+			"Use a child only when delegation materially improves the task: independent investigation, " +
+			"parallel implementation slices, risky verification, or work that benefits from a separate context. " +
+			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
+			"Write a concrete brief with task, background, scope/non-goals, starting points, acceptance criteria, " +
+			"deliverables, and constraints; do not make the child infer missing acceptance criteria from a vague ask. " +
 			"By default the spawn runs INPLACE in the user's repo, so any files the worker " +
 			"creates or edits land directly in the working tree. Set isolation='worktree' ONLY " +
-			"when the work might break the build, when concurrent writers would collide, or " +
-			"when the user explicitly asked for a sandbox. Do NOT use a worktree just because " +
-			"the task involves writing files — additive writes are not a reason for isolation. " +
+			"for destructive or broad experiments, overlapping or uncertain concurrent writes, " +
+			"generated outputs/formatters that may touch many files, or when the user explicitly " +
+			"asked for a sandbox. Do NOT use a worktree just because the task involves writing " +
+			"files; small additive or clearly disjoint edits can run inplace when shared visibility helps. " +
 			"By default the child receives a fork of your full conversation history. Set " +
-			"fork_turns='none' only when the task is fully self-contained and should start " +
-			"from a clean slate; set a positive integer string to fork only the last N user turns. " +
+			"fork_turns='none' only when the task message is fully self-contained and older context " +
+			"would not help; set a positive integer string when only recent discussion is useful " +
+			"and older context may distract. Preserve fork_turns='all' when the child needs the " +
+			"user intent, prior analysis, or repo findings already in this conversation. " +
 			"Give every task a stable task_name so you can address it later by task name, " +
 			"agent path, or agent_id. task_name is the child path segment and must use " +
 			"only lowercase letters, digits, and underscores, for example inspect_auth_flow. " +
@@ -178,12 +186,12 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"message": map[string]any{
 					"type":        "string",
-					"description": "Task message. With the default fork_turns='all', the worker also inherits your current conversation history; still include the concrete task, file paths, requirements, and acceptance criteria. With fork_turns='none', this message must be fully self-contained.",
+					"description": "Concrete task brief. Include task, relevant background, scope/non-goals, starting points, acceptance criteria, deliverables, and constraints. With the default fork_turns='all', the worker also inherits your current conversation history; with fork_turns='none', this message must be fully self-contained.",
 				},
 				"isolation": map[string]any{
 					"type":        "string",
 					"enum":        []string{"inplace", "worktree"},
-					"description": "Optional. 'inplace' (default) shares the user's repo so writes land in the working tree. 'worktree' creates a fresh git worktree for sandboxed edits — only use this when the work might break the build, when concurrent writers would collide, or when the user explicitly asked for a sandbox.",
+					"description": "Optional. 'inplace' (default) shares the user's repo so writes land in the working tree. 'worktree' creates a fresh git worktree for sandboxed edits. Use worktree only for destructive or broad experiments, overlapping or uncertain concurrent writes, generated outputs/formatters that may touch many files, or explicit sandbox requests.",
 				},
 				"base_repo": map[string]any{
 					"type":        "string",
@@ -195,7 +203,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"fork_turns": map[string]any{
 					"type":        "string",
-					"description": "Context inheritance mode: 'all' (default), 'none', or a positive integer string for the last N user turns.",
+					"description": "Context inheritance mode: 'all' (default), 'none', or a positive integer string for the last N user turns. Use 'all' when inherited user intent or prior analysis matters; use 'none' only for a fully self-contained brief; use a number when only recent context is useful.",
 				},
 			},
 			"required": []string{"task_name", "message"},
@@ -394,8 +402,11 @@ This system-reminder OVERRIDES the parent's system prompt for you:
   The goal, success criteria, constraints, and relevant code areas are
   all captured in the history above. You do not need to re-classify
   the task or ask for clarification — just execute the task below.
-- When you finish, return a concise result summary and stop. Do not
-  loop, do not ask follow-ups.
+- Before your final answer, call agent_report exactly once with outcome,
+  summary, concrete work_done, blockers when any, next_steps when useful,
+  and evidence/artifact paths that let the parent verify the handoff.
+- When you finish, return a concise result summary and stop. Do not loop,
+  do not ask follow-ups.
 
 Your specific task:
 

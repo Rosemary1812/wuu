@@ -1280,6 +1280,51 @@ func TestToolkit_SpawnAgentDescriptionDoesNotForceStopAfterSpawn(t *testing.T) {
 	t.Fatal("spawn_agent must be present in tool definitions")
 }
 
+func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, d := range kit.Definitions() {
+		if d.Name != "spawn_agent" {
+			continue
+		}
+		for _, want := range []string{
+			"delegation materially improves",
+			"Keep work local",
+			"concrete brief",
+			"destructive or broad experiments",
+			"overlapping or uncertain concurrent writes",
+			"generated outputs/formatters",
+			"fork_turns='none'",
+			"Preserve fork_turns='all'",
+			"user intent",
+			"prior analysis",
+		} {
+			if !strings.Contains(d.Description, want) {
+				t.Fatalf("spawn_agent description missing decision guidance %q: %q", want, d.Description)
+			}
+		}
+		props, _ := d.InputSchema["properties"].(map[string]any)
+		for field, wants := range map[string][]string{
+			"message":    {"Concrete task brief", "acceptance criteria", "fully self-contained"},
+			"isolation":  {"destructive or broad experiments", "overlapping or uncertain concurrent writes", "explicit sandbox requests"},
+			"fork_turns": {"inherited user intent", "fully self-contained", "recent context"},
+		} {
+			prop, _ := props[field].(map[string]any)
+			desc, _ := prop["description"].(string)
+			for _, want := range wants {
+				if !strings.Contains(desc, want) {
+					t.Fatalf("spawn_agent %s description missing %q: %q", field, want, desc)
+				}
+			}
+		}
+		return
+	}
+	t.Fatal("spawn_agent must be present in tool definitions")
+}
+
 func TestToolkit_WaitAgentUsesV2MailboxSchema(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -1331,6 +1376,9 @@ func TestWrapForkPrompt_OverridesParentReadOnlyClaims(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "If a tool is in") {
 		t.Fatalf("fork override must restore worker authority to use its tools: %q", prompt)
+	}
+	if !strings.Contains(prompt, "call agent_report exactly once") || !strings.Contains(prompt, "evidence/artifact paths") {
+		t.Fatalf("fork override must preserve structured handoff discipline: %q", prompt)
 	}
 }
 
