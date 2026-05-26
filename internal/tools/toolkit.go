@@ -75,7 +75,11 @@ func New(rootDir string) (*Toolkit, error) {
 		return nil, fmt.Errorf("resolve workspace state directory: %w", err)
 	}
 
-	env := &Env{RootDir: abs, StateDir: stateDir}
+	env := &Env{
+		RootDir:          abs,
+		StateDir:         stateDir,
+		BrowserBridgeURL: strings.TrimSpace(os.Getenv("WUU_BROWSER_BRIDGE_URL")),
+	}
 	t := &Toolkit{env: env}
 	t.rebuildRegistry()
 	return t, nil
@@ -126,7 +130,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 // Called at construction and whenever dependencies change.
 func (t *Toolkit) rebuildRegistry() {
 	e := t.env
-	t.registry = NewRegistry(
+	registered := []Tool{
 		// File operations
 		NewReadFileTool(e),
 		NewWriteFileTool(e),
@@ -169,7 +173,11 @@ func (t *Toolkit) rebuildRegistry() {
 		NewListCronTool(e),
 		// Deferred tool discovery
 		NewToolSearchTool(t),
-	)
+	}
+	if strings.TrimSpace(e.BrowserBridgeURL) != "" {
+		registered = append(registered, NewBrowserTool(e))
+	}
+	t.registry = NewRegistry(registered...)
 }
 
 // ── Dependency setters ─────────────────────────────────────────────

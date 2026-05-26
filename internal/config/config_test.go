@@ -455,6 +455,22 @@ func TestDefaultSystemPrompt_UpdatePlanDiscipline(t *testing.T) {
 	}
 }
 
+func TestDefaultSystemPrompt_BrowserToolDiscipline(t *testing.T) {
+	prompt := DefaultSystemPrompt()
+	for _, want := range []string{
+		"browser tool",
+		"Wuu Browser",
+		"real page state",
+		"screenshots, DOM, console, and network",
+		"web_search or web_fetch",
+		"clicking or typing in a logged-in site",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("default system prompt must include browser tool guidance %q: %q", want, prompt)
+		}
+	}
+}
+
 func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	if !strings.Contains(prompt, "Before your first tool call") || !strings.Contains(prompt, "short sentence") {

@@ -86,7 +86,11 @@ agent_app_html="${browser_dir}/agent/apps/agent/entrypoints/app/index.html"
 server_main="${browser_dir}/agent/apps/server/src/main.ts"
 server_api="${browser_dir}/agent/apps/server/src/api/server.ts"
 request_auth="${browser_dir}/agent/apps/server/src/api/utils/request-auth.ts"
+wuu_route="${browser_dir}/agent/apps/server/src/api/routes/wuu.ts"
 browser_bridge_route="${browser_dir}/agent/apps/server/src/api/routes/browser-bridge.ts"
+wuu_tool="${repo_root}/internal/tools/tool_browser.go"
+wuu_toolkit="${repo_root}/internal/tools/toolkit.go"
+wuu_prompt="${repo_root}/internal/config/config.go"
 
 echo "Wuu Browser product default verification"
 
@@ -664,6 +668,31 @@ check_contains \
   "${request_auth}" \
   "return isLocalhost && isTrustedAppOrigin(origin)" \
   "trusted app origins also require a loopback client socket"
+
+check_contains \
+  "${wuu_route}" \
+  "WUU_BROWSER_BRIDGE_URL" \
+  "Wuu Browser injects the Browser Bridge URL into the Wuu runtime"
+
+check_contains \
+  "${wuu_toolkit}" \
+  "NewBrowserTool(e)" \
+  "Wuu toolkit can register browser bridge tools"
+
+check_contains \
+  "${wuu_tool}" \
+  'Name:        "browser"' \
+  "Wuu exposes Browser Bridge as a single browser tool"
+
+check_contains \
+  "${wuu_tool}" \
+  "browser bridge url must be loopback" \
+  "Wuu browser tool rejects non-loopback bridge URLs"
+
+check_contains \
+  "${wuu_prompt}" \
+  "When the browser tool is available in Wuu Browser" \
+  "Wuu system prompt teaches when to use browser validation"
 
 check_not_contains \
   "${server_main}" \

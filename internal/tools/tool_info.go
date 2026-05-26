@@ -20,6 +20,7 @@ const (
 	ToolKindAgent           ToolKind = "agent"
 	ToolKindProcess         ToolKind = "process"
 	ToolKindSchedule        ToolKind = "schedule"
+	ToolKindBrowser         ToolKind = "browser"
 	ToolKindMCP             ToolKind = "mcp"
 	ToolKindUnknown         ToolKind = "unknown"
 )
@@ -126,6 +127,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindProcess
 	case "schedule_cron", "cancel_cron", "list_cron":
 		return ToolKindSchedule
+	case "browser":
+		return ToolKindBrowser
 	default:
 		if strings.HasPrefix(name, "mcp_") {
 			return ToolKindMCP

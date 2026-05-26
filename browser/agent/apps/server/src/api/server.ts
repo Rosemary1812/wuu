@@ -140,7 +140,12 @@ export async function createHttpServer(config: HttpServerConfig) {
 
   const wuuRoutes = new Hono<Env>()
     .use('/*', requireTrustedAppOrigin())
-    .route('/', createWuuRoutes())
+    .route(
+      '/',
+      createWuuRoutes({
+        browserBridgeUrl: `http://${host}:${port}/browser-bridge`,
+      }),
+    )
 
   const agentRoutes = new Hono<Env>()
     .use('/*', requireTrustedAppOrigin())

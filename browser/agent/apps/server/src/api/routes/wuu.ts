@@ -86,6 +86,10 @@ type WuuCommand = {
   cwd: string
 }
 
+type WuuRoutesOptions = {
+  browserBridgeUrl: string
+}
+
 const REQUEST_TIMEOUT_MS = 45_000
 const HEARTBEAT_MS = 15_000
 const RENDERABLE_IMAGE_CONTENT_TYPES = new Map([
@@ -181,7 +185,10 @@ class WuuStdioSession {
   private listeners = new Set<(event: WuuBridgeEvent) => void>()
   private stopping = false
 
-  constructor(private readonly options: Required<WuuRequestBody>) {}
+  constructor(
+    private readonly options: Required<WuuRequestBody>,
+    private readonly browserBridgeUrl: string,
+  ) {}
 
   get workdir(): string {
     return this.options.workdir
@@ -274,7 +281,11 @@ class WuuStdioSession {
     this.stopping = false
     this.child = spawn(command.command, args, {
       cwd: command.cwd,
-      env: process.env,
+      env: {
+        ...process.env,
+        WUU_BROWSER_BRIDGE_URL:
+          process.env.WUU_BROWSER_BRIDGE_URL || this.browserBridgeUrl,
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
@@ -380,7 +391,7 @@ class WuuStdioSession {
 class WuuBridgeRegistry {
   private sessions = new Map<string, WuuStdioSession>()
 
-  get(input: WuuRequestBody): WuuStdioSession {
+  get(input: WuuRequestBody, options: WuuRoutesOptions): WuuStdioSession {
     const normalized: Required<WuuRequestBody> = {
       workdir: resolveWorkdir(input.workdir),
       provider: input.provider?.trim() || '',
@@ -391,7 +402,7 @@ class WuuBridgeRegistry {
     const key = sessionKey(normalized)
     let session = this.sessions.get(key)
     if (!session) {
-      session = new WuuStdioSession(normalized)
+      session = new WuuStdioSession(normalized, options.browserBridgeUrl)
       this.sessions.set(key, session)
     }
     return session
@@ -411,7 +422,7 @@ class WuuBridgeRegistry {
 
 const registry = new WuuBridgeRegistry()
 
-export function createWuuRoutes() {
+export function createWuuRoutes(options: WuuRoutesOptions) {
   return new Hono<Env>()
     .get('/status', (c) => {
       const status = registry.status({
@@ -430,7 +441,7 @@ export function createWuuRoutes() {
 
       try {
         const result = await registry
-          .get(body)
+          .get(body, options)
           .request(body.method.trim(), body.params)
         return c.json({ result })
       } catch (error) {
@@ -483,7 +494,7 @@ export function createWuuRoutes() {
         return c.json({ error: 'id is required' }, 400)
       }
 
-      registry.get(body).respond(body.id.trim(), body.result)
+      registry.get(body, options).respond(body.id.trim(), body.result)
       return c.json({ ok: true })
     })
     .post('/reject', async (c) => {
@@ -495,17 +506,20 @@ export function createWuuRoutes() {
       }
 
       registry
-        .get(body)
+        .get(body, options)
         .reject(body.id.trim(), body.message?.trim() || 'Rejected')
       return c.json({ ok: true })
     })
     .get('/events', (c) => {
-      const session = registry.get({
-        workdir: c.req.query('workdir'),
-        provider: c.req.query('provider'),
-        model: c.req.query('model'),
-        noTools: c.req.query('noTools') === 'true',
-      })
+      const session = registry.get(
+        {
+          workdir: c.req.query('workdir'),
+          provider: c.req.query('provider'),
+          model: c.req.query('model'),
+          noTools: c.req.query('noTools') === 'true',
+        },
+        options,
+      )
 
       c.header('Content-Type', 'text/event-stream')
       c.header('Cache-Control', 'no-cache')

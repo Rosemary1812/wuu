@@ -70,6 +70,9 @@ type Env struct {
 	AskBridge    AskUserBridge
 	AgentControl *agentcontrol.AgentControl
 	Skills       []skills.Skill
+	// BrowserBridgeURL is set only by the Wuu Browser shell. When empty,
+	// browser-control tools are not registered for this toolkit.
+	BrowserBridgeURL string
 	// OnFileChanged is called after write_file/edit_file successfully
 	// modifies a file. Enables FileChanged hook dispatch without
 	// coupling the tools package to the hooks package.
