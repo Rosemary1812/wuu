@@ -34,6 +34,7 @@
     "build:agent:dev": "bun run codegen:agent && FORCE_COLOR=1 bun run --filter @browseros/agent --elide-lines=0 build:dev",
     "build:agent": "bun run codegen:agent && bun run --filter @browseros/agent build",
     "codegen:agent": "bun run --filter @browseros/agent codegen",
+    "check:workbench-ui": "bun run --filter @browseros/workbench-ui typecheck && bun run --filter @browseros/workbench-ui test",
     "test": "bun run test:all",
     "test:all": "bun run ./scripts/run-test-suite.ts all",
     "test:main": "bun run ./scripts/run-test-suite.ts main",
