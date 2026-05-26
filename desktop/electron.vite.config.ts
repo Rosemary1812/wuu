@@ -2,8 +2,15 @@ import { defineConfig } from "electron-vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 
+const workbenchUiRoot = resolve(__dirname, "../browser/agent/packages/workbench-ui/src");
+
 export default defineConfig({
   main: {
+    resolve: {
+      alias: {
+        "@browseros/workbench-ui": workbenchUiRoot
+      }
+    },
     build: {
       rollupOptions: {
         external: ["node-pty"],
@@ -14,6 +21,11 @@ export default defineConfig({
     }
   },
   preload: {
+    resolve: {
+      alias: {
+        "@browseros/workbench-ui": workbenchUiRoot
+      }
+    },
     build: {
       rollupOptions: {
         input: {
@@ -29,6 +41,9 @@ export default defineConfig({
     root: ".",
     plugins: [react()],
     resolve: {
+      alias: {
+        "@browseros/workbench-ui": workbenchUiRoot
+      },
       dedupe: ["react", "react-dom"]
     },
     build: {

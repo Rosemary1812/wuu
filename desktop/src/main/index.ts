@@ -51,7 +51,7 @@ import type {
   Thread,
   Turn,
   WorkspaceFileReadResult
-} from "../../../browser/agent/packages/workbench-ui/src/shared/protocol";
+} from "@browseros/workbench-ui/shared/protocol";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const requireFromMain = createRequire(import.meta.url);
