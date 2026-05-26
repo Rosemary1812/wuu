@@ -21,6 +21,9 @@
         --danger-soft: #a64b4b;
         --code-bg: rgba(118, 118, 128, 0.09);
         --code-line: rgba(60, 60, 67, 0.12);
+        --sweep-rest: #7f7f86;
+        --sweep-rise: #0066d6;
+        --sweep-peak: #050506;
         --shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
         --radius-control: 8px;
         --timing: cubic-bezier(0.2, 0, 0, 1);
@@ -42,6 +45,9 @@
           --danger-soft: #ff8a82;
           --code-bg: rgba(235, 235, 245, 0.08);
           --code-line: rgba(235, 235, 245, 0.12);
+          --sweep-rest: #8c8c94;
+          --sweep-rise: #66c7ff;
+          --sweep-peak: #ffffff;
           --shadow: 0 20px 70px rgba(0, 0, 0, 0.34);
         }
       }
@@ -338,14 +344,16 @@
           linear-gradient(
             100deg,
             transparent 0%,
-            transparent 28%,
-            color-mix(in srgb, var(--text) 70%, var(--accent) 30%) 43%,
-            color-mix(in srgb, var(--text) 92%, white 8%) 50%,
-            color-mix(in srgb, var(--text) 70%, var(--accent) 30%) 57%,
-            transparent 72%,
+            transparent 18%,
+            var(--sweep-rest) 30%,
+            var(--sweep-rise) 42%,
+            var(--sweep-peak) 50%,
+            var(--sweep-rise) 58%,
+            var(--sweep-rest) 70%,
+            transparent 82%,
             transparent 100%
           );
-        background-size: 220% 100%;
+        background-size: 185% 100%;
         -webkit-background-clip: text;
         background-clip: text;
         animation: textSweep var(--sweep-duration) ease-in-out infinite;
@@ -465,16 +473,18 @@
         background:
           linear-gradient(
             100deg,
-            color-mix(in srgb, var(--text), var(--muted) 28%) 0%,
-            color-mix(in srgb, var(--text), var(--accent) 20%) 38%,
-            color-mix(in srgb, var(--text), white 18%) 50%,
-            color-mix(in srgb, var(--text), var(--accent) 20%) 62%,
-            color-mix(in srgb, var(--text), var(--muted) 28%) 100%
+            var(--sweep-rest) 0%,
+            var(--sweep-rest) 24%,
+            var(--sweep-rise) 42%,
+            var(--sweep-peak) 50%,
+            var(--sweep-rise) 58%,
+            var(--sweep-rest) 76%,
+            var(--sweep-rest) 100%
           );
-        background-size: 260% 100%;
+        background-size: 190% 100%;
         -webkit-background-clip: text;
         background-clip: text;
-        animation: stalledTokenTail 1.85s ease-in-out infinite;
+        animation: stalledTokenTail 1.65s ease-in-out infinite;
       }
 
       .final-text p {
@@ -616,21 +626,21 @@
 
       @keyframes textSweep {
         0% {
-          background-position: 160% 0;
-          opacity: 0;
+          background-position: 135% 0;
+          opacity: 0.32;
         }
-        18% {
-          opacity: 0;
+        16% {
+          opacity: 0.54;
         }
-        38% {
+        42% {
           opacity: 1;
         }
-        82% {
+        72% {
           opacity: 1;
         }
         100% {
-          background-position: -160% 0;
-          opacity: 0;
+          background-position: -135% 0;
+          opacity: 0.32;
         }
       }
 
@@ -672,15 +682,15 @@
 
       @keyframes stalledTokenTail {
         0% {
-          background-position: 150% 0;
-          opacity: 0.68;
+          background-position: 125% 0;
+          opacity: 0.78;
         }
-        46% {
-          opacity: 0.82;
+        42% {
+          opacity: 1;
         }
         100% {
-          background-position: -150% 0;
-          opacity: 0.68;
+          background-position: -125% 0;
+          opacity: 0.78;
         }
       }
 
