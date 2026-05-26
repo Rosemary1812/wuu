@@ -1,0 +1,144 @@
+package harness
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestStorePersistsTaskRunReportAndEvents(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	now := time.Date(2026, 5, 26, 1, 2, 3, 0, time.UTC)
+
+	task := Task{
+		ID:        "worker-1",
+		SessionID: "sess-1",
+		Path:      "/root/research",
+		Name:      "research",
+		Role:      "worker",
+		Intent:    "inspect harness",
+		Workspace: WorkspaceLease{
+			Mode:      WorkspaceWorktree,
+			Root:      "/tmp/wt",
+			CreatedAt: now,
+		},
+		Status:    TaskStatusRunning,
+		LastRunID: "worker-1-run-1",
+		CreatedAt: now,
+		UpdatedAt: now,
+		StartedAt: now,
+	}
+	if err := store.UpsertTask(task); err != nil {
+		t.Fatalf("UpsertTask: %v", err)
+	}
+	if err := store.UpsertRun(AgentRun{
+		ID:        "worker-1-run-1",
+		TaskID:    task.ID,
+		AgentID:   task.ID,
+		Role:      "worker",
+		Status:    TaskStatusRunning,
+		StartedAt: now,
+	}); err != nil {
+		t.Fatalf("UpsertRun: %v", err)
+	}
+	if err := store.AppendEvent(Event{Type: EventTaskCreated, TaskID: task.ID, CreatedAt: now}); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+
+	report, err := store.SubmitReport(Report{
+		TaskID:    task.ID,
+		RunID:     task.LastRunID,
+		AgentID:   task.ID,
+		AgentPath: task.Path,
+		Outcome:   "completed",
+		Summary:   "Found the key files.",
+		WorkDone:  []string{"Read agentcontrol."},
+		Evidence: []EvidenceRef{{
+			Type: "file",
+			Path: "internal/agentcontrol/agent_control.go",
+			Line: 180,
+			Note: "spawn lifecycle",
+		}},
+		SubmittedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("SubmitReport: %v", err)
+	}
+	if report.ReportPath == "" {
+		t.Fatal("expected report path")
+	}
+	if _, err := os.Stat(report.ReportPath); err != nil {
+		t.Fatalf("report file missing: %v", err)
+	}
+
+	if _, err := store.UpdateRunStatus(task.LastRunID, TaskStatusCompleted, now.Add(time.Minute), 10, 20, ""); err != nil {
+		t.Fatalf("UpdateRunStatus: %v", err)
+	}
+	if _, err := store.UpdateTaskStatus(task.ID, TaskStatusCompleted, now.Add(time.Minute), 10, 20, ""); err != nil {
+		t.Fatalf("UpdateTaskStatus: %v", err)
+	}
+
+	tasks, err := store.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].Status != TaskStatusCompleted || tasks[0].ReportPath != report.ReportPath {
+		t.Fatalf("unexpected tasks: %+v", tasks)
+	}
+	runs, err := store.ListRuns()
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != TaskStatusCompleted || runs[0].InputTokens != 10 {
+		t.Fatalf("unexpected runs: %+v", runs)
+	}
+	artifacts, err := store.ListArtifacts()
+	if err != nil {
+		t.Fatalf("ListArtifacts: %v", err)
+	}
+	if len(artifacts) != 1 || artifacts[0].Kind != ArtifactReport || artifacts[0].Path != report.ReportPath {
+		t.Fatalf("unexpected artifacts: %+v", artifacts)
+	}
+	events, err := store.ReadEvents()
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if len(events) != 2 || events[0].Type != EventTaskCreated || events[1].Type != EventReportSubmitted {
+		t.Fatalf("unexpected events: %+v", events)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "reports", task.ID+".md")); err != nil {
+		t.Fatalf("stable report path missing: %v", err)
+	}
+}
+
+func TestStoreReportForTaskReturnsLatest(t *testing.T) {
+	store := NewStore(t.TempDir())
+	old := time.Date(2026, 5, 26, 1, 0, 0, 0, time.UTC)
+	if _, err := store.SubmitReport(Report{
+		ID:          "first",
+		TaskID:      "task-1",
+		Outcome:     "stuck",
+		Summary:     "first",
+		SubmittedAt: old,
+	}); err != nil {
+		t.Fatalf("SubmitReport first: %v", err)
+	}
+	if _, err := store.SubmitReport(Report{
+		ID:          "second",
+		TaskID:      "task-1",
+		Outcome:     "completed",
+		Summary:     "second",
+		SubmittedAt: old.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("SubmitReport second: %v", err)
+	}
+	report, ok, err := store.ReportForTask("task-1")
+	if err != nil {
+		t.Fatalf("ReportForTask: %v", err)
+	}
+	if !ok || report.ID != "second" || report.Outcome != "completed" {
+		t.Fatalf("expected latest report, got %+v ok=%v", report, ok)
+	}
+}

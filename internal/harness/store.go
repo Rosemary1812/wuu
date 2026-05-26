@@ -1,0 +1,638 @@
+package harness
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+type Store struct {
+	dir string
+	mu  sync.Mutex
+}
+
+func NewStore(dir string) *Store {
+	return &Store{dir: strings.TrimSpace(dir)}
+}
+
+func (s *Store) Dir() string {
+	if s == nil {
+		return ""
+	}
+	return s.dir
+}
+
+func (s *Store) UpsertTask(task Task) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return err
+	}
+	tasks, err := s.loadTasksLocked()
+	if err != nil {
+		return err
+	}
+	if task.CreatedAt.IsZero() {
+		task.CreatedAt = time.Now().UTC()
+	}
+	if task.UpdatedAt.IsZero() {
+		task.UpdatedAt = time.Now().UTC()
+	}
+	replaced := false
+	for i := range tasks {
+		if tasks[i].ID == task.ID {
+			if task.CreatedAt.IsZero() {
+				task.CreatedAt = tasks[i].CreatedAt
+			}
+			tasks[i] = task
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		tasks = append(tasks, task)
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		if tasks[i].Path == tasks[j].Path {
+			return tasks[i].ID < tasks[j].ID
+		}
+		return tasks[i].Path < tasks[j].Path
+	})
+	return writeJSONFile(filepath.Join(s.dir, "tasks.json"), tasks)
+}
+
+func (s *Store) UpdateTaskStatus(taskID string, status TaskStatus, completedAt time.Time, inputTokens, outputTokens int, errText string) (Task, error) {
+	if s == nil || s.dir == "" {
+		return Task{}, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return Task{}, err
+	}
+	tasks, err := s.loadTasksLocked()
+	if err != nil {
+		return Task{}, err
+	}
+	for i := range tasks {
+		if tasks[i].ID != taskID {
+			continue
+		}
+		now := time.Now().UTC()
+		tasks[i].Status = status
+		tasks[i].UpdatedAt = now
+		tasks[i].InputTokens = inputTokens
+		tasks[i].OutputTokens = outputTokens
+		tasks[i].Error = strings.TrimSpace(errText)
+		if !completedAt.IsZero() {
+			tasks[i].CompletedAt = completedAt
+		}
+		if err := writeJSONFile(filepath.Join(s.dir, "tasks.json"), tasks); err != nil {
+			return Task{}, err
+		}
+		return tasks[i], nil
+	}
+	return Task{}, fmt.Errorf("task %q not found", taskID)
+}
+
+func (s *Store) UpsertRun(run AgentRun) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return err
+	}
+	runs, err := s.loadRunsLocked()
+	if err != nil {
+		return err
+	}
+	if run.StartedAt.IsZero() {
+		run.StartedAt = time.Now().UTC()
+	}
+	replaced := false
+	for i := range runs {
+		if runs[i].ID == run.ID {
+			runs[i] = run
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		runs = append(runs, run)
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		if runs[i].TaskID == runs[j].TaskID {
+			return runs[i].StartedAt.Before(runs[j].StartedAt)
+		}
+		return runs[i].TaskID < runs[j].TaskID
+	})
+	return writeJSONFile(filepath.Join(s.dir, "runs.json"), runs)
+}
+
+func (s *Store) UpdateRunStatus(runID string, status TaskStatus, completedAt time.Time, inputTokens, outputTokens int, errText string) (AgentRun, error) {
+	if s == nil || s.dir == "" {
+		return AgentRun{}, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return AgentRun{}, err
+	}
+	runs, err := s.loadRunsLocked()
+	if err != nil {
+		return AgentRun{}, err
+	}
+	for i := range runs {
+		if runs[i].ID != runID {
+			continue
+		}
+		runs[i].Status = status
+		runs[i].InputTokens = inputTokens
+		runs[i].OutputTokens = outputTokens
+		runs[i].Error = strings.TrimSpace(errText)
+		if !completedAt.IsZero() {
+			runs[i].CompletedAt = completedAt
+		}
+		if err := writeJSONFile(filepath.Join(s.dir, "runs.json"), runs); err != nil {
+			return AgentRun{}, err
+		}
+		return runs[i], nil
+	}
+	return AgentRun{}, fmt.Errorf("run %q not found", runID)
+}
+
+func (s *Store) AddArtifact(artifact Artifact) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return err
+	}
+	artifacts, err := s.loadArtifactsLocked()
+	if err != nil {
+		return err
+	}
+	if artifact.CreatedAt.IsZero() {
+		artifact.CreatedAt = time.Now().UTC()
+	}
+	if artifact.ID == "" {
+		artifact.ID = artifactID(artifact)
+	}
+	replaced := false
+	for i := range artifacts {
+		if artifacts[i].ID == artifact.ID {
+			artifacts[i] = artifact
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		artifacts = append(artifacts, artifact)
+	}
+	sort.Slice(artifacts, func(i, j int) bool {
+		if artifacts[i].TaskID == artifacts[j].TaskID {
+			return artifacts[i].CreatedAt.Before(artifacts[j].CreatedAt)
+		}
+		return artifacts[i].TaskID < artifacts[j].TaskID
+	})
+	if err := writeJSONFile(filepath.Join(s.dir, "artifacts.json"), artifacts); err != nil {
+		return err
+	}
+	tasks, err := s.loadTasksLocked()
+	if err != nil {
+		return err
+	}
+	for i := range tasks {
+		if tasks[i].ID != artifact.TaskID {
+			continue
+		}
+		if artifact.Path != "" && !contains(tasks[i].ArtifactPaths, artifact.Path) {
+			tasks[i].ArtifactPaths = append(tasks[i].ArtifactPaths, artifact.Path)
+		}
+		if artifact.Kind == ArtifactReport {
+			tasks[i].ReportPath = artifact.Path
+		}
+		tasks[i].UpdatedAt = time.Now().UTC()
+		if err := writeJSONFile(filepath.Join(s.dir, "tasks.json"), tasks); err != nil {
+			return err
+		}
+		break
+	}
+	return s.appendEventLocked(Event{
+		Type:      EventArtifactRecorded,
+		TaskID:    artifact.TaskID,
+		RunID:     artifact.RunID,
+		Artifact:  artifact.Path,
+		CreatedAt: time.Now().UTC(),
+	})
+}
+
+func (s *Store) SubmitReport(report Report) (Report, error) {
+	if s == nil || s.dir == "" {
+		return report, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return Report{}, err
+	}
+	now := time.Now().UTC()
+	if report.SubmittedAt.IsZero() {
+		report.SubmittedAt = now
+	}
+	if report.ID == "" {
+		report.ID = report.TaskID + "-report"
+	}
+	if report.ReportPath == "" {
+		report.ReportPath = filepath.Join(s.dir, "reports", report.TaskID+".md")
+	}
+	if err := os.MkdirAll(filepath.Dir(report.ReportPath), 0o755); err != nil {
+		return Report{}, fmt.Errorf("create report dir: %w", err)
+	}
+	if err := os.WriteFile(report.ReportPath, []byte(renderReportMarkdown(report)), 0o644); err != nil {
+		return Report{}, fmt.Errorf("write report: %w", err)
+	}
+	reports, err := s.loadReportsLocked()
+	if err != nil {
+		return Report{}, err
+	}
+	replaced := false
+	for i := range reports {
+		if reports[i].ID == report.ID {
+			reports[i] = report
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		reports = append(reports, report)
+	}
+	sort.Slice(reports, func(i, j int) bool {
+		if reports[i].TaskID == reports[j].TaskID {
+			return reports[i].SubmittedAt.Before(reports[j].SubmittedAt)
+		}
+		return reports[i].TaskID < reports[j].TaskID
+	})
+	if err := writeJSONFile(filepath.Join(s.dir, "reports.json"), reports); err != nil {
+		return Report{}, err
+	}
+	artifact := Artifact{
+		ID:        report.ID + "-artifact",
+		TaskID:    report.TaskID,
+		RunID:     report.RunID,
+		Kind:      ArtifactReport,
+		Path:      report.ReportPath,
+		Summary:   report.Summary,
+		CreatedAt: report.SubmittedAt,
+	}
+	artifacts, err := s.loadArtifactsLocked()
+	if err != nil {
+		return Report{}, err
+	}
+	replacedArtifact := false
+	for i := range artifacts {
+		if artifacts[i].ID == artifact.ID {
+			artifacts[i] = artifact
+			replacedArtifact = true
+			break
+		}
+	}
+	if !replacedArtifact {
+		artifacts = append(artifacts, artifact)
+	}
+	if err := writeJSONFile(filepath.Join(s.dir, "artifacts.json"), artifacts); err != nil {
+		return Report{}, err
+	}
+	tasks, err := s.loadTasksLocked()
+	if err != nil {
+		return Report{}, err
+	}
+	for i := range tasks {
+		if tasks[i].ID != report.TaskID {
+			continue
+		}
+		tasks[i].ReportPath = report.ReportPath
+		if !contains(tasks[i].ArtifactPaths, report.ReportPath) {
+			tasks[i].ArtifactPaths = append(tasks[i].ArtifactPaths, report.ReportPath)
+		}
+		tasks[i].UpdatedAt = now
+		if err := writeJSONFile(filepath.Join(s.dir, "tasks.json"), tasks); err != nil {
+			return Report{}, err
+		}
+		break
+	}
+	if err := s.appendEventLocked(Event{
+		Type:      EventReportSubmitted,
+		TaskID:    report.TaskID,
+		RunID:     report.RunID,
+		AgentID:   report.AgentID,
+		Path:      report.AgentPath,
+		Status:    report.Outcome,
+		Artifact:  report.ReportPath,
+		CreatedAt: report.SubmittedAt,
+	}); err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
+func (s *Store) AppendEvent(event Event) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return err
+	}
+	return s.appendEventLocked(event)
+}
+
+func (s *Store) ListTasks() ([]Task, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadTasksLocked()
+}
+
+func (s *Store) ListRuns() ([]AgentRun, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadRunsLocked()
+}
+
+func (s *Store) ListArtifacts() ([]Artifact, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadArtifactsLocked()
+}
+
+func (s *Store) ListReports() ([]Report, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadReportsLocked()
+}
+
+func (s *Store) ReportForTask(taskID string) (Report, bool, error) {
+	reports, err := s.ListReports()
+	if err != nil {
+		return Report{}, false, err
+	}
+	for i := len(reports) - 1; i >= 0; i-- {
+		if reports[i].TaskID == taskID {
+			return reports[i], true, nil
+		}
+	}
+	return Report{}, false, nil
+}
+
+func (s *Store) ReadEvents() ([]Event, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	path := filepath.Join(s.dir, "events.jsonl")
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("open harness events: %w", err)
+	}
+	defer file.Close()
+	var events []Event
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var event Event
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		events = append(events, event)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan harness events: %w", err)
+	}
+	return events, nil
+}
+
+func (s *Store) ensureDirLocked() error {
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return fmt.Errorf("create harness store: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) loadTasksLocked() ([]Task, error) {
+	var out []Task
+	if err := readJSONFile(filepath.Join(s.dir, "tasks.json"), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) loadRunsLocked() ([]AgentRun, error) {
+	var out []AgentRun
+	if err := readJSONFile(filepath.Join(s.dir, "runs.json"), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) loadArtifactsLocked() ([]Artifact, error) {
+	var out []Artifact
+	if err := readJSONFile(filepath.Join(s.dir, "artifacts.json"), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) loadReportsLocked() ([]Report, error) {
+	var out []Report
+	if err := readJSONFile(filepath.Join(s.dir, "reports.json"), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) appendEventLocked(event Event) error {
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
+	}
+	path := filepath.Join(s.dir, "events.jsonl")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("open harness events: %w", err)
+	}
+	defer file.Close()
+	if err := json.NewEncoder(file).Encode(event); err != nil {
+		return fmt.Errorf("write harness event: %w", err)
+	}
+	return nil
+}
+
+func readJSONFile(path string, out any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", filepath.Base(path), err)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("decode %s: %w", filepath.Base(path), err)
+	}
+	return nil
+}
+
+func writeJSONFile(path string, value any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create %s dir: %w", filepath.Base(path), err)
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", filepath.Base(path), err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create %s tmp: %w", filepath.Base(path), err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("write %s tmp: %w", filepath.Base(path), err)
+	}
+	if _, err := tmp.Write([]byte("\n")); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("write %s newline: %w", filepath.Base(path), err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("close %s tmp: %w", filepath.Base(path), err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("rename %s: %w", filepath.Base(path), err)
+	}
+	return nil
+}
+
+func renderReportMarkdown(report Report) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Agent Report\n\n")
+	fmt.Fprintf(&b, "- Task: %s\n", report.TaskID)
+	if report.AgentPath != "" {
+		fmt.Fprintf(&b, "- Agent: %s\n", report.AgentPath)
+	}
+	fmt.Fprintf(&b, "- Outcome: %s\n", strings.TrimSpace(report.Outcome))
+	if !report.SubmittedAt.IsZero() {
+		fmt.Fprintf(&b, "- Submitted: %s\n", report.SubmittedAt.Format(time.RFC3339))
+	}
+	if strings.TrimSpace(report.Summary) != "" {
+		fmt.Fprintf(&b, "\n## Summary\n\n%s\n", strings.TrimSpace(report.Summary))
+	}
+	writeList := func(title string, values []string) {
+		if len(values) == 0 {
+			return
+		}
+		fmt.Fprintf(&b, "\n## %s\n\n", title)
+		for _, value := range values {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "- %s\n", strings.TrimSpace(value))
+		}
+	}
+	writeList("Work Done", report.WorkDone)
+	writeList("Blockers", report.Blockers)
+	writeList("Next Steps", report.NextSteps)
+	if len(report.Evidence) > 0 {
+		fmt.Fprintf(&b, "\n## Evidence\n\n")
+		for _, ev := range report.Evidence {
+			fmt.Fprintf(&b, "- %s\n", formatEvidence(ev))
+		}
+	}
+	writeList("Artifacts", report.Artifacts)
+	if strings.TrimSpace(report.RawResult) != "" {
+		fmt.Fprintf(&b, "\n## Raw Result\n\n```text\n%s\n```\n", strings.TrimSpace(report.RawResult))
+	}
+	return b.String()
+}
+
+func formatEvidence(ev EvidenceRef) string {
+	parts := make([]string, 0, 4)
+	if ev.Type != "" {
+		parts = append(parts, ev.Type)
+	}
+	if ev.Path != "" {
+		path := ev.Path
+		if ev.Line > 0 {
+			path = fmt.Sprintf("%s:%d", path, ev.Line)
+		}
+		parts = append(parts, path)
+	}
+	if ev.Command != "" {
+		parts = append(parts, "`"+ev.Command+"`")
+	}
+	if ev.Note != "" {
+		parts = append(parts, ev.Note)
+	}
+	if ev.Output != "" {
+		parts = append(parts, ev.Output)
+	}
+	return strings.Join(parts, " - ")
+}
+
+func artifactID(artifact Artifact) string {
+	kind := strings.TrimSpace(string(artifact.Kind))
+	if kind == "" {
+		kind = "artifact"
+	}
+	taskID := strings.TrimSpace(artifact.TaskID)
+	if taskID == "" {
+		taskID = "task"
+	}
+	return taskID + "-" + kind
+}
+
+func contains(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
+}
