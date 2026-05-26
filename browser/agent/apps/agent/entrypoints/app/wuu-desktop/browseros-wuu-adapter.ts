@@ -6,8 +6,6 @@ import {
 } from '@/lib/browseros/helpers'
 import { env } from '@/lib/env'
 import type {
-  AppServerNotification,
-  AppServerRequest,
   ConfigCodexModelsResult,
   ConfigModelUpdateResult,
   DesktopProject,
@@ -21,7 +19,6 @@ import type {
   InitializeResult,
   ProjectListResult,
   RuntimeContext,
-  ServerEvent,
   TerminalSessionActionResult,
   TerminalSessionEvent,
   TerminalSessionStartResult,
@@ -30,28 +27,7 @@ import type {
   WorkspaceFileReadResult,
   WuuDesktopApi,
 } from '@browseros/workbench-ui/shared/protocol'
-
-type WuuBridgeEvent =
-  | {
-      type: 'notification'
-      message: AppServerNotification
-    }
-  | {
-      type: 'server-started'
-      workdir: string
-    }
-  | {
-      type: 'server-request'
-      message: Required<AppServerRequest>
-    }
-  | {
-      type: 'server-error'
-      message: string
-    }
-  | {
-      type: 'server-exit'
-      code: number | null
-    }
+import { ServerEventHub } from './browseros-wuu-event-hub'
 
 type DesktopRpcResponse<T> = {
   result?: T
@@ -452,87 +428,6 @@ function isDesktopProject(value: unknown): value is DesktopProject {
   )
 }
 
-class ServerEventHub {
-  private readonly listeners = new Set<(event: ServerEvent) => void>()
-  private source: EventSource | null = null
-  private workdir: string | undefined
-
-  subscribe(handler: (event: ServerEvent) => void): () => void {
-    this.listeners.add(handler)
-    void this.setWorkdir(activeContext?.cwd)
-    return () => {
-      this.listeners.delete(handler)
-      if (this.listeners.size === 0) {
-        this.close()
-      }
-    }
-  }
-
-  async setWorkdir(workdir: string | undefined): Promise<void> {
-    if (this.workdir === workdir && this.source) return
-    this.close()
-    this.workdir = workdir
-    if (!workdir || this.listeners.size === 0) return
-
-    const serverUrl = await getAgentServerUrl()
-    if (this.workdir !== workdir || this.listeners.size === 0) return
-    const url = new URL(`${serverUrl}/wuu/events`)
-    url.searchParams.set('workdir', workdir)
-    this.source = new EventSource(url.toString())
-    this.source.onmessage = (event) => this.handleEvent(event)
-    this.source.addEventListener('notification', (event) =>
-      this.handleEvent(event),
-    )
-    this.source.addEventListener('server-request', (event) =>
-      this.handleEvent(event),
-    )
-    this.source.addEventListener('server-error', (event) =>
-      this.handleEvent(event),
-    )
-    this.source.addEventListener('server-exit', (event) =>
-      this.handleEvent(event),
-    )
-  }
-
-  private handleEvent(event: MessageEvent<string>): void {
-    if (!event.data) return
-    let bridgeEvent: WuuBridgeEvent
-    try {
-      bridgeEvent = JSON.parse(event.data) as WuuBridgeEvent
-    } catch {
-      return
-    }
-
-    const serverEvent = this.toServerEvent(bridgeEvent)
-    if (!serverEvent) return
-    for (const listener of this.listeners) {
-      listener(serverEvent)
-    }
-  }
-
-  private toServerEvent(event: WuuBridgeEvent): ServerEvent | null {
-    if (event.type === 'notification') {
-      return { kind: 'notification', message: event.message }
-    }
-    if (event.type === 'server-request') {
-      if (!event.message.id || !event.message.method) return null
-      return { kind: 'server-request', message: event.message }
-    }
-    if (event.type === 'server-error') {
-      return { kind: 'server-error', message: event.message }
-    }
-    if (event.type === 'server-exit') {
-      return { kind: 'server-exit', code: event.code }
-    }
-    return null
-  }
-
-  private close(): void {
-    this.source?.close()
-    this.source = null
-  }
-}
-
 class TerminalEventHub {
   private readonly listeners = new Set<(event: TerminalSessionEvent) => void>()
   private source: EventSource | null = null
@@ -570,5 +465,8 @@ class TerminalEventHub {
   }
 }
 
-const serverEventHub = new ServerEventHub()
+const serverEventHub = new ServerEventHub({
+  getServerUrl: getAgentServerUrl,
+  getWorkdir: () => activeContext?.cwd,
+})
 const terminalEventHub = new TerminalEventHub()
