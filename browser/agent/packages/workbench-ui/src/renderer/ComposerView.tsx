@@ -27,6 +27,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
+  type Ref,
   type RefObject,
   useEffect,
   useLayoutEffect,
@@ -405,7 +406,7 @@ export function Composer({
   onInterrupt
 }: {
   variant?: ComposerVariant;
-  containerRef?: RefObject<HTMLElement | null>;
+  containerRef?: Ref<HTMLElement>;
   prompt: string;
   setPrompt: (value: string) => void;
   images: ComposerImage[];

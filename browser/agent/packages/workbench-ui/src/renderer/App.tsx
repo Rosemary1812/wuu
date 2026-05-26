@@ -43,6 +43,7 @@ import {
   type RefObject,
   type ReactNode,
   Fragment,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -408,7 +409,10 @@ export function App(): JSX.Element {
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({ primary: null, secondary: null });
   const conversationPaneRef = useRef<HTMLElement | null>(null);
-  const dockComposerRef = useRef<HTMLElement>(null);
+  const [dockComposerNode, setDockComposerNode] = useState<HTMLElement | null>(null);
+  const dockComposerRef = useCallback((node: HTMLElement | null) => {
+    setDockComposerNode(node);
+  }, []);
   const dockComposerHeightRef = useRef(0);
   const conversationAutoFollowRef = useRef(true);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
@@ -937,14 +941,15 @@ export function App(): JSX.Element {
   }, [visibleAnsweredAskRequests.length]);
 
   useLayoutEffect(() => {
-    const node = dockComposerRef.current;
+    const node = dockComposerNode;
     const pane = conversationPaneRef.current;
     const applyHeight = (nextHeight: number): void => {
-      if (dockComposerHeightRef.current === nextHeight) {
+      const nextValue = `${nextHeight}px`;
+      if (dockComposerHeightRef.current === nextHeight && pane?.style.getPropertyValue("--dock-composer-height") === nextValue) {
         return;
       }
       dockComposerHeightRef.current = nextHeight;
-      pane?.style.setProperty("--dock-composer-height", `${nextHeight}px`);
+      pane?.style.setProperty("--dock-composer-height", nextValue);
       if (nextHeight > 0 && conversationAutoFollowRef.current) {
         scrollConversationToBottom();
       }
@@ -964,7 +969,7 @@ export function App(): JSX.Element {
     const resizeObserver = new ResizeObserver(updateHeight);
     resizeObserver.observe(node);
     return () => resizeObserver.disconnect();
-  }, [emptyConversation, previewingLaunch, showingWorkspaceMode, state.initialized]);
+  }, [dockComposerNode, emptyConversation, previewingLaunch, showingWorkspaceMode, state.initialized]);
 
   function applySidebarWidth(nextWidth: number): void {
     if (nextWidth <= SIDEBAR_MIN_WIDTH) {
