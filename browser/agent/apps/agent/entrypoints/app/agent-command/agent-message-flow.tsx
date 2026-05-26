@@ -9,6 +9,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import {
+  formatMessageFlowCommand,
+  isMessageFlowFailedStatus,
+  messageFlowStatusLabel,
+} from '@/lib/message-flow-display'
 import { cn } from '@/lib/utils'
 
 type ProcessToolStatus =
@@ -261,33 +266,20 @@ function processStatusLabel({
   hasFinalText: boolean
   stalled: boolean
 }) {
-  if (done) return failed ? 'Activity failed' : 'Activity log'
-  if (stalled) return 'Still generating'
-  if (hasFinalText) return 'Replying'
-  return 'Working'
+  return messageFlowStatusLabel({ done, failed, hasFinalText, stalled })
 }
 
 function isFailedTool(status: ProcessToolStatus) {
-  return status === 'failed' || status === 'error'
+  return isMessageFlowFailedStatus(status)
 }
 
 export function formatToolCommand(tool: ProcessTool): string {
-  const input = formatUnknown(tool.input)
-  if (input) return `${tool.name} ${input}`
-  if (tool.subject) return `${tool.name} ${tool.subject}`
-  if (tool.label && tool.label !== tool.name)
-    return `${tool.name} ${tool.label}`
-  return tool.name
-}
-
-function formatUnknown(value: unknown): string {
-  if (value == null) return ''
-  if (typeof value === 'string') return value
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
+  return formatMessageFlowCommand({
+    name: tool.name,
+    input: tool.input,
+    subject: tool.subject,
+    label: tool.label,
+  })
 }
 
 export function decorateStalledMarkdownTail(markdown: string): string {

@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
+import { formatMessageFlowCommand } from "@/lib/message-flow-display";
 import type { ThreadItem } from "../shared/protocol";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
 
@@ -125,11 +126,7 @@ function sectionSummaryText(section: ToolActivitySection): string {
 }
 
 function toolCommands(items: ThreadItem[]): string[] {
-  return items.map((item) => {
-    const name = item.name?.trim() || "tool";
-    const args = item.arguments?.trim();
-    return args ? `${name} ${args}` : name;
-  });
+  return items.map((item) => formatMessageFlowCommand({ name: item.name, input: item.arguments }));
 }
 
 function toolActivitySectionKey(item: ThreadItem): string {
@@ -370,29 +367,6 @@ function uniqueStrings(values: string[]): string[] {
     out.push(normalized);
   }
   return out;
-}
-
-function ActivityIcon({ kind, failed, size = 14 }: { kind: ToolActivityKind; failed: boolean; size?: number }): JSX.Element {
-  if (failed) {
-    return <AlertCircle size={size} />;
-  }
-  switch (kind) {
-    case "edit":
-    case "create":
-      return <Pencil size={size} />;
-    case "search":
-      return <Search size={size} />;
-    case "read":
-      return <FileText size={size} />;
-    case "list":
-      return <ListIcon size={size} />;
-    case "command":
-      return <Terminal size={size} />;
-    case "agent":
-      return <MessageSquarePlus size={size} />;
-    default:
-      return <Wrench size={size} />;
-  }
 }
 
 function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary {

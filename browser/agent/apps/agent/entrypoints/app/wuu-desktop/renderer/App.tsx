@@ -70,6 +70,7 @@ import type {
   ThreadItem,
   Turn
 } from "../shared/protocol";
+import { messageFlowStatusLabel } from "@/lib/message-flow-display";
 import {
   AnsweredAskUserMessage,
   AskUserMessage,
@@ -4409,7 +4410,13 @@ function TurnView({
       return;
     }
     renderedItems.push(
-      <TurnProcessGroup key={`${turn.id}-process-${renderedItems.length}`} turn={turn} entries={entries} autoCollapse={processAutoCollapse} />
+      <TurnProcessGroup
+        key={`${turn.id}-process-${renderedItems.length}`}
+        turn={turn}
+        entries={entries}
+        autoCollapse={processAutoCollapse}
+        hasFinalText={turnHasAssistantOutput(turn)}
+      />
     );
   }
 
@@ -4484,11 +4491,13 @@ type TurnProcessEntry = {
 function TurnProcessGroup({
   turn,
   entries,
-  autoCollapse
+  autoCollapse,
+  hasFinalText
 }: {
   turn: Turn;
   entries: TurnProcessEntry[];
   autoCollapse: boolean;
+  hasFinalText: boolean;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!autoCollapse);
   const previousAutoCollapseRef = useRef(autoCollapse);
@@ -4498,6 +4507,15 @@ function TurnProcessGroup({
   }`;
   const processCount = entries.filter((entry) => entry.kind !== "status").length;
   const metaParts = turnProcessMetaParts(turn, processCount);
+  const statusLabel =
+    turn.status === "interrupted"
+      ? "已停止"
+      : messageFlowStatusLabel({
+          done: autoCollapse,
+          failed: turn.status === "failed",
+          hasFinalText,
+          locale: "zh"
+        });
 
   useEffect(() => {
     const previousAutoCollapse = previousAutoCollapseRef.current;
@@ -4520,7 +4538,7 @@ function TurnProcessGroup({
         onClick={() => setExpanded((open) => !open)}
       >
         <span className="turn-process-copy">
-          <span>过程记录</span>
+          <span>{statusLabel}</span>
           {metaParts.map((part) => (
             <span key={part}>{part}</span>
           ))}
@@ -4539,13 +4557,6 @@ function turnProcessMetaParts(turn: Turn, processCount: number): string[] {
   if (processCount > 0) {
     parts.push(`${processCount} 项`);
   }
-  if (turn.status === "in_progress") {
-    parts.push("运行中");
-  } else if (turn.status === "failed") {
-    parts.push("失败");
-  } else if (turn.status === "interrupted") {
-    parts.push("已停止");
-  }
   if (typeof turn.duration_ms === "number") {
     parts.push(formatDuration(turn.duration_ms));
   }
@@ -4558,7 +4569,7 @@ function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
   const liveNow = useLiveNow(liveDuration);
   const elapsedMs = completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
-  const content = turnProgressContent(turn, elapsedMs);
+  const content = turnProgressContent(turn, elapsedMs, turnHasAssistantOutput(turn));
 
   return (
     <div
@@ -4571,16 +4582,19 @@ function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   );
 }
 
-function turnProgressContent(turn: Turn, elapsedMs: number): TurnProgressContent {
-  if (turn.status === "failed") {
-    const display = userFacingErrorForMessage(turn.error?.message, "turn");
-    return { label: display.title, detail: display.detail };
-  }
+function turnProgressContent(turn: Turn, elapsedMs: number, hasFinalText: boolean): TurnProgressContent {
   if (turn.status === "interrupted") {
     return { label: "已停止", detail: "这次请求已停止" };
   }
   if (turn.status !== "in_progress") {
-    return { label: "已处理" };
+    return {
+      label: messageFlowStatusLabel({
+        done: true,
+        failed: turn.status === "failed",
+        hasFinalText,
+        locale: "zh"
+      })
+    };
   }
 
   const runningTool = turn.items.find(
@@ -4589,31 +4603,43 @@ function turnProgressContent(turn: Turn, elapsedMs: number): TurnProgressContent
       (item.status ?? "in_progress") === "in_progress"
   );
   if (runningTool) {
-    return { label: "正在处理" };
+    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
   }
 
   const latestItem = latestDebugItem(turn);
   if (!latestItem) {
-    return { label: "正在思考", detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应") };
+    return {
+      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
+      detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应")
+    };
   }
   if (latestItem.type === "agent_message") {
-    const hasText = debugStreamFieldLength(turn.id, latestItem, "text") > 0;
-    return { label: hasText ? "正在生成回复" : "正在思考", detail: hasText ? undefined : waitingDetail(elapsedMs, "正在组织回答") };
+    const hasText = hasFinalText || debugStreamFieldLength(turn.id, latestItem, "text") > 0;
+    return {
+      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText: hasText, locale: "zh" }),
+      detail: hasText ? undefined : waitingDetail(elapsedMs, "正在组织回答")
+    };
   }
   if (latestItem.type === "reasoning") {
-    return { label: "正在思考", detail: waitingDetail(elapsedMs, "正在组织回答") };
+    return {
+      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
+      detail: waitingDetail(elapsedMs, "正在组织回答")
+    };
   }
   if (latestItem.type === "tool_call" || latestItem.type === "collab_agent_tool_call") {
-    return { label: "正在处理" };
+    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
   }
   if (latestItem.type === "context_compaction") {
-    return { label: "正在处理" };
+    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
   }
   if (latestItem.type === "error") {
-    return { label: "正在处理" };
+    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
   }
 
-  return { label: "正在处理", detail: waitingDetail(elapsedMs, "请求正在处理中") };
+  return {
+    label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
+    detail: waitingDetail(elapsedMs, "请求正在处理中")
+  };
 }
 
 function waitingDetail(elapsedMs: number, defaultDetail: string): string {
