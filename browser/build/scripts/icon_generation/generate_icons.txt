@@ -1,4 +1,4 @@
-# BrowserOS Icon Generation Configuration
+# Wuu Browser Icon Generation Configuration
 # =========================================
 #
 # Format:
@@ -23,7 +23,6 @@
 # ==============================================================================
 
 COPY static/product_logo.svg product_logo.svg
-COPY static/product_logo.ai product_logo.ai
 COPY static/product_logo_animation.svg product_logo_animation.svg
 
 # ==============================================================================

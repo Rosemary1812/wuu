@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified icon generation script for BrowserOS.
+Unified icon generation script for Wuu Browser.
 
 Generates all platform-specific icons (Windows, macOS, Linux, ChromeOS) from
 a single high-resolution source PNG.
@@ -8,7 +8,7 @@ a single high-resolution source PNG.
 Requirements:
 - Python 3.12+
 - Pillow (pip install Pillow)
-- ImageMagick (brew install imagemagick) - for XPM generation
+- ImageMagick (brew install imagemagick) - optional for XPM generation
 - macOS tools (iconutil, actool) - for .icns and Assets.car generation
 
 Usage:
@@ -113,32 +113,71 @@ def generate_ico(img: Image.Image, sizes: list[int], output_path: Path) -> bool:
 
 
 def generate_xpm(img: Image.Image, size: int, output_path: Path) -> bool:
-    """Generate XPM using ImageMagick."""
+    """Generate XPM using ImageMagick, with a pure-Pillow fallback."""
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # First create a temporary PNG
-        temp_png = output_path.with_suffix(".tmp.png")
         resized = img.resize((size, size), Image.Resampling.LANCZOS)
-        resized.save(temp_png, "PNG")
 
-        # Convert to XPM using ImageMagick
-        result = subprocess.run(
-            ["convert", str(temp_png), str(output_path)],
-            capture_output=True,
-            text=True,
-        )
+        if shutil.which("convert"):
+            temp_png = output_path.with_suffix(".tmp.png")
+            resized.save(temp_png, "PNG")
 
-        temp_png.unlink()  # Clean up temp file
+            result = subprocess.run(
+                ["convert", str(temp_png), str(output_path)],
+                capture_output=True,
+                text=True,
+            )
 
-        if result.returncode != 0:
-            print(f"  ✗ ImageMagick error: {result.stderr}")
-            return False
+            temp_png.unlink()
 
+            if result.returncode != 0:
+                print(f"  ✗ ImageMagick error: {result.stderr}")
+                return False
+
+            return True
+
+        rgba = resized.convert("RGBA").quantize(
+            colors=64,
+            method=Image.Quantize.FASTOCTREE,
+        ).convert("RGBA")
+        palette = []
+        palette_index: dict[tuple[int, int, int, int], str] = {}
+        pixels = []
+        symbols = " .o+=*BOX@%&#/^abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+        for y in range(size):
+            row = []
+            for x in range(size):
+                color = rgba.getpixel((x, y))
+                if color[3] < 16:
+                    color = (0, 0, 0, 0)
+                if color not in palette_index:
+                    if len(palette) >= len(symbols):
+                        color = tuple((channel // 32) * 32 for channel in color[:3]) + (color[3],)
+                    if color not in palette_index:
+                        palette_index[color] = symbols[len(palette)]
+                        palette.append(color)
+                row.append(palette_index[color])
+            pixels.append("".join(row))
+
+        lines = [
+            "/* XPM */",
+            "static char *product_logo_32[] = {",
+            f'"{size} {size} {len(palette)} 1",',
+        ]
+        for color in palette:
+            symbol = palette_index[color]
+            if color[3] == 0:
+                color_value = "None"
+            else:
+                color_value = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+            lines.append(f'"{symbol} c {color_value}",')
+        lines.extend(f'"{row}",' for row in pixels[:-1])
+        lines.append(f'"{pixels[-1]}"')
+        lines.append("};")
+        output_path.write_text("\n".join(lines) + "\n")
         return True
-    except FileNotFoundError:
-        print("  ✗ ImageMagick not found. Install with: brew install imagemagick")
-        return False
     except Exception as e:
         print(f"  ✗ Failed to generate {output_path}: {e}")
         return False
@@ -387,7 +426,7 @@ def main():
     """Main entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate BrowserOS icons")
+    parser = argparse.ArgumentParser(description="Generate Wuu Browser icons")
     parser.add_argument(
         "--config",
         type=Path,
@@ -403,7 +442,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("BrowserOS Icon Generation")
+    print("Wuu Browser Icon Generation")
     print("=" * 60)
     print(f"Config: {args.config}")
     print(f"Output: {args.output}")
