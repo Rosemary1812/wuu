@@ -1,5 +1,9 @@
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
-import { getAgentServerUrl } from '@/lib/browseros/helpers'
+import {
+  AgentPortError,
+  getAgentServerUrl,
+  McpPortError,
+} from '@/lib/browseros/helpers'
 import { CHROME_PREFS } from '@/lib/browseros/prefs'
 import { env } from '@/lib/env'
 import type {
@@ -64,7 +68,7 @@ type WuuRpcResponse<T> = {
 
 const PROJECTS_KEY = 'wuu.browseros.projects'
 const ACTIVE_CONTEXT_KEY = 'wuu.browseros.activeContext'
-const WUU_FETCH_RETRY_DELAYS_MS = [200, 500, 1000, 1500]
+const WUU_SERVER_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 4000]
 
 let installed = false
 let activeContext: RuntimeContext | undefined = loadActiveContext()
@@ -336,8 +340,7 @@ async function desktopRpc<T>(
   params?: unknown,
   requireActiveWorkdir = true,
 ): Promise<T> {
-  const serverUrl = await getAgentServerUrl()
-  const response = await fetchWuu(`${serverUrl}/wuu/desktop`, {
+  const response = await fetchWuuPath('/wuu/desktop', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -360,8 +363,7 @@ async function desktopRpc<T>(
 }
 
 async function wuuRpc<T>(method: string, params?: unknown): Promise<T> {
-  const serverUrl = await getAgentServerUrl()
-  const response = await fetchWuu(`${serverUrl}/wuu/rpc`, {
+  const response = await fetchWuuPath('/wuu/rpc', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -385,8 +387,7 @@ async function respondToServerRequest(
   id: string,
   result: unknown,
 ): Promise<void> {
-  const serverUrl = await getAgentServerUrl()
-  await postClientResponse(`${serverUrl}/wuu/respond`, {
+  await postClientResponse('/wuu/respond', {
     workdir: requireWorkdir(),
     id,
     result,
@@ -394,16 +395,15 @@ async function respondToServerRequest(
 }
 
 async function rejectServerRequest(id: string, message: string): Promise<void> {
-  const serverUrl = await getAgentServerUrl()
-  await postClientResponse(`${serverUrl}/wuu/reject`, {
+  await postClientResponse('/wuu/reject', {
     workdir: requireWorkdir(),
     id,
     message,
   })
 }
 
-async function postClientResponse(url: string, body: unknown): Promise<void> {
-  const response = await fetchWuu(url, {
+async function postClientResponse(path: string, body: unknown): Promise<void> {
+  const response = await fetchWuuPath(path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -416,28 +416,37 @@ async function postClientResponse(url: string, body: unknown): Promise<void> {
   }
 }
 
-async function fetchWuu(
-  input: RequestInfo | URL,
+async function fetchWuuPath(
+  path: string,
   init?: RequestInit,
 ): Promise<Response> {
   let lastError: unknown
 
-  for (const delayMs of [0, ...WUU_FETCH_RETRY_DELAYS_MS]) {
+  for (const delayMs of [0, ...WUU_SERVER_RETRY_DELAYS_MS]) {
     if (delayMs > 0) {
       await sleep(delayMs)
     }
 
     try {
-      return await fetch(input, init)
+      const serverUrl = await getAgentServerUrl()
+      return await fetch(`${serverUrl}${path}`, init)
     } catch (error) {
       lastError = error
-      if (!isTransientFetchError(error)) {
+      if (!isTransientWuuStartupError(error)) {
         throw error
       }
     }
   }
 
   throw lastError
+}
+
+function isTransientWuuStartupError(error: unknown): boolean {
+  return (
+    isTransientFetchError(error) ||
+    error instanceof AgentPortError ||
+    error instanceof McpPortError
+  )
 }
 
 function isTransientFetchError(error: unknown): boolean {
