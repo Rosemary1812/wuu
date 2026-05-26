@@ -278,6 +278,10 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	}
 	providerCfg.Model = model
 	connectionChanged := false
+	connectionLocked := isCodexProviderType(providerCfg.Type)
+	if connectionLocked && (params.BaseURL != nil || strings.TrimSpace(stringValue(params.APIKey)) != "") {
+		return s.writeResponse(req.ID, nil, errors.New("connection settings are managed by OpenAI OAuth for this provider"))
+	}
 	if params.BaseURL != nil {
 		baseURL := strings.TrimSpace(*params.BaseURL)
 		if baseURL == "" {
@@ -1200,6 +1204,7 @@ func providerSummariesFromConfig(cfg config.Config) []ProviderSummary {
 			Model:            provider.Model,
 			BaseURL:          provider.BaseURL,
 			APIKeyConfigured: provider.APIKey != "" || provider.APIKeyEnv != "" || provider.AuthToken != "" || provider.AuthTokenEnv != "",
+			ConnectionLocked: isCodexProviderType(provider.Type),
 		})
 	}
 	return out
@@ -1209,6 +1214,13 @@ func isCodexProviderType(providerType string) bool {
 	s := strings.ToLower(strings.TrimSpace(providerType))
 	s = strings.ReplaceAll(s, "_", "-")
 	return s == "openai-codex" || s == "codex-subscription" || s == "chatgpt-codex"
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func explicitProviderAPIKey(provider config.ProviderConfig) string {

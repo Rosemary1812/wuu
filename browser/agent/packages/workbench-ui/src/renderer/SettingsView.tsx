@@ -51,6 +51,7 @@ export function SettingsView({
   const [saved, setSaved] = useState(false);
   const selectedProvider = providers.find((item) => item.name === providerDraft);
   const selectedBaseURL = selectedProvider?.base_url ?? "";
+  const connectionLocked = selectedProvider?.connection_locked ?? false;
 
   useEffect(() => {
     setProviderDraft(initialized?.provider ?? "");
@@ -78,12 +79,15 @@ export function SettingsView({
     setError("");
     setSaved(false);
     try {
-      const connection: RuntimeConnectionUpdate = {
-        base_url: baseURLDraft.trim()
-      };
-      const apiKey = apiKeyDraft.trim();
-      if (apiKey) {
-        connection.api_key = apiKey;
+      let connection: RuntimeConnectionUpdate | undefined;
+      if (!connectionLocked) {
+        connection = {
+          base_url: baseURLDraft.trim()
+        };
+        const apiKey = apiKeyDraft.trim();
+        if (apiKey) {
+          connection.api_key = apiKey;
+        }
       }
       await onSave(providerDraft, modelDraft, undefined, connection);
       setAPIKeyDraft("");
@@ -97,11 +101,11 @@ export function SettingsView({
     running ||
     !providerDraft.trim() ||
     !modelDraft.trim() ||
-    !baseURLDraft.trim() ||
+    (!connectionLocked && !baseURLDraft.trim()) ||
     (providerDraft === initialized?.provider &&
       modelDraft === initialized?.model &&
-      baseURLDraft.trim() === selectedBaseURL &&
-      !apiKeyDraft.trim());
+      (connectionLocked || baseURLDraft.trim() === selectedBaseURL) &&
+      (connectionLocked || !apiKeyDraft.trim()));
   const shellStyle = {
     "--sidebar-width": `${sidebarWidth}px`
   } as CSSProperties;
@@ -191,33 +195,45 @@ export function SettingsView({
               <label className="settings-row">
                 <span>
                   <strong>Base URL</strong>
-                  <small>模型服务的 API 地址</small>
+                  <small>{connectionLocked ? "由 OpenAI OAuth 管理" : "模型服务的 API 地址"}</small>
                 </span>
                 <input
                   value={baseURLDraft}
-                  placeholder="https://api.openai.com/v1"
+                  placeholder={connectionLocked ? "由 OpenAI OAuth 管理" : "https://api.openai.com/v1"}
                   onChange={(event) => {
                     setBaseURLDraft(event.target.value);
                     setSaved(false);
                   }}
-                  disabled={running}
+                  disabled={running || connectionLocked}
                 />
               </label>
               <label className="settings-row">
                 <span>
                   <strong>API key</strong>
-                  <small>{selectedProvider?.api_key_configured ? "已配置，留空不修改" : "用于访问这个 Provider"}</small>
+                  <small>
+                    {connectionLocked
+                      ? "由 OpenAI OAuth 管理"
+                      : selectedProvider?.api_key_configured
+                        ? "已配置，留空不修改"
+                        : "用于访问这个 Provider"}
+                  </small>
                 </span>
                 <input
                   value={apiKeyDraft}
                   type="password"
                   autoComplete="new-password"
-                  placeholder={selectedProvider?.api_key_configured ? "留空保持当前密钥" : "输入 API key"}
+                  placeholder={
+                    connectionLocked
+                      ? "不需要 API key"
+                      : selectedProvider?.api_key_configured
+                        ? "留空保持当前密钥"
+                        : "输入 API key"
+                  }
                   onChange={(event) => {
                     setAPIKeyDraft(event.target.value);
                     setSaved(false);
                   }}
-                  disabled={running}
+                  disabled={running || connectionLocked}
                 />
               </label>
               <div className="settings-card-footer">

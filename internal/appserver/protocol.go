@@ -140,6 +140,7 @@ type ProviderSummary struct {
 	Model            string `json:"model"`
 	BaseURL          string `json:"base_url,omitempty"`
 	APIKeyConfigured bool   `json:"api_key_configured,omitempty"`
+	ConnectionLocked bool   `json:"connection_locked,omitempty"`
 }
 
 type ThreadStartResult struct {

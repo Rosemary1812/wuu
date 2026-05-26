@@ -50,6 +50,7 @@ export type ProviderSummary = {
   model: string;
   base_url?: string;
   api_key_configured?: boolean;
+  connection_locked?: boolean;
 };
 
 export type RuntimeConnectionUpdate = {

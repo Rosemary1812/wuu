@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -177,6 +178,16 @@ func TestServerConfigModelUpdateSwitchesProvider(t *testing.T) {
 	if len(result.Providers) != 2 {
 		t.Fatalf("expected two provider summaries, got %+v", result.Providers)
 	}
+	var codexSummary ProviderSummary
+	for _, summary := range result.Providers {
+		if summary.Name == "codex-provider" {
+			codexSummary = summary
+			break
+		}
+	}
+	if !codexSummary.ConnectionLocked {
+		t.Fatalf("expected codex provider connection to be locked: %+v", result.Providers)
+	}
 	if rt.ProviderName != "codex-provider" || rt.Model != "new-codex-model" || rt.StreamRunner.Model != "new-codex-model" {
 		t.Fatalf("runtime provider/model not updated: provider=%q runtime=%q runner=%q", rt.ProviderName, rt.Model, rt.StreamRunner.Model)
 	}
@@ -238,6 +249,44 @@ func TestServerConfigModelUpdatePersistsProviderConnection(t *testing.T) {
 		!strings.Contains(string(data), `"api_key": "new-key"`) ||
 		!strings.Contains(string(data), `"model": "new-model"`) {
 		t.Fatalf("provider connection was not persisted: %s", data)
+	}
+}
+
+func TestServerConfigModelUpdateRejectsOAuthConnectionChanges(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "codex-provider",
+  "providers": {
+    "codex-provider": {
+      "type": "openai-codex",
+      "base_url": "https://chatgpt.example.test/backend-api/codex",
+      "model": "old-codex-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/model/update","params":{"provider":"codex-provider","model":"new-codex-model","base_url":"https://custom.example.test/v1","api_key":"new-key"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] == nil || !strings.Contains(fmt.Sprint(response["error"]), "OpenAI OAuth") {
+		t.Fatalf("expected OAuth connection error, got %+v", response)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"api_key": "new-key"`) ||
+		strings.Contains(string(data), "https://custom.example.test/v1") ||
+		strings.Contains(string(data), `"model": "new-codex-model"`) {
+		t.Fatalf("OAuth provider connection should not be persisted: %s", data)
 	}
 }
 
