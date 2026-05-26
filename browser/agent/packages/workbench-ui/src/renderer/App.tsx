@@ -1,3 +1,5 @@
+/// <reference path="../shared/jsx-compat.d.ts" />
+
 import {
   AlertCircle,
   Archive,
