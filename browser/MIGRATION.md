@@ -327,12 +327,16 @@ Current packaging path:
 - `make browser-package-macos ARGS="--update-enabled"` is the release readiness
   gate. It fails while browser, extension, or server update feeds still point at
   BrowserOS infrastructure or release signing inputs are missing.
+- `make browser-launch-product` runs the production-named local app while
+  forcing the latest repo-owned Workbench extension and server resources. This
+  avoids accidentally testing stale bundled BrowserOS resources from the copied
+  Chromium app.
 - `make browser-launch-dev` prefers the repo-staged Wuu Browser Dev app before
   falling back to the external BrowserOS Chromium build.
-- `make browser-launch-dev` now defaults to a single active dev browser by
-  stopping previous Wuu Browser Dev/BrowserOS Dev launches that use temporary
-  `wuu-browser-dev` profiles and deleting stale temporary profile directories
-  before opening a new instance.
+- `make browser-launch-dev` and `make browser-launch-product` now default to a
+  single active local browser by stopping previous Wuu Browser Dev/Wuu Browser/
+  BrowserOS Dev launches that use repository-managed temporary profiles and
+  deleting stale temporary profile directories before opening a new instance.
 
 Remaining gap:
 
@@ -341,4 +345,6 @@ Remaining gap:
   Sparkle-signed artifacts, Developer ID signing, and notarization. Internal
   executable/framework names can still inherit BrowserOS or Dev from the source
   Chromium build until the remaining Chromium branding patches are fully
-  renamed and rebuilt.
+  renamed and rebuilt. Directly opening the local preview app uses its embedded
+  bundle resources; use `make browser-launch-product` when validating the latest
+  local Agent/Workbench changes against that product-named app.

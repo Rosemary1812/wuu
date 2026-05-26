@@ -5,7 +5,7 @@ usage() {
   cat <<'USAGE'
 Usage: browser/scripts/launch-dev.sh [--dry-run] [--profile-dir DIR] [--url URL] [--no-cleanup-existing]
 
-Launch the local Wuu Browser development build.
+Launch the local Wuu Browser build with repository-owned agent assets.
 
 Environment overrides:
   WUU_BROWSEROS_REPO       BrowserOS reference checkout.
@@ -31,9 +31,13 @@ Environment overrides:
   WUU_SOURCE_ROOT          Wuu source tree used by the browser-hosted app-server.
                            Defaults to this repository root.
   WUU_BROWSER_CLEANUP_EXISTING
-                           Stop existing Wuu Browser Dev/BrowserOS Dev launches
-                           that use temporary wuu-browser-dev profiles before
-                           starting a new one. Defaults to 1.
+                           Stop existing Wuu Browser/BrowserOS launches that use
+                           repository-managed temporary profiles before starting
+                           a new one. Defaults to 1.
+  WUU_BROWSER_PROFILE_PREFIX
+                           Temporary profile prefix. Defaults to wuu-browser-dev.
+  WUU_BROWSER_LAUNCH_LABEL
+                           Human-readable launch label.
 
 Port overrides:
   WUU_BROWSER_CDP_PORT        Defaults to 9100.
@@ -47,6 +51,8 @@ dry_run=false
 profile_dir="${WUU_BROWSER_PROFILE_DIR:-}"
 start_url="${WUU_BROWSER_START_URL:-chrome://wuu}"
 cleanup_existing="${WUU_BROWSER_CLEANUP_EXISTING:-1}"
+profile_prefix="${WUU_BROWSER_PROFILE_PREFIX:-wuu-browser-dev}"
+launch_label="${WUU_BROWSER_LAUNCH_LABEL:-Wuu Browser Dev launch}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -101,7 +107,7 @@ if [[ ! -d "${chromium_src}" && -d "${HOME}/browseros-chromium/src" ]]; then
 fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "launch-dev currently supports macOS Wuu Browser Dev app launches only." >&2
+  echo "launch-dev currently supports macOS Wuu Browser app launches only." >&2
   echo "Windows/Linux launch scripts should be added with the packaging work." >&2
   exit 2
 fi
@@ -124,9 +130,9 @@ cleanup_matching_processes() {
   fi
 }
 
-cleanup_wuu_dev_profile_processes() {
+cleanup_wuu_profile_processes() {
   local pids
-  pids="$(ps -axo pid=,args= | awk '/--user-data-dir=[^ ]*wuu-browser-dev\.XXXXXX\./ && $0 !~ /awk/ {print $1}')"
+  pids="$(ps -axo pid=,args= | awk '/--user-data-dir=[^ ]*wuu-browser-(dev|product)\.XXXXXX\./ && $0 !~ /awk/ {print $1}')"
   if [[ -z "${pids}" ]]; then
     return 0
   fi
@@ -142,13 +148,20 @@ cleanup_wuu_dev_profile_processes() {
 }
 
 cleanup_dev_browsers() {
-  cleanup_wuu_dev_profile_processes
+  cleanup_wuu_profile_processes
+  cleanup_matching_processes "${repo_root}/browser/out/Wuu Browser.app"
   cleanup_matching_processes "${repo_root}/browser/out/Wuu Browser Dev.app"
+  cleanup_matching_processes "${chromium_src}/out/Release_arm64/Wuu Browser.app"
+  cleanup_matching_processes "${chromium_src}/out/Release/Wuu Browser.app"
+  cleanup_matching_processes "${chromium_src}/out/Release_x64/Wuu Browser.app"
+  cleanup_matching_processes "${chromium_src}/out/Default_arm64/Wuu Browser.app"
+  cleanup_matching_processes "${chromium_src}/out/Default/Wuu Browser.app"
+  cleanup_matching_processes "${chromium_src}/out/Default_x64/Wuu Browser.app"
   cleanup_matching_processes "${chromium_src}/out/Default_arm64/BrowserOS Dev.app"
   cleanup_matching_processes "${chromium_src}/out/Default/BrowserOS Dev.app"
   cleanup_matching_processes "${chromium_src}/out/Default_x64/BrowserOS Dev.app"
 
-  find "${TMPDIR:-/tmp}" -maxdepth 1 -type d -name 'wuu-browser-dev.XXXXXX.*' -exec rm -rf {} + 2>/dev/null || true
+  find "${TMPDIR:-/tmp}" -maxdepth 1 \( -name 'wuu-browser-dev.XXXXXX.*' -o -name 'wuu-browser-product.XXXXXX.*' \) -exec rm -rf {} + 2>/dev/null || true
 }
 
 host_server_target() {
@@ -269,7 +282,7 @@ fi
 
 if [[ "${cleanup_existing}" == "1" ]]; then
   if [[ "${dry_run}" == "true" ]]; then
-    echo "Would stop existing Wuu Browser Dev instances and remove stale wuu-browser-dev temp profiles."
+    echo "Would stop existing Wuu Browser instances and remove stale Wuu Browser temp profiles."
   else
     cleanup_dev_browsers
   fi
@@ -282,9 +295,9 @@ fi
 if [[ -z "${profile_dir}" ]]; then
   if [[ "${dry_run}" == "true" ]]; then
     tmp_root="${TMPDIR:-/tmp}"
-    profile_dir="${tmp_root%/}/wuu-browser-dev.XXXXXX.dry-run"
+    profile_dir="${tmp_root%/}/${profile_prefix}.XXXXXX.dry-run"
   else
-    profile_dir="$(mktemp -d -t wuu-browser-dev.XXXXXX)"
+    profile_dir="$(mktemp -d -t "${profile_prefix}.XXXXXX")"
   fi
 fi
 
@@ -333,7 +346,7 @@ args=(
 
 cmd=(open -na "${app_path}" --args "${args[@]}")
 
-echo "Wuu Browser Dev launch"
+echo "${launch_label}"
 echo "  app:       ${app_path}"
 echo "  extension: ${extension_dir}"
 echo "  stage ext: ${stage_extension}"

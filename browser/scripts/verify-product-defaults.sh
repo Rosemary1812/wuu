@@ -89,6 +89,7 @@ prepare_checkouts_script="${browser_dir}/scripts/prepare-checkouts.sh"
 build_dev_script="${browser_dir}/scripts/build-dev.sh"
 build_agent_script="${browser_dir}/scripts/build-agent.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
+launch_product_script="${browser_dir}/scripts/launch-product.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
 package_macos_script="${browser_dir}/scripts/package-macos.sh"
@@ -625,6 +626,16 @@ check_contains \
 
 check_contains \
   "${makefile}" \
+  "browser-launch-product:" \
+  "Makefile exposes the Wuu Browser product preview launch entry point"
+
+check_contains \
+  "${makefile}" \
+  'bash browser/scripts/launch-product.sh $(ARGS)' \
+  "product preview launch can receive explicit script arguments"
+
+check_contains \
+  "${makefile}" \
   "browser-build-agent:" \
   "Makefile exposes the Wuu Browser agent asset build entry point"
 
@@ -677,6 +688,36 @@ check_contains \
   "${launch_script}" \
   'browseros-server-resources-${server_target}.zip' \
   "dev launch uses the selected server resource target archive"
+
+check_contains \
+  "${launch_script}" \
+  "--disable-browseros-extensions" \
+  "local launch disables bundled BrowserOS extensions before loading repo assets"
+
+check_contains \
+  "${launch_script}" \
+  '"--load-extension=${extension_dir}"' \
+  "local launch loads the repo-owned Workbench extension"
+
+check_contains \
+  "${launch_script}" \
+  'cleanup_matching_processes "${repo_root}/browser/out/Wuu Browser.app"' \
+  "local launch stops stale product preview browser instances"
+
+check_contains \
+  "${launch_product_script}" \
+  'WUU_BROWSER_APP="${WUU_BROWSER_APP:-${repo_root}/browser/out/Wuu Browser.app}"' \
+  "product preview launch uses the production-named local app"
+
+check_contains \
+  "${launch_product_script}" \
+  'WUU_BROWSER_STAGE_EXTENSION="${WUU_BROWSER_STAGE_EXTENSION:-1}"' \
+  "product preview launch stages the latest repo-owned extension by default"
+
+check_contains \
+  "${launch_product_script}" \
+  'WUU_BROWSER_STAGE_SERVER_RESOURCES="${WUU_BROWSER_STAGE_SERVER_RESOURCES:-1}"' \
+  "product preview launch stages the latest repo-owned server resources by default"
 
 check_not_contains \
   "${launch_script}" \

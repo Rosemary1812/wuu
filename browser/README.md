@@ -147,7 +147,9 @@ path stages server resources through `browser-build-agent --server`, with
 overridden. `browser-launch-dev` also stops existing Wuu Browser Dev/BrowserOS
 Dev launches that use temporary `wuu-browser-dev` profiles before starting a
 new instance, so repeated verification does not leave stacks of browser
-processes behind. Pass `ARGS="--no-cleanup-existing"` or set
+processes behind. The same launch path is also used by the product preview
+launcher so it can stop stale `Wuu Browser.app` runs before starting a clean
+repo-backed instance. Pass `ARGS="--no-cleanup-existing"` or set
 `WUU_BROWSER_CLEANUP_EXISTING=0` when debugging multiple dev instances
 intentionally.
 
@@ -177,6 +179,19 @@ This creates `browser/out/Wuu Browser.app` and, with `--dmg`,
 artifact is suitable for local install and smoke testing but is not a signed,
 notarized public release. If the only available Chromium source app is a dev
 build, pass `ARGS="--allow-dev-source"` to make that local preview explicit.
+To run that production-named local app while still getting the latest local
+Workbench extension and server resources from this repository, use:
+
+```bash
+make browser-launch-product
+```
+
+The product preview launch disables the app bundle's bundled BrowserOS
+extensions, loads `browser/agent/apps/agent/dist/chrome-mv3-dev`, stages local
+server resources, and opens `chrome://wuu`. Double-clicking the local preview
+app directly uses the resources already embedded in that app bundle, so it can
+lag behind repository changes until a full Chromium rebuild/package refresh
+embeds those assets.
 
 Do not treat auto-update as enabled unless the package command succeeds with
 `ARGS="--update-enabled"`. That gate intentionally fails while browser,
