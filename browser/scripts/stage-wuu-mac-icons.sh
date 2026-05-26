@@ -43,6 +43,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
 icon_source="${repo_root}/browser/resources/icons/mac/app.icns"
 assets_source="${repo_root}/browser/resources/icons/mac/Assets.car"
+product_logo_source="${repo_root}/browser/resources/icons/product_logo_32.png"
 
 if [[ -z "${app_path}" ]]; then
   echo "APP is required." >&2
@@ -55,7 +56,7 @@ if [[ ! -d "${app_path}" ]]; then
   exit 1
 fi
 
-if [[ ! -f "${icon_source}" || ! -f "${assets_source}" ]]; then
+if [[ ! -f "${icon_source}" || ! -f "${assets_source}" || ! -f "${product_logo_source}" ]]; then
   echo "Wuu macOS icon resources are missing under browser/resources/icons/mac." >&2
   exit 1
 fi
@@ -106,6 +107,12 @@ while IFS= read -r -d '' resources_dir; do
     fi
   fi
 done < <(find "${app_path}/Contents" -path '*/Contents/Resources' -type d -print0)
+
+while IFS= read -r -d '' product_logo_target; do
+  if copy_if_changed "${product_logo_source}" "${product_logo_target}"; then
+    changed=1
+  fi
+done < <(find "${app_path}/Contents" -path '*/Resources/product_logo_32.png' -type f -print0)
 
 if [[ "${changed}" == "1" ]]; then
   echo "Staged Wuu macOS icon resources: ${app_path}"

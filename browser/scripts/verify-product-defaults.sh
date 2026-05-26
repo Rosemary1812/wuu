@@ -81,6 +81,7 @@ build_agent_script="${browser_dir}/scripts/build-agent.sh"
 launch_script="${browser_dir}/scripts/launch-dev.sh"
 dev_verify_script="${browser_dir}/scripts/verify-dev.sh"
 package_dev_macos_script="${browser_dir}/scripts/package-dev-macos.sh"
+stage_macos_icons_script="${browser_dir}/scripts/stage-wuu-mac-icons.sh"
 agent_wxt_config="${browser_dir}/agent/apps/agent/wxt.config.ts"
 agent_app_html="${browser_dir}/agent/apps/agent/entrypoints/app/index.html"
 agent_app_routes="${browser_dir}/agent/apps/agent/entrypoints/app/App.tsx"
@@ -437,6 +438,11 @@ check_contains \
   "dev launch keeps BrowserOS server updater disabled"
 
 check_contains \
+  "${launch_script}" \
+  'stage-wuu-mac-icons.sh" --sign "${app_path}"' \
+  "dev launch stages Wuu macOS icons before opening the app"
+
+check_contains \
   "${makefile}" \
   "browser-prepare-checkouts:" \
   "Makefile exposes the BrowserOS/Chromium checkout preparation entry point"
@@ -615,6 +621,16 @@ check_contains \
   "${package_dev_macos_script}" \
   "find \"\${source_build_dir}\" -maxdepth 1 -type f -name '*.dylib' -print0" \
   "macOS dev packaging bundles Chromium component-build dylibs"
+
+check_contains \
+  "${package_dev_macos_script}" \
+  'stage-wuu-mac-icons.sh" "${output_app}"' \
+  "macOS dev packaging stages Wuu icon resources"
+
+check_contains \
+  "${stage_macos_icons_script}" \
+  'browser/resources/icons/product_logo_32.png' \
+  "macOS icon staging replaces Chromium runtime product logo"
 
 check_contains \
   "${dev_verify_script}" \
