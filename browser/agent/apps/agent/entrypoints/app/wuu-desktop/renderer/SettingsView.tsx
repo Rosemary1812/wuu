@@ -8,7 +8,7 @@ import {
   useState
 } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import type { InitializeResult } from "../shared/protocol";
+import type { BrowserSettingsResult, BrowserSettingsUpdate, InitializeResult } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
 export function SettingsView({
@@ -16,12 +16,15 @@ export function SettingsView({
   running,
   showDebugControlsSetting,
   debugControlsEnabled,
+  browserSettings,
+  browserSettingsError,
   sidebarWidth,
   sidebarMinWidth,
   sidebarMaxWidth,
   resizingSidebar,
   onBack,
   onSave,
+  onBrowserSettingsChange,
   onDebugControlsChange,
   onSidebarResizeStart,
   onSidebarSeparatorKey,
@@ -31,12 +34,15 @@ export function SettingsView({
   running: boolean;
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
+  browserSettings?: BrowserSettingsResult;
+  browserSettingsError: string;
   sidebarWidth: number;
   sidebarMinWidth: number;
   sidebarMaxWidth: number;
   resizingSidebar: boolean;
   onBack: () => void;
   onSave: (provider: string, model: string) => Promise<void>;
+  onBrowserSettingsChange: (settings: BrowserSettingsUpdate) => Promise<void>;
   onDebugControlsChange: (enabled: boolean) => void;
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
@@ -47,6 +53,8 @@ export function SettingsView({
   const [modelDraft, setModelDraft] = useState(initialized?.model ?? "");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [browserSettingsSaving, setBrowserSettingsSaving] = useState(false);
+  const [browserSettingsActionError, setBrowserSettingsActionError] = useState("");
 
   useEffect(() => {
     setProviderDraft(initialized?.provider ?? "");
@@ -76,6 +84,23 @@ export function SettingsView({
     }
   }
 
+  async function toggleVerticalTabs(): Promise<void> {
+    if (!browserSettings?.vertical_tabs_supported || browserSettingsSaving) {
+      return;
+    }
+    setBrowserSettingsActionError("");
+    setBrowserSettingsSaving(true);
+    try {
+      await onBrowserSettingsChange({
+        vertical_tabs_enabled: !browserSettings.vertical_tabs_enabled
+      });
+    } catch (saveError) {
+      setBrowserSettingsActionError(saveError instanceof Error ? saveError.message : "浏览器设置保存失败");
+    } finally {
+      setBrowserSettingsSaving(false);
+    }
+  }
+
   const disabled =
     running ||
     !providerDraft.trim() ||
@@ -84,6 +109,15 @@ export function SettingsView({
   const shellStyle = {
     "--sidebar-width": `${sidebarWidth}px`
   } as CSSProperties;
+  const verticalTabsSupported = browserSettings?.vertical_tabs_supported === true;
+  const verticalTabsEnabled = browserSettings?.vertical_tabs_enabled !== false;
+  const verticalTabsDisabled = !verticalTabsSupported || browserSettingsSaving || !browserSettings;
+  const verticalTabsDescription = !browserSettings
+    ? "正在读取浏览器设置"
+    : verticalTabsSupported
+      ? "关闭后使用顶部水平标签栏"
+      : "当前浏览器版本不支持这个设置";
+  const visibleBrowserSettingsError = browserSettingsActionError || browserSettingsError;
 
   return (
     <div className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
@@ -175,6 +209,37 @@ export function SettingsView({
                 </button>
               </div>
             </form>
+          </section>
+
+          <section className="settings-section">
+            <div>
+              <h2>浏览器</h2>
+              <p>控制 Wuu Browser 的窗口和标签页行为。</p>
+            </div>
+            <div className="settings-card">
+              <div className="settings-row">
+                <span>
+                  <strong>垂直标签页</strong>
+                  <small>{verticalTabsDescription}</small>
+                </span>
+                <button
+                  className="settings-switch"
+                  type="button"
+                  role="switch"
+                  aria-checked={verticalTabsEnabled}
+                  disabled={verticalTabsDisabled}
+                  onClick={toggleVerticalTabs}
+                >
+                  <span className="settings-switch-thumb" aria-hidden="true" />
+                  <span className="sr-only">{verticalTabsEnabled ? "关闭垂直标签页" : "打开垂直标签页"}</span>
+                </button>
+              </div>
+              {visibleBrowserSettingsError ? (
+                <div className="settings-card-footer">
+                  <div className="settings-error">{visibleBrowserSettingsError}</div>
+                </div>
+              ) : null}
+            </div>
           </section>
 
           {showDebugControlsSetting ? (

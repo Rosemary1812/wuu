@@ -54,6 +54,8 @@ import type {
   AppServerNotification,
   AskUserQuestion,
   AskUserResponse,
+  BrowserSettingsResult,
+  BrowserSettingsUpdate,
   CodexModelSummary,
   DesktopProject,
   GitCommitResult,
@@ -401,6 +403,8 @@ export function App(): JSX.Element {
   const [pendingViewSwitch, setPendingViewSwitch] = useState<PendingViewSwitch | undefined>(undefined);
   const [debugControlsEnabled, setDebugControlsEnabled] = useState(initialDebugControlsEnabled);
   const [swissStyleEnabled, setSwissStyleEnabled] = useState(initialSwissStyleEnabled);
+  const [browserSettings, setBrowserSettings] = useState<BrowserSettingsResult | undefined>(undefined);
+  const [browserSettingsError, setBrowserSettingsError] = useState("");
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({ primary: null, secondary: null });
   const conversationPaneRef = useRef<HTMLElement | null>(null);
@@ -717,6 +721,29 @@ export function App(): JSX.Element {
       window.localStorage.setItem(DEBUG_CONTROLS_KEY, String(debugControlsEnabled));
     }
   }, [debugControlsEnabled]);
+
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+    let cancelled = false;
+    setBrowserSettingsError("");
+    void window.wuu
+      .loadBrowserSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setBrowserSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setBrowserSettingsError(error instanceof Error ? error.message : "浏览器设置加载失败");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsOpen]);
 
   useEffect(() => {
     if (debugControlsVisible) {
@@ -2792,6 +2819,18 @@ export function App(): JSX.Element {
     }
   }
 
+  async function updateBrowserSettings(update: BrowserSettingsUpdate): Promise<void> {
+    setBrowserSettingsError("");
+    try {
+      const settings = await window.wuu.updateBrowserSettings(update);
+      setBrowserSettings(settings);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "浏览器设置保存失败";
+      setBrowserSettingsError(message);
+      throw error;
+    }
+  }
+
   function toggleCodexRuntimeMenu(menu: Exclude<CodexRuntimeMenu, null>): void {
     if (!state.initialized || anyThreadIsRunning || !isCodexProvider(state.initialized)) {
       return;
@@ -2908,12 +2947,15 @@ export function App(): JSX.Element {
         running={anyThreadIsRunning}
         showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
         debugControlsEnabled={debugControlsEnabled}
+        browserSettings={browserSettings}
+        browserSettingsError={browserSettingsError}
         sidebarWidth={sidebarWidth}
         sidebarMinWidth={SIDEBAR_MIN_WIDTH}
         sidebarMaxWidth={SIDEBAR_MAX_WIDTH}
         resizingSidebar={resizingSidebar}
         onBack={() => setSettingsOpen(false)}
         onSave={updateRuntimeSettings}
+        onBrowserSettingsChange={updateBrowserSettings}
         onDebugControlsChange={setDebugControlsEnabled}
         onSidebarResizeStart={startSettingsSidebarResize}
         onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}

@@ -1,9 +1,12 @@
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
+import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
 import { env } from '@/lib/env'
 import type {
   AppServerNotification,
   AppServerRequest,
+  BrowserSettingsResult,
+  BrowserSettingsUpdate,
   ConfigCodexModelsResult,
   ConfigModelUpdateResult,
   DesktopProject,
@@ -117,6 +120,8 @@ export function installWuuBrowserOSAdapter(): void {
         model,
         ...(effort === undefined ? {} : { effort }),
       }),
+    loadBrowserSettings,
+    updateBrowserSettings,
     startThread: () => wuuRpc<{ thread: Thread }>('thread/start'),
     resumeThread: (sessionId) =>
       wuuRpc<{ thread: Thread }>('thread/resume', {
@@ -153,6 +158,38 @@ export function installWuuBrowserOSAdapter(): void {
       return () => {}
     },
   } satisfies WuuDesktopApi
+}
+
+async function loadBrowserSettings(): Promise<BrowserSettingsResult> {
+  try {
+    const verticalTabsPref = await getBrowserOSAdapter().getPref(
+      BROWSEROS_PREFS.VERTICAL_TABS_ENABLED,
+    )
+    return {
+      vertical_tabs_supported: true,
+      vertical_tabs_enabled: verticalTabsPref?.value !== false,
+    }
+  } catch {
+    return {
+      vertical_tabs_supported: false,
+      vertical_tabs_enabled: true,
+    }
+  }
+}
+
+async function updateBrowserSettings(
+  settings: BrowserSettingsUpdate,
+): Promise<BrowserSettingsResult> {
+  if (settings.vertical_tabs_enabled !== undefined) {
+    const success = await getBrowserOSAdapter().setPref(
+      BROWSEROS_PREFS.VERTICAL_TABS_ENABLED,
+      settings.vertical_tabs_enabled,
+    )
+    if (!success) {
+      throw new Error('Failed to update vertical tabs setting')
+    }
+  }
+  return loadBrowserSettings()
 }
 
 function installRenderableFileUrl(): void {
