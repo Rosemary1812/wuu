@@ -1,4 +1,4 @@
-import { AlertCircle, ChevronDown, FileText, List as ListIcon, MessageSquarePlus, Pencil, Search, Terminal, Wrench } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ThreadItem } from "../shared/protocol";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
@@ -51,7 +51,6 @@ export function ToolActivityRow({ items, collapseWhenIdle = false }: { items: Th
         aria-expanded={expanded}
         onClick={() => setExpanded((open) => !open)}
       >
-        <ActivityIcon kind={summary.kind} failed={summary.failed} />
         <span className="activity-copy">
           <span>{summaryText}</span>
           {summary.fileName ? <span className="activity-file">{summary.fileName}</span> : null}
@@ -80,49 +79,25 @@ type ToolActivitySection = {
   subtitle?: string;
   detail?: string;
   status: ToolActivitySectionStatus;
+  commands: string[];
   error?: string;
 };
 
 function ToolActivitySectionView({ section }: { section: ToolActivitySection }): JSX.Element {
   return (
     <section className="activity-detail">
-      <div className="activity-detail-marker">
-        <ActivityIcon kind={section.kind} failed={section.status === "failed"} size={13} />
-      </div>
       <div className="activity-detail-body">
-        <div className="activity-detail-title">
-          <strong>{section.title}</strong>
-          <span>{section.detail ?? section.subtitle}</span>
+        <div className="activity-command-list">
+          {section.commands.map((command, index) => (
+            <code className="activity-command" key={`${section.id}-${index}`}>
+              {command}
+            </code>
+          ))}
         </div>
         {section.error ? <div className="activity-detail-error">{section.error}</div> : null}
       </div>
-      <span className={`activity-status ${section.status}`}>{toolSectionStatusLabel(section.status)}</span>
     </section>
   );
-}
-
-function toolStatusLabel(item: ThreadItem | undefined): string {
-  if (!item) {
-    return "";
-  }
-  if (item.status === "failed" || item.error) {
-    return "失败";
-  }
-  if ((item.status ?? "in_progress") === "in_progress") {
-    return "运行中";
-  }
-  return "完成";
-}
-
-function toolSectionStatusLabel(status: ToolActivitySectionStatus): string {
-  switch (status) {
-    case "failed":
-      return "未完成";
-    case "running":
-      return "进行中";
-    case "completed":
-      return "完成";
-  }
 }
 
 function buildToolActivitySections(items: ThreadItem[]): ToolActivitySection[] {
@@ -147,6 +122,14 @@ function activitySummaryText(sections: ToolActivitySection[], fallback: ToolActi
 
 function sectionSummaryText(section: ToolActivitySection): string {
   return section.title;
+}
+
+function toolCommands(items: ThreadItem[]): string[] {
+  return items.map((item) => {
+    const name = item.name?.trim() || "tool";
+    const args = item.arguments?.trim();
+    return args ? `${name} ${args}` : name;
+  });
 }
 
 function toolActivitySectionKey(item: ThreadItem): string {
@@ -189,6 +172,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `查看 ${items.length} 处`,
         detail: compactDetailText(compactToolTargets(items)),
         status: combinedToolStatus(items),
+        commands: toolCommands(items),
         error: firstToolError(items)
       };
     case "search":
@@ -198,6 +182,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `搜索 ${items.length} 次`,
         detail: compactDetailText(compactSearchTargets(items)),
         status: combinedToolStatus(items),
+        commands: toolCommands(items),
         error: firstToolError(items)
       };
     case "change":
@@ -207,6 +192,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `更新 ${items.length} 个文件`,
         detail: compactDetailText(compactToolTargets(items)),
         status: combinedToolStatus(items),
+        commands: toolCommands(items),
         error: firstToolError(items)
       };
     case "command":
@@ -216,6 +202,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `检查 ${items.length} 项`,
         detail: compactDetailText(compactCommandLabels(items)),
         status: combinedToolStatus(items),
+        commands: toolCommands(items),
         error: firstToolError(items)
       };
     case "agent":
@@ -225,6 +212,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `子任务 ${items.length} 项`,
         detail: compactDetailText(compactAgentLabels(items)),
         status: combinedToolStatus(items),
+        commands: toolCommands(items),
         error: firstToolError(items)
       };
     default:
@@ -234,6 +222,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `工具 ${items.length} 项`,
         detail: compactDetailText(uniqueStrings(items.map((item) => readableToolName(item.name)))),
         status: combinedToolStatus(items),
+        commands: toolCommands(items),
         error: firstToolError(items)
       };
   }

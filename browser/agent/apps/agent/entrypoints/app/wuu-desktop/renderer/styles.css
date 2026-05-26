@@ -6039,7 +6039,7 @@ button:disabled {
 .activity-details {
   display: grid;
   grid-template-rows: 0fr;
-  margin: 0 0 1px 7px;
+  margin: 0 0 1px;
   opacity: 0;
   transform: translateY(-2px);
   transition:
@@ -6058,18 +6058,15 @@ button:disabled {
   display: grid;
   min-height: 0;
   overflow: hidden;
-  border-left: 1px solid #e4e5e1;
-  gap: 0;
-  padding-left: 14px;
+  gap: 6px;
 }
 
 .activity-detail {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
   color: #767b80;
-  padding: 3px 0;
+  padding: 2px 0;
 }
 
 .activity-detail-marker {
@@ -6086,9 +6083,24 @@ button:disabled {
 
 .activity-detail-body {
   display: grid;
-  flex: 1 1 auto;
   min-width: 0;
-  gap: 1px;
+  gap: 6px;
+}
+
+.activity-command-list {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.activity-command {
+  display: block;
+  color: #74797e;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: var(--font-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .activity-detail-title {
