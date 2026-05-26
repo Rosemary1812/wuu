@@ -111,7 +111,7 @@ async function resolveBrowserOSConfig(
   const configUrl = INLINED_ENV.BROWSEROS_CONFIG_URL
   if (!configUrl) {
     throw new Error(
-      'BROWSEROS_CONFIG_URL environment variable is required for BrowserOS provider',
+      'BROWSEROS_CONFIG_URL environment variable is required for Wuu Browser provider',
     )
   }
 

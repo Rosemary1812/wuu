@@ -1,4 +1,4 @@
-const CHANGELOG_BASE_URL = 'https://docs.browseros.com/changelog'
+const CHANGELOG_BASE_URL = 'https://github.com/blueberrycongee/wuu'
 
 type ChangelogVersionConfig = {
   showChangelog: true

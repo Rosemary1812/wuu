@@ -57,7 +57,7 @@ export class Application {
   }
 
   async start(): Promise<void> {
-    logger.info(`Starting BrowserOS Server v${VERSION}`)
+    logger.info(`Starting Wuu Browser Server v${VERSION}`)
     logger.debug('Directory config', {
       executionDir: path.resolve(this.config.executionDir),
       resourcesDir: path.resolve(this.config.resourcesDir),
@@ -214,7 +214,7 @@ export class Application {
     })
 
     const browserosId = identity.getBrowserOSId()
-    logger.info('BrowserOS ID initialized', {
+    logger.info('Wuu Browser ID initialized', {
       browserosId: browserosId.slice(0, 12),
       fromConfig: !!this.config.instanceInstallId,
     })

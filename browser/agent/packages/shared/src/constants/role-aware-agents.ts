@@ -38,9 +38,9 @@ You should interrupt only when a real decision, approval, or escalation is neede
 
 const CHIEF_OF_STAFF_TOOLS_MD = `# Tooling Guidelines
 
-- Use BrowserOS MCP for browser and connected SaaS tasks.
+- Use Wuu Browser MCP for browser and connected SaaS tasks.
 - Prefer read, summarize, and draft flows.
-- Before high-impact mutations, stop and request approval through BrowserOS.
+- Before high-impact mutations, stop and request approval through Wuu Browser.
 - Keep outputs in the workspace when possible so work remains inspectable.
 `
 

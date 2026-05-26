@@ -503,7 +503,7 @@ export class OpenClawService {
         logger.info(message)
         onLog?.(message)
       }
-      logProgress('OpenClaw prewarm: ensuring BrowserOS VM is ready')
+      logProgress('OpenClaw prewarm: ensuring Wuu VM is ready')
       await this.runtime.ensureReady()
       logProgress(`OpenClaw prewarm: ensuring image ${imageRef} is available`)
       await this.runtime.prewarmGatewayImage()

@@ -62,7 +62,7 @@ const primarySettingsSections: NavSection[] = [
   {
     label: 'Provider Settings',
     items: [
-      { name: 'BrowserOS AI', to: '/settings/ai', icon: Bot },
+      { name: 'Wuu Browser AI', to: '/settings/ai', icon: Bot },
       {
         name: 'Chat & Council Provider',
         to: '/settings/chat',
@@ -75,7 +75,7 @@ const primarySettingsSections: NavSection[] = [
     label: 'Other',
     items: [
       {
-        name: 'Customize BrowserOS',
+        name: 'Customize Wuu Browser',
         to: '/settings/customization',
         icon: Palette,
         feature: Feature.CUSTOMIZATION_SUPPORT,
@@ -86,7 +86,7 @@ const primarySettingsSections: NavSection[] = [
         icon: ShieldCheck,
         feature: Feature.ALPHA_FEATURES_SUPPORT,
       },
-      { name: 'BrowserOS as MCP', to: '/settings/mcp', icon: Server },
+      { name: 'Wuu Browser as MCP', to: '/settings/mcp', icon: Server },
       {
         name: 'ACL Rules',
         to: '/settings/acl',
@@ -104,7 +104,11 @@ const primarySettingsSections: NavSection[] = [
 ]
 
 const helpItems: NavItem[] = [
-  { name: 'Docs', href: 'https://docs.browseros.com/', icon: BookOpen },
+  {
+    name: 'Docs',
+    href: 'https://github.com/blueberrycongee/wuu',
+    icon: BookOpen,
+  },
   { name: 'Features', to: '/onboarding/features', icon: Compass },
   { name: 'Revisit Onboarding', to: '/onboarding', icon: RotateCcw },
 ]

@@ -107,8 +107,8 @@ export const ProviderSelector: FC<ProviderSelectorProps> = ({
       </Select>
       {!hideApiKeyHint && (
         <p className="text-muted-foreground text-xs">
-          Uses your existing API key from BrowserOS settings. The key is passed
-          to the container and never leaves your machine.
+          Uses your existing API key from Wuu Browser settings. The key is
+          passed to the container and never leaves your machine.
         </p>
       )}
     </div>
@@ -330,8 +330,8 @@ export const GatewayStateCards: FC<GatewayStateCardsProps> = ({
             <h3 className="font-semibold text-lg">Set Up OpenClaw</h3>
             <p className="text-muted-foreground text-sm">
               {status.podmanAvailable
-                ? 'Create a local BrowserOS VM to run autonomous agents with full tool access.'
-                : 'BrowserOS VM runtime is unavailable on this system.'}
+                ? 'Create a local Wuu VM to run autonomous agents with full tool access.'
+                : 'Wuu VM runtime is unavailable on this system.'}
             </p>
           </div>
           {status.podmanAvailable ? (

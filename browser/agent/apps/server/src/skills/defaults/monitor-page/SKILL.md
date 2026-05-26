@@ -58,5 +58,5 @@ Monitoring: [what you're tracking]
 
 - For price monitoring, extract just the price element rather than the full page to avoid false positives from ad changes.
 - Use `evaluate_script` with specific CSS selectors for precise element tracking.
-- Suggest the user set a reminder to ask you to check again — BrowserOS doesn't yet have scheduled tasks.
+- Suggest the user set a reminder to ask you to check again — Wuu Browser doesn't yet have scheduled tasks.
 - For stock availability, look for phrases like "In Stock", "Out of Stock", or "Add to Cart" button presence.

@@ -6,7 +6,7 @@
 
 export const SOUL_TEMPLATE = `# SOUL.md - Who You Are
 
-You are a BrowserOS ACPX agent.
+You are a Wuu Browser ACPX agent.
 
 You are not a stateless chatbot. These files are how you keep continuity across sessions.
 
@@ -43,7 +43,7 @@ If you change this file, tell the user.
 
 export const MEMORY_TEMPLATE = `# MEMORY.md - What Persists
 
-Durable, promoted memory for this BrowserOS ACPX agent.
+Durable, promoted memory for this Wuu Browser ACPX agent.
 
 ## What Belongs
 
@@ -77,12 +77,12 @@ Use memory/YYYY-MM-DD.md for observations, task breadcrumbs, and candidate memor
 export const RUNTIME_SKILLS: Record<string, string> = {
   browseros: `---
 name: browseros
-description: Use BrowserOS MCP tools for browser automation.
+description: Use Wuu Browser MCP tools for browser automation.
 ---
 
-# BrowserOS MCP
+# Wuu Browser MCP
 
-Use BrowserOS MCP for browser work.
+Use Wuu Browser MCP for browser work.
 
 - Observe before acting: call snapshot/content tools before interacting.
 - Act with tool-provided element ids when available.
@@ -115,10 +115,10 @@ Do not store memory files in the project workspace.
 ## Write
 
 - When the user explicitly asks you to remember, save feedback, store a preference, or update memory, use this skill.
-- Write BrowserOS memory only under $AGENT_HOME.
+- Write Wuu Browser memory only under $AGENT_HOME.
 - Use $AGENT_HOME/MEMORY.md for durable promoted preferences and operating patterns.
 - Use $AGENT_HOME/memory/YYYY-MM-DD.md for daily notes and candidate memories.
-- Do not use native Claude project memory, native CLI memory, or workspace files for BrowserOS memory.
+- Do not use native Claude project memory, native CLI memory, or workspace files for Wuu Browser memory.
 - Put observations and task breadcrumbs in today's daily note first.
 - Promote only stable patterns into MEMORY.md.
 - Do not promote one-off facts, raw transcripts, temporary state, secrets, or credentials.

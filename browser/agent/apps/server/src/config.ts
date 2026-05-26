@@ -99,7 +99,7 @@ function parseCliArgs(argv: string[]): ConfigResult<ParsedCliArgs> {
   try {
     program
       .name('browseros-server')
-      .description('BrowserOS Unified Server - MCP + Agent')
+      .description('Wuu Browser Unified Server - MCP + Agent')
       .version(VERSION)
       .option('--config <path>', 'Path to JSON configuration file')
       .option(

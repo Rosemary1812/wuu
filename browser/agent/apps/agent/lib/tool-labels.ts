@@ -92,7 +92,7 @@ const VERB_OVERRIDES: Record<string, string> = {
   suggest_app_connection: 'Suggested app connect',
 
   // BrowserOS info
-  browseros_info: 'Read BrowserOS info',
+  browseros_info: 'Read Wuu Browser info',
 
   // Windows
   list_windows: 'Listed windows',

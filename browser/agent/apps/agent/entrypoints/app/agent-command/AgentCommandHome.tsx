@@ -35,7 +35,8 @@ function EmptyAgentsState({ onOpenAgents }: { onOpenAgents: () => void }) {
         <div className="space-y-2">
           <h2 className="font-semibold text-lg">No agents yet</h2>
           <p className="max-w-md text-muted-foreground text-sm leading-6">
-            Create an agent to start using BrowserOS as an agent-first new tab.
+            Create an agent to start using Wuu Browser as an agent-first new
+            tab.
           </p>
         </div>
         <Button variant="outline" onClick={onOpenAgents} className="rounded-xl">

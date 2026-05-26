@@ -7,7 +7,7 @@ import { uploadLlmProvidersToGraphql } from './uploadLlmProvidersToGraphql'
 
 /** Default provider ID constant */
 export const DEFAULT_PROVIDER_ID = 'browseros'
-const DEFAULT_PROVIDER_NAME = 'BrowserOS'
+const DEFAULT_PROVIDER_NAME = 'Wuu Browser'
 
 /** Storage key for LLM providers array */
 export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
@@ -124,7 +124,7 @@ export function createDefaultProvidersConfig(): LlmProviderConfig[] {
 }
 
 /**
- * Normalize built-in provider names back to "BrowserOS" (e.g. from "Kimi K2.5"
+ * Normalize built-in provider names back to "Wuu Browser" (e.g. from "Kimi K2.5"
  * which was set during a previous partnership launch).
  */
 function normalizeProviderNames(

@@ -18,7 +18,7 @@ export function renderLimaTemplate(
   ].join('\n')
 
   if (!template.includes('mounts: []')) {
-    throw new Error('BrowserOS VM Lima template is missing mounts: [] marker')
+    throw new Error('Wuu VM Lima template is missing mounts: [] marker')
   }
 
   return template.replace('mounts: []', mounts)

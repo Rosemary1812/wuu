@@ -80,9 +80,9 @@ export const ProviderCard: FC<ProviderCardProps> = ({
         <p className="truncate text-muted-foreground text-sm">
           {isBuiltIn ? (
             <>
-              BrowserOS-hosted model with strict rate limits.{' '}
+              Wuu Browser-hosted model with strict rate limits.{' '}
               <a
-                href="https://docs.browseros.com/features/bring-your-own-llm"
+                href="https://github.com/blueberrycongee/wuu"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline hover:text-foreground"

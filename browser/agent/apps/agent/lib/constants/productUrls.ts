@@ -1,43 +1,43 @@
 /**
  * @public
  */
-export const docsUrl = 'https://docs.browseros.com/'
+export const docsUrl = 'https://github.com/blueberrycongee/wuu'
 
 /**
  * @public
  */
-export const productWebUrl = 'https://browseros.com'
+export const productWebUrl = 'https://github.com/blueberrycongee/wuu'
 
 /**
  * @public
  */
-export const productRepositoryUrl = 'https://github.com/browseros-ai/BrowserOS'
+export const productRepositoryUrl = 'https://github.com/blueberrycongee/wuu'
 
 /**
  * @public
  */
-export const githubOrgUrl = 'https://github.com/browseros-ai'
+export const githubOrgUrl = 'https://github.com/blueberrycongee'
 
 /**
  * @public
  */
-export const privacyPolicyUrl = 'https://browseros.com/privacy'
+export const privacyPolicyUrl = 'https://github.com/blueberrycongee/wuu'
 
 /**
  * @public
  */
 export const contributorsUrl =
-  'https://github.com/browseros-ai/BrowserOS/graphs/contributors'
+  'https://github.com/blueberrycongee/wuu/graphs/contributors'
 
 /**
  * @public
  */
-export const discordUrl = 'https://discord.gg/browseros'
+export const discordUrl = 'https://github.com/blueberrycongee/wuu'
 
 /**
  * @public
  */
-export const slackUrl = 'https://dub.sh/browserOS-slack'
+export const slackUrl = 'https://github.com/blueberrycongee/wuu'
 
 /**
  * @public
@@ -47,10 +47,10 @@ export const productVideoUrl = 'https://youtu.be/J-lFhTP-7is'
 /**
  * @public
  */
-export const productRepositoryShortUrl = 'https://git.new/browseros'
+export const productRepositoryShortUrl =
+  'https://github.com/blueberrycongee/wuu'
 
 /**
  * @public
  */
-export const scheduledTasksHelpUrl =
-  'https://docs.browseros.com/features/scheduled-tasks'
+export const scheduledTasksHelpUrl = 'https://github.com/blueberrycongee/wuu'

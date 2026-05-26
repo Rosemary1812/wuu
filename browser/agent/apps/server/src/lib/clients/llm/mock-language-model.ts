@@ -9,7 +9,7 @@ import { MockLanguageModelV3 } from 'ai/test'
 import type { ResolvedLLMConfig } from './types'
 
 export const MOCK_BROWSEROS_MODEL_ID = 'browseros-test-mock'
-export const MOCK_BROWSEROS_RESPONSE_TEXT = 'Mock BrowserOS test response.'
+export const MOCK_BROWSEROS_RESPONSE_TEXT = 'Mock Wuu Browser test response.'
 
 const MOCK_USAGE: LanguageModelV3Usage = {
   inputTokens: {

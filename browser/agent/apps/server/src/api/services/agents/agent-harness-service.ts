@@ -1263,7 +1263,7 @@ function assertHermesProviderInputValid(input: CreateAgentInput): void {
   const providerType = input.providerType?.trim()
   if (!providerType) {
     throw new HermesProviderConfigInvalidError(
-      'Hermes agent requires providerType (pick a provider configured in BrowserOS AI Settings)',
+      'Hermes agent requires providerType (pick a provider configured in Wuu Browser AI Settings)',
     )
   }
   const mapping = getHermesProviderMapping(providerType)

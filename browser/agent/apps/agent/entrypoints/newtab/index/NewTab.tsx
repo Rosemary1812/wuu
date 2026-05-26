@@ -168,7 +168,7 @@ export const NewTab = () => {
     query: inputValue,
     selectedTabs,
   })
-  const searchPlaceholder = `Ask BrowserOS or search ${providerConfig.name}...`
+  const searchPlaceholder = `Ask Wuu Browser or search ${providerConfig.name}...`
   const supportsInlineChat =
     alphaEnabled && supports(Feature.NEWTAB_CHAT_SUPPORT)
 

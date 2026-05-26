@@ -56,6 +56,6 @@ export const TOOL_APPROVAL_CATEGORIES: readonly ToolApprovalCategory[] = [
   {
     id: 'assistant',
     name: 'Assistant Actions',
-    description: 'BrowserOS helper and suggestion tools.',
+    description: 'Wuu Browser helper and suggestion tools.',
   },
 ] as const

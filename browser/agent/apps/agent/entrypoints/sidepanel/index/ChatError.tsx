@@ -36,8 +36,8 @@ function parseErrorMessage(
   // fetch failure is always a local connection issue.
   if (message.includes('Failed to fetch') || message.includes('fetch failed')) {
     return {
-      text: 'Unable to connect to BrowserOS agent. Follow below instructions.',
-      url: 'https://docs.browseros.com/troubleshooting/connection-issues',
+      text: 'Unable to connect to Wuu Browser agent. Follow below instructions.',
+      url: 'https://github.com/blueberrycongee/wuu',
       isConnectionError: true,
     }
   }
@@ -64,7 +64,7 @@ function parseErrorMessage(
   ) {
     return {
       text: 'Add your own API key for unlimited usage.',
-      url: 'https://dub.sh/browseros-usage-limit',
+      url: '/app.html#/settings/usage',
       isRateLimit: true,
     }
   }

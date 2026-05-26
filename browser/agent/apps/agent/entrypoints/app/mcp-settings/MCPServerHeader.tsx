@@ -20,7 +20,7 @@ interface MCPServerHeaderProps {
   onServerRestart?: () => void
 }
 
-const DOCS_URL = 'https://docs.browseros.com/features/use-with-claude-code'
+const DOCS_URL = 'https://github.com/blueberrycongee/wuu'
 const HEALTH_CHECK_TIMEOUT_MS = 60_000
 const HEALTH_CHECK_INTERVAL_MS = 2_000
 
@@ -103,7 +103,7 @@ export const MCPServerHeader: FC<MCPServerHeaderProps> = ({
         </div>
         <div className="flex-1">
           <div className="mb-1 flex items-center justify-between">
-            <h2 className="font-semibold text-xl">BrowserOS MCP Server</h2>
+            <h2 className="font-semibold text-xl">Wuu Browser MCP Server</h2>
             <a
               href={DOCS_URL}
               target="_blank"
@@ -115,7 +115,7 @@ export const MCPServerHeader: FC<MCPServerHeaderProps> = ({
             </a>
           </div>
           <p className="mb-6 text-muted-foreground text-sm">
-            Connect BrowserOS to MCP clients like Claude Code, Gemini CLI and
+            Connect Wuu Browser to MCP clients like Claude Code, Gemini CLI and
             others.
           </p>
 

@@ -76,7 +76,7 @@ export const FilePreviewSheet: FC<FilePreviewSheetProps> = ({
   const handleDownload = () => {
     if (!downloadUrl) {
       toast.error("Couldn't reach the agent server", {
-        description: 'Reconnect to BrowserOS and try again.',
+        description: 'Reconnect to Wuu Browser and try again.',
       })
       return
     }

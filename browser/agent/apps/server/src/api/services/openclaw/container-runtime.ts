@@ -82,7 +82,7 @@ export class ContainerRuntime {
   }
 
   async ensureReady(onLog?: LogFn): Promise<void> {
-    logger.info('Ensuring BrowserOS VM runtime readiness')
+    logger.info('Ensuring Wuu VM runtime readiness')
     await this.vm.ensureReady(onLog)
     await this.vm.getDefaultGateway()
   }

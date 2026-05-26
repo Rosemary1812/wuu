@@ -68,7 +68,7 @@ export class VmRuntime {
       await this.provisionFresh(onLog)
     } else {
       if (existing.status !== 'Running') {
-        onLog?.('Starting BrowserOS VM...')
+        onLog?.('Starting Wuu VM...')
         await this.cli.start(VM_NAME)
       }
       if (
@@ -161,7 +161,7 @@ export class VmRuntime {
       templatePath: this.deps.templatePath,
     })
 
-    onLog?.('Creating BrowserOS VM...')
+    onLog?.('Creating Wuu VM...')
     logger.info(VM_TELEMETRY_EVENTS.provisionCreateStart, { yamlPath })
     const createStarted = Date.now()
     await this.cli.create(VM_NAME, yamlPath)
@@ -169,7 +169,7 @@ export class VmRuntime {
       durationMs: Date.now() - createStarted,
     })
 
-    onLog?.('Starting BrowserOS VM...')
+    onLog?.('Starting Wuu VM...')
     logger.info(VM_TELEMETRY_EVENTS.provisionStartBegin, {})
     const startStarted = Date.now()
     await this.cli.start(VM_NAME)
@@ -179,7 +179,7 @@ export class VmRuntime {
   }
 
   private async recreateForContainerd(onLog?: LogFn): Promise<void> {
-    onLog?.('Recreating BrowserOS VM for containerd runtime...')
+    onLog?.('Recreating Wuu VM for containerd runtime...')
     try {
       await this.cli.stop(VM_NAME)
     } catch (error) {
@@ -203,7 +203,7 @@ export class VmRuntime {
       )
       if (exitCode !== 0) return false
     } catch (error) {
-      logger.warn('Failed to inspect BrowserOS VM runtime marker', {
+      logger.warn('Failed to inspect Wuu VM runtime marker', {
         error: error instanceof Error ? error.message : String(error),
       })
       return false
@@ -215,7 +215,7 @@ export class VmRuntime {
   private async buildLimaYaml(): Promise<string> {
     if (!this.deps.templatePath) {
       throw new Error(
-        'BrowserOS VM Lima template path is missing; configure VmRuntime with resourcesDir',
+        'Wuu VM Lima template path is missing; configure VmRuntime with resourcesDir',
       )
     }
 
