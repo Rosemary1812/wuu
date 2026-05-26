@@ -5942,15 +5942,6 @@ button:disabled {
   transform: rotate(180deg);
 }
 
-.turn-process-group.running .turn-process-copy > span:first-child {
-  background: linear-gradient(100deg, #8f9498 0%, #8f9498 34%, #3f4744 49%, #8f9498 64%, #8f9498 100%);
-  background-size: 220% 100%;
-  color: transparent;
-  animation: turn-text-sweep 2800ms linear infinite;
-  -webkit-background-clip: text;
-  background-clip: text;
-}
-
 .turn-process-details {
   display: grid;
   grid-template-rows: 0fr;
@@ -7993,7 +7984,6 @@ pre {
   .thread-row.pending-switch::before,
   .turn-progress.in_progress .turn-progress-label svg,
   .turn-progress.in_progress .turn-progress-title,
-  .turn-process-group.running .turn-process-copy > span:first-child,
   .turn-progress.in_progress .turn-progress-rule::after,
   .turn-progress-campaign,
   .turn-progress-scene,
@@ -8018,8 +8008,7 @@ pre {
     display: none;
   }
 
-  .turn-progress.in_progress .turn-progress-title,
-  .turn-process-group.running .turn-process-copy > span:first-child {
+  .turn-progress.in_progress .turn-progress-title {
     background: none;
     color: #6f7478;
   }

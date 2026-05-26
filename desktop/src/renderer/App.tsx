@@ -4397,9 +4397,7 @@ function TurnProcessGroup({
   const [expanded, setExpanded] = useState(!autoCollapse);
   const previousAutoCollapseRef = useRef(autoCollapse);
   const detailsID = `${turn.id}-process-details`;
-  const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
-    turn.status === "in_progress" ? " running" : ""
-  }`;
+  const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}`;
   const processCount = entries.filter((entry) => entry.kind !== "status").length;
   const metaParts = turnProcessMetaParts(turn, processCount);
 
@@ -4445,13 +4443,6 @@ function turnProcessMetaParts(turn: Turn, processCount: number): string[] {
   const parts: string[] = [];
   if (processCount > 0) {
     parts.push(`${processCount} 项`);
-  }
-  if (turn.status === "in_progress") {
-    parts.push("运行中");
-  } else if (turn.status === "failed") {
-    parts.push("失败");
-  } else if (turn.status === "interrupted") {
-    parts.push("已停止");
   }
   if (typeof turn.duration_ms === "number") {
     parts.push(formatDuration(turn.duration_ms));

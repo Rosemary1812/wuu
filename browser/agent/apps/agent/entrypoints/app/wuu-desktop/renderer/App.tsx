@@ -4413,18 +4413,6 @@ function TurnView({
     }
     const detailEntries = entries.filter((entry) => entry.kind !== "status");
     if (detailEntries.length === 0) {
-      if (!processAutoCollapse && turn.status === "in_progress") {
-        renderedItems.push(
-          <TurnProcessGroup
-            key={`${turn.id}-process-${renderedItems.length}`}
-            turn={turn}
-            entries={[]}
-            autoCollapse={false}
-            hasFinalText={turnHasAssistantOutput(turn)}
-          />
-        );
-        return;
-      }
       if (!processAutoCollapse) {
         const statusEntry = entries.find((entry) => entry.kind === "status");
         if (statusEntry) {
@@ -4439,7 +4427,6 @@ function TurnView({
         turn={turn}
         entries={detailEntries}
         autoCollapse={processAutoCollapse}
-        hasFinalText={turnHasAssistantOutput(turn)}
       />
     );
   }
@@ -4525,32 +4512,21 @@ type TurnProcessEntry = {
 function TurnProcessGroup({
   turn,
   entries,
-  autoCollapse,
-  hasFinalText
+  autoCollapse
 }: {
   turn: Turn;
   entries: TurnProcessEntry[];
   autoCollapse: boolean;
-  hasFinalText: boolean;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!autoCollapse);
   const previousAutoCollapseRef = useRef(autoCollapse);
   const detailsID = `${turn.id}-process-details`;
   const hasDetails = entries.length > 0;
   const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
-    turn.status === "in_progress" ? " running" : ""
-  }${hasDetails ? "" : " no-details"}`;
+    hasDetails ? "" : " no-details"
+  }`;
   const processCount = entries.filter((entry) => entry.kind !== "status").length;
   const metaParts = turnProcessMetaParts(turn, processCount);
-  const statusLabel =
-    turn.status === "interrupted"
-      ? "已停止"
-      : messageFlowStatusLabel({
-          done: autoCollapse,
-          failed: turn.status === "failed",
-          hasFinalText,
-          locale: "zh"
-        });
 
   useEffect(() => {
     const previousAutoCollapse = previousAutoCollapseRef.current;
@@ -4568,7 +4544,7 @@ function TurnProcessGroup({
   const toggleContent = (
     <>
       <span className="turn-process-copy">
-        <span>{statusLabel}</span>
+        <span>过程记录</span>
         {metaParts.map((part) => (
           <span key={part}>{part}</span>
         ))}
