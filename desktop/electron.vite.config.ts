@@ -28,6 +28,9 @@ export default defineConfig({
   renderer: {
     root: ".",
     plugins: [react()],
+    resolve: {
+      dedupe: ["react", "react-dom"]
+    },
     build: {
       rollupOptions: {
         input: {
