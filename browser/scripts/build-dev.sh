@@ -221,7 +221,20 @@ fi
 run_in "${browser_dir}" "${python_runner[@]}" "${build_args[@]}"
 
 if [[ "${package_macos}" == "true" ]]; then
-  package_args=(--source-app "${chromium_src}/out/Default_${build_arch}/BrowserOS Dev.app")
+  package_source_app=""
+  for candidate in \
+    "${chromium_src}/out/Default_${build_arch}/Wuu Browser Dev.app" \
+    "${chromium_src}/out/Default_${build_arch}/BrowserOS Dev.app"; do
+    if [[ "${dry_run}" == "true" || -d "${candidate}" ]]; then
+      package_source_app="${candidate}"
+      break
+    fi
+  done
+
+  package_args=()
+  if [[ -n "${package_source_app}" ]]; then
+    package_args+=(--source-app "${package_source_app}")
+  fi
   if [[ "${dry_run}" == "true" ]]; then
     package_args+=(--dry-run)
   fi
