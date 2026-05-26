@@ -5,10 +5,11 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useMemo,
   useState
 } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import type { InitializeResult, RuntimeConnectionUpdate } from "../shared/protocol";
+import type { InitializeResult, ProviderSummary, RuntimeConnectionUpdate } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
 export function SettingsView({
@@ -50,6 +51,7 @@ export function SettingsView({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const selectedProvider = providers.find((item) => item.name === providerDraft);
+  const providerLabels = useMemo(() => providerDisplayLabels(providers), [providers]);
   const selectedBaseURL = selectedProvider?.base_url ?? "";
   const connectionLocked = selectedProvider?.connection_locked ?? false;
 
@@ -151,19 +153,19 @@ export function SettingsView({
           <section className="settings-section">
             <div>
               <h2>模型</h2>
-              <p>选择 wuu 使用的 Provider 和模型。</p>
+              <p>选择请求要发送到哪个模型服务，以及传给服务的模型名称。</p>
             </div>
             <form className="settings-card" onSubmit={submit}>
               <label className="settings-row">
                 <span>
-                  <strong>Provider</strong>
-                  <small>选择当前会话运行时使用的模型服务</small>
+                  <strong>模型服务</strong>
+                  <small>选择当前会话使用的连接方式</small>
                 </span>
                 {providers.length > 0 ? (
                   <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
                     {providers.map((provider) => (
                       <option key={provider.name} value={provider.name}>
-                        {provider.name}
+                        {providerLabels.get(provider.name) ?? provider.name}
                       </option>
                     ))}
                   </select>
@@ -180,8 +182,8 @@ export function SettingsView({
               </label>
               <label className="settings-row">
                 <span>
-                  <strong>模型</strong>
-                  <small>Provider 配置里的模型名称</small>
+                  <strong>模型名称</strong>
+                  <small>发送给模型服务的 model 名称</small>
                 </span>
                 <input
                   value={modelDraft}
@@ -276,4 +278,76 @@ export function SettingsView({
       </OverlayScrollbarsComponent>
     </div>
   );
+}
+
+function providerDisplayLabels(providers: ProviderSummary[]): Map<string, string> {
+  const baseLabels = new Map<string, string>();
+  const counts = new Map<string, number>();
+  providers.forEach((provider) => {
+    const label = providerBaseLabel(provider);
+    baseLabels.set(provider.name, label);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  });
+  return new Map(
+    providers.map((provider) => {
+      const label = baseLabels.get(provider.name) ?? provider.name;
+      if ((counts.get(label) ?? 0) > 1) {
+        return [provider.name, `${label} · ${provider.name}`];
+      }
+      return [provider.name, label];
+    })
+  );
+}
+
+function providerBaseLabel(provider: ProviderSummary): string {
+  const service = providerServiceLabel(provider);
+  const model = provider.model.trim();
+  return model ? `${service} · ${model}` : service;
+}
+
+function providerServiceLabel(provider: ProviderSummary): string {
+  const type = provider.type.trim().toLowerCase().replaceAll("_", "-");
+  if (provider.connection_locked || type === "openai-codex" || type === "codex-subscription" || type === "chatgpt-codex") {
+    return "OpenAI OAuth";
+  }
+  const baseURLLabel = serviceLabelFromBaseURL(provider.base_url);
+  if (baseURLLabel) {
+    return baseURLLabel;
+  }
+  if (type === "anthropic" || type === "claude" || type === "anthropic-official") {
+    return "Anthropic";
+  }
+  if (type === "openai" || type === "codex") {
+    return "OpenAI API";
+  }
+  if (type === "openai-compatible") {
+    return serviceLabelFromBaseURL(provider.base_url) || "OpenAI-compatible";
+  }
+  return type || "模型服务";
+}
+
+function serviceLabelFromBaseURL(baseURL?: string): string {
+  const host = hostFromBaseURL(baseURL);
+  if (!host) return "";
+  if (host.includes("api.openai.com")) return "OpenAI API";
+  if (host.includes("api.anthropic.com")) return "Anthropic";
+  if (host.includes("openrouter.ai")) return "OpenRouter";
+  if (host.includes("moonshot") || host.includes("kimi")) return "Kimi";
+  if (host.includes("bigmodel") || host.includes("zhipu")) return "智谱";
+  if (host.includes("deepseek")) return "DeepSeek";
+  if (host.includes("generativelanguage.googleapis.com") || host.includes("googleapis.com")) return "Google Gemini";
+  if (host.includes("dashscope") || host.includes("aliyuncs.com")) return "阿里云百炼";
+  if (host.includes("volces") || host.includes("ark.cn-beijing.volces.com")) return "火山方舟";
+  if (host.includes("siliconflow")) return "硅基流动";
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return "本地模型服务";
+  return host;
+}
+
+function hostFromBaseURL(baseURL?: string): string {
+  if (!baseURL) return "";
+  try {
+    return new URL(baseURL).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
 }
