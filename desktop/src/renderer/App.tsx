@@ -4251,17 +4251,15 @@ function TurnView({
   const renderedItems: JSX.Element[] = [];
   let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
-  const explicitFinalAgentMessageID = explicitFinalAgentMessageItemID(turn);
-  const liveFinalAgentMessageID = turn.status === "in_progress" ? explicitFinalAgentMessageID : undefined;
+  const explicitFinalAgentMessageID = turn.status === "completed" ? explicitFinalAgentMessageItemID(turn) : undefined;
   const actionableAgentMessageID =
     turn.status === "completed" ? explicitFinalAgentMessageID ?? actionableAgentMessageItemID(turn) : undefined;
   const primaryAgentMessageID =
-    liveFinalAgentMessageID ??
     actionableAgentMessageID ??
     (turn.status === "in_progress" || turn.status === "failed" || turn.status === "interrupted"
       ? latestAgentMessageItemIDForTurn(turn)
       : undefined);
-  const processAutoCollapse = liveFinalAgentMessageID !== undefined || (turn.status === "completed" && actionableAgentMessageID !== undefined);
+  const processAutoCollapse = turn.status === "completed" && actionableAgentMessageID !== undefined;
 
   function renderThreadItem(item: ThreadItem, streaming: boolean): JSX.Element | null {
     return (

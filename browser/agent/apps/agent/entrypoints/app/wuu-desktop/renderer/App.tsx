@@ -4355,16 +4355,14 @@ function TurnView({
   const renderedItems: JSX.Element[] = [];
   let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
-  const explicitFinalAgentMessageID = explicitFinalAgentMessageItemID(turn);
-  const liveFinalAgentMessageID = turn.status === "in_progress" ? explicitFinalAgentMessageID : undefined;
-  const liveTimeline = turn.status === "in_progress" && liveFinalAgentMessageID === undefined;
+  const liveTimeline = turn.status === "in_progress";
   const flowAgentMessageID =
-    liveFinalAgentMessageID ?? (turn.status === "completed" ? messageFlowAgentMessageItemID(turn) : undefined);
+    turn.status === "completed" ? messageFlowAgentMessageItemID(turn) : undefined;
   const actionableAgentMessageID = turn.status === "completed" ? flowAgentMessageID : undefined;
   const primaryAgentMessageID =
     flowAgentMessageID ??
     (turn.status === "failed" || turn.status === "interrupted" ? latestAgentMessageItemIDForTurn(turn) : undefined);
-  const processAutoCollapse = liveFinalAgentMessageID !== undefined || (turn.status === "completed" && actionableAgentMessageID !== undefined);
+  const processAutoCollapse = turn.status === "completed" && actionableAgentMessageID !== undefined;
 
   function renderThreadItem(item: ThreadItem, streaming: boolean): JSX.Element | null {
     return (
