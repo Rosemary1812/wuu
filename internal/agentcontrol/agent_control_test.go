@@ -978,6 +978,104 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
 
+func TestNewRestoresQueuedSpawnPayload(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	harnessDir := filepath.Join(dir, ".wuu", "sessions", "sess-restore-queue", "harness")
+	threadDir := filepath.Join(dir, ".wuu", "sessions", "sess-restore-queue", "threads")
+	now := time.Now().UTC()
+	meta := agentthread.Metadata{
+		ID:        "worker-restored",
+		SessionID: "sess-restore-queue",
+		ParentID:  "sess-restore-queue",
+		Path:      "/root/restored_task",
+		TaskName:  "restored_task",
+		Role:      "worker",
+		Status:    agentthread.StatusPending,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Source: agentthread.Source{
+			Kind:           agentthread.SourceThreadSpawn,
+			ParentThreadID: "sess-restore-queue",
+			ParentPath:     agentthread.RootPath,
+			Depth:          2,
+			EdgeStatus:     agentthread.EdgeOpen,
+		},
+	}
+	payload, err := json.Marshal(queuedSpawnPayload{
+		WorkerID:   meta.ID,
+		WorkerType: "worker",
+		ThreadMeta: meta,
+		Prompt:     "resume queued task",
+		Isolation:  "inplace",
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	store := harness.NewStore(harnessDir)
+	if err := store.UpsertTask(harness.Task{
+		ID:        meta.ID,
+		SessionID: meta.SessionID,
+		ParentID:  meta.ParentID,
+		Path:      meta.Path,
+		Name:      meta.TaskName,
+		Role:      meta.Role,
+		Intent:    "resume queued task",
+		Status:    harness.TaskStatusQueued,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("UpsertTask: %v", err)
+	}
+	if err := store.UpsertQueueItem(harness.QueueItem{
+		ID:      meta.ID,
+		TaskID:  meta.ID,
+		Kind:    "agent_spawn",
+		Payload: payload,
+	}); err != nil {
+		t.Fatalf("UpsertQueueItem: %v", err)
+	}
+
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-restore-queue",
+		ThreadDir:     threadDir,
+		HarnessDir:    harnessDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		MaxParallel:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		sa := c.Manager().Get(meta.ID)
+		if sa != nil && sa.Snapshot().Status == subagent.StatusRunning {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	sa := c.Manager().Get(meta.ID)
+	if sa == nil || sa.Snapshot().Status != subagent.StatusRunning {
+		t.Fatalf("restored queued task did not start: %+v", sa)
+	}
+	if got, ok := c.threads.Resolve(meta.Path); !ok || got.ID != meta.ID {
+		t.Fatalf("restored thread metadata did not resolve: %+v ok=%v", got, ok)
+	}
+	items, err := c.HarnessStore().ListQueueItems()
+	if err != nil {
+		t.Fatalf("ListQueueItems: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("queue item should be deleted after start, got %+v", items)
+	}
+	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
 // slowClient never returns until context is cancelled.
 type slowClient struct{}
 

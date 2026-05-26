@@ -1,6 +1,9 @@
 package harness
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // TaskStatus describes a durable task node in the harness graph.
 type TaskStatus string
@@ -147,4 +150,14 @@ type Event struct {
 	Message   string    `json:"message,omitempty"`
 	Artifact  string    `json:"artifact,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// QueueItem stores the durable payload needed to start a queued task.
+type QueueItem struct {
+	ID        string          `json:"id"`
+	TaskID    string          `json:"task_id"`
+	Kind      string          `json:"kind"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
 }

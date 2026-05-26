@@ -127,6 +127,39 @@ func (r *Registry) RegisterSpawn(spec SpawnSpec) (Metadata, error) {
 	return meta, nil
 }
 
+func (r *Registry) Restore(meta Metadata) error {
+	id := strings.TrimSpace(meta.ID)
+	path := cleanPath(meta.Path)
+	if id == "" {
+		return errors.New("thread id is required")
+	}
+	if path == "" {
+		return errors.New("thread path is required")
+	}
+	if _, err := ParseAgentPath(path); err != nil {
+		return err
+	}
+	meta.ID = id
+	meta.Path = path
+	if meta.CreatedAt.IsZero() {
+		meta.CreatedAt = time.Now().UTC()
+	}
+	if meta.UpdatedAt.IsZero() {
+		meta.UpdatedAt = meta.CreatedAt
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if existingID, exists := r.byPath[path]; exists && existingID != id {
+		return fmt.Errorf("thread path %q already exists", path)
+	}
+	if existing, exists := r.byID[id]; exists && existing.Path != path {
+		return fmt.Errorf("thread id %q already exists at %q", id, existing.Path)
+	}
+	r.byID[id] = meta
+	r.byPath[path] = id
+	return nil
+}
+
 func (r *Registry) Resolve(target string) (Metadata, bool) {
 	return r.ResolveFrom(RootPath, target)
 }

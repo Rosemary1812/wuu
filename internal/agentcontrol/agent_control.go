@@ -10,6 +10,7 @@ package agentcontrol
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -130,6 +131,8 @@ func New(cfg Config) (*AgentControl, error) {
 	statusCh := make(chan subagent.Notification, 64)
 	mgr.Subscribe(statusCh)
 	go c.consumeWorkerStatus(statusCh)
+	_ = c.restoreQueuedSpawns()
+	go c.maybeStartQueued(context.Background())
 	return c, nil
 }
 
@@ -221,6 +224,19 @@ type preparedSpawn struct {
 	ParentHistory []providers.ChatMessage
 }
 
+type queuedSpawnPayload struct {
+	WorkerID      string                  `json:"worker_id"`
+	WorkerType    string                  `json:"worker_type"`
+	ThreadMeta    agentthread.Metadata    `json:"thread_meta"`
+	Description   string                  `json:"description,omitempty"`
+	Prompt        string                  `json:"prompt"`
+	Isolation     string                  `json:"isolation"`
+	BaseRepo      string                  `json:"base_repo,omitempty"`
+	IsFork        bool                    `json:"is_fork,omitempty"`
+	ForkMode      string                  `json:"fork_mode,omitempty"`
+	ParentHistory []providers.ChatMessage `json:"parent_history,omitempty"`
+}
+
 // Spawn launches a sub-agent. In synchronous mode it blocks until
 // the sub-agent finishes; in async mode it returns immediately with
 // status "running" and the agent_id the orchestrator can poll.
@@ -267,7 +283,10 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			BaseRepo:    req.BaseRepo,
 		}
 		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo)
-		c.enqueuePreparedSpawn(prepared)
+		if err := c.enqueuePreparedSpawn(prepared); err != nil {
+			c.recordHarnessTaskFailure(workerID, err)
+			return nil, err
+		}
 		return &SpawnResult{
 			AgentID:   workerID,
 			TaskName:  threadMeta.TaskName,
@@ -480,7 +499,10 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			ParentHistory: append([]providers.ChatMessage(nil), parentHistory...),
 		}
 		c.recordHarnessTaskQueued(threadMeta, wt.Name, req.Prompt, isolation, req.BaseRepo)
-		c.enqueuePreparedSpawn(prepared)
+		if err := c.enqueuePreparedSpawn(prepared); err != nil {
+			c.recordHarnessTaskFailure(workerID, err)
+			return nil, err
+		}
 		return &SpawnResult{
 			AgentID:   workerID,
 			TaskName:  threadMeta.TaskName,
@@ -1034,10 +1056,25 @@ func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, 
 	})
 }
 
-func (c *AgentControl) enqueuePreparedSpawn(prepared preparedSpawn) {
+func (c *AgentControl) enqueuePreparedSpawn(prepared preparedSpawn) error {
+	if c != nil && c.harnessStore != nil && c.harnessStore.Dir() != "" {
+		payload, err := json.Marshal(queuedSpawnPayloadFromPrepared(prepared))
+		if err != nil {
+			return fmt.Errorf("persist queued spawn: %w", err)
+		}
+		if err := c.harnessStore.UpsertQueueItem(harness.QueueItem{
+			ID:      prepared.WorkerID,
+			TaskID:  prepared.WorkerID,
+			Kind:    "agent_spawn",
+			Payload: payload,
+		}); err != nil {
+			return fmt.Errorf("persist queued spawn: %w", err)
+		}
+	}
 	c.queueMu.Lock()
 	defer c.queueMu.Unlock()
 	c.queued = append(c.queued, prepared)
+	return nil
 }
 
 func (c *AgentControl) maybeStartQueued(ctx context.Context) {
@@ -1054,13 +1091,16 @@ func (c *AgentControl) maybeStartQueued(ctx context.Context) {
 		}
 		if err := c.startQueuedSpawn(ctx, prepared); err != nil {
 			c.recordHarnessTaskFailure(prepared.WorkerID, err)
+			c.deleteQueuedSpawn(prepared.WorkerID)
 			if failed, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusFailed, time.Now().UTC()); ok {
 				_ = c.threadStore.RecordStatus(failed)
 			}
 			if closed, ok := c.threads.UpdateEdgeStatus(prepared.WorkerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
 				_ = c.threadStore.RecordEdgeStatus(closed)
 			}
+			continue
 		}
+		c.deleteQueuedSpawn(prepared.WorkerID)
 	}
 }
 
@@ -1074,6 +1114,93 @@ func (c *AgentControl) popQueuedSpawn() (preparedSpawn, bool) {
 	c.queued[0] = preparedSpawn{}
 	c.queued = c.queued[1:]
 	return prepared, true
+}
+
+func (c *AgentControl) deleteQueuedSpawn(workerID string) {
+	if c == nil || c.harnessStore == nil || c.harnessStore.Dir() == "" {
+		return
+	}
+	_ = c.harnessStore.DeleteQueueItem(workerID)
+}
+
+func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
+	return queuedSpawnPayload{
+		WorkerID:      prepared.WorkerID,
+		WorkerType:    prepared.WorkerType.Name,
+		ThreadMeta:    prepared.ThreadMeta,
+		Description:   prepared.Description,
+		Prompt:        prepared.Prompt,
+		Isolation:     string(prepared.Isolation),
+		BaseRepo:      prepared.BaseRepo,
+		IsFork:        prepared.IsFork,
+		ForkMode:      prepared.ForkMode,
+		ParentHistory: append([]providers.ChatMessage(nil), prepared.ParentHistory...),
+	}
+}
+
+func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, error) {
+	wt, err := LookupWorkerType(payload.WorkerType)
+	if err != nil {
+		return preparedSpawn{}, err
+	}
+	isolation, err := NormalizeIsolation(payload.Isolation, wt)
+	if err != nil {
+		return preparedSpawn{}, err
+	}
+	workerID := strings.TrimSpace(payload.WorkerID)
+	if workerID == "" {
+		workerID = payload.ThreadMeta.ID
+	}
+	if workerID == "" {
+		return preparedSpawn{}, errors.New("queued spawn worker_id is required")
+	}
+	if payload.ThreadMeta.ID == "" {
+		payload.ThreadMeta.ID = workerID
+	}
+	return preparedSpawn{
+		WorkerID:      workerID,
+		WorkerType:    wt,
+		ThreadMeta:    payload.ThreadMeta,
+		Description:   payload.Description,
+		Prompt:        payload.Prompt,
+		Isolation:     isolation,
+		BaseRepo:      payload.BaseRepo,
+		IsFork:        payload.IsFork,
+		ForkMode:      payload.ForkMode,
+		ParentHistory: append([]providers.ChatMessage(nil), payload.ParentHistory...),
+	}, nil
+}
+
+func (c *AgentControl) restoreQueuedSpawns() error {
+	if c == nil || c.harnessStore == nil || c.harnessStore.Dir() == "" {
+		return nil
+	}
+	items, err := c.harnessStore.ListQueueItems()
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.Kind != "agent_spawn" {
+			continue
+		}
+		var payload queuedSpawnPayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			_ = c.harnessStore.DeleteQueueItem(item.ID)
+			continue
+		}
+		prepared, err := preparedSpawnFromQueuedPayload(payload)
+		if err != nil {
+			_ = c.harnessStore.DeleteQueueItem(item.ID)
+			continue
+		}
+		if err := c.threads.Restore(prepared.ThreadMeta); err != nil {
+			return err
+		}
+		c.queueMu.Lock()
+		c.queued = append(c.queued, prepared)
+		c.queueMu.Unlock()
+	}
+	return nil
 }
 
 func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSpawn) error {

@@ -90,3 +90,35 @@ func TestRegistrySubtreeReturnsNodeAndDescendants(t *testing.T) {
 		t.Fatalf("unexpected subtree order/content: %+v", got)
 	}
 }
+
+func TestRegistryRestoresPersistedMetadata(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterRoot("root-thread", "sess-1", "", "", time.Now())
+	meta := Metadata{
+		ID:        "worker-1",
+		Path:      "/root/queued_task",
+		TaskName:  "queued_task",
+		ParentID:  "root-thread",
+		Role:      "worker",
+		Status:    StatusPending,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Source: Source{
+			Kind:           SourceThreadSpawn,
+			ParentThreadID: "root-thread",
+			ParentPath:     RootPath,
+			Depth:          2,
+			EdgeStatus:     EdgeOpen,
+		},
+	}
+	if err := reg.Restore(meta); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	got, ok := reg.Resolve("queued_task")
+	if !ok || got.ID != meta.ID || got.Path != meta.Path {
+		t.Fatalf("restored metadata did not resolve: %+v ok=%v", got, ok)
+	}
+	if err := reg.Restore(Metadata{ID: "worker-2", Path: meta.Path}); err == nil {
+		t.Fatal("expected duplicate path restore to fail")
+	}
+}

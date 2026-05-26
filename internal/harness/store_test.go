@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -140,5 +141,41 @@ func TestStoreReportForTaskReturnsLatest(t *testing.T) {
 	}
 	if !ok || report.ID != "second" || report.Outcome != "completed" {
 		t.Fatalf("expected latest report, got %+v ok=%v", report, ok)
+	}
+}
+
+func TestStorePersistsQueueItems(t *testing.T) {
+	store := NewStore(t.TempDir())
+	payload := json.RawMessage(`{"task":"queued"}`)
+	if err := store.UpsertQueueItem(QueueItem{
+		ID:      "queue-1",
+		TaskID:  "worker-1",
+		Kind:    "agent_spawn",
+		Payload: payload,
+	}); err != nil {
+		t.Fatalf("UpsertQueueItem: %v", err)
+	}
+	items, err := store.ListQueueItems()
+	if err != nil {
+		t.Fatalf("ListQueueItems: %v", err)
+	}
+	var decoded map[string]string
+	if len(items) == 1 {
+		if err := json.Unmarshal(items[0].Payload, &decoded); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+	}
+	if len(items) != 1 || items[0].ID != "queue-1" || decoded["task"] != "queued" {
+		t.Fatalf("unexpected queue items: %+v", items)
+	}
+	if err := store.DeleteQueueItem("queue-1"); err != nil {
+		t.Fatalf("DeleteQueueItem: %v", err)
+	}
+	items, err = store.ListQueueItems()
+	if err != nil {
+		t.Fatalf("ListQueueItems after delete: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected queue empty, got %+v", items)
 	}
 }

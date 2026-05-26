@@ -361,6 +361,79 @@ func (s *Store) AppendEvent(event Event) error {
 	return s.appendEventLocked(event)
 }
 
+func (s *Store) UpsertQueueItem(item QueueItem) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return err
+	}
+	items, err := s.loadQueueLocked()
+	if err != nil {
+		return err
+	}
+	if item.ID == "" {
+		item.ID = item.TaskID
+	}
+	now := time.Now().UTC()
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = now
+	}
+	if item.UpdatedAt.IsZero() {
+		item.UpdatedAt = now
+	}
+	replaced := false
+	for i := range items {
+		if items[i].ID == item.ID {
+			item.CreatedAt = items[i].CreatedAt
+			items[i] = item
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].CreatedAt.Before(items[j].CreatedAt)
+	})
+	return writeJSONFile(filepath.Join(s.dir, "queue.json"), items)
+}
+
+func (s *Store) DeleteQueueItem(id string) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureDirLocked(); err != nil {
+		return err
+	}
+	items, err := s.loadQueueLocked()
+	if err != nil {
+		return err
+	}
+	out := items[:0]
+	for _, item := range items {
+		if item.ID == id {
+			continue
+		}
+		out = append(out, item)
+	}
+	return writeJSONFile(filepath.Join(s.dir, "queue.json"), out)
+}
+
+func (s *Store) ListQueueItems() ([]QueueItem, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadQueueLocked()
+}
+
 func (s *Store) ListTasks() ([]Task, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
@@ -478,6 +551,14 @@ func (s *Store) loadArtifactsLocked() ([]Artifact, error) {
 func (s *Store) loadReportsLocked() ([]Report, error) {
 	var out []Report
 	if err := readJSONFile(filepath.Join(s.dir, "reports.json"), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) loadQueueLocked() ([]QueueItem, error) {
+	var out []QueueItem
+	if err := readJSONFile(filepath.Join(s.dir, "queue.json"), &out); err != nil {
 		return nil, err
 	}
 	return out, nil
