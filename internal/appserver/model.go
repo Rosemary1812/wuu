@@ -396,6 +396,9 @@ func (th *threadState) toolItemFromCallLocked(turnID string, call providers.Tool
 			if call.Arguments != "" {
 				item.Arguments = call.Arguments
 			}
+			if call.Display != nil {
+				item.Display = cloneToolCallDisplay(call.Display)
+			}
 			th.upsertItemLocked(turnID, item, now)
 			return item
 		}
@@ -406,6 +409,7 @@ func (th *threadState) toolItemFromCallLocked(turnID string, call providers.Tool
 		Status:    ThreadItemStatusInProgress,
 		Name:      call.Name,
 		Arguments: call.Arguments,
+		Display:   cloneToolCallDisplay(call.Display),
 	}
 	th.toolItems[id] = item.ID
 	th.upsertItemLocked(turnID, item, now)
@@ -606,6 +610,7 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 					Status:    ThreadItemStatusCompleted,
 					Name:      call.Name,
 					Arguments: call.Arguments,
+					Display:   cloneToolCallDisplay(call.Display),
 				}
 				if strings.TrimSpace(call.ID) != "" {
 					toolItems[call.ID] = len(current.Items)
@@ -679,7 +684,7 @@ func isToolResultMessage(msg providers.ChatMessage) bool {
 
 func threadItemTypeForTool(name string) ThreadItemType {
 	switch strings.TrimSpace(name) {
-	case "spawn_agent", "send_message", "followup_task", "wait_agent", "close_agent", "list_agents":
+	case "spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "agent_report":
 		return ThreadItemCollabAgentTool
 	default:
 		return ThreadItemToolCall
@@ -734,7 +739,24 @@ func cloneTurns(turns []Turn) []Turn {
 	out := make([]Turn, len(turns))
 	for i, turn := range turns {
 		out[i] = turn
-		out[i].Items = append([]ThreadItem(nil), turn.Items...)
+		out[i].Items = make([]ThreadItem, len(turn.Items))
+		for j, item := range turn.Items {
+			out[i].Items[j] = cloneThreadItem(item)
+		}
 	}
 	return out
+}
+
+func cloneThreadItem(item ThreadItem) ThreadItem {
+	item.Images = append([]ThreadItemImage(nil), item.Images...)
+	item.Display = cloneToolCallDisplay(item.Display)
+	return item
+}
+
+func cloneToolCallDisplay(display *providers.ToolCallDisplay) *providers.ToolCallDisplay {
+	if display == nil {
+		return nil
+	}
+	clone := *display
+	return &clone
 }

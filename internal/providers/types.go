@@ -12,11 +12,18 @@ type ToolDefinition struct {
 	InputSchema map[string]any
 }
 
+// ToolCallDisplay carries a user-facing summary for a tool invocation.
+type ToolCallDisplay struct {
+	Kind string `json:"kind,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
 // ToolCall is a model requested tool execution.
 type ToolCall struct {
-	ID        string
-	Name      string
-	Arguments string
+	ID        string           `json:"id,omitempty"`
+	Name      string           `json:"name,omitempty"`
+	Arguments string           `json:"arguments,omitempty"`
+	Display   *ToolCallDisplay `json:"display,omitempty"`
 }
 
 // InputImage carries one user-provided image in base64 form.

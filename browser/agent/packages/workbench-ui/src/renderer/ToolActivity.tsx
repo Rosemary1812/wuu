@@ -1,9 +1,23 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
+import { formatMessageFlowCommand } from "../message-flow-display";
 import type { ThreadItem } from "../shared/protocol";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
 
-type ToolActivityKind = "edit" | "create" | "search" | "read" | "list" | "command" | "agent" | "unknown";
+type ToolActivityKind =
+  | "edit"
+  | "create"
+  | "search"
+  | "read"
+  | "list"
+  | "command"
+  | "agent"
+  | "plan"
+  | "interaction"
+  | "schedule"
+  | "browser"
+  | "skill"
+  | "unknown";
 
 type ToolActivitySummary = {
   kind: ToolActivityKind;
@@ -148,10 +162,32 @@ function itemToolStatus(item: ThreadItem): ToolActivitySectionStatus {
   return "completed";
 }
 
-export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arguments" | "result">): string {
+function rawToolCommand(name: string, args: string | undefined): string {
+  const trimmed = args?.trim();
+  if (!trimmed) {
+    return name || "tool";
+  }
+  let input: unknown = trimmed;
+  try {
+    input = JSON.parse(trimmed);
+  } catch {
+    input = trimmed;
+  }
+  return formatMessageFlowCommand({ name, input });
+}
+
+export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arguments" | "result" | "display">): string {
+  const displayText = item.display?.text?.trim();
+  if (displayText) {
+    return displayText;
+  }
+
   const args = parseJSONRecord(item.arguments);
   const result = parseJSONRecord(item.result);
   const name = (item.name ?? "").trim();
+  if (isMCPToolName(name)) {
+    return rawToolCommand(name, item.arguments);
+  }
   const path = stringValue(result, "path") ?? stringValue(args, "path") ?? stringValue(args, "file");
   const command = stringValue(result, "command") ?? stringValue(args, "command") ?? "";
   const pattern = stringValue(args, "pattern") ?? stringValue(args, "query") ?? stringValue(args, "q");
@@ -160,7 +196,7 @@ export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arg
     case "read_file":
       return `读取 ${formatPathTarget(path, "文件")}`;
     case "list_files":
-      return `查看 ${formatDirectoryTarget(path)}`;
+      return path && path !== "." ? `查看 ${formatDirectoryTarget(path)}` : "查看项目目录";
     case "grep":
     case "glob":
       return `搜索 ${formatSearchTarget(pattern)}`;
@@ -170,16 +206,30 @@ export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arg
       const url = stringValue(args, "url") ?? stringValue(result, "url");
       return url ? `读取网页 ${truncateText(url, 90)}` : "读取网页";
     }
+    case "tool_search":
+      return pattern ? `搜索工具 ${formatSearchTarget(pattern)}` : "搜索工具";
+    case "load_skill": {
+      const skill = stringValue(args, "name");
+      return skill ? `加载技能 ${truncateText(skill.replace(/^\//, ""), 70)}` : "加载技能";
+    }
+    case "update_plan":
+      return "更新计划";
+    case "ask_user":
+      return "等待用户选择";
     case "git":
       return readableCommandLabel(item);
     case "run_shell":
       return command ? `运行 ${truncateText(command, 100)}` : "运行命令";
     case "start_process":
       return command ? `启动 ${truncateText(command, 100)}` : "启动后台任务";
+    case "list_processes":
+      return "查看后台任务";
     case "read_process_output":
       return "读取后台输出";
     case "stop_process":
       return "停止后台任务";
+    case "write_stdin":
+      return "写入后台输入";
     case "edit_file":
       return `编辑 ${formatPathTarget(path, "文件")}`;
     case "write_file":
@@ -195,24 +245,80 @@ export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arg
     }
     case "wait_agent":
       return "等待子任务";
+    case "await_agents":
+      return "等待子任务";
     case "close_agent":
       return "关闭子任务";
     case "list_agents":
       return "查看子任务";
+    case "agent_report":
+      return "读取子任务报告";
+    case "schedule_cron": {
+      const cron = stringValue(args, "cron");
+      return cron ? `安排定时任务 ${truncateText(cron, 60)}` : "安排定时任务";
+    }
+    case "cancel_cron":
+      return "取消定时任务";
+    case "list_cron":
+      return "查看定时任务";
+    case "browser":
+      return readableBrowserLabel(args);
     default:
       return readableToolName(name);
   }
 }
 
+function isMCPToolName(name: string): boolean {
+  return name.startsWith("mcp_");
+}
+
+function displaySectionKey(kind: string | undefined): string | undefined {
+  const normalized = kind?.trim();
+  switch (normalized) {
+    case "read":
+    case "search":
+    case "command":
+    case "agent":
+    case "plan":
+    case "interaction":
+    case "schedule":
+    case "browser":
+    case "skill":
+      return normalized;
+    case "edit":
+    case "create":
+      return "change";
+    case "file":
+    case "web":
+      return "read";
+    case "discovery":
+      return "search";
+    case "shell":
+    case "git":
+    case "process":
+      return "command";
+    case "user_interaction":
+      return "interaction";
+    default:
+      return undefined;
+  }
+}
+
 function toolActivitySectionKey(item: ThreadItem): string {
+  const displayKey = displaySectionKey(item.display?.kind);
+  if (displayKey) {
+    return displayKey;
+  }
   const name = (item.name ?? "").trim();
   switch (name) {
     case "read_file":
     case "list_files":
+    case "web_fetch":
       return "read";
     case "grep":
     case "glob":
     case "web_search":
+    case "tool_search":
       return "search";
     case "edit_file":
     case "write_file":
@@ -220,16 +326,32 @@ function toolActivitySectionKey(item: ThreadItem): string {
     case "run_shell":
     case "git":
     case "start_process":
+    case "list_processes":
     case "read_process_output":
     case "stop_process":
+    case "write_stdin":
       return "command";
     case "spawn_agent":
     case "send_message":
     case "followup_task":
     case "wait_agent":
+    case "await_agents":
     case "close_agent":
     case "list_agents":
+    case "agent_report":
       return "agent";
+    case "update_plan":
+      return "plan";
+    case "ask_user":
+      return "interaction";
+    case "schedule_cron":
+    case "cancel_cron":
+    case "list_cron":
+      return "schedule";
+    case "browser":
+      return "browser";
+    case "load_skill":
+      return "skill";
     default:
       return "other";
   }
@@ -283,6 +405,51 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         kind: "agent",
         title: `子任务 ${items.length} 项`,
         detail: compactDetailText(compactAgentLabels(items)),
+        status: combinedToolStatus(items),
+        commands: toolCommands(items),
+        error: firstToolError(items)
+      };
+    case "plan":
+      return {
+        id: key,
+        kind: "plan",
+        title: `计划 ${items.length} 次`,
+        status: combinedToolStatus(items),
+        commands: toolCommands(items),
+        error: firstToolError(items)
+      };
+    case "interaction":
+      return {
+        id: key,
+        kind: "interaction",
+        title: `等待用户 ${items.length} 次`,
+        status: combinedToolStatus(items),
+        commands: toolCommands(items),
+        error: firstToolError(items)
+      };
+    case "schedule":
+      return {
+        id: key,
+        kind: "schedule",
+        title: `定时任务 ${items.length} 项`,
+        status: combinedToolStatus(items),
+        commands: toolCommands(items),
+        error: firstToolError(items)
+      };
+    case "browser":
+      return {
+        id: key,
+        kind: "browser",
+        title: `浏览器 ${items.length} 次`,
+        status: combinedToolStatus(items),
+        commands: toolCommands(items),
+        error: firstToolError(items)
+      };
+    case "skill":
+      return {
+        id: key,
+        kind: "skill",
+        title: `技能 ${items.length} 项`,
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items)
@@ -431,6 +598,27 @@ function readableCommandLabel(item: Pick<ThreadItem, "name" | "arguments" | "res
   return "运行命令";
 }
 
+function readableBrowserLabel(args: JsonRecord | undefined): string {
+  const action = (stringValue(args, "action") ?? "").toLowerCase();
+  if (action === "navigate" || action === "open") {
+    const url = stringValue(args, "url");
+    return url ? `打开浏览器 ${truncateText(url, 90)}` : "打开浏览器";
+  }
+  if (action === "click") {
+    return "点击浏览器";
+  }
+  if (action === "type") {
+    return "输入浏览器文本";
+  }
+  if (action === "screenshot") {
+    return "截取浏览器";
+  }
+  if (action === "evaluate") {
+    return "执行浏览器脚本";
+  }
+  return "操作浏览器";
+}
+
 export function readableToolName(name: string | undefined): string {
   switch ((name ?? "").trim()) {
     case "read_file":
@@ -453,6 +641,26 @@ export function readableToolName(name: string | undefined): string {
       return "运行命令";
     case "git":
       return "Git 操作";
+    case "tool_search":
+      return "搜索工具";
+    case "load_skill":
+      return "加载技能";
+    case "update_plan":
+      return "更新计划";
+    case "ask_user":
+      return "询问用户";
+    case "start_process":
+    case "list_processes":
+    case "read_process_output":
+    case "stop_process":
+    case "write_stdin":
+      return "后台任务";
+    case "schedule_cron":
+    case "cancel_cron":
+    case "list_cron":
+      return "定时任务";
+    case "browser":
+      return "浏览器";
     default:
       return name?.trim() || "工具";
   }

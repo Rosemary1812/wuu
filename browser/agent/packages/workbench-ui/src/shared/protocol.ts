@@ -244,6 +244,11 @@ export type ThreadItemType =
 export type ThreadItemStatus = "in_progress" | "completed" | "failed";
 export type ThreadItemPhase = "commentary" | "final_answer";
 
+export type ToolCallDisplay = {
+  kind?: string;
+  text?: string;
+};
+
 export type Agent = {
   id: string;
   type?: string;
@@ -304,6 +309,7 @@ export type ThreadItem = {
   images?: InputImage[];
   name?: string;
   arguments?: string;
+  display?: ToolCallDisplay;
   result?: string;
   error?: string;
 };

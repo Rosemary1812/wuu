@@ -33,6 +33,13 @@ type ToolMetadataProvider interface {
 	ToolMetadata(call providers.ToolCall) (ToolMetadata, bool)
 }
 
+// ToolDisplayProvider is an optional interface a ToolExecutor can implement
+// to provide user-facing labels for tool calls. UI clients should treat this
+// as display metadata only; it is not sent to model providers.
+type ToolDisplayProvider interface {
+	ToolDisplay(call providers.ToolCall) (providers.ToolCallDisplay, bool)
+}
+
 // ToolContextProvider is an optional interface a ToolExecutor can
 // implement to return additional context alongside tool results.
 // Hook systems use this to inject context into the conversation

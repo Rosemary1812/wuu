@@ -1285,6 +1285,7 @@ func TestTurnsFromHistoryRestoresToolCallItems(t *testing.T) {
 				ID:        "call_1",
 				Name:      "read_file",
 				Arguments: `{"path":"internal/appserver/model.go"}`,
+				Display:   &providers.ToolCallDisplay{Kind: "read", Text: "读取 model.go"},
 			}},
 		},
 		{
@@ -1306,6 +1307,9 @@ func TestTurnsFromHistoryRestoresToolCallItems(t *testing.T) {
 	toolItem := items[1]
 	if toolItem.Type != ThreadItemToolCall || toolItem.Name != "read_file" || toolItem.Arguments == "" || toolItem.Result == "" {
 		t.Fatalf("unexpected restored tool item: %+v", toolItem)
+	}
+	if toolItem.Display == nil || toolItem.Display.Text != "读取 model.go" {
+		t.Fatalf("expected restored tool display metadata, got %+v", toolItem.Display)
 	}
 	if items[2].Type != ThreadItemAgentMessage || items[2].Text != "done" {
 		t.Fatalf("unexpected assistant item: %+v", items[2])

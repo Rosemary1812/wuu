@@ -15,9 +15,10 @@ import (
 )
 
 type persistedToolCall struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	ID        string                     `json:"id"`
+	Name      string                     `json:"name"`
+	Arguments string                     `json:"arguments"`
+	Display   *providers.ToolCallDisplay `json:"display,omitempty"`
 }
 
 type persistedImage struct {
@@ -103,6 +104,7 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 				ID:        tc.ID,
 				Name:      tc.Name,
 				Arguments: tc.Arguments,
+				Display:   cloneToolCallDisplay(tc.Display),
 			})
 		}
 		messages = append(messages, msg)
@@ -230,6 +232,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 			ID:        tc.ID,
 			Name:      tc.Name,
 			Arguments: tc.Arguments,
+			Display:   cloneToolCallDisplay(tc.Display),
 		})
 	}
 	return out

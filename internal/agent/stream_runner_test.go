@@ -187,6 +187,79 @@ func TestStreamRunner_EmitsPlanUpdateEventAfterUpdatePlan(t *testing.T) {
 	}
 }
 
+type displayLoopTools struct {
+	fakeLoopTools
+}
+
+func (f *displayLoopTools) ToolDisplay(call providers.ToolCall) (providers.ToolCallDisplay, bool) {
+	if call.Name != "read_file" {
+		return providers.ToolCallDisplay{}, false
+	}
+	return providers.ToolCallDisplay{Kind: "read", Text: "读取 model.go"}, true
+}
+
+func TestStreamRunner_EnrichesToolCallDisplay(t *testing.T) {
+	client := &mockStreamClient{
+		attempts: []mockStreamAttempt{
+			{
+				events: []providers.StreamEvent{
+					{
+						Type:     providers.EventToolUseStart,
+						ToolCall: &providers.ToolCall{ID: "call-read", Name: "read_file"},
+					},
+					{
+						Type: providers.EventToolUseEnd,
+						ToolCall: &providers.ToolCall{
+							ID:        "call-read",
+							Name:      "read_file",
+							Arguments: `{"path":"internal/appserver/model.go"}`,
+						},
+					},
+					{Type: providers.EventDone},
+				},
+			},
+			{
+				events: []providers.StreamEvent{
+					{Type: providers.EventContentDelta, Content: "done"},
+					{Type: providers.EventDone},
+				},
+			},
+		},
+	}
+	tools := &displayLoopTools{
+		fakeLoopTools: fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: "read_file"}},
+			results: map[string]string{"call-read": `{"ok":true}`},
+		},
+	}
+	var seen []*providers.ToolCall
+	runner := StreamRunner{
+		Client: client,
+		Model:  "test-model",
+		Tools:  tools,
+		OnEvent: func(ev providers.StreamEvent) {
+			if ev.Type == providers.EventToolUseEnd && ev.ToolCall != nil {
+				seen = append(seen, ev.ToolCall)
+			}
+		},
+	}
+	result, err := runner.Run(context.Background(), "inspect")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("unexpected result: %q", result)
+	}
+	if len(seen) < 2 {
+		t.Fatalf("expected streamed and result tool end events, got %+v", seen)
+	}
+	for _, call := range seen {
+		if call.Display == nil || call.Display.Text != "读取 model.go" || call.Display.Kind != "read" {
+			t.Fatalf("expected display metadata on tool event, got %+v", call)
+		}
+	}
+}
+
 func TestStreamRunner_AllowsNaturalEmptyCompletionWithoutPersistingAssistantMessage(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{

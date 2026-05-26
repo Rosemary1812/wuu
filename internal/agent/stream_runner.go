@@ -192,9 +192,15 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			if effectiveOnEvent == nil {
 				return
 			}
+			toolCall := enrichToolCallDisplay(r.Tools, providers.ToolCall{
+				ID:        call.ID,
+				Name:      call.Name,
+				Arguments: call.Arguments,
+				Display:   call.Display,
+			})
 			effectiveOnEvent(providers.StreamEvent{
 				Type:       providers.EventToolUseEnd,
-				ToolCall:   &providers.ToolCall{ID: call.ID, Name: call.Name},
+				ToolCall:   &toolCall,
 				ToolResult: truncateLog(result, 2000),
 			})
 			if update, ok := planUpdateEventFromToolResult(call, result); ok {
@@ -404,6 +410,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		}
 		fbToolCalls := make([]providers.ToolCall, len(resp.ToolCalls))
 		copy(fbToolCalls, resp.ToolCalls)
+		enrichToolCallsDisplay(s.tools, fbToolCalls)
 		// Emit the fallback content through the streaming callback so
 		// live clients can render it.
 		if s.onEvent != nil && strings.TrimSpace(resp.Content) != "" {
@@ -662,10 +669,12 @@ func (s *streamStep) runStreamWithReconnect(
 			case providers.EventToolUseStart:
 				if event.ToolCall != nil {
 					idx := len(pendingTools)
-					pendingTools[idx] = &providers.ToolCall{
+					toolCall := enrichToolCallDisplay(s.tools, providers.ToolCall{
 						ID:   event.ToolCall.ID,
 						Name: event.ToolCall.Name,
-					}
+					})
+					pendingTools[idx] = &toolCall
+					event.ToolCall = &toolCall
 				}
 
 			case providers.EventToolUseDelta:
@@ -675,13 +684,23 @@ func (s *streamStep) runStreamWithReconnect(
 				}
 
 			case providers.EventToolUseEnd:
-				if event.ToolCall != nil && event.ToolCall.Arguments != "" {
+				if event.ToolCall != nil {
+					toolCall := enrichToolCallDisplay(s.tools, *event.ToolCall)
 					for _, tc := range pendingTools {
-						if tc.ID == event.ToolCall.ID {
-							tc.Arguments = event.ToolCall.Arguments
+						if tc.ID == toolCall.ID {
+							if strings.TrimSpace(toolCall.Name) != "" {
+								tc.Name = toolCall.Name
+							}
+							if toolCall.Arguments != "" {
+								tc.Arguments = toolCall.Arguments
+							}
+							if toolCall.Display != nil {
+								tc.Display = toolCall.Display
+							}
 							break
 						}
 					}
+					event.ToolCall = &toolCall
 				}
 
 			case providers.EventError:
@@ -739,6 +758,28 @@ func (s *streamStep) runStreamWithReconnect(
 		}
 		return streamErr
 	}
+}
+
+func enrichToolCallsDisplay(executor ToolExecutor, calls []providers.ToolCall) {
+	for i := range calls {
+		calls[i] = enrichToolCallDisplay(executor, calls[i])
+	}
+}
+
+func enrichToolCallDisplay(executor ToolExecutor, call providers.ToolCall) providers.ToolCall {
+	if call.Display != nil {
+		return call
+	}
+	displayProvider, ok := executor.(ToolDisplayProvider)
+	if !ok {
+		return call
+	}
+	display, ok := displayProvider.ToolDisplay(call)
+	if !ok || strings.TrimSpace(display.Text) == "" {
+		return call
+	}
+	call.Display = &display
+	return call
 }
 
 // streamReconnectConfig holds CC-aligned time-budget reconnection parameters.

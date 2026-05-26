@@ -358,17 +358,18 @@ const (
 )
 
 type ThreadItem struct {
-	ID        string            `json:"id"`
-	Type      ThreadItemType    `json:"type"`
-	Status    ThreadItemStatus  `json:"status,omitempty"`
-	Phase     ThreadItemPhase   `json:"phase,omitempty"`
-	Role      string            `json:"role,omitempty"`
-	Text      string            `json:"text,omitempty"`
-	Images    []ThreadItemImage `json:"images,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Arguments string            `json:"arguments,omitempty"`
-	Result    string            `json:"result,omitempty"`
-	Error     string            `json:"error,omitempty"`
+	ID        string                     `json:"id"`
+	Type      ThreadItemType             `json:"type"`
+	Status    ThreadItemStatus           `json:"status,omitempty"`
+	Phase     ThreadItemPhase            `json:"phase,omitempty"`
+	Role      string                     `json:"role,omitempty"`
+	Text      string                     `json:"text,omitempty"`
+	Images    []ThreadItemImage          `json:"images,omitempty"`
+	Name      string                     `json:"name,omitempty"`
+	Arguments string                     `json:"arguments,omitempty"`
+	Display   *providers.ToolCallDisplay `json:"display,omitempty"`
+	Result    string                     `json:"result,omitempty"`
+	Error     string                     `json:"error,omitempty"`
 }
 
 type ThreadItemImage struct {

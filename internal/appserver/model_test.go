@@ -62,6 +62,39 @@ func TestThreadStateCompletesPreambleBeforeToolStart(t *testing.T) {
 	}
 }
 
+func TestThreadStateCarriesToolCallDisplay(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventToolUseStart,
+		ToolCall: &providers.ToolCall{
+			ID:      "call_1",
+			Name:    "read_file",
+			Display: &providers.ToolCallDisplay{Kind: "read", Text: "读取 文件"},
+		},
+	}, now)
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventToolUseEnd,
+		ToolCall: &providers.ToolCall{
+			ID:        "call_1",
+			Name:      "read_file",
+			Arguments: `{"path":"internal/appserver/model.go"}`,
+			Display:   &providers.ToolCallDisplay{Kind: "read", Text: "读取 model.go"},
+		},
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 {
+		t.Fatalf("expected user and tool items, got %+v", turn.Items)
+	}
+	toolItem := turn.Items[1]
+	if toolItem.Display == nil || toolItem.Display.Text != "读取 model.go" || toolItem.Display.Kind != "read" {
+		t.Fatalf("expected updated display metadata, got %+v", toolItem.Display)
+	}
+}
+
 func TestThreadStateReplacesActiveAgentMessageText(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
