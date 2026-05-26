@@ -1,28 +1,21 @@
-import { Bot, CheckCircle2, Loader2, Wrench, XCircle } from 'lucide-react'
 import { type FC, useMemo } from 'react'
 import {
   Message,
   MessageAttachment,
   MessageAttachments,
   MessageContent,
-  MessageResponse,
 } from '@/components/ai-elements/message'
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from '@/components/ai-elements/reasoning'
-import {
-  Task,
-  TaskContent,
-  TaskItem,
-  TaskTrigger,
-} from '@/components/ai-elements/task'
 import type {
   AgentConversationTurn,
   ToolEntry,
 } from '@/lib/agent-conversations/types'
 import { FileCardStrip } from './agent-conversation.file-card-strip'
+import {
+  AssistantProcess,
+  FinalAssistantText,
+  type ProcessItem,
+  useStalledTextIndicator,
+} from './agent-message-flow'
 
 interface ConversationMessageProps {
   turn: AgentConversationTurn
@@ -44,61 +37,82 @@ interface ConversationMessageProps {
   stripOnly?: boolean
 }
 
-interface RenderEntry {
-  kind: 'thinking' | 'text' | 'task'
-  partIndex: number
-  text?: string
-  done?: boolean
-  tools?: ToolEntry[]
+interface AssistantRenderPlan {
+  processItems: ProcessItem[]
+  finalText: string
 }
 
 /**
- * Build the render plan for an assistant turn:
- * - thinking and text parts render in place
- * - all tool-batch parts collapse into a single Task entry at their first
- *   appearance position, with tools listed in arrival order
+ * Build the render plan for an assistant turn. Only the final text part is
+ * treated as the answer; all reasoning, tools, and earlier text stay in the
+ * collapsible process record.
  */
-function buildRenderEntries(turn: AgentConversationTurn): RenderEntry[] {
-  const entries: RenderEntry[] = []
-  const aggregatedTools: ToolEntry[] = []
-  let taskInserted = false
+function buildAssistantRenderPlan(
+  turn: AgentConversationTurn,
+): AssistantRenderPlan {
+  const processItems: ProcessItem[] = []
+  const lastTextIndex = findLastTextPartIndex(turn)
+  let finalText = ''
 
   turn.parts.forEach((part, partIndex) => {
     if (part.kind === 'thinking') {
-      entries.push({
-        kind: 'thinking',
-        partIndex,
+      processItems.push({
+        id: `${partIndex}-thinking`,
+        kind: 'text',
         text: part.text,
-        done: part.done,
+        muted: true,
       })
-    } else if (part.kind === 'text') {
-      entries.push({ kind: 'text', partIndex, text: part.text })
-    } else if (part.kind === 'tool-batch') {
-      aggregatedTools.push(...part.tools)
-      if (!taskInserted) {
-        entries.push({
-          kind: 'task',
-          partIndex,
-          tools: aggregatedTools,
+      return
+    }
+
+    if (part.kind === 'text') {
+      if (partIndex === lastTextIndex) {
+        finalText = part.text
+      } else {
+        processItems.push({
+          id: `${partIndex}-text`,
+          kind: 'text',
+          text: part.text,
+          muted: true,
         })
-        taskInserted = true
       }
+      return
+    }
+
+    if (part.kind === 'tool-batch') {
+      processItems.push(
+        ...part.tools.map((tool) => ({
+          id: `${partIndex}-${tool.id}`,
+          kind: 'tool' as const,
+          tool: toProcessTool(tool),
+        })),
+      )
     }
   })
 
-  return entries
+  return { processItems, finalText }
 }
 
-function ToolStatusIcon({ status }: { status: ToolEntry['status'] }) {
-  if (status === 'running') {
-    return (
-      <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-    )
+function findLastTextPartIndex(turn: AgentConversationTurn): number {
+  for (let index = turn.parts.length - 1; index >= 0; index -= 1) {
+    if (turn.parts[index]?.kind === 'text') {
+      return index
+    }
   }
-  if (status === 'completed') {
-    return <CheckCircle2 className="size-3.5 shrink-0 text-green-500" />
+  return -1
+}
+
+function toProcessTool(tool: ToolEntry) {
+  return {
+    id: tool.id,
+    name: tool.name,
+    label: tool.label,
+    subject: tool.subject,
+    status: tool.status,
+    input: tool.input,
+    error: tool.error,
+    durationMs: tool.durationMs,
   }
-  return <XCircle className="size-3.5 shrink-0 text-destructive" />
 }
 
 export const ConversationMessage: FC<ConversationMessageProps> = ({
@@ -107,7 +121,18 @@ export const ConversationMessage: FC<ConversationMessageProps> = ({
   onOpenOutputsRail,
   stripOnly,
 }) => {
-  const entries = useMemo(() => buildRenderEntries(turn), [turn])
+  const { processItems, finalText } = useMemo(
+    () => buildAssistantRenderPlan(turn),
+    [turn],
+  )
+  const isLiveStreaming = streaming && !turn.done
+  const stalled = useStalledTextIndicator({
+    text: finalText,
+    streaming: isLiveStreaming,
+    lastTextDeltaAt: turn.lastTextDeltaAt,
+  })
+  const hasAssistantContent =
+    !turn.done || processItems.length > 0 || finalText.trim().length > 0
 
   if (stripOnly) {
     if (!turn.producedFiles || turn.producedFiles.length === 0) return null
@@ -147,72 +172,24 @@ export const ConversationMessage: FC<ConversationMessageProps> = ({
         </MessageContent>
       </Message>
 
-      {entries.length > 0 && (
+      {hasAssistantContent ? (
         <Message from="assistant">
-          <MessageContent>
-            {entries.map((entry) => {
-              const key = `${turn.id}-entry-${entry.partIndex}`
-
-              if (entry.kind === 'thinking') {
-                return (
-                  <Reasoning
-                    key={key}
-                    className="w-full"
-                    isStreaming={!entry.done}
-                    defaultOpen={!entry.done}
-                  >
-                    <ReasoningTrigger />
-                    <ReasoningContent>{entry.text ?? ''}</ReasoningContent>
-                  </Reasoning>
-                )
-              }
-
-              if (entry.kind === 'text') {
-                return (
-                  <MessageResponse key={key}>
-                    {entry.text ?? ''}
-                  </MessageResponse>
-                )
-              }
-
-              const tools = entry.tools ?? []
-              const allDone = tools.every((t) => t.status !== 'running')
-              const taskTitle = allDone
-                ? `Agent activity (${tools.length} ${tools.length === 1 ? 'action' : 'actions'})`
-                : `Working… (${tools.length} ${tools.length === 1 ? 'action' : 'actions'})`
-
-              return (
-                <Task key={key} defaultOpen={!turn.done}>
-                  <TaskTrigger title={taskTitle} TriggerIcon={Wrench} />
-                  <TaskContent>
-                    {tools.map((tool) => (
-                      <TaskItem
-                        key={tool.id}
-                        className="flex items-center gap-2"
-                      >
-                        <ToolStatusIcon status={tool.status} />
-                        <span className="text-foreground text-xs">
-                          {tool.label}
-                        </span>
-                        {tool.subject ? (
-                          <span className="ml-1.5 truncate text-muted-foreground/70 text-xs">
-                            · {tool.subject}
-                          </span>
-                        ) : null}
-                        {tool.durationMs != null && (
-                          <span className="ml-auto text-muted-foreground/60 text-xs tabular-nums">
-                            {(tool.durationMs / 1000).toFixed(1)}s
-                          </span>
-                        )}
-                      </TaskItem>
-                    ))}
-                  </TaskContent>
-                </Task>
-              )
-            })}
+          <MessageContent className="w-full gap-3">
+            <AssistantProcess
+              done={turn.done}
+              hasFinalText={finalText.trim().length > 0}
+              items={processItems}
+              stalled={stalled}
+              streaming={isLiveStreaming}
+            />
+            <FinalAssistantText
+              stalled={stalled}
+              streaming={isLiveStreaming}
+              text={finalText}
+            />
           </MessageContent>
         </Message>
-      )}
+      ) : null}
 
       {turn.producedFiles && turn.producedFiles.length > 0 ? (
         <FileCardStrip
@@ -221,19 +198,6 @@ export const ConversationMessage: FC<ConversationMessageProps> = ({
           onOpenRail={onOpenOutputsRail ?? (() => {})}
         />
       ) : null}
-
-      {!turn.done && turn.parts.length === 0 && streaming && (
-        <div className="flex gap-2">
-          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-orange)] text-white">
-            <Bot className="size-3.5" />
-          </div>
-          <div className="flex items-center gap-1 rounded-xl rounded-tl-none border border-border/50 bg-card px-3 py-2.5 shadow-sm">
-            <span className="size-1.5 animate-bounce rounded-full bg-[var(--accent-orange)] [animation-delay:-0.3s]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-[var(--accent-orange)] [animation-delay:-0.15s]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-[var(--accent-orange)]" />
-          </div>
-        </div>
-      )}
     </div>
   )
 }

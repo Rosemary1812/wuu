@@ -78,6 +78,9 @@
   --accent-orange: oklch(0.6781 0.1663 43.21);
   /* Added brighter orange variant for shimmer animation */
   --accent-orange-bright: oklch(0.7531 0.1963 43.21);
+  --agent-sweep-rest: oklch(0.56 0.01 286);
+  --agent-sweep-rise: oklch(0.54 0.2 252);
+  --agent-sweep-peak: oklch(0.12 0.01 286);
 }
 
 .dark {
@@ -113,6 +116,9 @@
   --sidebar-accent-foreground: oklch(0.92 0 0);
   --sidebar-border: oklch(0.38 0.01 265);
   --sidebar-ring: oklch(0.408 0.123 38.172);
+  --agent-sweep-rest: oklch(0.64 0 0);
+  --agent-sweep-rise: oklch(0.78 0.12 232);
+  --agent-sweep-peak: oklch(1 0 0);
 }
 
 @theme inline {
@@ -313,6 +319,40 @@
     }
   }
 
+  @keyframes agent-text-sweep {
+    0% {
+      background-position: 135% 0;
+      opacity: 0.34;
+    }
+    16% {
+      opacity: 0.58;
+    }
+    42% {
+      opacity: 1;
+    }
+    72% {
+      opacity: 1;
+    }
+    100% {
+      background-position: -135% 0;
+      opacity: 0.34;
+    }
+  }
+
+  @keyframes agent-tail-sweep {
+    0% {
+      background-position: 125% 0;
+      opacity: 0.78;
+    }
+    42% {
+      opacity: 1;
+    }
+    100% {
+      background-position: -125% 0;
+      opacity: 0.78;
+    }
+  }
+
   /* Collapsible animations for smooth expand/collapse */
   @keyframes collapsible-down {
     from {
@@ -384,6 +424,64 @@
   /* Added utility class for shine animation on card hover */
   .animate-shine {
     animation: shine 0.8s ease-in-out;
+  }
+
+  .agent-process-status-running {
+    color: transparent;
+    background: linear-gradient(
+      100deg,
+      transparent 0%,
+      transparent 18%,
+      var(--agent-sweep-rest) 30%,
+      var(--agent-sweep-rise) 42%,
+      var(--agent-sweep-peak) 50%,
+      var(--agent-sweep-rise) 58%,
+      var(--agent-sweep-rest) 70%,
+      transparent 82%,
+      transparent 100%
+    );
+    background-size: 185% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: agent-text-sweep 3s ease-in-out infinite;
+  }
+
+  .agent-stalled-output
+    :is(p, li, h1, h2, h3, h4, h5, h6, blockquote):last-child
+    > span:last-child:not([data-streamdown]) {
+    color: transparent;
+    background: linear-gradient(
+      100deg,
+      var(--agent-sweep-rest) 0%,
+      var(--agent-sweep-rest) 24%,
+      var(--agent-sweep-rise) 42%,
+      var(--agent-sweep-peak) 50%,
+      var(--agent-sweep-rise) 58%,
+      var(--agent-sweep-rest) 76%,
+      var(--agent-sweep-rest) 100%
+    );
+    background-size: 190% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: agent-tail-sweep 1.65s ease-in-out infinite;
+  }
+
+  .agent-streaming-output [data-streamdown="code-block-copy-button"],
+  .agent-streaming-output [data-streamdown="code-block-download-button"] {
+    pointer-events: none;
+    opacity: 0;
+    transition: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .agent-process-status-running,
+    .agent-stalled-output
+      :is(p, li, h1, h2, h3, h4, h5, h6, blockquote):last-child
+      > span:last-child:not([data-streamdown]) {
+      color: var(--muted-foreground);
+      background: none;
+      animation: none;
+    }
   }
 
   /* Collapsible animation utility classes */
