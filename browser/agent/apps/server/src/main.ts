@@ -94,6 +94,8 @@ export class Application {
         browser,
         registry,
         browserosId: identity.getBrowserOSId(),
+        browserosVersion: this.config.instanceBrowserosVersion,
+        chromiumVersion: this.config.instanceChromiumVersion,
         executionDir: this.config.executionDir,
         resourcesDir: this.config.resourcesDir,
         codegenServiceUrl: this.config.codegenServiceUrl,

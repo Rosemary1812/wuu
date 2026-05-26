@@ -85,6 +85,8 @@ export async function createHttpServer(config: HttpServerConfig) {
     port,
     host = '127.0.0.1',
     browserosId,
+    browserosVersion,
+    chromiumVersion,
     executionDir,
     resourcesDir,
     version,
@@ -138,14 +140,12 @@ export async function createHttpServer(config: HttpServerConfig) {
     .use('/*', requireTrustedAppOrigin())
     .route('/', createBrowserBridgeRoutes({ browser }))
 
-  const wuuRoutes = new Hono<Env>()
-    .use('/*', requireTrustedAppOrigin())
-    .route(
-      '/',
-      createWuuRoutes({
-        browserBridgeUrl: `http://${host}:${port}/browser-bridge`,
-      }),
-    )
+  const wuuRoutes = new Hono<Env>().use('/*', requireTrustedAppOrigin()).route(
+    '/',
+    createWuuRoutes({
+      browserBridgeUrl: `http://${host}:${port}/browser-bridge`,
+    }),
+  )
 
   const agentRoutes = new Hono<Env>()
     .use('/*', requireTrustedAppOrigin())
@@ -195,7 +195,15 @@ export async function createHttpServer(config: HttpServerConfig) {
 
   const app = new Hono<Env>()
     .use('/*', cors(defaultCorsConfig))
-    .route('/health', createHealthRoute({ browser }))
+    .route(
+      '/health',
+      createHealthRoute({
+        browser,
+        version,
+        browserosVersion,
+        chromiumVersion,
+      }),
+    )
     .route(
       '/shutdown',
       createShutdownRoute({

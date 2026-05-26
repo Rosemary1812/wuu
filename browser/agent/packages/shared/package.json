@@ -49,6 +49,10 @@
       "types": "./src/constants/role-aware-agents.ts",
       "default": "./src/constants/role-aware-agents.ts"
     },
+    "./constants/runtime-contract": {
+      "types": "./src/constants/runtime-contract.ts",
+      "default": "./src/constants/runtime-contract.ts"
+    },
     "./types/logger": {
       "types": "./src/types/logger.ts",
       "default": "./src/types/logger.ts"

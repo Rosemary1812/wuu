@@ -121,6 +121,8 @@ export interface HttpServerConfig {
   registry: ToolRegistry
 
   browserosId?: string
+  browserosVersion?: string
+  chromiumVersion?: string
   executionDir: string
   resourcesDir: string
   codegenServiceUrl?: string
