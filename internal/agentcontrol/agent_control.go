@@ -642,11 +642,21 @@ func (c *AgentControl) StopFrom(currentPath, target string) bool {
 
 // List returns snapshots of all sub-agents in this session.
 func (c *AgentControl) List() []subagent.SubAgentSnapshot {
-	return c.manager.List()
+	return c.ListFrom(agentthread.RootPath, "")
 }
 
 func (c *AgentControl) ListFrom(currentPath, pathPrefix string) []subagent.SubAgentSnapshot {
 	list := c.manager.List()
+	known := make(map[string]struct{}, len(list))
+	for _, snap := range list {
+		known[snap.ID] = struct{}{}
+	}
+	for _, snap := range c.queuedSnapshots() {
+		if _, ok := known[snap.ID]; ok {
+			continue
+		}
+		list = append(list, snap)
+	}
 	prefix := strings.TrimSpace(pathPrefix)
 	if prefix == "" {
 		return list
@@ -665,6 +675,33 @@ func (c *AgentControl) ListFrom(currentPath, pathPrefix string) []subagent.SubAg
 		if snap.AgentPath == want || strings.HasPrefix(snap.AgentPath, want+"/") {
 			out = append(out, snap)
 		}
+	}
+	return out
+}
+
+func (c *AgentControl) queuedSnapshots() []subagent.SubAgentSnapshot {
+	if c == nil || c.harnessStore == nil {
+		return nil
+	}
+	tasks, err := c.harnessStore.ListTasks()
+	if err != nil {
+		return nil
+	}
+	out := make([]subagent.SubAgentSnapshot, 0)
+	for _, task := range tasks {
+		if task.Status != harness.TaskStatusQueued {
+			continue
+		}
+		out = append(out, subagent.SubAgentSnapshot{
+			ID:          task.ID,
+			Type:        task.Role,
+			TaskName:    task.Name,
+			AgentPath:   task.Path,
+			ParentID:    task.ParentID,
+			Description: task.Name,
+			Status:      subagent.StatusQueued,
+			StartedAt:   task.StartedAt,
+		})
 	}
 	return out
 }
@@ -1449,6 +1486,8 @@ func threadStatusFromSubAgent(status subagent.Status) agentthread.Status {
 	switch status {
 	case subagent.StatusPending:
 		return agentthread.StatusPending
+	case subagent.StatusQueued:
+		return agentthread.StatusPending
 	case subagent.StatusRunning:
 		return agentthread.StatusRunning
 	case subagent.StatusCompleted:
@@ -1466,6 +1505,8 @@ func harnessStatusFromSubAgent(status subagent.Status) harness.TaskStatus {
 	switch status {
 	case subagent.StatusPending:
 		return harness.TaskStatusPending
+	case subagent.StatusQueued:
+		return harness.TaskStatusQueued
 	case subagent.StatusRunning:
 		return harness.TaskStatusRunning
 	case subagent.StatusCompleted:

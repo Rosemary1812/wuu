@@ -948,6 +948,17 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 	if !foundQueued {
 		t.Fatalf("queued task not persisted: %+v", tasks)
 	}
+	list := c.List()
+	var listedQueued bool
+	for _, snap := range list {
+		if snap.ID == queued.AgentID && snap.Status == subagent.StatusQueued {
+			listedQueued = true
+			break
+		}
+	}
+	if !listedQueued {
+		t.Fatalf("queued task not visible in List: %+v", list)
+	}
 	if !c.Stop(firstID) {
 		t.Fatalf("expected to stop %s", firstID)
 	}
