@@ -143,6 +143,89 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	}
 }
 
+func TestProviderSummariesExposeOpenCodeStyleVariants(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "xiaomi",
+		Providers: map[string]config.ProviderConfig{
+			"xiaomi": {
+				Type:    "openai-compatible",
+				BaseURL: "https://token-plan-cn.xiaomimimo.com/v1",
+				Model:   "mimo-v2.5-pro",
+			},
+			"anthropic": {
+				Type:    "anthropic",
+				BaseURL: "https://anthropic.example.test",
+				Model:   "claude-opus-4-6",
+			},
+		},
+	}
+
+	summaries := providerSummariesFromConfig(cfg, t.TempDir())
+	var xiaomi, anthropic ProviderSummary
+	for _, summary := range summaries {
+		switch summary.Name {
+		case "xiaomi":
+			xiaomi = summary
+		case "anthropic":
+			anthropic = summary
+		}
+	}
+	if len(xiaomi.Models) != 1 {
+		t.Fatalf("expected xiaomi model summary, got %+v", xiaomi)
+	}
+	if got := variantIDs(xiaomi.Models[0].Variants); strings.Join(got, ",") != "low,medium,high" {
+		t.Fatalf("xiaomi variants = %+v", got)
+	}
+	if got := xiaomi.Models[0].Variants[0].Options["reasoningEffort"]; got != "low" {
+		t.Fatalf("xiaomi low variant options = %#v", xiaomi.Models[0].Variants[0].Options)
+	}
+	if got := variantIDs(anthropic.Models[0].Variants); strings.Join(got, ",") != "low,medium,high,max" {
+		t.Fatalf("anthropic variants = %+v", got)
+	}
+}
+
+func TestProviderSummariesMergeConfiguredVariants(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "custom",
+		Providers: map[string]config.ProviderConfig{
+			"custom": {
+				Type:    "openai-compatible",
+				BaseURL: "https://example.test/v1",
+				Model:   "custom-model",
+				Models: map[string]config.ProviderModelConfig{
+					"custom-model": {
+						DefaultVariant: "deep",
+						Variants: map[string]map[string]any{
+							"deep":     {"reasoningEffort": "high"},
+							"disabled": {"disabled": true, "reasoningEffort": "low"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	summaries := providerSummariesFromConfig(cfg, t.TempDir())
+	if len(summaries) != 1 || len(summaries[0].Models) != 1 {
+		t.Fatalf("unexpected summaries: %+v", summaries)
+	}
+	model := summaries[0].Models[0]
+	if model.DefaultVariant != "deep" {
+		t.Fatalf("DefaultVariant = %q, want deep", model.DefaultVariant)
+	}
+	if got := variantIDs(model.Variants); strings.Join(got, ",") != "deep" {
+		t.Fatalf("variants = %+v", got)
+	}
+}
+
+func variantIDs(variants []ProviderModelVariantSummary) []string {
+	out := make([]string, 0, len(variants))
+	for _, variant := range variants {
+		out = append(out, variant.ID)
+	}
+	return out
+}
+
 func TestServerConfigModelUpdate(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{

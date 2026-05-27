@@ -1522,7 +1522,9 @@ func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSumma
 			ID:               id,
 			DisplayName:      strings.TrimSpace(model.Name),
 			DefaultEffort:    strings.TrimSpace(model.DefaultEffort),
+			DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
 			SupportedEfforts: normalizedEffortList(model.SupportedEfforts),
+			Variants:         providerVariantSummaries(model.Variants),
 			Source:           "config",
 		}
 	}
@@ -1532,14 +1534,24 @@ func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSumma
 			models[current] = ProviderModelSummary{
 				ID:               current,
 				SupportedEfforts: inferredEfforts(provider, current),
+				Variants:         inferredVariantSummaries(provider, current),
 				Source:           "selected",
 			}
 		}
 	}
 	out := make([]ProviderModelSummary, 0, len(models))
 	for _, model := range models {
+		if len(model.Variants) == 0 {
+			model.Variants = inferredVariantSummaries(provider, model.ID)
+		}
 		if len(model.SupportedEfforts) == 0 {
-			model.SupportedEfforts = inferredEfforts(provider, model.ID)
+			model.SupportedEfforts = effortIDsFromVariants(model.Variants)
+			if len(model.SupportedEfforts) == 0 {
+				model.SupportedEfforts = inferredEfforts(provider, model.ID)
+			}
+		}
+		if model.DefaultVariant == "" && model.DefaultEffort != "" {
+			model.DefaultVariant = model.DefaultEffort
 		}
 		out = append(out, model)
 	}
@@ -1555,6 +1567,101 @@ func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSumma
 	return out
 }
 
+func providerVariantSummaries(variants map[string]map[string]any) []ProviderModelVariantSummary {
+	if len(variants) == 0 {
+		return nil
+	}
+	out := make([]ProviderModelVariantSummary, 0, len(variants))
+	for id, options := range variants {
+		id = strings.TrimSpace(id)
+		if id == "" || variantDisabled(options) {
+			continue
+		}
+		out = append(out, ProviderModelVariantSummary{
+			ID:      id,
+			Options: cloneVariantOptions(options),
+		})
+	}
+	sortVariantSummaries(out)
+	return out
+}
+
+func inferredVariantSummaries(provider config.ProviderConfig, model string) []ProviderModelVariantSummary {
+	return providerVariantSummaries(inferredVariantOptions(provider, model))
+}
+
+func cloneVariantOptions(options map[string]any) map[string]any {
+	if len(options) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(options))
+	for key, value := range options {
+		if key == "disabled" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func variantDisabled(options map[string]any) bool {
+	if len(options) == 0 {
+		return false
+	}
+	disabled, ok := options["disabled"].(bool)
+	return ok && disabled
+}
+
+func sortVariantSummaries(variants []ProviderModelVariantSummary) {
+	sort.Slice(variants, func(i, j int) bool {
+		leftRank := variantRank(variants[i].ID)
+		rightRank := variantRank(variants[j].ID)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return strings.ToLower(variants[i].ID) < strings.ToLower(variants[j].ID)
+	})
+}
+
+func variantRank(id string) int {
+	switch strings.ToLower(strings.TrimSpace(id)) {
+	case "none":
+		return 0
+	case "minimal":
+		return 1
+	case "low":
+		return 2
+	case "medium":
+		return 3
+	case "high":
+		return 4
+	case "xhigh":
+		return 5
+	case "max":
+		return 6
+	default:
+		return 100
+	}
+}
+
+func effortIDsFromVariants(variants []ProviderModelVariantSummary) []string {
+	if len(variants) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(variants))
+	for _, variant := range variants {
+		id := strings.TrimSpace(variant.ID)
+		if id == "" || id == "default" {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
 func normalizedEffortList(values []string) []string {
 	seen := make(map[string]bool, len(values))
 	out := make([]string, 0, len(values))
@@ -1567,6 +1674,178 @@ func normalizedEffortList(values []string) []string {
 		out = append(out, effort)
 	}
 	return out
+}
+
+func inferredVariantOptions(provider config.ProviderConfig, model string) map[string]map[string]any {
+	modelID := strings.ToLower(strings.TrimSpace(model))
+	if modelID == "" {
+		return nil
+	}
+	if excludedOpenCodeReasoningVariantModel(modelID) {
+		return nil
+	}
+	providerType := strings.ToLower(strings.TrimSpace(provider.Type))
+	providerType = strings.ReplaceAll(providerType, "_", "-")
+	baseURL := strings.ToLower(strings.TrimSpace(provider.BaseURL))
+
+	if isCodexProviderType(provider.Type) {
+		return variantsWithReasoningEffort(openAICodexEfforts(modelID))
+	}
+	if providerType == "anthropic" || providerType == "claude" || providerType == "anthropic-official" {
+		return anthropicVariantOptions(modelID)
+	}
+	if strings.Contains(baseURL, "openrouter.ai") {
+		if strings.Contains(modelID, "gpt") {
+			return variantsWithNestedReasoningEffort(openAICompatibleEfforts(modelID))
+		}
+		if strings.Contains(modelID, "gemini-3") || strings.Contains(modelID, "claude") {
+			return variantsWithNestedReasoningEffort(openAIEfforts())
+		}
+		return nil
+	}
+	if providerType == "openai" || providerType == "openai-compatible" || providerType == "codex" {
+		if strings.Contains(modelID, "mimo-v2.5-pro") || strings.Contains(baseURL, "xiaomimimo.com") {
+			return variantsWithReasoningEffort(widelySupportedEfforts())
+		}
+		if strings.Contains(modelID, "deepseek-v4") {
+			return variantsWithReasoningEffort(append(widelySupportedEfforts(), "max"))
+		}
+		if strings.Contains(modelID, "grok-3-mini") {
+			return variantsWithReasoningEffort([]string{"low", "high"})
+		}
+		if strings.Contains(modelID, "gpt") || openAIOSeriesModel(modelID) {
+			return variantsWithReasoningEffort(openAICompatibleEfforts(modelID))
+		}
+	}
+	return nil
+}
+
+func excludedOpenCodeReasoningVariantModel(modelID string) bool {
+	excluded := []string{
+		"deepseek-chat",
+		"deepseek-reasoner",
+		"deepseek-r1",
+		"deepseek-v3",
+		"minimax",
+		"glm",
+		"kimi",
+		"k2p",
+		"qwen",
+		"big-pickle",
+	}
+	for _, item := range excluded {
+		if strings.Contains(modelID, item) {
+			return true
+		}
+	}
+	if strings.Contains(modelID, "grok") && !strings.Contains(modelID, "grok-3-mini") {
+		return true
+	}
+	return false
+}
+
+func widelySupportedEfforts() []string {
+	return []string{"low", "medium", "high"}
+}
+
+func openAIEfforts() []string {
+	return []string{"none", "minimal", "low", "medium", "high", "xhigh"}
+}
+
+func openAICompatibleEfforts(modelID string) []string {
+	if strings.Contains(modelID, "gpt-5-pro") || strings.Contains(modelID, "gpt-5pro") {
+		return []string{"high"}
+	}
+	if strings.Contains(modelID, "gpt-5.2-pro") || strings.Contains(modelID, "gpt-5.3-pro") ||
+		strings.Contains(modelID, "gpt-5.4-pro") || strings.Contains(modelID, "gpt-5.5-pro") {
+		return []string{"medium", "high", "xhigh"}
+	}
+	if strings.Contains(modelID, "gpt-5.1-chat") || strings.Contains(modelID, "gpt-5.2-chat") ||
+		strings.Contains(modelID, "gpt-5.3-chat") || strings.Contains(modelID, "gpt-5-chat") {
+		return []string{"medium"}
+	}
+	if strings.Contains(modelID, "gpt-5.1") {
+		return []string{"none", "low", "medium", "high"}
+	}
+	if strings.Contains(modelID, "gpt-5.2") || strings.Contains(modelID, "gpt-5.3") ||
+		strings.Contains(modelID, "gpt-5.4") || strings.Contains(modelID, "gpt-5.5") {
+		return []string{"none", "low", "medium", "high", "xhigh"}
+	}
+	return openAIEfforts()
+}
+
+func openAICodexEfforts(modelID string) []string {
+	if strings.Contains(modelID, "gpt-5.3-codex") || strings.Contains(modelID, "gpt-5.4-codex") ||
+		strings.Contains(modelID, "gpt-5.5-codex") {
+		return []string{"none", "low", "medium", "high", "xhigh"}
+	}
+	if strings.Contains(modelID, "gpt-5.2-codex") || strings.Contains(modelID, "codex-max") {
+		return []string{"low", "medium", "high", "xhigh"}
+	}
+	if strings.Contains(modelID, "gpt-5") || strings.Contains(modelID, "codex") {
+		return widelySupportedEfforts()
+	}
+	return inferredEfforts(config.ProviderConfig{Type: "openai-codex"}, modelID)
+}
+
+func openAIOSeriesModel(modelID string) bool {
+	return strings.Contains(modelID, "o1") || strings.Contains(modelID, "o3") || strings.Contains(modelID, "o4")
+}
+
+func variantsWithReasoningEffort(efforts []string) map[string]map[string]any {
+	return variantsFromEfforts(efforts, func(effort string) map[string]any {
+		return map[string]any{"reasoningEffort": effort}
+	})
+}
+
+func variantsWithNestedReasoningEffort(efforts []string) map[string]map[string]any {
+	return variantsFromEfforts(efforts, func(effort string) map[string]any {
+		return map[string]any{"reasoning": map[string]any{"effort": effort}}
+	})
+}
+
+func variantsFromEfforts(efforts []string, build func(string) map[string]any) map[string]map[string]any {
+	if len(efforts) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(efforts))
+	for _, effort := range efforts {
+		effort = strings.TrimSpace(effort)
+		if effort == "" {
+			continue
+		}
+		out[effort] = build(effort)
+	}
+	return out
+}
+
+func anthropicVariantOptions(modelID string) map[string]map[string]any {
+	if strings.Contains(modelID, "opus-4-7") || strings.Contains(modelID, "opus-4.7") {
+		return variantsFromEfforts([]string{"low", "medium", "high", "xhigh", "max"}, func(effort string) map[string]any {
+			return map[string]any{
+				"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
+				"effort":   effort,
+			}
+		})
+	}
+	if strings.Contains(modelID, "opus-4-6") || strings.Contains(modelID, "opus-4.6") ||
+		strings.Contains(modelID, "sonnet-4-6") || strings.Contains(modelID, "sonnet-4.6") {
+		return variantsFromEfforts([]string{"low", "medium", "high", "max"}, func(effort string) map[string]any {
+			return map[string]any{
+				"thinking": map[string]any{"type": "adaptive"},
+				"effort":   effort,
+			}
+		})
+	}
+	if strings.Contains(modelID, "opus-4-5") || strings.Contains(modelID, "opus-4.5") {
+		return variantsFromEfforts(widelySupportedEfforts(), func(effort string) map[string]any {
+			return map[string]any{"effort": effort}
+		})
+	}
+	return map[string]map[string]any{
+		"high": {"thinking": map[string]any{"type": "enabled", "budgetTokens": 16000}},
+		"max":  {"thinking": map[string]any{"type": "enabled", "budgetTokens": 31999}},
+	}
 }
 
 func inferredEfforts(provider config.ProviderConfig, model string) []string {

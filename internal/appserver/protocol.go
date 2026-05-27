@@ -146,11 +146,18 @@ type ProviderSummary struct {
 }
 
 type ProviderModelSummary struct {
-	ID               string   `json:"id"`
-	DisplayName      string   `json:"display_name,omitempty"`
-	DefaultEffort    string   `json:"default_effort,omitempty"`
-	SupportedEfforts []string `json:"supported_efforts,omitempty"`
-	Source           string   `json:"source,omitempty"`
+	ID               string                        `json:"id"`
+	DisplayName      string                        `json:"display_name,omitempty"`
+	DefaultEffort    string                        `json:"default_effort,omitempty"`
+	DefaultVariant   string                        `json:"default_variant,omitempty"`
+	SupportedEfforts []string                      `json:"supported_efforts,omitempty"`
+	Variants         []ProviderModelVariantSummary `json:"variants,omitempty"`
+	Source           string                        `json:"source,omitempty"`
+}
+
+type ProviderModelVariantSummary struct {
+	ID      string         `json:"id"`
+	Options map[string]any `json:"options,omitempty"`
 }
 
 type ThreadStartResult struct {

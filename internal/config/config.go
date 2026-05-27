@@ -107,11 +107,13 @@ type ProviderConfig struct {
 // ProviderModelConfig lets a provider expose a small model catalog without
 // forcing users to duplicate full provider definitions.
 type ProviderModelConfig struct {
-	Name             string   `json:"name,omitempty"`
-	SupportedEfforts []string `json:"supported_efforts,omitempty"`
-	DefaultEffort    string   `json:"default_effort,omitempty"`
-	Disabled         bool     `json:"disabled,omitempty"`
-	ContextWindow    int      `json:"context_window,omitempty"`
+	Name             string                    `json:"name,omitempty"`
+	SupportedEfforts []string                  `json:"supported_efforts,omitempty"`
+	DefaultEffort    string                    `json:"default_effort,omitempty"`
+	DefaultVariant   string                    `json:"default_variant,omitempty"`
+	Variants         map[string]map[string]any `json:"variants,omitempty"`
+	Disabled         bool                      `json:"disabled,omitempty"`
+	ContextWindow    int                       `json:"context_window,omitempty"`
 }
 
 // AgentConfig controls behavior of the local tool loop.
@@ -266,6 +268,16 @@ func (c Config) Validate() error {
 			for _, effort := range model.SupportedEfforts {
 				if strings.TrimSpace(effort) == "" {
 					return fmt.Errorf("providers.%s.models.%s.supported_efforts contains an empty value", name, modelID)
+				}
+			}
+			for variantID, variant := range model.Variants {
+				if strings.TrimSpace(variantID) == "" {
+					return fmt.Errorf("providers.%s.models.%s.variants contains an empty variant id", name, modelID)
+				}
+				if disabled, ok := variant["disabled"]; ok {
+					if _, valid := disabled.(bool); !valid {
+						return fmt.Errorf("providers.%s.models.%s.variants.%s.disabled must be a boolean", name, modelID, variantID)
+					}
 				}
 			}
 		}
