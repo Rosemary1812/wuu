@@ -283,6 +283,11 @@ type ProjectStore = {
   active_context?: RuntimeContext;
 };
 
+type GitStatusOptions = {
+  includePullRequestURL?: boolean;
+  includeRemoteDefaultBranchFallback?: boolean;
+};
+
 let mainWindow: BrowserWindow | null = null;
 let client: AppServerClient | null = null;
 let projectStore: ProjectStore = { projects: [] };
@@ -425,7 +430,7 @@ function projectListResult(): ProjectListResult {
   };
 }
 
-function gitStatusResult(): GitStatusResult {
+function gitStatusResult(options: GitStatusOptions = {}): GitStatusResult {
   const context = ensureRuntimeContext();
   const root = gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
   const insideWorkTree = gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
@@ -445,9 +450,9 @@ function gitStatusResult(): GitStatusResult {
   const upstream = gitOutput(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
   const [aheadCount, behindCount] = upstream ? gitAheadBehind(root) : [0, 0];
   const remote = upstream?.split("/")[0] || firstGitRemote(root);
-  const defaultBranch = remote ? gitDefaultBranch(root, remote) : undefined;
+  const defaultBranch = remote ? gitDefaultBranch(root, remote, Boolean(options.includeRemoteDefaultBranchFallback)) : undefined;
   const ghAvailable = commandAvailable("gh", ["--version"]);
-  const prURL = branchName && ghAvailable ? ghPullRequestURL(root) : undefined;
+  const prURL = options.includePullRequestURL && branchName && ghAvailable ? ghPullRequestURL(root) : undefined;
 
   return {
     is_repo: true,
@@ -606,7 +611,7 @@ function commitGitChanges(params: GitCommitParams): GitCommitResult {
 
 function createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
   const context = ensureRuntimeContext();
-  const status = gitStatusResult();
+  const status = gitStatusResult({ includePullRequestURL: true, includeRemoteDefaultBranchFallback: true });
   if (!status.is_repo) {
     throw new Error("current workspace is not a git repository");
   }
@@ -624,7 +629,7 @@ function createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
     throw new Error("commit or discard local changes before opening a pull request");
   }
 
-  const existingURL = ghPullRequestURL(context.cwd);
+  const existingURL = status.pr_url;
   if (existingURL) {
     return { status, url: existingURL, already_exists: true };
   }
@@ -649,7 +654,11 @@ function createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
   if (!url) {
     throw new Error("GitHub CLI did not return a pull request URL");
   }
-  return { status: gitStatusResult(), url, already_exists: false };
+  return {
+    status: { ...gitStatusResult({ includeRemoteDefaultBranchFallback: true }), pr_url: url },
+    url,
+    already_exists: false
+  };
 }
 
 function validateGitBranchName(cwd: string, branch: string): void {
@@ -983,10 +992,13 @@ function firstGitRemote(cwd: string): string | undefined {
     .find(Boolean);
 }
 
-function gitDefaultBranch(cwd: string, remote: string): string | undefined {
+function gitDefaultBranch(cwd: string, remote: string, includeRemoteFallback = false): string | undefined {
   const symbolic = gitOutput(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`]);
   if (symbolic?.startsWith(`${remote}/`)) {
     return symbolic.slice(remote.length + 1);
+  }
+  if (!includeRemoteFallback) {
+    return undefined;
   }
   return gitOutput(cwd, ["remote", "show", remote])
     ?.split("\n")

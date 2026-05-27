@@ -787,7 +787,7 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     scheduleGitStatusRefresh(0);
-  }, [state.activeContext?.cwd]);
+  }, [state.activeContext?.kind, state.activeContext?.cwd, state.activeProjectId]);
 
   useEffect(() => {
     function handleFocus(): void {
@@ -1838,7 +1838,7 @@ export function App(): JSX.Element {
       return emptyRuntimeState(projectState);
     }
     const resumeLatestThread = options.resumeLatestThread ?? true;
-    const [initialized, gitStatus] = await Promise.all([window.wuu.initialize(), window.wuu.gitStatus()]);
+    const initialized = await window.wuu.initialize();
     const listed = await window.wuu.listThreads();
     const listedThreads = sortThreads(listed.threads);
     const defaultThread = resumeLatestThread
@@ -1852,7 +1852,7 @@ export function App(): JSX.Element {
       projects: projectState.projects,
       activeContext: projectState.active_context,
       activeProjectId: activeProjectID(projectState.active_context),
-      gitStatus,
+      gitStatus: undefined,
       thread,
       secondaryThread: undefined,
       activePane: "primary",
@@ -2214,7 +2214,8 @@ export function App(): JSX.Element {
   }
 
   async function refreshGitStatus(): Promise<void> {
-    if (!appStateRef.current.activeContext) {
+    const context = appStateRef.current.activeContext;
+    if (!context) {
       return;
     }
     if (gitRefreshInFlightRef.current) {
@@ -2224,7 +2225,7 @@ export function App(): JSX.Element {
     gitRefreshInFlightRef.current = true;
     try {
       const gitStatus = await window.wuu.gitStatus();
-      if (!appStateRef.current.activeContext) {
+      if (!sameRuntimeContext(appStateRef.current.activeContext, context)) {
         return;
       }
       setState((current) => ({
@@ -2233,6 +2234,9 @@ export function App(): JSX.Element {
         status: current.status === "ready" ? "ready" : current.status
       }));
     } catch (error) {
+      if (!sameRuntimeContext(appStateRef.current.activeContext, context)) {
+        return;
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "refresh git status failed"
