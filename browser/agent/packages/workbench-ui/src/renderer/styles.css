@@ -3651,7 +3651,7 @@ button:disabled {
   position: relative;
   display: inline-flex;
   min-width: 0;
-  max-width: 280px;
+  max-width: 180px;
   flex: 0 1 auto;
   align-items: center;
   gap: 2px;
@@ -3663,17 +3663,18 @@ button:disabled {
   height: 30px;
   min-width: 0;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   border-radius: 8px;
   background: transparent;
   color: #2f3337;
-  font-size: var(--font-ui);
+  font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
-  padding: 0;
+  padding: 0 9px;
 }
 
 .codex-runtime-effort {
   color: #74797d;
+  font-weight: var(--weight-medium);
 }
 
 .codex-runtime-trigger:hover,
@@ -3687,6 +3688,11 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.codex-runtime-trigger svg {
+  flex: 0 0 auto;
+  color: #707579;
 }
 
 .codex-runtime-menu {
@@ -8513,8 +8519,8 @@ pre {
 
 .composer-action-button {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 999px;
@@ -8529,6 +8535,11 @@ pre {
   background: #ef5b18;
   color: #fff;
   box-shadow: 0 1px 2px rgba(239, 91, 24, 0.22);
+}
+
+.composer-send-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .composer-send-button:hover {
@@ -8736,11 +8747,11 @@ pre {
 
 .slash-command-menu {
   position: absolute;
-  right: 0;
   bottom: calc(100% + 8px);
   left: 0;
   z-index: 35;
   display: grid;
+  width: min(560px, 100%);
   max-height: min(360px, calc(100vh - 190px));
   overflow: hidden;
   border: 1px solid rgba(31, 35, 40, 0.1);
@@ -8786,7 +8797,7 @@ pre {
 
 .slash-command-item {
   display: grid;
-  min-height: 34px;
+  min-height: 46px;
   grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
@@ -8819,16 +8830,14 @@ pre {
 }
 
 .slash-command-copy {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: baseline;
-  gap: 8px;
-  line-height: 18px;
+  gap: 2px;
+  line-height: 17px;
 }
 
 .slash-command-copy strong {
-  flex: 0 0 auto;
-  max-width: 46%;
+  min-width: 0;
   overflow: hidden;
   color: #202327;
   font-size: var(--font-content);
@@ -8839,13 +8848,12 @@ pre {
 }
 
 .slash-command-copy small {
-  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   color: #8d9296;
-  font-size: var(--font-content);
+  font-size: var(--font-ui);
   font-weight: 400;
-  line-height: 18px;
+  line-height: 17px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
