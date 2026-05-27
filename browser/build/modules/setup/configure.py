@@ -2,6 +2,7 @@
 """Build configuration module for BrowserOS build system"""
 
 import sys
+import shutil
 
 from ...common.module import CommandModule, ValidationError
 from ...common.context import Context
@@ -12,6 +13,7 @@ from ...common.utils import (
     log_success,
     join_paths,
     IS_LINUX,
+    IS_MACOS,
     IS_WINDOWS,
 )
 
@@ -56,7 +58,7 @@ class ConfigureModule(CommandModule):
 
         args_file.write_text(args_content)
 
-        gn_cmd = "gn.bat" if IS_WINDOWS() else "gn"
+        gn_cmd = _gn_command(ctx)
         gn_args = [gn_cmd, "gen", ctx.out_dir]
         if ctx.build_type != "debug":
             gn_args.append("--fail-on-unused-args")
@@ -86,3 +88,21 @@ class ConfigureModule(CommandModule):
             [sys.executable, str(install_script), f"--arch={ctx.architecture}"],
             cwd=ctx.chromium_src,
         )
+
+
+def _gn_command(ctx: Context) -> str:
+    default_cmd = "gn.bat" if IS_WINDOWS() else "gn"
+    path_cmd = shutil.which(default_cmd)
+    if path_cmd:
+        log_info("Using gn from PATH")
+        return path_cmd
+
+    platform_dir = "win" if IS_WINDOWS() else "mac" if IS_MACOS() else "linux64"
+    executable = "gn.exe" if IS_WINDOWS() else "gn"
+    bundled_gn = ctx.chromium_src / "buildtools" / platform_dir / executable
+    if bundled_gn.exists():
+        log_info(f"Using Chromium checkout gn: {bundled_gn}")
+        return str(bundled_gn)
+
+    log_warning("gn not found in PATH or Chromium checkout; falling back to PATH lookup")
+    return default_cmd
