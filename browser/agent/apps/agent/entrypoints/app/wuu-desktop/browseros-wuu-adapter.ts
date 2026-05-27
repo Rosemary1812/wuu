@@ -91,7 +91,7 @@ export function installWuuBrowserOSAdapter(): void {
       wuuRpc<ConfigCodexModelsResult>('config/codex/models', {
         provider: provider ?? '',
       }),
-    updateRuntimeSettings: (provider, model, effort, connection) =>
+    updateRuntimeSettings: (provider, model, effort, connection, variant) =>
       wuuRpc<ConfigModelUpdateResult>('config/model/update', {
         provider,
         model,
@@ -103,6 +103,7 @@ export function installWuuBrowserOSAdapter(): void {
           : { api_key: connection.api_key }),
         ...(connection?.create_provider ? { create_provider: true } : {}),
         ...(effort === undefined ? {} : { effort }),
+        ...(variant === undefined ? {} : { variant }),
       }),
     startThread: () => wuuRpc<{ thread: Thread }>('thread/start'),
     resumeThread: (sessionId) =>

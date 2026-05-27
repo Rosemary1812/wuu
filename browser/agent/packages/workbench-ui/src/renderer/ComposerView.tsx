@@ -67,11 +67,11 @@ import {
 import {
   codexEffortOptions,
   displayCodexModelName,
-  effortLabel,
   isCodexProvider,
   providerModelDisplayName,
-  providerModelEffortOptions,
-  shortCodexModelLabel
+  providerModelVariantOptions,
+  shortCodexModelLabel,
+  variantLabel
 } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import type { WorkspacePanelView } from "./WorkspacePanels";
@@ -438,8 +438,8 @@ export function Composer({
   onToggleMenu: () => void;
   onToggleAccessMenu: () => void;
   onToggleCodexRuntimeMenu: (menu: Exclude<CodexRuntimeMenu, null>) => void;
-  onSelectRuntimeModel: (provider: string, model: string, effort?: string) => void;
-  onSelectRuntimeEffort: (effort: string) => void;
+  onSelectRuntimeModel: (provider: string, model: string, variant?: string) => void;
+  onSelectRuntimeEffort: (variant: string) => void;
   onToggleModeMenu: () => void;
   onToggleBranchMenu: () => void;
   onOpenSettings: () => void;
@@ -886,17 +886,17 @@ function RuntimePicker({
   anchorRef: RefObject<HTMLDivElement | null>;
   running: boolean;
   onToggleMenu: (menu: Exclude<CodexRuntimeMenu, null>) => void;
-  onSelectModel: (provider: string, model: string, effort?: string) => void;
-  onSelectEffort: (effort: string) => void;
+  onSelectModel: (provider: string, model: string, variant?: string) => void;
+  onSelectEffort: (variant: string) => void;
 }): JSX.Element {
   const currentProvider = initialized.providers?.find((provider) => provider.name === initialized.provider);
   const codexProvider = isCodexProvider(initialized);
   const currentCodexModel = codexProvider ? state.models.find((model) => model.slug === initialized.model) : undefined;
   const currentProviderModel = currentProvider?.models?.find((model) => model.id === initialized.model);
-  const effort = initialized.effort ?? "";
-  const effortOptions = codexProvider
-    ? codexEffortOptions(currentCodexModel, effort)
-    : providerModelEffortOptions(currentProvider, initialized.model, effort);
+  const currentVariant = initialized.variant ?? initialized.effort ?? "";
+  const variantOptions = codexProvider
+    ? codexEffortOptions(currentCodexModel, currentVariant)
+    : providerModelVariantOptions(currentProvider, initialized.model, currentVariant);
   const placement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   return (
     <div className="codex-runtime-anchor" ref={anchorRef}>
@@ -909,7 +909,7 @@ function RuntimePicker({
         onClick={() => onToggleMenu("main")}
       >
         <span>{runtimeTriggerLabel(initialized, currentProviderModel, currentCodexModel)}</span>
-        <span className="codex-runtime-effort">{effortLabel(effort)}</span>
+        <span className="codex-runtime-effort">{variantLabel(currentVariant)}</span>
         <ChevronDown size={15} />
       </button>
       {openMenu === "main" ? (
@@ -921,8 +921,8 @@ function RuntimePicker({
           width={236}
         >
           <RuntimeMainMenu
-            selectedEffort={effort}
-            options={effortOptions}
+            selectedVariant={currentVariant}
+            options={variantOptions}
             currentLabel={runtimeModelLabel(initialized, currentProviderModel, currentCodexModel)}
             onSelectEffort={onSelectEffort}
             onOpenModelMenu={() => onToggleMenu("model")}
@@ -942,7 +942,7 @@ function RuntimePicker({
             state={state}
             selectedProvider={initialized.provider}
             selectedModel={initialized.model}
-            selectedEffort={effort}
+            selectedVariant={currentVariant}
             onSelectModel={onSelectModel}
           />
         </FloatingMenuPortal>
@@ -952,27 +952,27 @@ function RuntimePicker({
 }
 
 function RuntimeMainMenu({
-  selectedEffort,
+  selectedVariant,
   options,
   currentLabel,
   onSelectEffort,
   onOpenModelMenu
 }: {
-  selectedEffort: string;
+  selectedVariant: string;
   options: string[];
   currentLabel: string;
-  onSelectEffort: (effort: string) => void;
+  onSelectEffort: (variant: string) => void;
   onOpenModelMenu: () => void;
 }): JSX.Element {
   return (
     <div className="codex-runtime-menu codex-main-menu" role="menu">
       <div className="codex-menu-label">思考强度</div>
       {options.length > 1 ? (
-        options.map((effort) => {
-          const selected = effort === selectedEffort;
+        options.map((variant) => {
+          const selected = variant === selectedVariant;
           return (
-            <button key={effort || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(effort)}>
-              <span>{effortLabel(effort)}</span>
+            <button key={variant || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(variant)}>
+              <span>{variantLabel(variant)}</span>
               {selected ? <Check size={18} /> : null}
             </button>
           );
@@ -994,15 +994,15 @@ function RuntimeModelMenu({
   state,
   selectedProvider,
   selectedModel,
-  selectedEffort,
+  selectedVariant,
   onSelectModel
 }: {
   initialized: InitializeResult;
   state: CodexModelLoadState;
   selectedProvider: string;
   selectedModel: string;
-  selectedEffort: string;
-  onSelectModel: (provider: string, model: string, effort?: string) => void;
+  selectedVariant: string;
+  onSelectModel: (provider: string, model: string, variant?: string) => void;
 }): JSX.Element {
   const providers = initialized.providers ?? [];
   const codexProviderSelected = isCodexProvider(initialized);
@@ -1036,7 +1036,7 @@ function RuntimeModelMenu({
           provider={provider}
           model={model}
           selected={provider.name === selectedProvider && model.id === selectedModel}
-          selectedEffort={selectedEffort}
+          selectedVariant={selectedVariant}
           onSelectModel={onSelectModel}
         />
       ))}
@@ -1050,7 +1050,7 @@ function RuntimeModelMenu({
               provider={provider}
               model={model}
               selected={provider.name === selectedProvider && model.id === selectedModel}
-              selectedEffort={selectedEffort}
+              selectedVariant={selectedVariant}
               onSelectModel={onSelectModel}
             />
           ))}
@@ -1069,18 +1069,18 @@ function RuntimeModelMenuItem({
   provider,
   model,
   selected,
-  selectedEffort,
+  selectedVariant,
   onSelectModel
 }: {
   provider: ProviderSummary;
   model: ProviderModelSummary;
   selected: boolean;
-  selectedEffort: string;
-  onSelectModel: (provider: string, model: string, effort?: string) => void;
+  selectedVariant: string;
+  onSelectModel: (provider: string, model: string, variant?: string) => void;
 }): JSX.Element {
-  const nextEffort = normalizedEffortForRuntimeModel(selectedEffort, provider, model);
+  const nextVariant = normalizedVariantForRuntimeModel(selectedVariant, provider, model);
   return (
-    <button role="menuitem" type="button" onClick={() => onSelectModel(provider.name, model.id, nextEffort)}>
+    <button role="menuitem" type="button" onClick={() => onSelectModel(provider.name, model.id, nextVariant)}>
       <span>
         <strong>{providerModelDisplayName(model)}</strong>
         <small>{provider.name}</small>
@@ -1143,25 +1143,32 @@ function runtimeModelsForProvider(provider: ProviderSummary, state: CodexModelLo
   return [{ id: provider.model, source: "selected" }];
 }
 
-function normalizedEffortForRuntimeModel(
-  currentEffort: string,
+function normalizedVariantForRuntimeModel(
+  currentVariant: string,
   provider: ProviderSummary,
   model: ProviderModelSummary
 ): string {
-  if (!currentEffort) {
+  if (!currentVariant) {
     return "";
   }
-  const supported = model.supported_efforts ?? [];
+  const modelVariants = (model.variants ?? []).map((item) => item.id).filter(Boolean);
+  const supported = modelVariants.length > 0 ? modelVariants : model.supported_efforts ?? [];
   if (supported.length === 0) {
     return "";
   }
-  if (supported.includes(currentEffort)) {
-    return currentEffort;
+  if (supported.includes(currentVariant)) {
+    return currentVariant;
+  }
+  if (model.default_variant && supported.includes(model.default_variant)) {
+    return model.default_variant;
   }
   if (model.default_effort && supported.includes(model.default_effort)) {
     return model.default_effort;
   }
   const providerModel = provider.models?.find((item) => item.id === model.id);
+  if (providerModel?.default_variant && supported.includes(providerModel.default_variant)) {
+    return providerModel.default_variant;
+  }
   if (providerModel?.default_effort && supported.includes(providerModel.default_effort)) {
     return providerModel.default_effort;
   }

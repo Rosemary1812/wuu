@@ -33,6 +33,7 @@ export type InitializeResult = {
   provider: string;
   model: string;
   effort?: string;
+  variant?: string;
   workspace_root: string;
   providers?: ProviderSummary[];
 };
@@ -41,6 +42,7 @@ export type ConfigModelUpdateResult = {
   provider: string;
   model: string;
   effort?: string;
+  variant?: string;
   providers?: ProviderSummary[];
 };
 
@@ -58,8 +60,15 @@ export type ProviderModelSummary = {
   id: string;
   display_name?: string;
   default_effort?: string;
+  default_variant?: string;
   supported_efforts?: string[];
+  variants?: ProviderModelVariantSummary[];
   source?: string;
+};
+
+export type ProviderModelVariantSummary = {
+  id: string;
+  options?: Record<string, JsonValue>;
 };
 
 export type RuntimeConnectionUpdate = {
@@ -80,6 +89,7 @@ export type ConfigCodexModelsResult = {
   provider: string;
   model: string;
   effort?: string;
+  variant?: string;
   models: CodexModelSummary[];
 };
 
@@ -394,7 +404,8 @@ export type WuuDesktopApi = {
     provider: string,
     model: string,
     effort?: string,
-    connection?: RuntimeConnectionUpdate
+    connection?: RuntimeConnectionUpdate,
+    variant?: string
   ) => Promise<ConfigModelUpdateResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;

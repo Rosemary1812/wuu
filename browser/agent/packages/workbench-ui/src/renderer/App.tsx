@@ -1508,8 +1508,8 @@ export function App(): JSX.Element {
           setBranchMenuOpen((open) => !open);
         }}
         onToggleCodexRuntimeMenu={toggleCodexRuntimeMenu}
-        onSelectRuntimeModel={(provider, model, effort) => void selectRuntimeModel(provider, model, effort)}
-        onSelectRuntimeEffort={(nextEffort) => void selectRuntimeEffort(nextEffort)}
+        onSelectRuntimeModel={(provider, model, variant) => void selectRuntimeModel(provider, model, variant)}
+        onSelectRuntimeEffort={(nextVariant) => void selectRuntimeEffort(nextVariant)}
         onOpenSettings={() => {
           closeProjectMenus();
           setSettingsOpen(true);
@@ -2756,11 +2756,13 @@ export function App(): JSX.Element {
     provider: string,
     model: string,
     effort?: string,
-    connection?: RuntimeConnectionUpdate
+    connection?: RuntimeConnectionUpdate,
+    variant?: string
   ): Promise<void> {
     const nextProvider = provider.trim();
     const nextModel = model.trim();
     const nextEffort = effort === undefined ? undefined : effort.trim();
+    const nextVariant = variant === undefined ? undefined : variant.trim();
     const nextConnection =
       connection === undefined
         ? undefined
@@ -2782,12 +2784,13 @@ export function App(): JSX.Element {
       (nextProvider === state.initialized.provider &&
         nextModel === state.initialized.model &&
         (nextEffort === undefined || nextEffort === (state.initialized.effort ?? "")) &&
+        (nextVariant === undefined || nextVariant === (state.initialized.variant ?? "")) &&
         !connectionChanged)
     ) {
       return;
     }
     try {
-      const updated = await window.wuu.updateRuntimeSettings(nextProvider, nextModel, nextEffort, nextConnection);
+      const updated = await window.wuu.updateRuntimeSettings(nextProvider, nextModel, nextEffort, nextConnection, nextVariant);
       setState((current) => {
         const initialized = current.initialized
           ? {
@@ -2795,6 +2798,7 @@ export function App(): JSX.Element {
               provider: updated.provider,
               model: updated.model,
               effort: updated.effort ?? "",
+              variant: updated.variant ?? "",
               providers: updated.providers ?? current.initialized.providers
             }
           : current.initialized;
@@ -2860,7 +2864,8 @@ export function App(): JSX.Element {
           initialized: {
             ...current.initialized,
             model: result.model,
-            effort: result.effort ?? ""
+            effort: result.effort ?? "",
+            variant: result.variant ?? ""
           }
         };
       });
@@ -2874,19 +2879,19 @@ export function App(): JSX.Element {
     }
   }
 
-  async function selectRuntimeModel(provider: string, model: string, effort?: string): Promise<void> {
+  async function selectRuntimeModel(provider: string, model: string, variant?: string): Promise<void> {
     if (!state.initialized || anyThreadIsRunning) {
       return;
     }
-    await updateRuntimeSettings(provider, model, effort);
+    await updateRuntimeSettings(provider, model, undefined, undefined, variant);
     setCodexRuntimeMenu(null);
   }
 
-  async function selectRuntimeEffort(nextEffort: string): Promise<void> {
+  async function selectRuntimeEffort(nextVariant: string): Promise<void> {
     if (!state.initialized || anyThreadIsRunning) {
       return;
     }
-    await updateRuntimeSettings(state.initialized.provider, state.initialized.model, nextEffort);
+    await updateRuntimeSettings(state.initialized.provider, state.initialized.model, undefined, undefined, nextVariant);
     setCodexRuntimeMenu(null);
   }
 
@@ -3451,7 +3456,7 @@ function RunDebugPanel({
   const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
   const turnStartedAt = turn ? parseTurnTimestampMs(turn.started_at) : NaN;
   const model = state.initialized
-    ? `${state.initialized.provider} / ${state.initialized.model}${state.initialized.effort ? ` / ${state.initialized.effort}` : ""}`
+    ? `${state.initialized.provider} / ${state.initialized.model}${state.initialized.variant || state.initialized.effort ? ` / ${state.initialized.variant || state.initialized.effort}` : ""}`
     : "未初始化";
   const queueDetail = [
     queuedMessages.length > 0 ? `排队 ${queuedMessages.length}` : "",
@@ -5436,6 +5441,7 @@ function buildRunDebugSnapshot({
     `provider: ${state.initialized?.provider ?? "none"}`,
     `model: ${state.initialized?.model ?? "none"}`,
     `effort: ${state.initialized?.effort ?? ""}`,
+    `variant: ${state.initialized?.variant ?? ""}`,
     `cwd: ${state.activeContext?.cwd ?? thread?.cwd ?? ""}`,
     `thread: ${thread?.id ?? ""}`,
     `turn: ${turn?.id ?? ""}`,

@@ -10,7 +10,7 @@ import {
 } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { InitializeResult, ProviderSummary, RuntimeConnectionUpdate } from "../shared/protocol";
-import { effortLabel, providerModelEffortOptions } from "./RuntimeHelpers";
+import { providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
 export function SettingsView({
@@ -38,7 +38,7 @@ export function SettingsView({
   sidebarMaxWidth: number;
   resizingSidebar: boolean;
   onBack: () => void;
-  onSave: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate) => Promise<void>;
+  onSave: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
   onDebugControlsChange: (enabled: boolean) => void;
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
@@ -47,7 +47,7 @@ export function SettingsView({
   const providers = initialized?.providers ?? [];
   const [providerDraft, setProviderDraft] = useState(initialized?.provider ?? "");
   const [modelDraft, setModelDraft] = useState(initialized?.model ?? "");
-  const [effortDraft, setEffortDraft] = useState(initialized?.effort ?? "");
+  const [variantDraft, setVariantDraft] = useState(initialized?.variant ?? initialized?.effort ?? "");
   const [baseURLDraft, setBaseURLDraft] = useState("");
   const [apiKeyDraft, setAPIKeyDraft] = useState("");
   const [addingProvider, setAddingProvider] = useState(false);
@@ -57,19 +57,19 @@ export function SettingsView({
   const providerLabels = useMemo(() => providerDisplayLabels(providers), [providers]);
   const selectedBaseURL = selectedProvider?.base_url ?? "";
   const connectionLocked = !addingProvider && (selectedProvider?.connection_locked ?? false);
-  const effortOptions = providerModelEffortOptions(selectedProvider, modelDraft, effortDraft);
+  const variantOptions = providerModelVariantOptions(selectedProvider, modelDraft, variantDraft);
 
   useEffect(() => {
     setProviderDraft(initialized?.provider ?? "");
     setModelDraft(initialized?.model ?? "");
-    setEffortDraft(initialized?.effort ?? "");
+    setVariantDraft(initialized?.variant ?? initialized?.effort ?? "");
     const summary = initialized?.providers?.find((item) => item.name === initialized.provider);
     setBaseURLDraft(summary?.base_url ?? "");
     setAPIKeyDraft("");
     setAddingProvider(false);
     setError("");
     setSaved(false);
-  }, [initialized?.provider, initialized?.model, initialized?.effort, initialized?.providers]);
+  }, [initialized?.provider, initialized?.model, initialized?.variant, initialized?.effort, initialized?.providers]);
 
   function changeProvider(provider: string): void {
     setAddingProvider(false);
@@ -78,7 +78,7 @@ export function SettingsView({
     const summary = providers.find((item) => item.name === provider);
     if (summary) {
       setModelDraft(summary.model);
-      setEffortDraft(initialized?.effort ?? "");
+      setVariantDraft(initialized?.variant ?? initialized?.effort ?? "");
       setBaseURLDraft(summary.base_url ?? "");
       setAPIKeyDraft("");
     }
@@ -88,7 +88,7 @@ export function SettingsView({
     setAddingProvider(true);
     setProviderDraft(nextCustomProviderName(providers));
     setModelDraft("");
-    setEffortDraft("");
+    setVariantDraft("");
     setBaseURLDraft("");
     setAPIKeyDraft("");
     setError("");
@@ -99,7 +99,7 @@ export function SettingsView({
     setAddingProvider(false);
     setProviderDraft(initialized?.provider ?? "");
     setModelDraft(initialized?.model ?? "");
-    setEffortDraft(initialized?.effort ?? "");
+    setVariantDraft(initialized?.variant ?? initialized?.effort ?? "");
     const summary = initialized?.providers?.find((item) => item.name === initialized.provider);
     setBaseURLDraft(summary?.base_url ?? "");
     setAPIKeyDraft("");
@@ -128,7 +128,7 @@ export function SettingsView({
           connection.api_key = apiKey;
         }
       }
-      await onSave(providerDraft, modelDraft, effortDraft, connection);
+      await onSave(providerDraft, modelDraft, undefined, connection, variantDraft);
       setAddingProvider(false);
       setAPIKeyDraft("");
       setSaved(true);
@@ -146,7 +146,7 @@ export function SettingsView({
     (!addingProvider &&
       providerDraft === initialized?.provider &&
       modelDraft === initialized?.model &&
-      effortDraft === (initialized?.effort ?? "") &&
+      variantDraft === (initialized?.variant ?? initialized?.effort ?? "") &&
       (connectionLocked || baseURLDraft.trim() === selectedBaseURL) &&
       (connectionLocked || !apiKeyDraft.trim()));
   const shellStyle = {
@@ -239,7 +239,7 @@ export function SettingsView({
                   value={modelDraft}
                   onChange={(event) => {
                     setModelDraft(event.target.value);
-                    setEffortDraft("");
+                    setVariantDraft("");
                     setSaved(false);
                   }}
                   disabled={running}
@@ -248,19 +248,19 @@ export function SettingsView({
               <label className="settings-row">
                 <span>
                   <strong>思考强度</strong>
-                  <small>{effortOptions.length > 1 ? "当前模型支持的 reasoning effort" : "当前模型没有可调思考强度"}</small>
+                  <small>{variantOptions.length > 1 ? "当前模型支持的参数档位" : "当前模型没有可调参数档位"}</small>
                 </span>
                 <select
-                  value={effortDraft}
+                  value={variantDraft}
                   onChange={(event) => {
-                    setEffortDraft(event.target.value);
+                    setVariantDraft(event.target.value);
                     setSaved(false);
                   }}
-                  disabled={running || effortOptions.length <= 1}
+                  disabled={running || variantOptions.length <= 1}
                 >
-                  {effortOptions.map((effort) => (
-                    <option key={effort || "auto"} value={effort}>
-                      {effortLabel(effort)}
+                  {variantOptions.map((variant) => (
+                    <option key={variant || "auto"} value={variant}>
+                      {variantLabel(variant)}
                     </option>
                   ))}
                 </select>

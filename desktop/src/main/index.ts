@@ -1613,14 +1613,15 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:config-codex-models", (_event, provider?: string) =>
     serverClient().request<ConfigCodexModelsResult>("config/codex/models", { provider: provider ?? "" })
   );
-  ipcMain.handle("wuu:config-model-update", (_event, provider: string, model: string, effort?: string, connection?: { base_url?: string; api_key?: string; create_provider?: boolean }) =>
+  ipcMain.handle("wuu:config-model-update", (_event, provider: string, model: string, effort?: string, connection?: { base_url?: string; api_key?: string; create_provider?: boolean }, variant?: string) =>
     serverClient().request<ConfigModelUpdateResult>("config/model/update", {
       provider,
       model,
       ...(connection?.base_url === undefined ? {} : { base_url: connection.base_url }),
       ...(connection?.api_key === undefined ? {} : { api_key: connection.api_key }),
       ...(connection?.create_provider ? { create_provider: true } : {}),
-      ...(effort === undefined ? {} : { effort })
+      ...(effort === undefined ? {} : { effort }),
+      ...(variant === undefined ? {} : { variant })
     })
   );
   ipcMain.handle("wuu:thread-start", () => serverClient().request<{ thread: Thread }>("thread/start"));

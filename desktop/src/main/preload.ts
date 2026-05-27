@@ -23,8 +23,8 @@ const api: WuuDesktopApi = {
   stopTerminalSession: (id: string) => ipcRenderer.invoke("wuu:terminal-stop", id),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   loadCodexModels: (provider?: string) => ipcRenderer.invoke("wuu:config-codex-models", provider),
-  updateRuntimeSettings: (provider: string, model: string, effort?: string, connection?: Parameters<WuuDesktopApi["updateRuntimeSettings"]>[3]) =>
-    ipcRenderer.invoke("wuu:config-model-update", provider, model, effort, connection),
+  updateRuntimeSettings: (provider: string, model: string, effort?: string, connection?: Parameters<WuuDesktopApi["updateRuntimeSettings"]>[3], variant?: string) =>
+    ipcRenderer.invoke("wuu:config-model-update", provider, model, effort, connection, variant),
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) => ipcRenderer.invoke("wuu:thread-resume", sessionId),
   forkThread: (threadId: string, turnId?: string, itemId?: string) =>
