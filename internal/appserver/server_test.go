@@ -528,6 +528,60 @@ func TestServerConfigModelUpdatePersistsEffort(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdatePersistsVariantOptions(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.ProviderName = "xiaomi"
+	rt.Model = "mimo-v2.5-pro"
+	rt.StreamRunner.Model = "mimo-v2.5-pro"
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "agent": {
+    "effort": "low"
+  },
+  "default_provider": "xiaomi",
+  "providers": {
+    "xiaomi": {
+      "type": "openai-compatible",
+      "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+      "model": "mimo-v2.5-pro"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"provider":"xiaomi","model":"mimo-v2.5-pro","variant":"high"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Model != "mimo-v2.5-pro" || result.Variant != "high" || result.Effort != "high" {
+		t.Fatalf("unexpected update result: %+v", result)
+	}
+	if rt.StreamRunner.Variant != "high" {
+		t.Fatalf("runtime variant not updated: %q", rt.StreamRunner.Variant)
+	}
+	if rt.StreamRunner.Effort != "" {
+		t.Fatalf("legacy effort should be empty when variant options are active, got %q", rt.StreamRunner.Effort)
+	}
+	if got := rt.StreamRunner.ProviderOptions["reasoningEffort"]; got != "high" {
+		t.Fatalf("runtime provider options not updated: %#v", rt.StreamRunner.ProviderOptions)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"variant": "high"`) {
+		t.Fatalf("variant was not persisted: %s", text)
+	}
+	if strings.Contains(text, `"effort"`) {
+		t.Fatalf("legacy effort should be removed after variant migration: %s", text)
+	}
+}
+
 func TestServerConfigCodexModels(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.ProviderName = "openai-codex"

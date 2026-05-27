@@ -97,6 +97,47 @@ func TestNewSessionAppendsUserPromptAfterBuiltInBase(t *testing.T) {
 	}
 }
 
+func TestNewSessionResolvesConfiguredVariantOptions(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "xiaomi",
+			Providers: map[string]config.ProviderConfig{
+				"xiaomi": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://token-plan-cn.xiaomimimo.com/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "mimo-v2.5-pro",
+				},
+			},
+			Agent: config.AgentConfig{
+				Variant: "high",
+				Effort:  "low",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	if rt.StreamRunner.Variant != "high" {
+		t.Fatalf("Variant = %q, want high", rt.StreamRunner.Variant)
+	}
+	if rt.StreamRunner.Effort != "" {
+		t.Fatalf("legacy Effort should be empty when variant options are active, got %q", rt.StreamRunner.Effort)
+	}
+	if got := rt.StreamRunner.ProviderOptions["reasoningEffort"]; got != "high" {
+		t.Fatalf("ProviderOptions reasoningEffort = %#v", got)
+	}
+}
+
 func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	kit, err := tools.New(t.TempDir())
 	if err != nil {

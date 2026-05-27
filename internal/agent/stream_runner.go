@@ -76,6 +76,8 @@ type StreamRunner struct {
 
 	// Effort controls reasoning depth. See ChatRequest.Effort.
 	Effort string
+	// Variant is the selected model-scoped provider option bundle.
+	Variant string
 	// ProviderOptions carries provider-specific model options selected by the
 	// active model variant.
 	ProviderOptions map[string]any

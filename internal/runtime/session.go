@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
+	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
@@ -197,15 +198,18 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	sessionDir := statepath.SessionsDir(wuuHome)
+	modelSelection := modelvariant.Resolve(providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 
 	streamRunner := &agent.StreamRunner{
-		Client:       client,
-		Tools:        toolExecutor,
-		Model:        providerCfg.Model,
-		SystemPrompt: baseSystemPrompt,
-		MaxSteps:     cfg.Agent.MaxSteps,
-		Temperature:  cfg.Agent.Temperature,
-		Effort:       cfg.Agent.Effort,
+		Client:          client,
+		Tools:           toolExecutor,
+		Model:           providerCfg.Model,
+		SystemPrompt:    baseSystemPrompt,
+		MaxSteps:        cfg.Agent.MaxSteps,
+		Temperature:     cfg.Agent.Temperature,
+		Effort:          modelSelection.LegacyEffort,
+		Variant:         modelSelection.Variant,
+		ProviderOptions: modelSelection.ProviderOptions,
 		ContextWindowOverride: ResolveContextWindow(
 			providerCfg.Model,
 			providerCfg.ContextWindow,
@@ -362,6 +366,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		BeforeStep:              base.BeforeStep,
 		BeforeRequest:           base.BeforeRequest,
 		Effort:                  base.Effort,
+		Variant:                 base.Variant,
 		ProviderOptions:         cloneProviderOptions(base.ProviderOptions),
 		StreamReconnectBudget:   base.StreamReconnectBudget,
 		StreamRetryInitialDelay: base.StreamRetryInitialDelay,

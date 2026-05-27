@@ -16,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
+	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -245,14 +246,17 @@ func runTask(args []string) error {
 		toolExecutor = kit
 	}
 
+	modelSelection := modelvariant.Resolve(providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 	runner := agent.StreamRunner{
-		Client:       client,
-		Tools:        toolExecutor,
-		Model:        providerCfg.Model,
-		SystemPrompt: cfg.Agent.SystemPrompt,
-		MaxSteps:     cfg.Agent.MaxSteps,
-		Temperature:  cfg.Agent.Temperature,
-		Effort:       cfg.Agent.Effort,
+		Client:          client,
+		Tools:           toolExecutor,
+		Model:           providerCfg.Model,
+		SystemPrompt:    cfg.Agent.SystemPrompt,
+		MaxSteps:        cfg.Agent.MaxSteps,
+		Temperature:     cfg.Agent.Temperature,
+		Effort:          modelSelection.LegacyEffort,
+		Variant:         modelSelection.Variant,
+		ProviderOptions: modelSelection.ProviderOptions,
 		ContextWindowOverride: runtime.ResolveContextWindow(
 			providerCfg.Model,
 			providerCfg.ContextWindow,

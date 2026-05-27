@@ -132,6 +132,9 @@ type AgentConfig struct {
 	// "max" (Anthropic only). Empty = API default. Aligned with Claude
 	// Code's /effort command and Codex's reasoning_effort setting.
 	Effort string `json:"effort,omitempty"`
+	// Variant selects a model-scoped provider option bundle. It supersedes
+	// Effort when the selected provider/model exposes OpenCode-style variants.
+	Variant string `json:"variant,omitempty"`
 	// DisableAutoCompact turns off the proactive auto-compact pass
 	// that fires when the conversation reaches ~90% of the model's
 	// context window. The reactive overflow recovery (compact triggered
@@ -524,28 +527,28 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, false)
 }
 
 // UpdateProviderSelectionAndEffort changes the default provider, selected
 // provider's model, and global reasoning effort in the config file at configPath.
 func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, false)
 }
 
 // UpdateProviderRuntime changes the default provider and editable connection
 // fields for that provider. A nil apiKey keeps the existing key configuration.
-func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, false)
+func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, false)
 }
 
 // CreateProviderRuntime creates a new OpenAI-compatible provider, selects it,
 // and persists its editable runtime fields.
-func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, true)
+func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, true)
 }
 
-func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort *string, createProvider bool) error {
+func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant *string, createProvider bool) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -606,6 +609,18 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 			delete(agent, "effort")
 		} else {
 			agent["effort"] = strings.TrimSpace(*effort)
+		}
+	}
+	if variant != nil {
+		agent, _ := raw["agent"].(map[string]any)
+		if agent == nil {
+			agent = make(map[string]any)
+			raw["agent"] = agent
+		}
+		if strings.TrimSpace(*variant) == "" {
+			delete(agent, "variant")
+		} else {
+			agent["variant"] = strings.TrimSpace(*variant)
 		}
 	}
 

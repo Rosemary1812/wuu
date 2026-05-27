@@ -86,6 +86,7 @@ type InitializeResult struct {
 	Provider        string            `json:"provider"`
 	Model           string            `json:"model"`
 	Effort          string            `json:"effort,omitempty"`
+	Variant         string            `json:"variant,omitempty"`
 	WorkspaceRoot   string            `json:"workspace_root"`
 	Providers       []ProviderSummary `json:"providers,omitempty"`
 }
@@ -94,6 +95,7 @@ type ConfigReadResult struct {
 	Provider      string            `json:"provider"`
 	Model         string            `json:"model"`
 	Effort        string            `json:"effort,omitempty"`
+	Variant       string            `json:"variant,omitempty"`
 	ConfigPath    string            `json:"config_path"`
 	WorkspaceRoot string            `json:"workspace_root"`
 	SessionDir    string            `json:"session_dir"`
@@ -104,6 +106,7 @@ type ConfigModelUpdateParams struct {
 	Provider       string  `json:"provider,omitempty"`
 	Model          string  `json:"model"`
 	Effort         *string `json:"effort,omitempty"`
+	Variant        *string `json:"variant,omitempty"`
 	BaseURL        *string `json:"base_url,omitempty"`
 	APIKey         *string `json:"api_key,omitempty"`
 	CreateProvider bool    `json:"create_provider,omitempty"`
@@ -113,6 +116,7 @@ type ConfigModelUpdateResult struct {
 	Provider  string            `json:"provider"`
 	Model     string            `json:"model"`
 	Effort    string            `json:"effort,omitempty"`
+	Variant   string            `json:"variant,omitempty"`
 	Providers []ProviderSummary `json:"providers,omitempty"`
 }
 
@@ -124,6 +128,7 @@ type ConfigCodexModelsResult struct {
 	Provider string              `json:"provider"`
 	Model    string              `json:"model"`
 	Effort   string              `json:"effort,omitempty"`
+	Variant  string              `json:"variant,omitempty"`
 	Models   []CodexModelSummary `json:"models"`
 }
 
