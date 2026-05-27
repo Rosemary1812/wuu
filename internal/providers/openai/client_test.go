@@ -158,6 +158,78 @@ func TestChat_SendsOpenRouterReasoningEffortShape(t *testing.T) {
 	}
 }
 
+func TestChat_SendsProviderOptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if body["reasoning_effort"] != "medium" {
+			t.Fatalf("expected reasoning_effort=medium, got %#v", body["reasoning_effort"])
+		}
+		if body["verbosity"] != "low" {
+			t.Fatalf("expected verbosity=low, got %#v", body["verbosity"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		ProviderOptions: map[string]any{
+			"reasoningEffort": "medium",
+			"textVerbosity":   "low",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+func TestChat_SendsOpenRouterProviderOptionsShape(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if _, ok := body["reasoning_effort"]; ok {
+			t.Fatalf("did not expect reasoning_effort for OpenRouter payload: %#v", body)
+		}
+		reasoning, ok := body["reasoning"].(map[string]any)
+		if !ok || reasoning["effort"] != "high" {
+			t.Fatalf("expected reasoning.effort=high, got %#v", body["reasoning"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL + "/openrouter.ai/v1", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "openai/gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		ProviderOptions: map[string]any{
+			"reasoningEffort": "high",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_SendsPromptCacheKeyForOpenAICompatible(t *testing.T) {
 	t.Helper()
 
@@ -1061,6 +1133,56 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 	wantUsage := &providers.TokenUsage{InputTokens: 7, OutputTokens: 4, CacheReadTokens: 3}
 	if !reflect.DeepEqual(resp.Usage, wantUsage) {
 		t.Fatalf("got usage %+v, want %+v", resp.Usage, wantUsage)
+	}
+}
+
+func TestResponsesChat_SendsProviderOptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		reasoning, ok := body["reasoning"].(map[string]any)
+		if !ok || reasoning["effort"] != "high" || reasoning["summary"] != "auto" {
+			t.Fatalf("unexpected reasoning payload: %#v", body["reasoning"])
+		}
+		text, ok := body["text"].(map[string]any)
+		if !ok || text["verbosity"] != "low" {
+			t.Fatalf("unexpected text payload: %#v", body["text"])
+		}
+		if body["max_output_tokens"] != float64(777) {
+			t.Fatalf("expected max_output_tokens=777, got %#v", body["max_output_tokens"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "status": "completed",
+  "output": [{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]
+}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		ProviderOptions: map[string]any{
+			"reasoningEffort":  "high",
+			"reasoningSummary": "auto",
+			"textVerbosity":    "low",
+			"maxOutputTokens":  777,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
 	}
 }
 

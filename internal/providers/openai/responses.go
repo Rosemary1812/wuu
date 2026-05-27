@@ -22,7 +22,7 @@ func (c *Client) responsesChat(ctx context.Context, req providers.ChatRequest) (
 		return providers.ChatResponse{}, err
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := marshalResponsesRequest(payload)
 	if err != nil {
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
@@ -54,7 +54,7 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 		return nil, err
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := marshalResponsesRequest(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
@@ -96,6 +96,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		Temperature:     req.Temperature,
 		MaxOutputTokens: req.MaxTokens,
 		Stream:          stream,
+		Options:         cloneProviderOptions(req.ProviderOptions),
 	}
 	if c.responsesStore != nil {
 		payload.Store = c.responsesStore
@@ -121,6 +122,59 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 	}
 
 	return payload, nil
+}
+
+func marshalResponsesRequest(payload responsesRequest) ([]byte, error) {
+	if len(payload.Options) == 0 {
+		return json.Marshal(payload)
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	mergeResponsesProviderOptions(object, payload.Options)
+	return json.Marshal(object)
+}
+
+func mergeResponsesProviderOptions(object map[string]any, options map[string]any) {
+	if len(object) == 0 || len(options) == 0 {
+		return
+	}
+	for key, value := range options {
+		switch key {
+		case "reasoningEffort":
+			if effort, ok := value.(string); ok && strings.TrimSpace(effort) != "" {
+				reasoning := ensureResponseObject(object, "reasoning")
+				reasoning["effort"] = strings.TrimSpace(effort)
+			}
+		case "reasoningSummary":
+			reasoning := ensureResponseObject(object, "reasoning")
+			reasoning["summary"] = value
+		case "textVerbosity":
+			text := ensureResponseObject(object, "text")
+			text["verbosity"] = value
+		case "maxOutputTokens":
+			object["max_output_tokens"] = value
+		case "promptCacheKey":
+			object["prompt_cache_key"] = value
+		default:
+			mergeProviderOptionValue(object, key, value)
+		}
+	}
+}
+
+func ensureResponseObject(object map[string]any, key string) map[string]any {
+	if existing, ok := object[key].(map[string]any); ok {
+		return existing
+	}
+	next := make(map[string]any)
+	object[key] = next
+	return next
 }
 
 func splitResponsesInstructions(messages []providers.ChatMessage) (string, []providers.ChatMessage) {
@@ -575,6 +629,7 @@ type responsesRequest struct {
 	Store           *bool                     `json:"store,omitempty"`
 	Reasoning       *responsesReasoning       `json:"reasoning,omitempty"`
 	PromptCacheKey  string                    `json:"prompt_cache_key,omitempty"`
+	Options         map[string]any            `json:"-"`
 }
 
 type responsesReasoning struct {

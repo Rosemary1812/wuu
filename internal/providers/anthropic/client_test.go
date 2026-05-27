@@ -350,6 +350,35 @@ func TestBuildAnthropicRequest_LeavesRegularUserTextOutsideToolResult(t *testing
 	}
 }
 
+func TestBuildAnthropicRequest_SendsProviderOptions(t *testing.T) {
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "hello"},
+		},
+		ProviderOptions: map[string]any{
+			"effort": "high",
+			"thinking": map[string]any{
+				"type":         "enabled",
+				"budgetTokens": 4096,
+				"display":      "none",
+			},
+		},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if payload.OutputConfig == nil || payload.OutputConfig.Effort != "high" {
+		t.Fatalf("unexpected output_config: %+v", payload.OutputConfig)
+	}
+	if payload.Thinking == nil {
+		t.Fatal("expected thinking payload")
+	}
+	if payload.Thinking.Type != "enabled" || payload.Thinking.BudgetTokens != 4096 || payload.Thinking.Display != "none" {
+		t.Fatalf("unexpected thinking payload: %+v", payload.Thinking)
+	}
+}
+
 func TestChat_AnthropicPrefersCompactSummaryAsCacheAnchor(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any

@@ -161,6 +161,9 @@ type LoopConfig struct {
 	//   OpenAI:    "low", "medium", "high"
 	// Aligned with Claude Code's /effort and Codex's reasoning_effort.
 	Effort string
+	// ProviderOptions are provider-specific model options selected by the
+	// active model variant. They are forwarded to ChatRequest.
+	ProviderOptions map[string]any
 }
 
 // defaultCompactThresholdPct is the proactive trigger if the caller

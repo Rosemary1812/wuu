@@ -126,10 +126,12 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	}
 
 	payload := chatCompletionsRequest{
-		Model:       req.Model,
-		Messages:    make([]chatMessage, 0, len(req.Messages)),
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
+		Model:           req.Model,
+		Messages:        make([]chatMessage, 0, len(req.Messages)),
+		Temperature:     req.Temperature,
+		MaxTokens:       req.MaxTokens,
+		ReasoningFormat: c.reasoningFormat,
+		Options:         cloneProviderOptions(req.ProviderOptions),
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
@@ -245,11 +247,13 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 
 	payload := chatCompletionsRequest{
-		Model:       req.Model,
-		Messages:    make([]chatMessage, 0, len(req.Messages)),
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-		Stream:      true,
+		Model:           req.Model,
+		Messages:        make([]chatMessage, 0, len(req.Messages)),
+		Temperature:     req.Temperature,
+		MaxTokens:       req.MaxTokens,
+		Stream:          true,
+		ReasoningFormat: c.reasoningFormat,
+		Options:         cloneProviderOptions(req.ProviderOptions),
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
@@ -668,6 +672,17 @@ func cloneHeaders(input map[string]string) map[string]string {
 	return out
 }
 
+func cloneProviderOptions(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
 func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, error) {
 	type requestJSON struct {
 		Model           string           `json:"model"`
@@ -694,7 +709,7 @@ func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, erro
 		ReasoningEffort: payload.ReasoningEffort,
 		Reasoning:       payload.Reasoning,
 	}
-	if strings.TrimSpace(payload.AltCacheKey) == "" {
+	if strings.TrimSpace(payload.AltCacheKey) == "" && len(payload.Options) == 0 {
 		return json.Marshal(base)
 	}
 
@@ -706,7 +721,10 @@ func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, erro
 	if err := json.Unmarshal(raw, &object); err != nil {
 		return nil, err
 	}
-	object["prompt_cache_key"] = payload.AltCacheKey
+	if strings.TrimSpace(payload.AltCacheKey) != "" {
+		object["prompt_cache_key"] = payload.AltCacheKey
+	}
+	mergeChatProviderOptions(object, payload.Options, payload.ReasoningFormat)
 	return json.Marshal(object)
 }
 
@@ -770,6 +788,62 @@ func applyReasoningEffort(payload *chatCompletionsRequest, effort string, format
 	}
 }
 
+func mergeChatProviderOptions(object map[string]any, options map[string]any, format reasoningEffortFormat) {
+	if len(object) == 0 || len(options) == 0 {
+		return
+	}
+	for key, value := range options {
+		switch key {
+		case "reasoningEffort":
+			if effort, ok := value.(string); ok && strings.TrimSpace(effort) != "" {
+				effort = strings.TrimSpace(effort)
+				if format == reasoningEffortNested {
+					reasoning, ok := object["reasoning"].(map[string]any)
+					if !ok {
+						reasoning = make(map[string]any)
+						object["reasoning"] = reasoning
+					}
+					reasoning["effort"] = effort
+				} else {
+					object["reasoning_effort"] = effort
+				}
+			}
+		case "reasoningSummary":
+			object["reasoning_summary"] = value
+		case "textVerbosity":
+			object["verbosity"] = value
+		case "maxOutputTokens":
+			object["max_tokens"] = value
+		case "promptCacheKey":
+			object["promptCacheKey"] = value
+		default:
+			mergeProviderOptionValue(object, key, value)
+		}
+	}
+}
+
+func mergeProviderOptionValue(object map[string]any, key string, value any) {
+	if nested, ok := value.(map[string]any); ok {
+		if existing, ok := object[key].(map[string]any); ok {
+			mergeProviderOptionMap(existing, nested)
+			return
+		}
+	}
+	object[key] = value
+}
+
+func mergeProviderOptionMap(dst, src map[string]any) {
+	for key, value := range src {
+		if nested, ok := value.(map[string]any); ok {
+			if existing, ok := dst[key].(map[string]any); ok {
+				mergeProviderOptionMap(existing, nested)
+				continue
+			}
+		}
+		dst[key] = value
+	}
+}
+
 type reasoningEffortFormat int
 
 const (
@@ -790,17 +864,19 @@ type reasoningConfig struct {
 }
 
 type chatCompletionsRequest struct {
-	Model           string           `json:"model"`
-	Messages        []chatMessage    `json:"messages"`
-	Tools           []toolDefinition `json:"tools,omitempty"`
-	ToolChoice      string           `json:"tool_choice,omitempty"`
-	Temperature     float64          `json:"temperature,omitempty"`
-	MaxTokens       int              `json:"max_tokens,omitempty"`
-	Stream          bool             `json:"stream,omitempty"`
-	PromptCacheKey  string           `json:"promptCacheKey,omitempty"`
-	AltCacheKey     string           `json:"prompt_cache_key,omitempty"`
-	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
-	Reasoning       *reasoningConfig `json:"reasoning,omitempty"`
+	Model           string                `json:"model"`
+	Messages        []chatMessage         `json:"messages"`
+	Tools           []toolDefinition      `json:"tools,omitempty"`
+	ToolChoice      string                `json:"tool_choice,omitempty"`
+	Temperature     float64               `json:"temperature,omitempty"`
+	MaxTokens       int                   `json:"max_tokens,omitempty"`
+	Stream          bool                  `json:"stream,omitempty"`
+	PromptCacheKey  string                `json:"promptCacheKey,omitempty"`
+	AltCacheKey     string                `json:"prompt_cache_key,omitempty"`
+	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
+	Reasoning       *reasoningConfig      `json:"reasoning,omitempty"`
+	ReasoningFormat reasoningEffortFormat `json:"-"`
+	Options         map[string]any        `json:"-"`
 }
 
 type chatMessage struct {

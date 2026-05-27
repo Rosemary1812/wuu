@@ -76,6 +76,9 @@ type StreamRunner struct {
 
 	// Effort controls reasoning depth. See ChatRequest.Effort.
 	Effort string
+	// ProviderOptions carries provider-specific model options selected by the
+	// active model variant.
+	ProviderOptions map[string]any
 
 	// Stream reconnect policy. Zero values use CC-aligned defaults.
 	StreamReconnectBudget   time.Duration // total time for reconnection (default: 2m)
@@ -221,8 +224,9 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				Content: formatCompactNotice(info),
 			})
 		},
-		UsageTracker: runUsage,
-		Effort:       r.Effort,
+		UsageTracker:    runUsage,
+		Effort:          r.Effort,
+		ProviderOptions: cloneProviderOptions(r.ProviderOptions),
 	}
 
 	res, err := RunToolLoop(ctx, history, cfg, step)

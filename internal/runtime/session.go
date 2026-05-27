@@ -362,10 +362,22 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		BeforeStep:              base.BeforeStep,
 		BeforeRequest:           base.BeforeRequest,
 		Effort:                  base.Effort,
+		ProviderOptions:         cloneProviderOptions(base.ProviderOptions),
 		StreamReconnectBudget:   base.StreamReconnectBudget,
 		StreamRetryInitialDelay: base.StreamRetryInitialDelay,
 		StreamRetryMaxDelay:     base.StreamRetryMaxDelay,
 	}
+}
+
+func cloneProviderOptions(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType) {

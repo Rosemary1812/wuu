@@ -325,8 +325,67 @@ func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool
 		// adaptive mode for newer models (Opus 4.6, Sonnet 4.6).
 		payload.Thinking = &anthropicThinking{Type: "adaptive"}
 	}
+	applyAnthropicProviderOptions(&payload, req.ProviderOptions)
 
 	return payload, nil
+}
+
+func applyAnthropicProviderOptions(payload *anthropicRequest, options map[string]any) {
+	if payload == nil || len(options) == 0 {
+		return
+	}
+	if effort, ok := options["effort"].(string); ok && strings.TrimSpace(effort) != "" {
+		if payload.OutputConfig == nil {
+			payload.OutputConfig = &anthropicOutputConfig{}
+		}
+		payload.OutputConfig.Effort = strings.TrimSpace(effort)
+	}
+	if thinking, ok := providerOptionMap(options["thinking"]); ok {
+		applyAnthropicThinkingOption(payload, thinking)
+	}
+}
+
+func applyAnthropicThinkingOption(payload *anthropicRequest, option map[string]any) {
+	thinkingType, _ := option["type"].(string)
+	thinkingType = strings.TrimSpace(thinkingType)
+	if thinkingType == "" {
+		return
+	}
+
+	next := &anthropicThinking{Type: thinkingType}
+	if display, ok := option["display"].(string); ok && strings.TrimSpace(display) != "" {
+		next.Display = strings.TrimSpace(display)
+	}
+	if budget, ok := providerOptionInt(option["budgetTokens"]); ok {
+		next.BudgetTokens = budget
+	} else if budget, ok := providerOptionInt(option["budget_tokens"]); ok {
+		next.BudgetTokens = budget
+	}
+	payload.Thinking = next
+}
+
+func providerOptionMap(value any) (map[string]any, bool) {
+	out, ok := value.(map[string]any)
+	return out, ok
+}
+
+func providerOptionInt(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), typed > 0
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(parsed), true
+	default:
+		return 0, false
+	}
 }
 
 func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint) any {
@@ -844,6 +903,7 @@ type anthropicRequest struct {
 type anthropicThinking struct {
 	Type         string `json:"type"`                    // "adaptive" or "enabled"
 	BudgetTokens int    `json:"budget_tokens,omitempty"` // only for type=enabled
+	Display      string `json:"display,omitempty"`
 }
 
 // anthropicOutputConfig controls output behavior. The effort field

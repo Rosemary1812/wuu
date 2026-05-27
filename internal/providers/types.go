@@ -108,6 +108,10 @@ type ChatRequest struct {
 	// Aligned with Claude Code's /effort command and Codex's
 	// reasoning_effort setting.
 	Effort string
+	// ProviderOptions carries model/provider-specific options selected through
+	// model variants. Keys follow OpenCode's AI SDK option names where
+	// possible; provider clients translate them to wire-format fields.
+	ProviderOptions map[string]any
 }
 
 // ChatResponse is the normalized response from providers.
