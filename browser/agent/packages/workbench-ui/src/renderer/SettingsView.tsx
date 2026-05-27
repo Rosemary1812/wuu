@@ -10,6 +10,7 @@ import {
 } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { InitializeResult, ProviderSummary, RuntimeConnectionUpdate } from "../shared/protocol";
+import { effortLabel, providerModelEffortOptions } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
 export function SettingsView({
@@ -46,6 +47,7 @@ export function SettingsView({
   const providers = initialized?.providers ?? [];
   const [providerDraft, setProviderDraft] = useState(initialized?.provider ?? "");
   const [modelDraft, setModelDraft] = useState(initialized?.model ?? "");
+  const [effortDraft, setEffortDraft] = useState(initialized?.effort ?? "");
   const [baseURLDraft, setBaseURLDraft] = useState("");
   const [apiKeyDraft, setAPIKeyDraft] = useState("");
   const [addingProvider, setAddingProvider] = useState(false);
@@ -55,17 +57,19 @@ export function SettingsView({
   const providerLabels = useMemo(() => providerDisplayLabels(providers), [providers]);
   const selectedBaseURL = selectedProvider?.base_url ?? "";
   const connectionLocked = !addingProvider && (selectedProvider?.connection_locked ?? false);
+  const effortOptions = providerModelEffortOptions(selectedProvider, modelDraft, effortDraft);
 
   useEffect(() => {
     setProviderDraft(initialized?.provider ?? "");
     setModelDraft(initialized?.model ?? "");
+    setEffortDraft(initialized?.effort ?? "");
     const summary = initialized?.providers?.find((item) => item.name === initialized.provider);
     setBaseURLDraft(summary?.base_url ?? "");
     setAPIKeyDraft("");
     setAddingProvider(false);
     setError("");
     setSaved(false);
-  }, [initialized?.provider, initialized?.model, initialized?.providers]);
+  }, [initialized?.provider, initialized?.model, initialized?.effort, initialized?.providers]);
 
   function changeProvider(provider: string): void {
     setAddingProvider(false);
@@ -74,6 +78,7 @@ export function SettingsView({
     const summary = providers.find((item) => item.name === provider);
     if (summary) {
       setModelDraft(summary.model);
+      setEffortDraft(initialized?.effort ?? "");
       setBaseURLDraft(summary.base_url ?? "");
       setAPIKeyDraft("");
     }
@@ -83,6 +88,7 @@ export function SettingsView({
     setAddingProvider(true);
     setProviderDraft(nextCustomProviderName(providers));
     setModelDraft("");
+    setEffortDraft("");
     setBaseURLDraft("");
     setAPIKeyDraft("");
     setError("");
@@ -93,6 +99,7 @@ export function SettingsView({
     setAddingProvider(false);
     setProviderDraft(initialized?.provider ?? "");
     setModelDraft(initialized?.model ?? "");
+    setEffortDraft(initialized?.effort ?? "");
     const summary = initialized?.providers?.find((item) => item.name === initialized.provider);
     setBaseURLDraft(summary?.base_url ?? "");
     setAPIKeyDraft("");
@@ -121,7 +128,7 @@ export function SettingsView({
           connection.api_key = apiKey;
         }
       }
-      await onSave(providerDraft, modelDraft, undefined, connection);
+      await onSave(providerDraft, modelDraft, effortDraft, connection);
       setAddingProvider(false);
       setAPIKeyDraft("");
       setSaved(true);
@@ -139,6 +146,7 @@ export function SettingsView({
     (!addingProvider &&
       providerDraft === initialized?.provider &&
       modelDraft === initialized?.model &&
+      effortDraft === (initialized?.effort ?? "") &&
       (connectionLocked || baseURLDraft.trim() === selectedBaseURL) &&
       (connectionLocked || !apiKeyDraft.trim()));
   const shellStyle = {
@@ -231,10 +239,31 @@ export function SettingsView({
                   value={modelDraft}
                   onChange={(event) => {
                     setModelDraft(event.target.value);
+                    setEffortDraft("");
                     setSaved(false);
                   }}
                   disabled={running}
                 />
+              </label>
+              <label className="settings-row">
+                <span>
+                  <strong>思考强度</strong>
+                  <small>{effortOptions.length > 1 ? "当前模型支持的 reasoning effort" : "当前模型没有可调思考强度"}</small>
+                </span>
+                <select
+                  value={effortDraft}
+                  onChange={(event) => {
+                    setEffortDraft(event.target.value);
+                    setSaved(false);
+                  }}
+                  disabled={running || effortOptions.length <= 1}
+                >
+                  {effortOptions.map((effort) => (
+                    <option key={effort || "auto"} value={effort}>
+                      {effortLabel(effort)}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="settings-row">
                 <span>

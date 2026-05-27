@@ -1,4 +1,4 @@
-import type { CodexModelSummary, GitStatusResult, InitializeResult } from "../shared/protocol";
+import type { CodexModelSummary, GitStatusResult, InitializeResult, ProviderModelSummary, ProviderSummary } from "../shared/protocol";
 
 export function isCodexProvider(initialized: InitializeResult): boolean {
   const summary = initialized.providers?.find((provider) => provider.name === initialized.provider);
@@ -34,6 +34,47 @@ export function codexEffortLabel(effort: string): string {
     default:
       return effort;
   }
+}
+
+export function effortLabel(effort: string): string {
+  return codexEffortLabel(effort);
+}
+
+export function providerModelDisplayName(model?: ProviderModelSummary): string {
+  return model?.display_name || model?.id || "model";
+}
+
+export function providerModelEffortOptions(
+  provider: ProviderSummary | undefined,
+  modelID: string,
+  currentEffort: string
+): string[] {
+  const model = provider?.models?.find((item) => item.id === modelID);
+  const supported = (model?.supported_efforts ?? []).filter(Boolean);
+  const options = ["", ...supported];
+  if (currentEffort && !options.includes(currentEffort)) {
+    options.push(currentEffort);
+  }
+  return options;
+}
+
+export function normalizedEffortForProviderModel(
+  currentEffort: string,
+  provider: ProviderSummary | undefined,
+  modelID: string
+): string {
+  if (!currentEffort) {
+    return "";
+  }
+  const model = provider?.models?.find((item) => item.id === modelID);
+  const supported = model?.supported_efforts ?? [];
+  if (supported.length === 0 || supported.includes(currentEffort)) {
+    return currentEffort;
+  }
+  if (model?.default_effort && supported.includes(model.default_effort)) {
+    return model.default_effort;
+  }
+  return supported[0] ?? "";
 }
 
 export function codexEffortOptions(model: CodexModelSummary | undefined, currentEffort: string): string[] {

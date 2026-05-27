@@ -81,15 +81,16 @@ type MemoryConfig struct {
 
 // ProviderConfig configures one model gateway.
 type ProviderConfig struct {
-	Type         string            `json:"type"`
-	BaseURL      string            `json:"base_url"`
-	WireAPI      string            `json:"wire_api,omitempty"`
-	APIKey       string            `json:"api_key,omitempty"`
-	APIKeyEnv    string            `json:"api_key_env,omitempty"`
-	AuthToken    string            `json:"auth_token,omitempty"`
-	AuthTokenEnv string            `json:"auth_token_env,omitempty"`
-	Model        string            `json:"model"`
-	Headers      map[string]string `json:"headers,omitempty"`
+	Type         string                         `json:"type"`
+	BaseURL      string                         `json:"base_url"`
+	WireAPI      string                         `json:"wire_api,omitempty"`
+	APIKey       string                         `json:"api_key,omitempty"`
+	APIKeyEnv    string                         `json:"api_key_env,omitempty"`
+	AuthToken    string                         `json:"auth_token,omitempty"`
+	AuthTokenEnv string                         `json:"auth_token_env,omitempty"`
+	Model        string                         `json:"model"`
+	Models       map[string]ProviderModelConfig `json:"models,omitempty"`
+	Headers      map[string]string              `json:"headers,omitempty"`
 	// StreamConnectTimeoutMS bounds dial/TLS/response-header wait for one
 	// streaming connection attempt. It does not cap the whole turn.
 	StreamConnectTimeoutMS int `json:"stream_connect_timeout_ms,omitempty"`
@@ -101,6 +102,16 @@ type ProviderConfig struct {
 	// about yet, custom finetunes, private deployments, or proxies
 	// that rename the upstream model. Zero means "use the registry".
 	ContextWindow int `json:"context_window,omitempty"`
+}
+
+// ProviderModelConfig lets a provider expose a small model catalog without
+// forcing users to duplicate full provider definitions.
+type ProviderModelConfig struct {
+	Name             string   `json:"name,omitempty"`
+	SupportedEfforts []string `json:"supported_efforts,omitempty"`
+	DefaultEffort    string   `json:"default_effort,omitempty"`
+	Disabled         bool     `json:"disabled,omitempty"`
+	ContextWindow    int      `json:"context_window,omitempty"`
 }
 
 // AgentConfig controls behavior of the local tool loop.
@@ -244,6 +255,19 @@ func (c Config) Validate() error {
 		}
 		if provider.Model == "" {
 			return fmt.Errorf("providers.%s.model is required", name)
+		}
+		for modelID, model := range provider.Models {
+			if strings.TrimSpace(modelID) == "" {
+				return fmt.Errorf("providers.%s.models contains an empty model id", name)
+			}
+			if model.ContextWindow < 0 {
+				return fmt.Errorf("providers.%s.models.%s.context_window cannot be negative", name, modelID)
+			}
+			for _, effort := range model.SupportedEfforts {
+				if strings.TrimSpace(effort) == "" {
+					return fmt.Errorf("providers.%s.models.%s.supported_efforts contains an empty value", name, modelID)
+				}
+			}
 		}
 		switch provider.WireAPI {
 		case "", "chat", "responses":
@@ -535,13 +559,12 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 		if baseURL == nil || strings.TrimSpace(*baseURL) == "" {
 			return fmt.Errorf("base_url is required")
 		}
-		if apiKey == nil || strings.TrimSpace(*apiKey) == "" {
-			return fmt.Errorf("api_key is required")
-		}
 		provider = map[string]any{
 			"type":     "openai-compatible",
 			"base_url": strings.TrimSpace(*baseURL),
-			"api_key":  strings.TrimSpace(*apiKey),
+		}
+		if apiKey != nil && strings.TrimSpace(*apiKey) != "" {
+			provider["api_key"] = strings.TrimSpace(*apiKey)
 		}
 		providers[providerName] = provider
 	} else if !ok {
@@ -555,8 +578,11 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 	if apiKey != nil {
 		if key := strings.TrimSpace(*apiKey); key != "" {
 			provider["api_key"] = key
-			delete(provider, "api_key_env")
 		}
+		if strings.TrimSpace(*apiKey) == "" {
+			delete(provider, "api_key")
+		}
+		delete(provider, "api_key_env")
 	}
 	if effort != nil {
 		agent, _ := raw["agent"].(map[string]any)

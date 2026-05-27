@@ -542,12 +542,16 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		providerCfg.BaseURL = baseURL
 	}
 	apiKeyForConfig := params.APIKey
+	authKeyForStore := ""
 	if params.APIKey != nil {
 		apiKey := strings.TrimSpace(*params.APIKey)
 		if apiKey != "" {
 			connectionChanged = true
+			authKeyForStore = apiKey
 			providerCfg.APIKey = apiKey
 			providerCfg.APIKeyEnv = ""
+			empty := ""
+			apiKeyForConfig = &empty
 		} else {
 			apiKeyForConfig = nil
 		}
@@ -561,6 +565,11 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if resolvedName != s.rt.ProviderName || connectionChanged {
 		client, err = providerfactory.BuildStreamClient(providerCfg, resolvedName)
 		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	if authKeyForStore != "" {
+		if err := config.SaveAuthKey(os.Getenv("HOME"), resolvedName, authKeyForStore); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
@@ -1469,10 +1478,10 @@ func (s *Server) providerSummaries() []ProviderSummary {
 	if err != nil {
 		return nil
 	}
-	return providerSummariesFromConfig(cfg)
+	return providerSummariesFromConfig(cfg, os.Getenv("HOME"))
 }
 
-func providerSummariesFromConfig(cfg config.Config) []ProviderSummary {
+func providerSummariesFromConfig(cfg config.Config, home string) []ProviderSummary {
 	names := make([]string, 0, len(cfg.Providers))
 	for name := range cfg.Providers {
 		names = append(names, name)
@@ -1486,11 +1495,109 @@ func providerSummariesFromConfig(cfg config.Config) []ProviderSummary {
 			Type:             provider.Type,
 			Model:            provider.Model,
 			BaseURL:          provider.BaseURL,
-			APIKeyConfigured: provider.APIKey != "" || provider.APIKeyEnv != "" || provider.AuthToken != "" || provider.AuthTokenEnv != "",
+			APIKeyConfigured: providerHasAuth(name, provider, home),
 			ConnectionLocked: isCodexProviderType(provider.Type),
+			Models:           providerModelSummaries(provider),
 		})
 	}
 	return out
+}
+
+func providerHasAuth(name string, provider config.ProviderConfig, home string) bool {
+	if provider.APIKey != "" || provider.APIKeyEnv != "" || provider.AuthToken != "" || provider.AuthTokenEnv != "" {
+		return true
+	}
+	key, err := config.LoadAuthKey(home, name)
+	return err == nil && strings.TrimSpace(key) != ""
+}
+
+func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSummary {
+	models := make(map[string]ProviderModelSummary, len(provider.Models)+1)
+	for id, model := range provider.Models {
+		id = strings.TrimSpace(id)
+		if id == "" || model.Disabled {
+			continue
+		}
+		models[id] = ProviderModelSummary{
+			ID:               id,
+			DisplayName:      strings.TrimSpace(model.Name),
+			DefaultEffort:    strings.TrimSpace(model.DefaultEffort),
+			SupportedEfforts: normalizedEffortList(model.SupportedEfforts),
+			Source:           "config",
+		}
+	}
+	current := strings.TrimSpace(provider.Model)
+	if current != "" {
+		if _, ok := models[current]; !ok {
+			models[current] = ProviderModelSummary{
+				ID:               current,
+				SupportedEfforts: inferredEfforts(provider, current),
+				Source:           "selected",
+			}
+		}
+	}
+	out := make([]ProviderModelSummary, 0, len(models))
+	for _, model := range models {
+		if len(model.SupportedEfforts) == 0 {
+			model.SupportedEfforts = inferredEfforts(provider, model.ID)
+		}
+		out = append(out, model)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ID == current {
+			return true
+		}
+		if out[j].ID == current {
+			return false
+		}
+		return strings.ToLower(out[i].ID) < strings.ToLower(out[j].ID)
+	})
+	return out
+}
+
+func normalizedEffortList(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		effort := strings.TrimSpace(value)
+		if effort == "" || seen[effort] {
+			continue
+		}
+		seen[effort] = true
+		out = append(out, effort)
+	}
+	return out
+}
+
+func inferredEfforts(provider config.ProviderConfig, model string) []string {
+	modelID := strings.ToLower(strings.TrimSpace(model))
+	if modelID == "" {
+		return nil
+	}
+	providerType := strings.ToLower(strings.TrimSpace(provider.Type))
+	providerType = strings.ReplaceAll(providerType, "_", "-")
+	baseURL := strings.ToLower(strings.TrimSpace(provider.BaseURL))
+	if isCodexProviderType(provider.Type) {
+		return []string{"low", "medium", "high", "xhigh"}
+	}
+	if providerType == "anthropic" || providerType == "claude" || providerType == "anthropic-official" {
+		if strings.Contains(modelID, "claude") && (strings.Contains(modelID, "sonnet-4") || strings.Contains(modelID, "opus-4")) {
+			return []string{"low", "medium", "high", "max"}
+		}
+		return nil
+	}
+	if strings.Contains(baseURL, "openrouter.ai") {
+		if strings.Contains(modelID, "gpt") || strings.Contains(modelID, "claude") || strings.Contains(modelID, "gemini-3") {
+			return []string{"low", "medium", "high"}
+		}
+		return nil
+	}
+	if providerType == "openai" || providerType == "openai-compatible" || providerType == "codex" {
+		if strings.Contains(modelID, "gpt-5") || strings.Contains(modelID, "o1") || strings.Contains(modelID, "o3") || strings.Contains(modelID, "o4") {
+			return []string{"low", "medium", "high"}
+		}
+	}
+	return nil
 }
 
 func isCodexProviderType(providerType string) bool {

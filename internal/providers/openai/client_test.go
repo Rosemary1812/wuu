@@ -124,6 +124,40 @@ func TestChat_SendsMaxTokensAndReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestChat_SendsOpenRouterReasoningEffortShape(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if _, ok := body["reasoning_effort"]; ok {
+			t.Fatalf("did not expect reasoning_effort for OpenRouter payload: %#v", body)
+		}
+		reasoning, ok := body["reasoning"].(map[string]any)
+		if !ok || reasoning["effort"] != "high" {
+			t.Fatalf("expected reasoning.effort=high, got %#v", body["reasoning"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL + "/openrouter.ai/v1", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "openai/gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Effort:   "high",
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_SendsPromptCacheKeyForOpenAICompatible(t *testing.T) {
 	t.Helper()
 

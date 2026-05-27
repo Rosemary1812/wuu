@@ -42,6 +42,8 @@ import type {
   DesktopProject,
   GitStatusResult,
   InitializeResult,
+  ProviderModelSummary,
+  ProviderSummary,
   RuntimeContext
 } from "../shared/protocol";
 import {
@@ -63,10 +65,12 @@ import {
   type QueuedComposerMessage
 } from "./ComposerMessages";
 import {
-  codexEffortLabel,
   codexEffortOptions,
   displayCodexModelName,
+  effortLabel,
   isCodexProvider,
+  providerModelDisplayName,
+  providerModelEffortOptions,
   shortCodexModelLabel
 } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
@@ -384,8 +388,8 @@ export function Composer({
   onToggleMenu,
   onToggleAccessMenu,
   onToggleCodexRuntimeMenu,
-  onSelectCodexModel,
-  onSelectCodexEffort,
+  onSelectRuntimeModel,
+  onSelectRuntimeEffort,
   onToggleModeMenu,
   onToggleBranchMenu,
   onOpenSettings,
@@ -434,8 +438,8 @@ export function Composer({
   onToggleMenu: () => void;
   onToggleAccessMenu: () => void;
   onToggleCodexRuntimeMenu: (menu: Exclude<CodexRuntimeMenu, null>) => void;
-  onSelectCodexModel: (model: CodexModelSummary) => void;
-  onSelectCodexEffort: (effort: string) => void;
+  onSelectRuntimeModel: (provider: string, model: string, effort?: string) => void;
+  onSelectRuntimeEffort: (effort: string) => void;
   onToggleModeMenu: () => void;
   onToggleBranchMenu: () => void;
   onOpenSettings: () => void;
@@ -458,7 +462,6 @@ export function Composer({
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = status === "ready" ? "" : status;
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
-  const codexProvider = initialized ? isCodexProvider(initialized) : false;
   const hasDraft = prompt.trim().length > 0 || images.length > 0;
   const menuPlacement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -526,6 +529,9 @@ export function Composer({
         break;
       case "no-project":
         onSelectNoProject();
+        break;
+      case "model":
+        onToggleCodexRuntimeMenu("model");
         break;
       case "settings":
         onOpenSettings();
@@ -695,8 +701,8 @@ export function Composer({
               ) : null}
             </div>
             <div className="composer-spacer" />
-            {codexProvider && initialized ? (
-              <CodexRuntimePicker
+            {initialized ? (
+              <RuntimePicker
                 variant={variant}
                 initialized={initialized}
                 state={codexModels}
@@ -704,16 +710,16 @@ export function Composer({
                 anchorRef={codexRuntimeRef}
                 running={running}
                 onToggleMenu={onToggleCodexRuntimeMenu}
-                onSelectModel={onSelectCodexModel}
-                onSelectEffort={onSelectCodexEffort}
+                onSelectModel={onSelectRuntimeModel}
+                onSelectEffort={onSelectRuntimeEffort}
               />
             ) : (
               <>
                 <button className="provider-pill" type="button" onClick={onOpenSettings}>
-                  {initialized?.provider ?? "provider"}
+                  provider
                 </button>
                 <button className="model-label" type="button" onClick={onOpenSettings}>
-                  {initialized?.model ?? "model"}
+                  model
                 </button>
               </>
             )}
@@ -849,6 +855,8 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
       return <FolderOpen size={16} />;
     case "no-project":
       return <FolderX size={16} />;
+    case "model":
+      return <Laptop size={16} />;
     case "settings":
       return <Settings size={16} />;
     default:
@@ -856,7 +864,7 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
   }
 }
 
-function CodexRuntimePicker({
+function RuntimePicker({
   variant,
   initialized,
   state,
@@ -874,12 +882,17 @@ function CodexRuntimePicker({
   anchorRef: RefObject<HTMLDivElement | null>;
   running: boolean;
   onToggleMenu: (menu: Exclude<CodexRuntimeMenu, null>) => void;
-  onSelectModel: (model: CodexModelSummary) => void;
+  onSelectModel: (provider: string, model: string, effort?: string) => void;
   onSelectEffort: (effort: string) => void;
 }): JSX.Element {
-  const currentModel = state.models.find((model) => model.slug === initialized.model);
+  const currentProvider = initialized.providers?.find((provider) => provider.name === initialized.provider);
+  const codexProvider = isCodexProvider(initialized);
+  const currentCodexModel = codexProvider ? state.models.find((model) => model.slug === initialized.model) : undefined;
+  const currentProviderModel = currentProvider?.models?.find((model) => model.id === initialized.model);
   const effort = initialized.effort ?? "";
-  const effortOptions = codexEffortOptions(currentModel, effort);
+  const effortOptions = codexProvider
+    ? codexEffortOptions(currentCodexModel, effort)
+    : providerModelEffortOptions(currentProvider, initialized.model, effort);
   const placement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   return (
     <div className="codex-runtime-anchor" ref={anchorRef}>
@@ -891,8 +904,8 @@ function CodexRuntimePicker({
         aria-expanded={openMenu !== null}
         onClick={() => onToggleMenu("main")}
       >
-        <span>{shortCodexModelLabel(initialized.model)}</span>
-        <span className="codex-runtime-effort">{codexEffortLabel(effort)}</span>
+        <span>{runtimeTriggerLabel(initialized, currentProviderModel, currentCodexModel)}</span>
+        <span className="codex-runtime-effort">{effortLabel(effort)}</span>
         <ChevronDown size={15} />
       </button>
       {openMenu === "main" ? (
@@ -903,11 +916,10 @@ function CodexRuntimePicker({
           align="right"
           width={236}
         >
-          <CodexMainMenu
+          <RuntimeMainMenu
             selectedEffort={effort}
             options={effortOptions}
-            currentModel={currentModel}
-            fallbackModel={initialized.model}
+            currentLabel={runtimeModelLabel(initialized, currentProviderModel, currentCodexModel)}
             onSelectEffort={onSelectEffort}
             onOpenModelMenu={() => onToggleMenu("model")}
           />
@@ -921,9 +933,12 @@ function CodexRuntimePicker({
           align="right"
           width={286}
         >
-          <CodexModelMenu
+          <RuntimeModelMenu
+            initialized={initialized}
             state={state}
+            selectedProvider={initialized.provider}
             selectedModel={initialized.model}
+            selectedEffort={effort}
             onSelectModel={onSelectModel}
           />
         </FloatingMenuPortal>
@@ -932,74 +947,162 @@ function CodexRuntimePicker({
   );
 }
 
-function CodexMainMenu({
+function RuntimeMainMenu({
   selectedEffort,
   options,
-  currentModel,
-  fallbackModel,
+  currentLabel,
   onSelectEffort,
   onOpenModelMenu
 }: {
   selectedEffort: string;
   options: string[];
-  currentModel?: CodexModelSummary;
-  fallbackModel: string;
+  currentLabel: string;
   onSelectEffort: (effort: string) => void;
   onOpenModelMenu: () => void;
 }): JSX.Element {
   return (
     <div className="codex-runtime-menu codex-main-menu" role="menu">
-      {options.map((effort) => {
-        const selected = effort === selectedEffort;
-        return (
-          <button key={effort || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(effort)}>
-            <span>{codexEffortLabel(effort)}</span>
-            {selected ? <Check size={18} /> : null}
-          </button>
-        );
-      })}
+      <div className="codex-menu-label">思考强度</div>
+      {options.length > 1 ? (
+        options.map((effort) => {
+          const selected = effort === selectedEffort;
+          return (
+            <button key={effort || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(effort)}>
+              <span>{effortLabel(effort)}</span>
+              {selected ? <Check size={18} /> : null}
+            </button>
+          );
+        })
+      ) : (
+        <div className="composer-menu-empty">当前模型没有可调思考强度</div>
+      )}
       <div className="codex-menu-separator" />
       <button role="menuitem" type="button" onClick={onOpenModelMenu}>
-        <span>{currentModel ? displayCodexModelName(currentModel) : fallbackModel}</span>
+        <span>{currentLabel}</span>
         <ChevronRight className="codex-menu-chevron" size={18} />
       </button>
     </div>
   );
 }
 
-function CodexModelMenu({
+function RuntimeModelMenu({
+  initialized,
   state,
+  selectedProvider,
   selectedModel,
+  selectedEffort,
   onSelectModel
 }: {
+  initialized: InitializeResult;
   state: CodexModelLoadState;
+  selectedProvider: string;
   selectedModel: string;
-  onSelectModel: (model: CodexModelSummary) => void;
+  selectedEffort: string;
+  onSelectModel: (provider: string, model: string, effort?: string) => void;
 }): JSX.Element {
+  const providers = initialized.providers ?? [];
+  const codexProviderSelected = isCodexProvider(initialized);
   return (
     <div className="codex-runtime-menu codex-model-menu" role="menu">
       <div className="codex-menu-label">模型</div>
-      {state.loading ? <div className="composer-menu-empty">正在加载 Codex 模型</div> : null}
-      {state.error ? (
+      {codexProviderSelected && state.loading ? <div className="composer-menu-empty">正在加载 Codex 模型</div> : null}
+      {codexProviderSelected && state.error ? (
         <div className="composer-menu-note warning">
           <strong>无法读取 Codex 登录态</strong>
           <span>{state.error}</span>
         </div>
       ) : null}
-      {!state.loading && !state.error && state.models.length === 0 ? (
+      {!state.loading && providers.length === 0 ? (
         <div className="composer-menu-empty">没有可用模型</div>
       ) : null}
-      {state.models.map((model) => {
-        const selected = model.slug === selectedModel;
-        return (
-          <button key={model.slug} role="menuitem" type="button" onClick={() => onSelectModel(model)}>
-            <span>{displayCodexModelName(model)}</span>
-            {selected ? <Check size={18} /> : null}
-          </button>
-        );
+      {providers.flatMap((provider) => {
+        const models = runtimeModelsForProvider(provider, state);
+        return models.map((model) => {
+          const selected = provider.name === selectedProvider && model.id === selectedModel;
+          const nextEffort = normalizedEffortForRuntimeModel(selectedEffort, provider, model);
+          return (
+            <button
+              key={`${provider.name}/${model.id}`}
+              role="menuitem"
+              type="button"
+              onClick={() => onSelectModel(provider.name, model.id, nextEffort)}
+            >
+              <span>
+                <strong>{providerModelDisplayName(model)}</strong>
+                <small>{provider.name}</small>
+              </span>
+              {selected ? <Check size={18} /> : null}
+            </button>
+          );
+        });
       })}
     </div>
   );
+}
+
+function runtimeTriggerLabel(
+  initialized: InitializeResult,
+  providerModel?: ProviderModelSummary,
+  codexModel?: CodexModelSummary
+): string {
+  if (codexModel) {
+    return shortCodexModelLabel(codexModel.slug);
+  }
+  return shortCodexModelLabel(providerModel?.display_name || initialized.model);
+}
+
+function runtimeModelLabel(
+  initialized: InitializeResult,
+  providerModel?: ProviderModelSummary,
+  codexModel?: CodexModelSummary
+): string {
+  if (codexModel) {
+    return displayCodexModelName(codexModel);
+  }
+  return providerModel?.display_name || initialized.model;
+}
+
+function runtimeModelsForProvider(provider: ProviderSummary, state: CodexModelLoadState): ProviderModelSummary[] {
+  const type = provider.type.trim().toLowerCase().replaceAll("_", "-");
+  const isCodex = type === "openai-codex" || type === "codex-subscription" || type === "chatgpt-codex";
+  if (isCodex && state.provider === provider.name && state.models.length > 0) {
+    return state.models.map((model) => ({
+      id: model.slug,
+      display_name: displayCodexModelName(model),
+      default_effort: model.default_reasoning_level,
+      supported_efforts: model.supported_reasoning,
+      source: "live"
+    }));
+  }
+  if (provider.models?.length) {
+    return provider.models;
+  }
+  return [{ id: provider.model, source: "selected" }];
+}
+
+function normalizedEffortForRuntimeModel(
+  currentEffort: string,
+  provider: ProviderSummary,
+  model: ProviderModelSummary
+): string {
+  if (!currentEffort) {
+    return "";
+  }
+  const supported = model.supported_efforts ?? [];
+  if (supported.length === 0) {
+    return "";
+  }
+  if (supported.includes(currentEffort)) {
+    return currentEffort;
+  }
+  if (model.default_effort && supported.includes(model.default_effort)) {
+    return model.default_effort;
+  }
+  const providerModel = provider.models?.find((item) => item.id === model.id);
+  if (providerModel?.default_effort && supported.includes(providerModel.default_effort)) {
+    return providerModel.default_effort;
+  }
+  return supported[0] ?? "";
 }
 
 function AccessMenu(): JSX.Element {

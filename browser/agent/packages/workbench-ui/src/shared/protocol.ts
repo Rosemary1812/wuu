@@ -51,6 +51,15 @@ export type ProviderSummary = {
   base_url?: string;
   api_key_configured?: boolean;
   connection_locked?: boolean;
+  models?: ProviderModelSummary[];
+};
+
+export type ProviderModelSummary = {
+  id: string;
+  display_name?: string;
+  default_effort?: string;
+  supported_efforts?: string[];
+  source?: string;
 };
 
 export type RuntimeConnectionUpdate = {

@@ -3778,6 +3778,35 @@ button:disabled {
   white-space: nowrap;
 }
 
+.codex-model-menu button {
+  height: 42px;
+}
+
+.codex-model-menu button span {
+  display: grid;
+  gap: 2px;
+}
+
+.codex-model-menu button strong,
+.codex-model-menu button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-model-menu button strong {
+  color: #202427;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.codex-model-menu button small {
+  color: #82878b;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
 .scroll-region {
   contain: layout paint;
   grid-column: 1;

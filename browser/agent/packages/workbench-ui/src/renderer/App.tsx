@@ -56,7 +56,6 @@ import type {
   AppServerNotification,
   AskUserQuestion,
   AskUserResponse,
-  CodexModelSummary,
   DesktopProject,
   GitCommitResult,
   GitPullRequestResult,
@@ -112,7 +111,6 @@ import { EmptyConversationHome, RuntimeLoading, ViewSwitchLoading } from "./Load
 import { AgentMessageActions, MessageCopyButton, MessageImageGrid } from "./MessageActions";
 import {
   isCodexProvider,
-  normalizedEffortForModel,
   pullRequestUnavailableReason
 } from "./RuntimeHelpers";
 import { SettingsView } from "./SettingsView";
@@ -1510,8 +1508,8 @@ export function App(): JSX.Element {
           setBranchMenuOpen((open) => !open);
         }}
         onToggleCodexRuntimeMenu={toggleCodexRuntimeMenu}
-        onSelectCodexModel={(nextModel) => void selectCodexModel(nextModel)}
-        onSelectCodexEffort={(nextEffort) => void selectCodexEffort(nextEffort)}
+        onSelectRuntimeModel={(provider, model, effort) => void selectRuntimeModel(provider, model, effort)}
+        onSelectRuntimeEffort={(nextEffort) => void selectRuntimeEffort(nextEffort)}
         onOpenSettings={() => {
           closeProjectMenus();
           setSettingsOpen(true);
@@ -2824,7 +2822,7 @@ export function App(): JSX.Element {
   }
 
   function toggleCodexRuntimeMenu(menu: Exclude<CodexRuntimeMenu, null>): void {
-    if (!state.initialized || anyThreadIsRunning || !isCodexProvider(state.initialized)) {
+    if (!state.initialized || anyThreadIsRunning) {
       return;
     }
     setRuntimeMenuOpen(false);
@@ -2832,7 +2830,9 @@ export function App(): JSX.Element {
     setModeMenuOpen(false);
     setBranchMenuOpen(false);
     setCodexRuntimeMenu((current) => (current === menu ? null : menu));
-    void loadCodexModelsForProvider(state.initialized.provider);
+    if (isCodexProvider(state.initialized)) {
+      void loadCodexModelsForProvider(state.initialized.provider);
+    }
   }
 
   async function loadCodexModelsForProvider(provider: string): Promise<void> {
@@ -2874,16 +2874,15 @@ export function App(): JSX.Element {
     }
   }
 
-  async function selectCodexModel(nextModel: CodexModelSummary): Promise<void> {
+  async function selectRuntimeModel(provider: string, model: string, effort?: string): Promise<void> {
     if (!state.initialized || anyThreadIsRunning) {
       return;
     }
-    const nextEffort = normalizedEffortForModel(state.initialized.effort ?? "", nextModel);
-    await updateRuntimeSettings(state.initialized.provider, nextModel.slug, nextEffort);
+    await updateRuntimeSettings(provider, model, effort);
     setCodexRuntimeMenu(null);
   }
 
-  async function selectCodexEffort(nextEffort: string): Promise<void> {
+  async function selectRuntimeEffort(nextEffort: string): Promise<void> {
     if (!state.initialized || anyThreadIsRunning) {
       return;
     }

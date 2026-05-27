@@ -136,12 +136,21 @@ type CodexModelSummary struct {
 }
 
 type ProviderSummary struct {
-	Name             string `json:"name"`
-	Type             string `json:"type"`
-	Model            string `json:"model"`
-	BaseURL          string `json:"base_url,omitempty"`
-	APIKeyConfigured bool   `json:"api_key_configured,omitempty"`
-	ConnectionLocked bool   `json:"connection_locked,omitempty"`
+	Name             string                 `json:"name"`
+	Type             string                 `json:"type"`
+	Model            string                 `json:"model"`
+	BaseURL          string                 `json:"base_url,omitempty"`
+	APIKeyConfigured bool                   `json:"api_key_configured,omitempty"`
+	ConnectionLocked bool                   `json:"connection_locked,omitempty"`
+	Models           []ProviderModelSummary `json:"models,omitempty"`
+}
+
+type ProviderModelSummary struct {
+	ID               string   `json:"id"`
+	DisplayName      string   `json:"display_name,omitempty"`
+	DefaultEffort    string   `json:"default_effort,omitempty"`
+	SupportedEfforts []string `json:"supported_efforts,omitempty"`
+	Source           string   `json:"source,omitempty"`
 }
 
 type ThreadStartResult struct {

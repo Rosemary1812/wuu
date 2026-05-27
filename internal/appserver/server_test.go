@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -290,9 +291,13 @@ func TestServerConfigModelUpdatePersistsProviderConnection(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	if !strings.Contains(string(data), `"base_url": "https://custom.example.test/v1"`) ||
-		!strings.Contains(string(data), `"api_key": "new-key"`) ||
+		strings.Contains(string(data), `"api_key": "new-key"`) ||
 		!strings.Contains(string(data), `"model": "new-model"`) {
 		t.Fatalf("provider connection was not persisted: %s", data)
+	}
+	key, err := config.LoadAuthKey(os.Getenv("HOME"), "fake-provider")
+	if err != nil || key != "new-key" {
+		t.Fatalf("provider key was not saved to auth store: key=%q err=%v", key, err)
 	}
 }
 
@@ -350,9 +355,13 @@ func TestServerConfigModelUpdateCreatesProvider(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"custom-1"`) ||
 		!strings.Contains(string(data), `"base_url": "https://custom.example.test/v1"`) ||
-		!strings.Contains(string(data), `"api_key": "new-key"`) ||
+		strings.Contains(string(data), `"api_key": "new-key"`) ||
 		!strings.Contains(string(data), `"default_provider": "custom-1"`) {
 		t.Fatalf("new provider was not persisted: %s", data)
+	}
+	key, err := config.LoadAuthKey(os.Getenv("HOME"), "custom-1")
+	if err != nil || key != "new-key" {
+		t.Fatalf("provider key was not saved to auth store: key=%q err=%v", key, err)
 	}
 }
 
@@ -1851,6 +1860,7 @@ func TestServerQueuesAgentCompletionWhileRootTurnIsRunning(t *testing.T) {
 func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 	t.Helper()
 	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
 	return &runtime.Session{
 		ProviderName: "fake-provider",
 		Model:        "fake-model",

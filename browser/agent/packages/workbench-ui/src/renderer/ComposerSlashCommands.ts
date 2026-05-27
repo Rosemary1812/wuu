@@ -8,6 +8,7 @@ export type ComposerSlashCommandAction =
   | "open-terminal"
   | "open-project"
   | "no-project"
+  | "model"
   | "settings";
 export type ComposerSlashCommandKind = "prompt" | "action";
 
@@ -152,6 +153,18 @@ export function buildComposerSlashCommands({
       disabledReason: needsIdleThread
     },
     {
+      id: "model",
+      name: "model",
+      title: "切换模型",
+      description: "快速选择 provider、模型和思考强度",
+      tag: "配置",
+      kind: "action",
+      action: "model",
+      aliases: ["models"],
+      keywords: ["provider", "effort", "thinking", "模型", "思考强度"],
+      disabledReason: needsRuntime ?? needsIdleThread
+    },
+    {
       id: "settings",
       name: "settings",
       title: "打开设置",
@@ -159,7 +172,7 @@ export function buildComposerSlashCommands({
       tag: "配置",
       kind: "action",
       action: "settings",
-      aliases: ["model", "config"],
+      aliases: ["config"],
       keywords: ["provider", "模型", "配置"]
     }
   ];

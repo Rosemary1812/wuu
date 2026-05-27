@@ -71,6 +71,7 @@ type Client struct {
 	httpClient           *http.Client
 	retryConfig          providers.RetryConfig
 	promptCacheKeyFormat promptCacheKeyFormat
+	reasoningFormat      reasoningEffortFormat
 	streamConfig         providers.StreamTransportConfig
 	responsesStore       *bool
 }
@@ -106,6 +107,7 @@ func New(cfg ClientConfig) (*Client, error) {
 		httpClient:           hc,
 		retryConfig:          rc,
 		promptCacheKeyFormat: detectPromptCacheKeyFormat(cfg.BaseURL, cfg.Headers),
+		reasoningFormat:      detectReasoningEffortFormat(cfg.BaseURL),
 		streamConfig:         streamTransportConfig(cfg.StreamConfig),
 		responsesStore:       cfg.ResponsesStore,
 	}, nil
@@ -124,12 +126,12 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	}
 
 	payload := chatCompletionsRequest{
-		Model:           req.Model,
-		Messages:        make([]chatMessage, 0, len(req.Messages)),
-		Temperature:     req.Temperature,
-		MaxTokens:       req.MaxTokens,
-		ReasoningEffort: req.Effort,
+		Model:       req.Model,
+		Messages:    make([]chatMessage, 0, len(req.Messages)),
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
 	}
+	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
 
 	normalized, err := providers.NormalizeAndValidateMessages(req.Messages)
@@ -243,13 +245,13 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 
 	payload := chatCompletionsRequest{
-		Model:           req.Model,
-		Messages:        make([]chatMessage, 0, len(req.Messages)),
-		Temperature:     req.Temperature,
-		MaxTokens:       req.MaxTokens,
-		Stream:          true,
-		ReasoningEffort: req.Effort,
+		Model:       req.Model,
+		Messages:    make([]chatMessage, 0, len(req.Messages)),
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Stream:      true,
 	}
+	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
 	normalized, err := providers.NormalizeAndValidateMessages(req.Messages)
 	if err != nil {
@@ -677,6 +679,7 @@ func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, erro
 		Stream          bool             `json:"stream,omitempty"`
 		PromptCacheKey  string           `json:"promptCacheKey,omitempty"`
 		ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+		Reasoning       *reasoningConfig `json:"reasoning,omitempty"`
 	}
 
 	base := requestJSON{
@@ -689,6 +692,7 @@ func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, erro
 		Stream:          payload.Stream,
 		PromptCacheKey:  payload.PromptCacheKey,
 		ReasoningEffort: payload.ReasoningEffort,
+		Reasoning:       payload.Reasoning,
 	}
 	if strings.TrimSpace(payload.AltCacheKey) == "" {
 		return json.Marshal(base)
@@ -753,6 +757,38 @@ func promptCacheKeyHeaderPrefersSnake(headers map[string]string) bool {
 	return false
 }
 
+func applyReasoningEffort(payload *chatCompletionsRequest, effort string, format reasoningEffortFormat) {
+	effort = strings.TrimSpace(effort)
+	if payload == nil || effort == "" {
+		return
+	}
+	switch format {
+	case reasoningEffortNested:
+		payload.Reasoning = &reasoningConfig{Effort: effort}
+	default:
+		payload.ReasoningEffort = effort
+	}
+}
+
+type reasoningEffortFormat int
+
+const (
+	reasoningEffortOpenAI reasoningEffortFormat = iota
+	reasoningEffortNested
+)
+
+func detectReasoningEffortFormat(baseURL string) reasoningEffortFormat {
+	host := strings.ToLower(strings.TrimSpace(baseURL))
+	if strings.Contains(host, "openrouter.ai") {
+		return reasoningEffortNested
+	}
+	return reasoningEffortOpenAI
+}
+
+type reasoningConfig struct {
+	Effort string `json:"effort,omitempty"`
+}
+
 type chatCompletionsRequest struct {
 	Model           string           `json:"model"`
 	Messages        []chatMessage    `json:"messages"`
@@ -764,6 +800,7 @@ type chatCompletionsRequest struct {
 	PromptCacheKey  string           `json:"promptCacheKey,omitempty"`
 	AltCacheKey     string           `json:"prompt_cache_key,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+	Reasoning       *reasoningConfig `json:"reasoning,omitempty"`
 }
 
 type chatMessage struct {
