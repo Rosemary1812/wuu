@@ -1514,7 +1514,6 @@ button:disabled {
   align-items: center;
   gap: 8px;
   overflow: hidden;
-  -webkit-app-region: no-drag;
 }
 
 .session-tab-scroll {
