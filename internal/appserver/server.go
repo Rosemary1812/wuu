@@ -575,16 +575,16 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	if params.Variant != nil && variant != "" {
-		if _, ok := modelvariant.Options(providerCfg, model, variant); !ok {
+		if _, ok := modelvariant.OptionsForProvider(resolvedName, providerCfg, model, variant); !ok {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support variant %s", model, variant))
 		}
 	}
-	if params.Effort != nil && params.Variant == nil && variant != "" && len(modelvariant.Summaries(providerCfg, model)) > 0 {
-		if _, ok := modelvariant.Options(providerCfg, model, variant); !ok {
+	if params.Effort != nil && params.Variant == nil && variant != "" && len(modelvariant.SummariesForProvider(resolvedName, providerCfg, model)) > 0 {
+		if _, ok := modelvariant.OptionsForProvider(resolvedName, providerCfg, model, variant); !ok {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support effort %s", model, variant))
 		}
 	}
-	selection := modelvariant.Resolve(providerCfg, model, variant, legacyEffort)
+	selection := modelvariant.ResolveForProvider(resolvedName, providerCfg, model, variant, legacyEffort)
 	effort := selection.DisplayEffort
 	effortForConfig, variantForConfig := selectionConfigPointers(selection, selectionTouched, s.currentVariant())
 
@@ -678,7 +678,7 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 			SupportedInAPI:        model.SupportedInAPI,
 		})
 	}
-	selection := modelvariant.Resolve(providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
+	selection := modelvariant.ResolveForProvider(resolvedName, providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 	effort := selection.DisplayEffort
 	variant := selection.Variant
 	if resolvedName == s.rt.ProviderName {
@@ -1571,7 +1571,7 @@ func providerSummariesFromConfig(cfg config.Config, home string) []ProviderSumma
 			BaseURL:          provider.BaseURL,
 			APIKeyConfigured: providerHasAuth(name, provider, home),
 			ConnectionLocked: isCodexProviderType(provider.Type),
-			Models:           providerModelSummaries(provider),
+			Models:           providerModelSummaries(name, provider),
 		})
 	}
 	return out
@@ -1585,7 +1585,7 @@ func providerHasAuth(name string, provider config.ProviderConfig, home string) b
 	return err == nil && strings.TrimSpace(key) != ""
 }
 
-func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSummary {
+func providerModelSummaries(providerName string, provider config.ProviderConfig) []ProviderModelSummary {
 	models := make(map[string]ProviderModelSummary, len(provider.Models)+1)
 	for id, model := range provider.Models {
 		id = strings.TrimSpace(id)
@@ -1597,8 +1597,8 @@ func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSumma
 			DisplayName:      strings.TrimSpace(model.Name),
 			DefaultEffort:    strings.TrimSpace(model.DefaultEffort),
 			DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
-			SupportedEfforts: modelvariant.SupportedEfforts(provider, id, model),
-			Variants:         providerVariantSummaries(modelvariant.Summaries(provider, id)),
+			SupportedEfforts: modelvariant.SupportedEffortsForProvider(providerName, provider, id, model),
+			Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(providerName, provider, id)),
 			Source:           "config",
 		}
 	}
@@ -1607,8 +1607,8 @@ func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSumma
 		if _, ok := models[current]; !ok {
 			models[current] = ProviderModelSummary{
 				ID:               current,
-				SupportedEfforts: modelvariant.SupportedEfforts(provider, current, config.ProviderModelConfig{}),
-				Variants:         providerVariantSummaries(modelvariant.Summaries(provider, current)),
+				SupportedEfforts: modelvariant.SupportedEffortsForProvider(providerName, provider, current, config.ProviderModelConfig{}),
+				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(providerName, provider, current)),
 				Source:           "selected",
 			}
 		}
@@ -1616,7 +1616,7 @@ func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSumma
 	out := make([]ProviderModelSummary, 0, len(models))
 	for _, model := range models {
 		if len(model.Variants) == 0 {
-			model.Variants = providerVariantSummaries(modelvariant.Summaries(provider, model.ID))
+			model.Variants = providerVariantSummaries(modelvariant.SummariesForProvider(providerName, provider, model.ID))
 		}
 		if len(model.SupportedEfforts) == 0 {
 			model.SupportedEfforts = modelvariant.EffortIDs(modelVariantSummaries(model.Variants))
@@ -1625,7 +1625,7 @@ func providerModelSummaries(provider config.ProviderConfig) []ProviderModelSumma
 			model.DefaultVariant = model.DefaultEffort
 		}
 		if model.DefaultVariant == "" {
-			model.DefaultVariant = modelvariant.DefaultVariant(provider, model.ID)
+			model.DefaultVariant = modelvariant.DefaultVariantForProvider(providerName, provider, model.ID)
 		}
 		out = append(out, model)
 	}

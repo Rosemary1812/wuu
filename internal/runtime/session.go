@@ -198,7 +198,7 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	sessionDir := statepath.SessionsDir(wuuHome)
-	modelSelection := modelvariant.Resolve(providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
+	modelSelection := modelvariant.ResolveForProvider(resolvedName, providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 
 	streamRunner := &agent.StreamRunner{
 		Client:          client,

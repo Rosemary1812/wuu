@@ -800,6 +800,58 @@ func TestUpdateProviderModel(t *testing.T) {
 	}
 }
 
+func TestLoadFromAcceptsOpenCodeModelMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	data := `{
+  "default_provider": "google",
+  "providers": {
+    "google": {
+      "type": "openai-compatible",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "npm": "@ai-sdk/google",
+      "model": "gemini-3-flash",
+      "models": {
+        "gemini-3-flash": {
+          "id": "gemini-3-flash",
+          "name": "Gemini 3 Flash",
+          "release_date": "2026-01-01",
+          "reasoning": true,
+          "provider": {
+            "npm": "@ai-sdk/google"
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        }
+      }
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	model := cfg.Providers["google"].Models["gemini-3-flash"]
+	if model.Provider == nil || model.Provider.NPM != "@ai-sdk/google" {
+		t.Fatalf("provider metadata = %+v", model.Provider)
+	}
+	if model.Limit == nil || model.Limit.Output != 65536 {
+		t.Fatalf("limit metadata = %+v", model.Limit)
+	}
+	if model.Reasoning == nil || !*model.Reasoning {
+		t.Fatalf("reasoning metadata = %+v", model.Reasoning)
+	}
+}
+
 func TestUpdateProviderModel_NotFound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".wuu.json")

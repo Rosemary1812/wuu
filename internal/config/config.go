@@ -83,6 +83,8 @@ type MemoryConfig struct {
 type ProviderConfig struct {
 	Type         string                         `json:"type"`
 	BaseURL      string                         `json:"base_url"`
+	API          string                         `json:"api,omitempty"`
+	NPM          string                         `json:"npm,omitempty"`
 	WireAPI      string                         `json:"wire_api,omitempty"`
 	APIKey       string                         `json:"api_key,omitempty"`
 	APIKeyEnv    string                         `json:"api_key_env,omitempty"`
@@ -104,16 +106,39 @@ type ProviderConfig struct {
 	ContextWindow int `json:"context_window,omitempty"`
 }
 
+// ProviderModelProviderConfig mirrors OpenCode's per-model provider override
+// shape. It lets users pin the upstream AI SDK package and API endpoint for
+// custom model aliases.
+type ProviderModelProviderConfig struct {
+	API string `json:"api,omitempty"`
+	NPM string `json:"npm,omitempty"`
+}
+
+// ProviderModelLimitConfig carries model token limits used by provider-specific
+// option generation.
+type ProviderModelLimitConfig struct {
+	Context int `json:"context,omitempty"`
+	Input   int `json:"input,omitempty"`
+	Output  int `json:"output,omitempty"`
+}
+
 // ProviderModelConfig lets a provider expose a small model catalog without
-// forcing users to duplicate full provider definitions.
+// forcing users to duplicate full provider definitions. The OpenCode-compatible
+// metadata fields are intentionally accepted so wuu can derive the same
+// model-specific variants when a config was copied from OpenCode/models.dev.
 type ProviderModelConfig struct {
-	Name             string                    `json:"name,omitempty"`
-	SupportedEfforts []string                  `json:"supported_efforts,omitempty"`
-	DefaultEffort    string                    `json:"default_effort,omitempty"`
-	DefaultVariant   string                    `json:"default_variant,omitempty"`
-	Variants         map[string]map[string]any `json:"variants,omitempty"`
-	Disabled         bool                      `json:"disabled,omitempty"`
-	ContextWindow    int                       `json:"context_window,omitempty"`
+	ID               string                       `json:"id,omitempty"`
+	Name             string                       `json:"name,omitempty"`
+	ReleaseDate      string                       `json:"release_date,omitempty"`
+	Reasoning        *bool                        `json:"reasoning,omitempty"`
+	Provider         *ProviderModelProviderConfig `json:"provider,omitempty"`
+	Limit            *ProviderModelLimitConfig    `json:"limit,omitempty"`
+	SupportedEfforts []string                     `json:"supported_efforts,omitempty"`
+	DefaultEffort    string                       `json:"default_effort,omitempty"`
+	DefaultVariant   string                       `json:"default_variant,omitempty"`
+	Variants         map[string]map[string]any    `json:"variants,omitempty"`
+	Disabled         bool                         `json:"disabled,omitempty"`
+	ContextWindow    int                          `json:"context_window,omitempty"`
 }
 
 // AgentConfig controls behavior of the local tool loop.
@@ -267,6 +292,17 @@ func (c Config) Validate() error {
 			}
 			if model.ContextWindow < 0 {
 				return fmt.Errorf("providers.%s.models.%s.context_window cannot be negative", name, modelID)
+			}
+			if model.Limit != nil {
+				if model.Limit.Context < 0 {
+					return fmt.Errorf("providers.%s.models.%s.limit.context cannot be negative", name, modelID)
+				}
+				if model.Limit.Input < 0 {
+					return fmt.Errorf("providers.%s.models.%s.limit.input cannot be negative", name, modelID)
+				}
+				if model.Limit.Output < 0 {
+					return fmt.Errorf("providers.%s.models.%s.limit.output cannot be negative", name, modelID)
+				}
 			}
 			for _, effort := range model.SupportedEfforts {
 				if strings.TrimSpace(effort) == "" {
