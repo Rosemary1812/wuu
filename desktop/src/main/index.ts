@@ -60,6 +60,10 @@ const FILE_TREE_MAX_PATHS = 4000;
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
 const GIT_DIFF_PREVIEW_MAX_BYTES = 512 * 1024;
 const GIT_DIFF_COMMAND_MAX_BUFFER = 8 * 1024 * 1024;
+const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
+const MAIN_WINDOW_DEFAULT_HEIGHT = 920;
+const MAIN_WINDOW_MIN_WIDTH = 980;
+const MAIN_WINDOW_MIN_HEIGHT = 920;
 const FILE_TREE_IGNORED_DIRS = new Set([
   ".git",
   ".next",
@@ -1483,10 +1487,10 @@ function scheduleWindowResizeEnd(delay = 140): void {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 980,
-    minHeight: 460,
+    width: MAIN_WINDOW_DEFAULT_WIDTH,
+    height: MAIN_WINDOW_DEFAULT_HEIGHT,
+    minWidth: MAIN_WINDOW_MIN_WIDTH,
+    minHeight: MAIN_WINDOW_MIN_HEIGHT,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 16 },
     backgroundColor: "#f6f6f4",
