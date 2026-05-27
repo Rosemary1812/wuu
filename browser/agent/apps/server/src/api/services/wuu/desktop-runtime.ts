@@ -153,8 +153,13 @@ export async function handleWuuDesktopRpc(
       ) as JsonValue
     case 'project/select':
       return selectProject(stringParam(params, 'project_id')) as JsonValue
-    case 'project/select-none':
-      return selectNoProject(Boolean(asRecord(params).fresh)) as JsonValue
+    case 'project/select-none': {
+      const record = asRecord(params)
+      return selectNoProject(
+        Boolean(record.fresh),
+        typeof record.cwd === 'string' ? record.cwd : undefined,
+      ) as JsonValue
+    }
     case 'workspace/no-project':
       return { cwd: allocateNoProjectCwd() }
     case 'git/status':
@@ -281,9 +286,13 @@ function selectProject(projectIDToSelect: string) {
   return projectListResult({})
 }
 
-function selectNoProject(fresh: boolean) {
+function selectNoProject(fresh: boolean, cwd?: string) {
   const store = loadProjectStore()
-  if (fresh || store.active_context?.kind !== 'no_project') {
+  if (!fresh && cwd) {
+    const resolvedCwd = resolve(cwd)
+    mkdirSync(resolvedCwd, { recursive: true })
+    store.active_context = { kind: 'no_project', cwd: resolvedCwd }
+  } else if (fresh || store.active_context?.kind !== 'no_project') {
     store.active_context = { kind: 'no_project', cwd: allocateNoProjectCwd() }
   }
   saveProjectStore(store)

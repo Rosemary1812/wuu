@@ -222,10 +222,10 @@ async function selectProject(projectId: string): Promise<ProjectListResult> {
   return applyProjectList(result)
 }
 
-async function selectNoProject(fresh = false): Promise<ProjectListResult> {
+async function selectNoProject(fresh = false, cwd?: string): Promise<ProjectListResult> {
   const result = await desktopRpc<ProjectListResult>(
     'project/select-none',
-    { fresh },
+    cwd ? { fresh, cwd } : { fresh },
     false,
   )
   return applyProjectList(result)

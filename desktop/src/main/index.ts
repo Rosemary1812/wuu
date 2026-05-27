@@ -1251,9 +1251,13 @@ function selectProject(projectIDToSelect: string): ProjectListResult {
   return projectListResult();
 }
 
-function selectNoProject(fresh: boolean): ProjectListResult {
+function selectNoProject(fresh: boolean, cwd?: string): ProjectListResult {
   projectStore = loadProjectStore();
-  if (fresh || projectStore.active_context?.kind !== "no_project") {
+  if (!fresh && cwd) {
+    const resolvedCwd = resolve(cwd);
+    mkdirSync(resolvedCwd, { recursive: true });
+    projectStore.active_context = { kind: "no_project", cwd: resolvedCwd };
+  } else if (fresh || projectStore.active_context?.kind !== "no_project") {
     projectStore.active_context = createNoProjectContext();
   }
   resetClient();
@@ -1571,7 +1575,9 @@ app.whenReady().then(() => {
 
   ipcMain.handle("wuu:project-list", () => projectListResult());
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) => selectProject(projectIDToSelect));
-  ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean) => selectNoProject(Boolean(fresh)));
+  ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean, cwd?: string) =>
+    selectNoProject(Boolean(fresh), cwd)
+  );
   ipcMain.handle("wuu:git-status", () => gitStatusResult());
   ipcMain.handle("wuu:git-changes", () => gitChangesResult());
   ipcMain.handle("wuu:git-file-diff", (_event, path: string) => gitFileDiffResult(path));

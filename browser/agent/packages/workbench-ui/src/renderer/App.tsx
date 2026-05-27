@@ -208,6 +208,7 @@ type SessionTab =
   | {
       id: string;
       kind: "draft";
+      context: RuntimeContext;
       title: string;
       prompt: string;
       images: ComposerImage[];
@@ -216,7 +217,9 @@ type SessionTab =
   | {
       id: string;
       kind: "thread";
+      context: RuntimeContext;
       threadID: string;
+      title: string;
       prompt: string;
       images: ComposerImage[];
     };
@@ -271,8 +274,8 @@ const initialState: AppState = {
   projects: [],
   activePane: "primary",
   allowThreadAutoActivation: false,
-  sessionTabs: [createDraftSessionTab(INITIAL_DRAFT_SESSION_TAB_ID)],
-  activeSessionTabID: INITIAL_DRAFT_SESSION_TAB_ID,
+  sessionTabs: [],
+  activeSessionTabID: "",
   threads: [],
   running: false,
   status: "connecting",
@@ -632,10 +635,7 @@ export function App(): JSX.Element {
         if (!mounted) {
           return;
         }
-        setState((current) => ({
-          ...current,
-          ...loadedState
-        }));
+        setState((current) => withLoadedRuntimeSessionTab(current, loadedState));
       } catch (error) {
         if (!mounted) {
           return;
@@ -1857,8 +1857,6 @@ export function App(): JSX.Element {
       secondaryThread: undefined,
       activePane: "primary",
       allowThreadAutoActivation: Boolean(thread),
-      sessionTabs: thread ? [createThreadSessionTab(thread)] : [createDraftSessionTab(INITIAL_DRAFT_SESSION_TAB_ID)],
-      activeSessionTabID: thread ? threadSessionTabID(thread.id) : INITIAL_DRAFT_SESSION_TAB_ID,
       threads: thread ? upsertThread(listedThreads, thread) : listedThreads,
       running: isThreadRunning(thread),
       status: "ready",
@@ -1878,14 +1876,19 @@ export function App(): JSX.Element {
       secondaryThread: undefined,
       activePane: "primary",
       allowThreadAutoActivation: false,
-      sessionTabs: [createDraftSessionTab(INITIAL_DRAFT_SESSION_TAB_ID)],
-      activeSessionTabID: INITIAL_DRAFT_SESSION_TAB_ID,
       threads: [],
       running: false,
       status: "no-runtime",
       askRequests: [],
       answeredAskRequests: []
     };
+  }
+
+  async function selectRuntimeContext(context: RuntimeContext): Promise<ProjectListResult> {
+    if (context.kind === "project") {
+      return window.wuu.selectProject(context.project_id);
+    }
+    return window.wuu.selectNoProject(false, context.cwd);
   }
 
   function closeProjectMenus(): void {
@@ -1906,7 +1909,7 @@ export function App(): JSX.Element {
       closeProjectMenus();
       setArchiveConfirmThreadID(undefined);
       if (currentState.thread || currentState.secondaryThread) {
-        const nextTab = nextDraftSessionTab();
+        const nextTab = nextDraftSessionTab(currentState.activeContext);
         setPrompt("");
         setComposerImages([]);
         clearPendingComposerMessages();
@@ -1926,6 +1929,7 @@ export function App(): JSX.Element {
     }
     const requestID = beginViewSwitch("project", projectId);
     closeProjectMenus();
+    const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
       const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
@@ -1933,16 +1937,19 @@ export function App(): JSX.Element {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({
-        ...current,
-        ...loadedState,
-        thread: undefined,
-        secondaryThread: undefined,
-        activePane: "primary",
-        allowThreadAutoActivation: false,
-        running: false,
-        status: "ready"
-      }));
+      restoreLoadedRuntimeComposerDraft(loadedState);
+      setState((current) => {
+        const next = withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState);
+        return {
+          ...next,
+          thread: undefined,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: false,
+          running: false,
+          status: "ready"
+        };
+      });
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -1960,7 +1967,7 @@ export function App(): JSX.Element {
       closeProjectMenus();
       setArchiveConfirmThreadID(undefined);
       if (currentState.thread || currentState.secondaryThread) {
-        const nextTab = nextDraftSessionTab();
+        const nextTab = nextDraftSessionTab(currentState.activeContext);
         setPrompt("");
         setComposerImages([]);
         clearPendingComposerMessages();
@@ -1989,6 +1996,7 @@ export function App(): JSX.Element {
     const requestID = beginViewSwitch("project", projectId);
     closeProjectMenus();
     setArchiveConfirmThreadID(undefined);
+    const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
       const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
@@ -1996,16 +2004,19 @@ export function App(): JSX.Element {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({
-        ...current,
-        ...loadedState,
-        thread: undefined,
-        secondaryThread: undefined,
-        activePane: "primary",
-        allowThreadAutoActivation: false,
-        running: false,
-        status: "ready"
-      }));
+      restoreLoadedRuntimeComposerDraft(loadedState);
+      setState((current) => {
+        const next = withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState);
+        return {
+          ...next,
+          thread: undefined,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: false,
+          running: false,
+          status: "ready"
+        };
+      });
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -2028,7 +2039,7 @@ export function App(): JSX.Element {
       const nextTab =
         activeSessionTab(state)?.kind === "draft" && !prompt.trim() && composerImages.length === 0
           ? activeSessionTab(state)
-          : nextDraftSessionTab();
+          : nextDraftSessionTab(state.activeContext);
       if (!nextTab) {
         return;
       }
@@ -2046,16 +2057,35 @@ export function App(): JSX.Element {
       return;
     }
     const requestID = beginViewSwitch("project", projectId);
+    const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
       const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
       if (!finishViewSwitch(requestID)) {
         return;
       }
+      if (!loadedState.activeContext) {
+        return;
+      }
       setPrompt("");
       setComposerImages([]);
       clearPendingComposerMessages();
-      setState((current) => ({ ...current, ...loadedState }));
+      const nextTab = nextDraftSessionTab(loadedState.activeContext);
+      setState((current) => {
+        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        return {
+          ...withDraft,
+          ...loadedState,
+          thread: undefined,
+          secondaryThread: undefined,
+          activePane: "primary",
+          sessionTabs: ensureSessionTab(withDraft.sessionTabs, nextTab),
+          activeSessionTabID: nextTab.id,
+          allowThreadAutoActivation: false,
+          running: false,
+          status: "ready"
+        };
+      });
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -2070,6 +2100,7 @@ export function App(): JSX.Element {
   async function createBlankProject(): Promise<void> {
     const requestID = beginViewSwitch("runtime", "create-project");
     closeProjectMenus();
+    const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.createBlankProject();
       if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
@@ -2084,7 +2115,10 @@ export function App(): JSX.Element {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({ ...current, ...loadedState }));
+      restoreLoadedRuntimeComposerDraft(loadedState);
+      setState((current) =>
+        withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState)
+      );
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -2099,6 +2133,7 @@ export function App(): JSX.Element {
   async function chooseProjectFolder(): Promise<void> {
     const requestID = beginViewSwitch("runtime", "choose-project");
     closeProjectMenus();
+    const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.chooseProjectFolder();
       if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
@@ -2113,7 +2148,10 @@ export function App(): JSX.Element {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({ ...current, ...loadedState }));
+      restoreLoadedRuntimeComposerDraft(loadedState);
+      setState((current) =>
+        withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState)
+      );
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -2132,6 +2170,7 @@ export function App(): JSX.Element {
     }
     const requestID = beginViewSwitch("runtime", fresh ? "no-project:fresh" : "no-project");
     closeProjectMenus();
+    const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectNoProject(fresh);
       const loadedState = await loadRuntime(projectState);
@@ -2139,7 +2178,10 @@ export function App(): JSX.Element {
         return;
       }
       clearPendingComposerMessages();
-      setState((current) => ({ ...current, ...loadedState }));
+      restoreLoadedRuntimeComposerDraft(loadedState);
+      setState((current) =>
+        withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState)
+      );
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
@@ -2344,41 +2386,123 @@ export function App(): JSX.Element {
     setComposerImages(draft.images.map((image) => ({ ...image })));
   }
 
-  function nextDraftSessionTab(): SessionTab {
+  function restoreSessionTabComposerDraft(tab: SessionTab): void {
+    restorePrimaryComposerDraft(cloneSessionTabDraft(tab));
+    setSplitComposerDrafts(initialSplitComposerDrafts());
+  }
+
+  function restoreLoadedRuntimeComposerDraft(loadedState: Partial<AppState>): void {
+    const context = loadedState.activeContext;
+    if (!context) {
+      return;
+    }
+    restoreSessionTabComposerDraft(sessionTabForLoadedRuntime(appStateRef.current.sessionTabs, context, loadedState.thread));
+  }
+
+  function nextDraftSessionTab(context: RuntimeContext): SessionTab {
     draftSessionTabCounterRef.current += 1;
-    return createDraftSessionTab(`draft:${Date.now()}:${draftSessionTabCounterRef.current}`);
+    return createDraftSessionTab(`draft:${Date.now()}:${draftSessionTabCounterRef.current}`, context);
   }
 
   async function selectSessionTab(tabID: string): Promise<void> {
-    if (!state.activeContext || tabID === state.activeSessionTabID) {
+    const currentState = appStateRef.current;
+    if (tabID === currentState.activeSessionTabID) {
       return;
     }
-    const tab = state.sessionTabs.find((item) => item.id === tabID);
+    const tab = currentState.sessionTabs.find((item) => item.id === tabID);
     if (!tab) {
       return;
     }
     setWorkspaceMode(undefined);
     setArchiveConfirmThreadID(undefined);
+    const sameContext = sameRuntimeContext(tab.context, currentState.activeContext);
     if (tab.kind === "draft") {
-      cancelViewSwitch();
-      clearPendingComposerMessages();
-      restorePrimaryComposerDraft(tab);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => ({
-        ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
-        thread: undefined,
-        secondaryThread: undefined,
-        activePane: "primary",
-        activeSessionTabID: tab.id,
-        allowThreadAutoActivation: false,
-        running: false,
-        status: "ready",
-        askRequests: [],
-        answeredAskRequests: []
-      }));
+      const outgoingDraft = currentPrimaryComposerDraft();
+      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(tab.context));
+      try {
+        const loadedState = sameContext
+          ? undefined
+          : await loadRuntime(await selectRuntimeContext(tab.context), { resumeLatestThread: false });
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        if (requestID === undefined) {
+          cancelViewSwitch();
+        }
+        clearPendingComposerMessages();
+        restoreSessionTabComposerDraft(tab);
+        setState((current) => {
+          const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+          const next = loadedState ? { ...withDraft, ...loadedState } : withDraft;
+          return {
+            ...next,
+            thread: undefined,
+            secondaryThread: undefined,
+            activePane: "primary",
+            sessionTabs: ensureSessionTab(next.sessionTabs, tab),
+            activeSessionTabID: tab.id,
+            allowThreadAutoActivation: false,
+            running: false,
+            status: "ready",
+            askRequests: [],
+            answeredAskRequests: []
+          };
+        });
+      } catch (error) {
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          status: error instanceof Error ? error.message : "load failed"
+        }));
+      }
       return;
     }
-    await selectThread(tab.threadID);
+    if (sameContext) {
+      await selectThread(tab.threadID);
+      return;
+    }
+    const outgoingDraft = currentPrimaryComposerDraft();
+    const targetDraft = cloneSessionTabDraft(tab);
+    const requestID = beginViewSwitch("thread", tab.threadID);
+    try {
+      const projectState = await selectRuntimeContext(tab.context);
+      const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
+      const thread = requireThread(await window.wuu.resumeThread(tab.threadID), "resume did not return a thread");
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      clearPendingComposerMessages();
+      restorePrimaryComposerDraft(targetDraft);
+      setSplitComposerDrafts(initialSplitComposerDrafts());
+      setState((current) => {
+        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        const next = { ...withDraft, ...loadedState };
+        return {
+          ...next,
+          thread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: true,
+          sessionTabs: ensureSessionTab(next.sessionTabs, createThreadSessionTab(thread, tab.context, targetDraft)),
+          activeSessionTabID: threadSessionTabID(thread.id),
+          threads: upsertThread(next.threads, thread),
+          running: isThreadRunning(thread),
+          status: "ready",
+          askRequests: [],
+          answeredAskRequests: []
+        };
+      });
+    } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "load failed"
+      }));
+    }
   }
 
   async function closeSessionTab(tabID: string): Promise<void> {
@@ -2389,6 +2513,7 @@ export function App(): JSX.Element {
     }
     const closingActive = currentState.activeSessionTabID === tabID;
     const nextTabs = currentState.sessionTabs.filter((tab) => tab.id !== tabID);
+    const closedTab = currentState.sessionTabs[tabIndex];
     if (!closingActive) {
       setState((current) => ({
         ...current,
@@ -2397,65 +2522,84 @@ export function App(): JSX.Element {
       return;
     }
 
-    const fallbackTab = nextTabs[Math.min(tabIndex, Math.max(nextTabs.length - 1, 0))] ?? nextDraftSessionTab();
+    const fallbackTab =
+      nextTabs[Math.min(tabIndex, Math.max(nextTabs.length - 1, 0))] ?? nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
     setWorkspaceMode(undefined);
     setArchiveConfirmThreadID(undefined);
     clearPendingComposerMessages();
     if (fallbackTab.kind === "draft") {
-      cancelViewSwitch();
-      restorePrimaryComposerDraft(fallbackTab);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => ({
-        ...current,
-        sessionTabs: tabsWithFallback,
-        activeSessionTabID: fallbackTab.id,
-        thread: undefined,
-        secondaryThread: undefined,
-        activePane: "primary",
-        allowThreadAutoActivation: false,
-        running: false,
-        status: "ready",
-        askRequests: [],
-        answeredAskRequests: []
-      }));
+      const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
+      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
+      try {
+        const loadedState = sameContext
+          ? undefined
+          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), { resumeLatestThread: false });
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        if (requestID === undefined) {
+          cancelViewSwitch();
+        }
+        restoreSessionTabComposerDraft(fallbackTab);
+        setState((current) => {
+          const next = loadedState ? { ...current, ...loadedState } : current;
+          return {
+            ...next,
+            sessionTabs: tabsWithFallback,
+            activeSessionTabID: fallbackTab.id,
+            thread: undefined,
+            secondaryThread: undefined,
+            activePane: "primary",
+            allowThreadAutoActivation: false,
+            running: false,
+            status: "ready",
+            askRequests: [],
+            answeredAskRequests: []
+          };
+        });
+      } catch (error) {
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          status: error instanceof Error ? error.message : "load failed"
+        }));
+      }
       return;
     }
 
     const restoredDraft = cloneSessionTabDraft(fallbackTab);
-    restorePrimaryComposerDraft(restoredDraft);
-    setSplitComposerDrafts(initialSplitComposerDrafts());
-    const sourceContext = currentState.activeContext;
+    const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
     const requestID = beginViewSwitch("thread", fallbackTab.threadID);
-    setState((current) => ({
-      ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
-      sessionTabs: tabsWithFallback,
-      activeSessionTabID: fallbackTab.id,
-      thread: undefined,
-      secondaryThread: undefined,
-      activePane: "primary",
-      allowThreadAutoActivation: false,
-      running: false,
-      status: "ready"
-    }));
     try {
+      const loadedState = sameContext
+        ? undefined
+        : await loadRuntime(await selectRuntimeContext(fallbackTab.context), { resumeLatestThread: false });
       const thread = requireThread(await window.wuu.resumeThread(fallbackTab.threadID), "resume did not return a thread");
-      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      if (!finishViewSwitch(requestID)) {
         return;
       }
-      setState((current) => ({
-        ...current,
-        thread,
-        activePane: "primary",
-        allowThreadAutoActivation: true,
-        sessionTabs: ensureSessionTab(current.sessionTabs, createThreadSessionTab(thread, restoredDraft)),
-        activeSessionTabID: threadSessionTabID(thread.id),
-        threads: upsertThread(current.threads, thread),
-        running: isThreadRunning(thread),
-        status: "ready"
-      }));
+      restorePrimaryComposerDraft(restoredDraft);
+      setSplitComposerDrafts(initialSplitComposerDrafts());
+      setState((current) => {
+        const next = loadedState ? { ...current, ...loadedState } : current;
+        return {
+          ...next,
+          thread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: true,
+          sessionTabs: ensureSessionTab(tabsWithFallback, createThreadSessionTab(thread, fallbackTab.context, restoredDraft)),
+          activeSessionTabID: threadSessionTabID(thread.id),
+          threads: upsertThread(next.threads, thread),
+          running: isThreadRunning(thread),
+          status: "ready"
+        };
+      });
     } catch (error) {
-      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      if (!finishViewSwitch(requestID)) {
         return;
       }
       setState((current) => ({
@@ -2481,7 +2625,7 @@ export function App(): JSX.Element {
     const nextTab =
       activeSessionTab(state)?.kind === "draft" && !prompt.trim() && composerImages.length === 0
         ? activeSessionTab(state)
-        : nextDraftSessionTab();
+        : nextDraftSessionTab(state.activeContext);
     if (!nextTab) {
       return;
     }
@@ -2502,12 +2646,13 @@ export function App(): JSX.Element {
     if (!state.activeContext || !state.initialized) {
       return;
     }
+    const activeContext = state.activeContext;
     cancelViewSwitch();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
-    const demo = createAgentTreeDemo(state.activeContext.cwd, state.initialized);
+    const demo = createAgentTreeDemo(activeContext.cwd, state.initialized);
     const demoThreads = [demo.parent, ...demo.children];
     localDemoThreadsRef.current = new Map([
       ...localDemoThreadsRef.current,
@@ -2519,7 +2664,7 @@ export function App(): JSX.Element {
       secondaryThread: undefined,
       activePane: "primary",
       allowThreadAutoActivation: true,
-      sessionTabs: ensureSessionTab(current.sessionTabs, createThreadSessionTab(demo.parent)),
+      sessionTabs: ensureSessionTab(current.sessionTabs, createThreadSessionTab(demo.parent, activeContext)),
       activeSessionTabID: threadSessionTabID(demo.parent.id),
       threads: upsertThread(current.threads, demo.parent),
       running: false,
@@ -2533,12 +2678,13 @@ export function App(): JSX.Element {
     if (!state.activeContext || !state.initialized) {
       return;
     }
+    const activeContext = state.activeContext;
     cancelViewSwitch();
     setArchiveConfirmThreadID(undefined);
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
-    const thread = createConversationFixture(kind, state.activeContext.cwd, state.initialized);
+    const thread = createConversationFixture(kind, activeContext.cwd, state.initialized);
     localDemoThreadsRef.current = new Map([...localDemoThreadsRef.current, [thread.id, thread]]);
     setState((current) => ({
       ...current,
@@ -2546,7 +2692,7 @@ export function App(): JSX.Element {
       secondaryThread: undefined,
       activePane: "primary",
       allowThreadAutoActivation: true,
-      sessionTabs: ensureSessionTab(current.sessionTabs, createThreadSessionTab(thread)),
+      sessionTabs: ensureSessionTab(current.sessionTabs, createThreadSessionTab(thread, activeContext)),
       activeSessionTabID: threadSessionTabID(thread.id),
       threads: upsertThread(current.threads, thread),
       running: isThreadRunning(thread),
@@ -2571,6 +2717,7 @@ export function App(): JSX.Element {
     if (!state.activeContext) {
       return;
     }
+    const activeContext = state.activeContext;
     if (threadId === activeThreadID) {
       if (pendingViewSwitch) {
         cancelViewSwitch();
@@ -2598,7 +2745,7 @@ export function App(): JSX.Element {
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(demoThread, targetDraft)),
+          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(demoThread, activeContext, targetDraft)),
           activeSessionTabID: threadSessionTabID(demoThread.id),
           threads: upsertThread(current.threads, demoThread),
           running: isThreadRunning(demoThread),
@@ -2627,7 +2774,7 @@ export function App(): JSX.Element {
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(thread, targetDraft)),
+          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(thread, sourceContext, targetDraft)),
           activeSessionTabID: threadSessionTabID(thread.id),
           threads: upsertThread(current.threads, thread),
           running: isThreadRunning(thread),
@@ -2682,7 +2829,7 @@ export function App(): JSX.Element {
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(thread, targetDraft)),
+          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(thread, sourceContext, targetDraft)),
           activeSessionTabID: threadSessionTabID(thread.id),
           threads: upsertThread(current.threads, thread),
           running: isThreadRunning(thread),
@@ -2740,7 +2887,10 @@ export function App(): JSX.Element {
           status: "ready"
         };
       }
-      const nextTab = createDraftSessionTab(`draft:closed:${Date.now()}`);
+      if (!current.activeContext) {
+        return current;
+      }
+      const nextTab = createDraftSessionTab(`draft:closed:${Date.now()}`, current.activeContext);
       return {
         ...current,
         thread: undefined,
@@ -2757,6 +2907,7 @@ export function App(): JSX.Element {
     if (!state.activeContext || sourceThread.read_only) {
       return;
     }
+    const activeContext = state.activeContext;
     if (localDemoThreadsRef.current.has(sourceThread.id)) {
       setState((current) => ({ ...current, status: "示例会话不能分叉" }));
       return;
@@ -2794,8 +2945,8 @@ export function App(): JSX.Element {
           activePane: "secondary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
-            ensureSessionTab(current.sessionTabs, createThreadSessionTab(source, sourceDraft)),
-            createThreadSessionTab(fork)
+            ensureSessionTab(current.sessionTabs, createThreadSessionTab(source, activeContext, sourceDraft)),
+            createThreadSessionTab(fork, activeContext)
           ),
           activeSessionTabID: threadSessionTabID(fork.id),
           threads: upsertThread(upsertThread(current.threads, source), fork),
@@ -2856,7 +3007,7 @@ export function App(): JSX.Element {
     }
     clearPendingComposerMessages();
     const archivedActiveThread = thread.id === activeThreadID;
-    const fallbackDraft = archivedActiveThread ? nextDraftSessionTab() : undefined;
+    const fallbackDraft = archivedActiveThread ? nextDraftSessionTab(state.activeContext) : undefined;
     if (archivedActiveThread) {
       setPrompt("");
       setComposerImages([]);
@@ -2955,6 +3106,7 @@ export function App(): JSX.Element {
     ) {
       return false;
     }
+    const activeContext = currentState.activeContext;
     conversationAutoFollowRef.current = true;
     resetRunDebugEvents({
       source: "client",
@@ -2974,7 +3126,12 @@ export function App(): JSX.Element {
         allowThreadAutoActivation: true,
         sessionTabs:
           targetPane === "primary"
-            ? bindActiveSessionTabToThread(appStateRef.current.sessionTabs, appStateRef.current.activeSessionTabID, thread)
+            ? bindActiveSessionTabToThread(
+                appStateRef.current.sessionTabs,
+                appStateRef.current.activeSessionTabID,
+                thread,
+                activeContext
+              )
             : appStateRef.current.sessionTabs,
         activeSessionTabID:
           targetPane === "primary" ? threadSessionTabID(thread.id) : appStateRef.current.activeSessionTabID,
@@ -2986,7 +3143,7 @@ export function App(): JSX.Element {
         allowThreadAutoActivation: true,
         sessionTabs:
           targetPane === "primary"
-            ? bindActiveSessionTabToThread(current.sessionTabs, current.activeSessionTabID, thread)
+            ? bindActiveSessionTabToThread(current.sessionTabs, current.activeSessionTabID, thread, activeContext)
             : current.sessionTabs,
         activeSessionTabID: targetPane === "primary" ? threadSessionTabID(thread.id) : current.activeSessionTabID,
         threads: upsertThread(current.threads, thread)
@@ -4398,10 +4555,15 @@ function projectThreads(threads: Thread[]): Thread[] {
   return sortThreads(threads).filter((thread) => !thread.pinned);
 }
 
-function createDraftSessionTab(id: string, draft: ComposerDraftState = emptyComposerDraft()): SessionTab {
+function createDraftSessionTab(
+  id: string,
+  context: RuntimeContext,
+  draft: ComposerDraftState = emptyComposerDraft()
+): SessionTab {
   return {
     id,
     kind: "draft",
+    context,
     title: "新对话",
     prompt: draft.prompt,
     images: draft.images.map((image) => ({ ...image })),
@@ -4409,11 +4571,17 @@ function createDraftSessionTab(id: string, draft: ComposerDraftState = emptyComp
   };
 }
 
-function createThreadSessionTab(thread: Thread, draft: ComposerDraftState = emptyComposerDraft()): SessionTab {
+function createThreadSessionTab(
+  thread: Thread,
+  context: RuntimeContext,
+  draft: ComposerDraftState = emptyComposerDraft()
+): SessionTab {
   return {
     id: threadSessionTabID(thread.id),
     kind: "thread",
+    context,
     threadID: thread.id,
+    title: thread.preview || "未命名对话",
     prompt: draft.prompt,
     images: draft.images.map((image) => ({ ...image }))
   };
@@ -4421,6 +4589,48 @@ function createThreadSessionTab(thread: Thread, draft: ComposerDraftState = empt
 
 function threadSessionTabID(threadID: string): string {
   return `thread:${threadID}`;
+}
+
+function runtimeContextKey(context: RuntimeContext): string {
+  return context.kind === "project" ? `project:${context.project_id}` : `no_project:${context.cwd}`;
+}
+
+function draftSessionTabIDForContext(context: RuntimeContext): string {
+  return `${INITIAL_DRAFT_SESSION_TAB_ID}:${runtimeContextKey(context)}`;
+}
+
+function draftSessionTabForContext(tabs: SessionTab[], context: RuntimeContext): SessionTab | undefined {
+  for (let index = tabs.length - 1; index >= 0; index -= 1) {
+    const tab = tabs[index];
+    if (tab.kind === "draft" && sameRuntimeContext(tab.context, context)) {
+      return tab;
+    }
+  }
+  return undefined;
+}
+
+function sessionTabForLoadedRuntime(tabs: SessionTab[], context: RuntimeContext, thread: Thread | undefined): SessionTab {
+  if (thread) {
+    return createThreadSessionTab(thread, context, sessionTabDraftForThreadID(tabs, thread.id));
+  }
+  return draftSessionTabForContext(tabs, context) ?? createDraftSessionTab(draftSessionTabIDForContext(context), context);
+}
+
+function withLoadedRuntimeSessionTab(current: AppState, loadedState: Partial<AppState>): AppState {
+  const next = {
+    ...current,
+    ...loadedState
+  };
+  const context = loadedState.activeContext;
+  if (!context) {
+    return next;
+  }
+  const tab = sessionTabForLoadedRuntime(current.sessionTabs, context, loadedState.thread);
+  return {
+    ...next,
+    sessionTabs: ensureSessionTab(current.sessionTabs, tab),
+    activeSessionTabID: tab.id
+  };
 }
 
 function activeSessionTab(state: AppState): SessionTab | undefined {
@@ -4477,8 +4687,13 @@ function persistActiveSessionTabDraft(state: AppState, draft: ComposerDraftState
   };
 }
 
-function bindActiveSessionTabToThread(tabs: SessionTab[], activeTabID: string, thread: Thread): SessionTab[] {
-  const threadTab = createThreadSessionTab(thread);
+function bindActiveSessionTabToThread(
+  tabs: SessionTab[],
+  activeTabID: string,
+  thread: Thread,
+  context: RuntimeContext
+): SessionTab[] {
+  const threadTab = createThreadSessionTab(thread, context);
   const existingThreadTab = tabs.find((tab) => tab.id === threadTab.id);
   if (existingThreadTab) {
     return tabs
@@ -4489,7 +4704,11 @@ function bindActiveSessionTabToThread(tabs: SessionTab[], activeTabID: string, t
 }
 
 function sessionTabDraftForThread(state: AppState, threadID: string): ComposerDraftState {
-  const tab = state.sessionTabs.find((item) => item.kind === "thread" && item.threadID === threadID);
+  return sessionTabDraftForThreadID(state.sessionTabs, threadID);
+}
+
+function sessionTabDraftForThreadID(tabs: SessionTab[], threadID: string): ComposerDraftState {
+  const tab = tabs.find((item) => item.kind === "thread" && item.threadID === threadID);
   return tab ? cloneSessionTabDraft(tab) : emptyComposerDraft();
 }
 
@@ -4515,7 +4734,7 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
     const draftTitle = tab.prompt.trim().split(/\s+/).slice(0, 8).join(" ");
     return draftTitle || tab.title;
   }
-  return threadForTab(state, tab.threadID)?.preview || "未命名对话";
+  return threadForTab(state, tab.threadID)?.preview || tab.title || "未命名对话";
 }
 
 function threadTime(thread: Thread): number {
