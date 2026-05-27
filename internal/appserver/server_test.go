@@ -1370,6 +1370,125 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	}
 }
 
+func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{Content: "summary of older single-turn tool run"},
+			{Content: "after compact"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	rt.StreamRunner.ContextWindowOverride = 1000
+
+	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir session dir: %v", err)
+	}
+	sessionID := "20260527-000000-compact"
+	sess, err := session.CreateWithMetadata(rt.SessionDir, sessionID, rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
+	largeToolOutput := strings.Repeat("large output ", 1200)
+	initialHistory := []providers.ChatMessage{
+		{Role: "user", Content: "debug the failing workbench request"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "run_shell", Arguments: `{"command":"rg ContextOverflow"}`},
+		}},
+		{Role: "tool", Name: "run_shell", ToolCallID: "call_1", Content: largeToolOutput},
+		{Role: "assistant", Content: "I found the first clue."},
+	}
+	if err := rewriteChatHistory(sessionPath, initialHistory); err != nil {
+		t.Fatalf("write initial history: %v", err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, sess.ID, persistableMessageCount(initialHistory), threadPreview(initialHistory)); err != nil {
+		t.Fatalf("update index: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	rawResume, err := json.Marshal(map[string]any{
+		"id":     "resume-1",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: sess.ID},
+	})
+	if err != nil {
+		t.Fatalf("marshal resume: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rawResume); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+
+	rawTurn, err := json.Marshal(map[string]any{
+		"id":     "turn-1",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: sess.ID, Prompt: "continue"},
+	})
+	if err != nil {
+		t.Fatalf("marshal turn: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rawTurn); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
+	if completed.Content != "after compact" || completed.Turn.Status != TurnStatusCompleted {
+		t.Fatalf("unexpected turn completion: %+v", completed)
+	}
+	if turnEventByType(t, msgs, providers.EventCompact) == nil {
+		t.Fatal("expected compact event during resumed turn")
+	}
+
+	persisted, err := loadChatMessages(sessionPath)
+	if err != nil {
+		t.Fatalf("load compacted history: %v", err)
+	}
+	if len(persisted) != 3 {
+		t.Fatalf("expected compacted persisted history of 3 messages, got %+v", persisted)
+	}
+	if persisted[0].Role != "system" || !strings.Contains(persisted[0].Content, "summary of older single-turn tool run") {
+		t.Fatalf("expected persisted compact summary first, got %+v", persisted[0])
+	}
+	if persisted[1].Role != "user" || persisted[1].Content != "continue" {
+		t.Fatalf("expected resumed user message after summary, got %+v", persisted[1])
+	}
+	if persisted[2].Role != "assistant" || persisted[2].Content != "after compact" {
+		t.Fatalf("expected final assistant message after compact, got %+v", persisted[2])
+	}
+
+	out2 := &lockedBuffer{}
+	resumedSrv := New(rt, out2)
+	rawResume2, err := json.Marshal(map[string]any{
+		"id":     "resume-2",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: sess.ID},
+	})
+	if err != nil {
+		t.Fatalf("marshal second resume: %v", err)
+	}
+	if err := resumedSrv.handleLine(context.Background(), rawResume2); err != nil {
+		t.Fatalf("second thread/resume: %v", err)
+	}
+	resumeMsgs := parseOutput(t, out2.String())
+	result := remarshal[ThreadResumeResult](t, responseByID(t, resumeMsgs, "resume-2")["result"])
+	if result.Thread.ID != sess.ID || len(result.Thread.Turns) != 1 {
+		t.Fatalf("unexpected resumed compacted thread: %+v", result.Thread)
+	}
+	if len(result.Thread.Turns[0].Items) != 3 || result.Thread.Turns[0].Items[1].Type != ThreadItemContextCompaction {
+		t.Fatalf("expected resumed turn to include context compaction item: %+v", result.Thread.Turns[0])
+	}
+	th := resumedSrv.thread(sess.ID)
+	if th == nil {
+		t.Fatal("expected resumed compacted thread state")
+	}
+	if len(th.History) != 4 {
+		t.Fatalf("expected base system prompt plus compacted persisted history, got %+v", th.History)
+	}
+	if th.History[1].Role != "system" || !strings.Contains(th.History[1].Content, "summary of older single-turn tool run") {
+		t.Fatalf("expected compact summary after base system prompt, got %+v", th.History)
+	}
+}
+
 func TestServerThreadResumeReturnsLoadedRunningThread(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	out := &lockedBuffer{}

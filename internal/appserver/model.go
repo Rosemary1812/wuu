@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -615,6 +616,7 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 	var current *Turn
 	itemIndex := 0
 	toolItems := make(map[string]int)
+	var pendingCompactions []ThreadItem
 	nextItemID := func(turnID string) string {
 		itemIndex++
 		return fmt.Sprintf("%s-item-%d", turnID, itemIndex)
@@ -627,6 +629,13 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 	}
 	for _, msg := range history {
 		if msg.Role == "system" {
+			if compact.IsConversationSummaryContent(msg.Content) {
+				pendingCompactions = append(pendingCompactions, ThreadItem{
+					Type:   ThreadItemContextCompaction,
+					Status: ThreadItemStatusCompleted,
+					Text:   "Compacted history",
+				})
+			}
 			continue
 		}
 		if msg.Role == "user" && !isToolResultMessage(msg) {
@@ -639,6 +648,11 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 				Status:    TurnStatusCompleted,
 			}
 			turn.Items = append(turn.Items, chatMessageItem(nextItemID(turnID), msg))
+			for _, item := range pendingCompactions {
+				item.ID = nextItemID(turnID)
+				turn.Items = append(turn.Items, item)
+			}
+			pendingCompactions = nil
 			turns = append(turns, turn)
 			current = &turns[len(turns)-1]
 			continue
