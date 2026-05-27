@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import {
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
@@ -170,6 +171,11 @@ type PendingViewSwitch = {
   visible: boolean;
 };
 type ConversationPaneID = "primary" | "secondary";
+type SessionTabDropEdge = "before" | "after";
+type SessionTabDropTarget = {
+  id: string;
+  edge: SessionTabDropEdge;
+};
 type RunDebugEventSource = "client" | "server";
 type RunDebugEventTone = "info" | "running" | "success" | "warning" | "error";
 
@@ -430,6 +436,8 @@ export function App(): JSX.Element {
   const [pendingViewSwitch, setPendingViewSwitch] = useState<PendingViewSwitch | undefined>(undefined);
   const [debugControlsEnabled, setDebugControlsEnabled] = useState(initialDebugControlsEnabled);
   const [swissStyleEnabled, setSwissStyleEnabled] = useState(initialSwissStyleEnabled);
+  const [draggingSessionTabID, setDraggingSessionTabID] = useState<string | undefined>(undefined);
+  const [sessionTabDropTarget, setSessionTabDropTarget] = useState<SessionTabDropTarget | undefined>(undefined);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({ primary: null, secondary: null });
   const conversationPaneRef = useRef<HTMLElement | null>(null);
@@ -1652,6 +1660,8 @@ export function App(): JSX.Element {
               pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread" && tab.kind === "thread"
                 ? pendingViewSwitch.targetID === tab.threadID
                 : false;
+            const dragging = draggingSessionTabID === tab.id;
+            const dropTarget = sessionTabDropTarget?.id === tab.id ? sessionTabDropTarget.edge : undefined;
             const label = sessionTabLabel(tab, state);
             const closeLabel = tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
             return (
@@ -1659,7 +1669,14 @@ export function App(): JSX.Element {
                 key={tab.id}
                 className={`session-tab${active ? " active" : ""}${running ? " running" : ""}${
                   pendingSwitch ? " pending-switch" : ""
-                }`}
+                }${dragging ? " dragging" : ""}${dropTarget ? ` drop-${dropTarget}` : ""}`}
+                draggable={state.sessionTabs.length > 1}
+                aria-grabbed={dragging || undefined}
+                onDragStart={(event) => startSessionTabDrag(event, tab.id)}
+                onDragEnter={(event) => updateSessionTabDropTarget(event, tab.id)}
+                onDragOver={(event) => updateSessionTabDropTarget(event, tab.id)}
+                onDrop={(event) => dropSessionTab(event, tab.id)}
+                onDragEnd={endSessionTabDrag}
               >
                 <button
                   className="session-tab-main"
@@ -1675,8 +1692,10 @@ export function App(): JSX.Element {
                 <button
                   className="session-tab-close"
                   type="button"
+                  draggable={false}
                   aria-label={closeLabel}
                   title={closeLabel}
+                  onDragStart={(event) => event.preventDefault()}
                   onClick={(event) => {
                     event.stopPropagation();
                     void closeSessionTab(tab.id);
@@ -1716,6 +1735,59 @@ export function App(): JSX.Element {
         <h1>{activeTitle}</h1>
       </>
     );
+  }
+
+  function startSessionTabDrag(event: ReactDragEvent<HTMLDivElement>, tabID: string): void {
+    if (state.sessionTabs.length < 2) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-wuu-session-tab", tabID);
+    event.dataTransfer.setData("text/plain", tabID);
+    setDraggingSessionTabID(tabID);
+    setSessionTabDropTarget(undefined);
+  }
+
+  function updateSessionTabDropTarget(event: ReactDragEvent<HTMLDivElement>, targetID: string): void {
+    const sourceID = draggingSessionTabID;
+    if (!sourceID || sourceID === targetID) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const edge = sessionTabDropEdge(event);
+    setSessionTabDropTarget((current) =>
+      current?.id === targetID && current.edge === edge ? current : { id: targetID, edge }
+    );
+  }
+
+  function dropSessionTab(event: ReactDragEvent<HTMLDivElement>, targetID: string): void {
+    const sourceID =
+      draggingSessionTabID ||
+      event.dataTransfer.getData("application/x-wuu-session-tab") ||
+      event.dataTransfer.getData("text/plain");
+    if (!sourceID || sourceID === targetID) {
+      endSessionTabDrag();
+      return;
+    }
+    event.preventDefault();
+    const edge = sessionTabDropTarget?.id === targetID ? sessionTabDropTarget.edge : sessionTabDropEdge(event);
+    setState((current) => ({
+      ...current,
+      sessionTabs: reorderSessionTabs(current.sessionTabs, sourceID, targetID, edge)
+    }));
+    endSessionTabDrag();
+  }
+
+  function endSessionTabDrag(): void {
+    setDraggingSessionTabID(undefined);
+    setSessionTabDropTarget(undefined);
+  }
+
+  function sessionTabDropEdge(event: ReactDragEvent<HTMLDivElement>): SessionTabDropEdge {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientX > rect.left + rect.width / 2 ? "after" : "before";
   }
 
   function clearViewSwitchDelay(): void {
@@ -4367,6 +4439,32 @@ function ensureSessionTab(tabs: SessionTab[], tab: SessionTab): SessionTab[] {
 
 function removeSessionTab(tabs: SessionTab[], tabID: string): SessionTab[] {
   return tabs.filter((tab) => tab.id !== tabID);
+}
+
+function reorderSessionTabs(
+  tabs: SessionTab[],
+  sourceID: string,
+  targetID: string,
+  edge: SessionTabDropEdge
+): SessionTab[] {
+  if (sourceID === targetID) {
+    return tabs;
+  }
+  const sourceIndex = tabs.findIndex((tab) => tab.id === sourceID);
+  const targetIndex = tabs.findIndex((tab) => tab.id === targetID);
+  if (sourceIndex < 0 || targetIndex < 0) {
+    return tabs;
+  }
+
+  const next = tabs.slice();
+  const [source] = next.splice(sourceIndex, 1);
+  const adjustedTargetIndex = next.findIndex((tab) => tab.id === targetID);
+  if (adjustedTargetIndex < 0) {
+    return tabs;
+  }
+  const insertIndex = edge === "after" ? adjustedTargetIndex + 1 : adjustedTargetIndex;
+  next.splice(insertIndex, 0, source);
+  return next;
 }
 
 function persistActiveSessionTabDraft(state: AppState, draft: ComposerDraftState): AppState {

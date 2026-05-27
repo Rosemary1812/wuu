@@ -1535,6 +1535,7 @@ button:disabled {
 
 .session-tab {
   display: flex;
+  position: relative;
   min-width: 118px;
   max-width: 236px;
   height: 30px;
@@ -1552,6 +1553,40 @@ button:disabled {
     color 140ms ease,
     transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
   -webkit-app-region: no-drag;
+}
+
+.session-tab[draggable="true"] {
+  cursor: grab;
+}
+
+.session-tab[draggable="true"]:active,
+.session-tab.dragging {
+  cursor: grabbing;
+}
+
+.session-tab.dragging {
+  opacity: 0.48;
+  transform: scale(0.985);
+}
+
+.session-tab.drop-before::after,
+.session-tab.drop-after::after {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--sidebar-accent);
+  content: "";
+  pointer-events: none;
+}
+
+.session-tab.drop-before::after {
+  left: -4px;
+}
+
+.session-tab.drop-after::after {
+  right: -4px;
 }
 
 .session-tab:hover,
@@ -1585,6 +1620,7 @@ button:disabled {
   background: transparent;
   color: inherit;
   padding: 0 3px 0 11px;
+  cursor: inherit;
   text-align: left;
 }
 
@@ -1630,6 +1666,7 @@ button:disabled {
   border-radius: 999px;
   background: transparent;
   color: #8a8f93;
+  cursor: pointer;
   margin-right: 4px;
   opacity: 0;
   transition:
@@ -1659,6 +1696,7 @@ button:disabled {
   border-radius: 999px;
   background: #f6f6f3;
   color: #666d72;
+  cursor: pointer;
   transition:
     background-color 140ms ease,
     border-color 140ms ease,
