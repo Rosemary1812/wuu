@@ -52,6 +52,82 @@ type openCodeModelDescriptor struct {
 	BaseURL     string
 }
 
+func BaseOptionsForProvider(providerName string, provider config.ProviderConfig, model string) map[string]any {
+	desc := openCodeDescriptor(providerName, provider, model)
+	result := map[string]any{}
+
+	if desc.APINPM == openCodeNPMVertexAnthropic || (desc.APINPM == openCodeNPMAnthropic && !strings.Contains(desc.APIID, "claude")) {
+		result["toolStreaming"] = false
+	}
+	if desc.ProviderID == "openai" || desc.APINPM == openCodeNPMOpenAI || desc.APINPM == openCodeNPMGithubCopilot {
+		result["store"] = false
+	}
+	if desc.APINPM == openCodeNPMAzure {
+		result["store"] = false
+	}
+	if desc.APINPM == openCodeNPMOpenRouter {
+		result["usage"] = map[string]any{"include": true}
+		if strings.Contains(desc.APIID, "gemini-3") {
+			result["reasoning"] = map[string]any{"effort": "high"}
+		}
+	}
+	if desc.ProviderID == "baseten" || (desc.ProviderID == "opencode" && (desc.APIID == "kimi-k2-thinking" || desc.APIID == "glm-4.6")) {
+		result["chat_template_args"] = map[string]any{"enable_thinking": true}
+	}
+	if (strings.Contains(desc.ProviderID, "zai") || strings.Contains(desc.ProviderID, "zhipuai")) && desc.APINPM == openCodeNPMOpenAICompatible {
+		result["thinking"] = map[string]any{
+			"type":           "enabled",
+			"clear_thinking": false,
+		}
+	}
+	if desc.APINPM == openCodeNPMGoogle || desc.APINPM == openCodeNPMGoogleVertex {
+		if desc.Reasoning {
+			thinking := map[string]any{"includeThoughts": true}
+			if strings.Contains(desc.APIID, "gemini-3") {
+				thinking["thinkingLevel"] = "high"
+			}
+			result["thinkingConfig"] = thinking
+		}
+	}
+	if (desc.APINPM == openCodeNPMAnthropic || desc.APINPM == openCodeNPMVertexAnthropic) &&
+		(strings.Contains(desc.APIID, "k2p") || strings.Contains(desc.APIID, "kimi-k2.") || strings.Contains(desc.APIID, "kimi-k2p")) {
+		result["thinking"] = map[string]any{
+			"type":         "enabled",
+			"budgetTokens": openCodeAnthropicHighBudget(desc.OutputLimit),
+		}
+	}
+	if desc.ProviderID == "alibaba-cn" && desc.Reasoning && desc.APINPM == openCodeNPMOpenAICompatible && !strings.Contains(desc.APIID, "kimi-k2-thinking") {
+		result["enable_thinking"] = true
+	}
+	if desc.APINPM == openCodeNPMAzure && strings.Contains(desc.APIID, "gpt-5.5") {
+		result["reasoningSummary"] = "auto"
+		return nilIfEmpty(result)
+	}
+	if strings.Contains(desc.APIID, "gpt-5") && !strings.Contains(desc.APIID, "gpt-5-chat") {
+		if !strings.Contains(desc.APIID, "gpt-5-pro") {
+			result["reasoningEffort"] = "medium"
+			result["reasoningSummary"] = "auto"
+			if desc.APINPM == openCodeNPMOpenAI {
+				result["include"] = []any{"reasoning.encrypted_content"}
+			}
+		}
+		if strings.Contains(desc.APIID, "gpt-5.") &&
+			!strings.Contains(desc.APIID, "codex") &&
+			!strings.Contains(desc.APIID, "-chat") &&
+			desc.ProviderID != "azure" {
+			result["textVerbosity"] = "low"
+		}
+		if strings.HasPrefix(desc.ProviderID, "opencode") {
+			result["include"] = []any{"reasoning.encrypted_content"}
+			result["reasoningSummary"] = "auto"
+		}
+	}
+	if desc.APINPM == openCodeNPMGateway {
+		result["gateway"] = map[string]any{"caching": "auto"}
+	}
+	return nilIfEmpty(result)
+}
+
 func inferredOptionsForProvider(providerName string, provider config.ProviderConfig, model string) map[string]map[string]any {
 	desc := openCodeDescriptor(providerName, provider, model)
 	if !desc.Reasoning {
@@ -413,6 +489,13 @@ func openCodeAnthropicAdaptiveEfforts(apiID string) []string {
 		return []string{"low", "medium", "high", "max"}
 	}
 	return nil
+}
+
+func nilIfEmpty(options map[string]any) map[string]any {
+	if len(options) == 0 {
+		return nil
+	}
+	return options
 }
 
 func openCodeGoogleThinkingLevelEfforts(apiID string) []string {

@@ -26,6 +26,7 @@ func Resolve(provider config.ProviderConfig, model, variant, legacyEffort string
 func ResolveForProvider(providerName string, provider config.ProviderConfig, model, variant, legacyEffort string) Selection {
 	variant = strings.TrimSpace(variant)
 	legacyEffort = strings.TrimSpace(legacyEffort)
+	baseOptions := BaseOptionsForProvider(providerName, provider, model)
 
 	if variant == "" && legacyEffort != "" {
 		if _, ok := OptionsForProvider(providerName, provider, model, legacyEffort); ok {
@@ -44,13 +45,14 @@ func ResolveForProvider(providerName string, provider config.ProviderConfig, mod
 			return Selection{
 				Variant:         variant,
 				DisplayEffort:   variant,
-				ProviderOptions: options,
+				ProviderOptions: mergeOptions(baseOptions, options),
 			}
 		}
 	}
 	return Selection{
-		DisplayEffort: legacyEffort,
-		LegacyEffort:  legacyEffort,
+		DisplayEffort:   legacyEffort,
+		LegacyEffort:    legacyEffort,
+		ProviderOptions: baseOptions,
 	}
 }
 
@@ -145,6 +147,33 @@ func CloneOptions(options map[string]any) map[string]any {
 		return nil
 	}
 	return out
+}
+
+func mergeOptions(base, override map[string]any) map[string]any {
+	out := CloneOptions(base)
+	if len(override) == 0 {
+		return out
+	}
+	if out == nil {
+		out = make(map[string]any, len(override))
+	}
+	mergeOptionMap(out, override)
+	return out
+}
+
+func mergeOptionMap(dst, src map[string]any) {
+	for key, value := range src {
+		if key == "disabled" {
+			continue
+		}
+		if nested, ok := value.(map[string]any); ok {
+			if existing, ok := dst[key].(map[string]any); ok {
+				mergeOptionMap(existing, nested)
+				continue
+			}
+		}
+		dst[key] = cloneValue(value)
+	}
 }
 
 func cloneValue(value any) any {

@@ -147,6 +147,66 @@ func TestResolveUsesVariantOptionsInsteadOfLegacyEffort(t *testing.T) {
 	}
 }
 
+func TestResolveMergesOpenCodeBaseOptions(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:  "openai",
+		Model: "gpt-5.5",
+	}
+
+	selection := Resolve(provider, provider.Model, "high", "")
+	if selection.Variant != "high" {
+		t.Fatalf("selection = %+v", selection)
+	}
+	if got := selection.ProviderOptions["reasoningEffort"]; got != "high" {
+		t.Fatalf("reasoningEffort = %#v", got)
+	}
+	if got := selection.ProviderOptions["reasoningSummary"]; got != "auto" {
+		t.Fatalf("reasoningSummary = %#v", got)
+	}
+	if got := selection.ProviderOptions["textVerbosity"]; got != "low" {
+		t.Fatalf("textVerbosity = %#v", got)
+	}
+	if got := selection.ProviderOptions["store"]; got != false {
+		t.Fatalf("store = %#v", got)
+	}
+}
+
+func TestResolveKeepsOpenCodeDefaultOptionsWithoutVariant(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:  "openai-compatible",
+		Model: "gpt-5.5",
+	}
+
+	selection := Resolve(provider, provider.Model, "", "")
+	if selection.Variant != "" || selection.DisplayEffort != "" {
+		t.Fatalf("selection = %+v", selection)
+	}
+	if got := selection.ProviderOptions["reasoningEffort"]; got != "medium" {
+		t.Fatalf("reasoningEffort = %#v", got)
+	}
+	if got := selection.ProviderOptions["reasoningSummary"]; got != "auto" {
+		t.Fatalf("reasoningSummary = %#v", got)
+	}
+}
+
+func TestResolveMergesOpenRouterUsageOptions(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:    "openai-compatible",
+		BaseURL: "https://openrouter.ai/api/v1",
+		Model:   "openai/gpt-5.5",
+	}
+
+	selection := ResolveForProvider("openrouter", provider, provider.Model, "high", "")
+	usage, ok := selection.ProviderOptions["usage"].(map[string]any)
+	if !ok || usage["include"] != true {
+		t.Fatalf("usage = %#v", selection.ProviderOptions)
+	}
+	reasoning, ok := selection.ProviderOptions["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "high" {
+		t.Fatalf("reasoning = %#v", selection.ProviderOptions)
+	}
+}
+
 func variantIDs(variants []Variant) []string {
 	out := make([]string, 0, len(variants))
 	for _, variant := range variants {
