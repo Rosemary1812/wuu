@@ -560,7 +560,7 @@ func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
 	}
 }
 
-func TestRunToolLoop_PreRequestCompactRequiresGroundTruthUsage(t *testing.T) {
+func TestRunToolLoop_PreRequestCompactUsesLocalEstimateWithoutGroundTruth(t *testing.T) {
 	history := []providers.ChatMessage{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: strings.Repeat("seed ", 80)},
@@ -583,17 +583,20 @@ func TestRunToolLoop_PreRequestCompactRequiresGroundTruthUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if compactCalled != 0 {
-		t.Fatalf("expected no pre-request compact without ground-truth usage, got %d", compactCalled)
+	if compactCalled != 1 {
+		t.Fatalf("expected pre-request compact from local estimate, got %d", compactCalled)
 	}
 	if len(step.calls) != 1 {
 		t.Fatalf("expected one provider call, got %d", len(step.calls))
 	}
-	if len(step.calls[0].Messages) != len(history) {
-		t.Fatalf("expected original history to be sent unchanged, got %d messages", len(step.calls[0].Messages))
+	if len(step.calls[0].Messages) != 2 {
+		t.Fatalf("expected compacted history to be sent, got %d messages", len(step.calls[0].Messages))
 	}
 	if res.Content != "ok" {
 		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if !res.HistoryRewritten {
+		t.Fatal("expected history rewrite after estimate-based compact")
 	}
 }
 

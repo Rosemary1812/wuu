@@ -120,7 +120,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		MaxContextTokens: maxCtx,
 		OnUsage:          onUsage,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
-			return compact.Compact(ctx, messages, r.Client, r.Model)
+			return compact.CompactWithContextWindow(ctx, messages, r.Client, r.Model, maxCtx)
 		},
 	}
 

@@ -43,6 +43,20 @@ func (m *mockStreamClient) Chat(_ context.Context, req providers.ChatRequest) (p
 
 func (m *mockStreamClient) StreamChat(_ context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
 	m.requests = append(m.requests, req)
+	if isCompactSummaryRequest(req) {
+		idx := m.chatCallCount
+		m.chatCallCount++
+		if idx < len(m.chatErrs) && m.chatErrs[idx] != nil {
+			return nil, m.chatErrs[idx]
+		}
+		ch := make(chan providers.StreamEvent, 2)
+		if idx < len(m.chatResponses) {
+			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: m.chatResponses[idx].Content}
+		}
+		ch <- providers.StreamEvent{Type: providers.EventDone}
+		close(ch)
+		return ch, nil
+	}
 	if len(m.attempts) > 0 {
 		idx := m.callCount
 		m.callCount++
@@ -66,6 +80,15 @@ func (m *mockStreamClient) StreamChat(_ context.Context, req providers.ChatReque
 	}
 	close(ch)
 	return ch, nil
+}
+
+func isCompactSummaryRequest(req providers.ChatRequest) bool {
+	for _, msg := range req.Messages {
+		if strings.Contains(msg.Content, "Conversation to summarize") {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStreamRunner_DefaultReconnectConfigMatchesCC(t *testing.T) {
@@ -887,6 +910,119 @@ func TestStreamRunner_ReusesUsageAcrossTurnsForPreRequestCompact(t *testing.T) {
 	}
 	if got := client.requests[2].Messages[1].Content; !compact.IsConversationSummaryContent(got) || !strings.Contains(got, "summarized") {
 		t.Fatalf("expected compacted summary after system prompt, got %q", got)
+	}
+}
+
+func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "ok"},
+			{Type: providers.EventDone},
+		},
+		chatResponses: []providers.ChatResponse{
+			{Content: "summarized"},
+		},
+	}
+
+	runner := StreamRunner{
+		Client:                client,
+		Model:                 "test-model",
+		ContextWindowOverride: 1000,
+	}
+
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("older ", 300)},
+		{Role: "assistant", Content: strings.Repeat("older ", 300)},
+		{Role: "user", Content: "continue"},
+	}
+	res, err := runner.RunWithCallback(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("RunWithCallback: %v", err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if !res.HistoryRewritten {
+		t.Fatal("expected history rewrite after cold-start compact")
+	}
+	if len(client.requests) != 2 {
+		t.Fatalf("expected compact request plus stream request, got %d", len(client.requests))
+	}
+	if len(client.requests[1].Messages) >= len(history) {
+		t.Fatalf("expected compacted stream request, got %d messages from %d-history input",
+			len(client.requests[1].Messages), len(history))
+	}
+}
+
+func TestStreamRunner_ContextOverflowStreamErrorCompactsSingleUserTurn(t *testing.T) {
+	overflow := providers.NewProviderStreamError(
+		"context_length_exceeded",
+		"Your input exceeds the context window of this model. Please adjust your input and try again.",
+	)
+	client := &mockStreamClient{
+		attempts: []mockStreamAttempt{
+			{events: []providers.StreamEvent{
+				{Type: providers.EventError, Error: overflow},
+			}},
+			{events: []providers.StreamEvent{
+				{Type: providers.EventContentDelta, Content: "WUU_COMPACT_OK"},
+				{Type: providers.EventDone},
+			}},
+		},
+		chatResponses: []providers.ChatResponse{
+			{Content: "summarized single-turn tool run"},
+		},
+	}
+
+	runner := StreamRunner{
+		Client:                client,
+		Model:                 "test-model",
+		ContextWindowOverride: 1000,
+	}
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "debug the issue"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "run_shell", Arguments: `{"command":"rg ContextOverflow"}`},
+		}},
+		{Role: "tool", Name: "run_shell", ToolCallID: "call_1", Content: strings.Repeat("result ", 1000)},
+		{Role: "assistant", Content: "I found the first clue."},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{
+			{ID: "call_2", Name: "run_shell", Arguments: `{"command":"sed -n 1,220p internal/agent/loop.go"}`},
+		}},
+		{Role: "tool", Name: "run_shell", ToolCallID: "call_2", Content: strings.Repeat("result ", 1000)},
+		{Role: "assistant", Content: "I will continue from the runtime path."},
+	}
+
+	var compactSeen bool
+	res, err := runner.RunWithCallback(context.Background(), history, func(ev providers.StreamEvent) {
+		if ev.Type == providers.EventCompact {
+			compactSeen = true
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunWithCallback: %v", err)
+	}
+	if res.Content != "WUU_COMPACT_OK" {
+		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if !res.HistoryRewritten {
+		t.Fatal("expected rewritten history after overflow compact")
+	}
+	if !compactSeen {
+		t.Fatal("expected compact stream event")
+	}
+	if len(client.requests) != 3 {
+		t.Fatalf("expected stream, compact, stream requests, got %d", len(client.requests))
+	}
+	finalRequest := client.requests[2]
+	if len(finalRequest.Messages) >= len(history) {
+		t.Fatalf("expected compacted retry request, got %d messages from %d-history input",
+			len(finalRequest.Messages), len(history))
+	}
+	if got := finalRequest.Messages[0].Content; !compact.IsConversationSummaryContent(got) ||
+		!strings.Contains(got, "summarized single-turn tool run") {
+		t.Fatalf("expected compact summary in retry request, got %q", got)
 	}
 }
 

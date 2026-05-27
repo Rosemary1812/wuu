@@ -183,7 +183,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			})
 		},
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
-			return compact.Compact(ctx, messages, r.Client, r.Model)
+			return compact.CompactWithContextWindow(ctx, messages, r.Client, r.Model, maxCtx)
 		},
 		// Forward each tool result through the streaming callback so
 		// clients can render tool output live (the loop itself only

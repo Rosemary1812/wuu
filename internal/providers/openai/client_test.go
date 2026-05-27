@@ -1218,6 +1218,46 @@ func TestResponsesStreamChat_ContextLengthExceededClassified(t *testing.T) {
 	}
 }
 
+func TestResponsesStreamChat_TopLevelContextLengthErrorClassified(t *testing.T) {
+	rawError := `{"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"},"sequence_number":2}`
+	ssePayload := "event: error\n" +
+		"data: " + rawError + "\n\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ssePayload))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var got error
+	for ev := range ch {
+		if ev.Type == providers.EventError {
+			got = ev.Error
+			break
+		}
+	}
+	if !providers.IsContextOverflow(got) {
+		t.Fatalf("expected top-level context overflow stream error, got %T (%v)", got, got)
+	}
+}
+
 func TestNew_RejectsUnknownWireAPI(t *testing.T) {
 	_, err := New(ClientConfig{BaseURL: "https://example.com", WireAPI: "legacy", APIKey: "test-key"})
 	if err == nil {

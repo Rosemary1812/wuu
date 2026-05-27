@@ -105,10 +105,10 @@ type LoopConfig struct {
 	// paths; the overflow error is propagated to the caller as-is.
 	Compact CompactFn
 	// MaxContextTokens is the model's context window. When non-zero,
-	// the loop tracks usage from response.usage and proactively
-	// triggers a compact pass once the conversation exceeds
-	// CompactThresholdPct of this value. Zero disables proactive
-	// compact (the reactive overflow path still works).
+	// the loop tracks usage from response.usage plus local estimates
+	// and proactively triggers a compact pass once the conversation
+	// exceeds CompactThresholdPct of this value. Zero disables
+	// proactive compact (the reactive overflow path still works).
 	MaxContextTokens int
 	// CompactThresholdPct is the fraction of MaxContextTokens that
 	// triggers a proactive compact. Defaults to 0.9 (90%) when zero.

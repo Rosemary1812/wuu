@@ -115,8 +115,8 @@ func RunToolLoop(
 	if usage == nil {
 		usage = NewUsageTracker()
 		// Without caller-owned cross-turn state, seed this run from a
-		// local estimate. Pre-request proactive compact still waits
-		// for a real response.usage baseline before firing.
+		// local estimate so resumed long sessions can compact before
+		// the first provider request.
 		usage.RecordPendingMessages(history)
 	}
 	threshold := proactiveCompactThreshold(cfg)
@@ -137,7 +137,7 @@ func RunToolLoop(
 				usage.RecordPendingMessages(injected)
 			}
 		}
-		if cfg.Compact != nil && threshold > 0 && usage.HasGroundTruth() && usage.EstimateCurrent() >= threshold {
+		if cfg.Compact != nil && threshold > 0 && usage.EstimateCurrent() >= threshold {
 			before := usage.EstimateCurrent()
 			msgsBefore := len(messages)
 			if compacted, cerr := cfg.Compact(ctx, messages); cerr == nil && len(compacted) < len(messages) {

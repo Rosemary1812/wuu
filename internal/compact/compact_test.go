@@ -98,10 +98,6 @@ func (m *mockCompactClient) Chat(_ context.Context, req providers.ChatRequest) (
 	return providers.ChatResponse{Content: m.response}, nil
 }
 
-func (m *mockCompactClient) StreamChat(_ context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
-	return nil, errors.New("not implemented")
-}
-
 // flakyOverflowClient returns context-overflow on the first N calls
 // then a real summary. Used to exercise Compact's defensive trimming.
 type flakyOverflowClient struct {
@@ -121,10 +117,6 @@ func (f *flakyOverflowClient) Chat(_ context.Context, _ providers.ChatRequest) (
 		}
 	}
 	return providers.ChatResponse{Content: f.finalSummary}, nil
-}
-
-func (f *flakyOverflowClient) StreamChat(_ context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
-	return nil, errors.New("not implemented")
 }
 
 func TestCompactInstructionPrompt_EnforcesNoToolsAndFormat(t *testing.T) {
@@ -215,6 +207,38 @@ func TestCompact_DefensiveTrimOnOverflow(t *testing.T) {
 	}
 	if result[0].Role != "system" {
 		t.Fatalf("expected system summary first, got %s", result[0].Role)
+	}
+}
+
+func TestCompact_LongSingleUserTurnFallsBackToRecentTail(t *testing.T) {
+	largeToolOutput := strings.Repeat("tool output ", 1000)
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "debug the failing workbench request"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "run_shell", Arguments: `{"command":"rg failing"}`},
+		}},
+		{Role: "tool", Name: "run_shell", ToolCallID: "call_1", Content: largeToolOutput},
+		{Role: "assistant", Content: "I found the first clue."},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{
+			{ID: "call_2", Name: "run_shell", Arguments: `{"command":"sed -n 1,200p file.go"}`},
+		}},
+		{Role: "tool", Name: "run_shell", ToolCallID: "call_2", Content: largeToolOutput},
+		{Role: "assistant", Content: "I will keep checking the runtime path."},
+	}
+
+	client := &mockCompactClient{response: "single-turn investigation summary"}
+	result, err := CompactWithContextWindow(context.Background(), messages, client, "test-model", 1000)
+	if err != nil {
+		t.Fatalf("CompactWithContextWindow: %v", err)
+	}
+	if len(result) >= len(messages) {
+		t.Fatalf("expected single-user tool run to compact, got %d messages from %d", len(result), len(messages))
+	}
+	if result[0].Role != "system" || !IsConversationSummaryContent(result[0].Content) {
+		t.Fatalf("expected compact summary first, got %#v", result[0])
+	}
+	if err := providers.ValidateMessageSequence(result); err != nil {
+		t.Fatalf("compacted history has invalid tool sequence: %v\n%#v", err, result)
 	}
 }
 
@@ -375,10 +399,6 @@ func (c *ctxAwareCompactClient) Chat(ctx context.Context, _ providers.ChatReques
 	return providers.ChatResponse{}, ctx.Err()
 }
 
-func (c *ctxAwareCompactClient) StreamChat(_ context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
-	return nil, errors.New("not implemented")
-}
-
 func TestCompact_UsesInternalTimeout(t *testing.T) {
 	t.Setenv("WUU_COMPACT_TIMEOUT_MS", "20")
 
@@ -420,7 +440,10 @@ func TestCompact_PrunesOldLargeToolResultsBeforeSummary(t *testing.T) {
 		t.Fatalf("Compact: %v", err)
 	}
 
-	summaryInput := client.lastRequest.Messages[0].Content
+	if len(client.lastRequest.Messages) < 2 || client.lastRequest.Messages[0].Role != "system" {
+		t.Fatalf("expected compact summary request to include system instructions, got %+v", client.lastRequest.Messages)
+	}
+	summaryInput := client.lastRequest.Messages[len(client.lastRequest.Messages)-1].Content
 	if strings.Contains(summaryInput, large) {
 		t.Fatal("expected old large tool result to be pruned from summary input")
 	}

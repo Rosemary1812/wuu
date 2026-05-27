@@ -13,7 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
-const defaultCompactTimeout = 15 * time.Second
+const defaultCompactTimeout = 60 * time.Second
 const toolResultPruneThresholdChars = 400
 
 // maxCompactOutputChars caps the summarization output to approximately
@@ -172,6 +172,10 @@ const compactTailContextFraction = 0.15
 // times. This prevents the "compact → overflow → compact again →
 // overflow again" deadlock the simple form is vulnerable to.
 func Compact(ctx context.Context, messages []providers.ChatMessage, client providers.Client, model string) ([]providers.ChatMessage, error) {
+	return CompactWithContextWindow(ctx, messages, client, model, 0)
+}
+
+func CompactWithContextWindow(ctx context.Context, messages []providers.ChatMessage, client providers.Client, model string, maxContextTokens int) ([]providers.ChatMessage, error) {
 	if len(messages) <= 2 {
 		return messages, nil // nothing to compact
 	}
@@ -185,7 +189,7 @@ func Compact(ctx context.Context, messages []providers.ChatMessage, client provi
 		return messages, nil
 	}
 
-	keepStart := compactKeepStart(conversation, compactTailBudget(model))
+	keepStart := compactKeepStart(conversation, compactTailBudget(model, maxContextTokens))
 	if keepStart <= 0 {
 		return messages, nil
 	}
@@ -198,12 +202,13 @@ func Compact(ctx context.Context, messages []providers.ChatMessage, client provi
 		summaryReq := providers.ChatRequest{
 			Model: model,
 			Messages: []providers.ChatMessage{
+				{Role: "system", Content: "You summarize coding-agent conversations for context compaction. Follow the user's required format exactly. Do not call tools."},
 				{Role: "user", Content: summaryInput},
 			},
 			Temperature: 0.3,
 		}
 
-		resp, err := client.Chat(ctx, summaryReq)
+		resp, err := summarizeCompact(ctx, client, summaryReq)
 		if err != nil {
 			// If the summary request itself overflowed the model's
 			// context window, drop the oldest message from the slice
@@ -233,6 +238,53 @@ func Compact(ctx context.Context, messages []providers.ChatMessage, client provi
 		compacted = append(compacted, toKeep...)
 		return compacted, nil
 	}
+}
+
+func summarizeCompact(ctx context.Context, client providers.Client, req providers.ChatRequest) (providers.ChatResponse, error) {
+	if streamClient, ok := client.(providers.StreamClient); ok {
+		return streamCompactSummary(ctx, streamClient, req)
+	}
+	return client.Chat(ctx, req)
+}
+
+func streamCompactSummary(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (providers.ChatResponse, error) {
+	ch, err := client.StreamChat(ctx, req)
+	if err != nil {
+		return providers.ChatResponse{}, err
+	}
+
+	var content strings.Builder
+	var usage *providers.TokenUsage
+	stopReason := ""
+	truncated := false
+	done := false
+	for event := range ch {
+		switch event.Type {
+		case providers.EventContentDelta:
+			content.WriteString(event.Content)
+		case providers.EventError:
+			if event.Error != nil {
+				return providers.ChatResponse{}, event.Error
+			}
+			return providers.ChatResponse{}, fmt.Errorf("compact summary stream error")
+		case providers.EventDone:
+			done = true
+			if event.Usage != nil {
+				usage = event.Usage
+			}
+			stopReason = event.StopReason
+			truncated = event.Truncated
+		}
+	}
+	if !done {
+		return providers.ChatResponse{}, providers.NewIncompleteStreamError("compact summary stream closed before done")
+	}
+	return providers.ChatResponse{
+		Content:    content.String(),
+		Usage:      usage,
+		StopReason: stopReason,
+		Truncated:  truncated,
+	}, nil
 }
 
 func leadingSystemEnd(messages []providers.ChatMessage) int {
@@ -324,8 +376,11 @@ func collapseBlankLines(text string) string {
 	return strings.TrimSpace(b.String())
 }
 
-func compactTailBudget(model string) int {
-	window := providers.ContextWindowFor(model)
+func compactTailBudget(model string, maxContextTokens int) int {
+	window := maxContextTokens
+	if window <= 0 {
+		window = providers.ContextWindowFor(model)
+	}
 	budget := int(float64(window) * compactTailContextFraction)
 	if budget <= 0 || budget > compactTailMaxTokens {
 		return compactTailMaxTokens
@@ -335,9 +390,9 @@ func compactTailBudget(model string) int {
 
 // compactKeepStart returns the index where the un-compacted tail should begin.
 // It keeps the latest user-anchored turn, then expands backward by complete
-// user turns while the tail remains under the token budget. It deliberately
-// leaves at least one earlier message to summarize so manual /compact still
-// produces a boundary on short but non-trivial sessions.
+// user turns while the tail remains under the token budget. Long single-turn
+// tool runs only have one user message at the front, so those fall back to a
+// token-budgeted raw tail instead of refusing to compact.
 func compactKeepStart(messages []providers.ChatMessage, tailBudgetTokens int) int {
 	if len(messages) <= 1 {
 		return 0
@@ -348,6 +403,10 @@ func compactKeepStart(messages []providers.ChatMessage, tailBudgetTokens int) in
 
 	start := lastUserMessageIndex(messages)
 	if start < 0 {
+		start = compactFallbackTailStart(messages, tailBudgetTokens)
+		return adjustToolBoundary(messages, start)
+	}
+	if start == 0 {
 		start = compactFallbackTailStart(messages, tailBudgetTokens)
 		return adjustToolBoundary(messages, start)
 	}
