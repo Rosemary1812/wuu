@@ -134,14 +134,23 @@ if [[ "${sign_app}" == "true" && "${dry_run}" != "true" ]]; then
     exit 2
   fi
 
-  nested_bundles=()
-  while IFS= read -r -d '' nested_bundle; do
-    nested_bundles+=("${nested_bundle}")
-  done < <(find "${app_path}/Contents" \( -name '*.app' -o -name '*.framework' -o -name '*.xpc' \) -type d -print0)
+  needs_sign=false
+  if [[ "${changed}" == "1" ]]; then
+    needs_sign=true
+  elif ! codesign --verify --deep --strict --verbose=2 "${app_path}" >/dev/null 2>&1; then
+    needs_sign=true
+  fi
 
-  for ((i = ${#nested_bundles[@]} - 1; i >= 0; i--)); do
-    codesign --force --deep --sign - "${nested_bundles[i]}" >/dev/null
-  done
+  if [[ "${needs_sign}" == "true" ]]; then
+    nested_bundles=()
+    while IFS= read -r -d '' nested_bundle; do
+      nested_bundles+=("${nested_bundle}")
+    done < <(find "${app_path}/Contents" \( -name '*.app' -o -name '*.framework' -o -name '*.xpc' \) -type d -print0)
 
-  codesign --force --sign - "${app_path}" >/dev/null
+    for ((i = ${#nested_bundles[@]} - 1; i >= 0; i--)); do
+      codesign --force --deep --sign - "${nested_bundles[i]}" >/dev/null
+    done
+
+    codesign --force --sign - "${app_path}" >/dev/null
+  fi
 fi
