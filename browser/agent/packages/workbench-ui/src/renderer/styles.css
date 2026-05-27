@@ -1510,7 +1510,6 @@ button:disabled {
 .session-tab-strip {
   display: flex;
   min-width: 0;
-  max-width: min(720px, 100%);
   flex: 1 1 auto;
   align-items: center;
   gap: 8px;
@@ -6891,7 +6890,7 @@ pre {
   display: grid;
   width: min(1080px, calc(100% - clamp(56px, 10vw, 160px)));
   justify-items: center;
-  gap: clamp(112px, 13vh, 148px);
+  gap: clamp(128px, 15vh, 164px);
   margin: 0 auto;
 }
 
