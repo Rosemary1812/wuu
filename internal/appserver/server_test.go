@@ -157,30 +157,63 @@ func TestProviderSummariesExposeOpenCodeStyleVariants(t *testing.T) {
 				BaseURL: "https://anthropic.example.test",
 				Model:   "claude-opus-4-6",
 			},
+			"openai": {
+				Type:  "openai",
+				Model: "gpt-5.5",
+			},
+			"openrouter": {
+				Type:    "openai-compatible",
+				BaseURL: "https://openrouter.ai/api/v1",
+				Model:   "openai/gpt-5.5",
+			},
 		},
 	}
 
 	summaries := providerSummariesFromConfig(cfg, t.TempDir())
-	var xiaomi, anthropic ProviderSummary
+	var xiaomi, anthropic, openai, openrouter ProviderSummary
 	for _, summary := range summaries {
 		switch summary.Name {
 		case "xiaomi":
 			xiaomi = summary
 		case "anthropic":
 			anthropic = summary
+		case "openai":
+			openai = summary
+		case "openrouter":
+			openrouter = summary
 		}
 	}
-	if len(xiaomi.Models) != 1 {
-		t.Fatalf("expected xiaomi model summary, got %+v", xiaomi)
+	if len(xiaomi.Models) < 2 {
+		t.Fatalf("expected xiaomi catalog models, got %+v", xiaomi)
 	}
-	if got := variantIDs(xiaomi.Models[0].Variants); strings.Join(got, ",") != "low,medium,high" {
+	xiaomiModel := providerModelByID(t, xiaomi, "mimo-v2.5-pro")
+	if xiaomiModel.DisplayName != "MiMo-V2.5-Pro" || xiaomiModel.Source != "models.dev" {
+		t.Fatalf("unexpected xiaomi model summary: %+v", xiaomiModel)
+	}
+	if got := variantIDs(xiaomiModel.Variants); strings.Join(got, ",") != "low,medium,high" {
 		t.Fatalf("xiaomi variants = %+v", got)
 	}
-	if got := xiaomi.Models[0].Variants[0].Options["reasoningEffort"]; got != "low" {
-		t.Fatalf("xiaomi low variant options = %#v", xiaomi.Models[0].Variants[0].Options)
+	if got := xiaomiModel.Variants[0].Options["reasoningEffort"]; got != "low" {
+		t.Fatalf("xiaomi low variant options = %#v", xiaomiModel.Variants[0].Options)
 	}
-	if got := variantIDs(anthropic.Models[0].Variants); strings.Join(got, ",") != "low,medium,high,max" {
+	anthropicModel := providerModelByID(t, anthropic, "claude-opus-4-6")
+	if got := variantIDs(anthropicModel.Variants); strings.Join(got, ",") != "low,medium,high,max" {
 		t.Fatalf("anthropic variants = %+v", got)
+	}
+	openaiModel := providerModelByID(t, openai, "gpt-5.5")
+	if got := variantIDs(openaiModel.Variants); strings.Join(got, ",") != "none,low,medium,high,xhigh" {
+		t.Fatalf("openai variants = %+v", got)
+	}
+	if got := openaiModel.Variants[0].Options["reasoningSummary"]; got != "auto" {
+		t.Fatalf("openai variant options = %#v", openaiModel.Variants[0].Options)
+	}
+	openrouterModel := providerModelByID(t, openrouter, "openai/gpt-5.5")
+	if got := variantIDs(openrouterModel.Variants); strings.Join(got, ",") != "none,low,medium,high,xhigh" {
+		t.Fatalf("openrouter variants = %+v", got)
+	}
+	reasoning, ok := openrouterModel.Variants[0].Options["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "none" {
+		t.Fatalf("openrouter variant options = %#v", openrouterModel.Variants[0].Options)
 	}
 }
 
@@ -216,6 +249,46 @@ func TestProviderSummariesMergeConfiguredVariants(t *testing.T) {
 	if got := variantIDs(model.Variants); strings.Join(got, ",") != "deep" {
 		t.Fatalf("variants = %+v", got)
 	}
+}
+
+func TestProviderSummariesPreferConfiguredVariantsOverCatalog(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "openai",
+		Providers: map[string]config.ProviderConfig{
+			"openai": {
+				Type:  "openai",
+				Model: "gpt-5.5",
+				Models: map[string]config.ProviderModelConfig{
+					"gpt-5.5": {
+						DefaultVariant: "deep",
+						Variants: map[string]map[string]any{
+							"deep": {"reasoningEffort": "high"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	summaries := providerSummariesFromConfig(cfg, t.TempDir())
+	model := providerModelByID(t, summaries[0], "gpt-5.5")
+	if model.Source != "config" || model.DisplayName != "GPT-5.5" {
+		t.Fatalf("unexpected configured model summary: %+v", model)
+	}
+	if got := variantIDs(model.Variants); strings.Join(got, ",") != "deep" {
+		t.Fatalf("variants = %+v", got)
+	}
+}
+
+func providerModelByID(t *testing.T, provider ProviderSummary, id string) ProviderModelSummary {
+	t.Helper()
+	for _, model := range provider.Models {
+		if model.ID == id {
+			return model
+		}
+	}
+	t.Fatalf("model %s not found in provider %+v", id, provider)
+	return ProviderModelSummary{}
 }
 
 func variantIDs(variants []ProviderModelVariantSummary) []string {

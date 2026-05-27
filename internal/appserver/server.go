@@ -21,6 +21,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -574,17 +575,18 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			variant = legacyEffort
 		}
 	}
+	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, model)
 	if params.Variant != nil && variant != "" {
-		if _, ok := modelvariant.OptionsForProvider(resolvedName, providerCfg, model, variant); !ok {
+		if _, ok := modelvariant.OptionsForProvider(ruleProviderName, ruleProviderCfg, model, variant); !ok {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support variant %s", model, variant))
 		}
 	}
-	if params.Effort != nil && params.Variant == nil && variant != "" && len(modelvariant.SummariesForProvider(resolvedName, providerCfg, model)) > 0 {
-		if _, ok := modelvariant.OptionsForProvider(resolvedName, providerCfg, model, variant); !ok {
+	if params.Effort != nil && params.Variant == nil && variant != "" && len(modelvariant.SummariesForProvider(ruleProviderName, ruleProviderCfg, model)) > 0 {
+		if _, ok := modelvariant.OptionsForProvider(ruleProviderName, ruleProviderCfg, model, variant); !ok {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support effort %s", model, variant))
 		}
 	}
-	selection := modelvariant.ResolveForProvider(resolvedName, providerCfg, model, variant, legacyEffort)
+	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, model, variant, legacyEffort)
 	effort := selection.DisplayEffort
 	effortForConfig, variantForConfig := selectionConfigPointers(selection, selectionTouched, s.currentVariant())
 
@@ -621,7 +623,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)
 		s.rt.StreamRunner.ContextWindowOverride = runtime.ResolveContextWindow(
 			model,
-			providerCfg.ContextWindow,
+			ruleProviderCfg.ContextWindow,
 			cfg.Agent.MaxContextTokens,
 		)
 	}
@@ -678,7 +680,8 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 			SupportedInAPI:        model.SupportedInAPI,
 		})
 	}
-	selection := modelvariant.ResolveForProvider(resolvedName, providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
+	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
+	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 	effort := selection.DisplayEffort
 	variant := selection.Variant
 	if resolvedName == s.rt.ProviderName {
@@ -1586,29 +1589,68 @@ func providerHasAuth(name string, provider config.ProviderConfig, home string) b
 }
 
 func providerModelSummaries(providerName string, provider config.ProviderConfig) []ProviderModelSummary {
-	models := make(map[string]ProviderModelSummary, len(provider.Models)+1)
+	ruleProviderName := providerName
+	ruleProvider := provider
+	var catalogProvider modelcatalog.Provider
+	hasCatalog := false
+	if matched, ok := modelcatalog.MatchProvider(providerName, provider); ok {
+		catalogProvider = matched
+		hasCatalog = true
+		ruleProviderName = matched.ID
+		ruleProvider = modelcatalog.MergeProvider(provider, matched)
+	}
+
+	models := make(map[string]ProviderModelSummary, len(ruleProvider.Models)+1)
+	disabled := map[string]bool{}
 	for id, model := range provider.Models {
 		id = strings.TrimSpace(id)
-		if id == "" || model.Disabled {
+		if id == "" {
 			continue
 		}
+		if model.Disabled {
+			disabled[id] = true
+			continue
+		}
+		model = ruleProvider.Models[id]
 		models[id] = ProviderModelSummary{
 			ID:               id,
 			DisplayName:      strings.TrimSpace(model.Name),
 			DefaultEffort:    strings.TrimSpace(model.DefaultEffort),
 			DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
-			SupportedEfforts: modelvariant.SupportedEffortsForProvider(providerName, provider, id, model),
-			Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(providerName, provider, id)),
+			SupportedEfforts: modelvariant.SupportedEffortsForProvider(ruleProviderName, ruleProvider, id, model),
+			Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(ruleProviderName, ruleProvider, id)),
 			Source:           "config",
+		}
+	}
+	if hasCatalog {
+		for _, catalogModel := range catalogProvider.Models {
+			id := strings.TrimSpace(catalogModel.ID)
+			if id == "" || disabled[id] {
+				continue
+			}
+			if _, ok := models[id]; ok {
+				continue
+			}
+			model := ruleProvider.Models[id]
+			models[id] = ProviderModelSummary{
+				ID:               id,
+				DisplayName:      strings.TrimSpace(model.Name),
+				DefaultEffort:    strings.TrimSpace(model.DefaultEffort),
+				DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
+				SupportedEfforts: modelvariant.SupportedEffortsForProvider(ruleProviderName, ruleProvider, id, model),
+				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(ruleProviderName, ruleProvider, id)),
+				Source:           "models.dev",
+			}
 		}
 	}
 	current := strings.TrimSpace(provider.Model)
 	if current != "" {
 		if _, ok := models[current]; !ok {
+			selectedRuleProviderName, selectedRuleProvider := modelcatalog.EnrichProvider(providerName, provider, current)
 			models[current] = ProviderModelSummary{
 				ID:               current,
-				SupportedEfforts: modelvariant.SupportedEffortsForProvider(providerName, provider, current, config.ProviderModelConfig{}),
-				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(providerName, provider, current)),
+				SupportedEfforts: modelvariant.SupportedEffortsForProvider(selectedRuleProviderName, selectedRuleProvider, current, selectedRuleProvider.Models[current]),
+				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(selectedRuleProviderName, selectedRuleProvider, current)),
 				Source:           "selected",
 			}
 		}
@@ -1616,7 +1658,7 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 	out := make([]ProviderModelSummary, 0, len(models))
 	for _, model := range models {
 		if len(model.Variants) == 0 {
-			model.Variants = providerVariantSummaries(modelvariant.SummariesForProvider(providerName, provider, model.ID))
+			model.Variants = providerVariantSummaries(modelvariant.SummariesForProvider(ruleProviderName, ruleProvider, model.ID))
 		}
 		if len(model.SupportedEfforts) == 0 {
 			model.SupportedEfforts = modelvariant.EffortIDs(modelVariantSummaries(model.Variants))
@@ -1625,7 +1667,7 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 			model.DefaultVariant = model.DefaultEffort
 		}
 		if model.DefaultVariant == "" {
-			model.DefaultVariant = modelvariant.DefaultVariantForProvider(providerName, provider, model.ID)
+			model.DefaultVariant = modelvariant.DefaultVariantForProvider(ruleProviderName, ruleProvider, model.ID)
 		}
 		out = append(out, model)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
+	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/prompt"
@@ -198,7 +199,8 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	sessionDir := statepath.SessionsDir(wuuHome)
-	modelSelection := modelvariant.ResolveForProvider(resolvedName, providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
+	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
+	modelSelection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 
 	streamRunner := &agent.StreamRunner{
 		Client:          client,
@@ -212,7 +214,7 @@ func NewSession(opts Options) (*Session, error) {
 		ProviderOptions: modelSelection.ProviderOptions,
 		ContextWindowOverride: ResolveContextWindow(
 			providerCfg.Model,
-			providerCfg.ContextWindow,
+			ruleProviderCfg.ContextWindow,
 			cfg.Agent.MaxContextTokens,
 		),
 		DisableAutoCompact: cfg.Agent.DisableAutoCompact,

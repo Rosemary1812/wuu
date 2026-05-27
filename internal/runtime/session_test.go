@@ -136,6 +136,9 @@ func TestNewSessionResolvesConfiguredVariantOptions(t *testing.T) {
 	if got := rt.StreamRunner.ProviderOptions["reasoningEffort"]; got != "high" {
 		t.Fatalf("ProviderOptions reasoningEffort = %#v", got)
 	}
+	if rt.StreamRunner.ContextWindowOverride != 1048576 {
+		t.Fatalf("ContextWindowOverride = %d", rt.StreamRunner.ContextWindowOverride)
+	}
 }
 
 func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
