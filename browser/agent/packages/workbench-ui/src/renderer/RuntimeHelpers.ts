@@ -17,7 +17,7 @@ export function shortCodexModelLabel(model: string): string {
 export function codexEffortLabel(effort: string): string {
   switch (effort) {
     case "":
-      return "智能";
+      return "默认";
     case "none":
       return "无";
     case "minimal":
@@ -87,7 +87,7 @@ export function normalizedEffortForProviderModel(
   if (model?.default_effort && supported.includes(model.default_effort)) {
     return model.default_effort;
   }
-  return supported[0] ?? "";
+  return "";
 }
 
 export function normalizedVariantForProviderModel(
@@ -110,7 +110,7 @@ export function normalizedVariantForProviderModel(
   if (model?.default_effort && supported.includes(model.default_effort)) {
     return model.default_effort;
   }
-  return supported[0] ?? "";
+  return "";
 }
 
 export function codexEffortOptions(model: CodexModelSummary | undefined, currentEffort: string): string[] {
@@ -134,7 +134,7 @@ export function normalizedEffortForModel(currentEffort: string, model: CodexMode
   if (model.default_reasoning_level && supported.includes(model.default_reasoning_level)) {
     return model.default_reasoning_level;
   }
-  return supported[0] ?? "";
+  return "";
 }
 
 export function pullRequestUnavailableReason(gitStatus?: GitStatusResult): string {

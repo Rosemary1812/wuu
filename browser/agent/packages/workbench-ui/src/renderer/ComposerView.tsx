@@ -1172,7 +1172,7 @@ function normalizedVariantForRuntimeModel(
   if (providerModel?.default_effort && supported.includes(providerModel.default_effort)) {
     return providerModel.default_effort;
   }
-  return supported[0] ?? "";
+  return "";
 }
 
 function AccessMenu(): JSX.Element {
