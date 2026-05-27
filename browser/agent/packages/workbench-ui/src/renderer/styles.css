@@ -3673,6 +3673,7 @@ button:disabled {
 }
 
 .codex-runtime-effort {
+  flex: 0 0 auto;
   color: #74797d;
   font-weight: var(--weight-medium);
 }
@@ -3688,6 +3689,10 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.codex-runtime-trigger > span:first-child {
+  flex: 1 1 auto;
 }
 
 .codex-runtime-trigger svg {
@@ -9987,12 +9992,8 @@ html.swiss-international .os-theme-wuu {
   }
 
   .codex-runtime-anchor {
-    max-width: 82px;
-    flex: 0 1 82px;
-  }
-
-  .codex-runtime-effort {
-    display: none;
+    max-width: 136px;
+    flex: 0 1 124px;
   }
 }
 
@@ -10012,8 +10013,13 @@ html.swiss-international .os-theme-wuu {
   }
 
   .codex-runtime-anchor {
-    max-width: 52px;
-    flex-basis: 52px;
+    max-width: 112px;
+    flex-basis: 104px;
+  }
+
+  .codex-runtime-trigger {
+    gap: 5px;
+    padding: 0 7px;
   }
 }
 
