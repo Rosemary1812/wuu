@@ -533,6 +533,9 @@ export function Composer({
       case "model":
         onToggleCodexRuntimeMenu("model");
         break;
+      case "effort":
+        onToggleCodexRuntimeMenu("main");
+        break;
       case "settings":
         onOpenSettings();
         break;
@@ -856,6 +859,7 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
     case "no-project":
       return <FolderX size={16} />;
     case "model":
+    case "effort":
       return <Laptop size={16} />;
     case "settings":
       return <Settings size={16} />;

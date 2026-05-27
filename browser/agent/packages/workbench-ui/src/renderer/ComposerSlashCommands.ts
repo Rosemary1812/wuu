@@ -9,6 +9,7 @@ export type ComposerSlashCommandAction =
   | "open-project"
   | "no-project"
   | "model"
+  | "effort"
   | "settings";
 export type ComposerSlashCommandKind = "prompt" | "action";
 
@@ -162,6 +163,18 @@ export function buildComposerSlashCommands({
       action: "model",
       aliases: ["models"],
       keywords: ["provider", "effort", "thinking", "模型", "思考强度"],
+      disabledReason: needsRuntime ?? needsIdleThread
+    },
+    {
+      id: "effort",
+      name: "effort",
+      title: "调整思考强度",
+      description: "切换当前模型支持的 reasoning effort",
+      tag: "配置",
+      kind: "action",
+      action: "effort",
+      aliases: ["variants", "thinking"],
+      keywords: ["reasoning", "variant", "think", "思考", "强度"],
       disabledReason: needsRuntime ?? needsIdleThread
     },
     {
