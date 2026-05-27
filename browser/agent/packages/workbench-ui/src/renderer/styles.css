@@ -6891,7 +6891,7 @@ pre {
   display: grid;
   width: min(1080px, calc(100% - clamp(56px, 10vw, 160px)));
   justify-items: center;
-  gap: clamp(92px, 11vh, 124px);
+  gap: clamp(112px, 13vh, 148px);
   margin: 0 auto;
 }
 
