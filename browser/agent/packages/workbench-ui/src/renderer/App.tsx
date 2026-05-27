@@ -4449,6 +4449,7 @@ function TurnView({
         turn={turn}
         entries={detailEntries}
         autoCollapse={processAutoCollapse}
+        showTurnStatus={entries.some((entry) => entry.kind === "status")}
       />
     );
   }
@@ -4534,11 +4535,13 @@ type TurnProcessEntry = {
 function TurnProcessGroup({
   turn,
   entries,
-  autoCollapse
+  autoCollapse,
+  showTurnStatus
 }: {
   turn: Turn;
   entries: TurnProcessEntry[];
   autoCollapse: boolean;
+  showTurnStatus: boolean;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!autoCollapse);
   const previousAutoCollapseRef = useRef(autoCollapse);
@@ -4550,11 +4553,19 @@ function TurnProcessGroup({
   const processCount = entries.filter((entry) => entry.kind !== "status").length;
   const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = parseTurnTimestampMs(turn.started_at);
-  const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
+  const liveDuration =
+    showTurnStatus && completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
   const liveNow = useLiveNow(liveDuration);
   const elapsedMs = completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
-  const processStatus = turnProgressContent(turn, elapsedMs, turnHasAssistantOutput(turn));
-  const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs);
+  const processLabel = showTurnStatus
+    ? turnProgressContent(turn, elapsedMs, turnHasAssistantOutput(turn)).label
+    : messageFlowStatusLabel({
+        done: true,
+        failed: turn.status === "failed",
+        hasFinalText: turnHasAssistantOutput(turn),
+        locale: "zh"
+      });
+  const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs, showTurnStatus);
 
   useEffect(() => {
     const previousAutoCollapse = previousAutoCollapseRef.current;
@@ -4572,7 +4583,7 @@ function TurnProcessGroup({
   const toggleContent = (
     <>
       <span className="turn-process-copy">
-        <span>{processStatus.label}</span>
+        <span>{processLabel}</span>
         {metaParts.map((part) => (
           <span key={part}>{part}</span>
         ))}
@@ -4605,16 +4616,16 @@ function TurnProcessGroup({
   );
 }
 
-function turnProcessMetaParts(turn: Turn, processCount: number, elapsedMs: number): string[] {
+function turnProcessMetaParts(turn: Turn, processCount: number, elapsedMs: number, showTurnStatus: boolean): string[] {
   const parts: string[] = [];
-  if (turn.status === "in_progress") {
+  if (showTurnStatus && turn.status === "in_progress") {
     parts.push(formatDuration(elapsedMs));
     return parts;
   }
   if (processCount > 0) {
     parts.push(`${processCount} 项`);
   }
-  if (typeof turn.duration_ms === "number") {
+  if (showTurnStatus && typeof turn.duration_ms === "number") {
     parts.push(formatDuration(turn.duration_ms));
   }
   return parts;
