@@ -4876,9 +4876,13 @@ function AgentMessageContent({
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
-  const liveStream = streaming || hasBufferedStream;
-  const [keepStreamSurface, setKeepStreamSurface] = useState(false);
-  const settleMode = liveStream || keepStreamSurface ? "stream" : "rich";
+  const [streamSettled, setStreamSettled] = useState(false);
+  const liveStream = (streaming || hasBufferedStream) && !streamSettled;
+  const settleMode = liveStream ? "stream" : "rich";
+
+  useEffect(() => {
+    setStreamSettled(false);
+  }, [streamKeyValue]);
 
   return (
     <StreamingMarkdown
@@ -4890,7 +4894,7 @@ function AgentMessageContent({
       settleMode={settleMode}
       onFrame={onStreamFrame}
       onSettled={() => {
-        setKeepStreamSurface(true);
+        setStreamSettled(true);
         streamTextStore.clearItem(turnID, item.id);
         onStreamFrame();
       }}
