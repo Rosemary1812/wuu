@@ -1006,9 +1006,20 @@ function RuntimeModelMenu({
 }): JSX.Element {
   const providers = initialized.providers ?? [];
   const codexProviderSelected = isCodexProvider(initialized);
+  const configuredModels = providers
+    .map((provider) => {
+      const model = configuredRuntimeModelForProvider(provider, state);
+      return model ? { provider, model } : undefined;
+    })
+    .filter((item): item is RuntimeModelOption => Boolean(item));
+  const additionalModels = providers.flatMap((provider) =>
+    runtimeModelsForProvider(provider, state)
+      .filter((model) => model.id !== provider.model)
+      .map((model) => ({ provider, model }))
+  );
   return (
     <div className="codex-runtime-menu codex-model-menu" role="menu">
-      <div className="codex-menu-label">模型</div>
+      <div className="codex-menu-label">已配置</div>
       {codexProviderSelected && state.loading ? <div className="composer-menu-empty">正在加载 Codex 模型</div> : null}
       {codexProviderSelected && state.error ? (
         <div className="composer-menu-note warning">
@@ -1019,28 +1030,63 @@ function RuntimeModelMenu({
       {!state.loading && providers.length === 0 ? (
         <div className="composer-menu-empty">没有可用模型</div>
       ) : null}
-      {providers.flatMap((provider) => {
-        const models = runtimeModelsForProvider(provider, state);
-        return models.map((model) => {
-          const selected = provider.name === selectedProvider && model.id === selectedModel;
-          const nextEffort = normalizedEffortForRuntimeModel(selectedEffort, provider, model);
-          return (
-            <button
-              key={`${provider.name}/${model.id}`}
-              role="menuitem"
-              type="button"
-              onClick={() => onSelectModel(provider.name, model.id, nextEffort)}
-            >
-              <span>
-                <strong>{providerModelDisplayName(model)}</strong>
-                <small>{provider.name}</small>
-              </span>
-              {selected ? <Check size={18} /> : null}
-            </button>
-          );
-        });
-      })}
+      {configuredModels.map(({ provider, model }) => (
+        <RuntimeModelMenuItem
+          key={`configured/${provider.name}/${model.id}`}
+          provider={provider}
+          model={model}
+          selected={provider.name === selectedProvider && model.id === selectedModel}
+          selectedEffort={selectedEffort}
+          onSelectModel={onSelectModel}
+        />
+      ))}
+      {additionalModels.length > 0 ? (
+        <>
+          <div className="codex-menu-separator" />
+          <div className="codex-menu-label">更多模型</div>
+          {additionalModels.map(({ provider, model }) => (
+            <RuntimeModelMenuItem
+              key={`additional/${provider.name}/${model.id}`}
+              provider={provider}
+              model={model}
+              selected={provider.name === selectedProvider && model.id === selectedModel}
+              selectedEffort={selectedEffort}
+              onSelectModel={onSelectModel}
+            />
+          ))}
+        </>
+      ) : null}
     </div>
+  );
+}
+
+type RuntimeModelOption = {
+  provider: ProviderSummary;
+  model: ProviderModelSummary;
+};
+
+function RuntimeModelMenuItem({
+  provider,
+  model,
+  selected,
+  selectedEffort,
+  onSelectModel
+}: {
+  provider: ProviderSummary;
+  model: ProviderModelSummary;
+  selected: boolean;
+  selectedEffort: string;
+  onSelectModel: (provider: string, model: string, effort?: string) => void;
+}): JSX.Element {
+  const nextEffort = normalizedEffortForRuntimeModel(selectedEffort, provider, model);
+  return (
+    <button role="menuitem" type="button" onClick={() => onSelectModel(provider.name, model.id, nextEffort)}>
+      <span>
+        <strong>{providerModelDisplayName(model)}</strong>
+        <small>{provider.name}</small>
+      </span>
+      {selected ? <Check size={18} /> : null}
+    </button>
   );
 }
 
@@ -1064,6 +1110,19 @@ function runtimeModelLabel(
     return displayCodexModelName(codexModel);
   }
   return providerModel?.display_name || initialized.model;
+}
+
+function configuredRuntimeModelForProvider(
+  provider: ProviderSummary,
+  state: CodexModelLoadState
+): ProviderModelSummary | undefined {
+  if (!provider.model) {
+    return undefined;
+  }
+  return (
+    runtimeModelsForProvider(provider, state).find((model) => model.id === provider.model) ??
+    provider.models?.find((model) => model.id === provider.model) ?? { id: provider.model, source: "selected" }
+  );
 }
 
 function runtimeModelsForProvider(provider: ProviderSummary, state: CodexModelLoadState): ProviderModelSummary[] {
