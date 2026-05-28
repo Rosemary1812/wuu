@@ -23,7 +23,6 @@ import {
   List as ListIcon,
   MessageSquarePlus,
   MoreHorizontal,
-  PanelBottomOpen,
   Pencil,
   Pin,
   Plus,
@@ -159,7 +158,6 @@ import {
   type UserFacingErrorDisplay
 } from "./UserFacingErrors";
 import {
-  WorkspaceBottomPanel,
   WorkspaceMainPanel,
   WorkspaceRightPanel,
   WorkspaceToolIcon,
@@ -431,7 +429,6 @@ export function App(): JSX.Element {
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelAnimating, setRightPanelAnimating] = useState(false);
-  const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
   const [workspaceToolTabs, setWorkspaceToolTabs] = useState<WorkspacePanelView[]>([]);
   const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
   const [workspaceRightPanelView, setWorkspaceRightPanelView] = useState<WorkspaceRightPanelView>("tools");
@@ -929,7 +926,7 @@ export function App(): JSX.Element {
     sidebarAnimating ? " sidebar-animating" : ""
   }${rightPanelAnimating ? " right-panel-animating" : ""}${resizingSidebar ? " resizing-sidebar" : ""}${
     resizingRightPanel ? " resizing-right-panel" : ""
-  }${rightPanelOpen ? " right-panel-open" : ""}${bottomPanelOpen ? " bottom-panel-open" : ""}`;
+  }${rightPanelOpen ? " right-panel-open" : ""}`;
   const shellStyle = {
     "--sidebar-width": `${effectiveSidebarWidth}px`,
     "--sidebar-open-width": `${sidebarWidth}px`,
@@ -939,8 +936,7 @@ export function App(): JSX.Element {
     "--environment-panel-width": "328px",
     "--environment-panel-reserved-width": "372px",
     "--environment-panel-edge-gap": "18px",
-    "--environment-panel-motion-duration": `${ENVIRONMENT_PANEL_MOTION_MS}ms`,
-    "--workspace-bottom-panel-height": "238px"
+    "--environment-panel-motion-duration": `${ENVIRONMENT_PANEL_MOTION_MS}ms`
   } as CSSProperties;
   const environmentSourceItems = useMemo(
     () =>
@@ -3955,15 +3951,6 @@ export function App(): JSX.Element {
               <Info size={18} />
             </button>
             <button
-              className={`icon-button workspace-toggle-button${bottomPanelOpen ? " active" : ""}`}
-              type="button"
-              aria-label={bottomPanelOpen ? "关闭底部栏" : "打开底部栏"}
-              aria-pressed={bottomPanelOpen}
-              onClick={() => setBottomPanelOpen((open) => !open)}
-            >
-              <PanelBottomOpen size={18} />
-            </button>
-            <button
               className="icon-button side-panel-toggle-button"
               type="button"
               aria-label={rightPanelOpen ? "关闭右侧栏" : "打开右侧栏"}
@@ -4089,13 +4076,6 @@ export function App(): JSX.Element {
         onOpenFile={openWorkspaceFile}
         onClose={() => setRightPanelOpenWithMotion(false)}
       />
-      <WorkspaceBottomPanel
-        open={bottomPanelOpen}
-        selectedView={workspacePanelView}
-        onSelectTool={openWorkspaceTool}
-        onClose={() => setBottomPanelOpen(false)}
-      />
-
       {environmentDialog === "commit" ? (
         <CommitChangesDialog
           gitStatus={state.gitStatus}
