@@ -38,13 +38,15 @@ export function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
 export function MarkdownContent({
   text,
   cwd,
-  renderText
+  renderText,
+  renderMermaid = true
 }: {
   text: string;
   cwd?: string;
   renderText?: RichTextRenderer;
+  renderMermaid?: boolean;
 }): JSX.Element {
-  const components = useMemo(() => markdownComponents(cwd, renderText), [cwd, renderText]);
+  const components = useMemo(() => markdownComponents(cwd, renderText, renderMermaid), [cwd, renderMermaid, renderText]);
   return (
     <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
       {text}
@@ -201,7 +203,11 @@ type CodeElementProps = {
   children?: ReactNode;
 };
 
-function markdownComponents(cwd: string | undefined, renderText: RichTextRenderer | undefined): Components {
+function markdownComponents(
+  cwd: string | undefined,
+  renderText: RichTextRenderer | undefined,
+  renderMermaid: boolean
+): Components {
   return {
     p({ children }) {
       return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "p")}</p>;
@@ -245,7 +251,7 @@ function markdownComponents(cwd: string | undefined, renderText: RichTextRendere
       const child = Children.toArray(children)[0];
       if (isValidElement<CodeElementProps>(child)) {
         const language = languageFromClassName(child.props.className);
-        if (language === "mermaid") {
+        if (language === "mermaid" && renderMermaid) {
           return <MermaidDiagram code={reactNodeText(child.props.children).replace(/\n$/, "")} />;
         }
         return (
