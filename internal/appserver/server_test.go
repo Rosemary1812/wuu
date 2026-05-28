@@ -708,7 +708,7 @@ func TestServerConfigModelUpdateUsesCatalogFastModelRuntime(t *testing.T) {
   "providers": {
     "openai": {
       "type": "openai",
-      "base_url": "https://api.openai.test/v1",
+      "base_url": "https://api.openai.com/v1",
       "model": "gpt-5.5"
     }
   }

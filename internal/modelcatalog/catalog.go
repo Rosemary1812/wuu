@@ -72,14 +72,21 @@ func MatchProvider(providerName string, provider config.ProviderConfig) (Provide
 
 	endpoints := endpointCandidates(provider)
 	for _, endpoint := range endpoints {
+		var endpointMatches []Provider
 		for _, item := range providers {
 			if normalizeEndpoint(item.API) == endpoint {
-				return item, true
+				endpointMatches = append(endpointMatches, item)
 			}
+		}
+		if len(endpointMatches) > 0 {
+			return bestProviderMatch(endpointMatches, providerName, provider), true
 		}
 	}
 
-	for _, candidate := range providerIDCandidates(providerName, provider) {
+	if !allowProviderIdentityCatalogMatch(provider) {
+		return Provider{}, false
+	}
+	for _, candidate := range providerIDCandidates(providerName, provider, true) {
 		for _, item := range providers {
 			if normalizeID(item.ID) == candidate {
 				return item, true
@@ -88,6 +95,18 @@ func MatchProvider(providerName string, provider config.ProviderConfig) (Provide
 	}
 
 	return Provider{}, false
+}
+
+func bestProviderMatch(providers []Provider, providerName string, provider config.ProviderConfig) Provider {
+	candidates := providerIDCandidates(providerName, provider, true)
+	for _, candidate := range candidates {
+		for _, item := range providers {
+			if normalizeID(item.ID) == candidate {
+				return item
+			}
+		}
+	}
+	return providers[0]
 }
 
 func EnrichProvider(providerName string, provider config.ProviderConfig, modelIDs ...string) (string, config.ProviderConfig) {
@@ -285,9 +304,9 @@ func mergeHeaders(base, override map[string]string) map[string]string {
 	return out
 }
 
-func providerIDCandidates(providerName string, provider config.ProviderConfig) []string {
+func providerIDCandidates(providerName string, provider config.ProviderConfig, includeType bool) []string {
 	raw := []string{providerName}
-	if allowProviderTypeCatalogMatch(provider) {
+	if includeType {
 		raw = append(raw, provider.Type)
 	}
 	aliases := map[string]string{
@@ -315,7 +334,7 @@ func providerIDCandidates(providerName string, provider config.ProviderConfig) [
 	return out
 }
 
-func allowProviderTypeCatalogMatch(provider config.ProviderConfig) bool {
+func allowProviderIdentityCatalogMatch(provider config.ProviderConfig) bool {
 	endpoints := endpointCandidates(provider)
 	if len(endpoints) == 0 {
 		return true

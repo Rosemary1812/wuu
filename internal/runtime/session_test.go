@@ -156,7 +156,7 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 			Providers: map[string]config.ProviderConfig{
 				"openai": {
 					Type:    "openai",
-					BaseURL: "https://api.openai.test/v1",
+					BaseURL: "https://api.openai.com/v1",
 					Model:   "gpt-5.5-fast",
 				},
 			},

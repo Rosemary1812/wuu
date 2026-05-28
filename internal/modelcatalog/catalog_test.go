@@ -72,6 +72,39 @@ func TestMatchProviderDoesNotUseWireTypeForCustomEndpoint(t *testing.T) {
 	}
 }
 
+func TestMatchProviderDoesNotUseProviderNameForCustomEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		provider config.ProviderConfig
+	}{
+		{
+			name: "openai",
+			provider: config.ProviderConfig{
+				Type:    "openai-compatible",
+				BaseURL: "https://proxy.example/v1",
+			},
+		},
+		{
+			name: "claude",
+			provider: config.ProviderConfig{
+				Type:    "anthropic",
+				BaseURL: "https://proxy.example/anthropic",
+			},
+		},
+		{
+			name: "gemini",
+			provider: config.ProviderConfig{
+				Type:    "openai-compatible",
+				BaseURL: "https://proxy.example/v1",
+			},
+		},
+	} {
+		if provider, ok := MatchProvider(tc.name, tc.provider); ok {
+			t.Fatalf("custom endpoint %q matched %q", tc.name, provider.ID)
+		}
+	}
+}
+
 func TestMatchProviderDoesNotTreatCodexSubscriptionAsOpenCodeZen(t *testing.T) {
 	if provider, ok := MatchProvider("openai-codex", config.ProviderConfig{
 		Type:    "openai-codex",
@@ -87,6 +120,32 @@ func TestMatchProviderDoesNotTreatCodexSubscriptionAsOpenCodeZen(t *testing.T) {
 	})
 	if !ok || provider.ID != "opencode" {
 		t.Fatalf("OpenCode Zen provider match = %q, %v", provider.ID, ok)
+	}
+}
+
+func TestMatchProviderDisambiguatesDuplicateEndpointByName(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want string
+	}{
+		{name: "firepass", want: "firepass"},
+		{name: "fireworks-ai", want: "fireworks-ai"},
+	} {
+		provider, ok := MatchProvider(tc.name, config.ProviderConfig{
+			Type:    "openai-compatible",
+			BaseURL: "https://api.fireworks.ai/inference/v1",
+		})
+		if !ok || provider.ID != tc.want {
+			t.Fatalf("provider %q matched %q, %v; want %q", tc.name, provider.ID, ok, tc.want)
+		}
+	}
+
+	provider, ok := MatchProvider("minimax-coding-plan", config.ProviderConfig{
+		Type:    "anthropic",
+		BaseURL: "https://api.minimax.io/anthropic/v1",
+	})
+	if !ok || provider.ID != "minimax-coding-plan" {
+		t.Fatalf("MiniMax coding plan matched %q, %v", provider.ID, ok)
 	}
 }
 
