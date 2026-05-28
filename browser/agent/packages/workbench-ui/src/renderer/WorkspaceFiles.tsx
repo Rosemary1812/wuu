@@ -127,7 +127,7 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({
 }): JSX.Element {
   const preparedInput = useMemo(() => preparePresortedFileTreeInput(paths), [paths]);
   const { model } = useFileTree({
-    flattenEmptyDirectories: true,
+    flattenEmptyDirectories: false,
     initialExpansion: "closed",
     initialSelectedPaths: selectedFilePath ? [selectedFilePath] : [],
     itemHeight: WORKSPACE_FILE_TREE_ITEM_HEIGHT,
