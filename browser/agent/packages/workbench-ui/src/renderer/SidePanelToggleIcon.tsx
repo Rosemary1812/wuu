@@ -1,7 +1,7 @@
 export function SidePanelToggleIcon({
   side,
   open,
-  size = 20
+  size = 22
 }: {
   side: "left" | "right";
   open: boolean;
