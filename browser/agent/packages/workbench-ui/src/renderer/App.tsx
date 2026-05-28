@@ -230,6 +230,13 @@ type SessionTab =
       title: string;
       prompt: string;
       images: ComposerImage[];
+    }
+  | {
+      id: string;
+      kind: "file";
+      context: RuntimeContext;
+      path: string;
+      title: string;
     };
 
 type RunDebugEvent = {
@@ -429,7 +436,6 @@ export function App(): JSX.Element {
   const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
   const [workspaceRightPanelView, setWorkspaceRightPanelView] = useState<WorkspaceRightPanelView>("tools");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
-  const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState<string | undefined>(undefined);
   const [environmentPanelOpen, setEnvironmentPanelOpen] = useState(false);
   const [environmentPanelDismissed, setEnvironmentPanelDismissed] = useState(false);
   const [environmentPanelHasRoom, setEnvironmentPanelHasRoom] = useState(() =>
@@ -493,6 +499,11 @@ export function App(): JSX.Element {
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(workspaceRightPanelWidth, effectiveSidebarWidth);
   const debugControlsVisible = ENABLE_DEBUG_CONTROLS && debugControlsEnabled;
   const sessionTabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const currentSessionTab = activeSessionTab(state);
+  const activeWorkspaceFile =
+    currentSessionTab?.kind === "file" && sameRuntimeContext(currentSessionTab.context, state.activeContext)
+      ? currentSessionTab.path
+      : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   const activePlanUpdate = latestPlanUpdateForThread(activeThread);
@@ -794,10 +805,6 @@ export function App(): JSX.Element {
   }, [workspaceRightPanelWidth]);
 
   useEffect(() => {
-    setSelectedWorkspaceFile(undefined);
-  }, [state.activeContext?.cwd]);
-
-  useEffect(() => {
     scheduleGitStatusRefresh(0);
   }, [state.activeContext?.kind, state.activeContext?.cwd, state.activeProjectId]);
 
@@ -940,12 +947,12 @@ export function App(): JSX.Element {
       buildEnvironmentSourceItems({
         activeContext: state.activeContext,
         activeProject,
-        selectedWorkspaceFile,
+        selectedWorkspaceFile: activeWorkspaceFile,
         composerImages,
         queuedMessages,
         guideMessages
       }),
-    [activeProject, composerImages, guideMessages, queuedMessages, selectedWorkspaceFile, state.activeContext]
+    [activeProject, activeWorkspaceFile, composerImages, guideMessages, queuedMessages, state.activeContext]
   );
   const pullRequestDisabledReason = pullRequestUnavailableReason(state.gitStatus);
   const runDebugPhase = runDebugPhaseForState(state);
@@ -1254,7 +1261,6 @@ export function App(): JSX.Element {
   function activateWorkspaceTool(view: WorkspacePanelView): void {
     setWorkspacePanelView(view);
     setWorkspaceRightPanelView(view);
-    setWorkspaceMode(view === "files" ? "files" : undefined);
   }
 
   function openWorkspaceTool(view: WorkspacePanelView): void {
@@ -1264,10 +1270,22 @@ export function App(): JSX.Element {
   }
 
   function openWorkspaceFile(path: string): void {
+    const context = appStateRef.current.activeContext;
+    if (!context) {
+      return;
+    }
+    const fileTab = createFileSessionTab(context, path);
+    const outgoingDraft = currentPrimaryComposerDraft();
     ensureWorkspaceToolTab("files");
-    activateWorkspaceTool("files");
+    setWorkspacePanelView("files");
+    setWorkspaceRightPanelView("files");
     setRightPanelOpenWithMotion(true);
-    setSelectedWorkspaceFile((current) => (current === path ? current : path));
+    setWorkspaceMode("files");
+    setState((current) => ({
+      ...persistActiveSessionTabDraft(current, outgoingDraft),
+      sessionTabs: ensureSessionTab(current.sessionTabs, fileTab),
+      activeSessionTabID: fileTab.id
+    }));
   }
 
   function showWorkspaceToolPicker(): void {
@@ -1679,7 +1697,7 @@ export function App(): JSX.Element {
       ? state.sessionTabs.find((tab) => tab.id === draggingSessionTabID)
       : undefined;
     return (
-      <div className="session-tab-strip" aria-label="已打开的会话">
+      <div className="session-tab-strip" aria-label="已打开的工作对象">
         <DndContext
           sensors={sessionTabSensors}
           collisionDetection={closestCenter}
@@ -1910,6 +1928,7 @@ export function App(): JSX.Element {
     if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
       closeProjectMenus();
       setArchiveConfirmThreadID(undefined);
+      setWorkspaceMode(undefined);
       if (currentState.thread || currentState.secondaryThread) {
         const nextTab = nextDraftSessionTab(currentState.activeContext);
         setPrompt("");
@@ -1931,6 +1950,7 @@ export function App(): JSX.Element {
     }
     const requestID = beginViewSwitch("project", projectId);
     closeProjectMenus();
+    setWorkspaceMode(undefined);
     const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
@@ -1968,6 +1988,7 @@ export function App(): JSX.Element {
     if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
       closeProjectMenus();
       setArchiveConfirmThreadID(undefined);
+      setWorkspaceMode(undefined);
       if (currentState.thread || currentState.secondaryThread) {
         const nextTab = nextDraftSessionTab(currentState.activeContext);
         setPrompt("");
@@ -1998,6 +2019,7 @@ export function App(): JSX.Element {
     const requestID = beginViewSwitch("project", projectId);
     closeProjectMenus();
     setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
     const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
@@ -2034,6 +2056,7 @@ export function App(): JSX.Element {
     cancelViewSwitch();
     closeProjectMenus();
     setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
     if (projectId === state.activeProjectId && state.activeContext?.kind === "project") {
       setPrompt("");
       setComposerImages([]);
@@ -2419,9 +2442,52 @@ export function App(): JSX.Element {
     if (!tab) {
       return;
     }
-    setWorkspaceMode(undefined);
     setArchiveConfirmThreadID(undefined);
     const sameContext = sameRuntimeContext(tab.context, currentState.activeContext);
+    if (tab.kind === "file") {
+      const outgoingDraft = currentPrimaryComposerDraft();
+      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(tab.context));
+      try {
+        const loadedState = sameContext
+          ? undefined
+          : await loadRuntime(await selectRuntimeContext(tab.context), { resumeLatestThread: false });
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        if (requestID === undefined) {
+          cancelViewSwitch();
+        }
+        clearPendingComposerMessages();
+        setSplitComposerDrafts(initialSplitComposerDrafts());
+        setWorkspaceMode("files");
+        setState((current) => {
+          const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+          const next = loadedState ? { ...withDraft, ...loadedState } : withDraft;
+          return {
+            ...next,
+            secondaryThread: undefined,
+            activePane: "primary",
+            sessionTabs: ensureSessionTab(next.sessionTabs, tab),
+            activeSessionTabID: tab.id,
+            allowThreadAutoActivation: false,
+            running: false,
+            status: "ready",
+            askRequests: [],
+            answeredAskRequests: []
+          };
+        });
+      } catch (error) {
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          status: error instanceof Error ? error.message : "load failed"
+        }));
+      }
+      return;
+    }
+    setWorkspaceMode(undefined);
     if (tab.kind === "draft") {
       const outgoingDraft = currentPrimaryComposerDraft();
       const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(tab.context));
@@ -2531,9 +2597,50 @@ export function App(): JSX.Element {
     const fallbackTab =
       nextTabs[Math.min(tabIndex, Math.max(nextTabs.length - 1, 0))] ?? nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
-    setWorkspaceMode(undefined);
     setArchiveConfirmThreadID(undefined);
     clearPendingComposerMessages();
+    if (fallbackTab.kind === "file") {
+      const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
+      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
+      try {
+        const loadedState = sameContext
+          ? undefined
+          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), { resumeLatestThread: false });
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        if (requestID === undefined) {
+          cancelViewSwitch();
+        }
+        setSplitComposerDrafts(initialSplitComposerDrafts());
+        setWorkspaceMode("files");
+        setState((current) => {
+          const next = loadedState ? { ...current, ...loadedState } : current;
+          return {
+            ...next,
+            sessionTabs: tabsWithFallback,
+            activeSessionTabID: fallbackTab.id,
+            secondaryThread: undefined,
+            activePane: "primary",
+            allowThreadAutoActivation: false,
+            running: false,
+            status: "ready",
+            askRequests: [],
+            answeredAskRequests: []
+          };
+        });
+      } catch (error) {
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          status: error instanceof Error ? error.message : "load failed"
+        }));
+      }
+      return;
+    }
+    setWorkspaceMode(undefined);
     if (fallbackTab.kind === "draft") {
       const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
       const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
@@ -2621,6 +2728,7 @@ export function App(): JSX.Element {
     }
     cancelViewSwitch();
     setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
@@ -2655,6 +2763,7 @@ export function App(): JSX.Element {
     const activeContext = state.activeContext;
     cancelViewSwitch();
     setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
@@ -2687,6 +2796,7 @@ export function App(): JSX.Element {
     const activeContext = state.activeContext;
     cancelViewSwitch();
     setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
@@ -3886,7 +3996,7 @@ export function App(): JSX.Element {
                 view={workspaceMode}
                 activeContext={state.activeContext}
                 gitStatus={state.gitStatus}
-                selectedFilePath={selectedWorkspaceFile}
+                selectedFilePath={activeWorkspaceFile}
                 onOpenRightPanel={() => {
                   ensureWorkspaceToolTab(workspaceMode);
                   activateWorkspaceTool(workspaceMode);
@@ -3971,7 +4081,7 @@ export function App(): JSX.Element {
         openTabs={workspaceToolTabs}
         activeContext={state.activeContext}
         gitStatus={state.gitStatus}
-        selectedFilePath={selectedWorkspaceFile}
+        selectedFilePath={activeWorkspaceFile}
         onSelectView={openWorkspaceTool}
         onShowTools={showWorkspaceToolPicker}
         onCloseTab={closeWorkspaceToolTab}
@@ -4696,8 +4806,22 @@ function createThreadSessionTab(
   };
 }
 
+function createFileSessionTab(context: RuntimeContext, path: string): SessionTab {
+  return {
+    id: fileSessionTabID(context, path),
+    kind: "file",
+    context,
+    path,
+    title: fileNameFromPath(path)
+  };
+}
+
 function threadSessionTabID(threadID: string): string {
   return `thread:${threadID}`;
+}
+
+function fileSessionTabID(context: RuntimeContext, path: string): string {
+  return `file:${runtimeContextKey(context)}:${encodeURIComponent(path)}`;
 }
 
 function runtimeContextKey(context: RuntimeContext): string {
@@ -4765,7 +4889,9 @@ function persistActiveSessionTabDraft(state: AppState, draft: ComposerDraftState
   return {
     ...state,
     sessionTabs: state.sessionTabs.map((tab) =>
-      tab.id === activeTabID ? { ...tab, prompt: draft.prompt, images: draft.images.map((image) => ({ ...image })) } : tab
+      tab.id === activeTabID && tab.kind !== "file"
+        ? { ...tab, prompt: draft.prompt, images: draft.images.map((image) => ({ ...image })) }
+        : tab
     )
   };
 }
@@ -4796,6 +4922,9 @@ function sessionTabDraftForThreadID(tabs: SessionTab[], threadID: string): Compo
 }
 
 function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
+  if (tab.kind === "file") {
+    return emptyComposerDraft();
+  }
   return {
     prompt: tab.prompt,
     images: tab.images.map((image) => ({ ...image }))
@@ -4817,7 +4946,14 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
     const draftTitle = tab.prompt.trim().split(/\s+/).slice(0, 8).join(" ");
     return draftTitle || tab.title;
   }
+  if (tab.kind === "file") {
+    return tab.title || fileNameFromPath(tab.path);
+  }
   return threadForTab(state, tab.threadID)?.preview || tab.title || "未命名对话";
+}
+
+function fileNameFromPath(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
 
 function threadTime(thread: Thread): number {
@@ -4837,6 +4973,9 @@ function requireThread(result: { thread?: Thread }, message: string): Thread {
 }
 
 function activeThreadForState(state: AppState): Thread | undefined {
+  if (activeSessionTab(state)?.kind === "file") {
+    return undefined;
+  }
   if (state.activePane === "secondary" && state.secondaryThread) {
     return state.secondaryThread;
   }
