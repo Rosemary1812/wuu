@@ -1630,7 +1630,7 @@ export function App(): JSX.Element {
         <div className="conversation-split-header">
           <div className="conversation-split-title">
             <span>{pane === "secondary" ? "分叉" : "源会话"}</span>
-            <strong>{thread.preview || "新对话"}</strong>
+            <strong>{threadDisplayTitle(thread, state.threads, "新对话")}</strong>
           </div>
           <button className="icon-button conversation-split-close" type="button" aria-label={closeLabel} title={closeLabel} onClick={() => closeConversationPane(pane)}>
             <X size={16} />
@@ -3041,7 +3041,10 @@ export function App(): JSX.Element {
         : { prompt, images: composerImages.map((image) => ({ ...image })) };
       setPrompt("");
       setComposerImages([]);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
+      setSplitComposerDrafts({
+        primary: sourceDraft,
+        secondary: emptyComposerDraft()
+      });
       setState((current) => {
         const source =
           current.secondaryThread?.id === sourceThread.id
@@ -3052,9 +3055,9 @@ export function App(): JSX.Element {
         const forkTab = createThreadSessionTab(fork, activeContext);
         return {
           ...current,
-          thread: fork,
-          secondaryThread: undefined,
-          activePane: "primary",
+          thread: source,
+          secondaryThread: fork,
+          activePane: "secondary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
             ensureSessionTab(current.sessionTabs, createThreadSessionTab(source, activeContext, sourceDraft)),
