@@ -62,6 +62,16 @@ func TestCatalogMatchesOpenCodeDefaultVisibility(t *testing.T) {
 	}
 }
 
+func TestMatchProviderDoesNotUseWireTypeForCustomEndpoint(t *testing.T) {
+	if provider, ok := MatchProvider("zhipu2", config.ProviderConfig{
+		Type:    "anthropic",
+		BaseURL: "https://open.bigmodel.cn/api/anthropic",
+		Model:   "glm-5.1",
+	}); ok {
+		t.Fatalf("custom Anthropic-compatible endpoint matched %q", provider.ID)
+	}
+}
+
 func TestMergeProviderCarriesModelOptionsAndHeaders(t *testing.T) {
 	provider, ok := MatchProvider("anthropic", config.ProviderConfig{Type: "anthropic"})
 	if !ok {

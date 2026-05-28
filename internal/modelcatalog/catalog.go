@@ -286,9 +286,9 @@ func mergeHeaders(base, override map[string]string) map[string]string {
 }
 
 func providerIDCandidates(providerName string, provider config.ProviderConfig) []string {
-	raw := []string{
-		providerName,
-		provider.Type,
+	raw := []string{providerName}
+	if allowProviderTypeCatalogMatch(provider) {
+		raw = append(raw, provider.Type)
 	}
 	aliases := map[string]string{
 		"anthropic-official": "anthropic",
@@ -316,6 +316,33 @@ func providerIDCandidates(providerName string, provider config.ProviderConfig) [
 		out = append(out, normalized)
 	}
 	return out
+}
+
+func allowProviderTypeCatalogMatch(provider config.ProviderConfig) bool {
+	endpoints := endpointCandidates(provider)
+	if len(endpoints) == 0 {
+		return true
+	}
+	providerType := normalizeID(provider.Type)
+	for _, endpoint := range endpoints {
+		if isOfficialEndpointForType(providerType, endpoint) {
+			return true
+		}
+	}
+	return false
+}
+
+func isOfficialEndpointForType(providerType, endpoint string) bool {
+	switch providerType {
+	case "openai", "codex":
+		return endpointHost(endpoint) == "api.openai.com"
+	case "anthropic", "claude", "anthropic-official":
+		return endpointHost(endpoint) == "api.anthropic.com"
+	case "gemini", "google":
+		return strings.HasSuffix(endpointHost(endpoint), "generativelanguage.googleapis.com")
+	default:
+		return false
+	}
 }
 
 func endpointCandidates(provider config.ProviderConfig) []string {
@@ -353,4 +380,12 @@ func normalizeEndpoint(value string) string {
 		value = parsed.String()
 	}
 	return strings.TrimRight(strings.ToLower(value), "/")
+}
+
+func endpointHost(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(parsed.Host)
 }

@@ -280,6 +280,27 @@ func TestProviderSummariesPreferConfiguredVariantsOverCatalog(t *testing.T) {
 	}
 }
 
+func TestProviderSummariesDoNotShowOfficialModelsForCustomAnthropicEndpoint(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "zhipu2",
+		Providers: map[string]config.ProviderConfig{
+			"zhipu2": {
+				Type:    "anthropic",
+				BaseURL: "https://open.bigmodel.cn/api/anthropic",
+				Model:   "glm-5.1",
+			},
+		},
+	}
+
+	summaries := providerSummariesFromConfig(cfg, t.TempDir())
+	if len(summaries) != 1 {
+		t.Fatalf("unexpected summaries: %+v", summaries)
+	}
+	if len(summaries[0].Models) != 1 || summaries[0].Models[0].ID != "glm-5.1" {
+		t.Fatalf("custom endpoint should only expose configured model, got %+v", summaries[0].Models)
+	}
+}
+
 func providerModelByID(t *testing.T, provider ProviderSummary, id string) ProviderModelSummary {
 	t.Helper()
 	for _, model := range provider.Models {
