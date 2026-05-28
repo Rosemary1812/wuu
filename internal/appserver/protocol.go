@@ -16,6 +16,7 @@ const (
 	MethodConfigRead        = "config/read"
 	MethodConfigModelUpdate = "config/model/update"
 	MethodConfigCodexModels = "config/codex/models"
+	MethodSkillList         = "skill/list"
 	MethodThreadStart       = "thread/start"
 	MethodThreadResume      = "thread/resume"
 	MethodThreadFork        = "thread/fork"
@@ -130,6 +131,28 @@ type ConfigCodexModelsResult struct {
 	Effort   string              `json:"effort,omitempty"`
 	Variant  string              `json:"variant,omitempty"`
 	Models   []CodexModelSummary `json:"models"`
+}
+
+type SkillSummary struct {
+	Name               string   `json:"name"`
+	Description        string   `json:"description,omitempty"`
+	WhenToUse          string   `json:"when_to_use,omitempty"`
+	Source             string   `json:"source"`
+	Path               string   `json:"path,omitempty"`
+	ArgumentHint       string   `json:"argument_hint,omitempty"`
+	Model              string   `json:"model,omitempty"`
+	Context            string   `json:"context,omitempty"`
+	Agent              string   `json:"agent,omitempty"`
+	AllowedTools       []string `json:"allowed_tools,omitempty"`
+	UserInvocable      bool     `json:"user_invocable"`
+	DisableModelInvoke bool     `json:"disable_model_invoke"`
+	Paths              []string `json:"paths,omitempty"`
+	Effort             string   `json:"effort,omitempty"`
+	Version            string   `json:"version,omitempty"`
+}
+
+type SkillListResult struct {
+	Skills []SkillSummary `json:"skills"`
 }
 
 type CodexModelSummary struct {

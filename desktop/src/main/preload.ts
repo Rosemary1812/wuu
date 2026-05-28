@@ -26,6 +26,7 @@ const api: WuuDesktopApi = {
   loadCodexModels: (provider?: string) => ipcRenderer.invoke("wuu:config-codex-models", provider),
   updateRuntimeSettings: (provider: string, model: string, effort?: string, connection?: Parameters<WuuDesktopApi["updateRuntimeSettings"]>[3], variant?: string) =>
     ipcRenderer.invoke("wuu:config-model-update", provider, model, effort, connection, variant),
+  listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) => ipcRenderer.invoke("wuu:thread-resume", sessionId),
   forkThread: (threadId: string, turnId?: string, itemId?: string) =>

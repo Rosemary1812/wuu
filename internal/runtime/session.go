@@ -533,7 +533,7 @@ func discoverSkills(rootDir, homeDir string) []skills.Skill {
 	if homeDir != "" {
 		userSkillsDir = filepath.Join(homeDir, ".claude", "skills")
 	}
-	return skills.Discover(projectSkillsDir, userSkillsDir)
+	return skills.MergeWithBundled(skills.Discover(projectSkillsDir, userSkillsDir))
 }
 
 func connectMCPServers(cfg config.Config, toolkit *tools.Toolkit) {

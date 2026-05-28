@@ -19,6 +19,7 @@ import type {
   InitializeResult,
   ProjectListResult,
   RuntimeContext,
+  SkillListResult,
   TerminalSessionActionResult,
   TerminalSessionEvent,
   TerminalSessionStartResult,
@@ -110,6 +111,7 @@ export function installWuuBrowserOSAdapter(): void {
         ...(effort === undefined ? {} : { effort }),
         ...(variant === undefined ? {} : { variant }),
       }),
+    listSkills: () => wuuRpc<SkillListResult>('skill/list'),
     startThread: () => wuuRpc<{ thread: Thread }>('thread/start'),
     resumeThread: (sessionId) =>
       wuuRpc<{ thread: Thread }>('thread/resume', {

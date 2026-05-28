@@ -128,6 +128,7 @@ import {
 } from "./RuntimeHelpers";
 import { SettingsView } from "./SettingsView";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
+import { SkillsCatalog } from "./SkillsCatalog";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore, type StreamTextField } from "./StreamText";
 import { threadDisplayTitle } from "./ThreadTitles";
@@ -235,6 +236,12 @@ type SessionTab =
       kind: "file";
       context: RuntimeContext;
       path: string;
+      title: string;
+    }
+  | {
+      id: string;
+      kind: "skills";
+      context: RuntimeContext;
       title: string;
     };
 
@@ -891,7 +898,9 @@ export function App(): JSX.Element {
     () => state.projects.find((project) => project.id === state.activeProjectId),
     [state.activeProjectId, state.projects]
   );
-  const activeTitle = workspaceMode ? workspaceModeTitle(workspaceMode) : activeThread?.preview || "新对话";
+  const previewingLaunch = debugControlsVisible && ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
+  const showingSkillsCatalog = Boolean(state.initialized && !previewingLaunch && currentSessionTab?.kind === "skills");
+  const activeTitle = showingSkillsCatalog ? "Skills" : workspaceMode ? workspaceModeTitle(workspaceMode) : activeThread?.preview || "新对话";
   const emptyThreadTitle =
     state.activeContext?.kind === "project"
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
@@ -903,8 +912,8 @@ export function App(): JSX.Element {
   const answeredAskRequestsWithoutVisibleTurn = visibleAnsweredAskRequests.filter(
     (request) => !request.turnID || !turns.some((turn) => turn.id === request.turnID)
   );
-  const emptyConversation = turns.length === 0 && !visibleAskRequest && visibleAnsweredAskRequests.length === 0;
-  const previewingLaunch = debugControlsVisible && ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
+  const emptyConversation =
+    !showingSkillsCatalog && turns.length === 0 && !visibleAskRequest && visibleAnsweredAskRequests.length === 0;
   const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
   const visiblePendingThreadID =
@@ -1282,6 +1291,59 @@ export function App(): JSX.Element {
       ...persistActiveSessionTabDraft(current, outgoingDraft),
       sessionTabs: ensureSessionTab(current.sessionTabs, fileTab),
       activeSessionTabID: fileTab.id
+    }));
+  }
+
+  function openSkillsTab(): void {
+    if (!state.activeContext) {
+      return;
+    }
+    const tab = createSkillsSessionTab(state.activeContext);
+    setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
+    clearPendingComposerMessages();
+    setSplitComposerDrafts(initialSplitComposerDrafts());
+    setState((current) => ({
+      ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
+      secondaryThread: undefined,
+      activePane: "primary",
+      sessionTabs: ensureSessionTab(current.sessionTabs, tab),
+      activeSessionTabID: tab.id,
+      allowThreadAutoActivation: false,
+      running: false,
+      status: "ready",
+      askRequests: [],
+      answeredAskRequests: []
+    }));
+  }
+
+  function useSkillFromCatalog(name: string): void {
+    if (!state.activeContext) {
+      return;
+    }
+    draftSessionTabCounterRef.current += 1;
+    const draft = {
+      prompt: `/${name} `,
+      images: []
+    };
+    const tab = createDraftSessionTab(`draft:skill:${Date.now()}:${draftSessionTabCounterRef.current}`, state.activeContext, draft);
+    setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
+    clearPendingComposerMessages();
+    restorePrimaryComposerDraft(draft);
+    setSplitComposerDrafts(initialSplitComposerDrafts());
+    setState((current) => ({
+      ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
+      thread: undefined,
+      secondaryThread: undefined,
+      activePane: "primary",
+      sessionTabs: ensureSessionTab(current.sessionTabs, tab),
+      activeSessionTabID: tab.id,
+      allowThreadAutoActivation: false,
+      running: false,
+      status: "ready",
+      askRequests: [],
+      answeredAskRequests: []
     }));
   }
 
@@ -2484,6 +2546,49 @@ export function App(): JSX.Element {
       }
       return;
     }
+    if (tab.kind === "skills") {
+      const outgoingDraft = currentPrimaryComposerDraft();
+      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(tab.context));
+      try {
+        const loadedState = sameContext
+          ? undefined
+          : await loadRuntime(await selectRuntimeContext(tab.context), { resumeLatestThread: false });
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        if (requestID === undefined) {
+          cancelViewSwitch();
+        }
+        clearPendingComposerMessages();
+        setSplitComposerDrafts(initialSplitComposerDrafts());
+        setWorkspaceMode(undefined);
+        setState((current) => {
+          const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+          const next = loadedState ? { ...withDraft, ...loadedState } : withDraft;
+          return {
+            ...next,
+            secondaryThread: undefined,
+            activePane: "primary",
+            sessionTabs: ensureSessionTab(next.sessionTabs, tab),
+            activeSessionTabID: tab.id,
+            allowThreadAutoActivation: false,
+            running: false,
+            status: "ready",
+            askRequests: [],
+            answeredAskRequests: []
+          };
+        });
+      } catch (error) {
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          status: error instanceof Error ? error.message : "load failed"
+        }));
+      }
+      return;
+    }
     setWorkspaceMode(undefined);
     if (tab.kind === "draft") {
       const outgoingDraft = currentPrimaryComposerDraft();
@@ -2611,6 +2716,47 @@ export function App(): JSX.Element {
         }
         setSplitComposerDrafts(initialSplitComposerDrafts());
         setWorkspaceMode("files");
+        setState((current) => {
+          const next = loadedState ? { ...current, ...loadedState } : current;
+          return {
+            ...next,
+            sessionTabs: tabsWithFallback,
+            activeSessionTabID: fallbackTab.id,
+            secondaryThread: undefined,
+            activePane: "primary",
+            allowThreadAutoActivation: false,
+            running: false,
+            status: "ready",
+            askRequests: [],
+            answeredAskRequests: []
+          };
+        });
+      } catch (error) {
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          status: error instanceof Error ? error.message : "load failed"
+        }));
+      }
+      return;
+    }
+    if (fallbackTab.kind === "skills") {
+      const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
+      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
+      try {
+        const loadedState = sameContext
+          ? undefined
+          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), { resumeLatestThread: false });
+        if (requestID !== undefined && !finishViewSwitch(requestID)) {
+          return;
+        }
+        if (requestID === undefined) {
+          cancelViewSwitch();
+        }
+        setSplitComposerDrafts(initialSplitComposerDrafts());
+        setWorkspaceMode(undefined);
         setState((current) => {
           const next = loadedState ? { ...current, ...loadedState } : current;
           return {
@@ -3695,6 +3841,10 @@ export function App(): JSX.Element {
               <MessageSquarePlus size={18} />
               <span>新对话</span>
             </button>
+            <button className="nav-item" onClick={openSkillsTab} disabled={!state.activeContext}>
+              <Wrench size={18} />
+              <span>Skills</span>
+            </button>
             {debugControlsVisible && ENABLE_CONVERSATION_FIXTURES ? (
               <div className="dev-fixture-nav" aria-label="开发调试会话">
                 <div className="dev-fixture-label">开发样例</div>
@@ -3977,11 +4127,13 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation && !showingWorkspaceMode ? " empty-scroll-region" : ""}${
               showingWorkspaceMode ? " workspace-scroll-region" : ""
-            }${splitConversation ? " split-scroll-region" : ""}`}
+            }${splitConversation ? " split-scroll-region" : ""}${showingSkillsCatalog ? " skills-scroll-region" : ""}`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
-            {workspaceMode ? (
+            {showingSkillsCatalog ? (
+              <SkillsCatalog activeContext={state.activeContext} onUseSkill={useSkillFromCatalog} />
+            ) : workspaceMode ? (
               <WorkspaceMainPanel
                 view={workspaceMode}
                 activeContext={state.activeContext}
@@ -4044,7 +4196,7 @@ export function App(): JSX.Element {
           />
         )}
 
-        {state.initialized && !previewingLaunch && !emptyConversation && !showingWorkspaceMode && !splitConversation
+        {state.initialized && !previewingLaunch && !emptyConversation && !showingWorkspaceMode && !splitConversation && !showingSkillsCatalog
           ? renderComposer("dock")
           : null}
       </main>
@@ -4799,12 +4951,25 @@ function createFileSessionTab(context: RuntimeContext, path: string): SessionTab
   };
 }
 
+function createSkillsSessionTab(context: RuntimeContext): SessionTab {
+  return {
+    id: skillsSessionTabID(context),
+    kind: "skills",
+    context,
+    title: "Skills"
+  };
+}
+
 function threadSessionTabID(threadID: string): string {
   return `thread:${threadID}`;
 }
 
 function fileSessionTabID(context: RuntimeContext, path: string): string {
   return `file:${runtimeContextKey(context)}:${encodeURIComponent(path)}`;
+}
+
+function skillsSessionTabID(context: RuntimeContext): string {
+  return `skills:${runtimeContextKey(context)}`;
 }
 
 function runtimeContextKey(context: RuntimeContext): string {
@@ -4872,7 +5037,7 @@ function persistActiveSessionTabDraft(state: AppState, draft: ComposerDraftState
   return {
     ...state,
     sessionTabs: state.sessionTabs.map((tab) =>
-      tab.id === activeTabID && tab.kind !== "file"
+      tab.id === activeTabID && (tab.kind === "draft" || tab.kind === "thread")
         ? { ...tab, prompt: draft.prompt, images: draft.images.map((image) => ({ ...image })) }
         : tab
     )
@@ -4905,7 +5070,7 @@ function sessionTabDraftForThreadID(tabs: SessionTab[], threadID: string): Compo
 }
 
 function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
-  if (tab.kind === "file") {
+  if (tab.kind === "file" || tab.kind === "skills") {
     return emptyComposerDraft();
   }
   return {
@@ -4932,6 +5097,9 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
   if (tab.kind === "file") {
     return tab.title || fileNameFromPath(tab.path);
   }
+  if (tab.kind === "skills") {
+    return tab.title;
+  }
   return threadDisplayTitle(threadForTab(state, tab.threadID), state.threads, tab.title || "未命名对话");
 }
 
@@ -4956,7 +5124,8 @@ function requireThread(result: { thread?: Thread }, message: string): Thread {
 }
 
 function activeThreadForState(state: AppState): Thread | undefined {
-  if (activeSessionTab(state)?.kind === "file") {
+  const tab = activeSessionTab(state);
+  if (tab?.kind === "file" || tab?.kind === "skills") {
     return undefined;
   }
   if (state.activePane === "secondary" && state.secondaryThread) {

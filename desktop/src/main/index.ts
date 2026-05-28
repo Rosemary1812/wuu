@@ -1891,6 +1891,7 @@ app.whenReady().then(() => {
       ...(variant === undefined ? {} : { variant })
     })
   );
+  ipcMain.handle("wuu:skill-list", () => serverClient().request("skill/list"));
   ipcMain.handle("wuu:thread-start", () => serverClient().request<{ thread: Thread }>("thread/start"));
   ipcMain.handle("wuu:thread-resume", (_event, sessionId?: string) =>
     serverClient().request<{ thread: Thread }>("thread/resume", { session_id: sessionId ?? "" })

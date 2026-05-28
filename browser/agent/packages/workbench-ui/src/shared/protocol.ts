@@ -71,6 +71,28 @@ export type ProviderModelVariantSummary = {
   options?: Record<string, JsonValue>;
 };
 
+export type SkillSummary = {
+  name: string;
+  description?: string;
+  when_to_use?: string;
+  source: string;
+  path?: string;
+  argument_hint?: string;
+  model?: string;
+  context?: string;
+  agent?: string;
+  allowed_tools?: string[];
+  user_invocable: boolean;
+  disable_model_invoke: boolean;
+  paths?: string[];
+  effort?: string;
+  version?: string;
+};
+
+export type SkillListResult = {
+  skills: SkillSummary[];
+};
+
 export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
@@ -424,6 +446,7 @@ export type WuuDesktopApi = {
     connection?: RuntimeConnectionUpdate,
     variant?: string
   ) => Promise<ConfigModelUpdateResult>;
+  listSkills: () => Promise<SkillListResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

@@ -28,6 +28,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
@@ -405,6 +406,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigModelUpdate(req)
 	case MethodConfigCodexModels:
 		return s.handleConfigCodexModels(ctx, req)
+	case MethodSkillList:
+		return s.handleSkillList(req)
 	case MethodThreadStart:
 		return s.handleThreadStart(req)
 	case MethodThreadResume:
@@ -700,6 +703,34 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 		Variant:  variant,
 		Models:   out,
 	}, nil)
+}
+
+func (s *Server) handleSkillList(req Request) error {
+	return s.writeResponse(req.ID, SkillListResult{Skills: skillSummaries(s.rt.Skills)}, nil)
+}
+
+func skillSummaries(items []skills.Skill) []SkillSummary {
+	out := make([]SkillSummary, 0, len(items))
+	for _, item := range items {
+		out = append(out, SkillSummary{
+			Name:               item.Name,
+			Description:        item.Description,
+			WhenToUse:          item.WhenToUse,
+			Source:             item.Source,
+			Path:               item.Path,
+			ArgumentHint:       item.ArgumentHint,
+			Model:              item.Model,
+			Context:            item.Context,
+			Agent:              item.Agent,
+			AllowedTools:       append([]string(nil), item.AllowedTools...),
+			UserInvocable:      item.UserInvocable,
+			DisableModelInvoke: item.DisableModelInvoke,
+			Paths:              append([]string(nil), item.Paths...),
+			Effort:             item.Effort,
+			Version:            item.Version,
+		})
+	}
+	return out
 }
 
 func (s *Server) handleThreadStart(req Request) error {

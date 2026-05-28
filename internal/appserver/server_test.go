@@ -21,6 +21,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -794,6 +795,38 @@ func TestServerConfigCodexModels(t *testing.T) {
 	}
 	if got := result.Models[0].SupportedReasoning; len(got) != 2 || got[0] != "low" || got[1] != "xhigh" {
 		t.Fatalf("unexpected reasoning levels: %+v", got)
+	}
+}
+
+func TestServerSkillList(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Skills = []skills.Skill{{
+		Name:          "slides",
+		Description:   "Create slide decks",
+		WhenToUse:     "When the user asks for a presentation",
+		Source:        "bundled",
+		ArgumentHint:  "topic",
+		UserInvocable: true,
+		AllowedTools:  []string{"read_file"},
+		Paths:         []string{"**/*.pptx"},
+	}}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"skill/list"}`)); err != nil {
+		t.Fatalf("skill/list: %v", err)
+	}
+
+	result := remarshal[SkillListResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if len(result.Skills) != 1 {
+		t.Fatalf("expected one skill, got %+v", result)
+	}
+	got := result.Skills[0]
+	if got.Name != "slides" || got.Description != "Create slide decks" || got.Source != "bundled" || !got.UserInvocable {
+		t.Fatalf("unexpected skill summary: %+v", got)
+	}
+	if len(got.AllowedTools) != 1 || got.AllowedTools[0] != "read_file" || len(got.Paths) != 1 || got.Paths[0] != "**/*.pptx" {
+		t.Fatalf("skill metadata missing: %+v", got)
 	}
 }
 
