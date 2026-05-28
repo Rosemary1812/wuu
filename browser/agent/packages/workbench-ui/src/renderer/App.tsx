@@ -1292,6 +1292,20 @@ export function App(): JSX.Element {
     setWorkspaceRightPanelView("tools");
   }
 
+  function reorderWorkspaceToolTabs(activeView: WorkspacePanelView, overView: WorkspacePanelView): void {
+    if (activeView === overView) {
+      return;
+    }
+    setWorkspaceToolTabs((current) => {
+      const sourceIndex = current.indexOf(activeView);
+      const targetIndex = current.indexOf(overView);
+      if (sourceIndex < 0 || targetIndex < 0) {
+        return current;
+      }
+      return arrayMove(current, sourceIndex, targetIndex);
+    });
+  }
+
   function toggleRightPanel(): void {
     if (rightPanelOpen) {
       setRightPanelOpenWithMotion(false);
@@ -1715,14 +1729,14 @@ export function App(): JSX.Element {
           </DragOverlay>
         </DndContext>
         <button
-          className="session-tab-new"
+          className="icon-button workspace-panel-add session-tab-new"
           type="button"
           aria-label="新建对话"
           title="新建对话"
           disabled={!state.activeContext}
           onClick={() => void startNewThread()}
         >
-          <Plus size={15} />
+          <Plus size={19} />
         </button>
       </div>
     );
@@ -3961,6 +3975,7 @@ export function App(): JSX.Element {
         onSelectView={openWorkspaceTool}
         onShowTools={showWorkspaceToolPicker}
         onCloseTab={closeWorkspaceToolTab}
+        onReorderTabs={reorderWorkspaceToolTabs}
         onOpenFile={openWorkspaceFile}
         onClose={() => setRightPanelOpenWithMotion(false)}
       />

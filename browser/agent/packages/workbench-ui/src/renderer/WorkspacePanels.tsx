@@ -1,3 +1,18 @@
+import { type CSSProperties, useState } from "react";
+import {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragCancelEvent,
+  type DragEndEvent,
+  type DragStartEvent
+} from "@dnd-kit/core";
+import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { FolderOpen, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
@@ -60,6 +75,7 @@ export function WorkspaceRightPanel({
   onSelectView,
   onShowTools,
   onCloseTab,
+  onReorderTabs,
   onOpenFile,
   onClose
 }: {
@@ -73,10 +89,42 @@ export function WorkspaceRightPanel({
   onSelectView: (view: WorkspacePanelView) => void;
   onShowTools: () => void;
   onCloseTab: (view: WorkspacePanelView) => void;
+  onReorderTabs: (activeView: WorkspacePanelView, overView: WorkspacePanelView) => void;
   onOpenFile: (path: string) => void;
   onClose: () => void;
 }): JSX.Element {
   const detailView = view === "tools" ? undefined : view;
+  const [draggingTab, setDraggingTab] = useState<WorkspacePanelView | undefined>(undefined);
+  const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
+  const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const draggingTool = draggingTab ? workspaceToolFor(draggingTab) : undefined;
+
+  function startTabDrag(event: DragStartEvent): void {
+    const activeView = workspacePanelViewFromSortableID(event.active.id);
+    if (!activeView) {
+      return;
+    }
+    setDraggingTab(activeView);
+    setDraggingTabWidth(event.active.rect.current.initial?.width);
+  }
+
+  function endTabDrag(event: DragEndEvent): void {
+    const activeView = workspacePanelViewFromSortableID(event.active.id);
+    const overView = event.over ? workspacePanelViewFromSortableID(event.over.id) : undefined;
+    if (activeView && overView && activeView !== overView) {
+      onReorderTabs(activeView, overView);
+    }
+    finishTabDrag();
+  }
+
+  function cancelTabDrag(_event: DragCancelEvent): void {
+    finishTabDrag();
+  }
+
+  function finishTabDrag(): void {
+    setDraggingTab(undefined);
+    setDraggingTabWidth(undefined);
+  }
 
   return (
     <aside
@@ -84,37 +132,46 @@ export function WorkspaceRightPanel({
       aria-hidden={!open}
     >
       <div className="workspace-panel-tabbar">
-        <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
-          {openTabs.map((item) => {
-            const tool = workspaceToolFor(item);
-            const active = item === detailView;
-            return (
-              <div className={`workspace-tool-tab${active ? " active" : ""}`} key={item}>
-                <button
-                  className="workspace-tool-tab-main"
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  title={tool.title}
-                  disabled={!open}
-                  onClick={() => onSelectView(item)}
-                >
-                  <WorkspaceToolIcon view={item} size={16} />
-                  <span>{tool.title}</span>
-                </button>
-                <button
-                  className="workspace-tool-tab-close"
-                  type="button"
-                  aria-label={`关闭${tool.title}`}
-                  disabled={!open}
-                  onClick={() => onCloseTab(item)}
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        <DndContext
+          sensors={tabSensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToHorizontalAxis]}
+          onDragStart={startTabDrag}
+          onDragEnd={endTabDrag}
+          onDragCancel={cancelTabDrag}
+        >
+          <SortableContext items={openTabs} strategy={horizontalListSortingStrategy}>
+            <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
+              {openTabs.map((item) => {
+                const tool = workspaceToolFor(item);
+                const active = item === detailView;
+                return (
+                  <SortableWorkspaceToolTab
+                    key={item}
+                    view={item}
+                    title={tool.title}
+                    active={active}
+                    open={open}
+                    reorderable={openTabs.length > 1}
+                    onSelect={() => onSelectView(item)}
+                    onClose={() => onCloseTab(item)}
+                  />
+                );
+              })}
+            </div>
+          </SortableContext>
+          <DragOverlay dropAnimation={{ duration: 150, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
+            {draggingTab && draggingTool ? (
+              <WorkspaceToolTabPreview
+                view={draggingTab}
+                title={draggingTool.title}
+                active={draggingTab === detailView}
+                width={draggingTabWidth}
+              />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+        <span className="workspace-panel-tabbar-spacer" />
         <button
           className={`icon-button workspace-panel-add${view === "tools" ? " active" : ""}`}
           type="button"
@@ -125,7 +182,6 @@ export function WorkspaceRightPanel({
         >
           <Plus size={19} />
         </button>
-        <span className="workspace-panel-tabbar-spacer" />
         <button
           className="icon-button workspace-panel-close"
           type="button"
@@ -157,6 +213,97 @@ export function WorkspaceRightPanel({
         </>
       ) : null}
     </aside>
+  );
+}
+
+function SortableWorkspaceToolTab({
+  view,
+  title,
+  active,
+  open,
+  reorderable,
+  onSelect,
+  onClose
+}: {
+  view: WorkspacePanelView;
+  title: string;
+  active: boolean;
+  open: boolean;
+  reorderable: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+}): JSX.Element {
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: view,
+    disabled: !reorderable
+  });
+  const { role: _dragRole, ...dragAttributes } = attributes;
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      className={`workspace-tool-tab${active ? " active" : ""}${reorderable ? " can-reorder" : ""}${
+        isDragging ? " dragging" : ""
+      }`}
+      style={style}
+      aria-grabbed={isDragging || undefined}
+    >
+      <button
+        ref={setActivatorNodeRef}
+        className="workspace-tool-tab-main"
+        type="button"
+        role="tab"
+        aria-selected={active}
+        title={title}
+        disabled={!open}
+        onClick={onSelect}
+        {...dragAttributes}
+        {...listeners}
+      >
+        <WorkspaceToolIcon view={view} size={15} />
+        <span>{title}</span>
+      </button>
+      <button
+        className="workspace-tool-tab-close"
+        type="button"
+        draggable={false}
+        aria-label={`关闭${title}`}
+        disabled={!open}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClose();
+        }}
+      >
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+function WorkspaceToolTabPreview({
+  view,
+  title,
+  active,
+  width
+}: {
+  view: WorkspacePanelView;
+  title: string;
+  active: boolean;
+  width?: number;
+}): JSX.Element {
+  return (
+    <div className={`workspace-tool-tab workspace-tool-tab-drag-overlay${active ? " active" : ""}`} style={width ? { width } : undefined}>
+      <div className="workspace-tool-tab-main">
+        <WorkspaceToolIcon view={view} size={15} />
+        <span>{title}</span>
+      </div>
+      <div className="workspace-tool-tab-close" aria-hidden="true">
+        <X size={13} />
+      </div>
+    </div>
   );
 }
 
@@ -253,6 +400,11 @@ export function WorkspaceToolIcon({ view, size }: { view: WorkspacePanelView; si
 
 function workspaceToolFor(view: WorkspacePanelView): (typeof WORKSPACE_TOOL_ITEMS)[number] {
   return WORKSPACE_TOOL_ITEMS.find((item) => item.id === view) ?? WORKSPACE_TOOL_ITEMS[0];
+}
+
+function workspacePanelViewFromSortableID(id: unknown): WorkspacePanelView | undefined {
+  const value = typeof id === "string" ? id : String(id);
+  return WORKSPACE_TOOL_ITEMS.some((item) => item.id === value) ? (value as WorkspacePanelView) : undefined;
 }
 
 export function workspaceModeTitle(view: WorkspacePanelView): string {
