@@ -46,6 +46,7 @@ type Session struct {
 	ID               string     `json:"id"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at,omitempty"`
+	Title            string     `json:"title,omitempty"`
 	Summary          string     `json:"summary,omitempty"`
 	Entries          int        `json:"entries"`
 	CWD              string     `json:"cwd,omitempty"`
@@ -181,6 +182,32 @@ func ListForCWD(sessDir, cwd string, limit int) ([]Session, error) {
 
 // listLocked reads the index assuming the caller already holds the lock.
 func listLocked(sessDir string, limit int) ([]Session, error) {
+	sessions, err := readIndexEntriesLocked(sessDir, true)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(sessions, func(i, j int) bool {
+		leftPinned := sessions[i].PinnedAt != nil
+		rightPinned := sessions[j].PinnedAt != nil
+		if leftPinned != rightPinned {
+			return leftPinned
+		}
+		leftTime := sessionActivityAt(sessions[i])
+		rightTime := sessionActivityAt(sessions[j])
+		if !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
+		}
+		return sessions[i].ID > sessions[j].ID
+	})
+
+	if limit > 0 && len(sessions) > limit {
+		sessions = sessions[:limit]
+	}
+	return sessions, nil
+}
+
+func readIndexEntriesLocked(sessDir string, backfillUpdatedAt bool) ([]Session, error) {
 	indexPath := IndexPath(sessDir)
 	f, err := os.Open(indexPath)
 	if err != nil {
@@ -202,7 +229,7 @@ func listLocked(sessDir string, limit int) ([]Session, error) {
 		if err := json.Unmarshal([]byte(line), &s); err != nil {
 			continue // skip corrupt lines
 		}
-		if s.UpdatedAt.IsZero() {
+		if backfillUpdatedAt && s.UpdatedAt.IsZero() {
 			if info, err := os.Stat(FilePath(sessDir, s.ID)); err == nil {
 				s.UpdatedAt = info.ModTime().UTC()
 			}
@@ -211,24 +238,6 @@ func listLocked(sessDir string, limit int) ([]Session, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan index: %w", err)
-	}
-
-	sort.Slice(sessions, func(i, j int) bool {
-		leftPinned := sessions[i].PinnedAt != nil
-		rightPinned := sessions[j].PinnedAt != nil
-		if leftPinned != rightPinned {
-			return leftPinned
-		}
-		leftTime := sessionActivityAt(sessions[i])
-		rightTime := sessionActivityAt(sessions[j])
-		if !leftTime.Equal(rightTime) {
-			return leftTime.After(rightTime)
-		}
-		return sessions[i].ID > sessions[j].ID
-	})
-
-	if limit > 0 && len(sessions) > limit {
-		sessions = sessions[:limit]
 	}
 	return sessions, nil
 }
@@ -276,6 +285,19 @@ func UpdateIndex(sessDir string, id string, entries int, summary string) error {
 	return err
 }
 
+// UpdateGeneratedTitle sets a title only when the session does not already have one.
+func UpdateGeneratedTitle(sessDir, id string, title string) (Session, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return Session{}, fmt.Errorf("title is required")
+	}
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		if strings.TrimSpace(s.Title) == "" {
+			s.Title = title
+		}
+	})
+}
+
 // UpdatePinned marks a session as pinned or unpinned in the index.
 func UpdatePinned(sessDir, id string, pinned bool) (Session, error) {
 	now := time.Now().UTC()
@@ -304,7 +326,7 @@ func UpdateArchived(sessDir, id string, archived bool) (Session, error) {
 func updateMetadata(sessDir, id string, missingOK bool, update func(*Session)) (Session, error) {
 	var updated Session
 	err := withIndexLock(sessDir, true, func() error {
-		sessions, err := listLocked(sessDir, 0)
+		sessions, err := readIndexEntriesLocked(sessDir, false)
 		if err != nil {
 			return err
 		}

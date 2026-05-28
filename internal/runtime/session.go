@@ -55,6 +55,7 @@ type Session struct {
 	ConfigPath                  string
 	SessionDir                  string
 	StreamRunner                *agent.StreamRunner
+	TitleClient                 providers.Client
 	HookDispatcher              *hooks.Dispatcher
 	Skills                      []skills.Skill
 	Memory                      []memory.File
@@ -230,6 +231,7 @@ func NewSession(opts Options) (*Session, error) {
 		ConfigPath:                  opts.ConfigPath,
 		SessionDir:                  sessionDir,
 		StreamRunner:                streamRunner,
+		TitleClient:                 client,
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
 		Memory:                      memoryFiles,

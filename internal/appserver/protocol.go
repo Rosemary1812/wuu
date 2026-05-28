@@ -31,6 +31,7 @@ const (
 
 	NotificationThreadStarted = "thread/started"
 	NotificationThreadResumed = "thread/resumed"
+	NotificationThreadUpdated = "thread/updated"
 	NotificationTurnStarted   = "turn/started"
 	NotificationTurnEvent     = "turn/event"
 	NotificationTurnError     = "turn/error"
@@ -260,6 +261,10 @@ type ThreadStartedNotification struct {
 }
 
 type ThreadResumedNotification struct {
+	Thread Thread `json:"thread"`
+}
+
+type ThreadUpdatedNotification struct {
 	Thread Thread `json:"thread"`
 }
 

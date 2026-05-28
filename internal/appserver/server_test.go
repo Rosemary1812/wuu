@@ -917,6 +917,104 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 }
 
+func TestServerGeneratesThreadTitle(t *testing.T) {
+	mainClient := &fakeClient{response: providers.ChatResponse{Content: "done"}}
+	titleClient := &fakeClient{response: providers.ChatResponse{Content: "<think>ignore</think>\nFix login crash"}}
+	rt := newTestRuntime(t, mainClient)
+	rt.TitleClient = titleClient
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "please help me fix the login crash in auth.ts"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationThreadUpdated)
+	updated := remarshal[ThreadUpdatedNotification](t, notificationByMethod(t, msgs, NotificationThreadUpdated)["params"])
+	if updated.Thread.ID != threadID || updated.Thread.Preview != "Fix login crash" {
+		t.Fatalf("unexpected title update: %+v", updated)
+	}
+	sessions, err := session.List(rt.SessionDir, 1)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Title != "Fix login crash" || sessions[0].Summary != "please help me fix the login crash in auth.ts" {
+		t.Fatalf("unexpected persisted title: %+v", sessions)
+	}
+
+	mainClient.mu.Lock()
+	mainRequests := len(mainClient.requests)
+	mainClient.mu.Unlock()
+	titleClient.mu.Lock()
+	titleRequests := len(titleClient.requests)
+	titleClient.mu.Unlock()
+	if mainRequests != 1 || titleRequests != 1 {
+		t.Fatalf("unexpected request counts: main=%d title=%d", mainRequests, titleRequests)
+	}
+}
+
+func TestServerGeneratesThreadTitleFromFirstTurnSnapshot(t *testing.T) {
+	titleClient := &fakeClient{response: providers.ChatResponse{Content: "First task title"}}
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.TitleClient = titleClient
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "snapshot-title-thread", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstTurnHistory := []providers.ChatMessage{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "first task"},
+		{Role: "assistant", Content: "done"},
+	}
+	currentHistory := append(cloneHistory(firstTurnHistory), providers.ChatMessage{Role: "user", Content: "second task"})
+	th := newThreadState(sess.ID, currentHistory, rt.ProviderName, rt.Model, rt.RootDir, session.FilePath(rt.SessionDir, sess.ID), time.Now().UTC())
+	srv.mu.Lock()
+	srv.threads[th.ID] = th
+	srv.mu.Unlock()
+
+	srv.generateThreadTitle(th.ID, firstTurnHistory)
+
+	sessions, err := session.List(rt.SessionDir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].Title != "First task title" {
+		t.Fatalf("unexpected generated title: %+v", sessions)
+	}
+	titleClient.mu.Lock()
+	defer titleClient.mu.Unlock()
+	if len(titleClient.requests) != 1 {
+		t.Fatalf("expected one title request, got %d", len(titleClient.requests))
+	}
+	prompt := titleClient.requests[0].Messages[len(titleClient.requests[0].Messages)-1].Content
+	if !strings.Contains(prompt, "first task") || strings.Contains(prompt, "second task") {
+		t.Fatalf("title prompt should use first-turn snapshot, got %q", prompt)
+	}
+}
+
+func TestCleanGeneratedThreadTitle(t *testing.T) {
+	got := cleanGeneratedThreadTitle("<think>hidden</think>\nTitle: \"调试登录崩溃并修复认证流程\"")
+	if got != "调试登录崩溃并修复认证流程" {
+		t.Fatalf("cleanGeneratedThreadTitle() = %q", got)
+	}
+}
+
 func TestServerThreadForkAtAssistantItem(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{

@@ -43,6 +43,7 @@ type threadState struct {
 	History          []providers.ChatMessage
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	Title            string
 	ModelProvider    string
 	Model            string
 	CWD              string
@@ -620,6 +621,9 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 
 	s.rt.ProviderName = resolvedName
 	s.rt.Model = model
+	if client != nil {
+		s.rt.TitleClient = client
+	}
 	if s.rt.StreamRunner != nil {
 		if client != nil {
 			s.rt.StreamRunner.Client = client
@@ -1077,6 +1081,7 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	if strings.TrimSpace(metadata.CWD) != "" {
 		th.CWD = metadata.CWD
 	}
+	th.Title = metadata.Title
 	th.ForkedFromID = metadata.ForkedFromID
 	th.ForkedFromTurnID = metadata.ForkedFromTurnID
 	th.ForkedFromItemID = metadata.ForkedFromItemID
@@ -1092,7 +1097,7 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 	return threadListEntry{
 		thread: Thread{
 			ID:               sess.ID,
-			Preview:          sess.Summary,
+			Preview:          firstNonEmpty(sess.Title, sess.Summary),
 			ModelProvider:    provider,
 			Model:            model,
 			CWD:              sess.CWD,
@@ -2007,6 +2012,10 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		err = persistErr
 		status = TurnStatusFailed
 	}
+	var titleHistory []providers.ChatMessage
+	if err == nil {
+		titleHistory = cloneHistory(th.History)
+	}
 	turn := th.completeTurnLocked(turnID, status, err, now)
 	th.mu.Unlock()
 
@@ -2027,6 +2036,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		InputTokens:  res.InputTokens,
 		OutputTokens: res.OutputTokens,
 	})
+	go s.generateThreadTitle(th.ID, titleHistory)
 	s.kickAgentCompletionDrain(th.ID)
 }
 
@@ -2240,6 +2250,131 @@ func (s *Server) thread(id string) *threadState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.threads[id]
+}
+
+func (s *Server) generateThreadTitle(threadID string, history []providers.ChatMessage) {
+	if s == nil || s.rt == nil || s.rt.TitleClient == nil {
+		return
+	}
+	th := s.thread(threadID)
+	if th == nil {
+		return
+	}
+
+	th.mu.Lock()
+	if th.ReadOnly || th.ParentID != "" || strings.TrimSpace(th.Title) != "" {
+		th.mu.Unlock()
+		return
+	}
+	th.mu.Unlock()
+
+	firstUser, ok := firstUserMessageForTitle(history)
+	if !ok {
+		return
+	}
+	model := ""
+	if s.rt.StreamRunner != nil {
+		model = firstNonEmpty(s.rt.StreamRunner.APIModel, s.rt.StreamRunner.Model)
+	}
+	model = firstNonEmpty(model, s.rt.Model)
+	if model == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	resp, err := s.rt.TitleClient.Chat(ctx, providers.ChatRequest{
+		Model:       model,
+		Temperature: 0.3,
+		MaxTokens:   80,
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: threadTitleSystemPrompt},
+			{Role: "user", Content: "Generate a title for this conversation:\n" + firstUser},
+		},
+	})
+	if err != nil {
+		providers.DebugLogf("generate title for thread %q: %v", threadID, err)
+		return
+	}
+	title := cleanGeneratedThreadTitle(resp.Content)
+	if title == "" {
+		return
+	}
+	metadata, err := session.UpdateGeneratedTitle(s.rt.SessionDir, threadID, title)
+	if err != nil {
+		providers.DebugLogf("persist generated title for thread %q: %v", threadID, err)
+		return
+	}
+	thread, err := s.threadAfterMetadataUpdate(metadata)
+	if err != nil {
+		providers.DebugLogf("load generated title for thread %q: %v", threadID, err)
+		return
+	}
+	_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+}
+
+const threadTitleSystemPrompt = `You are a title generator. Output ONLY a short thread title.
+
+Rules:
+- Use the same language as the user message.
+- One line only, no explanations.
+- 50 characters or fewer.
+- Focus on the main task or question.
+- Do not mention tools.`
+
+func firstUserMessageForTitle(history []providers.ChatMessage) (string, bool) {
+	var first string
+	count := 0
+	for _, msg := range history {
+		if msg.Role != "user" || isToolResultMessage(msg) {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		count++
+		if count == 1 {
+			first = content
+		}
+	}
+	return first, count == 1 && first != ""
+}
+
+func cleanGeneratedThreadTitle(text string) string {
+	text = stripThinkBlocks(text)
+	for _, line := range strings.Split(text, "\n") {
+		title := strings.TrimSpace(line)
+		title = strings.TrimPrefix(title, "- ")
+		title = strings.TrimPrefix(title, "Title:")
+		title = strings.TrimPrefix(title, "title:")
+		title = strings.Trim(strings.TrimSpace(title), "\"'`“”‘’")
+		if title == "" {
+			continue
+		}
+		runes := []rune(title)
+		if len(runes) > 50 {
+			title = string(runes[:50])
+		}
+		return strings.TrimSpace(title)
+	}
+	return ""
+}
+
+func stripThinkBlocks(text string) string {
+	for {
+		lower := strings.ToLower(text)
+		start := strings.Index(lower, "<think>")
+		if start < 0 {
+			return text
+		}
+		endRel := strings.Index(lower[start:], "</think>")
+		if endRel < 0 {
+			return text[:start]
+		}
+		end := start + endRel + len("</think>")
+		text = text[:start] + text[end:]
+	}
 }
 
 func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool) error {

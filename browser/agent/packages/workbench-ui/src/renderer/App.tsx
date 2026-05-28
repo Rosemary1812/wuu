@@ -4640,6 +4640,17 @@ function reduceNotification(state: AppState, notification: AppServerNotification
         status: activateThread || updatesVisibleThread ? "ready" : state.status
       };
     }
+    case "thread/updated": {
+      const thread = params?.thread as Thread | undefined;
+      if (!thread || !threadMatchesActiveContext(thread, state.activeContext)) {
+        return state;
+      }
+      return updateThreadByID(state, thread.id, (current) => ({
+        ...thread,
+        turns: thread.turns.length > 0 ? thread.turns : current.turns,
+        child_agents: thread.child_agents ?? current.child_agents
+      }));
+    }
     case "agent/updated": {
       const threadID = threadIDFromParams(params);
       const agent = agentFromRecord(recordValue(params, "agent"));

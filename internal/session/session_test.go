@@ -122,6 +122,32 @@ func TestUpdateIndex(t *testing.T) {
 	}
 }
 
+func TestUpdateGeneratedTitle(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Create(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := UpdateGeneratedTitle(dir, s.ID, "Short title")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Title != "Short title" {
+		t.Fatalf("title not returned: %+v", updated)
+	}
+
+	if _, err := UpdateGeneratedTitle(dir, s.ID, "Replacement"); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := List(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].Title != "Short title" {
+		t.Fatalf("title should persist once: %+v", sessions)
+	}
+}
+
 func TestListOrdersPinnedGroupsByActivity(t *testing.T) {
 	dir := t.TempDir()
 	base := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
