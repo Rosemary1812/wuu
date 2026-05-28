@@ -304,6 +304,14 @@ func TestCompactWithCodexClientUsesNormalResponsesEndpoint(t *testing.T) {
 			t.Fatalf("expected one normal Responses input item, got %#v", body["input"])
 		}
 
+		if stream, _ := body["stream"].(bool); stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: response.output_text.delta\n"))
+			_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"<analysis>draft</analysis><summary>summary via normal responses</summary>\"}\n\n"))
+			_, _ = w.Write([]byte("event: response.completed\n"))
+			_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"<analysis>draft</analysis><summary>summary via normal responses</summary>"}]}]}`))
 	}))

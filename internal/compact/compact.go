@@ -2,6 +2,7 @@ package compact
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,6 +23,10 @@ const toolResultPruneThresholdChars = 400
 // Without this cap, the summary itself can consume a large portion of
 // the context window, defeating the purpose of compaction.
 const maxCompactOutputChars = 80_000
+const (
+	compactSummaryMaxTokens      = 4096
+	compactPartialMinOutputChars = 200
+)
 
 const (
 	// ConversationSummaryPrefix marks the synthetic summary installed after
@@ -206,6 +211,10 @@ func CompactWithContextWindow(ctx context.Context, messages []providers.ChatMess
 				{Role: "user", Content: summaryInput},
 			},
 			Temperature: 0.3,
+			MaxTokens:   compactSummaryMaxTokens,
+			ProviderOptions: map[string]any{
+				"textVerbosity": "low",
+			},
 		}
 
 		resp, err := summarizeCompact(ctx, client, summaryReq)
@@ -264,6 +273,9 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 			content.WriteString(event.Content)
 		case providers.EventError:
 			if event.Error != nil {
+				if resp, ok, ferr := recoverCompactStream(ctx, client, req, content.String(), event.Error); ok {
+					return resp, ferr
+				}
 				return providers.ChatResponse{}, event.Error
 			}
 			return providers.ChatResponse{}, fmt.Errorf("compact summary stream error")
@@ -277,7 +289,11 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 		}
 	}
 	if !done {
-		return providers.ChatResponse{}, providers.NewIncompleteStreamError("compact summary stream closed before done")
+		err := providers.NewIncompleteStreamError("compact summary stream closed before done")
+		if resp, ok, ferr := recoverCompactStream(ctx, client, req, content.String(), err); ok {
+			return resp, ferr
+		}
+		return providers.ChatResponse{}, err
 	}
 	return providers.ChatResponse{
 		Content:    content.String(),
@@ -285,6 +301,39 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 		StopReason: stopReason,
 		Truncated:  truncated,
 	}, nil
+}
+
+func recoverCompactStream(ctx context.Context, client providers.Client, req providers.ChatRequest, partial string, streamErr error) (providers.ChatResponse, bool, error) {
+	if partial = strings.TrimSpace(partial); len(partial) >= compactPartialMinOutputChars {
+		return providers.ChatResponse{
+			Content:   partial,
+			Truncated: true,
+		}, true, nil
+	}
+	if !isIncompleteCompactStream(streamErr) {
+		return providers.ChatResponse{}, false, nil
+	}
+	resp, err := client.Chat(ctx, req)
+	if err != nil {
+		return providers.ChatResponse{}, true, fmt.Errorf("compact summary stream incomplete and chat fallback failed: %w", err)
+	}
+	return resp, true, nil
+}
+
+func isIncompleteCompactStream(err error) bool {
+	var streamErr *providers.StreamError
+	if !errors.As(err, &streamErr) {
+		return false
+	}
+	if streamErr.ContextOverflow || streamErr.Auth {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(streamErr.Message))
+	return strings.Contains(msg, "before done") ||
+		strings.Contains(msg, "before [done]") ||
+		strings.Contains(msg, "before message_stop") ||
+		strings.Contains(msg, "before completion") ||
+		strings.Contains(msg, "before response.completed")
 }
 
 func leadingSystemEnd(messages []providers.ChatMessage) int {
@@ -514,24 +563,19 @@ func toolCallLabel(id string) string {
 // compact flow, but tightens the handoff discipline so the generated
 // summary can safely serve as the only continuation context.
 //
-// The load-bearing requirements are:
-//   - no tool calls at all
-//   - the response must start with <analysis> and then <summary>
-//   - the summary must preserve enough detail to continue the work
-//     without access to the pre-compact conversation
+// The load-bearing requirements are: no tool calls, no hidden reasoning, and
+// enough concrete state for the next turn to continue without the deleted
+// history. Keep this prompt concise: it runs only after the normal request is
+// near or over the context limit.
 const compactInstructionPrompt = `You are summarizing a coding-agent conversation to preserve context for continuing the work later.
 
 CRITICAL: This summary will be the ONLY context available when the conversation resumes. Assume every previous message is about to be deleted. Be thorough — losing a detail here means the next agent will have to ask the user (or guess) to recover it.
 
 CRITICAL: Respond with text only. Do NOT call any tools. Do NOT use read_file, grep, glob, run_shell, or any other tool. Tool calls will fail this task.
 
-Your response must contain exactly two top-level blocks, in this order:
-1. <analysis>...</analysis>
-2. <summary>...</summary>
+Respond with a markdown summary only. Do not include an analysis block, hidden reasoning, XML tags, preamble, or outro. Keep the summary under 2,000 words unless a longer summary is strictly necessary to continue the task.
 
-Use the <analysis> block to think through the conversation chronologically and make sure you did not miss anything load-bearing.
-
-In the <summary> block, cover at least these sections:
+Cover these sections:
 
 ## User Intent
 - The user's exact request, constraints, preferences, and success criteria
@@ -551,8 +595,9 @@ In the <summary> block, cover at least these sections:
 - Commands that failed and what the failure looked like
 - Commands that worked and what they verified
 
-## All User Messages
-- Every user message that is not just a tool result, including short clarifications and corrections
+## User Messages and Feedback
+- User instructions, corrections, and clarifications that affect future work
+- Do not list repeated short continuation messages unless they add a new requirement
 
 ## Unfinished Work
 - Pending tasks, open questions, blockers, and assumptions that still matter

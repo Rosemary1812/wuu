@@ -98,6 +98,32 @@ func (m *mockCompactClient) Chat(_ context.Context, req providers.ChatRequest) (
 	return providers.ChatResponse{Content: m.response}, nil
 }
 
+type partialStreamCompactClient struct {
+	events      []providers.StreamEvent
+	lastRequest providers.ChatRequest
+}
+
+func (p *partialStreamCompactClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	p.lastRequest = req
+	return providers.ChatResponse{Content: "fallback summary"}, nil
+}
+
+func (p *partialStreamCompactClient) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	p.lastRequest = req
+	ch := make(chan providers.StreamEvent, len(p.events))
+	go func() {
+		defer close(ch)
+		for _, ev := range p.events {
+			select {
+			case <-ctx.Done():
+				return
+			case ch <- ev:
+			}
+		}
+	}()
+	return ch, nil
+}
+
 // flakyOverflowClient returns context-overflow on the first N calls
 // then a real summary. Used to exercise Compact's defensive trimming.
 type flakyOverflowClient struct {
@@ -124,13 +150,15 @@ func TestCompactInstructionPrompt_EnforcesNoToolsAndFormat(t *testing.T) {
 		"ONLY context available when the conversation resumes",
 		"Do NOT call any tools",
 		"Do NOT use read_file, grep, glob, run_shell",
-		"<analysis>",
-		"<summary>",
-		"exactly two top-level blocks",
+		"markdown summary only",
+		"Do not include an analysis block",
 	} {
 		if !strings.Contains(compactInstructionPrompt, want) {
 			t.Errorf("compactInstructionPrompt missing %q", want)
 		}
+	}
+	if strings.Contains(compactInstructionPrompt, "<analysis>") {
+		t.Fatal("compact prompt should not ask for an analysis block")
 	}
 }
 
@@ -140,7 +168,7 @@ func TestCompactInstructionPrompt_CoversHandoffSections(t *testing.T) {
 		"## Technical Concepts",
 		"## Files and Code",
 		"## Errors and Fixes",
-		"## All User Messages",
+		"## User Messages and Feedback",
 		"## Unfinished Work",
 		"## Current Work",
 		"## Next Step",
@@ -172,6 +200,55 @@ func TestBuildSummaryContent_UsesStableConversationSummaryPrefix(t *testing.T) {
 	}
 	if !strings.Contains(content, "Summary:\nOlder turns were compacted.") {
 		t.Fatalf("expected formatted summary body, got %q", content)
+	}
+}
+
+func TestCompact_SetsSummaryOutputControls(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+	}
+
+	client := &mockCompactClient{response: "summary of older turns"}
+	_, err := Compact(context.Background(), messages, client, "gpt-5.5")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if client.lastRequest.MaxTokens != compactSummaryMaxTokens {
+		t.Fatalf("expected compact MaxTokens=%d, got %d", compactSummaryMaxTokens, client.lastRequest.MaxTokens)
+	}
+	if got := client.lastRequest.ProviderOptions["textVerbosity"]; got != "low" {
+		t.Fatalf("expected low text verbosity, got %#v", got)
+	}
+}
+
+func TestCompact_UsesPartialStreamSummaryWhenDoneIsMissing(t *testing.T) {
+	partial := strings.Repeat("usable compact summary detail ", 12)
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+	}
+	client := &partialStreamCompactClient{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: partial},
+	}}
+
+	result, err := Compact(context.Background(), messages, client, "gpt-5.5")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if len(result) == 0 || !IsConversationSummaryContent(result[0].Content) {
+		t.Fatalf("expected compacted summary first, got %#v", result)
+	}
+	if !strings.Contains(result[0].Content, strings.TrimSpace(partial)) {
+		t.Fatalf("expected partial summary to be used, got %q", result[0].Content)
 	}
 }
 
