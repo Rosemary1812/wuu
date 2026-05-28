@@ -72,6 +72,24 @@ func TestMatchProviderDoesNotUseWireTypeForCustomEndpoint(t *testing.T) {
 	}
 }
 
+func TestMatchProviderDoesNotTreatCodexSubscriptionAsOpenCodeZen(t *testing.T) {
+	if provider, ok := MatchProvider("openai-codex", config.ProviderConfig{
+		Type:    "openai-codex",
+		BaseURL: "https://chatgpt.com/backend-api/codex",
+		Model:   "gpt-5.5",
+	}); ok {
+		t.Fatalf("Codex subscription provider matched %q", provider.ID)
+	}
+
+	provider, ok := MatchProvider("opencode", config.ProviderConfig{
+		Type:    "openai-compatible",
+		BaseURL: "https://opencode.ai/zen/v1",
+	})
+	if !ok || provider.ID != "opencode" {
+		t.Fatalf("OpenCode Zen provider match = %q, %v", provider.ID, ok)
+	}
+}
+
 func TestMergeProviderCarriesModelOptionsAndHeaders(t *testing.T) {
 	provider, ok := MatchProvider("anthropic", config.ProviderConfig{Type: "anthropic"})
 	if !ok {

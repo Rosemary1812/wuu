@@ -301,6 +301,27 @@ func TestProviderSummariesDoNotShowOfficialModelsForCustomAnthropicEndpoint(t *t
 	}
 }
 
+func TestProviderSummariesDoNotShowOpenCodeModelsForCodexSubscription(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "openai-codex",
+		Providers: map[string]config.ProviderConfig{
+			"openai-codex": {
+				Type:    "openai-codex",
+				BaseURL: "https://chatgpt.com/backend-api/codex",
+				Model:   "gpt-5.5",
+			},
+		},
+	}
+
+	summaries := providerSummariesFromConfig(cfg, t.TempDir())
+	if len(summaries) != 1 {
+		t.Fatalf("unexpected summaries: %+v", summaries)
+	}
+	if len(summaries[0].Models) != 1 || summaries[0].Models[0].ID != "gpt-5.5" {
+		t.Fatalf("Codex subscription should only expose selected model before live load, got %+v", summaries[0].Models)
+	}
+}
+
 func providerModelByID(t *testing.T, provider ProviderSummary, id string) ProviderModelSummary {
 	t.Helper()
 	for _, model := range provider.Models {

@@ -295,9 +295,6 @@ func providerIDCandidates(providerName string, provider config.ProviderConfig) [
 		"bedrock":            "amazon-bedrock",
 		"claude":             "anthropic",
 		"gemini":             "google",
-		"openai-codex":       "opencode",
-		"chatgpt-codex":      "opencode",
-		"codex-subscription": "opencode",
 	}
 	var out []string
 	seen := map[string]bool{}
