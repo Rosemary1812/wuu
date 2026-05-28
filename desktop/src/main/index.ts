@@ -1223,46 +1223,45 @@ function collectFileTreePaths(root: string, relativeDirectory: string, paths: st
     return true;
   }
 
-  const directory = relativeDirectory ? join(root, relativeDirectory) : root;
-  let entries: Dirent[];
-  try {
-    entries = readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return false;
-  }
-
-  entries.sort((left, right) => {
-    const leftDirectory = left.isDirectory();
-    const rightDirectory = right.isDirectory();
-    if (leftDirectory !== rightDirectory) {
-      return leftDirectory ? -1 : 1;
-    }
-    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
-  });
-
-  for (const entry of entries) {
-    if (FILE_TREE_IGNORED_FILES.has(entry.name)) {
+  const directoriesToRead = [relativeDirectory];
+  for (let index = 0; index < directoriesToRead.length; index += 1) {
+    const currentRelativeDirectory = directoriesToRead[index];
+    const directory = currentRelativeDirectory ? join(root, currentRelativeDirectory) : root;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch {
       continue;
     }
 
-    const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      if (FILE_TREE_IGNORED_DIRS.has(entry.name)) {
+    entries.sort((left, right) => {
+      const leftDirectory = left.isDirectory();
+      const rightDirectory = right.isDirectory();
+      if (leftDirectory !== rightDirectory) {
+        return leftDirectory ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+    });
+
+    for (const entry of entries) {
+      if (FILE_TREE_IGNORED_FILES.has(entry.name)) {
         continue;
       }
-      paths.push(`${relativePath}/`);
-      if (collectFileTreePaths(root, relativePath, paths)) {
+
+      const relativePath = currentRelativeDirectory ? `${currentRelativeDirectory}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (FILE_TREE_IGNORED_DIRS.has(entry.name)) {
+          continue;
+        }
+        paths.push(`${relativePath}/`);
+        directoriesToRead.push(relativePath);
+      } else if (entry.isFile() || entry.isSymbolicLink()) {
+        paths.push(relativePath);
+      }
+
+      if (paths.length >= FILE_TREE_MAX_PATHS) {
         return true;
       }
-      continue;
-    }
-
-    if (entry.isFile() || entry.isSymbolicLink()) {
-      paths.push(relativePath);
-    }
-
-    if (paths.length >= FILE_TREE_MAX_PATHS) {
-      return true;
     }
   }
 
