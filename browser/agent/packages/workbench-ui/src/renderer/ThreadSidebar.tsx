@@ -9,6 +9,7 @@ import {
   agentTooltip,
   sortChildAgents
 } from "./ThreadAgents";
+import { threadDisplayTitle } from "./ThreadTitles";
 
 function projectThreads(threads: Thread[]): Thread[] {
   return threads.filter((thread) => !thread.pinned);
@@ -286,6 +287,7 @@ function ThreadRows({
         const archiveConfirming = archiveConfirmThreadID === thread.id;
         const pendingAsk = pendingAskThreadIDs.has(thread.id);
         const pendingSwitch = pendingThreadID === thread.id;
+        const title = threadDisplayTitle(thread, threads);
         return (
           <Fragment key={thread.id}>
             <div
@@ -301,7 +303,7 @@ function ThreadRows({
                 aria-busy={pendingSwitch}
                 onClick={() => onSelect(thread.id)}
               >
-                <span className="thread-row-title">{thread.preview || "未命名对话"}</span>
+                <span className="thread-row-title">{title}</span>
                 {pendingAsk ? (
                   <span className="thread-row-ask-badge" title="需要你选择">
                     <MessageSquarePlus size={12} />

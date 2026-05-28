@@ -130,6 +130,7 @@ import { SettingsView } from "./SettingsView";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore, type StreamTextField } from "./StreamText";
+import { threadDisplayTitle } from "./ThreadTitles";
 import {
   ToolActivityRow,
   isRecord,
@@ -3034,15 +3035,13 @@ export function App(): JSX.Element {
       conversationAutoFollowRef.current = true;
       const currentState = appStateRef.current;
       const sourcePane = currentState.secondaryThread?.id === sourceThread.id ? "secondary" : "primary";
-      const sourceDraft = splitConversation
+      const currentSplitConversation = Boolean(currentState.thread && currentState.secondaryThread && !workspaceMode);
+      const sourceDraft = currentSplitConversation
         ? cloneComposerDraft(splitComposerDrafts[sourcePane] ?? emptyComposerDraft())
         : { prompt, images: composerImages.map((image) => ({ ...image })) };
       setPrompt("");
       setComposerImages([]);
-      setSplitComposerDrafts({
-        primary: sourceDraft,
-        secondary: emptyComposerDraft()
-      });
+      setSplitComposerDrafts(initialSplitComposerDrafts());
       setState((current) => {
         const source =
           current.secondaryThread?.id === sourceThread.id
@@ -3050,17 +3049,18 @@ export function App(): JSX.Element {
             : current.thread?.id === sourceThread.id
               ? current.thread
               : sourceThread;
+        const forkTab = createThreadSessionTab(fork, activeContext);
         return {
           ...current,
-          thread: source,
-          secondaryThread: fork,
-          activePane: "secondary",
+          thread: fork,
+          secondaryThread: undefined,
+          activePane: "primary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
             ensureSessionTab(current.sessionTabs, createThreadSessionTab(source, activeContext, sourceDraft)),
-            createThreadSessionTab(fork, activeContext)
+            forkTab
           ),
-          activeSessionTabID: threadSessionTabID(fork.id),
+          activeSessionTabID: forkTab.id,
           threads: upsertThread(upsertThread(current.threads, source), fork),
           running: isThreadRunning(fork),
           status: "ready"
@@ -4780,7 +4780,7 @@ function createThreadSessionTab(
     kind: "thread",
     context,
     threadID: thread.id,
-    title: thread.preview || "未命名对话",
+    title: threadDisplayTitle(thread),
     prompt: draft.prompt,
     images: draft.images.map((image) => ({ ...image }))
   };
@@ -4929,7 +4929,7 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
   if (tab.kind === "file") {
     return tab.title || fileNameFromPath(tab.path);
   }
-  return threadForTab(state, tab.threadID)?.preview || tab.title || "未命名对话";
+  return threadDisplayTitle(threadForTab(state, tab.threadID), state.threads, tab.title || "未命名对话");
 }
 
 function fileNameFromPath(path: string): string {
