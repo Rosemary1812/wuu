@@ -369,11 +369,14 @@ export type AskUserResponse = {
   cancelled?: boolean;
 };
 
-export type ServerEvent =
+export type ServerEvent = {
+  workdir: string;
+} & (
   | { kind: "notification"; message: AppServerNotification }
   | { kind: "server-request"; message: Required<AppServerRequest> }
   | { kind: "server-error"; message: string }
-  | { kind: "server-exit"; code: number | null };
+  | { kind: "server-exit"; code: number | null }
+);
 
 export type WindowResizeState = {
   resizing: boolean;

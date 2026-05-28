@@ -621,6 +621,9 @@ export function App(): JSX.Element {
       if (!mounted) {
         return;
       }
+      if (!serverEventTargetsActiveContext(event, appStateRef.current)) {
+        return;
+      }
       recordRunDebugEvent(event);
       const handling = handleStreamingNotification(event, appStateRef.current);
       if (handling === "stream") {
@@ -4235,6 +4238,10 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
     case "server-exit":
       return { ...state, running: false, status: "wuu 遇到内部错误。后台服务已退出，请重启桌面端。" };
   }
+}
+
+function serverEventTargetsActiveContext(event: ServerEvent, state: AppState): boolean {
+  return event.workdir === state.activeContext?.cwd;
 }
 
 type StreamingNotificationHandling = "state" | "stream" | "skip";

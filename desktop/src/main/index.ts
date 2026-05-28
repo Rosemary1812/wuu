@@ -64,6 +64,7 @@ const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 920;
 const MAIN_WINDOW_MIN_WIDTH = 980;
 const MAIN_WINDOW_MIN_HEIGHT = 920;
+const MAX_APP_SERVER_CLIENTS = 3;
 const FILE_TREE_IGNORED_DIRS = new Set([
   ".git",
   ".next",
@@ -89,28 +90,51 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 type PendingRequest = {
+  method: string;
+  params?: unknown;
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
 };
 
+type AppServerClientEvent =
+  | { kind: "notification"; message: AppServerNotification }
+  | { kind: "server-request"; message: Required<AppServerRequest> }
+  | { kind: "server-error"; message: string }
+  | { kind: "server-exit"; code: number | null };
+
+type ServerRequestRoute = {
+  client: AppServerClient;
+  serverID: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 class AppServerClient {
   private child: ChildProcessWithoutNullStreams | null = null;
   private pending = new Map<string, PendingRequest>();
+  private runningThreadIDs = new Set<string>();
   private nextRequestID = 1;
   private stdoutBuffer = "";
   private disposing = false;
+  private lastUsedAt = Date.now();
 
   constructor(
     readonly workdir: string,
-    private readonly emit: (event: ServerEvent) => void
+    private readonly emit: (client: AppServerClient, event: AppServerClientEvent) => void,
+    private readonly onStateChange: () => void
   ) {}
 
   request<T>(method: string, params?: unknown): Promise<T> {
+    this.touch();
     this.ensureStarted();
     const id = `client-${this.nextRequestID++}`;
     const payload: AppServerRequest = { id, method, params };
     return new Promise<T>((resolveRequest, rejectRequest) => {
       this.pending.set(JSON.stringify(id), {
+        method,
+        params,
         resolve: (value) => resolveRequest(value as T),
         reject: rejectRequest
       });
@@ -119,11 +143,13 @@ class AppServerClient {
   }
 
   respond(id: string, result: unknown): void {
+    this.touch();
     this.ensureStarted();
     this.write({ id, result });
   }
 
   reject(id: string, message: string): void {
+    this.touch();
     this.ensureStarted();
     this.write({
       id,
@@ -154,6 +180,18 @@ class AppServerClient {
     this.shutdown();
   }
 
+  touch(): void {
+    this.lastUsedAt = Date.now();
+  }
+
+  lastUsed(): number {
+    return this.lastUsedAt;
+  }
+
+  isBusy(): boolean {
+    return this.pending.size > 0 || this.runningThreadIDs.size > 0;
+  }
+
   private ensureStarted(): void {
     if (this.child && !this.child.killed) {
       return;
@@ -171,7 +209,7 @@ class AppServerClient {
     this.child.stderr.on("data", (chunk: string) => {
       const message = chunk.trim();
       if (message) {
-        this.emit({ kind: "server-error", message });
+        this.emit(this, { kind: "server-error", message });
       }
     });
     this.child.on("exit", (code) => {
@@ -179,9 +217,11 @@ class AppServerClient {
         pending.reject(new Error("app-server exited"));
       }
       this.pending.clear();
+      this.runningThreadIDs.clear();
       if (!this.disposing) {
-        this.emit({ kind: "server-exit", code });
+        this.emit(this, { kind: "server-exit", code });
       }
+      this.onStateChange();
       this.child = null;
     });
   }
@@ -213,19 +253,21 @@ class AppServerClient {
     try {
       message = JSON.parse(line);
     } catch {
-      this.emit({ kind: "server-error", message: `Invalid app-server JSON: ${line}` });
+      this.emit(this, { kind: "server-error", message: `Invalid app-server JSON: ${line}` });
       return;
     }
 
     const maybeRequest = message as Required<AppServerRequest>;
     if (maybeRequest.method && maybeRequest.id !== undefined) {
-      this.emit({ kind: "server-request", message: maybeRequest });
+      this.emit(this, { kind: "server-request", message: maybeRequest });
       return;
     }
 
     const maybeNotification = message as AppServerNotification;
     if (maybeNotification.method) {
-      this.emit({ kind: "notification", message: maybeNotification });
+      this.updateRunningFromNotification(maybeNotification);
+      this.emit(this, { kind: "notification", message: maybeNotification });
+      this.onStateChange();
       return;
     }
 
@@ -236,11 +278,68 @@ class AppServerClient {
       return;
     }
     this.pending.delete(key);
+    this.updateRunningFromResponse(pending.method, pending.params, response.result);
+    this.onStateChange();
     if (response.error) {
       pending.reject(new Error(response.error.message));
       return;
     }
     pending.resolve(response.result);
+  }
+
+  private updateRunningFromNotification(message: AppServerNotification): void {
+    const params = isRecord(message.params) ? message.params : undefined;
+    const threadID = typeof params?.thread_id === "string" ? params.thread_id : undefined;
+    switch (message.method) {
+      case "turn/started":
+        if (threadID) {
+          this.runningThreadIDs.add(threadID);
+        }
+        return;
+      case "turn/completed":
+      case "turn/error":
+        if (threadID) {
+          this.runningThreadIDs.delete(threadID);
+        }
+        return;
+      case "thread/started":
+      case "thread/resumed":
+        this.updateRunningFromThread(params?.thread);
+        return;
+    }
+  }
+
+  private updateRunningFromResponse(method: string, params: unknown, result: unknown): void {
+    if (method === "thread/list" && isRecord(result) && Array.isArray(result.threads)) {
+      for (const thread of result.threads) {
+        this.updateRunningFromThread(thread);
+      }
+      return;
+    }
+    if (
+      (method === "thread/start" || method === "thread/resume" || method === "thread/fork") &&
+      isRecord(result)
+    ) {
+      this.updateRunningFromThread(result.thread);
+      return;
+    }
+    if (method === "turn/start" && isRecord(params) && typeof params.thread_id === "string") {
+      const turn = isRecord(result) ? result.turn : undefined;
+      if (isRecord(turn) && turn.status === "in_progress") {
+        this.runningThreadIDs.add(params.thread_id);
+      }
+    }
+  }
+
+  private updateRunningFromThread(value: unknown): void {
+    if (!isRecord(value) || typeof value.id !== "string") {
+      return;
+    }
+    if (value.status === "in_progress") {
+      this.runningThreadIDs.add(value.id);
+    } else {
+      this.runningThreadIDs.delete(value.id);
+    }
   }
 }
 
@@ -289,11 +388,13 @@ type GitStatusOptions = {
 };
 
 let mainWindow: BrowserWindow | null = null;
-let client: AppServerClient | null = null;
 let projectStore: ProjectStore = { projects: [] };
 let windowResizeEndTimer: NodeJS.Timeout | undefined;
 let windowResizeState = false;
 let terminalSessionCounter = 1;
+let nextServerRequestRouteID = 1;
+const appServerClients = new Map<string, AppServerClient>();
+const serverRequestRoutes = new Map<string, ServerRequestRoute>();
 const terminalSessions = new Map<string, TerminalSession>();
 
 type TerminalSession = {
@@ -1250,7 +1351,6 @@ function addProject(projectPath: string): ProjectListResult {
     projectStore.projects = [project, ...projectStore.projects];
   }
   projectStore.active_context = { kind: "project", project_id: id, cwd: resolvedPath };
-  resetClient();
   saveProjectStore();
   return projectListResult();
 }
@@ -1262,7 +1362,6 @@ function selectProject(projectIDToSelect: string): ProjectListResult {
     throw new Error("project not found");
   }
   projectStore.active_context = { kind: "project", project_id: project.id, cwd: project.path };
-  resetClient();
   saveProjectStore();
   return projectListResult();
 }
@@ -1276,15 +1375,8 @@ function selectNoProject(fresh: boolean, cwd?: string): ProjectListResult {
   } else if (fresh || projectStore.active_context?.kind !== "no_project") {
     projectStore.active_context = createNoProjectContext();
   }
-  resetClient();
   saveProjectStore();
   return projectListResult();
-}
-
-function resetClient(): void {
-  client?.dispose();
-  client = null;
-  cleanupTerminalSessions();
 }
 
 async function showProjectDirectoryDialog(options: OpenDialogOptions): Promise<string | undefined> {
@@ -1297,18 +1389,95 @@ async function showProjectDirectoryDialog(options: OpenDialogOptions): Promise<s
 
 function serverClient(): AppServerClient {
   const context = ensureRuntimeContext();
-  if (!client || client.workdir !== context.cwd) {
-    resetClient();
-    client = new AppServerClient(context.cwd, emitServerEvent);
+  const workdir = resolve(context.cwd);
+  let client = appServerClients.get(workdir);
+  if (!client) {
+    client = new AppServerClient(workdir, emitServerEvent, evictIdleAppServerClients);
+    appServerClients.set(workdir, client);
   }
+  client.touch();
+  evictIdleAppServerClients();
   return client;
 }
 
-function emitServerEvent(event: ServerEvent): void {
+function emitServerEvent(client: AppServerClient, event: AppServerClientEvent): void {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
     return;
   }
-  mainWindow.webContents.send("wuu:server-event", event);
+  const routedEvent = routeServerEvent(client, event);
+  mainWindow.webContents.send("wuu:server-event", routedEvent);
+}
+
+function routeServerEvent(client: AppServerClient, event: AppServerClientEvent): ServerEvent {
+  if (event.kind !== "server-request") {
+    return { ...event, workdir: client.workdir };
+  }
+  const publicID = `server-request-${nextServerRequestRouteID++}`;
+  serverRequestRoutes.set(publicID, { client, serverID: event.message.id });
+  return {
+    ...event,
+    workdir: client.workdir,
+    message: {
+      ...event.message,
+      id: publicID
+    }
+  };
+}
+
+function evictIdleAppServerClients(): void {
+  if (appServerClients.size <= MAX_APP_SERVER_CLIENTS) {
+    return;
+  }
+  const activeWorkdir = projectStore.active_context ? resolve(projectStore.active_context.cwd) : undefined;
+  const idleClients = [...appServerClients.values()]
+    .filter((client) => client.workdir !== activeWorkdir && !client.isBusy())
+    .sort((a, b) => a.lastUsed() - b.lastUsed());
+  for (const client of idleClients) {
+    if (appServerClients.size <= MAX_APP_SERVER_CLIENTS) {
+      return;
+    }
+    disposeAppServerClient(client);
+  }
+}
+
+function disposeAppServerClient(client: AppServerClient): void {
+  appServerClients.delete(client.workdir);
+  dropServerRequestRoutesForClient(client);
+  client.dispose();
+}
+
+function dropServerRequestRoutesForClient(client: AppServerClient): void {
+  for (const [id, route] of serverRequestRoutes) {
+    if (route.client === client) {
+      serverRequestRoutes.delete(id);
+    }
+  }
+}
+
+function respondToServerRequest(id: string, result: unknown): void {
+  const route = serverRequestRoutes.get(id);
+  if (!route) {
+    throw new Error("server request is no longer active");
+  }
+  serverRequestRoutes.delete(id);
+  route.client.respond(route.serverID, result);
+}
+
+function rejectServerRequest(id: string, message: string): void {
+  const route = serverRequestRoutes.get(id);
+  if (!route) {
+    throw new Error("server request is no longer active");
+  }
+  serverRequestRoutes.delete(id);
+  route.client.reject(route.serverID, message);
+}
+
+function shutdownAppServerClients(): void {
+  for (const client of appServerClients.values()) {
+    client.dispose();
+  }
+  appServerClients.clear();
+  serverRequestRoutes.clear();
 }
 
 function emitTerminalEvent(event: TerminalSessionEvent): void {
@@ -1671,10 +1840,10 @@ app.whenReady().then(() => {
     serverClient().request<{ ok: boolean }>("turn/interrupt", { thread_id: threadId })
   );
   ipcMain.handle("wuu:respond-server-request", (_event, id: string, result: unknown) => {
-    serverClient().respond(id, result);
+    respondToServerRequest(id, result);
   });
   ipcMain.handle("wuu:reject-server-request", (_event, id: string, message: string) => {
-    serverClient().reject(id, message);
+    rejectServerRequest(id, message);
   });
 
   createWindow();
@@ -1688,7 +1857,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   cleanupTerminalSessions();
-  client?.shutdown();
+  shutdownAppServerClients();
 });
 
 app.on("window-all-closed", () => {

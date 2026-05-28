@@ -547,6 +547,7 @@ async function run() {
 
 function emitNotification(win, method, params) {
   win.webContents.send("test:server-event", {
+    workdir: process.env.WUU_STREAM_E2E_CWD || process.cwd(),
     kind: "notification",
     message: { method, params }
   });
@@ -554,6 +555,7 @@ function emitNotification(win, method, params) {
 
 function emitServerRequest(win, id, method, params) {
   win.webContents.send("test:server-event", {
+    workdir: process.env.WUU_STREAM_E2E_CWD || process.cwd(),
     kind: "server-request",
     message: { id, method, params }
   });
