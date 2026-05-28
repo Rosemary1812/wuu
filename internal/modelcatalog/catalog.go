@@ -140,6 +140,13 @@ func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, mod
 			}
 		}
 	}
+	if len(modelSet) == 1 {
+		for id := range modelSet {
+			if model := models[id]; len(model.Headers) > 0 {
+				out.Headers = mergeHeaders(out.Headers, model.Headers)
+			}
+		}
+	}
 	return out
 }
 
@@ -171,7 +178,22 @@ func ModelConfig(model Model) config.ProviderModelConfig {
 			out.ContextWindow = model.Limit.Context
 		}
 	}
+	out.Options = cloneOptions(model.Options)
+	out.Headers = cloneHeaders(model.Headers)
 	return out
+}
+
+func APIModel(provider config.ProviderConfig, model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	if modelCfg, ok := provider.Models[model]; ok {
+		if apiID := strings.TrimSpace(modelCfg.ID); apiID != "" {
+			return apiID
+		}
+	}
+	return model
 }
 
 func MergeModelConfig(primary, fallback config.ProviderModelConfig) config.ProviderModelConfig {
@@ -217,6 +239,48 @@ func MergeModelConfig(primary, fallback config.ProviderModelConfig) config.Provi
 	}
 	if out.ContextWindow == 0 {
 		out.ContextWindow = fallback.ContextWindow
+	}
+	if len(out.Options) == 0 {
+		out.Options = cloneOptions(fallback.Options)
+	}
+	if len(out.Headers) == 0 {
+		out.Headers = cloneHeaders(fallback.Headers)
+	}
+	return out
+}
+
+func cloneOptions(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneHeaders(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func mergeHeaders(base, override map[string]string) map[string]string {
+	out := cloneHeaders(base)
+	if len(override) == 0 {
+		return out
+	}
+	if out == nil {
+		out = make(map[string]string, len(override))
+	}
+	for key, value := range override {
+		out[key] = value
 	}
 	return out
 }

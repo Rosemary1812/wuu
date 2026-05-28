@@ -104,6 +104,27 @@ func TestStreamRunner_DefaultReconnectConfigMatchesCC(t *testing.T) {
 	}
 }
 
+func TestStreamRunnerUsesAPIModelForProviderRequest(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "ok"}, {Type: providers.EventDone}},
+	}
+	runner := &StreamRunner{
+		Client:   client,
+		Model:    "gpt-5.5-fast",
+		APIModel: "gpt-5.5",
+	}
+
+	if _, err := runner.Run(context.Background(), "hello"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(client.requests) != 1 {
+		t.Fatalf("requests = %d", len(client.requests))
+	}
+	if client.requests[0].Model != "gpt-5.5" {
+		t.Fatalf("request model = %q", client.requests[0].Model)
+	}
+}
+
 func TestStreamRunner_SimpleContent(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{

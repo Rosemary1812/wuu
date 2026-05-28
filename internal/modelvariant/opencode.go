@@ -54,7 +54,11 @@ type openCodeModelDescriptor struct {
 
 func BaseOptionsForProvider(providerName string, provider config.ProviderConfig, model string) map[string]any {
 	desc := openCodeDescriptor(providerName, provider, model)
-	result := map[string]any{}
+	modelCfg := provider.Models[strings.TrimSpace(model)]
+	result := CloneOptions(modelCfg.Options)
+	if result == nil {
+		result = map[string]any{}
+	}
 
 	if desc.APINPM == openCodeNPMVertexAnthropic || (desc.APINPM == openCodeNPMAnthropic && !strings.Contains(desc.APIID, "claude")) {
 		result["toolStreaming"] = false

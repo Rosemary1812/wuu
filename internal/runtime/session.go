@@ -101,8 +101,9 @@ func NewSession(opts Options) (*Session, error) {
 	if opts.ModelOverride != "" {
 		providerCfg.Model = opts.ModelOverride
 	}
+	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
 
-	client, err := providerfactory.BuildStreamClient(providerCfg, resolvedName)
+	client, err := providerfactory.BuildStreamClient(ruleProviderCfg, resolvedName)
 	if err != nil {
 		return nil, err
 	}
@@ -199,13 +200,13 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	sessionDir := statepath.SessionsDir(wuuHome)
-	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
 	modelSelection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 
 	streamRunner := &agent.StreamRunner{
 		Client:          client,
 		Tools:           toolExecutor,
 		Model:           providerCfg.Model,
+		APIModel:        modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model),
 		SystemPrompt:    baseSystemPrompt,
 		MaxSteps:        cfg.Agent.MaxSteps,
 		Temperature:     cfg.Agent.Temperature,
@@ -356,6 +357,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		Client:                  base.Client,
 		Tools:                   toolExecutor,
 		Model:                   base.Model,
+		APIModel:                base.APIModel,
 		SystemPrompt:            base.SystemPrompt,
 		MaxSteps:                base.MaxSteps,
 		Temperature:             base.Temperature,

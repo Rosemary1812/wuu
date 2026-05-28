@@ -358,6 +358,7 @@ func TestBuildAnthropicRequest_SendsProviderOptions(t *testing.T) {
 		},
 		ProviderOptions: map[string]any{
 			"effort": "high",
+			"speed":  "fast",
 			"thinking": map[string]any{
 				"type":         "enabled",
 				"budgetTokens": 4096,
@@ -376,6 +377,9 @@ func TestBuildAnthropicRequest_SendsProviderOptions(t *testing.T) {
 	}
 	if payload.Thinking.Type != "enabled" || payload.Thinking.BudgetTokens != 4096 || payload.Thinking.Display != "none" {
 		t.Fatalf("unexpected thinking payload: %+v", payload.Thinking)
+	}
+	if payload.Speed != "fast" {
+		t.Fatalf("unexpected speed: %q", payload.Speed)
 	}
 }
 

@@ -170,6 +170,9 @@ func TestChat_SendsProviderOptions(t *testing.T) {
 		if body["verbosity"] != "low" {
 			t.Fatalf("expected verbosity=low, got %#v", body["verbosity"])
 		}
+		if body["service_tier"] != "priority" {
+			t.Fatalf("expected service_tier=priority, got %#v", body["service_tier"])
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
@@ -187,6 +190,7 @@ func TestChat_SendsProviderOptions(t *testing.T) {
 		ProviderOptions: map[string]any{
 			"reasoningEffort": "medium",
 			"textVerbosity":   "low",
+			"serviceTier":     "priority",
 		},
 	})
 	if err != nil {
@@ -1157,6 +1161,9 @@ func TestResponsesChat_SendsProviderOptions(t *testing.T) {
 		if body["max_output_tokens"] != float64(777) {
 			t.Fatalf("expected max_output_tokens=777, got %#v", body["max_output_tokens"])
 		}
+		if body["service_tier"] != "priority" {
+			t.Fatalf("expected service_tier=priority, got %#v", body["service_tier"])
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -1179,6 +1186,7 @@ func TestResponsesChat_SendsProviderOptions(t *testing.T) {
 			"reasoningSummary": "auto",
 			"textVerbosity":    "low",
 			"maxOutputTokens":  777,
+			"serviceTier":      "priority",
 		},
 	})
 	if err != nil {

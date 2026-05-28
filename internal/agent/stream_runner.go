@@ -30,6 +30,7 @@ type StreamRunner struct {
 	Client       providers.StreamClient
 	Tools        ToolExecutor
 	Model        string
+	APIModel     string
 	SystemPrompt string
 	MaxSteps     int
 	Temperature  float64
@@ -133,6 +134,10 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	if strings.TrimSpace(r.Model) == "" {
 		return LoopResult{}, errors.New("model is required")
 	}
+	requestModel := strings.TrimSpace(r.APIModel)
+	if requestModel == "" {
+		requestModel = r.Model
+	}
 	history = filterEphemeralHistory(history)
 	runUsage, baseHistoryLen := r.prepareUsageTracker(history)
 
@@ -170,7 +175,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	}
 	cfg := LoopConfig{
 		Tools:            r.Tools,
-		Model:            r.Model,
+		Model:            requestModel,
 		Temperature:      r.Temperature,
 		MaxSteps:         r.MaxSteps,
 		MaxContextTokens: maxCtx,
@@ -188,7 +193,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			})
 		},
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
-			return compact.CompactWithContextWindow(ctx, messages, r.Client, r.Model, maxCtx)
+			return compact.CompactWithContextWindow(ctx, messages, r.Client, requestModel, maxCtx)
 		},
 		// Forward each tool result through the streaming callback so
 		// clients can render tool output live (the loop itself only

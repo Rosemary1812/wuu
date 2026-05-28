@@ -141,6 +141,42 @@ func TestNewSessionResolvesConfiguredVariantOptions(t *testing.T) {
 	}
 }
 
+func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("OPENAI_API_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "openai",
+			Providers: map[string]config.ProviderConfig{
+				"openai": {
+					Type:    "openai",
+					BaseURL: "https://api.openai.test/v1",
+					Model:   "gpt-5.5-fast",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	if rt.StreamRunner.Model != "gpt-5.5-fast" {
+		t.Fatalf("Model = %q", rt.StreamRunner.Model)
+	}
+	if rt.StreamRunner.APIModel != "gpt-5.5" {
+		t.Fatalf("APIModel = %q", rt.StreamRunner.APIModel)
+	}
+	if got := rt.StreamRunner.ProviderOptions["serviceTier"]; got != "priority" {
+		t.Fatalf("ProviderOptions serviceTier = %#v", got)
+	}
+}
+
 func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	kit, err := tools.New(t.TempDir())
 	if err != nil {

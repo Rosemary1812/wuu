@@ -61,3 +61,18 @@ func TestCatalogMatchesOpenCodeDefaultVisibility(t *testing.T) {
 		t.Fatalf("unexpected experimental mode metadata: %+v", fastMode)
 	}
 }
+
+func TestMergeProviderCarriesModelOptionsAndHeaders(t *testing.T) {
+	provider, ok := MatchProvider("anthropic", config.ProviderConfig{Type: "anthropic"})
+	if !ok {
+		t.Fatal("expected Anthropic provider match")
+	}
+	enriched := MergeProvider(config.ProviderConfig{Type: "anthropic"}, provider, "claude-opus-4-7-fast")
+	model := enriched.Models["claude-opus-4-7-fast"]
+	if model.ID != "claude-opus-4-7" || model.Options["speed"] != "fast" {
+		t.Fatalf("unexpected fast model metadata: %+v", model)
+	}
+	if enriched.Headers["anthropic-beta"] != "fast-mode-2026-02-01" {
+		t.Fatalf("unexpected merged headers: %+v", enriched.Headers)
+	}
+}

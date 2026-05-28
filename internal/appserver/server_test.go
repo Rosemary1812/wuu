@@ -655,6 +655,44 @@ func TestServerConfigModelUpdatePersistsVariantOptions(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdateUsesCatalogFastModelRuntime(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.ProviderName = "openai"
+	rt.Model = "gpt-5.5"
+	rt.StreamRunner.Model = "gpt-5.5"
+	t.Setenv("OPENAI_API_KEY", "abc")
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "openai",
+  "providers": {
+    "openai": {
+      "type": "openai",
+      "base_url": "https://api.openai.test/v1",
+      "model": "gpt-5.5"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"provider":"openai","model":"gpt-5.5-fast"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Model != "gpt-5.5-fast" {
+		t.Fatalf("unexpected update result: %+v", result)
+	}
+	if rt.StreamRunner.Model != "gpt-5.5-fast" || rt.StreamRunner.APIModel != "gpt-5.5" {
+		t.Fatalf("runtime model mismatch: model=%q api=%q", rt.StreamRunner.Model, rt.StreamRunner.APIModel)
+	}
+	if got := rt.StreamRunner.ProviderOptions["serviceTier"]; got != "priority" {
+		t.Fatalf("runtime provider options not updated: %#v", rt.StreamRunner.ProviderOptions)
+	}
+}
+
 func TestServerConfigCodexModels(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.ProviderName = "openai-codex"

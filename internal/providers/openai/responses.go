@@ -158,6 +158,8 @@ func mergeResponsesProviderOptions(object map[string]any, options map[string]any
 		case "textVerbosity":
 			text := ensureResponseObject(object, "text")
 			text["verbosity"] = value
+		case "serviceTier":
+			object["service_tier"] = value
 		case "maxOutputTokens":
 			object["max_output_tokens"] = value
 		case "promptCacheKey":

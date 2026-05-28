@@ -529,6 +529,8 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
+	previousProviderCfg := providerCfg
+	previousModel := strings.TrimSpace(providerCfg.Model)
 	providerCfg.Model = model
 	connectionChanged := creatingProvider
 	connectionLocked := isCodexProviderType(providerCfg.Type)
@@ -576,6 +578,8 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, model)
+	_, previousRuleProviderCfg := modelcatalog.EnrichProvider(resolvedName, previousProviderCfg, previousModel)
+	modelHeadersChanged := !reflect.DeepEqual(previousRuleProviderCfg.Headers, ruleProviderCfg.Headers)
 	if params.Variant != nil && variant != "" {
 		if _, ok := modelvariant.OptionsForProvider(ruleProviderName, ruleProviderCfg, model, variant); !ok {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support variant %s", model, variant))
@@ -591,8 +595,8 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	effortForConfig, variantForConfig := selectionConfigPointers(selection, selectionTouched, s.currentVariant())
 
 	var client providers.StreamClient
-	if resolvedName != s.rt.ProviderName || connectionChanged {
-		client, err = providerfactory.BuildStreamClient(providerCfg, resolvedName)
+	if resolvedName != s.rt.ProviderName || connectionChanged || modelHeadersChanged {
+		client, err = providerfactory.BuildStreamClient(ruleProviderCfg, resolvedName)
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
@@ -618,6 +622,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			s.rt.StreamRunner.Client = client
 		}
 		s.rt.StreamRunner.Model = model
+		s.rt.StreamRunner.APIModel = modelcatalog.APIModel(ruleProviderCfg, model)
 		s.rt.StreamRunner.Effort = selection.LegacyEffort
 		s.rt.StreamRunner.Variant = selection.Variant
 		s.rt.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)

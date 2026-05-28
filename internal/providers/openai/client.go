@@ -812,6 +812,8 @@ func mergeChatProviderOptions(object map[string]any, options map[string]any, for
 			object["reasoning_summary"] = value
 		case "textVerbosity":
 			object["verbosity"] = value
+		case "serviceTier":
+			object["service_tier"] = value
 		case "maxOutputTokens":
 			object["max_tokens"] = value
 		case "promptCacheKey":

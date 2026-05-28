@@ -133,6 +133,8 @@ type ProviderModelConfig struct {
 	Reasoning        *bool                        `json:"reasoning,omitempty"`
 	Provider         *ProviderModelProviderConfig `json:"provider,omitempty"`
 	Limit            *ProviderModelLimitConfig    `json:"limit,omitempty"`
+	Options          map[string]any               `json:"options,omitempty"`
+	Headers          map[string]string            `json:"headers,omitempty"`
 	SupportedEfforts []string                     `json:"supported_efforts,omitempty"`
 	DefaultEffort    string                       `json:"default_effort,omitempty"`
 	DefaultVariant   string                       `json:"default_variant,omitempty"`

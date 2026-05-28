@@ -343,6 +343,9 @@ func applyAnthropicProviderOptions(payload *anthropicRequest, options map[string
 	if thinking, ok := providerOptionMap(options["thinking"]); ok {
 		applyAnthropicThinkingOption(payload, thinking)
 	}
+	if speed, ok := options["speed"].(string); ok && strings.TrimSpace(speed) != "" {
+		payload.Speed = strings.TrimSpace(speed)
+	}
 }
 
 func applyAnthropicThinkingOption(payload *anthropicRequest, option map[string]any) {
@@ -894,6 +897,7 @@ type anthropicRequest struct {
 	Messages     []anthropicMessage     `json:"messages"`
 	Tools        []anthropicTool        `json:"tools,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`
+	Speed        string                 `json:"speed,omitempty"`
 	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
 	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
 }
