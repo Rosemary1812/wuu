@@ -50,6 +50,7 @@ import type {
   TerminalSessionStartResult,
   Thread,
   Turn,
+  WorkspaceDirectoryListResult,
   WorkspaceFileReadResult
 } from "@browseros/workbench-ui/shared/protocol";
 
@@ -1161,6 +1162,55 @@ function fileTreeListResult(): FileTreeListResult {
   return { root: context.cwd, paths, truncated };
 }
 
+function workspaceDirectoryListResult(path?: string): WorkspaceDirectoryListResult {
+  const context = ensureRuntimeContext();
+  const relativeDirectoryPath = normalizeWorkspaceDirectoryPath(path ?? "");
+  const absoluteDirectoryPath = resolveWorkspaceDirectoryPath(context.cwd, relativeDirectoryPath);
+  const stats = statSync(absoluteDirectoryPath);
+  if (!stats.isDirectory()) {
+    throw new Error("selected path is not a directory");
+  }
+
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(absoluteDirectoryPath, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+
+  entries.sort(compareFileTreeEntries);
+
+  const visibleEntries = [];
+  let truncated = false;
+  for (const entry of entries) {
+    if (FILE_TREE_IGNORED_FILES.has(entry.name)) {
+      continue;
+    }
+
+    const relativePath = relativeDirectoryPath ? `${relativeDirectoryPath}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (FILE_TREE_IGNORED_DIRS.has(entry.name)) {
+        continue;
+      }
+      visibleEntries.push({ name: entry.name, path: `${relativePath}/`, kind: "directory" as const });
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      visibleEntries.push({ name: entry.name, path: relativePath, kind: "file" as const });
+    }
+
+    if (visibleEntries.length >= FILE_TREE_MAX_PATHS) {
+      truncated = true;
+      break;
+    }
+  }
+
+  return {
+    root: context.cwd,
+    path: relativeDirectoryPath,
+    entries: visibleEntries,
+    truncated
+  };
+}
+
 function readWorkspaceFileResult(path: string): WorkspaceFileReadResult {
   const context = ensureRuntimeContext();
   const relativeFilePath = normalizeWorkspaceRelativePath(path);
@@ -1202,6 +1252,14 @@ function normalizeWorkspaceRelativePath(path: string): string {
   return value;
 }
 
+function normalizeWorkspaceDirectoryPath(path: string): string {
+  const value = path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+  if (value.includes("\0") || value.split("/").some((segment) => segment === "..")) {
+    throw new Error("invalid workspace directory path");
+  }
+  return value;
+}
+
 function resolveWorkspacePath(root: string, relativeFilePath: string): string {
   const absolutePath = resolve(root, relativeFilePath);
   const relativeToRoot = relative(root, absolutePath);
@@ -1216,6 +1274,31 @@ function resolveWorkspacePath(root: string, relativeFilePath: string): string {
     throw new Error("file is outside the current workspace");
   }
   return absolutePath;
+}
+
+function resolveWorkspaceDirectoryPath(root: string, relativeDirectoryPath: string): string {
+  const absolutePath = relativeDirectoryPath ? resolve(root, relativeDirectoryPath) : root;
+  const relativeToRoot = relative(root, absolutePath);
+  if (relativeToRoot && (relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot))) {
+    throw new Error("directory is outside the current workspace");
+  }
+
+  const realRoot = realpathSync(root);
+  const realDirectory = realpathSync(absolutePath);
+  const realRelative = relative(realRoot, realDirectory);
+  if (realRelative && (realRelative.startsWith("..") || isAbsolute(realRelative))) {
+    throw new Error("directory is outside the current workspace");
+  }
+  return absolutePath;
+}
+
+function compareFileTreeEntries(left: Dirent, right: Dirent): number {
+  const leftDirectory = left.isDirectory();
+  const rightDirectory = right.isDirectory();
+  if (leftDirectory !== rightDirectory) {
+    return leftDirectory ? -1 : 1;
+  }
+  return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
 }
 
 function collectFileTreePaths(root: string, relativeDirectory: string, paths: string[]): boolean {
@@ -1234,14 +1317,7 @@ function collectFileTreePaths(root: string, relativeDirectory: string, paths: st
       continue;
     }
 
-    entries.sort((left, right) => {
-      const leftDirectory = left.isDirectory();
-      const rightDirectory = right.isDirectory();
-      if (leftDirectory !== rightDirectory) {
-        return leftDirectory ? -1 : 1;
-      }
-      return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
-    });
+    entries.sort(compareFileTreeEntries);
 
     for (const entry of entries) {
       if (FILE_TREE_IGNORED_FILES.has(entry.name)) {
@@ -1770,6 +1846,7 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:git-commit", (_event, params: GitCommitParams) => commitGitChanges(params ?? {}));
   ipcMain.handle("wuu:git-create-pr", (_event, params: GitPullRequestParams) => createPullRequest(params ?? {}));
   ipcMain.handle("wuu:file-tree-list", () => fileTreeListResult());
+  ipcMain.handle("wuu:file-directory-list", (_event, path?: string) => workspaceDirectoryListResult(path));
   ipcMain.handle("wuu:file-read", (_event, path: string) => readWorkspaceFileResult(path));
   ipcMain.handle("wuu:terminal-start", (_event, params?: TerminalSessionStartParams) => startTerminalSession(params));
   ipcMain.handle("wuu:terminal-write", (_event, id: string, data: string) => writeTerminalSession(id, data));

@@ -203,6 +203,19 @@ export type FileTreeListResult = {
   truncated: boolean;
 };
 
+export type WorkspaceFileTreeEntry = {
+  name: string;
+  path: string;
+  kind: "directory" | "file";
+};
+
+export type WorkspaceDirectoryListResult = {
+  root: string;
+  path: string;
+  entries: WorkspaceFileTreeEntry[];
+  truncated: boolean;
+};
+
 export type WorkspaceFileReadResult = {
   root: string;
   path: string;
@@ -396,6 +409,7 @@ export type WuuDesktopApi = {
   commitGitChanges: (params: GitCommitParams) => Promise<GitCommitResult>;
   createPullRequest: (params: GitPullRequestParams) => Promise<GitPullRequestResult>;
   listWorkspaceFiles: () => Promise<FileTreeListResult>;
+  listWorkspaceDirectory: (path?: string) => Promise<WorkspaceDirectoryListResult>;
   readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
   startTerminalSession: (params?: TerminalSessionStartParams) => Promise<TerminalSessionStartResult>;
   writeTerminalSession: (id: string, data: string) => Promise<TerminalSessionActionResult>;

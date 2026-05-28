@@ -24,6 +24,7 @@ import type {
   TerminalSessionStartResult,
   Thread,
   Turn,
+  WorkspaceDirectoryListResult,
   WorkspaceFileReadResult,
   WuuDesktopApi,
 } from '@browseros/workbench-ui/shared/protocol'
@@ -72,6 +73,10 @@ export function installWuuBrowserOSAdapter(): void {
     createPullRequest: (params) =>
       desktopRpc<GitPullRequestResult>('git/create-pr', params),
     listWorkspaceFiles: () => desktopRpc<FileTreeListResult>('file-tree/list'),
+    listWorkspaceDirectory: (path) =>
+      desktopRpc<WorkspaceDirectoryListResult>('file-directory/list', {
+        path: path ?? '',
+      }),
     readWorkspaceFile: (path) =>
       desktopRpc<WorkspaceFileReadResult>('file/read', { path }),
     startTerminalSession: (params) =>
@@ -222,7 +227,10 @@ async function selectProject(projectId: string): Promise<ProjectListResult> {
   return applyProjectList(result)
 }
 
-async function selectNoProject(fresh = false, cwd?: string): Promise<ProjectListResult> {
+async function selectNoProject(
+  fresh = false,
+  cwd?: string,
+): Promise<ProjectListResult> {
   const result = await desktopRpc<ProjectListResult>(
     'project/select-none',
     cwd ? { fresh, cwd } : { fresh },

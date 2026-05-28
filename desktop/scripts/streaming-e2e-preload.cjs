@@ -49,6 +49,12 @@ contextBridge.exposeInMainWorld("wuu", {
     paths: [],
     truncated: false
   }),
+  listWorkspaceDirectory: async (path = "") => ({
+    root: cwd,
+    path: path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, ""),
+    entries: [],
+    truncated: false
+  }),
   readWorkspaceFile: async (path) => ({
     root: cwd,
     path,

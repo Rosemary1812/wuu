@@ -187,6 +187,11 @@ export async function handleWuuDesktopRpc(
       return createPullRequest(workdir, asRecord(params)) as JsonValue
     case 'file-tree/list':
       return fileTreeListResult(workdir) as JsonValue
+    case 'file-directory/list':
+      return workspaceDirectoryListResult(
+        workdir,
+        stringParam(params, 'path'),
+      ) as JsonValue
     case 'file/read':
       return readWorkspaceFileResult(
         workdir,
@@ -1151,6 +1156,67 @@ function fileTreeListResult(workdir: string) {
   return { root: workdir, paths, truncated }
 }
 
+function workspaceDirectoryListResult(workdir: string, path: string) {
+  const relativeDirectoryPath = normalizeWorkspaceDirectoryPath(path)
+  const absoluteDirectoryPath = resolveWorkspaceDirectoryPath(
+    workdir,
+    relativeDirectoryPath,
+  )
+  const stats = statSync(absoluteDirectoryPath)
+  if (!stats.isDirectory()) {
+    throw new Error('selected path is not a directory')
+  }
+
+  let entries: Dirent[]
+  try {
+    entries = readdirSync(absoluteDirectoryPath, { withFileTypes: true })
+  } catch {
+    entries = []
+  }
+
+  entries.sort(compareFileTreeEntries)
+
+  const visibleEntries = []
+  let truncated = false
+  for (const entry of entries) {
+    if (FILE_TREE_IGNORED_FILES.has(entry.name)) {
+      continue
+    }
+
+    const relativePath = relativeDirectoryPath
+      ? `${relativeDirectoryPath}/${entry.name}`
+      : entry.name
+    if (entry.isDirectory()) {
+      if (FILE_TREE_IGNORED_DIRS.has(entry.name)) {
+        continue
+      }
+      visibleEntries.push({
+        name: entry.name,
+        path: `${relativePath}/`,
+        kind: 'directory',
+      })
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      visibleEntries.push({
+        name: entry.name,
+        path: relativePath,
+        kind: 'file',
+      })
+    }
+
+    if (visibleEntries.length >= FILE_TREE_MAX_PATHS) {
+      truncated = true
+      break
+    }
+  }
+
+  return {
+    root: workdir,
+    path: relativeDirectoryPath,
+    entries: visibleEntries,
+    truncated,
+  }
+}
+
 function readWorkspaceFileResult(workdir: string, path: string) {
   const relativeFilePath = normalizeWorkspaceRelativePath(path)
   const absolutePath = resolveWorkspacePath(workdir, relativeFilePath)
@@ -1202,6 +1268,21 @@ function normalizeWorkspaceRelativePath(path: string): string {
   return value
 }
 
+function normalizeWorkspaceDirectoryPath(path: string): string {
+  const value = path
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+  if (
+    value.includes('\0') ||
+    value.split('/').some((segment) => segment === '..')
+  ) {
+    throw new Error('invalid workspace directory path')
+  }
+  return value
+}
+
 function resolveWorkspacePath(root: string, relativeFilePath: string): string {
   const absolutePath = resolve(root, relativeFilePath)
   const relativeToRoot = relative(root, absolutePath)
@@ -1226,6 +1307,44 @@ function resolveWorkspacePath(root: string, relativeFilePath: string): string {
   return absolutePath
 }
 
+function resolveWorkspaceDirectoryPath(
+  root: string,
+  relativeDirectoryPath: string,
+): string {
+  const absolutePath = relativeDirectoryPath
+    ? resolve(root, relativeDirectoryPath)
+    : root
+  const relativeToRoot = relative(root, absolutePath)
+  if (
+    relativeToRoot &&
+    (relativeToRoot.startsWith('..') || isAbsolute(relativeToRoot))
+  ) {
+    throw new Error('directory is outside the current workspace')
+  }
+
+  const realRoot = realpathSync(root)
+  const realDirectory = realpathSync(absolutePath)
+  const realRelative = relative(realRoot, realDirectory)
+  if (
+    realRelative &&
+    (realRelative.startsWith('..') || isAbsolute(realRelative))
+  ) {
+    throw new Error('directory is outside the current workspace')
+  }
+  return absolutePath
+}
+
+function compareFileTreeEntries(left: Dirent, right: Dirent): number {
+  const leftDirectory = left.isDirectory()
+  const rightDirectory = right.isDirectory()
+  if (leftDirectory !== rightDirectory) {
+    return leftDirectory ? -1 : 1
+  }
+  return left.name.localeCompare(right.name, undefined, {
+    sensitivity: 'base',
+  })
+}
+
 function collectFileTreePaths(
   root: string,
   relativeDirectory: string,
@@ -1243,16 +1362,7 @@ function collectFileTreePaths(
     return false
   }
 
-  entries.sort((left, right) => {
-    const leftDirectory = left.isDirectory()
-    const rightDirectory = right.isDirectory()
-    if (leftDirectory !== rightDirectory) {
-      return leftDirectory ? -1 : 1
-    }
-    return left.name.localeCompare(right.name, undefined, {
-      sensitivity: 'base',
-    })
-  })
+  entries.sort(compareFileTreeEntries)
 
   for (const entry of entries) {
     if (FILE_TREE_IGNORED_FILES.has(entry.name)) {

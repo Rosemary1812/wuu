@@ -1,37 +1,24 @@
-import { preparePresortedFileTreeInput } from "@pierre/trees";
-import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
-import { AlertCircle, FileText, FolderOpen, FolderX } from "lucide-react";
-import { type CSSProperties, memo, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, ChevronDown, ChevronRight, FileText, Folder, FolderOpen, FolderX } from "lucide-react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import type { FileTreeListResult, RuntimeContext, WorkspaceFileReadResult } from "../shared/protocol";
+import type {
+  RuntimeContext,
+  WorkspaceDirectoryListResult,
+  WorkspaceFileReadResult,
+  WorkspaceFileTreeEntry
+} from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
 
-const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
-  contain: "strict",
-  height: "100%",
-  minHeight: 0,
-  minWidth: 0,
-  width: "100%"
+type DirectoryLoadState = {
+  entries?: WorkspaceFileTreeEntry[];
+  loading?: boolean;
+  error?: string;
+  root?: string;
+  truncated?: boolean;
 };
-const WORKSPACE_FILE_TREE_ITEM_HEIGHT = 28;
 
-const WORKSPACE_TREE_CSS = `
-  :host {
-    --trees-fg-override: #34393d;
-    --trees-muted-fg-override: #7a8085;
-    --trees-selected-bg-override: #eeeeeb;
-    --trees-hover-bg-override: #f4f4f2;
-    --trees-border-color-override: transparent;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 13px;
-    line-height: 1.35;
-  }
-
-  button[data-type="item"] {
-    border-radius: 7px;
-  }
-`;
+type DirectoryLoadMap = Record<string, DirectoryLoadState>;
 
 export function WorkspaceFileTree({
   activeContext,
@@ -44,129 +31,356 @@ export function WorkspaceFileTree({
   selectedFilePath?: string;
   onOpenFile: (path: string) => void;
 }): JSX.Element {
-  const [fileTree, setFileTree] = useState<FileTreeListResult | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [directories, setDirectories] = useState<DirectoryLoadMap>({});
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  const directoriesRef = useRef(directories);
+  const workspaceRootRef = useRef<string | undefined>(undefined);
   const workspaceRoot = activeContext?.cwd;
 
   useEffect(() => {
+    directoriesRef.current = directories;
+  }, [directories]);
+
+  const loadDirectory = useCallback((path: string) => {
+    const directoryPath = normalizeDirectoryPath(path);
+    const expectedWorkspaceRoot = workspaceRootRef.current;
+    setDirectories((current) => ({
+      ...current,
+      [directoryPath]: {
+        ...current[directoryPath],
+        loading: true,
+        error: undefined
+      }
+    }));
+
+    void window.wuu
+      .listWorkspaceDirectory(directoryPath)
+      .then((result: WorkspaceDirectoryListResult) => {
+        if (workspaceRootRef.current !== expectedWorkspaceRoot) {
+          return;
+        }
+        const resultPath = normalizeDirectoryPath(result.path);
+        setDirectories((current) => ({
+          ...current,
+          [resultPath]: {
+            entries: result.entries,
+            loading: false,
+            root: result.root,
+            truncated: result.truncated
+          }
+        }));
+      })
+      .catch((nextError) => {
+        if (workspaceRootRef.current !== expectedWorkspaceRoot) {
+          return;
+        }
+        setDirectories((current) => ({
+          ...current,
+          [directoryPath]: {
+            ...current[directoryPath],
+            loading: false,
+            error: desktopApiErrorMessage(nextError, "读取文件失败")
+          }
+        }));
+      });
+  }, []);
+
+  useEffect(() => {
+    workspaceRootRef.current = open ? workspaceRoot : undefined;
     if (!open || !workspaceRoot) {
+      setDirectories({});
+      setExpandedPaths(new Set());
+      setSearch("");
       return;
     }
 
-    let cancelled = false;
-    setFileTree(undefined);
-    setLoading(true);
-    setError(undefined);
-    void window.wuu
-      .listWorkspaceFiles()
-      .then((result) => {
-        if (cancelled) {
-          return;
+    setDirectories({});
+    setExpandedPaths(new Set());
+    setSearch("");
+    loadDirectory("");
+  }, [loadDirectory, open, workspaceRoot]);
+
+  const toggleDirectory = useCallback(
+    (path: string) => {
+      const directoryPath = normalizeDirectoryPath(path);
+      setExpandedPaths((current) => {
+        const next = new Set(current);
+        if (next.has(directoryPath)) {
+          next.delete(directoryPath);
+          return next;
         }
-        setFileTree(result);
-      })
-      .catch((nextError) => {
-        if (cancelled) {
-          return;
-        }
-        setError(desktopApiErrorMessage(nextError, "读取文件失败"));
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        next.add(directoryPath);
+        return next;
       });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [open, workspaceRoot]);
+      const directoryState = directoriesRef.current[directoryPath];
+      if (!directoryState?.entries && !directoryState?.loading) {
+        loadDirectory(directoryPath);
+      }
+    },
+    [loadDirectory]
+  );
 
   if (!workspaceRoot) {
     return <WorkspacePanelEmpty title="没有项目" description="先选择一个项目。这个面板会显示它的文件。" />;
   }
 
-  if (loading && !fileTree) {
+  const rootDirectory = directories[""] ?? {};
+
+  if (!rootDirectory.entries && !rootDirectory.error) {
     return <WorkspacePanelEmpty title="正在读取文件" description="文件树马上就绪。" />;
   }
 
-  if (error) {
-    return <WorkspacePanelEmpty title="读取失败" description={error} />;
+  if (rootDirectory.error) {
+    return <WorkspacePanelEmpty title="读取失败" description={rootDirectory.error} />;
   }
 
-  if (!fileTree || fileTree.paths.length === 0) {
+  if (!rootDirectory.entries || rootDirectory.entries.length === 0) {
     return <WorkspacePanelEmpty title="没有文件" description={formatWorkspaceRoot(workspaceRoot)} />;
   }
 
   return (
     <div className="workspace-file-panel">
       <div className="workspace-file-meta">
-        <span>{formatWorkspaceRoot(fileTree.root)}</span>
-        <small>
-          {fileTree.paths.length} 项{fileTree.truncated ? "，已截断" : ""}
-        </small>
+        <span>{formatWorkspaceRoot(rootDirectory.root ?? workspaceRoot)}</span>
+        {rootDirectory.truncated ? <small>已截断</small> : null}
       </div>
       <WorkspaceFileTreeView
-        paths={fileTree.paths}
+        directories={directories}
+        entries={rootDirectory.entries}
+        expandedPaths={expandedPaths}
         selectedFilePath={selectedFilePath}
+        search={search}
+        onSearchChange={setSearch}
+        onToggleDirectory={toggleDirectory}
         onOpenFile={onOpenFile}
+        onRetryDirectory={loadDirectory}
       />
     </div>
   );
 }
 
-const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({
-  paths,
+function WorkspaceFileTreeView({
+  directories,
+  entries,
+  expandedPaths,
   selectedFilePath,
-  onOpenFile
+  search,
+  onSearchChange,
+  onToggleDirectory,
+  onOpenFile,
+  onRetryDirectory
 }: {
-  paths: string[];
+  directories: DirectoryLoadMap;
+  entries: WorkspaceFileTreeEntry[];
+  expandedPaths: Set<string>;
   selectedFilePath?: string;
+  search: string;
+  onSearchChange: (value: string) => void;
+  onToggleDirectory: (path: string) => void;
   onOpenFile: (path: string) => void;
+  onRetryDirectory: (path: string) => void;
 }): JSX.Element {
-  const preparedInput = useMemo(() => preparePresortedFileTreeInput(paths), [paths]);
-  const { model } = useFileTree({
-    flattenEmptyDirectories: false,
-    initialExpansion: "closed",
-    initialSelectedPaths: selectedFilePath ? [selectedFilePath] : [],
-    itemHeight: WORKSPACE_FILE_TREE_ITEM_HEIGHT,
-    overscan: 8,
-    preparedInput,
-    search: true,
-    stickyFolders: false,
-    unsafeCSS: WORKSPACE_TREE_CSS
-  });
-  const syncedPathsRef = useRef(paths);
-  const selectedPaths = useFileTreeSelection(model);
-  const onOpenFileRef = useRef(onOpenFile);
-
-  useEffect(() => {
-    onOpenFileRef.current = onOpenFile;
-  }, [onOpenFile]);
-
-  useEffect(() => {
-    if (paths === syncedPathsRef.current) {
-      return;
-    }
-    model.resetPaths(preparedInput.paths, { preparedInput });
-    syncedPathsRef.current = paths;
-  }, [model, paths, preparedInput]);
-
-  useEffect(() => {
-    const nextPath = selectedPaths[0];
-    if (!nextPath || nextPath.endsWith("/")) {
-      return;
-    }
-    onOpenFileRef.current(nextPath);
-  }, [selectedPaths]);
+  const query = search.trim().toLowerCase();
+  const visibleEntries = entries.filter((entry) => shouldShowFileTreeEntry(entry, query, directories));
 
   return (
     <div className="workspace-file-tree-frame">
-      <FileTree model={model} style={WORKSPACE_FILE_TREE_STYLE} />
+      <input
+        className="workspace-file-search"
+        value={search}
+        onChange={(event) => onSearchChange(event.currentTarget.value)}
+        placeholder="Search..."
+        spellCheck={false}
+      />
+      <OverlayScrollbarsComponent
+        className="workspace-file-tree-scroll"
+        data-overlayscrollbars-initialize
+        defer
+        options={OVERLAY_SCROLLBAR_OPTIONS}
+      >
+        <div className="workspace-file-tree-list" role="tree">
+          {visibleEntries.length > 0 ? (
+            <WorkspaceFileTreeRows
+              directories={directories}
+              entries={visibleEntries}
+              expandedPaths={expandedPaths}
+              selectedFilePath={selectedFilePath}
+              query={query}
+              depth={0}
+              onToggleDirectory={onToggleDirectory}
+              onOpenFile={onOpenFile}
+              onRetryDirectory={onRetryDirectory}
+            />
+          ) : (
+            <div className="workspace-file-tree-status">没有匹配文件</div>
+          )}
+        </div>
+      </OverlayScrollbarsComponent>
     </div>
   );
-});
+}
+
+function WorkspaceFileTreeRows({
+  directories,
+  entries,
+  expandedPaths,
+  selectedFilePath,
+  query,
+  depth,
+  onToggleDirectory,
+  onOpenFile,
+  onRetryDirectory
+}: {
+  directories: DirectoryLoadMap;
+  entries: WorkspaceFileTreeEntry[];
+  expandedPaths: Set<string>;
+  selectedFilePath?: string;
+  query: string;
+  depth: number;
+  onToggleDirectory: (path: string) => void;
+  onOpenFile: (path: string) => void;
+  onRetryDirectory: (path: string) => void;
+}): JSX.Element {
+  return (
+    <>
+      {entries.map((entry) => (
+        <WorkspaceFileTreeNode
+          key={entry.path}
+          directories={directories}
+          entry={entry}
+          expandedPaths={expandedPaths}
+          selectedFilePath={selectedFilePath}
+          query={query}
+          depth={depth}
+          onToggleDirectory={onToggleDirectory}
+          onOpenFile={onOpenFile}
+          onRetryDirectory={onRetryDirectory}
+        />
+      ))}
+    </>
+  );
+}
+
+function WorkspaceFileTreeNode({
+  directories,
+  entry,
+  expandedPaths,
+  selectedFilePath,
+  query,
+  depth,
+  onToggleDirectory,
+  onOpenFile,
+  onRetryDirectory
+}: {
+  directories: DirectoryLoadMap;
+  entry: WorkspaceFileTreeEntry;
+  expandedPaths: Set<string>;
+  selectedFilePath?: string;
+  query: string;
+  depth: number;
+  onToggleDirectory: (path: string) => void;
+  onOpenFile: (path: string) => void;
+  onRetryDirectory: (path: string) => void;
+}): JSX.Element | null {
+  if (!shouldShowFileTreeEntry(entry, query, directories)) {
+    return null;
+  }
+
+  const directoryPath = normalizeDirectoryPath(entry.path);
+  const directoryState = entry.kind === "directory" ? directories[directoryPath] : undefined;
+  const directoryEntries = directoryState?.entries ?? [];
+  const visibleChildren = directoryEntries.filter((child) => shouldShowFileTreeEntry(child, query, directories));
+  const isExpanded = expandedPaths.has(directoryPath) || Boolean(query && visibleChildren.length > 0);
+  const rowStyle = { "--workspace-tree-depth": depth } as CSSProperties;
+
+  if (entry.kind === "file") {
+    return (
+      <button
+        type="button"
+        className={`workspace-file-tree-row${selectedFilePath === entry.path ? " selected" : ""}`}
+        style={rowStyle}
+        role="treeitem"
+        title={entry.path}
+        onClick={() => onOpenFile(entry.path)}
+      >
+        <span className="workspace-file-tree-toggle-spacer" />
+        <FileText size={15} />
+        <span className="workspace-file-tree-name">{entry.name}</span>
+      </button>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="workspace-file-tree-row"
+        style={rowStyle}
+        role="treeitem"
+        aria-expanded={isExpanded}
+        title={entry.path}
+        onClick={() => onToggleDirectory(directoryPath)}
+      >
+        <span className="workspace-file-tree-toggle">
+          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </span>
+        {isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+        <span className="workspace-file-tree-name">{entry.name}</span>
+      </button>
+      {isExpanded && directoryState?.loading ? (
+        <div className="workspace-file-tree-status row" style={{ "--workspace-tree-depth": depth + 1 } as CSSProperties}>
+          读取中
+        </div>
+      ) : null}
+      {isExpanded && directoryState?.error ? (
+        <button
+          type="button"
+          className="workspace-file-tree-status row action"
+          style={{ "--workspace-tree-depth": depth + 1 } as CSSProperties}
+          onClick={() => onRetryDirectory(directoryPath)}
+        >
+          读取失败，点击重试
+        </button>
+      ) : null}
+      {isExpanded && visibleChildren.length > 0 ? (
+        <WorkspaceFileTreeRows
+          directories={directories}
+          entries={visibleChildren}
+          expandedPaths={expandedPaths}
+          selectedFilePath={selectedFilePath}
+          query={query}
+          depth={depth + 1}
+          onToggleDirectory={onToggleDirectory}
+          onOpenFile={onOpenFile}
+          onRetryDirectory={onRetryDirectory}
+        />
+      ) : null}
+      {isExpanded && directoryState?.truncated ? (
+        <div className="workspace-file-tree-status row" style={{ "--workspace-tree-depth": depth + 1 } as CSSProperties}>
+          已截断
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function shouldShowFileTreeEntry(entry: WorkspaceFileTreeEntry, query: string, directories: DirectoryLoadMap): boolean {
+  if (!query || entry.name.toLowerCase().includes(query) || entry.path.toLowerCase().includes(query)) {
+    return true;
+  }
+  if (entry.kind !== "directory") {
+    return false;
+  }
+
+  const directory = directories[normalizeDirectoryPath(entry.path)];
+  return Boolean(directory?.entries?.some((child) => shouldShowFileTreeEntry(child, query, directories)));
+}
+
+function normalizeDirectoryPath(path: string): string {
+  return path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+}
 
 export function WorkspacePanelEmpty({
   title,
