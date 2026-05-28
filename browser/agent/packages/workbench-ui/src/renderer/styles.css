@@ -1553,38 +1553,33 @@ button:disabled {
   -webkit-app-region: no-drag;
 }
 
-.session-tab[draggable="true"] {
+.session-tab.can-reorder {
   cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.session-tab[draggable="true"]:active,
+.session-tab.can-reorder:active,
 .session-tab.dragging {
   cursor: grabbing;
 }
 
 .session-tab.dragging {
-  opacity: 0.48;
-  transform: scale(0.985);
+  opacity: 0.22;
 }
 
-.session-tab.drop-before::after,
-.session-tab.drop-after::after {
-  position: absolute;
-  top: 5px;
-  bottom: 5px;
-  width: 2px;
-  border-radius: 999px;
-  background: var(--sidebar-accent);
-  content: "";
+.session-tab-drag-overlay {
+  cursor: grabbing;
+  opacity: 0.98;
   pointer-events: none;
+  transform: scale(1.025);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 9px 24px rgba(31, 35, 40, 0.14);
 }
 
-.session-tab.drop-before::after {
-  left: -4px;
-}
-
-.session-tab.drop-after::after {
-  right: -4px;
+.session-tab-drag-overlay .session-tab-close {
+  opacity: 1;
 }
 
 .session-tab:hover,
