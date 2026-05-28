@@ -373,7 +373,23 @@ func proactiveCompactThreshold(cfg LoopConfig) int {
 	if pct <= 0 || pct >= 1 {
 		pct = defaultCompactThresholdPct
 	}
-	return int(float64(cfg.MaxContextTokens) * pct)
+	fractional := int(float64(cfg.MaxContextTokens) * pct)
+	outputReserved := cfg.MaxContextTokens - compactOutputReserve(cfg)
+	if outputReserved > 0 && outputReserved < fractional {
+		return outputReserved
+	}
+	return fractional
+}
+
+func compactOutputReserve(cfg LoopConfig) int {
+	reserve := cfg.DefaultMaxTokens
+	if reserve <= 0 {
+		reserve = providers.MaxOutputTokensFor(cfg.Model)
+	}
+	if reserve > 20_000 {
+		reserve = 20_000
+	}
+	return reserve
 }
 
 // copyMessages returns an independent copy of msgs so callers can

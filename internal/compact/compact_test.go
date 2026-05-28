@@ -164,14 +164,13 @@ func TestCompactInstructionPrompt_EnforcesNoToolsAndFormat(t *testing.T) {
 
 func TestCompactInstructionPrompt_CoversHandoffSections(t *testing.T) {
 	for _, want := range []string{
-		"## User Intent",
-		"## Technical Concepts",
-		"## Files and Code",
-		"## Errors and Fixes",
-		"## User Messages and Feedback",
-		"## Unfinished Work",
-		"## Current Work",
-		"## Next Step",
+		"## Goal",
+		"## Constraints & Preferences",
+		"## Progress",
+		"## Key Decisions",
+		"## Next Steps",
+		"## Critical Context",
+		"## Relevant Files",
 	} {
 		if !strings.Contains(compactInstructionPrompt, want) {
 			t.Errorf("compactInstructionPrompt missing section %q", want)
@@ -200,6 +199,9 @@ func TestBuildSummaryContent_UsesStableConversationSummaryPrefix(t *testing.T) {
 	}
 	if !strings.Contains(content, "Summary:\nOlder turns were compacted.") {
 		t.Fatalf("expected formatted summary body, got %q", content)
+	}
+	if got := summaryBodyFromContent(content); got != "Older turns were compacted." {
+		t.Fatalf("expected summary body extraction, got %q", got)
 	}
 }
 
@@ -348,6 +350,60 @@ func TestCompact_PreservesLeadingSystemPrompt(t *testing.T) {
 	}
 	if strings.Contains(result[1].Content, "draft") || strings.Contains(result[1].Content, "<analysis>") {
 		t.Fatalf("analysis leaked into compact summary: %q", result[1].Content)
+	}
+}
+
+func TestCompact_ReplacesPreviousSummaryInsteadOfStacking(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "system", Content: "You are wuu."},
+		{Role: "system", Content: BuildSummaryContent("old anchored summary")},
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+	}
+
+	client := &mockCompactClient{response: "updated anchored summary"}
+	result, err := Compact(context.Background(), messages, client, "test")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	summaryCount := 0
+	for _, msg := range result {
+		if msg.Role == "system" && IsConversationSummaryContent(msg.Content) {
+			summaryCount++
+			if strings.Contains(msg.Content, "old anchored summary") {
+				t.Fatalf("old summary should be replaced, got %q", msg.Content)
+			}
+		}
+	}
+	if summaryCount != 1 {
+		t.Fatalf("expected exactly one compact summary, got %d in %+v", summaryCount, result)
+	}
+	if result[0].Content != "You are wuu." {
+		t.Fatalf("expected base system prompt preserved first, got %+v", result[0])
+	}
+	if len(client.lastRequest.Messages) < 2 {
+		t.Fatalf("expected compact request, got %+v", client.lastRequest.Messages)
+	}
+	prompt := client.lastRequest.Messages[1].Content
+	if !strings.Contains(prompt, "Previous anchored summary") || !strings.Contains(prompt, "old anchored summary") {
+		t.Fatalf("expected previous summary in compact prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "Return one complete replacement summary") {
+		t.Fatalf("expected replacement-summary instruction, got %q", prompt)
+	}
+}
+
+func TestCompactTailBudget_UsesOpenCodeStyleCap(t *testing.T) {
+	if got := compactTailBudget("gpt-4o", 128_000); got != compactTailMaxTokens {
+		t.Fatalf("expected large window to cap at %d, got %d", compactTailMaxTokens, got)
+	}
+	if got := compactTailBudget("test-model", 1_000); got != 250 {
+		t.Fatalf("expected small test window to use 25%% tail budget, got %d", got)
 	}
 }
 

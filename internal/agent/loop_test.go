@@ -678,6 +678,18 @@ func TestRunToolLoop_ProactiveCompactRespectsCustomThreshold(t *testing.T) {
 	}
 }
 
+func TestProactiveCompactThresholdReservesOutputHeadroom(t *testing.T) {
+	cfg := LoopConfig{Model: "claude-sonnet-4-6", MaxContextTokens: 64_000}
+	if got, want := proactiveCompactThreshold(cfg), 48_000; got != want {
+		t.Fatalf("expected output-reserved threshold %d, got %d", want, got)
+	}
+
+	cfg = LoopConfig{Model: "claude-sonnet-4-6", MaxContextTokens: 64_000, CompactThresholdPct: 0.5}
+	if got, want := proactiveCompactThreshold(cfg), 32_000; got != want {
+		t.Fatalf("expected custom lower threshold %d, got %d", want, got)
+	}
+}
+
 func TestRunToolLoop_ProactiveCompactDoesNotLoopOnNoOpCompact(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 950}}, {ToolCalls: []providers.ToolCall{{ID: "c2", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 950}}, {Content: "done"}}}
 	compactCalled := 0

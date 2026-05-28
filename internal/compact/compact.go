@@ -150,18 +150,22 @@ func ShouldCompact(messages []providers.ChatMessage, maxContextTokens int) bool 
 // with Codex CLI's safeguard.
 const maxCompactRetries = 3
 
+// compactReservedMaxTokens reserves output headroom before deciding how much
+// raw recent context can survive compaction. This mirrors OpenCode's overflow
+// guard, which keeps up to 20K tokens unavailable for retained input.
+const compactReservedMaxTokens = 20_000
+
 // compactTailMaxTokens caps the recent raw history kept after compaction.
-// Mature agents avoid a fixed "last N messages" tail: Codex keeps recent user
-// messages under a token budget, and Claude Code budgets compaction headroom by
-// tokens. 20K is the shared practical scale those systems use for compact
-// summary/tail budgets.
-const compactTailMaxTokens = 20_000
+// OpenCode keeps only a small recent tail after the anchored summary; its
+// default upper bound is 8K tokens.
+const compactTailMaxTokens = 8_000
 
 // compactTailContextFraction keeps the raw tail small relative to the target
 // model window so the generated summary and post-compact context still have
-// room. The tail selector also keeps complete user-anchored turns and tool
-// chains, so this is a soft budget rather than a hard truncation point.
-const compactTailContextFraction = 0.15
+// room. OpenCode's default is roughly 25% of the usable input window, capped at
+// 8K. The tail selector also keeps complete user-anchored turns and tool chains,
+// so this is a soft budget rather than a hard truncation point.
+const compactTailContextFraction = 0.25
 
 // Compact compresses older messages into a summary. It finds an
 // appropriate boundary near the end of the conversation, summarizes
@@ -187,9 +191,7 @@ func CompactWithContextWindow(ctx context.Context, messages []providers.ChatMess
 	ctx, cancel := withCompactTimeout(ctx)
 	defer cancel()
 
-	systemEnd := leadingSystemEnd(messages)
-	systemPrefix := append([]providers.ChatMessage(nil), messages[:systemEnd]...)
-	conversation := messages[systemEnd:]
+	systemPrefix, previousSummary, conversation := splitLeadingSystemMessages(messages)
 	if len(conversation) <= 2 {
 		return messages, nil
 	}
@@ -203,7 +205,7 @@ func CompactWithContextWindow(ctx context.Context, messages []providers.ChatMess
 	toKeep := conversation[keepStart:]
 
 	for attempt := 0; ; attempt++ {
-		summaryInput := buildSummaryPrompt(toSummarize)
+		summaryInput := buildSummaryPrompt(toSummarize, previousSummary)
 		summaryReq := providers.ChatRequest{
 			Model: model,
 			Messages: []providers.ChatMessage{
@@ -336,17 +338,26 @@ func isIncompleteCompactStream(err error) bool {
 		strings.Contains(msg, "before response.completed")
 }
 
-func leadingSystemEnd(messages []providers.ChatMessage) int {
+func splitLeadingSystemMessages(messages []providers.ChatMessage) ([]providers.ChatMessage, string, []providers.ChatMessage) {
 	i := 0
+	systemPrefix := make([]providers.ChatMessage, 0)
+	previousSummary := ""
 	for i < len(messages) && strings.EqualFold(messages[i].Role, "system") {
+		msg := messages[i]
+		if IsConversationSummaryContent(msg.Content) {
+			previousSummary = summaryBodyFromContent(msg.Content)
+			i++
+			continue
+		}
+		systemPrefix = append(systemPrefix, msg)
 		i++
 	}
-	return i
+	return systemPrefix, previousSummary, messages[i:]
 }
 
 // FormatSummary turns the model's compact response into the content that will
-// be replayed later. The prompt asks for an <analysis> drafting block followed
-// by <summary>; only the summary belongs in future model context.
+// be replayed later. The current prompt asks for markdown only, but this still
+// strips legacy XML wrappers from older compaction prompts and tests.
 func FormatSummary(raw string) string {
 	summary := strings.TrimSpace(raw)
 	summary = stripXMLBlock(summary, "analysis")
@@ -374,6 +385,18 @@ func BuildSummaryContent(summary string) string {
 // "[Conversation summary]" format for existing sessions.
 func IsConversationSummaryContent(content string) bool {
 	return strings.HasPrefix(strings.TrimSpace(content), ConversationSummaryPrefix)
+}
+
+func summaryBodyFromContent(content string) string {
+	text := strings.TrimSpace(content)
+	if !IsConversationSummaryContent(text) {
+		return ""
+	}
+	text = strings.TrimSpace(strings.TrimPrefix(text, ConversationSummaryPrefix))
+	text = strings.TrimSpace(strings.TrimPrefix(text, summaryContinuationNote))
+	text = strings.TrimSpace(text)
+	text = strings.TrimPrefix(text, summarySectionHeader)
+	return strings.TrimSpace(text)
 }
 
 func stripXMLBlock(text, tag string) string {
@@ -430,11 +453,26 @@ func compactTailBudget(model string, maxContextTokens int) int {
 	if window <= 0 {
 		window = providers.ContextWindowFor(model)
 	}
-	budget := int(float64(window) * compactTailContextFraction)
+	usable := compactUsableWindow(model, window)
+	budget := int(float64(usable) * compactTailContextFraction)
 	if budget <= 0 || budget > compactTailMaxTokens {
 		return compactTailMaxTokens
 	}
 	return budget
+}
+
+func compactUsableWindow(model string, window int) int {
+	if window <= 0 {
+		return 0
+	}
+	reserved := providers.MaxOutputTokensFor(model)
+	if reserved > compactReservedMaxTokens {
+		reserved = compactReservedMaxTokens
+	}
+	if reserved <= 0 || reserved >= window {
+		return window
+	}
+	return window - reserved
 }
 
 // compactKeepStart returns the index where the un-compacted tail should begin.
@@ -573,53 +611,48 @@ CRITICAL: This summary will be the ONLY context available when the conversation 
 
 CRITICAL: Respond with text only. Do NOT call any tools. Do NOT use read_file, grep, glob, run_shell, or any other tool. Tool calls will fail this task.
 
-Respond with a markdown summary only. Do not include an analysis block, hidden reasoning, XML tags, preamble, or outro. Keep the summary under 2,000 words unless a longer summary is strictly necessary to continue the task.
+Respond with a markdown summary only. Do not include an analysis block, hidden reasoning, XML tags, preamble, or outro. Keep the summary terse but complete enough to continue the task.
 
 Cover these sections:
 
-## User Intent
-- The user's exact request, constraints, preferences, and success criteria
-- Any course corrections or explicit feedback from the user
+## Goal
+- Current user goal and success criteria
 
-## Technical Concepts
-- Important technical concepts, design decisions, libraries, frameworks, and conventions
+## Constraints & Preferences
+- User instructions, project rules, style constraints, and important non-goals
 
-## Files and Code
-- Files modified, with a one-line description of each change
-- Files read or analyzed and why they mattered
-- Important code snippets, function signatures, data shapes, and exact paths the next agent should inspect
-- File paths and line numbers for code locations the next agent should jump to
+## Progress
+- Done
+- In progress
+- Blocked
 
-## Errors and Fixes
-- Errors encountered, what caused them, and how they were fixed or investigated
-- Commands that failed and what the failure looked like
-- Commands that worked and what they verified
+## Key Decisions
+- Product or engineering decisions already made and why
 
-## User Messages and Feedback
-- User instructions, corrections, and clarifications that affect future work
-- Do not list repeated short continuation messages unless they add a new requirement
+## Next Steps
+- Concrete next actions in order
 
-## Unfinished Work
-- Pending tasks, open questions, blockers, and assumptions that still matter
+## Critical Context
+- Exact errors, commands, logs, IDs, state, assumptions, and anything easy to lose
 
-## Current Work
-- What was being worked on immediately before this summary request
-- How far along it is
-
-## Next Step
-- The next concrete step that should happen, written so another agent can continue directly
+## Relevant Files
+- Exact paths and why each matters
 
 Tone: brief a teammate taking over mid-task. Include enough detail that they can continue without asking the user to repeat anything. No filler. No emojis.
-
---- Conversation to summarize ---
-
 `
 
 // buildSummaryPrompt is the inner formatting helper extracted so the
 // retry loop above doesn't have to duplicate the string-builder code.
-func buildSummaryPrompt(toSummarize []providers.ChatMessage) string {
+func buildSummaryPrompt(toSummarize []providers.ChatMessage, previousSummary string) string {
 	var b strings.Builder
 	b.WriteString(compactInstructionPrompt)
+	previousSummary = strings.TrimSpace(previousSummary)
+	if previousSummary != "" {
+		b.WriteString("\n--- Previous anchored summary ---\n\n")
+		b.WriteString(previousSummary)
+		b.WriteString("\n\nUpdate the anchored summary above using the new conversation below. Preserve details that are still true, remove stale details, and merge new facts. Return one complete replacement summary with the required sections.\n\n")
+	}
+	b.WriteString("--- Conversation to summarize ---\n\n")
 	for _, msg := range toSummarize {
 		fmt.Fprintf(&b, "[%s]: %s\n", msg.Role, truncate(msg.Content, 500))
 		for _, tc := range msg.ToolCalls {

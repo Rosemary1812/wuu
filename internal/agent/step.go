@@ -107,12 +107,14 @@ type LoopConfig struct {
 	// MaxContextTokens is the model's context window. When non-zero,
 	// the loop tracks usage from response.usage plus local estimates
 	// and proactively triggers a compact pass once the conversation
-	// exceeds CompactThresholdPct of this value. Zero disables
-	// proactive compact (the reactive overflow path still works).
+	// exceeds the configured fraction or the output-reserved usable
+	// input window. Zero disables proactive compact (the reactive
+	// overflow path still works).
 	MaxContextTokens int
 	// CompactThresholdPct is the fraction of MaxContextTokens that
 	// triggers a proactive compact. Defaults to 0.9 (90%) when zero.
-	// Aligned with Codex CLI's auto_compact_token_limit default.
+	// The effective threshold may be lower when the model's expected
+	// output needs more reserved headroom.
 	CompactThresholdPct float64
 	// BeforeStep, when set, is called at the start of each model
 	// round. Any returned messages are appended to the live history
