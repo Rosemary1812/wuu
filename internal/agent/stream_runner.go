@@ -761,7 +761,7 @@ func (s *streamStep) runStreamWithReconnect(
 		}
 
 		emitLifecycle(providers.StreamPhaseFailed, attempt, streamErr, 0)
-		if onEvent != nil {
+		if onEvent != nil && !providers.IsContextOverflow(streamErr) {
 			onEvent(providers.StreamEvent{
 				Type:  providers.EventError,
 				Error: streamErr,

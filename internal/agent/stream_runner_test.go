@@ -1016,9 +1016,13 @@ func TestStreamRunner_ContextOverflowStreamErrorCompactsSingleUserTurn(t *testin
 	}
 
 	var compactSeen bool
+	var eventErrorSeen bool
 	res, err := runner.RunWithCallback(context.Background(), history, func(ev providers.StreamEvent) {
 		if ev.Type == providers.EventCompact {
 			compactSeen = true
+		}
+		if ev.Type == providers.EventError {
+			eventErrorSeen = true
 		}
 	})
 	if err != nil {
@@ -1032,6 +1036,9 @@ func TestStreamRunner_ContextOverflowStreamErrorCompactsSingleUserTurn(t *testin
 	}
 	if !compactSeen {
 		t.Fatal("expected compact stream event")
+	}
+	if eventErrorSeen {
+		t.Fatal("context overflow recovery should not surface a terminal error event")
 	}
 	if len(client.requests) != 3 {
 		t.Fatalf("expected stream, compact, stream requests, got %d", len(client.requests))
