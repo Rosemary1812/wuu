@@ -878,9 +878,15 @@ button:disabled {
 }
 
 .thread-row.active::before {
+  background: rgba(95, 126, 104, 0.42);
+  transform: scale(1);
+}
+
+.thread-row.running::before {
   background: var(--sidebar-accent);
   box-shadow: 0 0 0 3px rgba(95, 126, 104, 0.14);
   transform: scale(1);
+  animation: session-loading-pulse 900ms ease-in-out infinite;
 }
 
 .thread-child-agent-list {
@@ -8718,6 +8724,7 @@ pre {
   .project-row.pending-switch::before,
   .thread-row-loading,
   .thread-row.pending-switch::before,
+  .thread-row.running::before,
   .session-tab.running .session-tab-status,
   .session-tab.pending-switch .session-tab-status,
   .turn-progress.in_progress .turn-progress-label svg,
@@ -9865,8 +9872,7 @@ html.swiss-international .thread-child-agent-list::before {
   box-shadow: none;
 }
 
-html.swiss-international .thread-row.active::before,
-html.swiss-international .thread-row:hover::before,
+html.swiss-international .thread-row.running::before,
 html.swiss-international .thread-row.pending-switch::before,
 html.swiss-international .thread-row.pending-ask::before {
   background: #ef3b2d;

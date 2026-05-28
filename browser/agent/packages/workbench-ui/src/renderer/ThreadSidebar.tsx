@@ -209,12 +209,16 @@ function importantThreadVisible(
   pendingThreadID: string | undefined,
   pendingAskThreadIDs: Set<string>
 ): boolean {
-  if (thread.id === activeID || thread.id === pendingThreadID || pendingAskThreadIDs.has(thread.id)) {
+  if (thread.id === activeID || thread.id === pendingThreadID || pendingAskThreadIDs.has(thread.id) || threadRunning(thread)) {
     return true;
   }
   return (thread.child_agents ?? []).some(
     (agent) => agent.id === activeID || agent.id === pendingThreadID || pendingAskThreadIDs.has(agent.id)
   );
+}
+
+function threadRunning(thread: Thread): boolean {
+  return thread.status === "in_progress" || thread.turns.some((turn) => turn.status === "in_progress");
 }
 
 export function PinnedThreadList({
@@ -287,20 +291,22 @@ function ThreadRows({
         const archiveConfirming = archiveConfirmThreadID === thread.id;
         const pendingAsk = pendingAskThreadIDs.has(thread.id);
         const pendingSwitch = pendingThreadID === thread.id;
+        const running = threadRunning(thread);
         const title = threadDisplayTitle(thread, threads);
         return (
           <Fragment key={thread.id}>
             <div
-              className={`thread-row ${thread.id === activeID ? "active" : ""}${pendingAsk ? " pending-ask" : ""}${
-                pendingSwitch ? " pending-switch" : ""
-              }`}
+              className={`thread-row ${thread.id === activeID ? "active" : ""}${running ? " running" : ""}${
+                pendingAsk ? " pending-ask" : ""
+              }${pendingSwitch ? " pending-switch" : ""}`}
               aria-current={thread.id === activeID ? "page" : undefined}
               onMouseLeave={() => onClearArchiveConfirm(thread.id)}
             >
               <button
                 className="thread-row-main"
                 type="button"
-                aria-busy={pendingSwitch}
+                aria-busy={pendingSwitch || running}
+                aria-label={`${title}，${running ? "响应中" : "已完成"}`}
                 onClick={() => onSelect(thread.id)}
               >
                 <span className="thread-row-title">{title}</span>
