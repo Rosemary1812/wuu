@@ -21,7 +21,8 @@ import {
   Terminal,
   Trash2,
   Wrench,
-  X
+  X,
+  Zap
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -54,6 +55,7 @@ import {
   isComposerTextComposing,
   nextEnabledSlashCommandIndex,
   parseComposerSlashDraft,
+  runtimeFastModelTarget,
   type ComposerSlashCommand,
   type ComposerSlashDraft
 } from "./ComposerSlashCommands";
@@ -473,6 +475,7 @@ export function Composer({
     () => buildComposerSlashCommands({ activeContext, initialized, running }),
     [activeContext, initialized, running]
   );
+  const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
   const visibleSlashCommands = useMemo(
     () => filterComposerSlashCommands(slashCommands, slashQuery),
     [slashCommands, slashQuery]
@@ -532,6 +535,11 @@ export function Composer({
         break;
       case "model":
         onToggleCodexRuntimeMenu("model");
+        break;
+      case "fast":
+        if (fastModelTarget && !fastModelTarget.current) {
+          onSelectRuntimeModel(fastModelTarget.provider, fastModelTarget.model);
+        }
         break;
       case "effort":
         onToggleCodexRuntimeMenu("main");
@@ -858,6 +866,8 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
       return <FolderOpen size={16} />;
     case "no-project":
       return <FolderX size={16} />;
+    case "fast":
+      return <Zap size={16} />;
     case "model":
     case "effort":
       return <Laptop size={16} />;

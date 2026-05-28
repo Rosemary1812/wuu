@@ -9,6 +9,7 @@ export type ComposerSlashCommandAction =
   | "open-project"
   | "no-project"
   | "model"
+  | "fast"
   | "effort"
   | "settings";
 export type ComposerSlashCommandKind = "prompt" | "action";
@@ -29,6 +30,12 @@ export type ComposerSlashCommand = {
 export type ComposerSlashDraft = {
   query: string;
   args: string;
+};
+
+export type ComposerFastModelTarget = {
+  provider: string;
+  model: string;
+  current: boolean;
 };
 
 const COMPOSER_SLASH_COMMAND_LIMIT = 8;
@@ -70,7 +77,8 @@ export function buildComposerSlashCommands({
   const needsRuntime = activeContext && initialized ? undefined : "先选择工作区";
   const needsWorkspace = activeContext ? undefined : "先选择工作区";
   const needsIdleThread = running ? "当前任务运行中" : undefined;
-  return [
+  const fastTarget = runtimeFastModelTarget(initialized);
+  const commands: ComposerSlashCommand[] = [
     {
       id: "review",
       name: "review",
@@ -165,6 +173,22 @@ export function buildComposerSlashCommands({
       keywords: ["provider", "effort", "variant", "模型", "参数档位"],
       disabledReason: needsRuntime ?? needsIdleThread
     },
+    ...(fastTarget
+      ? [
+          {
+            id: "fast",
+            name: "fast",
+            title: "切换快速模式",
+            description: fastTarget.current ? "当前模型已经是 fast mode" : "切到当前模型的 fast mode",
+            tag: "配置",
+            kind: "action",
+            action: "fast",
+            aliases: ["quick"],
+            keywords: ["fast", "priority", "快速", "高速"],
+            disabledReason: needsRuntime ?? needsIdleThread ?? (fastTarget.current ? "当前已是快速模式" : undefined)
+          } satisfies ComposerSlashCommand
+        ]
+      : []),
     {
       id: "effort",
       name: "effort",
@@ -189,6 +213,33 @@ export function buildComposerSlashCommands({
       keywords: ["provider", "模型", "配置"]
     }
   ];
+  return commands;
+}
+
+export function runtimeFastModelTarget(initialized?: InitializeResult): ComposerFastModelTarget | undefined {
+  if (!initialized) {
+    return undefined;
+  }
+  const provider = initialized.providers?.find((item) => item.name === initialized.provider);
+  if (!provider) {
+    return undefined;
+  }
+  const currentModel = initialized.model.trim();
+  if (!currentModel) {
+    return undefined;
+  }
+  const currentFast = currentModel.toLowerCase().endsWith("-fast");
+  const baseModel = currentFast ? currentModel.slice(0, -"-fast".length) : currentModel;
+  const fastModel = `${baseModel}-fast`;
+  const hasFastModel = provider.models?.some((model) => model.id === fastModel);
+  if (!hasFastModel && !currentFast) {
+    return undefined;
+  }
+  return {
+    provider: provider.name,
+    model: currentFast ? currentModel : fastModel,
+    current: currentFast
+  };
 }
 
 export function filterComposerSlashCommands(commands: ComposerSlashCommand[], query: string): ComposerSlashCommand[] {
