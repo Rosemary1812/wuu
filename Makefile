@@ -1,4 +1,4 @@
-.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib browser-status browser-verify-product-defaults browser-prepare-checkouts browser-build-dev browser-build-agent browser-dev browser-patch-status browser-patch-check browser-patch-apply browser-package-macos browser-package-dev-macos browser-launch-product browser-launch-dev browser-migrate-doubao-profile browser-import-doubao-cookies browser-verify-dev browser-import-browseros browser-import-agent
+.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib
 
 VERSION_FILE := VERSION
 BASE_VERSION := $(shell cat $(VERSION_FILE) 2>/dev/null || echo "0.1.0")
@@ -30,60 +30,6 @@ vet:
 
 clean:
 	rm -rf bin/ dist/
-
-browser-status:
-	bash browser/scripts/status.sh
-
-browser-verify-product-defaults:
-	bash browser/scripts/verify-product-defaults.sh
-
-browser-prepare-checkouts:
-	bash browser/scripts/prepare-checkouts.sh $(ARGS)
-
-browser-build-dev:
-	bash browser/scripts/build-dev.sh $(ARGS)
-
-browser-build-agent:
-	bash browser/scripts/build-agent.sh $(ARGS)
-
-browser-dev:
-	WUU_BROWSER_STAGE_EXTENSION=1 WUU_BROWSER_STAGE_SERVER_RESOURCES=1 bash browser/scripts/launch-dev.sh $(ARGS)
-
-browser-patch-status:
-	bash browser/scripts/patch-checkout.sh status $(ARGS)
-
-browser-patch-check:
-	bash browser/scripts/patch-checkout.sh check $(ARGS)
-
-browser-patch-apply:
-	bash browser/scripts/patch-checkout.sh apply $(ARGS)
-
-browser-package-dev-macos:
-	bash browser/scripts/package-dev-macos.sh $(ARGS)
-
-browser-package-macos:
-	bash browser/scripts/package-macos.sh $(ARGS)
-
-browser-launch-product:
-	bash browser/scripts/launch-product.sh $(ARGS)
-
-browser-launch-dev:
-	bash browser/scripts/launch-dev.sh $(ARGS)
-
-browser-migrate-doubao-profile:
-	bash browser/scripts/migrate-doubao-profile.sh $(ARGS)
-
-browser-import-doubao-cookies:
-	node browser/scripts/import-doubao-cookies-cdp.mjs $(ARGS)
-
-browser-verify-dev:
-	bash browser/scripts/verify-dev.sh $(ARGS)
-
-browser-import-browseros:
-	bash browser/scripts/import-browseros-assets.sh $(ARGS)
-
-browser-import-agent:
-	bash browser/scripts/import-browseros-agent.sh $(ARGS)
 
 release-dry:
 	goreleaser check
