@@ -62,6 +62,8 @@ const api: WuuDesktopApi = {
   forkThread: (threadId: string, turnId?: string, itemId?: string) =>
     ipcRenderer.invoke("wuu:thread-fork", threadId, turnId, itemId),
   listThreads: () => ipcRenderer.invoke("wuu:thread-list"),
+  searchThreads: (query: string, limit?: number) =>
+    ipcRenderer.invoke("wuu:thread-search", query, limit),
   pinThread: (threadId: string, pinned: boolean) =>
     ipcRenderer.invoke("wuu:thread-pin", threadId, pinned),
   archiveThread: (threadId: string, archived: boolean) =>

@@ -2361,6 +2361,12 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:thread-list", () =>
     serverClient().request<{ threads: Thread[] }>("thread/list"),
   );
+  ipcMain.handle("wuu:thread-search", (_event, query: string, limit?: number) =>
+    serverClient().request("thread/search", {
+      query: query ?? "",
+      limit: typeof limit === "number" ? limit : undefined,
+    }),
+  );
   ipcMain.handle(
     "wuu:thread-pin",
     (_event, threadId: string, pinned: boolean) =>

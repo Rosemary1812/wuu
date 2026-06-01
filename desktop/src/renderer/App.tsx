@@ -86,6 +86,7 @@ import type {
   ServerEvent,
   Thread,
   ThreadItem,
+  ThreadSearchResultItem,
   Turn,
 } from "../shared/protocol";
 import {
@@ -209,6 +210,21 @@ type RunDebugEventSource = "client" | "server";
 type RunDebugEventTone = "info" | "running" | "success" | "warning" | "error";
 
 type RunDebugPhaseTone = "idle" | "running" | "success" | "warning" | "error";
+
+type ConversationSearchState = {
+  open: boolean;
+  query: string;
+  loading: boolean;
+  error: string;
+  results: ThreadSearchResultItem[];
+  selectedIndex: number;
+};
+
+type ConversationSearchResultSection = {
+  title: string;
+  results: ThreadSearchResultItem[];
+  startIndex: number;
+};
 
 type ComposerDraftState = {
   prompt: string;
@@ -345,6 +361,7 @@ const SWISS_STYLE_KEY = "wuu.desktop.swissInternationalStyle";
 const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
+const CONVERSATION_SEARCH_RESULT_LIMIT = 40;
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
     env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
@@ -496,6 +513,15 @@ export function App(): JSX.Element {
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
+  const [conversationSearch, setConversationSearch] =
+    useState<ConversationSearchState>({
+      open: false,
+      query: "",
+      loading: false,
+      error: "",
+      results: [],
+      selectedIndex: 0,
+    });
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -588,6 +614,9 @@ export function App(): JSX.Element {
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const runDebugRef = useRef<HTMLDivElement>(null);
+  const conversationSearchRef = useRef<HTMLDivElement>(null);
+  const conversationSearchInputRef = useRef<HTMLInputElement>(null);
+  const conversationSearchRequestRef = useRef(0);
   const appStateRef = useRef<AppState>(initialState);
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
@@ -873,6 +902,17 @@ export function App(): JSX.Element {
     runtimeMenuOpen,
   ]);
 
+  useEffect(() => {
+    if (!conversationSearch.open) {
+      return undefined;
+    }
+    const delay = conversationSearch.query.trim() ? 140 : 0;
+    const timer = window.setTimeout(() => {
+      void refreshConversationSearchThreads(conversationSearch.query);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [conversationSearch.open, conversationSearch.query]);
+
   useLayoutEffect(() => {
     conversationAutoFollowRef.current = true;
     scrollConversationToBottom({ force: true });
@@ -1084,6 +1124,7 @@ export function App(): JSX.Element {
   const showingWorkspaceMode =
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
+  const conversationSearchResults = conversationSearch.results;
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
       ? pendingViewSwitch.targetID
@@ -1546,6 +1587,155 @@ export function App(): JSX.Element {
       askRequests: [],
       answeredAskRequests: [],
     }));
+  }
+
+  function toggleConversationSearch(): void {
+    if (conversationSearch.open) {
+      closeConversationSearch();
+      return;
+    }
+    openConversationSearch();
+  }
+
+  function openConversationSearch(): void {
+    if (!state.activeContext) {
+      return;
+    }
+    setProjectMenuOpen(false);
+    setRuntimeMenuOpen(false);
+    setAccessMenuOpen(false);
+    setModeMenuOpen(false);
+    setBranchMenuOpen(false);
+    setCodexRuntimeMenu(null);
+    setConversationSearch((current) => ({
+      ...current,
+      open: true,
+      loading: true,
+      error: "",
+      selectedIndex: 0,
+    }));
+    window.requestAnimationFrame(() => conversationSearchInputRef.current?.focus());
+  }
+
+  function closeConversationSearch(): void {
+    conversationSearchRequestRef.current += 1;
+    setConversationSearch((current) => ({
+      ...current,
+      open: false,
+      loading: false,
+      error: "",
+    }));
+  }
+
+  async function refreshConversationSearchThreads(
+    query = conversationSearch.query,
+  ): Promise<void> {
+    const sourceContext = appStateRef.current.activeContext;
+    if (!sourceContext) {
+      return;
+    }
+    const requestID = conversationSearchRequestRef.current + 1;
+    conversationSearchRequestRef.current = requestID;
+    setConversationSearch((current) => ({
+      ...current,
+      loading: true,
+      error: "",
+    }));
+    try {
+      const search = await window.wuu.searchThreads(
+        query,
+        CONVERSATION_SEARCH_RESULT_LIMIT,
+      );
+      if (
+        requestID !== conversationSearchRequestRef.current ||
+        !sameRuntimeContext(sourceContext, appStateRef.current.activeContext)
+      ) {
+        return;
+      }
+      const threads = search.results.map((result) => result.thread);
+      setState((current) => ({
+        ...current,
+        threads: mergeListedThreads(current.threads, threads),
+      }));
+      setConversationSearch((current) => ({
+        ...current,
+        results: search.results,
+        loading: false,
+        error: "",
+        selectedIndex: Math.max(
+          0,
+          Math.min(current.selectedIndex, search.results.length - 1),
+        ),
+      }));
+    } catch (error) {
+      if (
+        requestID !== conversationSearchRequestRef.current ||
+        !sameRuntimeContext(sourceContext, appStateRef.current.activeContext)
+      ) {
+        return;
+      }
+      setConversationSearch((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "搜索会话失败",
+      }));
+    }
+  }
+
+  function selectConversationSearchResult(result: ThreadSearchResultItem): void {
+    closeConversationSearch();
+    void selectThread(result.thread.id);
+  }
+
+  function handleConversationSearchKeyDown(
+    event: ReactKeyboardEvent<HTMLInputElement>,
+  ): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeConversationSearch();
+      return;
+    }
+    if (event.key === "ArrowDown" && conversationSearchResults.length > 0) {
+      event.preventDefault();
+      setConversationSearch((current) => ({
+        ...current,
+        selectedIndex: (current.selectedIndex + 1) % conversationSearchResults.length,
+      }));
+      return;
+    }
+    if (event.key === "ArrowUp" && conversationSearchResults.length > 0) {
+      event.preventDefault();
+      setConversationSearch((current) => ({
+        ...current,
+        selectedIndex:
+          (current.selectedIndex - 1 + conversationSearchResults.length) %
+          conversationSearchResults.length,
+      }));
+      return;
+    }
+    if (event.metaKey && /^[1-9]$/.test(event.key)) {
+      const index = Number(event.key) - 1;
+      const result = conversationSearchResults[index];
+      if (result) {
+        event.preventDefault();
+        selectConversationSearchResult(result);
+      }
+      return;
+    }
+    const selectedResult =
+      conversationSearchResults[
+        Math.max(
+          0,
+          Math.min(
+            conversationSearch.selectedIndex,
+            conversationSearchResults.length - 1,
+          ),
+        )
+      ];
+    if (event.key === "Enter" && selectedResult) {
+      event.preventDefault();
+      selectConversationSearchResult(selectedResult);
+    }
   }
 
   function useSkillFromCatalog(name: string): void {
@@ -4581,6 +4771,15 @@ export function App(): JSX.Element {
         onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
       />
     ) : null;
+  const conversationSearchSections = conversationSearchResultSections(
+    conversationSearchResults,
+    conversationSearch.query,
+  );
+  const conversationSearchStatusText = conversationSearch.loading
+    ? "正在搜索"
+    : conversationSearch.query.trim()
+      ? `${conversationSearchResults.length} 个结果`
+      : "最近会话";
 
   return (
     <div className={shellClassName} style={shellStyle}>
@@ -4603,6 +4802,17 @@ export function App(): JSX.Element {
             >
               <Wrench size={18} />
               <span>Skills</span>
+            </button>
+            <button
+              className="nav-item conversation-search-trigger"
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={conversationSearch.open}
+              onClick={toggleConversationSearch}
+              disabled={!state.activeContext}
+            >
+              <Search size={18} />
+              <span>搜索会话</span>
             </button>
             {debugControlsVisible && ENABLE_CONVERSATION_FIXTURES ? (
               <div className="dev-fixture-nav" aria-label="开发调试会话">
@@ -4766,6 +4976,151 @@ export function App(): JSX.Element {
           onKeyDown={handleSidebarSeparatorKey}
         />
       )}
+
+      {conversationSearch.open ? (
+        <div
+          className="conversation-search-overlay"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeConversationSearch();
+            }
+          }}
+        >
+          <div
+            className="conversation-search-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="搜索会话"
+            ref={conversationSearchRef}
+          >
+            <div className="conversation-search-input-wrap">
+              <Search size={18} aria-hidden="true" />
+              <input
+                ref={conversationSearchInputRef}
+                value={conversationSearch.query}
+                placeholder="搜索对话内容或提问"
+                onChange={(event) =>
+                  setConversationSearch((current) => ({
+                    ...current,
+                    query: event.target.value,
+                    selectedIndex: 0,
+                  }))
+                }
+                onKeyDown={handleConversationSearchKeyDown}
+              />
+              {conversationSearch.query ? (
+                <button
+                  className="conversation-search-clear"
+                  type="button"
+                  aria-label="清空搜索"
+                  onClick={() =>
+                    setConversationSearch((current) => ({
+                      ...current,
+                      query: "",
+                      selectedIndex: 0,
+                    }))
+                  }
+                >
+                  <X size={15} />
+                </button>
+              ) : null}
+            </div>
+            <div className="conversation-search-status">
+              <span>{conversationSearchStatusText}</span>
+              <button
+                type="button"
+                onClick={() => void refreshConversationSearchThreads()}
+              >
+                刷新
+              </button>
+            </div>
+            {conversationSearch.error ? (
+              <div className="conversation-search-error">
+                {conversationSearch.error}
+              </div>
+            ) : null}
+            <div className="conversation-search-results">
+              {conversationSearchSections.map((section) => (
+                <section
+                  className="conversation-search-section"
+                  key={section.title}
+                >
+                  <div className="conversation-search-section-title">
+                    {section.title}
+                  </div>
+                  {section.results.map((result, sectionIndex) => {
+                    const resultIndex = section.startIndex + sectionIndex;
+                    const thread = result.thread;
+                    const title = threadDisplayTitle(
+                      thread,
+                      state.threads,
+                      "未命名对话",
+                    );
+                    const active = thread.id === activeThreadID;
+                    const pending = visiblePendingThreadID === thread.id;
+                    const selected =
+                      conversationSearch.selectedIndex === resultIndex;
+                    const contextLabel = conversationSearchContextLabel(
+                      thread,
+                      state.projects,
+                    );
+                    const snippet = result.snippet?.trim();
+                    return (
+                      <button
+                        key={thread.id}
+                        className={`conversation-search-result${active ? " active" : ""}${pending ? " pending" : ""}${selected ? " selected" : ""}`}
+                        type="button"
+                        aria-current={active ? "page" : undefined}
+                        aria-selected={selected}
+                        onMouseEnter={() =>
+                          setConversationSearch((current) => ({
+                            ...current,
+                            selectedIndex: resultIndex,
+                          }))
+                        }
+                        onClick={() => selectConversationSearchResult(result)}
+                      >
+                        <span className="conversation-search-result-main">
+                          <span className="conversation-search-result-title">
+                            {title}
+                          </span>
+                          {snippet ? (
+                            <span className="conversation-search-result-snippet">
+                              {snippet}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="conversation-search-result-side">
+                          <span className="conversation-search-result-context">
+                            {contextLabel}
+                          </span>
+                          <span className="conversation-search-result-meta">
+                            {conversationSearchThreadMeta(thread)}
+                          </span>
+                          {resultIndex < 9 ? (
+                            <span className="conversation-search-result-shortcut">
+                              ⌘{resultIndex + 1}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </section>
+              ))}
+              {conversationSearchResults.length === 0 ? (
+                <div className="conversation-search-empty">
+                  {conversationSearch.loading
+                    ? "正在搜索会话"
+                    : conversationSearch.query.trim()
+                      ? "没有匹配的会话"
+                      : "暂无会话"}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
@@ -5896,17 +6251,6 @@ function mergeListedThreads(current: Thread[], listed: Thread[]): Thread[] {
   );
 }
 
-function conversationSearchThreads(threads: Thread[], query: string): Thread[] {
-  const sorted = sortThreads(threads);
-  const normalizedQuery = normalizeConversationSearchText(query);
-  if (!normalizedQuery) {
-    return sorted;
-  }
-  return sorted.filter((thread) =>
-    conversationSearchHaystack(thread, sorted).includes(normalizedQuery),
-  );
-}
-
 function conversationSearchThreadMeta(thread: Thread): string {
   const updatedAt = threadTime(thread);
   const timeLabel =
@@ -5916,83 +6260,37 @@ function conversationSearchThreadMeta(thread: Thread): string {
   return thread.pinned ? `置顶 · ${timeLabel}` : timeLabel;
 }
 
-function conversationSearchSnippet(
-  thread: Thread,
+function conversationSearchResultSections(
+  results: ThreadSearchResultItem[],
   query: string,
-  title: string,
-): string {
-  const normalizedQuery = normalizeConversationSearchText(query);
-  const normalizedTitle = normalizeConversationSearchText(title);
-  const candidates = conversationSearchTextCandidates(thread, []);
-  if (!normalizedQuery) {
-    const fallback = candidates.find(
-      (candidate) => normalizeConversationSearchText(candidate) !== normalizedTitle,
-    );
-    return fallback ? conversationSearchExcerpt(fallback, "") : "";
+): ConversationSearchResultSection[] {
+  if (query.trim()) {
+    return results.length > 0
+      ? [{ title: "搜索结果", results, startIndex: 0 }]
+      : [];
   }
-  const match = candidates.find((candidate) =>
-    normalizeConversationSearchText(candidate).includes(normalizedQuery),
-  );
-  return match ? conversationSearchExcerpt(match, normalizedQuery) : "";
+  const pinned = results.filter((result) => result.thread.pinned);
+  const recent = results.filter((result) => !result.thread.pinned);
+  const sections: ConversationSearchResultSection[] = [];
+  if (pinned.length > 0) {
+    sections.push({ title: "置顶对话", results: pinned, startIndex: 0 });
+  }
+  if (recent.length > 0) {
+    sections.push({
+      title: "最近对话",
+      results: recent,
+      startIndex: pinned.length,
+    });
+  }
+  return sections;
 }
 
-function conversationSearchHaystack(thread: Thread, threads: Thread[]): string {
-  return conversationSearchTextCandidates(thread, threads)
-    .map(normalizeConversationSearchText)
-    .join("\n");
-}
-
-function conversationSearchTextCandidates(
+function conversationSearchContextLabel(
   thread: Thread,
-  threads: Thread[],
-): string[] {
-  const candidates = [
-    threadDisplayTitle(thread, threads),
-    thread.preview,
-    thread.cwd,
-    thread.model,
-  ];
-  for (const turn of thread.turns) {
-    for (const item of turn.items) {
-      candidates.push(...conversationSearchItemTexts(item));
-    }
-  }
-  return candidates
-    .map(compactConversationSearchText)
-    .filter((value, index, values) => value && values.indexOf(value) === index);
-}
-
-function conversationSearchItemTexts(item: ThreadItem): string[] {
-  const values = [
-    item.text,
-    item.name,
-    item.display?.text,
-    item.error,
-  ];
-  return values.filter((value): value is string => Boolean(value?.trim()));
-}
-
-function conversationSearchExcerpt(text: string, normalizedQuery: string): string {
-  const compact = compactConversationSearchText(text);
-  if (compact.length <= 120) {
-    return compact;
-  }
-  const matchIndex = normalizedQuery
-    ? normalizeConversationSearchText(compact).indexOf(normalizedQuery)
-    : -1;
-  const start = matchIndex < 0 ? 0 : Math.max(0, matchIndex - 30);
-  const end = Math.min(compact.length, start + 120);
-  const prefix = start > 0 ? "..." : "";
-  const suffix = end < compact.length ? "..." : "";
-  return `${prefix}${compact.slice(start, end)}${suffix}`;
-}
-
-function normalizeConversationSearchText(value: string): string {
-  return compactConversationSearchText(value).toLocaleLowerCase();
-}
-
-function compactConversationSearchText(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  projects: DesktopProject[],
+): string {
+  const project = projects.find((candidate) => candidate.path === thread.cwd);
+  return project?.name ?? fileNameFromPath(thread.cwd) ?? "wuu";
 }
 
 function pinnedThreads(threads: Thread[]): Thread[] {

@@ -343,6 +343,15 @@ export type Thread = {
   child_agents?: Agent[];
 };
 
+export type ThreadSearchResultItem = {
+  thread: Thread;
+  snippet?: string;
+};
+
+export type ThreadSearchResult = {
+  results: ThreadSearchResultItem[];
+};
+
 export type Turn = {
   id: string;
   items: ThreadItem[];
@@ -451,6 +460,7 @@ export type WuuDesktopApi = {
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;
   listThreads: () => Promise<{ threads: Thread[] }>;
+  searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
   startTurn: (threadId: string, prompt: string, images?: InputImage[]) => Promise<{ turn: Turn }>;
