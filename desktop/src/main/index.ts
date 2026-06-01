@@ -1,5 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, type OpenDialogOptions } from "electron";
-import { spawn as spawnChild, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  net,
+  protocol,
+  type OpenDialogOptions,
+} from "electron";
+import {
+  spawn as spawnChild,
+  spawnSync,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import {
   accessSync,
   chmodSync,
@@ -14,11 +26,19 @@ import {
   realpathSync,
   statSync,
   writeFileSync,
-  type Dirent
+  type Dirent,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as pty from "node-pty";
 import type {
@@ -51,12 +71,21 @@ import type {
   Thread,
   Turn,
   WorkspaceDirectoryListResult,
-  WorkspaceFileReadResult
-} from "@browseros/workbench-ui/shared/protocol";
+  WorkspaceFileReadResult,
+} from "../shared/protocol";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const requireFromMain = createRequire(import.meta.url);
-const RENDERABLE_IMAGE_EXTENSIONS = new Set([".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"]);
+const RENDERABLE_IMAGE_EXTENSIONS = new Set([
+  ".apng",
+  ".avif",
+  ".gif",
+  ".jpeg",
+  ".jpg",
+  ".png",
+  ".svg",
+  ".webp",
+]);
 const FILE_TREE_MAX_PATHS = 4000;
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
 const GIT_DIFF_PREVIEW_MAX_BYTES = 512 * 1024;
@@ -75,7 +104,7 @@ const FILE_TREE_IGNORED_DIRS = new Set([
   "dist",
   "node_modules",
   "out",
-  "target"
+  "target",
 ]);
 const FILE_TREE_IGNORED_FILES = new Set([".DS_Store"]);
 
@@ -85,9 +114,9 @@ protocol.registerSchemesAsPrivileged([
     privileges: {
       standard: true,
       secure: true,
-      supportFetchAPI: false
-    }
-  }
+      supportFetchAPI: false,
+    },
+  },
 ]);
 
 type PendingRequest = {
@@ -123,8 +152,11 @@ class AppServerClient {
 
   constructor(
     readonly workdir: string,
-    private readonly emit: (client: AppServerClient, event: AppServerClientEvent) => void,
-    private readonly onStateChange: () => void
+    private readonly emit: (
+      client: AppServerClient,
+      event: AppServerClientEvent,
+    ) => void,
+    private readonly onStateChange: () => void,
   ) {}
 
   request<T>(method: string, params?: unknown): Promise<T> {
@@ -137,7 +169,7 @@ class AppServerClient {
         method,
         params,
         resolve: (value) => resolveRequest(value as T),
-        reject: rejectRequest
+        reject: rejectRequest,
       });
       this.write(payload);
     });
@@ -156,8 +188,8 @@ class AppServerClient {
       id,
       error: {
         code: "error",
-        message
-      }
+        message,
+      },
     });
   }
 
@@ -198,11 +230,15 @@ class AppServerClient {
       return;
     }
     const command = resolveWuuCommand(this.workdir);
-    this.child = spawnChild(command.command, [...command.args, "app-server", "--workdir", this.workdir], {
-      cwd: command.cwd,
-      env: process.env,
-      stdio: ["pipe", "pipe", "pipe"]
-    });
+    this.child = spawnChild(
+      command.command,
+      [...command.args, "app-server", "--workdir", this.workdir],
+      {
+        cwd: command.cwd,
+        env: process.env,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
 
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.readStdout(chunk));
@@ -250,11 +286,17 @@ class AppServerClient {
   }
 
   private handleLine(line: string): void {
-    let message: AppServerResponse | AppServerNotification | Required<AppServerRequest>;
+    let message:
+      | AppServerResponse
+      | AppServerNotification
+      | Required<AppServerRequest>;
     try {
       message = JSON.parse(line);
     } catch {
-      this.emit(this, { kind: "server-error", message: `Invalid app-server JSON: ${line}` });
+      this.emit(this, {
+        kind: "server-error",
+        message: `Invalid app-server JSON: ${line}`,
+      });
       return;
     }
 
@@ -279,7 +321,11 @@ class AppServerClient {
       return;
     }
     this.pending.delete(key);
-    this.updateRunningFromResponse(pending.method, pending.params, response.result);
+    this.updateRunningFromResponse(
+      pending.method,
+      pending.params,
+      response.result,
+    );
     this.onStateChange();
     if (response.error) {
       pending.reject(new Error(response.error.message));
@@ -290,7 +336,8 @@ class AppServerClient {
 
   private updateRunningFromNotification(message: AppServerNotification): void {
     const params = isRecord(message.params) ? message.params : undefined;
-    const threadID = typeof params?.thread_id === "string" ? params.thread_id : undefined;
+    const threadID =
+      typeof params?.thread_id === "string" ? params.thread_id : undefined;
     switch (message.method) {
       case "turn/started":
         if (threadID) {
@@ -310,21 +357,35 @@ class AppServerClient {
     }
   }
 
-  private updateRunningFromResponse(method: string, params: unknown, result: unknown): void {
-    if (method === "thread/list" && isRecord(result) && Array.isArray(result.threads)) {
+  private updateRunningFromResponse(
+    method: string,
+    params: unknown,
+    result: unknown,
+  ): void {
+    if (
+      method === "thread/list" &&
+      isRecord(result) &&
+      Array.isArray(result.threads)
+    ) {
       for (const thread of result.threads) {
         this.updateRunningFromThread(thread);
       }
       return;
     }
     if (
-      (method === "thread/start" || method === "thread/resume" || method === "thread/fork") &&
+      (method === "thread/start" ||
+        method === "thread/resume" ||
+        method === "thread/fork") &&
       isRecord(result)
     ) {
       this.updateRunningFromThread(result.thread);
       return;
     }
-    if (method === "turn/start" && isRecord(params) && typeof params.thread_id === "string") {
+    if (
+      method === "turn/start" &&
+      isRecord(params) &&
+      typeof params.thread_id === "string"
+    ) {
       const turn = isRecord(result) ? result.turn : undefined;
       if (isRecord(turn) && turn.status === "in_progress") {
         this.runningThreadIDs.add(params.thread_id);
@@ -373,9 +434,13 @@ function wuuSourceRoot(): string | undefined {
     resolve(process.cwd(), ".."),
     app.getAppPath(),
     resolve(app.getAppPath(), ".."),
-    resolve(__dirname, "..", "..", "..")
+    resolve(__dirname, "..", "..", ".."),
   ].filter((candidate): candidate is string => Boolean(candidate));
-  return candidates.find((candidate) => existsSync(join(candidate, "go.mod")) && existsSync(join(candidate, "cmd", "wuu")));
+  return candidates.find(
+    (candidate) =>
+      existsSync(join(candidate, "go.mod")) &&
+      existsSync(join(candidate, "cmd", "wuu")),
+  );
 }
 
 type ProjectStore = {
@@ -425,7 +490,10 @@ function wuuHomePath(): string {
 function loadProjectStore(): ProjectStore {
   const loaded = readProjectStoreFile(projectStorePath());
   const legacy = readProjectStoreFile(legacyProjectStorePath());
-  const { store, changed } = mergeProjectStores(loaded ?? { projects: [] }, legacy);
+  const { store, changed } = mergeProjectStores(
+    loaded ?? { projects: [] },
+    legacy,
+  );
   if (!loaded || changed) {
     writeProjectStoreFile(projectStorePath(), store);
   }
@@ -434,23 +502,32 @@ function loadProjectStore(): ProjectStore {
 
 function readProjectStoreFile(path: string): ProjectStore | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ProjectStore> & {
+    const parsed = JSON.parse(
+      readFileSync(path, "utf8"),
+    ) as Partial<ProjectStore> & {
       active_project_id?: unknown;
     };
     const projects = Array.isArray(parsed.projects)
-      ? parsed.projects.filter((project): project is DesktopProject => isDesktopProject(project))
+      ? parsed.projects.filter((project): project is DesktopProject =>
+          isDesktopProject(project),
+        )
       : [];
-    const activeContext = normalizeRuntimeContext(parsed.active_context, projects) ?? legacyProjectContext(parsed.active_project_id, projects);
+    const activeContext =
+      normalizeRuntimeContext(parsed.active_context, projects) ??
+      legacyProjectContext(parsed.active_project_id, projects);
     return {
       projects,
-      active_context: activeContext
+      active_context: activeContext,
     };
   } catch {
     return undefined;
   }
 }
 
-function mergeProjectStores(base: ProjectStore, incoming: ProjectStore | undefined): { store: ProjectStore; changed: boolean } {
+function mergeProjectStores(
+  base: ProjectStore,
+  incoming: ProjectStore | undefined,
+): { store: ProjectStore; changed: boolean } {
   if (!incoming) {
     return { store: base, changed: false };
   }
@@ -488,14 +565,21 @@ function isDesktopProject(value: unknown): value is DesktopProject {
   );
 }
 
-function normalizeRuntimeContext(value: unknown, projects: DesktopProject[]): RuntimeContext | undefined {
+function normalizeRuntimeContext(
+  value: unknown,
+  projects: DesktopProject[],
+): RuntimeContext | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
   const context = value as Partial<RuntimeContext>;
   if (context.kind === "project" && typeof context.project_id === "string") {
-    const project = projects.find((candidate) => candidate.id === context.project_id);
-    return project ? { kind: "project", project_id: project.id, cwd: project.path } : undefined;
+    const project = projects.find(
+      (candidate) => candidate.id === context.project_id,
+    );
+    return project
+      ? { kind: "project", project_id: project.id, cwd: project.path }
+      : undefined;
   }
   if (context.kind === "no_project" && typeof context.cwd === "string") {
     const cwd = resolve(context.cwd);
@@ -505,12 +589,17 @@ function normalizeRuntimeContext(value: unknown, projects: DesktopProject[]): Ru
   return undefined;
 }
 
-function legacyProjectContext(value: unknown, projects: DesktopProject[]): RuntimeContext | undefined {
+function legacyProjectContext(
+  value: unknown,
+  projects: DesktopProject[],
+): RuntimeContext | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
   const project = projects.find((candidate) => candidate.id === value);
-  return project ? { kind: "project", project_id: project.id, cwd: project.path } : undefined;
+  return project
+    ? { kind: "project", project_id: project.id, cwd: project.path }
+    : undefined;
 }
 
 function saveProjectStore(): void {
@@ -528,33 +617,61 @@ function projectListResult(): ProjectListResult {
   return {
     projects: projectStore.projects,
     active_context: context,
-    active_project_id: context.kind === "project" ? context.project_id : undefined
+    active_project_id:
+      context.kind === "project" ? context.project_id : undefined,
   };
 }
 
 function gitStatusResult(options: GitStatusOptions = {}): GitStatusResult {
   const context = ensureRuntimeContext();
-  const root = gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
-  const insideWorkTree = gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
+  const root =
+    gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
+  const insideWorkTree =
+    gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
   if (!insideWorkTree) {
-    return { is_repo: false, dirty_count: 0, diff: emptyGitDiffStats(), staged_diff: emptyGitDiffStats() };
+    return {
+      is_repo: false,
+      dirty_count: 0,
+      diff: emptyGitDiffStats(),
+      staged_diff: emptyGitDiffStats(),
+    };
   }
 
   const branchName = gitOutput(root, ["branch", "--show-current"]);
   const head = gitOutput(root, ["rev-parse", "--short", "HEAD"]);
   const branch = branchName || head;
-  const branches = gitOutput(root, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+  const branches = gitOutput(root, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/heads",
+  ])
     ?.split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
   const porcelain = gitOutput(root, ["status", "--porcelain"]);
-  const dirtyCount = porcelain ? porcelain.split("\n").filter((line) => line.trim()).length : 0;
-  const upstream = gitOutput(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+  const dirtyCount = porcelain
+    ? porcelain.split("\n").filter((line) => line.trim()).length
+    : 0;
+  const upstream = gitOutput(root, [
+    "rev-parse",
+    "--abbrev-ref",
+    "--symbolic-full-name",
+    "@{u}",
+  ]);
   const [aheadCount, behindCount] = upstream ? gitAheadBehind(root) : [0, 0];
   const remote = upstream?.split("/")[0] || firstGitRemote(root);
-  const defaultBranch = remote ? gitDefaultBranch(root, remote, Boolean(options.includeRemoteDefaultBranchFallback)) : undefined;
+  const defaultBranch = remote
+    ? gitDefaultBranch(
+        root,
+        remote,
+        Boolean(options.includeRemoteDefaultBranchFallback),
+      )
+    : undefined;
   const ghAvailable = commandAvailable("gh", ["--version"]);
-  const prURL = options.includePullRequestURL && branchName && ghAvailable ? ghPullRequestURL(root) : undefined;
+  const prURL =
+    options.includePullRequestURL && branchName && ghAvailable
+      ? ghPullRequestURL(root)
+      : undefined;
 
   return {
     is_repo: true,
@@ -570,31 +687,44 @@ function gitStatusResult(options: GitStatusOptions = {}): GitStatusResult {
     remote,
     default_branch: defaultBranch,
     gh_available: ghAvailable,
-    pr_url: prURL
+    pr_url: prURL,
   };
 }
 
 function gitChangesResult(): GitChangesResult {
   const context = ensureRuntimeContext();
-  const root = gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
-  const insideWorkTree = gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
+  const root =
+    gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
+  const insideWorkTree =
+    gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
   if (!insideWorkTree) {
     return { is_repo: false, files: [] };
   }
 
   const filesByPath = new Map<string, GitChangeFile>();
-  for (const file of parseGitNameStatus(gitOutput(root, ["diff", "--name-status", "--find-renames", "HEAD", "--"]) ?? "")) {
+  for (const file of parseGitNameStatus(
+    gitOutput(root, [
+      "diff",
+      "--name-status",
+      "--find-renames",
+      "HEAD",
+      "--",
+    ]) ?? "",
+  )) {
     filesByPath.set(file.path, file);
   }
 
-  for (const file of parseGitNumstatFiles(gitOutput(root, ["diff", "--numstat", "--find-renames", "HEAD", "--"]) ?? "")) {
+  for (const file of parseGitNumstatFiles(
+    gitOutput(root, ["diff", "--numstat", "--find-renames", "HEAD", "--"]) ??
+      "",
+  )) {
     const existing = filesByPath.get(file.path);
     filesByPath.set(file.path, {
       ...file,
       ...existing,
       additions: file.additions,
       deletions: file.deletions,
-      binary: existing?.binary || file.binary
+      binary: existing?.binary || file.binary,
     });
   }
 
@@ -605,31 +735,37 @@ function gitChangesResult(): GitChangesResult {
       status: "untracked",
       additions: stats.additions,
       deletions: 0,
-      binary: stats.binary
+      binary: stats.binary,
     });
   }
 
   return {
     is_repo: true,
     root,
-    files: Array.from(filesByPath.values()).sort((left, right) => left.path.localeCompare(right.path))
+    files: Array.from(filesByPath.values()).sort((left, right) =>
+      left.path.localeCompare(right.path),
+    ),
   };
 }
 
 function gitFileDiffResult(path: string): GitFileDiffResult {
   const context = ensureRuntimeContext();
-  const root = gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
-  const insideWorkTree = gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
+  const root =
+    gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
+  const insideWorkTree =
+    gitOutput(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
   const { relativePath, absolutePath } = resolveGitRelativePath(root, path);
   if (!insideWorkTree) {
     return emptyGitFileDiffResult(relativePath, false);
   }
 
-  const change = gitChangesResult().files.find((file) => file.path === relativePath) ?? {
+  const change = gitChangesResult().files.find(
+    (file) => file.path === relativePath,
+  ) ?? {
     path: relativePath,
     status: "unknown" as const,
     additions: 0,
-    deletions: 0
+    deletions: 0,
   };
 
   if (change.status === "untracked") {
@@ -637,8 +773,14 @@ function gitFileDiffResult(path: string): GitFileDiffResult {
   }
 
   const rawPatch = gitDiffOutput(root, relativePath);
-  const truncatedPatch = truncateTextBytes(rawPatch, GIT_DIFF_PREVIEW_MAX_BYTES);
-  const binary = change.binary || rawPatch.includes("Binary files ") || rawPatch.includes("GIT binary patch");
+  const truncatedPatch = truncateTextBytes(
+    rawPatch,
+    GIT_DIFF_PREVIEW_MAX_BYTES,
+  );
+  const binary =
+    change.binary ||
+    rawPatch.includes("Binary files ") ||
+    rawPatch.includes("GIT binary patch");
   return {
     is_repo: true,
     path: change.path,
@@ -648,7 +790,7 @@ function gitFileDiffResult(path: string): GitFileDiffResult {
     deletions: change.deletions,
     binary,
     patch: truncatedPatch.text,
-    truncated: truncatedPatch.truncated
+    truncated: truncatedPatch.truncated,
   };
 }
 
@@ -665,7 +807,7 @@ function checkoutGitBranch(branch: string): GitStatusResult {
   const result = spawnSync("git", ["-C", context.cwd, "checkout", target], {
     cwd: context.cwd,
     encoding: "utf8",
-    env: process.env
+    env: process.env,
   });
   if (result.status !== 0) {
     throw new Error(result.stderr.trim() || `failed to checkout ${target}`);
@@ -707,13 +849,16 @@ function commitGitChanges(params: GitCommitParams): GitCommitResult {
   return {
     status: gitStatusResult(),
     commit,
-    message
+    message,
   };
 }
 
 function createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
   const context = ensureRuntimeContext();
-  const status = gitStatusResult({ includePullRequestURL: true, includeRemoteDefaultBranchFallback: true });
+  const status = gitStatusResult({
+    includePullRequestURL: true,
+    includeRemoteDefaultBranchFallback: true,
+  });
   if (!status.is_repo) {
     throw new Error("current workspace is not a git repository");
   }
@@ -728,7 +873,9 @@ function createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
     throw new Error("create a feature branch before opening a pull request");
   }
   if (status.dirty_count > 0) {
-    throw new Error("commit or discard local changes before opening a pull request");
+    throw new Error(
+      "commit or discard local changes before opening a pull request",
+    );
   }
 
   const existingURL = status.pr_url;
@@ -757,9 +904,12 @@ function createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
     throw new Error("GitHub CLI did not return a pull request URL");
   }
   return {
-    status: { ...gitStatusResult({ includeRemoteDefaultBranchFallback: true }), pr_url: url },
+    status: {
+      ...gitStatusResult({ includeRemoteDefaultBranchFallback: true }),
+      pr_url: url,
+    },
     url,
-    already_exists: false
+    already_exists: false,
   };
 }
 
@@ -767,11 +917,15 @@ function validateGitBranchName(cwd: string, branch: string): void {
   if (!branch) {
     throw new Error("branch name is required");
   }
-  const result = spawnSync("git", ["-C", cwd, "check-ref-format", "--branch", branch], {
-    cwd,
-    encoding: "utf8",
-    env: process.env
-  });
+  const result = spawnSync(
+    "git",
+    ["-C", cwd, "check-ref-format", "--branch", branch],
+    {
+      cwd,
+      encoding: "utf8",
+      env: process.env,
+    },
+  );
   if (result.status !== 0) {
     throw new Error(result.stderr.trim() || "invalid branch name");
   }
@@ -781,10 +935,14 @@ function gitRun(cwd: string, args: string[]): string {
   const result = spawnSync("git", ["-C", cwd, ...args], {
     cwd,
     encoding: "utf8",
-    env: process.env
+    env: process.env,
   });
   if (result.status !== 0) {
-    throw new Error(result.stderr.trim() || result.stdout.trim() || `git ${args.join(" ")} failed`);
+    throw new Error(
+      result.stderr.trim() ||
+        result.stdout.trim() ||
+        `git ${args.join(" ")} failed`,
+    );
   }
   return result.stdout.trim();
 }
@@ -793,7 +951,7 @@ function gitOutput(cwd: string, args: string[]): string | undefined {
   const result = spawnSync("git", ["-C", cwd, ...args], {
     cwd,
     encoding: "utf8",
-    env: process.env
+    env: process.env,
   });
   if (result.status !== 0) {
     return undefined;
@@ -806,11 +964,17 @@ function emptyGitDiffStats(): GitDiffStats {
 }
 
 function gitDiffStats(cwd: string, includeUntracked: boolean): GitDiffStats {
-  const stats = parseGitNumstat(gitOutput(cwd, ["diff", "--numstat", "HEAD", "--"]) ?? "");
+  const stats = parseGitNumstat(
+    gitOutput(cwd, ["diff", "--numstat", "HEAD", "--"]) ?? "",
+  );
   if (!includeUntracked) {
     return stats;
   }
-  const untracked = gitOutput(cwd, ["ls-files", "--others", "--exclude-standard"])
+  const untracked = gitOutput(cwd, [
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+  ])
     ?.split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
@@ -824,23 +988,41 @@ function gitDiffStats(cwd: string, includeUntracked: boolean): GitDiffStats {
   return {
     files: stats.files + untracked.length,
     additions: stats.additions + additions,
-    deletions: stats.deletions
+    deletions: stats.deletions,
   };
 }
 
 function gitStagedDiffStats(cwd: string): GitDiffStats {
-  return parseGitNumstat(gitOutput(cwd, ["diff", "--cached", "--numstat", "--"]) ?? "");
+  return parseGitNumstat(
+    gitOutput(cwd, ["diff", "--cached", "--numstat", "--"]) ?? "",
+  );
 }
 
 function gitDiffOutput(cwd: string, relativePath: string): string {
-  const result = spawnSync("git", ["-C", cwd, "diff", "--no-ext-diff", "--find-renames", "--unified=3", "HEAD", "--", relativePath], {
-    cwd,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: GIT_DIFF_COMMAND_MAX_BUFFER
-  });
+  const result = spawnSync(
+    "git",
+    [
+      "-C",
+      cwd,
+      "diff",
+      "--no-ext-diff",
+      "--find-renames",
+      "--unified=3",
+      "HEAD",
+      "--",
+      relativePath,
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      env: process.env,
+      maxBuffer: GIT_DIFF_COMMAND_MAX_BUFFER,
+    },
+  );
   if (result.status !== 0 && !result.stdout) {
-    throw new Error(result.stderr.trim() || `git diff failed for ${relativePath}`);
+    throw new Error(
+      result.stderr.trim() || `git diff failed for ${relativePath}`,
+    );
   }
   return result.stdout;
 }
@@ -874,8 +1056,10 @@ function parseGitNameStatus(output: string): GitChangeFile[] {
     const columns = trimmed.split("\t");
     const statusCode = columns[0] ?? "";
     const status = gitChangeStatus(statusCode);
-    const oldPath = status === "renamed" || status === "copied" ? columns[1] : undefined;
-    const path = status === "renamed" || status === "copied" ? columns[2] : columns[1];
+    const oldPath =
+      status === "renamed" || status === "copied" ? columns[1] : undefined;
+    const path =
+      status === "renamed" || status === "copied" ? columns[2] : columns[1];
     if (!path) {
       continue;
     }
@@ -884,7 +1068,7 @@ function parseGitNameStatus(output: string): GitChangeFile[] {
       old_path: oldPath,
       status,
       additions: 0,
-      deletions: 0
+      deletions: 0,
     });
   }
   return files;
@@ -912,7 +1096,7 @@ function parseGitNumstatFiles(output: string): GitChangeFile[] {
       status: "unknown",
       additions: additions === "-" ? 0 : Number(additions) || 0,
       deletions: deletions === "-" ? 0 : Number(deletions) || 0,
-      binary: additions === "-" || deletions === "-"
+      binary: additions === "-" || deletions === "-",
     });
   }
   return files;
@@ -944,25 +1128,35 @@ function listUntrackedGitFiles(cwd: string): string[] {
   );
 }
 
-function untrackedGitFileStats(root: string, path: string): { additions: number; binary: boolean } {
+function untrackedGitFileStats(
+  root: string,
+  path: string,
+): { additions: number; binary: boolean } {
   const { absolutePath } = resolveGitRelativePath(root, path);
   try {
     const stats = statSync(absolutePath);
     if (!stats.isFile()) {
       return { additions: 0, binary: false };
     }
-    const previewBuffer = readFilePreviewBuffer(absolutePath, Math.min(stats.size, FILE_PREVIEW_MAX_BYTES));
+    const previewBuffer = readFilePreviewBuffer(
+      absolutePath,
+      Math.min(stats.size, FILE_PREVIEW_MAX_BYTES),
+    );
     const binary = previewBuffer.includes(0);
     return {
       additions: binary ? 0 : countTextFileLines(absolutePath),
-      binary
+      binary,
     };
   } catch {
     return { additions: 0, binary: false };
   }
 }
 
-function gitUntrackedFileDiffResult(root: string, absolutePath: string, change: GitChangeFile): GitFileDiffResult {
+function gitUntrackedFileDiffResult(
+  root: string,
+  absolutePath: string,
+  change: GitChangeFile,
+): GitFileDiffResult {
   try {
     const stats = statSync(absolutePath);
     if (!stats.isFile()) {
@@ -971,9 +1165,18 @@ function gitUntrackedFileDiffResult(root: string, absolutePath: string, change: 
     const readLimit = Math.min(stats.size, GIT_DIFF_PREVIEW_MAX_BYTES + 1);
     const buffer = readFilePreviewBuffer(absolutePath, readLimit);
     const truncated = stats.size > GIT_DIFF_PREVIEW_MAX_BYTES;
-    const previewBuffer = buffer.subarray(0, truncated ? GIT_DIFF_PREVIEW_MAX_BYTES : buffer.length);
+    const previewBuffer = buffer.subarray(
+      0,
+      truncated ? GIT_DIFF_PREVIEW_MAX_BYTES : buffer.length,
+    );
     const binary = previewBuffer.includes(0);
-    const patch = binary ? `Binary file ${change.path} is untracked` : buildUntrackedPatch(change.path, previewBuffer.toString("utf8"), truncated);
+    const patch = binary
+      ? `Binary file ${change.path} is untracked`
+      : buildUntrackedPatch(
+          change.path,
+          previewBuffer.toString("utf8"),
+          truncated,
+        );
     return {
       is_repo: true,
       path: change.path,
@@ -983,14 +1186,18 @@ function gitUntrackedFileDiffResult(root: string, absolutePath: string, change: 
       deletions: change.deletions,
       binary,
       patch,
-      truncated
+      truncated,
     };
   } catch {
     return emptyGitFileDiffResult(change.path, true);
   }
 }
 
-function buildUntrackedPatch(path: string, text: string, truncated: boolean): string {
+function buildUntrackedPatch(
+  path: string,
+  text: string,
+  truncated: boolean,
+): string {
   const lines = splitPatchTextLines(text);
   const patchLines = [
     `diff --git a/${path} b/${path}`,
@@ -998,7 +1205,7 @@ function buildUntrackedPatch(path: string, text: string, truncated: boolean): st
     "--- /dev/null",
     `+++ b/${path}`,
     `@@ -0,0 +1,${lines.length} @@`,
-    ...lines.map((line) => `+${line}`)
+    ...lines.map((line) => `+${line}`),
   ];
   if (truncated) {
     patchLines.push("+");
@@ -1027,28 +1234,41 @@ function readFilePreviewBuffer(filePath: string, readLimit: number): Buffer {
   return buffer.subarray(0, bytesRead);
 }
 
-function resolveGitRelativePath(root: string, path: string): { relativePath: string; absolutePath: string } {
+function resolveGitRelativePath(
+  root: string,
+  path: string,
+): { relativePath: string; absolutePath: string } {
   const relativePath = normalizeWorkspaceRelativePath(path);
   const absolutePath = resolve(root, relativePath);
   const relativeToRoot = relative(root, absolutePath);
-  if (!relativeToRoot || relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot)) {
+  if (
+    !relativeToRoot ||
+    relativeToRoot.startsWith("..") ||
+    isAbsolute(relativeToRoot)
+  ) {
     throw new Error("file is outside the current git repository");
   }
   return { relativePath, absolutePath };
 }
 
-function truncateTextBytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
+function truncateTextBytes(
+  text: string,
+  maxBytes: number,
+): { text: string; truncated: boolean } {
   const buffer = Buffer.from(text, "utf8");
   if (buffer.byteLength <= maxBytes) {
     return { text, truncated: false };
   }
   return {
     text: `${buffer.subarray(0, maxBytes).toString("utf8")}\n[diff truncated]\n`,
-    truncated: true
+    truncated: true,
   };
 }
 
-function emptyGitFileDiffResult(path: string, isRepo: boolean): GitFileDiffResult {
+function emptyGitFileDiffResult(
+  path: string,
+  isRepo: boolean,
+): GitFileDiffResult {
   return {
     is_repo: isRepo,
     path,
@@ -1057,7 +1277,7 @@ function emptyGitFileDiffResult(path: string, isRepo: boolean): GitFileDiffResul
     deletions: 0,
     binary: false,
     patch: "",
-    truncated: false
+    truncated: false,
   };
 }
 
@@ -1075,15 +1295,24 @@ function countTextFileLines(filePath: string): number {
     if (!text) {
       return 0;
     }
-    return text.endsWith("\n") ? text.split("\n").length - 1 : text.split(/\r\n|\n|\r/).length;
+    return text.endsWith("\n")
+      ? text.split("\n").length - 1
+      : text.split(/\r\n|\n|\r/).length;
   } catch {
     return 0;
   }
 }
 
 function gitAheadBehind(cwd: string): [number, number] {
-  const output = gitOutput(cwd, ["rev-list", "--left-right", "--count", "HEAD...@{u}"]);
-  const [ahead, behind] = output?.split(/\s+/, 2).map((item) => Number(item) || 0) ?? [0, 0];
+  const output = gitOutput(cwd, [
+    "rev-list",
+    "--left-right",
+    "--count",
+    "HEAD...@{u}",
+  ]);
+  const [ahead, behind] = output
+    ?.split(/\s+/, 2)
+    .map((item) => Number(item) || 0) ?? [0, 0];
   return [ahead, behind];
 }
 
@@ -1094,8 +1323,16 @@ function firstGitRemote(cwd: string): string | undefined {
     .find(Boolean);
 }
 
-function gitDefaultBranch(cwd: string, remote: string, includeRemoteFallback = false): string | undefined {
-  const symbolic = gitOutput(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`]);
+function gitDefaultBranch(
+  cwd: string,
+  remote: string,
+  includeRemoteFallback = false,
+): string | undefined {
+  const symbolic = gitOutput(cwd, [
+    "symbolic-ref",
+    "--short",
+    `refs/remotes/${remote}/HEAD`,
+  ]);
   if (symbolic?.startsWith(`${remote}/`)) {
     return symbolic.slice(remote.length + 1);
   }
@@ -1113,7 +1350,7 @@ function gitDefaultBranch(cwd: string, remote: string, includeRemoteFallback = f
 function commandAvailable(command: string, args: string[]): boolean {
   const result = spawnSync(command, args, {
     encoding: "utf8",
-    env: process.env
+    env: process.env,
   });
   return result.status === 0;
 }
@@ -1122,13 +1359,17 @@ function ghOutput(cwd: string, args: string[]): string | undefined {
   const result = spawnSync("gh", args, {
     cwd,
     encoding: "utf8",
-    env: process.env
+    env: process.env,
   });
   if (result.status !== 0) {
     if (args[0] === "pr" && args[1] === "view") {
       return undefined;
     }
-    throw new Error(result.stderr.trim() || result.stdout.trim() || `gh ${args.join(" ")} failed`);
+    throw new Error(
+      result.stderr.trim() ||
+        result.stdout.trim() ||
+        `gh ${args.join(" ")} failed`,
+    );
   }
   return result.stdout.trim() || undefined;
 }
@@ -1148,11 +1389,14 @@ function generatedCommitMessage(cwd: string): string {
   if (files.length === 1) {
     return `Update ${basename(files[0])}`;
   }
-  const topLevel = files
-    .map((file) => file.split("/", 1)[0])
-    .filter(Boolean);
-  const sharedArea = topLevel.length > 0 && topLevel.every((item) => item === topLevel[0]) ? topLevel[0] : "";
-  return sharedArea ? `Update ${sharedArea} changes` : "Update workspace changes";
+  const topLevel = files.map((file) => file.split("/", 1)[0]).filter(Boolean);
+  const sharedArea =
+    topLevel.length > 0 && topLevel.every((item) => item === topLevel[0])
+      ? topLevel[0]
+      : "";
+  return sharedArea
+    ? `Update ${sharedArea} changes`
+    : "Update workspace changes";
 }
 
 function fileTreeListResult(): FileTreeListResult {
@@ -1162,10 +1406,15 @@ function fileTreeListResult(): FileTreeListResult {
   return { root: context.cwd, paths, truncated };
 }
 
-function workspaceDirectoryListResult(path?: string): WorkspaceDirectoryListResult {
+function workspaceDirectoryListResult(
+  path?: string,
+): WorkspaceDirectoryListResult {
   const context = ensureRuntimeContext();
   const relativeDirectoryPath = normalizeWorkspaceDirectoryPath(path ?? "");
-  const absoluteDirectoryPath = resolveWorkspaceDirectoryPath(context.cwd, relativeDirectoryPath);
+  const absoluteDirectoryPath = resolveWorkspaceDirectoryPath(
+    context.cwd,
+    relativeDirectoryPath,
+  );
   const stats = statSync(absoluteDirectoryPath);
   if (!stats.isDirectory()) {
     throw new Error("selected path is not a directory");
@@ -1187,14 +1436,24 @@ function workspaceDirectoryListResult(path?: string): WorkspaceDirectoryListResu
       continue;
     }
 
-    const relativePath = relativeDirectoryPath ? `${relativeDirectoryPath}/${entry.name}` : entry.name;
+    const relativePath = relativeDirectoryPath
+      ? `${relativeDirectoryPath}/${entry.name}`
+      : entry.name;
     if (entry.isDirectory()) {
       if (FILE_TREE_IGNORED_DIRS.has(entry.name)) {
         continue;
       }
-      visibleEntries.push({ name: entry.name, path: `${relativePath}/`, kind: "directory" as const });
+      visibleEntries.push({
+        name: entry.name,
+        path: `${relativePath}/`,
+        kind: "directory" as const,
+      });
     } else if (entry.isFile() || entry.isSymbolicLink()) {
-      visibleEntries.push({ name: entry.name, path: relativePath, kind: "file" as const });
+      visibleEntries.push({
+        name: entry.name,
+        path: relativePath,
+        kind: "file" as const,
+      });
     }
 
     if (visibleEntries.length >= FILE_TREE_MAX_PATHS) {
@@ -1207,7 +1466,7 @@ function workspaceDirectoryListResult(path?: string): WorkspaceDirectoryListResu
     root: context.cwd,
     path: relativeDirectoryPath,
     entries: visibleEntries,
-    truncated
+    truncated,
   };
 }
 
@@ -1230,7 +1489,10 @@ function readWorkspaceFileResult(path: string): WorkspaceFileReadResult {
     closeSync(descriptor);
   }
   const truncated = stats.size > FILE_PREVIEW_MAX_BYTES;
-  const previewBuffer = buffer.subarray(0, truncated ? FILE_PREVIEW_MAX_BYTES : bytesRead);
+  const previewBuffer = buffer.subarray(
+    0,
+    truncated ? FILE_PREVIEW_MAX_BYTES : bytesRead,
+  );
   const binary = previewBuffer.includes(0);
 
   return {
@@ -1240,21 +1502,36 @@ function readWorkspaceFileResult(path: string): WorkspaceFileReadResult {
     size_bytes: stats.size,
     binary,
     truncated,
-    text: binary ? undefined : previewBuffer.toString("utf8")
+    text: binary ? undefined : previewBuffer.toString("utf8"),
   };
 }
 
 function normalizeWorkspaceRelativePath(path: string): string {
-  const value = path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
-  if (!value || value.includes("\0") || value.split("/").some((segment) => segment === "..")) {
+  const value = path
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  if (
+    !value ||
+    value.includes("\0") ||
+    value.split("/").some((segment) => segment === "..")
+  ) {
     throw new Error("invalid workspace file path");
   }
   return value;
 }
 
 function normalizeWorkspaceDirectoryPath(path: string): string {
-  const value = path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
-  if (value.includes("\0") || value.split("/").some((segment) => segment === "..")) {
+  const value = path
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  if (
+    value.includes("\0") ||
+    value.split("/").some((segment) => segment === "..")
+  ) {
     throw new Error("invalid workspace directory path");
   }
   return value;
@@ -1263,30 +1540,49 @@ function normalizeWorkspaceDirectoryPath(path: string): string {
 function resolveWorkspacePath(root: string, relativeFilePath: string): string {
   const absolutePath = resolve(root, relativeFilePath);
   const relativeToRoot = relative(root, absolutePath);
-  if (!relativeToRoot || relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot)) {
+  if (
+    !relativeToRoot ||
+    relativeToRoot.startsWith("..") ||
+    isAbsolute(relativeToRoot)
+  ) {
     throw new Error("file is outside the current workspace");
   }
 
   const realRoot = realpathSync(root);
   const realFile = realpathSync(absolutePath);
   const realRelative = relative(realRoot, realFile);
-  if (!realRelative || realRelative.startsWith("..") || isAbsolute(realRelative)) {
+  if (
+    !realRelative ||
+    realRelative.startsWith("..") ||
+    isAbsolute(realRelative)
+  ) {
     throw new Error("file is outside the current workspace");
   }
   return absolutePath;
 }
 
-function resolveWorkspaceDirectoryPath(root: string, relativeDirectoryPath: string): string {
-  const absolutePath = relativeDirectoryPath ? resolve(root, relativeDirectoryPath) : root;
+function resolveWorkspaceDirectoryPath(
+  root: string,
+  relativeDirectoryPath: string,
+): string {
+  const absolutePath = relativeDirectoryPath
+    ? resolve(root, relativeDirectoryPath)
+    : root;
   const relativeToRoot = relative(root, absolutePath);
-  if (relativeToRoot && (relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot))) {
+  if (
+    relativeToRoot &&
+    (relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot))
+  ) {
     throw new Error("directory is outside the current workspace");
   }
 
   const realRoot = realpathSync(root);
   const realDirectory = realpathSync(absolutePath);
   const realRelative = relative(realRoot, realDirectory);
-  if (realRelative && (realRelative.startsWith("..") || isAbsolute(realRelative))) {
+  if (
+    realRelative &&
+    (realRelative.startsWith("..") || isAbsolute(realRelative))
+  ) {
     throw new Error("directory is outside the current workspace");
   }
   return absolutePath;
@@ -1298,10 +1594,16 @@ function compareFileTreeEntries(left: Dirent, right: Dirent): number {
   if (leftDirectory !== rightDirectory) {
     return leftDirectory ? -1 : 1;
   }
-  return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+  return left.name.localeCompare(right.name, undefined, {
+    sensitivity: "base",
+  });
 }
 
-function collectFileTreePaths(root: string, relativeDirectory: string, paths: string[]): boolean {
+function collectFileTreePaths(
+  root: string,
+  relativeDirectory: string,
+  paths: string[],
+): boolean {
   if (paths.length >= FILE_TREE_MAX_PATHS) {
     return true;
   }
@@ -1309,7 +1611,9 @@ function collectFileTreePaths(root: string, relativeDirectory: string, paths: st
   const directoriesToRead = [relativeDirectory];
   for (let index = 0; index < directoriesToRead.length; index += 1) {
     const currentRelativeDirectory = directoriesToRead[index];
-    const directory = currentRelativeDirectory ? join(root, currentRelativeDirectory) : root;
+    const directory = currentRelativeDirectory
+      ? join(root, currentRelativeDirectory)
+      : root;
     let entries: Dirent[];
     try {
       entries = readdirSync(directory, { withFileTypes: true });
@@ -1324,7 +1628,9 @@ function collectFileTreePaths(root: string, relativeDirectory: string, paths: st
         continue;
       }
 
-      const relativePath = currentRelativeDirectory ? `${currentRelativeDirectory}/${entry.name}` : entry.name;
+      const relativePath = currentRelativeDirectory
+        ? `${currentRelativeDirectory}/${entry.name}`
+        : entry.name;
       if (entry.isDirectory()) {
         if (FILE_TREE_IGNORED_DIRS.has(entry.name)) {
           continue;
@@ -1347,9 +1653,15 @@ function collectFileTreePaths(root: string, relativeDirectory: string, paths: st
 function ensureRuntimeContext(): RuntimeContext {
   const activeContext = projectStore.active_context;
   if (activeContext?.kind === "project") {
-    const project = projectStore.projects.find((candidate) => candidate.id === activeContext.project_id);
+    const project = projectStore.projects.find(
+      (candidate) => candidate.id === activeContext.project_id,
+    );
     if (project) {
-      projectStore.active_context = { kind: "project", project_id: project.id, cwd: project.path };
+      projectStore.active_context = {
+        kind: "project",
+        project_id: project.id,
+        cwd: project.path,
+      };
       return projectStore.active_context;
     }
   }
@@ -1367,7 +1679,11 @@ function createNoProjectContext(): RuntimeContext {
 }
 
 function allocateNoProjectCwd(): string {
-  const baseDir = join(app.getPath("documents"), "Wuu", formatLocalDate(new Date()));
+  const baseDir = join(
+    app.getPath("documents"),
+    "Wuu",
+    formatLocalDate(new Date()),
+  );
   mkdirSync(baseDir, { recursive: true });
   for (let index = 0; index < 1000; index += 1) {
     const name = index === 0 ? "new-chat" : `new-chat-${index + 1}`;
@@ -1412,31 +1728,46 @@ function addProject(projectPath: string): ProjectListResult {
   }
   const now = new Date().toISOString();
   const id = projectID(resolvedPath);
-  const existingIndex = projectStore.projects.findIndex((project) => project.id === id);
+  const existingIndex = projectStore.projects.findIndex(
+    (project) => project.id === id,
+  );
   const project: DesktopProject = {
     id,
     name: projectName(resolvedPath),
     path: resolvedPath,
-    created_at: existingIndex >= 0 ? projectStore.projects[existingIndex].created_at : now,
-    updated_at: now
+    created_at:
+      existingIndex >= 0
+        ? projectStore.projects[existingIndex].created_at
+        : now,
+    updated_at: now,
   };
   if (existingIndex >= 0) {
     projectStore.projects[existingIndex] = project;
   } else {
     projectStore.projects = [project, ...projectStore.projects];
   }
-  projectStore.active_context = { kind: "project", project_id: id, cwd: resolvedPath };
+  projectStore.active_context = {
+    kind: "project",
+    project_id: id,
+    cwd: resolvedPath,
+  };
   saveProjectStore();
   return projectListResult();
 }
 
 function selectProject(projectIDToSelect: string): ProjectListResult {
   projectStore = loadProjectStore();
-  const project = projectStore.projects.find((candidate) => candidate.id === projectIDToSelect);
+  const project = projectStore.projects.find(
+    (candidate) => candidate.id === projectIDToSelect,
+  );
   if (!project) {
     throw new Error("project not found");
   }
-  projectStore.active_context = { kind: "project", project_id: project.id, cwd: project.path };
+  projectStore.active_context = {
+    kind: "project",
+    project_id: project.id,
+    cwd: project.path,
+  };
   saveProjectStore();
   return projectListResult();
 }
@@ -1454,8 +1785,12 @@ function selectNoProject(fresh: boolean, cwd?: string): ProjectListResult {
   return projectListResult();
 }
 
-async function showProjectDirectoryDialog(options: OpenDialogOptions): Promise<string | undefined> {
-  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+async function showProjectDirectoryDialog(
+  options: OpenDialogOptions,
+): Promise<string | undefined> {
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
   if (result.canceled) {
     return undefined;
   }
@@ -1467,7 +1802,11 @@ function serverClient(): AppServerClient {
   const workdir = resolve(context.cwd);
   let client = appServerClients.get(workdir);
   if (!client) {
-    client = new AppServerClient(workdir, emitServerEvent, evictIdleAppServerClients);
+    client = new AppServerClient(
+      workdir,
+      emitServerEvent,
+      evictIdleAppServerClients,
+    );
     appServerClients.set(workdir, client);
   }
   client.touch();
@@ -1475,15 +1814,25 @@ function serverClient(): AppServerClient {
   return client;
 }
 
-function emitServerEvent(client: AppServerClient, event: AppServerClientEvent): void {
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+function emitServerEvent(
+  client: AppServerClient,
+  event: AppServerClientEvent,
+): void {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isDestroyed()
+  ) {
     return;
   }
   const routedEvent = routeServerEvent(client, event);
   mainWindow.webContents.send("wuu:server-event", routedEvent);
 }
 
-function routeServerEvent(client: AppServerClient, event: AppServerClientEvent): ServerEvent {
+function routeServerEvent(
+  client: AppServerClient,
+  event: AppServerClientEvent,
+): ServerEvent {
   if (event.kind !== "server-request") {
     return { ...event, workdir: client.workdir };
   }
@@ -1494,8 +1843,8 @@ function routeServerEvent(client: AppServerClient, event: AppServerClientEvent):
     workdir: client.workdir,
     message: {
       ...event.message,
-      id: publicID
-    }
+      id: publicID,
+    },
   };
 }
 
@@ -1503,7 +1852,9 @@ function evictIdleAppServerClients(): void {
   if (appServerClients.size <= MAX_APP_SERVER_CLIENTS) {
     return;
   }
-  const activeWorkdir = projectStore.active_context ? resolve(projectStore.active_context.cwd) : undefined;
+  const activeWorkdir = projectStore.active_context
+    ? resolve(projectStore.active_context.cwd)
+    : undefined;
   const idleClients = [...appServerClients.values()]
     .filter((client) => client.workdir !== activeWorkdir && !client.isBusy())
     .sort((a, b) => a.lastUsed() - b.lastUsed());
@@ -1556,13 +1907,19 @@ function shutdownAppServerClients(): void {
 }
 
 function emitTerminalEvent(event: TerminalSessionEvent): void {
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isDestroyed()
+  ) {
     return;
   }
   mainWindow.webContents.send("wuu:terminal-event", event);
 }
 
-function startTerminalSession(params: TerminalSessionStartParams = {}): TerminalSessionStartResult {
+function startTerminalSession(
+  params: TerminalSessionStartParams = {},
+): TerminalSessionStartResult {
   const context = ensureRuntimeContext();
   const cwd = context.cwd;
   const id = `term-${terminalSessionCounter++}`;
@@ -1576,10 +1933,22 @@ function startTerminalSession(params: TerminalSessionStartParams = {}): Terminal
     cols,
     rows,
     cwd,
-    env: { ...process.env, CLICOLOR: "1", COLORTERM: "truecolor", FORCE_COLOR: "1", TERM: "xterm-256color" }
+    env: {
+      ...process.env,
+      CLICOLOR: "1",
+      COLORTERM: "truecolor",
+      FORCE_COLOR: "1",
+      TERM: "xterm-256color",
+    },
   });
 
-  const entry: TerminalSession = { id, ptyProcess, cwd, shell: shell.command, startedAt };
+  const entry: TerminalSession = {
+    id,
+    ptyProcess,
+    cwd,
+    shell: shell.command,
+    startedAt,
+  };
   terminalSessions.set(id, entry);
 
   ptyProcess.onData((text) => emitTerminalEvent({ type: "data", id, text }));
@@ -1591,7 +1960,7 @@ function startTerminalSession(params: TerminalSessionStartParams = {}): Terminal
       exit_code: event.exitCode,
       signal: event.signal ?? null,
       duration_ms: Date.now() - startedAt,
-      finished_at: new Date().toISOString()
+      finished_at: new Date().toISOString(),
     });
   });
 
@@ -1599,11 +1968,14 @@ function startTerminalSession(params: TerminalSessionStartParams = {}): Terminal
     id,
     cwd,
     shell: shell.command,
-    started_at: new Date(startedAt).toISOString()
+    started_at: new Date(startedAt).toISOString(),
   };
 }
 
-function writeTerminalSession(id: string, data: string): TerminalSessionActionResult {
+function writeTerminalSession(
+  id: string,
+  data: string,
+): TerminalSessionActionResult {
   const session = terminalSessions.get(id);
   if (!session) {
     return { ok: false };
@@ -1612,12 +1984,19 @@ function writeTerminalSession(id: string, data: string): TerminalSessionActionRe
   return { ok: true };
 }
 
-function resizeTerminalSession(id: string, cols: number, rows: number): TerminalSessionActionResult {
+function resizeTerminalSession(
+  id: string,
+  cols: number,
+  rows: number,
+): TerminalSessionActionResult {
   const session = terminalSessions.get(id);
   if (!session) {
     return { ok: false };
   }
-  session.ptyProcess.resize(normalizeTerminalSize(cols, 80, 20, 500), normalizeTerminalSize(rows, 24, 6, 200));
+  session.ptyProcess.resize(
+    normalizeTerminalSize(cols, 80, 20, 500),
+    normalizeTerminalSize(rows, 24, 6, 200),
+  );
   return { ok: true };
 }
 
@@ -1645,13 +2024,21 @@ function terminateTerminalSession(session: TerminalSession): void {
     emitTerminalEvent({
       type: "error",
       id: session.id,
-      message: error instanceof Error ? error.message : "Failed to stop terminal session.",
-      finished_at: new Date().toISOString()
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to stop terminal session.",
+      finished_at: new Date().toISOString(),
     });
   }
 }
 
-function normalizeTerminalSize(value: number | undefined, fallback: number, min: number, max: number): number {
+function normalizeTerminalSize(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
@@ -1673,7 +2060,7 @@ function resolveTerminalShell(): string {
     "/bin/sh",
     "/usr/bin/zsh",
     "/usr/bin/bash",
-    "/usr/bin/sh"
+    "/usr/bin/sh",
   ];
   for (const candidate of candidates) {
     if (isExecutableFile(candidate)) {
@@ -1690,7 +2077,13 @@ function ensureNodePtyHelperExecutable(): void {
   let helperPath: string;
   try {
     const nodePtyMain = requireFromMain.resolve("node-pty");
-    helperPath = resolve(dirname(nodePtyMain), "..", "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
+    helperPath = resolve(
+      dirname(nodePtyMain),
+      "..",
+      "prebuilds",
+      `${process.platform}-${process.arch}`,
+      "spawn-helper",
+    );
     helperPath = helperPath
       .replace("app.asar", "app.asar.unpacked")
       .replace("node_modules.asar", "node_modules.asar.unpacked");
@@ -1725,7 +2118,11 @@ function setWindowResizeState(resizing: boolean): void {
     return;
   }
   windowResizeState = resizing;
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isDestroyed()
+  ) {
     return;
   }
   mainWindow.webContents.send("wuu:window-resize-state", { resizing });
@@ -1753,8 +2150,8 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   });
 
   mainWindow.on("will-resize", () => {
@@ -1823,7 +2220,10 @@ function filePathFromRenderableURL(rawURL: string): string | undefined {
 
 function isRenderableImageFile(filePath: string): boolean {
   try {
-    return statSync(filePath).isFile() && RENDERABLE_IMAGE_EXTENSIONS.has(extname(filePath).toLowerCase());
+    return (
+      statSync(filePath).isFile() &&
+      RENDERABLE_IMAGE_EXTENSIONS.has(extname(filePath).toLowerCase())
+    );
   } catch {
     return false;
   }
@@ -1834,31 +2234,59 @@ app.whenReady().then(() => {
   registerRenderableFileProtocol();
 
   ipcMain.handle("wuu:project-list", () => projectListResult());
-  ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) => selectProject(projectIDToSelect));
-  ipcMain.handle("wuu:project-select-none", (_event, fresh?: boolean, cwd?: string) =>
-    selectNoProject(Boolean(fresh), cwd)
+  ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>
+    selectProject(projectIDToSelect),
+  );
+  ipcMain.handle(
+    "wuu:project-select-none",
+    (_event, fresh?: boolean, cwd?: string) =>
+      selectNoProject(Boolean(fresh), cwd),
   );
   ipcMain.handle("wuu:git-status", () => gitStatusResult());
   ipcMain.handle("wuu:git-changes", () => gitChangesResult());
-  ipcMain.handle("wuu:git-file-diff", (_event, path: string) => gitFileDiffResult(path));
-  ipcMain.handle("wuu:git-checkout-branch", (_event, branch: string) => checkoutGitBranch(branch));
-  ipcMain.handle("wuu:git-create-checkout-branch", (_event, branch: string) => createCheckoutGitBranch(branch));
-  ipcMain.handle("wuu:git-commit", (_event, params: GitCommitParams) => commitGitChanges(params ?? {}));
-  ipcMain.handle("wuu:git-create-pr", (_event, params: GitPullRequestParams) => createPullRequest(params ?? {}));
-  ipcMain.handle("wuu:file-tree-list", () => fileTreeListResult());
-  ipcMain.handle("wuu:file-directory-list", (_event, path?: string) => workspaceDirectoryListResult(path));
-  ipcMain.handle("wuu:file-read", (_event, path: string) => readWorkspaceFileResult(path));
-  ipcMain.handle("wuu:terminal-start", (_event, params?: TerminalSessionStartParams) => startTerminalSession(params));
-  ipcMain.handle("wuu:terminal-write", (_event, id: string, data: string) => writeTerminalSession(id, data));
-  ipcMain.handle("wuu:terminal-resize", (_event, id: string, cols: number, rows: number) =>
-    resizeTerminalSession(id, cols, rows)
+  ipcMain.handle("wuu:git-file-diff", (_event, path: string) =>
+    gitFileDiffResult(path),
   );
-  ipcMain.handle("wuu:terminal-stop", (_event, id: string) => stopTerminalSession(id));
+  ipcMain.handle("wuu:git-checkout-branch", (_event, branch: string) =>
+    checkoutGitBranch(branch),
+  );
+  ipcMain.handle("wuu:git-create-checkout-branch", (_event, branch: string) =>
+    createCheckoutGitBranch(branch),
+  );
+  ipcMain.handle("wuu:git-commit", (_event, params: GitCommitParams) =>
+    commitGitChanges(params ?? {}),
+  );
+  ipcMain.handle("wuu:git-create-pr", (_event, params: GitPullRequestParams) =>
+    createPullRequest(params ?? {}),
+  );
+  ipcMain.handle("wuu:file-tree-list", () => fileTreeListResult());
+  ipcMain.handle("wuu:file-directory-list", (_event, path?: string) =>
+    workspaceDirectoryListResult(path),
+  );
+  ipcMain.handle("wuu:file-read", (_event, path: string) =>
+    readWorkspaceFileResult(path),
+  );
+  ipcMain.handle(
+    "wuu:terminal-start",
+    (_event, params?: TerminalSessionStartParams) =>
+      startTerminalSession(params),
+  );
+  ipcMain.handle("wuu:terminal-write", (_event, id: string, data: string) =>
+    writeTerminalSession(id, data),
+  );
+  ipcMain.handle(
+    "wuu:terminal-resize",
+    (_event, id: string, cols: number, rows: number) =>
+      resizeTerminalSession(id, cols, rows),
+  );
+  ipcMain.handle("wuu:terminal-stop", (_event, id: string) =>
+    stopTerminalSession(id),
+  );
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
       title: "使用现有文件夹",
       buttonLabel: "使用文件夹",
-      properties: ["openDirectory"]
+      properties: ["openDirectory"],
     });
     if (!projectPath) {
       return projectListResult();
@@ -1869,59 +2297,112 @@ app.whenReady().then(() => {
     const projectPath = await showProjectDirectoryDialog({
       title: "新建空白项目",
       buttonLabel: "创建项目",
-      properties: ["openDirectory", "createDirectory"]
+      properties: ["openDirectory", "createDirectory"],
     });
     if (!projectPath) {
       return projectListResult();
     }
     return addProject(projectPath);
   });
-  ipcMain.handle("wuu:initialize", () => serverClient().request<InitializeResult>("initialize"));
-  ipcMain.handle("wuu:config-codex-models", (_event, provider?: string) =>
-    serverClient().request<ConfigCodexModelsResult>("config/codex/models", { provider: provider ?? "" })
+  ipcMain.handle("wuu:initialize", () =>
+    serverClient().request<InitializeResult>("initialize"),
   );
-  ipcMain.handle("wuu:config-model-update", (_event, provider: string, model: string, effort?: string, connection?: { base_url?: string; api_key?: string; create_provider?: boolean }, variant?: string) =>
-    serverClient().request<ConfigModelUpdateResult>("config/model/update", {
-      provider,
-      model,
-      ...(connection?.base_url === undefined ? {} : { base_url: connection.base_url }),
-      ...(connection?.api_key === undefined ? {} : { api_key: connection.api_key }),
-      ...(connection?.create_provider ? { create_provider: true } : {}),
-      ...(effort === undefined ? {} : { effort }),
-      ...(variant === undefined ? {} : { variant })
-    })
+  ipcMain.handle("wuu:config-codex-models", (_event, provider?: string) =>
+    serverClient().request<ConfigCodexModelsResult>("config/codex/models", {
+      provider: provider ?? "",
+    }),
+  );
+  ipcMain.handle(
+    "wuu:config-model-update",
+    (
+      _event,
+      provider: string,
+      model: string,
+      effort?: string,
+      connection?: {
+        base_url?: string;
+        api_key?: string;
+        create_provider?: boolean;
+      },
+      variant?: string,
+    ) =>
+      serverClient().request<ConfigModelUpdateResult>("config/model/update", {
+        provider,
+        model,
+        ...(connection?.base_url === undefined
+          ? {}
+          : { base_url: connection.base_url }),
+        ...(connection?.api_key === undefined
+          ? {}
+          : { api_key: connection.api_key }),
+        ...(connection?.create_provider ? { create_provider: true } : {}),
+        ...(effort === undefined ? {} : { effort }),
+        ...(variant === undefined ? {} : { variant }),
+      }),
   );
   ipcMain.handle("wuu:skill-list", () => serverClient().request("skill/list"));
-  ipcMain.handle("wuu:thread-start", () => serverClient().request<{ thread: Thread }>("thread/start"));
+  ipcMain.handle("wuu:thread-start", () =>
+    serverClient().request<{ thread: Thread }>("thread/start"),
+  );
   ipcMain.handle("wuu:thread-resume", (_event, sessionId?: string) =>
-    serverClient().request<{ thread: Thread }>("thread/resume", { session_id: sessionId ?? "" })
+    serverClient().request<{ thread: Thread }>("thread/resume", {
+      session_id: sessionId ?? "",
+    }),
   );
-  ipcMain.handle("wuu:thread-fork", (_event, threadId: string, turnId?: string, itemId?: string) =>
-    serverClient().request<{ thread: Thread }>("thread/fork", {
-      thread_id: threadId,
-      turn_id: turnId ?? "",
-      item_id: itemId ?? ""
-    })
+  ipcMain.handle(
+    "wuu:thread-fork",
+    (_event, threadId: string, turnId?: string, itemId?: string) =>
+      serverClient().request<{ thread: Thread }>("thread/fork", {
+        thread_id: threadId,
+        turn_id: turnId ?? "",
+        item_id: itemId ?? "",
+      }),
   );
-  ipcMain.handle("wuu:thread-list", () => serverClient().request<{ threads: Thread[] }>("thread/list"));
-  ipcMain.handle("wuu:thread-pin", (_event, threadId: string, pinned: boolean) =>
-    serverClient().request<{ thread: Thread }>("thread/pin", { thread_id: threadId, pinned })
+  ipcMain.handle("wuu:thread-list", () =>
+    serverClient().request<{ threads: Thread[] }>("thread/list"),
   );
-  ipcMain.handle("wuu:thread-archive", (_event, threadId: string, archived: boolean) =>
-    serverClient().request<{ thread: Thread }>("thread/archive", { thread_id: threadId, archived })
+  ipcMain.handle(
+    "wuu:thread-pin",
+    (_event, threadId: string, pinned: boolean) =>
+      serverClient().request<{ thread: Thread }>("thread/pin", {
+        thread_id: threadId,
+        pinned,
+      }),
   );
-  ipcMain.handle("wuu:turn-start", (_event, threadId: string, prompt: string, images?: InputImage[]) =>
-    serverClient().request<{ turn: Turn }>("turn/start", { thread_id: threadId, prompt, images: images ?? [] })
+  ipcMain.handle(
+    "wuu:thread-archive",
+    (_event, threadId: string, archived: boolean) =>
+      serverClient().request<{ thread: Thread }>("thread/archive", {
+        thread_id: threadId,
+        archived,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:turn-start",
+    (_event, threadId: string, prompt: string, images?: InputImage[]) =>
+      serverClient().request<{ turn: Turn }>("turn/start", {
+        thread_id: threadId,
+        prompt,
+        images: images ?? [],
+      }),
   );
   ipcMain.handle("wuu:turn-interrupt", (_event, threadId: string) =>
-    serverClient().request<{ ok: boolean }>("turn/interrupt", { thread_id: threadId })
+    serverClient().request<{ ok: boolean }>("turn/interrupt", {
+      thread_id: threadId,
+    }),
   );
-  ipcMain.handle("wuu:respond-server-request", (_event, id: string, result: unknown) => {
-    respondToServerRequest(id, result);
-  });
-  ipcMain.handle("wuu:reject-server-request", (_event, id: string, message: string) => {
-    rejectServerRequest(id, message);
-  });
+  ipcMain.handle(
+    "wuu:respond-server-request",
+    (_event, id: string, result: unknown) => {
+      respondToServerRequest(id, result);
+    },
+  );
+  ipcMain.handle(
+    "wuu:reject-server-request",
+    (_event, id: string, message: string) => {
+      rejectServerRequest(id, message);
+    },
+  );
 
   createWindow();
 

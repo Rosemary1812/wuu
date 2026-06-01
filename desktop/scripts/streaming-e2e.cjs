@@ -184,8 +184,8 @@ async function run() {
     type: "tool_call",
     status: "completed",
     name: "grep",
-    arguments: '{"pattern":"streaming-word","path":"browser/agent/packages/workbench-ui/src/renderer"}',
-    result: "browser/agent/packages/workbench-ui/src/renderer/App.tsx: streaming-word"
+    arguments: '{"pattern":"streaming-word","path":"desktop/src/renderer"}',
+    result: "desktop/src/renderer/App.tsx: streaming-word"
   };
   const turn = {
     id: "turn-streaming-e2e",
