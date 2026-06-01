@@ -171,6 +171,11 @@ import {
   turnProgressCampaign,
   useLiveNow,
 } from "./TurnProgress";
+import {
+  mergeTurnItemsInOrder,
+  orderedTurnItems,
+  upsertTurnItemInOrder,
+} from "./TurnOrdering";
 import { sortChildAgents } from "./ThreadAgents";
 import { PinnedThreadList, ProjectList } from "./ThreadSidebar";
 import {
@@ -6778,37 +6783,17 @@ function upsertTurn(thread: Thread, turn: Turn): Thread {
   const status = turn.status === "in_progress" ? "in_progress" : "idle";
   if (index < 0) {
     return threadWithTurnSummary(
-      { ...thread, turns: [...thread.turns, turn], status },
+      {
+        ...thread,
+        turns: [...thread.turns, { ...turn, items: orderedTurnItems(turn.items) }],
+        status,
+      },
       turn,
     );
   }
   const turns = thread.turns.slice();
-  turns[index] = { ...turn, items: mergeTurnItems(turns[index], turn) };
+  turns[index] = { ...turn, items: mergeTurnItemsInOrder(turns[index], turn) };
   return threadWithTurnSummary({ ...thread, turns, status }, turn);
-}
-
-function mergeTurnItems(previous: Turn, next: Turn): ThreadItem[] {
-  const nextByID = new Map(next.items.map((item) => [item.id, item]));
-  const used = new Set<string>();
-  const merged: ThreadItem[] = [];
-  for (const item of previous.items) {
-    const nextItem = nextByID.get(item.id);
-    if (nextItem) {
-      merged.push(nextItem);
-      used.add(nextItem.id);
-      continue;
-    }
-    if (item.type !== "user_message") {
-      merged.push(item);
-      used.add(item.id);
-    }
-  }
-  for (const item of next.items) {
-    if (!used.has(item.id)) {
-      merged.push(item);
-    }
-  }
-  return merged;
 }
 
 function threadWithTurnSummary(thread: Thread, turn: Turn): Thread {
@@ -6893,13 +6878,7 @@ function upsertTurnItem(
     if (turn.id !== turnID) {
       return turn;
     }
-    const index = turn.items.findIndex((existing) => existing.id === item.id);
-    if (index < 0) {
-      return { ...turn, items: [...turn.items, item] };
-    }
-    const items = turn.items.slice();
-    items[index] = item;
-    return { ...turn, items };
+    return { ...turn, items: upsertTurnItemInOrder(turn, item) };
   });
   return { ...thread, turns };
 }
