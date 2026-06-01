@@ -7,31 +7,39 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:e2e:streaming": "VITE_ENABLE_RUN_DEBUG_PANEL=true npm run build && electron scripts/streaming-e2e.cjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@pierre/trees": "^1.0.0-beta.4",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "lucide-react": "^0.468.0",
+    "lucide-react": "^0.562.0",
     "mermaid": "^11.15.0",
     "node-pty": "^1.1.0",
     "overlayscrollbars": "^2.16.0",
     "overlayscrollbars-react": "^0.5.6",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@types/react": "^18.3.17",
-    "@types/react-dom": "^18.3.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^42.2.0",
     "electron-vite": "^2.3.0",
+    "jsdom": "^25.0.0",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^2.1.0"
   }
 }

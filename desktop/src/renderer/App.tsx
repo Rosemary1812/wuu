@@ -34,7 +34,7 @@ import {
   Terminal,
   Trash2,
   Wrench,
-  X
+  X,
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -48,7 +48,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState
+  useState,
 } from "react";
 import {
   closestCenter,
@@ -59,10 +59,15 @@ import {
   useSensors,
   type DragCancelEvent,
   type DragEndEvent,
-  type DragStartEvent
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
-import { arrayMove, horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
+import {
+  arrayMove,
+  horizontalListSortingStrategy,
+  SortableContext,
+  useSortable,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type {
   Agent,
@@ -81,17 +86,17 @@ import type {
   ServerEvent,
   Thread,
   ThreadItem,
-  Turn
+  Turn,
 } from "../shared/protocol";
 import {
   messageFlowFinalTextIndex,
-  messageFlowStatusLabel
-} from "../message-flow-display";
+  messageFlowStatusLabel,
+} from "./message-flow-display";
 import {
   AnsweredAskUserMessage,
   AskUserMessage,
   type AnsweredAskRequestState,
-  type AskRequestState
+  type AskRequestState,
 } from "./AskUserMessages";
 import {
   composerImageFromFile,
@@ -99,7 +104,7 @@ import {
   inputImagesFromComposer,
   mergeGuideMessages,
   type ComposerImage,
-  type QueuedComposerMessage
+  type QueuedComposerMessage,
 } from "./ComposerMessages";
 import {
   Composer,
@@ -108,29 +113,45 @@ import {
   type CodexModelLoadState,
   type CodexRuntimeMenu,
   type ComposerVariant,
-  type FloatingMenuOwner
+  type FloatingMenuOwner,
 } from "./ComposerView";
-import { createAgentTreeDemo, createConversationFixture, type ConversationFixtureKind } from "./ConversationFixtures";
+import {
+  createAgentTreeDemo,
+  createConversationFixture,
+  type ConversationFixtureKind,
+} from "./ConversationFixtures";
 import {
   EnvironmentPanel,
   buildEnvironmentSourceItems,
   type EnvironmentPanelMenu,
-  type EnvironmentPanelMotionState
+  type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
 import { agentHandoffDisplay } from "./AgentHandoff";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
 import { RichContent } from "./RichContent";
-import { EmptyConversationHome, RuntimeLoading, ViewSwitchLoading } from "./LoadingViews";
-import { AgentMessageActions, MessageCopyButton, MessageImageGrid } from "./MessageActions";
+import {
+  EmptyConversationHome,
+  RuntimeLoading,
+  ViewSwitchLoading,
+} from "./LoadingViews";
+import {
+  AgentMessageActions,
+  MessageCopyButton,
+  MessageImageGrid,
+} from "./MessageActions";
 import {
   isCodexProvider,
-  pullRequestUnavailableReason
+  pullRequestUnavailableReason,
 } from "./RuntimeHelpers";
 import { SettingsView } from "./SettingsView";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SkillsCatalog } from "./SkillsCatalog";
 import { StreamingMarkdown } from "./StreamingMarkdown";
-import { streamTextKey, streamTextStore, type StreamTextField } from "./StreamText";
+import {
+  streamTextKey,
+  streamTextStore,
+  type StreamTextField,
+} from "./StreamText";
 import { threadDisplayTitle } from "./ThreadTitles";
 import {
   ToolActivityRow,
@@ -139,7 +160,7 @@ import {
   readableToolName,
   recordValue,
   stringValue,
-  type JsonRecord
+  type JsonRecord,
 } from "./ToolActivity";
 import {
   LiveDuration,
@@ -147,7 +168,7 @@ import {
   TurnProgressPreviewOverlay,
   formatDuration,
   turnProgressCampaign,
-  useLiveNow
+  useLiveNow,
 } from "./TurnProgress";
 import { sortChildAgents } from "./ThreadAgents";
 import { PinnedThreadList, ProjectList } from "./ThreadSidebar";
@@ -157,7 +178,7 @@ import {
   statusMessageForError,
   statusToneClass,
   userFacingErrorForMessage,
-  type UserFacingErrorDisplay
+  type UserFacingErrorDisplay,
 } from "./UserFacingErrors";
 import {
   WorkspaceMainPanel,
@@ -165,7 +186,7 @@ import {
   WorkspaceToolIcon,
   workspaceModeTitle,
   type WorkspacePanelView,
-  type WorkspaceRightPanelView
+  type WorkspaceRightPanelView,
 } from "./WorkspacePanels";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
@@ -198,17 +219,20 @@ function emptyComposerDraft(): ComposerDraftState {
   return { prompt: "", images: [] };
 }
 
-function initialSplitComposerDrafts(): Record<ConversationPaneID, ComposerDraftState> {
+function initialSplitComposerDrafts(): Record<
+  ConversationPaneID,
+  ComposerDraftState
+> {
   return {
     primary: emptyComposerDraft(),
-    secondary: emptyComposerDraft()
+    secondary: emptyComposerDraft(),
   };
 }
 
 function cloneComposerDraft(draft: ComposerDraftState): ComposerDraftState {
   return {
     prompt: draft.prompt,
-    images: draft.images.map((image) => ({ ...image }))
+    images: draft.images.map((image) => ({ ...image })),
   };
 }
 
@@ -301,7 +325,7 @@ const initialState: AppState = {
   running: false,
   status: "connecting",
   askRequests: [],
-  answeredAskRequests: []
+  answeredAskRequests: [],
 };
 
 const SIDEBAR_DEFAULT_WIDTH = 326;
@@ -322,12 +346,18 @@ const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
 const RENDERER_ENV = (
-  import.meta as ImportMeta & { env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string } }
+  import.meta as ImportMeta & {
+    env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
+  }
 ).env;
 const ENABLE_DEBUG_CONTROL_SETTING = Boolean(RENDERER_ENV?.DEV);
-const ENABLE_DEBUG_CONTROLS = Boolean(RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true");
+const ENABLE_DEBUG_CONTROLS = Boolean(
+  RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true",
+);
 const ENABLE_LAUNCH_PREVIEW = Boolean(RENDERER_ENV?.DEV);
-const ENABLE_RUN_DEBUG_PANEL = Boolean(RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true");
+const ENABLE_RUN_DEBUG_PANEL = Boolean(
+  RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true",
+);
 const ENABLE_SWISS_STYLE_TOGGLE = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
@@ -363,22 +393,35 @@ function initialCollapsedProjectIDs(): Set<string> {
     if (!Array.isArray(parsed)) {
       return new Set();
     }
-    return new Set(parsed.filter((id): id is string => typeof id === "string" && id.length > 0));
+    return new Set(
+      parsed.filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      ),
+    );
   } catch {
     return new Set();
   }
 }
 
 function initialWorkspaceRightPanelWidth(): number {
-  const stored = Number(window.localStorage.getItem(WORKSPACE_RIGHT_PANEL_WIDTH_KEY));
+  const stored = Number(
+    window.localStorage.getItem(WORKSPACE_RIGHT_PANEL_WIDTH_KEY),
+  );
   if (!Number.isFinite(stored)) {
     return WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH;
   }
-  return clamp(stored, WORKSPACE_RIGHT_PANEL_MIN_WIDTH, WORKSPACE_RIGHT_PANEL_MAX_WIDTH);
+  return clamp(
+    stored,
+    WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
+    WORKSPACE_RIGHT_PANEL_MAX_WIDTH,
+  );
 }
 
 function initialSwissStyleEnabled(): boolean {
-  return ENABLE_SWISS_STYLE_TOGGLE && window.localStorage.getItem(SWISS_STYLE_KEY) === "true";
+  return (
+    ENABLE_SWISS_STYLE_TOGGLE &&
+    window.localStorage.getItem(SWISS_STYLE_KEY) === "true"
+  );
 }
 
 function initialDebugControlsEnabled(): boolean {
@@ -395,14 +438,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function clampWorkspaceRightPanelWidth(width: number, sidebarWidth: number): number {
+function clampWorkspaceRightPanelWidth(
+  width: number,
+  sidebarWidth: number,
+): number {
   const maxForWindow =
     typeof window === "undefined"
       ? WORKSPACE_RIGHT_PANEL_MAX_WIDTH
       : window.innerWidth - sidebarWidth - WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH;
   const maxWidth = Math.max(
     WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
-    Math.min(WORKSPACE_RIGHT_PANEL_MAX_WIDTH, maxForWindow)
+    Math.min(WORKSPACE_RIGHT_PANEL_MAX_WIDTH, maxForWindow),
   );
   return clamp(width, WORKSPACE_RIGHT_PANEL_MIN_WIDTH, maxWidth);
 }
@@ -411,24 +457,41 @@ export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
   const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
-  const [splitComposerDrafts, setSplitComposerDrafts] = useState<Record<ConversationPaneID, ComposerDraftState>>(
-    initialSplitComposerDrafts
+  const [splitComposerDrafts, setSplitComposerDrafts] = useState<
+    Record<ConversationPaneID, ComposerDraftState>
+  >(initialSplitComposerDrafts);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>(
+    [],
   );
-  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
-  const [guideMessages, setGuideMessages] = useState<QueuedComposerMessage[]>([]);
+  const [guideMessages, setGuideMessages] = useState<QueuedComposerMessage[]>(
+    [],
+  );
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
-  const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(initialCollapsedProjectIDs);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    initialSidebarCollapsed,
+  );
+  const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(
+    initialCollapsedProjectIDs,
+  );
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [sidebarAnimating, setSidebarAnimating] = useState(false);
-  const [workspaceRightPanelWidth, setWorkspaceRightPanelWidth] = useState(initialWorkspaceRightPanelWidth);
+  const [workspaceRightPanelWidth, setWorkspaceRightPanelWidth] = useState(
+    initialWorkspaceRightPanelWidth,
+  );
   const [resizingRightPanel, setResizingRightPanel] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [collapsingProjectIDs, setCollapsingProjectIDs] = useState<Set<string>>(() => new Set());
+  const [collapsingProjectIDs, setCollapsingProjectIDs] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
-  const [codexRuntimeMenu, setCodexRuntimeMenu] = useState<CodexRuntimeMenu>(null);
-  const [codexModels, setCodexModels] = useState<CodexModelLoadState>({ loading: false, error: "", models: [] });
+  const [codexRuntimeMenu, setCodexRuntimeMenu] =
+    useState<CodexRuntimeMenu>(null);
+  const [codexModels, setCodexModels] = useState<CodexModelLoadState>({
+    loading: false,
+    error: "",
+    models: [],
+  });
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -437,33 +500,63 @@ export function App(): JSX.Element {
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelAnimating, setRightPanelAnimating] = useState(false);
-  const [workspaceToolTabs, setWorkspaceToolTabs] = useState<WorkspacePanelView[]>([]);
-  const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
-  const [workspaceRightPanelView, setWorkspaceRightPanelView] = useState<WorkspaceRightPanelView>("tools");
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
+  const [workspaceToolTabs, setWorkspaceToolTabs] = useState<
+    WorkspacePanelView[]
+  >([]);
+  const [workspacePanelView, setWorkspacePanelView] =
+    useState<WorkspacePanelView>("files");
+  const [workspaceRightPanelView, setWorkspaceRightPanelView] =
+    useState<WorkspaceRightPanelView>("tools");
+  const [workspaceMode, setWorkspaceMode] = useState<
+    WorkspacePanelView | undefined
+  >(undefined);
   const [environmentPanelOpen, setEnvironmentPanelOpen] = useState(false);
-  const [environmentPanelDismissed, setEnvironmentPanelDismissed] = useState(false);
+  const [environmentPanelDismissed, setEnvironmentPanelDismissed] =
+    useState(false);
   const [environmentPanelHasRoom, setEnvironmentPanelHasRoom] = useState(() =>
-    typeof window === "undefined" ? false : window.matchMedia("(min-width: 1320px) and (min-height: 680px)").matches
+    typeof window === "undefined"
+      ? false
+      : window.matchMedia("(min-width: 1320px) and (min-height: 680px)")
+          .matches,
   );
   const [environmentPanelMounted, setEnvironmentPanelMounted] = useState(false);
   const [environmentPanelClosing, setEnvironmentPanelClosing] = useState(false);
-  const [environmentPanelReserved, setEnvironmentPanelReserved] = useState(false);
-  const [environmentPanelMenu, setEnvironmentPanelMenu] = useState<EnvironmentPanelMenu>(null);
-  const [environmentDialog, setEnvironmentDialog] = useState<EnvironmentDialog>(null);
+  const [environmentPanelReserved, setEnvironmentPanelReserved] =
+    useState(false);
+  const [environmentPanelMenu, setEnvironmentPanelMenu] =
+    useState<EnvironmentPanelMenu>(null);
+  const [environmentDialog, setEnvironmentDialog] =
+    useState<EnvironmentDialog>(null);
   const [runDebugOpen, setRunDebugOpen] = useState(false);
   const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
   const [runDebugCopied, setRunDebugCopied] = useState(false);
-  const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<string | undefined>(undefined);
-  const [pendingViewSwitch, setPendingViewSwitch] = useState<PendingViewSwitch | undefined>(undefined);
-  const [debugControlsEnabled, setDebugControlsEnabled] = useState(initialDebugControlsEnabled);
-  const [swissStyleEnabled, setSwissStyleEnabled] = useState(initialSwissStyleEnabled);
-  const [draggingSessionTabID, setDraggingSessionTabID] = useState<string | undefined>(undefined);
-  const [draggingSessionTabWidth, setDraggingSessionTabWidth] = useState<number | undefined>(undefined);
+  const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<
+    string | undefined
+  >(undefined);
+  const [pendingViewSwitch, setPendingViewSwitch] = useState<
+    PendingViewSwitch | undefined
+  >(undefined);
+  const [debugControlsEnabled, setDebugControlsEnabled] = useState(
+    initialDebugControlsEnabled,
+  );
+  const [swissStyleEnabled, setSwissStyleEnabled] = useState(
+    initialSwissStyleEnabled,
+  );
+  const [draggingSessionTabID, setDraggingSessionTabID] = useState<
+    string | undefined
+  >(undefined);
+  const [draggingSessionTabWidth, setDraggingSessionTabWidth] = useState<
+    number | undefined
+  >(undefined);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
-  const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({ primary: null, secondary: null });
+  const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({
+    primary: null,
+    secondary: null,
+  });
   const conversationPaneRef = useRef<HTMLElement | null>(null);
-  const [dockComposerNode, setDockComposerNode] = useState<HTMLElement | null>(null);
+  const [dockComposerNode, setDockComposerNode] = useState<HTMLElement | null>(
+    null,
+  );
   const dockComposerRef = useCallback((node: HTMLElement | null) => {
     setDockComposerNode(node);
   }, []);
@@ -473,12 +566,18 @@ export function App(): JSX.Element {
   const projectCollapseTimersRef = useRef(new Map<string, number>());
   const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
-  const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
+  const conversationScrollbarHideTimerRef = useRef<number | undefined>(
+    undefined,
+  );
   const windowResizingRef = useRef(false);
   const environmentPanelHasRoomRef = useRef(environmentPanelHasRoom);
-  const pendingEnvironmentPanelHasRoomRef = useRef<boolean | undefined>(undefined);
+  const pendingEnvironmentPanelHasRoomRef = useRef<boolean | undefined>(
+    undefined,
+  );
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
-  const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(null);
+  const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(
+    null,
+  );
   const gitRefreshTimerRef = useRef<number | undefined>(undefined);
   const gitRefreshInFlightRef = useRef(false);
   const gitRefreshQueuedRef = useRef(false);
@@ -501,18 +600,26 @@ export function App(): JSX.Element {
   const runDebugDeltaSeenRef = useRef(new Set<string>());
   const draftSessionTabCounterRef = useRef(0);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
-  const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(workspaceRightPanelWidth, effectiveSidebarWidth);
+  const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
+    workspaceRightPanelWidth,
+    effectiveSidebarWidth,
+  );
   const debugControlsVisible = ENABLE_DEBUG_CONTROLS && debugControlsEnabled;
-  const sessionTabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sessionTabSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
   const currentSessionTab = activeSessionTab(state);
   const activeWorkspaceFile =
-    currentSessionTab?.kind === "file" && sameRuntimeContext(currentSessionTab.context, state.activeContext)
+    currentSessionTab?.kind === "file" &&
+    sameRuntimeContext(currentSessionTab.context, state.activeContext)
       ? currentSessionTab.path
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   const activePlanUpdate = latestPlanUpdateForThread(activeThread);
-  const splitConversation = Boolean(state.thread && state.secondaryThread && !workspaceMode);
+  const splitConversation = Boolean(
+    state.thread && state.secondaryThread && !workspaceMode,
+  );
 
   useEffect(() => {
     return () => {
@@ -545,7 +652,10 @@ export function App(): JSX.Element {
       resizing = nextResizing;
       windowResizingRef.current = nextResizing;
       root.classList.toggle("window-resizing", nextResizing);
-      if (!nextResizing && pendingEnvironmentPanelHasRoomRef.current !== undefined) {
+      if (
+        !nextResizing &&
+        pendingEnvironmentPanelHasRoomRef.current !== undefined
+      ) {
         const pendingHasRoom = pendingEnvironmentPanelHasRoomRef.current;
         pendingEnvironmentPanelHasRoomRef.current = undefined;
         if (environmentPanelHasRoomRef.current !== pendingHasRoom) {
@@ -570,14 +680,16 @@ export function App(): JSX.Element {
       scheduleResizeEnd();
     }
 
-    const offWindowResizeState = window.wuu.onWindowResizeState(({ resizing: nextResizing }) => {
-      if (nextResizing) {
-        setResizeState(true);
-        scheduleResizeEnd();
-        return;
-      }
-      scheduleResizeEnd(40);
-    });
+    const offWindowResizeState = window.wuu.onWindowResizeState(
+      ({ resizing: nextResizing }) => {
+        if (nextResizing) {
+          setResizeState(true);
+          scheduleResizeEnd();
+          return;
+        }
+        scheduleResizeEnd(40);
+      },
+    );
 
     window.addEventListener("resize", handleWindowResize);
     return () => {
@@ -593,10 +705,15 @@ export function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    const query = window.matchMedia("(min-width: 1320px) and (min-height: 680px)");
+    const query = window.matchMedia(
+      "(min-width: 1320px) and (min-height: 680px)",
+    );
     const update = (): void => {
       const nextHasRoom = query.matches;
-      if (windowResizingRef.current || document.documentElement.classList.contains("window-resizing")) {
+      if (
+        windowResizingRef.current ||
+        document.documentElement.classList.contains("window-resizing")
+      ) {
         pendingEnvironmentPanelHasRoomRef.current = nextHasRoom;
         return;
       }
@@ -628,7 +745,7 @@ export function App(): JSX.Element {
     state.thread?.turns,
     state.secondaryThread?.id,
     state.secondaryThread?.status,
-    state.secondaryThread?.turns
+    state.secondaryThread?.turns,
   ]);
 
   useEffect(() => {
@@ -658,19 +775,23 @@ export function App(): JSX.Element {
     void (async () => {
       try {
         const listedProjects = await window.wuu.listProjects();
-        const runtimeState = listedProjects.active_context ? listedProjects : await window.wuu.selectNoProject(false);
+        const runtimeState = listedProjects.active_context
+          ? listedProjects
+          : await window.wuu.selectNoProject(false);
         const loadedState = await loadRuntime(runtimeState);
         if (!mounted) {
           return;
         }
-        setState((current) => withLoadedRuntimeSessionTab(current, loadedState));
+        setState((current) =>
+          withLoadedRuntimeSessionTab(current, loadedState),
+        );
       } catch (error) {
         if (!mounted) {
           return;
         }
         setState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : "failed to start"
+          status: error instanceof Error ? error.message : "failed to start",
         }));
       }
     })();
@@ -722,7 +843,8 @@ export function App(): JSX.Element {
         setCodexRuntimeMenu(null);
       }
       const environmentPanelClickOutside =
-        !environmentToggleRef.current?.contains(target) && !environmentPanelRef.current?.contains(target);
+        !environmentToggleRef.current?.contains(target) &&
+        !environmentPanelRef.current?.contains(target);
       if (environmentPanelClickOutside) {
         if (environmentPanelMenu) {
           setEnvironmentPanelMenu(null);
@@ -748,7 +870,7 @@ export function App(): JSX.Element {
     modeMenuOpen,
     projectMenuOpen,
     runDebugOpen,
-    runtimeMenuOpen
+    runtimeMenuOpen,
   ]);
 
   useLayoutEffect(() => {
@@ -767,11 +889,14 @@ export function App(): JSX.Element {
     setSettingsOpen(false);
     setWorkspaceMode(undefined);
     conversationAutoFollowRef.current = true;
-    window.requestAnimationFrame(() => scrollConversationToBottom({ force: true }));
+    window.requestAnimationFrame(() =>
+      scrollConversationToBottom({ force: true }),
+    );
   }, [activeThreadID, state.askRequests]);
 
   useEffect(() => {
-    const enabled = debugControlsVisible && ENABLE_SWISS_STYLE_TOGGLE && swissStyleEnabled;
+    const enabled =
+      debugControlsVisible && ENABLE_SWISS_STYLE_TOGGLE && swissStyleEnabled;
     document.documentElement.classList.toggle("swiss-international", enabled);
     if (ENABLE_SWISS_STYLE_TOGGLE) {
       window.localStorage.setItem(SWISS_STYLE_KEY, String(swissStyleEnabled));
@@ -783,7 +908,10 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (ENABLE_DEBUG_CONTROLS) {
-      window.localStorage.setItem(DEBUG_CONTROLS_KEY, String(debugControlsEnabled));
+      window.localStorage.setItem(
+        DEBUG_CONTROLS_KEY,
+        String(debugControlsEnabled),
+      );
     }
   }, [debugControlsEnabled]);
 
@@ -798,20 +926,33 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+    window.localStorage.setItem(
+      SIDEBAR_COLLAPSED_KEY,
+      String(sidebarCollapsed),
+    );
   }, [sidebarWidth, sidebarCollapsed]);
 
   useEffect(() => {
-    window.localStorage.setItem(PROJECT_COLLAPSED_IDS_KEY, JSON.stringify([...collapsedProjectIDs]));
+    window.localStorage.setItem(
+      PROJECT_COLLAPSED_IDS_KEY,
+      JSON.stringify([...collapsedProjectIDs]),
+    );
   }, [collapsedProjectIDs]);
 
   useEffect(() => {
-    window.localStorage.setItem(WORKSPACE_RIGHT_PANEL_WIDTH_KEY, String(workspaceRightPanelWidth));
+    window.localStorage.setItem(
+      WORKSPACE_RIGHT_PANEL_WIDTH_KEY,
+      String(workspaceRightPanelWidth),
+    );
   }, [workspaceRightPanelWidth]);
 
   useEffect(() => {
     scheduleGitStatusRefresh(0);
-  }, [state.activeContext?.kind, state.activeContext?.cwd, state.activeProjectId]);
+  }, [
+    state.activeContext?.kind,
+    state.activeContext?.cwd,
+    state.activeProjectId,
+  ]);
 
   useEffect(() => {
     function handleFocus(): void {
@@ -866,7 +1007,10 @@ export function App(): JSX.Element {
         return;
       }
       setWorkspaceRightPanelWidth(
-        clampWorkspaceRightPanelWidth(session.startWidth - (event.clientX - session.startX), effectiveSidebarWidth)
+        clampWorkspaceRightPanelWidth(
+          session.startWidth - (event.clientX - session.startX),
+          effectiveSidebarWidth,
+        ),
       );
     }
 
@@ -887,7 +1031,9 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     function handleResize(): void {
-      setWorkspaceRightPanelWidth((current) => clampWorkspaceRightPanelWidth(current, effectiveSidebarWidth));
+      setWorkspaceRightPanelWidth((current) =>
+        clampWorkspaceRightPanelWidth(current, effectiveSidebarWidth),
+      );
     }
 
     window.addEventListener("resize", handleResize);
@@ -895,42 +1041,77 @@ export function App(): JSX.Element {
   }, [effectiveSidebarWidth]);
 
   const activeProject = useMemo(
-    () => state.projects.find((project) => project.id === state.activeProjectId),
-    [state.activeProjectId, state.projects]
+    () =>
+      state.projects.find((project) => project.id === state.activeProjectId),
+    [state.activeProjectId, state.projects],
   );
-  const previewingLaunch = debugControlsVisible && ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
-  const showingSkillsCatalog = Boolean(state.initialized && !previewingLaunch && currentSessionTab?.kind === "skills");
-  const activeTitle = showingSkillsCatalog ? "Skills" : workspaceMode ? workspaceModeTitle(workspaceMode) : activeThread?.preview || "新对话";
+  const previewingLaunch =
+    debugControlsVisible && ENABLE_LAUNCH_PREVIEW && launchPreviewPinned;
+  const showingSkillsCatalog = Boolean(
+    state.initialized &&
+    !previewingLaunch &&
+    currentSessionTab?.kind === "skills",
+  );
+  const activeTitle = showingSkillsCatalog
+    ? "Skills"
+    : workspaceMode
+      ? workspaceModeTitle(workspaceMode)
+      : activeThread?.preview || "新对话";
   const emptyThreadTitle =
     state.activeContext?.kind === "project"
       ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
       : "我们应该在 wuu 中构建什么？";
   const turns = activeThread?.turns ?? [];
   const latestAgentMessageID = latestAgentMessageItemID(turns);
-  const visibleAskRequest = visibleAskRequestForThread(state.askRequests, activeThreadID);
-  const visibleAnsweredAskRequests = visibleAnsweredAskRequestsForThread(state.answeredAskRequests, activeThreadID);
-  const answeredAskRequestsWithoutVisibleTurn = visibleAnsweredAskRequests.filter(
-    (request) => !request.turnID || !turns.some((turn) => turn.id === request.turnID)
+  const visibleAskRequest = visibleAskRequestForThread(
+    state.askRequests,
+    activeThreadID,
   );
+  const visibleAnsweredAskRequests = visibleAnsweredAskRequestsForThread(
+    state.answeredAskRequests,
+    activeThreadID,
+  );
+  const answeredAskRequestsWithoutVisibleTurn =
+    visibleAnsweredAskRequests.filter(
+      (request) =>
+        !request.turnID || !turns.some((turn) => turn.id === request.turnID),
+    );
   const emptyConversation =
-    !showingSkillsCatalog && turns.length === 0 && !visibleAskRequest && visibleAnsweredAskRequests.length === 0;
-  const showingWorkspaceMode = state.initialized && !previewingLaunch && workspaceMode !== undefined;
+    !showingSkillsCatalog &&
+    turns.length === 0 &&
+    !visibleAskRequest &&
+    visibleAnsweredAskRequests.length === 0;
+  const showingWorkspaceMode =
+    state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
   const visiblePendingThreadID =
-    pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread" ? pendingViewSwitch.targetID : undefined;
+    pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
+      ? pendingViewSwitch.targetID
+      : undefined;
   const visiblePendingProjectID =
-    pendingViewSwitch?.visible && pendingViewSwitch.kind === "project" ? pendingViewSwitch.targetID : undefined;
+    pendingViewSwitch?.visible && pendingViewSwitch.kind === "project"
+      ? pendingViewSwitch.targetID
+      : undefined;
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
   const viewSwitchPending = pendingViewSwitch !== undefined;
   const pendingAskThreadIDs = pendingAskThreadIDsForRequests(state.askRequests);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewSwitchPending;
-  const environmentPanelCanShow = Boolean(state.initialized && !previewingLaunch && !showingWorkspaceMode && !rightPanelOpen);
+  const environmentPanelCanShow = Boolean(
+    state.initialized &&
+    !previewingLaunch &&
+    !showingWorkspaceMode &&
+    !rightPanelOpen,
+  );
   const environmentPanelTargetVisible =
     environmentPanelCanShow &&
-    (environmentPanelOpen || (environmentPanelHasRoom && !environmentPanelDismissed && !emptyConversation));
+    (environmentPanelOpen ||
+      (environmentPanelHasRoom &&
+        !environmentPanelDismissed &&
+        !emptyConversation));
   const environmentPanelVisible = environmentPanelTargetVisible;
-  const environmentPanelMotionState: EnvironmentPanelMotionState = environmentPanelVisible ? "open" : "closing";
+  const environmentPanelMotionState: EnvironmentPanelMotionState =
+    environmentPanelVisible ? "open" : "closing";
   const sessionTabsVisible = Boolean(state.initialized && !previewingLaunch);
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     sidebarAnimating ? " sidebar-animating" : ""
@@ -946,7 +1127,7 @@ export function App(): JSX.Element {
     "--environment-panel-width": "328px",
     "--environment-panel-reserved-width": "372px",
     "--environment-panel-edge-gap": "18px",
-    "--environment-panel-motion-duration": `${ENVIRONMENT_PANEL_MOTION_MS}ms`
+    "--environment-panel-motion-duration": `${ENVIRONMENT_PANEL_MOTION_MS}ms`,
   } as CSSProperties;
   const environmentSourceItems = useMemo(
     () =>
@@ -956,11 +1137,20 @@ export function App(): JSX.Element {
         selectedWorkspaceFile: activeWorkspaceFile,
         composerImages,
         queuedMessages,
-        guideMessages
+        guideMessages,
       }),
-    [activeProject, activeWorkspaceFile, composerImages, guideMessages, queuedMessages, state.activeContext]
+    [
+      activeProject,
+      activeWorkspaceFile,
+      composerImages,
+      guideMessages,
+      queuedMessages,
+      state.activeContext,
+    ],
   );
-  const pullRequestDisabledReason = pullRequestUnavailableReason(state.gitStatus);
+  const pullRequestDisabledReason = pullRequestUnavailableReason(
+    state.gitStatus,
+  );
   const runDebugPhase = runDebugPhaseForState(state);
 
   useLayoutEffect(() => {
@@ -983,7 +1173,11 @@ export function App(): JSX.Element {
       setEnvironmentPanelReserved(false);
     }, ENVIRONMENT_PANEL_MOTION_MS);
     return () => window.clearTimeout(timer);
-  }, [environmentPanelHasRoom, environmentPanelMounted, environmentPanelVisible]);
+  }, [
+    environmentPanelHasRoom,
+    environmentPanelMounted,
+    environmentPanelVisible,
+  ]);
 
   useEffect(() => {
     if (!environmentPanelVisible && environmentPanelMenu) {
@@ -996,7 +1190,9 @@ export function App(): JSX.Element {
       return;
     }
     conversationAutoFollowRef.current = true;
-    window.requestAnimationFrame(() => scrollConversationToBottom({ force: true }));
+    window.requestAnimationFrame(() =>
+      scrollConversationToBottom({ force: true }),
+    );
   }, [visibleAnsweredAskRequests.length]);
 
   useLayoutEffect(() => {
@@ -1004,7 +1200,10 @@ export function App(): JSX.Element {
     const pane = conversationPaneRef.current;
     const applyHeight = (nextHeight: number): void => {
       const nextValue = `${nextHeight}px`;
-      if (dockComposerHeightRef.current === nextHeight && pane?.style.getPropertyValue("--dock-composer-height") === nextValue) {
+      if (
+        dockComposerHeightRef.current === nextHeight &&
+        pane?.style.getPropertyValue("--dock-composer-height") === nextValue
+      ) {
         return;
       }
       dockComposerHeightRef.current = nextHeight;
@@ -1028,7 +1227,13 @@ export function App(): JSX.Element {
     const resizeObserver = new ResizeObserver(updateHeight);
     resizeObserver.observe(node);
     return () => resizeObserver.disconnect();
-  }, [dockComposerNode, emptyConversation, previewingLaunch, showingWorkspaceMode, state.initialized]);
+  }, [
+    dockComposerNode,
+    emptyConversation,
+    previewingLaunch,
+    showingWorkspaceMode,
+    state.initialized,
+  ]);
 
   function applySidebarWidth(nextWidth: number): void {
     if (nextWidth <= SIDEBAR_MIN_WIDTH) {
@@ -1080,7 +1285,9 @@ export function App(): JSX.Element {
   }
 
   function applyWorkspaceRightPanelWidth(nextWidth: number): void {
-    setWorkspaceRightPanelWidth(clampWorkspaceRightPanelWidth(nextWidth, effectiveSidebarWidth));
+    setWorkspaceRightPanelWidth(
+      clampWorkspaceRightPanelWidth(nextWidth, effectiveSidebarWidth),
+    );
   }
 
   function scheduleStreamScroll(): void {
@@ -1141,7 +1348,10 @@ export function App(): JSX.Element {
   }
 
   function isConversationNearBottom(node: HTMLElement): boolean {
-    const distanceFromBottom = Math.max(0, node.scrollHeight - node.scrollTop - node.clientHeight);
+    const distanceFromBottom = Math.max(
+      0,
+      node.scrollHeight - node.scrollTop - node.clientHeight,
+    );
     return distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
   }
 
@@ -1153,13 +1363,15 @@ export function App(): JSX.Element {
     resizeSessionRef.current = {
       startX: event.clientX,
       startWidth: sidebarCollapsed ? 0 : sidebarWidth,
-      allowCollapse: true
+      allowCollapse: true,
     };
     setProjectMenuOpen(false);
     setResizingSidebar(true);
   }
 
-  function startSettingsSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
+  function startSettingsSidebarResize(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ): void {
     if (event.button !== 0) {
       return;
     }
@@ -1167,31 +1379,39 @@ export function App(): JSX.Element {
     resizeSessionRef.current = {
       startX: event.clientX,
       startWidth: sidebarWidth,
-      allowCollapse: false
+      allowCollapse: false,
     };
     setProjectMenuOpen(false);
     setResizingSidebar(true);
   }
 
-  function startRightPanelResize(event: ReactPointerEvent<HTMLDivElement>): void {
+  function startRightPanelResize(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ): void {
     if (event.button !== 0 || !rightPanelOpen) {
       return;
     }
     event.preventDefault();
     rightPanelResizeSessionRef.current = {
       startX: event.clientX,
-      startWidth: clampedWorkspaceRightPanelWidth
+      startWidth: clampedWorkspaceRightPanelWidth,
     };
     setResizingRightPanel(true);
   }
 
-  function handleRightPanelSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
+  function handleRightPanelSeparatorKey(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ): void {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      applyWorkspaceRightPanelWidth(workspaceRightPanelWidth + WORKSPACE_RIGHT_PANEL_STEP);
+      applyWorkspaceRightPanelWidth(
+        workspaceRightPanelWidth + WORKSPACE_RIGHT_PANEL_STEP,
+      );
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      applyWorkspaceRightPanelWidth(workspaceRightPanelWidth - WORKSPACE_RIGHT_PANEL_STEP);
+      applyWorkspaceRightPanelWidth(
+        workspaceRightPanelWidth - WORKSPACE_RIGHT_PANEL_STEP,
+      );
     } else if (event.key === "Home") {
       event.preventDefault();
       applyWorkspaceRightPanelWidth(WORKSPACE_RIGHT_PANEL_MAX_WIDTH);
@@ -1209,7 +1429,9 @@ export function App(): JSX.Element {
     setProjectMenuOpen(false);
     startSidebarMotion();
     setSidebarCollapsed((collapsed) => !collapsed);
-    setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
+    setSidebarWidth((width) =>
+      width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width,
+    );
   }
 
   function clearProjectCollapseTimer(projectID: string): void {
@@ -1222,7 +1444,10 @@ export function App(): JSX.Element {
   }
 
   function toggleProjectCollapsed(projectID: string): void {
-    if (collapsedProjectIDs.has(projectID) || collapsingProjectIDs.has(projectID)) {
+    if (
+      collapsedProjectIDs.has(projectID) ||
+      collapsingProjectIDs.has(projectID)
+    ) {
       clearProjectCollapseTimer(projectID);
       setCollapsedProjectIDs((current) => {
         if (!current.has(projectID)) {
@@ -1243,11 +1468,15 @@ export function App(): JSX.Element {
       return;
     }
 
-    setCollapsingProjectIDs((current) => (current.has(projectID) ? current : new Set(current).add(projectID)));
+    setCollapsingProjectIDs((current) =>
+      current.has(projectID) ? current : new Set(current).add(projectID),
+    );
     clearProjectCollapseTimer(projectID);
     const timer = window.setTimeout(() => {
       projectCollapseTimersRef.current.delete(projectID);
-      setCollapsedProjectIDs((current) => (current.has(projectID) ? current : new Set(current).add(projectID)));
+      setCollapsedProjectIDs((current) =>
+        current.has(projectID) ? current : new Set(current).add(projectID),
+      );
       setCollapsingProjectIDs((current) => {
         if (!current.has(projectID)) {
           return current;
@@ -1261,7 +1490,9 @@ export function App(): JSX.Element {
   }
 
   function ensureWorkspaceToolTab(view: WorkspacePanelView): void {
-    setWorkspaceToolTabs((current) => (current.includes(view) ? current : [...current, view]));
+    setWorkspaceToolTabs((current) =>
+      current.includes(view) ? current : [...current, view],
+    );
   }
 
   function activateWorkspaceTool(view: WorkspacePanelView): void {
@@ -1290,7 +1521,7 @@ export function App(): JSX.Element {
     setState((current) => ({
       ...persistActiveSessionTabDraft(current, outgoingDraft),
       sessionTabs: ensureSessionTab(current.sessionTabs, fileTab),
-      activeSessionTabID: fileTab.id
+      activeSessionTabID: fileTab.id,
     }));
   }
 
@@ -1313,7 +1544,7 @@ export function App(): JSX.Element {
       running: false,
       status: "ready",
       askRequests: [],
-      answeredAskRequests: []
+      answeredAskRequests: [],
     }));
   }
 
@@ -1324,9 +1555,13 @@ export function App(): JSX.Element {
     draftSessionTabCounterRef.current += 1;
     const draft = {
       prompt: `/${name} `,
-      images: []
+      images: [],
     };
-    const tab = createDraftSessionTab(`draft:skill:${Date.now()}:${draftSessionTabCounterRef.current}`, state.activeContext, draft);
+    const tab = createDraftSessionTab(
+      `draft:skill:${Date.now()}:${draftSessionTabCounterRef.current}`,
+      state.activeContext,
+      draft,
+    );
     setArchiveConfirmThreadID(undefined);
     setWorkspaceMode(undefined);
     clearPendingComposerMessages();
@@ -1343,7 +1578,7 @@ export function App(): JSX.Element {
       running: false,
       status: "ready",
       askRequests: [],
-      answeredAskRequests: []
+      answeredAskRequests: [],
     }));
   }
 
@@ -1361,7 +1596,10 @@ export function App(): JSX.Element {
     }
 
     const closedIndex = workspaceToolTabs.indexOf(view);
-    const fallback = nextTabs[Math.min(Math.max(closedIndex, 0), Math.max(nextTabs.length - 1, 0))];
+    const fallback =
+      nextTabs[
+        Math.min(Math.max(closedIndex, 0), Math.max(nextTabs.length - 1, 0))
+      ];
     if (fallback) {
       activateWorkspaceTool(fallback);
       return;
@@ -1369,7 +1607,10 @@ export function App(): JSX.Element {
     setWorkspaceRightPanelView("tools");
   }
 
-  function reorderWorkspaceToolTabs(activeView: WorkspacePanelView, overView: WorkspacePanelView): void {
+  function reorderWorkspaceToolTabs(
+    activeView: WorkspacePanelView,
+    overView: WorkspacePanelView,
+  ): void {
     if (activeView === overView) {
       return;
     }
@@ -1399,12 +1640,14 @@ export function App(): JSX.Element {
       return;
     }
     try {
-      const images = await Promise.all(files.map((file) => composerImageFromFile(file)));
+      const images = await Promise.all(
+        files.map((file) => composerImageFromFile(file)),
+      );
       setComposerImages((current) => [...current, ...images]);
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "图片粘贴失败"
+        status: error instanceof Error ? error.message : "图片粘贴失败",
       }));
     }
   }
@@ -1415,40 +1658,54 @@ export function App(): JSX.Element {
 
   function updateSplitComposerDraft(
     pane: ConversationPaneID,
-    update: (draft: ComposerDraftState) => ComposerDraftState
+    update: (draft: ComposerDraftState) => ComposerDraftState,
   ): void {
     setSplitComposerDrafts((current) => {
       const draft = current[pane] ?? emptyComposerDraft();
       return {
         ...current,
-        [pane]: update(draft)
+        [pane]: update(draft),
       };
     });
   }
 
-  function setSplitComposerPrompt(pane: ConversationPaneID, value: string): void {
+  function setSplitComposerPrompt(
+    pane: ConversationPaneID,
+    value: string,
+  ): void {
     updateSplitComposerDraft(pane, (draft) => ({ ...draft, prompt: value }));
   }
 
-  async function attachSplitComposerImageFiles(pane: ConversationPaneID, files: File[]): Promise<void> {
+  async function attachSplitComposerImageFiles(
+    pane: ConversationPaneID,
+    files: File[],
+  ): Promise<void> {
     if (files.length === 0) {
       return;
     }
     try {
-      const images = await Promise.all(files.map((file) => composerImageFromFile(file)));
-      updateSplitComposerDraft(pane, (draft) => ({ ...draft, images: [...draft.images, ...images] }));
+      const images = await Promise.all(
+        files.map((file) => composerImageFromFile(file)),
+      );
+      updateSplitComposerDraft(pane, (draft) => ({
+        ...draft,
+        images: [...draft.images, ...images],
+      }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "图片粘贴失败"
+        status: error instanceof Error ? error.message : "图片粘贴失败",
       }));
     }
   }
 
-  function removeSplitComposerImage(pane: ConversationPaneID, id: string): void {
+  function removeSplitComposerImage(
+    pane: ConversationPaneID,
+    id: string,
+  ): void {
     updateSplitComposerDraft(pane, (draft) => ({
       ...draft,
-      images: draft.images.filter((image) => image.id !== id)
+      images: draft.images.filter((image) => image.id !== id),
     }));
   }
 
@@ -1481,38 +1738,44 @@ export function App(): JSX.Element {
     setQueuedMessagesNow(next);
     setState((current) => ({
       ...current,
-      status: `已排队 ${next.length} 条`
+      status: `已排队 ${next.length} 条`,
     }));
   }
 
   function removeQueuedMessage(id: string): void {
     queueDrainPausedRef.current = false;
-    setQueuedMessagesNow(queuedMessagesRef.current.filter((message) => message.id !== id));
+    setQueuedMessagesNow(
+      queuedMessagesRef.current.filter((message) => message.id !== id),
+    );
     void drainQueuedMessages();
   }
 
   function removeGuideMessage(id: string): void {
     queueDrainPausedRef.current = false;
-    setGuideMessagesNow(guideMessagesRef.current.filter((message) => message.id !== id));
+    setGuideMessagesNow(
+      guideMessagesRef.current.filter((message) => message.id !== id),
+    );
     void drainQueuedMessages();
   }
 
   async function guideQueuedMessage(id: string): Promise<void> {
-    const queuedIndex = queuedMessagesRef.current.findIndex((message) => message.id === id);
+    const queuedIndex = queuedMessagesRef.current.findIndex(
+      (message) => message.id === id,
+    );
     if (queuedIndex < 0) {
       return;
     }
     const message = queuedMessagesRef.current[queuedIndex];
     const remainingQueued = [
       ...queuedMessagesRef.current.slice(0, queuedIndex),
-      ...queuedMessagesRef.current.slice(queuedIndex + 1)
+      ...queuedMessagesRef.current.slice(queuedIndex + 1),
     ];
     queueDrainPausedRef.current = false;
     setQueuedMessagesNow(remainingQueued);
     setGuideMessagesNow([...guideMessagesRef.current, message]);
     setState((current) => ({
       ...current,
-      status: "引导已加入"
+      status: "引导已加入",
     }));
 
     const currentState = appStateRef.current;
@@ -1529,12 +1792,14 @@ export function App(): JSX.Element {
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "interrupt failed"
+        status: error instanceof Error ? error.message : "interrupt failed",
       }));
     }
   }
 
-  function handleSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
+  function handleSidebarSeparatorKey(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ): void {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       toggleSidebar();
@@ -1560,7 +1825,9 @@ export function App(): JSX.Element {
     }
   }
 
-  function handleSettingsSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
+  function handleSettingsSidebarSeparatorKey(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ): void {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       applySettingsSidebarWidth(sidebarWidth - SIDEBAR_STEP);
@@ -1596,8 +1863,16 @@ export function App(): JSX.Element {
         images={composerImages}
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
-        running={(!activeThreadReadOnly && activeThreadIsRunning) || viewSwitchPending}
-        status={activeThreadReadOnly ? (activeThreadIsRunning ? "子任务运行中" : "子任务会话只读") : state.status}
+        running={
+          (!activeThreadReadOnly && activeThreadIsRunning) || viewSwitchPending
+        }
+        status={
+          activeThreadReadOnly
+            ? activeThreadIsRunning
+              ? "子任务运行中"
+              : "子任务会话只读"
+            : state.status
+        }
         readOnly={activeThreadReadOnly}
         initialized={state.initialized}
         gitStatus={state.gitStatus}
@@ -1644,8 +1919,12 @@ export function App(): JSX.Element {
           setBranchMenuOpen((open) => !open);
         }}
         onToggleCodexRuntimeMenu={toggleCodexRuntimeMenu}
-        onSelectRuntimeModel={(provider, model, variant) => void selectRuntimeModel(provider, model, variant)}
-        onSelectRuntimeEffort={(nextVariant) => void selectRuntimeEffort(nextVariant)}
+        onSelectRuntimeModel={(provider, model, variant) =>
+          void selectRuntimeModel(provider, model, variant)
+        }
+        onSelectRuntimeEffort={(nextVariant) =>
+          void selectRuntimeEffort(nextVariant)
+        }
         onOpenSettings={() => {
           closeProjectMenus();
           setSettingsOpen(true);
@@ -1669,20 +1948,39 @@ export function App(): JSX.Element {
     );
   }
 
-  function renderThreadConversation(thread: Thread, pane: ConversationPaneID): JSX.Element {
+  function renderThreadConversation(
+    thread: Thread,
+    pane: ConversationPaneID,
+  ): JSX.Element {
     const paneTurns = thread.turns ?? [];
     const paneLatestAgentMessageID = latestAgentMessageItemID(paneTurns);
-    const paneAskRequest = visibleAskRequestForThread(state.askRequests, thread.id);
-    const paneAnsweredAskRequests = visibleAnsweredAskRequestsForThread(state.answeredAskRequests, thread.id);
+    const paneAskRequest = visibleAskRequestForThread(
+      state.askRequests,
+      thread.id,
+    );
+    const paneAnsweredAskRequests = visibleAnsweredAskRequestsForThread(
+      state.answeredAskRequests,
+      thread.id,
+    );
     const paneAnsweredWithoutVisibleTurn = paneAnsweredAskRequests.filter(
-      (request) => !request.turnID || !paneTurns.some((turn) => turn.id === request.turnID)
+      (request) =>
+        !request.turnID ||
+        !paneTurns.some((turn) => turn.id === request.turnID),
     );
     const active = state.activePane === pane;
     const closeLabel = pane === "secondary" ? "关闭右侧对话" : "关闭左侧对话";
     const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
     const paneRunning = isThreadRunning(thread);
     const paneReadOnly = Boolean(thread.read_only);
-    const paneStatus = paneReadOnly ? (paneRunning ? "子任务运行中" : "子任务会话只读") : paneRunning ? "运行中" : active && state.status !== "ready" ? state.status : "";
+    const paneStatus = paneReadOnly
+      ? paneRunning
+        ? "子任务运行中"
+        : "子任务会话只读"
+      : paneRunning
+        ? "运行中"
+        : active && state.status !== "ready"
+          ? state.status
+          : "";
     return (
       <section
         className={`conversation-split-pane${active ? " active" : ""}`}
@@ -1692,9 +1990,17 @@ export function App(): JSX.Element {
         <div className="conversation-split-header">
           <div className="conversation-split-title">
             <span>{pane === "secondary" ? "分叉" : "源会话"}</span>
-            <strong>{threadDisplayTitle(thread, state.threads, "新对话")}</strong>
+            <strong>
+              {threadDisplayTitle(thread, state.threads, "新对话")}
+            </strong>
           </div>
-          <button className="icon-button conversation-split-close" type="button" aria-label={closeLabel} title={closeLabel} onClick={() => closeConversationPane(pane)}>
+          <button
+            className="icon-button conversation-split-close"
+            type="button"
+            aria-label={closeLabel}
+            title={closeLabel}
+            onClick={() => closeConversationPane(pane)}
+          >
             <X size={16} />
           </button>
         </div>
@@ -1713,24 +2019,36 @@ export function App(): JSX.Element {
                   cwd={thread.cwd ?? state.activeContext?.cwd}
                   latestAgentMessageID={paneLatestAgentMessageID}
                   onStreamFrame={scheduleStreamScroll}
-                  onForkMessage={(turnID, itemID) => void forkThreadFromMessage(thread, turnID, itemID)}
+                  onForkMessage={(turnID, itemID) =>
+                    void forkThreadFromMessage(thread, turnID, itemID)
+                  }
                 />
                 {paneAnsweredAskRequests
                   .filter((request) => request.turnID === turn.id)
                   .map((request) => (
-                    <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
+                    <AnsweredAskUserMessage
+                      key={`answered-${request.id}`}
+                      request={request}
+                    />
                   ))}
               </Fragment>
             ))}
             {paneAnsweredWithoutVisibleTurn.map((request) => (
-              <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
+              <AnsweredAskUserMessage
+                key={`answered-${request.id}`}
+                request={request}
+              />
             ))}
             {paneAskRequest ? (
               <AskUserMessage
                 key={paneAskRequest.id}
                 request={paneAskRequest}
-                onCancel={(request) => respondToAskRequest(request, { answers: {}, cancelled: true })}
-                onSubmit={(request, answers) => respondToAskRequest(request, { answers })}
+                onCancel={(request) =>
+                  respondToAskRequest(request, { answers: {}, cancelled: true })
+                }
+                onSubmit={(request, answers) =>
+                  respondToAskRequest(request, { answers })
+                }
               />
             ) : null}
           </div>
@@ -1742,7 +2060,9 @@ export function App(): JSX.Element {
           running={(!paneReadOnly && paneRunning) || viewSwitchPending}
           readOnly={paneReadOnly}
           status={paneStatus}
-          onPasteImageFiles={(files) => void attachSplitComposerImageFiles(pane, files)}
+          onPasteImageFiles={(files) =>
+            void attachSplitComposerImageFiles(pane, files)
+          }
           onRemoveImage={(id) => removeSplitComposerImage(pane, id)}
           onSend={() => void sendPromptForPane(pane)}
           onInterrupt={() => void interruptPane(pane)}
@@ -1765,18 +2085,27 @@ export function App(): JSX.Element {
           onDragEnd={endSessionTabDrag}
           onDragCancel={cancelSessionTabDrag}
         >
-          <SortableContext items={state.sessionTabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
+          <SortableContext
+            items={state.sessionTabs.map((tab) => tab.id)}
+            strategy={horizontalListSortingStrategy}
+          >
             <div className="session-tab-scroll">
               {state.sessionTabs.map((tab) => {
                 const active = tab.id === state.activeSessionTabID;
-                const tabThread = tab.kind === "thread" ? threadForTab(state, tab.threadID) : undefined;
+                const tabThread =
+                  tab.kind === "thread"
+                    ? threadForTab(state, tab.threadID)
+                    : undefined;
                 const running = isThreadRunning(tabThread);
                 const pendingSwitch =
-                  pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread" && tab.kind === "thread"
+                  pendingViewSwitch?.visible &&
+                  pendingViewSwitch.kind === "thread" &&
+                  tab.kind === "thread"
                     ? pendingViewSwitch.targetID === tab.threadID
                     : false;
                 const label = sessionTabLabel(tab, state);
-                const closeLabel = tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
+                const closeLabel =
+                  tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
                 return (
                   <SortableSessionTab
                     key={tab.id}
@@ -1794,12 +2123,21 @@ export function App(): JSX.Element {
               })}
             </div>
           </SortableContext>
-          <DragOverlay dropAnimation={{ duration: 150, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <DragOverlay
+            dropAnimation={{
+              duration: 150,
+              easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+            }}
+          >
             {draggingTab ? (
               <SessionTabDragPreview
                 active={draggingTab.id === state.activeSessionTabID}
                 label={sessionTabLabel(draggingTab, state)}
-                running={draggingTab.kind === "thread" ? isThreadRunning(threadForTab(state, draggingTab.threadID)) : false}
+                running={
+                  draggingTab.kind === "thread"
+                    ? isThreadRunning(threadForTab(state, draggingTab.threadID))
+                    : false
+                }
                 width={draggingSessionTabWidth}
               />
             ) : null}
@@ -1846,14 +2184,18 @@ export function App(): JSX.Element {
     const overID = event.over ? String(event.over.id) : undefined;
     if (overID && activeID !== overID) {
       setState((current) => {
-        const sourceIndex = current.sessionTabs.findIndex((tab) => tab.id === activeID);
-        const targetIndex = current.sessionTabs.findIndex((tab) => tab.id === overID);
+        const sourceIndex = current.sessionTabs.findIndex(
+          (tab) => tab.id === activeID,
+        );
+        const targetIndex = current.sessionTabs.findIndex(
+          (tab) => tab.id === overID,
+        );
         if (sourceIndex < 0 || targetIndex < 0) {
           return current;
         }
         return {
           ...current,
-          sessionTabs: arrayMove(current.sessionTabs, sourceIndex, targetIndex)
+          sessionTabs: arrayMove(current.sessionTabs, sourceIndex, targetIndex),
         };
       });
     }
@@ -1877,7 +2219,10 @@ export function App(): JSX.Element {
     viewSwitchDelayTimerRef.current = undefined;
   }
 
-  function beginViewSwitch(kind: PendingViewSwitchKind, targetID: string): number {
+  function beginViewSwitch(
+    kind: PendingViewSwitchKind,
+    targetID: string,
+  ): number {
     const requestID = viewSwitchRequestRef.current + 1;
     viewSwitchRequestRef.current = requestID;
     clearViewSwitchDelay();
@@ -1888,7 +2233,9 @@ export function App(): JSX.Element {
         return;
       }
       setPendingViewSwitch((current) =>
-        current?.kind === kind && current.targetID === targetID ? { ...current, visible: true } : current
+        current?.kind === kind && current.targetID === targetID
+          ? { ...current, visible: true }
+          : current,
       );
     }, VIEW_SWITCH_LOADING_DELAY_MS);
     return requestID;
@@ -1911,7 +2258,7 @@ export function App(): JSX.Element {
 
   async function loadRuntime(
     projectState: ProjectListResult,
-    options: { resumeLatestThread?: boolean } = {}
+    options: { resumeLatestThread?: boolean } = {},
   ): Promise<Partial<AppState>> {
     if (!projectState.active_context) {
       return emptyRuntimeState(projectState);
@@ -1921,10 +2268,14 @@ export function App(): JSX.Element {
     const listed = await window.wuu.listThreads();
     const listedThreads = sortThreads(listed.threads);
     const defaultThread = resumeLatestThread
-      ? listedThreads.find((candidate) => !candidate.pinned) ?? listedThreads[0]
+      ? (listedThreads.find((candidate) => !candidate.pinned) ??
+        listedThreads[0])
       : undefined;
     const thread = defaultThread
-      ? requireThread(await window.wuu.resumeThread(defaultThread.id), "resume did not return a thread")
+      ? requireThread(
+          await window.wuu.resumeThread(defaultThread.id),
+          "resume did not return a thread",
+        )
       : undefined;
     return {
       initialized,
@@ -1940,11 +2291,13 @@ export function App(): JSX.Element {
       running: isThreadRunning(thread),
       status: "ready",
       askRequests: [],
-      answeredAskRequests: []
+      answeredAskRequests: [],
     };
   }
 
-  function emptyRuntimeState(projectState: ProjectListResult): Partial<AppState> {
+  function emptyRuntimeState(
+    projectState: ProjectListResult,
+  ): Partial<AppState> {
     return {
       initialized: undefined,
       projects: projectState.projects,
@@ -1959,11 +2312,13 @@ export function App(): JSX.Element {
       running: false,
       status: "no-runtime",
       askRequests: [],
-      answeredAskRequests: []
+      answeredAskRequests: [],
     };
   }
 
-  async function selectRuntimeContext(context: RuntimeContext): Promise<ProjectListResult> {
+  async function selectRuntimeContext(
+    context: RuntimeContext,
+  ): Promise<ProjectListResult> {
     if (context.kind === "project") {
       return window.wuu.selectProject(context.project_id);
     }
@@ -1984,7 +2339,10 @@ export function App(): JSX.Element {
 
   async function openProject(projectId: string): Promise<void> {
     const currentState = appStateRef.current;
-    if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
+    if (
+      projectId === currentState.activeProjectId &&
+      currentState.activeContext?.kind === "project"
+    ) {
       closeProjectMenus();
       setArchiveConfirmThreadID(undefined);
       setWorkspaceMode(undefined);
@@ -1994,7 +2352,10 @@ export function App(): JSX.Element {
         setComposerImages([]);
         clearPendingComposerMessages();
         setState((current) => ({
-          ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
+          ...persistActiveSessionTabDraft(
+            current,
+            currentPrimaryComposerDraft(),
+          ),
           thread: undefined,
           secondaryThread: undefined,
           activePane: "primary",
@@ -2002,7 +2363,7 @@ export function App(): JSX.Element {
           activeSessionTabID: nextTab.id,
           allowThreadAutoActivation: false,
           running: false,
-          status: "ready"
+          status: "ready",
         }));
       }
       return;
@@ -2013,14 +2374,19 @@ export function App(): JSX.Element {
     const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
-      const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
+      const loadedState = await loadRuntime(projectState, {
+        resumeLatestThread: false,
+      });
       if (!finishViewSwitch(requestID)) {
         return;
       }
       clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) => {
-        const next = withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState);
+        const next = withLoadedRuntimeSessionTab(
+          persistActiveSessionTabDraft(current, outgoingDraft),
+          loadedState,
+        );
         return {
           ...next,
           thread: undefined,
@@ -2028,7 +2394,7 @@ export function App(): JSX.Element {
           activePane: "primary",
           allowThreadAutoActivation: false,
           running: false,
-          status: "ready"
+          status: "ready",
         };
       });
     } catch (error) {
@@ -2037,14 +2403,17 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "open project failed"
+        status: error instanceof Error ? error.message : "open project failed",
       }));
     }
   }
 
   async function selectProjectForNewThread(projectId: string): Promise<void> {
     const currentState = appStateRef.current;
-    if (projectId === currentState.activeProjectId && currentState.activeContext?.kind === "project") {
+    if (
+      projectId === currentState.activeProjectId &&
+      currentState.activeContext?.kind === "project"
+    ) {
       closeProjectMenus();
       setArchiveConfirmThreadID(undefined);
       setWorkspaceMode(undefined);
@@ -2054,7 +2423,10 @@ export function App(): JSX.Element {
         setComposerImages([]);
         clearPendingComposerMessages();
         setState((current) => ({
-          ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
+          ...persistActiveSessionTabDraft(
+            current,
+            currentPrimaryComposerDraft(),
+          ),
           thread: undefined,
           secondaryThread: undefined,
           activePane: "primary",
@@ -2062,7 +2434,7 @@ export function App(): JSX.Element {
           activeSessionTabID: nextTab.id,
           allowThreadAutoActivation: false,
           running: false,
-          status: "ready"
+          status: "ready",
         }));
       }
       return;
@@ -2071,7 +2443,7 @@ export function App(): JSX.Element {
       closeProjectMenus();
       setState((current) => ({
         ...current,
-        status: "任务运行中，暂不能切换项目"
+        status: "任务运行中，暂不能切换项目",
       }));
       return;
     }
@@ -2082,14 +2454,19 @@ export function App(): JSX.Element {
     const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
-      const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
+      const loadedState = await loadRuntime(projectState, {
+        resumeLatestThread: false,
+      });
       if (!finishViewSwitch(requestID)) {
         return;
       }
       clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) => {
-        const next = withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState);
+        const next = withLoadedRuntimeSessionTab(
+          persistActiveSessionTabDraft(current, outgoingDraft),
+          loadedState,
+        );
         return {
           ...next,
           thread: undefined,
@@ -2097,7 +2474,7 @@ export function App(): JSX.Element {
           activePane: "primary",
           allowThreadAutoActivation: false,
           running: false,
-          status: "ready"
+          status: "ready",
         };
       });
     } catch (error) {
@@ -2106,7 +2483,7 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "open project failed"
+        status: error instanceof Error ? error.message : "open project failed",
       }));
     }
   }
@@ -2116,12 +2493,17 @@ export function App(): JSX.Element {
     closeProjectMenus();
     setArchiveConfirmThreadID(undefined);
     setWorkspaceMode(undefined);
-    if (projectId === state.activeProjectId && state.activeContext?.kind === "project") {
+    if (
+      projectId === state.activeProjectId &&
+      state.activeContext?.kind === "project"
+    ) {
       setPrompt("");
       setComposerImages([]);
       clearPendingComposerMessages();
       const nextTab =
-        activeSessionTab(state)?.kind === "draft" && !prompt.trim() && composerImages.length === 0
+        activeSessionTab(state)?.kind === "draft" &&
+        !prompt.trim() &&
+        composerImages.length === 0
           ? activeSessionTab(state)
           : nextDraftSessionTab(state.activeContext);
       if (!nextTab) {
@@ -2136,7 +2518,7 @@ export function App(): JSX.Element {
         activeSessionTabID: nextTab.id,
         allowThreadAutoActivation: false,
         running: false,
-        status: "ready"
+        status: "ready",
       }));
       return;
     }
@@ -2144,7 +2526,9 @@ export function App(): JSX.Element {
     const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
-      const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
+      const loadedState = await loadRuntime(projectState, {
+        resumeLatestThread: false,
+      });
       if (!finishViewSwitch(requestID)) {
         return;
       }
@@ -2167,7 +2551,7 @@ export function App(): JSX.Element {
           activeSessionTabID: nextTab.id,
           allowThreadAutoActivation: false,
           running: false,
-          status: "ready"
+          status: "ready",
         };
       });
     } catch (error) {
@@ -2176,7 +2560,7 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "open project failed"
+        status: error instanceof Error ? error.message : "open project failed",
       }));
     }
   }
@@ -2187,11 +2571,16 @@ export function App(): JSX.Element {
     const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.createBlankProject();
-      if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
+      if (
+        sameRuntimeContext(projectState.active_context, state.activeContext)
+      ) {
         if (!finishViewSwitch(requestID)) {
           return;
         }
-        setState((current) => ({ ...current, projects: projectState.projects }));
+        setState((current) => ({
+          ...current,
+          projects: projectState.projects,
+        }));
         return;
       }
       const loadedState = await loadRuntime(projectState);
@@ -2201,7 +2590,10 @@ export function App(): JSX.Element {
       clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) =>
-        withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState)
+        withLoadedRuntimeSessionTab(
+          persistActiveSessionTabDraft(current, outgoingDraft),
+          loadedState,
+        ),
       );
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
@@ -2209,7 +2601,8 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "create project failed"
+        status:
+          error instanceof Error ? error.message : "create project failed",
       }));
     }
   }
@@ -2220,11 +2613,16 @@ export function App(): JSX.Element {
     const outgoingDraft = currentPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.chooseProjectFolder();
-      if (sameRuntimeContext(projectState.active_context, state.activeContext)) {
+      if (
+        sameRuntimeContext(projectState.active_context, state.activeContext)
+      ) {
         if (!finishViewSwitch(requestID)) {
           return;
         }
-        setState((current) => ({ ...current, projects: projectState.projects }));
+        setState((current) => ({
+          ...current,
+          projects: projectState.projects,
+        }));
         return;
       }
       const loadedState = await loadRuntime(projectState);
@@ -2234,7 +2632,10 @@ export function App(): JSX.Element {
       clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) =>
-        withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState)
+        withLoadedRuntimeSessionTab(
+          persistActiveSessionTabDraft(current, outgoingDraft),
+          loadedState,
+        ),
       );
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
@@ -2242,7 +2643,7 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "open folder failed"
+        status: error instanceof Error ? error.message : "open folder failed",
       }));
     }
   }
@@ -2252,7 +2653,10 @@ export function App(): JSX.Element {
       closeProjectMenus();
       return;
     }
-    const requestID = beginViewSwitch("runtime", fresh ? "no-project:fresh" : "no-project");
+    const requestID = beginViewSwitch(
+      "runtime",
+      fresh ? "no-project:fresh" : "no-project",
+    );
     closeProjectMenus();
     const outgoingDraft = currentPrimaryComposerDraft();
     try {
@@ -2264,7 +2668,10 @@ export function App(): JSX.Element {
       clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) =>
-        withLoadedRuntimeSessionTab(persistActiveSessionTabDraft(current, outgoingDraft), loadedState)
+        withLoadedRuntimeSessionTab(
+          persistActiveSessionTabDraft(current, outgoingDraft),
+          loadedState,
+        ),
       );
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
@@ -2272,7 +2679,8 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "open no-project failed"
+        status:
+          error instanceof Error ? error.message : "open no-project failed",
       }));
     }
   }
@@ -2287,12 +2695,13 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         gitStatus,
-        status: current.status === "ready" ? "ready" : current.status
+        status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "checkout branch failed"
+        status:
+          error instanceof Error ? error.message : "checkout branch failed",
       }));
     }
   }
@@ -2315,7 +2724,7 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         gitStatus,
-        status: current.status === "ready" ? "ready" : current.status
+        status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
       if (!sameRuntimeContext(appStateRef.current.activeContext, context)) {
@@ -2323,7 +2732,8 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "refresh git status failed"
+        status:
+          error instanceof Error ? error.message : "refresh git status failed",
       }));
     } finally {
       gitRefreshInFlightRef.current = false;
@@ -2356,27 +2766,30 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         gitStatus: result.status,
-        status: current.status === "ready" ? "ready" : current.status
+        status: current.status === "ready" ? "ready" : current.status,
       }));
       setEnvironmentPanelMenu(null);
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "create branch failed"
+        status: error instanceof Error ? error.message : "create branch failed",
       }));
       throw error;
     }
   }
 
-  async function commitEnvironmentChanges(params: { message: string; includeUnstaged: boolean }): Promise<GitCommitResult> {
+  async function commitEnvironmentChanges(params: {
+    message: string;
+    includeUnstaged: boolean;
+  }): Promise<GitCommitResult> {
     const result = await window.wuu.commitGitChanges({
       message: params.message,
-      include_unstaged: params.includeUnstaged
+      include_unstaged: params.includeUnstaged,
     });
     setState((current) => ({
       ...current,
       gitStatus: result.status,
-      status: `已提交 ${result.commit}`
+      status: `已提交 ${result.commit}`,
     }));
     return result;
   }
@@ -2389,12 +2802,12 @@ export function App(): JSX.Element {
     const result = await window.wuu.createPullRequest({
       title: params.title,
       body: params.body,
-      draft: params.draft
+      draft: params.draft,
     });
     setState((current) => ({
       ...current,
       gitStatus: result.status,
-      status: result.already_exists ? "已有拉取请求" : "已创建拉取请求"
+      status: result.already_exists ? "已有拉取请求" : "已创建拉取请求",
     }));
     return result;
   }
@@ -2418,7 +2831,7 @@ export function App(): JSX.Element {
     const next: RunDebugEvent = {
       ...entry,
       id: ++runDebugEventIDRef.current,
-      at: Date.now()
+      at: Date.now(),
     };
     setRunDebugEvents((current) => [...current, next].slice(-80));
   }
@@ -2428,13 +2841,16 @@ export function App(): JSX.Element {
     const next: RunDebugEvent = {
       ...entry,
       id: ++runDebugEventIDRef.current,
-      at: Date.now()
+      at: Date.now(),
     };
     setRunDebugEvents([next]);
   }
 
   function recordRunDebugEvent(event: ServerEvent): void {
-    const entry = runDebugEventFromServerEvent(event, runDebugDeltaSeenRef.current);
+    const entry = runDebugEventFromServerEvent(
+      event,
+      runDebugDeltaSeenRef.current,
+    );
     if (entry) {
       appendRunDebugEvent(entry);
     }
@@ -2446,7 +2862,7 @@ export function App(): JSX.Element {
       events: runDebugEvents,
       queuedMessages,
       guideMessages,
-      composerImages
+      composerImages,
     });
     try {
       await navigator.clipboard.writeText(snapshot);
@@ -2457,7 +2873,7 @@ export function App(): JSX.Element {
         source: "client",
         method: "debug/copy",
         detail: error instanceof Error ? error.message : "复制失败",
-        tone: "error"
+        tone: "error",
       });
     }
   }
@@ -2465,7 +2881,7 @@ export function App(): JSX.Element {
   function currentPrimaryComposerDraft(): ComposerDraftState {
     return {
       prompt,
-      images: composerImages.map((image) => ({ ...image }))
+      images: composerImages.map((image) => ({ ...image })),
     };
   }
 
@@ -2479,17 +2895,28 @@ export function App(): JSX.Element {
     setSplitComposerDrafts(initialSplitComposerDrafts());
   }
 
-  function restoreLoadedRuntimeComposerDraft(loadedState: Partial<AppState>): void {
+  function restoreLoadedRuntimeComposerDraft(
+    loadedState: Partial<AppState>,
+  ): void {
     const context = loadedState.activeContext;
     if (!context) {
       return;
     }
-    restoreSessionTabComposerDraft(sessionTabForLoadedRuntime(appStateRef.current.sessionTabs, context, loadedState.thread));
+    restoreSessionTabComposerDraft(
+      sessionTabForLoadedRuntime(
+        appStateRef.current.sessionTabs,
+        context,
+        loadedState.thread,
+      ),
+    );
   }
 
   function nextDraftSessionTab(context: RuntimeContext): SessionTab {
     draftSessionTabCounterRef.current += 1;
-    return createDraftSessionTab(`draft:${Date.now()}:${draftSessionTabCounterRef.current}`, context);
+    return createDraftSessionTab(
+      `draft:${Date.now()}:${draftSessionTabCounterRef.current}`,
+      context,
+    );
   }
 
   async function selectSessionTab(tabID: string): Promise<void> {
@@ -2502,14 +2929,21 @@ export function App(): JSX.Element {
       return;
     }
     setArchiveConfirmThreadID(undefined);
-    const sameContext = sameRuntimeContext(tab.context, currentState.activeContext);
+    const sameContext = sameRuntimeContext(
+      tab.context,
+      currentState.activeContext,
+    );
     if (tab.kind === "file") {
       const outgoingDraft = currentPrimaryComposerDraft();
-      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(tab.context));
+      const requestID = sameContext
+        ? undefined
+        : beginViewSwitch("runtime", runtimeContextKey(tab.context));
       try {
         const loadedState = sameContext
           ? undefined
-          : await loadRuntime(await selectRuntimeContext(tab.context), { resumeLatestThread: false });
+          : await loadRuntime(await selectRuntimeContext(tab.context), {
+              resumeLatestThread: false,
+            });
         if (requestID !== undefined && !finishViewSwitch(requestID)) {
           return;
         }
@@ -2520,8 +2954,13 @@ export function App(): JSX.Element {
         setSplitComposerDrafts(initialSplitComposerDrafts());
         setWorkspaceMode("files");
         setState((current) => {
-          const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-          const next = loadedState ? { ...withDraft, ...loadedState } : withDraft;
+          const withDraft = persistActiveSessionTabDraft(
+            current,
+            outgoingDraft,
+          );
+          const next = loadedState
+            ? { ...withDraft, ...loadedState }
+            : withDraft;
           return {
             ...next,
             secondaryThread: undefined,
@@ -2532,7 +2971,7 @@ export function App(): JSX.Element {
             running: false,
             status: "ready",
             askRequests: [],
-            answeredAskRequests: []
+            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -2541,18 +2980,22 @@ export function App(): JSX.Element {
         }
         setState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : "load failed"
+          status: error instanceof Error ? error.message : "load failed",
         }));
       }
       return;
     }
     if (tab.kind === "skills") {
       const outgoingDraft = currentPrimaryComposerDraft();
-      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(tab.context));
+      const requestID = sameContext
+        ? undefined
+        : beginViewSwitch("runtime", runtimeContextKey(tab.context));
       try {
         const loadedState = sameContext
           ? undefined
-          : await loadRuntime(await selectRuntimeContext(tab.context), { resumeLatestThread: false });
+          : await loadRuntime(await selectRuntimeContext(tab.context), {
+              resumeLatestThread: false,
+            });
         if (requestID !== undefined && !finishViewSwitch(requestID)) {
           return;
         }
@@ -2563,8 +3006,13 @@ export function App(): JSX.Element {
         setSplitComposerDrafts(initialSplitComposerDrafts());
         setWorkspaceMode(undefined);
         setState((current) => {
-          const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-          const next = loadedState ? { ...withDraft, ...loadedState } : withDraft;
+          const withDraft = persistActiveSessionTabDraft(
+            current,
+            outgoingDraft,
+          );
+          const next = loadedState
+            ? { ...withDraft, ...loadedState }
+            : withDraft;
           return {
             ...next,
             secondaryThread: undefined,
@@ -2575,7 +3023,7 @@ export function App(): JSX.Element {
             running: false,
             status: "ready",
             askRequests: [],
-            answeredAskRequests: []
+            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -2584,7 +3032,7 @@ export function App(): JSX.Element {
         }
         setState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : "load failed"
+          status: error instanceof Error ? error.message : "load failed",
         }));
       }
       return;
@@ -2592,11 +3040,15 @@ export function App(): JSX.Element {
     setWorkspaceMode(undefined);
     if (tab.kind === "draft") {
       const outgoingDraft = currentPrimaryComposerDraft();
-      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(tab.context));
+      const requestID = sameContext
+        ? undefined
+        : beginViewSwitch("runtime", runtimeContextKey(tab.context));
       try {
         const loadedState = sameContext
           ? undefined
-          : await loadRuntime(await selectRuntimeContext(tab.context), { resumeLatestThread: false });
+          : await loadRuntime(await selectRuntimeContext(tab.context), {
+              resumeLatestThread: false,
+            });
         if (requestID !== undefined && !finishViewSwitch(requestID)) {
           return;
         }
@@ -2606,8 +3058,13 @@ export function App(): JSX.Element {
         clearPendingComposerMessages();
         restoreSessionTabComposerDraft(tab);
         setState((current) => {
-          const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-          const next = loadedState ? { ...withDraft, ...loadedState } : withDraft;
+          const withDraft = persistActiveSessionTabDraft(
+            current,
+            outgoingDraft,
+          );
+          const next = loadedState
+            ? { ...withDraft, ...loadedState }
+            : withDraft;
           return {
             ...next,
             thread: undefined,
@@ -2619,7 +3076,7 @@ export function App(): JSX.Element {
             running: false,
             status: "ready",
             askRequests: [],
-            answeredAskRequests: []
+            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -2628,7 +3085,7 @@ export function App(): JSX.Element {
         }
         setState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : "load failed"
+          status: error instanceof Error ? error.message : "load failed",
         }));
       }
       return;
@@ -2642,8 +3099,13 @@ export function App(): JSX.Element {
     const requestID = beginViewSwitch("thread", tab.threadID);
     try {
       const projectState = await selectRuntimeContext(tab.context);
-      const loadedState = await loadRuntime(projectState, { resumeLatestThread: false });
-      const thread = requireThread(await window.wuu.resumeThread(tab.threadID), "resume did not return a thread");
+      const loadedState = await loadRuntime(projectState, {
+        resumeLatestThread: false,
+      });
+      const thread = requireThread(
+        await window.wuu.resumeThread(tab.threadID),
+        "resume did not return a thread",
+      );
       if (!finishViewSwitch(requestID)) {
         return;
       }
@@ -2659,13 +3121,16 @@ export function App(): JSX.Element {
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(next.sessionTabs, createThreadSessionTab(thread, tab.context, targetDraft)),
+          sessionTabs: ensureSessionTab(
+            next.sessionTabs,
+            createThreadSessionTab(thread, tab.context, targetDraft),
+          ),
           activeSessionTabID: threadSessionTabID(thread.id),
           threads: upsertThread(next.threads, thread),
           running: isThreadRunning(thread),
           status: "ready",
           askRequests: [],
-          answeredAskRequests: []
+          answeredAskRequests: [],
         };
       });
     } catch (error) {
@@ -2674,14 +3139,16 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "load failed"
+        status: error instanceof Error ? error.message : "load failed",
       }));
     }
   }
 
   async function closeSessionTab(tabID: string): Promise<void> {
     const currentState = appStateRef.current;
-    const tabIndex = currentState.sessionTabs.findIndex((tab) => tab.id === tabID);
+    const tabIndex = currentState.sessionTabs.findIndex(
+      (tab) => tab.id === tabID,
+    );
     if (tabIndex < 0) {
       return;
     }
@@ -2691,23 +3158,31 @@ export function App(): JSX.Element {
     if (!closingActive) {
       setState((current) => ({
         ...current,
-        sessionTabs: current.sessionTabs.filter((tab) => tab.id !== tabID)
+        sessionTabs: current.sessionTabs.filter((tab) => tab.id !== tabID),
       }));
       return;
     }
 
     const fallbackTab =
-      nextTabs[Math.min(tabIndex, Math.max(nextTabs.length - 1, 0))] ?? nextDraftSessionTab(closedTab.context);
+      nextTabs[Math.min(tabIndex, Math.max(nextTabs.length - 1, 0))] ??
+      nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
     setArchiveConfirmThreadID(undefined);
     clearPendingComposerMessages();
     if (fallbackTab.kind === "file") {
-      const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
-      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
+      const sameContext = sameRuntimeContext(
+        fallbackTab.context,
+        currentState.activeContext,
+      );
+      const requestID = sameContext
+        ? undefined
+        : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
       try {
         const loadedState = sameContext
           ? undefined
-          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), { resumeLatestThread: false });
+          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), {
+              resumeLatestThread: false,
+            });
         if (requestID !== undefined && !finishViewSwitch(requestID)) {
           return;
         }
@@ -2728,7 +3203,7 @@ export function App(): JSX.Element {
             running: false,
             status: "ready",
             askRequests: [],
-            answeredAskRequests: []
+            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -2737,18 +3212,25 @@ export function App(): JSX.Element {
         }
         setState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : "load failed"
+          status: error instanceof Error ? error.message : "load failed",
         }));
       }
       return;
     }
     if (fallbackTab.kind === "skills") {
-      const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
-      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
+      const sameContext = sameRuntimeContext(
+        fallbackTab.context,
+        currentState.activeContext,
+      );
+      const requestID = sameContext
+        ? undefined
+        : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
       try {
         const loadedState = sameContext
           ? undefined
-          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), { resumeLatestThread: false });
+          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), {
+              resumeLatestThread: false,
+            });
         if (requestID !== undefined && !finishViewSwitch(requestID)) {
           return;
         }
@@ -2769,7 +3251,7 @@ export function App(): JSX.Element {
             running: false,
             status: "ready",
             askRequests: [],
-            answeredAskRequests: []
+            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -2778,19 +3260,26 @@ export function App(): JSX.Element {
         }
         setState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : "load failed"
+          status: error instanceof Error ? error.message : "load failed",
         }));
       }
       return;
     }
     setWorkspaceMode(undefined);
     if (fallbackTab.kind === "draft") {
-      const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
-      const requestID = sameContext ? undefined : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
+      const sameContext = sameRuntimeContext(
+        fallbackTab.context,
+        currentState.activeContext,
+      );
+      const requestID = sameContext
+        ? undefined
+        : beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
       try {
         const loadedState = sameContext
           ? undefined
-          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), { resumeLatestThread: false });
+          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), {
+              resumeLatestThread: false,
+            });
         if (requestID !== undefined && !finishViewSwitch(requestID)) {
           return;
         }
@@ -2811,7 +3300,7 @@ export function App(): JSX.Element {
             running: false,
             status: "ready",
             askRequests: [],
-            answeredAskRequests: []
+            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -2820,20 +3309,28 @@ export function App(): JSX.Element {
         }
         setState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : "load failed"
+          status: error instanceof Error ? error.message : "load failed",
         }));
       }
       return;
     }
 
     const restoredDraft = cloneSessionTabDraft(fallbackTab);
-    const sameContext = sameRuntimeContext(fallbackTab.context, currentState.activeContext);
+    const sameContext = sameRuntimeContext(
+      fallbackTab.context,
+      currentState.activeContext,
+    );
     const requestID = beginViewSwitch("thread", fallbackTab.threadID);
     try {
       const loadedState = sameContext
         ? undefined
-        : await loadRuntime(await selectRuntimeContext(fallbackTab.context), { resumeLatestThread: false });
-      const thread = requireThread(await window.wuu.resumeThread(fallbackTab.threadID), "resume did not return a thread");
+        : await loadRuntime(await selectRuntimeContext(fallbackTab.context), {
+            resumeLatestThread: false,
+          });
+      const thread = requireThread(
+        await window.wuu.resumeThread(fallbackTab.threadID),
+        "resume did not return a thread",
+      );
       if (!finishViewSwitch(requestID)) {
         return;
       }
@@ -2847,11 +3344,14 @@ export function App(): JSX.Element {
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(tabsWithFallback, createThreadSessionTab(thread, fallbackTab.context, restoredDraft)),
+          sessionTabs: ensureSessionTab(
+            tabsWithFallback,
+            createThreadSessionTab(thread, fallbackTab.context, restoredDraft),
+          ),
           activeSessionTabID: threadSessionTabID(thread.id),
           threads: upsertThread(next.threads, thread),
           running: isThreadRunning(thread),
-          status: "ready"
+          status: "ready",
         };
       });
     } catch (error) {
@@ -2860,7 +3360,7 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "load failed"
+        status: error instanceof Error ? error.message : "load failed",
       }));
     }
   }
@@ -2875,12 +3375,17 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
-    if (state.activeContext.kind === "no_project" && (state.thread || state.secondaryThread)) {
+    if (
+      state.activeContext.kind === "no_project" &&
+      (state.thread || state.secondaryThread)
+    ) {
       await useNoProject(true);
       return;
     }
     const nextTab =
-      activeSessionTab(state)?.kind === "draft" && !prompt.trim() && composerImages.length === 0
+      activeSessionTab(state)?.kind === "draft" &&
+      !prompt.trim() &&
+      composerImages.length === 0
         ? activeSessionTab(state)
         : nextDraftSessionTab(state.activeContext);
     if (!nextTab) {
@@ -2895,7 +3400,7 @@ export function App(): JSX.Element {
       activeSessionTabID: nextTab.id,
       allowThreadAutoActivation: false,
       running: false,
-      status: "ready"
+      status: "ready",
     }));
   }
 
@@ -2914,7 +3419,7 @@ export function App(): JSX.Element {
     const demoThreads = [demo.parent, ...demo.children];
     localDemoThreadsRef.current = new Map([
       ...localDemoThreadsRef.current,
-      ...demoThreads.map((thread): [string, Thread] => [thread.id, thread])
+      ...demoThreads.map((thread): [string, Thread] => [thread.id, thread]),
     ]);
     setState((current) => ({
       ...current,
@@ -2922,13 +3427,16 @@ export function App(): JSX.Element {
       secondaryThread: undefined,
       activePane: "primary",
       allowThreadAutoActivation: true,
-      sessionTabs: ensureSessionTab(current.sessionTabs, createThreadSessionTab(demo.parent, activeContext)),
+      sessionTabs: ensureSessionTab(
+        current.sessionTabs,
+        createThreadSessionTab(demo.parent, activeContext),
+      ),
       activeSessionTabID: threadSessionTabID(demo.parent.id),
       threads: upsertThread(current.threads, demo.parent),
       running: false,
       status: "ready",
       askRequests: [],
-      answeredAskRequests: []
+      answeredAskRequests: [],
     }));
   }
 
@@ -2943,21 +3451,31 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     clearPendingComposerMessages();
-    const thread = createConversationFixture(kind, activeContext.cwd, state.initialized);
-    localDemoThreadsRef.current = new Map([...localDemoThreadsRef.current, [thread.id, thread]]);
+    const thread = createConversationFixture(
+      kind,
+      activeContext.cwd,
+      state.initialized,
+    );
+    localDemoThreadsRef.current = new Map([
+      ...localDemoThreadsRef.current,
+      [thread.id, thread],
+    ]);
     setState((current) => ({
       ...current,
       thread,
       secondaryThread: undefined,
       activePane: "primary",
       allowThreadAutoActivation: true,
-      sessionTabs: ensureSessionTab(current.sessionTabs, createThreadSessionTab(thread, activeContext)),
+      sessionTabs: ensureSessionTab(
+        current.sessionTabs,
+        createThreadSessionTab(thread, activeContext),
+      ),
       activeSessionTabID: threadSessionTabID(thread.id),
       threads: upsertThread(current.threads, thread),
       running: isThreadRunning(thread),
       status: "ready",
       askRequests: [],
-      answeredAskRequests: []
+      answeredAskRequests: [],
     }));
   }
 
@@ -2983,7 +3501,10 @@ export function App(): JSX.Element {
       }
       return;
     }
-    if (pendingViewSwitch?.kind === "thread" && pendingViewSwitch.targetID === threadId) {
+    if (
+      pendingViewSwitch?.kind === "thread" &&
+      pendingViewSwitch.targetID === threadId
+    ) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
@@ -3004,13 +3525,16 @@ export function App(): JSX.Element {
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(demoThread, activeContext, targetDraft)),
+          sessionTabs: ensureSessionTab(
+            withDraft.sessionTabs,
+            createThreadSessionTab(demoThread, activeContext, targetDraft),
+          ),
           activeSessionTabID: threadSessionTabID(demoThread.id),
           threads: upsertThread(current.threads, demoThread),
           running: isThreadRunning(demoThread),
           status: "ready",
           askRequests: [],
-          answeredAskRequests: []
+          answeredAskRequests: [],
         };
       });
       return;
@@ -3018,8 +3542,14 @@ export function App(): JSX.Element {
     const sourceContext = state.activeContext;
     const requestID = beginViewSwitch("thread", threadId);
     try {
-      const thread = requireThread(await window.wuu.resumeThread(threadId), "resume did not return a thread");
-      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      const thread = requireThread(
+        await window.wuu.resumeThread(threadId),
+        "resume did not return a thread",
+      );
+      if (
+        !finishViewSwitch(requestID) ||
+        !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
+      ) {
         return;
       }
       clearPendingComposerMessages();
@@ -3033,20 +3563,26 @@ export function App(): JSX.Element {
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(thread, sourceContext, targetDraft)),
+          sessionTabs: ensureSessionTab(
+            withDraft.sessionTabs,
+            createThreadSessionTab(thread, sourceContext, targetDraft),
+          ),
           activeSessionTabID: threadSessionTabID(thread.id),
           threads: upsertThread(current.threads, thread),
           running: isThreadRunning(thread),
-          status: "ready"
+          status: "ready",
         };
       });
     } catch (error) {
-      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      if (
+        !finishViewSwitch(requestID) ||
+        !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
+      ) {
         return;
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "load failed"
+        status: error instanceof Error ? error.message : "load failed",
       }));
     }
   }
@@ -3061,7 +3597,10 @@ export function App(): JSX.Element {
       }
       return;
     }
-    if (pendingViewSwitch?.kind === "thread" && pendingViewSwitch.targetID === agent.id) {
+    if (
+      pendingViewSwitch?.kind === "thread" &&
+      pendingViewSwitch.targetID === agent.id
+    ) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
@@ -3073,8 +3612,14 @@ export function App(): JSX.Element {
     try {
       const thread =
         localDemoThreadsRef.current.get(agent.id) ??
-        requireThread(await window.wuu.resumeThread(agent.id), "resume did not return a child agent thread");
-      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+        requireThread(
+          await window.wuu.resumeThread(agent.id),
+          "resume did not return a child agent thread",
+        );
+      if (
+        !finishViewSwitch(requestID) ||
+        !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
+      ) {
         return;
       }
       restorePrimaryComposerDraft(targetDraft);
@@ -3088,20 +3633,27 @@ export function App(): JSX.Element {
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(withDraft.sessionTabs, createThreadSessionTab(thread, sourceContext, targetDraft)),
+          sessionTabs: ensureSessionTab(
+            withDraft.sessionTabs,
+            createThreadSessionTab(thread, sourceContext, targetDraft),
+          ),
           activeSessionTabID: threadSessionTabID(thread.id),
           threads: upsertThread(current.threads, thread),
           running: isThreadRunning(thread),
-          status: "ready"
+          status: "ready",
         };
       });
     } catch (error) {
-      if (!finishViewSwitch(requestID) || !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)) {
+      if (
+        !finishViewSwitch(requestID) ||
+        !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
+      ) {
         return;
       }
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "load child agent failed"
+        status:
+          error instanceof Error ? error.message : "load child agent failed",
       }));
     }
   }
@@ -3111,28 +3663,35 @@ export function App(): JSX.Element {
       if (pane === "secondary" && !current.secondaryThread) {
         return current;
       }
-      const thread = pane === "secondary" ? current.secondaryThread : current.thread;
+      const thread =
+        pane === "secondary" ? current.secondaryThread : current.thread;
       return {
         ...current,
         activePane: pane,
-        activeSessionTabID: thread ? threadSessionTabID(thread.id) : current.activeSessionTabID,
-        running: isThreadRunning(thread)
+        activeSessionTabID: thread
+          ? threadSessionTabID(thread.id)
+          : current.activeSessionTabID,
+        running: isThreadRunning(thread),
       };
     });
   }
 
   function closeConversationPane(pane: ConversationPaneID): void {
     clearPendingComposerMessages();
-    moveSplitDraftToGlobalComposer(pane === "secondary" ? "primary" : "secondary");
+    moveSplitDraftToGlobalComposer(
+      pane === "secondary" ? "primary" : "secondary",
+    );
     setState((current) => {
       if (pane === "secondary") {
         return {
           ...current,
           secondaryThread: undefined,
           activePane: "primary",
-          activeSessionTabID: current.thread ? threadSessionTabID(current.thread.id) : current.activeSessionTabID,
+          activeSessionTabID: current.thread
+            ? threadSessionTabID(current.thread.id)
+            : current.activeSessionTabID,
           running: isThreadRunning(current.thread),
-          status: "ready"
+          status: "ready",
         };
       }
       if (current.secondaryThread) {
@@ -3143,13 +3702,16 @@ export function App(): JSX.Element {
           activePane: "primary",
           activeSessionTabID: threadSessionTabID(current.secondaryThread.id),
           running: isThreadRunning(current.secondaryThread),
-          status: "ready"
+          status: "ready",
         };
       }
       if (!current.activeContext) {
         return current;
       }
-      const nextTab = createDraftSessionTab(`draft:closed:${Date.now()}`, current.activeContext);
+      const nextTab = createDraftSessionTab(
+        `draft:closed:${Date.now()}`,
+        current.activeContext,
+      );
       return {
         ...current,
         thread: undefined,
@@ -3157,12 +3719,16 @@ export function App(): JSX.Element {
         sessionTabs: ensureSessionTab(current.sessionTabs, nextTab),
         activeSessionTabID: nextTab.id,
         running: false,
-        status: "ready"
+        status: "ready",
       };
     });
   }
 
-  async function forkThreadFromMessage(sourceThread: Thread, turnID: string, itemID: string): Promise<void> {
+  async function forkThreadFromMessage(
+    sourceThread: Thread,
+    turnID: string,
+    itemID: string,
+  ): Promise<void> {
     if (!state.activeContext || sourceThread.read_only) {
       return;
     }
@@ -3176,20 +3742,27 @@ export function App(): JSX.Element {
     try {
       const fork = requireThread(
         await window.wuu.forkThread(sourceThread.id, turnID, itemID),
-        "thread/fork did not return a thread"
+        "thread/fork did not return a thread",
       );
       conversationAutoFollowRef.current = true;
       const currentState = appStateRef.current;
-      const sourcePane = currentState.secondaryThread?.id === sourceThread.id ? "secondary" : "primary";
-      const currentSplitConversation = Boolean(currentState.thread && currentState.secondaryThread && !workspaceMode);
+      const sourcePane =
+        currentState.secondaryThread?.id === sourceThread.id
+          ? "secondary"
+          : "primary";
+      const currentSplitConversation = Boolean(
+        currentState.thread && currentState.secondaryThread && !workspaceMode,
+      );
       const sourceDraft = currentSplitConversation
-        ? cloneComposerDraft(splitComposerDrafts[sourcePane] ?? emptyComposerDraft())
+        ? cloneComposerDraft(
+            splitComposerDrafts[sourcePane] ?? emptyComposerDraft(),
+          )
         : { prompt, images: composerImages.map((image) => ({ ...image })) };
       setPrompt("");
       setComposerImages([]);
       setSplitComposerDrafts({
         primary: sourceDraft,
-        secondary: emptyComposerDraft()
+        secondary: emptyComposerDraft(),
       });
       setState((current) => {
         const source =
@@ -3206,19 +3779,22 @@ export function App(): JSX.Element {
           activePane: "secondary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
-            ensureSessionTab(current.sessionTabs, createThreadSessionTab(source, activeContext, sourceDraft)),
-            forkTab
+            ensureSessionTab(
+              current.sessionTabs,
+              createThreadSessionTab(source, activeContext, sourceDraft),
+            ),
+            forkTab,
           ),
           activeSessionTabID: forkTab.id,
           threads: upsertThread(upsertThread(current.threads, source), fork),
           running: isThreadRunning(fork),
-          status: "ready"
+          status: "ready",
         };
       });
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "fork failed"
+        status: error instanceof Error ? error.message : "fork failed",
       }));
     }
   }
@@ -3230,13 +3806,19 @@ export function App(): JSX.Element {
     setArchiveConfirmThreadID(undefined);
     if (localDemoThreadsRef.current.has(thread.id)) {
       const nextThread = { ...thread, pinned: !thread.pinned };
-      localDemoThreadsRef.current = new Map([...localDemoThreadsRef.current, [thread.id, nextThread]]);
+      localDemoThreadsRef.current = new Map([
+        ...localDemoThreadsRef.current,
+        [thread.id, nextThread],
+      ]);
       setState((current) => ({
         ...current,
         thread: current.thread?.id === thread.id ? nextThread : current.thread,
-        secondaryThread: current.secondaryThread?.id === thread.id ? nextThread : current.secondaryThread,
+        secondaryThread:
+          current.secondaryThread?.id === thread.id
+            ? nextThread
+            : current.secondaryThread,
         threads: upsertThread(current.threads, nextThread),
-        status: current.status === "ready" ? "ready" : current.status
+        status: current.status === "ready" ? "ready" : current.status,
       }));
       return;
     }
@@ -3244,22 +3826,29 @@ export function App(): JSX.Element {
       const result = await window.wuu.pinThread(thread.id, !thread.pinned);
       setState((current) => ({
         ...current,
-        thread: current.thread?.id === thread.id ? result.thread : current.thread,
-        secondaryThread: current.secondaryThread?.id === thread.id ? result.thread : current.secondaryThread,
+        thread:
+          current.thread?.id === thread.id ? result.thread : current.thread,
+        secondaryThread:
+          current.secondaryThread?.id === thread.id
+            ? result.thread
+            : current.secondaryThread,
         threads: upsertThread(current.threads, result.thread),
-        status: current.status === "ready" ? "ready" : current.status
+        status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "pin thread failed"
+        status: error instanceof Error ? error.message : "pin thread failed",
       }));
     }
   }
 
   async function archiveThread(thread: Thread): Promise<void> {
     const isLocalDemoThread = localDemoThreadsRef.current.has(thread.id);
-    if (!state.activeContext || (!isLocalDemoThread && isThreadRunning(thread))) {
+    if (
+      !state.activeContext ||
+      (!isLocalDemoThread && isThreadRunning(thread))
+    ) {
       return;
     }
     if (archiveConfirmThreadID !== thread.id) {
@@ -3268,7 +3857,9 @@ export function App(): JSX.Element {
     }
     clearPendingComposerMessages();
     const archivedActiveThread = thread.id === activeThreadID;
-    const fallbackDraft = archivedActiveThread ? nextDraftSessionTab(state.activeContext) : undefined;
+    const fallbackDraft = archivedActiveThread
+      ? nextDraftSessionTab(state.activeContext)
+      : undefined;
     if (archivedActiveThread) {
       setPrompt("");
       setComposerImages([]);
@@ -3276,24 +3867,44 @@ export function App(): JSX.Element {
     }
     if (isLocalDemoThread) {
       localDemoThreadsRef.current = new Map(
-        [...localDemoThreadsRef.current].filter(([threadID]) => threadID !== thread.id)
+        [...localDemoThreadsRef.current].filter(
+          ([threadID]) => threadID !== thread.id,
+        ),
       );
       setArchiveConfirmThreadID(undefined);
       setState((current) => {
-        const nextTabs = removeSessionTab(current.sessionTabs, threadSessionTabID(thread.id));
+        const nextTabs = removeSessionTab(
+          current.sessionTabs,
+          threadSessionTabID(thread.id),
+        );
         return {
           ...current,
           thread: current.thread?.id === thread.id ? undefined : current.thread,
-          secondaryThread: current.secondaryThread?.id === thread.id ? undefined : current.secondaryThread,
-          activePane: current.activePane === "secondary" && current.secondaryThread?.id === thread.id ? "primary" : current.activePane,
-          sessionTabs: fallbackDraft ? ensureSessionTab(nextTabs, fallbackDraft) : nextTabs,
+          secondaryThread:
+            current.secondaryThread?.id === thread.id
+              ? undefined
+              : current.secondaryThread,
+          activePane:
+            current.activePane === "secondary" &&
+            current.secondaryThread?.id === thread.id
+              ? "primary"
+              : current.activePane,
+          sessionTabs: fallbackDraft
+            ? ensureSessionTab(nextTabs, fallbackDraft)
+            : nextTabs,
           activeSessionTabID:
-            current.activeSessionTabID === threadSessionTabID(thread.id) && fallbackDraft
+            current.activeSessionTabID === threadSessionTabID(thread.id) &&
+            fallbackDraft
               ? fallbackDraft.id
               : current.activeSessionTabID,
-          threads: current.threads.filter((candidate) => candidate.id !== thread.id),
-          running: activeThreadIDForState(current) === thread.id ? false : current.running,
-          status: "ready"
+          threads: current.threads.filter(
+            (candidate) => candidate.id !== thread.id,
+          ),
+          running:
+            activeThreadIDForState(current) === thread.id
+              ? false
+              : current.running,
+          status: "ready",
         };
       });
       return;
@@ -3302,27 +3913,46 @@ export function App(): JSX.Element {
       const result = await window.wuu.archiveThread(thread.id, true);
       setArchiveConfirmThreadID(undefined);
       setState((current) => {
-        const nextTabs = removeSessionTab(current.sessionTabs, threadSessionTabID(thread.id));
+        const nextTabs = removeSessionTab(
+          current.sessionTabs,
+          threadSessionTabID(thread.id),
+        );
         return {
           ...current,
           thread: current.thread?.id === thread.id ? undefined : current.thread,
-          secondaryThread: current.secondaryThread?.id === thread.id ? undefined : current.secondaryThread,
-          activePane: current.activePane === "secondary" && current.secondaryThread?.id === thread.id ? "primary" : current.activePane,
-          sessionTabs: fallbackDraft ? ensureSessionTab(nextTabs, fallbackDraft) : nextTabs,
+          secondaryThread:
+            current.secondaryThread?.id === thread.id
+              ? undefined
+              : current.secondaryThread,
+          activePane:
+            current.activePane === "secondary" &&
+            current.secondaryThread?.id === thread.id
+              ? "primary"
+              : current.activePane,
+          sessionTabs: fallbackDraft
+            ? ensureSessionTab(nextTabs, fallbackDraft)
+            : nextTabs,
           activeSessionTabID:
-            current.activeSessionTabID === threadSessionTabID(thread.id) && fallbackDraft
+            current.activeSessionTabID === threadSessionTabID(thread.id) &&
+            fallbackDraft
               ? fallbackDraft.id
               : current.activeSessionTabID,
-          threads: current.threads.filter((candidate) => candidate.id !== result.thread.id),
-          running: activeThreadIDForState(current) === thread.id ? false : current.running,
-          status: "ready"
+          threads: current.threads.filter(
+            (candidate) => candidate.id !== result.thread.id,
+          ),
+          running:
+            activeThreadIDForState(current) === thread.id
+              ? false
+              : current.running,
+          status: "ready",
         };
       });
     } catch (error) {
       setArchiveConfirmThreadID(undefined);
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "archive thread failed"
+        status:
+          error instanceof Error ? error.message : "archive thread failed",
       }));
     }
   }
@@ -3350,11 +3980,16 @@ export function App(): JSX.Element {
     await sendComposerMessage(message, true);
   }
 
-  async function sendComposerMessage(message: QueuedComposerMessage, restoreDraftOnError = false): Promise<boolean> {
+  async function sendComposerMessage(
+    message: QueuedComposerMessage,
+    restoreDraftOnError = false,
+  ): Promise<boolean> {
     const currentState = appStateRef.current;
     const targetThread = activeThreadForState(currentState);
     const targetPane: ConversationPaneID =
-      currentState.activePane === "secondary" && currentState.secondaryThread ? "secondary" : "primary";
+      currentState.activePane === "secondary" && currentState.secondaryThread
+        ? "secondary"
+        : "primary";
     const text = message.text.trim();
     const images = inputImagesFromComposer(message.images);
     if (
@@ -3372,15 +4007,30 @@ export function App(): JSX.Element {
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
-      detail: images.length > 0 ? `已提交输入，包含 ${images.length} 张图片` : "已提交输入",
+      detail:
+        images.length > 0
+          ? `已提交输入，包含 ${images.length} 张图片`
+          : "已提交输入",
       tone: "running",
-      threadID: targetThread?.id
+      threadID: targetThread?.id,
     });
-    appStateRef.current = { ...currentState, running: true, status: "正在发送请求" };
-    setState((current) => ({ ...current, running: true, status: "正在发送请求" }));
+    appStateRef.current = {
+      ...currentState,
+      running: true,
+      status: "正在发送请求",
+    };
+    setState((current) => ({
+      ...current,
+      running: true,
+      status: "正在发送请求",
+    }));
     try {
       const thread =
-        targetThread ?? requireThread(await window.wuu.startThread(), "thread/start did not return a thread");
+        targetThread ??
+        requireThread(
+          await window.wuu.startThread(),
+          "thread/start did not return a thread",
+        );
       appStateRef.current = {
         ...setThreadForPane(appStateRef.current, targetPane, thread),
         activePane: targetPane,
@@ -3391,12 +4041,14 @@ export function App(): JSX.Element {
                 appStateRef.current.sessionTabs,
                 appStateRef.current.activeSessionTabID,
                 thread,
-                activeContext
+                activeContext,
               )
             : appStateRef.current.sessionTabs,
         activeSessionTabID:
-          targetPane === "primary" ? threadSessionTabID(thread.id) : appStateRef.current.activeSessionTabID,
-        threads: upsertThread(appStateRef.current.threads, thread)
+          targetPane === "primary"
+            ? threadSessionTabID(thread.id)
+            : appStateRef.current.activeSessionTabID,
+        threads: upsertThread(appStateRef.current.threads, thread),
       };
       setState((current) => ({
         ...setThreadForPane(current, targetPane, thread),
@@ -3404,22 +4056,34 @@ export function App(): JSX.Element {
         allowThreadAutoActivation: true,
         sessionTabs:
           targetPane === "primary"
-            ? bindActiveSessionTabToThread(current.sessionTabs, current.activeSessionTabID, thread, activeContext)
+            ? bindActiveSessionTabToThread(
+                current.sessionTabs,
+                current.activeSessionTabID,
+                thread,
+                activeContext,
+              )
             : current.sessionTabs,
-        activeSessionTabID: targetPane === "primary" ? threadSessionTabID(thread.id) : current.activeSessionTabID,
-        threads: upsertThread(current.threads, thread)
+        activeSessionTabID:
+          targetPane === "primary"
+            ? threadSessionTabID(thread.id)
+            : current.activeSessionTabID,
+        threads: upsertThread(current.threads, thread),
       }));
       const result = await window.wuu.startTurn(thread.id, text, images);
-      setState((current) => updateThreadByID(setThreadForPane(current, targetPane, thread), thread.id, (currentThread) =>
-        upsertTurn(currentThread, result.turn)
-      ));
+      setState((current) =>
+        updateThreadByID(
+          setThreadForPane(current, targetPane, thread),
+          thread.id,
+          (currentThread) => upsertTurn(currentThread, result.turn),
+        ),
+      );
       appendRunDebugEvent({
         source: "client",
         method: "turn/start response",
         detail: "服务端已接受本轮请求",
         tone: "running",
         threadID: thread.id,
-        turnID: result.turn.id
+        turnID: result.turn.id,
       });
     } catch (error) {
       const rawMessage = rawErrorMessage(error, "send failed");
@@ -3429,13 +4093,17 @@ export function App(): JSX.Element {
         method: "turn/start failed",
         detail: rawMessage,
         tone: "error",
-        threadID: targetThread?.id
+        threadID: targetThread?.id,
       });
-      appStateRef.current = { ...appStateRef.current, running: false, status: errorMessage };
+      appStateRef.current = {
+        ...appStateRef.current,
+        running: false,
+        status: errorMessage,
+      };
       setState((current) => ({
         ...current,
         running: false,
-        status: errorMessage
+        status: errorMessage,
       }));
       if (restoreDraftOnError) {
         setPrompt(message.text);
@@ -3458,16 +4126,25 @@ export function App(): JSX.Element {
       setState((current) => ({ ...current, status: "子任务会话只读" }));
       return;
     }
-    if (!message || !targetThread || !currentState.activeContext || !currentState.initialized) {
+    if (
+      !message ||
+      !targetThread ||
+      !currentState.activeContext ||
+      !currentState.initialized
+    ) {
       return;
     }
     if (isThreadRunning(targetThread)) {
-      setState((current) => ({ ...current, activePane: pane, status: "该分支正在运行" }));
+      setState((current) => ({
+        ...current,
+        activePane: pane,
+        status: "该分支正在运行",
+      }));
       return;
     }
     setSplitComposerDrafts((current) => ({
       ...current,
-      [pane]: emptyComposerDraft()
+      [pane]: emptyComposerDraft(),
     }));
     const sent = await sendComposerMessageToPane(message, pane);
     if (!sent) {
@@ -3475,13 +4152,16 @@ export function App(): JSX.Element {
         ...current,
         [pane]: {
           prompt: message.text,
-          images: message.images.map((image) => ({ ...image }))
-        }
+          images: message.images.map((image) => ({ ...image })),
+        },
       }));
     }
   }
 
-  async function sendComposerMessageToPane(message: QueuedComposerMessage, pane: ConversationPaneID): Promise<boolean> {
+  async function sendComposerMessageToPane(
+    message: QueuedComposerMessage,
+    pane: ConversationPaneID,
+  ): Promise<boolean> {
     const currentState = appStateRef.current;
     const targetThread = threadForPane(currentState, pane);
     const text = message.text.trim();
@@ -3501,16 +4181,33 @@ export function App(): JSX.Element {
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
-      detail: images.length > 0 ? `已提交输入，包含 ${images.length} 张图片` : "已提交输入",
+      detail:
+        images.length > 0
+          ? `已提交输入，包含 ${images.length} 张图片`
+          : "已提交输入",
       tone: "running",
-      threadID: targetThread.id
+      threadID: targetThread.id,
     });
-    appStateRef.current = { ...currentState, activePane: pane, running: true, status: "正在发送请求" };
-    setState((current) => ({ ...current, activePane: pane, running: true, status: "正在发送请求" }));
+    appStateRef.current = {
+      ...currentState,
+      activePane: pane,
+      running: true,
+      status: "正在发送请求",
+    };
+    setState((current) => ({
+      ...current,
+      activePane: pane,
+      running: true,
+      status: "正在发送请求",
+    }));
     try {
       const result = await window.wuu.startTurn(targetThread.id, text, images);
       setState((current) =>
-        updateThreadByID({ ...current, activePane: pane }, targetThread.id, (thread) => upsertTurn(thread, result.turn))
+        updateThreadByID(
+          { ...current, activePane: pane },
+          targetThread.id,
+          (thread) => upsertTurn(thread, result.turn),
+        ),
       );
       appendRunDebugEvent({
         source: "client",
@@ -3518,7 +4215,7 @@ export function App(): JSX.Element {
         detail: "服务端已接受本轮请求",
         tone: "running",
         threadID: targetThread.id,
-        turnID: result.turn.id
+        turnID: result.turn.id,
       });
     } catch (error) {
       const rawMessage = rawErrorMessage(error, "send failed");
@@ -3528,14 +4225,19 @@ export function App(): JSX.Element {
         method: "turn/start failed",
         detail: rawMessage,
         tone: "error",
-        threadID: targetThread.id
+        threadID: targetThread.id,
       });
-      appStateRef.current = { ...appStateRef.current, activePane: pane, running: false, status: errorMessage };
+      appStateRef.current = {
+        ...appStateRef.current,
+        activePane: pane,
+        running: false,
+        status: errorMessage,
+      };
       setState((current) => ({
         ...current,
         activePane: pane,
         running: false,
-        status: errorMessage
+        status: errorMessage,
       }));
       return false;
     }
@@ -3547,7 +4249,11 @@ export function App(): JSX.Element {
       return;
     }
     const currentState = appStateRef.current;
-    if (isAnyThreadRunning(currentState) || !currentState.activeContext || !currentState.initialized) {
+    if (
+      isAnyThreadRunning(currentState) ||
+      !currentState.activeContext ||
+      !currentState.initialized
+    ) {
       return;
     }
 
@@ -3583,7 +4289,7 @@ export function App(): JSX.Element {
       }
       setState((current) => ({
         ...current,
-        status: "队列暂停"
+        status: "队列暂停",
       }));
     }
   }
@@ -3593,7 +4299,7 @@ export function App(): JSX.Element {
     model: string,
     effort?: string,
     connection?: RuntimeConnectionUpdate,
-    variant?: string
+    variant?: string,
   ): Promise<void> {
     const nextProvider = provider.trim();
     const nextModel = model.trim();
@@ -3603,15 +4309,22 @@ export function App(): JSX.Element {
       connection === undefined
         ? undefined
         : {
-            ...(connection.base_url === undefined ? {} : { base_url: connection.base_url.trim() }),
-            ...(connection.api_key === undefined ? {} : { api_key: connection.api_key.trim() }),
-            ...(connection.create_provider ? { create_provider: true } : {})
+            ...(connection.base_url === undefined
+              ? {}
+              : { base_url: connection.base_url.trim() }),
+            ...(connection.api_key === undefined
+              ? {}
+              : { api_key: connection.api_key.trim() }),
+            ...(connection.create_provider ? { create_provider: true } : {}),
           };
-    const currentProvider = state.initialized?.providers?.find((item) => item.name === nextProvider);
+    const currentProvider = state.initialized?.providers?.find(
+      (item) => item.name === nextProvider,
+    );
     const connectionChanged =
       Boolean(nextConnection?.create_provider) ||
       Boolean(nextConnection?.api_key) ||
-      (nextConnection?.base_url !== undefined && nextConnection.base_url !== (currentProvider?.base_url ?? ""));
+      (nextConnection?.base_url !== undefined &&
+        nextConnection.base_url !== (currentProvider?.base_url ?? ""));
     if (
       !nextProvider ||
       !nextModel ||
@@ -3619,14 +4332,22 @@ export function App(): JSX.Element {
       anyThreadIsRunning ||
       (nextProvider === state.initialized.provider &&
         nextModel === state.initialized.model &&
-        (nextEffort === undefined || nextEffort === (state.initialized.effort ?? "")) &&
-        (nextVariant === undefined || nextVariant === (state.initialized.variant ?? "")) &&
+        (nextEffort === undefined ||
+          nextEffort === (state.initialized.effort ?? "")) &&
+        (nextVariant === undefined ||
+          nextVariant === (state.initialized.variant ?? "")) &&
         !connectionChanged)
     ) {
       return;
     }
     try {
-      const updated = await window.wuu.updateRuntimeSettings(nextProvider, nextModel, nextEffort, nextConnection, nextVariant);
+      const updated = await window.wuu.updateRuntimeSettings(
+        nextProvider,
+        nextModel,
+        nextEffort,
+        nextConnection,
+        nextVariant,
+      );
       setState((current) => {
         const initialized = current.initialized
           ? {
@@ -3635,27 +4356,32 @@ export function App(): JSX.Element {
               model: updated.model,
               effort: updated.effort ?? "",
               variant: updated.variant ?? "",
-              providers: updated.providers ?? current.initialized.providers
+              providers: updated.providers ?? current.initialized.providers,
             }
           : current.initialized;
         const updateThreadModel = (thread: Thread): Thread => ({
           ...thread,
           model_provider: updated.provider,
-          model: updated.model
+          model: updated.model,
         });
-        const thread = current.thread ? updateThreadModel(current.thread) : current.thread;
+        const thread = current.thread
+          ? updateThreadModel(current.thread)
+          : current.thread;
         return {
           ...current,
           initialized,
           thread,
           threads: current.threads.map(updateThreadModel),
-          status: current.status === "ready" ? current.status : "ready"
+          status: current.status === "ready" ? current.status : "ready",
         };
       });
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "update runtime settings failed"
+        status:
+          error instanceof Error
+            ? error.message
+            : "update runtime settings failed",
       }));
       throw error;
     }
@@ -3679,7 +4405,10 @@ export function App(): JSX.Element {
     if (!provider) {
       return;
     }
-    if (codexModels.provider === provider && (codexModels.loading || codexModels.models.length > 0)) {
+    if (
+      codexModels.provider === provider &&
+      (codexModels.loading || codexModels.models.length > 0)
+    ) {
       return;
     }
     setCodexModels({ provider, loading: true, error: "", models: [] });
@@ -3689,10 +4418,13 @@ export function App(): JSX.Element {
         provider: result.provider,
         loading: false,
         error: "",
-        models: result.models
+        models: result.models,
       });
       setState((current) => {
-        if (!current.initialized || current.initialized.provider !== result.provider) {
+        if (
+          !current.initialized ||
+          current.initialized.provider !== result.provider
+        ) {
           return current;
         }
         return {
@@ -3701,8 +4433,8 @@ export function App(): JSX.Element {
             ...current.initialized,
             model: result.model,
             effort: result.effort ?? "",
-            variant: result.variant ?? ""
-          }
+            variant: result.variant ?? "",
+          },
         };
       });
     } catch (error) {
@@ -3710,12 +4442,16 @@ export function App(): JSX.Element {
         provider,
         loading: false,
         error: error instanceof Error ? error.message : "无法加载 Codex 模型",
-        models: []
+        models: [],
       });
     }
   }
 
-  async function selectRuntimeModel(provider: string, model: string, variant?: string): Promise<void> {
+  async function selectRuntimeModel(
+    provider: string,
+    model: string,
+    variant?: string,
+  ): Promise<void> {
     if (!state.initialized || anyThreadIsRunning) {
       return;
     }
@@ -3727,7 +4463,13 @@ export function App(): JSX.Element {
     if (!state.initialized || anyThreadIsRunning) {
       return;
     }
-    await updateRuntimeSettings(state.initialized.provider, state.initialized.model, undefined, undefined, nextVariant);
+    await updateRuntimeSettings(
+      state.initialized.provider,
+      state.initialized.model,
+      undefined,
+      undefined,
+      nextVariant,
+    );
     setCodexRuntimeMenu(null);
   }
 
@@ -3747,7 +4489,10 @@ export function App(): JSX.Element {
     await window.wuu.interruptTurn(thread.id);
   }
 
-  async function respondToAskRequest(request: AskRequestState, response: AskUserResponse): Promise<void> {
+  async function respondToAskRequest(
+    request: AskRequestState,
+    response: AskUserResponse,
+  ): Promise<void> {
     try {
       await window.wuu.respondToServerRequest(request.id, response);
       const currentThread = activeThreadForState(appStateRef.current);
@@ -3756,18 +4501,21 @@ export function App(): JSX.Element {
         threadID: request.threadID ?? currentThread?.id,
         turnID: activeDebugTurn(currentThread)?.id,
         answers: response.answers ?? {},
-        cancelled: response.cancelled === true
+        cancelled: response.cancelled === true,
       };
       setState((current) => ({
         ...current,
         askRequests: removeAskRequest(current.askRequests, request.id),
-        answeredAskRequests: upsertAnsweredAskRequest(current.answeredAskRequests, answeredRequest)
+        answeredAskRequests: upsertAnsweredAskRequest(
+          current.answeredAskRequests,
+          answeredRequest,
+        ),
       }));
     } catch (error) {
       setState((current) => ({
         ...current,
         askRequests: upsertAskRequest(current.askRequests, request),
-        status: desktopApiErrorMessage(error, "提交选择失败")
+        status: desktopApiErrorMessage(error, "提交选择失败"),
       }));
     }
   }
@@ -3794,10 +4542,13 @@ export function App(): JSX.Element {
   }
 
   const environmentPanelNode =
-    (environmentPanelVisible || environmentPanelMounted) && state.initialized ? (
+    (environmentPanelVisible || environmentPanelMounted) &&
+    state.initialized ? (
       <EnvironmentPanel
         panelRef={environmentPanelRef}
-        motionState={environmentPanelClosing ? "closing" : environmentPanelMotionState}
+        motionState={
+          environmentPanelClosing ? "closing" : environmentPanelMotionState
+        }
         initialized={state.initialized}
         gitStatus={state.gitStatus}
         activeContext={state.activeContext}
@@ -3837,11 +4588,19 @@ export function App(): JSX.Element {
         <div className="sidebar-content">
           <div className="traffic-spacer" />
           <nav className="primary-nav" aria-label="主导航">
-            <button className="nav-item" onClick={() => void startNewThread()} disabled={!state.activeContext}>
+            <button
+              className="nav-item"
+              onClick={() => void startNewThread()}
+              disabled={!state.activeContext}
+            >
               <MessageSquarePlus size={18} />
               <span>新对话</span>
             </button>
-            <button className="nav-item" onClick={openSkillsTab} disabled={!state.activeContext}>
+            <button
+              className="nav-item"
+              onClick={openSkillsTab}
+              disabled={!state.activeContext}
+            >
               <Wrench size={18} />
               <span>Skills</span>
             </button>
@@ -3906,7 +4665,9 @@ export function App(): JSX.Element {
                 onTogglePinned={(thread) => void toggleThreadPinned(thread)}
                 onArchive={(thread) => void archiveThread(thread)}
                 onClearArchiveConfirm={(id) =>
-                  setArchiveConfirmThreadID((current) => (current === id ? undefined : current))
+                  setArchiveConfirmThreadID((current) =>
+                    current === id ? undefined : current,
+                  )
                 }
               />
             </section>
@@ -3926,18 +4687,26 @@ export function App(): JSX.Element {
               </button>
               {projectMenuOpen ? (
                 <div className="project-add-menu" role="menu">
-                  <button role="menuitem" onClick={() => void createBlankProject()}>
+                  <button
+                    role="menuitem"
+                    onClick={() => void createBlankProject()}
+                  >
                     <FolderPlus size={22} />
                     <span>新建空白项目</span>
                   </button>
-                  <button role="menuitem" onClick={() => void chooseProjectFolder()}>
+                  <button
+                    role="menuitem"
+                    onClick={() => void chooseProjectFolder()}
+                  >
                     <FolderOpen size={22} />
                     <span>使用现有文件夹</span>
                   </button>
                 </div>
               ) : null}
             </div>
-            {state.projects.length === 0 ? <div className="project-empty-note">还没有项目</div> : null}
+            {state.projects.length === 0 ? (
+              <div className="project-empty-note">还没有项目</div>
+            ) : null}
             <ProjectList
               projects={state.projects}
               activeID={state.activeProjectId}
@@ -3957,7 +4726,9 @@ export function App(): JSX.Element {
               onToggleThreadPinned={(thread) => void toggleThreadPinned(thread)}
               onArchiveThread={(thread) => void archiveThread(thread)}
               onClearArchiveConfirm={(id) =>
-                setArchiveConfirmThreadID((current) => (current === id ? undefined : current))
+                setArchiveConfirmThreadID((current) =>
+                  current === id ? undefined : current,
+                )
               }
             />
           </section>
@@ -4020,7 +4791,11 @@ export function App(): JSX.Element {
               <button
                 className={`launch-preview-button style-toggle-button${swissStyleEnabled ? " active" : ""}`}
                 type="button"
-                aria-label={swissStyleEnabled ? "关闭瑞士国际主义风格" : "开启瑞士国际主义风格"}
+                aria-label={
+                  swissStyleEnabled
+                    ? "关闭瑞士国际主义风格"
+                    : "开启瑞士国际主义风格"
+                }
                 aria-pressed={swissStyleEnabled}
                 title="开发专用：切换瑞士国际主义风格"
                 onClick={() => setSwissStyleEnabled((enabled) => !enabled)}
@@ -4097,7 +4872,9 @@ export function App(): JSX.Element {
               ref={environmentToggleRef}
               className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
               type="button"
-              aria-label={environmentPanelVisible ? "隐藏环境信息" : "显示环境信息"}
+              aria-label={
+                environmentPanelVisible ? "隐藏环境信息" : "显示环境信息"
+              }
               aria-pressed={environmentPanelVisible}
               onClick={toggleEnvironmentPanel}
             >
@@ -4115,8 +4892,12 @@ export function App(): JSX.Element {
           </div>
         </header>
 
-        {debugControlsVisible && ENABLE_TURN_PROGRESS_EXPERIMENT && turnProgressPreviewOpen ? (
-          <TurnProgressPreviewOverlay onClose={() => setTurnProgressPreviewOpen(false)} />
+        {debugControlsVisible &&
+        ENABLE_TURN_PROGRESS_EXPERIMENT &&
+        turnProgressPreviewOpen ? (
+          <TurnProgressPreviewOverlay
+            onClose={() => setTurnProgressPreviewOpen(false)}
+          />
         ) : null}
 
         {environmentPanelNode}
@@ -4132,7 +4913,10 @@ export function App(): JSX.Element {
             ref={conversationScrollRef}
           >
             {showingSkillsCatalog ? (
-              <SkillsCatalog activeContext={state.activeContext} onUseSkill={useSkillFromCatalog} />
+              <SkillsCatalog
+                activeContext={state.activeContext}
+                onUseSkill={useSkillFromCatalog}
+              />
             ) : workspaceMode ? (
               <WorkspaceMainPanel
                 view={workspaceMode}
@@ -4164,25 +4948,45 @@ export function App(): JSX.Element {
                       latestAgentMessageID={latestAgentMessageID}
                       onStreamFrame={scheduleStreamScroll}
                       onForkMessage={
-                        activeThread ? (turnID, itemID) => void forkThreadFromMessage(activeThread, turnID, itemID) : undefined
+                        activeThread
+                          ? (turnID, itemID) =>
+                              void forkThreadFromMessage(
+                                activeThread,
+                                turnID,
+                                itemID,
+                              )
+                          : undefined
                       }
                     />
                     {visibleAnsweredAskRequests
                       .filter((request) => request.turnID === turn.id)
                       .map((request) => (
-                        <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
+                        <AnsweredAskUserMessage
+                          key={`answered-${request.id}`}
+                          request={request}
+                        />
                       ))}
                   </Fragment>
                 ))}
                 {answeredAskRequestsWithoutVisibleTurn.map((request) => (
-                  <AnsweredAskUserMessage key={`answered-${request.id}`} request={request} />
+                  <AnsweredAskUserMessage
+                    key={`answered-${request.id}`}
+                    request={request}
+                  />
                 ))}
                 {visibleAskRequest ? (
                   <AskUserMessage
                     key={visibleAskRequest.id}
                     request={visibleAskRequest}
-                    onCancel={(request) => respondToAskRequest(request, { answers: {}, cancelled: true })}
-                    onSubmit={(request, answers) => respondToAskRequest(request, { answers })}
+                    onCancel={(request) =>
+                      respondToAskRequest(request, {
+                        answers: {},
+                        cancelled: true,
+                      })
+                    }
+                    onSubmit={(request, answers) =>
+                      respondToAskRequest(request, { answers })
+                    }
                   />
                 ) : null}
               </div>
@@ -4196,7 +5000,12 @@ export function App(): JSX.Element {
           />
         )}
 
-        {state.initialized && !previewingLaunch && !emptyConversation && !showingWorkspaceMode && !splitConversation && !showingSkillsCatalog
+        {state.initialized &&
+        !previewingLaunch &&
+        !emptyConversation &&
+        !showingWorkspaceMode &&
+        !splitConversation &&
+        !showingSkillsCatalog
           ? renderComposer("dock")
           : null}
       </main>
@@ -4247,7 +5056,6 @@ export function App(): JSX.Element {
           onCreate={createEnvironmentPullRequest}
         />
       ) : null}
-
     </div>
   );
 }
@@ -4261,7 +5069,7 @@ function RunDebugPanel({
   composerImages,
   copied,
   onCopy,
-  onClose
+  onClose,
 }: {
   state: AppState;
   phase: RunDebugPhase;
@@ -4283,7 +5091,7 @@ function RunDebugPanel({
   const queueDetail = [
     queuedMessages.length > 0 ? `排队 ${queuedMessages.length}` : "",
     guideMessages.length > 0 ? `引导 ${guideMessages.length}` : "",
-    composerImages.length > 0 ? `图片 ${composerImages.length}` : ""
+    composerImages.length > 0 ? `图片 ${composerImages.length}` : "",
   ]
     .filter(Boolean)
     .join("，");
@@ -4296,10 +5104,20 @@ function RunDebugPanel({
           <strong>{phase.detail}</strong>
         </div>
         <div className="run-debug-actions">
-          <button className="icon-button" type="button" aria-label="复制调试信息" onClick={onCopy}>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="复制调试信息"
+            onClick={onCopy}
+          >
             <Copy size={15} />
           </button>
-          <button className="icon-button" type="button" aria-label="关闭调试信息" onClick={onClose}>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="关闭调试信息"
+            onClick={onClose}
+          >
             <X size={15} />
           </button>
         </div>
@@ -4309,21 +5127,34 @@ function RunDebugPanel({
         {copied ? <div className="run-debug-copied">已复制诊断信息</div> : null}
         <section className="run-debug-section">
           <h3>当前状态</h3>
-          <RunDebugRow label="运行" value={state.running ? "running" : state.status || "ready"} />
+          <RunDebugRow
+            label="运行"
+            value={state.running ? "running" : state.status || "ready"}
+          />
           <RunDebugRow label="模型" value={model} />
-          <RunDebugRow label="工作区" value={state.activeContext?.cwd ?? thread?.cwd ?? "未连接"} />
-          <RunDebugRow label="Thread" value={thread ? shortDebugID(thread.id) : "无"} />
+          <RunDebugRow
+            label="工作区"
+            value={state.activeContext?.cwd ?? thread?.cwd ?? "未连接"}
+          />
+          <RunDebugRow
+            label="Thread"
+            value={thread ? shortDebugID(thread.id) : "无"}
+          />
           <RunDebugRow
             label="Turn"
             value={
               turn ? (
                 <>
-                  {shortDebugID(turn.id)} · {debugTurnStatusLabel(turn.status)} ·{" "}
-                  {typeof turn.duration_ms === "number"
-                    ? formatDuration(turn.duration_ms)
-                    : turn.status === "in_progress" && Number.isFinite(turnStartedAt)
-                      ? <LiveDuration startedAtMs={turnStartedAt} />
-                      : "未知耗时"}
+                  {shortDebugID(turn.id)} · {debugTurnStatusLabel(turn.status)}{" "}
+                  ·{" "}
+                  {typeof turn.duration_ms === "number" ? (
+                    formatDuration(turn.duration_ms)
+                  ) : turn.status === "in_progress" &&
+                    Number.isFinite(turnStartedAt) ? (
+                    <LiveDuration startedAtMs={turnStartedAt} />
+                  ) : (
+                    "未知耗时"
+                  )}
                 </>
               ) : (
                 "无"
@@ -4342,7 +5173,9 @@ function RunDebugPanel({
               )
             }
           />
-          {queueDetail ? <RunDebugRow label="待发送" value={queueDetail} /> : null}
+          {queueDetail ? (
+            <RunDebugRow label="待发送" value={queueDetail} />
+          ) : null}
         </section>
 
         <section className="run-debug-section">
@@ -4366,7 +5199,10 @@ function RunDebugPanel({
                 .slice(-24)
                 .reverse()
                 .map((event) => (
-                  <div className={`run-debug-event ${event.tone}`} key={event.id}>
+                  <div
+                    className={`run-debug-event ${event.tone}`}
+                    key={event.id}
+                  >
                     <span>{formatDebugTime(event.at)}</span>
                     <strong>{event.method}</strong>
                     <small>{event.detail}</small>
@@ -4382,7 +5218,13 @@ function RunDebugPanel({
   );
 }
 
-function RunDebugRow({ label, value }: { label: string; value: ReactNode }): JSX.Element {
+function RunDebugRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}): JSX.Element {
   return (
     <div className="run-debug-row">
       <span>{label}</span>
@@ -4391,7 +5233,13 @@ function RunDebugRow({ label, value }: { label: string; value: ReactNode }): JSX
   );
 }
 
-function RunDebugItem({ turnID, item }: { turnID: string; item: ThreadItem }): JSX.Element {
+function RunDebugItem({
+  turnID,
+  item,
+}: {
+  turnID: string;
+  item: ThreadItem;
+}): JSX.Element {
   return (
     <div className={`run-debug-item ${item.status ?? "in_progress"}`}>
       <div>
@@ -4401,9 +5249,24 @@ function RunDebugItem({ turnID, item }: { turnID: string; item: ThreadItem }): J
         </span>
       </div>
       <div className="run-debug-item-meta">
-        <DebugFieldLength turnID={turnID} item={item} field="text" label="text" />
-        <DebugFieldLength turnID={turnID} item={item} field="arguments" label="args" />
-        <DebugFieldLength turnID={turnID} item={item} field="result" label="result" />
+        <DebugFieldLength
+          turnID={turnID}
+          item={item}
+          field="text"
+          label="text"
+        />
+        <DebugFieldLength
+          turnID={turnID}
+          item={item}
+          field="arguments"
+          label="args"
+        />
+        <DebugFieldLength
+          turnID={turnID}
+          item={item}
+          field="result"
+          label="result"
+        />
         {item.error ? (
           <span className="error" title={item.error}>
             error: {shortDebugError(item.error)}
@@ -4426,7 +5289,7 @@ function DebugFieldLength({
   turnID,
   item,
   field,
-  label
+  label,
 }: {
   turnID: string;
   item: ThreadItem;
@@ -4434,11 +5297,15 @@ function DebugFieldLength({
   label: string;
 }): JSX.Element | null {
   const key = streamTextKey(turnID, item.id, field);
-  const initialValue = streamTextStore.has(key) ? streamTextStore.get(key) : item[field] ?? "";
+  const initialValue = streamTextStore.has(key)
+    ? streamTextStore.get(key)
+    : (item[field] ?? "");
   const [length, setLength] = useState(initialValue.length);
 
   useEffect(() => {
-    const currentValue = streamTextStore.has(key) ? streamTextStore.get(key) : item[field] ?? "";
+    const currentValue = streamTextStore.has(key)
+      ? streamTextStore.get(key)
+      : (item[field] ?? "");
     setLength(currentValue.length);
     return streamTextStore.subscribe(key, (value) => setLength(value.length));
   }, [field, item, key]);
@@ -4470,43 +5337,64 @@ function LiveSince({ atMs }: { atMs: number }): JSX.Element {
   return <span ref={nodeRef}>{formatDuration(Date.now() - atMs)} 前</span>;
 }
 
-
-
 function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
   switch (event.kind) {
     case "notification":
       return reduceNotification(state, event.message);
     case "server-request": {
       if (event.message.method !== "item/tool/requestUserInput") {
-        void window.wuu.rejectServerRequest(event.message.id, `unsupported server request: ${event.message.method}`);
+        void window.wuu.rejectServerRequest(
+          event.message.id,
+          `unsupported server request: ${event.message.method}`,
+        );
         return state;
       }
-      const params = event.message.params as { thread_id?: string; questions?: AskUserQuestion[] } | undefined;
+      const params = event.message.params as
+        | { thread_id?: string; questions?: AskUserQuestion[] }
+        | undefined;
       const request: AskRequestState = {
         id: event.message.id,
-        threadID: typeof params?.thread_id === "string" && params.thread_id ? params.thread_id : undefined,
-        questions: params?.questions ?? []
+        threadID:
+          typeof params?.thread_id === "string" && params.thread_id
+            ? params.thread_id
+            : undefined,
+        questions: params?.questions ?? [],
       };
       return {
         ...state,
-        answeredAskRequests: state.answeredAskRequests.filter((request) => request.id !== event.message.id),
-        askRequests: upsertAskRequest(state.askRequests, request)
+        answeredAskRequests: state.answeredAskRequests.filter(
+          (request) => request.id !== event.message.id,
+        ),
+        askRequests: upsertAskRequest(state.askRequests, request),
       };
     }
     case "server-error":
-      return { ...state, status: statusMessageForError(event.message, "server error") };
+      return {
+        ...state,
+        status: statusMessageForError(event.message, "server error"),
+      };
     case "server-exit":
-      return { ...state, running: false, status: "wuu 遇到内部错误。后台服务已退出，请重启桌面端。" };
+      return {
+        ...state,
+        running: false,
+        status: "wuu 遇到内部错误。后台服务已退出，请重启桌面端。",
+      };
   }
 }
 
-function serverEventTargetsActiveContext(event: ServerEvent, state: AppState): boolean {
+function serverEventTargetsActiveContext(
+  event: ServerEvent,
+  state: AppState,
+): boolean {
   return event.workdir === state.activeContext?.cwd;
 }
 
 type StreamingNotificationHandling = "state" | "stream" | "skip";
 
-function handleStreamingNotification(event: ServerEvent, state: AppState): StreamingNotificationHandling {
+function handleStreamingNotification(
+  event: ServerEvent,
+  state: AppState,
+): StreamingNotificationHandling {
   if (event.kind !== "notification") {
     return "state";
   }
@@ -4566,15 +5454,28 @@ function serverEventShouldRefreshGit(event: ServerEvent): boolean {
   if (event.kind !== "notification") {
     return false;
   }
-  return event.message.method === "turn/completed" || event.message.method === "turn/error";
+  return (
+    event.message.method === "turn/completed" ||
+    event.message.method === "turn/error"
+  );
 }
 
-function notificationTargetsActiveThread(params: Record<string, unknown> | undefined, state: AppState): boolean {
+function notificationTargetsActiveThread(
+  params: Record<string, unknown> | undefined,
+  state: AppState,
+): boolean {
   const threadID = threadIDFromParams(params);
-  return !threadID || threadID === state.thread?.id || threadID === state.secondaryThread?.id;
+  return (
+    !threadID ||
+    threadID === state.thread?.id ||
+    threadID === state.secondaryThread?.id
+  );
 }
 
-function appendStreamDelta(params: Record<string, unknown> | undefined, field: StreamTextField): void {
+function appendStreamDelta(
+  params: Record<string, unknown> | undefined,
+  field: StreamTextField,
+): void {
   const turnID = params?.turn_id as string | undefined;
   const itemID = params?.item_id as string | undefined;
   const delta = params?.delta as string | undefined;
@@ -4584,7 +5485,10 @@ function appendStreamDelta(params: Record<string, unknown> | undefined, field: S
   streamTextStore.append(streamTextKey(turnID, itemID, field), delta);
 }
 
-function replaceStreamText(params: Record<string, unknown> | undefined, field: StreamTextField): void {
+function replaceStreamText(
+  params: Record<string, unknown> | undefined,
+  field: StreamTextField,
+): void {
   const turnID = params?.turn_id as string | undefined;
   const itemID = params?.item_id as string | undefined;
   const text = params?.text;
@@ -4601,22 +5505,31 @@ function syncStreamItem(params: Record<string, unknown> | undefined): void {
     return;
   }
   const completed = (item.status ?? "in_progress") !== "in_progress";
-  const retainTextStream = completed && (item.type === "agent_message" || item.type === "reasoning");
+  const retainTextStream =
+    completed && (item.type === "agent_message" || item.type === "reasoning");
   if (typeof item.text === "string") {
     streamTextStore.set(streamTextKey(turnID, item.id, "text"), item.text);
   }
   if (typeof item.arguments === "string") {
-    streamTextStore.set(streamTextKey(turnID, item.id, "arguments"), item.arguments);
+    streamTextStore.set(
+      streamTextKey(turnID, item.id, "arguments"),
+      item.arguments,
+    );
   }
   if (typeof item.result === "string") {
     streamTextStore.set(streamTextKey(turnID, item.id, "result"), item.result);
   }
   if (completed && !retainTextStream) {
-    window.requestAnimationFrame(() => streamTextStore.clearItem(turnID, item.id));
+    window.requestAnimationFrame(() =>
+      streamTextStore.clearItem(turnID, item.id),
+    );
   }
 }
 
-function reduceNotification(state: AppState, notification: AppServerNotification): AppState {
+function reduceNotification(
+  state: AppState,
+  notification: AppServerNotification,
+): AppState {
   const params = notification.params as Record<string, unknown> | undefined;
   switch (notification.method) {
     case "thread/started":
@@ -4629,15 +5542,24 @@ function reduceNotification(state: AppState, notification: AppServerNotification
         return state;
       }
       const knownThread = state.threads.some((item) => item.id === thread.id);
-      const updatesVisibleThread = state.thread?.id === thread.id || state.secondaryThread?.id === thread.id;
-      const activateThread = state.thread?.id === thread.id || (state.allowThreadAutoActivation && !state.thread && !knownThread);
+      const updatesVisibleThread =
+        state.thread?.id === thread.id ||
+        state.secondaryThread?.id === thread.id;
+      const activateThread =
+        state.thread?.id === thread.id ||
+        (state.allowThreadAutoActivation && !state.thread && !knownThread);
       return {
         ...state,
         thread: activateThread ? thread : state.thread,
-        secondaryThread: state.secondaryThread?.id === thread.id ? thread : state.secondaryThread,
-        allowThreadAutoActivation: activateThread ? true : state.allowThreadAutoActivation,
+        secondaryThread:
+          state.secondaryThread?.id === thread.id
+            ? thread
+            : state.secondaryThread,
+        allowThreadAutoActivation: activateThread
+          ? true
+          : state.allowThreadAutoActivation,
         threads: upsertThread(state.threads, thread),
-        status: activateThread || updatesVisibleThread ? "ready" : state.status
+        status: activateThread || updatesVisibleThread ? "ready" : state.status,
       };
     }
     case "thread/updated": {
@@ -4648,7 +5570,7 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       return updateThreadByID(state, thread.id, (current) => ({
         ...thread,
         turns: thread.turns.length > 0 ? thread.turns : current.turns,
-        child_agents: thread.child_agents ?? current.child_agents
+        child_agents: thread.child_agents ?? current.child_agents,
       }));
     }
     case "agent/updated": {
@@ -4657,16 +5579,23 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       if (!threadID || !agent || !isDirectChildAgent(threadID, agent)) {
         return state;
       }
-      return updateThreadByID(state, threadID, (thread) => upsertThreadChildAgent(thread, agent));
+      return updateThreadByID(state, threadID, (thread) =>
+        upsertThreadChildAgent(thread, agent),
+      );
     }
     case "turn/started": {
       const turn = params?.turn as Turn | undefined;
       if (!turn) {
         return state;
       }
-      return updateThreadByID(state, threadIDFromParams(params), (thread) => upsertTurn(thread, turn), {
-        running: true
-      });
+      return updateThreadByID(
+        state,
+        threadIDFromParams(params),
+        (thread) => upsertTurn(thread, turn),
+        {
+          running: true,
+        },
+      );
     }
     case "item/started":
     case "item/completed": {
@@ -4675,7 +5604,9 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       if (!item || !turnID) {
         return state;
       }
-      return updateThreadByID(state, threadIDFromParams(params), (thread) => upsertTurnItem(thread, turnID, item));
+      return updateThreadByID(state, threadIDFromParams(params), (thread) =>
+        upsertTurnItem(thread, turnID, item),
+      );
     }
     case "item/agentMessage/delta":
       return applyDelta(state, params, "text");
@@ -4694,19 +5625,30 @@ function reduceNotification(state: AppState, notification: AppServerNotification
       const turn = params?.turn as Turn | undefined;
       const threadID = threadIDFromParams(params);
       if (!turn) {
-        return threadID === activeThreadIDForState(state) ? { ...state, running: false } : state;
+        return threadID === activeThreadIDForState(state)
+          ? { ...state, running: false }
+          : state;
       }
-      return updateThreadByID(state, threadID, (thread) => upsertTurn(thread, turn), {
-        running: false,
-        status: "ready"
-      });
+      return updateThreadByID(
+        state,
+        threadID,
+        (thread) => upsertTurn(thread, turn),
+        {
+          running: false,
+          status: "ready",
+        },
+      );
     }
     default:
       return state;
   }
 }
 
-function applyDelta(state: AppState, params: Record<string, unknown> | undefined, field: "text" | "arguments" | "result"): AppState {
+function applyDelta(
+  state: AppState,
+  params: Record<string, unknown> | undefined,
+  field: "text" | "arguments" | "result",
+): AppState {
   const threadID = threadIDFromParams(params);
   const turnID = params?.turn_id as string | undefined;
   const itemID = params?.item_id as string | undefined;
@@ -4717,12 +5659,16 @@ function applyDelta(state: AppState, params: Record<string, unknown> | undefined
   return updateThreadByID(state, threadID, (thread) =>
     updateTurnItem(thread, turnID, itemID, (item) => ({
       ...item,
-      [field]: `${item[field] ?? ""}${delta}`
-    }))
+      [field]: `${item[field] ?? ""}${delta}`,
+    })),
   );
 }
 
-function applyReplace(state: AppState, params: Record<string, unknown> | undefined, field: "text" | "arguments" | "result"): AppState {
+function applyReplace(
+  state: AppState,
+  params: Record<string, unknown> | undefined,
+  field: "text" | "arguments" | "result",
+): AppState {
   const threadID = threadIDFromParams(params);
   const turnID = params?.turn_id as string | undefined;
   const itemID = params?.item_id as string | undefined;
@@ -4733,12 +5679,14 @@ function applyReplace(state: AppState, params: Record<string, unknown> | undefin
   return updateThreadByID(state, threadID, (thread) =>
     updateTurnItem(thread, turnID, itemID, (item) => ({
       ...item,
-      [field]: text
-    }))
+      [field]: text,
+    })),
   );
 }
 
-function threadIDFromParams(params: Record<string, unknown> | undefined): string | undefined {
+function threadIDFromParams(
+  params: Record<string, unknown> | undefined,
+): string | undefined {
   const threadID = params?.thread_id;
   return typeof threadID === "string" && threadID ? threadID : undefined;
 }
@@ -4764,15 +5712,23 @@ function SortableSessionTab({
   closeLabel,
   reorderable,
   onSelect,
-  onClose
+  onClose,
 }: SortableSessionTabProps): JSX.Element {
-  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } = useSortable({
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id,
-    disabled: !reorderable
+    disabled: !reorderable,
   });
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition
+    transition,
   };
   return (
     <div
@@ -4818,7 +5774,7 @@ function SessionTabDragPreview({
   active,
   running,
   label,
-  width
+  width,
 }: {
   active: boolean;
   running: boolean;
@@ -4845,26 +5801,33 @@ function updateThreadByID(
   state: AppState,
   threadID: string | undefined,
   update: (thread: Thread) => Thread,
-  activePatch: Partial<Pick<AppState, "running" | "status">> = {}
+  activePatch: Partial<Pick<AppState, "running" | "status">> = {},
 ): AppState {
   if (!threadID) {
     return state;
   }
   const primaryActive = state.thread?.id === threadID;
   const secondaryActive = state.secondaryThread?.id === threadID;
-  if ((primaryActive && state.thread) || (secondaryActive && state.secondaryThread)) {
+  if (
+    (primaryActive && state.thread) ||
+    (secondaryActive && state.secondaryThread)
+  ) {
     const currentThread = primaryActive ? state.thread : state.secondaryThread;
     if (!currentThread) {
       return state;
     }
     const thread = update(currentThread);
-    const patch = activeThreadIDForState(state) === threadID || activePatch.running === false ? activePatch : {};
+    const patch =
+      activeThreadIDForState(state) === threadID ||
+      activePatch.running === false
+        ? activePatch
+        : {};
     return {
       ...state,
       ...patch,
       thread: primaryActive ? thread : state.thread,
       secondaryThread: secondaryActive ? thread : state.secondaryThread,
-      threads: upsertThread(state.threads, thread)
+      threads: upsertThread(state.threads, thread),
     };
   }
   let updated = false;
@@ -4881,7 +5844,10 @@ function updateThreadByID(
   return { ...state, threads: sortThreads(threads) };
 }
 
-function updateThread(state: AppState, update: (thread: Thread) => Thread): AppState {
+function updateThread(
+  state: AppState,
+  update: (thread: Thread) => Thread,
+): AppState {
   if (!state.thread) {
     return state;
   }
@@ -4908,7 +5874,10 @@ function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
 
 function sortThreads(threads: Thread[]): Thread[] {
   return threads
-    .filter((thread): thread is Thread => isThread(thread) && !thread.archived && !thread.read_only)
+    .filter(
+      (thread): thread is Thread =>
+        isThread(thread) && !thread.archived && !thread.read_only,
+    )
     .sort((left, right) => threadTime(right) - threadTime(left));
 }
 
@@ -4923,7 +5892,7 @@ function projectThreads(threads: Thread[]): Thread[] {
 function createDraftSessionTab(
   id: string,
   context: RuntimeContext,
-  draft: ComposerDraftState = emptyComposerDraft()
+  draft: ComposerDraftState = emptyComposerDraft(),
 ): SessionTab {
   return {
     id,
@@ -4932,14 +5901,14 @@ function createDraftSessionTab(
     title: "新对话",
     prompt: draft.prompt,
     images: draft.images.map((image) => ({ ...image })),
-    createdAt: Date.now()
+    createdAt: Date.now(),
   };
 }
 
 function createThreadSessionTab(
   thread: Thread,
   context: RuntimeContext,
-  draft: ComposerDraftState = emptyComposerDraft()
+  draft: ComposerDraftState = emptyComposerDraft(),
 ): SessionTab {
   return {
     id: threadSessionTabID(thread.id),
@@ -4948,17 +5917,20 @@ function createThreadSessionTab(
     threadID: thread.id,
     title: threadDisplayTitle(thread),
     prompt: draft.prompt,
-    images: draft.images.map((image) => ({ ...image }))
+    images: draft.images.map((image) => ({ ...image })),
   };
 }
 
-function createFileSessionTab(context: RuntimeContext, path: string): SessionTab {
+function createFileSessionTab(
+  context: RuntimeContext,
+  path: string,
+): SessionTab {
   return {
     id: fileSessionTabID(context, path),
     kind: "file",
     context,
     path,
-    title: fileNameFromPath(path)
+    title: fileNameFromPath(path),
   };
 }
 
@@ -4967,7 +5939,7 @@ function createSkillsSessionTab(context: RuntimeContext): SessionTab {
     id: skillsSessionTabID(context),
     kind: "skills",
     context,
-    title: "Skills"
+    title: "Skills",
   };
 }
 
@@ -4984,14 +5956,19 @@ function skillsSessionTabID(context: RuntimeContext): string {
 }
 
 function runtimeContextKey(context: RuntimeContext): string {
-  return context.kind === "project" ? `project:${context.project_id}` : `no_project:${context.cwd}`;
+  return context.kind === "project"
+    ? `project:${context.project_id}`
+    : `no_project:${context.cwd}`;
 }
 
 function draftSessionTabIDForContext(context: RuntimeContext): string {
   return `${INITIAL_DRAFT_SESSION_TAB_ID}:${runtimeContextKey(context)}`;
 }
 
-function draftSessionTabForContext(tabs: SessionTab[], context: RuntimeContext): SessionTab | undefined {
+function draftSessionTabForContext(
+  tabs: SessionTab[],
+  context: RuntimeContext,
+): SessionTab | undefined {
   for (let index = tabs.length - 1; index >= 0; index -= 1) {
     const tab = tabs[index];
     if (tab.kind === "draft" && sameRuntimeContext(tab.context, context)) {
@@ -5001,27 +5978,45 @@ function draftSessionTabForContext(tabs: SessionTab[], context: RuntimeContext):
   return undefined;
 }
 
-function sessionTabForLoadedRuntime(tabs: SessionTab[], context: RuntimeContext, thread: Thread | undefined): SessionTab {
+function sessionTabForLoadedRuntime(
+  tabs: SessionTab[],
+  context: RuntimeContext,
+  thread: Thread | undefined,
+): SessionTab {
   if (thread) {
-    return createThreadSessionTab(thread, context, sessionTabDraftForThreadID(tabs, thread.id));
+    return createThreadSessionTab(
+      thread,
+      context,
+      sessionTabDraftForThreadID(tabs, thread.id),
+    );
   }
-  return draftSessionTabForContext(tabs, context) ?? createDraftSessionTab(draftSessionTabIDForContext(context), context);
+  return (
+    draftSessionTabForContext(tabs, context) ??
+    createDraftSessionTab(draftSessionTabIDForContext(context), context)
+  );
 }
 
-function withLoadedRuntimeSessionTab(current: AppState, loadedState: Partial<AppState>): AppState {
+function withLoadedRuntimeSessionTab(
+  current: AppState,
+  loadedState: Partial<AppState>,
+): AppState {
   const next = {
     ...current,
-    ...loadedState
+    ...loadedState,
   };
   const context = loadedState.activeContext;
   if (!context) {
     return next;
   }
-  const tab = sessionTabForLoadedRuntime(current.sessionTabs, context, loadedState.thread);
+  const tab = sessionTabForLoadedRuntime(
+    current.sessionTabs,
+    context,
+    loadedState.thread,
+  );
   return {
     ...next,
     sessionTabs: ensureSessionTab(current.sessionTabs, tab),
-    activeSessionTabID: tab.id
+    activeSessionTabID: tab.id,
   };
 }
 
@@ -5043,15 +6038,22 @@ function removeSessionTab(tabs: SessionTab[], tabID: string): SessionTab[] {
   return tabs.filter((tab) => tab.id !== tabID);
 }
 
-function persistActiveSessionTabDraft(state: AppState, draft: ComposerDraftState): AppState {
+function persistActiveSessionTabDraft(
+  state: AppState,
+  draft: ComposerDraftState,
+): AppState {
   const activeTabID = state.activeSessionTabID;
   return {
     ...state,
     sessionTabs: state.sessionTabs.map((tab) =>
       tab.id === activeTabID && (tab.kind === "draft" || tab.kind === "thread")
-        ? { ...tab, prompt: draft.prompt, images: draft.images.map((image) => ({ ...image })) }
-        : tab
-    )
+        ? {
+            ...tab,
+            prompt: draft.prompt,
+            images: draft.images.map((image) => ({ ...image })),
+          }
+        : tab,
+    ),
   };
 }
 
@@ -5059,7 +6061,7 @@ function bindActiveSessionTabToThread(
   tabs: SessionTab[],
   activeTabID: string,
   thread: Thread,
-  context: RuntimeContext
+  context: RuntimeContext,
 ): SessionTab[] {
   const threadTab = createThreadSessionTab(thread, context);
   const existingThreadTab = tabs.find((tab) => tab.id === threadTab.id);
@@ -5071,12 +6073,20 @@ function bindActiveSessionTabToThread(
   return tabs.map((tab) => (tab.id === activeTabID ? threadTab : tab));
 }
 
-function sessionTabDraftForThread(state: AppState, threadID: string): ComposerDraftState {
+function sessionTabDraftForThread(
+  state: AppState,
+  threadID: string,
+): ComposerDraftState {
   return sessionTabDraftForThreadID(state.sessionTabs, threadID);
 }
 
-function sessionTabDraftForThreadID(tabs: SessionTab[], threadID: string): ComposerDraftState {
-  const tab = tabs.find((item) => item.kind === "thread" && item.threadID === threadID);
+function sessionTabDraftForThreadID(
+  tabs: SessionTab[],
+  threadID: string,
+): ComposerDraftState {
+  const tab = tabs.find(
+    (item) => item.kind === "thread" && item.threadID === threadID,
+  );
   return tab ? cloneSessionTabDraft(tab) : emptyComposerDraft();
 }
 
@@ -5086,7 +6096,7 @@ function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
   }
   return {
     prompt: tab.prompt,
-    images: tab.images.map((image) => ({ ...image }))
+    images: tab.images.map((image) => ({ ...image })),
   };
 }
 
@@ -5111,7 +6121,11 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
   if (tab.kind === "skills") {
     return tab.title;
   }
-  return threadDisplayTitle(threadForTab(state, tab.threadID), state.threads, tab.title || "未命名对话");
+  return threadDisplayTitle(
+    threadForTab(state, tab.threadID),
+    state.threads,
+    tab.title || "未命名对话",
+  );
 }
 
 function fileNameFromPath(path: string): string {
@@ -5145,7 +6159,10 @@ function activeThreadForState(state: AppState): Thread | undefined {
   return state.thread;
 }
 
-function threadForPane(state: AppState, pane: ConversationPaneID): Thread | undefined {
+function threadForPane(
+  state: AppState,
+  pane: ConversationPaneID,
+): Thread | undefined {
   return pane === "secondary" ? state.secondaryThread : state.thread;
 }
 
@@ -5153,7 +6170,9 @@ function activeThreadIDForState(state: AppState): string | undefined {
   return activeThreadForState(state)?.id;
 }
 
-function latestPlanUpdateForThread(thread: Thread | undefined): PlanUpdate | undefined {
+function latestPlanUpdateForThread(
+  thread: Thread | undefined,
+): PlanUpdate | undefined {
   if (!thread) {
     return undefined;
   }
@@ -5173,7 +6192,9 @@ function latestPlanUpdateForThread(thread: Thread | undefined): PlanUpdate | und
   return undefined;
 }
 
-function parsePlanUpdateArguments(argumentsJSON: string): PlanUpdate | undefined {
+function parsePlanUpdateArguments(
+  argumentsJSON: string,
+): PlanUpdate | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(argumentsJSON);
@@ -5190,7 +6211,12 @@ function parsePlanUpdateArguments(argumentsJSON: string): PlanUpdate | undefined
       }
       const step = stringValue(raw, "step")?.trim();
       const status = stringValue(raw, "status");
-      if (!step || (status !== "pending" && status !== "in_progress" && status !== "completed")) {
+      if (
+        !step ||
+        (status !== "pending" &&
+          status !== "in_progress" &&
+          status !== "completed")
+      ) {
         return undefined;
       }
       return { step, status };
@@ -5203,18 +6229,27 @@ function parsePlanUpdateArguments(argumentsJSON: string): PlanUpdate | undefined
   return explanation ? { explanation, plan } : { plan };
 }
 
-function setThreadForPane(state: AppState, pane: ConversationPaneID, thread: Thread | undefined): AppState {
+function setThreadForPane(
+  state: AppState,
+  pane: ConversationPaneID,
+  thread: Thread | undefined,
+): AppState {
   if (pane === "secondary") {
     return { ...state, secondaryThread: thread };
   }
   return { ...state, thread };
 }
 
-function activeProjectID(context: RuntimeContext | undefined): string | undefined {
+function activeProjectID(
+  context: RuntimeContext | undefined,
+): string | undefined {
   return context?.kind === "project" ? context.project_id : undefined;
 }
 
-function sameRuntimeContext(left: RuntimeContext | undefined, right: RuntimeContext | undefined): boolean {
+function sameRuntimeContext(
+  left: RuntimeContext | undefined,
+  right: RuntimeContext | undefined,
+): boolean {
   if (!left || !right || left.kind !== right.kind) {
     return false;
   }
@@ -5224,16 +6259,26 @@ function sameRuntimeContext(left: RuntimeContext | undefined, right: RuntimeCont
   return left.cwd === right.cwd;
 }
 
-function threadMatchesActiveContext(thread: Thread, context: RuntimeContext | undefined): boolean {
+function threadMatchesActiveContext(
+  thread: Thread,
+  context: RuntimeContext | undefined,
+): boolean {
   return Boolean(context && thread.cwd === context.cwd);
 }
 
 function isThread(value: unknown): value is Thread {
-  return Boolean(value && typeof value === "object" && typeof (value as Thread).id === "string");
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    typeof (value as Thread).id === "string",
+  );
 }
 
 function isThreadRunning(thread: Thread | undefined): boolean {
-  return Boolean(thread?.status === "in_progress" || thread?.turns.some((turn) => turn.status === "in_progress"));
+  return Boolean(
+    thread?.status === "in_progress" ||
+    thread?.turns.some((turn) => turn.status === "in_progress"),
+  );
 }
 
 function isStateActiveThreadRunning(state: AppState): boolean {
@@ -5243,13 +6288,16 @@ function isStateActiveThreadRunning(state: AppState): boolean {
 function isAnyThreadRunning(state: AppState): boolean {
   return Boolean(
     state.running ||
-      isThreadRunning(state.thread) ||
-      isThreadRunning(state.secondaryThread) ||
-      state.threads.some(isThreadRunning)
+    isThreadRunning(state.thread) ||
+    isThreadRunning(state.secondaryThread) ||
+    state.threads.some(isThreadRunning),
   );
 }
 
-function visibleAskRequestForThread(requests: AskRequestState[], threadID: string | undefined): AskRequestState | undefined {
+function visibleAskRequestForThread(
+  requests: AskRequestState[],
+  threadID: string | undefined,
+): AskRequestState | undefined {
   for (let index = requests.length - 1; index >= 0; index--) {
     const request = requests[index];
     if (!request.threadID || request.threadID === threadID) {
@@ -5259,7 +6307,9 @@ function visibleAskRequestForThread(requests: AskRequestState[], threadID: strin
   return undefined;
 }
 
-function pendingAskThreadIDsForRequests(requests: AskRequestState[]): Set<string> {
+function pendingAskThreadIDsForRequests(
+  requests: AskRequestState[],
+): Set<string> {
   const ids = new Set<string>();
   for (const request of requests) {
     if (request.threadID) {
@@ -5271,12 +6321,17 @@ function pendingAskThreadIDsForRequests(requests: AskRequestState[]): Set<string
 
 function visibleAnsweredAskRequestsForThread(
   requests: AnsweredAskRequestState[],
-  threadID: string | undefined
+  threadID: string | undefined,
 ): AnsweredAskRequestState[] {
-  return requests.filter((request) => !request.threadID || request.threadID === threadID);
+  return requests.filter(
+    (request) => !request.threadID || request.threadID === threadID,
+  );
 }
 
-function upsertAskRequest(requests: AskRequestState[], request: AskRequestState): AskRequestState[] {
+function upsertAskRequest(
+  requests: AskRequestState[],
+  request: AskRequestState,
+): AskRequestState[] {
   const index = requests.findIndex((item) => item.id === request.id);
   if (index < 0) {
     return [...requests, request];
@@ -5286,13 +6341,16 @@ function upsertAskRequest(requests: AskRequestState[], request: AskRequestState)
   return next;
 }
 
-function removeAskRequest(requests: AskRequestState[], id: string): AskRequestState[] {
+function removeAskRequest(
+  requests: AskRequestState[],
+  id: string,
+): AskRequestState[] {
   return requests.filter((request) => request.id !== id);
 }
 
 function upsertAnsweredAskRequest(
   requests: AnsweredAskRequestState[],
-  request: AnsweredAskRequestState
+  request: AnsweredAskRequestState,
 ): AnsweredAskRequestState[] {
   const index = requests.findIndex((item) => item.id === request.id);
   if (index < 0) {
@@ -5307,7 +6365,10 @@ function upsertTurn(thread: Thread, turn: Turn): Thread {
   const index = thread.turns.findIndex((item) => item.id === turn.id);
   const status = turn.status === "in_progress" ? "in_progress" : "idle";
   if (index < 0) {
-    return threadWithTurnSummary({ ...thread, turns: [...thread.turns, turn], status }, turn);
+    return threadWithTurnSummary(
+      { ...thread, turns: [...thread.turns, turn], status },
+      turn,
+    );
   }
   const turns = thread.turns.slice();
   turns[index] = { ...turn, items: mergeTurnItems(turns[index], turn) };
@@ -5343,7 +6404,10 @@ function threadWithTurnSummary(thread: Thread, turn: Turn): Thread {
   return {
     ...thread,
     preview,
-    updated_at: laterTimestamp(thread.updated_at, turn.completed_at ?? turn.started_at)
+    updated_at: laterTimestamp(
+      thread.updated_at,
+      turn.completed_at ?? turn.started_at,
+    ),
   };
 }
 
@@ -5370,7 +6434,10 @@ function hasText(value: string): boolean {
   return value.trim() !== "";
 }
 
-function laterTimestamp(current: string, candidate: string | null | undefined): string {
+function laterTimestamp(
+  current: string,
+  candidate: string | null | undefined,
+): string {
   if (!candidate) {
     return current;
   }
@@ -5379,10 +6446,17 @@ function laterTimestamp(current: string, candidate: string | null | undefined): 
   if (!Number.isFinite(candidateTime)) {
     return current;
   }
-  return !Number.isFinite(currentTime) || candidateTime > currentTime ? candidate : current;
+  return !Number.isFinite(currentTime) || candidateTime > currentTime
+    ? candidate
+    : current;
 }
 
-function updateTurnItem(thread: Thread, turnID: string, itemID: string, update: (item: ThreadItem) => ThreadItem): Thread {
+function updateTurnItem(
+  thread: Thread,
+  turnID: string,
+  itemID: string,
+  update: (item: ThreadItem) => ThreadItem,
+): Thread {
   const turns = thread.turns.map((turn) => {
     if (turn.id !== turnID) {
       return turn;
@@ -5398,7 +6472,11 @@ function updateTurnItem(thread: Thread, turnID: string, itemID: string, update: 
   return { ...thread, turns };
 }
 
-function upsertTurnItem(thread: Thread, turnID: string, item: ThreadItem): Thread {
+function upsertTurnItem(
+  thread: Thread,
+  turnID: string,
+  item: ThreadItem,
+): Thread {
   const turns = thread.turns.map((turn) => {
     if (turn.id !== turnID) {
       return turn;
@@ -5417,7 +6495,10 @@ function upsertTurnItem(thread: Thread, turnID: string, item: ThreadItem): Threa
 function upsertThreadChildAgent(thread: Thread, agent: Agent): Thread {
   const current = thread.child_agents ?? [];
   const index = current.findIndex((item) => item.id === agent.id);
-  const nextAgent = mergeAgentSummary(index >= 0 ? current[index] : undefined, agent);
+  const nextAgent = mergeAgentSummary(
+    index >= 0 ? current[index] : undefined,
+    agent,
+  );
   const next = current.slice();
   if (index < 0) {
     next.push(nextAgent);
@@ -5435,13 +6516,17 @@ function mergeAgentSummary(current: Agent | undefined, incoming: Agent): Agent {
     ...current,
     ...incoming,
     nested_count: incoming.nested_count ?? current.nested_count,
-    nested_running_count: incoming.nested_running_count ?? current.nested_running_count,
+    nested_running_count:
+      incoming.nested_running_count ?? current.nested_running_count,
     started_at: incoming.started_at ?? current.started_at,
-    completed_at: incoming.completed_at ?? current.completed_at
+    completed_at: incoming.completed_at ?? current.completed_at,
   };
 }
 
-function turnNoticeDisplay(turn: Turn, hasAssistantOutput: boolean): UserFacingErrorDisplay | undefined {
+function turnNoticeDisplay(
+  turn: Turn,
+  hasAssistantOutput: boolean,
+): UserFacingErrorDisplay | undefined {
   const rawMessage = turn.error?.message;
   const baseDisplay =
     turn.status === "interrupted"
@@ -5458,12 +6543,16 @@ function turnNoticeDisplay(turn: Turn, hasAssistantOutput: boolean): UserFacingE
     return {
       ...baseDisplay,
       title: hasAssistantOutput ? "回复已中断" : "已停止",
-      detail: hasAssistantOutput ? "已保留已生成内容，可以继续发送消息。" : "这次请求已停止，没有生成回复内容。"
+      detail: hasAssistantOutput
+        ? "已保留已生成内容，可以继续发送消息。"
+        : "这次请求已停止，没有生成回复内容。",
     };
   }
   return {
     ...baseDisplay,
-    detail: hasAssistantOutput ? `${baseDisplay.detail} 已保留已生成内容。` : baseDisplay.detail
+    detail: hasAssistantOutput
+      ? `${baseDisplay.detail} 已保留已生成内容。`
+      : baseDisplay.detail,
   };
 }
 
@@ -5476,10 +6565,19 @@ function turnHasAssistantOutput(turn: Turn): boolean {
   });
 }
 
-function TurnNotice({ display }: { display: UserFacingErrorDisplay }): JSX.Element {
+function TurnNotice({
+  display,
+}: {
+  display: UserFacingErrorDisplay;
+}): JSX.Element {
   const Icon = turnNoticeIcon(display);
   return (
-    <aside className={`turn-notice ${display.tone}`} role={display.tone === "error" || display.tone === "auth" ? "alert" : "status"}>
+    <aside
+      className={`turn-notice ${display.tone}`}
+      role={
+        display.tone === "error" || display.tone === "auth" ? "alert" : "status"
+      }
+    >
       <span className="turn-notice-icon" aria-hidden="true">
         <Icon size={17} />
       </span>
@@ -5509,7 +6607,7 @@ function TurnView({
   cwd,
   latestAgentMessageID,
   onStreamFrame,
-  onForkMessage
+  onForkMessage,
 }: {
   turn: Turn;
   cwd?: string;
@@ -5522,14 +6620,23 @@ function TurnView({
   let statusInserted = false;
   const liveTimeline = turn.status === "in_progress";
   const flowAgentMessageID =
-    turn.status === "completed" ? messageFlowAgentMessageItemID(turn) : undefined;
-  const actionableAgentMessageID = turn.status === "completed" ? flowAgentMessageID : undefined;
+    turn.status === "completed"
+      ? messageFlowAgentMessageItemID(turn)
+      : undefined;
+  const actionableAgentMessageID =
+    turn.status === "completed" ? flowAgentMessageID : undefined;
   const primaryAgentMessageID =
     flowAgentMessageID ??
-    (turn.status === "failed" || turn.status === "interrupted" ? latestAgentMessageItemIDForTurn(turn) : undefined);
-  const processAutoCollapse = turn.status === "completed" && actionableAgentMessageID !== undefined;
+    (turn.status === "failed" || turn.status === "interrupted"
+      ? latestAgentMessageItemIDForTurn(turn)
+      : undefined);
+  const processAutoCollapse =
+    turn.status === "completed" && actionableAgentMessageID !== undefined;
 
-  function renderThreadItem(item: ThreadItem, streaming: boolean): JSX.Element | null {
+  function renderThreadItem(
+    item: ThreadItem,
+    streaming: boolean,
+  ): JSX.Element | null {
     return (
       <ThreadItemView
         key={item.id}
@@ -5553,7 +6660,7 @@ function TurnView({
     processEntries.push({
       key: `${turn.id}-status`,
       kind: "status",
-      element: <TurnStatusLine key={`${turn.id}-status`} turn={turn} />
+      element: <TurnStatusLine key={`${turn.id}-status`} turn={turn} />,
     });
     statusInserted = true;
   }
@@ -5570,7 +6677,8 @@ function TurnView({
     }
     const entries = processEntries;
     processEntries = [];
-    const onlyCompletedStatus = processAutoCollapse && entries.every((entry) => entry.kind === "status");
+    const onlyCompletedStatus =
+      processAutoCollapse && entries.every((entry) => entry.kind === "status");
     if (onlyCompletedStatus) {
       return;
     }
@@ -5591,7 +6699,7 @@ function TurnView({
         entries={detailEntries}
         autoCollapse={processAutoCollapse}
         showTurnStatus={entries.some((entry) => entry.kind === "status")}
-      />
+      />,
     );
   }
 
@@ -5626,7 +6734,8 @@ function TurnView({
       let nextIndex = index + 1;
       while (
         nextIndex < turn.items.length &&
-        (turn.items[nextIndex].type === "tool_call" || turn.items[nextIndex].type === "collab_agent_tool_call")
+        (turn.items[nextIndex].type === "tool_call" ||
+          turn.items[nextIndex].type === "collab_agent_tool_call")
       ) {
         group.push(turn.items[nextIndex]);
         nextIndex++;
@@ -5634,13 +6743,22 @@ function TurnView({
       appendProcessEntry({
         key: `${item.id}-activity`,
         kind: "activity",
-        element: <ToolActivityRow key={`${item.id}-activity`} items={group} collapseWhenIdle={processAutoCollapse} />
+        element: (
+          <ToolActivityRow
+            key={`${item.id}-activity`}
+            items={group}
+            collapseWhenIdle={processAutoCollapse}
+          />
+        ),
       });
       index = nextIndex - 1;
       continue;
     }
 
-    const rendered = renderThreadItem(item, turn.status === "in_progress" && item.status === "in_progress");
+    const rendered = renderThreadItem(
+      item,
+      turn.status === "in_progress" && item.status === "in_progress",
+    );
     if (!rendered) {
       continue;
     }
@@ -5677,7 +6795,7 @@ function TurnProcessGroup({
   turn,
   entries,
   autoCollapse,
-  showTurnStatus
+  showTurnStatus,
 }: {
   turn: Turn;
   entries: TurnProcessEntry[];
@@ -5691,22 +6809,34 @@ function TurnProcessGroup({
   const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
     hasDetails ? "" : " no-details"
   }`;
-  const processCount = entries.filter((entry) => entry.kind !== "status").length;
-  const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
+  const processCount = entries.filter(
+    (entry) => entry.kind !== "status",
+  ).length;
+  const completedDuration =
+    typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = parseTurnTimestampMs(turn.started_at);
   const liveDuration =
-    showTurnStatus && completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
+    showTurnStatus &&
+    completedDuration === undefined &&
+    turn.status === "in_progress" &&
+    Number.isFinite(startedAt);
   const liveNow = useLiveNow(liveDuration);
-  const elapsedMs = completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
+  const elapsedMs =
+    completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
   const processLabel = showTurnStatus
     ? turnProgressContent(turn, elapsedMs, turnHasAssistantOutput(turn)).label
     : messageFlowStatusLabel({
         done: true,
         failed: turn.status === "failed",
         hasFinalText: turnHasAssistantOutput(turn),
-        locale: "zh"
+        locale: "zh",
       });
-  const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs, showTurnStatus);
+  const metaParts = turnProcessMetaParts(
+    turn,
+    processCount,
+    elapsedMs,
+    showTurnStatus,
+  );
 
   useEffect(() => {
     const previousAutoCollapse = previousAutoCollapseRef.current;
@@ -5729,7 +6859,9 @@ function TurnProcessGroup({
           <span key={part}>{part}</span>
         ))}
       </span>
-      {hasDetails ? <ChevronDown className="turn-process-chevron" size={15} /> : null}
+      {hasDetails ? (
+        <ChevronDown className="turn-process-chevron" size={15} />
+      ) : null}
     </>
   );
 
@@ -5746,18 +6878,31 @@ function TurnProcessGroup({
           {toggleContent}
         </button>
       ) : (
-        <div className="turn-process-toggle turn-process-toggle-static">{toggleContent}</div>
+        <div className="turn-process-toggle turn-process-toggle-static">
+          {toggleContent}
+        </div>
       )}
       {hasDetails ? (
-        <div className="turn-process-details" id={detailsID} aria-hidden={!expanded}>
-          <div className="turn-process-stack">{entries.map((entry) => entry.element)}</div>
+        <div
+          className="turn-process-details"
+          id={detailsID}
+          aria-hidden={!expanded}
+        >
+          <div className="turn-process-stack">
+            {entries.map((entry) => entry.element)}
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
 
-function turnProcessMetaParts(turn: Turn, processCount: number, elapsedMs: number, showTurnStatus: boolean): string[] {
+function turnProcessMetaParts(
+  turn: Turn,
+  processCount: number,
+  elapsedMs: number,
+  showTurnStatus: boolean,
+): string[] {
   const parts: string[] = [];
   if (showTurnStatus && turn.status === "in_progress") {
     parts.push(formatDuration(elapsedMs));
@@ -5773,12 +6918,21 @@ function turnProcessMetaParts(turn: Turn, processCount: number, elapsedMs: numbe
 }
 
 function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
-  const completedDuration = typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
+  const completedDuration =
+    typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = parseTurnTimestampMs(turn.started_at);
-  const liveDuration = completedDuration === undefined && turn.status === "in_progress" && Number.isFinite(startedAt);
+  const liveDuration =
+    completedDuration === undefined &&
+    turn.status === "in_progress" &&
+    Number.isFinite(startedAt);
   const liveNow = useLiveNow(liveDuration);
-  const elapsedMs = completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
-  const content = turnProgressContent(turn, elapsedMs, turnHasAssistantOutput(turn));
+  const elapsedMs =
+    completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
+  const content = turnProgressContent(
+    turn,
+    elapsedMs,
+    turnHasAssistantOutput(turn),
+  );
 
   return (
     <div
@@ -5791,7 +6945,11 @@ function TurnStatusLine({ turn }: { turn: Turn }): JSX.Element {
   );
 }
 
-function turnProgressContent(turn: Turn, elapsedMs: number, hasFinalText: boolean): TurnProgressContent {
+function turnProgressContent(
+  turn: Turn,
+  elapsedMs: number,
+  hasFinalText: boolean,
+): TurnProgressContent {
   if (turn.status === "interrupted") {
     return { label: "已停止", detail: "这次请求已停止" };
   }
@@ -5801,53 +6959,105 @@ function turnProgressContent(turn: Turn, elapsedMs: number, hasFinalText: boolea
         done: true,
         failed: turn.status === "failed",
         hasFinalText,
-        locale: "zh"
-      })
+        locale: "zh",
+      }),
     };
   }
 
   const runningTool = turn.items.find(
     (item) =>
       (item.type === "tool_call" || item.type === "collab_agent_tool_call") &&
-      (item.status ?? "in_progress") === "in_progress"
+      (item.status ?? "in_progress") === "in_progress",
   );
   if (runningTool) {
-    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
+    return {
+      label: messageFlowStatusLabel({
+        done: false,
+        failed: false,
+        hasFinalText,
+        locale: "zh",
+      }),
+    };
   }
 
   const latestItem = latestDebugItem(turn);
   if (!latestItem) {
     return {
-      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
-      detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应")
+      label: messageFlowStatusLabel({
+        done: false,
+        failed: false,
+        hasFinalText,
+        locale: "zh",
+      }),
+      detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应"),
     };
   }
   if (latestItem.type === "agent_message") {
-    const hasText = hasFinalText || debugStreamFieldLength(turn.id, latestItem, "text") > 0;
+    const hasText =
+      hasFinalText || debugStreamFieldLength(turn.id, latestItem, "text") > 0;
     return {
-      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText: hasText, locale: "zh" }),
-      detail: hasText ? undefined : waitingDetail(elapsedMs, "正在组织回答")
+      label: messageFlowStatusLabel({
+        done: false,
+        failed: false,
+        hasFinalText: hasText,
+        locale: "zh",
+      }),
+      detail: hasText ? undefined : waitingDetail(elapsedMs, "正在组织回答"),
     };
   }
   if (latestItem.type === "reasoning") {
     return {
-      label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
-      detail: waitingDetail(elapsedMs, "正在组织回答")
+      label: messageFlowStatusLabel({
+        done: false,
+        failed: false,
+        hasFinalText,
+        locale: "zh",
+      }),
+      detail: waitingDetail(elapsedMs, "正在组织回答"),
     };
   }
-  if (latestItem.type === "tool_call" || latestItem.type === "collab_agent_tool_call") {
-    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
+  if (
+    latestItem.type === "tool_call" ||
+    latestItem.type === "collab_agent_tool_call"
+  ) {
+    return {
+      label: messageFlowStatusLabel({
+        done: false,
+        failed: false,
+        hasFinalText,
+        locale: "zh",
+      }),
+    };
   }
   if (latestItem.type === "context_compaction") {
-    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
+    return {
+      label: messageFlowStatusLabel({
+        done: false,
+        failed: false,
+        hasFinalText,
+        locale: "zh",
+      }),
+    };
   }
   if (latestItem.type === "error") {
-    return { label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }) };
+    return {
+      label: messageFlowStatusLabel({
+        done: false,
+        failed: false,
+        hasFinalText,
+        locale: "zh",
+      }),
+    };
   }
 
   return {
-    label: messageFlowStatusLabel({ done: false, failed: false, hasFinalText, locale: "zh" }),
-    detail: waitingDetail(elapsedMs, "请求正在处理中")
+    label: messageFlowStatusLabel({
+      done: false,
+      failed: false,
+      hasFinalText,
+      locale: "zh",
+    }),
+    detail: waitingDetail(elapsedMs, "请求正在处理中"),
   };
 }
 
@@ -5889,7 +7099,9 @@ function messageFlowAgentMessageItemID(turn: Turn): string | undefined {
 
   const finalIndex = messageFlowFinalTextIndex(turn.items, (item) => {
     if (item.type === "agent_message") {
-      return streamFieldValue(turn.id, item, "text").trim().length > 0 ? "text" : "ignore";
+      return streamFieldValue(turn.id, item, "text").trim().length > 0
+        ? "text"
+        : "ignore";
     }
     if (
       item.type === "reasoning" ||
@@ -5927,7 +7139,7 @@ function ThreadItemView({
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
-  onForkMessage
+  onForkMessage,
 }: {
   turnID: string;
   turnStatus: Turn["status"];
@@ -5952,14 +7164,25 @@ function ThreadItemView({
       }
       const copyable = text.trim() !== "";
       return (
-        <div className={`user-message-block${copyable ? " user-message-block-with-actions" : ""}`}>
+        <div
+          className={`user-message-block${copyable ? " user-message-block-with-actions" : ""}`}
+        >
           <div className="message user-message">
-            {item.images?.length ? <MessageImageGrid images={item.images} /> : null}
+            {item.images?.length ? (
+              <MessageImageGrid images={item.images} />
+            ) : null}
             {text ? <RichContent text={text} cwd={cwd} /> : null}
           </div>
           {copyable ? (
-            <div className="message-actions user-message-actions" aria-label="用户消息操作">
-              <MessageCopyButton getText={() => text} className="message-action-button" iconSize={15} />
+            <div
+              className="message-actions user-message-actions"
+              aria-label="用户消息操作"
+            >
+              <MessageCopyButton
+                getText={() => text}
+                className="message-action-button"
+                iconSize={15}
+              />
             </div>
           ) : null}
         </div>
@@ -5967,14 +7190,22 @@ function ThreadItemView({
     }
     case "agent_message": {
       const streamKeyValue = streamTextKey(turnID, item.id, "text");
-      const agentText = streamTextStore.has(streamKeyValue) ? streamTextStore.get(streamKeyValue) : (item.text ?? "");
+      const agentText = streamTextStore.has(streamKeyValue)
+        ? streamTextStore.get(streamKeyValue)
+        : (item.text ?? "");
       const copyable = streaming || agentText.trim() !== "";
-      const actionsVisible = turnStatus === "completed" && item.id === actionableAgentMessageID && copyable;
-      const actionsPersistent = actionsVisible && item.id === latestAgentMessageID;
+      const actionsVisible =
+        turnStatus === "completed" &&
+        item.id === actionableAgentMessageID &&
+        copyable;
+      const actionsPersistent =
+        actionsVisible && item.id === latestAgentMessageID;
       return (
         <article
           className={`agent-block${
-            actionsVisible ? ` agent-block-with-actions${actionsPersistent ? " agent-actions-persistent" : ""}` : ""
+            actionsVisible
+              ? ` agent-block-with-actions${actionsPersistent ? " agent-actions-persistent" : ""}`
+              : ""
           }`}
         >
           <div className="agent-text">
@@ -5989,7 +7220,9 @@ function ThreadItemView({
           {actionsVisible ? (
             <AgentMessageActions
               getText={() => streamFieldValue(turnID, item, "text")}
-              onFork={onForkMessage ? () => onForkMessage(turnID, item.id) : undefined}
+              onFork={
+                onForkMessage ? () => onForkMessage(turnID, item.id) : undefined
+              }
             />
           ) : null}
         </article>
@@ -5998,7 +7231,12 @@ function ThreadItemView({
     case "reasoning":
       return (
         <article className="reasoning-block">
-          <ReasoningContent turnID={turnID} item={item} streaming={streaming} onStreamFrame={onStreamFrame} />
+          <ReasoningContent
+            turnID={turnID}
+            item={item}
+            streaming={streaming}
+            onStreamFrame={onStreamFrame}
+          />
         </article>
       );
     case "tool_call":
@@ -6007,7 +7245,9 @@ function ThreadItemView({
     case "context_compaction":
       return <div className="system-line">{item.text}</div>;
     case "error":
-      return <TurnNotice display={userFacingErrorForMessage(item.error, "turn")} />;
+      return (
+        <TurnNotice display={userFacingErrorForMessage(item.error, "turn")} />
+      );
     default:
       return null;
   }
@@ -6018,7 +7258,7 @@ function AgentMessageContent({
   item,
   cwd,
   streaming,
-  onStreamFrame
+  onStreamFrame,
 }: {
   turnID: string;
   item: ThreadItem;
@@ -6039,7 +7279,11 @@ function AgentMessageContent({
   return (
     <StreamingMarkdown
       streamKey={streamKeyValue}
-      initialText={hasBufferedStream ? streamTextStore.seedValue(streamKeyValue) : item.text}
+      initialText={
+        hasBufferedStream
+          ? streamTextStore.seedValue(streamKeyValue)
+          : item.text
+      }
       cwd={cwd}
       final={!streaming}
       live={liveStream}
@@ -6058,7 +7302,7 @@ function ReasoningContent({
   turnID,
   item,
   streaming,
-  onStreamFrame
+  onStreamFrame,
 }: {
   turnID: string;
   item: ThreadItem;
@@ -6074,7 +7318,11 @@ function ReasoningContent({
   return (
     <StreamingMarkdown
       streamKey={streamKeyValue}
-      initialText={hasBufferedStream ? streamTextStore.seedValue(streamKeyValue) : item.text}
+      initialText={
+        hasBufferedStream
+          ? streamTextStore.seedValue(streamKeyValue)
+          : item.text
+      }
       className="streaming-markdown reasoning-stream"
       final={!streaming}
       live={liveStream}
@@ -6098,29 +7346,32 @@ function runDebugPhaseForState(state: AppState): RunDebugPhase {
       label: "等待用户选择",
       detail: `${askRequest.questions.length} 个问题需要响应`,
       tone: "warning",
-      turn
+      turn,
     };
   }
   if (!state.initialized) {
     return {
       label: "运行时未就绪",
       detail: state.status || "等待初始化",
-      tone: state.status === "connecting" || state.status === "opening" ? "running" : "warning",
-      turn
+      tone:
+        state.status === "connecting" || state.status === "opening"
+          ? "running"
+          : "warning",
+      turn,
     };
   }
   if (state.running && !turn) {
     return {
       label: "正在发送请求",
       detail: "还没收到 turn/started",
-      tone: "running"
+      tone: "running",
     };
   }
   if (turn?.status === "in_progress") {
     const runningTool = turn.items.find(
       (item) =>
         (item.type === "tool_call" || item.type === "collab_agent_tool_call") &&
-        (item.status ?? "in_progress") === "in_progress"
+        (item.status ?? "in_progress") === "in_progress",
     );
     if (runningTool) {
       return {
@@ -6128,7 +7379,7 @@ function runDebugPhaseForState(state: AppState): RunDebugPhase {
         detail: readableToolName(runningTool.name),
         tone: "running",
         turn,
-        activeItem: runningTool
+        activeItem: runningTool,
       };
     }
 
@@ -6138,36 +7389,45 @@ function runDebugPhaseForState(state: AppState): RunDebugPhase {
         label: "等待模型响应",
         detail: "turn 已开始，尚未收到回复 item",
         tone: "running",
-        turn
+        turn,
       };
     }
     if (latestItem.type === "agent_message") {
       const length = debugStreamFieldLength(turn.id, latestItem, "text");
       return {
         label: length > 0 ? "正在生成回复" : "回复已开始",
-        detail: length > 0 ? `已收到 ${length.toLocaleString()} 字` : "等待首个回复片段",
+        detail:
+          length > 0
+            ? `已收到 ${length.toLocaleString()} 字`
+            : "等待首个回复片段",
         tone: "running",
         turn,
-        activeItem: latestItem
+        activeItem: latestItem,
       };
     }
     if (latestItem.type === "reasoning") {
       const length = debugStreamFieldLength(turn.id, latestItem, "text");
       return {
         label: "模型正在思考",
-        detail: length > 0 ? `已收到 ${length.toLocaleString()} 字思考内容` : "等待推理片段",
+        detail:
+          length > 0
+            ? `已收到 ${length.toLocaleString()} 字思考内容`
+            : "等待推理片段",
         tone: "running",
         turn,
-        activeItem: latestItem
+        activeItem: latestItem,
       };
     }
-    if (latestItem.type === "tool_call" || latestItem.type === "collab_agent_tool_call") {
+    if (
+      latestItem.type === "tool_call" ||
+      latestItem.type === "collab_agent_tool_call"
+    ) {
       return {
         label: "工具已返回",
         detail: "等待模型继续处理工具结果",
         tone: "running",
         turn,
-        activeItem: latestItem
+        activeItem: latestItem,
       };
     }
     return {
@@ -6175,7 +7435,7 @@ function runDebugPhaseForState(state: AppState): RunDebugPhase {
       detail: debugItemTitle(latestItem),
       tone: "running",
       turn,
-      activeItem: latestItem
+      activeItem: latestItem,
     };
   }
   if (turn?.status === "failed") {
@@ -6183,7 +7443,7 @@ function runDebugPhaseForState(state: AppState): RunDebugPhase {
       label: "处理失败",
       detail: turn.error?.message ?? "本轮返回失败状态",
       tone: "error",
-      turn
+      turn,
     };
   }
   if (turn?.status === "interrupted") {
@@ -6191,15 +7451,18 @@ function runDebugPhaseForState(state: AppState): RunDebugPhase {
       label: "已停止",
       detail: "本轮已被中断",
       tone: "warning",
-      turn
+      turn,
     };
   }
   if (turn?.status === "completed") {
     return {
       label: "已完成",
-      detail: turn.duration_ms === undefined ? "本轮完成" : `耗时 ${formatDuration(turn.duration_ms)}`,
+      detail:
+        turn.duration_ms === undefined
+          ? "本轮完成"
+          : `耗时 ${formatDuration(turn.duration_ms)}`,
       tone: "success",
-      turn
+      turn,
     };
   }
   if (state.running) {
@@ -6207,14 +7470,14 @@ function runDebugPhaseForState(state: AppState): RunDebugPhase {
       label: "运行中",
       detail: state.status || "等待事件",
       tone: "running",
-      turn
+      turn,
     };
   }
   return {
     label: state.status === "ready" ? "空闲" : "当前状态",
     detail: state.status === "ready" ? "可以发送新消息" : state.status,
     tone: state.status === "ready" ? "idle" : "warning",
-    turn
+    turn,
   };
 }
 
@@ -6238,18 +7501,28 @@ function latestDebugItem(turn: Turn): ThreadItem | undefined {
   return undefined;
 }
 
-function streamFieldValue(turnID: string, item: ThreadItem, field: StreamTextField): string {
+function streamFieldValue(
+  turnID: string,
+  item: ThreadItem,
+  field: StreamTextField,
+): string {
   const key = streamTextKey(turnID, item.id, field);
-  return streamTextStore.has(key) ? streamTextStore.get(key) : (item[field] ?? "");
+  return streamTextStore.has(key)
+    ? streamTextStore.get(key)
+    : (item[field] ?? "");
 }
 
-function debugStreamFieldLength(turnID: string, item: ThreadItem, field: StreamTextField): number {
+function debugStreamFieldLength(
+  turnID: string,
+  item: ThreadItem,
+  field: StreamTextField,
+): number {
   return streamFieldValue(turnID, item, field).length;
 }
 
 function runDebugEventFromServerEvent(
   event: ServerEvent,
-  deltaSeen: Set<string>
+  deltaSeen: Set<string>,
 ): Omit<RunDebugEvent, "id" | "at"> | undefined {
   switch (event.kind) {
     case "server-request":
@@ -6257,21 +7530,21 @@ function runDebugEventFromServerEvent(
         source: "server",
         method: event.message.method,
         detail: "服务端正在等待客户端响应",
-        tone: "warning"
+        tone: "warning",
       };
     case "server-error":
       return {
         source: "server",
         method: "server/error",
         detail: event.message,
-        tone: "error"
+        tone: "error",
       };
     case "server-exit":
       return {
         source: "server",
         method: "server/exit",
         detail: `app-server 退出：${event.code ?? "unknown"}`,
-        tone: "error"
+        tone: "error",
       };
     case "notification":
       return runDebugEventFromNotification(event.message, deltaSeen);
@@ -6280,9 +7553,11 @@ function runDebugEventFromServerEvent(
 
 function runDebugEventFromNotification(
   notification: AppServerNotification,
-  deltaSeen: Set<string>
+  deltaSeen: Set<string>,
 ): Omit<RunDebugEvent, "id" | "at"> | undefined {
-  const params = isRecord(notification.params) ? notification.params : undefined;
+  const params = isRecord(notification.params)
+    ? notification.params
+    : undefined;
   const threadID = stringValue(params, "thread_id");
   const turnID = stringValue(params, "turn_id");
   const itemID = stringValue(params, "item_id");
@@ -6301,7 +7576,7 @@ function runDebugEventFromNotification(
       tone: "running",
       threadID,
       turnID,
-      itemID
+      itemID,
     };
   }
 
@@ -6317,11 +7592,14 @@ function runDebugEventFromNotification(
       detail: streamEventDebugDetail(payload),
       tone: streamEventTone(eventType),
       threadID,
-      turnID
+      turnID,
     };
   }
 
-  if (notification.method === "item/started" || notification.method === "item/completed") {
+  if (
+    notification.method === "item/started" ||
+    notification.method === "item/completed"
+  ) {
     const item = threadItemFromRecord(recordValue(params, "item"));
     if (!item) {
       return undefined;
@@ -6330,10 +7608,15 @@ function runDebugEventFromNotification(
       source: "server",
       method: notification.method,
       detail: `${debugItemTitle(item)} · ${debugItemStatusLabel(item)}`,
-      tone: item.status === "failed" || item.error ? "error" : notification.method === "item/completed" ? "success" : "running",
+      tone:
+        item.status === "failed" || item.error
+          ? "error"
+          : notification.method === "item/completed"
+            ? "success"
+            : "running",
       threadID,
       turnID,
-      itemID: item.id
+      itemID: item.id,
     };
   }
 
@@ -6345,31 +7628,40 @@ function runDebugEventFromNotification(
       detail: turn ? `本轮开始：${shortDebugID(turn.id)}` : "本轮开始",
       tone: "running",
       threadID,
-      turnID: turn?.id ?? turnID
+      turnID: turn?.id ?? turnID,
     };
   }
 
-  if (notification.method === "turn/completed" || notification.method === "turn/error") {
+  if (
+    notification.method === "turn/completed" ||
+    notification.method === "turn/error"
+  ) {
     const turn = turnFromRecord(recordValue(params, "turn"));
-    const failed = notification.method === "turn/error" || turn?.status === "failed";
+    const failed =
+      notification.method === "turn/error" || turn?.status === "failed";
     return {
       source: "server",
       method: notification.method,
-      detail: failed ? stringValue(params, "error") ?? "本轮失败" : "本轮完成",
+      detail: failed
+        ? (stringValue(params, "error") ?? "本轮失败")
+        : "本轮完成",
       tone: failed ? "error" : "success",
       threadID,
-      turnID: turn?.id ?? turnID
+      turnID: turn?.id ?? turnID,
     };
   }
 
-  if (notification.method === "thread/started" || notification.method === "thread/resumed") {
+  if (
+    notification.method === "thread/started" ||
+    notification.method === "thread/resumed"
+  ) {
     const thread = threadFromRecord(recordValue(params, "thread"));
     return {
       source: "server",
       method: notification.method,
       detail: thread ? `Thread ${shortDebugID(thread.id)}` : "Thread 已更新",
       tone: "info",
-      threadID: thread?.id ?? threadID
+      threadID: thread?.id ?? threadID,
     };
   }
 
@@ -6386,7 +7678,11 @@ function isDeltaNotification(method: string): boolean {
 }
 
 function isHighVolumeStreamEvent(eventType: string): boolean {
-  return eventType === "content_delta" || eventType === "thinking_delta" || eventType === "tool_use_delta";
+  return (
+    eventType === "content_delta" ||
+    eventType === "thinking_delta" ||
+    eventType === "tool_use_delta"
+  );
 }
 
 function debugNotificationMethodLabel(method: string): string {
@@ -6432,28 +7728,46 @@ function streamEventTone(eventType: string): RunDebugEventTone {
   if (eventType === "reconnect") {
     return "warning";
   }
-  if (eventType === "tool_use_start" || eventType === "tool_use_end" || eventType === "lifecycle") {
+  if (
+    eventType === "tool_use_start" ||
+    eventType === "tool_use_end" ||
+    eventType === "lifecycle"
+  ) {
     return "running";
   }
   return "info";
 }
 
-function threadItemFromRecord(record: JsonRecord | undefined): ThreadItem | undefined {
-  if (!record || typeof record.id !== "string" || typeof record.type !== "string") {
+function threadItemFromRecord(
+  record: JsonRecord | undefined,
+): ThreadItem | undefined {
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    typeof record.type !== "string"
+  ) {
     return undefined;
   }
   return record as ThreadItem;
 }
 
 function turnFromRecord(record: JsonRecord | undefined): Turn | undefined {
-  if (!record || typeof record.id !== "string" || !Array.isArray(record.items)) {
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    !Array.isArray(record.items)
+  ) {
     return undefined;
   }
   return record as Turn;
 }
 
 function threadFromRecord(record: JsonRecord | undefined): Thread | undefined {
-  if (!record || typeof record.id !== "string" || !Array.isArray(record.turns)) {
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    !Array.isArray(record.turns)
+  ) {
     return undefined;
   }
   return record as Thread;
@@ -6480,7 +7794,7 @@ function agentFromRecord(record: JsonRecord | undefined): Agent | undefined {
     nested_count: numberValue(record, "nested_count"),
     nested_running_count: numberValue(record, "nested_running_count"),
     started_at: stringValue(record, "started_at"),
-    completed_at: stringValue(record, "completed_at")
+    completed_at: stringValue(record, "completed_at"),
   };
 }
 
@@ -6551,7 +7865,7 @@ function formatDebugTime(atMs: number): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false
+    hour12: false,
   });
 }
 
@@ -6560,7 +7874,7 @@ function buildRunDebugSnapshot({
   events,
   queuedMessages,
   guideMessages,
-  composerImages
+  composerImages,
 }: {
   state: AppState;
   events: RunDebugEvent[];
@@ -6586,7 +7900,7 @@ function buildRunDebugSnapshot({
     `turn_error: ${turn?.error?.message ?? ""}`,
     `queued_messages: ${queuedMessages.length}`,
     `guide_messages: ${guideMessages.length}`,
-    `composer_images: ${composerImages.length}`
+    `composer_images: ${composerImages.length}`,
   ];
 
   lines.push("");
@@ -6597,10 +7911,10 @@ function buildRunDebugSnapshot({
         `- ${item.id} ${item.type} ${item.status ?? "in_progress"} ${item.name ?? ""} text=${debugStreamFieldLength(
           turn.id,
           item,
-          "text"
+          "text",
         )} args=${debugStreamFieldLength(turn.id, item, "arguments")} result=${debugStreamFieldLength(turn.id, item, "result")} error=${
           item.error ?? ""
-        }`
+        }`,
       );
     }
   } else {
@@ -6613,7 +7927,7 @@ function buildRunDebugSnapshot({
     lines.push(
       `- ${new Date(event.at).toISOString()} ${event.source} ${event.method} ${event.detail} thread=${event.threadID ?? ""} turn=${
         event.turnID ?? ""
-      } item=${event.itemID ?? ""}`
+      } item=${event.itemID ?? ""}`,
     );
   }
   return lines.join("\n");

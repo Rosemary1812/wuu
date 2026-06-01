@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatMessageFlowCommand } from "../message-flow-display";
+import { formatMessageFlowCommand } from "./message-flow-display";
 import type { ThreadItem } from "../shared/protocol";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
 
@@ -37,12 +37,20 @@ type DiffStats = {
 
 export type JsonRecord = Record<string, unknown>;
 
-export function ToolActivityRow({ items, collapseWhenIdle = false }: { items: ThreadItem[]; collapseWhenIdle?: boolean }): JSX.Element {
+export function ToolActivityRow({
+  items,
+  collapseWhenIdle = false,
+}: {
+  items: ThreadItem[];
+  collapseWhenIdle?: boolean;
+}): JSX.Element {
   const summary = summarizeToolActivity(items);
   const sections = buildToolActivitySections(items);
   const summaryText = activitySummaryText(sections, summary);
   const shouldExpandForStatus = summary.running || summary.failed;
-  const [expanded, setExpanded] = useState(!collapseWhenIdle && shouldExpandForStatus);
+  const [expanded, setExpanded] = useState(
+    !collapseWhenIdle && shouldExpandForStatus,
+  );
   const className = `activity-group${expanded ? " expanded" : ""}${summary.running ? " running" : ""}${
     summary.failed ? " failed" : ""
   }`;
@@ -69,9 +77,15 @@ export function ToolActivityRow({ items, collapseWhenIdle = false }: { items: Th
       >
         <span className="activity-copy">
           <span>{summaryText}</span>
-          {summary.fileName ? <span className="activity-file">{summary.fileName}</span> : null}
-          {summary.additions > 0 ? <span className="activity-add">+{summary.additions}</span> : null}
-          {summary.deletions > 0 ? <span className="activity-delete">-{summary.deletions}</span> : null}
+          {summary.fileName ? (
+            <span className="activity-file">{summary.fileName}</span>
+          ) : null}
+          {summary.additions > 0 ? (
+            <span className="activity-add">+{summary.additions}</span>
+          ) : null}
+          {summary.deletions > 0 ? (
+            <span className="activity-delete">-{summary.deletions}</span>
+          ) : null}
         </span>
         <ChevronDown className="activity-chevron" size={13} />
       </button>
@@ -104,18 +118,27 @@ type ToolActivitySection = {
   error?: string;
 };
 
-function ToolActivitySectionView({ section }: { section: ToolActivitySection }): JSX.Element {
+function ToolActivitySectionView({
+  section,
+}: {
+  section: ToolActivitySection;
+}): JSX.Element {
   return (
     <section className="activity-detail">
       <div className="activity-detail-body">
         <div className="activity-command-list">
           {section.commands.map((command, index) => (
-            <div className={`activity-command ${command.status}`} key={`${section.id}-${index}`}>
+            <div
+              className={`activity-command ${command.status}`}
+              key={`${section.id}-${index}`}
+            >
               {command.text}
             </div>
           ))}
         </div>
-        {section.error ? <div className="activity-detail-error">{section.error}</div> : null}
+        {section.error ? (
+          <div className="activity-detail-error">{section.error}</div>
+        ) : null}
       </div>
     </section>
   );
@@ -127,18 +150,27 @@ function buildToolActivitySections(items: ThreadItem[]): ToolActivitySection[] {
     const key = toolActivitySectionKey(item);
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
-  return Array.from(groups.entries()).map(([key, grouped]) => toolActivitySectionFromItems(key, grouped));
+  return Array.from(groups.entries()).map(([key, grouped]) =>
+    toolActivitySectionFromItems(key, grouped),
+  );
 }
 
-function activitySummaryText(sections: ToolActivitySection[], fallback: ToolActivitySummary): string {
+function activitySummaryText(
+  sections: ToolActivitySection[],
+  fallback: ToolActivitySummary,
+): string {
   if (sections.length === 0) {
     return fallback.text;
   }
-  const fragments = sections.map((section) => sectionSummaryText(section)).filter(Boolean);
+  const fragments = sections
+    .map((section) => sectionSummaryText(section))
+    .filter(Boolean);
   if (fragments.length === 0) {
     return fallback.text;
   }
-  return fallback.failed ? `未完成 · ${fragments.join("，")}` : fragments.join("，");
+  return fallback.failed
+    ? `未完成 · ${fragments.join("，")}`
+    : fragments.join("，");
 }
 
 function sectionSummaryText(section: ToolActivitySection): string {
@@ -148,7 +180,7 @@ function sectionSummaryText(section: ToolActivitySection): string {
 function toolCommands(items: ThreadItem[]): ToolActivityCommand[] {
   return items.map((item) => ({
     text: readableToolActivityCommand(item),
-    status: itemToolStatus(item)
+    status: itemToolStatus(item),
   }));
 }
 
@@ -176,7 +208,9 @@ function rawToolCommand(name: string, args: string | undefined): string {
   return formatMessageFlowCommand({ name, input });
 }
 
-export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arguments" | "result" | "display">): string {
+export function readableToolActivityCommand(
+  item: Pick<ThreadItem, "name" | "arguments" | "result" | "display">,
+): string {
   const displayText = item.display?.text?.trim();
   if (displayText) {
     return displayText;
@@ -188,15 +222,24 @@ export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arg
   if (isMCPToolName(name)) {
     return rawToolCommand(name, item.arguments);
   }
-  const path = stringValue(result, "path") ?? stringValue(args, "path") ?? stringValue(args, "file");
-  const command = stringValue(result, "command") ?? stringValue(args, "command") ?? "";
-  const pattern = stringValue(args, "pattern") ?? stringValue(args, "query") ?? stringValue(args, "q");
+  const path =
+    stringValue(result, "path") ??
+    stringValue(args, "path") ??
+    stringValue(args, "file");
+  const command =
+    stringValue(result, "command") ?? stringValue(args, "command") ?? "";
+  const pattern =
+    stringValue(args, "pattern") ??
+    stringValue(args, "query") ??
+    stringValue(args, "q");
 
   switch (name) {
     case "read_file":
       return `读取 ${formatPathTarget(path, "文件")}`;
     case "list_files":
-      return path && path !== "." ? `查看 ${formatDirectoryTarget(path)}` : "查看项目目录";
+      return path && path !== "."
+        ? `查看 ${formatDirectoryTarget(path)}`
+        : "查看项目目录";
     case "grep":
     case "glob":
       return `搜索 ${formatSearchTarget(pattern)}`;
@@ -210,7 +253,9 @@ export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arg
       return pattern ? `搜索工具 ${formatSearchTarget(pattern)}` : "搜索工具";
     case "load_skill": {
       const skill = stringValue(args, "name");
-      return skill ? `加载技能 ${truncateText(skill.replace(/^\//, ""), 70)}` : "加载技能";
+      return skill
+        ? `加载技能 ${truncateText(skill.replace(/^\//, ""), 70)}`
+        : "加载技能";
     }
     case "update_plan":
       return "更新计划";
@@ -236,11 +281,13 @@ export function readableToolActivityCommand(item: Pick<ThreadItem, "name" | "arg
       return `写入 ${formatPathTarget(path, "文件")}`;
     case "spawn_agent":
     case "followup_task": {
-      const task = stringValue(args, "task_name") ?? stringValue(args, "message");
+      const task =
+        stringValue(args, "task_name") ?? stringValue(args, "message");
       return task ? `启动子任务 ${truncateText(task, 70)}` : "启动子任务";
     }
     case "send_message": {
-      const task = stringValue(args, "task_name") ?? stringValue(args, "message");
+      const task =
+        stringValue(args, "task_name") ?? stringValue(args, "message");
       return task ? `发送给子任务 ${truncateText(task, 70)}` : "发送给子任务";
     }
     case "wait_agent":
@@ -357,7 +404,10 @@ function toolActivitySectionKey(item: ThreadItem): string {
   }
 }
 
-function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolActivitySection {
+function toolActivitySectionFromItems(
+  key: string,
+  items: ThreadItem[],
+): ToolActivitySection {
   switch (key) {
     case "read":
       return {
@@ -367,7 +417,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         detail: compactDetailText(compactToolTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "search":
       return {
@@ -377,7 +427,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         detail: compactDetailText(compactSearchTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "change":
       return {
@@ -387,7 +437,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         detail: compactDetailText(compactToolTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "command":
       return {
@@ -397,7 +447,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         detail: compactDetailText(compactCommandLabels(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "agent":
       return {
@@ -407,7 +457,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         detail: compactDetailText(compactAgentLabels(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "plan":
       return {
@@ -416,7 +466,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `计划 ${items.length} 次`,
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "interaction":
       return {
@@ -425,7 +475,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `等待用户 ${items.length} 次`,
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "schedule":
       return {
@@ -434,7 +484,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `定时任务 ${items.length} 项`,
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "browser":
       return {
@@ -443,7 +493,7 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `浏览器 ${items.length} 次`,
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     case "skill":
       return {
@@ -452,17 +502,19 @@ function toolActivitySectionFromItems(key: string, items: ThreadItem[]): ToolAct
         title: `技能 ${items.length} 项`,
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
     default:
       return {
         id: key,
         kind: "unknown",
         title: `工具 ${items.length} 项`,
-        detail: compactDetailText(uniqueStrings(items.map((item) => readableToolName(item.name)))),
+        detail: compactDetailText(
+          uniqueStrings(items.map((item) => readableToolName(item.name))),
+        ),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
-        error: firstToolError(items)
+        error: firstToolError(items),
       };
   }
 }
@@ -492,10 +544,13 @@ function compactToolTargets(items: ThreadItem[]): string[] {
       .map((item) => {
         const args = parseJSONRecord(item.arguments);
         const result = parseJSONRecord(item.result);
-        const path = stringValue(result, "path") ?? stringValue(args, "path") ?? stringValue(args, "file");
+        const path =
+          stringValue(result, "path") ??
+          stringValue(args, "path") ??
+          stringValue(args, "file");
         return path ? fileBaseName(path) : undefined;
       })
-      .filter((value): value is string => Boolean(value))
+      .filter((value): value is string => Boolean(value)),
   );
 }
 
@@ -504,9 +559,13 @@ function compactSearchTargets(items: ThreadItem[]): string[] {
     items
       .map((item) => {
         const args = parseJSONRecord(item.arguments);
-        return stringValue(args, "pattern") ?? stringValue(args, "query") ?? readableToolName(item.name);
+        return (
+          stringValue(args, "pattern") ??
+          stringValue(args, "query") ??
+          readableToolName(item.name)
+        );
       })
-      .filter((value): value is string => Boolean(value))
+      .filter((value): value is string => Boolean(value)),
   );
 }
 
@@ -519,7 +578,7 @@ function compactAgentLabels(items: ThreadItem[]): string[] {
     items.map((item) => {
       const args = parseJSONRecord(item.arguments);
       return stringValue(args, "task_name") ?? readableToolName(item.name);
-    })
+    }),
   );
 }
 
@@ -559,12 +618,16 @@ function truncateText(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function readableCommandLabel(item: Pick<ThreadItem, "name" | "arguments" | "result">): string {
+function readableCommandLabel(
+  item: Pick<ThreadItem, "name" | "arguments" | "result">,
+): string {
   const args = parseJSONRecord(item.arguments);
   const result = parseJSONRecord(item.result);
   const name = (item.name ?? "").trim();
-  const command = stringValue(result, "command") ?? stringValue(args, "command") ?? "";
-  const subcommand = stringValue(result, "subcommand") ?? stringValue(args, "subcommand") ?? "";
+  const command =
+    stringValue(result, "command") ?? stringValue(args, "command") ?? "";
+  const subcommand =
+    stringValue(result, "subcommand") ?? stringValue(args, "subcommand") ?? "";
   if (name === "git" || command.startsWith("git ")) {
     if (subcommand === "status" || command.includes("status")) {
       return "检查 Git 状态";
@@ -700,7 +763,10 @@ function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary {
     const name = (item.name ?? "tool").trim() || "tool";
     const args = parseJSONRecord(item.arguments);
     const result = parseJSONRecord(item.result);
-    const path = stringValue(result, "path") ?? stringValue(args, "path") ?? stringValue(args, "file");
+    const path =
+      stringValue(result, "path") ??
+      stringValue(args, "path") ??
+      stringValue(args, "file");
 
     running = running || (item.status ?? "in_progress") === "in_progress";
     failed = failed || item.status === "failed" || Boolean(item.error);
@@ -711,7 +777,10 @@ function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary {
       continue;
     }
     if (name === "grep" || name === "glob" || name === "web_search") {
-      primaryKind = primaryKind === "unknown" || primaryKind === "read" ? "search" : primaryKind;
+      primaryKind =
+        primaryKind === "unknown" || primaryKind === "read"
+          ? "search"
+          : primaryKind;
       searchCount++;
       collectResultFiles(result, searchedFiles);
       continue;
@@ -735,7 +804,11 @@ function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary {
       primaryKind = diff.newFile ? "create" : "edit";
       continue;
     }
-    if (name === "spawn_agent" || name === "fork_agent" || name === "send_message") {
+    if (
+      name === "spawn_agent" ||
+      name === "fork_agent" ||
+      name === "send_message"
+    ) {
       primaryKind = primaryKind === "unknown" ? "agent" : primaryKind;
       agentCount++;
       continue;
@@ -743,18 +816,27 @@ function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary {
     unknownTools.add(name);
   }
 
-  const singleChangedFile = editedFiles.size + createdFiles.size === 1 && items.length === 1;
+  const singleChangedFile =
+    editedFiles.size + createdFiles.size === 1 && items.length === 1;
   if (singleChangedFile) {
     const created = createdFiles.size === 1;
     const filePath = firstSetValue(created ? createdFiles : editedFiles);
     return {
       kind: created ? "create" : "edit",
-      text: failed ? "编辑失败" : created ? (running ? "正在创建" : "已创建") : running ? "正在编辑" : "已编辑",
+      text: failed
+        ? "编辑失败"
+        : created
+          ? running
+            ? "正在创建"
+            : "已创建"
+          : running
+            ? "正在编辑"
+            : "已编辑",
       fileName: filePath ? fileBaseName(filePath) : undefined,
       additions,
       deletions,
       running,
-      failed
+      failed,
     };
   }
 
@@ -797,7 +879,7 @@ function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary {
     additions,
     deletions,
     running,
-    failed
+    failed,
   };
 }
 
@@ -808,7 +890,11 @@ function summarizeDiff(result: JsonRecord | undefined): DiffStats {
   }
   const newFile = diff.new_file === true;
   if (newFile) {
-    return { additions: numberValue(diff, "lines") ?? 0, deletions: 0, newFile };
+    return {
+      additions: numberValue(diff, "lines") ?? 0,
+      deletions: 0,
+      newFile,
+    };
   }
 
   let additions = 0;
@@ -831,7 +917,10 @@ function summarizeDiff(result: JsonRecord | undefined): DiffStats {
   return { additions, deletions, newFile };
 }
 
-function collectResultFiles(result: JsonRecord | undefined, output: Set<string>): void {
+function collectResultFiles(
+  result: JsonRecord | undefined,
+  output: Set<string>,
+): void {
   for (const file of arrayValue(result, "files")) {
     if (typeof file === "string" && file.trim()) {
       output.add(file.trim());
@@ -865,7 +954,10 @@ export function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-export function recordValue(record: JsonRecord | undefined, key: string): JsonRecord | undefined {
+export function recordValue(
+  record: JsonRecord | undefined,
+  key: string,
+): JsonRecord | undefined {
   if (!record) {
     return undefined;
   }
@@ -881,7 +973,10 @@ function arrayValue(record: JsonRecord | undefined, key: string): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-export function stringValue(record: JsonRecord | undefined, key: string): string | undefined {
+export function stringValue(
+  record: JsonRecord | undefined,
+  key: string,
+): string | undefined {
   if (!record) {
     return undefined;
   }
@@ -889,12 +984,17 @@ export function stringValue(record: JsonRecord | undefined, key: string): string
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-export function numberValue(record: JsonRecord | undefined, key: string): number | undefined {
+export function numberValue(
+  record: JsonRecord | undefined,
+  key: string,
+): number | undefined {
   if (!record) {
     return undefined;
   }
   const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function addPath(output: Set<string>, path: string | undefined): void {

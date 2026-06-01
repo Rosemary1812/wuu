@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { buildComposerSlashCommands, filterComposerSlashCommands, runtimeFastModelTarget } from "./ComposerSlashCommands";
 import type { InitializeResult } from "../shared/protocol";
 
