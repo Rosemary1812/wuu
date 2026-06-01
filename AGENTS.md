@@ -17,6 +17,13 @@
 - Keep engineering discipline proportional to risk: inspect the relevant code first, preserve data safety, avoid avoidable regressions, and verify the actual running product path before claiming completion.
 - When validation matters, verify against the real app or runtime the user is using, not only an isolated worktree, stale build, or inferred code path.
 
+## Core and Shell Architecture
+
+- The **Go core** (`internal/`, `cmd/wuu/`) is the reusable foundation: agent runtime, providers, tool loop, sessions, config, and the `wuu app-server` subprocess. The core is not coupled to any specific shell.
+- The **current shell** is the Electron desktop in `desktop/`. It spawns the core as a subprocess and owns the UI, native integrations, and the IPC bridge.
+- **Future shells** (VS Code extension, JetBrains plugin, etc.) consume the core by spawning `wuu app-server`. They do not need to import or fork the Go core; they reuse it as a process.
+- A change is **shell-level** when it touches `desktop/` only (UI, native APIs, packaging). A change is **core-level** when it touches `internal/` or `cmd/wuu/`. Keep this boundary clean: do not let the shell leak into the core, and do not let the core depend on Electron APIs.
+
 ## Intent First
 
 - Must start from the user's real goal before optimizing local implementation details. The current codebase is context, not the primary definition of what should be built.

@@ -2,8 +2,11 @@
 
 [中文](README_zh.md)
 
-GUI-first AI coding agent with a Go backend, one shared core workbench/runtime
-path, and two app surfaces: Electron desktop and Wuu Browser.
+GUI-first AI coding agent with a Go backend and an Electron desktop shell.
+The Go core (agent runtime, providers, tool loop, sessions, config) is the
+reusable foundation; the Electron desktop is the current shell. Future
+shells (VS Code, JetBrains) can reuse the core by spawning the
+`wuu app-server` process.
 
 Named after its author (Wu) — the goal is to build a coding companion so good that every developer goes *wuuuuu!*
 
@@ -32,10 +35,9 @@ wuu app-server --workdir .       # backend used by the desktop GUI
 cd desktop && npm install && npm run dev  # local desktop GUI
 ```
 
-Interactive work currently runs through the Electron desktop GUI. The future
-product keeps Electron desktop and Wuu Browser as first-class app surfaces over
-the same core workbench and native runtime path. The `wuu` binary provides the
-app-server backend plus non-interactive CLI tools.
+Interactive work runs through the Electron desktop GUI. The `wuu` binary
+provides the app-server backend (used by the desktop shell and any future
+shell) plus non-interactive CLI tools.
 
 ## Versioning
 
@@ -62,9 +64,9 @@ When a `v*` tag is pushed, GitHub Actions + GoReleaser publishes release artifac
 
 ## What It Does
 
-- Shared workbench and native runtime core used by both Electron desktop and Wuu Browser
+- Go core: agent runtime, providers (Anthropic, OpenAI-compatible), tool loop, sessions, config, app-server
 - Electron desktop GUI backed by the Go app-server for conversations, workspace context, and session streaming
-- Chromium-based Wuu Browser surface that uses the same core workbench/runtime path
+- Reusable core: future shells (VS Code, JetBrains) consume the same `wuu app-server` process
 - One-shot CLI task runner for non-interactive use
 - Agentic tool-calling loop — reads, writes, edits, searches, and runs shell commands in your repo
 - Supports OpenAI-compatible APIs (OpenAI / OpenRouter / one-api / etc.) and Anthropic Messages API
