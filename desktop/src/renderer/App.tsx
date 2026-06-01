@@ -5881,6 +5881,120 @@ function sortThreads(threads: Thread[]): Thread[] {
     .sort((left, right) => threadTime(right) - threadTime(left));
 }
 
+function mergeListedThreads(current: Thread[], listed: Thread[]): Thread[] {
+  const currentByID = new Map(
+    current.filter(isThread).map((thread) => [thread.id, thread]),
+  );
+  return sortThreads(
+    listed.map((thread) => {
+      const existing = currentByID.get(thread.id);
+      if (!existing || thread.turns.length > 0 || existing.turns.length === 0) {
+        return thread;
+      }
+      return { ...thread, turns: existing.turns };
+    }),
+  );
+}
+
+function conversationSearchThreads(threads: Thread[], query: string): Thread[] {
+  const sorted = sortThreads(threads);
+  const normalizedQuery = normalizeConversationSearchText(query);
+  if (!normalizedQuery) {
+    return sorted;
+  }
+  return sorted.filter((thread) =>
+    conversationSearchHaystack(thread, sorted).includes(normalizedQuery),
+  );
+}
+
+function conversationSearchThreadMeta(thread: Thread): string {
+  const updatedAt = threadTime(thread);
+  const timeLabel =
+    updatedAt > 0
+      ? `${formatDuration(Math.max(0, Date.now() - updatedAt))} 前`
+      : "未知时间";
+  return thread.pinned ? `置顶 · ${timeLabel}` : timeLabel;
+}
+
+function conversationSearchSnippet(
+  thread: Thread,
+  query: string,
+  title: string,
+): string {
+  const normalizedQuery = normalizeConversationSearchText(query);
+  const normalizedTitle = normalizeConversationSearchText(title);
+  const candidates = conversationSearchTextCandidates(thread, []);
+  if (!normalizedQuery) {
+    const fallback = candidates.find(
+      (candidate) => normalizeConversationSearchText(candidate) !== normalizedTitle,
+    );
+    return fallback ? conversationSearchExcerpt(fallback, "") : "";
+  }
+  const match = candidates.find((candidate) =>
+    normalizeConversationSearchText(candidate).includes(normalizedQuery),
+  );
+  return match ? conversationSearchExcerpt(match, normalizedQuery) : "";
+}
+
+function conversationSearchHaystack(thread: Thread, threads: Thread[]): string {
+  return conversationSearchTextCandidates(thread, threads)
+    .map(normalizeConversationSearchText)
+    .join("\n");
+}
+
+function conversationSearchTextCandidates(
+  thread: Thread,
+  threads: Thread[],
+): string[] {
+  const candidates = [
+    threadDisplayTitle(thread, threads),
+    thread.preview,
+    thread.cwd,
+    thread.model,
+  ];
+  for (const turn of thread.turns) {
+    for (const item of turn.items) {
+      candidates.push(...conversationSearchItemTexts(item));
+    }
+  }
+  return candidates
+    .map(compactConversationSearchText)
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+}
+
+function conversationSearchItemTexts(item: ThreadItem): string[] {
+  const values = [
+    item.text,
+    item.name,
+    item.display?.text,
+    item.error,
+  ];
+  return values.filter((value): value is string => Boolean(value?.trim()));
+}
+
+function conversationSearchExcerpt(text: string, normalizedQuery: string): string {
+  const compact = compactConversationSearchText(text);
+  if (compact.length <= 120) {
+    return compact;
+  }
+  const matchIndex = normalizedQuery
+    ? normalizeConversationSearchText(compact).indexOf(normalizedQuery)
+    : -1;
+  const start = matchIndex < 0 ? 0 : Math.max(0, matchIndex - 30);
+  const end = Math.min(compact.length, start + 120);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < compact.length ? "..." : "";
+  return `${prefix}${compact.slice(start, end)}${suffix}`;
+}
+
+function normalizeConversationSearchText(value: string): string {
+  return compactConversationSearchText(value).toLocaleLowerCase();
+}
+
+function compactConversationSearchText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function pinnedThreads(threads: Thread[]): Thread[] {
   return sortThreads(threads).filter((thread) => thread.pinned);
 }
