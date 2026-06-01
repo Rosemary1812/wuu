@@ -6853,14 +6853,19 @@ function TurnView({
 
     if (item.type === "agent_message") {
       insertStatus();
-      flushProcessEntries(completedAgentTextItem(turn, item));
       const rendered = renderThreadItem(
         item,
         turn.status === "in_progress" && item.status === "in_progress",
       );
-      if (rendered) {
-        renderedItems.push(rendered);
+      if (!rendered) {
+        continue;
       }
+      if (completedAgentMessageFollows(turn, index)) {
+        appendProcessEntry({ key: item.id, kind: "item", element: rendered });
+        continue;
+      }
+      flushProcessEntries(completedAgentTextItem(turn, item));
+      renderedItems.push(rendered);
       continue;
     }
 
