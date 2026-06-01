@@ -120,8 +120,6 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		return toolDisplay("schedule", "取消定时任务 "+displayTarget(displayString(args, "id"), ""))
 	case "list_cron":
 		return toolDisplay("schedule", "查看定时任务")
-	case "browser":
-		return toolDisplay("browser", displayBrowserLabel(args))
 	default:
 		return providers.ToolCallDisplay{
 			Kind: displayKindForTool(name),
@@ -242,30 +240,6 @@ func displayGitLabel(args map[string]any) string {
 	}
 }
 
-func displayBrowserLabel(args map[string]any) string {
-	action := strings.ToLower(displayString(args, "action"))
-	switch action {
-	case "navigate", "open":
-		url := displayString(args, "url")
-		if url == "" {
-			return "打开浏览器"
-		}
-		return "打开浏览器 " + displayTruncate(url, 90)
-	case "click":
-		return "点击浏览器"
-	case "type":
-		return "输入浏览器文本"
-	case "screenshot":
-		return "截取浏览器"
-	case "evaluate":
-		return "执行浏览器脚本"
-	case "find":
-		return "查找浏览器内容"
-	default:
-		return "操作浏览器"
-	}
-}
-
 func displayKindForTool(name string) string {
 	switch classifyToolKind(name) {
 	case ToolKindFile, ToolKindWeb, ToolKindSkill:
@@ -282,8 +256,6 @@ func displayKindForTool(name string) string {
 		return "agent"
 	case ToolKindSchedule:
 		return "schedule"
-	case ToolKindBrowser:
-		return "browser"
 	default:
 		return "tool"
 	}

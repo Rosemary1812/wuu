@@ -76,9 +76,8 @@ func New(rootDir string) (*Toolkit, error) {
 	}
 
 	env := &Env{
-		RootDir:          abs,
-		StateDir:         stateDir,
-		BrowserBridgeURL: strings.TrimSpace(os.Getenv("WUU_BROWSER_BRIDGE_URL")),
+		RootDir:  abs,
+		StateDir: stateDir,
 	}
 	t := &Toolkit{env: env}
 	t.rebuildRegistry()
@@ -173,9 +172,6 @@ func (t *Toolkit) rebuildRegistry() {
 		NewListCronTool(e),
 		// Deferred tool discovery
 		NewToolSearchTool(t),
-	}
-	if strings.TrimSpace(e.BrowserBridgeURL) != "" {
-		registered = append(registered, NewBrowserTool(e))
 	}
 	t.registry = NewRegistry(registered...)
 }
