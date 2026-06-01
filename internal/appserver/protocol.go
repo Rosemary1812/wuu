@@ -21,6 +21,7 @@ const (
 	MethodThreadResume      = "thread/resume"
 	MethodThreadFork        = "thread/fork"
 	MethodThreadList        = "thread/list"
+	MethodThreadSearch      = "thread/search"
 	MethodThreadPin         = "thread/pin"
 	MethodThreadArchive     = "thread/archive"
 	MethodTurnStart         = "turn/start"
@@ -213,6 +214,20 @@ type ThreadForkResult struct {
 
 type ThreadListResult struct {
 	Threads []Thread `json:"threads"`
+}
+
+type ThreadSearchParams struct {
+	Query string `json:"query,omitempty"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+type ThreadSearchResult struct {
+	Results []ThreadSearchResultItem `json:"results"`
+}
+
+type ThreadSearchResultItem struct {
+	Thread  Thread `json:"thread"`
+	Snippet string `json:"snippet,omitempty"`
 }
 
 type ThreadPinParams struct {

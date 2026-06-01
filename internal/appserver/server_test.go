@@ -1291,6 +1291,100 @@ func TestServerThreadListOrdersSessionsByUpdatedAt(t *testing.T) {
 	}
 }
 
+func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	userThread, err := session.CreateWithMetadata(rt.SessionDir, "user-thread", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, userThread.ID), []providers.ChatMessage{
+		{Role: "user", Content: "Investigate the delta-vector login failure"},
+		{Role: "assistant", Content: "The login failure comes from stale config."},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, userThread.ID, 2, "login summary"); err != nil {
+		t.Fatal(err)
+	}
+	assistantThread, err := session.CreateWithMetadata(rt.SessionDir, "assistant-thread", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, assistantThread.ID), []providers.ChatMessage{
+		{Role: "user", Content: "summarize the deploy"},
+		{Role: "assistant", Content: "The deploy note mentions orion-cache warming."},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, assistantThread.ID, 2, "deploy summary"); err != nil {
+		t.Fatal(err)
+	}
+	archivedThread, err := session.CreateWithMetadata(rt.SessionDir, "archived-thread", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, archivedThread.ID), []providers.ChatMessage{
+		{Role: "user", Content: "delta-vector archived"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.UpdateArchived(rt.SessionDir, archivedThread.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	otherThread, err := session.CreateWithMetadata(rt.SessionDir, "other-thread", filepath.Join(rt.RootDir, "other"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, otherThread.ID), []providers.ChatMessage{
+		{Role: "user", Content: "delta-vector other workspace"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	userPayload := map[string]any{
+		"id":     "1",
+		"method": MethodThreadSearch,
+		"params": ThreadSearchParams{Query: "delta-vector"},
+	}
+	rawUserPayload, err := json.Marshal(userPayload)
+	if err != nil {
+		t.Fatalf("marshal user search request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rawUserPayload); err != nil {
+		t.Fatalf("thread/search user query: %v", err)
+	}
+	assistantPayload := map[string]any{
+		"id":     "2",
+		"method": MethodThreadSearch,
+		"params": ThreadSearchParams{Query: "orion-cache"},
+	}
+	rawAssistantPayload, err := json.Marshal(assistantPayload)
+	if err != nil {
+		t.Fatalf("marshal assistant search request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rawAssistantPayload); err != nil {
+		t.Fatalf("thread/search assistant content: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	userResult := remarshal[ThreadSearchResult](t, responseByID(t, msgs, "1")["result"])
+	if len(userResult.Results) != 1 || userResult.Results[0].Thread.ID != userThread.ID {
+		t.Fatalf("expected user-thread only, got %+v", userResult.Results)
+	}
+	if !strings.Contains(userResult.Results[0].Snippet, "delta-vector") {
+		t.Fatalf("expected user query snippet, got %q", userResult.Results[0].Snippet)
+	}
+	assistantResult := remarshal[ThreadSearchResult](t, responseByID(t, msgs, "2")["result"])
+	if len(assistantResult.Results) != 1 || assistantResult.Results[0].Thread.ID != assistantThread.ID {
+		t.Fatalf("expected assistant-thread only, got %+v", assistantResult.Results)
+	}
+	if !strings.Contains(assistantResult.Results[0].Snippet, "orion-cache") {
+		t.Fatalf("expected assistant content snippet, got %q", assistantResult.Results[0].Snippet)
+	}
+}
+
 func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu", "state")
