@@ -1,3 +1,0 @@
-BrowserOS server resources are not bundled in the public repository.
-This placeholder keeps local macOS arm64 Chromium builds reproducible until
-the server bundle is produced or downloaded by the Wuu build pipeline.
