@@ -6565,6 +6565,35 @@ function turnHasAssistantOutput(turn: Turn): boolean {
   });
 }
 
+function completedAgentTextItem(turn: Turn, item: ThreadItem): boolean {
+  if (item.type !== "agent_message") {
+    return false;
+  }
+  const status =
+    item.status ?? (turn.status === "in_progress" ? "in_progress" : "completed");
+  return (
+    status === "completed" &&
+    streamFieldValue(turn.id, item, "text").trim().length > 0
+  );
+}
+
+function completedAgentMessageFollows(turn: Turn, itemIndex: number): boolean {
+  for (let index = itemIndex + 1; index < turn.items.length; index++) {
+    const item = turn.items[index];
+    if (item.type === "user_message") {
+      return false;
+    }
+    if (item.type !== "agent_message") {
+      continue;
+    }
+    if (streamFieldValue(turn.id, item, "text").trim().length === 0) {
+      continue;
+    }
+    return completedAgentTextItem(turn, item);
+  }
+  return false;
+}
+
 function TurnNotice({
   display,
 }: {
@@ -6618,18 +6647,12 @@ function TurnView({
   const renderedItems: JSX.Element[] = [];
   let processEntries: TurnProcessEntry[] = [];
   let statusInserted = false;
-  const liveTimeline = turn.status === "in_progress";
   const flowAgentMessageID =
     turn.status === "completed"
       ? messageFlowAgentMessageItemID(turn)
       : undefined;
   const actionableAgentMessageID =
     turn.status === "completed" ? flowAgentMessageID : undefined;
-  const primaryAgentMessageID =
-    flowAgentMessageID ??
-    (turn.status === "failed" || turn.status === "interrupted"
-      ? latestAgentMessageItemIDForTurn(turn)
-      : undefined);
   const processAutoCollapse =
     turn.status === "completed" && actionableAgentMessageID !== undefined;
 
@@ -6671,20 +6694,20 @@ function TurnView({
     }
   }
 
-  function flushProcessEntries(): void {
+  function flushProcessEntries(autoCollapse = processAutoCollapse): void {
     if (processEntries.length === 0) {
       return;
     }
     const entries = processEntries;
     processEntries = [];
     const onlyCompletedStatus =
-      processAutoCollapse && entries.every((entry) => entry.kind === "status");
+      autoCollapse && entries.every((entry) => entry.kind === "status");
     if (onlyCompletedStatus) {
       return;
     }
     const detailEntries = entries.filter((entry) => entry.kind !== "status");
     if (detailEntries.length === 0) {
-      if (!processAutoCollapse) {
+      if (!autoCollapse) {
         const statusEntry = entries.find((entry) => entry.kind === "status");
         if (statusEntry) {
           renderedItems.push(statusEntry.element);
@@ -6697,7 +6720,7 @@ function TurnView({
         key={`${turn.id}-process-${renderedItems.length}`}
         turn={turn}
         entries={detailEntries}
-        autoCollapse={processAutoCollapse}
+        autoCollapse={autoCollapse}
         showTurnStatus={entries.some((entry) => entry.kind === "status")}
       />,
     );
@@ -6714,20 +6737,20 @@ function TurnView({
       continue;
     }
 
-    if (liveTimeline && item.type === "agent_message") {
+    if (item.type === "agent_message") {
       insertStatus();
-      flushProcessEntries();
-      const rendered = renderThreadItem(item, item.status === "in_progress");
+      flushProcessEntries(completedAgentTextItem(turn, item));
+      const rendered = renderThreadItem(
+        item,
+        turn.status === "in_progress" && item.status === "in_progress",
+      );
       if (rendered) {
         renderedItems.push(rendered);
       }
       continue;
     }
 
-    const isPrimaryAgentMessage = item.id === primaryAgentMessageID;
-    if (!isPrimaryAgentMessage) {
-      insertStatus();
-    }
+    insertStatus();
 
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
       const group = [item];
@@ -6747,7 +6770,10 @@ function TurnView({
           <ToolActivityRow
             key={`${item.id}-activity`}
             items={group}
-            collapseWhenIdle={processAutoCollapse}
+            collapseWhenIdle={
+              processAutoCollapse ||
+              completedAgentMessageFollows(turn, nextIndex - 1)
+            }
           />
         ),
       });
@@ -6762,13 +6788,7 @@ function TurnView({
     if (!rendered) {
       continue;
     }
-    if (isPrimaryAgentMessage) {
-      insertStatus();
-      flushProcessEntries();
-      renderedItems.push(rendered);
-    } else {
-      appendProcessEntry({ key: item.id, kind: "item", element: rendered });
-    }
+    appendProcessEntry({ key: item.id, kind: "item", element: rendered });
   }
 
   if (!statusInserted && turn.status === "in_progress") {
