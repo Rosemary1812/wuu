@@ -240,7 +240,11 @@ function StreamingMarkdownSurface({
   const streamState = final ? (live ? "settling" : "settled") : "streaming";
   return (
     <div className={className} data-stream-state={streamState}>
-      <MarkdownContent text={visibleText} cwd={cwd} renderMermaid={!live} />
+      {live ? (
+        <div className="streaming-plain-text">{visibleText}</div>
+      ) : (
+        <MarkdownContent text={visibleText} cwd={cwd} renderMermaid />
+      )}
     </div>
   );
 }

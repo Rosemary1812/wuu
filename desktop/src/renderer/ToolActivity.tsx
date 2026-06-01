@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { formatMessageFlowCommand } from "./message-flow-display";
 import type { ThreadItem } from "../shared/protocol";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
@@ -36,6 +36,71 @@ type DiffStats = {
 };
 
 export type JsonRecord = Record<string, unknown>;
+
+const TOOL_ACTIVITY_REVEAL_INTERVAL_MS = 85;
+
+export function ToolActivityTimeline({
+  items,
+  collapseWhenIdle = false,
+  revealItems = false,
+}: {
+  items: ThreadItem[];
+  collapseWhenIdle?: boolean;
+  revealItems?: boolean;
+}): JSX.Element {
+  const [visibleCount, setVisibleCount] = useState(() =>
+    revealItems ? Math.min(1, items.length) : items.length,
+  );
+  const itemSignature = items.map((item) => item.id).join("\u0000");
+
+  useEffect(() => {
+    setVisibleCount((current) => {
+      if (!revealItems) {
+        return items.length;
+      }
+      if (items.length === 0) {
+        return 0;
+      }
+      return Math.min(Math.max(current, 1), items.length);
+    });
+  }, [itemSignature, items.length, revealItems]);
+
+  useEffect(() => {
+    if (!revealItems || visibleCount >= items.length) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setVisibleCount((current) => Math.min(current + 1, items.length));
+    }, TOOL_ACTIVITY_REVEAL_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [itemSignature, items.length, revealItems, visibleCount]);
+
+  if (!revealItems) {
+    return (
+      <ToolActivityRow items={items} collapseWhenIdle={collapseWhenIdle} />
+    );
+  }
+
+  return (
+    <div
+      className="activity-timeline"
+      data-pending-count={Math.max(0, items.length - visibleCount)}
+    >
+      {items.slice(0, visibleCount).map((item, index) => (
+        <div
+          className="activity-timeline-item"
+          key={item.id}
+          style={{ "--activity-index": index } as CSSProperties}
+        >
+          <ToolActivityRow
+            items={[item]}
+            collapseWhenIdle={collapseWhenIdle}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function ToolActivityRow({
   items,

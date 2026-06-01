@@ -156,6 +156,7 @@ import {
 import { threadDisplayTitle } from "./ThreadTitles";
 import {
   ToolActivityRow,
+  ToolActivityTimeline,
   isRecord,
   numberValue,
   readableToolName,
@@ -7163,13 +7164,14 @@ function TurnView({
         key: `${item.id}-activity`,
         kind: "activity",
         element: (
-          <ToolActivityRow
+          <ToolActivityTimeline
             key={`${item.id}-activity`}
             items={group}
             collapseWhenIdle={
               processAutoCollapse ||
               completedAgentMessageFollows(turn, nextIndex - 1)
             }
+            revealItems={turn.status === "in_progress"}
           />
         ),
       });

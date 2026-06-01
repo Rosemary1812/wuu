@@ -5162,6 +5162,16 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.streaming-plain-text {
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .streaming-markdown {
   min-width: 0;
   gap: 10px;
@@ -5189,6 +5199,18 @@ button:disabled {
 
 .streaming-markdown[data-stream-state="settled"] .stream-word {
   animation: none;
+}
+
+@keyframes activity-timeline-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes turn-text-sweep {
@@ -7009,6 +7031,19 @@ button:disabled {
   overflow: hidden;
   gap: 8px;
   padding: 3px 0 1px;
+}
+
+.activity-timeline {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.activity-timeline-item {
+  min-width: 0;
+  animation: activity-timeline-item-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: min(calc(var(--activity-index, 0) * 22ms), 120ms);
+  transform-origin: 50% 0;
 }
 
 .activity-group {
@@ -11211,6 +11246,7 @@ html.swiss-international .os-theme-wuu {
   .turn-process-details,
   .activity-chevron,
   .activity-details,
+  .activity-timeline-item,
   .message-copy-button,
   .ask-option,
   .ask-other-toggle,
@@ -11226,6 +11262,7 @@ html.swiss-international .os-theme-wuu {
 
 	  .conversation-search-dialog,
 	  .ask-message,
+  .activity-timeline-item,
 	  .stream-word {
 	    animation: none;
 	  }
