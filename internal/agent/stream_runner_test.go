@@ -979,6 +979,87 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 	}
 }
 
+func TestStreamRunner_CompactedHistoryDoesNotTriggerImmediateSecondCompact(t *testing.T) {
+	client := &mockStreamClient{
+		attempts: []mockStreamAttempt{
+			{events: []providers.StreamEvent{
+				{Type: providers.EventContentDelta, Content: "first"},
+				{Type: providers.EventDone},
+			}},
+			{events: []providers.StreamEvent{
+				{Type: providers.EventContentDelta, Content: "second"},
+				{Type: providers.EventDone},
+			}},
+		},
+		chatResponses: []providers.ChatResponse{
+			{Content: "summarized older context"},
+		},
+	}
+
+	runner := StreamRunner{
+		Client:                client,
+		Model:                 "gpt-4-turbo",
+		ContextWindowOverride: 5000,
+	}
+
+	firstHistory := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("older ", 2000)},
+		{Role: "assistant", Content: strings.Repeat("older ", 2000)},
+		{Role: "user", Content: "continue"},
+	}
+	first, err := runner.RunWithCallback(context.Background(), firstHistory, nil)
+	if err != nil {
+		t.Fatalf("first RunWithCallback: %v", err)
+	}
+	if first.Content != "first" {
+		t.Fatalf("unexpected first content %q", first.Content)
+	}
+	if !first.HistoryRewritten {
+		t.Fatal("expected first run to rewrite history")
+	}
+
+	secondHistory := append([]providers.ChatMessage{}, first.NewMessages...)
+	secondHistory = append(secondHistory, providers.ChatMessage{Role: "user", Content: "follow up"})
+	second, err := runner.RunWithCallback(context.Background(), secondHistory, nil)
+	if err != nil {
+		t.Fatalf("second RunWithCallback: %v", err)
+	}
+	if second.Content != "second" {
+		t.Fatalf("unexpected second content %q", second.Content)
+	}
+	if second.HistoryRewritten {
+		t.Fatal("did not expect immediate second history rewrite")
+	}
+
+	if len(client.requests) != 3 {
+		t.Fatalf("expected compact request plus two stream requests, got %d", len(client.requests))
+	}
+	if !isCompactSummaryRequest(client.requests[0]) {
+		t.Fatalf("expected first request to summarize for compact, got %+v", client.requests[0].Messages)
+	}
+	if isCompactSummaryRequest(client.requests[1]) || isCompactSummaryRequest(client.requests[2]) {
+		t.Fatalf("expected only one compact request, got compact flags: %t %t %t",
+			isCompactSummaryRequest(client.requests[0]),
+			isCompactSummaryRequest(client.requests[1]),
+			isCompactSummaryRequest(client.requests[2]))
+	}
+	if client.chatCallCount != 1 {
+		t.Fatalf("expected one compact summary call, got %d", client.chatCallCount)
+	}
+
+	secondSent := client.requests[2].Messages
+	if len(secondSent) != len(secondHistory) {
+		t.Fatalf("expected second request to send compacted persisted history unchanged, got %d messages from %d-history input",
+			len(secondSent), len(secondHistory))
+	}
+	if got := secondSent[1].Content; !compact.IsConversationSummaryContent(got) ||
+		!strings.Contains(got, "summarized older context") ||
+		strings.Contains(got, "older older older older") {
+		t.Fatalf("expected compacted summary without raw older context in second request, got %q", got)
+	}
+}
+
 func TestStreamRunner_ContextOverflowStreamErrorCompactsSingleUserTurn(t *testing.T) {
 	overflow := providers.NewProviderStreamError(
 		"context_length_exceeded",

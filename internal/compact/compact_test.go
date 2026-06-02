@@ -398,6 +398,91 @@ func TestCompact_ReplacesPreviousSummaryInsteadOfStacking(t *testing.T) {
 	}
 }
 
+func TestCompact_RepeatedCompactionKeepsRecentTailAndAnchorsPreviousSummary(t *testing.T) {
+	firstMessages := []providers.ChatMessage{
+		{Role: "user", Content: "one"},
+		{Role: "assistant", Content: "one reply"},
+		{Role: "user", Content: "two"},
+		{Role: "assistant", Content: "two reply"},
+		{Role: "user", Content: "three"},
+		{Role: "assistant", Content: "three reply"},
+	}
+	firstClient := &mockCompactClient{response: "summary one"}
+
+	firstResult, err := Compact(context.Background(), firstMessages, firstClient, "test")
+	if err != nil {
+		t.Fatalf("first Compact: %v", err)
+	}
+	if len(firstResult) != 5 {
+		t.Fatalf("expected first compact to keep summary plus two recent turns, got %+v", firstResult)
+	}
+	if !IsConversationSummaryContent(firstResult[0].Content) || !strings.Contains(firstResult[0].Content, "summary one") {
+		t.Fatalf("expected first compact summary, got %+v", firstResult[0])
+	}
+
+	secondMessages := append([]providers.ChatMessage{}, firstResult...)
+	secondMessages = append(secondMessages,
+		providers.ChatMessage{Role: "user", Content: "four"},
+		providers.ChatMessage{Role: "assistant", Content: "four reply"},
+	)
+	secondClient := &mockCompactClient{response: "summary two"}
+
+	secondResult, err := Compact(context.Background(), secondMessages, secondClient, "test")
+	if err != nil {
+		t.Fatalf("second Compact: %v", err)
+	}
+
+	if len(secondClient.lastRequest.Messages) < 2 {
+		t.Fatalf("expected compact request, got %+v", secondClient.lastRequest.Messages)
+	}
+	prompt := secondClient.lastRequest.Messages[1].Content
+	if !strings.Contains(prompt, "Previous anchored summary") || strings.Count(prompt, "summary one") != 1 {
+		t.Fatalf("expected previous summary to anchor replacement prompt once, got %q", prompt)
+	}
+	for _, want := range []string{"[user]: two", "[assistant]: two reply"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected second compact prompt to include old retained head %q, got %q", want, prompt)
+		}
+	}
+	for _, notWant := range []string{"[user]: three", "[assistant]: three reply", "[user]: four", "[assistant]: four reply"} {
+		if strings.Contains(prompt, notWant) {
+			t.Fatalf("expected recent tail %q to stay out of summary input, got %q", notWant, prompt)
+		}
+	}
+
+	summaryCount := 0
+	for _, msg := range secondResult {
+		if msg.Role == "system" && IsConversationSummaryContent(msg.Content) {
+			summaryCount++
+			if !strings.Contains(msg.Content, "summary two") || strings.Contains(msg.Content, "summary one") {
+				t.Fatalf("expected replacement summary only, got %q", msg.Content)
+			}
+		}
+	}
+	if summaryCount != 1 {
+		t.Fatalf("expected exactly one compact summary, got %d in %+v", summaryCount, secondResult)
+	}
+	for _, want := range []string{"three", "three reply", "four", "four reply"} {
+		found := false
+		for _, msg := range secondResult {
+			if msg.Content == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected recent tail message %q to remain raw, got %+v", want, secondResult)
+		}
+	}
+	for _, notWant := range []string{"two", "two reply"} {
+		for _, msg := range secondResult {
+			if msg.Content == notWant {
+				t.Fatalf("expected older retained head %q to be summarized, got %+v", notWant, secondResult)
+			}
+		}
+	}
+}
+
 func TestCompactTailBudget_UsesOpenCodeStyleCap(t *testing.T) {
 	if got := compactTailBudget("gpt-4o", 128_000); got != compactTailMaxTokens {
 		t.Fatalf("expected large window to cap at %d, got %d", compactTailMaxTokens, got)
