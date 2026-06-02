@@ -68,6 +68,9 @@ type Runner struct {
 	// back to the registry. Used by sub-agents whose model isn't in
 	// the registry but whose owner knows the right number.
 	ContextWindowOverride int
+	// MaxInputTokens pins the prompt/input budget when lower than the
+	// model's total context window.
+	MaxInputTokens int
 }
 
 // RunResult is the structured outcome of a Runner.RunWithUsage call.
@@ -118,6 +121,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		Temperature:      r.Temperature,
 		MaxSteps:         r.MaxSteps,
 		MaxContextTokens: maxCtx,
+		MaxInputTokens:   r.MaxInputTokens,
 		OnUsage:          onUsage,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			return compact.CompactWithContextWindow(ctx, messages, r.Client, r.Model, maxCtx)

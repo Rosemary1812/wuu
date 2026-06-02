@@ -87,11 +87,11 @@ function classifyUserFacingError(message: string, context: UserFacingErrorContex
   if (isAuthOrPermissionError(normalized)) {
     return "auth";
   }
-  if (isNetworkOrUpstreamError(normalized)) {
-    return "network";
-  }
   if (isProviderBusinessError(normalized)) {
     return "provider";
+  }
+  if (isNetworkOrUpstreamError(normalized)) {
+    return "network";
   }
   return context === "tool" ? "tool" : "internal";
 }

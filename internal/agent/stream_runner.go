@@ -54,6 +54,9 @@ type StreamRunner struct {
 	// proxied model that wuu wouldn't otherwise recognize. Zero
 	// means "ask providers.ContextWindowFor(Model)".
 	ContextWindowOverride int
+	// MaxInputTokens lets callers pass a provider/model prompt limit
+	// when it is smaller than the total context window.
+	MaxInputTokens int
 
 	// DisableAutoCompact turns off the proactive fill-rate trigger.
 	// The reactive context-overflow recovery still runs. Off by default.
@@ -179,6 +182,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		Temperature:      r.Temperature,
 		MaxSteps:         r.MaxSteps,
 		MaxContextTokens: maxCtx,
+		MaxInputTokens:   r.MaxInputTokens,
 		BeforeStep:       beforeStep,
 		BeforeRequest:    r.BeforeRequest,
 		OnUsage:          r.OnUsage,

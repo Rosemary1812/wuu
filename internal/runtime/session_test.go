@@ -175,6 +175,19 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	if got := rt.StreamRunner.ProviderOptions["serviceTier"]; got != "priority" {
 		t.Fatalf("ProviderOptions serviceTier = %#v", got)
 	}
+	if rt.StreamRunner.MaxInputTokens != 922000 {
+		t.Fatalf("MaxInputTokens = %d", rt.StreamRunner.MaxInputTokens)
+	}
+}
+
+func TestResolveInputWindow_CapsCodexSubscriptionGPT5(t *testing.T) {
+	got := ResolveInputWindow("gpt-5.5", config.ProviderConfig{
+		Type:  "openai-codex",
+		Model: "gpt-5.5",
+	}, 1_048_576)
+	if got != codexSubscriptionGPT5InputCap {
+		t.Fatalf("ResolveInputWindow = %d, want %d", got, codexSubscriptionGPT5InputCap)
+	}
 }
 
 func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {

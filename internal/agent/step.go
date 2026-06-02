@@ -111,6 +111,11 @@ type LoopConfig struct {
 	// input window. Zero disables proactive compact (the reactive
 	// overflow path still works).
 	MaxContextTokens int
+	// MaxInputTokens is the provider's prompt/input limit when it is
+	// lower than the full context window. Some APIs advertise a large
+	// total context window but reserve a large output budget server-side;
+	// proactive compact must respect the smaller input side.
+	MaxInputTokens int
 	// CompactThresholdPct is the fraction of MaxContextTokens that
 	// triggers a proactive compact. Defaults to 0.9 (90%) when zero.
 	// The effective threshold may be lower when the model's expected

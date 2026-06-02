@@ -202,25 +202,27 @@ func NewSession(opts Options) (*Session, error) {
 
 	sessionDir := statepath.SessionsDir(wuuHome)
 	modelSelection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
+	contextWindow := ResolveContextWindow(
+		providerCfg.Model,
+		ruleProviderCfg.ContextWindow,
+		cfg.Agent.MaxContextTokens,
+	)
 
 	streamRunner := &agent.StreamRunner{
-		Client:          client,
-		Tools:           toolExecutor,
-		Model:           providerCfg.Model,
-		APIModel:        modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model),
-		SystemPrompt:    baseSystemPrompt,
-		MaxSteps:        cfg.Agent.MaxSteps,
-		Temperature:     cfg.Agent.Temperature,
-		Effort:          modelSelection.LegacyEffort,
-		Variant:         modelSelection.Variant,
-		ProviderOptions: modelSelection.ProviderOptions,
-		ContextWindowOverride: ResolveContextWindow(
-			providerCfg.Model,
-			ruleProviderCfg.ContextWindow,
-			cfg.Agent.MaxContextTokens,
-		),
-		DisableAutoCompact: cfg.Agent.DisableAutoCompact,
-		BeforeRequest:      EnvContextInjector(rootDir, agentControl, agentthread.RootPath),
+		Client:                client,
+		Tools:                 toolExecutor,
+		Model:                 providerCfg.Model,
+		APIModel:              modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model),
+		SystemPrompt:          baseSystemPrompt,
+		MaxSteps:              cfg.Agent.MaxSteps,
+		Temperature:           cfg.Agent.Temperature,
+		Effort:                modelSelection.LegacyEffort,
+		Variant:               modelSelection.Variant,
+		ProviderOptions:       modelSelection.ProviderOptions,
+		ContextWindowOverride: contextWindow,
+		MaxInputTokens:        ResolveInputWindow(providerCfg.Model, ruleProviderCfg, contextWindow),
+		DisableAutoCompact:    cfg.Agent.DisableAutoCompact,
+		BeforeRequest:         EnvContextInjector(rootDir, agentControl, agentthread.RootPath),
 	}
 
 	return &Session{
@@ -367,6 +369,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		Bus:                     base.Bus,
 		OnUsage:                 base.OnUsage,
 		ContextWindowOverride:   base.ContextWindowOverride,
+		MaxInputTokens:          base.MaxInputTokens,
 		DisableAutoCompact:      base.DisableAutoCompact,
 		StreamingToolExecution:  base.StreamingToolExecution,
 		BeforeStep:              base.BeforeStep,
@@ -471,6 +474,71 @@ func ResolveContextWindow(model string, providerOverride, agentOverride int) int
 		return agentOverride
 	}
 	return providers.ContextWindowFor(model)
+}
+
+// ResolveInputWindow resolves the effective prompt/input budget. It is often
+// lower than the total context window because providers reserve output tokens
+// server-side before validating the request.
+func ResolveInputWindow(model string, provider config.ProviderConfig, contextWindow int) int {
+	if limit := configuredModelInputLimit(model, provider); limit > 0 {
+		if cap := codexSubscriptionInputCap(model, provider.Type); cap > 0 && cap < limit {
+			return cap
+		}
+		return limit
+	}
+	if cap := codexSubscriptionInputCap(model, provider.Type); cap > 0 {
+		return cap
+	}
+	if contextWindow <= 0 {
+		return 0
+	}
+	reserve := providers.MaxOutputTokensFor(model)
+	if reserve <= 0 || reserve >= contextWindow {
+		return 0
+	}
+	return contextWindow - reserve
+}
+
+func configuredModelInputLimit(model string, provider config.ProviderConfig) int {
+	model = strings.TrimSpace(model)
+	if model == "" || len(provider.Models) == 0 {
+		return 0
+	}
+	if cfg, ok := provider.Models[model]; ok && cfg.Limit != nil && cfg.Limit.Input > 0 {
+		return cfg.Limit.Input
+	}
+	apiModel := modelcatalog.APIModel(provider, model)
+	if apiModel != "" && apiModel != model {
+		if cfg, ok := provider.Models[apiModel]; ok && cfg.Limit != nil && cfg.Limit.Input > 0 {
+			return cfg.Limit.Input
+		}
+	}
+	return 0
+}
+
+const codexSubscriptionGPT5InputCap = 272_000
+
+func codexSubscriptionInputCap(model, providerType string) int {
+	if !isCodexSubscriptionProviderType(providerType) {
+		return 0
+	}
+	id := strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndex(id, "/"); idx >= 0 {
+		id = id[idx+1:]
+	}
+	if strings.Contains(id, "gpt-5") {
+		return codexSubscriptionGPT5InputCap
+	}
+	return 0
+}
+
+func isCodexSubscriptionProviderType(providerType string) bool {
+	switch strings.ToLower(strings.TrimSpace(providerType)) {
+	case "openai-codex", "codex-subscription", "chatgpt-codex":
+		return true
+	default:
+		return false
+	}
 }
 
 // EnvContextInjector returns dynamic runtime context injected into each model

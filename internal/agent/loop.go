@@ -366,19 +366,31 @@ func RunToolLoop(
 // the loop should run a proactive compact pass, or 0 if proactive
 // compact is disabled (caller didn't supply a window).
 func proactiveCompactThreshold(cfg LoopConfig) int {
-	if cfg.MaxContextTokens <= 0 {
+	if cfg.MaxContextTokens <= 0 && cfg.MaxInputTokens <= 0 {
 		return 0
 	}
 	pct := cfg.CompactThresholdPct
 	if pct <= 0 || pct >= 1 {
 		pct = defaultCompactThresholdPct
 	}
-	fractional := int(float64(cfg.MaxContextTokens) * pct)
-	outputReserved := cfg.MaxContextTokens - compactOutputReserve(cfg)
-	if outputReserved > 0 && outputReserved < fractional {
-		return outputReserved
+	baseWindow := cfg.MaxContextTokens
+	if baseWindow <= 0 || (cfg.MaxInputTokens > 0 && cfg.MaxInputTokens < baseWindow) {
+		baseWindow = cfg.MaxInputTokens
 	}
-	return fractional
+	threshold := int(float64(baseWindow) * pct)
+	if cfg.MaxInputTokens > 0 {
+		inputThreshold := int(float64(cfg.MaxInputTokens) * pct)
+		if inputThreshold > 0 && inputThreshold < threshold {
+			threshold = inputThreshold
+		}
+	}
+	if cfg.MaxContextTokens > 0 {
+		outputReserved := cfg.MaxContextTokens - compactOutputReserve(cfg)
+		if outputReserved > 0 && outputReserved < threshold {
+			threshold = outputReserved
+		}
+	}
+	return threshold
 }
 
 func compactOutputReserve(cfg LoopConfig) int {

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -164,8 +165,21 @@ func estimateMessages(msgs []providers.ChatMessage) int {
 			// Tool call envelope cost.
 			total += 8
 		}
-		// Fixed estimate per image (2000 tokens each).
-		total += len(m.Images) * 2000
+		for _, image := range m.Images {
+			total += estimateImageTokens(image)
+		}
 	}
 	return total
+}
+
+func estimateImageTokens(image providers.InputImage) int {
+	dataLen := len(strings.TrimSpace(image.Data))
+	if dataLen == 0 {
+		return 0
+	}
+	payloadEstimate := dataLen / 4
+	if payloadEstimate > 2000 {
+		return payloadEstimate
+	}
+	return 2000
 }

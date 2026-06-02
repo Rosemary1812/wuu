@@ -95,11 +95,10 @@ func EstimateJSONTokens(text string) int {
 	return utf8.RuneCountInString(text)/2 + 1
 }
 
-// imageTokenEstimate is the fixed token budget for an image content
-// block. The real formula is (width×height)/750, but images are
-// resized to fit within provider limits, and the actual count comes
-// from the API response. 2000 is the conservative heuristic both
-// Claude Code and Codex CLI use.
+// imageTokenEstimate is the minimum token budget for an image content
+// block. We also account for large inline base64 payloads so resumed
+// sessions with old screenshots compact before the request body itself
+// becomes the dominant context risk.
 const imageTokenEstimate = 2000
 
 // toolDefinitionOverhead is the approximate token cost the API adds
@@ -125,13 +124,26 @@ func EstimateMessagesTokens(messages []providers.ChatMessage) int {
 			total += EstimateJSONTokens(tc.Arguments)
 			total += 8 // tool call envelope (id, type, JSON wrapping)
 		}
-		// Images: fixed estimate per image block.
-		total += len(msg.Images) * imageTokenEstimate
+		for _, image := range msg.Images {
+			total += estimateImageTokens(image)
+		}
 	}
 	if hasTools {
 		total += toolDefinitionOverhead
 	}
 	return total
+}
+
+func estimateImageTokens(image providers.InputImage) int {
+	dataLen := len(strings.TrimSpace(image.Data))
+	if dataLen == 0 {
+		return 0
+	}
+	payloadEstimate := dataLen / 4
+	if payloadEstimate > imageTokenEstimate {
+		return payloadEstimate
+	}
+	return imageTokenEstimate
 }
 
 // ShouldCompact returns true if messages exceed the threshold.
@@ -196,13 +208,14 @@ func CompactWithContextWindow(ctx context.Context, messages []providers.ChatMess
 		return messages, nil
 	}
 
-	keepStart := compactKeepStart(conversation, compactTailBudget(model, maxContextTokens))
+	conversationForCompact := stripHistoricalImages(conversation)
+	keepStart := compactKeepStart(conversationForCompact, compactTailBudget(model, maxContextTokens))
 	if keepStart <= 0 {
 		return messages, nil
 	}
 
-	toSummarize := pruneOldToolResults(conversation[:keepStart])
-	toKeep := conversation[keepStart:]
+	toSummarize := pruneOldToolResults(conversationForCompact[:keepStart])
+	toKeep := conversationForCompact[keepStart:]
 
 	for attempt := 0; ; attempt++ {
 		summaryInput := buildSummaryPrompt(toSummarize, previousSummary)
@@ -559,6 +572,48 @@ func adjustToolBoundary(messages []providers.ChatMessage, start int) int {
 	return start
 }
 
+func stripHistoricalImages(messages []providers.ChatMessage) []providers.ChatMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	latestUser := lastUserMessageIndex(messages)
+	out := make([]providers.ChatMessage, len(messages))
+	copy(out, messages)
+	for i := range out {
+		if len(out[i].Images) == 0 {
+			continue
+		}
+		if i == latestUser && strings.EqualFold(out[i].Role, "user") {
+			continue
+		}
+		out[i].Content = appendImageOmissionNote(out[i].Content, out[i].Images)
+		out[i].Images = nil
+	}
+	return out
+}
+
+func appendImageOmissionNote(content string, images []providers.InputImage) string {
+	if len(images) == 0 {
+		return content
+	}
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(content))
+	if b.Len() > 0 {
+		b.WriteString("\n\n")
+	}
+	for i, image := range images {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		mediaType := strings.TrimSpace(image.MediaType)
+		if mediaType == "" {
+			mediaType = "image"
+		}
+		fmt.Fprintf(&b, "[Image attachment omitted from compacted history: %s, %d base64 characters.]", mediaType, len(strings.TrimSpace(image.Data)))
+	}
+	return b.String()
+}
+
 func pruneOldToolResults(messages []providers.ChatMessage) []providers.ChatMessage {
 	if len(messages) == 0 {
 		return nil
@@ -655,6 +710,13 @@ func buildSummaryPrompt(toSummarize []providers.ChatMessage, previousSummary str
 	b.WriteString("--- Conversation to summarize ---\n\n")
 	for _, msg := range toSummarize {
 		fmt.Fprintf(&b, "[%s]: %s\n", msg.Role, truncate(msg.Content, 500))
+		for _, image := range msg.Images {
+			mediaType := strings.TrimSpace(image.MediaType)
+			if mediaType == "" {
+				mediaType = "image"
+			}
+			fmt.Fprintf(&b, "  [image omitted: %s, %d base64 characters]\n", mediaType, len(strings.TrimSpace(image.Data)))
+		}
 		for _, tc := range msg.ToolCalls {
 			fmt.Fprintf(&b, "  -> tool_call: %s(%s)\n", tc.Name, truncate(tc.Arguments, 200))
 		}

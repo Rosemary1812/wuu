@@ -621,6 +621,65 @@ func TestCompact_DoesNotPruneRecentTailToolResults(t *testing.T) {
 	}
 }
 
+func TestCompact_StripsHistoricalImagesFromKeptTail(t *testing.T) {
+	imageData := strings.Repeat("a", 1200)
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second screenshot", Images: []providers.InputImage{{MediaType: "image/png", Data: imageData}}},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third screenshot", Images: []providers.InputImage{{MediaType: "image/jpeg", Data: "latest"}}},
+		{Role: "assistant", Content: "third reply"},
+	}
+
+	client := &mockCompactClient{response: "summary"}
+	result, err := CompactWithContextWindow(context.Background(), messages, client, "test", 100_000)
+	if err != nil {
+		t.Fatalf("CompactWithContextWindow: %v", err)
+	}
+
+	var historical providers.ChatMessage
+	var latest providers.ChatMessage
+	foundHistorical := false
+	foundLatest := false
+	for _, msg := range result {
+		switch msg.Content {
+		case "second screenshot\n\n[Image attachment omitted from compacted history: image/png, 1200 base64 characters.]":
+			historical = msg
+			foundHistorical = true
+		case "third screenshot":
+			latest = msg
+			foundLatest = true
+		}
+	}
+	if !foundHistorical {
+		t.Fatalf("expected historical image omission note in compacted result: %+v", result)
+	}
+	if !foundLatest {
+		t.Fatalf("expected latest user message in compacted result: %+v", result)
+	}
+	if len(historical.Images) != 0 {
+		t.Fatalf("expected historical image stripped, got %+v", historical.Images)
+	}
+	if len(latest.Images) != 1 || latest.Images[0].Data != "latest" {
+		t.Fatalf("expected latest user image preserved, got %+v", latest.Images)
+	}
+}
+
+func TestBuildSummaryPromptMentionsImagesWithoutData(t *testing.T) {
+	imageData := strings.Repeat("z", 80)
+	prompt := buildSummaryPrompt([]providers.ChatMessage{
+		{Role: "user", Content: "see screenshot", Images: []providers.InputImage{{MediaType: "image/png", Data: imageData}}},
+	}, "")
+
+	if strings.Contains(prompt, imageData) {
+		t.Fatal("summary prompt must not include raw image data")
+	}
+	if !strings.Contains(prompt, "[image omitted: image/png, 80 base64 characters]") {
+		t.Fatalf("expected image omission note, got %q", prompt)
+	}
+}
+
 func TestPruneOldToolResults_PreservesToolCallPairing(t *testing.T) {
 	large := strings.Repeat("z", toolResultPruneThresholdChars+50)
 	messages := []providers.ChatMessage{
