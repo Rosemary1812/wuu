@@ -7263,7 +7263,8 @@ function TurnView({
       return;
     }
     const detailEntries = entries.filter((entry) => entry.kind !== "status");
-    const summaryCheckpoint = autoCollapse ? undefined : checkpoint;
+    const summaryCheckpoint =
+      autoCollapse && turn.status === "completed" ? undefined : checkpoint;
     if (detailEntries.length === 0 && !checkpoint) {
       if (!autoCollapse) {
         const statusEntry = entries.find((entry) => entry.kind === "status");
@@ -7443,9 +7444,11 @@ function initialProcessCheckpointText(text: string, live: boolean): string {
 function TurnProcessCheckpointText({
   checkpoint,
   live,
+  handoff = false,
 }: {
   checkpoint: TurnProcessCheckpoint;
   live: boolean;
+  handoff?: boolean;
 }): JSX.Element {
   const [state, setState] = useState<TurnProcessCheckpointViewState>(() => ({
     id: checkpoint.key,
@@ -7453,12 +7456,26 @@ function TurnProcessCheckpointText({
     targetText: checkpoint.text,
     swapping: false,
   }));
+  const [handoffVisible, setHandoffVisible] = useState(!handoff);
   const stateRef = useRef(state);
   const paceTimeoutRef = useRef<number | undefined>(undefined);
   const swapFrameRef = useRef<number | undefined>(undefined);
   const swapTimeoutRef = useRef<number | undefined>(undefined);
 
   stateRef.current = state;
+
+  useEffect(() => {
+    if (!handoff) {
+      setHandoffVisible(true);
+      return undefined;
+    }
+    setHandoffVisible(true);
+    const timer = window.setTimeout(
+      () => setHandoffVisible(false),
+      PROCESS_CHECKPOINT_SWAP_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [checkpoint.key, handoff]);
 
   const clearPace = useCallback((): void => {
     if (paceTimeoutRef.current === undefined) {
@@ -7591,11 +7608,16 @@ function TurnProcessCheckpointText({
     };
   }, [clearPace, clearSwap]);
 
+  if (!handoffVisible) {
+    return <span className="turn-process-checkpoint-spacer" aria-hidden />;
+  }
+
   return (
     <span
-      className="turn-process-checkpoint"
+      className={`turn-process-checkpoint${handoff ? " handoff" : ""}`}
       data-swapping={state.swapping ? "true" : "false"}
       title={checkpoint.text}
+      aria-hidden={handoff ? true : undefined}
     >
       <span
         className="turn-process-checkpoint-track"
@@ -7680,7 +7702,8 @@ function TurnProcessGroup({
         {checkpoint ? (
           <TurnProcessCheckpointText
             checkpoint={checkpoint}
-            live={turn.status === "in_progress"}
+            live={turn.status === "in_progress" && !autoCollapse}
+            handoff={autoCollapse}
           />
         ) : null}
       </span>
