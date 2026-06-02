@@ -160,7 +160,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 				Function: toolFunctionDefinition{
 					Name:        tool.Name,
 					Description: tool.Description,
-					Parameters:  tool.InputSchema,
+					Parameters:  providers.ToolInputSchemaForModel(req.Model, tool.InputSchema),
 				},
 			})
 		}
@@ -281,7 +281,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 				Function: toolFunctionDefinition{
 					Name:        tool.Name,
 					Description: tool.Description,
-					Parameters:  tool.InputSchema,
+					Parameters:  providers.ToolInputSchemaForModel(req.Model, tool.InputSchema),
 				},
 			})
 		}

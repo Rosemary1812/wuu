@@ -311,7 +311,7 @@ func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool
 			payload.Tools = append(payload.Tools, anthropicTool{
 				Name:        tool.Name,
 				Description: tool.Description,
-				InputSchema: tool.InputSchema,
+				InputSchema: providers.ToolInputSchemaForModel(req.Model, tool.InputSchema),
 			})
 		}
 	}

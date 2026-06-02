@@ -116,7 +116,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 				Name:        tool.Name,
 				Description: tool.Description,
 				Strict:      false,
-				Parameters:  responsesToolParameters(tool.InputSchema),
+				Parameters:  responsesToolParameters(providers.ToolInputSchemaForModel(req.Model, tool.InputSchema)),
 			})
 		}
 	}
