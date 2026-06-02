@@ -23,7 +23,8 @@ const (
 	MethodThreadList        = "thread/list"
 	MethodThreadSearch      = "thread/search"
 	MethodThreadPin         = "thread/pin"
-	MethodThreadArchive     = "thread/archive"
+	MethodThreadArchive       = "thread/archive"
+	MethodThreadRegenerateTitle = "thread/regenerate-title"
 	MethodTurnStart         = "turn/start"
 	MethodTurnInterrupt     = "turn/interrupt"
 	MethodShutdown          = "shutdown"
@@ -281,6 +282,25 @@ type ThreadResumedNotification struct {
 
 type ThreadUpdatedNotification struct {
 	Thread Thread `json:"thread"`
+}
+
+// ThreadRegenerateTitleParams is the input for the `thread/regenerate-title`
+// JSON-RPC method. The desktop uses this to manually re-run the title
+// pipeline for an existing thread (e.g. after the user changes provider)
+// and to inspect what the pipeline would produce.
+type ThreadRegenerateTitleParams struct {
+	ThreadID     string `json:"thread_id"`
+	DryRun       bool   `json:"dry_run,omitempty"`
+	ModelOverride string `json:"model_override,omitempty"`
+	ProviderName  string `json:"provider,omitempty"`
+}
+
+// ThreadRegenerateTitleResult mirrors TitleGenerationResult and is what
+// the desktop receives when it calls thread/regenerate-title. Persisted
+// is the only field the desktop typically renders, but everything else
+// is useful for surfacing in a dev panel.
+type ThreadRegenerateTitleResult struct {
+	TitleGenerationResult
 }
 
 type TurnStartedNotification struct {

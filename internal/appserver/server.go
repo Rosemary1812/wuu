@@ -423,6 +423,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadPin(req)
 	case MethodThreadArchive:
 		return s.handleThreadArchive(req)
+	case MethodThreadRegenerateTitle:
+		return s.handleThreadRegenerateTitle(ctx, req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnInterrupt:

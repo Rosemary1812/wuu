@@ -2,11 +2,16 @@ package appserver
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -164,7 +169,7 @@ type TitleGenerationResult struct {
 //   - We aggregate text deltas only; thinking deltas (<think>…</think>) are
 //     stripped again post-hoc in cleanGeneratedThreadTitle.
 func (s *Server) generateThreadTitle(threadID string, history []providers.ChatMessage) {
-	_, _ = s.generateThreadTitleCore(threadID, history, true, true)
+	_, _ = s.generateThreadTitleCore(threadID, history, true, true, false)
 }
 
 // generateThreadTitleCore is the workhorse behind generateThreadTitle,
@@ -175,7 +180,13 @@ func (s *Server) generateThreadTitle(threadID string, history []providers.ChatMe
 // Every step is logged via providers.DebugLogf so the production path leaves
 // a structured trace in ~/.wuu/log/debug.log that can be correlated by
 // thread ID. The CLI path additionally prints to stdout.
-func (s *Server) generateThreadTitleCore(threadID string, history []providers.ChatMessage, persist, notify bool) (res TitleGenerationResult, retErr error) {
+//
+// When forceFirstUser is true, the pipeline uses the first user message
+// regardless of how many subsequent user messages there are. This is the
+// behavior thread/regenerate-title wants (re-title with the original
+// prompt). The production first-turn path leaves it false so a later
+// turn cannot accidentally re-trigger title generation.
+func (s *Server) generateThreadTitleCore(threadID string, history []providers.ChatMessage, persist, notify, forceFirstUser bool) (res TitleGenerationResult, retErr error) {
 	res.ThreadID = threadID
 	res.StartedAt = time.Now().UTC()
 	defer func() {
@@ -204,7 +215,7 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 		return res, nil
 	}
 
-	firstUser, ok := firstUserMessageForTitle(history)
+	firstUser, ok := firstUserMessageForTitle(history, forceFirstUser)
 	if !ok {
 		res.SkipReason = "no eligible first user message"
 		providers.DebugLogf("title[%s]: skipped (%s)", threadID, res.SkipReason)
@@ -376,10 +387,107 @@ func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClien
 	return b.String(), deltas, ctx.Err()
 }
 
+// handleThreadRegenerateTitle is the JSON-RPC entry point for "rerun the
+// title pipeline against the current provider/model". The desktop uses
+// it to manually re-title a thread (after a model switch, for example)
+// and to surface the full TitleGenerationResult in a dev panel.
+//
+// The result is always returned to the caller regardless of dry-run, so
+// the UI can show what *would* be persisted. When not dry-run, a
+// thread/updated notification is also fired (handled by the core).
+func (s *Server) handleThreadRegenerateTitle(ctx context.Context, req Request) error {
+	var params ThreadRegenerateTitleParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("parse params: %w", err))
+	}
+	threadID := strings.TrimSpace(params.ThreadID)
+	if threadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+
+	// Build history from the on-disk session (the in-memory thread state
+	// may be missing — e.g. after a desktop restart).
+	history, err := loadChatMessages(session.FilePath(s.rt.SessionDir, threadID))
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("load history for thread %q: %w", threadID, err))
+	}
+
+	// If the caller overrode the model or provider, we need a fresh
+	// runtime whose TitleClient targets that. We rebuild the runtime
+	// only when an override is requested; otherwise reuse s.rt so the
+	// request matches the user's live provider exactly.
+	if params.ModelOverride != "" || params.ProviderName != "" {
+		return s.regenerateTitleWithOverride(ctx, req, threadID, history, params)
+	}
+
+	result, err := s.generateThreadTitleCore(threadID, history, !params.DryRun, !params.DryRun, true)
+	if err != nil {
+		// Still return the result so the caller can see what went wrong.
+		_ = s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, err)
+		return nil
+	}
+	return s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, nil)
+}
+
+// regenerateTitleWithOverride is the model/provider-override branch of
+// handleThreadRegenerateTitle. It spins up a one-off runtime + server
+// so the request hits the user-requested provider instead of the live
+// one, runs generateThreadTitleCore against that runtime, then merges
+// the resulting title back into the live server's thread state and
+// fires the thread/updated notification.
+func (s *Server) regenerateTitleWithOverride(ctx context.Context, req Request, threadID string, history []providers.ChatMessage, params ThreadRegenerateTitleParams) error {
+	cfg, _, err := loadProbeConfig(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	probeRT, err := runtime.NewSession(runtime.Options{
+		RootDir:       s.rt.RootDir,
+		HomeDir:       os.Getenv("HOME"),
+		Config:        cfg,
+		ProviderName:  params.ProviderName,
+		ModelOverride: params.ModelOverride,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("build override runtime: %w", err))
+	}
+	defer func() { _, _ = probeRT.Cleanup() }()
+
+	probeSrv := New(probeRT, s.out)
+	result, err := probeSrv.generateThreadTitleCore(threadID, history, !params.DryRun, false, true)
+	if err != nil {
+		_ = s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, err)
+		return nil
+	}
+	// Persist + notify on the live server so the existing session index
+	// and the desktop's thread state stay authoritative. Skip when
+	// dry-run (the probe already returned without persisting).
+	if !params.DryRun && result.Persisted {
+		metadata, perr := session.UpdateGeneratedTitle(s.rt.SessionDir, threadID, result.CleanedTitle)
+		if perr != nil {
+			return s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, perr)
+		}
+		thread, terr := s.threadAfterMetadataUpdate(metadata)
+		if terr != nil {
+			return s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, terr)
+		}
+		_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+		result.PersistedTitle = metadata.Title
+		result.PreviewAfter = thread.Preview
+		result.Notified = true
+	}
+	return s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, nil)
+}
+
 // firstUserMessageForTitle returns the user prompt to summarize. opencode only
 // generates a title for the very first user turn (`history.filter(real).length
 // !== 1` returns); we mirror that constraint with the count == 1 check.
-func firstUserMessageForTitle(history []providers.ChatMessage) (string, bool) {
+//
+// When force is true, the function ignores the count check and returns the
+// first non-empty user message regardless of how many follow. This is what
+// thread/regenerate-title wants (re-title using the original prompt), and
+// what `wuu probe-title --user-prompt` already passes by virtue of the
+// synthetic single-user history it constructs.
+func firstUserMessageForTitle(history []providers.ChatMessage, force bool) (string, bool) {
 	var first string
 	count := 0
 	for _, msg := range history {
@@ -394,6 +502,9 @@ func firstUserMessageForTitle(history []providers.ChatMessage) (string, bool) {
 		if count == 1 {
 			first = content
 		}
+	}
+	if force {
+		return first, first != ""
 	}
 	return first, count == 1 && first != ""
 }

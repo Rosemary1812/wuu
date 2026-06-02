@@ -235,7 +235,7 @@ func TestFirstUserMessageForTitle_RequiresExactlyOneUser(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		got, ok := firstUserMessageForTitle(tc.history)
+		got, ok := firstUserMessageForTitle(tc.history, false)
 		if ok != tc.ok {
 			t.Errorf("%s: ok=%v; want %v (first=%q)", tc.name, ok, tc.ok, got)
 			continue
@@ -243,5 +243,28 @@ func TestFirstUserMessageForTitle_RequiresExactlyOneUser(t *testing.T) {
 		if ok && got != tc.want {
 			t.Errorf("%s: first=%q; want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestFirstUserMessageForTitle_ForceUsesFirstRegardlessOfCount covers the
+// regenerate-title / probe path. force=true must return the first user
+// message even when subsequent user messages exist (the production
+// first-turn path uses force=false to mirror opencode's "only the very
+// first turn gets a title" gating).
+func TestFirstUserMessageForTitle_ForceUsesFirstRegardlessOfCount(t *testing.T) {
+	t.Parallel()
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "first prompt"},
+		{Role: "assistant", Content: "first answer"},
+		{Role: "user", Content: "second prompt"},
+		{Role: "assistant", Content: "second answer"},
+	}
+	got, ok := firstUserMessageForTitle(history, true)
+	if !ok || got != "first prompt" {
+		t.Errorf("force=true: got (%q, %v); want (%q, true)", got, ok, "first prompt")
+	}
+	// And the no-user-message case must still fail even with force.
+	if _, ok := firstUserMessageForTitle([]providers.ChatMessage{{Role: "assistant", Content: "hi"}}, true); ok {
+		t.Error("force=true must still fail when no user message exists")
 	}
 }

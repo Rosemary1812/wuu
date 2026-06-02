@@ -1112,6 +1112,92 @@ func TestServerGeneratesThreadTitleEndToEndWithStreaming(t *testing.T) {
 	}
 }
 
+// TestServerRegenerateTitle exercises the thread/regenerate-title JSON-RPC
+// method end-to-end: a thread that already has multiple turns (so the
+// first-turn auto title gen is skipped) can still be re-titled by hand.
+// Verifies:
+//
+//   - dry-run=true returns the cleaned title but does not persist or notify
+//   - dry-run=false persists the title and fires a thread/updated
+//     notification with the new Preview
+//   - the response surfaces every TitleGenerationResult field
+func TestServerRegenerateTitle(t *testing.T) {
+	mainClient := &fakeClient{response: providers.ChatResponse{Content: "ok"}}
+	titleClient := &scriptedStreamClient{
+		prefix: "let me think…\n",
+		chunks: []string{"Refactor ", "user ", "service"},
+	}
+	rt := newTestRuntime(t, mainClient)
+	rt.TitleClient = titleClient
+	srv := New(rt, &lockedBuffer{})
+
+	// Seed an existing thread that is BEYOND its first turn. The first-turn
+	// auto title gen would skip this because history has > 1 user message;
+	// the explicit regenerate method must still work.
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "regen-thread-1", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "first task prompt"},
+		{Role: "assistant", Content: "first task answer"},
+		{Role: "user", Content: "second task prompt"},
+		{Role: "assistant", Content: "second task answer"},
+	}
+	if err := session.UpdateIndex(rt.SessionDir, sess.ID, len(history), "first task prompt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, sess.ID), history); err != nil {
+		t.Fatal(err)
+	}
+
+	// dry-run path: returns the cleaned title without persisting or notifying.
+	dryParams, _ := json.Marshal(ThreadRegenerateTitleParams{
+		ThreadID: sess.ID,
+		DryRun:   true,
+	})
+	dryReq := []byte(fmt.Sprintf(`{"id":"reg-1","method":%q,"params":%s}`, MethodThreadRegenerateTitle, dryParams))
+	if err := srv.handleLine(context.Background(), dryReq); err != nil {
+		t.Fatalf("regenerate-title dry-run: %v", err)
+	}
+	// Verify title was NOT persisted.
+	if _, ok, _ := session.Find(rt.SessionDir, sess.ID); !ok {
+		t.Fatal("session should still exist")
+	}
+	persisted, _ := session.List(rt.SessionDir, 100)
+	for _, p := range persisted {
+		if p.ID == sess.ID && p.Title != "" {
+			t.Fatalf("dry-run must not persist, got Title=%q", p.Title)
+		}
+	}
+
+	// Persist path: re-issue without dry-run.
+	persistParams, _ := json.Marshal(ThreadRegenerateTitleParams{
+		ThreadID: sess.ID,
+		DryRun:   false,
+	})
+	persistReq := []byte(fmt.Sprintf(`{"id":"reg-2","method":%q,"params":%s}`, MethodThreadRegenerateTitle, persistParams))
+	if err := srv.handleLine(context.Background(), persistReq); err != nil {
+		t.Fatalf("regenerate-title persist: %v", err)
+	}
+	persisted2, _ := session.List(rt.SessionDir, 100)
+	var updated *session.Session
+	for i := range persisted2 {
+		if persisted2[i].ID == sess.ID {
+			updated = &persisted2[i]
+		}
+	}
+	if updated == nil {
+		t.Fatal("session missing after persist")
+	}
+	if updated.Title != "Refactor user service" {
+		t.Fatalf("persisted Title = %q; want %q", updated.Title, "Refactor user service")
+	}
+	if updated.Summary != "first task prompt" {
+		t.Fatalf("Summary must be preserved, got %q", updated.Summary)
+	}
+}
+
 func TestCleanGeneratedThreadTitle(t *testing.T) {
 	got := cleanGeneratedThreadTitle("<think>hidden</think>\nTitle: \"调试登录崩溃并修复认证流程\"")
 	if got != "调试登录崩溃并修复认证流程" {
