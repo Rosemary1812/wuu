@@ -953,8 +953,8 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 
 	history := []providers.ChatMessage{
 		{Role: "system", Content: "sys"},
-		{Role: "user", Content: strings.Repeat("older ", 1000)},
-		{Role: "assistant", Content: strings.Repeat("older ", 1000)},
+		{Role: "user", Content: strings.Repeat("older ", 2000)},
+		{Role: "assistant", Content: strings.Repeat("older ", 2000)},
 		{Role: "user", Content: "continue"},
 	}
 	res, err := runner.RunWithCallback(context.Background(), history, nil)
@@ -973,6 +973,9 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 	if len(client.requests[1].Messages) >= len(history) {
 		t.Fatalf("expected compacted stream request, got %d messages from %d-history input",
 			len(client.requests[1].Messages), len(history))
+	}
+	if got := client.requests[1].Messages[1].Content; !compact.IsConversationSummaryContent(got) || !strings.Contains(got, "summarized") {
+		t.Fatalf("expected compacted summary after system prompt, got %q", got)
 	}
 }
 

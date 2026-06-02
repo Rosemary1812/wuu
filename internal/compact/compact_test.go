@@ -402,8 +402,29 @@ func TestCompactTailBudget_UsesOpenCodeStyleCap(t *testing.T) {
 	if got := compactTailBudget("gpt-4o", 128_000); got != compactTailMaxTokens {
 		t.Fatalf("expected large window to cap at %d, got %d", compactTailMaxTokens, got)
 	}
-	if got := compactTailBudget("test-model", 1_000); got != 250 {
-		t.Fatalf("expected small test window to use 25%% tail budget, got %d", got)
+	if got := compactTailBudget("test-model", 1_000); got != compactTailMinTokens {
+		t.Fatalf("expected small test window to use %d minimum tail budget, got %d", compactTailMinTokens, got)
+	}
+}
+
+func TestCompact_SummarizesAllWhenRecentTailWouldBeWholeHistory(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+	}
+
+	client := &mockCompactClient{response: "summary of all turns"}
+	result, err := Compact(context.Background(), messages, client, "test")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if len(result) != 1 || result[0].Role != "system" || !IsConversationSummaryContent(result[0].Content) {
+		t.Fatalf("expected summary-only compacted history, got %+v", result)
+	}
+	if strings.Contains(result[0].Content, "first reply") {
+		t.Fatalf("expected raw history to be summarized, got %q", result[0].Content)
 	}
 }
 
@@ -463,6 +484,8 @@ func TestCompact_DoesNotLeaveDanglingToolResults(t *testing.T) {
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "older question"},
 		{Role: "assistant", Content: "older answer"},
+		{Role: "user", Content: "before current tool run"},
+		{Role: "assistant", Content: "ready"},
 		{Role: "user", Content: "run both reads"},
 		{Role: "assistant", ToolCalls: []providers.ToolCall{
 			{ID: "c1", Name: "read_file", Arguments: `{"path":"README.md"}`},
@@ -471,6 +494,8 @@ func TestCompact_DoesNotLeaveDanglingToolResults(t *testing.T) {
 		{Role: "tool", Name: "read_file", ToolCallID: "c1", Content: "english"},
 		{Role: "tool", Name: "read_file", ToolCallID: "c2", Content: "chinese"},
 		{Role: "assistant", Content: "done"},
+		{Role: "user", Content: "what changed?"},
+		{Role: "assistant", Content: "summarized changes"},
 	}
 
 	client := &mockCompactClient{response: "summary of older turns"}
@@ -522,6 +547,24 @@ func TestCompactKeepStart_ExpandsRecentTurnsWithinBudget(t *testing.T) {
 	start := compactKeepStart(messages, 1000)
 	if start != 2 {
 		t.Fatalf("expected budget to keep recent turns while leaving oldest summarized, start=%d", start)
+	}
+}
+
+func TestCompactKeepStart_LimitsRecentTailToTwoUserTurns(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+		{Role: "user", Content: "fourth"},
+		{Role: "assistant", Content: "fourth reply"},
+	}
+
+	start := compactKeepStart(messages, 10_000)
+	if start != 4 {
+		t.Fatalf("expected default tail to keep only the latest two user turns, start=%d", start)
 	}
 }
 

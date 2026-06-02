@@ -172,6 +172,14 @@ const compactReservedMaxTokens = 20_000
 // default upper bound is 8K tokens.
 const compactTailMaxTokens = 8_000
 
+// compactTailMinTokens mirrors OpenCode's lower bound for the recent raw
+// context kept after the anchored summary. Even small models need enough fresh
+// context to preserve the immediate working state.
+const compactTailMinTokens = 2_000
+
+// compactTailDefaultTurns mirrors OpenCode's default tail_turns setting.
+const compactTailDefaultTurns = 2
+
 // compactTailContextFraction keeps the raw tail small relative to the target
 // model window so the generated summary and post-compact context still have
 // room. OpenCode's default is roughly 25% of the usable input window, capped at
@@ -210,7 +218,7 @@ func CompactWithContextWindow(ctx context.Context, messages []providers.ChatMess
 
 	conversationForCompact := stripHistoricalImages(conversation)
 	keepStart := compactKeepStart(conversationForCompact, compactTailBudget(model, maxContextTokens))
-	if keepStart <= 0 {
+	if keepStart < 0 || keepStart > len(conversationForCompact) {
 		return messages, nil
 	}
 
@@ -471,6 +479,9 @@ func compactTailBudget(model string, maxContextTokens int) int {
 	if budget <= 0 || budget > compactTailMaxTokens {
 		return compactTailMaxTokens
 	}
+	if budget < compactTailMinTokens {
+		return compactTailMinTokens
+	}
 	return budget
 }
 
@@ -488,40 +499,98 @@ func compactUsableWindow(model string, window int) int {
 	return window - reserved
 }
 
+type compactTurn struct {
+	start int
+	end   int
+}
+
 // compactKeepStart returns the index where the un-compacted tail should begin.
-// It keeps the latest user-anchored turn, then expands backward by complete
-// user turns while the tail remains under the token budget. Long single-turn
-// tool runs only have one user message at the front, so those fall back to a
-// token-budgeted raw tail instead of refusing to compact.
+// It keeps up to the latest two user-anchored turns within the token budget,
+// matching OpenCode's default tail selection. Long single-turn tool runs only
+// have one user message at the front, so those fall back to a token-budgeted
+// raw tail instead of refusing to compact. A return value equal to len(messages)
+// means summarize everything and keep no raw tail; -1 means no compaction.
 func compactKeepStart(messages []providers.ChatMessage, tailBudgetTokens int) int {
 	if len(messages) <= 1 {
-		return 0
+		return -1
 	}
 	if tailBudgetTokens <= 0 {
 		tailBudgetTokens = compactTailMaxTokens
 	}
 
-	start := lastUserMessageIndex(messages)
-	if start < 0 {
-		start = compactFallbackTailStart(messages, tailBudgetTokens)
-		return adjustToolBoundary(messages, start)
+	turns := compactTurns(messages)
+	if len(turns) == 0 {
+		return compactTailStartOrSummaryAll(messages, compactFallbackTailStart(messages, tailBudgetTokens))
 	}
-	if start == 0 {
-		start = compactFallbackTailStart(messages, tailBudgetTokens)
-		return adjustToolBoundary(messages, start)
+	if len(turns) == 1 && turns[0].start == 0 {
+		return compactTailStartOrSummaryAll(messages, compactFallbackTailStart(messages, tailBudgetTokens))
 	}
 
-	for {
-		prev := previousUserMessageIndex(messages, start-1)
-		if prev <= 0 {
-			break
+	recentStart := len(turns) - compactTailDefaultTurns
+	if recentStart < 0 {
+		recentStart = 0
+	}
+	recent := turns[recentStart:]
+
+	total := 0
+	keepStart := -1
+	for i := len(recent) - 1; i >= 0; i-- {
+		turn := recent[i]
+		size := EstimateMessagesTokens(messages[turn.start:turn.end])
+		if total+size <= tailBudgetTokens {
+			total += size
+			keepStart = turn.start
+			continue
 		}
-		if EstimateMessagesTokens(messages[prev:]) > tailBudgetTokens {
-			break
+
+		remaining := tailBudgetTokens - total
+		if split, ok := compactSplitTurnStart(messages, turn, remaining); ok {
+			keepStart = split
 		}
-		start = prev
+		break
+	}
+	if keepStart <= 0 {
+		return len(messages)
+	}
+	return adjustToolBoundary(messages, keepStart)
+}
+
+func compactTailStartOrSummaryAll(messages []providers.ChatMessage, start int) int {
+	start = adjustToolBoundary(messages, start)
+	if start <= 0 {
+		return len(messages)
 	}
 	return start
+}
+
+func compactTurns(messages []providers.ChatMessage) []compactTurn {
+	turns := make([]compactTurn, 0)
+	for i, msg := range messages {
+		if !strings.EqualFold(msg.Role, "user") {
+			continue
+		}
+		turns = append(turns, compactTurn{
+			start: i,
+			end:   len(messages),
+		})
+	}
+	for i := 0; i < len(turns)-1; i++ {
+		turns[i].end = turns[i+1].start
+	}
+	return turns
+}
+
+func compactSplitTurnStart(messages []providers.ChatMessage, turn compactTurn, tailBudgetTokens int) (int, bool) {
+	if tailBudgetTokens <= 0 || turn.end-turn.start <= 1 {
+		return 0, false
+	}
+	for start := turn.start + 1; start < turn.end; start++ {
+		if EstimateMessagesTokens(messages[start:turn.end]) > tailBudgetTokens {
+			continue
+		}
+		return adjustToolBoundary(messages, start), true
+	}
+	return 0, false
 }
 
 func compactFallbackTailStart(messages []providers.ChatMessage, tailBudgetTokens int) int {
@@ -537,18 +606,6 @@ func compactFallbackTailStart(messages []providers.ChatMessage, tailBudgetTokens
 
 func lastUserMessageIndex(messages []providers.ChatMessage) int {
 	for i := len(messages) - 1; i >= 0; i-- {
-		if strings.EqualFold(messages[i].Role, "user") {
-			return i
-		}
-	}
-	return -1
-}
-
-func previousUserMessageIndex(messages []providers.ChatMessage, before int) int {
-	if before >= len(messages) {
-		before = len(messages) - 1
-	}
-	for i := before; i >= 0; i-- {
 		if strings.EqualFold(messages[i].Role, "user") {
 			return i
 		}

@@ -140,7 +140,7 @@ func RunToolLoop(
 		if cfg.Compact != nil && threshold > 0 && usage.EstimateCurrent() >= threshold {
 			before := usage.EstimateCurrent()
 			msgsBefore := len(messages)
-			if compacted, cerr := cfg.Compact(ctx, messages); cerr == nil && len(compacted) < len(messages) {
+			if compacted, cerr := cfg.Compact(ctx, messages); cerr == nil && compactChanged(messages, compacted) {
 				messages = compacted
 				historyRewritten = true
 				usage.Reset()
@@ -417,6 +417,13 @@ func compactMaxOutputTokens(cfg LoopConfig) int {
 		reserve = providers.MaxOutputTokensFor(cfg.Model)
 	}
 	return reserve
+}
+
+func compactChanged(before, after []providers.ChatMessage) bool {
+	if len(before) != len(after) {
+		return true
+	}
+	return !reflect.DeepEqual(before, after)
 }
 
 // copyMessages returns an independent copy of msgs so callers can

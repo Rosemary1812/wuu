@@ -1968,17 +1968,20 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load compacted history: %v", err)
 	}
-	if len(persisted) != 3 {
-		t.Fatalf("expected compacted persisted history of 3 messages, got %+v", persisted)
+	if len(persisted) != 4 {
+		t.Fatalf("expected compacted persisted history of 4 messages, got %+v", persisted)
 	}
 	if persisted[0].Role != "system" || !strings.Contains(persisted[0].Content, "summary of older single-turn tool run") {
 		t.Fatalf("expected persisted compact summary first, got %+v", persisted[0])
 	}
-	if persisted[1].Role != "user" || persisted[1].Content != "continue" {
-		t.Fatalf("expected resumed user message after summary, got %+v", persisted[1])
+	if persisted[1].Role != "assistant" || persisted[1].Content != "I found the first clue." {
+		t.Fatalf("expected recent assistant tail after summary, got %+v", persisted[1])
 	}
-	if persisted[2].Role != "assistant" || persisted[2].Content != "after compact" {
-		t.Fatalf("expected final assistant message after compact, got %+v", persisted[2])
+	if persisted[2].Role != "user" || persisted[2].Content != "continue" {
+		t.Fatalf("expected resumed user message after recent tail, got %+v", persisted[2])
+	}
+	if persisted[3].Role != "assistant" || persisted[3].Content != "after compact" {
+		t.Fatalf("expected final assistant message after compact, got %+v", persisted[3])
 	}
 
 	out2 := &lockedBuffer{}
@@ -2006,7 +2009,7 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	if th == nil {
 		t.Fatal("expected resumed compacted thread state")
 	}
-	if len(th.History) != 4 {
+	if len(th.History) != 5 {
 		t.Fatalf("expected base system prompt plus compacted persisted history, got %+v", th.History)
 	}
 	if th.History[1].Role != "system" || !strings.Contains(th.History[1].Content, "summary of older single-turn tool run") {
