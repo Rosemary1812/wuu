@@ -7076,6 +7076,52 @@ function agentMessageWithTextFollows(turn: Turn, itemIndex: number): boolean {
   return false;
 }
 
+function turnHasProcessItems(turn: Turn): boolean {
+  return turn.items.some((item) => {
+    if (item.type === "agent_message") {
+      return item.phase === "commentary";
+    }
+    return turnItemIsProcess(item);
+  });
+}
+
+function turnItemIsProcess(item: ThreadItem): boolean {
+  return (
+    item.type === "reasoning" ||
+    item.type === "tool_call" ||
+    item.type === "collab_agent_tool_call" ||
+    item.type === "context_compaction"
+  );
+}
+
+function agentMessageBelongsToProcess(
+  turn: Turn,
+  item: ThreadItem,
+  itemIndex: number,
+  finalAgentMessageID: string | undefined,
+): boolean {
+  if (item.type !== "agent_message") {
+    return false;
+  }
+  if (streamFieldValue(turn.id, item, "text").trim().length === 0) {
+    return false;
+  }
+  if (item.phase === "commentary") {
+    return true;
+  }
+  if (item.phase === "final_answer") {
+    return false;
+  }
+  if (
+    turn.status === "completed" &&
+    finalAgentMessageID &&
+    turnHasProcessItems(turn)
+  ) {
+    return item.id !== finalAgentMessageID;
+  }
+  return agentMessageWithTextFollows(turn, itemIndex);
+}
+
 function compactProcessCheckpointText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -7259,7 +7305,14 @@ function TurnView({
       if (!rendered) {
         continue;
       }
-      if (agentMessageWithTextFollows(turn, index)) {
+      if (
+        agentMessageBelongsToProcess(
+          turn,
+          item,
+          index,
+          flowAgentMessageID,
+        )
+      ) {
         updateProcessCheckpoint(item);
         continue;
       }
