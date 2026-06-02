@@ -808,8 +808,10 @@ export function App(): JSX.Element {
       }
       recordRunDebugEvent(event);
       const handling = handleStreamingNotification(event, appStateRef.current);
-      if (handling === "stream") {
+      if (handling === "stream" || handling === "stream-state") {
         scheduleStreamScroll();
+      }
+      if (handling === "stream") {
         return;
       }
       if (handling === "skip") {
@@ -5799,7 +5801,7 @@ function serverEventTargetsActiveContext(
   return event.workdir === state.activeContext?.cwd;
 }
 
-type StreamingNotificationHandling = "state" | "stream" | "skip";
+type StreamingNotificationHandling = "state" | "stream" | "stream-state" | "skip";
 
 function handleStreamingNotification(
   event: ServerEvent,
@@ -5815,26 +5817,22 @@ function handleStreamingNotification(
       if (!notificationTargetsActiveThread(params, state)) {
         return "skip";
       }
-      appendStreamDelta(params, "text");
-      return "stream";
+      return appendStreamDelta(params, "text") ? "stream-state" : "stream";
     case "item/agentMessage/replace":
       if (!notificationTargetsActiveThread(params, state)) {
         return "skip";
       }
-      replaceStreamText(params, "text");
-      return "stream";
+      return replaceStreamText(params, "text") ? "stream-state" : "stream";
     case "item/reasoning/delta":
       if (!notificationTargetsActiveThread(params, state)) {
         return "skip";
       }
-      appendStreamDelta(params, "text");
-      return "stream";
+      return appendStreamDelta(params, "text") ? "stream-state" : "stream";
     case "item/reasoning/replace":
       if (!notificationTargetsActiveThread(params, state)) {
         return "skip";
       }
-      replaceStreamText(params, "text");
-      return "stream";
+      return replaceStreamText(params, "text") ? "stream-state" : "stream";
     case "item/toolCall/delta":
       if (!notificationTargetsActiveThread(params, state)) {
         return "skip";
@@ -5885,27 +5883,33 @@ function notificationTargetsActiveThread(
 function appendStreamDelta(
   params: Record<string, unknown> | undefined,
   field: StreamTextField,
-): void {
+): boolean {
   const turnID = params?.turn_id as string | undefined;
   const itemID = params?.item_id as string | undefined;
   const delta = params?.delta as string | undefined;
   if (!turnID || !itemID || !delta) {
-    return;
+    return false;
   }
-  streamTextStore.append(streamTextKey(turnID, itemID, field), delta);
+  const key = streamTextKey(turnID, itemID, field);
+  const wasEmpty = streamTextStore.get(key).trim().length === 0;
+  streamTextStore.append(key, delta);
+  return field === "text" && wasEmpty && streamTextStore.get(key).trim().length > 0;
 }
 
 function replaceStreamText(
   params: Record<string, unknown> | undefined,
   field: StreamTextField,
-): void {
+): boolean {
   const turnID = params?.turn_id as string | undefined;
   const itemID = params?.item_id as string | undefined;
   const text = params?.text;
   if (!turnID || !itemID || typeof text !== "string") {
-    return;
+    return false;
   }
-  streamTextStore.set(streamTextKey(turnID, itemID, field), text);
+  const key = streamTextKey(turnID, itemID, field);
+  const wasEmpty = streamTextStore.get(key).trim().length === 0;
+  streamTextStore.set(key, text);
+  return field === "text" && wasEmpty && text.trim().length > 0;
 }
 
 function syncStreamItem(params: Record<string, unknown> | undefined): void {
@@ -7047,18 +7051,6 @@ function turnHasAssistantOutput(turn: Turn): boolean {
   });
 }
 
-function completedAgentTextItem(turn: Turn, item: ThreadItem): boolean {
-  if (item.type !== "agent_message") {
-    return false;
-  }
-  const status =
-    item.status ?? (turn.status === "in_progress" ? "in_progress" : "completed");
-  return (
-    status === "completed" &&
-    streamFieldValue(turn.id, item, "text").trim().length > 0
-  );
-}
-
 function agentMessageWithTextFollows(turn: Turn, itemIndex: number): boolean {
   for (let index = itemIndex + 1; index < turn.items.length; index++) {
     const item = turn.items[index];
@@ -7176,18 +7168,10 @@ function TurnView({
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
 }): JSX.Element {
-  const renderedItems: JSX.Element[] = [];
-  let processEntries: TurnProcessEntry[] = [];
-  let processCheckpoint: TurnProcessCheckpoint | undefined;
-  let statusInserted = false;
-  const flowAgentMessageID =
+  const actionableAgentMessageID =
     turn.status === "completed"
       ? messageFlowAgentMessageItemID(turn)
       : undefined;
-  const actionableAgentMessageID =
-    turn.status === "completed" ? flowAgentMessageID : undefined;
-  const processAutoCollapse =
-    turn.status === "completed" && actionableAgentMessageID !== undefined;
 
   function renderThreadItem(
     item: ThreadItem,
@@ -7209,17 +7193,61 @@ function TurnView({
     );
   }
 
-  function insertStatus(): void {
-    if (statusInserted) {
-      return;
-    }
-    processEntries.push({
-      key: `${turn.id}-status`,
-      kind: "status",
-      element: <TurnStatusLine key={`${turn.id}-status`} turn={turn} />,
-    });
-    statusInserted = true;
-  }
+  const userItems = turn.items.filter((item) => item.type === "user_message");
+  const assistantDisplay = buildAssistantTurnDisplay(
+    turn,
+    actionableAgentMessageID,
+    renderThreadItem,
+  );
+  const notice = turnNoticeDisplay(turn, turnHasAssistantOutput(turn));
+
+  return (
+    <section className="turn">
+      {userItems.map((item) => renderThreadItem(item, false))}
+      {assistantDisplay ? (
+        <AssistantTurnShell turn={turn} display={assistantDisplay} />
+      ) : null}
+      {notice ? <TurnNotice display={notice} /> : null}
+    </section>
+  );
+}
+
+type AssistantTurnDisplay = {
+  processEntries: TurnProcessEntry[];
+  processCheckpoint?: TurnProcessCheckpoint;
+  showProcessLane: boolean;
+  answerItems: AssistantTurnAnswerItem[];
+};
+
+type AssistantTurnAnswerItem = {
+  item: ThreadItem;
+  streaming: boolean;
+  element: JSX.Element;
+};
+
+type TurnProcessEntry = {
+  key: string;
+  kind: "checkpoint" | "activity";
+  element: JSX.Element;
+  count?: number;
+};
+
+type TurnProcessCheckpoint = {
+  key: string;
+  text: string;
+};
+
+function buildAssistantTurnDisplay(
+  turn: Turn,
+  actionableAgentMessageID: string | undefined,
+  renderThreadItem: (item: ThreadItem, streaming: boolean) => JSX.Element | null,
+): AssistantTurnDisplay | undefined {
+  const processEntries: TurnProcessEntry[] = [];
+  const answerItems: AssistantTurnAnswerItem[] = [];
+  let processCheckpoint: TurnProcessCheckpoint | undefined;
+  let sawAssistantWork = false;
+  const finalAgentMessageID =
+    actionableAgentMessageID ?? explicitFinalAgentMessageItemID(turn);
 
   function appendProcessEntry(entry: TurnProcessEntry | null): void {
     if (entry) {
@@ -7247,85 +7275,41 @@ function TurnView({
     });
   }
 
-  function flushProcessEntries(autoCollapse = processAutoCollapse): void {
-    if (processEntries.length === 0 && !processCheckpoint) {
-      return;
-    }
-    const entries = processEntries;
-    const checkpoint = processCheckpoint;
-    processEntries = [];
-    processCheckpoint = undefined;
-    const onlyCompletedStatus =
-      !checkpoint &&
-      autoCollapse &&
-      entries.every((entry) => entry.kind === "status");
-    if (onlyCompletedStatus) {
-      return;
-    }
-    const detailEntries = entries.filter((entry) => entry.kind !== "status");
-    const summaryCheckpoint =
-      autoCollapse && turn.status === "completed" ? undefined : checkpoint;
-    if (detailEntries.length === 0 && !checkpoint) {
-      if (!autoCollapse) {
-        const statusEntry = entries.find((entry) => entry.kind === "status");
-        if (statusEntry) {
-          renderedItems.push(statusEntry.element);
-        }
-      }
-      return;
-    }
-    renderedItems.push(
-      <TurnProcessGroup
-        key={`${turn.id}-process-${renderedItems.length}`}
-        turn={turn}
-        entries={detailEntries}
-        checkpoint={summaryCheckpoint}
-        autoCollapse={autoCollapse}
-        showTurnStatus={entries.some((entry) => entry.kind === "status")}
-      />,
-    );
-  }
-
   for (let index = 0; index < turn.items.length; index++) {
     const item = turn.items[index];
     if (item.type === "user_message") {
-      flushProcessEntries();
-      const rendered = renderThreadItem(item, false);
-      if (rendered) {
-        renderedItems.push(rendered);
-      }
       continue;
     }
+    sawAssistantWork = true;
 
     if (item.type === "agent_message") {
-      insertStatus();
-      const rendered = renderThreadItem(
-        item,
-        turn.status === "in_progress" && item.status === "in_progress",
-      );
-      if (!rendered) {
-        continue;
-      }
+      const streaming =
+        turn.status === "in_progress" && item.status === "in_progress";
       if (
         agentMessageBelongsToProcess(
           turn,
           item,
           index,
-          flowAgentMessageID,
+          actionableAgentMessageID,
         )
       ) {
         updateProcessCheckpoint(item);
         continue;
       }
-      flushProcessEntries(
-        completedAgentTextItem(turn, item) ||
-          streamFieldValue(turn.id, item, "text").trim().length > 0,
-      );
-      renderedItems.push(rendered);
+      const text = streamFieldValue(turn.id, item, "text");
+      if (
+        text.trim().length === 0 &&
+        item.phase !== "final_answer" &&
+        !streaming
+      ) {
+        continue;
+      }
+      const rendered = renderThreadItem(item, streaming);
+      if (rendered) {
+        answerItems.push({ item, streaming, element: rendered });
+      }
       continue;
     }
-
-    insertStatus();
 
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
       const group = [item];
@@ -7345,10 +7329,7 @@ function TurnView({
           <ToolActivityTimeline
             key={`${item.id}-activity`}
             items={group}
-            collapseWhenIdle={
-              processAutoCollapse ||
-              agentMessageWithTextFollows(turn, nextIndex - 1)
-            }
+            collapseWhenIdle={agentMessageWithTextFollows(turn, nextIndex - 1)}
             revealItems={turn.status === "in_progress"}
           />
         ),
@@ -7362,37 +7343,82 @@ function TurnView({
       item,
       turn.status === "in_progress" && item.status === "in_progress",
     );
-    if (!rendered) {
-      continue;
+    if (rendered) {
+      appendProcessEntry({
+        key: item.id,
+        kind: "activity",
+        element: rendered,
+      });
     }
-    appendProcessEntry({ key: item.id, kind: "activity", element: rendered });
   }
 
-  if (!statusInserted && turn.status === "in_progress") {
-    insertStatus();
+  if (answerItems.length > 1 && finalAgentMessageID) {
+    const finalIndex = answerItems.findIndex(
+      (answer) => answer.item.id === finalAgentMessageID,
+    );
+    if (finalIndex > 0) {
+      const processAnswers = answerItems.splice(0, finalIndex);
+      for (const answer of processAnswers) {
+        appendProcessEntry({
+          key: `${answer.item.id}-answer-process`,
+          kind: "activity",
+          element: answer.element,
+        });
+      }
+    }
   }
-  flushProcessEntries();
-  const notice = turnNoticeDisplay(turn, turnHasAssistantOutput(turn));
 
-  return (
-    <section className="turn">
-      {renderedItems}
-      {notice ? <TurnNotice display={notice} /> : null}
-    </section>
-  );
+  const hasProcessContent =
+    processEntries.length > 0 || processCheckpoint !== undefined;
+  const hasAnswer = answerItems.length > 0;
+  const showProcessLane =
+    hasProcessContent ||
+    turn.status === "in_progress" ||
+    (sawAssistantWork && turn.status !== "completed");
+  if (!showProcessLane && !hasAnswer) {
+    return undefined;
+  }
+
+  return {
+    processEntries,
+    processCheckpoint: hasAnswer ? undefined : processCheckpoint,
+    showProcessLane,
+    answerItems,
+  };
 }
 
-type TurnProcessEntry = {
-  key: string;
-  kind: "status" | "checkpoint" | "activity";
-  element: JSX.Element;
-  count?: number;
-};
-
-type TurnProcessCheckpoint = {
-  key: string;
-  text: string;
-};
+function AssistantTurnShell({
+  turn,
+  display,
+}: {
+  turn: Turn;
+  display: AssistantTurnDisplay;
+}): JSX.Element {
+  return (
+    <div
+      className={`assistant-turn-shell${display.showProcessLane ? " has-process-lane" : ""}${
+        display.answerItems.length > 0 ? " has-answer-lane" : ""
+      }`}
+    >
+      {display.showProcessLane ? (
+        <div className="assistant-turn-process-lane">
+          <TurnProcessGroup
+            turn={turn}
+            entries={display.processEntries}
+            checkpoint={display.processCheckpoint}
+            autoCollapse={false}
+            showTurnStatus
+          />
+        </div>
+      ) : null}
+      <div className="assistant-turn-answer-lane">
+        {display.answerItems.map((answer) => (
+          <Fragment key={answer.item.id}>{answer.element}</Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 type TurnProcessCheckpointViewState = {
   id: string;
@@ -7703,7 +7729,6 @@ function TurnProcessGroup({
           <TurnProcessCheckpointText
             checkpoint={checkpoint}
             live={turn.status === "in_progress" && !autoCollapse}
-            handoff={autoCollapse}
           />
         ) : null}
       </span>

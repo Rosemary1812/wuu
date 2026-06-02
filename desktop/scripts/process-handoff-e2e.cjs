@@ -60,14 +60,17 @@ async function run() {
     status: "completed",
     text: "第一段说明：我会先查看文件，然后再给出最终回答。"
   };
-  const toolItem = {
-    id: "tool-process-handoff-e2e",
+  const toolItems = Array.from({ length: 8 }, (_value, index) => ({
+    id: `tool-process-handoff-e2e-${index + 1}`,
     type: "tool_call",
     status: "completed",
-    name: "list",
-    arguments: '{"path":"desktop/src/renderer"}',
+    name: index % 2 === 0 ? "list_files" : "read_file",
+    arguments:
+      index % 2 === 0
+        ? '{"path":"desktop/src/renderer"}'
+        : `{"path":"desktop/src/renderer/${index + 1}.tsx"}`,
     result: "App.tsx\nStreamingMarkdown.tsx\nToolActivity.tsx"
-  };
+  }));
   const finalItem = {
     id: "agent-process-handoff-final-e2e",
     type: "agent_message",
@@ -90,14 +93,30 @@ async function run() {
     turn_id: turn.id,
     item: commentaryItem
   });
-  emitNotification(win, "item/completed", {
-    thread_id: threadID,
-    turn_id: turn.id,
-    item: toolItem
-  });
+  for (const item of toolItems) {
+    emitNotification(win, "item/completed", {
+      thread_id: threadID,
+      turn_id: turn.id,
+      item
+    });
+  }
 
   const processRect = await waitFor(win, processCheckpointRect, 3000);
   assert.match(processRect.text, /第一段说明/, "Process checkpoint should be visible before final text starts.");
+  const beforeProcessState = await waitFor(win, processGroupState, 3000);
+  assert.equal(beforeProcessState.expanded, false, "Process details should stay collapsed before final text starts.");
+  assert.equal(beforeProcessState.shellHasProcess, true, "Assistant shell should expose a stable process lane.");
+  assert.equal(beforeProcessState.shellHasAnswer, false, "Answer lane should stay empty before final text starts.");
+  assert.equal(beforeProcessState.checkpointVisible, true, "Process checkpoint should be the active live text before final starts.");
+  assert.ok(
+    beforeProcessState.detailsHeight <= 1,
+    `Collapsed tool details should not occupy timeline space. Height=${beforeProcessState.detailsHeight}`
+  );
+  assert.equal(
+    beforeProcessState.visibleActivityRows,
+    0,
+    "Batched tools should not all appear in the main timeline while process details are collapsed."
+  );
   await capture(win, "process-handoff-before.png");
 
   emitNotification(win, "item/started", {
@@ -113,7 +132,16 @@ async function run() {
   });
 
   const finalRect = await waitFor(win, finalAnswerRect, 3000);
+  const afterProcessState = await waitFor(win, processGroupState, 3000);
   assert.match(finalRect.text, /第二段/, "Final text should stream after process work.");
+  assert.equal(afterProcessState.shellHasProcess, true, "Process lane should remain stable after final text starts.");
+  assert.equal(afterProcessState.shellHasAnswer, true, "Final text should appear in the stable answer lane.");
+  assert.equal(afterProcessState.checkpointVisible, false, "Process checkpoint should yield space to the answer lane.");
+  assert.equal(afterProcessState.expanded, false, "Process details should not expand during text handoff.");
+  assert.ok(
+    afterProcessState.detailsHeight <= 1,
+    `Process details should remain visually collapsed during handoff. Height=${afterProcessState.detailsHeight}`
+  );
   assert.equal(finalRect.fontSize, processRect.fontSize, "Handoff text should keep font size stable.");
   assert.equal(finalRect.lineHeight, processRect.lineHeight, "Handoff text should keep line height stable.");
   assert.ok(
@@ -121,8 +149,12 @@ async function run() {
     `Final text should keep the same horizontal anchor. Before=${processRect.left}, after=${finalRect.left}`
   );
   assert.ok(
-    Math.abs(finalRect.top - processRect.top) <= 8,
-    `Final text should replace process text without a vertical jump. Before=${processRect.top}, after=${finalRect.top}`
+    Math.abs(finalRect.top - processRect.top) <= 10,
+    `Final text should enter the same text lane rhythm as process text. Before=${processRect.top}, after=${finalRect.top}`
+  );
+  assert.ok(
+    afterProcessState.headerToAnswerGap >= 4 && afterProcessState.headerToAnswerGap <= 12,
+    `Process header and answer lane should use a compact stable gap. Gap=${afterProcessState.headerToAnswerGap}`
   );
   await capture(win, "process-handoff-after.png");
 
@@ -148,7 +180,7 @@ async function run() {
       items: [
         userItem,
         commentaryItem,
-        toolItem,
+        ...toolItems,
         { ...finalItem, status: "completed", text: finalText }
       ]
     }
@@ -161,8 +193,17 @@ async function run() {
   );
   const completedFinalRect = await waitFor(win, finalAnswerRect, 3000);
   const completedProcessHeaderRect = await waitFor(win, processHeaderRect, 3000);
+  const completedProcessState = await waitFor(win, processGroupState, 3000);
   const headerToBodyGap = completedFinalRect.top - (completedProcessHeaderRect.top + completedProcessHeaderRect.height);
   const bodyToActionsGap = completedActionSlot.top - (completedFinalRect.top + completedFinalRect.height);
+  assert.equal(completedProcessState.shellHasProcess, true, "Completed process summary should remain in the stable shell.");
+  assert.equal(completedProcessState.shellHasAnswer, true, "Completed answer should remain in the answer lane.");
+  assert.equal(completedProcessState.checkpointVisible, false, "Completed process summary should not keep live checkpoint text open.");
+  assert.equal(completedProcessState.expanded, false, "Completed process details should remain collapsed by default.");
+  assert.ok(
+    completedProcessState.detailsHeight <= 1,
+    `Completed process details should not occupy space until opened. Height=${completedProcessState.detailsHeight}`
+  );
   assert.ok(
     Math.abs(completedFinalRect.left - finalRect.left) <= 2,
     `Completing the answer should not move text horizontally. Before=${finalRect.left}, after=${completedFinalRect.left}`
@@ -288,6 +329,62 @@ function processHeaderRect() {
     left: rect.left,
     width: rect.width,
     height: rect.height
+  };
+}
+
+function processGroupState() {
+  const turns = Array.from(document.querySelectorAll(".turn"));
+  const turn = turns.at(-1);
+  const shell = turn?.querySelector(".assistant-turn-shell");
+  const group = shell?.querySelector(".turn-process-group");
+  if (!(group instanceof HTMLElement)) {
+    return null;
+  }
+  const processLane = shell?.querySelector(".assistant-turn-process-lane");
+  const answerLane = shell?.querySelector(".assistant-turn-answer-lane");
+  const answer = answerLane?.querySelector(".agent-block");
+  const header = group.querySelector(".turn-process-header");
+  const checkpoint = group.querySelector(".turn-process-checkpoint");
+  const details = group.querySelector(".turn-process-details");
+  if (!(processLane instanceof HTMLElement) || !(answerLane instanceof HTMLElement)) {
+    return null;
+  }
+  const headerRect =
+    header instanceof HTMLElement
+      ? header.getBoundingClientRect()
+      : { top: 0, bottom: 0, height: 0 };
+  const answerRect =
+    answer instanceof HTMLElement
+      ? answer.getBoundingClientRect()
+      : { top: 0, bottom: 0, height: 0 };
+  const detailsRect =
+    details instanceof HTMLElement
+      ? details.getBoundingClientRect()
+      : { top: 0, bottom: 0, height: 0 };
+  const visibleActivityRows = Array.from(group.querySelectorAll(".activity-row")).filter((row) => {
+    if (!(row instanceof HTMLElement)) {
+      return false;
+    }
+    const rect = row.getBoundingClientRect();
+    return (
+      detailsRect.height > 1 &&
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.bottom > detailsRect.top &&
+      rect.top < detailsRect.bottom
+    );
+  }).length;
+  return {
+    expanded: group.classList.contains("expanded"),
+    shellHasProcess: shell instanceof HTMLElement && shell.classList.contains("has-process-lane"),
+    shellHasAnswer: shell instanceof HTMLElement && shell.classList.contains("has-answer-lane"),
+    checkpointVisible: checkpoint instanceof HTMLElement && checkpoint.getBoundingClientRect().height > 0,
+    detailsHeight: detailsRect.height,
+    visibleActivityRows,
+    headerToAnswerGap:
+      answer instanceof HTMLElement && answerRect.height > 0
+        ? answerRect.top - (headerRect.top + headerRect.height)
+        : null
   };
 }
 
