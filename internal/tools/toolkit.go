@@ -81,6 +81,7 @@ func New(rootDir string) (*Toolkit, error) {
 	}
 	t := &Toolkit{env: env}
 	t.rebuildRegistry()
+	t.SetEditToolMode(EditToolModeText)
 	return t, nil
 }
 
@@ -135,6 +136,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewWriteFileTool(e),
 		NewListFilesTool(e),
 		NewEditFileTool(e),
+		NewApplyPatchTool(e),
 		// Search
 		NewGrepTool(e),
 		NewGlobTool(e),

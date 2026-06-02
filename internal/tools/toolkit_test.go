@@ -17,6 +17,25 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+func mustWriteFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir parent: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	return string(content)
+}
+
 func TestToolkit_WriteAndReadFile(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -198,6 +217,123 @@ func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
 	}
 	if string(got) != "BRAVO\n" {
 		t.Fatalf("unexpected final content: %q", got)
+	}
+}
+
+func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "line one\nline two\nline three\n")
+	mustWriteFile(t, filepath.Join(root, "remove.txt"), "remove me\n")
+	mustWriteFile(t, filepath.Join(root, "oldname.txt"), "old name\n")
+
+	patchText := `*** Begin Patch
+*** Update File: a.txt
+@@
+ line one
+-line two
++line 2
+ line three
+*** Add File: dir/new.txt
++created
+*** Delete File: remove.txt
+*** Update File: oldname.txt
+*** Move to: renamed.txt
+@@
+-old name
++new name
+*** End Patch`
+	args, err := json.Marshal(map[string]string{"patchText": patchText})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	})
+	if err != nil {
+		t.Fatalf("apply_patch: %v", err)
+	}
+	if !strings.Contains(resp, `"action":"update"`) || !strings.Contains(resp, `"action":"add"`) ||
+		!strings.Contains(resp, `"action":"delete"`) || !strings.Contains(resp, `"action":"move"`) {
+		t.Fatalf("expected per-file actions in response: %s", resp)
+	}
+
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "line one\nline 2\nline three\n" {
+		t.Fatalf("unexpected updated content: %q", got)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "dir/new.txt")); got != "created\n" {
+		t.Fatalf("unexpected added content: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "remove.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected remove.txt to be deleted, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "oldname.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected oldname.txt to be moved, stat err=%v", err)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "renamed.txt")); got != "new name\n" {
+		t.Fatalf("unexpected moved content: %q", got)
+	}
+}
+
+func TestToolkit_ApplyPatchRejectsAmbiguousUpdate(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "same\nsame\n")
+
+	args, err := json.Marshal(map[string]string{"patchText": `*** Begin Patch
+*** Update File: a.txt
+@@
+-same
++different
+*** End Patch`})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	})
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("expected ambiguous update error, got %v", err)
+	}
+}
+
+func TestToolkit_ApplyPatchAppendsAtEndOfFile(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "first\n")
+
+	args, err := json.Marshal(map[string]string{"patchText": `*** Begin Patch
+*** Update File: a.txt
+@@
+*** End of File
++second
+*** End Patch`})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	}); err != nil {
+		t.Fatalf("apply_patch: %v", err)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "first\nsecond\n" {
+		t.Fatalf("unexpected appended content: %q", got)
 	}
 }
 
@@ -720,6 +856,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "write_stdin", kind: ToolKindProcess, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
+		{name: "apply_patch", kind: ToolKindFile, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 	}
 	for _, tt := range tests {
 		info, ok := kit.ToolInfo(tt.name)
@@ -735,6 +872,59 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 
 	if _, ok := kit.ToolInfo("not_a_tool"); ok {
 		t.Fatal("unknown tool should not return metadata")
+	}
+}
+
+func TestToolkit_EditToolModeForModelMatchesOpenCodeRule(t *testing.T) {
+	tests := []struct {
+		model string
+		want  EditToolMode
+	}{
+		{model: "gpt-5.5", want: EditToolModePatch},
+		{model: "openai/gpt-5-codex", want: EditToolModePatch},
+		{model: "gpt-4.1-mini", want: EditToolModeText},
+		{model: "openai/gpt-oss-120b", want: EditToolModeText},
+		{model: "anthropic/claude-sonnet-4-5", want: EditToolModeText},
+	}
+	for _, tt := range tests {
+		if got := EditToolModeForModel(tt.model); got != tt.want {
+			t.Fatalf("EditToolModeForModel(%q) = %s, want %s", tt.model, got, tt.want)
+		}
+	}
+}
+
+func TestToolkit_EditToolModeControlsDefinitionsAndExecution(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	defs := definitionNames(kit.Definitions())
+	if defs["apply_patch"] {
+		t.Fatal("apply_patch should be hidden in default text edit mode")
+	}
+	if !defs["edit_file"] || !defs["write_file"] {
+		t.Fatalf("edit_file and write_file should be visible in text edit mode: %+v", defs)
+	}
+
+	kit.ConfigureEditToolsForModel("gpt-5.5")
+	defs = definitionNames(kit.Definitions())
+	if !defs["apply_patch"] {
+		t.Fatal("apply_patch should be visible for GPT patch edit mode")
+	}
+	if defs["edit_file"] || defs["write_file"] {
+		t.Fatalf("edit_file and write_file should be hidden in patch edit mode: %+v", defs)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "edit_file", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("expected hidden edit_file to be blocked, got %v", err)
+	}
+
+	kit.ConfigureEditToolsForModel("claude-sonnet-4-5")
+	defs = definitionNames(kit.Definitions())
+	if defs["apply_patch"] || !defs["edit_file"] || !defs["write_file"] {
+		t.Fatalf("text edit mode should restore edit_file/write_file and hide apply_patch: %+v", defs)
 	}
 }
 

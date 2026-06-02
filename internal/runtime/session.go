@@ -103,6 +103,7 @@ func NewSession(opts Options) (*Session, error) {
 		providerCfg.Model = opts.ModelOverride
 	}
 	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
+	toolModeModel := modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model)
 
 	client, err := providerfactory.BuildStreamClient(ruleProviderCfg, resolvedName)
 	if err != nil {
@@ -132,6 +133,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetSkills(discoveredSkills)
 		kit.SetAskUserBridge(opts.AskBridge)
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+		kit.ConfigureEditToolsForModel(toolModeModel)
 		kit.SetOnFileChanged(func(absPath string) {
 			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{
 				CWD:      rootDir,
@@ -187,6 +189,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetAgentControl(agentControl)
 				wkit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+				wkit.ConfigureEditToolsForModel(toolModeModel)
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil

@@ -42,6 +42,8 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		return toolDisplay("edit", "写入 "+displayPathTarget(displayString(args, "path", "file"), "文件"))
 	case "edit_file":
 		return toolDisplay("edit", "编辑 "+displayPathTarget(displayString(args, "path", "file"), "文件"))
+	case "apply_patch":
+		return toolDisplay("edit", "应用补丁")
 	case "grep", "glob":
 		return toolDisplay("search", "搜索 "+displaySearchTarget(displayString(args, "pattern", "query", "q")))
 	case "tool_search":

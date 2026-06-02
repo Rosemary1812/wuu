@@ -431,6 +431,9 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 	if !strings.Contains(prompt, "in parallel") {
 		t.Fatalf("default system prompt must encourage parallel tool calls: %q", prompt)
 	}
+	if !strings.Contains(prompt, "apply_patch") || !strings.Contains(prompt, "edit_file") || !strings.Contains(prompt, "write_file") {
+		t.Fatalf("default system prompt must teach model-aware edit tool use: %q", prompt)
+	}
 	if !strings.Contains(prompt, "non-interactive") {
 		t.Fatalf("default system prompt must teach non-interactive shell: %q", prompt)
 	}

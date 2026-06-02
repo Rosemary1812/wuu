@@ -16,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
+	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	processruntime "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
@@ -212,6 +213,8 @@ func runTask(args []string) error {
 	if *modelOverride != "" {
 		providerCfg.Model = *modelOverride
 	}
+	_, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
+	toolModeModel := modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model)
 
 	client, err := providerfactory.BuildStreamClient(providerCfg, resolvedName)
 	if err != nil {
@@ -243,6 +246,7 @@ func runTask(args []string) error {
 		kit.SetStateDir(workspaceStateDir)
 		kit.SetProcessManager(processMgr)
 		kit.SetToolPolicy(runtime.ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+		kit.ConfigureEditToolsForModel(toolModeModel)
 		toolExecutor = kit
 	}
 
