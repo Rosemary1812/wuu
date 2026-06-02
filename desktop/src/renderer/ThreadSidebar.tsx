@@ -417,7 +417,7 @@ function ThreadChildAgentRows({
  * sidebar fading in on project switch / cold boot, which would itself feel
  * like a loading state.
  */
-function ThreadRowTitle({ title }: { title: string }): JSX.Element {
+export function ThreadRowTitle({ title }: { title: string }): JSX.Element {
   const previousTitleRef = useRef(title);
   const swapCountRef = useRef(0);
   if (previousTitleRef.current !== title) {
