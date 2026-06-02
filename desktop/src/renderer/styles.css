@@ -7092,7 +7092,36 @@ button:disabled {
   gap: 0 7px;
 }
 
-.turn-process-copy span:not(:first-child) {
+.turn-process-primary {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 260px;
+  overflow: hidden;
+  color: #7d8388;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-process-primary.checkpoint {
+  color: #454b50;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+}
+
+.turn-process-primary-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-process-primary.checkpoint .turn-process-primary-text {
+  animation: turn-process-checkpoint-replace 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.turn-process-meta {
   color: #a1a5a9;
   font-size: var(--font-sm);
 }
@@ -7130,6 +7159,18 @@ button:disabled {
 .collapsible-details-inner {
   min-height: 0;
   overflow: hidden;
+}
+
+@keyframes turn-process-checkpoint-replace {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .activity-details {
@@ -11394,6 +11435,7 @@ html.swiss-international .os-theme-wuu {
   .conversation-search-error,
   .conversation-search-empty,
   .ask-message,
+  .turn-process-primary-text,
   .activity-timeline-item,
   .stream-word {
     animation: none;
