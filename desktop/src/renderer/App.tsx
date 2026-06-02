@@ -6309,10 +6309,51 @@ function mergeListedThreads(current: Thread[], listed: Thread[]): Thread[] {
 function conversationSearchThreadMeta(thread: Thread): string {
   const updatedAt = threadTime(thread);
   const timeLabel =
-    updatedAt > 0
-      ? `${formatDuration(Math.max(0, Date.now() - updatedAt))} 前`
-      : "未知时间";
+    updatedAt > 0 ? conversationSearchTimeLabel(updatedAt) : "未知时间";
   return thread.pinned ? `置顶 · ${timeLabel}` : timeLabel;
+}
+
+function conversationSearchTimeLabel(atMs: number, nowMs = Date.now()): string {
+  const elapsedMs = Math.max(0, nowMs - atMs);
+  if (elapsedMs < 60_000) {
+    return "刚刚";
+  }
+  if (elapsedMs < 60 * 60_000) {
+    return `${Math.floor(elapsedMs / 60_000)}分钟前`;
+  }
+
+  const date = new Date(atMs);
+  const now = new Date(nowMs);
+  if (sameCalendarDay(date, now)) {
+    return `今天 ${formatHourMinute(date)}`;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameCalendarDay(date, yesterday)) {
+    return `昨天 ${formatHourMinute(date)}`;
+  }
+
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${date.getMonth() + 1}月${date.getDate()}日`;
+  }
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function sameCalendarDay(left: Date, right: Date): boolean {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function formatHourMinute(date: Date): string {
+  return date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function conversationSearchResultSections(
