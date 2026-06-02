@@ -1,5 +1,5 @@
 import { Archive, ChevronRight, CornerDownRight, Folder, FolderOpen, MessageSquarePlus, Pin } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import type { Agent, DesktopProject, Thread } from "../shared/protocol";
 import {
   agentLabel,
@@ -309,7 +309,7 @@ function ThreadRows({
                 aria-label={`${title}，${running ? "响应中" : "已完成"}`}
                 onClick={() => onSelect(thread.id)}
               >
-                <span className="thread-row-title">{title}</span>
+                <ThreadRowTitle title={title} />
                 {pendingAsk ? (
                   <span className="thread-row-ask-badge" title="需要你选择">
                     <MessageSquarePlus size={12} />
@@ -398,5 +398,40 @@ function ThreadChildAgentRows({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * ThreadRowTitle renders the sidebar title with a soft crossfade whenever the
+ * displayed text changes (typically when the LLM-generated title replaces the
+ * fallback preview after the first turn completes).
+ *
+ * Design intent: the streaming-state visual and the post-stable visual should
+ * not switch abruptly. A pure DOM-text swap reads as a flicker because the
+ * fallback (first user query, often long) and the final title (short,
+ * grammar-normalized) are visually very different. We crossfade between them
+ * with a key remount so the user perceives a settle, not a snap.
+ *
+ * The first appearance of a title does not animate — only swaps after the
+ * component has been mounted with prior content. This avoids the entire
+ * sidebar fading in on project switch / cold boot, which would itself feel
+ * like a loading state.
+ */
+function ThreadRowTitle({ title }: { title: string }): JSX.Element {
+  const previousTitleRef = useRef(title);
+  const swapCountRef = useRef(0);
+  if (previousTitleRef.current !== title) {
+    previousTitleRef.current = title;
+    swapCountRef.current += 1;
+  }
+  const hasSwapped = swapCountRef.current > 0;
+  return (
+    <span
+      className="thread-row-title"
+      data-title-swap={hasSwapped ? swapCountRef.current : undefined}
+      key={swapCountRef.current}
+    >
+      {title}
+    </span>
   );
 }
