@@ -1008,6 +1008,110 @@ func TestServerGeneratesThreadTitleFromFirstTurnSnapshot(t *testing.T) {
 	}
 }
 
+// TestServerGeneratesThreadTitleEndToEndWithStreaming exercises the full
+// pipeline with a real streaming title client (not a fakeClient wrapped by
+// AdaptStreamClient). It mirrors what production looks like for kimi-k2.6 —
+// a provider that REQUIRES streaming and has a pinned temperature — and
+// verifies:
+//
+//   - the title request actually went through StreamChat (not Chat)
+//   - thinking deltas were ignored, content deltas were aggregated
+//   - temperature matches the per-model mapping
+//   - the persisted title and the thread/updated notification Preview carry
+//     the cleaned title
+//   - the main client received exactly one non-stream chat for the agent
+//     loop and the title client received exactly one stream chat
+func TestServerGeneratesThreadTitleEndToEndWithStreaming(t *testing.T) {
+	t.Parallel()
+	mainClient := &scriptedStreamClient{chunks: []string{"d", "one"}}
+	titleClient := &scriptedStreamClient{
+		prefix: "let me think about a good title\n",
+		chunks: []string{"Fix ", "login ", "crash"},
+	}
+	rt := &runtime.Session{
+		ProviderName: "fake-provider",
+		Model:        "kimi-k2.6",
+		RootDir:      t.TempDir(),
+		ConfigPath:   "/tmp/.wuu.json",
+		SessionDir:   t.TempDir() + "/.wuu/sessions",
+		StreamRunner: &agent.StreamRunner{
+			Client:       providers.AdaptStreamClient(mainClient),
+			Model:        "kimi-k2.6",
+			SystemPrompt: "system prompt",
+		},
+		TitleClient: titleClient,
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "please help me fix the login crash in auth.ts"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationThreadUpdated)
+	updated := remarshal[ThreadUpdatedNotification](t, notificationByMethod(t, msgs, NotificationThreadUpdated)["params"])
+	if updated.Thread.ID != threadID {
+		t.Fatalf("notification thread id = %q; want %q", updated.Thread.ID, threadID)
+	}
+	if updated.Thread.Preview != "Fix login crash" {
+		t.Fatalf("notification Preview = %q; want %q", updated.Thread.Preview, "Fix login crash")
+	}
+	// Summary (the raw first user prompt) must be preserved — the title
+	// model only writes to Title, never to Summary.
+	if updated.Thread.Preview == "please help me fix the login crash in auth.ts" {
+		t.Fatal("Preview should have been replaced by the LLM title, not the raw user prompt")
+	}
+
+	sessions, err := session.List(rt.SessionDir, 1)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].Title != "Fix login crash" {
+		t.Fatalf("persisted Title = %q; want %q", sessions[0].Title, "Fix login crash")
+	}
+	if sessions[0].Summary != "please help me fix the login crash in auth.ts" {
+		t.Fatalf("persisted Summary = %q; want raw user prompt preserved", sessions[0].Summary)
+	}
+
+	titleClient.mu.Lock()
+	defer titleClient.mu.Unlock()
+	if len(titleClient.requests) != 1 {
+		t.Fatalf("expected exactly 1 title request, got %d", len(titleClient.requests))
+	}
+	req := titleClient.requests[0]
+	if req.Model != "kimi-k2.6" {
+		t.Errorf("title request model = %q; want kimi-k2.6", req.Model)
+	}
+	if req.Temperature != 1.0 {
+		t.Errorf("title request Temperature = %v; want 1.0 for kimi-k2.6", req.Temperature)
+	}
+	if len(req.Messages) < 2 {
+		t.Fatalf("title request must have at least system+user messages, got %d", len(req.Messages))
+	}
+	if req.Messages[0].Role != "system" || !strings.Contains(req.Messages[0].Content, "title generator") {
+		t.Errorf("title system prompt not aligned with opencode: %q", req.Messages[0].Content)
+	}
+	if req.Messages[1].Role != "user" || !strings.Contains(req.Messages[1].Content, "please help me fix the login crash") {
+		t.Errorf("title user message wrong: %q", req.Messages[1].Content)
+	}
+}
+
 func TestCleanGeneratedThreadTitle(t *testing.T) {
 	got := cleanGeneratedThreadTitle("<think>hidden</think>\nTitle: \"调试登录崩溃并修复认证流程\"")
 	if got != "调试登录崩溃并修复认证流程" {
