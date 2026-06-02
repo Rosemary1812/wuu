@@ -7108,19 +7108,21 @@ button:disabled {
 }
 
 .collapsible-details {
-  height: 0;
+  display: grid;
+  grid-template-rows: 0fr;
   min-height: 0;
   overflow: hidden;
   opacity: 0;
   transform: translateY(var(--collapse-enter-offset-y));
   transition:
-    height var(--collapse-motion-duration) var(--collapse-motion-easing),
+    grid-template-rows var(--collapse-motion-duration) var(--collapse-motion-easing),
     opacity var(--collapse-opacity-duration) ease,
     transform var(--collapse-motion-duration) var(--collapse-motion-easing);
-  will-change: height, opacity, transform;
+  will-change: grid-template-rows, opacity, transform;
 }
 
 .collapsible-details.expanded {
+  grid-template-rows: 1fr;
   opacity: 1;
   transform: translateY(0);
 }
