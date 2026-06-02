@@ -65,9 +65,8 @@ type CompactFn func(ctx context.Context, messages []providers.ChatMessage) ([]pr
 type CompactReason string
 
 const (
-	// CompactReasonProactive means the loop hit its proactive
-	// fill-rate threshold (CompactThresholdPct of MaxContextTokens)
-	// and ran a compact preemptively to avoid overflow.
+	// CompactReasonProactive means the loop hit its proactive usable-window
+	// threshold and ran a compact preemptively to avoid overflow.
 	CompactReasonProactive CompactReason = "proactive"
 	// CompactReasonOverflow means a step.Execute returned a
 	// context-overflow error and the loop ran compact reactively as
@@ -116,10 +115,9 @@ type LoopConfig struct {
 	// total context window but reserve a large output budget server-side;
 	// proactive compact must respect the smaller input side.
 	MaxInputTokens int
-	// CompactThresholdPct is the fraction of MaxContextTokens that
-	// triggers a proactive compact. Defaults to 0.9 (90%) when zero.
-	// The effective threshold may be lower when the model's expected
-	// output needs more reserved headroom.
+	// CompactThresholdPct overrides the default OpenCode-style usable-window
+	// trigger with a fraction of the configured input/context window. Zero
+	// means use the default usable-window calculation.
 	CompactThresholdPct float64
 	// BeforeStep, when set, is called at the start of each model
 	// round. Any returned messages are appended to the live history
@@ -172,11 +170,6 @@ type LoopConfig struct {
 	// active model variant. They are forwarded to ChatRequest.
 	ProviderOptions map[string]any
 }
-
-// defaultCompactThresholdPct is the proactive trigger if the caller
-// didn't set one. 90% matches Codex CLI; CC uses an effectively
-// equivalent "window − 13k" buffer.
-const defaultCompactThresholdPct = 0.90
 
 // LoopResult is what RunToolLoop returns on success.
 type LoopResult struct {

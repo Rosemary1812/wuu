@@ -233,6 +233,7 @@ func TestRunToolLoop_CompactRewritePromotesSummaryIntoCacheHint(t *testing.T) {
 			}, nil
 		},
 		MaxContextTokens: 1000,
+		DefaultMaxTokens: 100,
 	}
 
 	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{
@@ -525,7 +526,7 @@ func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
 		return []providers.ChatMessage{{Role: "user", Content: "summary"}}, nil
 	}
 	var compactInfos []CompactInfo
-	cfg := LoopConfig{Model: "m", Tools: tools, Compact: compactFn, MaxContextTokens: 1000, OnCompact: func(info CompactInfo) { compactInfos = append(compactInfos, info) }}
+	cfg := LoopConfig{Model: "m", Tools: tools, Compact: compactFn, MaxContextTokens: 1000, DefaultMaxTokens: 100, OnCompact: func(info CompactInfo) { compactInfos = append(compactInfos, info) }}
 
 	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
 	if err != nil {
@@ -577,6 +578,7 @@ func TestRunToolLoop_PreRequestCompactUsesLocalEstimateWithoutGroundTruth(t *tes
 			return msgs[:2], nil
 		},
 		MaxContextTokens: 10,
+		DefaultMaxTokens: 1,
 	}
 
 	res, err := RunToolLoop(context.Background(), history, cfg, step)
@@ -625,6 +627,7 @@ func TestRunToolLoop_PreRequestCompactUsesSharedUsageTracker(t *testing.T) {
 			}, nil
 		},
 		MaxContextTokens: 1000,
+		DefaultMaxTokens: 100,
 		UsageTracker:     tracker,
 	}
 
@@ -684,6 +687,11 @@ func TestProactiveCompactThresholdReservesOutputHeadroom(t *testing.T) {
 		t.Fatalf("expected output-reserved threshold %d, got %d", want, got)
 	}
 
+	cfg = LoopConfig{Model: "gpt-5", MaxContextTokens: 400_000}
+	if got, want := proactiveCompactThreshold(cfg), 368_000; got != want {
+		t.Fatalf("expected full max-output-reserved threshold %d, got %d", want, got)
+	}
+
 	cfg = LoopConfig{Model: "claude-sonnet-4-6", MaxContextTokens: 64_000, CompactThresholdPct: 0.5}
 	if got, want := proactiveCompactThreshold(cfg), 32_000; got != want {
 		t.Fatalf("expected custom lower threshold %d, got %d", want, got)
@@ -692,7 +700,7 @@ func TestProactiveCompactThresholdReservesOutputHeadroom(t *testing.T) {
 
 func TestProactiveCompactThresholdRespectsInputLimit(t *testing.T) {
 	cfg := LoopConfig{Model: "gpt-5.5", MaxContextTokens: 1_048_576, MaxInputTokens: 272_000}
-	if got, want := proactiveCompactThreshold(cfg), 244_800; got != want {
+	if got, want := proactiveCompactThreshold(cfg), 252_000; got != want {
 		t.Fatalf("expected input-limited threshold %d, got %d", want, got)
 	}
 }
@@ -703,7 +711,7 @@ func TestRunToolLoop_ProactiveCompactDoesNotLoopOnNoOpCompact(t *testing.T) {
 	cfg := LoopConfig{Model: "m", Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}, Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) {
 		compactCalled++
 		return m, nil
-	}, MaxContextTokens: 1000}
+	}, MaxContextTokens: 1000, DefaultMaxTokens: 100}
 	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
 	if err != nil {
 		t.Fatal(err)

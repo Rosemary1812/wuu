@@ -369,10 +369,28 @@ func proactiveCompactThreshold(cfg LoopConfig) int {
 	if cfg.MaxContextTokens <= 0 && cfg.MaxInputTokens <= 0 {
 		return 0
 	}
-	pct := cfg.CompactThresholdPct
-	if pct <= 0 || pct >= 1 {
-		pct = defaultCompactThresholdPct
+	if cfg.CompactThresholdPct > 0 && cfg.CompactThresholdPct < 1 {
+		return proactiveCompactPercentThreshold(cfg, cfg.CompactThresholdPct)
 	}
+	return proactiveCompactUsableWindow(cfg)
+}
+
+func proactiveCompactUsableWindow(cfg LoopConfig) int {
+	maxOutput := compactMaxOutputTokens(cfg)
+	if cfg.MaxInputTokens > 0 {
+		reserve := maxOutput
+		if reserve > 20_000 {
+			reserve = 20_000
+		}
+		return max(0, cfg.MaxInputTokens-reserve)
+	}
+	if cfg.MaxContextTokens <= 0 {
+		return 0
+	}
+	return max(0, cfg.MaxContextTokens-maxOutput)
+}
+
+func proactiveCompactPercentThreshold(cfg LoopConfig, pct float64) int {
 	baseWindow := cfg.MaxContextTokens
 	if baseWindow <= 0 || (cfg.MaxInputTokens > 0 && cfg.MaxInputTokens < baseWindow) {
 		baseWindow = cfg.MaxInputTokens
@@ -385,7 +403,7 @@ func proactiveCompactThreshold(cfg LoopConfig) int {
 		}
 	}
 	if cfg.MaxContextTokens > 0 {
-		outputReserved := cfg.MaxContextTokens - compactOutputReserve(cfg)
+		outputReserved := cfg.MaxContextTokens - compactMaxOutputTokens(cfg)
 		if outputReserved > 0 && outputReserved < threshold {
 			threshold = outputReserved
 		}
@@ -393,13 +411,10 @@ func proactiveCompactThreshold(cfg LoopConfig) int {
 	return threshold
 }
 
-func compactOutputReserve(cfg LoopConfig) int {
+func compactMaxOutputTokens(cfg LoopConfig) int {
 	reserve := cfg.DefaultMaxTokens
 	if reserve <= 0 {
 		reserve = providers.MaxOutputTokensFor(cfg.Model)
-	}
-	if reserve > 20_000 {
-		reserve = 20_000
 	}
 	return reserve
 }

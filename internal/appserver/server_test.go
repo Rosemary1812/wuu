@@ -1902,7 +1902,8 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 		},
 	}
 	rt := newTestRuntime(t, client)
-	rt.StreamRunner.ContextWindowOverride = 1000
+	rt.StreamRunner.Model = "gpt-4-turbo"
+	rt.StreamRunner.ContextWindowOverride = 5000
 
 	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
 		t.Fatalf("mkdir session dir: %v", err)

@@ -894,8 +894,8 @@ func TestStreamRunner_ReusesUsageAcrossTurnsForPreRequestCompact(t *testing.T) {
 
 	runner := StreamRunner{
 		Client:                client,
-		Model:                 "test-model",
-		ContextWindowOverride: 1000,
+		Model:                 "gpt-4-turbo",
+		ContextWindowOverride: 5000,
 	}
 
 	firstHistory := []providers.ChatMessage{
@@ -947,14 +947,14 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 
 	runner := StreamRunner{
 		Client:                client,
-		Model:                 "test-model",
-		ContextWindowOverride: 1000,
+		Model:                 "gpt-4-turbo",
+		ContextWindowOverride: 5000,
 	}
 
 	history := []providers.ChatMessage{
 		{Role: "system", Content: "sys"},
-		{Role: "user", Content: strings.Repeat("older ", 300)},
-		{Role: "assistant", Content: strings.Repeat("older ", 300)},
+		{Role: "user", Content: strings.Repeat("older ", 1000)},
+		{Role: "assistant", Content: strings.Repeat("older ", 1000)},
 		{Role: "user", Content: "continue"},
 	}
 	res, err := runner.RunWithCallback(context.Background(), history, nil)
