@@ -7316,7 +7316,10 @@ function TurnView({
         updateProcessCheckpoint(item);
         continue;
       }
-      flushProcessEntries(completedAgentTextItem(turn, item));
+      flushProcessEntries(
+        completedAgentTextItem(turn, item) ||
+          streamFieldValue(turn.id, item, "text").trim().length > 0,
+      );
       renderedItems.push(rendered);
       continue;
     }
@@ -7390,6 +7393,230 @@ type TurnProcessCheckpoint = {
   text: string;
 };
 
+type TurnProcessCheckpointViewState = {
+  id: string;
+  currentText: string;
+  targetText: string;
+  previousID?: string;
+  previousText?: string;
+  swapping: boolean;
+};
+
+const PROCESS_CHECKPOINT_PACE_MS = 24;
+const PROCESS_CHECKPOINT_SWAP_MS = 260;
+const PROCESS_CHECKPOINT_SNAP = /[\s.,!?;:)\]，。！？；：、）】]/;
+
+function processCheckpointStep(remaining: number): number {
+  if (remaining <= 12) {
+    return 2;
+  }
+  if (remaining <= 48) {
+    return 4;
+  }
+  if (remaining <= 96) {
+    return 8;
+  }
+  return Math.min(24, Math.ceil(remaining / 8));
+}
+
+function nextProcessCheckpointIndex(text: string, start: number): number {
+  const end = Math.min(
+    text.length,
+    start + processCheckpointStep(text.length - start),
+  );
+  const max = Math.min(text.length, end + 8);
+  for (let index = end; index < max; index++) {
+    if (PROCESS_CHECKPOINT_SNAP.test(text[index] ?? "")) {
+      return index + 1;
+    }
+  }
+  return end;
+}
+
+function initialProcessCheckpointText(text: string, live: boolean): string {
+  if (!live || text.length === 0) {
+    return text;
+  }
+  return text.slice(0, nextProcessCheckpointIndex(text, 0));
+}
+
+function TurnProcessCheckpointText({
+  checkpoint,
+  live,
+}: {
+  checkpoint: TurnProcessCheckpoint;
+  live: boolean;
+}): JSX.Element {
+  const [state, setState] = useState<TurnProcessCheckpointViewState>(() => ({
+    id: checkpoint.key,
+    currentText: initialProcessCheckpointText(checkpoint.text, live),
+    targetText: checkpoint.text,
+    swapping: false,
+  }));
+  const stateRef = useRef(state);
+  const paceTimeoutRef = useRef<number | undefined>(undefined);
+  const swapFrameRef = useRef<number | undefined>(undefined);
+  const swapTimeoutRef = useRef<number | undefined>(undefined);
+
+  stateRef.current = state;
+
+  const clearPace = useCallback((): void => {
+    if (paceTimeoutRef.current === undefined) {
+      return;
+    }
+    window.clearTimeout(paceTimeoutRef.current);
+    paceTimeoutRef.current = undefined;
+  }, []);
+
+  const clearSwap = useCallback((): void => {
+    if (swapFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(swapFrameRef.current);
+      swapFrameRef.current = undefined;
+    }
+    if (swapTimeoutRef.current !== undefined) {
+      window.clearTimeout(swapTimeoutRef.current);
+      swapTimeoutRef.current = undefined;
+    }
+  }, []);
+
+  const scheduleSwapEnd = useCallback(
+    (id: string): void => {
+      clearSwap();
+      swapFrameRef.current = window.requestAnimationFrame(() => {
+        swapFrameRef.current = undefined;
+        swapTimeoutRef.current = window.setTimeout(() => {
+          swapTimeoutRef.current = undefined;
+          setState((current) =>
+            current.id === id
+              ? {
+                  ...current,
+                  previousID: undefined,
+                  previousText: undefined,
+                  swapping: false,
+                }
+              : current,
+          );
+        }, PROCESS_CHECKPOINT_SWAP_MS);
+      });
+    },
+    [clearSwap],
+  );
+
+  const schedulePace = useCallback((): void => {
+    if (!live || paceTimeoutRef.current !== undefined) {
+      return;
+    }
+    paceTimeoutRef.current = window.setTimeout(() => {
+      paceTimeoutRef.current = undefined;
+      setState((current) => {
+        if (!live) {
+          return current;
+        }
+        if (!current.targetText.startsWith(current.currentText)) {
+          return { ...current, currentText: current.targetText };
+        }
+        if (current.currentText.length >= current.targetText.length) {
+          return current;
+        }
+        const nextIndex = nextProcessCheckpointIndex(
+          current.targetText,
+          current.currentText.length,
+        );
+        return {
+          ...current,
+          currentText: current.targetText.slice(0, nextIndex),
+        };
+      });
+    }, PROCESS_CHECKPOINT_PACE_MS);
+  }, [live]);
+
+  useLayoutEffect(() => {
+    const previous = stateRef.current;
+    const replacing = checkpoint.key !== previous.id;
+    clearPace();
+    setState((current) => {
+      if (checkpoint.key !== current.id) {
+        return {
+          id: checkpoint.key,
+          currentText: initialProcessCheckpointText(checkpoint.text, live),
+          targetText: checkpoint.text,
+          previousID: current.id,
+          previousText: current.currentText,
+          swapping: true,
+        };
+      }
+      if (checkpoint.text === current.targetText) {
+        return current;
+      }
+      if (
+        !live ||
+        !checkpoint.text.startsWith(current.currentText) ||
+        checkpoint.text.length < current.currentText.length
+      ) {
+        return {
+          ...current,
+          currentText: checkpoint.text,
+          targetText: checkpoint.text,
+        };
+      }
+      return { ...current, targetText: checkpoint.text };
+    });
+    if (replacing) {
+      scheduleSwapEnd(checkpoint.key);
+    }
+  }, [checkpoint.key, checkpoint.text, clearPace, live, scheduleSwapEnd]);
+
+  useEffect(() => {
+    if (!live) {
+      clearPace();
+      setState((current) =>
+        current.currentText === current.targetText
+          ? current
+          : { ...current, currentText: current.targetText },
+      );
+      return;
+    }
+    if (
+      state.targetText.startsWith(state.currentText) &&
+      state.currentText.length < state.targetText.length
+    ) {
+      schedulePace();
+    }
+  }, [clearPace, live, schedulePace, state.currentText, state.targetText]);
+
+  useEffect(() => {
+    return () => {
+      clearPace();
+      clearSwap();
+    };
+  }, [clearPace, clearSwap]);
+
+  return (
+    <span
+      className="turn-process-checkpoint"
+      data-swapping={state.swapping ? "true" : "false"}
+      title={checkpoint.text}
+    >
+      <span
+        className="turn-process-checkpoint-track"
+        aria-label={checkpoint.text}
+      >
+        {state.previousText !== undefined ? (
+          <span
+            className="turn-process-checkpoint-leaving"
+            key={state.previousID ?? "previous"}
+          >
+            {state.previousText || "\u00A0"}
+          </span>
+        ) : null}
+        <span className="turn-process-checkpoint-entering" key={state.id}>
+          {state.currentText || "\u00A0"}
+        </span>
+      </span>
+    </span>
+  );
+}
+
 function TurnProcessGroup({
   turn,
   entries,
@@ -7451,14 +7678,10 @@ function TurnProcessGroup({
           ))}
         </span>
         {checkpoint ? (
-          <span
-            className="turn-process-checkpoint active"
-            title={checkpoint.text}
-          >
-            <span className="turn-process-checkpoint-text" key={checkpoint.key}>
-              {checkpoint.text}
-            </span>
-          </span>
+          <TurnProcessCheckpointText
+            checkpoint={checkpoint}
+            live={turn.status === "in_progress"}
+          />
         ) : null}
       </span>
       {hasDetails ? (

@@ -7087,7 +7087,7 @@ button:disabled {
   display: grid;
   min-width: 0;
   flex: 1 1 auto;
-  gap: 2px;
+  gap: 4px;
 }
 
 .turn-process-header {
@@ -7107,28 +7107,61 @@ button:disabled {
 }
 
 .turn-process-checkpoint {
-  display: block;
+  display: grid;
   min-width: 0;
-  max-width: min(100%, 720px);
+  max-width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
   overflow: hidden;
-  color: #454b50;
-  font-size: var(--font-body);
-  font-weight: var(--weight-semibold);
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #202427;
+  font-size: var(--conversation-message-font-size);
+  font-weight: 400;
+  line-height: var(--conversation-prose-line-height);
+  white-space: normal;
 }
 
-.turn-process-checkpoint-text {
-  display: block;
+.turn-process-checkpoint-track {
+  display: grid;
   min-width: 0;
+  max-height: 3.1em;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: inherit;
 }
 
-.turn-process-checkpoint.active .turn-process-checkpoint-text {
-  animation: turn-process-checkpoint-replace 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+.turn-process-checkpoint-entering,
+.turn-process-checkpoint-leaving {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  grid-area: 1 / 1;
+  line-height: inherit;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.turn-process-checkpoint-entering {
+  -webkit-mask-image: linear-gradient(to top, #000 34%, transparent 51%);
+  mask-image: linear-gradient(to top, #000 34%, transparent 51%);
+  -webkit-mask-position: 0 100%;
+  mask-position: 0 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 300%;
+  mask-size: 100% 300%;
+  animation: turn-process-checkpoint-enter 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.turn-process-checkpoint-leaving {
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 34%, transparent 51%);
+  mask-image: linear-gradient(to bottom, #000 34%, transparent 51%);
+  -webkit-mask-position: 0 0%;
+  mask-position: 0 0%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 300%;
+  mask-size: 100% 300%;
+  animation: turn-process-checkpoint-leave 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .turn-process-meta {
@@ -7171,15 +7204,31 @@ button:disabled {
   overflow: hidden;
 }
 
-@keyframes turn-process-checkpoint-replace {
+@keyframes turn-process-checkpoint-enter {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    -webkit-mask-position: 0 0%;
+    mask-position: 0 0%;
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
+    -webkit-mask-position: 0 100%;
+    mask-position: 0 100%;
+  }
+}
+
+@keyframes turn-process-checkpoint-leave {
+  from {
+    opacity: 1;
+    -webkit-mask-position: 0 0%;
+    mask-position: 0 0%;
+  }
+
+  to {
+    opacity: 0;
+    -webkit-mask-position: 0 100%;
+    mask-position: 0 100%;
   }
 }
 
@@ -11436,6 +11485,7 @@ html.swiss-international .os-theme-wuu {
   .thread-list-more,
   .collapsible-details,
   .turn-process-chevron,
+  .turn-process-checkpoint-track,
   .turn-process-details,
   .activity-chevron,
   .activity-details,
@@ -11461,7 +11511,8 @@ html.swiss-international .os-theme-wuu {
   .conversation-search-error,
   .conversation-search-empty,
   .ask-message,
-  .turn-process-checkpoint-text,
+  .turn-process-checkpoint-entering,
+  .turn-process-checkpoint-leaving,
   .activity-timeline-item,
   .stream-word {
     animation: none;
