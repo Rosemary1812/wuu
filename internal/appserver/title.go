@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
@@ -109,6 +110,44 @@ func recommendedTitleTemperature(modelID string) (float64, bool) {
 	return 0, false
 }
 
+// TitleGenerationResult captures the observable state of a single title
+// generation attempt. Every field is populated whenever the pipeline reaches
+// that step, so callers (production hot path, `wuu probe-title`, and
+// `thread/regenerate-title`) can answer the same diagnostic questions:
+//
+//   - Did we even attempt this thread? (SkipReason != "")
+//   - Which model / temperature / request did we send?
+//   - What came back from the provider?
+//   - What was the cleaned title?
+//   - Did we persist it, and did we notify the renderer?
+//
+// Production hot path only checks Error and PersistedTitle. `wuu probe-title`
+// prints the whole struct for human inspection.
+type TitleGenerationResult struct {
+	ThreadID    string
+	Model       string
+	Temperature float64
+	// SendTemperature reports whether Temperature was included in the
+	// request. False means we deliberately omitted the field (e.g. for
+	// claude), so the title struct reports Temperature=0.
+	SendTemperature   bool
+	FirstUserPrompt   string
+	RequestMessages   int
+	ContentDeltas     []string
+	AggregatedText    string
+	CleanedTitle      string
+	Persisted         bool
+	PersistedTitle    string
+	PreviewAfter      string
+	Notified          bool
+	SkipReason        string
+	StreamErr         error
+	PersistErr        error
+	NotificationErr   error
+	StartedAt         time.Time
+	CompletedAt       time.Time
+}
+
 // generateThreadTitle asks the title model for a short, sidebar-friendly title
 // for the freshly started conversation.
 //
@@ -125,41 +164,71 @@ func recommendedTitleTemperature(modelID string) (float64, bool) {
 //   - We aggregate text deltas only; thinking deltas (<think>…</think>) are
 //     stripped again post-hoc in cleanGeneratedThreadTitle.
 func (s *Server) generateThreadTitle(threadID string, history []providers.ChatMessage) {
+	_, _ = s.generateThreadTitleCore(threadID, history, true, true)
+}
+
+// generateThreadTitleCore is the workhorse behind generateThreadTitle,
+// `wuu probe-title`, and `thread/regenerate-title`. It exposes the same
+// observability fields to all three callers and supports dry-run mode
+// (persist=false) and silent mode (notify=false) for the CLI path.
+//
+// Every step is logged via providers.DebugLogf so the production path leaves
+// a structured trace in ~/.wuu/log/debug.log that can be correlated by
+// thread ID. The CLI path additionally prints to stdout.
+func (s *Server) generateThreadTitleCore(threadID string, history []providers.ChatMessage, persist, notify bool) (res TitleGenerationResult, retErr error) {
+	res.ThreadID = threadID
+	res.StartedAt = time.Now().UTC()
+	defer func() {
+		res.CompletedAt = time.Now().UTC()
+		providers.DebugLogf("title[%s]: completed in %dms (skipped=%q persisted=%v notified=%v)",
+			threadID, res.CompletedAt.Sub(res.StartedAt).Milliseconds(), res.SkipReason, res.Persisted, res.Notified)
+	}()
+
 	if s == nil || s.rt == nil {
-		return
+		res.SkipReason = "server not initialized"
+		return res, nil
 	}
 	client := s.titleStreamClient()
 	if client == nil {
-		return
+		res.SkipReason = "no TitleClient configured"
+		providers.DebugLogf("title[%s]: skipped (%s)", threadID, res.SkipReason)
+		return res, nil
 	}
-	th := s.thread(threadID)
-	if th == nil {
-		return
+	res.Model = firstNonEmpty(
+		nonEmptyModel(s.rt.StreamRunner),
+		s.rt.Model,
+	)
+	if res.Model == "" {
+		res.SkipReason = "no model resolved"
+		providers.DebugLogf("title[%s]: skipped (%s)", threadID, res.SkipReason)
+		return res, nil
 	}
-
-	th.mu.Lock()
-	if th.ReadOnly || th.ParentID != "" || strings.TrimSpace(th.Title) != "" {
-		th.mu.Unlock()
-		return
-	}
-	th.mu.Unlock()
 
 	firstUser, ok := firstUserMessageForTitle(history)
 	if !ok {
-		return
+		res.SkipReason = "no eligible first user message"
+		providers.DebugLogf("title[%s]: skipped (%s)", threadID, res.SkipReason)
+		return res, nil
 	}
-	model := ""
-	if s.rt.StreamRunner != nil {
-		model = firstNonEmpty(s.rt.StreamRunner.APIModel, s.rt.StreamRunner.Model)
-	}
-	model = firstNonEmpty(model, s.rt.Model)
-	if model == "" {
-		return
+	res.FirstUserPrompt = firstUser
+
+	th := s.thread(threadID)
+	if th != nil {
+		th.mu.Lock()
+		if th.ReadOnly || th.ParentID != "" || strings.TrimSpace(th.Title) != "" {
+			th.mu.Unlock()
+			res.SkipReason = "thread already titled / read-only / forked"
+			providers.DebugLogf("title[%s]: skipped (%s)", threadID, res.SkipReason)
+			return res, nil
+		}
+		th.mu.Unlock()
 	}
 
-	temp, sendTemp := recommendedTitleTemperature(model)
+	temp, sendTemp := recommendedTitleTemperature(res.Model)
+	res.Temperature = temp
+	res.SendTemperature = sendTemp
 	req := providers.ChatRequest{
-		Model: model,
+		Model: res.Model,
 		Messages: []providers.ChatMessage{
 			{Role: "system", Content: threadTitleSystemPrompt},
 			{Role: "user", Content: "Generate a title for this conversation:\n" + firstUser},
@@ -168,30 +237,76 @@ func (s *Server) generateThreadTitle(threadID string, history []providers.ChatMe
 	if sendTemp {
 		req.Temperature = temp
 	}
+	res.RequestMessages = len(req.Messages)
+
+	providers.DebugLogf("title[%s]: sending request (model=%s temp=%.2f sendTemp=%v messages=%d firstUser=%d chars)",
+		threadID, res.Model, temp, sendTemp, res.RequestMessages, len(firstUser))
 
 	ctx, cancel := context.WithTimeout(context.Background(), titleGenerationTimeout)
 	defer cancel()
 
-	text, err := streamTitleText(ctx, client, req)
+	// We use a small adapter over streamTitleText so we can capture per-delta
+	// deltas for the probe / regenerate-title result. streamTitleText itself
+	// remains untouched (it's exercised by TestStreamTitleText_*).
+	text, deltas, err := streamTitleTextWithDeltas(ctx, client, req)
+	res.ContentDeltas = deltas
+	res.AggregatedText = text
 	if err != nil {
-		providers.DebugLogf("generate title for thread %q: %v", threadID, err)
-		return
+		res.StreamErr = err
+		providers.DebugLogf("title[%s]: stream error after %d deltas: %v", threadID, len(deltas), err)
+		return res, err
 	}
-	title := cleanGeneratedThreadTitle(text)
-	if title == "" {
-		return
+	providers.DebugLogf("title[%s]: received %d content deltas, aggregated %d chars",
+		threadID, len(deltas), len(text))
+
+	res.CleanedTitle = cleanGeneratedThreadTitle(text)
+	if res.CleanedTitle == "" {
+		res.SkipReason = "empty title after cleaning"
+		providers.DebugLogf("title[%s]: empty title after cleaning (raw=%q); skipping persist", threadID, text)
+		return res, nil
 	}
-	metadata, err := session.UpdateGeneratedTitle(s.rt.SessionDir, threadID, title)
+	providers.DebugLogf("title[%s]: cleaned title: %q", threadID, res.CleanedTitle)
+
+	if !persist {
+		providers.DebugLogf("title[%s]: dry-run, not persisting", threadID)
+		return res, nil
+	}
+
+	metadata, err := session.UpdateGeneratedTitle(s.rt.SessionDir, threadID, res.CleanedTitle)
 	if err != nil {
-		providers.DebugLogf("persist generated title for thread %q: %v", threadID, err)
-		return
+		res.PersistErr = err
+		providers.DebugLogf("title[%s]: persist failed: %v", threadID, err)
+		return res, err
 	}
+	res.Persisted = true
+	res.PersistedTitle = metadata.Title
+
 	thread, err := s.threadAfterMetadataUpdate(metadata)
 	if err != nil {
-		providers.DebugLogf("load generated title for thread %q: %v", threadID, err)
-		return
+		res.NotificationErr = err
+		providers.DebugLogf("title[%s]: failed to reload thread after persist: %v", threadID, err)
+		return res, err
 	}
-	_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+	res.PreviewAfter = thread.Preview
+
+	if notify {
+		if err := s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread}); err != nil {
+			res.NotificationErr = err
+			providers.DebugLogf("title[%s]: notification failed: %v", threadID, err)
+			return res, err
+		}
+		res.Notified = true
+	}
+	return res, nil
+}
+
+// nonEmptyModel returns the APIModel or Model of a StreamRunner, skipping
+// nil runners. Centralized so generateThreadTitleCore can stay readable.
+func nonEmptyModel(r *agent.StreamRunner) string {
+	if r == nil {
+		return ""
+	}
+	return firstNonEmpty(r.APIModel, r.Model)
 }
 
 // titleStreamClient resolves the streaming client used for title generation.
@@ -218,32 +333,47 @@ func (s *Server) titleStreamClient() providers.StreamClient {
 // the same (Stream.filter(textDelta)) and we additionally strip <think> blocks
 // from the final text as belt-and-suspenders.
 func streamTitleText(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (string, error) {
+	text, _, err := streamTitleTextWithDeltas(ctx, client, req)
+	return text, err
+}
+
+// streamTitleTextWithDeltas is like streamTitleText but also returns every
+// content delta separately so callers (probe / regenerate-title) can inspect
+// the streaming behavior — useful when the model returns a non-monotonic
+// sequence (replace / message events reset the buffer).
+func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (string, []string, error) {
 	events, err := client.StreamChat(ctx, req)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var b strings.Builder
+	var deltas []string
 	for ev := range events {
 		switch ev.Type {
 		case providers.EventContentDelta:
-			b.WriteString(ev.Content)
+			if ev.Content != "" {
+				deltas = append(deltas, ev.Content)
+				b.WriteString(ev.Content)
+			}
 		case providers.EventContentReplace:
+			deltas = append(deltas, "[replace:"+ev.Content+"]")
 			b.Reset()
 			b.WriteString(ev.Content)
 		case providers.EventMessage:
 			if ev.Message != nil && ev.Message.Content != "" {
+				deltas = append(deltas, "[message:"+ev.Message.Content+"]")
 				b.Reset()
 				b.WriteString(ev.Message.Content)
 			}
 		case providers.EventError:
 			if ev.Error != nil {
-				return "", ev.Error
+				return b.String(), deltas, ev.Error
 			}
 		case providers.EventDone:
 			// keep draining to let the producer close cleanly
 		}
 	}
-	return b.String(), ctx.Err()
+	return b.String(), deltas, ctx.Err()
 }
 
 // firstUserMessageForTitle returns the user prompt to summarize. opencode only

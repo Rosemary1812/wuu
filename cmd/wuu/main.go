@@ -48,6 +48,8 @@ func run(args []string) error {
 		return runModels(args[1:])
 	case "run":
 		return runTask(args[1:])
+	case "probe-title":
+		return runProbeTitle(args[1:])
 	case "eval":
 		return runEval(args[1:])
 	case "tui":
@@ -123,6 +125,60 @@ func runInit(args []string) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	fmt.Printf("created %s\n", configPath)
+	return nil
+}
+
+func runProbeTitle(args []string) error {
+	fs := flag.NewFlagSet("probe-title", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	workdir := fs.String("workdir", "", "workspace directory (default: cwd)")
+	threadID := fs.String("thread", "", "thread id to regenerate title for (default: most recent)")
+	userPrompt := fs.String("user-prompt", "", "synthetic first user message; probe runs in dry-run mode")
+	providerName := fs.String("provider", "", "override provider name from config")
+	modelOverride := fs.String("model", "", "override model from config")
+	dryRun := fs.Bool("dry-run", false, "do not persist the title")
+	verbose := fs.Bool("verbose", true, "print every step in human-readable mode")
+	jsonOut := fs.Bool("json", false, "emit TitleGenerationResult as JSON")
+	quiet := fs.Bool("quiet", false, "suppress human-readable summary; implies --json")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *quiet {
+		*jsonOut = true
+	}
+
+	if *userPrompt == "" && *threadID == "" && *dryRun == false {
+		// Default to dry-run for the implicit "use most recent thread" path
+		// so an accidental invocation cannot overwrite a real title without
+		// intent. Pass --dry-run=false to persist.
+		*dryRun = true
+	}
+
+	rootDir, err := resolveWorkdir(*workdir)
+	if err != nil {
+		return err
+	}
+	homeDir := os.Getenv("HOME")
+
+	opts := appserver.ProbeTitleOptions{
+		WorkDir:       rootDir,
+		HomeDir:       homeDir,
+		ProviderName:  *providerName,
+		ModelOverride: *modelOverride,
+		ThreadID:      *threadID,
+		UserPrompt:    *userPrompt,
+		DryRun:        *dryRun,
+		Verbose:       *verbose,
+		JSON:          *jsonOut,
+	}
+	_, err = appserver.ProbeTitle(context.Background(), opts)
+	if err != nil {
+		// TitleGenerationResult is already pretty-printed or JSON-encoded by
+		// ProbeTitle itself. We only need to surface the error to the shell.
+		return err
+	}
 	return nil
 }
 
