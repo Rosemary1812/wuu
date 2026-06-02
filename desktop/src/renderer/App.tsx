@@ -8055,11 +8055,14 @@ function ThreadItemView({
         copyable;
       const actionsPersistent =
         actionsVisible && item.id === latestAgentMessageID;
+      const reserveActionSlot =
+        copyable &&
+        (streaming || actionsVisible || item.phase === "final_answer");
       return (
         <article
           className={`agent-block${
-            actionsVisible
-              ? ` agent-block-with-actions${actionsPersistent ? " agent-actions-persistent" : ""}`
+            reserveActionSlot
+              ? ` agent-block-with-action-slot${actionsVisible ? " agent-actions-available" : ""}${actionsPersistent ? " agent-actions-persistent" : ""}`
               : ""
           }`}
         >
@@ -8072,12 +8075,17 @@ function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
-          {actionsVisible ? (
+          {reserveActionSlot && actionsVisible ? (
             <AgentMessageActions
               getText={() => streamFieldValue(turnID, item, "text")}
               onFork={
                 onForkMessage ? () => onForkMessage(turnID, item.id) : undefined
               }
+            />
+          ) : reserveActionSlot ? (
+            <div
+              className="message-actions agent-message-actions action-slot-placeholder"
+              aria-hidden="true"
             />
           ) : null}
         </article>

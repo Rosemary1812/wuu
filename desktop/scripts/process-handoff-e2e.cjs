@@ -126,6 +126,66 @@ async function run() {
   );
   await capture(win, "process-handoff-after.png");
 
+  const actionSlotBeforeCompletion = await waitFor(win, agentActionSlotRect, 3000);
+  assert.equal(
+    actionSlotBeforeCompletion.hasButtons,
+    false,
+    "Action slot should be reserved while the final answer is still streaming."
+  );
+
+  emitNotification(win, "item/completed", {
+    thread_id: threadID,
+    turn_id: turn.id,
+    item: { ...finalItem, status: "completed", text: finalText }
+  });
+  emitNotification(win, "turn/completed", {
+    thread_id: threadID,
+    turn: {
+      ...turn,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      duration_ms: 180,
+      items: [
+        userItem,
+        commentaryItem,
+        toolItem,
+        { ...finalItem, status: "completed", text: finalText }
+      ]
+    }
+  });
+
+  const completedActionSlot = await waitFor(
+    win,
+    completedAgentActionSlotRect,
+    3000
+  );
+  const completedFinalRect = await waitFor(win, finalAnswerRect, 3000);
+  const completedProcessHeaderRect = await waitFor(win, processHeaderRect, 3000);
+  const headerToBodyGap = completedFinalRect.top - (completedProcessHeaderRect.top + completedProcessHeaderRect.height);
+  const bodyToActionsGap = completedActionSlot.top - (completedFinalRect.top + completedFinalRect.height);
+  assert.ok(
+    Math.abs(completedFinalRect.left - finalRect.left) <= 2,
+    `Completing the answer should not move text horizontally. Before=${finalRect.left}, after=${completedFinalRect.left}`
+  );
+  assert.ok(
+    Math.abs(completedFinalRect.top - finalRect.top) <= 2,
+    `Completing the answer should not move text vertically when buttons appear. Before=${finalRect.top}, after=${completedFinalRect.top}`
+  );
+  assert.ok(
+    headerToBodyGap >= 2 && headerToBodyGap <= 10,
+    `Process header and answer should use a compact hierarchy gap. Gap=${headerToBodyGap}`
+  );
+  assert.ok(
+    bodyToActionsGap >= 4 && bodyToActionsGap <= 12,
+    `Answer and action buttons should keep a compact breathing gap. Gap=${bodyToActionsGap}`
+  );
+  assert.equal(
+    Math.round(completedActionSlot.height),
+    Math.round(actionSlotBeforeCompletion.height),
+    "Action buttons should appear inside the reserved action slot."
+  );
+  await capture(win, "process-handoff-completed.png");
+
   console.log("process handoff e2e passed");
   app.exit(0);
 }
@@ -191,7 +251,11 @@ function processCheckpointRect() {
 function finalAnswerRect() {
   const turns = Array.from(document.querySelectorAll(".turn"));
   const turn = turns.at(-1);
-  const finalText = turn?.querySelector(".agent-text .streaming-plain-text");
+  const markdown = turn?.querySelector(".agent-text .streaming-markdown");
+  const finalText =
+    turn?.querySelector(".agent-text .streaming-plain-text") ??
+    markdown?.querySelector(".rich-paragraph, .rich-heading, .streaming-plain-text") ??
+    markdown;
   if (!(finalText instanceof HTMLElement) || !finalText.textContent?.trim()) {
     return null;
   }
@@ -206,6 +270,68 @@ function finalAnswerRect() {
     fontSize: style.fontSize,
     lineHeight: style.lineHeight
   };
+}
+
+function processHeaderRect() {
+  const turns = Array.from(document.querySelectorAll(".turn"));
+  const turn = turns.at(-1);
+  const header = turn?.querySelector(".turn-process-header");
+  if (!(header instanceof HTMLElement)) {
+    return null;
+  }
+  const rect = header.getBoundingClientRect();
+  if (rect.height <= 0) {
+    return null;
+  }
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height
+  };
+}
+
+function agentActionSlotRect() {
+  const turns = Array.from(document.querySelectorAll(".turn"));
+  const turn = turns.at(-1);
+  const slot = turn?.querySelector(".agent-message-actions");
+  if (!(slot instanceof HTMLElement)) {
+    return null;
+  }
+  const rect = slot.getBoundingClientRect();
+  if (rect.height <= 0) {
+    return null;
+  }
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+    hasButtons: slot.querySelectorAll(".message-action-button").length > 0
+  };
+}
+
+function completedAgentActionSlotRect() {
+  const turns = Array.from(document.querySelectorAll(".turn"));
+  const turn = turns.at(-1);
+  const slot = turn?.querySelector(".agent-message-actions");
+  if (!(slot instanceof HTMLElement)) {
+    return null;
+  }
+  const rect = slot.getBoundingClientRect();
+  if (rect.height <= 0) {
+    return null;
+  }
+  const hasButtons = slot.querySelectorAll(".message-action-button").length > 0;
+  return hasButtons
+    ? {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        hasButtons
+      }
+    : null;
 }
 
 function emitNotification(win, method, params) {
