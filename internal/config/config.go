@@ -163,11 +163,12 @@ type AgentConfig struct {
 	// Effort when the selected provider/model exposes OpenCode-style variants.
 	Variant string `json:"variant,omitempty"`
 	// DisableAutoCompact turns off the proactive auto-compact pass
-	// that fires when the conversation reaches ~90% of the model's
-	// context window. The reactive overflow recovery (compact triggered
-	// by an actual context_length_exceeded error) still runs. Use this
-	// when you want full control over compact via the slash command,
-	// or when you're debugging compact behavior itself.
+	// that fires when the conversation reaches the model's usable input
+	// window after reserving output headroom. The reactive overflow
+	// recovery (compact triggered by an actual context_length_exceeded
+	// error) still runs. Use this when you want full control over compact
+	// via the slash command, or when you're debugging compact behavior
+	// itself.
 	DisableAutoCompact bool `json:"disable_auto_compact,omitempty"`
 	// CatwalkAutoupdate enables the background fetch from charm.land's
 	// catwalk service to refresh the model→context-window registry
