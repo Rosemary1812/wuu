@@ -529,6 +529,7 @@ export function App(): JSX.Element {
   const [conversationSearch, setConversationSearch] =
     useState<ConversationSearchState>({
       open: false,
+      closing: false,
       query: "",
       loading: false,
       error: "",
@@ -630,6 +631,9 @@ export function App(): JSX.Element {
   const conversationSearchRef = useRef<HTMLDivElement>(null);
   const conversationSearchInputRef = useRef<HTMLInputElement>(null);
   const conversationSearchRequestRef = useRef(0);
+  const conversationSearchCloseTimerRef = useRef<number | undefined>(
+    undefined,
+  );
   const appStateRef = useRef<AppState>(initialState);
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
@@ -677,6 +681,9 @@ export function App(): JSX.Element {
       }
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
+      }
+      if (conversationSearchCloseTimerRef.current !== undefined) {
+        window.clearTimeout(conversationSearchCloseTimerRef.current);
       }
       clearViewSwitchDelay();
     };
@@ -916,7 +923,7 @@ export function App(): JSX.Element {
   ]);
 
   useEffect(() => {
-    if (!conversationSearch.open) {
+    if (!conversationSearch.open || conversationSearch.closing) {
       return undefined;
     }
     const delay = conversationSearch.query.trim() ? 140 : 0;
@@ -924,7 +931,11 @@ export function App(): JSX.Element {
       void refreshConversationSearchThreads(conversationSearch.query);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [conversationSearch.open, conversationSearch.query]);
+  }, [
+    conversationSearch.closing,
+    conversationSearch.open,
+    conversationSearch.query,
+  ]);
 
   useLayoutEffect(() => {
     conversationAutoFollowRef.current = true;
@@ -1614,6 +1625,10 @@ export function App(): JSX.Element {
     if (!state.activeContext) {
       return;
     }
+    if (conversationSearchCloseTimerRef.current !== undefined) {
+      window.clearTimeout(conversationSearchCloseTimerRef.current);
+      conversationSearchCloseTimerRef.current = undefined;
+    }
     setProjectMenuOpen(false);
     setRuntimeMenuOpen(false);
     setAccessMenuOpen(false);
@@ -1623,6 +1638,7 @@ export function App(): JSX.Element {
     setConversationSearch((current) => ({
       ...current,
       open: true,
+      closing: false,
       loading: true,
       error: "",
       selectedIndex: 0,
@@ -1631,13 +1647,31 @@ export function App(): JSX.Element {
   }
 
   function closeConversationSearch(): void {
+    if (!conversationSearch.open && !conversationSearch.closing) {
+      return;
+    }
     conversationSearchRequestRef.current += 1;
+    if (conversationSearchCloseTimerRef.current !== undefined) {
+      window.clearTimeout(conversationSearchCloseTimerRef.current);
+      conversationSearchCloseTimerRef.current = undefined;
+    }
+    const closeImmediately = prefersReducedMotion();
     setConversationSearch((current) => ({
       ...current,
       open: false,
+      closing: !closeImmediately,
       loading: false,
       error: "",
     }));
+    if (closeImmediately) {
+      return;
+    }
+    conversationSearchCloseTimerRef.current = window.setTimeout(() => {
+      conversationSearchCloseTimerRef.current = undefined;
+      setConversationSearch((current) =>
+        current.open ? current : { ...current, closing: false },
+      );
+    }, CONVERSATION_SEARCH_EXIT_MS);
   }
 
   async function refreshConversationSearchThreads(
@@ -4990,9 +5024,11 @@ export function App(): JSX.Element {
         />
       )}
 
-      {conversationSearch.open ? (
+      {conversationSearch.open || conversationSearch.closing ? (
         <div
-          className="conversation-search-overlay"
+          className={`conversation-search-overlay${
+            conversationSearch.closing ? " closing" : ""
+          }`}
           onPointerDown={(event) => {
             if (event.target === event.currentTarget) {
               closeConversationSearch();
@@ -5038,8 +5074,14 @@ export function App(): JSX.Element {
                 </button>
               ) : null}
             </div>
-            <div className="conversation-search-status">
-              <span>{conversationSearchStatusText}</span>
+            <div
+              className={`conversation-search-status${
+                conversationSearch.loading ? " loading" : ""
+              }`}
+            >
+              <span className="conversation-search-status-text">
+                {conversationSearchStatusText}
+              </span>
               <button
                 type="button"
                 onClick={() => void refreshConversationSearchThreads()}

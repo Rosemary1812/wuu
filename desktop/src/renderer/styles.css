@@ -25,6 +25,9 @@
     0 2px 8px rgba(20, 24, 28, 0.08);
   --menu-enter-duration: 140ms;
   --menu-enter-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --search-enter-duration: 220ms;
+  --search-exit-duration: 180ms;
+  --search-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
   --collapse-motion-duration: 260ms;
   --collapse-opacity-duration: 180ms;
   --collapse-chevron-duration: 140ms;
@@ -55,6 +58,56 @@
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes conversation-search-overlay-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes conversation-search-overlay-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes conversation-search-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.982);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes conversation-search-dialog-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.986);
+  }
+}
+
+@keyframes conversation-search-progress {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -2490,6 +2543,12 @@ button:disabled {
   background: rgba(30, 34, 38, 0.22);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
+  opacity: 0;
+  animation: conversation-search-overlay-in var(--search-enter-duration) var(--search-motion-easing) both;
+}
+
+.conversation-search-overlay.closing {
+  animation: conversation-search-overlay-out var(--search-exit-duration) var(--search-motion-easing) both;
 }
 
 .conversation-search-dialog {
@@ -2506,7 +2565,12 @@ button:disabled {
     0 3px 12px rgba(20, 24, 28, 0.1);
   padding: 10px;
   transform-origin: top center;
-  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+  will-change: opacity, transform;
+  animation: conversation-search-dialog-in var(--search-enter-duration) var(--search-motion-easing) both;
+}
+
+.conversation-search-overlay.closing .conversation-search-dialog {
+  animation: conversation-search-dialog-out var(--search-exit-duration) var(--search-motion-easing) both;
 }
 
 .conversation-search-input-wrap {
@@ -2544,6 +2608,9 @@ button:disabled {
   border-radius: 8px;
   background: transparent;
   color: #7d8580;
+  transition:
+    opacity 160ms ease,
+    transform 180ms var(--search-motion-easing);
 }
 
 .conversation-search-clear:hover,
@@ -2551,6 +2618,7 @@ button:disabled {
   outline: 0;
   background: #e9ebe7;
   color: #202427;
+  transform: scale(0.96);
 }
 
 .conversation-search-status {
@@ -2565,6 +2633,25 @@ button:disabled {
   padding: 4px 12px 0;
 }
 
+.conversation-search-status-text {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.conversation-search-status.loading .conversation-search-status-text::before {
+  content: "";
+  display: block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(105, 115, 109, 0.22);
+  border-top-color: rgba(105, 115, 109, 0.72);
+  border-radius: 999px;
+  animation: conversation-search-progress 760ms linear infinite;
+}
+
 .conversation-search-status button {
   border-radius: 7px;
   background: transparent;
@@ -2573,6 +2660,9 @@ button:disabled {
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   padding: 5px 8px;
+  transition:
+    opacity 160ms ease,
+    transform 180ms var(--search-motion-easing);
 }
 
 .conversation-search-status button:hover,
@@ -2580,6 +2670,7 @@ button:disabled {
   outline: 0;
   background: #f0f1ee;
   color: #202427;
+  transform: translate3d(0, -1px, 0);
 }
 
 .conversation-search-error {
@@ -2590,6 +2681,7 @@ button:disabled {
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   padding: 8px 10px;
+  animation: menu-enter 180ms var(--search-motion-easing) both;
 }
 
 .conversation-search-results {
@@ -2641,11 +2733,16 @@ button:disabled {
   cursor: pointer;
   padding: 7px 10px 7px 12px;
   text-align: left;
+  transition:
+    opacity 160ms ease,
+    transform 180ms var(--search-motion-easing);
+  will-change: opacity, transform;
 }
 
 .conversation-search-result:hover,
 .conversation-search-result.selected {
   background: #f0f1ef;
+  transform: translate3d(0, -1px, 0);
 }
 
 .conversation-search-result.active {
@@ -2654,6 +2751,10 @@ button:disabled {
 
 .conversation-search-result.pending {
   opacity: 0.68;
+}
+
+.conversation-search-result:active {
+  transform: scale(0.992);
 }
 
 .conversation-search-result-main {
@@ -2731,6 +2832,7 @@ button:disabled {
   color: #8b928e;
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
+  animation: menu-enter 180ms var(--search-motion-easing) both;
 }
 
 @media (max-width: 720px) {
@@ -11273,19 +11375,35 @@ html.swiss-international .os-theme-wuu {
   .ask-option,
   .ask-other-toggle,
   .ask-other-input,
-	  .settings-button,
-	  .settings-switch,
-	  .settings-switch-thumb,
-	  .conversation-search-dialog,
-	  .conversation-search-result,
-	  .conversation-search-clear {
-	    transition: none;
-	  }
+  .settings-button,
+  .settings-switch,
+  .settings-switch-thumb,
+  .conversation-search-overlay,
+  .conversation-search-dialog,
+  .conversation-search-result,
+  .conversation-search-clear,
+  .conversation-search-status button {
+    transition: none;
+  }
 
-	  .conversation-search-dialog,
-	  .ask-message,
+  .conversation-search-overlay,
+  .conversation-search-dialog,
+  .conversation-search-status.loading .conversation-search-status-text::before,
+  .conversation-search-error,
+  .conversation-search-empty,
+  .ask-message,
   .activity-timeline-item,
-	  .stream-word {
-	    animation: none;
-	  }
+  .stream-word {
+    animation: none;
+  }
+
+  .conversation-search-clear:hover,
+  .conversation-search-clear:focus-visible,
+  .conversation-search-status button:hover,
+  .conversation-search-status button:focus-visible,
+  .conversation-search-result:hover,
+  .conversation-search-result.selected,
+  .conversation-search-result:active {
+    transform: none;
+  }
 }
