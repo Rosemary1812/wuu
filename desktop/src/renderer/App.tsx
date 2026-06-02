@@ -7059,7 +7059,7 @@ function completedAgentTextItem(turn: Turn, item: ThreadItem): boolean {
   );
 }
 
-function completedAgentMessageFollows(turn: Turn, itemIndex: number): boolean {
+function agentMessageWithTextFollows(turn: Turn, itemIndex: number): boolean {
   for (let index = itemIndex + 1; index < turn.items.length; index++) {
     const item = turn.items[index];
     if (item.type === "user_message") {
@@ -7071,7 +7071,7 @@ function completedAgentMessageFollows(turn: Turn, itemIndex: number): boolean {
     if (streamFieldValue(turn.id, item, "text").trim().length === 0) {
       continue;
     }
-    return completedAgentTextItem(turn, item);
+    return true;
   }
   return false;
 }
@@ -7189,6 +7189,16 @@ function TurnView({
       return;
     }
     processCheckpoint = { key: item.id, text };
+    appendProcessEntry({
+      key: `${item.id}-checkpoint`,
+      kind: "checkpoint",
+      element: (
+        <TurnProcessCheckpointLine
+          key={`${item.id}-checkpoint`}
+          text={text}
+        />
+      ),
+    });
   }
 
   function flushProcessEntries(autoCollapse = processAutoCollapse): void {
@@ -7207,6 +7217,7 @@ function TurnView({
       return;
     }
     const detailEntries = entries.filter((entry) => entry.kind !== "status");
+    const summaryCheckpoint = autoCollapse ? undefined : checkpoint;
     if (detailEntries.length === 0 && !checkpoint) {
       if (!autoCollapse) {
         const statusEntry = entries.find((entry) => entry.kind === "status");
@@ -7221,7 +7232,7 @@ function TurnView({
         key={`${turn.id}-process-${renderedItems.length}`}
         turn={turn}
         entries={detailEntries}
-        checkpoint={checkpoint}
+        checkpoint={summaryCheckpoint}
         autoCollapse={autoCollapse}
         showTurnStatus={entries.some((entry) => entry.kind === "status")}
       />,
@@ -7248,7 +7259,7 @@ function TurnView({
       if (!rendered) {
         continue;
       }
-      if (completedAgentMessageFollows(turn, index)) {
+      if (agentMessageWithTextFollows(turn, index)) {
         updateProcessCheckpoint(item);
         continue;
       }
@@ -7279,11 +7290,12 @@ function TurnView({
             items={group}
             collapseWhenIdle={
               processAutoCollapse ||
-              completedAgentMessageFollows(turn, nextIndex - 1)
+              agentMessageWithTextFollows(turn, nextIndex - 1)
             }
             revealItems={turn.status === "in_progress"}
           />
         ),
+        count: group.length,
       });
       index = nextIndex - 1;
       continue;
@@ -7315,8 +7327,9 @@ function TurnView({
 
 type TurnProcessEntry = {
   key: string;
-  kind: "status" | "activity";
+  kind: "status" | "checkpoint" | "activity";
   element: JSX.Element;
+  count?: number;
 };
 
 type TurnProcessCheckpoint = {
@@ -7343,7 +7356,10 @@ function TurnProcessGroup({
   const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
     hasDetails ? "" : " no-details"
   }`;
-  const processCount = entries.length;
+  const processCount = entries.reduce(
+    (total, entry) => total + (entry.count ?? 1),
+    0,
+  );
   const completedDuration =
     typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = parseTurnTimestampMs(turn.started_at);
@@ -7363,7 +7379,6 @@ function TurnProcessGroup({
         hasFinalText: turnHasAssistantOutput(turn),
         locale: "zh",
       });
-  const primaryLabel = checkpoint?.text ?? processLabel;
   const metaParts = turnProcessMetaParts(
     turn,
     processCount,
@@ -7374,22 +7389,24 @@ function TurnProcessGroup({
   const toggleContent = (
     <>
       <span className="turn-process-copy">
-        <span
-          className={`turn-process-primary${checkpoint ? " checkpoint" : ""}`}
-          title={checkpoint?.text}
-        >
-          <span
-            className="turn-process-primary-text"
-            key={checkpoint?.key ?? primaryLabel}
-          >
-            {primaryLabel}
-          </span>
+        <span className="turn-process-header">
+          <span className="turn-process-title">{processLabel}</span>
+          {metaParts.map((part) => (
+            <span className="turn-process-meta" key={part}>
+              {part}
+            </span>
+          ))}
         </span>
-        {metaParts.map((part) => (
-          <span className="turn-process-meta" key={part}>
-            {part}
+        {checkpoint ? (
+          <span
+            className="turn-process-checkpoint active"
+            title={checkpoint.text}
+          >
+            <span className="turn-process-checkpoint-text" key={checkpoint.key}>
+              {checkpoint.text}
+            </span>
           </span>
-        ))}
+        ) : null}
       </span>
       {hasDetails ? (
         <ChevronDown className="turn-process-chevron" size={15} />
@@ -7424,6 +7441,14 @@ function TurnProcessGroup({
           {entries.map((entry) => entry.element)}
         </CollapsibleDetails>
       ) : null}
+    </div>
+  );
+}
+
+function TurnProcessCheckpointLine({ text }: { text: string }): JSX.Element {
+  return (
+    <div className="turn-process-checkpoint-line">
+      <span>{text}</span>
     </div>
   );
 }

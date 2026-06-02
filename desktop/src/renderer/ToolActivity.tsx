@@ -75,7 +75,7 @@ export function ToolActivityTimeline({
     return () => window.clearTimeout(timer);
   }, [itemSignature, items.length, revealItems, visibleCount]);
 
-  if (!revealItems) {
+  if (items.length <= 1) {
     return (
       <ToolActivityRow items={items} collapseWhenIdle={collapseWhenIdle} />
     );

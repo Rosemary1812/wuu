@@ -7084,32 +7084,42 @@ button:disabled {
 }
 
 .turn-process-copy {
-  display: flex;
+  display: grid;
   min-width: 0;
   flex: 1 1 auto;
+  gap: 2px;
+}
+
+.turn-process-header {
+  display: flex;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 7px;
 }
 
-.turn-process-primary {
-  display: block;
+.turn-process-title {
   min-width: 0;
-  max-width: 100%;
-  flex: 1 1 260px;
   overflow: hidden;
   color: #7d8388;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.turn-process-primary.checkpoint {
+.turn-process-checkpoint {
+  display: block;
+  min-width: 0;
+  max-width: min(100%, 720px);
+  overflow: hidden;
   color: #454b50;
   font-size: var(--font-body);
   font-weight: var(--weight-semibold);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.turn-process-primary-text {
+.turn-process-checkpoint-text {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -7117,7 +7127,7 @@ button:disabled {
   white-space: nowrap;
 }
 
-.turn-process-primary.checkpoint .turn-process-primary-text {
+.turn-process-checkpoint.active .turn-process-checkpoint-text {
   animation: turn-process-checkpoint-replace 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -7197,6 +7207,22 @@ button:disabled {
   overflow: hidden;
   gap: 8px;
   padding: 3px 0 1px;
+}
+
+.turn-process-checkpoint-line {
+  min-width: 0;
+  border-left: 2px solid #e2e4df;
+  color: #6e7478;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  line-height: 1.45;
+  padding: 1px 0 1px 10px;
+}
+
+.turn-process-checkpoint-line span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .activity-timeline {
@@ -11435,7 +11461,7 @@ html.swiss-international .os-theme-wuu {
   .conversation-search-error,
   .conversation-search-empty,
   .ask-message,
-  .turn-process-primary-text,
+  .turn-process-checkpoint-text,
   .activity-timeline-item,
   .stream-word {
     animation: none;
