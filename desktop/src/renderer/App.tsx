@@ -128,6 +128,7 @@ import {
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
 import { agentHandoffDisplay } from "./AgentHandoff";
+import { CollapsibleDetails, useAutoCollapseState } from "./CollapsibleMotion";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
 import { RichContent } from "./RichContent";
 import {
@@ -202,6 +203,7 @@ const SIDEBAR_MOTION_MS = 280;
 const RIGHT_PANEL_MOTION_MS = 280;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
+const CONVERSATION_SEARCH_EXIT_MS = 180;
 
 type EnvironmentDialog = "commit" | "pull-request" | null;
 type PendingViewSwitchKind = "thread" | "project" | "runtime";
@@ -219,6 +221,7 @@ type RunDebugPhaseTone = "idle" | "running" | "success" | "warning" | "error";
 
 type ConversationSearchState = {
   open: boolean;
+  closing: boolean;
   query: string;
   loading: boolean;
   error: string;
@@ -385,6 +388,10 @@ const ENABLE_SWISS_STYLE_TOGGLE = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 type SidebarResizeSession = {
   startX: number;
@@ -7220,8 +7227,10 @@ function TurnProcessGroup({
   autoCollapse: boolean;
   showTurnStatus: boolean;
 }): JSX.Element {
-  const [expanded, setExpanded] = useState(!autoCollapse);
-  const previousAutoCollapseRef = useRef(autoCollapse);
+  const [expanded, setExpanded] = useAutoCollapseState({
+    autoCollapse,
+    defaultExpanded: !autoCollapse || turn.status === "in_progress",
+  });
   const detailsID = `${turn.id}-process-details`;
   const hasDetails = entries.length > 0;
   const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
@@ -7256,19 +7265,6 @@ function TurnProcessGroup({
     showTurnStatus,
   );
 
-  useEffect(() => {
-    const previousAutoCollapse = previousAutoCollapseRef.current;
-    previousAutoCollapseRef.current = autoCollapse;
-    if (autoCollapse && !previousAutoCollapse) {
-      const timer = window.setTimeout(() => setExpanded(false), 140);
-      return () => window.clearTimeout(timer);
-    }
-    if (!autoCollapse && previousAutoCollapse) {
-      setExpanded(true);
-    }
-    return undefined;
-  }, [autoCollapse]);
-
   const toggleContent = (
     <>
       <span className="turn-process-copy">
@@ -7301,15 +7297,14 @@ function TurnProcessGroup({
         </div>
       )}
       {hasDetails ? (
-        <div
+        <CollapsibleDetails
           className="turn-process-details"
           id={detailsID}
-          aria-hidden={!expanded}
+          expanded={expanded}
+          innerClassName="turn-process-stack"
         >
-          <div className="turn-process-stack">
-            {entries.map((entry) => entry.element)}
-          </div>
-        </div>
+          {entries.map((entry) => entry.element)}
+        </CollapsibleDetails>
       ) : null}
     </div>
   );

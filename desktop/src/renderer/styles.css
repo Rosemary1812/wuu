@@ -7005,7 +7005,29 @@ button:disabled {
   transform: rotate(180deg);
 }
 
-.turn-process-details,
+.collapsible-details {
+  height: 0;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(var(--collapse-enter-offset-y));
+  transition:
+    height var(--collapse-motion-duration) var(--collapse-motion-easing),
+    opacity var(--collapse-opacity-duration) ease,
+    transform var(--collapse-motion-duration) var(--collapse-motion-easing);
+  will-change: height, opacity, transform;
+}
+
+.collapsible-details.expanded {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.collapsible-details-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .activity-details {
   display: grid;
   grid-template-rows: 0fr;
@@ -7018,7 +7040,6 @@ button:disabled {
   will-change: grid-template-rows, opacity, transform;
 }
 
-.turn-process-group.expanded .turn-process-details,
 .activity-group.expanded .activity-details {
   grid-template-rows: 1fr;
   opacity: 1;
@@ -11242,6 +11263,7 @@ html.swiss-international .os-theme-wuu {
   .thread-row-actions,
   .thread-row-action,
   .thread-list-more,
+  .collapsible-details,
   .turn-process-chevron,
   .turn-process-details,
   .activity-chevron,
