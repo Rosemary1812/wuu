@@ -1048,6 +1048,7 @@ Usage:
   wuu run [flags] "your coding task"
   wuu eval [flags]
   wuu app-server [flags]
+  wuu probe-title [flags]   run the LLM title pipeline against a real provider
   wuu version [--long|--json]
 
 Models flags:
@@ -1083,5 +1084,16 @@ App server flags:
   --provider        provider name from config
   --model           model override
   --workdir         workspace directory
-  --no-tools        disable local tools`)
+  --no-tools        disable local tools
+
+Probe-title flags:
+  --workdir         workspace directory (default: cwd)
+  --thread          thread id to regenerate title for (default: most recent)
+  --user-prompt     synthetic first user message; auto dry-run
+  --provider        override provider from config
+  --model           override model from config
+  --dry-run         do not persist the title
+  --verbose         print every step in human-readable mode
+  --json            emit the result struct as JSON
+  --quiet           suppress human-readable summary`)
 }
