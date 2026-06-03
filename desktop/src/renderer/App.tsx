@@ -6830,10 +6830,11 @@ function agentMessageBelongsToProcess(
   if (streamFieldValue(turn.id, item, "text").trim().length === 0) {
     return false;
   }
-  if (item.phase === "commentary") {
-    return true;
-  }
-  if (item.phase === "final_answer") {
+  // Both commentary and final_answer text are the visible reply to the
+  // user, so they render in the answer lane. The process lane only
+  // carries tool activity (tool calls, reasoning blocks, etc.) and a
+  // status header — never the model's words.
+  if (item.phase === "commentary" || item.phase === "final_answer") {
     return false;
   }
   if (
