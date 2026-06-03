@@ -13,15 +13,16 @@ import {
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { FolderOpen, Plus, ShieldCheck, Terminal, X } from "lucide-react";
+import { FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
+import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 
-export type WorkspacePanelView = "files" | "review" | "terminal";
+export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
 export type WorkspaceRightPanelView = "tools" | WorkspacePanelView;
 
 export function WorkspaceMainPanel({
@@ -61,7 +62,8 @@ const WORKSPACE_TOOL_ITEMS: Array<{
 }> = [
   { id: "files", title: "文件", subtitle: "浏览项目文件" },
   { id: "review", title: "审查", subtitle: "查看代码更改" },
-  { id: "terminal", title: "终端", subtitle: "运行 shell 命令" }
+  { id: "terminal", title: "终端", subtitle: "运行 shell 命令" },
+  { id: "browser", title: "浏览器", subtitle: "在右侧栏里调试前端" }
 ];
 
 export function WorkspaceRightPanel({
@@ -208,6 +210,8 @@ export function WorkspaceRightPanel({
               <WorkspaceReviewPanel gitStatus={gitStatus} />
             ) : view === "terminal" ? (
               <WorkspaceTerminalPanel activeContext={activeContext} />
+            ) : view === "browser" ? (
+              <WorkspaceBrowserPanel activeContext={activeContext} />
             ) : null}
           </div>
         </>
@@ -395,6 +399,8 @@ export function WorkspaceToolIcon({ view, size }: { view: WorkspacePanelView; si
       return <ShieldCheck size={size} />;
     case "terminal":
       return <Terminal size={size} />;
+    case "browser":
+      return <Globe size={size} />;
   }
 }
 

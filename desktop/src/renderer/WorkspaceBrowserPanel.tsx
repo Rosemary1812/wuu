@@ -1,0 +1,429 @@
+import {
+  ArrowLeft,
+  ArrowRight,
+  Globe,
+  RotateCw,
+  Search,
+  ShieldAlert,
+  X
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent
+} from "react";
+import type { RuntimeContext } from "../shared/protocol";
+import { WorkspacePanelEmpty } from "./WorkspaceFiles";
+
+const HOME_PAGE_URL = "wuu://new-tab";
+const HOME_PAGE_TITLE = "新标签页";
+const SEARCH_FALLBACK_URL = "https://www.google.com/search?igu=1&q=";
+
+type WebviewElement = Electron.WebviewTag;
+
+type BrowserStatus = "idle" | "loading" | "error";
+
+function isWebviewElement(node: unknown): node is WebviewElement {
+  return (
+    typeof node === "object" &&
+    node !== null &&
+    (node as { tagName?: string }).tagName === "WEBVIEW"
+  );
+}
+
+function extractHostname(value: string): string | undefined {
+  const match = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]+)/.exec(value);
+  return match?.[1];
+}
+
+function looksLikeUrl(input: string): boolean {
+  const value = input.trim();
+  if (value.length === 0) {
+    return false;
+  }
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value)) {
+    return true;
+  }
+  // localhost with port
+  if (/^localhost(:\d+)?(\/.*)?$/i.test(value)) {
+    return true;
+  }
+  // 127.0.0.1 / 0.0.0.0 with optional port
+  if (/^(?:127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/.*)?$/.test(value)) {
+    return true;
+  }
+  // bare host with optional port and path/query
+  if (/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+(:\d+)?(\/.*)?$/.test(value)) {
+    return true;
+  }
+  return false;
+}
+
+function resolveNavigationInput(input: string): string {
+  const value = input.trim();
+  if (value.length === 0) {
+    return HOME_PAGE_URL;
+  }
+  if (looksLikeUrl(value)) {
+    return /^https?:\/\//i.test(value) || /^file:\/\//i.test(value)
+      ? value
+      : `https://${value}`;
+  }
+  return `${SEARCH_FALLBACK_URL}${encodeURIComponent(value)}`;
+}
+
+function isInternalUrl(url: string): boolean {
+  return url === HOME_PAGE_URL;
+}
+
+// Electron's <webview> element rejects most method calls with a synchronous
+// "WebView must be attached and dom-ready" error when invoked before its
+// initial dom-ready event has fired. Wrap any call we make through the
+// element so a misordered lifecycle can't leak an unhandled exception.
+function safeWebview<T>(fn: () => T): T | undefined {
+  try {
+    return fn();
+  } catch {
+    return undefined;
+  }
+}
+
+export function WorkspaceBrowserPanel({
+  activeContext
+}: {
+  activeContext?: RuntimeContext;
+}): JSX.Element {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const webviewRef = useRef<WebviewElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const isWebviewReadyRef = useRef(false);
+
+  const [currentURL, setCurrentURL] = useState<string>(HOME_PAGE_URL);
+  const [pageTitle, setPageTitle] = useState<string>(HOME_PAGE_TITLE);
+  const [draftURL, setDraftURL] = useState<string>("");
+  const [status, setStatus] = useState<BrowserStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
+  const [hostHint, setHostHint] = useState<string | undefined>(undefined);
+  const [isWebviewReady, setIsWebviewReady] = useState(false);
+
+  // Mount the <webview> element once. The element is a custom Electron tag and
+  // is not part of the standard JSX intrinsic set, so we create it imperatively
+  // and append it to a dedicated container.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    const webview = document.createElement("webview") as WebviewElement;
+    webview.setAttribute("partition", "persist:wuu-browser");
+    webview.setAttribute("allowpopups", "");
+    webview.style.flex = "1 1 auto";
+    webview.style.width = "100%";
+    webview.style.height = "100%";
+    webview.style.border = "0";
+    webview.style.display = "flex";
+
+    container.appendChild(webview);
+    webviewRef.current = webview;
+
+    return () => {
+      if (webview.parentNode === container) {
+        container.removeChild(webview);
+      }
+      webviewRef.current = null;
+    };
+  }, []);
+
+  // Wire up the <webview> event listeners exactly once. State updates use the
+  // setter functions directly so the effect does not need to re-run on every
+  // navigation.
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) {
+      return undefined;
+    }
+
+    const syncNavigationState = (): void => {
+      if (!isWebviewReadyRef.current) {
+        return;
+      }
+      setCanGoBack(Boolean(safeWebview(() => webview.canGoBack())));
+      setCanGoForward(Boolean(safeWebview(() => webview.canGoForward())));
+    };
+
+    const handleDomReady = (): void => {
+      const url = safeWebview(() => webview.getURL());
+      if (typeof url !== "string") {
+        return;
+      }
+      isWebviewReadyRef.current = true;
+      setCurrentURL(url);
+      setDraftURL(url === HOME_PAGE_URL ? "" : url);
+      setHostHint(extractHostname(url));
+      const title = safeWebview(() => webview.getTitle());
+      if (typeof title === "string" && title.length > 0) {
+        setPageTitle(title);
+      }
+      setStatus("idle");
+      setErrorMessage(undefined);
+      setIsWebviewReady(true);
+      syncNavigationState();
+    };
+
+    const handleDidStartLoading = (): void => {
+      setStatus("loading");
+      setErrorMessage(undefined);
+    };
+
+    const handleDidStopLoading = (): void => {
+      setStatus("idle");
+      syncNavigationState();
+    };
+
+    const handleDidNavigate = (event: { url: string }): void => {
+      setCurrentURL(event.url);
+      setDraftURL(event.url === HOME_PAGE_URL ? "" : event.url);
+      setHostHint(extractHostname(event.url));
+    };
+
+    const handleDidNavigateInPage = (event: { url: string }): void => {
+      setCurrentURL(event.url);
+      setDraftURL(event.url === HOME_PAGE_URL ? "" : event.url);
+      setHostHint(extractHostname(event.url));
+    };
+
+    const handlePageTitleUpdated = (event: { title: string }): void => {
+      if (event.title) {
+        setPageTitle(event.title);
+      }
+    };
+
+    const handleDidFailLoad = (event: {
+      errorCode?: number;
+      errorDescription?: string;
+      validatedURL?: string;
+    }): void => {
+      // -3 is "ERR_ABORTED" which fires on programmatic reloads, not a real error.
+      if (event.errorCode === -3) {
+        return;
+      }
+      const target = event.validatedURL ?? "";
+      setHostHint(extractHostname(target));
+      setStatus("error");
+      setErrorMessage(
+        event.errorDescription ||
+          `加载失败 (${event.errorCode ?? "未知错误"}): ${target}`
+      );
+    };
+
+    webview.addEventListener("dom-ready", handleDomReady);
+    webview.addEventListener("did-start-loading", handleDidStartLoading);
+    webview.addEventListener("did-stop-loading", handleDidStopLoading);
+    webview.addEventListener("did-navigate", handleDidNavigate);
+    webview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
+    webview.addEventListener("page-title-updated", handlePageTitleUpdated);
+    webview.addEventListener("did-fail-load", handleDidFailLoad);
+
+    return () => {
+      webview.removeEventListener("dom-ready", handleDomReady);
+      webview.removeEventListener("did-start-loading", handleDidStartLoading);
+      webview.removeEventListener("did-stop-loading", handleDidStopLoading);
+      webview.removeEventListener("did-navigate", handleDidNavigate);
+      webview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
+      webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
+      webview.removeEventListener("did-fail-load", handleDidFailLoad);
+    };
+  }, []);
+
+  const navigate = useCallback((rawInput: string) => {
+    const target = resolveNavigationInput(rawInput);
+    const webview = webviewRef.current;
+    if (!webview) {
+      return;
+    }
+    if (target === HOME_PAGE_URL) {
+      setCurrentURL(HOME_PAGE_URL);
+      setDraftURL("");
+      setPageTitle(HOME_PAGE_TITLE);
+      setHostHint(undefined);
+      setStatus("idle");
+      setErrorMessage(undefined);
+      setCanGoBack(false);
+      setCanGoForward(false);
+      // Loading a blank page clears the visible page in the same webview.
+      safeWebview(() => webview.loadURL("about:blank"));
+      return;
+    }
+    setStatus("loading");
+    setErrorMessage(undefined);
+    setDraftURL(target);
+    safeWebview(() => webview.loadURL(target));
+  }, []);
+
+  const goBack = useCallback(() => {
+    const webview = webviewRef.current;
+    if (!webview || !canGoBack) {
+      return;
+    }
+    safeWebview(() => webview.goBack());
+  }, [canGoBack]);
+
+  const goForward = useCallback(() => {
+    const webview = webviewRef.current;
+    if (!webview || !canGoForward) {
+      return;
+    }
+    safeWebview(() => webview.goForward());
+  }, [canGoForward]);
+
+  const reload = useCallback(() => {
+    const webview = webviewRef.current;
+    if (!webview) {
+      return;
+    }
+    if (status === "loading") {
+      safeWebview(() => webview.stop());
+    } else {
+      safeWebview(() => webview.reload());
+    }
+  }, [status]);
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    navigate(draftURL);
+    inputRef.current?.blur();
+  };
+
+  const showWebview = !isInternalUrl(currentURL);
+  const isLoading = status === "loading";
+
+  return (
+    <div className="workspace-browser-panel">
+      <div className="workspace-browser-toolbar">
+        <button
+          className="icon-button workspace-browser-nav"
+          type="button"
+          aria-label="后退"
+          title="后退"
+          disabled={!canGoBack}
+          onClick={goBack}
+        >
+          <ArrowLeft size={16} />
+        </button>
+        <button
+          className="icon-button workspace-browser-nav"
+          type="button"
+          aria-label="前进"
+          title="前进"
+          disabled={!canGoForward}
+          onClick={goForward}
+        >
+          <ArrowRight size={16} />
+        </button>
+        <button
+          className="icon-button workspace-browser-nav"
+          type="button"
+          aria-label={isLoading ? "停止" : "刷新"}
+          title={isLoading ? "停止" : "刷新"}
+          onClick={reload}
+        >
+          {isLoading ? <X size={16} /> : <RotateCw size={15} />}
+        </button>
+        <form
+          className="workspace-browser-url-form"
+          role="search"
+          onSubmit={handleSubmit}
+        >
+          <span className="workspace-browser-url-icon" aria-hidden="true">
+            {status === "error" ? <ShieldAlert size={14} /> : <Globe size={14} />}
+          </span>
+          <input
+            ref={inputRef}
+            className={`workspace-browser-url-input${status === "error" ? " has-error" : ""}`}
+            type="text"
+            inputMode="url"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            placeholder="输入网址或搜索内容,例如 http://localhost:3000"
+            value={draftURL}
+            onChange={(event) => setDraftURL(event.target.value)}
+            onFocus={(event) => event.currentTarget.select()}
+            aria-label="地址"
+          />
+        </form>
+        <button
+          className="icon-button workspace-browser-nav"
+          type="button"
+          aria-label="主页"
+          title="新标签页"
+          onClick={() => navigate(HOME_PAGE_URL)}
+        >
+          <Search size={15} />
+        </button>
+      </div>
+      <div className="workspace-browser-frame">
+        <div
+          ref={containerRef}
+          className="workspace-browser-host"
+          hidden={!showWebview}
+        />
+        {!showWebview ? (
+          <WorkspaceBrowserHome workspaceRoot={activeContext?.cwd} />
+        ) : null}
+        {status === "error" && errorMessage ? (
+          <div className="workspace-browser-error" role="alert">
+            <strong>无法打开页面</strong>
+            <span>{errorMessage}</span>
+            <button
+              className="workspace-browser-retry"
+              type="button"
+              onClick={() => navigate(currentURL)}
+            >
+              重试
+            </button>
+          </div>
+        ) : null}
+        {!isWebviewReady && showWebview ? (
+          <div className="workspace-browser-status" role="status">
+            正在准备浏览器…
+          </div>
+        ) : null}
+      </div>
+      <div className="workspace-browser-statusbar" aria-live="polite">
+        <span className="workspace-browser-host-hint">
+          {hostHint ? `${hostHint}` : isInternalUrl(currentURL) ? "新标签页" : "等待输入"}
+        </span>
+        <span className="workspace-browser-title-hint">
+          {pageTitle || (isInternalUrl(currentURL) ? HOME_PAGE_TITLE : "")}
+        </span>
+        {isLoading ? <span className="workspace-browser-loading-dot" aria-hidden="true" /> : null}
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceBrowserHome({
+  workspaceRoot
+}: {
+  workspaceRoot?: string;
+}): JSX.Element {
+  return (
+    <div className="workspace-browser-home">
+      <WorkspacePanelEmpty
+        title="新标签页"
+        description={
+          workspaceRoot
+            ? `在地址栏输入网址,例如 http://localhost:3000,可以直接调试当前项目的前端。`
+            : "在地址栏输入网址,例如 http://localhost:3000,就可以开始调试。"
+        }
+        icon={<Globe size={24} />}
+      />
+    </div>
+  );
+}
