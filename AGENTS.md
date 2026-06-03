@@ -68,6 +68,64 @@
 3. `wuu --version` (fallback `wuu version`)
 - Explicitly tell the user that running `wuu` now uses the latest local build.
 
+## Desktop Dev (`electron-vite dev`) and the `go run` Build Cache
+
+`desktop/`'s dev script (`npm run dev` / `electron-vite dev`) launches the Go
+`wuu app-server` as a child process via `go run ./cmd/wuu app-server
+--workdir <repo>`. `go run` compiles the binary into Go's build cache
+(`~/Library/Caches/go-build/<hash>/wuu`) and execs it. The parent
+`go run` process keeps the cache entry alive — the cache survives
+across `go run` invocations until that process is killed.
+
+**Trap:** a long-running `electron-vite dev` session keeps a single
+`go run` process (and its derived binary) alive for its entire
+lifetime. If you change Go source after that, the running binary
+**does not pick up the change** — the user sees the old behavior and
+will tell you "the fix didn't work" when in fact the fix is correct
+but never made it into the running binary. We hit this when the model
+reported `ask_user` in its tool list after the ask_user removal
+commit: the source was clean, but the cached binary predated the
+removal.
+
+Symptoms the user reports contradict the current source:
+- A tool the source has removed still appears in the model's tool list
+- An error format from the source no longer matches what the model
+  sees in tool results
+- "I restarted the desktop and it still does X"
+
+When this happens, do not trust your source-level audit alone. The
+running binary is the ground truth during a live dev session.
+
+Recovery:
+1. Identify the live process chain:
+   ```bash
+   ps -ef | grep "wuu app-server" | grep -v grep
+   ```
+   You will see one `go run ./cmd/wuu app-server ...` parent and one
+   binary it exec'd, both with the same `--workdir`.
+2. Kill both PIDs (kill the `go run` parent first; the child binary
+   is its exec target and will exit shortly after, but killing both
+   is safe):
+   ```bash
+   kill <go-run-pid> <binary-pid>
+   ```
+3. Verify the cache entry is gone (its hash is a function of the
+   source state, so a fresh `go run` will compile a new binary even
+   if the old one is still on disk):
+   ```bash
+   ls -la ~/Library/Caches/go-build/*/*-d/wuu 2>/dev/null
+   ```
+4. Have the user restart desktop (`Ctrl+C` in their dev terminal,
+   then `cd desktop && npm run dev`). The new `go run` will compile
+   against the current source and the model will see the new behavior.
+
+Quick verification after restart: send `initialize` over the
+JSON-RPC stdio of the freshly-spawned app-server and confirm the
+returned tool list matches what `tools.New(...).Definitions()`
+returns for the current source. (`internal/tools/toolkit.go`
+`rebuildRegistry` is the only place tools are registered; if the
+list matches there, the running binary is current.)
+
 ## Hydra Orchestration Toolkit
 
 Hydra is a Lead-driven orchestration toolkit. You (the Lead) make strategic
