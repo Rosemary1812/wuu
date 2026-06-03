@@ -1,91 +1,156 @@
-import { useEffect, useRef } from "react";
+import { useSyncExternalStore } from "react";
 
+/**
+ * The set of fields on a thread item that can be streamed incrementally.
+ * `text` is the visible assistant/user/reasoning body. `arguments` and
+ * `result` carry the streamed JSON payload for tool calls.
+ */
 export type StreamTextField = "text" | "arguments" | "result";
 
 type StreamTextListener = (value: string) => void;
 
+interface StreamEntry {
+  /** The current accumulated text. */
+  value: string;
+  /** The text at the time the stream was first seeded. */
+  seed: string;
+  /** Whether this entry has an actual stream value, not only listeners. */
+  hasValue: boolean;
+  /** Subscribers for value changes. */
+  valueListeners: Set<StreamTextListener>;
+}
+
+const STREAM_FIELD_KEYS = ["text", "arguments", "result"] as const satisfies readonly StreamTextField[];
+
+/**
+ * Append-only text store used by the renderer to coalesce server-streamed
+ * deltas. Components read with `useSyncExternalStore`, which gives us
+ * correct concurrent-mode tearing semantics and a single subscription per
+ * component.
+ */
 class StreamTextStore {
-  private values = new Map<string, string>();
-  private seeds = new Map<string, string>();
-  private listeners = new Map<string, Set<StreamTextListener>>();
+  private entries = new Map<string, StreamEntry>();
 
   key(turnID: string, itemID: string, field: StreamTextField): string {
     return `${turnID}\u0000${itemID}\u0000${field}`;
   }
 
-  get(key: string): string {
-    return this.values.get(key) ?? "";
+  has(key: string): boolean {
+    return this.entries.get(key)?.hasValue ?? false;
   }
 
-  has(key: string): boolean {
-    return this.values.has(key);
+  get(key: string): string {
+    const entry = this.entries.get(key);
+    return entry?.hasValue ? entry.value : "";
   }
 
   seedValue(key: string): string {
-    return this.seeds.get(key) ?? "";
+    const entry = this.entries.get(key);
+    return entry?.hasValue ? entry.seed : "";
   }
 
+  /**
+   * Seed an entry. Idempotent: subsequent seeds are no-ops so late-arriving
+   * `item/started` notifications cannot clobber in-flight deltas.
+   */
   seed(key: string, value: string): void {
-    if (this.values.has(key)) {
+    const existing = this.entries.get(key);
+    if (existing?.hasValue) {
       return;
     }
-    this.values.set(key, value);
-    this.seeds.set(key, value);
+    if (existing) {
+      existing.value = value;
+      existing.seed = value;
+      existing.hasValue = true;
+      this.notifyValue(existing, value);
+      return;
+    }
+    const entry: StreamEntry = {
+      value,
+      seed: value,
+      hasValue: true,
+      valueListeners: new Set()
+    };
+    this.entries.set(key, entry);
+    this.notifyValue(entry, value);
   }
 
+  /** Replace the value at a key. Used by `*\/replace` events and sync. */
   set(key: string, value: string): void {
-    this.ensureSeed(key);
-    this.values.set(key, value);
-    this.notify(key, value);
+    this.ensureEntry(key, { hasValue: true });
+    const entry = this.entries.get(key);
+    if (!entry) {
+      return;
+    }
+    const valueChanged = !entry.hasValue || entry.value !== value;
+    entry.hasValue = true;
+    if (!valueChanged) {
+      return;
+    }
+    entry.value = value;
+    this.notifyValue(entry, value);
   }
 
+  /** Concatenate a delta. Used by `*\/delta` events. */
   append(key: string, delta: string): void {
     if (!delta) {
       return;
     }
-    this.ensureSeed(key);
-    const value = `${this.values.get(key) ?? ""}${delta}`;
-    this.values.set(key, value);
-    this.notify(key, value);
+    this.ensureEntry(key, { hasValue: true });
+    const entry = this.entries.get(key);
+    if (!entry) {
+      return;
+    }
+    entry.hasValue = true;
+    entry.value = `${entry.value}${delta}`;
+    this.notifyValue(entry, entry.value);
   }
 
   clearItem(turnID: string, itemID: string): void {
-    for (const field of ["text", "arguments", "result"] satisfies StreamTextField[]) {
+    for (const field of STREAM_FIELD_KEYS) {
       const key = this.key(turnID, itemID, field);
-      this.values.delete(key);
-      this.seeds.delete(key);
-      this.listeners.delete(key);
+      const entry = this.entries.get(key);
+      if (!entry) {
+        continue;
+      }
+      entry.valueListeners.clear();
+      this.entries.delete(key);
     }
   }
 
+  /**
+   * Subscribe to value updates. Returns an unsubscribe function. Uses the
+   * `useSyncExternalStore` snapshot/getServerState convention: we always
+   * return the latest cached value, and React decides when to re-render.
+   */
   subscribe(key: string, listener: StreamTextListener): () => void {
-    let listeners = this.listeners.get(key);
-    if (!listeners) {
-      listeners = new Set();
-      this.listeners.set(key, listeners);
+    this.ensureEntry(key);
+    const entry = this.entries.get(key);
+    if (!entry) {
+      return () => undefined;
     }
-    listeners.add(listener);
+    entry.valueListeners.add(listener);
     return () => {
-      listeners?.delete(listener);
-      if (listeners?.size === 0) {
-        this.listeners.delete(key);
-      }
+      entry.valueListeners.delete(listener);
     };
   }
 
-  private notify(key: string, value: string): void {
-    const listeners = this.listeners.get(key);
-    if (!listeners) {
+  private ensureEntry(key: string, options?: { hasValue?: boolean }): void {
+    const hasValue = options?.hasValue ?? false;
+    if (this.entries.has(key)) {
       return;
     }
-    for (const listener of listeners) {
-      listener(value);
-    }
+    this.entries.set(key, {
+      value: "",
+      seed: "",
+      hasValue,
+      valueListeners: new Set()
+    });
   }
 
-  private ensureSeed(key: string): void {
-    if (!this.seeds.has(key)) {
-      this.seeds.set(key, this.values.get(key) ?? "");
+  private notifyValue(entry: StreamEntry, value: string): void {
+    for (const listener of entry.valueListeners) {
+      listener(value);
     }
   }
 }
@@ -96,45 +161,14 @@ export function streamTextKey(turnID: string, itemID: string, field: StreamTextF
   return streamTextStore.key(turnID, itemID, field);
 }
 
-export function StreamingText({
-  streamKey,
-  initialText = "",
-  className = "streaming-text"
-}: {
-  streamKey: string;
-  initialText?: string;
-  className?: string;
-}): JSX.Element {
-  const nodeRef = useRef<HTMLDivElement | null>(null);
-  const frameRef = useRef<number | undefined>(undefined);
-  const pendingTextRef = useRef(initialText);
-
-  useEffect(() => {
-    streamTextStore.seed(streamKey, initialText);
-
-    const applyText = (value: string): void => {
-      pendingTextRef.current = value;
-      if (frameRef.current !== undefined) {
-        return;
-      }
-      frameRef.current = window.requestAnimationFrame(() => {
-        frameRef.current = undefined;
-        if (nodeRef.current) {
-          nodeRef.current.textContent = pendingTextRef.current;
-        }
-      });
-    };
-
-    applyText(streamTextStore.get(streamKey));
-    const unsubscribe = streamTextStore.subscribe(streamKey, applyText);
-    return () => {
-      unsubscribe();
-      if (frameRef.current !== undefined) {
-        window.cancelAnimationFrame(frameRef.current);
-        frameRef.current = undefined;
-      }
-    };
-  }, [initialText, streamKey]);
-
-  return <div ref={nodeRef} className={className} />;
+/**
+ * Hook that subscribes to a stream key. Returns the latest value or
+ * `initialValue` if nothing has been written yet.
+ */
+export function useStreamedText(streamKey: string, initialValue = ""): string {
+  return useSyncExternalStore(
+    (listener) => streamTextStore.subscribe(streamKey, listener),
+    () => streamTextStore.has(streamKey) ? streamTextStore.get(streamKey) : initialValue,
+    () => streamTextStore.has(streamKey) ? streamTextStore.get(streamKey) : initialValue
+  );
 }

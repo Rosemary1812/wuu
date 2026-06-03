@@ -102,7 +102,7 @@ async function run() {
   const immediateTitle = await waitFor(
     win,
     () => {
-      const title = document.querySelector(".title-block h1")?.textContent ?? "";
+      const title = window.e2eActiveTitleText();
       return title.includes("Rename me immediately.") ? title : null;
     },
     3000
@@ -119,7 +119,7 @@ async function run() {
     return true;
   });
   assert.equal(resetStarted, true, "New conversation button should be available after title update.");
-  await waitFor(win, () => (document.querySelector(".title-block h1")?.textContent ?? "") === "新对话", 3000);
+  await waitFor(win, () => window.e2eActiveTitleText() === "新对话", 3000);
 
   const streamingThreadStarted = await waitFor(
     win,
@@ -146,7 +146,7 @@ async function run() {
   assert.equal(streamingThreadStarted, true, "Streaming e2e should create an active thread before server events.");
   await waitFor(
     win,
-    () => (document.querySelector(".title-block h1")?.textContent ?? "").includes("Write a long streaming response."),
+    () => window.e2eActiveTitleText().includes("Write a long streaming response."),
     3000
   );
 
@@ -585,6 +585,13 @@ async function waitFor(win, predicate, timeoutMs, options = {}) {
 async function evaluate(win, fn, options = {}) {
   const source = `(() => {
     window.__STREAMING_E2E_FULL_LENGTH__ = ${Number(options.fullLength ?? 0)};
+    window.e2eActiveTitleText = () => {
+      const heading = document.querySelector(".title-block h1")?.textContent?.trim();
+      if (heading) {
+        return heading;
+      }
+      return document.querySelector(".session-tab.active .session-tab-title")?.textContent?.trim() ?? "";
+    };
     window.streamingSnapshot = () => {
       const streaming = document.querySelector(".agent-text .streaming-markdown");
       const staticFallback = document.querySelector(".agent-text > .rich-content:not(.streaming-markdown)");

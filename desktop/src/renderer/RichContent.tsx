@@ -263,7 +263,10 @@ function markdownComponents(
       return <pre className="rich-code">{children}</pre>;
     },
     code({ className, children }) {
-      return <code className={className}>{children}</code>;
+      return <code className={className}>{renderMarkdownText(children, renderText, "code")}</code>;
+    },
+    li({ children }) {
+      return <li>{renderMarkdownText(children, renderText, "li")}</li>;
     },
     table({ children }) {
       return (
@@ -271,6 +274,12 @@ function markdownComponents(
           <table>{children}</table>
         </div>
       );
+    },
+    th({ children }) {
+      return <th>{renderMarkdownText(children, renderText, "th")}</th>;
+    },
+    td({ children }) {
+      return <td>{renderMarkdownText(children, renderText, "td")}</td>;
     },
     blockquote({ children }) {
       return <blockquote className="rich-blockquote">{renderMarkdownText(children, renderText, "blockquote")}</blockquote>;

@@ -21,3 +21,41 @@ describe("streamTextStore", () => {
     expect(streamTextStore.get(key)).toBe("new response");
   });
 });
+
+describe("streamTextStore subscriptions", () => {
+  it("does not mark a key as buffered just because a component subscribed", () => {
+    const key = streamTextKey("turn-sub-empty", "item", "text");
+    const unsubscribe = streamTextStore.subscribe(key, () => undefined);
+    expect(streamTextStore.has(key)).toBe(false);
+    unsubscribe();
+  });
+
+  it("can seed a key after a component subscribed early", () => {
+    const key = streamTextKey("turn-sub-seed", "item", "text");
+    const calls: string[] = [];
+    const unsubscribe = streamTextStore.subscribe(key, (value) => {
+      calls.push(value);
+    });
+    streamTextStore.seed(key, "hello");
+    unsubscribe();
+    expect(streamTextStore.has(key)).toBe(true);
+    expect(streamTextStore.seedValue(key)).toBe("hello");
+    expect(calls).toEqual(["hello"]);
+  });
+
+  it("invokes value subscribers only when the value changes", () => {
+    const key = streamTextKey("turn-sub", "item", "text");
+    streamTextStore.set(key, "");
+    const calls: string[] = [];
+    const unsubscribe = streamTextStore.subscribe(key, (value) => {
+      calls.push(value);
+    });
+    streamTextStore.append(key, "a");
+    streamTextStore.append(key, "b");
+    streamTextStore.set(key, "ab");
+    streamTextStore.set(key, "ab");
+    unsubscribe();
+    streamTextStore.append(key, "c");
+    expect(calls).toEqual(["a", "ab"]);
+  });
+});
