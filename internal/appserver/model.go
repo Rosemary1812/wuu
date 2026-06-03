@@ -1,7 +1,9 @@
 package appserver
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -52,6 +54,7 @@ func (th *threadState) snapshotLocked() Thread {
 		CreatedAt:        th.CreatedAt,
 		UpdatedAt:        th.UpdatedAt,
 		Turns:            cloneTurns(th.Turns),
+		ListeningPorts:   cloneListeningPorts(th.ListeningPorts),
 	}
 }
 
@@ -303,6 +306,23 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 				},
 			})
 			out = append(out, itemCompleted(th.ID, turnID, item, now))
+		}
+		// The report_listening_ports tool result is a structured JSON
+		// payload of the form {"status":"noted","ports":[...]}. When the
+		// agent finishes a report, mirror its normalized port list into
+		// the thread-level listening_ports and notify the UI so the
+		// sidebar can surface chips and the in-app browser can auto-open
+		// at the first URL.
+		if ev.ToolCall.Name == "report_listening_ports" {
+			ports, ok := decodeListeningPortsResult(ev.ToolResult)
+			if ok && !intSliceEqual(th.ListeningPorts, ports) {
+				th.ListeningPorts = ports
+				th.UpdatedAt = now
+				out = append(out, outboundNotification{
+					method: NotificationThreadUpdated,
+					params: ThreadUpdatedNotification{Thread: th.snapshotLocked()},
+				})
+			}
 		}
 	case providers.EventMessage:
 		if ev.Message == nil {
@@ -836,4 +856,70 @@ func cloneToolCallDisplay(display *providers.ToolCallDisplay) *providers.ToolCal
 	}
 	clone := *display
 	return &clone
+}
+
+// cloneListeningPorts returns a defensive copy so the snapshot is safe to
+// hand off to the renderer without aliasing the live threadState.
+func cloneListeningPorts(ports []int) []int {
+	if len(ports) == 0 {
+		return nil
+	}
+	out := make([]int, len(ports))
+	copy(out, ports)
+	return out
+}
+
+// decodeListeningPortsResult parses a report_listening_ports tool result
+// (a compact JSON object) into a normalized, deduped, ascending port
+// list. Returns ok=false if the result is not a recognizable payload.
+func decodeListeningPortsResult(raw string) ([]int, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, false
+	}
+	var payload struct {
+		Ports []int `json:"ports"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return nil, false
+	}
+	return normalizeListeningPortsForServer(payload.Ports), true
+}
+
+// normalizeListeningPortsForServer mirrors the tool's own normalization:
+// drop out-of-range, dedupe, sort ascending. Returning nil for an empty
+// input keeps the thread-level field unset so the JSON omits it.
+func normalizeListeningPortsForServer(in []int) []int {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(in))
+	out := make([]int, 0, len(in))
+	for _, p := range in {
+		if p < 1 || p > 65535 {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	sort.Ints(out)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func intSliceEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

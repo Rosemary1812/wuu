@@ -395,6 +395,12 @@ type Thread struct {
 	UpdatedAt        time.Time    `json:"updated_at"`
 	Turns            []Turn       `json:"turns"`
 	ChildAgents      []Agent      `json:"child_agents,omitempty"`
+	// ListeningPorts is the latest deduped, sorted list of localhost
+	// ports the agent asked the desktop to surface (via
+	// report_listening_ports). The desktop uses the first entry to
+	// auto-open the in-app browser when this thread becomes active,
+	// and renders the full list as clickable chips in the sidebar.
+	ListeningPorts []int `json:"listening_ports,omitempty"`
 }
 
 type Turn struct {

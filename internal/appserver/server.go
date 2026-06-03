@@ -54,6 +54,12 @@ type threadState struct {
 	Turns            []Turn
 	MemoryPath       string
 	ReadOnly         bool
+	// ListeningPorts is the deduped, sorted list of localhost ports the
+	// agent has surfaced via the report_listening_ports tool. It is
+	// reset whenever a fresh tool call reports an explicit (possibly
+	// empty) list, and carried over across turns so the in-app browser
+	// preview survives between tool calls.
+	ListeningPorts []int
 
 	execRuntime *runtime.ThreadRuntime
 

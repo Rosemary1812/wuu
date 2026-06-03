@@ -609,6 +609,15 @@ export function App(): JSX.Element {
   const gitRefreshTimerRef = useRef<number | undefined>(undefined);
   const gitRefreshInFlightRef = useRef(false);
   const gitRefreshQueuedRef = useRef(false);
+  // Tracks the last URL we asked the in-app browser to navigate to via
+  // a "listening ports" auto-open, so repeated thread/updated events
+  // for the same URL don't re-jump the browser.
+  const lastAutoNavigatedListeningURLRef = useRef<string | undefined>(
+    undefined,
+  );
+  const [pendingBrowserURL, setPendingBrowserURL] = useState<
+    string | undefined
+  >(undefined);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
@@ -654,6 +663,25 @@ export function App(): JSX.Element {
   const splitConversation = Boolean(
     state.thread && state.secondaryThread && !workspaceMode,
   );
+
+  // When the active thread reports a listening port, auto-open the
+  // workspace browser at the first URL. We compare against the last URL
+  // we sent so repeated thread/updated events for the same dev server
+  // (e.g. HMR re-reports) do not re-jump the browser and disturb the
+  // user if they are already looking at the page.
+  useEffect(() => {
+    const ports = activeThread?.listening_ports;
+    if (!ports || ports.length === 0) {
+      return;
+    }
+    const target = `http://localhost:${ports[0]}`;
+    if (lastAutoNavigatedListeningURLRef.current === target) {
+      return;
+    }
+    lastAutoNavigatedListeningURLRef.current = target;
+    openWorkspaceTool("browser");
+    setPendingBrowserURL(target);
+  }, [activeThreadID, activeThread?.listening_ports]);
 
   useEffect(() => {
     return () => {
@@ -5270,6 +5298,8 @@ export function App(): JSX.Element {
         onReorderTabs={reorderWorkspaceToolTabs}
         onOpenFile={openWorkspaceFile}
         onClose={() => setRightPanelOpenWithMotion(false)}
+        pendingBrowserURL={pendingBrowserURL}
+        onBrowserURLConsumed={() => setPendingBrowserURL(undefined)}
       />
       {environmentDialog === "commit" ? (
         <CommitChangesDialog
@@ -6909,6 +6939,7 @@ function TurnView({
   function renderThreadItem(
     item: ThreadItem,
     streaming: boolean,
+    pendingCompanionReasoning?: boolean,
   ): JSX.Element | null {
     return (
       <ThreadItemView
@@ -6918,6 +6949,7 @@ function TurnView({
         item={item}
         cwd={cwd}
         streaming={streaming}
+        pendingCompanionReasoning={pendingCompanionReasoning}
         actionableAgentMessageID={actionableAgentMessageID}
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
@@ -6956,6 +6988,14 @@ type AssistantTurnAnswerItem = {
   item: ThreadItem;
   streaming: boolean;
   element: JSX.Element;
+  /**
+   * True when the turn has a reasoning block that the model just finished
+   * writing. The first answer item waits a short beat so the reasoning
+   * cursor can fully settle before the text cursor starts animating;
+   * otherwise the two cursors race and the user sees them "streaming at
+   * the same time" even though the underlying events are sequential.
+   */
+  pendingCompanionReasoning?: boolean;
 };
 
 type TurnProcessEntry = {
@@ -6973,12 +7013,23 @@ type TurnProcessCheckpoint = {
 function buildAssistantTurnDisplay(
   turn: Turn,
   actionableAgentMessageID: string | undefined,
-  renderThreadItem: (item: ThreadItem, streaming: boolean) => JSX.Element | null,
+  renderThreadItem: (
+    item: ThreadItem,
+    streaming: boolean,
+    pendingCompanionReasoning?: boolean,
+  ) => JSX.Element | null,
 ): AssistantTurnDisplay | undefined {
   const processEntries: TurnProcessEntry[] = [];
   const answerItems: AssistantTurnAnswerItem[] = [];
   let processCheckpoint: TurnProcessCheckpoint | undefined;
   let sawAssistantWork = false;
+  // When the turn has a reasoning block, the first answer item waits a
+  // beat before starting its cursor so the reasoning cursor can finish
+  // settling. Reasoning and text are sequential on the wire; the visual
+  // race is purely a render-side artifact.
+  const turnHasReasoning = turn.items.some(
+    (item) => item.type === "reasoning",
+  );
   const finalAgentMessageID =
     actionableAgentMessageID ?? explicitFinalAgentMessageItemID(turn);
 
@@ -7037,7 +7088,11 @@ function buildAssistantTurnDisplay(
       ) {
         continue;
       }
-      const rendered = renderThreadItem(item, streaming);
+      const rendered = renderThreadItem(
+        item,
+        streaming,
+        turnHasReasoning && answerItems.length === 0 ? true : undefined,
+      );
       if (rendered) {
         answerItems.push({ item, streaming, element: rendered });
       }
@@ -7694,6 +7749,7 @@ function ThreadItemView({
   item,
   cwd,
   streaming,
+  pendingCompanionReasoning,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -7704,6 +7760,7 @@ function ThreadItemView({
   item: ThreadItem;
   cwd?: string;
   streaming: boolean;
+  pendingCompanionReasoning?: boolean;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -7775,6 +7832,7 @@ function ThreadItemView({
               item={item}
               cwd={cwd}
               streaming={streaming}
+              pendingCompanionReasoning={pendingCompanionReasoning}
               onStreamFrame={onStreamFrame}
             />
           </div>
@@ -7824,18 +7882,48 @@ function AgentMessageContent({
   item,
   cwd,
   streaming,
+  pendingCompanionReasoning,
   onStreamFrame,
 }: {
   turnID: string;
   item: ThreadItem;
   cwd?: string;
   streaming: boolean;
+  /**
+   * True when the turn has a reasoning block that the model just finished
+   * writing. The first answer item waits a short beat so the reasoning
+   * cursor can fully settle before the text cursor starts animating.
+   */
+  pendingCompanionReasoning?: boolean;
   onStreamFrame: () => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
   const [streamSettled, setStreamSettled] = useState(false);
-  const liveStream = (streaming || hasBufferedStream) && !streamSettled;
+  // Hold the cursor back when a just-completed reasoning block is still
+  // visually settling. The reasoning and text streams are sequential on
+  // the wire, but the StreamingMarkdown cursor's "settling" phase and the
+  // next text's "streaming" phase can briefly race in the UI.
+  const [cursorArmed, setCursorArmed] = useState<boolean>(
+    !pendingCompanionReasoning,
+  );
+  useEffect(() => {
+    if (!pendingCompanionReasoning) {
+      setCursorArmed(true);
+      return;
+    }
+    // 240ms is enough to let the reasoning cursor finish its tail reveal
+    // (it's bound by max cps but typically clears in ~150ms for short
+    // reasoning). Tuned by hand; bump up if you can still see overlap.
+    const timer = window.setTimeout(() => {
+      setCursorArmed(true);
+    }, 240);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [pendingCompanionReasoning]);
+  const liveStream =
+    (streaming || hasBufferedStream) && !streamSettled && cursorArmed;
 
   useEffect(() => {
     setStreamSettled(false);

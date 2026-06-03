@@ -91,9 +91,13 @@ function safeWebview<T>(fn: () => T): T | undefined {
 }
 
 export function WorkspaceBrowserPanel({
-  activeContext
+  activeContext,
+  pendingBrowserURL,
+  onBrowserURLConsumed
 }: {
   activeContext?: RuntimeContext;
+  pendingBrowserURL?: string;
+  onBrowserURLConsumed?: () => void;
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<WebviewElement | null>(null);
@@ -298,6 +302,22 @@ export function WorkspaceBrowserPanel({
     navigate(draftURL);
     inputRef.current?.blur();
   };
+
+  // Bridge for parent-level commands (currently used to auto-open the
+  // browser preview when a thread's listening ports change). When the
+  // parent hands us a fresh URL we navigate and then notify it so the
+  // command is cleared.
+  useEffect(() => {
+    if (!pendingBrowserURL) {
+      return;
+    }
+    if (pendingBrowserURL === currentURL) {
+      onBrowserURLConsumed?.();
+      return;
+    }
+    navigate(pendingBrowserURL);
+    onBrowserURLConsumed?.();
+  }, [pendingBrowserURL]);
 
   const showWebview = !isInternalUrl(currentURL);
   const isLoading = status === "loading";

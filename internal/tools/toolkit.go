@@ -170,6 +170,8 @@ func (t *Toolkit) rebuildRegistry() {
 		NewScheduleCronTool(e),
 		NewCancelCronTool(e),
 		NewListCronTool(e),
+		// Dev-server surface for the desktop preview
+		NewReportListeningPortsTool(e),
 		// Deferred tool discovery
 		NewToolSearchTool(t),
 	}
@@ -238,6 +240,13 @@ func (t *Toolkit) SetOnFileChanged(fn func(absPath string)) {
 // stores a new snapshot.
 func (t *Toolkit) SetOnPlanUpdated(fn func(snapshot PlanSnapshot)) {
 	t.env.OnPlanUpdated = fn
+}
+
+// SetOnPortsReported sets the callback fired after report_listening_ports
+// successfully validates the agent's port list. The desktop wires this to
+// push thread state into the GUI's in-app browser preview.
+func (t *Toolkit) SetOnPortsReported(fn func(ports []int)) {
+	t.env.OnPortsReported = fn
 }
 
 // SetMCPManager attaches the MCP manager so its tools are exposed to the agent.

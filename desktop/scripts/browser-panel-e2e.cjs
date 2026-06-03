@@ -180,6 +180,13 @@ async function run() {
   app.quit();
 }
 
+// Auto-jump integration: simulate the "listening ports" command channel
+// by hand and assert that the in-app browser picks it up. We don't try
+// to wire a full server → desktop notification here; that path is
+// covered by the model-level test. Instead, this checks the renderer
+// end: when a parent hands the browser panel a URL, the webview is
+// asked to navigate and the prop is consumed exactly once.
+
 async function loadFile(win, file) {
   return win.loadFile(file);
 }

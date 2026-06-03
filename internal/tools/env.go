@@ -77,6 +77,11 @@ type Env struct {
 	// new snapshot. Consumers can bridge it to runtime events or UI
 	// notifications without coupling the plan tool to either layer.
 	OnPlanUpdated func(snapshot PlanSnapshot)
+	// OnPortsReported is called after report_listening_ports validates
+	// the agent's port list. Consumers (the desktop app-server) use it
+	// to thread the per-conversation listening ports into the UI and
+	// auto-open the in-app browser preview.
+	OnPortsReported func(ports []int)
 
 	readState *readFileState
 	planState planState

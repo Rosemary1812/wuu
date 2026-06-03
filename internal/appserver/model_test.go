@@ -199,3 +199,105 @@ func TestTurnsFromHistoryMarksAssistantMessagePhases(t *testing.T) {
 		t.Fatalf("unexpected assistant phases: %+v", phases)
 	}
 }
+
+func TestThreadStateCapturesListeningPortsFromReport(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start vite"}, now)
+
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventToolUseStart,
+		ToolCall: &providers.ToolCall{
+			ID:   "call_1",
+			Name: "report_listening_ports",
+		},
+	}, now)
+
+	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventToolUseEnd,
+		ToolCall: &providers.ToolCall{
+			ID:        "call_1",
+			Name:      "report_listening_ports",
+			Arguments: `{"ports":[3000,8080,3000,70000]}`,
+		},
+		ToolResult: `{"status":"noted","ports":[3000,8080]}`,
+	}, now)
+
+	if got, want := th.ListeningPorts, []int{3000, 8080}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("expected normalized ports [3000 8080], got %v", got)
+	}
+	if len(out) == 0 {
+		t.Fatal("expected a thread/updated notification")
+	}
+	last := out[len(out)-1]
+	if last.method != NotificationThreadUpdated {
+		t.Fatalf("expected thread/updated notification, got %+v", last)
+	}
+	updated, ok := last.params.(ThreadUpdatedNotification)
+	if !ok {
+		t.Fatalf("unexpected params type: %T", last.params)
+	}
+	if len(updated.Thread.ListeningPorts) != 2 || updated.Thread.ListeningPorts[0] != 3000 {
+		t.Fatalf("expected snapshot to carry normalized ports, got %+v", updated.Thread.ListeningPorts)
+	}
+
+	// A second report that produces the same normalized list should not
+	// emit a duplicate thread/updated notification (the desktop would
+	// otherwise re-jump the browser preview).
+	outRepeat := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventToolUseEnd,
+		ToolCall: &providers.ToolCall{
+			ID:        "call_2",
+			Name:      "report_listening_ports",
+			Arguments: `{"ports":[8080,3000]}`,
+		},
+		ToolResult: `{"status":"noted","ports":[3000,8080]}`,
+	}, now)
+	for _, n := range outRepeat {
+		if n.method == NotificationThreadUpdated {
+			t.Fatalf("did not expect a duplicate thread/updated when ports are unchanged, got %+v", n)
+		}
+	}
+
+	// Reporting an empty list clears the surfaced ports and emits a
+	// fresh update so the desktop can hide the chips and stop trying
+	// to auto-navigate.
+	outEmpty := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventToolUseEnd,
+		ToolCall: &providers.ToolCall{
+			ID:        "call_3",
+			Name:      "report_listening_ports",
+			Arguments: `{"ports":[]}`,
+		},
+		ToolResult: `{"status":"noted","ports":[]}`,
+	}, now)
+	if len(th.ListeningPorts) != 0 {
+		t.Fatalf("expected empty ports after explicit empty report, got %v", th.ListeningPorts)
+	}
+	var sawUpdate bool
+	for _, n := range outEmpty {
+		if n.method == NotificationThreadUpdated {
+			sawUpdate = true
+		}
+	}
+	if !sawUpdate {
+		t.Fatalf("expected a thread/updated notification when ports transition to empty, got %+v", outEmpty)
+	}
+}
+
+func TestSnapshotIncludesListeningPorts(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th.ListeningPorts = []int{5173, 3000}
+	snap := th.snapshotLocked()
+	if len(snap.ListeningPorts) != 2 || snap.ListeningPorts[0] != 5173 || snap.ListeningPorts[1] != 3000 {
+		t.Fatalf("expected snapshot to carry listening ports, got %+v", snap.ListeningPorts)
+	}
+	// Mutating the live threadState after the snapshot must not affect
+	// the snapshot we already handed out — the clone is a defensive
+	// copy so the renderer never sees an aliased slice.
+	th.ListeningPorts[0] = 9999
+	if snap.ListeningPorts[0] != 5173 {
+		t.Fatalf("snapshot ports must be detached from the live slice, got %v", snap.ListeningPorts)
+	}
+}
