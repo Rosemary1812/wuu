@@ -324,8 +324,6 @@ export function readableToolActivityCommand(
     }
     case "update_plan":
       return "更新计划";
-    case "ask_user":
-      return "等待用户选择";
     case "git":
       return readableCommandLabel(item);
     case "run_shell":
@@ -454,8 +452,6 @@ function toolActivitySectionKey(item: ThreadItem): string {
       return "agent";
     case "update_plan":
       return "plan";
-    case "ask_user":
-      return "interaction";
     case "schedule_cron":
     case "cancel_cron":
     case "list_cron":
@@ -775,8 +771,6 @@ export function readableToolName(name: string | undefined): string {
       return "加载技能";
     case "update_plan":
       return "更新计划";
-    case "ask_user":
-      return "询问用户";
     case "start_process":
     case "list_processes":
     case "read_process_output":

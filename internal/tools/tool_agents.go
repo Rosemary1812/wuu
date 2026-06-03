@@ -17,114 +17,6 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// ask_user
-// ---------------------------------------------------------------------------
-
-type AskUserTool struct{ env *Env }
-
-func NewAskUserTool(env *Env) *AskUserTool { return &AskUserTool{env: env} }
-
-func (t *AskUserTool) Name() string            { return "ask_user" }
-func (t *AskUserTool) IsReadOnly() bool        { return true }
-func (t *AskUserTool) IsConcurrencySafe() bool { return false }
-
-func (t *AskUserTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "ask_user",
-		Description: "Pause your turn and ask the user a multiple-choice clarifying question. " +
-			"Use this BEFORE acting whenever the user's intent is unclear and the answer lives in " +
-			"their head (Path A tasks: they have a specific answer you just don't have yet), or " +
-			"to offer 2-4 concrete options WITH tradeoffs when the task is genuinely a choice " +
-			"(Path B tasks, only AFTER you've done the research that makes the options concrete). " +
-			"Send 1-4 questions per call, each with 2-4 options; an \"Other\" escape hatch is " +
-			"appended automatically so the user can type a free-text answer if none of your " +
-			"options fit. NEVER use this to ask something you could find by reading the code or " +
-			"running a command — questions are for things only the user can answer: requirements, " +
-			"preferences, tradeoffs, edge-case priorities. If you recommend a specific option, " +
-			"put it first in the options list and add \"(recommended)\" at the end of its label.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"questions": map[string]any{
-					"type":        "array",
-					"minItems":    1,
-					"maxItems":    4,
-					"description": "Questions to ask the user (1-4 per call, batched into one dialog).",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"question": map[string]any{
-								"type":        "string",
-								"description": "Full question text the user will read. End with a question mark. Must be unique across questions in this call (used as the answer-map key).",
-							},
-							"header": map[string]any{
-								"type":        "string",
-								"description": "Very short chip label (<= 12 chars) shown as a tag on the question nav bar. Examples: \"Auth method\", \"DB driver\", \"Approach\".",
-							},
-							"options": map[string]any{
-								"type":        "array",
-								"minItems":    2,
-								"maxItems":    4,
-								"description": "Available choices (2-4). Each option label must be unique. Do NOT include an \"Other\" option — it is appended automatically.",
-								"items": map[string]any{
-									"type": "object",
-									"properties": map[string]any{
-										"label": map[string]any{
-											"type":        "string",
-											"description": "Short display label (1-5 words). Add \"(recommended)\" to the label if this is your recommendation.",
-										},
-										"description": map[string]any{
-											"type":        "string",
-											"description": "Explanation of what this option means or what its tradeoffs are. Shown under the label in the option list.",
-										},
-										"preview": map[string]any{
-											"type":        "string",
-											"description": "Optional markdown preview (code snippet, ASCII mockup, diagram) rendered side-by-side with the option list when any option in this question has one. Use it when the user needs to visually compare concrete artifacts, not for simple preference questions.",
-										},
-									},
-									"required": []string{"label", "description"},
-								},
-							},
-							"multi_select": map[string]any{
-								"type":        "boolean",
-								"description": "Set true when the options are NOT mutually exclusive (user may pick several). Default false.",
-							},
-						},
-						"required": []string{"question", "header", "options"},
-					},
-				},
-			},
-			"required": []string{"questions"},
-		},
-	}
-}
-
-func (t *AskUserTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	if t.env.AskBridge == nil {
-		return "", errors.New("ask_user is only available to the main agent in an interactive GUI session (sub-agents cannot interrupt the human)")
-	}
-	var req AskUserRequest
-	if err := decodeArgs(argsJSON, &req); err != nil {
-		return "", fmt.Errorf("ask_user: decode arguments: %w", err)
-	}
-	if err := req.Validate(); err != nil {
-		return "", err
-	}
-	resp, err := t.env.AskBridge.AskUser(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("ask_user: %w", err)
-	}
-	if resp.Cancelled {
-		return "", errors.New("ask_user: user dismissed the dialog without answering; reconsider the plan before trying again")
-	}
-	payload, err := json.Marshal(resp)
-	if err != nil {
-		return "", fmt.Errorf("ask_user: marshal response: %w", err)
-	}
-	return string(payload), nil
-}
-
-// ---------------------------------------------------------------------------
 // spawn_agent
 // ---------------------------------------------------------------------------
 
@@ -142,7 +34,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 		Description: "Spawn a named child agent to work on a focused task. If your current task is " +
 			"/root/task1 and you spawn task_name='task_3', the child has canonical task name " +
 			"/root/task1/task_3 and can be addressed as task_3 from the current agent or by its " +
-			"canonical path from elsewhere. The child has its own context, the same non-ask_user " +
+			"canonical path from elsewhere. The child has its own context, the same tool " +
 			"tool set, and can spawn its own sub-agents. It can message you and other running " +
 			"agents, and its final answer is delivered to you when it finishes. There is exactly " +
 			"one worker type, 'worker'; specialized roles (verification, read-only research) are " +
@@ -388,9 +280,9 @@ acting as the parent.
 This system-reminder OVERRIDES the parent's system prompt for you:
 
 - You may use spawn_agent, send_message, followup_task, wait_agent,
-  await_agents, close_agent, and list_agents when delegation helps. You cannot use
-  ask_user; route decisions through your parent by returning a concise
-  blocked result.
+  await_agents, close_agent, and list_agents when delegation helps. If a
+  decision needs the user's input, surface it in your final answer so the
+  parent can resolve it.
 - Messages from other agents may arrive as inter-agent JSON with
   author, recipient, content, and trigger_turn fields. Treat the
   content field as the actual instruction or notification.

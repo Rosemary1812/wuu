@@ -27,7 +27,6 @@ export function ProjectList({
   threads,
   activeThreadID,
   pendingThreadID,
-  pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelectProject,
   onToggleProjectCollapsed,
@@ -46,7 +45,6 @@ export function ProjectList({
   threads: Thread[];
   activeThreadID?: string;
   pendingThreadID?: string;
-  pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelectProject: (id: string) => void;
   onToggleProjectCollapsed: (id: string) => void;
@@ -113,7 +111,6 @@ export function ProjectList({
                   threads={threads}
                   activeID={activeThreadID}
                   pendingThreadID={pendingThreadID}
-                  pendingAskThreadIDs={pendingAskThreadIDs}
                   archiveConfirmThreadID={archiveConfirmThreadID}
                   visibleCount={visibleThreadCountForProject(project.id)}
                   onSelect={onSelectThread}
@@ -136,7 +133,6 @@ function ThreadList({
   threads,
   activeID,
   pendingThreadID,
-  pendingAskThreadIDs,
   archiveConfirmThreadID,
   visibleCount,
   onSelect,
@@ -149,7 +145,6 @@ function ThreadList({
   threads: Thread[];
   activeID?: string;
   pendingThreadID?: string;
-  pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   visibleCount: number;
   onSelect: (id: string) => void;
@@ -160,7 +155,7 @@ function ThreadList({
   onShowMore: () => void;
 }): JSX.Element {
   const visibleThreads = projectThreads(threads);
-  const limitedThreads = limitedProjectThreads(visibleThreads, visibleCount, activeID, pendingThreadID, pendingAskThreadIDs);
+  const limitedThreads = limitedProjectThreads(visibleThreads, visibleCount, activeID, pendingThreadID);
   const hiddenCount = visibleThreads.length - limitedThreads.length;
   const showMoreCount = Math.min(PROJECT_THREAD_VISIBLE_INCREMENT, hiddenCount);
   return (
@@ -169,7 +164,6 @@ function ThreadList({
         threads={limitedThreads}
         activeID={activeID}
         pendingThreadID={pendingThreadID}
-        pendingAskThreadIDs={pendingAskThreadIDs}
         archiveConfirmThreadID={archiveConfirmThreadID}
         onSelect={onSelect}
         onSelectChildAgent={onSelectChildAgent}
@@ -191,12 +185,11 @@ function limitedProjectThreads(
   threads: Thread[],
   visibleCount: number,
   activeID: string | undefined,
-  pendingThreadID: string | undefined,
-  pendingAskThreadIDs: Set<string>
+  pendingThreadID: string | undefined
 ): Thread[] {
   const visibleIDs = new Set(threads.slice(0, Math.max(0, visibleCount)).map((thread) => thread.id));
   return threads.filter((thread) => {
-    if (visibleIDs.has(thread.id) || importantThreadVisible(thread, activeID, pendingThreadID, pendingAskThreadIDs)) {
+    if (visibleIDs.has(thread.id) || importantThreadVisible(thread, activeID, pendingThreadID)) {
       return true;
     }
     return false;
@@ -206,14 +199,13 @@ function limitedProjectThreads(
 function importantThreadVisible(
   thread: Thread,
   activeID: string | undefined,
-  pendingThreadID: string | undefined,
-  pendingAskThreadIDs: Set<string>
+  pendingThreadID: string | undefined
 ): boolean {
-  if (thread.id === activeID || thread.id === pendingThreadID || pendingAskThreadIDs.has(thread.id) || threadRunning(thread)) {
+  if (thread.id === activeID || thread.id === pendingThreadID || threadRunning(thread)) {
     return true;
   }
   return (thread.child_agents ?? []).some(
-    (agent) => agent.id === activeID || agent.id === pendingThreadID || pendingAskThreadIDs.has(agent.id)
+    (agent) => agent.id === activeID || agent.id === pendingThreadID
   );
 }
 
@@ -225,7 +217,6 @@ export function PinnedThreadList({
   threads,
   activeID,
   pendingThreadID,
-  pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelect,
   onSelectChildAgent,
@@ -236,7 +227,6 @@ export function PinnedThreadList({
   threads: Thread[];
   activeID?: string;
   pendingThreadID?: string;
-  pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
@@ -250,7 +240,6 @@ export function PinnedThreadList({
         threads={threads}
         activeID={activeID}
         pendingThreadID={pendingThreadID}
-        pendingAskThreadIDs={pendingAskThreadIDs}
         archiveConfirmThreadID={archiveConfirmThreadID}
         onSelect={onSelect}
         onSelectChildAgent={onSelectChildAgent}
@@ -266,7 +255,6 @@ function ThreadRows({
   threads,
   activeID,
   pendingThreadID,
-  pendingAskThreadIDs,
   archiveConfirmThreadID,
   onSelect,
   onSelectChildAgent,
@@ -277,7 +265,6 @@ function ThreadRows({
   threads: Thread[];
   activeID?: string;
   pendingThreadID?: string;
-  pendingAskThreadIDs: Set<string>;
   archiveConfirmThreadID?: string;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
@@ -289,7 +276,6 @@ function ThreadRows({
     <>
       {threads.map((thread) => {
         const archiveConfirming = archiveConfirmThreadID === thread.id;
-        const pendingAsk = pendingAskThreadIDs.has(thread.id);
         const pendingSwitch = pendingThreadID === thread.id;
         const running = threadRunning(thread);
         const title = threadDisplayTitle(thread, threads);
@@ -297,8 +283,8 @@ function ThreadRows({
           <Fragment key={thread.id}>
             <div
               className={`thread-row ${thread.id === activeID ? "active" : ""}${running ? " running" : ""}${
-                pendingAsk ? " pending-ask" : ""
-              }${pendingSwitch ? " pending-switch" : ""}`}
+                pendingSwitch ? " pending-switch" : ""
+              }`}
               aria-current={thread.id === activeID ? "page" : undefined}
               onMouseLeave={() => onClearArchiveConfirm(thread.id)}
             >
@@ -310,12 +296,6 @@ function ThreadRows({
                 onClick={() => onSelect(thread.id)}
               >
                 <ThreadRowTitle title={title} />
-                {pendingAsk ? (
-                  <span className="thread-row-ask-badge" title="需要你选择">
-                    <MessageSquarePlus size={12} />
-                    <span>需选择</span>
-                  </span>
-                ) : null}
                 {pendingSwitch ? <span className="thread-row-loading" aria-hidden="true" /> : null}
               </button>
               <div className="thread-row-actions" aria-label="对话操作">

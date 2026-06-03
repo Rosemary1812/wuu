@@ -13,6 +13,38 @@ import {
 } from "./StreamText";
 
 /**
+ * Returns `true` when the user has asked the OS to reduce motion. The
+ * value is computed once on mount and updated when the user toggles the
+ * system setting, so components that consult it can do so synchronously
+ * in render.
+ */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return false;
+    }
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return undefined;
+    }
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (): void => {
+      setReduced(media.matches);
+    };
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    }
+    // Legacy Safari path.
+    media.addListener(onChange);
+    return () => media.removeListener(onChange);
+  }, []);
+  return reduced;
+}
+
+/**
  * Progressive Markdown renderer used while assistant text is arriving.
  * The stream reveals text with a small inline cursor and keeps the final
  * markup on the same surface so completion does not cause a layout swap.
@@ -231,6 +263,7 @@ export function StreamingMarkdown({
 
   /* --------------------- Cursor visibility & fade-out ------------------- */
   const hasMoreToReveal = visibleLength < renderedText.length;
+  const prefersReducedMotion = useReducedMotion();
   useEffect(() => {
     if (hasMoreToReveal) {
       // Still streaming: keep the cursor visible.
@@ -238,16 +271,23 @@ export function StreamingMarkdown({
       return;
     }
     if (!live) {
-      // Caught up and not live: fade out, then remove from DOM.
+      // Caught up and not live: fade out, then remove from DOM. When the
+      // user prefers reduced motion, skip the fade and remove the cursor
+      // immediately so the settled DOM matches the non-streaming render
+      // byte-for-byte.
+      if (prefersReducedMotion) {
+        setCursorState("gone");
+        return;
+      }
       setCursorState("fading");
       const t = window.setTimeout(() => {
         setCursorState("gone");
-      }, 200);
+      }, 180);
       return () => window.clearTimeout(t);
     }
     // Caught up but still live: keep visible while we wait for more.
     setCursorState("shown");
-  }, [hasMoreToReveal, live]);
+  }, [hasMoreToReveal, live, prefersReducedMotion]);
 
   /* ------------------------- Derived view data -------------------------- */
   const visibleText = renderedText.slice(0, visibleLength);

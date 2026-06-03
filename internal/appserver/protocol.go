@@ -6,7 +6,6 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/providers"
-	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 const (
@@ -28,8 +27,6 @@ const (
 	MethodTurnStart         = "turn/start"
 	MethodTurnInterrupt     = "turn/interrupt"
 	MethodShutdown          = "shutdown"
-
-	MethodToolRequestUserInput = "item/tool/requestUserInput"
 
 	NotificationThreadStarted = "thread/started"
 	NotificationThreadResumed = "thread/resumed"
@@ -516,11 +513,6 @@ type ToolCallOutputNotification struct {
 	TurnID   string `json:"turn_id"`
 	ItemID   string `json:"item_id"`
 	Delta    string `json:"delta"`
-}
-
-type ToolRequestUserInputParams struct {
-	ThreadID  string                  `json:"thread_id,omitempty"`
-	Questions []tools.AskUserQuestion `json:"questions"`
 }
 
 type StreamEventPayload struct {

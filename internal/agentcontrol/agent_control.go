@@ -464,8 +464,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	}
 
 	// Resolve the default worker type so the worker has the full
-	// tool set. ask_user remains unavailable because workers do not
-	// receive an ask bridge.
+	// tool set.
 	wt, err := LookupWorkerType("worker")
 	if err != nil {
 		return nil, err
@@ -1797,16 +1796,9 @@ func stringSliceContains(values []string, needle string) bool {
 // SystemPromptPreamble returns the instructions prepended to the
 // main agent's system prompt. It teaches, in order:
 //
-//   - Step 0: classify every task before acting (Path A / B / C and
-//     the "referenced artifact" override).
-//   - Path A: when the user has a specific answer in their head,
-//     extract it via the ask_user tool instead of guessing.
-//   - Path B: when the user hands the decision to the agent, gather
-//     context, form a recommendation, and declare it before acting.
-//   - The phantom-read rule: if the user references an existing
-//     artifact, read_file it in full before planning.
-//   - The interview loop: the default iterative rhythm for
-//     non-trivial tasks.
+//   - When the user's intent is unclear or the request depends on
+//     information only they have, ask a clarifying question in your
+//     reply before acting. Do not guess.
 //   - Delegation rules (spawn/fork_turns, communication planes,
 //     honesty rules, failure handling) — but only AFTER alignment.
 //
@@ -1816,6 +1808,10 @@ func stringSliceContains(values []string, needle string) bool {
 // to use that split well, not just that tools exist.
 func SystemPromptPreamble() string {
 	return `You are an orchestration agent. Your job is to help the user achieve their goal by directing workers to research, implement, and verify code changes.
+
+## Clarifying the request
+
+When the user's intent is unclear, the task depends on requirements or tradeoffs only they can answer, or you would otherwise have to guess at something material, ask a clarifying question in your assistant reply before acting. Do not invent answers the user has not given you, and do not invoke a tool to surface the question — write it as plain text and let the user respond.
 
 ## Your Tools
 

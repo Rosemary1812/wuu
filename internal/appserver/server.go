@@ -31,7 +31,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
-	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 var errShutdown = errors.New("app-server shutdown requested")
@@ -96,10 +95,7 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		pendingAgentCompletionTurns:  make(map[string][]providers.ChatMessage),
 		drainingAgentCompletionTurns: make(map[string]bool),
 	}
-	if rt != nil && rt.Toolkit != nil {
-		rt.Toolkit.SetAskUserBridge(s)
-		rt.AskBridge = s
-	}
+	_ = rt
 	return s
 }
 
@@ -1807,7 +1803,6 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
-	turnCtx = withAskUserThreadID(turnCtx, th.ID)
 	userMsg := providers.ChatMessage{Role: "user", Content: params.Prompt, Images: images}
 	now := time.Now().UTC()
 
@@ -1859,7 +1854,7 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	if s.rt == nil {
 		return nil, errors.New("runtime session is required")
 	}
-	threadRuntime, err := s.rt.NewThreadRuntime(th.ID, s)
+	threadRuntime, err := s.rt.NewThreadRuntime(th.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -2146,7 +2141,6 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
-	turnCtx = withAskUserThreadID(turnCtx, th.ID)
 	now := time.Now().UTC()
 
 	th.mu.Lock()
@@ -2277,38 +2271,9 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))
 }
 
-func (s *Server) AskUser(ctx context.Context, req tools.AskUserRequest) (tools.AskUserResponse, error) {
-	if err := req.Validate(); err != nil {
-		return tools.AskUserResponse{}, err
-	}
-	result, err := s.requestClient(ctx, MethodToolRequestUserInput, ToolRequestUserInputParams{
-		ThreadID:  askUserThreadID(ctx),
-		Questions: req.Questions,
-	})
-	if err != nil {
-		return tools.AskUserResponse{}, err
-	}
-	var resp tools.AskUserResponse
-	if err := json.Unmarshal(result, &resp); err != nil {
-		return tools.AskUserResponse{}, fmt.Errorf("decode ask_user response: %w", err)
-	}
-	return resp, nil
-}
-
 type clientResponse struct {
 	result json.RawMessage
 	err    *ResponseError
-}
-
-type askUserThreadIDContextKey struct{}
-
-func withAskUserThreadID(ctx context.Context, threadID string) context.Context {
-	return context.WithValue(ctx, askUserThreadIDContextKey{}, strings.TrimSpace(threadID))
-}
-
-func askUserThreadID(ctx context.Context) string {
-	threadID, _ := ctx.Value(askUserThreadIDContextKey{}).(string)
-	return strings.TrimSpace(threadID)
 }
 
 func (s *Server) requestClient(ctx context.Context, method string, params any) (json.RawMessage, error) {

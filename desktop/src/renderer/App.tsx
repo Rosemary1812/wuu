@@ -72,8 +72,6 @@ import { CSS } from "@dnd-kit/utilities";
 import type {
   Agent,
   AppServerNotification,
-  AskUserQuestion,
-  AskUserResponse,
   DesktopProject,
   GitCommitResult,
   GitPullRequestResult,
@@ -93,12 +91,6 @@ import {
   messageFlowFinalTextIndex,
   messageFlowStatusLabel,
 } from "./message-flow-display";
-import {
-  AnsweredAskUserMessage,
-  AskUserMessage,
-  type AnsweredAskRequestState,
-  type AskRequestState,
-} from "./AskUserMessages";
 import {
   composerImageFromFile,
   createComposerMessage,
@@ -334,8 +326,6 @@ type AppState = {
   threads: Thread[];
   running: boolean;
   status: string;
-  askRequests: AskRequestState[];
-  answeredAskRequests: AnsweredAskRequestState[];
 };
 
 const INITIAL_DRAFT_SESSION_TAB_ID = "draft:initial";
@@ -349,8 +339,6 @@ const initialState: AppState = {
   threads: [],
   running: false,
   status: "connecting",
-  askRequests: [],
-  answeredAskRequests: [],
 };
 
 const SIDEBAR_DEFAULT_WIDTH = 326;
@@ -949,18 +937,6 @@ export function App(): JSX.Element {
   }, [state.thread?.turns, state.secondaryThread?.turns]);
 
   useEffect(() => {
-    if (!visibleAskRequestForThread(state.askRequests, activeThreadID)) {
-      return;
-    }
-    setSettingsOpen(false);
-    setWorkspaceMode(undefined);
-    conversationAutoFollowRef.current = true;
-    window.requestAnimationFrame(() =>
-      scrollConversationToBottom({ force: true }),
-    );
-  }, [activeThreadID, state.askRequests]);
-
-  useEffect(() => {
     const enabled =
       debugControlsVisible && ENABLE_SWISS_STYLE_TOGGLE && swissStyleEnabled;
     document.documentElement.classList.toggle("swiss-international", enabled);
@@ -1129,24 +1105,7 @@ export function App(): JSX.Element {
       : "我们应该在 wuu 中构建什么？";
   const turns = activeThread?.turns ?? [];
   const latestAgentMessageID = latestAgentMessageItemID(turns);
-  const visibleAskRequest = visibleAskRequestForThread(
-    state.askRequests,
-    activeThreadID,
-  );
-  const visibleAnsweredAskRequests = visibleAnsweredAskRequestsForThread(
-    state.answeredAskRequests,
-    activeThreadID,
-  );
-  const answeredAskRequestsWithoutVisibleTurn =
-    visibleAnsweredAskRequests.filter(
-      (request) =>
-        !request.turnID || !turns.some((turn) => turn.id === request.turnID),
-    );
-  const emptyConversation =
-    !showingSkillsCatalog &&
-    turns.length === 0 &&
-    !visibleAskRequest &&
-    visibleAnsweredAskRequests.length === 0;
+  const emptyConversation = !showingSkillsCatalog && turns.length === 0;
   const showingWorkspaceMode =
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
@@ -1162,7 +1121,6 @@ export function App(): JSX.Element {
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
   const viewSwitchPending = pendingViewSwitch !== undefined;
-  const pendingAskThreadIDs = pendingAskThreadIDsForRequests(state.askRequests);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewSwitchPending;
   const environmentPanelCanShow = Boolean(
     state.initialized &&
@@ -1251,16 +1209,6 @@ export function App(): JSX.Element {
       setEnvironmentPanelMenu(null);
     }
   }, [environmentPanelMenu, environmentPanelVisible]);
-
-  useEffect(() => {
-    if (visibleAnsweredAskRequests.length === 0) {
-      return;
-    }
-    conversationAutoFollowRef.current = true;
-    window.requestAnimationFrame(() =>
-      scrollConversationToBottom({ force: true }),
-    );
-  }, [visibleAnsweredAskRequests.length]);
 
   useLayoutEffect(() => {
     const node = dockComposerNode;
@@ -1610,8 +1558,6 @@ export function App(): JSX.Element {
       allowThreadAutoActivation: false,
       running: false,
       status: "ready",
-      askRequests: [],
-      answeredAskRequests: [],
     }));
   }
 
@@ -1816,8 +1762,6 @@ export function App(): JSX.Element {
       allowThreadAutoActivation: false,
       running: false,
       status: "ready",
-      askRequests: [],
-      answeredAskRequests: [],
     }));
   }
 
@@ -2193,19 +2137,6 @@ export function App(): JSX.Element {
   ): JSX.Element {
     const paneTurns = thread.turns ?? [];
     const paneLatestAgentMessageID = latestAgentMessageItemID(paneTurns);
-    const paneAskRequest = visibleAskRequestForThread(
-      state.askRequests,
-      thread.id,
-    );
-    const paneAnsweredAskRequests = visibleAnsweredAskRequestsForThread(
-      state.answeredAskRequests,
-      thread.id,
-    );
-    const paneAnsweredWithoutVisibleTurn = paneAnsweredAskRequests.filter(
-      (request) =>
-        !request.turnID ||
-        !paneTurns.some((turn) => turn.id === request.turnID),
-    );
     const active = state.activePane === pane;
     const closeLabel = pane === "secondary" ? "关闭右侧对话" : "关闭左侧对话";
     const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
@@ -2262,34 +2193,8 @@ export function App(): JSX.Element {
                     void forkThreadFromMessage(thread, turnID, itemID)
                   }
                 />
-                {paneAnsweredAskRequests
-                  .filter((request) => request.turnID === turn.id)
-                  .map((request) => (
-                    <AnsweredAskUserMessage
-                      key={`answered-${request.id}`}
-                      request={request}
-                    />
-                  ))}
               </Fragment>
             ))}
-            {paneAnsweredWithoutVisibleTurn.map((request) => (
-              <AnsweredAskUserMessage
-                key={`answered-${request.id}`}
-                request={request}
-              />
-            ))}
-            {paneAskRequest ? (
-              <AskUserMessage
-                key={paneAskRequest.id}
-                request={paneAskRequest}
-                onCancel={(request) =>
-                  respondToAskRequest(request, { answers: {}, cancelled: true })
-                }
-                onSubmit={(request, answers) =>
-                  respondToAskRequest(request, { answers })
-                }
-              />
-            ) : null}
           </div>
         </div>
         <SplitPaneComposer
@@ -2529,8 +2434,6 @@ export function App(): JSX.Element {
       threads: thread ? upsertThread(listedThreads, thread) : listedThreads,
       running: isThreadRunning(thread),
       status: "ready",
-      askRequests: [],
-      answeredAskRequests: [],
     };
   }
 
@@ -2550,8 +2453,6 @@ export function App(): JSX.Element {
       threads: [],
       running: false,
       status: "no-runtime",
-      askRequests: [],
-      answeredAskRequests: [],
     };
   }
 
@@ -3209,8 +3110,6 @@ export function App(): JSX.Element {
             allowThreadAutoActivation: false,
             running: false,
             status: "ready",
-            askRequests: [],
-            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -3261,8 +3160,6 @@ export function App(): JSX.Element {
             allowThreadAutoActivation: false,
             running: false,
             status: "ready",
-            askRequests: [],
-            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -3314,8 +3211,6 @@ export function App(): JSX.Element {
             allowThreadAutoActivation: false,
             running: false,
             status: "ready",
-            askRequests: [],
-            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -3368,8 +3263,6 @@ export function App(): JSX.Element {
           threads: upsertThread(next.threads, thread),
           running: isThreadRunning(thread),
           status: "ready",
-          askRequests: [],
-          answeredAskRequests: [],
         };
       });
     } catch (error) {
@@ -3441,8 +3334,6 @@ export function App(): JSX.Element {
             allowThreadAutoActivation: false,
             running: false,
             status: "ready",
-            askRequests: [],
-            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -3489,8 +3380,6 @@ export function App(): JSX.Element {
             allowThreadAutoActivation: false,
             running: false,
             status: "ready",
-            askRequests: [],
-            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -3538,8 +3427,6 @@ export function App(): JSX.Element {
             allowThreadAutoActivation: false,
             running: false,
             status: "ready",
-            askRequests: [],
-            answeredAskRequests: [],
           };
         });
       } catch (error) {
@@ -3674,8 +3561,6 @@ export function App(): JSX.Element {
       threads: upsertThread(current.threads, demo.parent),
       running: false,
       status: "ready",
-      askRequests: [],
-      answeredAskRequests: [],
     }));
   }
 
@@ -3713,8 +3598,6 @@ export function App(): JSX.Element {
       threads: upsertThread(current.threads, thread),
       running: isThreadRunning(thread),
       status: "ready",
-      askRequests: [],
-      answeredAskRequests: [],
     }));
   }
 
@@ -3772,8 +3655,6 @@ export function App(): JSX.Element {
           threads: upsertThread(current.threads, demoThread),
           running: isThreadRunning(demoThread),
           status: "ready",
-          askRequests: [],
-          answeredAskRequests: [],
         };
       });
       return;
@@ -4728,37 +4609,6 @@ export function App(): JSX.Element {
     await window.wuu.interruptTurn(thread.id);
   }
 
-  async function respondToAskRequest(
-    request: AskRequestState,
-    response: AskUserResponse,
-  ): Promise<void> {
-    try {
-      await window.wuu.respondToServerRequest(request.id, response);
-      const currentThread = activeThreadForState(appStateRef.current);
-      const answeredRequest: AnsweredAskRequestState = {
-        ...request,
-        threadID: request.threadID ?? currentThread?.id,
-        turnID: activeDebugTurn(currentThread)?.id,
-        answers: response.answers ?? {},
-        cancelled: response.cancelled === true,
-      };
-      setState((current) => ({
-        ...current,
-        askRequests: removeAskRequest(current.askRequests, request.id),
-        answeredAskRequests: upsertAnsweredAskRequest(
-          current.answeredAskRequests,
-          answeredRequest,
-        ),
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        askRequests: upsertAskRequest(current.askRequests, request),
-        status: desktopApiErrorMessage(error, "提交选择失败"),
-      }));
-    }
-  }
-
   if (settingsOpen) {
     return (
       <SettingsView
@@ -4917,7 +4767,6 @@ export function App(): JSX.Element {
                 threads={sidebarPinnedThreads}
                 activeID={activeThreadID}
                 pendingThreadID={visiblePendingThreadID}
-                pendingAskThreadIDs={pendingAskThreadIDs}
                 archiveConfirmThreadID={archiveConfirmThreadID}
                 onSelect={(id) => void selectThread(id)}
                 onSelectChildAgent={(agent) => void selectChildAgent(agent)}
@@ -4975,7 +4824,6 @@ export function App(): JSX.Element {
               threads={state.threads}
               activeThreadID={activeThreadID}
               pendingThreadID={visiblePendingThreadID}
-              pendingAskThreadIDs={pendingAskThreadIDs}
               archiveConfirmThreadID={archiveConfirmThreadID}
               onSelectProject={(id) => void openProject(id)}
               onToggleProjectCollapsed={toggleProjectCollapsed}
@@ -5370,37 +5218,8 @@ export function App(): JSX.Element {
                           : undefined
                       }
                     />
-                    {visibleAnsweredAskRequests
-                      .filter((request) => request.turnID === turn.id)
-                      .map((request) => (
-                        <AnsweredAskUserMessage
-                          key={`answered-${request.id}`}
-                          request={request}
-                        />
-                      ))}
                   </Fragment>
                 ))}
-                {answeredAskRequestsWithoutVisibleTurn.map((request) => (
-                  <AnsweredAskUserMessage
-                    key={`answered-${request.id}`}
-                    request={request}
-                  />
-                ))}
-                {visibleAskRequest ? (
-                  <AskUserMessage
-                    key={visibleAskRequest.id}
-                    request={visibleAskRequest}
-                    onCancel={(request) =>
-                      respondToAskRequest(request, {
-                        answers: {},
-                        cancelled: true,
-                      })
-                    }
-                    onSubmit={(request, answers) =>
-                      respondToAskRequest(request, { answers })
-                    }
-                  />
-                ) : null}
               </div>
             )}
           </div>
@@ -5754,31 +5573,11 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
     case "notification":
       return reduceNotification(state, event.message);
     case "server-request": {
-      if (event.message.method !== "item/tool/requestUserInput") {
-        void window.wuu.rejectServerRequest(
-          event.message.id,
-          `unsupported server request: ${event.message.method}`,
-        );
-        return state;
-      }
-      const params = event.message.params as
-        | { thread_id?: string; questions?: AskUserQuestion[] }
-        | undefined;
-      const request: AskRequestState = {
-        id: event.message.id,
-        threadID:
-          typeof params?.thread_id === "string" && params.thread_id
-            ? params.thread_id
-            : undefined,
-        questions: params?.questions ?? [],
-      };
-      return {
-        ...state,
-        answeredAskRequests: state.answeredAskRequests.filter(
-          (request) => request.id !== event.message.id,
-        ),
-        askRequests: upsertAskRequest(state.askRequests, request),
-      };
+      void window.wuu.rejectServerRequest(
+        event.message.id,
+        `unsupported server request: ${event.message.method}`,
+      );
+      return state;
     }
     case "server-error":
       return {
@@ -6806,73 +6605,6 @@ function isAnyThreadRunning(state: AppState): boolean {
   );
 }
 
-function visibleAskRequestForThread(
-  requests: AskRequestState[],
-  threadID: string | undefined,
-): AskRequestState | undefined {
-  for (let index = requests.length - 1; index >= 0; index--) {
-    const request = requests[index];
-    if (!request.threadID || request.threadID === threadID) {
-      return request;
-    }
-  }
-  return undefined;
-}
-
-function pendingAskThreadIDsForRequests(
-  requests: AskRequestState[],
-): Set<string> {
-  const ids = new Set<string>();
-  for (const request of requests) {
-    if (request.threadID) {
-      ids.add(request.threadID);
-    }
-  }
-  return ids;
-}
-
-function visibleAnsweredAskRequestsForThread(
-  requests: AnsweredAskRequestState[],
-  threadID: string | undefined,
-): AnsweredAskRequestState[] {
-  return requests.filter(
-    (request) => !request.threadID || request.threadID === threadID,
-  );
-}
-
-function upsertAskRequest(
-  requests: AskRequestState[],
-  request: AskRequestState,
-): AskRequestState[] {
-  const index = requests.findIndex((item) => item.id === request.id);
-  if (index < 0) {
-    return [...requests, request];
-  }
-  const next = requests.slice();
-  next[index] = request;
-  return next;
-}
-
-function removeAskRequest(
-  requests: AskRequestState[],
-  id: string,
-): AskRequestState[] {
-  return requests.filter((request) => request.id !== id);
-}
-
-function upsertAnsweredAskRequest(
-  requests: AnsweredAskRequestState[],
-  request: AnsweredAskRequestState,
-): AnsweredAskRequestState[] {
-  const index = requests.findIndex((item) => item.id === request.id);
-  if (index < 0) {
-    return [...requests, request];
-  }
-  const next = requests.slice();
-  next[index] = request;
-  return next;
-}
-
 function upsertTurn(thread: Thread, turn: Turn): Thread {
   const index = thread.turns.findIndex((item) => item.id === turn.id);
   const status = turn.status === "in_progress" ? "in_progress" : "idle";
@@ -7424,13 +7156,9 @@ type TurnProcessCheckpointViewState = {
   id: string;
   currentText: string;
   targetText: string;
-  previousID?: string;
-  previousText?: string;
-  swapping: boolean;
 };
 
 const PROCESS_CHECKPOINT_PACE_MS = 24;
-const PROCESS_CHECKPOINT_SWAP_MS = 260;
 const PROCESS_CHECKPOINT_SNAP = /[\s.,!?;:)\]，。！？；：、）】]/;
 
 function processCheckpointStep(remaining: number): number {
@@ -7480,28 +7208,12 @@ function TurnProcessCheckpointText({
     id: checkpoint.key,
     currentText: initialProcessCheckpointText(checkpoint.text, live),
     targetText: checkpoint.text,
-    swapping: false,
   }));
-  const [handoffVisible, setHandoffVisible] = useState(!handoff);
   const stateRef = useRef(state);
   const paceTimeoutRef = useRef<number | undefined>(undefined);
-  const swapFrameRef = useRef<number | undefined>(undefined);
-  const swapTimeoutRef = useRef<number | undefined>(undefined);
+  const prefersReducedMotion = useReducedMotion();
 
   stateRef.current = state;
-
-  useEffect(() => {
-    if (!handoff) {
-      setHandoffVisible(true);
-      return undefined;
-    }
-    setHandoffVisible(true);
-    const timer = window.setTimeout(
-      () => setHandoffVisible(false),
-      PROCESS_CHECKPOINT_SWAP_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [checkpoint.key, handoff]);
 
   const clearPace = useCallback((): void => {
     if (paceTimeoutRef.current === undefined) {
@@ -7511,41 +7223,16 @@ function TurnProcessCheckpointText({
     paceTimeoutRef.current = undefined;
   }, []);
 
-  const clearSwap = useCallback((): void => {
-    if (swapFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(swapFrameRef.current);
-      swapFrameRef.current = undefined;
-    }
-    if (swapTimeoutRef.current !== undefined) {
-      window.clearTimeout(swapTimeoutRef.current);
-      swapTimeoutRef.current = undefined;
-    }
-  }, []);
-
-  const scheduleSwapEnd = useCallback(
-    (id: string): void => {
-      clearSwap();
-      swapFrameRef.current = window.requestAnimationFrame(() => {
-        swapFrameRef.current = undefined;
-        swapTimeoutRef.current = window.setTimeout(() => {
-          swapTimeoutRef.current = undefined;
-          setState((current) =>
-            current.id === id
-              ? {
-                  ...current,
-                  previousID: undefined,
-                  previousText: undefined,
-                  swapping: false,
-                }
-              : current,
-          );
-        }, PROCESS_CHECKPOINT_SWAP_MS);
-      });
-    },
-    [clearSwap],
-  );
-
   const schedulePace = useCallback((): void => {
+    if (prefersReducedMotion) {
+      // Reduced motion: skip pacing and reveal the full target at once.
+      setState((current) =>
+        current.currentText === current.targetText
+          ? current
+          : { ...current, currentText: current.targetText },
+      );
+      return;
+    }
     if (!live || paceTimeoutRef.current !== undefined) {
       return;
     }
@@ -7571,11 +7258,9 @@ function TurnProcessCheckpointText({
         };
       });
     }, PROCESS_CHECKPOINT_PACE_MS);
-  }, [live]);
+  }, [live, prefersReducedMotion]);
 
   useLayoutEffect(() => {
-    const previous = stateRef.current;
-    const replacing = checkpoint.key !== previous.id;
     clearPace();
     setState((current) => {
       if (checkpoint.key !== current.id) {
@@ -7583,9 +7268,6 @@ function TurnProcessCheckpointText({
           id: checkpoint.key,
           currentText: initialProcessCheckpointText(checkpoint.text, live),
           targetText: checkpoint.text,
-          previousID: current.id,
-          previousText: current.currentText,
-          swapping: true,
         };
       }
       if (checkpoint.text === current.targetText) {
@@ -7604,10 +7286,7 @@ function TurnProcessCheckpointText({
       }
       return { ...current, targetText: checkpoint.text };
     });
-    if (replacing) {
-      scheduleSwapEnd(checkpoint.key);
-    }
-  }, [checkpoint.key, checkpoint.text, clearPace, live, scheduleSwapEnd]);
+  }, [checkpoint.key, checkpoint.text, clearPace, live]);
 
   useEffect(() => {
     if (!live) {
@@ -7630,36 +7309,34 @@ function TurnProcessCheckpointText({
   useEffect(() => {
     return () => {
       clearPace();
-      clearSwap();
     };
-  }, [clearPace, clearSwap]);
+  }, [clearPace]);
 
-  if (!handoffVisible) {
+  if (handoff) {
+    // Handoff: the previous turn is leaving; render a quiet placeholder
+    // for a moment so the next turn's checkpoint can appear in place
+    // without a hard swap.
     return <span className="turn-process-checkpoint-spacer" aria-hidden />;
   }
 
+  const isLive = live && state.currentText.length < state.targetText.length;
+  const trailingSpace = state.currentText.length === 0;
+  const visible = trailingSpace ? "\u00A0" : state.currentText;
+
   return (
     <span
-      className={`turn-process-checkpoint${handoff ? " handoff" : ""}`}
-      data-swapping={state.swapping ? "true" : "false"}
+      className="turn-process-checkpoint"
+      data-live={isLive ? "true" : "false"}
       title={checkpoint.text}
-      aria-hidden={handoff ? true : undefined}
     >
       <span
-        className="turn-process-checkpoint-track"
+        className="turn-process-checkpoint-line"
         aria-label={checkpoint.text}
       >
-        {state.previousText !== undefined ? (
-          <span
-            className="turn-process-checkpoint-leaving"
-            key={state.previousID ?? "previous"}
-          >
-            {state.previousText || "\u00A0"}
-          </span>
+        <span className="turn-process-checkpoint-text">{visible}</span>
+        {isLive ? (
+          <span className="turn-process-checkpoint-cursor" aria-hidden />
         ) : null}
-        <span className="turn-process-checkpoint-entering" key={state.id}>
-          {state.currentText || "\u00A0"}
-        </span>
       </span>
     </span>
   );
@@ -8222,15 +7899,6 @@ function ReasoningContent({
 function runDebugPhaseForState(state: AppState): RunDebugPhase {
   const thread = activeThreadForState(state);
   const turn = activeDebugTurn(thread);
-  const askRequest = visibleAskRequestForThread(state.askRequests, thread?.id);
-  if (askRequest) {
-    return {
-      label: "等待用户选择",
-      detail: `${askRequest.questions.length} 个问题需要响应`,
-      tone: "warning",
-      turn,
-    };
-  }
   if (!state.initialized) {
     return {
       label: "运行时未就绪",
@@ -8820,4 +8488,35 @@ function parseTurnTimestampMs(value: string | null | undefined): number {
     return NaN;
   }
   return Date.parse(value);
+}
+
+/**
+ * Returns `true` when the user has asked the OS to reduce motion. The
+ * value is computed once on mount and updated when the user toggles the
+ * system setting, so components can consult it synchronously in render.
+ */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return false;
+    }
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return undefined;
+    }
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (): void => {
+      setReduced(media.matches);
+    };
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    }
+    // Legacy Safari path.
+    media.addListener(onChange);
+    return () => media.removeListener(onChange);
+  }, []);
+  return reduced;
 }

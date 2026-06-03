@@ -106,7 +106,7 @@ func classifyToolRisk(_ string, kind ToolKind, readOnly bool) ToolRisk {
 			return ToolRiskMedium
 		}
 		return ToolRiskHigh
-	case ToolKindWeb, ToolKindUserInteraction:
+	case ToolKindWeb:
 		return ToolRiskMedium
 	case ToolKindDiscovery, ToolKindSkill, ToolKindPlan, ToolKindSearch:
 		return ToolRiskLow

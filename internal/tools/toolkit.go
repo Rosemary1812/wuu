@@ -151,8 +151,6 @@ func (t *Toolkit) rebuildRegistry() {
 		NewLoadSkillTool(e),
 		// Planning
 		NewUpdatePlanTool(e),
-		// User interaction
-		NewAskUserTool(e),
 		// Agent orchestration
 		NewSpawnAgentTool(e),
 		NewSendAgentMessageTool(e),
@@ -183,11 +181,6 @@ func (t *Toolkit) rebuildRegistry() {
 // SetAgentControl attaches the shared agent control runtime.
 func (t *Toolkit) SetAgentControl(c *agentcontrol.AgentControl) {
 	t.env.AgentControl = c
-}
-
-// SetAskUserBridge attaches the bridge used by ask_user.
-func (t *Toolkit) SetAskUserBridge(b AskUserBridge) {
-	t.env.AskBridge = b
 }
 
 // SetProcessManager attaches the process manager.

@@ -80,8 +80,6 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		return toolDisplay("skill", "加载技能 "+displayTruncate(skill, 70))
 	case "update_plan":
 		return toolDisplay("plan", "更新计划")
-	case "ask_user":
-		return toolDisplay("interaction", "等待用户选择")
 	case "spawn_agent":
 		return toolDisplay("agent", "启动子任务 "+displayTarget(displayString(args, "task_name"), ""))
 	case "send_message":
@@ -252,8 +250,6 @@ func displayKindForTool(name string) string {
 		return "command"
 	case ToolKindPlan:
 		return "plan"
-	case ToolKindUserInteraction:
-		return "interaction"
 	case ToolKindAgent:
 		return "agent"
 	case ToolKindSchedule:

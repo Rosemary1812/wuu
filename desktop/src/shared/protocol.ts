@@ -395,24 +395,6 @@ export type InputImage = {
   data: string;
 };
 
-export type AskUserOption = {
-  label: string;
-  description: string;
-  preview?: string;
-};
-
-export type AskUserQuestion = {
-  question: string;
-  header: string;
-  options: AskUserOption[];
-  multi_select?: boolean;
-};
-
-export type AskUserResponse = {
-  answers: Record<string, string>;
-  cancelled?: boolean;
-};
-
 export type ServerEvent = {
   workdir: string;
 } & (

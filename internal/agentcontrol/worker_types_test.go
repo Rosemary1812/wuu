@@ -53,7 +53,7 @@ func TestFilterToolsForWorker_Worker(t *testing.T) {
 	full := []string{
 		"read_file", "write_file", "edit_file", "run_shell",
 		"grep", "glob", "spawn_agent", "send_message", "followup_task",
-		"wait_agent", "close_agent", "list_agents", "ask_user",
+		"wait_agent", "close_agent", "list_agents",
 	}
 	filtered := FilterToolsForWorker(wt, full)
 	allowed := map[string]bool{}
@@ -64,12 +64,6 @@ func TestFilterToolsForWorker_Worker(t *testing.T) {
 	for _, expected := range []string{"read_file", "write_file", "edit_file", "run_shell", "grep", "glob"} {
 		if !allowed[expected] {
 			t.Errorf("worker missing %s", expected)
-		}
-	}
-	// Human-interruption tools are blocked for background workers.
-	for _, blocked := range []string{"ask_user"} {
-		if allowed[blocked] {
-			t.Errorf("worker should not have %s", blocked)
 		}
 	}
 }

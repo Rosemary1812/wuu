@@ -67,7 +67,6 @@ type Env struct {
 	AgentID      string
 	AgentPath    string
 	ProcessMgr   *proc.Manager
-	AskBridge    AskUserBridge
 	AgentControl *agentcontrol.AgentControl
 	Skills       []skills.Skill
 	// OnFileChanged is called after write_file/edit_file successfully

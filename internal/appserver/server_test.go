@@ -23,7 +23,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
-	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 type fakeClient struct {
@@ -1971,64 +1970,6 @@ func TestServerTurnItemsIncludeReasoningAndAgentMessage(t *testing.T) {
 	}
 }
 
-func TestServerAskUserUsesClientResponse(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	ctx = withAskUserThreadID(ctx, "thread-ask")
-
-	done := make(chan tools.AskUserResponse, 1)
-	errCh := make(chan error, 1)
-	go func() {
-		resp, err := srv.AskUser(ctx, tools.AskUserRequest{
-			Questions: []tools.AskUserQuestion{{
-				Question: "Continue?",
-				Header:   "Continue",
-				Options: []tools.AskUserOption{
-					{Label: "Yes", Description: "Continue the turn."},
-					{Label: "No", Description: "Stop now."},
-				},
-			}},
-		})
-		if err != nil {
-			errCh <- err
-			return
-		}
-		done <- resp
-	}()
-
-	msgs := waitForMethod(t, out, MethodToolRequestUserInput)
-	request := requestByMethod(t, msgs, MethodToolRequestUserInput)
-	params := remarshal[ToolRequestUserInputParams](t, request["params"])
-	if params.ThreadID != "thread-ask" {
-		t.Fatalf("ask_user request missing thread id: %+v", params)
-	}
-	raw, err := json.Marshal(map[string]any{
-		"id": request["id"],
-		"result": tools.AskUserResponse{
-			Answers: map[string]string{"Continue?": "Yes"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("marshal client response: %v", err)
-	}
-	if err := srv.handleLine(context.Background(), raw); err != nil {
-		t.Fatalf("client response: %v", err)
-	}
-
-	select {
-	case err := <-errCh:
-		t.Fatalf("AskUser returned error: %v", err)
-	case resp := <-done:
-		if resp.Answers["Continue?"] != "Yes" {
-			t.Fatalf("unexpected AskUser response: %+v", resp)
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for AskUser")
-	}
-}
 
 func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})

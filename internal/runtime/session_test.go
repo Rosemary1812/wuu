@@ -206,11 +206,6 @@ func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	for _, def := range kit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, blocked := range []string{"ask_user"} {
-		if defs[blocked] {
-			t.Fatalf("worker toolkit should hide %s", blocked)
-		}
-	}
 	for _, allowed := range []string{"read_file", "write_file", "run_shell", "update_plan", "spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents"} {
 		if !defs[allowed] {
 			t.Fatalf("worker toolkit should keep %s", allowed)
@@ -295,11 +290,11 @@ func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 		t.Fatalf("NewSession: %v", err)
 	}
 
-	first, err := rt.NewThreadRuntime("thread-a", nil)
+	first, err := rt.NewThreadRuntime("thread-a")
 	if err != nil {
 		t.Fatalf("NewThreadRuntime first: %v", err)
 	}
-	second, err := rt.NewThreadRuntime("thread-b", nil)
+	second, err := rt.NewThreadRuntime("thread-b")
 	if err != nil {
 		t.Fatalf("NewThreadRuntime second: %v", err)
 	}

@@ -40,7 +40,6 @@ type Options struct {
 	ProviderName  string
 	ModelOverride string
 	NoTools       bool
-	AskBridge     tools.AskUserBridge
 }
 
 // Session owns one initialized local agent runtime: provider client, tool
@@ -60,7 +59,6 @@ type Session struct {
 	Skills                      []skills.Skill
 	Memory                      []memory.File
 	AgentControl                *agentcontrol.AgentControl
-	AskBridge                   tools.AskUserBridge
 	ProcessManager              *process.Manager
 	Toolkit                     *tools.Toolkit
 	WorkerClient                providers.StreamClient
@@ -131,7 +129,6 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetStateDir(workspaceStateDir)
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
-		kit.SetAskUserBridge(opts.AskBridge)
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.ConfigureEditToolsForModel(toolModeModel)
 		kit.SetOnFileChanged(func(absPath string) {
@@ -241,7 +238,6 @@ func NewSession(opts Options) (*Session, error) {
 		Skills:                      discoveredSkills,
 		Memory:                      memoryFiles,
 		AgentControl:                agentControl,
-		AskBridge:                   opts.AskBridge,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
 		WorkerClient:                workerClient,
@@ -255,7 +251,7 @@ func NewSession(opts Options) (*Session, error) {
 // shared workspace runtime. It intentionally does not mutate Session.Toolkit or
 // Session.AgentControl; those remain the legacy single-session runtime used by
 // CLI and older call sites.
-func (s *Session) NewThreadRuntime(sessionID string, askBridge tools.AskUserBridge) (*ThreadRuntime, error) {
+func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 	if s == nil {
 		return nil, fmt.Errorf("runtime session is required")
 	}
@@ -319,7 +315,6 @@ func (s *Session) NewThreadRuntime(sessionID string, askBridge tools.AskUserBrid
 					workerKit.SetStateDir(workerStateDir)
 					workerKit.SetProcessManager(s.ProcessManager)
 					workerKit.SetSkills(s.Skills)
-					workerKit.SetAskUserBridge(nil)
 					workerKit.SetAgentControl(control)
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
 					applyWorkerToolFilter(workerKit, wt)
@@ -338,7 +333,6 @@ func (s *Session) NewThreadRuntime(sessionID string, askBridge tools.AskUserBrid
 		kit.SetStateDir(stateDir)
 		kit.SetProcessManager(s.ProcessManager)
 		kit.SetSkills(s.Skills)
-		kit.SetAskUserBridge(askBridge)
 		kit.SetAgentControl(agentControl)
 		kit.SetSessionID(id)
 		kit.SetSessionDir(artifactDir)
