@@ -61,12 +61,13 @@ git push origin v$(cat VERSION)
 - Agent 工具调用循环 —— 在你的仓库里读、写、编辑、搜索、执行命令
 - 支持 OpenAI 兼容 API（OpenAI / OpenRouter / one-api 等）和 Anthropic Messages API
 - 内置工具：`run_shell`、`git`、`read_file`、`write_file`、`edit_file`、`list_files`、`grep`、`glob`、`web_search`、`web_fetch`
-- 编排与会话工具：`ask_user`、`spawn_agent`、`fork_agent`、`send_message`、`followup_task`、`wait_agent`、`close_agent`、`list_agents`、`load_skill`
+- 编排与会话工具：`spawn_agent`、`fork_agent`、`send_message`、`followup_task`、`wait_agent`、`close_agent`、`list_agents`、`load_skill`
 - 后台进程工具：`start_process`、`list_processes`、`stop_process`、`read_process_output`
 - 定时任务工具：`schedule_cron`、`cancel_cron`、`list_cron`
 - 工具可用范围：
   - 主 GUI/app-server 会话：可用全部工具
-  - 子代理：不可用 `ask_user` 与编排工具（`spawn_agent`、`fork_agent`、`send_message`、`followup_task`、`wait_agent`、`close_agent`、`list_agents`）
+  - 子代理：不可用编排工具（`spawn_agent`、`fork_agent`、`send_message`、`followup_task`、`wait_agent`、`close_agent`、`list_agents`）
+- 澄清问题：用户意图不明确时，模型直接在回复正文中以普通文字提出澄清问题——wuu 不再提供独立的 `ask_user` 工具
 - Follow-up 控制：`send_message` 可向子代理排队发送简短指令；`followup_task` 可让空闲任务基于已保存历史继续新一轮
 - 文件工具沙箱化，限制在当前工作区内
 - 会话隔离，支持恢复
