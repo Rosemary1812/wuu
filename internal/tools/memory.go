@@ -21,6 +21,10 @@ const (
 	memoryTargetMemory = "memory"
 	memoryTargetUser   = "user"
 	memoryTargetPrefix = "target:"
+
+	memoryActionAdd     = "add"
+	memoryActionReplace = "replace"
+	memoryActionRemove  = "remove"
 )
 
 var errMemoryUnavailable = fmt.Errorf("memory: no Provider configured on Env; set Env.Memory before registering memory tools")
@@ -70,6 +74,12 @@ var allowedMemorySources = []string{
 var allowedMemoryTargets = []string{
 	memoryTargetMemory,
 	memoryTargetUser,
+}
+
+var allowedMemoryActions = []string{
+	memoryActionAdd,
+	memoryActionReplace,
+	memoryActionRemove,
 }
 
 func isAllowedMemorySource(s string) bool {
@@ -133,11 +143,26 @@ func memoryStoreTags(target string, tags []string) []string {
 	return out
 }
 
+func normalizeMemoryAction(action string) (string, error) {
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return memoryActionAdd, nil
+	}
+	for _, allowed := range allowedMemoryActions {
+		if action == allowed {
+			return action, nil
+		}
+	}
+	return "", fmt.Errorf("action %q is not one of %v", action, allowedMemoryActions)
+}
+
 // write_memory
 
 type writeMemoryArgs struct {
+	Action  string   `json:"action,omitempty"`
 	Target  string   `json:"target,omitempty"`
 	Content string   `json:"content"`
+	OldText string   `json:"old_text,omitempty"`
 	Tags    []string `json:"tags,omitempty"`
 	Source  string   `json:"source,omitempty"`
 	ID      string   `json:"id,omitempty"`
@@ -163,12 +188,17 @@ func (t *writeMemoryTool) Definition() providers.ToolDefinition {
 			"Use proactively when the user corrects you, shares a stable preference, asks you to remember something, " +
 			"or when you learn a durable environment fact, project convention, or tool quirk that will matter in future sessions. " +
 			"Do not save task progress, completed-work logs, PR numbers, commit SHAs, temporary TODOs, raw data dumps, or facts likely to go stale within a week. " +
-			"Write declarative facts, not instructions to yourself.",
+			"Use action=\"replace\" or action=\"remove\" when an existing memory is wrong, stale, or no longer wanted. Write declarative facts, not instructions to yourself.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
-			"required":             []string{"target", "content"},
+			"required":             []string{"action", "target"},
 			"properties": map[string]any{
+				"action": map[string]any{
+					"type":        "string",
+					"enum":        allowedMemoryActions,
+					"description": "Use \"add\" for a new entry, \"replace\" to update an existing entry identified by old_text, or \"remove\" to delete an existing entry identified by old_text.",
+				},
 				"target": map[string]any{
 					"type":        "string",
 					"enum":        allowedMemoryTargets,
@@ -176,7 +206,11 @@ func (t *writeMemoryTool) Definition() providers.ToolDefinition {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Self-contained durable fact. Phrase as a declarative statement, not as an imperative instruction.",
+					"description": "Self-contained durable fact. Required for action=\"add\" and action=\"replace\". Phrase as a declarative statement, not as an imperative instruction.",
+				},
+				"old_text": map[string]any{
+					"type":        "string",
+					"description": "Short unique substring identifying the existing entry for action=\"replace\" or action=\"remove\".",
 				},
 				"tags": map[string]any{
 					"type":        "array",
@@ -206,9 +240,9 @@ func (t *writeMemoryTool) Execute(ctx context.Context, args string) (string, err
 	if err := decodeArgs(args, &a); err != nil {
 		return "", fmt.Errorf("write_memory: %w", err)
 	}
-	content := strings.TrimSpace(a.Content)
-	if content == "" {
-		return "", fmt.Errorf("write_memory: content is required and must be non-empty")
+	action, err := normalizeMemoryAction(a.Action)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
 	}
 	if !isAllowedMemorySource(a.Source) {
 		return "", fmt.Errorf("write_memory: source %q is not one of %v", a.Source, allowedMemorySources)
@@ -216,6 +250,23 @@ func (t *writeMemoryTool) Execute(ctx context.Context, args string) (string, err
 	target, err := normalizeMemoryTarget(a.Target)
 	if err != nil {
 		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	switch action {
+	case memoryActionAdd:
+		return t.executeAdd(ctx, mem, a, target)
+	case memoryActionReplace:
+		return t.executeReplace(ctx, mem, a, target)
+	case memoryActionRemove:
+		return t.executeRemove(ctx, mem, a, target)
+	default:
+		return "", fmt.Errorf("write_memory: action %q is not one of %v", action, allowedMemoryActions)
+	}
+}
+
+func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a writeMemoryArgs, target string) (string, error) {
+	content := strings.TrimSpace(a.Content)
+	if content == "" {
+		return "", fmt.Errorf("write_memory: content is required and must be non-empty")
 	}
 	source := store.Source(a.Source)
 	if source == "" {
@@ -232,6 +283,7 @@ func (t *writeMemoryTool) Execute(ctx context.Context, args string) (string, err
 		return "", fmt.Errorf("write_memory: %w", err)
 	}
 	out := map[string]any{
+		"action":  memoryActionAdd,
 		"id":      string(id),
 		"written": true,
 		"target":  target,
@@ -244,6 +296,108 @@ func (t *writeMemoryTool) Execute(ctx context.Context, args string) (string, err
 		return "", fmt.Errorf("write_memory: encode result: %w", err)
 	}
 	return string(b), nil
+}
+
+func (t *writeMemoryTool) executeReplace(ctx context.Context, mem store.Provider, a writeMemoryArgs, target string) (string, error) {
+	oldText := strings.TrimSpace(a.OldText)
+	if oldText == "" {
+		return "", fmt.Errorf("write_memory: old_text is required for action %q", memoryActionReplace)
+	}
+	content := strings.TrimSpace(a.Content)
+	if content == "" {
+		return "", fmt.Errorf("write_memory: content is required and must be non-empty for action %q", memoryActionReplace)
+	}
+	oldEntry, err := findMemoryEntryByOldText(ctx, mem, target, oldText)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	source := store.Source(a.Source)
+	if source == "" {
+		source = oldEntry.Source
+	}
+	if source == "" {
+		source = store.SourceAssistant
+	}
+	entry := store.Entry{
+		ID:      store.ID(strings.TrimSpace(a.ID)),
+		Content: content,
+		Tags:    memoryStoreTags(target, a.Tags),
+		Source:  source,
+	}
+	id, err := mem.Store(ctx, entry)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	if err := mem.Delete(ctx, oldEntry.ID); err != nil {
+		_ = mem.Delete(ctx, id)
+		return "", fmt.Errorf("write_memory: replace rollback after delete failure: %w", err)
+	}
+	out := map[string]any{
+		"action":      memoryActionReplace,
+		"id":          string(id),
+		"replaced_id": string(oldEntry.ID),
+		"written":     true,
+		"target":      target,
+		"source":      string(source),
+		"tags":        memoryUserTags(entry.Tags),
+		"length":      len(content),
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: encode result: %w", err)
+	}
+	return string(b), nil
+}
+
+func (t *writeMemoryTool) executeRemove(ctx context.Context, mem store.Provider, a writeMemoryArgs, target string) (string, error) {
+	oldText := strings.TrimSpace(a.OldText)
+	if oldText == "" {
+		return "", fmt.Errorf("write_memory: old_text is required for action %q", memoryActionRemove)
+	}
+	oldEntry, err := findMemoryEntryByOldText(ctx, mem, target, oldText)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	if err := mem.Delete(ctx, oldEntry.ID); err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	out := map[string]any{
+		"action":     memoryActionRemove,
+		"removed":    true,
+		"removed_id": string(oldEntry.ID),
+		"target":     target,
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: encode result: %w", err)
+	}
+	return string(b), nil
+}
+
+func findMemoryEntryByOldText(ctx context.Context, mem store.Provider, target, oldText string) (store.Entry, error) {
+	entries, err := mem.Recall(ctx, store.RecallQuery{})
+	if err != nil {
+		return store.Entry{}, err
+	}
+	var matches []store.Entry
+	for _, entry := range entries {
+		if memoryEntryTarget(entry) == target && strings.Contains(entry.Content, oldText) {
+			matches = append(matches, entry)
+		}
+	}
+	if len(matches) == 0 {
+		return store.Entry{}, fmt.Errorf("no %s memory entry matched old_text %q", target, oldText)
+	}
+	if len(matches) > 1 {
+		unique := make(map[string]struct{}, len(matches))
+		for _, entry := range matches {
+			unique[entry.Content] = struct{}{}
+		}
+		if len(unique) > 1 {
+			return store.Entry{}, fmt.Errorf("multiple %s memory entries matched old_text %q; be more specific", target, oldText)
+		}
+	}
+	return matches[0], nil
 }
 
 // read_memory

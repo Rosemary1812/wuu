@@ -65,7 +65,7 @@ func TestProfileMemoryReview_RunWritesMemoryWithMemoryOnlyTools(t *testing.T) {
 				ToolCalls: []providers.ToolCall{{
 					ID:        "call_1",
 					Name:      "write_memory",
-					Arguments: `{"target":"user","content":"User prefers concise Chinese replies","source":"assistant"}`,
+					Arguments: `{"action":"add","target":"user","content":"User prefers concise Chinese replies","source":"assistant"}`,
 				}},
 			},
 			{Content: "Saved."},

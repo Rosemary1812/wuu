@@ -305,4 +305,4 @@ Save memory only when it is durable and likely to help future sessions:
 
 Do not save task progress, completed-work logs, temporary TODOs, PR numbers, issue numbers, commit SHAs, raw dumps, or facts likely to go stale within a week. Do not duplicate facts that are already present in the current profile memory snapshot.
 
-If something is worth saving, call write_memory with a compact declarative fact. If nothing is worth saving, reply exactly: Nothing to save.`
+If something is worth saving, call write_memory with action="add" and a compact declarative fact. If an existing memory is wrong or stale, use action="replace" or action="remove" with old_text. If nothing is worth saving, reply exactly: Nothing to save.`

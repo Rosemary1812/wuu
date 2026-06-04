@@ -164,14 +164,14 @@ func TestWriteMemoryTool_Definition(t *testing.T) {
 	if !ok {
 		t.Fatalf("properties missing or wrong type: %T", def.InputSchema["properties"])
 	}
-	for _, key := range []string{"target", "content", "tags", "source", "id"} {
+	for _, key := range []string{"action", "target", "content", "old_text", "tags", "source", "id"} {
 		if _, ok := props[key].(map[string]any); !ok {
 			t.Errorf("schema missing property %q", key)
 		}
 	}
 	required, _ := def.InputSchema["required"].([]string)
-	if strings.Join(required, ",") != "target,content" {
-		t.Errorf("required = %v, want [target content]", required)
+	if strings.Join(required, ",") != "action,target" {
+		t.Errorf("required = %v, want [action target]", required)
 	}
 	if v, _ := def.InputSchema["additionalProperties"].(bool); v != false {
 		t.Errorf("additionalProperties = %v, want false", v)
@@ -196,6 +196,9 @@ func TestWriteMemoryTool_Execute(t *testing.T) {
 	if written, _ := resp["written"].(bool); !written {
 		t.Errorf("written = %v, want true", resp["written"])
 	}
+	if action, _ := resp["action"].(string); action != "add" {
+		t.Errorf("default action = %q, want add", action)
+	}
 	if target, _ := resp["target"].(string); target != "memory" {
 		t.Errorf("default target = %q, want memory", target)
 	}
@@ -219,7 +222,7 @@ func TestWriteMemoryTool_Execute_WithCallerIDAndSource(t *testing.T) {
 	p := newTestProvider(t)
 	tool := NewWriteMemoryTool(newEnvWith(p))
 
-	out, err := tool.Execute(context.Background(), `{"target":"user","content":"x","id":"caller-123","source":"user"}`)
+	out, err := tool.Execute(context.Background(), `{"action":"add","target":"user","content":"x","id":"caller-123","source":"user"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -233,6 +236,84 @@ func TestWriteMemoryTool_Execute_WithCallerIDAndSource(t *testing.T) {
 	}
 	if got, _ := resp["target"].(string); got != "user" {
 		t.Errorf("target = %q, want user", got)
+	}
+}
+
+func TestWriteMemoryTool_Execute_Replace(t *testing.T) {
+	p := newTestProvider(t)
+	tool := NewWriteMemoryTool(newEnvWith(p))
+	oldID, err := p.Store(context.Background(), store.Entry{
+		Content: "User prefers verbose replies",
+		Tags:    []string{"target:user", "tone"},
+		Source:  store.SourceUser,
+	})
+	if err != nil {
+		t.Fatalf("seed Store: %v", err)
+	}
+
+	out, err := tool.Execute(context.Background(), `{"action":"replace","target":"user","old_text":"verbose","content":"User prefers concise replies","tags":["tone"],"source":"user"}`)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("unmarshal result: %v (raw: %s)", err, out)
+	}
+	if got, _ := resp["action"].(string); got != "replace" {
+		t.Fatalf("action = %q, want replace", got)
+	}
+	if got, _ := resp["replaced_id"].(string); got != string(oldID) {
+		t.Fatalf("replaced_id = %q, want %q", got, oldID)
+	}
+
+	entries, err := p.Recall(context.Background(), store.RecallQuery{})
+	if err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Content != "User prefers concise replies" {
+		t.Fatalf("entries after replace = %+v", entries)
+	}
+	if entries[0].ID == oldID {
+		t.Fatalf("replace should create a fresh entry id, still got %q", entries[0].ID)
+	}
+	if !testTagsMatch(entries[0].Tags, []string{"target:user", "tone"}) {
+		t.Fatalf("stored tags = %+v", entries[0].Tags)
+	}
+}
+
+func TestWriteMemoryTool_Execute_Remove(t *testing.T) {
+	p := newTestProvider(t)
+	tool := NewWriteMemoryTool(newEnvWith(p))
+	oldID, err := p.Store(context.Background(), store.Entry{
+		Content: "Project uses an obsolete workflow",
+		Tags:    []string{"target:memory", "project"},
+		Source:  store.SourceAssistant,
+	})
+	if err != nil {
+		t.Fatalf("seed Store: %v", err)
+	}
+
+	out, err := tool.Execute(context.Background(), `{"action":"remove","target":"memory","old_text":"obsolete workflow"}`)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("unmarshal result: %v (raw: %s)", err, out)
+	}
+	if got, _ := resp["action"].(string); got != "remove" {
+		t.Fatalf("action = %q, want remove", got)
+	}
+	if got, _ := resp["removed_id"].(string); got != string(oldID) {
+		t.Fatalf("removed_id = %q, want %q", got, oldID)
+	}
+
+	entries, err := p.Recall(context.Background(), store.RecallQuery{})
+	if err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries after remove = %+v, want empty", entries)
 	}
 }
 
@@ -254,8 +335,17 @@ func TestWriteMemoryTool_Execute_ErrorBranches(t *testing.T) {
 	if _, err := tool.Execute(context.Background(), `{"content":"x","source":"unknown"}`); err == nil || !strings.Contains(err.Error(), "source") {
 		t.Fatalf("bad source err = %v", err)
 	}
+	if _, err := tool.Execute(context.Background(), `{"action":"merge","target":"memory","content":"x"}`); err == nil || !strings.Contains(err.Error(), "action") {
+		t.Fatalf("bad action err = %v", err)
+	}
 	if _, err := tool.Execute(context.Background(), `{"target":"session","content":"x"}`); err == nil || !strings.Contains(err.Error(), "target") {
 		t.Fatalf("bad target err = %v", err)
+	}
+	if _, err := tool.Execute(context.Background(), `{"action":"replace","target":"memory","content":"x"}`); err == nil || !strings.Contains(err.Error(), "old_text") {
+		t.Fatalf("replace without old_text err = %v", err)
+	}
+	if _, err := tool.Execute(context.Background(), `{"action":"remove","target":"memory","old_text":"missing"}`); err == nil || !strings.Contains(err.Error(), "matched") {
+		t.Fatalf("remove missing err = %v", err)
 	}
 	if _, err := tool.Execute(context.Background(), `{not json`); err == nil {
 		t.Fatal("expected malformed JSON error")

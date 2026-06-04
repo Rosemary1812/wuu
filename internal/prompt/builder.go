@@ -97,6 +97,7 @@ func (b *Builder) AddProfileMemory(entries []store.Entry) {
 	sb.WriteString("- `target=\"user\"`: who the user is, their preferences, communication style, expectations, and recurring corrections.\n")
 	sb.WriteString("- `target=\"memory\"`: this agent's notes, such as environment facts, project conventions, tool quirks, and lessons learned.\n\n")
 	sb.WriteString("Write memories as declarative facts, not instructions to yourself. ")
+	sb.WriteString("Use `write_memory` with `action=\"replace\"` or `action=\"remove\"` when an existing memory becomes wrong, stale, or unwanted. ")
 	sb.WriteString("For example, write \"User prefers concise Chinese replies\", not \"Always reply concisely\".\n")
 
 	userBlock := renderProfileMemoryTarget(entries, "user", MaxUserProfileMemoryBytes)
