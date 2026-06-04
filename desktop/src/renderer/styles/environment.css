@@ -1,3 +1,25 @@
+.environment-side-stack {
+  position: absolute;
+  top: 66px;
+  right: var(--environment-panel-edge-gap);
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(var(--environment-panel-width), calc(100% - 32px));
+  max-height: calc(100vh - 86px);
+  pointer-events: none;
+}
+
+.environment-side-stack > .environment-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 100%;
+  flex: 0 0 auto;
+  pointer-events: auto;
+}
+
 .environment-panel {
   position: absolute;
   top: 66px;

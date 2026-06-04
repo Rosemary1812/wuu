@@ -108,12 +108,18 @@ import {
 import {
   Composer,
   SplitPaneComposer,
+  FloatingMenuPortal,
   isInsideFloatingMenu,
   type CodexModelLoadState,
   type CodexRuntimeMenu,
   type ComposerVariant,
   type FloatingMenuOwner,
 } from "./ComposerView";
+import {
+  QueryHistoryPopover,
+  type QueryHistoryEntry,
+} from "./QueryHistoryPopover";
+import { QueryHistoryRail } from "./QueryHistoryRail";
 import {
   createAgentTreeDemo,
   createConversationFixture,
@@ -209,6 +215,41 @@ const RIGHT_PANEL_MOTION_MS = 280;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const CONVERSATION_SEARCH_EXIT_MS = 180;
+const ENVIRONMENT_PANEL_WIDTH_PX = 328;
+const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
+// Cap on the number of bars rendered in the always-visible rail. The
+// rail is a thin at-a-glance index; if there are more queries than fit,
+// we collapse the tail into a single bar.
+const QUERY_HISTORY_RAIL_MAX_BARS = 20;
+
+// Anchor IDs used by the input-box query history popover to scroll
+// back to a past user message. Kept as plain DOM ids (no hash routing
+// involvement) so document.getElementById / scrollIntoView stay cheap.
+function turnAnchorID(turnID: string): string {
+  return `turn-${turnID}`;
+}
+
+function userMessageAnchorID(turnID: string, itemID: string): string {
+  return `user-msg-${turnID}-${itemID}`;
+}
+
+function userMessageAnchorSelector(turnID: string, itemID: string): string {
+  return `#${userMessageAnchorID(turnID, itemID)}`;
+}
+
+function scrollToUserMessage(turnID: string, itemID: string): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const node = document.querySelector<HTMLElement>(
+    userMessageAnchorSelector(turnID, itemID),
+  );
+  if (!node) {
+    return;
+  }
+  node.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 
 type EnvironmentDialog = "commit" | "pull-request" | null;
 type PendingViewSwitchKind = "thread" | "project" | "runtime";
@@ -600,6 +641,7 @@ export function App(): JSX.Element {
     secondary: null,
   });
   const conversationPaneRef = useRef<HTMLElement | null>(null);
+  const queryHistoryRailRef = useRef<HTMLDivElement | null>(null);
   const [dockComposerNode, setDockComposerNode] = useState<HTMLElement | null>(
     null,
   );
@@ -615,6 +657,8 @@ export function App(): JSX.Element {
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(
     undefined,
   );
+  const [queryHistoryOpen, setQueryHistoryOpen] = useState(false);
+  const queryHistoryCloseTimerRef = useRef<number | undefined>(undefined);
   const windowResizingRef = useRef(false);
   const environmentPanelHasRoomRef = useRef(environmentPanelHasRoom);
   const pendingEnvironmentPanelHasRoomRef = useRef<boolean | undefined>(
@@ -679,6 +723,44 @@ export function App(): JSX.Element {
   const splitConversation = Boolean(
     state.thread && state.secondaryThread && !workspaceMode,
   );
+
+  // Past-query popover control. The rail beside the scrollbar is the hover
+  // target; we close on a short delay so the user can travel from the rail
+  // into the floating list without it snapping shut.
+  function openQueryHistory(): void {
+    if (activeThreadReadOnly || pastQueries.length === 0) {
+      return;
+    }
+    cancelQueryHistoryClose();
+    setQueryHistoryOpen(true);
+  }
+
+  function scheduleQueryHistoryClose(): void {
+    cancelQueryHistoryClose();
+    queryHistoryCloseTimerRef.current = window.setTimeout(() => {
+      queryHistoryCloseTimerRef.current = undefined;
+      setQueryHistoryOpen(false);
+    }, 200);
+  }
+
+  function cancelQueryHistoryClose(): void {
+    if (queryHistoryCloseTimerRef.current !== undefined) {
+      window.clearTimeout(queryHistoryCloseTimerRef.current);
+      queryHistoryCloseTimerRef.current = undefined;
+    }
+  }
+
+  function handleQueryHistorySelect(entry: QueryHistoryEntry): void {
+    cancelQueryHistoryClose();
+    setQueryHistoryOpen(false);
+    scrollToUserMessage(entry.turnID, entry.itemID);
+  }
+
+  useEffect(() => {
+    return () => {
+      cancelQueryHistoryClose();
+    };
+  }, []);
 
   // When the active thread reports a listening port, auto-open the
   // workspace browser at the first URL. We compare against the last URL
@@ -1133,6 +1215,27 @@ export function App(): JSX.Element {
   const turns = activeThread?.turns ?? [];
   const latestAgentMessageID = latestAgentMessageItemID(turns);
   const emptyConversation = !showingSkillsCatalog && turns.length === 0;
+
+  // Past user queries for the input-box hover popover. We collect them
+  // in turn order, oldest first, so the popover mirrors the order in
+  // which the user asked them. Empty / handoff / image-only items are
+  // skipped — they have nothing to show in a quick-jump list.
+  const pastQueries = useMemo<QueryHistoryEntry[]>(() => {
+    const entries: QueryHistoryEntry[] = [];
+    for (const turn of turns) {
+      for (const item of turn.items) {
+        if (item.type !== "user_message") {
+          continue;
+        }
+        const text = (item.text ?? "").trim();
+        if (text.length === 0) {
+          continue;
+        }
+        entries.push({ turnID: turn.id, itemID: item.id, text });
+      }
+    }
+    return entries;
+  }, [turns]);
   const showingWorkspaceMode =
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
@@ -1164,6 +1267,14 @@ export function App(): JSX.Element {
   const environmentPanelVisible = environmentPanelTargetVisible;
   const environmentPanelMotionState: EnvironmentPanelMotionState =
     environmentPanelVisible ? "open" : "closing";
+  const queryHistoryDocked = Boolean(
+    environmentPanelReserved &&
+      environmentPanelVisible &&
+      !activeThreadReadOnly &&
+      pastQueries.length > 0 &&
+      !showingWorkspaceMode &&
+      !showingSkillsCatalog,
+  );
   const sessionTabsVisible = Boolean(state.initialized && !previewingLaunch);
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     sidebarAnimating ? " sidebar-animating" : ""
@@ -1176,7 +1287,7 @@ export function App(): JSX.Element {
     "--sidebar-motion-duration": `${SIDEBAR_MOTION_MS}ms`,
     "--workspace-panel-motion-duration": `${RIGHT_PANEL_MOTION_MS}ms`,
     "--workspace-right-panel-width": `${clampedWorkspaceRightPanelWidth}px`,
-    "--environment-panel-width": "328px",
+    "--environment-panel-width": ENVIRONMENT_PANEL_WIDTH_CSS,
     "--environment-panel-reserved-width": "372px",
     "--environment-panel-edge-gap": "18px",
     "--environment-panel-motion-duration": `${ENVIRONMENT_PANEL_MOTION_MS}ms`,
@@ -1238,6 +1349,12 @@ export function App(): JSX.Element {
       setEnvironmentPanelMenu(null);
     }
   }, [environmentPanelMenu, environmentPanelVisible]);
+
+  useEffect(() => {
+    if (queryHistoryDocked) {
+      setQueryHistoryOpen(false);
+    }
+  }, [queryHistoryDocked]);
 
   useLayoutEffect(() => {
     const node = dockComposerNode;
@@ -4803,42 +4920,52 @@ export function App(): JSX.Element {
   const environmentPanelNode =
     (environmentPanelVisible || environmentPanelMounted) &&
     state.initialized ? (
-      <EnvironmentPanel
-        panelRef={environmentPanelRef}
-        motionState={
-          environmentPanelClosing ? "closing" : environmentPanelMotionState
-        }
-        initialized={state.initialized}
-        gitStatus={state.gitStatus}
-        activeContext={state.activeContext}
-        activeProject={activeProject}
-        planUpdate={activePlanUpdate}
-        sourceItems={environmentSourceItems}
-        activeMenu={environmentPanelMenu}
-        running={anyThreadIsRunning}
-        pullRequestDisabledReason={pullRequestDisabledReason}
-        onSetActiveMenu={setEnvironmentPanelMenu}
-        onClose={() => {
-          setEnvironmentPanelOpen(false);
-          setEnvironmentPanelDismissed(true);
-          setEnvironmentPanelMenu(null);
-        }}
-        onOpenProject={() => void chooseProjectFolder()}
-        onSelectNoProject={() => void useNoProject(false)}
-        onSelectBranch={(branch) => void checkoutBranch(branch)}
-        onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
-        onOpenReview={() => {
-          setWorkspacePanelView("review");
-          setWorkspaceRightPanelView("review");
-          setWorkspaceMode(undefined);
-          setRightPanelOpenWithMotion(true);
-          setEnvironmentPanelOpen(false);
-          setEnvironmentPanelDismissed(true);
-          setEnvironmentPanelMenu(null);
-        }}
-        onOpenCommit={() => setEnvironmentDialog("commit")}
-        onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
-      />
+      <div className="environment-side-stack">
+        <EnvironmentPanel
+          panelRef={environmentPanelRef}
+          motionState={
+            environmentPanelClosing ? "closing" : environmentPanelMotionState
+          }
+          initialized={state.initialized}
+          gitStatus={state.gitStatus}
+          activeContext={state.activeContext}
+          activeProject={activeProject}
+          planUpdate={activePlanUpdate}
+          sourceItems={environmentSourceItems}
+          activeMenu={environmentPanelMenu}
+          running={anyThreadIsRunning}
+          pullRequestDisabledReason={pullRequestDisabledReason}
+          onSetActiveMenu={setEnvironmentPanelMenu}
+          onClose={() => {
+            setEnvironmentPanelOpen(false);
+            setEnvironmentPanelDismissed(true);
+            setEnvironmentPanelMenu(null);
+          }}
+          onOpenProject={() => void chooseProjectFolder()}
+          onSelectNoProject={() => void useNoProject(false)}
+          onSelectBranch={(branch) => void checkoutBranch(branch)}
+          onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
+          onOpenReview={() => {
+            setWorkspacePanelView("review");
+            setWorkspaceRightPanelView("review");
+            setWorkspaceMode(undefined);
+            setRightPanelOpenWithMotion(true);
+            setEnvironmentPanelOpen(false);
+            setEnvironmentPanelDismissed(true);
+            setEnvironmentPanelMenu(null);
+          }}
+          onOpenCommit={() => setEnvironmentDialog("commit")}
+          onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
+        />
+        {queryHistoryDocked ? (
+          <div className="query-history-environment-slot">
+            <QueryHistoryPopover
+              entries={pastQueries}
+              onSelect={handleQueryHistorySelect}
+            />
+          </div>
+        ) : null}
+      </div>
     ) : null;
   const conversationSearchSections = conversationSearchResultSections(
     conversationSearchResults,
@@ -5360,7 +5487,19 @@ export function App(): JSX.Element {
                   setRightPanelOpenWithMotion(true);
                 }}
               />
-            ) : splitConversation && state.thread && state.secondaryThread ? (
+            ) : (
+              <>
+                {!queryHistoryDocked && !activeThreadReadOnly ? (
+                  <QueryHistoryRail
+                    entries={pastQueries}
+                    maxBars={QUERY_HISTORY_RAIL_MAX_BARS}
+                    active={queryHistoryOpen}
+                    railRef={queryHistoryRailRef}
+                    onHoverStart={openQueryHistory}
+                    onHoverEnd={scheduleQueryHistoryClose}
+                  />
+                ) : null}
+                {splitConversation && state.thread && state.secondaryThread ? (
               <div className="conversation-split">
                 {renderThreadConversation(state.thread, "primary")}
                 {renderThreadConversation(state.secondaryThread, "secondary")}
@@ -5392,6 +5531,8 @@ export function App(): JSX.Element {
                   </Fragment>
                 ))}
               </div>
+            )}
+              </>
             )}
           </div>
         ) : (
@@ -5461,6 +5602,32 @@ export function App(): JSX.Element {
         />
       ) : null}
       <DesignTokensPanel />
+      {queryHistoryOpen &&
+      !queryHistoryDocked &&
+      !activeThreadReadOnly &&
+      pastQueries.length > 0 ? (
+        <FloatingMenuPortal
+          anchorRef={queryHistoryRailRef}
+          owner="composer-query-history"
+          placement="middle"
+          align="right"
+          crossAxisOffset={-8}
+          width={ENVIRONMENT_PANEL_WIDTH_PX}
+        >
+          <div
+            onMouseEnter={cancelQueryHistoryClose}
+            onMouseLeave={scheduleQueryHistoryClose}
+            style={{
+              width: `min(${ENVIRONMENT_PANEL_WIDTH_CSS}, calc(100vw - 32px))`,
+            }}
+          >
+            <QueryHistoryPopover
+              entries={pastQueries}
+              onSelect={handleQueryHistorySelect}
+            />
+          </div>
+        </FloatingMenuPortal>
+      ) : null}
     </div>
   );
 }
@@ -7097,7 +7264,7 @@ function TurnView({
   const notice = turnNoticeDisplay(turn, turnHasAssistantOutput(turn));
 
   return (
-    <section className="turn">
+    <section className="turn" id={turnAnchorID(turn.id)} data-turn-id={turn.id}>
       {userItems.map((item) => renderThreadItem(item, false))}
       {assistantDisplay ? (
         <AssistantTurnShell turn={turn} display={assistantDisplay} />
@@ -7556,6 +7723,9 @@ function ThreadItemView({
       return (
         <div
           className={`user-message-block${copyable ? " user-message-block-with-actions" : ""}`}
+          id={userMessageAnchorID(turnID, item.id)}
+          data-user-message-id={item.id}
+          data-turn-id={turnID}
         >
           <div className="message user-message">
             {item.images?.length ? (

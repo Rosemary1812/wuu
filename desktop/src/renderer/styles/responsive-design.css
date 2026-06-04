@@ -35,6 +35,7 @@
 }
 
 @media (max-width: 1060px) {
+  .environment-side-stack,
   .environment-panel {
     right: 16px;
   }

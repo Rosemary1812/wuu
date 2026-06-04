@@ -140,6 +140,9 @@
   justify-items: end;
   gap: 8px;
   margin-bottom: 14px;
+  /* Leave room above the jumped-to message so it doesn't slam into the
+     top edge of the conversation scroll surface. */
+  scroll-margin-top: 12px;
 }
 
 .conversation-split-width .user-message-block {

@@ -89,9 +89,13 @@ export type CodexModelLoadState = {
 
 export type CodexRuntimeMenu = "main" | "model" | null;
 export type ComposerVariant = "dock" | "hero";
-export type FloatingMenuOwner = "composer-runtime" | "composer-access" | "codex-runtime";
-type FloatingMenuPlacement = "above" | "below";
-type FloatingMenuAlign = "left" | "right";
+export type FloatingMenuOwner =
+  | "composer-runtime"
+  | "composer-access"
+  | "codex-runtime"
+  | "composer-query-history";
+export type FloatingMenuPlacement = "above" | "below" | "middle";
+export type FloatingMenuAlign = "left" | "right";
 
 export function isInsideFloatingMenu(target: Node, owner: FloatingMenuOwner): boolean {
   const element = target instanceof Element ? target : target.parentElement;
@@ -478,7 +482,7 @@ function ComposerQueueItem({
   );
 }
 
-function FloatingMenuPortal({
+export function FloatingMenuPortal({
   anchorRef,
   owner,
   placement,
@@ -521,8 +525,15 @@ function FloatingMenuPortal({
       };
       if (placement === "above") {
         nextStyle.bottom = Math.max(viewportMargin, window.innerHeight - rect.top + offset);
-      } else {
+      } else if (placement === "below") {
         nextStyle.top = Math.max(viewportMargin, rect.bottom + offset);
+      } else {
+        nextStyle.top = clamp(
+          rect.top + rect.height / 2,
+          viewportMargin,
+          window.innerHeight - viewportMargin
+        );
+        nextStyle.transform = "translateY(-50%)";
       }
       setStyle(nextStyle);
     }
