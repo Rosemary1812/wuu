@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { type FormEvent as ReactFormEvent, type RefObject, useState } from "react";
 import type { DesktopProject, GitStatusResult, InitializeResult, PlanUpdate, RuntimeContext } from "../shared/protocol";
-import type { ComposerImage, QueuedComposerMessage } from "./ComposerMessages";
+import type { ComposerFile, ComposerImage, QueuedComposerMessage } from "./ComposerMessages";
 import { shortCodexModelLabel } from "./RuntimeHelpers";
 
 export type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
@@ -35,6 +35,7 @@ export function buildEnvironmentSourceItems({
   activeContext,
   activeProject,
   selectedWorkspaceFile,
+  composerFiles,
   composerImages,
   queuedMessages,
   guideMessages
@@ -42,6 +43,7 @@ export function buildEnvironmentSourceItems({
   activeContext?: RuntimeContext;
   activeProject?: DesktopProject;
   selectedWorkspaceFile?: string;
+  composerFiles: ComposerFile[];
   composerImages: ComposerImage[];
   queuedMessages: QueuedComposerMessage[];
   guideMessages: QueuedComposerMessage[];
@@ -78,6 +80,14 @@ export function buildEnvironmentSourceItems({
       detail: `${composerImages.length} 张`
     });
   }
+  if (composerFiles.length > 0) {
+    items.push({
+      id: "composer-files",
+      icon: "file",
+      title: "输入文件",
+      detail: `${composerFiles.length} 个`
+    });
+  }
   if (guideMessages.length > 0) {
     items.push({
       id: "guide-messages",
@@ -88,11 +98,19 @@ export function buildEnvironmentSourceItems({
   }
   if (queuedMessages.length > 0) {
     const imageCount = queuedMessages.reduce((count, message) => count + message.images.length, 0);
+    const fileCount = queuedMessages.reduce((count, message) => count + message.files.length, 0);
+    const detail = [
+      `${queuedMessages.length} 条`,
+      imageCount > 0 ? `${imageCount} 张图片` : "",
+      fileCount > 0 ? `${fileCount} 个文件` : ""
+    ]
+      .filter(Boolean)
+      .join("，");
     items.push({
       id: "queued-messages",
       icon: "queue",
       title: "排队消息",
-      detail: imageCount > 0 ? `${queuedMessages.length} 条，${imageCount} 张图片` : `${queuedMessages.length} 条`
+      detail
     });
   }
   return items;

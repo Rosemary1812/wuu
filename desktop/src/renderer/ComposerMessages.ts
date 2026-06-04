@@ -1,5 +1,5 @@
 import type { ClipboardEvent as ReactClipboardEvent } from "react";
-import type { InputImage } from "../shared/protocol";
+import type { InputFile, InputImage } from "../shared/protocol";
 
 const IMAGE_MAX_DIMENSION = 2000;
 const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
@@ -8,21 +8,26 @@ export type ComposerImage = InputImage & {
   id: string;
 };
 
+export type ComposerFile = InputFile & {
+  id: string;
+};
+
 export type QueuedComposerMessage = {
   id: string;
   text: string;
   images: ComposerImage[];
+  files: ComposerFile[];
 };
 
-export function clipboardImageFiles(event: ReactClipboardEvent<HTMLTextAreaElement>): File[] {
+export function clipboardAttachmentFiles(event: ReactClipboardEvent<HTMLTextAreaElement>): File[] {
   const items = Array.from(event.clipboardData?.items ?? []);
   const files: File[] = [];
   for (const item of items) {
-    if (item.kind !== "file" || !item.type.toLowerCase().startsWith("image/")) {
+    if (item.kind !== "file") {
       continue;
     }
     const file = item.getAsFile();
-    if (file) {
+    if (file && isSupportedComposerAttachment(file)) {
       files.push(file);
     }
   }
@@ -32,9 +37,34 @@ export function clipboardImageFiles(event: ReactClipboardEvent<HTMLTextAreaEleme
 export async function composerImageFromFile(file: File): Promise<ComposerImage> {
   const image = await normalizeImageFileForPrompt(file);
   return {
-    id: nextComposerImageID(),
+    id: nextComposerAttachmentID(),
     ...image
   };
+}
+
+export async function composerFileFromFile(file: File): Promise<ComposerFile> {
+  if (!isPDFFile(file)) {
+    throw new Error("仅支持 PDF 文件");
+  }
+  const data = arrayBufferToBase64(await file.arrayBuffer());
+  return {
+    id: nextComposerAttachmentID(),
+    media_type: "application/pdf",
+    data,
+    filename: file.name.trim() || "attachment.pdf"
+  };
+}
+
+export function isSupportedComposerAttachment(file: File): boolean {
+  return file.type.toLowerCase().startsWith("image/") || isPDFFile(file);
+}
+
+export function isComposerImageFile(file: File): boolean {
+  return file.type.toLowerCase().startsWith("image/");
+}
+
+export function isPDFFile(file: File): boolean {
+  return file.type.toLowerCase() === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }
 
 async function normalizeImageFileForPrompt(file: File): Promise<InputImage> {
@@ -134,13 +164,13 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function nextComposerImageID(): string {
+function nextComposerAttachmentID(): string {
   const browserCrypto = globalThis.crypto as Crypto & { randomUUID?: () => string };
   return browserCrypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function nextComposerMessageID(): string {
-  return nextComposerImageID();
+  return nextComposerAttachmentID();
 }
 
 export function imageSource(image: InputImage): string {
@@ -148,20 +178,29 @@ export function imageSource(image: InputImage): string {
   return `data:${mediaType};base64,${image.data}`;
 }
 
-export function createComposerMessage(text: string, images: ComposerImage[]): QueuedComposerMessage | undefined {
+export function createComposerMessage(
+  text: string,
+  images: ComposerImage[],
+  files: ComposerFile[] = []
+): QueuedComposerMessage | undefined {
   const trimmed = text.trim();
-  if (!trimmed && images.length === 0) {
+  if (!trimmed && images.length === 0 && files.length === 0) {
     return undefined;
   }
   return {
     id: nextComposerMessageID(),
     text,
-    images: images.map((image) => ({ ...image }))
+    images: images.map((image) => ({ ...image })),
+    files: files.map((file) => ({ ...file }))
   };
 }
 
 export function inputImagesFromComposer(images: ComposerImage[]): InputImage[] {
   return images.map(({ media_type, data }) => ({ media_type, data }));
+}
+
+export function inputFilesFromComposer(files: ComposerFile[]): InputFile[] {
+  return files.map(({ media_type, data, filename }) => ({ media_type, data, filename }));
 }
 
 export function mergeGuideMessages(messages: QueuedComposerMessage[]): QueuedComposerMessage {
@@ -171,14 +210,16 @@ export function mergeGuideMessages(messages: QueuedComposerMessage[]): QueuedCom
       .map((message) => message.text.trim())
       .filter(Boolean)
       .join("\n"),
-    images: messages.flatMap((message) => message.images.map((image) => ({ ...image })))
+    images: messages.flatMap((message) => message.images.map((image) => ({ ...image }))),
+    files: messages.flatMap((message) => message.files.map((file) => ({ ...file })))
   };
 }
 
 export function queuedMessagePreview(message: QueuedComposerMessage): string {
   const text = message.text.trim().replace(/\s+/g, " ");
   const imageText = message.images.length > 0 ? `${message.images.length} 张图片` : "";
-  const preview = [text, imageText].filter(Boolean).join(" · ");
+  const fileText = message.files.length > 0 ? `${message.files.length} 个文件` : "";
+  const preview = [text, imageText, fileText].filter(Boolean).join(" · ");
   return trimMiddle(preview || "空消息", 48);
 }
 

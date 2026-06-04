@@ -243,6 +243,35 @@
   background: #fff;
 }
 
+.message-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+
+.message-file {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(280px, 100%);
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(31, 35, 40, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #24292f;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.message-file span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-block {
   display: block;
   width: 100%;

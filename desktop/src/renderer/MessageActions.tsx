@@ -1,6 +1,6 @@
-import { AlertCircle, Check, Copy, GitFork, ThumbsDown, ThumbsUp } from "lucide-react";
+import { AlertCircle, Check, Copy, FileText, GitFork, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { InputImage } from "../shared/protocol";
+import type { InputFile, InputImage } from "../shared/protocol";
 import { imageSource } from "./ComposerMessages";
 
 export function AgentMessageActions({ getText, onFork }: { getText: () => string; onFork?: () => void }): JSX.Element {
@@ -110,6 +110,19 @@ export function MessageImageGrid({ images }: { images: InputImage[] }): JSX.Elem
     <div className="message-images">
       {images.map((image, index) => (
         <img className="message-image" key={`${image.media_type}-${index}`} src={imageSource(image)} alt={`Image ${index + 1}`} />
+      ))}
+    </div>
+  );
+}
+
+export function MessageFileList({ files }: { files: InputFile[] }): JSX.Element {
+  return (
+    <div className="message-files">
+      {files.map((file, index) => (
+        <div className="message-file" key={`${file.media_type}-${file.filename ?? index}-${index}`}>
+          <FileText size={16} aria-hidden="true" />
+          <span>{file.filename?.trim() || `File ${index + 1}`}</span>
+        </div>
       ))}
     </div>
   );

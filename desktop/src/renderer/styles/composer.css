@@ -106,6 +106,10 @@
   padding: 12px 14px 0;
 }
 
+.composer-file-input {
+  display: none;
+}
+
 .composer-image-attachment {
   position: relative;
   width: 58px;
@@ -142,6 +146,49 @@
 
 .composer-image-attachment button:hover {
   background: #f2f3f0;
+  color: #1f2328;
+}
+
+.composer-file-attachment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: min(260px, 100%);
+  min-height: 38px;
+  gap: 8px;
+  padding: 8px 34px 8px 10px;
+  border: 1px solid #d9d9d5;
+  border-radius: 10px;
+  background: #f7f7f5;
+  color: #262a2f;
+  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.06);
+}
+
+.composer-file-attachment span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.composer-file-attachment button {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: #5c6268;
+}
+
+.composer-file-attachment button:hover {
+  background: #eceee9;
   color: #1f2328;
 }
 
@@ -1124,6 +1171,7 @@ html.swiss-international .workspace-main-empty button,
 html.swiss-international .environment-create-branch button,
 html.swiss-international .composer-tool-button,
 html.swiss-international .composer-queue-icon,
+html.swiss-international .composer-file-attachment button,
 html.swiss-international .composer-image-attachment button {
   border-radius: 0;
   background: transparent;

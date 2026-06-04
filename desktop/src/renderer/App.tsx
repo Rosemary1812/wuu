@@ -94,9 +94,14 @@ import {
   messageFlowStatusLabel,
 } from "./message-flow-display";
 import {
+  composerFileFromFile,
   composerImageFromFile,
   createComposerMessage,
+  inputFilesFromComposer,
   inputImagesFromComposer,
+  isComposerImageFile,
+  isPDFFile,
+  type ComposerFile,
   type ComposerImage,
   type QueuedComposerMessage,
 } from "./ComposerMessages";
@@ -137,6 +142,7 @@ import {
 } from "./LoadingViews";
 import {
   AgentMessageActions,
+  MessageFileList,
   MessageCopyButton,
   MessageImageGrid,
 } from "./MessageActions";
@@ -237,10 +243,11 @@ type ConversationSearchResultSection = {
 type ComposerDraftState = {
   prompt: string;
   images: ComposerImage[];
+  files: ComposerFile[];
 };
 
 function emptyComposerDraft(): ComposerDraftState {
-  return { prompt: "", images: [] };
+  return { prompt: "", images: [], files: [] };
 }
 
 function initialSplitComposerDrafts(): Record<
@@ -257,6 +264,7 @@ function cloneComposerDraft(draft: ComposerDraftState): ComposerDraftState {
   return {
     prompt: draft.prompt,
     images: draft.images.map((image) => ({ ...image })),
+    files: draft.files.map((file) => ({ ...file })),
   };
 }
 
@@ -268,6 +276,7 @@ type SessionTab =
       title: string;
       prompt: string;
       images: ComposerImage[];
+      files: ComposerFile[];
       createdAt: number;
     }
   | {
@@ -278,6 +287,7 @@ type SessionTab =
       title: string;
       prompt: string;
       images: ComposerImage[];
+      files: ComposerFile[];
     }
   | {
       id: string;
@@ -482,6 +492,7 @@ export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
   const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+  const [composerFiles, setComposerFiles] = useState<ComposerFile[]>([]);
   const [splitComposerDrafts, setSplitComposerDrafts] = useState<
     Record<ConversationPaneID, ComposerDraftState>
   >(initialSplitComposerDrafts);
@@ -1176,6 +1187,7 @@ export function App(): JSX.Element {
         activeContext: state.activeContext,
         activeProject,
         selectedWorkspaceFile: activeWorkspaceFile,
+        composerFiles,
         composerImages,
         queuedMessages,
         guideMessages,
@@ -1183,6 +1195,7 @@ export function App(): JSX.Element {
     [
       activeProject,
       activeWorkspaceFile,
+      composerFiles,
       composerImages,
       guideMessages,
       queuedMessages,
@@ -1757,6 +1770,7 @@ export function App(): JSX.Element {
     const draft = {
       prompt: `/${name} `,
       images: [],
+      files: [],
     };
     const tab = createDraftSessionTab(
       `draft:skill:${Date.now()}:${draftSessionTabCounterRef.current}`,
@@ -1834,25 +1848,51 @@ export function App(): JSX.Element {
     setRightPanelOpenWithMotion(true);
   }
 
-  async function attachComposerImageFiles(files: File[]): Promise<void> {
+  async function buildComposerAttachments(files: File[]): Promise<{
+    images: ComposerImage[];
+    files: ComposerFile[];
+  }> {
+    const imageFiles = files.filter(isComposerImageFile);
+    const pdfFiles = files.filter(isPDFFile);
+    return {
+      images: await Promise.all(
+        imageFiles.map((file) => composerImageFromFile(file)),
+      ),
+      files: await Promise.all(
+        pdfFiles.map((file) => composerFileFromFile(file)),
+      ),
+    };
+  }
+
+  async function attachComposerAttachmentFiles(files: File[]): Promise<void> {
     if (files.length === 0) {
       return;
     }
     try {
-      const images = await Promise.all(
-        files.map((file) => composerImageFromFile(file)),
-      );
-      setComposerImages((current) => [...current, ...images]);
+      const attachments = await buildComposerAttachments(files);
+      if (attachments.images.length === 0 && attachments.files.length === 0) {
+        setState((current) => ({
+          ...current,
+          status: "仅支持图片和 PDF",
+        }));
+        return;
+      }
+      setComposerImages((current) => [...current, ...attachments.images]);
+      setComposerFiles((current) => [...current, ...attachments.files]);
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "图片粘贴失败",
+        status: error instanceof Error ? error.message : "附件添加失败",
       }));
     }
   }
 
   function removeComposerImage(id: string): void {
     setComposerImages((current) => current.filter((image) => image.id !== id));
+  }
+
+  function removeComposerFile(id: string): void {
+    setComposerFiles((current) => current.filter((file) => file.id !== id));
   }
 
   function updateSplitComposerDraft(
@@ -1875,7 +1915,7 @@ export function App(): JSX.Element {
     updateSplitComposerDraft(pane, (draft) => ({ ...draft, prompt: value }));
   }
 
-  async function attachSplitComposerImageFiles(
+  async function attachSplitComposerAttachmentFiles(
     pane: ConversationPaneID,
     files: File[],
   ): Promise<void> {
@@ -1883,17 +1923,23 @@ export function App(): JSX.Element {
       return;
     }
     try {
-      const images = await Promise.all(
-        files.map((file) => composerImageFromFile(file)),
-      );
+      const attachments = await buildComposerAttachments(files);
+      if (attachments.images.length === 0 && attachments.files.length === 0) {
+        setState((current) => ({
+          ...current,
+          status: "仅支持图片和 PDF",
+        }));
+        return;
+      }
       updateSplitComposerDraft(pane, (draft) => ({
         ...draft,
-        images: [...draft.images, ...images],
+        images: [...draft.images, ...attachments.images],
+        files: [...draft.files, ...attachments.files],
       }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "图片粘贴失败",
+        status: error instanceof Error ? error.message : "附件添加失败",
       }));
     }
   }
@@ -1908,10 +1954,18 @@ export function App(): JSX.Element {
     }));
   }
 
+  function removeSplitComposerFile(pane: ConversationPaneID, id: string): void {
+    updateSplitComposerDraft(pane, (draft) => ({
+      ...draft,
+      files: draft.files.filter((file) => file.id !== id),
+    }));
+  }
+
   function moveSplitDraftToGlobalComposer(pane: ConversationPaneID): void {
     const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
     setPrompt(draft.prompt);
     setComposerImages(draft.images.map((image) => ({ ...image })));
+    setComposerFiles(draft.files.map((file) => ({ ...file })));
     setSplitComposerDrafts(initialSplitComposerDrafts());
   }
 
@@ -2056,12 +2110,14 @@ export function App(): JSX.Element {
       return;
     }
     try {
+      const files = inputFilesFromComposer(message.files);
       await window.wuu.steerTurn(
         targetThread.id,
         turnID,
         message.text.trim(),
         inputImagesFromComposer(message.images),
         message.id,
+        files,
       );
       setQueuedMessagesNow(remainingQueued);
       setGuideMessagesNow([...guideMessagesRef.current, message]);
@@ -2140,6 +2196,7 @@ export function App(): JSX.Element {
         containerRef={variant === "dock" ? dockComposerRef : undefined}
         prompt={prompt}
         setPrompt={setPrompt}
+        files={composerFiles}
         images={composerImages}
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
@@ -2216,7 +2273,8 @@ export function App(): JSX.Element {
         onOpenProject={() => void chooseProjectFolder()}
         onStartNewThread={() => void startNewThread()}
         onOpenWorkspaceTool={openWorkspaceTool}
-        onPasteImageFiles={(files) => void attachComposerImageFiles(files)}
+        onPasteAttachmentFiles={(files) => void attachComposerAttachmentFiles(files)}
+        onRemoveFile={removeComposerFile}
         onRemoveImage={removeComposerImage}
         onRemoveQueuedMessage={removeQueuedMessage}
         onRemoveGuideMessage={removeGuideMessage}
@@ -2299,13 +2357,15 @@ export function App(): JSX.Element {
         <SplitPaneComposer
           prompt={draft.prompt}
           setPrompt={(value) => setSplitComposerPrompt(pane, value)}
+          files={draft.files}
           images={draft.images}
           running={(!paneReadOnly && paneRunning) || viewSwitchPending}
           readOnly={paneReadOnly}
           status={paneStatus}
-          onPasteImageFiles={(files) =>
-            void attachSplitComposerImageFiles(pane, files)
+          onPasteAttachmentFiles={(files) =>
+            void attachSplitComposerAttachmentFiles(pane, files)
           }
+          onRemoveFile={(id) => removeSplitComposerFile(pane, id)}
           onRemoveImage={(id) => removeSplitComposerImage(pane, id)}
           onSend={() => void sendPromptForPane(pane)}
           onInterrupt={() => void interruptPane(pane)}
@@ -2591,6 +2651,7 @@ export function App(): JSX.Element {
         const nextTab = nextDraftSessionTab(currentState.activeContext);
         setPrompt("");
         setComposerImages([]);
+        setComposerFiles([]);
         clearPendingComposerMessages();
         setState((current) => ({
           ...persistActiveSessionTabDraft(
@@ -2662,6 +2723,7 @@ export function App(): JSX.Element {
         const nextTab = nextDraftSessionTab(currentState.activeContext);
         setPrompt("");
         setComposerImages([]);
+        setComposerFiles([]);
         clearPendingComposerMessages();
         setState((current) => ({
           ...persistActiveSessionTabDraft(
@@ -2740,11 +2802,13 @@ export function App(): JSX.Element {
     ) {
       setPrompt("");
       setComposerImages([]);
+      setComposerFiles([]);
       clearPendingComposerMessages();
       const nextTab =
         activeSessionTab(state)?.kind === "draft" &&
         !prompt.trim() &&
-        composerImages.length === 0
+        composerImages.length === 0 &&
+        composerFiles.length === 0
           ? activeSessionTab(state)
           : nextDraftSessionTab(state.activeContext);
       if (!nextTab) {
@@ -2778,6 +2842,7 @@ export function App(): JSX.Element {
       }
       setPrompt("");
       setComposerImages([]);
+      setComposerFiles([]);
       clearPendingComposerMessages();
       const nextTab = nextDraftSessionTab(loadedState.activeContext);
       setState((current) => {
@@ -3104,6 +3169,7 @@ export function App(): JSX.Element {
       queuedMessages,
       guideMessages,
       composerImages,
+      composerFiles,
     });
     try {
       await navigator.clipboard.writeText(snapshot);
@@ -3123,12 +3189,14 @@ export function App(): JSX.Element {
     return {
       prompt,
       images: composerImages.map((image) => ({ ...image })),
+      files: composerFiles.map((file) => ({ ...file })),
     };
   }
 
   function restorePrimaryComposerDraft(draft: ComposerDraftState): void {
     setPrompt(draft.prompt);
     setComposerImages(draft.images.map((image) => ({ ...image })));
+    setComposerFiles(draft.files.map((file) => ({ ...file })));
   }
 
   function restoreSessionTabComposerDraft(tab: SessionTab): void {
@@ -3601,6 +3669,7 @@ export function App(): JSX.Element {
     setWorkspaceMode(undefined);
     setPrompt("");
     setComposerImages([]);
+    setComposerFiles([]);
     clearPendingComposerMessages();
     if (
       state.activeContext.kind === "no_project" &&
@@ -3612,7 +3681,8 @@ export function App(): JSX.Element {
     const nextTab =
       activeSessionTab(state)?.kind === "draft" &&
       !prompt.trim() &&
-      composerImages.length === 0
+      composerImages.length === 0 &&
+      composerFiles.length === 0
         ? activeSessionTab(state)
         : nextDraftSessionTab(state.activeContext);
     if (!nextTab) {
@@ -3641,6 +3711,7 @@ export function App(): JSX.Element {
     setWorkspaceMode(undefined);
     setPrompt("");
     setComposerImages([]);
+    setComposerFiles([]);
     clearPendingComposerMessages();
     const demo = createAgentTreeDemo(activeContext.cwd, state.initialized);
     const demoThreads = [demo.parent, ...demo.children];
@@ -3675,6 +3746,7 @@ export function App(): JSX.Element {
     setWorkspaceMode(undefined);
     setPrompt("");
     setComposerImages([]);
+    setComposerFiles([]);
     clearPendingComposerMessages();
     const thread = createConversationFixture(
       kind,
@@ -3978,9 +4050,14 @@ export function App(): JSX.Element {
         ? cloneComposerDraft(
             splitComposerDrafts[sourcePane] ?? emptyComposerDraft(),
           )
-        : { prompt, images: composerImages.map((image) => ({ ...image })) };
+        : {
+            prompt,
+            images: composerImages.map((image) => ({ ...image })),
+            files: composerFiles.map((file) => ({ ...file })),
+          };
       setPrompt("");
       setComposerImages([]);
+      setComposerFiles([]);
       setSplitComposerDrafts({
         primary: sourceDraft,
         secondary: emptyComposerDraft(),
@@ -4084,6 +4161,7 @@ export function App(): JSX.Element {
     if (archivedActiveThread) {
       setPrompt("");
       setComposerImages([]);
+      setComposerFiles([]);
       setSplitComposerDrafts(initialSplitComposerDrafts());
     }
     if (isLocalDemoThread) {
@@ -4182,7 +4260,7 @@ export function App(): JSX.Element {
     if (viewSwitchPending) {
       return;
     }
-    const message = createComposerMessage(prompt, composerImages);
+    const message = createComposerMessage(prompt, composerImages, composerFiles);
     const currentState = appStateRef.current;
     const targetThread = activeThreadForState(currentState);
     if (targetThread?.read_only) {
@@ -4194,11 +4272,13 @@ export function App(): JSX.Element {
     }
     setPrompt("");
     setComposerImages([]);
+    setComposerFiles([]);
     if (isStateActiveThreadRunning(currentState)) {
       const queued = await queueComposerMessage(message, targetThread);
       if (!queued) {
         setPrompt(message.text);
         setComposerImages(message.images);
+        setComposerFiles(message.files);
       }
       return;
     }
@@ -4212,8 +4292,9 @@ export function App(): JSX.Element {
     const currentState = appStateRef.current;
     const text = message.text.trim();
     const images = inputImagesFromComposer(message.images);
+    const files = inputFilesFromComposer(message.files);
     if (
-      (!text && images.length === 0) ||
+      (!text && images.length === 0 && files.length === 0) ||
       !targetThread ||
       targetThread.read_only ||
       !currentState.activeContext ||
@@ -4223,7 +4304,7 @@ export function App(): JSX.Element {
       return false;
     }
     try {
-      await window.wuu.queueTurn(targetThread.id, text, images, message.id);
+      await window.wuu.queueTurn(targetThread.id, text, images, message.id, files);
       enqueueComposerMessage(message);
       return true;
     } catch (error) {
@@ -4247,8 +4328,9 @@ export function App(): JSX.Element {
         : "primary";
     const text = message.text.trim();
     const images = inputImagesFromComposer(message.images);
+    const files = inputFilesFromComposer(message.files);
     if (
-      (!text && images.length === 0) ||
+      (!text && images.length === 0 && files.length === 0) ||
       !currentState.activeContext ||
       !currentState.initialized ||
       targetThread?.read_only ||
@@ -4262,10 +4344,7 @@ export function App(): JSX.Element {
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
-      detail:
-        images.length > 0
-          ? `已提交输入，包含 ${images.length} 张图片`
-          : "已提交输入",
+      detail: composerSubmissionDetail(images.length, files.length),
       tone: "running",
       threadID: targetThread?.id,
     });
@@ -4324,7 +4403,7 @@ export function App(): JSX.Element {
             : current.activeSessionTabID,
         threads: upsertThread(current.threads, thread),
       }));
-      const result = await window.wuu.startTurn(thread.id, text, images);
+      const result = await window.wuu.startTurn(thread.id, text, images, files);
       setState((current) =>
         updateThreadByID(
           setThreadForPane(current, targetPane, thread),
@@ -4363,6 +4442,7 @@ export function App(): JSX.Element {
       if (restoreDraftOnError) {
         setPrompt(message.text);
         setComposerImages(message.images);
+        setComposerFiles(message.files);
       }
       return false;
     }
@@ -4374,7 +4454,7 @@ export function App(): JSX.Element {
       return;
     }
     const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
-    const message = createComposerMessage(draft.prompt, draft.images);
+    const message = createComposerMessage(draft.prompt, draft.images, draft.files);
     const currentState = appStateRef.current;
     const targetThread = threadForPane(currentState, pane);
     if (targetThread?.read_only) {
@@ -4414,6 +4494,7 @@ export function App(): JSX.Element {
         [pane]: {
           prompt: message.text,
           images: message.images.map((image) => ({ ...image })),
+          files: message.files.map((file) => ({ ...file })),
         },
       }));
     }
@@ -4427,8 +4508,9 @@ export function App(): JSX.Element {
     const targetThread = threadForPane(currentState, pane);
     const text = message.text.trim();
     const images = inputImagesFromComposer(message.images);
+    const files = inputFilesFromComposer(message.files);
     if (
-      (!text && images.length === 0) ||
+      (!text && images.length === 0 && files.length === 0) ||
       !targetThread ||
       targetThread.read_only ||
       !currentState.activeContext ||
@@ -4442,10 +4524,7 @@ export function App(): JSX.Element {
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
-      detail:
-        images.length > 0
-          ? `已提交输入，包含 ${images.length} 张图片`
-          : "已提交输入",
+      detail: composerSubmissionDetail(images.length, files.length),
       tone: "running",
       threadID: targetThread.id,
     });
@@ -4462,7 +4541,7 @@ export function App(): JSX.Element {
       status: "正在发送请求",
     }));
     try {
-      const result = await window.wuu.startTurn(targetThread.id, text, images);
+      const result = await window.wuu.startTurn(targetThread.id, text, images, files);
       setState((current) =>
         updateThreadByID(
           { ...current, activePane: pane },
@@ -5212,6 +5291,7 @@ export function App(): JSX.Element {
                     queuedMessages={queuedMessages}
                     guideMessages={guideMessages}
                     composerImages={composerImages}
+                    composerFiles={composerFiles}
                     copied={runDebugCopied}
                     onCopy={() => void copyRunDebugInfo()}
                     onClose={() => setRunDebugOpen(false)}
@@ -5392,6 +5472,7 @@ function RunDebugPanel({
   queuedMessages,
   guideMessages,
   composerImages,
+  composerFiles,
   copied,
   onCopy,
   onClose,
@@ -5402,6 +5483,7 @@ function RunDebugPanel({
   queuedMessages: QueuedComposerMessage[];
   guideMessages: QueuedComposerMessage[];
   composerImages: ComposerImage[];
+  composerFiles: ComposerFile[];
   copied: boolean;
   onCopy: () => void;
   onClose: () => void;
@@ -5417,6 +5499,7 @@ function RunDebugPanel({
     queuedMessages.length > 0 ? `排队 ${queuedMessages.length}` : "",
     guideMessages.length > 0 ? `引导 ${guideMessages.length}` : "",
     composerImages.length > 0 ? `图片 ${composerImages.length}` : "",
+    composerFiles.length > 0 ? `文件 ${composerFiles.length}` : "",
   ]
     .filter(Boolean)
     .join("，");
@@ -6306,6 +6389,7 @@ function createDraftSessionTab(
     title: "新对话",
     prompt: draft.prompt,
     images: draft.images.map((image) => ({ ...image })),
+    files: draft.files.map((file) => ({ ...file })),
     createdAt: Date.now(),
   };
 }
@@ -6323,6 +6407,7 @@ function createThreadSessionTab(
     title: threadDisplayTitle(thread),
     prompt: draft.prompt,
     images: draft.images.map((image) => ({ ...image })),
+    files: draft.files.map((file) => ({ ...file })),
   };
 }
 
@@ -6456,6 +6541,7 @@ function persistActiveSessionTabDraft(
             ...tab,
             prompt: draft.prompt,
             images: draft.images.map((image) => ({ ...image })),
+            files: draft.files.map((file) => ({ ...file })),
           }
         : tab,
     ),
@@ -6502,6 +6588,7 @@ function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
   return {
     prompt: tab.prompt,
     images: tab.images.map((image) => ({ ...image })),
+    files: tab.files.map((file) => ({ ...file })),
   };
 }
 
@@ -6777,11 +6864,26 @@ function turnPreview(turn: Turn): string {
   if (images.length > 1) {
     return `[${images.length} images]`;
   }
+  const files = userItem.files ?? [];
+  if (files.length === 1) {
+    return `[${files[0].filename?.trim() || "File #1"}]`;
+  }
+  if (files.length > 1) {
+    return `[${files.length} files]`;
+  }
   return "";
 }
 
 function hasText(value: string): boolean {
   return value.trim() !== "";
+}
+
+function composerSubmissionDetail(imageCount: number, fileCount: number): string {
+  const parts = [
+    imageCount > 0 ? `${imageCount} 张图片` : "",
+    fileCount > 0 ? `${fileCount} 个文件` : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? `已提交输入，包含 ${parts.join("、")}` : "已提交输入";
 }
 
 function laterTimestamp(
@@ -7459,6 +7561,7 @@ function ThreadItemView({
             {item.images?.length ? (
               <MessageImageGrid images={item.images} />
             ) : null}
+            {item.files?.length ? <MessageFileList files={item.files} /> : null}
             {text ? <RichContent text={text} cwd={cwd} /> : null}
           </div>
           {copyable ? (
@@ -8178,12 +8281,14 @@ function buildRunDebugSnapshot({
   queuedMessages,
   guideMessages,
   composerImages,
+  composerFiles,
 }: {
   state: AppState;
   events: RunDebugEvent[];
   queuedMessages: QueuedComposerMessage[];
   guideMessages: QueuedComposerMessage[];
   composerImages: ComposerImage[];
+  composerFiles: ComposerFile[];
 }): string {
   const phase = runDebugPhaseForState(state);
   const thread = activeThreadForState(state);
@@ -8204,6 +8309,7 @@ function buildRunDebugSnapshot({
     `queued_messages: ${queuedMessages.length}`,
     `guide_messages: ${guideMessages.length}`,
     `composer_images: ${composerImages.length}`,
+    `composer_files: ${composerFiles.length}`,
   ];
 
   lines.push("");

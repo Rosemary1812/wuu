@@ -12,6 +12,7 @@ import {
   Laptop,
   MessageSquarePlus,
   MoreHorizontal,
+  Paperclip,
   Plus,
   Search,
   Send,
@@ -60,9 +61,10 @@ import {
   type ComposerSlashDraft
 } from "./ComposerSlashCommands";
 import {
-  clipboardImageFiles,
+  clipboardAttachmentFiles,
   imageSource,
   queuedMessagePreview,
+  type ComposerFile,
   type ComposerImage,
   type QueuedComposerMessage
 } from "./ComposerMessages";
@@ -214,19 +216,35 @@ function useComposerQueryHistory({
   return { resetQueryHistoryNavigation, handleQueryHistoryKeyDown };
 }
 
-export function ComposerImageStrip({
+export function ComposerAttachmentStrip({
+  files,
   images,
+  onRemoveFile,
   onRemoveImage
 }: {
+  files: ComposerFile[];
   images: ComposerImage[];
+  onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
-}): JSX.Element {
+}): JSX.Element | null {
+  if (images.length === 0 && files.length === 0) {
+    return null;
+  }
   return (
     <div className="composer-attachments">
       {images.map((image, index) => (
         <div className="composer-image-attachment" key={image.id}>
           <img src={imageSource(image)} alt={`Image ${index + 1}`} />
           <button type="button" aria-label={`移除图片 ${index + 1}`} onClick={() => onRemoveImage(image.id)}>
+            <X size={13} />
+          </button>
+        </div>
+      ))}
+      {files.map((file, index) => (
+        <div className="composer-file-attachment" key={file.id}>
+          <FileText size={16} aria-hidden="true" />
+          <span>{file.filename?.trim() || `PDF ${index + 1}`}</span>
+          <button type="button" aria-label={`移除文件 ${index + 1}`} onClick={() => onRemoveFile(file.id)}>
             <X size={13} />
           </button>
         </div>
@@ -238,32 +256,38 @@ export function ComposerImageStrip({
 export function SplitPaneComposer({
   prompt,
   setPrompt,
+  files,
   images,
   running,
   readOnly,
   status,
   queryHistorySessionID,
   queryHistory = [],
-  onPasteImageFiles,
+  onPasteAttachmentFiles,
+  onRemoveFile,
   onRemoveImage,
   onSend,
   onInterrupt
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
+  files: ComposerFile[];
   images: ComposerImage[];
   running: boolean;
   readOnly: boolean;
   status: string;
   queryHistorySessionID?: string;
   queryHistory?: string[];
-  onPasteImageFiles: (files: File[]) => void;
+  onPasteAttachmentFiles: (files: File[]) => void;
+  onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
   onSend: () => void;
   onInterrupt: () => void;
 }): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const hasDraft = prompt.trim().length > 0 || images.length > 0;
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const hasAttachments = images.length > 0 || files.length > 0;
+  const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const statusText = status === "ready" ? "" : status;
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
     disabled: readOnly || images.length > 0,
@@ -291,11 +315,26 @@ export function SplitPaneComposer({
   return (
     <footer className="split-composer">
       <div className="split-composer-shell">
-        {images.length > 0 ? <ComposerImageStrip images={images} onRemoveImage={onRemoveImage} /> : null}
+        <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
+        <input
+          ref={attachmentInputRef}
+          className="composer-file-input"
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          tabIndex={-1}
+          onChange={(event) => {
+            const selected = Array.from(event.currentTarget.files ?? []);
+            event.currentTarget.value = "";
+            if (selected.length > 0) {
+              onPasteAttachmentFiles(selected);
+            }
+          }}
+        />
         <textarea
           ref={textareaRef}
           value={prompt}
-          placeholder={readOnly ? "子任务会话只读" : images.length > 0 ? "添加描述" : "继续这个分支"}
+          placeholder={readOnly ? "子任务会话只读" : hasAttachments ? "添加描述" : "继续这个分支"}
           disabled={readOnly}
           aria-readonly={readOnly}
           onChange={(event) => {
@@ -306,16 +345,26 @@ export function SplitPaneComposer({
             if (readOnly) {
               return;
             }
-            const files = clipboardImageFiles(event);
-            if (files.length === 0) {
+            const pasted = clipboardAttachmentFiles(event);
+            if (pasted.length === 0) {
               return;
             }
             event.preventDefault();
-            onPasteImageFiles(files);
+            onPasteAttachmentFiles(pasted);
           }}
           onKeyDown={handleKeyDown}
         />
         <div className="split-composer-bar">
+          <button
+            className="composer-action-button composer-attach-button"
+            type="button"
+            aria-label="添加附件"
+            title="添加附件"
+            disabled={readOnly}
+            onClick={() => attachmentInputRef.current?.click()}
+          >
+            <Paperclip size={16} />
+          </button>
           {statusText ? <span className="split-composer-status">{statusText}</span> : <span />}
           {running ? (
             <button
@@ -500,6 +549,7 @@ export function Composer({
   containerRef,
   prompt,
   setPrompt,
+  files,
   images,
   queuedMessages,
   guideMessages,
@@ -537,7 +587,8 @@ export function Composer({
   onOpenProject,
   onStartNewThread,
   onOpenWorkspaceTool,
-  onPasteImageFiles,
+  onPasteAttachmentFiles,
+  onRemoveFile,
   onRemoveImage,
   onRemoveQueuedMessage,
   onRemoveGuideMessage,
@@ -552,6 +603,7 @@ export function Composer({
   containerRef?: Ref<HTMLElement>;
   prompt: string;
   setPrompt: (value: string) => void;
+  files: ComposerFile[];
   images: ComposerImage[];
   queuedMessages: QueuedComposerMessage[];
   guideMessages: QueuedComposerMessage[];
@@ -589,7 +641,8 @@ export function Composer({
   onOpenProject: () => void;
   onStartNewThread: () => void;
   onOpenWorkspaceTool: (view: WorkspacePanelView) => void;
-  onPasteImageFiles: (files: File[]) => void;
+  onPasteAttachmentFiles: (files: File[]) => void;
+  onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
   onRemoveQueuedMessage: (id: string) => void;
   onRemoveGuideMessage: (id: string) => void;
@@ -603,9 +656,11 @@ export function Composer({
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = status === "ready" ? "" : status;
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
-  const hasDraft = prompt.trim().length > 0 || images.length > 0;
+  const hasAttachments = images.length > 0 || files.length > 0;
+  const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const menuPlacement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
   const slashDraft = parseComposerSlashDraft(prompt);
@@ -791,11 +846,26 @@ export function Composer({
           </div>
         ) : null}
         <div className="composer">
-          {images.length > 0 ? <ComposerImageStrip images={images} onRemoveImage={onRemoveImage} /> : null}
+          <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
+          <input
+            ref={attachmentInputRef}
+            className="composer-file-input"
+            type="file"
+            accept="image/*,application/pdf"
+            multiple
+            tabIndex={-1}
+            onChange={(event) => {
+              const selected = Array.from(event.currentTarget.files ?? []);
+              event.currentTarget.value = "";
+              if (selected.length > 0) {
+                onPasteAttachmentFiles(selected);
+              }
+            }}
+          />
           <textarea
             ref={textareaRef}
             value={prompt}
-            placeholder={readOnly ? "子任务会话只读" : images.length > 0 ? "添加描述" : "尽管问，或输入 / 选择命令"}
+            placeholder={readOnly ? "子任务会话只读" : hasAttachments ? "添加描述" : "尽管问，或输入 / 选择命令"}
             disabled={readOnly}
             aria-readonly={readOnly}
             aria-controls={slashMenuOpen ? slashMenuID : undefined}
@@ -810,12 +880,12 @@ export function Composer({
               if (readOnly) {
                 return;
               }
-              const files = clipboardImageFiles(event);
-              if (files.length === 0) {
+              const pasted = clipboardAttachmentFiles(event);
+              if (pasted.length === 0) {
                 return;
               }
               event.preventDefault();
-              onPasteImageFiles(files);
+              onPasteAttachmentFiles(pasted);
             }}
             onBlur={() => {
               if (slashMenuOpen) {
@@ -827,6 +897,16 @@ export function Composer({
           <div className="composer-bar">
             <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
               <Plus size={20} />
+            </button>
+            <button
+              className="composer-tool-button"
+              type="button"
+              aria-label="添加附件"
+              title="添加附件"
+              disabled={readOnly}
+              onClick={() => attachmentInputRef.current?.click()}
+            >
+              <Paperclip size={18} />
             </button>
             <button
               className="composer-tool-button composer-slash-button"
