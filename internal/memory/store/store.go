@@ -75,6 +75,9 @@ type SearchQuery struct {
 	// Tags, if non-empty, restricts results to entries that carry ALL
 	// listed tags.
 	Tags []string
+	// Since, if non-zero, restricts results to entries created at or
+	// after this time.
+	Since time.Time
 	// Limit caps the number of returned entries.
 	Limit int
 }

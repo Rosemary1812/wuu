@@ -227,6 +227,9 @@ func (f *FileProvider) Search(_ context.Context, q SearchQuery) ([]Entry, error)
 		if !tagsMatch(e.Tags, q.Tags) {
 			return false
 		}
+		if !q.Since.IsZero() && e.CreatedAt.Before(q.Since) {
+			return false
+		}
 		if needle != "" && !strings.Contains(strings.ToLower(e.Content), needle) {
 			return false
 		}

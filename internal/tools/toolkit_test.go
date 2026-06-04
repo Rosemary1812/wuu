@@ -378,7 +378,6 @@ func TestToolkit_PathEscapeBlocked(t *testing.T) {
 	}
 }
 
-
 func TestToolkit_TaskAddressedAgentTools_RegisteredInDefinitions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -1980,7 +1979,7 @@ func TestToolkit_GrepIncludeMatchesRelativePaths_Ripgrep(t *testing.T) {
 }
 
 func TestToolkit_MemoryTools_AlwaysRegistered(t *testing.T) {
-	// The three memory tools are part of the static registry built by New():
+	// The memory tools are part of the static registry built by New():
 	// they appear in Definitions() even when no provider has been attached.
 	root := t.TempDir()
 	kit, err := New(root)
@@ -1992,7 +1991,7 @@ func TestToolkit_MemoryTools_AlwaysRegistered(t *testing.T) {
 	for _, d := range kit.Definitions() {
 		names[d.Name] = true
 	}
-	for _, want := range []string{"memory_store", "memory_recall", "memory_search"} {
+	for _, want := range []string{"read_memory", "write_memory"} {
 		if !names[want] {
 			t.Errorf("memory tool %q missing from Definitions()", want)
 		}
@@ -2010,30 +2009,22 @@ func TestToolkit_MemoryTools_NoProviderReturnsError(t *testing.T) {
 	}
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "memory_store",
+		Name:      "write_memory",
 		Arguments: `{"content":"a note"}`,
 	})
 	if err == nil {
-		t.Fatalf("expected error from memory_store without provider, got nil")
+		t.Fatalf("expected error from write_memory without provider, got nil")
 	}
 	if !strings.Contains(err.Error(), "no Provider") {
 		t.Fatalf("expected no-provider error, got: %v", err)
 	}
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "memory_recall",
+		Name:      "read_memory",
 		Arguments: `{"limit":5}`,
 	})
 	if err == nil {
-		t.Fatalf("expected error from memory_recall without provider, got nil")
-	}
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "memory_search",
-		Arguments: `{"query":"anything"}`,
-	})
-	if err == nil {
-		t.Fatalf("expected error from memory_search without provider, got nil")
+		t.Fatalf("expected error from read_memory without provider, got nil")
 	}
 }
 
@@ -2053,32 +2044,32 @@ func TestToolkit_MemoryTools_SetMemorySwapsProvider(t *testing.T) {
 	}
 	kit.SetMemory(provider)
 
-	storeResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "memory_store",
+	writeResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_memory",
 		Arguments: `{"content":"prefer tabs over spaces","tags":["go","formatting"]}`,
 	})
 	if err != nil {
-		t.Fatalf("memory_store with provider: %v", err)
+		t.Fatalf("write_memory with provider: %v", err)
 	}
-	if !strings.Contains(storeResp, `"stored":true`) {
-		t.Fatalf("unexpected memory_store response: %s", storeResp)
+	if !strings.Contains(writeResp, `"written":true`) {
+		t.Fatalf("unexpected write_memory response: %s", writeResp)
 	}
 
-	searchResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "memory_search",
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_memory",
 		Arguments: `{"query":"tabs","limit":5}`,
 	})
 	if err != nil {
-		t.Fatalf("memory_search: %v", err)
+		t.Fatalf("read_memory: %v", err)
 	}
-	if !strings.Contains(searchResp, "prefer tabs over spaces") {
-		t.Fatalf("expected search to find the stored note, got: %s", searchResp)
+	if !strings.Contains(readResp, "prefer tabs over spaces") {
+		t.Fatalf("expected read to find the stored note, got: %s", readResp)
 	}
 
 	// Detaching returns the tools to the "no provider" error branch.
 	kit.SetMemory(nil)
 	if _, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "memory_store",
+		Name:      "write_memory",
 		Arguments: `{"content":"a note"}`,
 	}); err == nil || !strings.Contains(err.Error(), "no Provider") {
 		t.Fatalf("expected no-provider error after detach, got: %v", err)

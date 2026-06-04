@@ -176,9 +176,8 @@ func (t *Toolkit) rebuildRegistry() {
 		// Deferred tool discovery
 		NewToolSearchTool(t),
 	}
-	// Memory tools: always registered, but each individual tool returns
-	// a structured "unavailable" payload at Execute time when Env.Memory
-	// is nil, so the model still sees a stable tool surface.
+	// Memory tools are always registered. When Env.Memory is nil they
+	// fail with a clear tool error, so the model sees a stable tool surface.
 	registered = append(registered, NewMemoryTools(e)...)
 	t.registry = NewRegistry(registered...)
 }
