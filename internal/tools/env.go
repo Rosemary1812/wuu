@@ -91,6 +91,12 @@ type Env struct {
 	// Memory tools may be registered even when this is nil; they will
 	// return a clear error at execution time instead of panicking.
 	Memory store.Provider
+	// MemoryCharLimit caps target="memory" entries by character count.
+	// Zero uses the built-in default.
+	MemoryCharLimit int
+	// UserMemoryCharLimit caps target="user" entries by character count.
+	// Zero uses the built-in default.
+	UserMemoryCharLimit int
 
 	readState *readFileState
 	planState planState

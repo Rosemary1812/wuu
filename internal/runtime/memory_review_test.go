@@ -26,7 +26,7 @@ func (c *profileMemoryReviewFakeClient) Chat(_ context.Context, req providers.Ch
 
 func TestProfileMemoryReviewScheduler_ShouldReviewHydratesFromHistory(t *testing.T) {
 	provider := mustProfileMemoryProvider(t)
-	scheduler := newProfileMemoryReviewScheduler(provider, 10)
+	scheduler := newProfileMemoryReviewScheduler(provider, 10, 2200, 1375)
 	history := makeProfileMemoryReviewHistory(10)
 
 	if !scheduler.shouldReview(history, agent.LoopResult{Content: "done"}) {
@@ -39,7 +39,7 @@ func TestProfileMemoryReviewScheduler_ShouldReviewHydratesFromHistory(t *testing
 
 func TestProfileMemoryReviewScheduler_ResetWhenTurnAlreadyWroteMemory(t *testing.T) {
 	provider := mustProfileMemoryProvider(t)
-	scheduler := newProfileMemoryReviewScheduler(provider, 1)
+	scheduler := newProfileMemoryReviewScheduler(provider, 1, 2200, 1375)
 	history := makeProfileMemoryReviewHistory(1)
 	result := agent.LoopResult{
 		Content: "done",
@@ -71,7 +71,7 @@ func TestProfileMemoryReview_RunWritesMemoryWithMemoryOnlyTools(t *testing.T) {
 			{Content: "Saved."},
 		},
 	}
-	scheduler := newProfileMemoryReviewScheduler(provider, 1)
+	scheduler := newProfileMemoryReviewScheduler(provider, 1, 2200, 1375)
 	err := scheduler.run(context.Background(), profileMemoryReviewJob{
 		client:       client,
 		model:        "test-model",

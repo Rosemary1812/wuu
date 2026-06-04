@@ -61,6 +61,8 @@ type Session struct {
 	Skills                      []skills.Skill
 	Memory                      []memory.File
 	ProfileMemoryNudgeInterval  int
+	ProfileMemoryCharLimit      int
+	ProfileUserMemoryCharLimit  int
 	AgentControl                *agentcontrol.AgentControl
 	ProcessManager              *process.Manager
 	Toolkit                     *tools.Toolkit
@@ -129,6 +131,8 @@ func NewSession(opts Options) (*Session, error) {
 	var toolExecutor agent.ToolExecutor
 	var toolkit *tools.Toolkit
 	var profileMemoryProvider memstore.Provider
+	profileMemoryCharLimit := cfg.Memory.ProfileMemoryCharLimit()
+	profileUserMemoryCharLimit := cfg.Memory.ProfileUserCharLimit()
 	if !opts.NoTools {
 		kit, newErr := tools.New(rootDir)
 		if newErr != nil {
@@ -139,6 +143,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetSkills(discoveredSkills)
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.ConfigureEditToolsForModel(toolModeModel)
+		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		// Attach the durable profile memory store. The provider is
 		// best-effort: if the profile state directory is not writable we
 		// continue without memory rather than failing the whole session,
@@ -161,7 +166,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
 	profileMemoryEntries := recallProfileMemory(context.Background(), profileMemoryProvider)
-	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), cfg.Agent.UserSystemPrompt(), memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, discoveredSkills)
+	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), cfg.Agent.UserSystemPrompt(), memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills)
 
 	if toolkit != nil {
 		if err := agentcontrol.EnsureSharedDir(workspaceStateDir); err != nil {
@@ -227,7 +232,7 @@ func NewSession(opts Options) (*Session, error) {
 	)
 	profileMemoryNudgeInterval := cfg.Memory.ProfileMemoryNudgeInterval()
 	var afterTurn func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
-	if memoryReviewer := newProfileMemoryReviewScheduler(profileMemoryProvider, profileMemoryNudgeInterval); memoryReviewer != nil {
+	if memoryReviewer := newProfileMemoryReviewScheduler(profileMemoryProvider, profileMemoryNudgeInterval, profileMemoryCharLimit, profileUserMemoryCharLimit); memoryReviewer != nil {
 		afterTurn = memoryReviewer.AfterTurn
 	}
 
@@ -262,6 +267,8 @@ func NewSession(opts Options) (*Session, error) {
 		Skills:                      discoveredSkills,
 		Memory:                      memoryFiles,
 		ProfileMemoryNudgeInterval:  profileMemoryNudgeInterval,
+		ProfileMemoryCharLimit:      profileMemoryCharLimit,
+		ProfileUserMemoryCharLimit:  profileUserMemoryCharLimit,
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
@@ -368,7 +375,8 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
 	runner.BeforeRequest = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath)
 	if kit != nil {
-		if memoryReviewer := newProfileMemoryReviewScheduler(kit.Memory(), s.ProfileMemoryNudgeInterval); memoryReviewer != nil {
+		memoryLimit, userLimit := kit.MemoryLimits()
+		if memoryReviewer := newProfileMemoryReviewScheduler(kit.Memory(), s.ProfileMemoryNudgeInterval, memoryLimit, userLimit); memoryReviewer != nil {
 			runner.AfterTurn = memoryReviewer.AfterTurn
 		}
 	}
@@ -735,7 +743,7 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 	return memory.Discover(rootDir, homeDir, memOpts)
 }
 
-func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, discoveredSkills []skills.Skill) string {
+func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill) string {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
 	if strings.TrimSpace(userPrompt) != "" {
@@ -743,7 +751,7 @@ func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles [
 	}
 	pb.AddMemory(memoryFiles)
 	if profileMemoryEnabled {
-		pb.AddProfileMemory(profileMemoryEntries)
+		pb.AddProfileMemoryWithLimits(profileMemoryEntries, profileMemoryCharLimit, profileUserMemoryCharLimit)
 	}
 	pb.AddSkills(discoveredSkills)
 	if worktree.IsGitRepo(rootDir) {

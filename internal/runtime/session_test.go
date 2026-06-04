@@ -77,6 +77,10 @@ func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
 				},
 			},
 			Agent: config.AgentConfig{Name: "Mia Agent"},
+			Memory: config.MemoryConfig{
+				MemoryCharLimit: 42,
+				UserCharLimit:   24,
+			},
 		},
 	})
 	if err != nil {
@@ -99,6 +103,10 @@ func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
 	}
 	if strings.HasPrefix(provider.Dir(), rt.StateDir+string(os.PathSeparator)) {
 		t.Fatalf("memory dir should be profile-scoped, got workspace path %q", provider.Dir())
+	}
+	memoryLimit, userLimit := rt.Toolkit.MemoryLimits()
+	if memoryLimit != 42 || userLimit != 24 {
+		t.Fatalf("memory limits = (%d, %d), want (42, 24)", memoryLimit, userLimit)
 	}
 }
 

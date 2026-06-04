@@ -23,21 +23,25 @@ const (
 )
 
 type profileMemoryReviewScheduler struct {
-	provider memstore.Provider
-	interval int
+	provider        memstore.Provider
+	interval        int
+	memoryCharLimit int
+	userCharLimit   int
 
 	mu         sync.Mutex
 	hydrated   bool
 	turnsSince int
 }
 
-func newProfileMemoryReviewScheduler(provider memstore.Provider, interval int) *profileMemoryReviewScheduler {
+func newProfileMemoryReviewScheduler(provider memstore.Provider, interval, memoryCharLimit, userCharLimit int) *profileMemoryReviewScheduler {
 	if provider == nil || interval <= 0 {
 		return nil
 	}
 	return &profileMemoryReviewScheduler{
-		provider: provider,
-		interval: interval,
+		provider:        provider,
+		interval:        interval,
+		memoryCharLimit: memoryCharLimit,
+		userCharLimit:   userCharLimit,
 	}
 }
 
@@ -130,7 +134,7 @@ func (s *profileMemoryReviewScheduler) run(ctx context.Context, job profileMemor
 	if len(messages) == 0 {
 		return nil
 	}
-	executor := newProfileMemoryOnlyExecutor(s.provider)
+	executor := newProfileMemoryOnlyExecutor(s.provider, s.memoryCharLimit, s.userCharLimit)
 	_, err := agent.RunToolLoop(ctx, messages, agent.LoopConfig{
 		Tools:           executor,
 		Model:           job.model,
@@ -167,8 +171,8 @@ type profileMemoryOnlyExecutor struct {
 	defs  []providers.ToolDefinition
 }
 
-func newProfileMemoryOnlyExecutor(provider memstore.Provider) *profileMemoryOnlyExecutor {
-	env := &tools.Env{Memory: provider}
+func newProfileMemoryOnlyExecutor(provider memstore.Provider, memoryCharLimit, userCharLimit int) *profileMemoryOnlyExecutor {
+	env := &tools.Env{Memory: provider, MemoryCharLimit: memoryCharLimit, UserMemoryCharLimit: userCharLimit}
 	memoryTools := tools.NewMemoryTools(env)
 	index := make(map[string]tools.Tool, len(memoryTools))
 	defs := make([]providers.ToolDefinition, 0, len(memoryTools))
@@ -305,4 +309,4 @@ Save memory only when it is durable and likely to help future sessions:
 
 Do not save task progress, completed-work logs, temporary TODOs, PR numbers, issue numbers, commit SHAs, raw dumps, or facts likely to go stale within a week. Do not duplicate facts that are already present in the current profile memory snapshot.
 
-If something is worth saving, call write_memory with action="add" and a compact declarative fact. If an existing memory is wrong or stale, use action="replace" or action="remove" with old_text. If nothing is worth saving, reply exactly: Nothing to save.`
+If something is worth saving, call write_memory with action="add" and a compact declarative fact. If an existing memory is wrong, stale, or the target is near its character limit, use action="replace" or action="remove" with old_text. If nothing is worth saving, reply exactly: Nothing to save.`

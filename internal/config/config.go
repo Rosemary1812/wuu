@@ -16,6 +16,9 @@ const (
 	globalConfigRelative = ".config/wuu/config.json"
 
 	DefaultAgentName = "default"
+
+	DefaultMemoryCharLimit     = 2200
+	DefaultUserMemoryCharLimit = 1375
 )
 
 // ErrConfigNotFound is returned by LoadFrom when none of the candidate
@@ -83,6 +86,12 @@ type MemoryConfig struct {
 	// the background memory reviewer checks whether durable facts should be
 	// saved. nil means the default interval; 0 disables the reviewer.
 	NudgeInterval *int `json:"nudge_interval,omitempty"`
+	// MemoryCharLimit caps target="memory" persistent entries by character
+	// count. Zero uses DefaultMemoryCharLimit.
+	MemoryCharLimit int `json:"memory_char_limit,omitempty"`
+	// UserCharLimit caps target="user" persistent entries by character
+	// count. Zero uses DefaultUserMemoryCharLimit.
+	UserCharLimit int `json:"user_char_limit,omitempty"`
 }
 
 // ProfileMemoryNudgeInterval returns the configured background review
@@ -93,6 +102,20 @@ func (m MemoryConfig) ProfileMemoryNudgeInterval() int {
 		return 10
 	}
 	return *m.NudgeInterval
+}
+
+func (m MemoryConfig) ProfileMemoryCharLimit() int {
+	if m.MemoryCharLimit <= 0 {
+		return DefaultMemoryCharLimit
+	}
+	return m.MemoryCharLimit
+}
+
+func (m MemoryConfig) ProfileUserCharLimit() int {
+	if m.UserCharLimit <= 0 {
+		return DefaultUserMemoryCharLimit
+	}
+	return m.UserCharLimit
 }
 
 // ProviderConfig configures one model gateway.

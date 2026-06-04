@@ -24,12 +24,12 @@ const (
 	MaxMemoryLines = 200
 	// MaxMemoryBytes caps a single memory file at 25 KB.
 	MaxMemoryBytes = 25 * 1024
-	// MaxProfileMemoryBytes caps the agent-notes snapshot injected into
+	// MaxProfileMemoryChars caps the agent-notes snapshot injected into
 	// the system prompt.
-	MaxProfileMemoryBytes = 2200
-	// MaxUserProfileMemoryBytes caps the user-profile snapshot injected into
+	MaxProfileMemoryChars = 2200
+	// MaxUserProfileMemoryChars caps the user-profile snapshot injected into
 	// the system prompt.
-	MaxUserProfileMemoryBytes = 1375
+	MaxUserProfileMemoryChars = 1375
 )
 
 // Section is one logical piece of the system prompt.
@@ -82,9 +82,21 @@ func (b *Builder) AddMemory(files []memory.File) {
 // frozen snapshot of saved entries. Mid-session writes update the store but do
 // not mutate this prompt; a new session receives a fresh snapshot.
 func (b *Builder) AddProfileMemory(entries []store.Entry) {
+	b.AddProfileMemoryWithLimits(entries, MaxProfileMemoryChars, MaxUserProfileMemoryChars)
+}
+
+// AddProfileMemoryWithLimits is AddProfileMemory with caller-provided target
+// budgets. Zero or negative limits fall back to the built-in defaults.
+func (b *Builder) AddProfileMemoryWithLimits(entries []store.Entry, memoryChars, userChars int) {
+	if memoryChars <= 0 {
+		memoryChars = MaxProfileMemoryChars
+	}
+	if userChars <= 0 {
+		userChars = MaxUserProfileMemoryChars
+	}
 	var sb strings.Builder
 	sb.WriteString("# Persistent Memory\n\n")
-	sb.WriteString("You have profile-scoped persistent memory across sessions for this named agent. ")
+	sb.WriteString("You have bounded, profile-scoped persistent memory across sessions for this named agent. ")
 	sb.WriteString("Use `write_memory` to save compact durable facts and `read_memory` to retrieve them when needed.\n\n")
 	sb.WriteString("**When to save:**\n")
 	sb.WriteString("- The user corrects you, says to remember or stop doing something, or shares a durable preference.\n")
@@ -97,11 +109,11 @@ func (b *Builder) AddProfileMemory(entries []store.Entry) {
 	sb.WriteString("- `target=\"user\"`: who the user is, their preferences, communication style, expectations, and recurring corrections.\n")
 	sb.WriteString("- `target=\"memory\"`: this agent's notes, such as environment facts, project conventions, tool quirks, and lessons learned.\n\n")
 	sb.WriteString("Write memories as declarative facts, not instructions to yourself. ")
-	sb.WriteString("Use `write_memory` with `action=\"replace\"` or `action=\"remove\"` when an existing memory becomes wrong, stale, or unwanted. ")
+	sb.WriteString("Use `write_memory` with `action=\"replace\"` or `action=\"remove\"` when an existing memory becomes wrong, stale, unwanted, or the target is near its character limit. ")
 	sb.WriteString("For example, write \"User prefers concise Chinese replies\", not \"Always reply concisely\".\n")
 
-	userBlock := renderProfileMemoryTarget(entries, "user", MaxUserProfileMemoryBytes)
-	memoryBlock := renderProfileMemoryTarget(entries, "memory", MaxProfileMemoryBytes)
+	userBlock := renderProfileMemoryTarget(entries, "user", userChars)
+	memoryBlock := renderProfileMemoryTarget(entries, "memory", memoryChars)
 	if userBlock != "" || memoryBlock != "" {
 		sb.WriteString("\n## Current Profile Memory Snapshot\n\n")
 		sb.WriteString("The following entries were captured at session start. Mid-session writes update disk but do not change this snapshot until the next session.\n\n")
@@ -214,9 +226,10 @@ func countLines(s string) int {
 	return n
 }
 
-func renderProfileMemoryTarget(entries []store.Entry, target string, maxBytes int) string {
+func renderProfileMemoryTarget(entries []store.Entry, target string, maxChars int) string {
 	var sb strings.Builder
 	written := 0
+	chars := 0
 	for _, entry := range entries {
 		if profileMemoryTarget(entry) != target {
 			continue
@@ -225,7 +238,8 @@ func renderProfileMemoryTarget(entries []store.Entry, target string, maxBytes in
 		if line == "" {
 			continue
 		}
-		if maxBytes > 0 && sb.Len()+len(line)+1 > maxBytes {
+		lineChars := len([]rune("- " + line + "\n"))
+		if maxChars > 0 && chars+lineChars > maxChars {
 			if written == 0 {
 				return "[profile memory truncated]"
 			}
@@ -235,6 +249,7 @@ func renderProfileMemoryTarget(entries []store.Entry, target string, maxBytes in
 		sb.WriteString("- ")
 		sb.WriteString(line)
 		sb.WriteString("\n")
+		chars += lineChars
 		written++
 	}
 	return strings.TrimRight(sb.String(), "\n")

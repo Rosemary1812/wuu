@@ -131,6 +131,25 @@ func TestMemoryConfig_ProfileMemoryNudgeInterval(t *testing.T) {
 	}
 }
 
+func TestMemoryConfig_ProfileMemoryCharLimits(t *testing.T) {
+	var cfg MemoryConfig
+	if got := cfg.ProfileMemoryCharLimit(); got != DefaultMemoryCharLimit {
+		t.Fatalf("default memory char limit = %d, want %d", got, DefaultMemoryCharLimit)
+	}
+	if got := cfg.ProfileUserCharLimit(); got != DefaultUserMemoryCharLimit {
+		t.Fatalf("default user char limit = %d, want %d", got, DefaultUserMemoryCharLimit)
+	}
+
+	cfg.MemoryCharLimit = 12
+	cfg.UserCharLimit = 8
+	if got := cfg.ProfileMemoryCharLimit(); got != 12 {
+		t.Fatalf("custom memory char limit = %d, want 12", got)
+	}
+	if got := cfg.ProfileUserCharLimit(); got != 8 {
+		t.Fatalf("custom user char limit = %d, want 8", got)
+	}
+}
+
 func TestLoadFrom_AgentName(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")

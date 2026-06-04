@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -25,6 +26,11 @@ const (
 	memoryActionAdd     = "add"
 	memoryActionReplace = "replace"
 	memoryActionRemove  = "remove"
+
+	memoryEntryDelimiter = "\n§\n"
+
+	defaultMemoryCharLimit     = 2200
+	defaultUserMemoryCharLimit = 1375
 )
 
 var errMemoryUnavailable = fmt.Errorf("memory: no Provider configured on Env; set Env.Memory before registering memory tools")
@@ -80,6 +86,29 @@ var allowedMemoryActions = []string{
 	memoryActionAdd,
 	memoryActionReplace,
 	memoryActionRemove,
+}
+
+var memoryThreatPatterns = []struct {
+	pattern *regexp.Regexp
+	id      string
+}{
+	{regexp.MustCompile(`(?i)ignore\s+(previous|all|above|prior)\s+instructions`), "prompt_injection"},
+	{regexp.MustCompile(`(?i)you\s+are\s+now\s+`), "role_hijack"},
+	{regexp.MustCompile(`(?i)do\s+not\s+tell\s+the\s+user`), "deception_hide"},
+	{regexp.MustCompile(`(?i)system\s+prompt\s+override`), "sys_prompt_override"},
+	{regexp.MustCompile(`(?i)disregard\s+(your|all|any)\s+(instructions|rules|guidelines)`), "disregard_rules"},
+	{regexp.MustCompile(`(?i)act\s+as\s+(if|though)\s+you\s+(have\s+no|don'?t\s+have)\s+(restrictions|limits|rules)`), "bypass_restrictions"},
+	{regexp.MustCompile(`(?i)curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)`), "exfil_curl"},
+	{regexp.MustCompile(`(?i)wget\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)`), "exfil_wget"},
+	{regexp.MustCompile(`(?i)cat\s+[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)`), "read_secrets"},
+	{regexp.MustCompile(`(?i)authorized_keys`), "ssh_backdoor"},
+	{regexp.MustCompile(`(?i)(\$HOME/\.ssh|~/\.ssh)`), "ssh_access"},
+	{regexp.MustCompile(`(?i)(\$HOME/\.wuu/\.env|~/\.wuu/\.env)`), "wuu_env"},
+}
+
+var memoryInvisibleChars = []rune{
+	'\u200b', '\u200c', '\u200d', '\u2060', '\ufeff',
+	'\u202a', '\u202b', '\u202c', '\u202d', '\u202e',
 }
 
 func isAllowedMemorySource(s string) bool {
@@ -156,6 +185,82 @@ func normalizeMemoryAction(action string) (string, error) {
 	return "", fmt.Errorf("action %q is not one of %v", action, allowedMemoryActions)
 }
 
+func memoryTargetCharLimit(env *Env, target string) int {
+	if env == nil {
+		return defaultMemoryCharLimit
+	}
+	if target == memoryTargetUser {
+		if env.UserMemoryCharLimit > 0 {
+			return env.UserMemoryCharLimit
+		}
+		return defaultUserMemoryCharLimit
+	}
+	if env.MemoryCharLimit > 0 {
+		return env.MemoryCharLimit
+	}
+	return defaultMemoryCharLimit
+}
+
+func scanMemoryContent(content string) error {
+	for _, ch := range memoryInvisibleChars {
+		if strings.ContainsRune(content, ch) {
+			return fmt.Errorf("blocked: content contains invisible unicode character U+%04X", ch)
+		}
+	}
+	for _, threat := range memoryThreatPatterns {
+		if threat.pattern.MatchString(content) {
+			return fmt.Errorf("blocked: content matches threat pattern %q", threat.id)
+		}
+	}
+	return nil
+}
+
+func memoryTargetEntries(ctx context.Context, mem store.Provider, target string) ([]store.Entry, error) {
+	entries, err := mem.Recall(ctx, store.RecallQuery{})
+	if err != nil {
+		return nil, err
+	}
+	return filterMemoryEntriesByTarget(entries, target), nil
+}
+
+func memoryEntriesCharCount(entries []store.Entry) int {
+	if len(entries) == 0 {
+		return 0
+	}
+	total := 0
+	for _, entry := range entries {
+		total += len([]rune(entry.Content))
+	}
+	total += (len(entries) - 1) * len([]rune(memoryEntryDelimiter))
+	return total
+}
+
+func memoryEntriesWithReplacement(entries []store.Entry, oldID store.ID, newContent string) []store.Entry {
+	out := make([]store.Entry, 0, len(entries))
+	replaced := false
+	for _, entry := range entries {
+		if entry.ID == oldID && !replaced {
+			cp := entry
+			cp.Content = newContent
+			out = append(out, cp)
+			replaced = true
+			continue
+		}
+		out = append(out, entry)
+	}
+	if !replaced {
+		out = append(out, store.Entry{Content: newContent})
+	}
+	return out
+}
+
+func memoryEntriesWithAppend(entries []store.Entry, content string) []store.Entry {
+	out := make([]store.Entry, 0, len(entries)+1)
+	out = append(out, entries...)
+	out = append(out, store.Entry{Content: content})
+	return out
+}
+
 // write_memory
 
 type writeMemoryArgs struct {
@@ -184,11 +289,12 @@ func (t *writeMemoryTool) IsConcurrencySafe() bool { return true }
 func (t *writeMemoryTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: writeMemoryName,
-		Description: "Save compact, durable information to this agent profile's long-term memory. " +
+		Description: "Save compact, durable information to this agent profile's bounded long-term memory. " +
 			"Use proactively when the user corrects you, shares a stable preference, asks you to remember something, " +
 			"or when you learn a durable environment fact, project convention, or tool quirk that will matter in future sessions. " +
 			"Do not save task progress, completed-work logs, PR numbers, commit SHAs, temporary TODOs, raw data dumps, or facts likely to go stale within a week. " +
-			"Use action=\"replace\" or action=\"remove\" when an existing memory is wrong, stale, or no longer wanted. Write declarative facts, not instructions to yourself.",
+			"Use action=\"replace\" or action=\"remove\" when an existing memory is wrong, stale, no longer wanted, or when the target is near its character limit. " +
+			"Memory entries are injected into future prompts, so unsafe prompt-injection or secret-exfiltration payloads are blocked. Write declarative facts, not instructions to yourself.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -268,6 +374,38 @@ func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a 
 	if content == "" {
 		return "", fmt.Errorf("write_memory: content is required and must be non-empty")
 	}
+	if err := scanMemoryContent(content); err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	targetEntries, err := memoryTargetEntries(ctx, mem, target)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	for _, entry := range targetEntries {
+		if entry.Content == content {
+			out := map[string]any{
+				"action":    memoryActionAdd,
+				"id":        string(entry.ID),
+				"written":   false,
+				"duplicate": true,
+				"target":    target,
+				"source":    string(entry.Source),
+				"tags":      memoryUserTags(entry.Tags),
+				"length":    len([]rune(content)),
+			}
+			b, err := json.Marshal(out)
+			if err != nil {
+				return "", fmt.Errorf("write_memory: encode result: %w", err)
+			}
+			return string(b), nil
+		}
+	}
+	limit := memoryTargetCharLimit(t.env, target)
+	nextTotal := memoryEntriesCharCount(memoryEntriesWithAppend(targetEntries, content))
+	if limit > 0 && nextTotal > limit {
+		current := memoryEntriesCharCount(targetEntries)
+		return "", fmt.Errorf("write_memory: %s memory at %d/%d chars; adding this entry (%d chars) would exceed the limit. Replace or remove existing entries first", target, current, limit, len([]rune(content)))
+	}
 	source := store.Source(a.Source)
 	if source == "" {
 		source = store.SourceAssistant
@@ -289,7 +427,8 @@ func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a 
 		"target":  target,
 		"source":  string(source),
 		"tags":    memoryUserTags(entry.Tags),
-		"length":  len(content),
+		"length":  len([]rune(content)),
+		"usage":   fmt.Sprintf("%d/%d", nextTotal, limit),
 	}
 	b, err := json.Marshal(out)
 	if err != nil {
@@ -307,9 +446,21 @@ func (t *writeMemoryTool) executeReplace(ctx context.Context, mem store.Provider
 	if content == "" {
 		return "", fmt.Errorf("write_memory: content is required and must be non-empty for action %q", memoryActionReplace)
 	}
-	oldEntry, err := findMemoryEntryByOldText(ctx, mem, target, oldText)
+	if err := scanMemoryContent(content); err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	targetEntries, err := memoryTargetEntries(ctx, mem, target)
 	if err != nil {
 		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	oldEntry, err := findMemoryEntryInEntries(targetEntries, target, oldText)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	limit := memoryTargetCharLimit(t.env, target)
+	nextTotal := memoryEntriesCharCount(memoryEntriesWithReplacement(targetEntries, oldEntry.ID, content))
+	if limit > 0 && nextTotal > limit {
+		return "", fmt.Errorf("write_memory: replacement would put %s memory at %d/%d chars. Shorten the new content or remove other entries first", target, nextTotal, limit)
 	}
 	source := store.Source(a.Source)
 	if source == "" {
@@ -340,7 +491,8 @@ func (t *writeMemoryTool) executeReplace(ctx context.Context, mem store.Provider
 		"target":      target,
 		"source":      string(source),
 		"tags":        memoryUserTags(entry.Tags),
-		"length":      len(content),
+		"length":      len([]rune(content)),
+		"usage":       fmt.Sprintf("%d/%d", nextTotal, limit),
 	}
 	b, err := json.Marshal(out)
 	if err != nil {
@@ -375,13 +527,17 @@ func (t *writeMemoryTool) executeRemove(ctx context.Context, mem store.Provider,
 }
 
 func findMemoryEntryByOldText(ctx context.Context, mem store.Provider, target, oldText string) (store.Entry, error) {
-	entries, err := mem.Recall(ctx, store.RecallQuery{})
+	entries, err := memoryTargetEntries(ctx, mem, target)
 	if err != nil {
 		return store.Entry{}, err
 	}
+	return findMemoryEntryInEntries(entries, target, oldText)
+}
+
+func findMemoryEntryInEntries(entries []store.Entry, target, oldText string) (store.Entry, error) {
 	var matches []store.Entry
 	for _, entry := range entries {
-		if memoryEntryTarget(entry) == target && strings.Contains(entry.Content, oldText) {
+		if strings.Contains(entry.Content, oldText) {
 			matches = append(matches, entry)
 		}
 	}

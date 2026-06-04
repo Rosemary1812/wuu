@@ -217,6 +217,21 @@ func (t *Toolkit) SetMemory(p store.Provider) {
 	t.env.Memory = p
 }
 
+func (t *Toolkit) SetMemoryLimits(memoryLimit, userLimit int) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.MemoryCharLimit = memoryLimit
+	t.env.UserMemoryCharLimit = userLimit
+}
+
+func (t *Toolkit) MemoryLimits() (memoryLimit, userLimit int) {
+	if t == nil || t.env == nil {
+		return 0, 0
+	}
+	return t.env.MemoryCharLimit, t.env.UserMemoryCharLimit
+}
+
 // Memory returns the currently attached memory store provider, if any.
 func (t *Toolkit) Memory() store.Provider {
 	if t == nil || t.env == nil {
