@@ -13,6 +13,8 @@ import (
 
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+
+	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 )
 
 func mustWriteFile(t *testing.T, path, content string) {
@@ -1974,5 +1976,111 @@ func TestToolkit_GrepIncludeMatchesRelativePaths_Ripgrep(t *testing.T) {
 	}
 	if len(parsed.Matches) != 1 || parsed.Matches[0].File != "src/app/main.ts" {
 		t.Fatalf("unexpected matches for src/**/*.ts: %+v", parsed.Matches)
+	}
+}
+
+func TestToolkit_MemoryTools_AlwaysRegistered(t *testing.T) {
+	// The three memory tools are part of the static registry built by New():
+	// they appear in Definitions() even when no provider has been attached.
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, d := range kit.Definitions() {
+		names[d.Name] = true
+	}
+	for _, want := range []string{"memory_store", "memory_recall", "memory_search"} {
+		if !names[want] {
+			t.Errorf("memory tool %q missing from Definitions()", want)
+		}
+	}
+}
+
+func TestToolkit_MemoryTools_NoProviderReturnsError(t *testing.T) {
+	// Without a provider, every memory tool returns a Go error so the
+	// model observes the failure as a tool error rather than silently
+	// reading an empty list.
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "memory_store",
+		Arguments: `{"content":"a note"}`,
+	})
+	if err == nil {
+		t.Fatalf("expected error from memory_store without provider, got nil")
+	}
+	if !strings.Contains(err.Error(), "no Provider") {
+		t.Fatalf("expected no-provider error, got: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "memory_recall",
+		Arguments: `{"limit":5}`,
+	})
+	if err == nil {
+		t.Fatalf("expected error from memory_recall without provider, got nil")
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "memory_search",
+		Arguments: `{"query":"anything"}`,
+	})
+	if err == nil {
+		t.Fatalf("expected error from memory_search without provider, got nil")
+	}
+}
+
+func TestToolkit_MemoryTools_SetMemorySwapsProvider(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Attach a real FileProvider so the registry dispatches to a working
+	// backend that actually persists to disk.
+	memDir := t.TempDir()
+	provider, err := memstore.NewFileProvider(memDir)
+	if err != nil {
+		t.Fatalf("NewFileProvider: %v", err)
+	}
+	kit.SetMemory(provider)
+
+	storeResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "memory_store",
+		Arguments: `{"content":"prefer tabs over spaces","tags":["go","formatting"]}`,
+	})
+	if err != nil {
+		t.Fatalf("memory_store with provider: %v", err)
+	}
+	if !strings.Contains(storeResp, `"stored":true`) {
+		t.Fatalf("unexpected memory_store response: %s", storeResp)
+	}
+
+	searchResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "memory_search",
+		Arguments: `{"query":"tabs","limit":5}`,
+	})
+	if err != nil {
+		t.Fatalf("memory_search: %v", err)
+	}
+	if !strings.Contains(searchResp, "prefer tabs over spaces") {
+		t.Fatalf("expected search to find the stored note, got: %s", searchResp)
+	}
+
+	// Detaching returns the tools to the "no provider" error branch.
+	kit.SetMemory(nil)
+	if _, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "memory_store",
+		Arguments: `{"content":"a note"}`,
+	}); err == nil || !strings.Contains(err.Error(), "no Provider") {
+		t.Fatalf("expected no-provider error after detach, got: %v", err)
 	}
 }

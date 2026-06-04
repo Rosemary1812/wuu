@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
+	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	"github.com/blueberrycongee/wuu/internal/process"
@@ -131,6 +132,13 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetSkills(discoveredSkills)
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.ConfigureEditToolsForModel(toolModeModel)
+		// Attach the durable memory store. The provider is best-effort: if
+		// the workspace state directory is not writable we continue without
+		// memory rather than failing the whole session, because the memory
+		// tools already degrade gracefully when Env.Memory is nil.
+		if memProvider, memErr := memstore.NewFileProvider(statepath.MemoryDir(workspaceStateDir)); memErr == nil {
+			kit.SetMemory(memProvider)
+		}
 		kit.SetOnFileChanged(func(absPath string) {
 			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{
 				CWD:      rootDir,

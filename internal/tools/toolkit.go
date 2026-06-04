@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/mcp"
+	"github.com/blueberrycongee/wuu/internal/memory/store"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
@@ -175,6 +176,10 @@ func (t *Toolkit) rebuildRegistry() {
 		// Deferred tool discovery
 		NewToolSearchTool(t),
 	}
+	// Memory tools: always registered, but each individual tool returns
+	// a structured "unavailable" payload at Execute time when Env.Memory
+	// is nil, so the model still sees a stable tool surface.
+	registered = append(registered, NewMemoryTools(e)...)
 	t.registry = NewRegistry(registered...)
 }
 
@@ -203,6 +208,22 @@ func (t *Toolkit) SetSkills(s []skills.Skill) {
 // Skills returns the currently registered skills (read-only).
 func (t *Toolkit) Skills() []skills.Skill {
 	return t.env.Skills
+}
+
+// SetMemory attaches the memory store provider. The memory tools always
+// appear in the registry; this setter only swaps the underlying provider
+// between calls, so callers that have already retrieved a Tool handle
+// will see the new provider on its next Execute.
+func (t *Toolkit) SetMemory(p store.Provider) {
+	t.env.Memory = p
+}
+
+// Memory returns the currently attached memory store provider, if any.
+func (t *Toolkit) Memory() store.Provider {
+	if t == nil || t.env == nil {
+		return nil
+	}
+	return t.env.Memory
 }
 
 // SetSessionID sets the current session ID.

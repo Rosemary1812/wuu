@@ -119,15 +119,18 @@ type memoryStoreArgs struct {
 }
 
 // memoryStoreTool implements the Tool interface for memory_store.
+// memoryStoreTool implements the Tool interface for memory_store.
+// It holds a *Env rather than a captured Provider so the toolkit can
+// swap providers late (kit.SetMemory) without re-registering the tool.
 type memoryStoreTool struct {
-	deps memoryToolDeps
+	env *Env
 }
 
 // NewMemoryStoreTool returns a tool that inserts a new entry into the
 // configured memory Provider. It is safe to call even when env.Memory
 // is nil — Execute will return a clear error in that case.
 func NewMemoryStoreTool(env *Env) *memoryStoreTool {
-	return &memoryStoreTool{deps: depsForMemory(env)}
+	return &memoryStoreTool{env: env}
 }
 
 func (t *memoryStoreTool) Name() string { return memoryStoreName }
@@ -181,7 +184,8 @@ func (t *memoryStoreTool) Definition() providers.ToolDefinition {
 }
 
 func (t *memoryStoreTool) Execute(ctx context.Context, args string) (string, error) {
-	if t.deps.Memory == nil {
+	mem := depsForMemory(t.env).Memory
+	if mem == nil {
 		return "", errMemoryUnavailable
 	}
 	var a memoryStoreArgs
@@ -205,7 +209,7 @@ func (t *memoryStoreTool) Execute(ctx context.Context, args string) (string, err
 		Tags:    append([]string(nil), a.Tags...),
 		Source:  source,
 	}
-	id, err := t.deps.Memory.Store(ctx, entry)
+	id, err := mem.Store(ctx, entry)
 	if err != nil {
 		return "", fmt.Errorf("memory_store: %w", err)
 	}
@@ -235,15 +239,17 @@ type memoryRecallArgs struct {
 }
 
 // memoryRecallTool implements the Tool interface for memory_recall.
+// See memoryStoreTool for why this holds *Env instead of a captured
+// Provider snapshot.
 type memoryRecallTool struct {
-	deps memoryToolDeps
+	env *Env
 }
 
 // NewMemoryRecallTool returns a tool that lists recent entries from
 // the configured memory Provider, optionally filtered by tags and a
 // time floor.
 func NewMemoryRecallTool(env *Env) *memoryRecallTool {
-	return &memoryRecallTool{deps: depsForMemory(env)}
+	return &memoryRecallTool{env: env}
 }
 
 func (t *memoryRecallTool) Name() string { return memoryRecallName }
@@ -286,7 +292,8 @@ func (t *memoryRecallTool) Definition() providers.ToolDefinition {
 }
 
 func (t *memoryRecallTool) Execute(ctx context.Context, args string) (string, error) {
-	if t.deps.Memory == nil {
+	mem := depsForMemory(t.env).Memory
+	if mem == nil {
 		return "", errMemoryUnavailable
 	}
 	var a memoryRecallArgs
@@ -314,7 +321,7 @@ func (t *memoryRecallTool) Execute(ctx context.Context, args string) (string, er
 		}
 		since = parsed
 	}
-	entries, err := t.deps.Memory.Recall(ctx, store.RecallQuery{
+	entries, err := mem.Recall(ctx, store.RecallQuery{
 		Tags:  append([]string(nil), a.Tags...),
 		Limit: limit,
 		Since: since,
@@ -349,14 +356,16 @@ type memorySearchArgs struct {
 }
 
 // memorySearchTool implements the Tool interface for memory_search.
+// See memoryStoreTool for why this holds *Env instead of a captured
+// Provider snapshot.
 type memorySearchTool struct {
-	deps memoryToolDeps
+	env *Env
 }
 
 // NewMemorySearchTool returns a tool that performs text search over
 // the configured memory Provider.
 func NewMemorySearchTool(env *Env) *memorySearchTool {
-	return &memorySearchTool{deps: depsForMemory(env)}
+	return &memorySearchTool{env: env}
 }
 
 func (t *memorySearchTool) Name() string { return memorySearchName }
@@ -398,7 +407,8 @@ func (t *memorySearchTool) Definition() providers.ToolDefinition {
 }
 
 func (t *memorySearchTool) Execute(ctx context.Context, args string) (string, error) {
-	if t.deps.Memory == nil {
+	mem := depsForMemory(t.env).Memory
+	if mem == nil {
 		return "", errMemoryUnavailable
 	}
 	var a memorySearchArgs
@@ -416,7 +426,7 @@ func (t *memorySearchTool) Execute(ctx context.Context, args string) (string, er
 	if limit > 200 {
 		limit = 200
 	}
-	entries, err := t.deps.Memory.Search(ctx, store.SearchQuery{
+	entries, err := mem.Search(ctx, store.SearchQuery{
 		Text:  q,
 		Tags:  append([]string(nil), a.Tags...),
 		Limit: limit,
