@@ -97,7 +97,9 @@ func NewSession(opts Options) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace state directory: %w", err)
 	}
-	profileStateDir, err := statepath.ProfileDir(wuuHome, cfg.Agent.ProfileName())
+	profileName := cfg.Agent.ProfileName()
+	profileMemoryEnabled := cfg.Agent.ProfileMemoryEnabled()
+	profileStateDir, err := statepath.ProfileDir(wuuHome, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("resolve profile state directory: %w", err)
 	}
@@ -144,14 +146,14 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.ConfigureEditToolsForModel(toolModeModel)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
-		// Attach the durable profile memory store. The provider is
-		// best-effort: if the profile state directory is not writable we
-		// continue without memory rather than failing the whole session,
-		// because the memory tools already degrade gracefully when
-		// Env.Memory is nil.
-		if memProvider, memErr := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileStateDir)); memErr == nil {
-			kit.SetMemory(memProvider)
-			profileMemoryProvider = memProvider
+		if profileMemoryEnabled {
+			// Attach the durable profile memory store for named agents. Ordinary
+			// default sessions stay memoryless so they can act as transient
+			// orchestration workspaces.
+			if memProvider, memErr := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileStateDir)); memErr == nil {
+				kit.SetMemory(memProvider)
+				profileMemoryProvider = memProvider
+			}
 		}
 		kit.SetOnFileChanged(func(absPath string) {
 			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{

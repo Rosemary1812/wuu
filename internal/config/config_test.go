@@ -181,6 +181,18 @@ func TestLoadFrom_AgentName(t *testing.T) {
 	}
 }
 
+func TestAgentConfig_ProfileMemoryEnabled(t *testing.T) {
+	if (AgentConfig{}).ProfileMemoryEnabled() {
+		t.Fatal("default ordinary session should not enable profile memory")
+	}
+	if (AgentConfig{Name: DefaultAgentName}).ProfileMemoryEnabled() {
+		t.Fatal("explicit default profile should not enable profile memory")
+	}
+	if !(AgentConfig{Name: "Mia"}).ProfileMemoryEnabled() {
+		t.Fatal("named agent profile should enable profile memory")
+	}
+}
+
 func TestTemplateJSONDoesNotSerializeBuiltInSystemPrompt(t *testing.T) {
 	cfg := Default()
 	if cfg.Agent.SystemPrompt != "" {

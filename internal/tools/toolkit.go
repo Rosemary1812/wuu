@@ -350,6 +350,9 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	all := t.registry.Definitions()
 	out := make([]providers.ToolDefinition, 0, len(all))
 	for _, d := range all {
+		if isMemoryToolName(d.Name) && memoryProvider(t.env) == nil {
+			continue
+		}
 		if t.toolExposure(d.Name) == ToolExposureDirect {
 			out = append(out, d)
 		}

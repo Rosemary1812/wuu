@@ -1978,9 +1978,7 @@ func TestToolkit_GrepIncludeMatchesRelativePaths_Ripgrep(t *testing.T) {
 	}
 }
 
-func TestToolkit_MemoryTools_AlwaysRegistered(t *testing.T) {
-	// The memory tools are part of the static registry built by New():
-	// they appear in Definitions() even when no provider has been attached.
+func TestToolkit_MemoryTools_HiddenWithoutProvider(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -1992,8 +1990,8 @@ func TestToolkit_MemoryTools_AlwaysRegistered(t *testing.T) {
 		names[d.Name] = true
 	}
 	for _, want := range []string{"read_memory", "write_memory"} {
-		if !names[want] {
-			t.Errorf("memory tool %q missing from Definitions()", want)
+		if names[want] {
+			t.Errorf("memory tool %q should be hidden without provider", want)
 		}
 	}
 }
@@ -2043,6 +2041,12 @@ func TestToolkit_MemoryTools_SetMemorySwapsProvider(t *testing.T) {
 		t.Fatalf("NewFileProvider: %v", err)
 	}
 	kit.SetMemory(provider)
+	names := definitionNames(kit.Definitions())
+	for _, want := range []string{"read_memory", "write_memory"} {
+		if !names[want] {
+			t.Fatalf("memory tool %q missing from Definitions() after attaching provider", want)
+		}
+	}
 
 	writeResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_memory",

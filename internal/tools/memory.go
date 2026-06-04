@@ -42,6 +42,10 @@ func memoryProvider(env *Env) store.Provider {
 	return env.Memory
 }
 
+func isMemoryToolName(name string) bool {
+	return name == readMemoryName || name == writeMemoryName
+}
+
 type memoryEntryDTO struct {
 	ID        string   `json:"id"`
 	Content   string   `json:"content"`

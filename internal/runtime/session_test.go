@@ -55,6 +55,51 @@ func TestNewSessionUsesUserStateNotWorkspaceDotWuu(t *testing.T) {
 	}
 }
 
+func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.Toolkit == nil {
+		t.Fatal("expected toolkit")
+	}
+	if rt.Toolkit.Memory() != nil {
+		t.Fatalf("default profile should be memoryless, got %T", rt.Toolkit.Memory())
+	}
+	if strings.Contains(rt.BaseSystemPrompt, "# Persistent Memory") {
+		t.Fatalf("default profile should not inject persistent memory:\n%s", rt.BaseSystemPrompt)
+	}
+	defs := make(map[string]bool)
+	for _, def := range rt.Toolkit.Definitions() {
+		defs[def.Name] = true
+	}
+	for _, name := range []string{"read_memory", "write_memory"} {
+		if defs[name] {
+			t.Fatalf("default profile should not expose %s", name)
+		}
+	}
+}
+
 func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -107,6 +152,15 @@ func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
 	memoryLimit, userLimit := rt.Toolkit.MemoryLimits()
 	if memoryLimit != 42 || userLimit != 24 {
 		t.Fatalf("memory limits = (%d, %d), want (42, 24)", memoryLimit, userLimit)
+	}
+	defs := make(map[string]bool)
+	for _, def := range rt.Toolkit.Definitions() {
+		defs[def.Name] = true
+	}
+	for _, name := range []string{"read_memory", "write_memory"} {
+		if !defs[name] {
+			t.Fatalf("named profile should expose %s", name)
+		}
 	}
 }
 

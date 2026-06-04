@@ -184,8 +184,9 @@ type ProviderModelConfig struct {
 
 // AgentConfig controls behavior of the local tool loop.
 type AgentConfig struct {
-	// Name identifies the agent profile. Profile-scoped state such as
-	// durable memory is shared across workspaces for the same agent name.
+	// Name identifies a durable agent profile. The default profile is the
+	// ordinary memoryless session; non-default names opt into profile-scoped
+	// memory shared across workspaces.
 	Name             string  `json:"name,omitempty"`
 	MaxSteps         int     `json:"max_steps"`
 	MaxContextTokens int     `json:"max_context_tokens"`
@@ -561,6 +562,10 @@ func (a AgentConfig) ProfileName() string {
 		return name
 	}
 	return DefaultAgentName
+}
+
+func (a AgentConfig) ProfileMemoryEnabled() bool {
+	return a.ProfileName() != DefaultAgentName
 }
 
 func isCodexSubscriptionProvider(providerType string) bool {
