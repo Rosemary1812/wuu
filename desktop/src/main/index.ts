@@ -3,8 +3,6 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
-  net,
-  protocol,
   type OpenDialogOptions,
 } from "electron";
 import {
@@ -29,13 +27,12 @@ import { homedir } from "node:os";
 import {
   basename,
   dirname,
-  extname,
   isAbsolute,
   join,
   relative,
   resolve,
 } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import type {
   AppServerNotification,
   AppServerRequest,
@@ -68,19 +65,13 @@ import type {
   WorkspaceDirectoryListResult,
   WorkspaceFileReadResult,
 } from "../shared/protocol";
+import {
+  registerRenderableFileProtocol,
+  registerRenderableFileScheme,
+} from "./renderableFileProtocol";
 import { TerminalSessionManager } from "./terminalSessions";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const RENDERABLE_IMAGE_EXTENSIONS = new Set([
-  ".apng",
-  ".avif",
-  ".gif",
-  ".jpeg",
-  ".jpg",
-  ".png",
-  ".svg",
-  ".webp",
-]);
 const FILE_TREE_MAX_PATHS = 4000;
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
 const GIT_DIFF_PREVIEW_MAX_BYTES = 512 * 1024;
@@ -103,16 +94,7 @@ const FILE_TREE_IGNORED_DIRS = new Set([
 ]);
 const FILE_TREE_IGNORED_FILES = new Set([".DS_Store"]);
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "wuu-file",
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: false,
-    },
-  },
-]);
+registerRenderableFileScheme();
 
 type PendingRequest = {
   method: string;
@@ -2000,43 +1982,6 @@ function createWindow(): void {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
-  }
-}
-
-function registerRenderableFileProtocol(): void {
-  protocol.handle("wuu-file", (request) => {
-    const filePath = filePathFromRenderableURL(request.url);
-    if (!filePath || !isRenderableImageFile(filePath)) {
-      return new Response("Not found", { status: 404 });
-    }
-    return net.fetch(pathToFileURL(filePath).toString());
-  });
-}
-
-function filePathFromRenderableURL(rawURL: string): string | undefined {
-  try {
-    const url = new URL(rawURL);
-    if (url.hostname !== "local") {
-      return undefined;
-    }
-    const encodedPath = url.pathname.replace(/^\/+/, "");
-    if (!encodedPath) {
-      return undefined;
-    }
-    return Buffer.from(encodedPath, "base64url").toString("utf8");
-  } catch {
-    return undefined;
-  }
-}
-
-function isRenderableImageFile(filePath: string): boolean {
-  try {
-    return (
-      statSync(filePath).isFile() &&
-      RENDERABLE_IMAGE_EXTENSIONS.has(extname(filePath).toLowerCase())
-    );
-  } catch {
-    return false;
   }
 }
 
