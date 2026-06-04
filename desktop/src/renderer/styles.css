@@ -1507,7 +1507,7 @@ button:disabled {
   --environment-panel-motion-easing: cubic-bezier(0.2, 0, 0, 1);
   --environment-flow-motion-duration: 280ms;
   --environment-flow-motion-delay: 22ms;
-  --conversation-readable-width: 1000px;
+  --conversation-readable-width: 860px;
   --conversation-flow-width: var(--conversation-readable-width);
   --conversation-flow-padding-inline: clamp(28px, 4vw, 64px);
   --conversation-content-width: calc(
@@ -1520,8 +1520,8 @@ button:disabled {
   --conversation-dialog-width: 920px;
   --conversation-message-font-size: 16px;
   --conversation-prose-line-height: 1.85;
-  --conversation-prose-block-gap: 20px;
-  --conversation-meta-line-height: 1.6;
+  --conversation-prose-block-gap: 30px;
+  --conversation-meta-line-height: 1.4;
   --conversation-control-line-height: 1.5;
   --conversation-shell-gap: 14px;
   --conversation-process-gap: 8px;
@@ -11723,4 +11723,231 @@ html.swiss-international .os-theme-wuu {
   .workspace-browser-url-form:has(.workspace-browser-url-input.has-error) {
     transition: none;
   }
+}
+
+/* ----------------------------------------------------------------------------
+   Design tokens panel ("design-tokens-panel.tsx")
+
+   A floating button + side drawer that lets the user live-tune the
+   conversation flow's CSS variables without editing the stylesheet.
+   The drawer applies values via JS to .conversation-pane, which
+   override the CSS defaults (specificity-wise, inline style > class
+   rule) until "恢复默认" is pressed or the localStorage override
+   is cleared.
+   -------------------------------------------------------------------------- */
+
+.design-tokens-toggle {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(31, 35, 40, 0.85);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition:
+    background 120ms ease,
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.design-tokens-toggle:hover,
+.design-tokens-toggle:focus-visible {
+  background: rgba(31, 35, 40, 1);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  outline: 0;
+}
+
+.design-tokens-toggle[aria-expanded="true"] {
+  background: #1f2328;
+}
+
+.design-tokens-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  background: #fff;
+  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.08);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1f2328;
+}
+
+.design-tokens-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+}
+
+.design-tokens-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #1f2328;
+}
+
+.design-tokens-title h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.design-tokens-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6f7478;
+  cursor: pointer;
+}
+
+.design-tokens-close:hover,
+.design-tokens-close:focus-visible {
+  background: rgba(31, 35, 40, 0.06);
+  color: #1f2328;
+  outline: 0;
+}
+
+.design-tokens-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 18px 8px;
+}
+
+.design-token {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(31, 35, 40, 0.05);
+}
+
+.design-token:last-child {
+  border-bottom: 0;
+}
+
+.design-token-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.design-token-name {
+  color: #1f2328;
+  font-weight: 500;
+}
+
+.design-token-value {
+  color: #6f7478;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+/* Range input — keep it minimal so it matches the rest of the
+   panel's restrained look. The track is a flat gray line; the
+   thumb is a solid dark circle, no extra chrome. */
+.design-tokens-body input[type="range"] {
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.design-tokens-body input[type="range"]:focus-visible {
+  outline: 0;
+}
+
+.design-tokens-body input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  background: rgba(31, 35, 40, 0.12);
+  border-radius: 2px;
+}
+
+.design-tokens-body input[type="range"]::-moz-range-track {
+  height: 3px;
+  background: rgba(31, 35, 40, 0.12);
+  border-radius: 2px;
+  border: 0;
+}
+
+.design-tokens-body input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  background: #1f2328;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.design-tokens-body input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #1f2328;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.design-tokens-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid rgba(31, 35, 40, 0.08);
+}
+
+.design-tokens-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(31, 35, 40, 0.12);
+  border-radius: 6px;
+  background: transparent;
+  color: #1f2328;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.design-tokens-reset:hover,
+.design-tokens-reset:focus-visible {
+  background: rgba(31, 35, 40, 0.04);
+  outline: 0;
+}
+
+.design-tokens-hint {
+  color: #a1a5a9;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }

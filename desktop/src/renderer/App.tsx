@@ -124,6 +124,7 @@ import {
 import { agentHandoffDisplay } from "./AgentHandoff";
 import { CollapsibleDetails } from "./CollapsibleMotion";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
+import { DesignTokensPanel } from "./DesignTokensPanel";
 import { RichContent } from "./RichContent";
 import {
   EmptyConversationHome,
@@ -5319,6 +5320,7 @@ export function App(): JSX.Element {
           onCreate={createEnvironmentPullRequest}
         />
       ) : null}
+      <DesignTokensPanel />
     </div>
   );
 }
