@@ -5688,6 +5688,83 @@ button:disabled {
   color: inherit;
 }
 
+/* Commentary sweep: a 2-3-character-wide highlight band that
+   travels left-to-right across the visible text while the
+   commentary is streaming. Replaces the typewriter cursor for
+   commentary, which the user found too "writing-document" for a
+   chat surface that already shows the latest commentary in the
+   fold header preview.
+
+   The trick is `background-clip: text` + a horizontally
+   translating gradient — the text itself is rendered as
+   `color: transparent`, the gradient peeks through, and only the
+   characters inside the bright band show the bright color. The
+   base color (at 0% / 100% of the gradient) is the muted
+   commentary gray (#5a6064, matching the fold header preview
+   row); the bright spot at 50% is the body ink color (#1f2328),
+   so the sweep reads as "text lighting up as the model works
+   on it" rather than "glowing text".
+
+   Sized to 300% of the text width so the bright band is roughly
+   3% of the visible text — about 2-3 characters at 16px body
+   font. The animation moves the background from -100% to +100%,
+   so the bright spot enters from off-screen left and exits
+   off-screen right, with a brief reset between loops. Linear
+   timing keeps the band a constant width; ease functions would
+   distort the band shape. */
+.streaming-markdown.streaming-commentary-live {
+  --commentary-sweep-base: #5a6064;
+  --commentary-sweep-bright: #1f2328;
+  background-image: linear-gradient(
+    90deg,
+    var(--commentary-sweep-base) 0%,
+    var(--commentary-sweep-base) 45%,
+    var(--commentary-sweep-bright) 50%,
+    var(--commentary-sweep-base) 55%,
+    var(--commentary-sweep-base) 100%
+  );
+  background-size: 300% 100%;
+  background-position: -100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: commentary-sweep 1.8s linear infinite;
+}
+
+.streaming-markdown.streaming-commentary-live .rich-paragraph,
+.streaming-markdown.streaming-commentary-live .rich-list,
+.streaming-markdown.streaming-commentary-live .rich-code,
+.streaming-markdown.streaming-commentary-live .rich-blockquote,
+.streaming-markdown.streaming-commentary-live .rich-table-wrap {
+  /* Block children render their own backgrounds (code block, table
+     wrap, blockquote border). Resetting color is enough — we don't
+     need to override those block-level surfaces, only the inline
+     text gradient. */
+  color: inherit;
+  background-color: transparent;
+}
+
+@keyframes commentary-sweep {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* Reduced motion: skip the sweep entirely. Fall back to the
+   comment's own body color (no gradient, no transparent text) so
+   the user can still read the streaming commentary, just without
+   the moving highlight band. */
+@media (prefers-reduced-motion: reduce) {
+  .streaming-markdown.streaming-commentary-live {
+    background-image: none;
+    color: inherit;
+    animation: none;
+  }
+}
+
 /* Reduced motion: skip the fade transition entirely. */
 @media (prefers-reduced-motion: reduce) {
   .stream-cursor.is-fading {
@@ -7453,7 +7530,12 @@ button:disabled {
   grid-template-rows: auto auto;
   align-items: flex-start;
   column-gap: 8px;
-  row-gap: 10px;
+  /* Row gap between the status row and the commentary preview row
+     tracks --conversation-prose-block-gap so the two reads
+     (status ↔ live commentary) feel like one text block, not two
+     crammed lines. Tied to the prose gap on purpose: the fold
+     header and the body share the same vertical rhythm. */
+  row-gap: var(--conversation-prose-block-gap);
   border: 0;
   background: transparent;
   color: inherit;

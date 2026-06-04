@@ -7881,6 +7881,7 @@ function AgentMessageContent({
       cwd={cwd}
       final={!streaming}
       live={liveStream}
+      textKind={item.phase === "commentary" ? "commentary" : "final_answer"}
       onFrame={onStreamFrame}
       onSettled={() => {
         setStreamSettled(true);

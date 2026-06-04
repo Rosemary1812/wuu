@@ -62,6 +62,15 @@ type StreamingMarkdownProps = {
    *  toward the target. When false, the surface renders the full text
    *  immediately with no animation. */
   live?: boolean;
+  /** What kind of text we're rendering. "commentary" is the model's
+   *  scratch / "thinking aloud" stream — it's a low-priority
+   *  hint, not the actual reply, so the typewriter cursor looks
+   *  out of place. "commentary" suppresses the cursor and
+   *  instead marks the container with `streaming-commentary-live`
+   *  while live, which CSS uses to draw a 2-3-char sweep band
+   *  across the text from left to right. "final_answer" is the
+   *  default and keeps the cursor as-is. */
+  textKind?: "commentary" | "final_answer";
   onFrame?: () => void;
   onSettled?: () => void;
 };
@@ -94,6 +103,7 @@ export function StreamingMarkdown({
   className = DEFAULT_CLASS_NAME,
   final = false,
   live = !final,
+  textKind = "final_answer",
   onFrame,
   onSettled
 }: StreamingMarkdownProps): JSX.Element {
@@ -291,7 +301,15 @@ export function StreamingMarkdown({
 
   /* ------------------------- Derived view data -------------------------- */
   const visibleText = renderedText.slice(0, visibleLength);
-  const showCursor = cursorState !== "gone";
+  // Commentary uses a sweep effect on the text itself (CSS
+  // background-clip:text gradient) instead of a typewriter cursor.
+  // The cursor is suppressed entirely; the `streaming-commentary-live`
+  // class is what drives the visual. We keep the rest of the
+  // reveal-rate machinery identical so the comment still streams
+  // at the same character cadence — only the trailing glyph changes.
+  const showCursor = cursorState !== "gone" && textKind !== "commentary";
+  const isLiveCommentary =
+    textKind === "commentary" && phase !== "settled" && visibleText.length > 0;
   const cursorClassName =
     CURSOR_CLASS_NAME + (cursorState === "fading" ? " is-fading" : "");
   const cursorTextRenderer = useMemo(
@@ -318,11 +336,14 @@ export function StreamingMarkdown({
     [phase, visibleText]
   );
   const tailText = showCursor ? `${split.tail}${CURSOR_SENTINEL}` : split.tail;
+  const containerClass = isLiveCommentary
+    ? `${className} streaming-commentary-live`
+    : className;
 
   /* ------------------------------- Render -------------------------------- */
   return (
     <div
-      className={className}
+      className={containerClass}
       data-stream-state={phase}
     >
       {split.blocks.map((block, index) => (
