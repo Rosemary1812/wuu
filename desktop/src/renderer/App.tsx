@@ -2224,6 +2224,8 @@ export function App(): JSX.Element {
         onClearQueuedMessages={clearPendingComposerMessages}
         onSend={() => void sendPrompt()}
         onInterrupt={() => void interrupt()}
+        queryHistorySessionID={activeThread?.id}
+        queryHistory={queryTextsForThread(activeThread)}
       />
     );
   }
@@ -2307,6 +2309,8 @@ export function App(): JSX.Element {
           onRemoveImage={(id) => removeSplitComposerImage(pane, id)}
           onSend={() => void sendPromptForPane(pane)}
           onInterrupt={() => void interruptPane(pane)}
+          queryHistorySessionID={thread.id}
+          queryHistory={queryTextsForThread(thread)}
         />
       </section>
     );
@@ -6565,6 +6569,25 @@ function threadForPane(
   pane: ConversationPaneID,
 ): Thread | undefined {
   return pane === "secondary" ? state.secondaryThread : state.thread;
+}
+
+function queryTextsForThread(thread: Thread | undefined): string[] {
+  if (!thread) {
+    return [];
+  }
+  const queries: string[] = [];
+  for (const turn of thread.turns) {
+    for (const item of turn.items) {
+      if (item.type !== "user_message") {
+        continue;
+      }
+      const text = (item.text ?? "").trim();
+      if (text.length > 0) {
+        queries.push(text);
+      }
+    }
+  }
+  return queries;
 }
 
 function activeThreadIDForState(state: AppState): string | undefined {

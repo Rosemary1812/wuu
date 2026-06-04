@@ -100,6 +100,120 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function textareaSelectionAtStart(textarea: HTMLTextAreaElement): boolean {
+  return textarea.selectionStart === 0 && textarea.selectionEnd === 0;
+}
+
+function textareaSelectionAtEnd(textarea: HTMLTextAreaElement): boolean {
+  const end = textarea.value.length;
+  return textarea.selectionStart === end && textarea.selectionEnd === end;
+}
+
+function useComposerQueryHistory({
+  disabled,
+  prompt,
+  queryHistory = [],
+  queryHistorySessionID,
+  setPrompt,
+  textareaRef
+}: {
+  disabled: boolean;
+  prompt: string;
+  queryHistory?: string[];
+  queryHistorySessionID?: string;
+  setPrompt: (value: string) => void;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+}): {
+  resetQueryHistoryNavigation: () => void;
+  handleQueryHistoryKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => boolean;
+} {
+  const draftRef = useRef("");
+  const indexRef = useRef<number | null>(null);
+
+  function resetQueryHistoryNavigation(): void {
+    draftRef.current = "";
+    indexRef.current = null;
+  }
+
+  function setPromptFromHistory(value: string): void {
+    setPrompt(value);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+      textarea.focus();
+      textarea.setSelectionRange(value.length, value.length);
+    });
+  }
+
+  function navigateQueryHistory(direction: -1 | 1): boolean {
+    if (queryHistory.length === 0) {
+      return false;
+    }
+    const currentIndex = indexRef.current;
+    if (direction === -1) {
+      const nextIndex = currentIndex === null ? queryHistory.length - 1 : Math.max(0, currentIndex - 1);
+      if (currentIndex === null) {
+        draftRef.current = prompt;
+      }
+      indexRef.current = nextIndex;
+      setPromptFromHistory(queryHistory[nextIndex]);
+      return true;
+    }
+    if (currentIndex === null) {
+      return false;
+    }
+    if (currentIndex >= queryHistory.length - 1) {
+      const draft = draftRef.current;
+      resetQueryHistoryNavigation();
+      setPromptFromHistory(draft);
+      return true;
+    }
+    const nextIndex = currentIndex + 1;
+    indexRef.current = nextIndex;
+    setPromptFromHistory(queryHistory[nextIndex]);
+    return true;
+  }
+
+  function handleQueryHistoryKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): boolean {
+    if (disabled || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return false;
+    }
+    if (event.key === "ArrowUp") {
+      if (indexRef.current === null && !textareaSelectionAtStart(event.currentTarget)) {
+        return false;
+      }
+      if (navigateQueryHistory(-1)) {
+        event.preventDefault();
+        return true;
+      }
+    }
+    if (event.key === "ArrowDown") {
+      if (indexRef.current === null || !textareaSelectionAtEnd(event.currentTarget)) {
+        return false;
+      }
+      if (navigateQueryHistory(1)) {
+        event.preventDefault();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  useEffect(() => {
+    resetQueryHistoryNavigation();
+  }, [queryHistorySessionID]);
+
+  useEffect(() => {
+    if (prompt.length === 0) {
+      resetQueryHistoryNavigation();
+    }
+  }, [prompt]);
+
+  return { resetQueryHistoryNavigation, handleQueryHistoryKeyDown };
+}
+
 export function ComposerImageStrip({
   images,
   onRemoveImage
@@ -128,6 +242,8 @@ export function SplitPaneComposer({
   running,
   readOnly,
   status,
+  queryHistorySessionID,
+  queryHistory = [],
   onPasteImageFiles,
   onRemoveImage,
   onSend,
@@ -139,20 +255,35 @@ export function SplitPaneComposer({
   running: boolean;
   readOnly: boolean;
   status: string;
+  queryHistorySessionID?: string;
+  queryHistory?: string[];
   onPasteImageFiles: (files: File[]) => void;
   onRemoveImage: (id: string) => void;
   onSend: () => void;
   onInterrupt: () => void;
 }): JSX.Element {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const hasDraft = prompt.trim().length > 0 || images.length > 0;
   const statusText = status === "ready" ? "" : status;
+  const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
+    disabled: readOnly || images.length > 0,
+    prompt,
+    queryHistory,
+    queryHistorySessionID,
+    setPrompt,
+    textareaRef
+  });
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
     if (readOnly || isComposerTextComposing(event)) {
       return;
     }
+    if (handleQueryHistoryKeyDown(event)) {
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      resetQueryHistoryNavigation();
       onSend();
     }
   }
@@ -162,11 +293,15 @@ export function SplitPaneComposer({
       <div className="split-composer-shell">
         {images.length > 0 ? <ComposerImageStrip images={images} onRemoveImage={onRemoveImage} /> : null}
         <textarea
+          ref={textareaRef}
           value={prompt}
           placeholder={readOnly ? "子任务会话只读" : images.length > 0 ? "添加描述" : "继续这个分支"}
           disabled={readOnly}
           aria-readonly={readOnly}
-          onChange={(event) => setPrompt(event.target.value)}
+          onChange={(event) => {
+            resetQueryHistoryNavigation();
+            setPrompt(event.target.value);
+          }}
           onPaste={(event) => {
             if (readOnly) {
               return;
@@ -409,7 +544,9 @@ export function Composer({
   onGuideQueuedMessage,
   onClearQueuedMessages,
   onSend,
-  onInterrupt
+  onInterrupt,
+  queryHistorySessionID,
+  queryHistory = []
 }: {
   variant?: ComposerVariant;
   containerRef?: Ref<HTMLElement>;
@@ -460,6 +597,8 @@ export function Composer({
   onClearQueuedMessages: () => void;
   onSend: () => void;
   onInterrupt: () => void;
+  queryHistorySessionID?: string;
+  queryHistory?: string[];
 }): JSX.Element {
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = status === "ready" ? "" : status;
@@ -483,6 +622,14 @@ export function Composer({
   const slashMenuOpen = Boolean(!readOnly && slashDraft && slashDismissedValue !== prompt);
   const selectedSlashCommand = slashMenuOpen ? visibleSlashCommands[selectedSlashIndex] : undefined;
   const slashMenuID = `composer-slash-commands-${variant}`;
+  const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
+    disabled: readOnly || images.length > 0,
+    prompt,
+    queryHistory,
+    queryHistorySessionID,
+    setPrompt,
+    textareaRef
+  });
 
   useEffect(() => {
     setSelectedSlashIndex(firstEnabledSlashCommandIndex(visibleSlashCommands));
@@ -581,8 +728,12 @@ export function Composer({
         return;
       }
     }
+    if (handleQueryHistoryKeyDown(event)) {
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      resetQueryHistoryNavigation();
       onSend();
     }
   }
@@ -651,6 +802,7 @@ export function Composer({
             aria-activedescendant={selectedSlashCommand ? `${slashMenuID}-${selectedSlashCommand.id}` : undefined}
             aria-expanded={slashMenuOpen || undefined}
             onChange={(event) => {
+              resetQueryHistoryNavigation();
               setSlashDismissedValue("");
               setPrompt(event.target.value);
             }}
