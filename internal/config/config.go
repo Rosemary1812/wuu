@@ -79,6 +79,20 @@ type MemoryConfig struct {
 	UserDirs []string `json:"user_dirs,omitempty"`
 	// Disable turns off memory loading entirely.
 	Disable bool `json:"disable,omitempty"`
+	// NudgeInterval controls how many successful user turns pass before
+	// the background memory reviewer checks whether durable facts should be
+	// saved. nil means the default interval; 0 disables the reviewer.
+	NudgeInterval *int `json:"nudge_interval,omitempty"`
+}
+
+// ProfileMemoryNudgeInterval returns the configured background review
+// cadence. The default mirrors the memory-review cadence used by comparable
+// agent runtimes.
+func (m MemoryConfig) ProfileMemoryNudgeInterval() int {
+	if m.NudgeInterval == nil {
+		return 10
+	}
+	return *m.NudgeInterval
 }
 
 // ProviderConfig configures one model gateway.

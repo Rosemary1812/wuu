@@ -112,6 +112,25 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	}
 }
 
+func TestMemoryConfig_ProfileMemoryNudgeInterval(t *testing.T) {
+	var cfg MemoryConfig
+	if got := cfg.ProfileMemoryNudgeInterval(); got != 10 {
+		t.Fatalf("default nudge interval = %d, want 10", got)
+	}
+
+	disabled := 0
+	cfg.NudgeInterval = &disabled
+	if got := cfg.ProfileMemoryNudgeInterval(); got != 0 {
+		t.Fatalf("disabled nudge interval = %d, want 0", got)
+	}
+
+	custom := 3
+	cfg.NudgeInterval = &custom
+	if got := cfg.ProfileMemoryNudgeInterval(); got != 3 {
+		t.Fatalf("custom nudge interval = %d, want 3", got)
+	}
+}
+
 func TestLoadFrom_AgentName(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")

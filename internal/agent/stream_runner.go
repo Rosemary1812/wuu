@@ -79,6 +79,12 @@ type StreamRunner struct {
 	// are not appended to saved conversation history.
 	BeforeRequest func() []providers.ChatMessage
 
+	// AfterTurn, when set, is invoked after a successful turn has
+	// completed and usage state has been committed. It is best-effort:
+	// implementations should return quickly and run slow work in the
+	// background if needed.
+	AfterTurn func(ctx context.Context, runner *StreamRunner, history []providers.ChatMessage, result LoopResult)
+
 	// Effort controls reasoning depth. See ChatRequest.Effort.
 	Effort string
 	// Variant is the selected model-scoped provider option bundle.
@@ -252,6 +258,13 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		finalHistoryLen = len(res.NewMessages)
 	}
 	r.commitUsageTracker(runUsage, finalHistoryLen)
+	if r.AfterTurn != nil {
+		fullHistory := make([]providers.ChatMessage, 0, len(history)+len(res.NewMessages))
+		fullHistory = append(fullHistory, history...)
+		fullHistory = append(fullHistory, res.NewMessages...)
+		fullHistory = filterEphemeralHistory(fullHistory)
+		r.AfterTurn(ctx, r, fullHistory, res)
+	}
 	return res, nil
 }
 

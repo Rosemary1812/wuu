@@ -125,6 +125,53 @@ func TestStreamRunnerUsesAPIModelForProviderRequest(t *testing.T) {
 	}
 }
 
+func TestStreamRunner_AfterTurnRunsAfterSuccess(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "ok"}, {Type: providers.EventDone}},
+	}
+	called := false
+	runner := &StreamRunner{
+		Client: client,
+		Model:  "test-model",
+	}
+	runner.AfterTurn = func(_ context.Context, gotRunner *StreamRunner, history []providers.ChatMessage, result LoopResult) {
+		called = true
+		if gotRunner != runner {
+			t.Fatalf("AfterTurn runner mismatch")
+		}
+		if result.Content != "ok" {
+			t.Fatalf("AfterTurn content = %q, want ok", result.Content)
+		}
+		if len(history) != 2 || history[1].Role != "assistant" || history[1].Content != "ok" {
+			t.Fatalf("AfterTurn history = %+v", history)
+		}
+	}
+
+	if _, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
+		t.Fatalf("RunWithCallback: %v", err)
+	}
+	if !called {
+		t.Fatal("AfterTurn was not called")
+	}
+}
+
+func TestStreamRunner_AfterTurnDoesNotRunAfterSetupError(t *testing.T) {
+	called := false
+	runner := &StreamRunner{
+		Model: "test-model",
+		AfterTurn: func(context.Context, *StreamRunner, []providers.ChatMessage, LoopResult) {
+			called = true
+		},
+	}
+
+	if _, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{{Role: "user", Content: "hi"}}, nil); err == nil {
+		t.Fatal("expected missing client error")
+	}
+	if called {
+		t.Fatal("AfterTurn should not run after an error")
+	}
+}
+
 func TestStreamRunner_SimpleContent(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{

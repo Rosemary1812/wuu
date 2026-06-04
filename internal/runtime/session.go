@@ -60,6 +60,7 @@ type Session struct {
 	HookDispatcher              *hooks.Dispatcher
 	Skills                      []skills.Skill
 	Memory                      []memory.File
+	ProfileMemoryNudgeInterval  int
 	AgentControl                *agentcontrol.AgentControl
 	ProcessManager              *process.Manager
 	Toolkit                     *tools.Toolkit
@@ -224,6 +225,11 @@ func NewSession(opts Options) (*Session, error) {
 		ruleProviderCfg.ContextWindow,
 		cfg.Agent.MaxContextTokens,
 	)
+	profileMemoryNudgeInterval := cfg.Memory.ProfileMemoryNudgeInterval()
+	var afterTurn func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
+	if memoryReviewer := newProfileMemoryReviewScheduler(profileMemoryProvider, profileMemoryNudgeInterval); memoryReviewer != nil {
+		afterTurn = memoryReviewer.AfterTurn
+	}
 
 	streamRunner := &agent.StreamRunner{
 		Client:                client,
@@ -240,6 +246,7 @@ func NewSession(opts Options) (*Session, error) {
 		MaxInputTokens:        ResolveInputWindow(providerCfg.Model, ruleProviderCfg, contextWindow),
 		DisableAutoCompact:    cfg.Agent.DisableAutoCompact,
 		BeforeRequest:         EnvContextInjector(rootDir, agentControl, agentthread.RootPath),
+		AfterTurn:             afterTurn,
 	}
 
 	return &Session{
@@ -254,6 +261,7 @@ func NewSession(opts Options) (*Session, error) {
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
 		Memory:                      memoryFiles,
+		ProfileMemoryNudgeInterval:  profileMemoryNudgeInterval,
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
@@ -359,6 +367,11 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
 	runner.BeforeRequest = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath)
+	if kit != nil {
+		if memoryReviewer := newProfileMemoryReviewScheduler(kit.Memory(), s.ProfileMemoryNudgeInterval); memoryReviewer != nil {
+			runner.AfterTurn = memoryReviewer.AfterTurn
+		}
+	}
 
 	return &ThreadRuntime{
 		StreamRunner: runner,
@@ -388,6 +401,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		StreamingToolExecution:  base.StreamingToolExecution,
 		BeforeStep:              base.BeforeStep,
 		BeforeRequest:           base.BeforeRequest,
+		AfterTurn:               base.AfterTurn,
 		Effort:                  base.Effort,
 		Variant:                 base.Variant,
 		ProviderOptions:         provideroptions.Clone(base.ProviderOptions),
