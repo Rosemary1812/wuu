@@ -122,6 +122,11 @@ import {
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
 import { agentHandoffDisplay } from "./AgentHandoff";
+import {
+  buildAssistantTurnDisplay,
+  type AssistantTurnDisplay,
+  type TurnProcessEntry,
+} from "./AssistantTurnDisplay";
 import { CollapsibleDetails } from "./CollapsibleMotion";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
 import { DesignTokensPanel } from "./DesignTokensPanel";
@@ -152,7 +157,6 @@ import {
 import { threadDisplayTitle } from "./ThreadTitles";
 import {
   ToolActivityRow,
-  ToolActivityTimeline,
   isRecord,
   numberValue,
   readableToolName,
@@ -173,6 +177,7 @@ import {
   orderedTurnItems,
   upsertTurnItemInOrder,
 } from "./TurnOrdering";
+import { streamFieldValue } from "./ThreadItemText";
 import { sortChildAgents } from "./ThreadAgents";
 import { PinnedThreadList, ProjectList } from "./ThreadSidebar";
 import {
@@ -6817,75 +6822,6 @@ function turnHasAssistantOutput(turn: Turn): boolean {
   });
 }
 
-function agentMessageWithTextFollows(turn: Turn, itemIndex: number): boolean {
-  for (let index = itemIndex + 1; index < turn.items.length; index++) {
-    const item = turn.items[index];
-    if (item.type === "user_message") {
-      return false;
-    }
-    if (item.type !== "agent_message") {
-      continue;
-    }
-    if (streamFieldValue(turn.id, item, "text").trim().length === 0) {
-      continue;
-    }
-    return true;
-  }
-  return false;
-}
-
-function turnHasProcessItems(turn: Turn): boolean {
-  return turn.items.some((item) => {
-    if (item.type === "agent_message") {
-      return item.phase === "commentary";
-    }
-    return turnItemIsProcess(item);
-  });
-}
-
-function turnItemIsProcess(item: ThreadItem): boolean {
-  return (
-    item.type === "reasoning" ||
-    item.type === "tool_call" ||
-    item.type === "collab_agent_tool_call" ||
-    item.type === "context_compaction"
-  );
-}
-
-function agentMessageBelongsToProcess(
-  turn: Turn,
-  item: ThreadItem,
-  itemIndex: number,
-  finalAgentMessageID: string | undefined,
-): boolean {
-  // Legacy helper. The assistant turn layout no longer routes agent
-  // messages into a process lane — commentary renders in the front
-  // content (between tool calls) and final_answer renders in the
-  // final body. Both are still rendered through the normal
-  // renderThreadItem path; we keep this function so older call sites
-  // that import it for debug purposes continue to type-check.
-  if (item.type !== "agent_message") {
-    return false;
-  }
-  if (streamFieldValue(turn.id, item, "text").trim().length === 0) {
-    return false;
-  }
-  if (item.phase === "commentary") {
-    return true;
-  }
-  if (item.phase === "final_answer") {
-    return false;
-  }
-  if (
-    turn.status === "completed" &&
-    finalAgentMessageID &&
-    turnHasProcessItems(turn)
-  ) {
-    return item.id !== finalAgentMessageID;
-  }
-  return agentMessageWithTextFollows(turn, itemIndex);
-}
-
 function TurnNotice({
   display,
 }: {
@@ -6980,301 +6916,6 @@ function TurnView({
       {notice ? <TurnNotice display={notice} /> : null}
     </section>
   );
-}
-
-type AssistantTurnDisplay = {
-  /**
-   * Front content: the "process" lane. Carries reasoning, tool calls,
-   * context_compaction, and commentary in the order they appeared in
-   * the turn. Commentary renders here as a normal text block — same
-   * visual style as final_answer — because the two are structurally
-   * distinct (front vs body) rather than visually distinct.
-   */
-  frontEntries: TurnProcessEntry[];
-  /**
-   * Body: the user-facing reply. One entry per final_answer item in
-   * the turn, in chronological order. Empty when the turn produced no
-   * final answer.
-   */
-  finalAnswerItems: AssistantTurnAnswerItem[];
-  /**
-   * True when the completed turn has a malformed reply shape and the
-   * shell should draw the warning border + banner. The two cases are:
-   *   - 0 final_answer and the turn actually had text (commentary).
-   *     A pure-tool turn is allowed to complete without a final
-   *     answer (sub-agents do this routinely).
-   *   - ≥2 final_answer. There is no single primary reply to draw the
-   *     divider under; everything stays in the body.
-   */
-  isBuggy: boolean;
-  bugMessage?: string;
-  /**
-   * True only when there is exactly one final_answer and the turn is
-   * completed. The shell draws a thin horizontal divider between the
-   * front and the body in that case.
-   */
-  showDivider: boolean;
-  /**
-   * Initial collapse state of the front content. The user can always
-   * toggle the front afterwards, so this is purely a hint about the
-   * default render. We always start collapsed: the fold header alone
-   * is enough to tell the user "something is / was happening here",
-   * and the latest commentary preview (when present) carries the live
-   * signal. Expanding is a deliberate user action.
-   */
-  frontDefaultCollapsed: boolean;
-  /**
-   * Text of the latest commentary `agent_message` in the front
-   * content, truncated to a single short line for the fold header
-   * preview. Undefined when:
-   *   - the turn is completed (no live signal to surface)
-   *   - the turn has no commentary items at all
-   *   - the latest commentary has no streamed text yet
-   * The preview sits on a second row of the fold header, under the
-   * status row, with a small avatar slot on its left (the future
-   * mascot slot). The user can read the latest reasoning aloud to
-   * the user without expanding the fold.
-   */
-  latestCommentaryPreview?: string;
-};
-
-type AssistantTurnAnswerItem = {
-  item: ThreadItem;
-  streaming: boolean;
-  element: JSX.Element;
-  /**
-   * True when the turn has a reasoning block that the model just
-   * finished writing. The first text item (commentary or final_answer,
-   * whichever appears first chronologically) waits a short beat so
-   * the reasoning cursor can fully settle before its own cursor starts
-   * animating; otherwise the two cursors race and the user sees them
-   * "streaming at the same time" even though the underlying events
-   * are sequential.
-   */
-  pendingCompanionReasoning?: boolean;
-};
-
-type TurnProcessEntry = {
-  key: string;
-  element: JSX.Element;
-  count?: number;
-};
-
-export function buildAssistantTurnDisplay(
-  turn: Turn,
-  _actionableAgentMessageID: string | undefined,
-  renderThreadItem: (
-    item: ThreadItem,
-    streaming: boolean,
-    pendingCompanionReasoning?: boolean,
-  ) => JSX.Element | null,
-): AssistantTurnDisplay | undefined {
-  const frontEntries: TurnProcessEntry[] = [];
-  const finalAnswerItems: AssistantTurnAnswerItem[] = [];
-  let sawAssistantWork = false;
-  // When the turn has a reasoning block, the first text item (commentary
-  // or final_answer) waits a beat before starting its cursor so the
-  // reasoning cursor can finish settling. Reasoning and text are
-  // sequential on the wire; the visual race is purely a render-side
-  // artifact.
-  const turnHasReasoning = turn.items.some(
-    (item) => item.type === "reasoning",
-  );
-  let firstTextItemRendered = false;
-
-  function appendFrontEntry(entry: TurnProcessEntry | null): void {
-    if (entry) {
-      frontEntries.push(entry);
-    }
-  }
-
-  for (let index = 0; index < turn.items.length; index++) {
-    const item = turn.items[index];
-    if (item.type === "user_message") {
-      continue;
-    }
-    sawAssistantWork = true;
-
-    if (item.type === "agent_message") {
-      const streaming =
-        turn.status === "in_progress" && item.status === "in_progress";
-      const text = streamFieldValue(turn.id, item, "text");
-      // Skip empty agent_message items that aren't actively streaming.
-      // runtime (model.go) already drops empty agent_message items at
-      // creation time, but a streaming item can briefly have an empty
-      // text before its first delta arrives.
-      if (text.trim().length === 0 && !streaming) {
-        continue;
-      }
-      const isFinalAnswer = item.phase === "final_answer";
-      const shouldDelayCursor =
-        turnHasReasoning && !firstTextItemRendered;
-      firstTextItemRendered = true;
-      const rendered = renderThreadItem(
-        item,
-        streaming,
-        shouldDelayCursor ? true : undefined,
-      );
-      if (!rendered) {
-        continue;
-      }
-      if (isFinalAnswer) {
-        finalAnswerItems.push({ item, streaming, element: rendered });
-      } else {
-        // commentary (or any unphased agent_message) — render in front
-        // using the same visual style as a final_answer. The two are
-        // distinguished only by their structural position, not by
-        // decoration.
-        appendFrontEntry({
-          key: item.id,
-          element: rendered,
-        });
-      }
-      continue;
-    }
-
-    if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
-      const group = [item];
-      let nextIndex = index + 1;
-      while (
-        nextIndex < turn.items.length &&
-        (turn.items[nextIndex].type === "tool_call" ||
-          turn.items[nextIndex].type === "collab_agent_tool_call")
-      ) {
-        group.push(turn.items[nextIndex]);
-        nextIndex++;
-      }
-      appendFrontEntry({
-        key: `${item.id}-activity`,
-        element: (
-          <ToolActivityTimeline
-            key={`${item.id}-activity`}
-            items={group}
-            collapseWhenIdle={agentMessageWithTextFollows(turn, nextIndex - 1)}
-            revealItems={turn.status === "in_progress"}
-          />
-        ),
-        count: group.length,
-      });
-      index = nextIndex - 1;
-      continue;
-    }
-
-    // reasoning, context_compaction, error — render in the front
-    // content, in the order they arrived.
-    const rendered = renderThreadItem(
-      item,
-      turn.status === "in_progress" && item.status === "in_progress",
-    );
-    if (rendered) {
-      appendFrontEntry({
-        key: item.id,
-        element: rendered,
-      });
-    }
-  }
-
-  if (!sawAssistantWork) {
-    return undefined;
-  }
-  if (frontEntries.length === 0 && finalAnswerItems.length === 0) {
-    return undefined;
-  }
-
-  const finalCount = finalAnswerItems.length;
-  const isInProgress = turn.status === "in_progress";
-  const isCompleted = turn.status === "completed";
-
-  let isBuggy = false;
-  let bugMessage: string | undefined;
-  if (isCompleted) {
-    if (finalCount === 0) {
-      // A turn with no text at all (only tool calls) is not a bug —
-      // sub-agents routinely complete a turn after making tool calls
-      // without ever speaking. A turn that *did* speak (commentary)
-      // but produced no final answer is a bug, because the model
-      // started a reply and then dropped it.
-      const hasCommentary = turn.items.some(
-        (item) =>
-          item.type === "agent_message" && item.phase === "commentary",
-      );
-      if (hasCommentary) {
-        isBuggy = true;
-        bugMessage = "这次请求没有产生最终回复";
-      }
-    } else if (finalCount > 1) {
-      isBuggy = true;
-      bugMessage = "这次请求产生了多个最终回复";
-    }
-  }
-
-  // The divider only makes sense when the body has exactly one entry
-  // and the turn shape is normal. in_progress never draws a divider
-  // (the body is still streaming), and the bug cases don't get a
-  // divider either (no single primary to anchor it under).
-  const showDivider = isCompleted && finalCount === 1 && !isBuggy;
-
-  // Front content is always default-collapsed. The fold header alone
-  // (status row + optional commentary preview) is enough to tell the
-  // user "something is / was happening here" — the user expands the
-  // fold explicitly when they want the full process lane. Bug turns
-  // still surface the orange border + banner regardless of collapse
-  // state, so the "something's wrong" signal isn't lost.
-  const frontDefaultCollapsed = true;
-
-  // Latest commentary preview: a single-line snippet of the most
-  // recent commentary `agent_message` text in the front, shown under
-  // the status row of the fold header so the user can see the
-  // "current thought" without expanding. Live only — once the turn
-  // completes, the preview is dropped (the turn is no longer
-  // streaming and the front is no longer the "live" area).
-  let latestCommentaryPreview: string | undefined;
-  if (isInProgress) {
-    // Walk front entries in arrival order; the LAST one whose
-    // underlying item is a commentary agent_message is the latest.
-    let latestCommentaryItem: ThreadItem | undefined;
-    for (const entry of frontEntries) {
-      if (entry.key.endsWith("-activity")) {
-        // Tool activity groups don't carry commentary text.
-        continue;
-      }
-      const item = turn.items.find((candidate) => candidate.id === entry.key);
-      if (
-        item &&
-        item.type === "agent_message" &&
-        item.phase === "commentary"
-      ) {
-        latestCommentaryItem = item;
-      }
-    }
-    if (latestCommentaryItem) {
-      const raw = streamFieldValue(
-        turn.id,
-        latestCommentaryItem,
-        "text",
-      ).trim();
-      if (raw.length > 0) {
-        // Hard cap so a runaway stream can't push the fold header
-        // onto two lines. The CSS also enforces a single-line
-        // ellipsis as a safety net for narrow widths.
-        const PREVIEW_MAX = 120;
-        latestCommentaryPreview =
-          raw.length > PREVIEW_MAX
-            ? `${raw.slice(0, PREVIEW_MAX)}…`
-            : raw;
-      }
-    }
-  }
-
-  return {
-    frontEntries,
-    finalAnswerItems,
-    isBuggy,
-    bugMessage,
-    showDivider,
-    frontDefaultCollapsed,
-    latestCommentaryPreview,
-  };
 }
 
 function AssistantTurnShell({
@@ -8084,17 +7725,6 @@ function latestDebugItem(turn: Turn): ThreadItem | undefined {
     }
   }
   return undefined;
-}
-
-function streamFieldValue(
-  turnID: string,
-  item: ThreadItem,
-  field: StreamTextField,
-): string {
-  const key = streamTextKey(turnID, item.id, field);
-  return streamTextStore.has(key)
-    ? streamTextStore.get(key)
-    : (item[field] ?? "");
 }
 
 function debugStreamFieldLength(

@@ -14,6 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/eventbus"
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
@@ -237,7 +238,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		},
 		UsageTracker:    runUsage,
 		Effort:          r.Effort,
-		ProviderOptions: cloneProviderOptions(r.ProviderOptions),
+		ProviderOptions: provideroptions.Clone(r.ProviderOptions),
 	}
 
 	res, err := RunToolLoop(ctx, history, cfg, step)

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -194,7 +195,7 @@ func RunToolLoop(
 			MaxTokens:       currentMaxTokens,
 			CacheHint:       buildCacheHint(requestMessages),
 			Effort:          cfg.Effort,
-			ProviderOptions: cloneProviderOptions(cfg.ProviderOptions),
+			ProviderOptions: provideroptions.Clone(cfg.ProviderOptions),
 		}
 		if cfg.Tools != nil {
 			req.Tools = cfg.Tools.Definitions()
@@ -596,17 +597,6 @@ func partitionToolCalls(executor ToolExecutor, calls []providers.ToolCall) []too
 	})
 
 	return batches
-}
-
-func cloneProviderOptions(input map[string]any) map[string]any {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
-	return out
 }
 
 // maxAggregateResultChars caps the total content of all tool-role

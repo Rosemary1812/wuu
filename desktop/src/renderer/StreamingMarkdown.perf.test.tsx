@@ -45,8 +45,6 @@ const longText = Array.from({ length: 40 }, (_, i) =>
   sectionTemplate.replace("N", String(i + 1))
 ).join("");
 
-(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 

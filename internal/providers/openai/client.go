@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -131,7 +132,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		Temperature:     req.Temperature,
 		MaxTokens:       req.MaxTokens,
 		ReasoningFormat: c.reasoningFormat,
-		Options:         cloneProviderOptions(req.ProviderOptions),
+		Options:         provideroptions.Clone(req.ProviderOptions),
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
@@ -253,7 +254,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 		MaxTokens:       req.MaxTokens,
 		Stream:          true,
 		ReasoningFormat: c.reasoningFormat,
-		Options:         cloneProviderOptions(req.ProviderOptions),
+		Options:         provideroptions.Clone(req.ProviderOptions),
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
@@ -672,17 +673,6 @@ func cloneHeaders(input map[string]string) map[string]string {
 	return out
 }
 
-func cloneProviderOptions(input map[string]any) map[string]any {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
-	return out
-}
-
 func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, error) {
 	type requestJSON struct {
 		Model           string           `json:"model"`
@@ -825,25 +815,7 @@ func mergeChatProviderOptions(object map[string]any, options map[string]any, for
 }
 
 func mergeProviderOptionValue(object map[string]any, key string, value any) {
-	if nested, ok := value.(map[string]any); ok {
-		if existing, ok := object[key].(map[string]any); ok {
-			mergeProviderOptionMap(existing, nested)
-			return
-		}
-	}
-	object[key] = value
-}
-
-func mergeProviderOptionMap(dst, src map[string]any) {
-	for key, value := range src {
-		if nested, ok := value.(map[string]any); ok {
-			if existing, ok := dst[key].(map[string]any); ok {
-				mergeProviderOptionMap(existing, nested)
-				continue
-			}
-		}
-		dst[key] = value
-	}
+	provideroptions.MergeValue(object, key, value)
 }
 
 type reasoningEffortFormat int

@@ -36,7 +36,7 @@
 import { describe, expect, it } from "vitest";
 import { createElement, type JSX } from "react";
 import type { ThreadItem, Turn, TurnStatus } from "../shared/protocol";
-import { buildAssistantTurnDisplay } from "./App";
+import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 
 let idCounter = 0;
 function nextID(prefix: string): string {
