@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/memory/store"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -82,6 +83,14 @@ type Env struct {
 	// to thread the per-conversation listening ports into the UI and
 	// auto-open the in-app browser preview.
 	OnPortsReported func(ports []int)
+
+	// Memory is the optional LLM-writable memory backend. When nil,
+	// the memory_* tools report that memory is not configured. The
+	// constructor that builds Env is responsible for wiring a real
+	// Provider (typically a *store.FileProvider rooted under StateDir).
+	// Memory tools may be registered even when this is nil; they will
+	// return a clear error at execution time instead of panicking.
+	Memory store.Provider
 
 	readState *readFileState
 	planState planState
