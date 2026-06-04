@@ -22,6 +22,7 @@ type AwaitAgentsResult struct {
 type AwaitAgentResult struct {
 	AgentID       string   `json:"agent_id,omitempty"`
 	TaskName      string   `json:"task_name,omitempty"`
+	AgentProfile  string   `json:"agent_profile,omitempty"`
 	AgentPath     string   `json:"agent_path,omitempty"`
 	Status        string   `json:"status"`
 	Result        string   `json:"result,omitempty"`
@@ -258,12 +259,13 @@ func (c *AgentControl) snapshotByID(id string) *subagent.SubAgentSnapshot {
 
 func metadataFromSnapshot(snap subagent.SubAgentSnapshot) agentthread.Metadata {
 	return agentthread.Metadata{
-		ID:       snap.ID,
-		Path:     snap.AgentPath,
-		TaskName: snap.TaskName,
-		Role:     snap.Type,
-		ParentID: snap.ParentID,
-		Status:   threadStatusFromSubAgent(snap.Status),
+		ID:           snap.ID,
+		Path:         snap.AgentPath,
+		TaskName:     snap.TaskName,
+		AgentProfile: snap.AgentProfile,
+		Role:         snap.Type,
+		ParentID:     snap.ParentID,
+		Status:       threadStatusFromSubAgent(snap.Status),
 	}
 }
 
@@ -271,6 +273,7 @@ func awaitResultFromSnapshot(snap subagent.SubAgentSnapshot) AwaitAgentResult {
 	out := AwaitAgentResult{
 		AgentID:      snap.ID,
 		TaskName:     snap.TaskName,
+		AgentProfile: snap.AgentProfile,
 		AgentPath:    snap.AgentPath,
 		Status:       string(snap.Status),
 		Result:       snap.Result,

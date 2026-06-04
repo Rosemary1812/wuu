@@ -68,6 +68,8 @@ type Session struct {
 	Toolkit                     *tools.Toolkit
 	WorkerClient                providers.StreamClient
 	BaseSystemPrompt            string
+	UserSystemPrompt            string
+	WuuHome                     string
 	CoordinatorPreamble         string
 	ExperimentalCoordinatorMode bool
 }
@@ -99,10 +101,7 @@ func NewSession(opts Options) (*Session, error) {
 	}
 	profileName := cfg.Agent.ProfileName()
 	profileMemoryEnabled := cfg.Agent.ProfileMemoryEnabled()
-	profileStateDir, err := statepath.ProfileDir(wuuHome, profileName)
-	if err != nil {
-		return nil, fmt.Errorf("resolve profile state directory: %w", err)
-	}
+	userSystemPrompt := cfg.Agent.UserSystemPrompt()
 
 	providerCfg, resolvedName, err := cfg.ResolveProvider(opts.ProviderName)
 	if err != nil {
@@ -150,7 +149,7 @@ func NewSession(opts Options) (*Session, error) {
 			// Attach the durable profile memory store for named agents. Ordinary
 			// default sessions stay memoryless so they can act as transient
 			// orchestration workspaces.
-			if memProvider, memErr := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileStateDir)); memErr == nil {
+			if memProvider, memErr := newProfileMemoryProvider(wuuHome, profileName); memErr == nil {
 				kit.SetMemory(memProvider)
 				profileMemoryProvider = memProvider
 			}
@@ -168,7 +167,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
 	profileMemoryEntries := recallProfileMemory(context.Background(), profileMemoryProvider)
-	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), cfg.Agent.UserSystemPrompt(), memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills)
+	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills)
 
 	if toolkit != nil {
 		if err := agentcontrol.EnsureSharedDir(workspaceStateDir); err != nil {
@@ -195,6 +194,9 @@ func NewSession(opts Options) (*Session, error) {
 			SessionID:       "session-pending",
 			HistoryDir:      "",
 			WorkerSysPrompt: baseSystemPrompt,
+			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
+				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills)
+			},
 			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := tools.New(workerRoot)
 				if werr != nil {
@@ -212,6 +214,16 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetAgentControl(agentControl)
 				wkit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 				wkit.ConfigureEditToolsForModel(toolModeModel)
+				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
+				if strings.TrimSpace(meta.AgentProfile) != "" {
+					memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
+					if memErr != nil {
+						return nil, memErr
+					}
+					wkit.SetMemory(memProvider)
+				} else if profileMemoryProvider != nil {
+					wkit.SetMemory(profileMemoryProvider)
+				}
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
@@ -276,6 +288,8 @@ func NewSession(opts Options) (*Session, error) {
 		Toolkit:                     toolkit,
 		WorkerClient:                workerClient,
 		BaseSystemPrompt:            baseSystemPrompt,
+		UserSystemPrompt:            userSystemPrompt,
+		WuuHome:                     wuuHome,
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
 	}, nil
@@ -322,6 +336,12 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 			workerClient = s.StreamRunner.Client
 		}
 		if workerClient != nil {
+			wuuHome := strings.TrimSpace(s.WuuHome)
+			if wuuHome == "" {
+				if home, err := statepath.Home(""); err == nil {
+					wuuHome = home
+				}
+			}
 			var control *agentcontrol.AgentControl
 			control, _ = agentcontrol.New(agentcontrol.Config{
 				Client:          workerClient,
@@ -333,6 +353,9 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				ThreadDir:       filepath.Join(artifactDir, "threads"),
 				HarnessDir:      filepath.Join(artifactDir, "harness"),
 				WorkerSysPrompt: s.BaseSystemPrompt,
+				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
+					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills)
+				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 					workerKit, err := s.Toolkit.CloneForRoot(workerRoot)
 					if err != nil {
@@ -350,6 +373,13 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 					workerKit.SetProcessManager(s.ProcessManager)
 					workerKit.SetSkills(s.Skills)
 					workerKit.SetAgentControl(control)
+					if strings.TrimSpace(meta.AgentProfile) != "" {
+						memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
+						if memErr != nil {
+							return nil, memErr
+						}
+						workerKit.SetMemory(memProvider)
+					}
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
 					applyWorkerToolFilter(workerKit, wt)
 					return workerKit, nil
@@ -743,6 +773,31 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 		memOpts.UserDirs = cfg.UserDirs
 	}
 	return memory.Discover(rootDir, homeDir, memOpts)
+}
+
+func newProfileMemoryProvider(wuuHome, profileName string) (*memstore.FileProvider, error) {
+	name := strings.TrimSpace(profileName)
+	if name == "" || strings.EqualFold(name, config.DefaultAgentName) {
+		return nil, fmt.Errorf("profile memory requires a named agent profile")
+	}
+	profileStateDir, err := statepath.ProfileDir(wuuHome, name)
+	if err != nil {
+		return nil, fmt.Errorf("resolve profile state directory: %w", err)
+	}
+	return memstore.NewFileProvider(statepath.ProfileMemoryDir(profileStateDir))
+}
+
+func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt string, memoryFiles []memory.File, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill) (string, error) {
+	name := strings.TrimSpace(profileName)
+	if name == "" || strings.EqualFold(name, config.DefaultAgentName) {
+		return "", nil
+	}
+	provider, err := newProfileMemoryProvider(wuuHome, name)
+	if err != nil {
+		return "", err
+	}
+	entries := recallProfileMemory(context.Background(), provider)
+	return buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userPrompt, memoryFiles, entries, true, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills), nil
 }
 
 func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill) string {

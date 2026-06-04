@@ -41,20 +41,21 @@ type persistedMessage struct {
 }
 
 type persistedAgentHistory struct {
-	ID          string                  `json:"id"`
-	Type        string                  `json:"type"`
-	TaskName    string                  `json:"task_name,omitempty"`
-	AgentPath   string                  `json:"agent_path,omitempty"`
-	ParentID    string                  `json:"parent_id,omitempty"`
-	Description string                  `json:"description"`
-	Status      string                  `json:"status"`
-	StartedAt   time.Time               `json:"started_at"`
-	CompletedAt time.Time               `json:"completed_at"`
-	Model       string                  `json:"model"`
-	Prompt      string                  `json:"prompt"`
-	Result      string                  `json:"result,omitempty"`
-	Error       string                  `json:"error,omitempty"`
-	Messages    []providers.ChatMessage `json:"messages,omitempty"`
+	ID           string                  `json:"id"`
+	Type         string                  `json:"type"`
+	TaskName     string                  `json:"task_name,omitempty"`
+	AgentProfile string                  `json:"agent_profile,omitempty"`
+	AgentPath    string                  `json:"agent_path,omitempty"`
+	ParentID     string                  `json:"parent_id,omitempty"`
+	Description  string                  `json:"description"`
+	Status       string                  `json:"status"`
+	StartedAt    time.Time               `json:"started_at"`
+	CompletedAt  time.Time               `json:"completed_at"`
+	Model        string                  `json:"model"`
+	Prompt       string                  `json:"prompt"`
+	Result       string                  `json:"result,omitempty"`
+	Error        string                  `json:"error,omitempty"`
+	Messages     []providers.ChatMessage `json:"messages,omitempty"`
 }
 
 func loadChatMessages(path string) ([]providers.ChatMessage, error) {

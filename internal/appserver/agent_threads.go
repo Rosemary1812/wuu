@@ -258,6 +258,7 @@ func agentFromSnapshot(snap subagent.SubAgentSnapshot) Agent {
 		ID:           snap.ID,
 		Type:         snap.Type,
 		TaskName:     snap.TaskName,
+		AgentProfile: snap.AgentProfile,
 		AgentPath:    snap.AgentPath,
 		ParentID:     snap.ParentID,
 		Description:  snap.Description,

@@ -176,8 +176,8 @@ func (t *Toolkit) rebuildRegistry() {
 		// Deferred tool discovery
 		NewToolSearchTool(t),
 	}
-	// Memory tools are always registered. When Env.Memory is nil they
-	// fail with a clear tool error, so the model sees a stable tool surface.
+	// Memory tools stay in the internal registry, but Definitions hides them
+	// unless a memory provider is attached for this agent profile.
 	registered = append(registered, NewMemoryTools(e)...)
 	t.registry = NewRegistry(registered...)
 }
@@ -209,10 +209,8 @@ func (t *Toolkit) Skills() []skills.Skill {
 	return t.env.Skills
 }
 
-// SetMemory attaches the memory store provider. The memory tools always
-// appear in the registry; this setter only swaps the underlying provider
-// between calls, so callers that have already retrieved a Tool handle
-// will see the new provider on its next Execute.
+// SetMemory attaches the memory store provider. Definitions exposes the
+// memory tools only while a provider is attached.
 func (t *Toolkit) SetMemory(p store.Provider) {
 	t.env.Memory = p
 }

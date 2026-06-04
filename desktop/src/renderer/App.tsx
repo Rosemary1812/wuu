@@ -7998,6 +7998,7 @@ function agentFromRecord(record: JsonRecord | undefined): Agent | undefined {
     id,
     type: stringValue(record, "type"),
     task_name: stringValue(record, "task_name"),
+    agent_profile: stringValue(record, "agent_profile"),
     agent_path: stringValue(record, "agent_path"),
     parent_id: stringValue(record, "parent_id"),
     description: stringValue(record, "description"),

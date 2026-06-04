@@ -12,6 +12,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -41,6 +42,9 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"injected by pasting the appropriate preset block at the start of the prompt. " +
 			"Use a child only when delegation materially improves the task: independent investigation, " +
 			"parallel implementation slices, risky verification, or work that benefits from a separate context. " +
+			"Ordinary child agents are memoryless. Set agent_profile only when the user asks to wake or use a named " +
+			"Workflow Agent/Profile with durable memory; the profile name is the agent's long-lived identity, while " +
+			"task_name is only this child task's path segment. Do not set agent_profile for routine one-off delegation. " +
 			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
 			"Write a concrete brief with task, background, scope/non-goals, starting points, acceptance criteria, " +
 			"deliverables, and constraints; do not make the child infer missing acceptance criteria from a vague ask. " +
@@ -77,6 +81,10 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Worker type. Only 'worker' is supported; omit to use the default.",
 				},
+				"agent_profile": map[string]any{
+					"type":        "string",
+					"description": "Optional durable Workflow Agent/Profile name to wake for this task. Use only when the user explicitly wants a named memory-bearing agent; omit for ordinary memoryless child tasks. This is the long-lived agent identity, not the task path segment.",
+				},
 				"message": map[string]any{
 					"type":        "string",
 					"description": "Concrete task brief. Include task, relevant background, scope/non-goals, starting points, acceptance criteria, deliverables, and constraints. With the default fork_turns='all', the worker also inherits your current conversation history; with fork_turns='none', this message must be fully self-contained.",
@@ -109,14 +117,15 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return "", errors.New("spawn_agent: agent control not configured (this build does not support sub-agents)")
 	}
 	var args struct {
-		TaskName    string `json:"task_name"`
-		AgentType   string `json:"agent_type"`
-		Message     string `json:"message"`
-		Isolation   string `json:"isolation"`
-		BaseRepo    string `json:"base_repo"`
-		Synchronous bool   `json:"synchronous"`
-		ForkTurns   string `json:"fork_turns"`
-		ForkContext *bool  `json:"fork_context"`
+		TaskName     string `json:"task_name"`
+		AgentType    string `json:"agent_type"`
+		AgentProfile string `json:"agent_profile"`
+		Message      string `json:"message"`
+		Isolation    string `json:"isolation"`
+		BaseRepo     string `json:"base_repo"`
+		Synchronous  bool   `json:"synchronous"`
+		ForkTurns    string `json:"fork_turns"`
+		ForkContext  *bool  `json:"fork_context"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -129,6 +138,10 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 	if strings.TrimSpace(args.Message) == "" {
 		return "", errors.New("spawn_agent: message is required")
+	}
+	agentProfile := strings.TrimSpace(args.AgentProfile)
+	if strings.EqualFold(agentProfile, config.DefaultAgentName) {
+		return "", errors.New("spawn_agent: agent_profile \"default\" is reserved for ordinary memoryless sessions; omit agent_profile or choose a named profile")
 	}
 	forkMode, lastNTurns, err := parseSpawnForkTurns(args.ForkTurns, args.ForkContext)
 	if err != nil {
@@ -147,15 +160,16 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 			cleaned = truncateHistoryToLastUserTurns(cleaned, lastNTurns)
 		}
 		result, err := t.env.AgentControl.Fork(ctx, agentcontrol.ForkRequest{
-			TaskName:    strings.TrimSpace(args.TaskName),
-			Description: strings.TrimSpace(args.TaskName),
-			ForkMode:    forkModeLabel(forkMode, lastNTurns),
-			ParentID:    strings.TrimSpace(t.env.AgentID),
-			ParentPath:  currentAgentPath(t.env),
-			Prompt:      wrapForkPrompt(args.Message),
-			Isolation:   args.Isolation,
-			BaseRepo:    args.BaseRepo,
-			Synchronous: args.Synchronous,
+			TaskName:     strings.TrimSpace(args.TaskName),
+			AgentProfile: agentProfile,
+			Description:  strings.TrimSpace(args.TaskName),
+			ForkMode:     forkModeLabel(forkMode, lastNTurns),
+			ParentID:     strings.TrimSpace(t.env.AgentID),
+			ParentPath:   currentAgentPath(t.env),
+			Prompt:       wrapForkPrompt(args.Message),
+			Isolation:    args.Isolation,
+			BaseRepo:     args.BaseRepo,
+			Synchronous:  args.Synchronous,
 		}, cleaned)
 		if err != nil {
 			return "", err
@@ -167,15 +181,16 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return string(out), nil
 	}
 	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
-		Type:        args.AgentType,
-		TaskName:    strings.TrimSpace(args.TaskName),
-		Description: strings.TrimSpace(args.TaskName),
-		Prompt:      args.Message,
-		ParentID:    strings.TrimSpace(t.env.AgentID),
-		ParentPath:  currentAgentPath(t.env),
-		Isolation:   args.Isolation,
-		BaseRepo:    args.BaseRepo,
-		Synchronous: args.Synchronous,
+		Type:         args.AgentType,
+		TaskName:     strings.TrimSpace(args.TaskName),
+		AgentProfile: agentProfile,
+		Description:  strings.TrimSpace(args.TaskName),
+		Prompt:       args.Message,
+		ParentID:     strings.TrimSpace(t.env.AgentID),
+		ParentPath:   currentAgentPath(t.env),
+		Isolation:    args.Isolation,
+		BaseRepo:     args.BaseRepo,
+		Synchronous:  args.Synchronous,
 	})
 	if err != nil {
 		return "", err

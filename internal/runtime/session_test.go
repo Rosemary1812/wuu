@@ -5,14 +5,46 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
+
+type sessionRecordingClient struct {
+	mu   sync.Mutex
+	last providers.ChatRequest
+}
+
+func (c *sessionRecordingClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	c.mu.Lock()
+	c.last = req
+	c.mu.Unlock()
+	return providers.ChatResponse{Content: "done"}, nil
+}
+
+func (c *sessionRecordingClient) StreamChat(_ context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.mu.Lock()
+	c.last = req
+	c.mu.Unlock()
+	ch := make(chan providers.StreamEvent, 2)
+	ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "done"}
+	ch <- providers.StreamEvent{Type: providers.EventDone}
+	close(ch)
+	return ch, nil
+}
+
+func (c *sessionRecordingClient) LastRequest() providers.ChatRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.last
+}
 
 func TestNewSessionUsesUserStateNotWorkspaceDotWuu(t *testing.T) {
 	root := t.TempDir()
@@ -96,6 +128,152 @@ func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
 	for _, name := range []string{"read_memory", "write_memory"} {
 		if defs[name] {
 			t.Fatalf("default profile should not expose %s", name)
+		}
+	}
+}
+
+func TestNewThreadRuntimeOrdinarySpawnIsMemoryless(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &sessionRecordingClient{}
+	rt.WorkerClient = client
+	threadRT, err := rt.NewThreadRuntime("thread-memoryless")
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	defer func() {
+		threadRT.AgentControl.StopAll()
+		time.Sleep(100 * time.Millisecond)
+	}()
+	if _, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        "worker",
+		TaskName:    "inspect_repo",
+		Prompt:      "inspect the repo",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	req := client.LastRequest()
+	for _, def := range req.Tools {
+		if def.Name == "read_memory" || def.Name == "write_memory" {
+			t.Fatalf("ordinary worker should not receive memory tool %q", def.Name)
+		}
+	}
+	if len(req.Messages) == 0 || strings.Contains(req.Messages[0].Content, "# Persistent Memory") {
+		t.Fatalf("ordinary worker should not receive persistent memory prompt: %+v", req.Messages)
+	}
+}
+
+func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	wuuHome := filepath.Join(home, "state")
+	agentProfile := "qa workflow"
+	t.Setenv("WUU_HOME", wuuHome)
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	profileDir, err := statepath.ProfileDir(wuuHome, agentProfile)
+	if err != nil {
+		t.Fatalf("ProfileDir: %v", err)
+	}
+	provider, err := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileDir))
+	if err != nil {
+		t.Fatalf("NewFileProvider: %v", err)
+	}
+	if _, err := provider.Store(context.Background(), memstore.Entry{
+		Content: "QA workflow checks visual regressions before release",
+		Tags:    []string{"target:memory", "qa"},
+		Source:  memstore.SourceAssistant,
+	}); err != nil {
+		t.Fatalf("Store memory: %v", err)
+	}
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.Toolkit.Memory() != nil {
+		t.Fatalf("ordinary root session should be memoryless, got %T", rt.Toolkit.Memory())
+	}
+	client := &sessionRecordingClient{}
+	rt.WorkerClient = client
+	threadRT, err := rt.NewThreadRuntime("thread-profile")
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	defer func() {
+		threadRT.AgentControl.StopAll()
+		time.Sleep(100 * time.Millisecond)
+	}()
+	res, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:         "worker",
+		TaskName:     "qa_check",
+		AgentProfile: agentProfile,
+		Prompt:       "run the QA workflow",
+		Synchronous:  true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if res.AgentProfile != agentProfile {
+		t.Fatalf("AgentProfile = %q, want %q", res.AgentProfile, agentProfile)
+	}
+
+	req := client.LastRequest()
+	toolNames := map[string]bool{}
+	for _, def := range req.Tools {
+		toolNames[def.Name] = true
+	}
+	for _, name := range []string{"read_memory", "write_memory"} {
+		if !toolNames[name] {
+			t.Fatalf("profile worker missing %s in tools: %+v", name, req.Tools)
+		}
+	}
+	if len(req.Messages) == 0 {
+		t.Fatal("profile worker sent no messages")
+	}
+	systemPrompt := req.Messages[0].Content
+	for _, want := range []string{"# Persistent Memory", "QA workflow checks visual regressions"} {
+		if !strings.Contains(systemPrompt, want) {
+			t.Fatalf("profile worker system prompt missing %q:\n%s", want, systemPrompt)
 		}
 	}
 }

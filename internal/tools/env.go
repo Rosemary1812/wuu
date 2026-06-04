@@ -88,8 +88,8 @@ type Env struct {
 	// read_memory/write_memory report that memory is not configured. The
 	// constructor that builds Env is responsible for wiring a real
 	// Provider (typically a *store.FileProvider rooted under profile state).
-	// Memory tools may be registered even when this is nil; they will
-	// return a clear error at execution time instead of panicking.
+	// Memory tools may be registered internally even when this is nil; they
+	// are hidden from Definitions until a provider is attached.
 	Memory store.Provider
 	// MemoryCharLimit caps target="memory" entries by character count.
 	// Zero uses the built-in default.

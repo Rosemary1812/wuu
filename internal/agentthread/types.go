@@ -41,6 +41,7 @@ type Metadata struct {
 	ParentID        string    `json:"parent_id,omitempty"`
 	Path            string    `json:"path"`
 	TaskName        string    `json:"task_name,omitempty"`
+	AgentProfile    string    `json:"agent_profile,omitempty"`
 	Role            string    `json:"role,omitempty"`
 	LastTaskMessage string    `json:"last_task_message,omitempty"`
 	CWD             string    `json:"cwd,omitempty"`
@@ -57,6 +58,7 @@ type SpawnSpec struct {
 	ParentID        string
 	ParentPath      string
 	TaskName        string
+	AgentProfile    string
 	Role            string
 	LastTaskMessage string
 	CWD             string

@@ -708,14 +708,15 @@ func agentFromThreadMetadata(meta agentthread.Metadata) Agent {
 		startedAt = meta.UpdatedAt
 	}
 	return Agent{
-		ID:          meta.ID,
-		Type:        meta.Role,
-		TaskName:    meta.TaskName,
-		AgentPath:   meta.Path,
-		ParentID:    meta.ParentID,
-		Description: meta.TaskName,
-		Status:      string(meta.Status),
-		StartedAt:   startedAt,
+		ID:           meta.ID,
+		Type:         meta.Role,
+		TaskName:     meta.TaskName,
+		AgentProfile: meta.AgentProfile,
+		AgentPath:    meta.Path,
+		ParentID:     meta.ParentID,
+		Description:  meta.TaskName,
+		Status:       string(meta.Status),
+		StartedAt:    startedAt,
 	}
 }
 

@@ -11,22 +11,22 @@ import (
 const (
 	ProtocolVersion = "wuu-app-server/v0.1"
 
-	MethodInitialize        = "initialize"
-	MethodConfigRead        = "config/read"
-	MethodConfigModelUpdate = "config/model/update"
-	MethodConfigCodexModels = "config/codex/models"
-	MethodSkillList         = "skill/list"
-	MethodThreadStart       = "thread/start"
-	MethodThreadResume      = "thread/resume"
-	MethodThreadFork        = "thread/fork"
-	MethodThreadList        = "thread/list"
-	MethodThreadSearch      = "thread/search"
-	MethodThreadPin         = "thread/pin"
-	MethodThreadArchive       = "thread/archive"
+	MethodInitialize            = "initialize"
+	MethodConfigRead            = "config/read"
+	MethodConfigModelUpdate     = "config/model/update"
+	MethodConfigCodexModels     = "config/codex/models"
+	MethodSkillList             = "skill/list"
+	MethodThreadStart           = "thread/start"
+	MethodThreadResume          = "thread/resume"
+	MethodThreadFork            = "thread/fork"
+	MethodThreadList            = "thread/list"
+	MethodThreadSearch          = "thread/search"
+	MethodThreadPin             = "thread/pin"
+	MethodThreadArchive         = "thread/archive"
 	MethodThreadRegenerateTitle = "thread/regenerate-title"
-	MethodTurnStart         = "turn/start"
-	MethodTurnInterrupt     = "turn/interrupt"
-	MethodShutdown          = "shutdown"
+	MethodTurnStart             = "turn/start"
+	MethodTurnInterrupt         = "turn/interrupt"
+	MethodShutdown              = "shutdown"
 
 	NotificationThreadStarted = "thread/started"
 	NotificationThreadResumed = "thread/resumed"
@@ -298,8 +298,8 @@ type ThreadUpdatedNotification struct {
 // pipeline for an existing thread (e.g. after the user changes provider)
 // and to inspect what the pipeline would produce.
 type ThreadRegenerateTitleParams struct {
-	ThreadID     string `json:"thread_id"`
-	DryRun       bool   `json:"dry_run,omitempty"`
+	ThreadID      string `json:"thread_id"`
+	DryRun        bool   `json:"dry_run,omitempty"`
 	ModelOverride string `json:"model_override,omitempty"`
 	ProviderName  string `json:"provider,omitempty"`
 }
@@ -342,6 +342,7 @@ type Agent struct {
 	ID                 string    `json:"id"`
 	Type               string    `json:"type"`
 	TaskName           string    `json:"task_name,omitempty"`
+	AgentProfile       string    `json:"agent_profile,omitempty"`
 	AgentPath          string    `json:"agent_path,omitempty"`
 	ParentID           string    `json:"parent_id,omitempty"`
 	Description        string    `json:"description,omitempty"`

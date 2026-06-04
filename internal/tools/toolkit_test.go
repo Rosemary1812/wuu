@@ -1234,7 +1234,7 @@ func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
 	}
 }
 
-func TestToolkit_SpawnAgentDefinitionIncludesForkTurns(t *testing.T) {
+func TestToolkit_SpawnAgentDefinitionIncludesForkTurnsAndAgentProfile(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -1247,6 +1247,9 @@ func TestToolkit_SpawnAgentDefinitionIncludesForkTurns(t *testing.T) {
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		if _, ok := props["fork_turns"]; !ok {
 			t.Fatalf("spawn_agent schema must expose fork_turns: %#v", d.InputSchema)
+		}
+		if _, ok := props["agent_profile"]; !ok {
+			t.Fatalf("spawn_agent schema must expose agent_profile: %#v", d.InputSchema)
 		}
 		return
 	}
@@ -1297,6 +1300,8 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"Preserve fork_turns='all'",
 			"user intent",
 			"prior analysis",
+			"Ordinary child agents are memoryless",
+			"agent_profile",
 		} {
 			if !strings.Contains(d.Description, want) {
 				t.Fatalf("spawn_agent description missing decision guidance %q: %q", want, d.Description)
@@ -1304,9 +1309,10 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
-			"message":    {"Concrete task brief", "acceptance criteria", "fully self-contained"},
-			"isolation":  {"destructive or broad experiments", "overlapping or uncertain concurrent writes", "explicit sandbox requests"},
-			"fork_turns": {"inherited user intent", "fully self-contained", "recent context"},
+			"message":       {"Concrete task brief", "acceptance criteria", "fully self-contained"},
+			"agent_profile": {"durable Workflow Agent/Profile", "memory-bearing agent", "ordinary memoryless child tasks"},
+			"isolation":     {"destructive or broad experiments", "overlapping or uncertain concurrent writes", "explicit sandbox requests"},
+			"fork_turns":    {"inherited user intent", "fully self-contained", "recent context"},
 		} {
 			prop, _ := props[field].(map[string]any)
 			desc, _ := prop["description"].(string)

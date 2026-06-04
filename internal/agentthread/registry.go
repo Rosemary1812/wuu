@@ -106,6 +106,7 @@ func (r *Registry) RegisterSpawn(spec SpawnSpec) (Metadata, error) {
 		ParentID:        parentID,
 		Path:            path,
 		TaskName:        taskName,
+		AgentProfile:    strings.TrimSpace(spec.AgentProfile),
 		Role:            strings.TrimSpace(spec.Role),
 		LastTaskMessage: strings.TrimSpace(spec.LastTaskMessage),
 		CWD:             strings.TrimSpace(spec.CWD),

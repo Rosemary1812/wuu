@@ -233,6 +233,61 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 	}
 }
 
+func TestForkAgentProfileOverridesInheritedSystemPrompt(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	client := &recordingClient{resp: providers.ChatResponse{Content: "task done"}}
+
+	c, err := New(Config{
+		Client:        client,
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-profile-fork",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerPrompt: func(_ string, _ WorkerType, meta agentthread.Metadata, _ IsolationMode) (string, error) {
+			if meta.AgentProfile == "qa workflow" {
+				return "profile base prompt with persistent memory", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.Fork(context.Background(), ForkRequest{
+		TaskName:     "qa_check",
+		AgentProfile: "qa workflow",
+		Prompt:       "run QA",
+		Synchronous:  true,
+	}, []providers.ChatMessage{
+		{Role: "system", Content: "parent ordinary memoryless system prompt"},
+		{Role: "user", Content: "please delegate"},
+		{Role: "assistant", Content: "spawning"},
+	})
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+	if res.AgentProfile != "qa workflow" {
+		t.Fatalf("AgentProfile = %q, want qa workflow", res.AgentProfile)
+	}
+	req := client.LastRequest()
+	if len(req.Messages) == 0 {
+		t.Fatal("client received no messages")
+	}
+	first := req.Messages[0]
+	if first.Role != "system" {
+		t.Fatalf("first message role = %q, want system", first.Role)
+	}
+	if !strings.Contains(first.Content, "profile base prompt with persistent memory") {
+		t.Fatalf("fork did not install profile system prompt:\n%s", first.Content)
+	}
+	if strings.Contains(first.Content, "parent ordinary memoryless system prompt") {
+		t.Fatalf("fork leaked inherited parent system prompt:\n%s", first.Content)
+	}
+}
+
 func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

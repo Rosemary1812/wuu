@@ -88,9 +88,10 @@ func TestSpawn_HappyPath(t *testing.T) {
 	mgr := NewManager(client, "fake-model")
 
 	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
-		Type:    "explorer",
-		Prompt:  "find foo",
-		Toolkit: fakeToolkit{},
+		Type:         "explorer",
+		AgentProfile: "qa workflow",
+		Prompt:       "find foo",
+		Toolkit:      fakeToolkit{},
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
@@ -108,6 +109,9 @@ func TestSpawn_HappyPath(t *testing.T) {
 	}
 	if snap.Result != "all done" {
 		t.Fatalf("got result %q", snap.Result)
+	}
+	if snap.AgentProfile != "qa workflow" {
+		t.Fatalf("AgentProfile = %q, want qa workflow", snap.AgentProfile)
 	}
 	if client.calls.Load() != 1 {
 		t.Fatalf("expected 1 LLM call, got %d", client.calls.Load())

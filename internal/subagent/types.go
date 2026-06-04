@@ -48,9 +48,10 @@ type SpawnOptions struct {
 
 	// TaskName is a stable human-provided task identifier. AgentPath is
 	// the canonical path in the root thread's agent tree.
-	TaskName  string
-	AgentPath string
-	ParentID  string
+	TaskName     string
+	AgentProfile string
+	AgentPath    string
+	ParentID     string
 
 	// Description is a short human-readable summary of the task,
 	// shown in status displays.
@@ -113,6 +114,7 @@ type SubAgent struct {
 	ID           string
 	Type         string
 	TaskName     string
+	AgentProfile string
 	AgentPath    string
 	ParentID     string
 	Description  string
@@ -184,6 +186,7 @@ type SubAgentSnapshot struct {
 	ID           string
 	Type         string
 	TaskName     string
+	AgentProfile string
 	AgentPath    string
 	ParentID     string
 	Description  string

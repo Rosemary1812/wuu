@@ -326,6 +326,7 @@ export type Agent = {
   id: string;
   type?: string;
   task_name?: string;
+  agent_profile?: string;
   agent_path?: string;
   parent_id?: string;
   description?: string;

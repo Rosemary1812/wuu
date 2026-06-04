@@ -39,6 +39,11 @@ import (
 // orchestration tools inside that worker can resolve relative child paths.
 type WorkerToolkitFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error)
 
+// WorkerSystemPromptFactory builds the base prompt for a registered worker.
+// AgentControl still wraps it with the worker role and working-directory
+// instructions.
+type WorkerSystemPromptFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata, isolation IsolationMode) (string, error)
+
 // AgentControl owns the orchestration runtime for one wuu session.
 type AgentControl struct {
 	manager       *subagent.Manager
@@ -55,6 +60,7 @@ type AgentControl struct {
 	rootThreadID  string
 	rootThreadDir string
 	workerFact    WorkerToolkitFactory
+	workerPrompt  WorkerSystemPromptFactory
 	defaultSys    string // base system prompt prefix added to every worker
 	maxParallel   int
 	queueMu       sync.Mutex
@@ -77,6 +83,7 @@ type Config struct {
 	SessionID       string
 	WorkerSysPrompt string
 	WorkerFactory   WorkerToolkitFactory
+	WorkerPrompt    WorkerSystemPromptFactory
 	MaxParallel     int
 }
 
@@ -127,6 +134,7 @@ func New(cfg Config) (*AgentControl, error) {
 		harnessDir:   harnessDir,
 		harnessStore: harness.NewStore(harnessDir),
 		workerFact:   cfg.WorkerFactory,
+		workerPrompt: cfg.WorkerPrompt,
 		defaultSys:   cfg.WorkerSysPrompt,
 		maxParallel:  maxP,
 	}
@@ -185,15 +193,16 @@ func (c *AgentControl) SessionID() string {
 // SpawnRequest is the internal shape of a spawn_agent tool invocation
 // after argument validation.
 type SpawnRequest struct {
-	Type        string
-	TaskName    string
-	Description string
-	Prompt      string
-	ParentID    string
-	ParentPath  string
-	BaseRepo    string // optional: chain off another worktree (worktree mode only)
-	Synchronous bool
-	Timeout     time.Duration
+	Type         string
+	TaskName     string
+	AgentProfile string // optional durable memory profile to wake for this worker
+	Description  string
+	Prompt       string
+	ParentID     string
+	ParentPath   string
+	BaseRepo     string // optional: chain off another worktree (worktree mode only)
+	Synchronous  bool
+	Timeout      time.Duration
 	// Isolation overrides the worker type's DefaultIsolation when set.
 	// Empty string means "use the type default". Use this from
 	// spawn_agent to opt a normally-inplace worker into a worktree
@@ -205,6 +214,7 @@ type SpawnRequest struct {
 type SpawnResult struct {
 	AgentID      string `json:"agent_id"`
 	TaskName     string `json:"task_name,omitempty"`
+	AgentProfile string `json:"agent_profile,omitempty"`
 	AgentPath    string `json:"agent_path,omitempty"`
 	Status       string `json:"status"`
 	Isolation    string `json:"isolation"`               // "inplace" or "worktree"
@@ -257,6 +267,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 
 	workerID := newAgentControlWorkerID(wtype)
 	taskName := req.TaskName
+	agentProfile := strings.TrimSpace(req.AgentProfile)
 
 	// Resolve effective isolation: caller override > type default.
 	isolation, err := NormalizeIsolation(req.Isolation, wt)
@@ -272,7 +283,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		if req.Synchronous {
 			return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
 		}
-		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, agentthread.StatusPending)
+		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, agentthread.StatusPending)
 		if err != nil {
 			return nil, err
 		}
@@ -291,11 +302,12 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			return nil, err
 		}
 		return &SpawnResult{
-			AgentID:   workerID,
-			TaskName:  threadMeta.TaskName,
-			AgentPath: threadMeta.Path,
-			Status:    "queued",
-			Isolation: string(isolation),
+			AgentID:      workerID,
+			TaskName:     threadMeta.TaskName,
+			AgentProfile: threadMeta.AgentProfile,
+			AgentPath:    threadMeta.Path,
+			Status:       "queued",
+			Isolation:    string(isolation),
 		}, nil
 	}
 
@@ -321,7 +333,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 
 	// 2. Register the child thread before launch so the visible worker
 	// ID, worktree ID, and thread path all point at the same task.
-	threadMeta, err := c.registerChildThread(workerID, taskName, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath)
+	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath)
 	if err != nil {
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
@@ -347,7 +359,20 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	}
 
 	// 4. Compose system prompt: type-specific role + working dir + base prompt.
-	sys := composeWorkerSystemPrompt(c.defaultSys, wt, workerRoot, isolation)
+	sys, err := c.workerSystemPrompt(workerRoot, wt, threadMeta, isolation)
+	if err != nil {
+		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
+			_ = c.threadStore.RecordStatus(failed)
+		}
+		c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker system prompt: %w", err))
+		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
+			_ = c.threadStore.RecordEdgeStatus(closed)
+		}
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
+		return nil, fmt.Errorf("worker system prompt: %w", err)
+	}
 
 	// 5. History path.
 	historyPath := ""
@@ -367,6 +392,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		ID:           workerID,
 		Type:         wtype,
 		TaskName:     threadMeta.TaskName,
+		AgentProfile: threadMeta.AgentProfile,
 		AgentPath:    threadMeta.Path,
 		ParentID:     threadMeta.ParentID,
 		Description:  req.Description,
@@ -384,11 +410,12 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	}
 
 	result := &SpawnResult{
-		AgentID:   sa.ID,
-		TaskName:  threadMeta.TaskName,
-		AgentPath: threadMeta.Path,
-		Status:    string(sa.Status),
-		Isolation: string(isolation),
+		AgentID:      sa.ID,
+		TaskName:     threadMeta.TaskName,
+		AgentProfile: threadMeta.AgentProfile,
+		AgentPath:    threadMeta.Path,
+		Status:       string(sa.Status),
+		Isolation:    string(isolation),
 	}
 	if worktreeRef != nil {
 		result.WorktreePath = worktreeRef.Path
@@ -426,12 +453,13 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 // default worker type, but isolation is still caller-selectable: a
 // forked history and a worktree are orthogonal concerns.
 type ForkRequest struct {
-	TaskName    string
-	Description string
-	ForkMode    string
-	ParentID    string
-	ParentPath  string
-	BaseRepo    string // optional: chain off another worktree (worktree mode only)
+	TaskName     string
+	AgentProfile string // optional durable memory profile to wake for this worker
+	Description  string
+	ForkMode     string
+	ParentID     string
+	ParentPath   string
+	BaseRepo     string // optional: chain off another worktree (worktree mode only)
 	// Isolation overrides the default worker type's DefaultIsolation
 	// when set. Empty string means "use the type default".
 	Isolation string
@@ -472,6 +500,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 
 	workerID := newAgentControlWorkerID(wt.Name)
 	taskName := req.TaskName
+	agentProfile := strings.TrimSpace(req.AgentProfile)
 	isolation, err := NormalizeIsolation(req.Isolation, wt)
 	if err != nil {
 		return nil, err
@@ -484,7 +513,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		if req.Synchronous {
 			return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
 		}
-		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, agentthread.StatusPending)
+		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, agentProfile, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, agentthread.StatusPending)
 		if err != nil {
 			return nil, err
 		}
@@ -506,11 +535,12 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			return nil, err
 		}
 		return &SpawnResult{
-			AgentID:   workerID,
-			TaskName:  threadMeta.TaskName,
-			AgentPath: threadMeta.Path,
-			Status:    "queued",
-			Isolation: string(isolation),
+			AgentID:      workerID,
+			TaskName:     threadMeta.TaskName,
+			AgentProfile: threadMeta.AgentProfile,
+			AgentPath:    threadMeta.Path,
+			Status:       "queued",
+			Isolation:    string(isolation),
 		}, nil
 	}
 
@@ -536,7 +566,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		forkPrompt = appendForkWorktreeReminder(forkPrompt, workerRoot, isolation)
 	}
 
-	threadMeta, err := c.registerChildThread(workerID, taskName, wt.Name, forkPrompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath)
+	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wt.Name, forkPrompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath)
 	if err != nil {
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
@@ -565,9 +595,29 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		historyPath = filepath.Join(c.historyDir, workerID+".json")
 	}
 
-	// Note: we deliberately do NOT set SystemPrompt — when
-	// InitialHistory is non-nil, the subagent runner uses
-	// history[0] as the system message and ignores the option.
+	initialHistory := append([]providers.ChatMessage(nil), parentHistory...)
+	if threadMeta.AgentProfile != "" {
+		sys, sysErr := c.workerSystemPrompt(workerRoot, wt, threadMeta, isolation)
+		if sysErr != nil {
+			if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
+				_ = c.threadStore.RecordStatus(failed)
+			}
+			if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
+				_ = c.threadStore.RecordEdgeStatus(closed)
+			}
+			if worktreeRef != nil {
+				_ = c.worktrees.Cleanup(worktreeRef)
+			}
+			c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker system prompt: %w", sysErr))
+			return nil, fmt.Errorf("worker system prompt: %w", sysErr)
+		}
+		initialHistory = withInitialSystemPrompt(initialHistory, sys)
+	}
+
+	// Note: for ordinary forks we deliberately do NOT set SystemPrompt — when
+	// InitialHistory is non-nil, the subagent runner uses the inherited system
+	// message. Profile-backed workers replace that inherited system message
+	// above so their durable identity and memory rules are active.
 	workerCtx := ctx
 	if !req.Synchronous {
 		workerCtx = context.WithoutCancel(ctx)
@@ -577,13 +627,14 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		ID:             workerID,
 		Type:           wt.Name,
 		TaskName:       threadMeta.TaskName,
+		AgentProfile:   threadMeta.AgentProfile,
 		AgentPath:      threadMeta.Path,
 		ParentID:       threadMeta.ParentID,
 		Description:    req.Description,
 		Prompt:         forkPrompt,
 		Toolkit:        workerKit,
 		HistoryPath:    historyPath,
-		InitialHistory: parentHistory,
+		InitialHistory: initialHistory,
 	})
 	if err != nil {
 		if worktreeRef != nil {
@@ -594,11 +645,12 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	}
 
 	result := &SpawnResult{
-		AgentID:   sa.ID,
-		TaskName:  threadMeta.TaskName,
-		AgentPath: threadMeta.Path,
-		Status:    string(sa.Status),
-		Isolation: string(isolation),
+		AgentID:      sa.ID,
+		TaskName:     threadMeta.TaskName,
+		AgentProfile: threadMeta.AgentProfile,
+		AgentPath:    threadMeta.Path,
+		Status:       string(sa.Status),
+		Isolation:    string(isolation),
 	}
 	if worktreeRef != nil {
 		result.WorktreePath = worktreeRef.Path
@@ -892,11 +944,43 @@ func (c *AgentControl) registerRootThread() {
 	c.rootThreadDir = c.threadDir
 }
 
-func (c *AgentControl) registerChildThread(id, taskName, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string) (agentthread.Metadata, error) {
-	return c.registerChildThreadWithStatus(id, taskName, role, message, source, forkMode, parentID, parentPath, agentthread.StatusRunning)
+func (c *AgentControl) workerSystemPrompt(rootDir string, wt WorkerType, meta agentthread.Metadata, isolation IsolationMode) (string, error) {
+	base := ""
+	if c != nil {
+		base = c.defaultSys
+	}
+	if c != nil && c.workerPrompt != nil {
+		customBase, err := c.workerPrompt(rootDir, wt, meta, isolation)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(customBase) != "" {
+			base = customBase
+		}
+	}
+	return composeWorkerSystemPrompt(base, wt, rootDir, isolation), nil
 }
 
-func (c *AgentControl) registerChildThreadWithStatus(id, taskName, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string, status agentthread.Status) (agentthread.Metadata, error) {
+func withInitialSystemPrompt(history []providers.ChatMessage, systemPrompt string) []providers.ChatMessage {
+	sys := strings.TrimSpace(systemPrompt)
+	if sys == "" {
+		return append([]providers.ChatMessage(nil), history...)
+	}
+	out := make([]providers.ChatMessage, 0, len(history)+1)
+	out = append(out, providers.ChatMessage{Role: "system", Content: sys})
+	start := 0
+	for start < len(history) && strings.TrimSpace(history[start].Role) == "system" {
+		start++
+	}
+	out = append(out, history[start:]...)
+	return out
+}
+
+func (c *AgentControl) registerChildThread(id, taskName, agentProfile, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string) (agentthread.Metadata, error) {
+	return c.registerChildThreadWithStatus(id, taskName, agentProfile, role, message, source, forkMode, parentID, parentPath, agentthread.StatusRunning)
+}
+
+func (c *AgentControl) registerChildThreadWithStatus(id, taskName, agentProfile, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string, status agentthread.Status) (agentthread.Metadata, error) {
 	if c == nil || c.threads == nil {
 		return agentthread.Metadata{}, errors.New("thread registry is not configured")
 	}
@@ -915,6 +999,7 @@ func (c *AgentControl) registerChildThreadWithStatus(id, taskName, role, message
 		ParentID:        parentID,
 		ParentPath:      parentPath,
 		TaskName:        taskName,
+		AgentProfile:    strings.TrimSpace(agentProfile),
 		Role:            role,
 		LastTaskMessage: message,
 		CWD:             c.parentRepo,
@@ -1235,11 +1320,21 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		return fmt.Errorf("worker toolkit: %w", err)
 	}
 	prompt := prepared.Prompt
-	systemPrompt := composeWorkerSystemPrompt(c.defaultSys, prepared.WorkerType, workerRoot, prepared.Isolation)
+	systemPrompt, err := c.workerSystemPrompt(workerRoot, prepared.WorkerType, prepared.ThreadMeta, prepared.Isolation)
+	if err != nil {
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
+		return fmt.Errorf("worker system prompt: %w", err)
+	}
 	var initialHistory []providers.ChatMessage
 	if prepared.IsFork {
 		initialHistory = append([]providers.ChatMessage(nil), prepared.ParentHistory...)
-		systemPrompt = ""
+		if prepared.ThreadMeta.AgentProfile != "" {
+			initialHistory = withInitialSystemPrompt(initialHistory, systemPrompt)
+		} else {
+			systemPrompt = ""
+		}
 		if prepared.Isolation == IsolationWorktree {
 			prompt = appendForkWorktreeReminder(prompt, workerRoot, prepared.Isolation)
 		}
@@ -1252,6 +1347,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		ID:             prepared.WorkerID,
 		Type:           prepared.WorkerType.Name,
 		TaskName:       prepared.ThreadMeta.TaskName,
+		AgentProfile:   prepared.ThreadMeta.AgentProfile,
 		AgentPath:      prepared.ThreadMeta.Path,
 		ParentID:       prepared.ThreadMeta.ParentID,
 		Description:    prepared.Description,
