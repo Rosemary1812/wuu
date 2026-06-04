@@ -1,0 +1,560 @@
+package appserver
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"reflect"
+	"sort"
+	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/modelcatalog"
+	"github.com/blueberrycongee/wuu/internal/modelvariant"
+	"github.com/blueberrycongee/wuu/internal/providerfactory"
+	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/providers/codex"
+	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/version"
+)
+
+func (s *Server) handleInitialize(req Request) error {
+	core := version.Info()
+	return s.writeResponse(req.ID, InitializeResult{
+		ProtocolVersion: ProtocolVersion,
+		Core: CoreBuildInfo{
+			Version: core.Version,
+			Commit:  core.Commit,
+			Date:    core.Date,
+			Dirty:   core.Dirty,
+		},
+		Provider:      s.rt.ProviderName,
+		Model:         s.rt.Model,
+		Effort:        s.currentDisplayEffort(),
+		Variant:       s.currentVariant(),
+		WorkspaceRoot: s.rt.RootDir,
+		Providers:     s.providerSummaries(),
+	}, nil)
+}
+
+func (s *Server) handleConfigRead(req Request) error {
+	return s.writeResponse(req.ID, ConfigReadResult{
+		Provider:      s.rt.ProviderName,
+		Model:         s.rt.Model,
+		Effort:        s.currentDisplayEffort(),
+		Variant:       s.currentVariant(),
+		ConfigPath:    s.rt.ConfigPath,
+		WorkspaceRoot: s.rt.RootDir,
+		SessionDir:    s.rt.SessionDir,
+		Providers:     s.providerSummaries(),
+	}, nil)
+}
+
+func (s *Server) handleConfigModelUpdate(req Request) error {
+	var params ConfigModelUpdateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerName := strings.TrimSpace(params.Provider)
+	if providerName == "" {
+		providerName = s.rt.ProviderName
+	}
+	model := strings.TrimSpace(params.Model)
+	if model == "" {
+		return s.writeResponse(req.ID, nil, errors.New("model is required"))
+	}
+	if s.hasRunningThread() {
+		return s.writeResponse(req.ID, nil, errors.New("cannot change model while a turn is running"))
+	}
+	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	var providerCfg config.ProviderConfig
+	var resolvedName string
+	creatingProvider := params.CreateProvider
+	if creatingProvider {
+		if providerName == "" {
+			return s.writeResponse(req.ID, nil, errors.New("provider is required"))
+		}
+		if _, _, err := cfg.ResolveProvider(providerName); err == nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("provider %q already exists", providerName))
+		}
+		baseURL := strings.TrimSpace(stringValue(params.BaseURL))
+		apiKey := strings.TrimSpace(stringValue(params.APIKey))
+		if baseURL == "" {
+			return s.writeResponse(req.ID, nil, errors.New("base_url is required"))
+		}
+		if apiKey == "" {
+			return s.writeResponse(req.ID, nil, errors.New("api_key is required"))
+		}
+		providerCfg = config.ProviderConfig{
+			Type:    "openai-compatible",
+			BaseURL: baseURL,
+			APIKey:  apiKey,
+			Model:   model,
+		}
+		resolvedName = providerName
+	} else {
+		providerCfg, resolvedName, err = cfg.ResolveProvider(providerName)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	previousProviderCfg := providerCfg
+	previousModel := strings.TrimSpace(providerCfg.Model)
+	providerCfg.Model = model
+	connectionChanged := creatingProvider
+	connectionLocked := isCodexProviderType(providerCfg.Type)
+	if connectionLocked && (params.BaseURL != nil || strings.TrimSpace(stringValue(params.APIKey)) != "") {
+		return s.writeResponse(req.ID, nil, errors.New("connection settings are managed by OpenAI OAuth for this provider"))
+	}
+	if params.BaseURL != nil {
+		baseURL := strings.TrimSpace(*params.BaseURL)
+		if baseURL == "" {
+			return s.writeResponse(req.ID, nil, errors.New("base_url is required"))
+		}
+		if baseURL != strings.TrimSpace(providerCfg.BaseURL) {
+			connectionChanged = true
+		}
+		providerCfg.BaseURL = baseURL
+	}
+	apiKeyForConfig := params.APIKey
+	authKeyForStore := ""
+	if params.APIKey != nil {
+		apiKey := strings.TrimSpace(*params.APIKey)
+		if apiKey != "" {
+			connectionChanged = true
+			authKeyForStore = apiKey
+			providerCfg.APIKey = apiKey
+			providerCfg.APIKeyEnv = ""
+			empty := ""
+			apiKeyForConfig = &empty
+		} else {
+			apiKeyForConfig = nil
+		}
+	}
+	variant := s.currentVariant()
+	legacyEffort := s.currentEffort()
+	selectionTouched := params.Variant != nil || params.Effort != nil
+	if params.Variant != nil {
+		variant = strings.TrimSpace(*params.Variant)
+		if variant == "" && params.Effort == nil {
+			legacyEffort = ""
+		}
+	}
+	if params.Effort != nil {
+		legacyEffort = strings.TrimSpace(*params.Effort)
+		if params.Variant == nil {
+			variant = legacyEffort
+		}
+	}
+	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, model)
+	_, previousRuleProviderCfg := modelcatalog.EnrichProvider(resolvedName, previousProviderCfg, previousModel)
+	modelHeadersChanged := !reflect.DeepEqual(previousRuleProviderCfg.Headers, ruleProviderCfg.Headers)
+	if params.Variant != nil && variant != "" {
+		if _, ok := modelvariant.OptionsForProvider(ruleProviderName, ruleProviderCfg, model, variant); !ok {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support variant %s", model, variant))
+		}
+	}
+	if params.Effort != nil && params.Variant == nil && variant != "" && len(modelvariant.SummariesForProvider(ruleProviderName, ruleProviderCfg, model)) > 0 {
+		if _, ok := modelvariant.OptionsForProvider(ruleProviderName, ruleProviderCfg, model, variant); !ok {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support effort %s", model, variant))
+		}
+	}
+	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, model, variant, legacyEffort)
+	effort := selection.DisplayEffort
+	effortForConfig, variantForConfig := selectionConfigPointers(selection, selectionTouched, s.currentVariant())
+
+	var client providers.StreamClient
+	if resolvedName != s.rt.ProviderName || connectionChanged || modelHeadersChanged {
+		client, err = providerfactory.BuildStreamClient(ruleProviderCfg, resolvedName)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	if authKeyForStore != "" {
+		if err := config.SaveAuthKey(os.Getenv("HOME"), resolvedName, authKeyForStore); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	if creatingProvider {
+		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig)
+	} else {
+		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig)
+	}
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	s.rt.ProviderName = resolvedName
+	s.rt.Model = model
+	if client != nil {
+		s.rt.TitleClient = client
+	}
+	if s.rt.StreamRunner != nil {
+		if client != nil {
+			s.rt.StreamRunner.Client = client
+		}
+		s.rt.StreamRunner.Model = model
+		s.rt.StreamRunner.APIModel = modelcatalog.APIModel(ruleProviderCfg, model)
+		s.rt.StreamRunner.Effort = selection.LegacyEffort
+		s.rt.StreamRunner.Variant = selection.Variant
+		s.rt.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)
+		s.rt.StreamRunner.ContextWindowOverride = runtime.ResolveContextWindow(
+			model,
+			ruleProviderCfg.ContextWindow,
+			cfg.Agent.MaxContextTokens,
+		)
+	}
+	s.updateIdleThreadRuntime(resolvedName, model)
+
+	return s.writeResponse(req.ID, ConfigModelUpdateResult{
+		Provider:  resolvedName,
+		Model:     model,
+		Effort:    effort,
+		Variant:   selection.Variant,
+		Providers: s.providerSummaries(),
+	}, nil)
+}
+
+func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error {
+	var params ConfigCodexModelsParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerName := strings.TrimSpace(params.Provider)
+	if providerName == "" {
+		providerName = s.rt.ProviderName
+	}
+	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(providerName)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if !isCodexProviderType(providerCfg.Type) {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("provider %s uses type %s; Codex models require openai-codex", resolvedName, providerCfg.Type))
+	}
+	client, err := codex.New(codex.ClientConfig{
+		BaseURL: providerCfg.BaseURL,
+		APIKey:  explicitProviderAPIKey(providerCfg),
+		Headers: providerCfg.Headers,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	models, err := client.Models(ctx)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	out := make([]CodexModelSummary, 0, len(models))
+	for _, model := range models {
+		out = append(out, CodexModelSummary{
+			Slug:                  model.Slug,
+			DisplayName:           model.DisplayName,
+			DefaultReasoningLevel: model.DefaultReasoningLevel,
+			SupportedReasoning:    append([]string(nil), model.SupportedReasoning...),
+			SupportedInAPI:        model.SupportedInAPI,
+		})
+	}
+	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
+	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
+	effort := selection.DisplayEffort
+	variant := selection.Variant
+	if resolvedName == s.rt.ProviderName {
+		effort = s.currentDisplayEffort()
+		variant = s.currentVariant()
+	}
+	return s.writeResponse(req.ID, ConfigCodexModelsResult{
+		Provider: resolvedName,
+		Model:    providerCfg.Model,
+		Effort:   effort,
+		Variant:  variant,
+		Models:   out,
+	}, nil)
+}
+
+func (s *Server) handleSkillList(req Request) error {
+	return s.writeResponse(req.ID, SkillListResult{Skills: skillSummaries(s.rt.Skills)}, nil)
+}
+
+func skillSummaries(items []skills.Skill) []SkillSummary {
+	out := make([]SkillSummary, 0, len(items))
+	for _, item := range items {
+		out = append(out, SkillSummary{
+			Name:               item.Name,
+			Description:        item.Description,
+			WhenToUse:          item.WhenToUse,
+			Source:             item.Source,
+			Path:               item.Path,
+			ArgumentHint:       item.ArgumentHint,
+			Model:              item.Model,
+			Context:            item.Context,
+			Agent:              item.Agent,
+			AllowedTools:       append([]string(nil), item.AllowedTools...),
+			UserInvocable:      item.UserInvocable,
+			DisableModelInvoke: item.DisableModelInvoke,
+			Paths:              append([]string(nil), item.Paths...),
+			Effort:             item.Effort,
+			Version:            item.Version,
+		})
+	}
+	return out
+}
+
+func (s *Server) updateIdleThreadRuntime(providerName, model string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, th := range s.threads {
+		th.mu.Lock()
+		if !th.running {
+			th.ModelProvider = providerName
+			th.Model = model
+			if th.execRuntime != nil && th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
+				th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
+				th.execRuntime.StreamRunner.Model = model
+				th.execRuntime.StreamRunner.Effort = s.currentEffort()
+				th.execRuntime.StreamRunner.Variant = s.currentVariant()
+				th.execRuntime.StreamRunner.ProviderOptions = s.currentProviderOptions()
+				th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
+			}
+		}
+		th.mu.Unlock()
+	}
+}
+
+func (s *Server) currentEffort() string {
+	if s == nil || s.rt == nil || s.rt.StreamRunner == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.rt.StreamRunner.Effort)
+}
+
+func (s *Server) currentVariant() string {
+	if s == nil || s.rt == nil || s.rt.StreamRunner == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.rt.StreamRunner.Variant)
+}
+
+func (s *Server) currentDisplayEffort() string {
+	if variant := s.currentVariant(); variant != "" {
+		return variant
+	}
+	return s.currentEffort()
+}
+
+func (s *Server) currentProviderOptions() map[string]any {
+	if s == nil || s.rt == nil || s.rt.StreamRunner == nil {
+		return nil
+	}
+	return modelvariant.CloneOptions(s.rt.StreamRunner.ProviderOptions)
+}
+
+func selectionConfigPointers(selection modelvariant.Selection, touched bool, previousVariant string) (*string, *string) {
+	if !touched && (strings.TrimSpace(previousVariant) == "" || selection.Variant != "") {
+		return nil, nil
+	}
+	if selection.Variant != "" {
+		empty := ""
+		variant := selection.Variant
+		return &empty, &variant
+	}
+	if selection.LegacyEffort != "" {
+		effort := selection.LegacyEffort
+		empty := ""
+		return &effort, &empty
+	}
+	emptyEffort := ""
+	emptyVariant := ""
+	return &emptyEffort, &emptyVariant
+}
+
+func (s *Server) providerSummaries() []ProviderSummary {
+	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return nil
+	}
+	return providerSummariesFromConfig(cfg, os.Getenv("HOME"))
+}
+
+func providerSummariesFromConfig(cfg config.Config, home string) []ProviderSummary {
+	names := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]ProviderSummary, 0, len(names))
+	for _, name := range names {
+		provider := cfg.Providers[name]
+		out = append(out, ProviderSummary{
+			Name:             name,
+			Type:             provider.Type,
+			Model:            provider.Model,
+			BaseURL:          provider.BaseURL,
+			APIKeyConfigured: providerHasAuth(name, provider, home),
+			ConnectionLocked: isCodexProviderType(provider.Type),
+			Models:           providerModelSummaries(name, provider),
+		})
+	}
+	return out
+}
+
+func providerHasAuth(name string, provider config.ProviderConfig, home string) bool {
+	if provider.APIKey != "" || provider.APIKeyEnv != "" || provider.AuthToken != "" || provider.AuthTokenEnv != "" {
+		return true
+	}
+	key, err := config.LoadAuthKey(home, name)
+	return err == nil && strings.TrimSpace(key) != ""
+}
+
+func providerModelSummaries(providerName string, provider config.ProviderConfig) []ProviderModelSummary {
+	ruleProviderName := providerName
+	ruleProvider := provider
+	var catalogProvider modelcatalog.Provider
+	hasCatalog := false
+	if matched, ok := modelcatalog.MatchProvider(providerName, provider); ok {
+		catalogProvider = matched
+		hasCatalog = true
+		ruleProviderName = matched.ID
+		ruleProvider = modelcatalog.MergeProvider(provider, matched)
+	}
+
+	models := make(map[string]ProviderModelSummary, len(ruleProvider.Models)+1)
+	disabled := map[string]bool{}
+	for id, model := range provider.Models {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if model.Disabled {
+			disabled[id] = true
+			continue
+		}
+		model = ruleProvider.Models[id]
+		models[id] = ProviderModelSummary{
+			ID:               id,
+			DisplayName:      strings.TrimSpace(model.Name),
+			DefaultEffort:    strings.TrimSpace(model.DefaultEffort),
+			DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
+			SupportedEfforts: modelvariant.SupportedEffortsForProvider(ruleProviderName, ruleProvider, id, model),
+			Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(ruleProviderName, ruleProvider, id)),
+			Source:           "config",
+		}
+	}
+	if hasCatalog {
+		for _, catalogModel := range catalogProvider.Models {
+			id := strings.TrimSpace(catalogModel.ID)
+			if id == "" || disabled[id] {
+				continue
+			}
+			if _, ok := models[id]; ok {
+				continue
+			}
+			model := ruleProvider.Models[id]
+			models[id] = ProviderModelSummary{
+				ID:               id,
+				DisplayName:      strings.TrimSpace(model.Name),
+				DefaultEffort:    strings.TrimSpace(model.DefaultEffort),
+				DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
+				SupportedEfforts: modelvariant.SupportedEffortsForProvider(ruleProviderName, ruleProvider, id, model),
+				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(ruleProviderName, ruleProvider, id)),
+				Source:           "models.dev",
+			}
+		}
+	}
+	current := strings.TrimSpace(provider.Model)
+	if current != "" {
+		if _, ok := models[current]; !ok {
+			selectedRuleProviderName, selectedRuleProvider := modelcatalog.EnrichProvider(providerName, provider, current)
+			models[current] = ProviderModelSummary{
+				ID:               current,
+				SupportedEfforts: modelvariant.SupportedEffortsForProvider(selectedRuleProviderName, selectedRuleProvider, current, selectedRuleProvider.Models[current]),
+				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(selectedRuleProviderName, selectedRuleProvider, current)),
+				Source:           "selected",
+			}
+		}
+	}
+	out := make([]ProviderModelSummary, 0, len(models))
+	for _, model := range models {
+		if len(model.Variants) == 0 {
+			model.Variants = providerVariantSummaries(modelvariant.SummariesForProvider(ruleProviderName, ruleProvider, model.ID))
+		}
+		if len(model.SupportedEfforts) == 0 {
+			model.SupportedEfforts = modelvariant.EffortIDs(modelVariantSummaries(model.Variants))
+		}
+		if model.DefaultVariant == "" && model.DefaultEffort != "" {
+			model.DefaultVariant = model.DefaultEffort
+		}
+		if model.DefaultVariant == "" {
+			model.DefaultVariant = modelvariant.DefaultVariantForProvider(ruleProviderName, ruleProvider, model.ID)
+		}
+		out = append(out, model)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ID == current {
+			return true
+		}
+		if out[j].ID == current {
+			return false
+		}
+		return strings.ToLower(out[i].ID) < strings.ToLower(out[j].ID)
+	})
+	return out
+}
+
+func providerVariantSummaries(variants []modelvariant.Variant) []ProviderModelVariantSummary {
+	if len(variants) == 0 {
+		return nil
+	}
+	out := make([]ProviderModelVariantSummary, 0, len(variants))
+	for _, variant := range variants {
+		out = append(out, ProviderModelVariantSummary{
+			ID:      variant.ID,
+			Options: modelvariant.CloneOptions(variant.Options),
+		})
+	}
+	return out
+}
+
+func modelVariantSummaries(variants []ProviderModelVariantSummary) []modelvariant.Variant {
+	if len(variants) == 0 {
+		return nil
+	}
+	out := make([]modelvariant.Variant, 0, len(variants))
+	for _, variant := range variants {
+		out = append(out, modelvariant.Variant{
+			ID:      variant.ID,
+			Options: modelvariant.CloneOptions(variant.Options),
+		})
+	}
+	return out
+}
+
+func isCodexProviderType(providerType string) bool {
+	s := strings.ToLower(strings.TrimSpace(providerType))
+	s = strings.ReplaceAll(s, "_", "-")
+	return s == "openai-codex" || s == "codex-subscription" || s == "chatgpt-codex"
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func explicitProviderAPIKey(provider config.ProviderConfig) string {
+	if key := strings.TrimSpace(provider.APIKey); key != "" {
+		return key
+	}
+	if envKey := strings.TrimSpace(provider.APIKeyEnv); envKey != "" {
+		return strings.TrimSpace(os.Getenv(envKey))
+	}
+	return ""
+}
