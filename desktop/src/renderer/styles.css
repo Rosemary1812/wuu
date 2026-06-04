@@ -1507,17 +1507,17 @@ button:disabled {
   --environment-panel-motion-easing: cubic-bezier(0.2, 0, 0, 1);
   --environment-flow-motion-duration: 280ms;
   --environment-flow-motion-delay: 22ms;
-  --conversation-readable-width: 880px;
+  --conversation-readable-width: 1000px;
   --conversation-flow-width: var(--conversation-readable-width);
-  --conversation-flow-padding-inline: clamp(24px, 4vw, 56px);
+  --conversation-flow-padding-inline: clamp(28px, 4vw, 64px);
   --conversation-content-width: calc(
     var(--conversation-flow-width) - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline)
   );
   --conversation-message-max-width: 720px;
   --conversation-message-max-inline: 86%;
-  --conversation-split-message-max-width: 640px;
+  --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;
-  --conversation-dialog-width: 800px;
+  --conversation-dialog-width: 920px;
   --conversation-message-font-size: 15px;
   --conversation-prose-line-height: 1.75;
   --conversation-prose-block-gap: 16px;
@@ -5297,13 +5297,25 @@ button:disabled {
 
 .assistant-turn-shell {
   display: grid;
-  width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
+  /* The assistant turn spans the full flow width. The
+     --conversation-message-max-width cap (720px) was inherited from
+     the user-message-bubble model, but the assistant turn is NOT a
+     right-aligned bubble — it's a full-width prose block, and
+     capping it makes long-form code blocks, tables, and
+     multi-paragraph replies feel pinched. The user message keeps
+     its own 720px cap below (.user-message-block) because the
+     bubble shape wants to stay compact. */
+  width: 100%;
   min-width: 0;
   gap: var(--conversation-shell-gap);
 }
 
 .conversation-split-width .assistant-turn-shell {
-  width: min(var(--conversation-split-message-max-width), var(--conversation-split-message-max-inline));
+  /* In split view, the assistant also gets the full split column
+     — same reasoning as above. The split column itself is
+     narrower (--conversation-split-message-max-width) so the
+     overall turn stays narrower than the full flow. */
+  width: 100%;
 }
 
 /* Front content ("过程"区): the collapsible timeline of reasoning,
@@ -7889,29 +7901,33 @@ button:disabled {
 }
 
 .rich-heading {
-  margin: 4px 0 0;
+  /* Reset margin — the parent .rich-content already provides
+     inter-block gap (--conversation-prose-block-gap, 16px). Adding
+     extra margin-top here would create asymmetric spacing (more
+     above a heading than below it), which reads as "shouty". */
+  margin: 0;
   color: #202427;
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .rich-heading-1 {
-  font-size: 22px;
+  /* Notion-style: h1 is only 3px taller than body text, weight 600
+     does the visual lift. Keeping the size close to body avoids
+     the "marketing page" feel that 22px h1 gives. */
+  font-size: 18px;
 }
 
 .rich-heading-2 {
-  font-size: 19px;
+  font-size: 16px;
 }
 
-.rich-heading-3 {
-  font-size: 17px;
-}
-
+.rich-heading-3,
 .rich-heading-4,
 .rich-heading-5,
 .rich-heading-6 {
-  font-size: var(--font-title);
+  font-size: 15px;
 }
 
 .rich-paragraph {
@@ -7963,13 +7979,17 @@ button:disabled {
 }
 
 .rich-content :not(pre) > code {
-  border: 1px solid #e2e2df;
-  border-radius: 5px;
-  background: #f6f6f4;
+  /* Notion-style inline code: zero border, very subtle bg, 4px
+     radius. The slightly larger horizontal padding (0.4em vs
+     0.34em) keeps the chip from feeling like a tightly-clamped
+     monospace token when it sits next to surrounding prose. */
+  border: 0;
+  border-radius: 4px;
+  background: rgba(31, 35, 40, 0.05);
   color: #343940;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.92em;
-  padding: 0.08em 0.34em;
+  padding: 0.1em 0.4em;
   white-space: break-spaces;
 }
 
@@ -7987,18 +8007,25 @@ button:disabled {
   display: block;
   max-width: 100%;
   max-height: 420px;
-  border: 1px solid #e5e5e1;
+  /* Notion-style: the border is so soft it's almost invisible
+     (6% black, 1px). The bg is barely off-white. The image
+     "floats" in the message flow rather than sitting in a frame. */
+  border: 1px solid rgba(31, 35, 40, 0.06);
   border-radius: 8px;
-  background: #f7f7f5;
+  background: #fafaf8;
   object-fit: contain;
 }
 
 .rich-code {
   max-height: 460px;
   min-width: 0;
-  border: 1px solid #e5e5e1;
+  /* Notion-style code block: zero border, slightly darker solid bg
+     (#f3f3f0 vs the page's white) so the code "sinks" into a soft
+     plate. 8px radius keeps it from feeling sharp. Internal padding
+     comes from .rich-code pre. */
+  border: 0;
+  background: #f3f3f0;
   border-radius: 8px;
-  border-bottom: 1px solid #e5e5e1;
 }
 
 .rich-code code {
@@ -8019,27 +8046,36 @@ button:disabled {
 .rich-table-wrap {
   max-width: 100%;
   overflow: auto;
-  border: 1px solid #e5e5e1;
-  border-radius: 8px;
+  /* Notion-style table: NO outer border, NO border-radius, NO
+     background. The table "sits" in the message flow as a soft
+     block — the only frame is the thead's 4% black background
+     and the 6% black row dividers below. Horizontal overflow
+     becomes the only scrollable surface. */
+  background: transparent;
+  font-variant-numeric: tabular-nums;
 }
 
 .rich-table-wrap table {
   width: 100%;
-  min-width: 420px;
+  min-width: 0;
   border-collapse: collapse;
   font-size: var(--font-ui);
 }
 
 .rich-table-wrap th,
 .rich-table-wrap td {
-  border-bottom: 1px solid #ececea;
-  padding: 8px 10px;
+  /* Generous padding so the table breathes in the chat flow.
+     The only visible line is the 6% black row divider; cell
+     sides are borderless and columns are separated by padding
+     alone, which is the "open" Notion feel. */
+  padding: 10px 14px;
   text-align: left;
   vertical-align: top;
+  border-bottom: 1px solid rgba(31, 35, 40, 0.06);
 }
 
 .rich-table-wrap th {
-  background: #f8f8f6;
+  background: rgba(31, 35, 40, 0.04);
   color: #42474d;
   font-weight: var(--weight-semibold);
 }
@@ -8050,7 +8086,11 @@ button:disabled {
 
 .rich-blockquote {
   margin: 0;
-  border-left: 3px solid #d4d8d5;
+  /* Notion-style: 2px left bar (down from 3px) at 16% black so
+     the bar reads as a "thoughtful marker" rather than a heavy
+     left rule. Text stays slightly muted (20% lighter than
+     body) so the quoted content feels referenced, not primary. */
+  border-left: 2px solid rgba(31, 35, 40, 0.16);
   color: #596067;
   padding: 2px 0 2px 12px;
 }
