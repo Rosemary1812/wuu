@@ -42,21 +42,6 @@ let fakeWebview: FakeWebview;
 let originalCreateElement: typeof document.createElement;
 
 beforeAll(() => {
-  if (typeof globalThis.matchMedia !== "function") {
-    Object.defineProperty(globalThis, "matchMedia", {
-      writable: true,
-      value: (query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false
-      })
-    });
-  }
   (globalThis as { Electron?: unknown }).Electron = {
     WebviewTag: class WebviewTag {}
   };
@@ -130,12 +115,9 @@ describe("WorkspaceBrowserPanel pendingBrowserURL", () => {
   });
 
   it("surfaces the navigated URL in the address bar", () => {
-    render({ pendingBrowserURL: "http://localhost:5173" });
     const { input } = render({});
-    // The second render with no URL re-mounts the panel in a clean
-    // state, so re-render with the URL and assert on a fresh mount.
     rerender({ pendingBrowserURL: "http://localhost:5173" });
-    void input;
+    expect(input?.value).toBe("http://localhost:5173");
   });
 
   it("does not navigate again when the same URL is re-asserted", () => {

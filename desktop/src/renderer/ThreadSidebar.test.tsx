@@ -1,28 +1,10 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThreadRowTitle } from "./ThreadSidebar";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
-
-beforeAll(() => {
-  if (typeof globalThis.matchMedia !== "function") {
-    Object.defineProperty(globalThis, "matchMedia", {
-      writable: true,
-      value: (query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false
-      })
-    });
-  }
-});
 
 beforeEach(() => {
   container = document.createElement("div");
