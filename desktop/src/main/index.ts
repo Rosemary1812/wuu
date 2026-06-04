@@ -59,6 +59,10 @@ import {
   registerRenderableFileScheme,
 } from "./renderableFileProtocol";
 import { TerminalSessionManager } from "./terminalSessions";
+import {
+  readFilePreviewBuffer,
+  truncateTextBytes,
+} from "./textPreviews";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FILE_TREE_MAX_PATHS = 4000;
@@ -726,18 +730,6 @@ function splitPatchTextLines(text: string): string[] {
   return withoutFinalNewline ? withoutFinalNewline.split(/\r?\n/) : [];
 }
 
-function readFilePreviewBuffer(filePath: string, readLimit: number): Buffer {
-  const buffer = Buffer.alloc(readLimit);
-  const descriptor = openSync(filePath, "r");
-  let bytesRead = 0;
-  try {
-    bytesRead = readSync(descriptor, buffer, 0, readLimit, 0);
-  } finally {
-    closeSync(descriptor);
-  }
-  return buffer.subarray(0, bytesRead);
-}
-
 function resolveGitRelativePath(
   root: string,
   path: string,
@@ -753,20 +745,6 @@ function resolveGitRelativePath(
     throw new Error("file is outside the current git repository");
   }
   return { relativePath, absolutePath };
-}
-
-function truncateTextBytes(
-  text: string,
-  maxBytes: number,
-): { text: string; truncated: boolean } {
-  const buffer = Buffer.from(text, "utf8");
-  if (buffer.byteLength <= maxBytes) {
-    return { text, truncated: false };
-  }
-  return {
-    text: `${buffer.subarray(0, maxBytes).toString("utf8")}\n[diff truncated]\n`,
-    truncated: true,
-  };
 }
 
 function emptyGitFileDiffResult(
