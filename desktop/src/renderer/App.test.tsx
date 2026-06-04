@@ -18,18 +18,20 @@
  * answer, so they're not a bug. Multi-final_answer turns are always
  * a bug — there's no single primary reply.
  *
- * Default collapse state of the front content:
- *   - in_progress: false (the user wants to watch the work)
- *   - buggy: false (the user needs to see what went wrong)
- *   - completed + ≤1 final_answer: true (the normal "I scrolled past
- *     this turn" case)
+ * Fold header: the front is always default-collapsed. The header
+ * alone (status row + optional commentary preview row) is enough
+ * to tell the user "something is / was happening here". The
+ * commentary preview is a single-line snippet of the latest
+ * commentary `agent_message` text, shown only while the turn is
+ * in_progress — once the turn completes, the front is no longer
+ * "live" and the preview is dropped.
  *
  * These tests exercise `buildAssistantTurnDisplay`, the pure
  * function that decides which items go to front vs body, whether the
- * turn is buggy, and what the front's default collapse state should
- * be. The render layer (`AssistantTurnShell`) maps that display
- * object directly to the DOM, so verifying the function output
- * verifies the layout.
+ * turn is buggy, what the front's default collapse state should be,
+ * and what the commentary preview text is. The render layer
+ * (`AssistantTurnShell`) maps that display object directly to the
+ * DOM, so verifying the function output verifies the layout.
  */
 import { describe, expect, it } from "vitest";
 import { createElement, type JSX } from "react";
@@ -182,7 +184,7 @@ describe("assistant turn front / body layout", () => {
     expect(display?.frontDefaultCollapsed).toBe(true);
   });
 
-  it("missing final: commentary + tool_call + commentary, no final_answer → front expanded, orange border + 'no final reply' banner", () => {
+  it("missing final: commentary + tool_call + commentary, no final_answer → front collapsed, orange border + 'no final reply' banner", () => {
     const commentaryA = makeCommentary("Let me check.");
     const tool = makeToolCall("ls");
     const commentaryB = makeCommentary("Found something.");
@@ -197,14 +199,17 @@ describe("assistant turn front / body layout", () => {
     expect(frontItemIDs(display)).toEqual([commentaryA.id, commentaryB.id]);
     expect(timelineItemIDs(display)).toEqual([tool.id]);
     // The turn started talking (commentary present) but never produced
-    // a final answer → bug, no divider, front forced expanded.
+    // a final answer → bug, no divider. Front stays default-collapsed;
+    // the orange border + banner is the "look at me" signal.
     expect(display?.isBuggy).toBe(true);
     expect(display?.bugMessage).toBe("这次请求没有产生最终回复");
     expect(display?.showDivider).toBe(false);
-    expect(display?.frontDefaultCollapsed).toBe(false);
+    expect(display?.frontDefaultCollapsed).toBe(true);
+    // Completed turn → no live commentary preview.
+    expect(display?.latestCommentaryPreview).toBeUndefined();
   });
 
-  it("multi final: commentary + final_answer_1 + commentary + final_answer_2 → front expanded, both final_answers in body, orange border + 'multiple final replies' banner", () => {
+  it("multi final: commentary + final_answer_1 + commentary + final_answer_2 → front collapsed, both final_answers in body, orange border + 'multiple final replies' banner", () => {
     const commentaryA = makeCommentary("First thought.");
     const finalOne = makeFinalAnswer("First answer.");
     const commentaryB = makeCommentary("Second thought.");
@@ -225,18 +230,20 @@ describe("assistant turn front / body layout", () => {
     expect(display?.isBuggy).toBe(true);
     expect(display?.bugMessage).toBe("这次请求产生了多个最终回复");
     expect(display?.showDivider).toBe(false);
-    expect(display?.frontDefaultCollapsed).toBe(false);
+    expect(display?.frontDefaultCollapsed).toBe(true);
+    // Completed turn → no live commentary preview.
+    expect(display?.latestCommentaryPreview).toBeUndefined();
   });
 
-  it("pure tool: only tool_calls, no text — in_progress forces expand, completed stays collapsed (pure tool is not a bug)", () => {
+  it("pure tool: only tool_calls, no text — front default-collapsed in both states (pure tool is not a bug)", () => {
     const toolA = makeToolCall("read_file");
     const toolB = makeToolCall("grep");
 
-    // in_progress: the user wants to watch the work, front is forced
-    // expanded. No final_answer exists yet, but pure tool with no
-    // text at all is allowed in either state. Two consecutive tool
-    // calls collapse into a single ToolActivityTimeline group entry
-    // (count = 2) so the front has exactly one element.
+    // in_progress: front is now default-collapsed in *all* states,
+    // including in_progress. The status row (e.g. "正在回复 9s") plus
+    // the chevron is enough to tell the user something is happening;
+    // the user clicks to see the actual tool timeline. No commentary
+    // exists → no preview row in the fold header.
     const inProgressTurn = makeTurn({
       status: "in_progress",
       items: [toolA, toolB],
@@ -253,7 +260,8 @@ describe("assistant turn front / body layout", () => {
     expect(timelineItemIDs(inProgressDisplay)).toEqual([toolA.id]);
     expect(inProgressDisplay?.isBuggy).toBe(false);
     expect(inProgressDisplay?.showDivider).toBe(false);
-    expect(inProgressDisplay?.frontDefaultCollapsed).toBe(false);
+    expect(inProgressDisplay?.frontDefaultCollapsed).toBe(true);
+    expect(inProgressDisplay?.latestCommentaryPreview).toBeUndefined();
 
     // completed: pure tool with no text is not a bug. The front
     // content stays around so the user can expand to see the tool
@@ -277,5 +285,92 @@ describe("assistant turn front / body layout", () => {
     expect(completedDisplay?.isBuggy).toBe(false);
     expect(completedDisplay?.showDivider).toBe(false);
     expect(completedDisplay?.frontDefaultCollapsed).toBe(true);
+    expect(completedDisplay?.latestCommentaryPreview).toBeUndefined();
+  });
+});
+
+describe("assistant turn fold header preview", () => {
+  it("in_progress + single commentary → preview = commentary text, under 120 chars passes through unchanged", () => {
+    const commentary = makeCommentary("Let me look that up.");
+    const turn = makeTurn({ status: "in_progress", items: [commentary] });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    expect(display?.frontDefaultCollapsed).toBe(true);
+    expect(display?.latestCommentaryPreview).toBe("Let me look that up.");
+  });
+
+  it("in_progress + multiple commentaries → preview = the LATEST commentary, in arrival order", () => {
+    const commentaryA = makeCommentary("First thought.");
+    const commentaryB = makeCommentary("Second thought.");
+    const turn = makeTurn({
+      status: "in_progress",
+      items: [commentaryA, commentaryB],
+    });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    // The last commentary in arrival order is the one the user
+    // currently sees in the fold header — earlier ones are hidden
+    // behind the fold.
+    expect(display?.latestCommentaryPreview).toBe("Second thought.");
+  });
+
+  it("in_progress + commentary interleaved with tool calls → preview = the commentary that came AFTER the tool, not before", () => {
+    const commentaryA = makeCommentary("Let me look that up.");
+    const tool = makeToolCall("read_file");
+    const commentaryB = makeCommentary("Got it. The file says...");
+    const turn = makeTurn({
+      status: "in_progress",
+      items: [commentaryA, tool, commentaryB],
+    });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    expect(display?.latestCommentaryPreview).toBe("Got it. The file says...");
+  });
+
+  it("in_progress + long commentary → preview is truncated to 120 chars + ellipsis so the fold stays on two lines", () => {
+    // 200 chars of 'a' — well past the 120-char cap.
+    const longText = "a".repeat(200);
+    const commentary = makeCommentary(longText);
+    const turn = makeTurn({ status: "in_progress", items: [commentary] });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    expect(display?.latestCommentaryPreview).toBe("a".repeat(120) + "…");
+  });
+
+  it("in_progress + reasoning only (no commentary) → preview is undefined, fold has no second row", () => {
+    const reasoning = makeReasoning("thinking deeply about the problem");
+    const turn = makeTurn({ status: "in_progress", items: [reasoning] });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    // Reasoning is not commentary — the preview row has nothing to
+    // show, so the fold header renders only the status row.
+    expect(display?.latestCommentaryPreview).toBeUndefined();
+  });
+
+  it("completed + commentary → preview is undefined; fold has status only, no live signal", () => {
+    const commentary = makeCommentary("Let me look that up.");
+    const final = makeFinalAnswer("Here is the answer.");
+    const turn = makeTurn({
+      status: "completed",
+      items: [commentary, final],
+      durationMs: 4200,
+    });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    // The turn is done — the "live signal" no longer applies. The
+    // fold header collapses to just the status line.
+    expect(display?.latestCommentaryPreview).toBeUndefined();
   });
 });

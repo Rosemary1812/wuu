@@ -33,7 +33,7 @@
   --collapse-chevron-duration: 140ms;
   --collapse-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
   --collapse-enter-offset-y: -2px;
-  --conversation-turn-gap: 20px;
+  --conversation-turn-gap: 30px;
   --sidebar-glass-bg: linear-gradient(180deg, rgba(250, 251, 248, 0.82), rgba(241, 244, 239, 0.68));
   --sidebar-glass-border: rgba(68, 76, 70, 0.13);
   --sidebar-glass-highlight: rgba(255, 255, 255, 0.62);
@@ -1519,15 +1519,15 @@ button:disabled {
   --conversation-split-message-max-inline: 86%;
   --conversation-dialog-width: 800px;
   --conversation-message-font-size: 15px;
-  --conversation-prose-line-height: 1.6;
-  --conversation-prose-block-gap: 8px;
-  --conversation-meta-line-height: 1.34;
-  --conversation-control-line-height: 1.3;
-  --conversation-shell-gap: 7px;
-  --conversation-process-gap: 4px;
-  --conversation-process-answer-gap: 4px;
-  --conversation-answer-action-gap: 6px;
-  --conversation-activity-gap: 6px;
+  --conversation-prose-line-height: 1.75;
+  --conversation-prose-block-gap: 16px;
+  --conversation-meta-line-height: 1.55;
+  --conversation-control-line-height: 1.45;
+  --conversation-shell-gap: 14px;
+  --conversation-process-gap: 8px;
+  --conversation-process-answer-gap: 10px;
+  --conversation-answer-action-gap: 10px;
+  --conversation-activity-gap: 10px;
   --conversation-scrollbar-gutter: 12px;
   --dock-composer-height: 0px;
   grid-column: 2;
@@ -5288,11 +5288,11 @@ button:disabled {
 
 .turn {
   content-visibility: auto;
-  contain-intrinsic-size: auto 220px;
+  contain-intrinsic-size: auto 260px;
   display: flex;
   flex-direction: column;
   gap: var(--conversation-turn-gap);
-  margin-bottom: 46px;
+  margin-bottom: 56px;
 }
 
 .assistant-turn-shell {
@@ -7429,11 +7429,19 @@ button:disabled {
 }
 
 .turn-process-toggle {
-  display: flex;
+  display: grid;
   width: 100%;
   min-height: 18px;
-  align-items: center;
-  gap: 7px;
+  /* Two rows (status + optional commentary preview), three columns
+     (avatar | text | chevron). Both avatar slots live in col 1 so
+     the row-1 brain and row-2 speech-bubble line up vertically with
+     no indent — that's the whole point of using grid here vs.
+     flex-with-nested-icon. */
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: flex-start;
+  column-gap: 8px;
+  row-gap: 10px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -7441,7 +7449,7 @@ button:disabled {
   font: inherit;
   font-weight: var(--weight-medium);
   line-height: 1.25;
-  padding: 0;
+  padding: 2px 0;
   text-align: left;
 }
 
@@ -7464,17 +7472,48 @@ button:disabled {
   color: currentColor;
 }
 
-.turn-process-copy {
-  position: relative;
-  display: grid;
-  min-width: 0;
-  flex: 1 1 auto;
-  gap: var(--conversation-process-gap);
+.turn-process-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  grid-column: 1;
+  width: 18px;
+  height: 18px;
+  color: #7d8388;
+  border-radius: 50%;
+  /* Subtle background hint for the future mascot slot. When the
+     mascot character lands, it fills this 18x18 area; for now the
+     faint outline keeps the slot discoverable without competing
+     with the actual text. */
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(125, 131, 136, 0.18);
+  transition: box-shadow 120ms ease;
+}
+
+.turn-process-avatar-secondary {
+  /* Pinned to row 2 col 1 — same x as the row-1 brain so the two
+     slots align vertically. Only rendered when a preview exists. */
+  grid-row: 2;
+}
+
+.turn-process-toggle:hover .turn-process-avatar,
+.turn-process-toggle:focus-visible .turn-process-avatar {
+  box-shadow: inset 0 0 0 1px rgba(125, 131, 136, 0.35);
+}
+
+.turn-process-avatar svg {
+  width: 100%;
+  height: 100%;
+  /* The Brain / MessageCircle placeholders sit subtly behind the
+     future mascot by dropping opacity to 0.55. */
+  opacity: 0.55;
 }
 
 .turn-process-header {
   display: flex;
   min-width: 0;
+  grid-column: 2;
+  grid-row: 1;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 7px;
@@ -7538,8 +7577,34 @@ button:disabled {
   line-height: var(--conversation-meta-line-height);
 }
 
+/* Row 2 of the fold header: live commentary preview. Pinned to
+   col 2 row 2 in the toggle grid, so the preview text starts at
+   the same x as the status text in row 1. The row-2 avatar slot
+   (speech-bubble placeholder) is a sibling in col 1, not a child
+   of this element, so it lines up with the row-1 brain slot
+   exactly. The text itself stays on a single line via ellipsis. */
+.turn-process-preview {
+  display: flex;
+  min-width: 0;
+  grid-column: 2;
+  grid-row: 2;
+  align-items: center;
+  color: #5a6064;
+  font-size: var(--font-sm);
+  line-height: var(--conversation-meta-line-height);
+}
+
+.turn-process-preview-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .turn-process-chevron {
-  margin-left: auto;
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
   transition: transform var(--collapse-chevron-duration) ease;
 }
 
@@ -7859,7 +7924,7 @@ button:disabled {
 .rich-content ul,
 .rich-content ol {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   margin: 0;
   padding-left: 22px;
 }
@@ -7875,7 +7940,7 @@ button:disabled {
 
 .rich-content li > ul,
 .rich-content li > ol {
-  margin-top: 5px;
+  margin-top: 10px;
 }
 
 .rich-content input[type="checkbox"] {
@@ -7915,7 +7980,7 @@ button:disabled {
 
 .rich-image-block.inline {
   display: block;
-  margin-top: 8px;
+  margin-top: 14px;
 }
 
 .rich-image {

@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   Archive,
+  Brain,
   Bug,
   ChevronDown,
   ChevronRight,
@@ -21,6 +22,7 @@ import {
   Laptop,
   ListChecks,
   List as ListIcon,
+  MessageCircle,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
@@ -7013,13 +7015,25 @@ type AssistantTurnDisplay = {
   /**
    * Initial collapse state of the front content. The user can always
    * toggle the front afterwards, so this is purely a hint about the
-   * default render:
-   *   - in_progress: false (the user wants to watch the work)
-   *   - buggy: false (the user needs to see what went wrong)
-   *   - completed + ≤1 final_answer: true (the normal "I scrolled
-   *     past this turn" case)
+   * default render. We always start collapsed: the fold header alone
+   * is enough to tell the user "something is / was happening here",
+   * and the latest commentary preview (when present) carries the live
+   * signal. Expanding is a deliberate user action.
    */
   frontDefaultCollapsed: boolean;
+  /**
+   * Text of the latest commentary `agent_message` in the front
+   * content, truncated to a single short line for the fold header
+   * preview. Undefined when:
+   *   - the turn is completed (no live signal to surface)
+   *   - the turn has no commentary items at all
+   *   - the latest commentary has no streamed text yet
+   * The preview sits on a second row of the fold header, under the
+   * status row, with a small avatar slot on its left (the future
+   * mascot slot). The user can read the latest reasoning aloud to
+   * the user without expanding the fold.
+   */
+  latestCommentaryPreview?: string;
 };
 
 type AssistantTurnAnswerItem = {
@@ -7198,13 +7212,57 @@ export function buildAssistantTurnDisplay(
   // divider either (no single primary to anchor it under).
   const showDivider = isCompleted && finalCount === 1 && !isBuggy;
 
-  // Front content default collapsed only in the "normal completed"
-  // case: in_progress forces expansion (the user wants to watch the
-  // work), bug cases force expansion (the user needs to see what went
-  // wrong), and completed + 0 final + no commentary is the pure-tool
-  // sub-agent case which the user typically wants to glance past.
-  const frontDefaultCollapsed =
-    isCompleted && finalCount <= 1 && !isBuggy;
+  // Front content is always default-collapsed. The fold header alone
+  // (status row + optional commentary preview) is enough to tell the
+  // user "something is / was happening here" — the user expands the
+  // fold explicitly when they want the full process lane. Bug turns
+  // still surface the orange border + banner regardless of collapse
+  // state, so the "something's wrong" signal isn't lost.
+  const frontDefaultCollapsed = true;
+
+  // Latest commentary preview: a single-line snippet of the most
+  // recent commentary `agent_message` text in the front, shown under
+  // the status row of the fold header so the user can see the
+  // "current thought" without expanding. Live only — once the turn
+  // completes, the preview is dropped (the turn is no longer
+  // streaming and the front is no longer the "live" area).
+  let latestCommentaryPreview: string | undefined;
+  if (isInProgress) {
+    // Walk front entries in arrival order; the LAST one whose
+    // underlying item is a commentary agent_message is the latest.
+    let latestCommentaryItem: ThreadItem | undefined;
+    for (const entry of frontEntries) {
+      if (entry.key.endsWith("-activity")) {
+        // Tool activity groups don't carry commentary text.
+        continue;
+      }
+      const item = turn.items.find((candidate) => candidate.id === entry.key);
+      if (
+        item &&
+        item.type === "agent_message" &&
+        item.phase === "commentary"
+      ) {
+        latestCommentaryItem = item;
+      }
+    }
+    if (latestCommentaryItem) {
+      const raw = streamFieldValue(
+        turn.id,
+        latestCommentaryItem,
+        "text",
+      ).trim();
+      if (raw.length > 0) {
+        // Hard cap so a runaway stream can't push the fold header
+        // onto two lines. The CSS also enforces a single-line
+        // ellipsis as a safety net for narrow widths.
+        const PREVIEW_MAX = 120;
+        latestCommentaryPreview =
+          raw.length > PREVIEW_MAX
+            ? `${raw.slice(0, PREVIEW_MAX)}…`
+            : raw;
+      }
+    }
+  }
 
   return {
     frontEntries,
@@ -7213,6 +7271,7 @@ export function buildAssistantTurnDisplay(
     bugMessage,
     showDivider,
     frontDefaultCollapsed,
+    latestCommentaryPreview,
   };
 }
 
@@ -7243,6 +7302,7 @@ function AssistantTurnShell({
             entries={display.frontEntries}
             defaultCollapsed={display.frontDefaultCollapsed}
             showTurnStatus
+            latestCommentaryPreview={display.latestCommentaryPreview}
           />
         </div>
       ) : null}
@@ -7272,18 +7332,21 @@ function TurnProcessGroup({
   entries,
   defaultCollapsed,
   showTurnStatus,
+  latestCommentaryPreview,
 }: {
   turn: Turn;
   entries: TurnProcessEntry[];
   defaultCollapsed: boolean;
   showTurnStatus: boolean;
+  latestCommentaryPreview?: string;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
   const detailsID = `${turn.id}-process-details`;
   const hasDetails = entries.length > 0;
+  const hasPreview = Boolean(latestCommentaryPreview);
   const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${
     hasDetails ? "" : " no-details"
-  }`;
+  }${hasPreview ? " has-preview" : ""}`;
   const processCount = entries.reduce(
     (total, entry) => total + (entry.count ?? 1),
     0,
@@ -7316,16 +7379,39 @@ function TurnProcessGroup({
 
   const toggleContent = (
     <>
-      <span className="turn-process-copy">
-        <span className="turn-process-header">
-          <span className="turn-process-title">{processLabel}</span>
-          {metaParts.map((part) => (
-            <span className="turn-process-meta" key={part}>
-              {part}
-            </span>
-          ))}
-        </span>
+      {/* Row 1 avatar slot: brain placeholder. Reserved for the
+          future mascot character. */}
+      <span className="turn-process-avatar" aria-hidden>
+        <Brain size={15} />
       </span>
+      {/* Row 2 avatar slot: speech-bubble placeholder. Only rendered
+          when there's a live commentary preview, so a turn without
+          commentary shows only the status row + brain slot. Both
+          slots share col 1 of the grid below so the icons line up
+          vertically with no indent between rows. */}
+      {hasPreview ? (
+        <span
+          className="turn-process-avatar turn-process-avatar-secondary"
+          aria-hidden
+        >
+          <MessageCircle size={15} />
+        </span>
+      ) : null}
+      <span className="turn-process-header">
+        <span className="turn-process-title">{processLabel}</span>
+        {metaParts.map((part) => (
+          <span className="turn-process-meta" key={part}>
+            {part}
+          </span>
+        ))}
+      </span>
+      {hasPreview ? (
+        <span className="turn-process-preview">
+          <span className="turn-process-preview-text">
+            {latestCommentaryPreview}
+          </span>
+        </span>
+      ) : null}
       {hasDetails ? (
         <ChevronDown className="turn-process-chevron" size={15} />
       ) : null}
