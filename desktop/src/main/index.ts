@@ -13,10 +13,7 @@ import {
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
 import {
-  accessSync,
-  chmodSync,
   closeSync,
-  constants,
   existsSync,
   mkdirSync,
   openSync,
@@ -28,7 +25,6 @@ import {
   writeFileSync,
   type Dirent,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import {
   basename,
@@ -40,7 +36,6 @@ import {
   resolve,
 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import * as pty from "node-pty";
 import type {
   AppServerNotification,
   AppServerRequest,
@@ -67,18 +62,15 @@ import type {
   ProjectListResult,
   RuntimeContext,
   ServerEvent,
-  TerminalSessionActionResult,
-  TerminalSessionEvent,
   TerminalSessionStartParams,
-  TerminalSessionStartResult,
   Thread,
   Turn,
   WorkspaceDirectoryListResult,
   WorkspaceFileReadResult,
 } from "../shared/protocol";
+import { TerminalSessionManager } from "./terminalSessions";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const requireFromMain = createRequire(import.meta.url);
 const RENDERABLE_IMAGE_EXTENSIONS = new Set([
   ".apng",
   ".avif",
@@ -477,19 +469,13 @@ const DESKTOP_BUILD_INFO: DesktopBuildInfo = {
 let cachedCoreBuildInfo: CoreBuildInfo | undefined;
 let windowResizeEndTimer: NodeJS.Timeout | undefined;
 let windowResizeState = false;
-let terminalSessionCounter = 1;
 let nextServerRequestRouteID = 1;
 const appServerClients = new Map<string, AppServerClient>();
 const serverRequestRoutes = new Map<string, ServerRequestRoute>();
-const terminalSessions = new Map<string, TerminalSession>();
-
-type TerminalSession = {
-  id: string;
-  ptyProcess: pty.IPty;
-  cwd: string;
-  shell: string;
-  startedAt: number;
-};
+const terminalSessionManager = new TerminalSessionManager(
+  () => ensureRuntimeContext(),
+  (event) => emitTerminalEvent(event),
+);
 
 function projectStorePath(): string {
   return join(wuuHomePath(), "projects.json");
@@ -1926,7 +1912,7 @@ function shutdownAppServerClients(): void {
   serverRequestRoutes.clear();
 }
 
-function emitTerminalEvent(event: TerminalSessionEvent): void {
+function emitTerminalEvent(event: Parameters<TerminalSessionManager["emit"]>[0]): void {
   if (
     !mainWindow ||
     mainWindow.isDestroyed() ||
@@ -1935,202 +1921,6 @@ function emitTerminalEvent(event: TerminalSessionEvent): void {
     return;
   }
   mainWindow.webContents.send("wuu:terminal-event", event);
-}
-
-function startTerminalSession(
-  params: TerminalSessionStartParams = {},
-): TerminalSessionStartResult {
-  const context = ensureRuntimeContext();
-  const cwd = context.cwd;
-  const id = `term-${terminalSessionCounter++}`;
-  const startedAt = Date.now();
-  const shell = terminalShell();
-  const cols = normalizeTerminalSize(params.cols, 80, 20, 500);
-  const rows = normalizeTerminalSize(params.rows, 24, 6, 200);
-  ensureNodePtyHelperExecutable();
-  const ptyProcess = pty.spawn(shell.command, shell.args, {
-    name: "xterm-256color",
-    cols,
-    rows,
-    cwd,
-    env: {
-      ...process.env,
-      CLICOLOR: "1",
-      COLORTERM: "truecolor",
-      FORCE_COLOR: "1",
-      TERM: "xterm-256color",
-    },
-  });
-
-  const entry: TerminalSession = {
-    id,
-    ptyProcess,
-    cwd,
-    shell: shell.command,
-    startedAt,
-  };
-  terminalSessions.set(id, entry);
-
-  ptyProcess.onData((text) => emitTerminalEvent({ type: "data", id, text }));
-  ptyProcess.onExit((event) => {
-    terminalSessions.delete(id);
-    emitTerminalEvent({
-      type: "exit",
-      id,
-      exit_code: event.exitCode,
-      signal: event.signal ?? null,
-      duration_ms: Date.now() - startedAt,
-      finished_at: new Date().toISOString(),
-    });
-  });
-
-  return {
-    id,
-    cwd,
-    shell: shell.command,
-    started_at: new Date(startedAt).toISOString(),
-  };
-}
-
-function writeTerminalSession(
-  id: string,
-  data: string,
-): TerminalSessionActionResult {
-  const session = terminalSessions.get(id);
-  if (!session) {
-    return { ok: false };
-  }
-  session.ptyProcess.write(data);
-  return { ok: true };
-}
-
-function resizeTerminalSession(
-  id: string,
-  cols: number,
-  rows: number,
-): TerminalSessionActionResult {
-  const session = terminalSessions.get(id);
-  if (!session) {
-    return { ok: false };
-  }
-  session.ptyProcess.resize(
-    normalizeTerminalSize(cols, 80, 20, 500),
-    normalizeTerminalSize(rows, 24, 6, 200),
-  );
-  return { ok: true };
-}
-
-function stopTerminalSession(id: string): TerminalSessionActionResult {
-  const session = terminalSessions.get(id);
-  if (!session) {
-    return { ok: false };
-  }
-  terminateTerminalSession(session);
-  return { ok: true };
-}
-
-function cleanupTerminalSessions(): void {
-  for (const session of terminalSessions.values()) {
-    terminateTerminalSession(session);
-  }
-  terminalSessions.clear();
-}
-
-function terminateTerminalSession(session: TerminalSession): void {
-  terminalSessions.delete(session.id);
-  try {
-    session.ptyProcess.kill();
-  } catch (error) {
-    emitTerminalEvent({
-      type: "error",
-      id: session.id,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Failed to stop terminal session.",
-      finished_at: new Date().toISOString(),
-    });
-  }
-}
-
-function normalizeTerminalSize(
-  value: number | undefined,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return fallback;
-  }
-  return Math.max(min, Math.min(max, Math.floor(value)));
-}
-
-function terminalShell(): { command: string; args: string[] } {
-  if (process.platform === "win32") {
-    return { command: process.env.ComSpec || "cmd.exe", args: [] };
-  }
-  return { command: resolveTerminalShell(), args: ["-l"] };
-}
-
-function resolveTerminalShell(): string {
-  const candidates = [
-    process.env.SHELL,
-    "/bin/zsh",
-    "/bin/bash",
-    "/bin/sh",
-    "/usr/bin/zsh",
-    "/usr/bin/bash",
-    "/usr/bin/sh",
-  ];
-  for (const candidate of candidates) {
-    if (isExecutableFile(candidate)) {
-      return candidate;
-    }
-  }
-  return "/bin/sh";
-}
-
-function ensureNodePtyHelperExecutable(): void {
-  if (process.platform === "win32") {
-    return;
-  }
-  let helperPath: string;
-  try {
-    const nodePtyMain = requireFromMain.resolve("node-pty");
-    helperPath = resolve(
-      dirname(nodePtyMain),
-      "..",
-      "prebuilds",
-      `${process.platform}-${process.arch}`,
-      "spawn-helper",
-    );
-    helperPath = helperPath
-      .replace("app.asar", "app.asar.unpacked")
-      .replace("node_modules.asar", "node_modules.asar.unpacked");
-  } catch {
-    return;
-  }
-  try {
-    accessSync(helperPath, constants.X_OK);
-  } catch {
-    const mode = existsSync(helperPath) ? statSync(helperPath).mode : 0o755;
-    chmodSync(helperPath, mode | 0o755);
-  }
-}
-
-function isExecutableFile(path: string | undefined): path is string {
-  if (!path || !isAbsolute(path)) {
-    return false;
-  }
-  try {
-    if (!statSync(path).isFile()) {
-      return false;
-    }
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function setWindowResizeState(resizing: boolean): void {
@@ -2290,18 +2080,18 @@ app.whenReady().then(() => {
   ipcMain.handle(
     "wuu:terminal-start",
     (_event, params?: TerminalSessionStartParams) =>
-      startTerminalSession(params),
+      terminalSessionManager.start(params),
   );
   ipcMain.handle("wuu:terminal-write", (_event, id: string, data: string) =>
-    writeTerminalSession(id, data),
+    terminalSessionManager.write(id, data),
   );
   ipcMain.handle(
     "wuu:terminal-resize",
     (_event, id: string, cols: number, rows: number) =>
-      resizeTerminalSession(id, cols, rows),
+      terminalSessionManager.resize(id, cols, rows),
   );
   ipcMain.handle("wuu:terminal-stop", (_event, id: string) =>
-    stopTerminalSession(id),
+    terminalSessionManager.stop(id),
   );
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
@@ -2449,7 +2239,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
-  cleanupTerminalSessions();
+  terminalSessionManager.cleanup();
   shutdownAppServerClients();
 });
 
