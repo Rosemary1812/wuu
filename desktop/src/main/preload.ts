@@ -38,6 +38,7 @@ const api: WuuDesktopApi = {
   stopTerminalSession: (id: string) =>
     ipcRenderer.invoke("wuu:terminal-stop", id),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
+  getBuildInfo: () => ipcRenderer.invoke("wuu:build-info"),
   loadCodexModels: (provider?: string) =>
     ipcRenderer.invoke("wuu:config-codex-models", provider),
   updateRuntimeSettings: (

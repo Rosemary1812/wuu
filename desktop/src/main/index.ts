@@ -59,6 +59,9 @@ import type {
   GitPullRequestResult,
   FileTreeListResult,
   GitStatusResult,
+  BuildInfoResult,
+  CoreBuildInfo,
+  DesktopBuildInfo,
   InputImage,
   InitializeResult,
   ProjectListResult,
@@ -455,6 +458,23 @@ type GitStatusOptions = {
 
 let mainWindow: BrowserWindow | null = null;
 let projectStore: ProjectStore = { projects: [] };
+
+// Build-time globals injected by electron.vite.config.ts. TypeScript
+// doesn't know about them by default; declare them so we can reference
+// them inside main. The "undefined" type keeps the same declaration
+// valid for unit-test contexts where the define hasn't run.
+declare const __DESKTOP_VERSION__: string | undefined;
+declare const __DESKTOP_BUILD_DATE__: string | undefined;
+
+const DESKTOP_BUILD_INFO: DesktopBuildInfo = {
+  version: typeof __DESKTOP_VERSION__ === "string" ? __DESKTOP_VERSION__ : "0.0.0-test",
+  date: typeof __DESKTOP_BUILD_DATE__ === "string" ? __DESKTOP_BUILD_DATE__ : "1970-01-01T00:00:00Z",
+};
+
+// Cached core build info. Populated on the first wuu:initialize call so
+// the renderer can ask for build identity via wuu:build-info without
+// racing the first initialize.
+let cachedCoreBuildInfo: CoreBuildInfo | undefined;
 let windowResizeEndTimer: NodeJS.Timeout | undefined;
 let windowResizeState = false;
 let terminalSessionCounter = 1;
@@ -2305,9 +2325,17 @@ app.whenReady().then(() => {
     }
     return addProject(projectPath);
   });
-  ipcMain.handle("wuu:initialize", () =>
-    serverClient().request<InitializeResult>("initialize"),
-  );
+  ipcMain.handle("wuu:initialize", async () => {
+    const result = await serverClient().request<InitializeResult>("initialize");
+    if (result.core) {
+      cachedCoreBuildInfo = result.core;
+    }
+    return result;
+  });
+  ipcMain.handle("wuu:build-info", (): BuildInfoResult => ({
+    core: cachedCoreBuildInfo,
+    desktop: DESKTOP_BUILD_INFO,
+  }));
   ipcMain.handle("wuu:config-codex-models", (_event, provider?: string) =>
     serverClient().request<ConfigCodexModelsResult>("config/codex/models", {
       provider: provider ?? "",

@@ -1,9 +1,25 @@
 import { defineConfig } from "electron-vite";
 import react from "@vitejs/plugin-react";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
+// Pull the desktop's own version into every build at compile time so the
+// renderer, preload, and main process can render an About row without a
+// runtime fs read or a separate IPC call. The build date is fixed at
+// config-eval time; the commit SHA is intentionally omitted because the
+// desktop is shipped as a bundle and the build identity that matters is
+// the version + date pair, not the source commit.
+const desktopPackage = JSON.parse(
+  readFileSync(resolve(__dirname, "package.json"), "utf8"),
+) as { version: string };
+const desktopDefine = {
+  __DESKTOP_VERSION__: JSON.stringify(desktopPackage.version),
+  __DESKTOP_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+};
 
 export default defineConfig({
   main: {
+    define: desktopDefine,
     build: {
       rollupOptions: {
         external: ["node-pty"],
@@ -14,6 +30,7 @@ export default defineConfig({
     },
   },
   preload: {
+    define: desktopDefine,
     build: {
       rollupOptions: {
         input: {
@@ -27,6 +44,7 @@ export default defineConfig({
   },
   renderer: {
     root: ".",
+    define: desktopDefine,
     plugins: [react()],
     resolve: {
       dedupe: ["react", "react-dom"],

@@ -9,7 +9,7 @@ import {
   useState
 } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import type { InitializeResult, ProviderSummary, RuntimeConnectionUpdate } from "../shared/protocol";
+import type { DesktopBuildInfo, InitializeResult, ProviderSummary, RuntimeConnectionUpdate } from "../shared/protocol";
 import { providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
@@ -53,6 +53,21 @@ export function SettingsView({
   const [addingProvider, setAddingProvider] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [desktopBuild, setDesktopBuild] = useState<DesktopBuildInfo | undefined>();
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.wuu.getBuildInfo().then((info) => {
+      if (!cancelled) {
+        setDesktopBuild(info.desktop);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const core = initialized?.core;
   const selectedProvider = addingProvider ? undefined : providers.find((item) => item.name === providerDraft);
   const providerLabels = useMemo(() => providerDisplayLabels(providers), [providers]);
   const selectedBaseURL = selectedProvider?.base_url ?? "";
@@ -349,10 +364,68 @@ export function SettingsView({
               </div>
             </section>
           ) : null}
+
+          <section className="settings-section" data-testid="settings-about">
+            <div>
+              <h2>关于</h2>
+              <p>wuu 桌面与核心的构建信息。报问题时带上这一段。</p>
+            </div>
+            <div className="settings-card">
+              <dl className="settings-about-list">
+                <div className="settings-row">
+                  <span>
+                    <strong>桌面端</strong>
+                    <small>Electron 客户端构建</small>
+                  </span>
+                  <span className="settings-about-value">
+                    {desktopBuild ? `v${desktopBuild.version} · ${formatBuildDate(desktopBuild.date)}` : "加载中…"}
+                  </span>
+                </div>
+                <div className="settings-row">
+                  <span>
+                    <strong>核心</strong>
+                    <small>wuu app-server 二进制构建</small>
+                  </span>
+                  <span className="settings-about-value">{formatCoreBuild(core)}</span>
+                </div>
+                <div className="settings-row">
+                  <span>
+                    <strong>App-server 协议</strong>
+                    <small>桌面与核心的 IPC 协议版本</small>
+                  </span>
+                  <span className="settings-about-value">{initialized?.protocol_version ?? "—"}</span>
+                </div>
+              </dl>
+            </div>
+          </section>
         </div>
       </OverlayScrollbarsComponent>
     </div>
   );
+}
+
+function formatBuildDate(iso: string): string {
+  // The build date is a UTC ISO timestamp; render in a compact local form
+  // so the user can correlate it with their clock without doing TZ math.
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    return iso;
+  }
+  return parsed.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
+}
+
+function formatCoreBuild(core: InitializeResult["core"]): string {
+  if (!core || !core.version) {
+    return "未连接";
+  }
+  const pieces: string[] = [`v${core.version}`];
+  if (core.commit) {
+    pieces.push(core.dirty ? `${core.commit}-dirty` : core.commit);
+  }
+  if (core.date) {
+    pieces.push(formatBuildDate(core.date));
+  }
+  return pieces.join(" · ");
 }
 
 function providerDisplayLabels(providers: ProviderSummary[]): Map<string, string> {

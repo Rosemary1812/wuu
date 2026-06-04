@@ -28,8 +28,26 @@ export type AppServerNotification<T = unknown> = {
   params?: T;
 };
 
+export type CoreBuildInfo = {
+  version?: string;
+  commit?: string;
+  date?: string;
+  dirty?: boolean;
+};
+
+export type DesktopBuildInfo = {
+  version: string;
+  date: string;
+};
+
+export type BuildInfoResult = {
+  core: CoreBuildInfo | undefined;
+  desktop: DesktopBuildInfo;
+};
+
 export type InitializeResult = {
   protocol_version: string;
+  core?: CoreBuildInfo;
   provider: string;
   model: string;
   effort?: string;
@@ -434,6 +452,7 @@ export type WuuDesktopApi = {
   resizeTerminalSession: (id: string, cols: number, rows: number) => Promise<TerminalSessionActionResult>;
   stopTerminalSession: (id: string) => Promise<TerminalSessionActionResult>;
   initialize: () => Promise<InitializeResult>;
+  getBuildInfo: () => Promise<BuildInfoResult>;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
   updateRuntimeSettings: (
     provider: string,
