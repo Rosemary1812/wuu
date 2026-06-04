@@ -396,6 +396,7 @@ export type ThreadItem = {
   role?: string;
   text?: string;
   images?: InputImage[];
+  files?: InputFile[];
   name?: string;
   arguments?: string;
   display?: ToolCallDisplay;
@@ -420,11 +421,18 @@ export type InputImage = {
   data: string;
 };
 
+export type InputFile = {
+  media_type: string;
+  data: string;
+  filename?: string;
+};
+
 export type QueuedTurn = {
   id: string;
   thread_id: string;
   preview?: string;
   image_count?: number;
+  file_count?: number;
 };
 
 export type ServerEvent = {
@@ -478,12 +486,13 @@ export type WuuDesktopApi = {
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
-  startTurn: (threadId: string, prompt: string, images?: InputImage[]) => Promise<{ turn: Turn }>;
+  startTurn: (threadId: string, prompt: string, images?: InputImage[], files?: InputFile[]) => Promise<{ turn: Turn }>;
   queueTurn: (
     threadId: string,
     prompt: string,
     images?: InputImage[],
     clientId?: string,
+    files?: InputFile[],
   ) => Promise<{ queued: QueuedTurn }>;
   dequeueTurn: (threadId: string, queueId: string) => Promise<{ ok: boolean }>;
   steerTurn: (
@@ -492,6 +501,7 @@ export type WuuDesktopApi = {
     prompt: string,
     images?: InputImage[],
     clientId?: string,
+    files?: InputFile[],
   ) => Promise<{ turn_id: string }>;
   unsteerTurn: (threadId: string, steerId: string) => Promise<{ ok: boolean }>;
   interruptTurn: (threadId: string) => Promise<{ ok: boolean }>;

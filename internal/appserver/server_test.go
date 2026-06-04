@@ -1591,6 +1591,81 @@ func TestServerTurnStartAcceptsImageOnlyPrompt(t *testing.T) {
 	}
 }
 
+func TestServerTurnStartAcceptsPDFOnlyPrompt(t *testing.T) {
+	client := &fakeClient{
+		response: providers.ChatResponse{Content: "read it"},
+	}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{
+			ThreadID: threadID,
+			Files: []TurnStartFile{{
+				MediaType: "application/pdf",
+				Data:      "JVBERi0xLjQ=",
+				Filename:  "brief.pdf",
+			}},
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	started := remarshal[TurnStartResult](t, responseByID(t, msgs, "2")["result"])
+	if len(started.Turn.Items) != 1 || len(started.Turn.Items[0].Files) != 1 {
+		t.Fatalf("start response missing user file: %+v", started.Turn)
+	}
+	if started.Turn.Items[0].Files[0].Filename != "brief.pdf" {
+		t.Fatalf("unexpected thread item file: %+v", started.Turn.Items[0].Files[0])
+	}
+
+	client.mu.Lock()
+	requestCount := len(client.requests)
+	var messages []providers.ChatMessage
+	if requestCount > 0 {
+		messages = append([]providers.ChatMessage(nil), client.requests[0].Messages...)
+	}
+	client.mu.Unlock()
+	if requestCount != 1 {
+		t.Fatalf("expected one provider request, got %d", requestCount)
+	}
+	if len(messages) < 2 || messages[1].Role != "user" || messages[1].Content != "" || len(messages[1].Files) != 1 {
+		t.Fatalf("unexpected provider messages: %+v", messages)
+	}
+	if messages[1].Files[0].MediaType != "application/pdf" || messages[1].Files[0].Data != "JVBERi0xLjQ=" || messages[1].Files[0].Filename != "brief.pdf" {
+		t.Fatalf("unexpected provider file: %+v", messages[1].Files[0])
+	}
+
+	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	if len(persisted) != 2 || len(persisted[0].Files) != 1 {
+		t.Fatalf("unexpected persisted history: %+v", persisted)
+	}
+	sessions, err := session.List(rt.SessionDir, 1)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Summary != "[brief.pdf]" {
+		t.Fatalf("unexpected session index: %+v", sessions)
+	}
+}
+
 func TestServerThreadListUsesSessionIndexMetadata(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if _, err := session.CreateWithMetadata(rt.SessionDir, "old-thread", rt.RootDir); err != nil {

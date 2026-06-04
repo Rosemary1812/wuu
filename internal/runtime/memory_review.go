@@ -294,6 +294,7 @@ func cloneChatMessages(messages []providers.ChatMessage) []providers.ChatMessage
 	for i, msg := range messages {
 		out[i] = msg
 		out[i].Images = nil
+		out[i].Files = nil
 		out[i].ReasoningBlocks = nil
 		out[i].ReasoningContent = ""
 		out[i].ToolCalls = nil

@@ -782,6 +782,69 @@ func TestChat_SendsImageBlocks(t *testing.T) {
 	}
 }
 
+func TestChat_SendsDocumentBlocks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+
+		msgs, ok := body["messages"].([]any)
+		if !ok || len(msgs) != 1 {
+			t.Fatalf("unexpected messages payload: %#v", body["messages"])
+		}
+
+		msg, ok := msgs[0].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected message type: %#v", msgs[0])
+		}
+		content, ok := msg["content"].([]any)
+		if !ok || len(content) != 2 {
+			t.Fatalf("unexpected content payload: %#v", msg["content"])
+		}
+
+		documentBlock, ok := content[1].(map[string]any)
+		if !ok || documentBlock["type"] != "document" {
+			t.Fatalf("unexpected document block: %#v", content[1])
+		}
+		source, ok := documentBlock["source"].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected source payload: %#v", documentBlock["source"])
+		}
+		if source["type"] != "base64" || source["media_type"] != "application/pdf" || source["data"] != "JVBERi0xLjQ=" {
+			t.Fatalf("unexpected document source: %#v", source)
+		}
+
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+	})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{
+				Role:    "user",
+				Content: "read this",
+				Files: []providers.InputFile{
+					{MediaType: "application/pdf", Data: "JVBERi0xLjQ=", Filename: "brief.pdf"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("chat error: %v", err)
+	}
+}
+
 func TestChat_AppliesCacheControlToStablePrefix(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

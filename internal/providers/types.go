@@ -32,6 +32,15 @@ type InputImage struct {
 	Data      string
 }
 
+// InputFile carries one user-provided file attachment in base64 form.
+// Images are still represented by InputImage for backward compatibility;
+// non-image media such as PDFs use InputFile.
+type InputFile struct {
+	MediaType string
+	Data      string
+	Filename  string
+}
+
 // ReasoningBlock preserves provider-native thinking payloads that must be
 // replayed verbatim on follow-up requests for some APIs.
 type ReasoningBlock struct {
@@ -56,6 +65,7 @@ type ChatMessage struct {
 	ReasoningContent string
 	ReasoningBlocks  []ReasoningBlock
 	Images           []InputImage
+	Files            []InputFile
 	ToolCallID       string
 	ToolCalls        []ToolCall
 }

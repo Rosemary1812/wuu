@@ -35,8 +35,12 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if params.Prompt == "" && len(images) == 0 {
-		return s.writeResponse(req.ID, nil, errors.New("prompt or image is required"))
+	files, err := normalizeTurnStartFiles(params.Files)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
+		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
 	th := s.thread(params.ThreadID)
 	if th == nil {
@@ -49,7 +53,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
-	userMsg := providers.ChatMessage{Role: "user", Content: params.Prompt, Images: images}
+	userMsg := providers.ChatMessage{Role: "user", Content: params.Prompt, Images: images, Files: files}
 	now := time.Now().UTC()
 
 	th.mu.Lock()
@@ -100,8 +104,12 @@ func (s *Server) handleTurnQueue(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if params.Prompt == "" && len(images) == 0 {
-		return s.writeResponse(req.ID, nil, errors.New("prompt or image is required"))
+	files, err := normalizeTurnStartFiles(params.Files)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
+		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
 	th := s.thread(params.ThreadID)
 	if th == nil {
@@ -123,6 +131,7 @@ func (s *Server) handleTurnQueue(req Request) error {
 		ClientID: queueID,
 		Content:  params.Prompt,
 		Images:   images,
+		Files:    files,
 	}
 	queued := queuedTurnSummary(params.ThreadID, queuedTurn{id: queueID, msg: msg})
 	s.enqueueQueuedUserTurn(params.ThreadID, queuedTurn{id: queueID, msg: msg})
@@ -178,8 +187,12 @@ func (s *Server) handleTurnSteer(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if params.Prompt == "" && len(images) == 0 {
-		return s.writeResponse(req.ID, nil, errors.New("prompt or image is required"))
+	files, err := normalizeTurnStartFiles(params.Files)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
+		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
 	th := s.thread(params.ThreadID)
 	if th == nil {
@@ -206,6 +219,7 @@ func (s *Server) handleTurnSteer(req Request) error {
 		ClientID: clientID,
 		Content:  params.Prompt,
 		Images:   images,
+		Files:    files,
 		Steered:  true,
 	})
 	th.mu.Unlock()
@@ -310,6 +324,31 @@ func normalizeTurnStartImages(images []TurnStartImage) ([]providers.InputImage, 
 	return out, nil
 }
 
+func normalizeTurnStartFiles(files []TurnStartFile) ([]providers.InputFile, error) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+	out := make([]providers.InputFile, 0, len(files))
+	for index, file := range files {
+		mediaType := strings.TrimSpace(file.MediaType)
+		data := strings.TrimSpace(file.Data)
+		if data == "" {
+			return nil, fmt.Errorf("file %d data is required", index+1)
+		}
+		var err error
+		mediaType, data, err = normalizeFilePayload(mediaType, data)
+		if err != nil {
+			return nil, fmt.Errorf("file %d: %w", index+1, err)
+		}
+		out = append(out, providers.InputFile{
+			MediaType: mediaType,
+			Data:      data,
+			Filename:  strings.TrimSpace(file.Filename),
+		})
+	}
+	return out, nil
+}
+
 func normalizeImagePayload(mediaType, data string) (string, string, error) {
 	if strings.HasPrefix(strings.ToLower(data), "data:") {
 		header, payload, ok := strings.Cut(data, ",")
@@ -329,6 +368,33 @@ func normalizeImagePayload(mediaType, data string) (string, string, error) {
 	}
 	if !strings.HasPrefix(strings.ToLower(mediaType), "image/") {
 		return "", "", fmt.Errorf("unsupported media type %q", mediaType)
+	}
+	if _, err := base64.StdEncoding.DecodeString(data); err != nil {
+		return "", "", fmt.Errorf("invalid base64 data: %w", err)
+	}
+	return mediaType, data, nil
+}
+
+func normalizeFilePayload(mediaType, data string) (string, string, error) {
+	if strings.HasPrefix(strings.ToLower(data), "data:") {
+		header, payload, ok := strings.Cut(data, ",")
+		if !ok {
+			return "", "", errors.New("invalid data URL")
+		}
+		if !strings.Contains(strings.ToLower(header), ";base64") {
+			return "", "", errors.New("file data URL must be base64")
+		}
+		if mediaType == "" {
+			mediaType = strings.TrimPrefix(strings.Split(header, ";")[0], "data:")
+		}
+		data = strings.TrimSpace(payload)
+	}
+	mediaType = strings.TrimSpace(strings.ToLower(mediaType))
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	if mediaType != "application/pdf" {
+		return "", "", fmt.Errorf("unsupported file media type %q", mediaType)
 	}
 	if _, err := base64.StdEncoding.DecodeString(data); err != nil {
 		return "", "", fmt.Errorf("invalid base64 data: %w", err)
@@ -466,7 +532,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 
 func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatMessage) {
 	threadID = strings.TrimSpace(threadID)
-	if threadID == "" || (strings.TrimSpace(msg.Content) == "" && len(msg.Images) == 0) {
+	if threadID == "" || !chatMessageHasUserPayload(msg) {
 		return
 	}
 	th := s.thread(threadID)
@@ -490,7 +556,7 @@ func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatM
 func (s *Server) enqueueQueuedUserTurn(threadID string, entry queuedTurn) {
 	threadID = strings.TrimSpace(threadID)
 	entry.id = strings.TrimSpace(entry.id)
-	if threadID == "" || entry.id == "" || (strings.TrimSpace(entry.msg.Content) == "" && len(entry.msg.Images) == 0) {
+	if threadID == "" || entry.id == "" || !chatMessageHasUserPayload(entry.msg) {
 		return
 	}
 	if strings.TrimSpace(entry.msg.Role) == "" {
@@ -593,7 +659,7 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	if strings.TrimSpace(entry.msg.Role) == "" {
 		entry.msg.Role = "user"
 	}
-	if strings.TrimSpace(entry.msg.Content) == "" && len(entry.msg.Images) == 0 {
+	if !chatMessageHasUserPayload(entry.msg) {
 		return false, nil
 	}
 	entry.id = strings.TrimSpace(entry.id)
@@ -757,7 +823,7 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 	if strings.TrimSpace(userMsg.Role) == "" {
 		userMsg.Role = "user"
 	}
-	if strings.TrimSpace(userMsg.Content) == "" && len(userMsg.Images) == 0 {
+	if !chatMessageHasUserPayload(userMsg) {
 		return false, nil
 	}
 
@@ -887,12 +953,24 @@ func queuedTurnSummary(threadID string, entry queuedTurn) QueuedTurn {
 			preview = fmt.Sprintf("[%d images]", len(entry.msg.Images))
 		}
 	}
+	if preview == "" && len(entry.msg.Files) > 0 {
+		if len(entry.msg.Files) == 1 {
+			preview = filePreview(entry.msg.Files[0], 1)
+		} else {
+			preview = fmt.Sprintf("[%d files]", len(entry.msg.Files))
+		}
+	}
 	return QueuedTurn{
 		ID:         entry.id,
 		ThreadID:   threadID,
 		Preview:    preview,
 		ImageCount: len(entry.msg.Images),
+		FileCount:  len(entry.msg.Files),
 	}
+}
+
+func chatMessageHasUserPayload(msg providers.ChatMessage) bool {
+	return strings.TrimSpace(msg.Content) != "" || len(msg.Images) > 0 || len(msg.Files) > 0
 }
 
 func queuedTurnsFromSteers(msgs []providers.ChatMessage) []queuedTurn {

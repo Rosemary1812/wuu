@@ -575,6 +575,7 @@ func cloneStreamEvent(ev providers.StreamEvent) providers.StreamEvent {
 
 func cloneChatMessage(msg providers.ChatMessage) providers.ChatMessage {
 	msg.Images = append([]providers.InputImage(nil), msg.Images...)
+	msg.Files = append([]providers.InputFile(nil), msg.Files...)
 	msg.ReasoningBlocks = append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...)
 	if len(msg.ToolCalls) > 0 {
 		msg.ToolCalls = make([]providers.ToolCall, len(msg.ToolCalls))

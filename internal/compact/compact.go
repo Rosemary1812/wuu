@@ -127,6 +127,9 @@ func EstimateMessagesTokens(messages []providers.ChatMessage) int {
 		for _, image := range msg.Images {
 			total += estimateImageTokens(image)
 		}
+		for _, file := range msg.Files {
+			total += estimateFileTokens(file)
+		}
 	}
 	if hasTools {
 		total += toolDefinitionOverhead
@@ -136,6 +139,18 @@ func EstimateMessagesTokens(messages []providers.ChatMessage) int {
 
 func estimateImageTokens(image providers.InputImage) int {
 	dataLen := len(strings.TrimSpace(image.Data))
+	if dataLen == 0 {
+		return 0
+	}
+	payloadEstimate := dataLen / 4
+	if payloadEstimate > imageTokenEstimate {
+		return payloadEstimate
+	}
+	return imageTokenEstimate
+}
+
+func estimateFileTokens(file providers.InputFile) int {
+	dataLen := len(strings.TrimSpace(file.Data))
 	if dataLen == 0 {
 		return 0
 	}
@@ -637,20 +652,25 @@ func stripHistoricalImages(messages []providers.ChatMessage) []providers.ChatMes
 	out := make([]providers.ChatMessage, len(messages))
 	copy(out, messages)
 	for i := range out {
-		if len(out[i].Images) == 0 {
+		if len(out[i].Images) == 0 && len(out[i].Files) == 0 {
 			continue
 		}
 		if i == latestUser && strings.EqualFold(out[i].Role, "user") {
 			continue
 		}
-		out[i].Content = appendImageOmissionNote(out[i].Content, out[i].Images)
+		out[i].Content = appendAttachmentOmissionNote(out[i].Content, out[i].Images, out[i].Files)
 		out[i].Images = nil
+		out[i].Files = nil
 	}
 	return out
 }
 
 func appendImageOmissionNote(content string, images []providers.InputImage) string {
-	if len(images) == 0 {
+	return appendAttachmentOmissionNote(content, images, nil)
+}
+
+func appendAttachmentOmissionNote(content string, images []providers.InputImage, files []providers.InputFile) string {
+	if len(images) == 0 && len(files) == 0 {
 		return content
 	}
 	var b strings.Builder
@@ -667,6 +687,20 @@ func appendImageOmissionNote(content string, images []providers.InputImage) stri
 			mediaType = "image"
 		}
 		fmt.Fprintf(&b, "[Image attachment omitted from compacted history: %s, %d base64 characters.]", mediaType, len(strings.TrimSpace(image.Data)))
+	}
+	for i, file := range files {
+		if len(images) > 0 || i > 0 {
+			b.WriteByte('\n')
+		}
+		mediaType := strings.TrimSpace(file.MediaType)
+		if mediaType == "" {
+			mediaType = "file"
+		}
+		name := strings.TrimSpace(file.Filename)
+		if name == "" {
+			name = "file"
+		}
+		fmt.Fprintf(&b, "[File attachment omitted from compacted history: %s, %s, %d base64 characters.]", mediaType, name, len(strings.TrimSpace(file.Data)))
 	}
 	return b.String()
 }

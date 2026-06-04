@@ -744,7 +744,7 @@ func (c *Client) handleSSEEvent(
 func mapMessage(msg providers.ChatMessage) (anthropicMessage, error) {
 	switch msg.Role {
 	case "user":
-		blocks := make([]anthropicBlock, 0, len(msg.Images)+1)
+		blocks := make([]anthropicBlock, 0, len(msg.Images)+len(msg.Files)+1)
 		text := msg.Content
 		if strings.TrimSpace(text) == "" {
 			text = " "
@@ -760,6 +760,17 @@ func mapMessage(msg providers.ChatMessage) (anthropicMessage, error) {
 				mediaType = "image/png"
 			}
 			blocks = append(blocks, anthropicBlock{Type: "image", Source: &anthropicImageSource{Type: "base64", MediaType: mediaType, Data: data}})
+		}
+		for _, file := range msg.Files {
+			data := strings.TrimSpace(file.Data)
+			if data == "" {
+				continue
+			}
+			mediaType := strings.TrimSpace(file.MediaType)
+			if mediaType == "" {
+				mediaType = "application/octet-stream"
+			}
+			blocks = append(blocks, anthropicBlock{Type: "document", Source: &anthropicImageSource{Type: "base64", MediaType: mediaType, Data: data}})
 		}
 		return anthropicMessage{Role: msg.Role, Content: blocks}, nil
 	case "assistant":

@@ -232,11 +232,11 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 }
 
 func responsesMessageContent(msg providers.ChatMessage) any {
-	if len(msg.Images) == 0 || !strings.EqualFold(msg.Role, "user") {
+	if (len(msg.Images) == 0 && len(msg.Files) == 0) || !strings.EqualFold(msg.Role, "user") {
 		return msg.Content
 	}
 
-	parts := make([]responsesInputContentPart, 0, len(msg.Images)+1)
+	parts := make([]responsesInputContentPart, 0, len(msg.Images)+len(msg.Files)+1)
 	if strings.TrimSpace(msg.Content) != "" {
 		parts = append(parts, responsesInputContentPart{
 			Type: "input_text",
@@ -255,6 +255,25 @@ func responsesMessageContent(msg providers.ChatMessage) any {
 		parts = append(parts, responsesInputContentPart{
 			Type:     "input_image",
 			ImageURL: "data:" + mediaType + ";base64," + data,
+		})
+	}
+	for _, file := range msg.Files {
+		data := strings.TrimSpace(file.Data)
+		if data == "" {
+			continue
+		}
+		mediaType := strings.TrimSpace(file.MediaType)
+		if mediaType == "" {
+			mediaType = "application/octet-stream"
+		}
+		filename := strings.TrimSpace(file.Filename)
+		if filename == "" {
+			filename = "attachment"
+		}
+		parts = append(parts, responsesInputContentPart{
+			Type:     "input_file",
+			Filename: filename,
+			FileData: "data:" + mediaType + ";base64," + data,
 		})
 	}
 	return parts
@@ -653,6 +672,8 @@ type responsesInputContentPart struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	FileData string `json:"file_data,omitempty"`
 }
 
 type responsesToolDefinition struct {

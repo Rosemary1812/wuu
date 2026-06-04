@@ -429,6 +429,69 @@ func TestChat_SendsImageContentParts(t *testing.T) {
 	}
 }
 
+func TestChat_SendsFileContentParts(t *testing.T) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+
+		msgs, ok := body["messages"].([]any)
+		if !ok || len(msgs) != 1 {
+			t.Fatalf("unexpected messages payload: %#v", body["messages"])
+		}
+		msg, ok := msgs[0].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected message type: %#v", msgs[0])
+		}
+		content, ok := msg["content"].([]any)
+		if !ok || len(content) != 2 {
+			t.Fatalf("unexpected content payload: %#v", msg["content"])
+		}
+		filePart, ok := content[1].(map[string]any)
+		if !ok || filePart["type"] != "file" {
+			t.Fatalf("unexpected file part: %#v", content[1])
+		}
+		filePayload, ok := filePart["file"].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected file payload: %#v", filePart["file"])
+		}
+		if filePayload["filename"] != "brief.pdf" || filePayload["file_data"] != "data:application/pdf;base64,JVBERi0xLjQ=" {
+			t.Fatalf("unexpected file payload: %#v", filePayload)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{
+				Role:    "user",
+				Content: "read this",
+				Files: []providers.InputFile{
+					{MediaType: "application/pdf", Data: "JVBERi0xLjQ=", Filename: "brief.pdf"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_SendsPromptCacheKeyAliases(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -1137,6 +1200,67 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 	wantUsage := &providers.TokenUsage{InputTokens: 7, OutputTokens: 4, CacheReadTokens: 3}
 	if !reflect.DeepEqual(resp.Usage, wantUsage) {
 		t.Fatalf("got usage %+v, want %+v", resp.Usage, wantUsage)
+	}
+}
+
+func TestResponsesChat_SendsFileContentParts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+
+		input, ok := body["input"].([]any)
+		if !ok || len(input) != 1 {
+			t.Fatalf("unexpected input payload: %#v", body["input"])
+		}
+		item, ok := input[0].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected input item: %#v", input[0])
+		}
+		content, ok := item["content"].([]any)
+		if !ok || len(content) != 2 {
+			t.Fatalf("unexpected content payload: %#v", item["content"])
+		}
+		filePart, ok := content[1].(map[string]any)
+		if !ok || filePart["type"] != "input_file" {
+			t.Fatalf("unexpected file part: %#v", content[1])
+		}
+		if filePart["filename"] != "brief.pdf" || filePart["file_data"] != "data:application/pdf;base64,JVBERi0xLjQ=" {
+			t.Fatalf("unexpected file part: %#v", filePart)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "status": "completed",
+  "output": [{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]
+}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{
+				Role:    "user",
+				Content: "read this",
+				Files: []providers.InputFile{
+					{MediaType: "application/pdf", Data: "JVBERi0xLjQ=", Filename: "brief.pdf"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
 	}
 }
 

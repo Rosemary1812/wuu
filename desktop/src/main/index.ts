@@ -15,6 +15,7 @@ import type {
   BuildInfoResult,
   CoreBuildInfo,
   DesktopBuildInfo,
+  InputFile,
   InputImage,
   InitializeResult,
   ServerEvent,
@@ -360,11 +361,12 @@ app.whenReady().then(() => {
   );
   ipcMain.handle(
     "wuu:turn-start",
-    (_event, threadId: string, prompt: string, images?: InputImage[]) =>
+    (_event, threadId: string, prompt: string, images?: InputImage[], files?: InputFile[]) =>
       appServerClientPool.request<{ turn: Turn }>("turn/start", {
         thread_id: threadId,
         prompt,
         images: images ?? [],
+        files: files ?? [],
       }),
   );
   ipcMain.handle(
@@ -375,11 +377,13 @@ app.whenReady().then(() => {
       prompt: string,
       images?: InputImage[],
       clientId?: string,
+      files?: InputFile[],
     ) =>
       appServerClientPool.request("turn/queue", {
         thread_id: threadId,
         prompt,
         images: images ?? [],
+        files: files ?? [],
         client_id: clientId,
       }),
   );
@@ -400,12 +404,14 @@ app.whenReady().then(() => {
       prompt: string,
       images?: InputImage[],
       clientId?: string,
+      files?: InputFile[],
     ) =>
       appServerClientPool.request("turn/steer", {
         thread_id: threadId,
         expected_turn_id: expectedTurnId,
         prompt,
         images: images ?? [],
+        files: files ?? [],
         client_id: clientId,
       }),
   );

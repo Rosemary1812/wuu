@@ -168,12 +168,27 @@ func estimateMessages(msgs []providers.ChatMessage) int {
 		for _, image := range m.Images {
 			total += estimateImageTokens(image)
 		}
+		for _, file := range m.Files {
+			total += estimateFileTokens(file)
+		}
 	}
 	return total
 }
 
 func estimateImageTokens(image providers.InputImage) int {
 	dataLen := len(strings.TrimSpace(image.Data))
+	if dataLen == 0 {
+		return 0
+	}
+	payloadEstimate := dataLen / 4
+	if payloadEstimate > 2000 {
+		return payloadEstimate
+	}
+	return 2000
+}
+
+func estimateFileTokens(file providers.InputFile) int {
+	dataLen := len(strings.TrimSpace(file.Data))
 	if dataLen == 0 {
 		return 0
 	}

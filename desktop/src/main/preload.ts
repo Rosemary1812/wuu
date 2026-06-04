@@ -69,13 +69,13 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-pin", threadId, pinned),
   archiveThread: (threadId: string, archived: boolean) =>
     ipcRenderer.invoke("wuu:thread-archive", threadId, archived),
-  startTurn: (threadId: string, prompt: string, images) =>
-    ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images),
-  queueTurn: (threadId: string, prompt: string, images, clientId) =>
-    ipcRenderer.invoke("wuu:turn-queue", threadId, prompt, images, clientId),
+  startTurn: (threadId: string, prompt: string, images, files) =>
+    ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files),
+  queueTurn: (threadId: string, prompt: string, images, clientId, files) =>
+    ipcRenderer.invoke("wuu:turn-queue", threadId, prompt, images, clientId, files),
   dequeueTurn: (threadId: string, queueId: string) =>
     ipcRenderer.invoke("wuu:turn-dequeue", threadId, queueId),
-  steerTurn: (threadId: string, expectedTurnId: string, prompt: string, images, clientId) =>
+  steerTurn: (threadId: string, expectedTurnId: string, prompt: string, images, clientId, files) =>
     ipcRenderer.invoke(
       "wuu:turn-steer",
       threadId,
@@ -83,6 +83,7 @@ const api: WuuDesktopApi = {
       prompt,
       images,
       clientId,
+      files,
     ),
   unsteerTurn: (threadId: string, steerId: string) =>
     ipcRenderer.invoke("wuu:turn-unsteer", threadId, steerId),

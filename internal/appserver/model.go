@@ -801,6 +801,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 			Role:     "user",
 			Text:     msg.Content,
 			Images:   threadItemImages(msg.Images),
+			Files:    threadItemFiles(msg.Files),
 		}
 	case "assistant":
 		if strings.TrimSpace(msg.Content) != "" {
@@ -863,6 +864,12 @@ func threadPreview(history []providers.ChatMessage) string {
 			}
 			return fmt.Sprintf("[%d images]", len(msg.Images))
 		}
+		if msg.Role == "user" && !isToolResultMessage(msg) && len(msg.Files) > 0 {
+			if len(msg.Files) == 1 {
+				return filePreview(msg.Files[0], 1)
+			}
+			return fmt.Sprintf("[%d files]", len(msg.Files))
+		}
 	}
 	return ""
 }
@@ -901,8 +908,44 @@ func cloneTurns(turns []Turn) []Turn {
 	return out
 }
 
+func threadItemFiles(files []providers.InputFile) []ThreadItemFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]ThreadItemFile, 0, len(files))
+	for _, file := range files {
+		data := strings.TrimSpace(file.Data)
+		if data == "" {
+			continue
+		}
+		mediaType := strings.TrimSpace(file.MediaType)
+		if mediaType == "" {
+			mediaType = "application/octet-stream"
+		}
+		out = append(out, ThreadItemFile{
+			MediaType: mediaType,
+			Data:      data,
+			Filename:  strings.TrimSpace(file.Filename),
+		})
+	}
+	return out
+}
+
+func filePreview(file providers.InputFile, index int) string {
+	name := strings.TrimSpace(file.Filename)
+	if name != "" {
+		return "[" + name + "]"
+	}
+	mediaType := strings.TrimSpace(file.MediaType)
+	if mediaType == "" {
+		mediaType = "file"
+	}
+	return fmt.Sprintf("[File #%d: %s]", index, mediaType)
+}
+
 func cloneThreadItem(item ThreadItem) ThreadItem {
 	item.Images = append([]ThreadItemImage(nil), item.Images...)
+	item.Files = append([]ThreadItemFile(nil), item.Files...)
 	item.Display = cloneToolCallDisplay(item.Display)
 	return item
 }

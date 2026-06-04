@@ -558,8 +558,8 @@ func mapMessage(msg providers.ChatMessage) chatMessage {
 		ReasoningContent: msg.ReasoningContent,
 	}
 
-	if len(msg.Images) > 0 && strings.EqualFold(msg.Role, "user") {
-		parts := make([]chatContentPart, 0, len(msg.Images)+1)
+	if (len(msg.Images) > 0 || len(msg.Files) > 0) && strings.EqualFold(msg.Role, "user") {
+		parts := make([]chatContentPart, 0, len(msg.Images)+len(msg.Files)+1)
 		if strings.TrimSpace(msg.Content) != "" {
 			parts = append(parts, chatContentPart{
 				Type: "text",
@@ -579,6 +579,27 @@ func mapMessage(msg providers.ChatMessage) chatMessage {
 				Type: "image_url",
 				ImageURL: &chatImageURL{
 					URL: "data:" + mediaType + ";base64," + data,
+				},
+			})
+		}
+		for _, file := range msg.Files {
+			data := strings.TrimSpace(file.Data)
+			if data == "" {
+				continue
+			}
+			mediaType := strings.TrimSpace(file.MediaType)
+			if mediaType == "" {
+				mediaType = "application/octet-stream"
+			}
+			filename := strings.TrimSpace(file.Filename)
+			if filename == "" {
+				filename = "attachment"
+			}
+			parts = append(parts, chatContentPart{
+				Type: "file",
+				File: &chatFilePart{
+					Filename: filename,
+					FileData: "data:" + mediaType + ";base64," + data,
 				},
 			})
 		}
@@ -866,10 +887,16 @@ type chatContentPart struct {
 	Type     string        `json:"type"`
 	Text     string        `json:"text,omitempty"`
 	ImageURL *chatImageURL `json:"image_url,omitempty"`
+	File     *chatFilePart `json:"file,omitempty"`
 }
 
 type chatImageURL struct {
 	URL string `json:"url"`
+}
+
+type chatFilePart struct {
+	Filename string `json:"filename,omitempty"`
+	FileData string `json:"file_data,omitempty"`
 }
 
 type toolDefinition struct {

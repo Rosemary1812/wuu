@@ -26,6 +26,12 @@ type persistedImage struct {
 	Data      string `json:"data"`
 }
 
+type persistedFile struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+	Filename  string `json:"filename,omitempty"`
+}
+
 type persistedMessage struct {
 	Role             string                     `json:"role"`
 	Content          string                     `json:"content"`
@@ -34,6 +40,7 @@ type persistedMessage struct {
 	ReasoningContent string                     `json:"reasoning_content,omitempty"`
 	ReasoningBlocks  []providers.ReasoningBlock `json:"reasoning_blocks,omitempty"`
 	Images           []persistedImage           `json:"images,omitempty"`
+	Files            []persistedFile            `json:"files,omitempty"`
 	ToolCalls        []persistedToolCall        `json:"tool_calls,omitempty"`
 	ToolCallID       string                     `json:"tool_call_id,omitempty"`
 	Name             string                     `json:"name,omitempty"`
@@ -102,6 +109,16 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 			msg.Images = append(msg.Images, providers.InputImage{
 				MediaType: image.MediaType,
 				Data:      image.Data,
+			})
+		}
+		for _, file := range rec.Files {
+			if strings.TrimSpace(file.Data) == "" {
+				continue
+			}
+			msg.Files = append(msg.Files, providers.InputFile{
+				MediaType: file.MediaType,
+				Data:      file.Data,
+				Filename:  file.Filename,
 			})
 		}
 		for _, tc := range rec.ToolCalls {
@@ -232,6 +249,17 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		out.Images = append(out.Images, persistedImage{
 			MediaType: image.MediaType,
 			Data:      data,
+		})
+	}
+	for _, file := range msg.Files {
+		data := strings.TrimSpace(file.Data)
+		if data == "" {
+			continue
+		}
+		out.Files = append(out.Files, persistedFile{
+			MediaType: file.MediaType,
+			Data:      data,
+			Filename:  file.Filename,
 		})
 	}
 	for _, tc := range msg.ToolCalls {

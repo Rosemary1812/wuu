@@ -794,6 +794,51 @@ func TestCompact_StripsHistoricalImagesFromKeptTail(t *testing.T) {
 	}
 }
 
+func TestCompact_StripsHistoricalFilesFromKeptTail(t *testing.T) {
+	fileData := strings.Repeat("b", 1400)
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second brief", Files: []providers.InputFile{{MediaType: "application/pdf", Data: fileData, Filename: "brief.pdf"}}},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "latest brief", Files: []providers.InputFile{{MediaType: "application/pdf", Data: "latest", Filename: "latest.pdf"}}},
+		{Role: "assistant", Content: "latest reply"},
+	}
+
+	client := &mockCompactClient{response: "summary"}
+	result, err := CompactWithContextWindow(context.Background(), messages, client, "test", 100_000)
+	if err != nil {
+		t.Fatalf("CompactWithContextWindow: %v", err)
+	}
+
+	var historical providers.ChatMessage
+	var latest providers.ChatMessage
+	foundHistorical := false
+	foundLatest := false
+	for _, msg := range result {
+		switch msg.Content {
+		case "second brief\n\n[File attachment omitted from compacted history: application/pdf, brief.pdf, 1400 base64 characters.]":
+			historical = msg
+			foundHistorical = true
+		case "latest brief":
+			latest = msg
+			foundLatest = true
+		}
+	}
+	if !foundHistorical {
+		t.Fatalf("expected historical file omission note in compacted result: %+v", result)
+	}
+	if !foundLatest {
+		t.Fatalf("expected latest user message in compacted result: %+v", result)
+	}
+	if len(historical.Files) != 0 {
+		t.Fatalf("expected historical file stripped, got %+v", historical.Files)
+	}
+	if len(latest.Files) != 1 || latest.Files[0].Data != "latest" {
+		t.Fatalf("expected latest user file preserved, got %+v", latest.Files)
+	}
+}
+
 func TestBuildSummaryPromptMentionsImagesWithoutData(t *testing.T) {
 	imageData := strings.Repeat("z", 80)
 	prompt := buildSummaryPrompt([]providers.ChatMessage{

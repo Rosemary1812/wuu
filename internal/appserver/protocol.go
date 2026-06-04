@@ -268,11 +268,18 @@ type TurnStartParams struct {
 	ThreadID string           `json:"thread_id"`
 	Prompt   string           `json:"prompt"`
 	Images   []TurnStartImage `json:"images,omitempty"`
+	Files    []TurnStartFile  `json:"files,omitempty"`
 }
 
 type TurnStartImage struct {
 	MediaType string `json:"media_type"`
 	Data      string `json:"data"`
+}
+
+type TurnStartFile struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+	Filename  string `json:"filename,omitempty"`
 }
 
 type TurnStartResult struct {
@@ -283,6 +290,7 @@ type TurnQueueParams struct {
 	ThreadID string           `json:"thread_id"`
 	Prompt   string           `json:"prompt"`
 	Images   []TurnStartImage `json:"images,omitempty"`
+	Files    []TurnStartFile  `json:"files,omitempty"`
 	ClientID string           `json:"client_id,omitempty"`
 }
 
@@ -291,6 +299,7 @@ type QueuedTurn struct {
 	ThreadID   string `json:"thread_id"`
 	Preview    string `json:"preview,omitempty"`
 	ImageCount int    `json:"image_count,omitempty"`
+	FileCount  int    `json:"file_count,omitempty"`
 }
 
 type TurnQueueResult struct {
@@ -306,6 +315,7 @@ type TurnSteerParams struct {
 	ThreadID       string           `json:"thread_id"`
 	Prompt         string           `json:"prompt"`
 	Images         []TurnStartImage `json:"images,omitempty"`
+	Files          []TurnStartFile  `json:"files,omitempty"`
 	ExpectedTurnID string           `json:"expected_turn_id"`
 	ClientID       string           `json:"client_id,omitempty"`
 }
@@ -523,6 +533,7 @@ type ThreadItem struct {
 	Role      string                     `json:"role,omitempty"`
 	Text      string                     `json:"text,omitempty"`
 	Images    []ThreadItemImage          `json:"images,omitempty"`
+	Files     []ThreadItemFile           `json:"files,omitempty"`
 	Name      string                     `json:"name,omitempty"`
 	Arguments string                     `json:"arguments,omitempty"`
 	Display   *providers.ToolCallDisplay `json:"display,omitempty"`
@@ -533,6 +544,12 @@ type ThreadItem struct {
 type ThreadItemImage struct {
 	MediaType string `json:"media_type"`
 	Data      string `json:"data"`
+}
+
+type ThreadItemFile struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+	Filename  string `json:"filename,omitempty"`
 }
 
 type ItemStartedNotification struct {

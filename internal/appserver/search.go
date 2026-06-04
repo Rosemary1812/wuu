@@ -202,6 +202,11 @@ func threadSearchCandidatesFromMessage(msg providers.ChatMessage) []threadSearch
 	} else if len(msg.Images) > 1 {
 		add("images")
 	}
+	if len(msg.Files) == 1 {
+		add(filePreview(msg.Files[0], 1))
+	} else if len(msg.Files) > 1 {
+		add("files")
+	}
 	return candidates
 }
 
