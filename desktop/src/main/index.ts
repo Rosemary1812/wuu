@@ -8,18 +8,14 @@ import {
 import { spawnSync } from "node:child_process";
 import {
   closeSync,
-  existsSync,
-  mkdirSync,
   openSync,
   readdirSync,
   readFileSync,
   readSync,
   realpathSync,
   statSync,
-  writeFileSync,
   type Dirent,
 } from "node:fs";
-import { homedir } from "node:os";
 import {
   basename,
   dirname,
@@ -32,7 +28,6 @@ import { fileURLToPath } from "node:url";
 import type {
   ConfigCodexModelsResult,
   ConfigModelUpdateResult,
-  DesktopProject,
   GitChangeFile,
   GitChangesResult,
   GitCommitParams,
@@ -49,7 +44,6 @@ import type {
   DesktopBuildInfo,
   InputImage,
   InitializeResult,
-  ProjectListResult,
   RuntimeContext,
   ServerEvent,
   TerminalSessionStartParams,
@@ -59,6 +53,7 @@ import type {
   WorkspaceFileReadResult,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
+import { ProjectManager } from "./projects";
 import {
   registerRenderableFileProtocol,
   registerRenderableFileScheme,
@@ -89,18 +84,13 @@ const FILE_TREE_IGNORED_FILES = new Set([".DS_Store"]);
 
 registerRenderableFileScheme();
 
-type ProjectStore = {
-  projects: DesktopProject[];
-  active_context?: RuntimeContext;
-};
-
 type GitStatusOptions = {
   includePullRequestURL?: boolean;
   includeRemoteDefaultBranchFallback?: boolean;
 };
 
 let mainWindow: BrowserWindow | null = null;
-let projectStore: ProjectStore = { projects: [] };
+const projectManager = new ProjectManager();
 
 // Build-time globals injected by electron.vite.config.ts. TypeScript
 // doesn't know about them by default; declare them so we can reference
@@ -127,171 +117,17 @@ let cachedCoreBuildInfo: CoreBuildInfo | undefined;
 let windowResizeEndTimer: NodeJS.Timeout | undefined;
 let windowResizeState = false;
 const appServerClientPool = new AppServerClientPool(
-  () => ensureRuntimeContext(),
-  () =>
-    projectStore.active_context
-      ? resolve(projectStore.active_context.cwd)
-      : undefined,
+  () => projectManager.ensureRuntimeContext(),
+  () => projectManager.activeWorkdir(),
   (event) => emitServerEvent(event),
 );
 const terminalSessionManager = new TerminalSessionManager(
-  () => ensureRuntimeContext(),
+  () => projectManager.ensureRuntimeContext(),
   (event) => emitTerminalEvent(event),
 );
 
-function projectStorePath(): string {
-  return join(wuuHomePath(), "projects.json");
-}
-
-function legacyProjectStorePath(): string {
-  return join(app.getPath("userData"), "projects.json");
-}
-
-function wuuHomePath(): string {
-  const override = process.env.WUU_HOME?.trim();
-  if (override) {
-    return resolve(override);
-  }
-  return join(homedir(), ".wuu");
-}
-
-function loadProjectStore(): ProjectStore {
-  const loaded = readProjectStoreFile(projectStorePath());
-  const legacy = readProjectStoreFile(legacyProjectStorePath());
-  const { store, changed } = mergeProjectStores(
-    loaded ?? { projects: [] },
-    legacy,
-  );
-  if (!loaded || changed) {
-    writeProjectStoreFile(projectStorePath(), store);
-  }
-  return store;
-}
-
-function readProjectStoreFile(path: string): ProjectStore | undefined {
-  try {
-    const parsed = JSON.parse(
-      readFileSync(path, "utf8"),
-    ) as Partial<ProjectStore> & {
-      active_project_id?: unknown;
-    };
-    const projects = Array.isArray(parsed.projects)
-      ? parsed.projects.filter((project): project is DesktopProject =>
-          isDesktopProject(project),
-        )
-      : [];
-    const activeContext =
-      normalizeRuntimeContext(parsed.active_context, projects) ??
-      legacyProjectContext(parsed.active_project_id, projects);
-    return {
-      projects,
-      active_context: activeContext,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function mergeProjectStores(
-  base: ProjectStore,
-  incoming: ProjectStore | undefined,
-): { store: ProjectStore; changed: boolean } {
-  if (!incoming) {
-    return { store: base, changed: false };
-  }
-
-  let changed = false;
-  const projects = [...base.projects];
-  for (const project of incoming.projects) {
-    if (projects.some((candidate) => candidate.id === project.id)) {
-      continue;
-    }
-    projects.push(project);
-    changed = true;
-  }
-
-  let activeContext = base.active_context;
-  if (!activeContext && incoming.active_context) {
-    activeContext = normalizeRuntimeContext(incoming.active_context, projects);
-    changed = Boolean(activeContext);
-  }
-
-  return { store: { projects, active_context: activeContext }, changed };
-}
-
-function isDesktopProject(value: unknown): value is DesktopProject {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const project = value as Partial<DesktopProject>;
-  return (
-    typeof project.id === "string" &&
-    typeof project.name === "string" &&
-    typeof project.path === "string" &&
-    typeof project.created_at === "string" &&
-    typeof project.updated_at === "string"
-  );
-}
-
-function normalizeRuntimeContext(
-  value: unknown,
-  projects: DesktopProject[],
-): RuntimeContext | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const context = value as Partial<RuntimeContext>;
-  if (context.kind === "project" && typeof context.project_id === "string") {
-    const project = projects.find(
-      (candidate) => candidate.id === context.project_id,
-    );
-    return project
-      ? { kind: "project", project_id: project.id, cwd: project.path }
-      : undefined;
-  }
-  if (context.kind === "no_project" && typeof context.cwd === "string") {
-    const cwd = resolve(context.cwd);
-    mkdirSync(cwd, { recursive: true });
-    return { kind: "no_project", cwd };
-  }
-  return undefined;
-}
-
-function legacyProjectContext(
-  value: unknown,
-  projects: DesktopProject[],
-): RuntimeContext | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const project = projects.find((candidate) => candidate.id === value);
-  return project
-    ? { kind: "project", project_id: project.id, cwd: project.path }
-    : undefined;
-}
-
-function saveProjectStore(): void {
-  writeProjectStoreFile(projectStorePath(), projectStore);
-}
-
-function writeProjectStoreFile(path: string, store: ProjectStore): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`);
-}
-
-function projectListResult(): ProjectListResult {
-  projectStore = loadProjectStore();
-  const context = ensureRuntimeContext();
-  return {
-    projects: projectStore.projects,
-    active_context: context,
-    active_project_id:
-      context.kind === "project" ? context.project_id : undefined,
-  };
-}
-
 function gitStatusResult(options: GitStatusOptions = {}): GitStatusResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const root =
     gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
   const insideWorkTree =
@@ -360,7 +196,7 @@ function gitStatusResult(options: GitStatusOptions = {}): GitStatusResult {
 }
 
 function gitChangesResult(): GitChangesResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const root =
     gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
   const insideWorkTree =
@@ -417,7 +253,7 @@ function gitChangesResult(): GitChangesResult {
 }
 
 function gitFileDiffResult(path: string): GitFileDiffResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const root =
     gitOutput(context.cwd, ["rev-parse", "--show-toplevel"]) ?? context.cwd;
   const insideWorkTree =
@@ -463,7 +299,7 @@ function gitFileDiffResult(path: string): GitFileDiffResult {
 }
 
 function checkoutGitBranch(branch: string): GitStatusResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const current = gitStatusResult();
   const target = branch.trim();
   if (!current.is_repo) {
@@ -484,7 +320,7 @@ function checkoutGitBranch(branch: string): GitStatusResult {
 }
 
 function createCheckoutGitBranch(branch: string): GitCreateBranchResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const current = gitStatusResult();
   const target = branch.trim();
   if (!current.is_repo) {
@@ -499,7 +335,7 @@ function createCheckoutGitBranch(branch: string): GitCreateBranchResult {
 }
 
 function commitGitChanges(params: GitCommitParams): GitCommitResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const current = gitStatusResult();
   if (!current.is_repo) {
     throw new Error("current workspace is not a git repository");
@@ -522,7 +358,7 @@ function commitGitChanges(params: GitCommitParams): GitCommitResult {
 }
 
 function createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const status = gitStatusResult({
     includePullRequestURL: true,
     includeRemoteDefaultBranchFallback: true,
@@ -1068,7 +904,7 @@ function generatedCommitMessage(cwd: string): string {
 }
 
 function fileTreeListResult(): FileTreeListResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const paths: string[] = [];
   const truncated = collectFileTreePaths(context.cwd, "", paths);
   return { root: context.cwd, paths, truncated };
@@ -1077,7 +913,7 @@ function fileTreeListResult(): FileTreeListResult {
 function workspaceDirectoryListResult(
   path?: string,
 ): WorkspaceDirectoryListResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const relativeDirectoryPath = normalizeWorkspaceDirectoryPath(path ?? "");
   const absoluteDirectoryPath = resolveWorkspaceDirectoryPath(
     context.cwd,
@@ -1139,7 +975,7 @@ function workspaceDirectoryListResult(
 }
 
 function readWorkspaceFileResult(path: string): WorkspaceFileReadResult {
-  const context = ensureRuntimeContext();
+  const context = projectManager.ensureRuntimeContext();
   const relativeFilePath = normalizeWorkspaceRelativePath(path);
   const absolutePath = resolveWorkspacePath(context.cwd, relativeFilePath);
   const stats = statSync(absolutePath);
@@ -1318,141 +1154,6 @@ function collectFileTreePaths(
   return false;
 }
 
-function ensureRuntimeContext(): RuntimeContext {
-  const activeContext = projectStore.active_context;
-  if (activeContext?.kind === "project") {
-    const project = projectStore.projects.find(
-      (candidate) => candidate.id === activeContext.project_id,
-    );
-    if (project) {
-      projectStore.active_context = {
-        kind: "project",
-        project_id: project.id,
-        cwd: project.path,
-      };
-      return projectStore.active_context;
-    }
-  }
-  if (projectStore.active_context?.kind === "no_project") {
-    mkdirSync(projectStore.active_context.cwd, { recursive: true });
-    return projectStore.active_context;
-  }
-  projectStore.active_context = createNoProjectContext();
-  saveProjectStore();
-  return projectStore.active_context;
-}
-
-function createNoProjectContext(): RuntimeContext {
-  return { kind: "no_project", cwd: allocateNoProjectCwd() };
-}
-
-function allocateNoProjectCwd(): string {
-  const baseDir = join(
-    app.getPath("documents"),
-    "Wuu",
-    formatLocalDate(new Date()),
-  );
-  mkdirSync(baseDir, { recursive: true });
-  for (let index = 0; index < 1000; index += 1) {
-    const name = index === 0 ? "new-chat" : `new-chat-${index + 1}`;
-    const candidate = join(baseDir, name);
-    if (existsSync(candidate)) {
-      continue;
-    }
-    mkdirSync(candidate, { recursive: true });
-    return candidate;
-  }
-  throw new Error(`failed to allocate no-project workspace under ${baseDir}`);
-}
-
-function formatLocalDate(date: Date): string {
-  const year = String(date.getFullYear());
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function projectID(projectPath: string): string {
-  return Buffer.from(resolve(projectPath)).toString("base64url");
-}
-
-function projectName(projectPath: string): string {
-  return basename(projectPath) || projectPath;
-}
-
-function isDirectory(projectPath: string): boolean {
-  try {
-    return statSync(projectPath).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function addProject(projectPath: string): ProjectListResult {
-  projectStore = loadProjectStore();
-  const resolvedPath = resolve(projectPath);
-  if (!isDirectory(resolvedPath)) {
-    throw new Error("selected project is not a directory");
-  }
-  const now = new Date().toISOString();
-  const id = projectID(resolvedPath);
-  const existingIndex = projectStore.projects.findIndex(
-    (project) => project.id === id,
-  );
-  const project: DesktopProject = {
-    id,
-    name: projectName(resolvedPath),
-    path: resolvedPath,
-    created_at:
-      existingIndex >= 0
-        ? projectStore.projects[existingIndex].created_at
-        : now,
-    updated_at: now,
-  };
-  if (existingIndex >= 0) {
-    projectStore.projects[existingIndex] = project;
-  } else {
-    projectStore.projects = [project, ...projectStore.projects];
-  }
-  projectStore.active_context = {
-    kind: "project",
-    project_id: id,
-    cwd: resolvedPath,
-  };
-  saveProjectStore();
-  return projectListResult();
-}
-
-function selectProject(projectIDToSelect: string): ProjectListResult {
-  projectStore = loadProjectStore();
-  const project = projectStore.projects.find(
-    (candidate) => candidate.id === projectIDToSelect,
-  );
-  if (!project) {
-    throw new Error("project not found");
-  }
-  projectStore.active_context = {
-    kind: "project",
-    project_id: project.id,
-    cwd: project.path,
-  };
-  saveProjectStore();
-  return projectListResult();
-}
-
-function selectNoProject(fresh: boolean, cwd?: string): ProjectListResult {
-  projectStore = loadProjectStore();
-  if (!fresh && cwd) {
-    const resolvedCwd = resolve(cwd);
-    mkdirSync(resolvedCwd, { recursive: true });
-    projectStore.active_context = { kind: "no_project", cwd: resolvedCwd };
-  } else if (fresh || projectStore.active_context?.kind !== "no_project") {
-    projectStore.active_context = createNoProjectContext();
-  }
-  saveProjectStore();
-  return projectListResult();
-}
-
 async function showProjectDirectoryDialog(
   options: OpenDialogOptions,
 ): Promise<string | undefined> {
@@ -1570,17 +1271,17 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  projectStore = loadProjectStore();
+  projectManager.load();
   registerRenderableFileProtocol();
 
-  ipcMain.handle("wuu:project-list", () => projectListResult());
+  ipcMain.handle("wuu:project-list", () => projectManager.list());
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>
-    selectProject(projectIDToSelect),
+    projectManager.select(projectIDToSelect),
   );
   ipcMain.handle(
     "wuu:project-select-none",
     (_event, fresh?: boolean, cwd?: string) =>
-      selectNoProject(Boolean(fresh), cwd),
+      projectManager.selectNoProject(Boolean(fresh), cwd),
   );
   ipcMain.handle("wuu:git-status", () => gitStatusResult());
   ipcMain.handle("wuu:git-changes", () => gitChangesResult());
@@ -1629,9 +1330,9 @@ app.whenReady().then(() => {
       properties: ["openDirectory"],
     });
     if (!projectPath) {
-      return projectListResult();
+      return projectManager.list();
     }
-    return addProject(projectPath);
+    return projectManager.add(projectPath);
   });
   ipcMain.handle("wuu:project-create-blank", async () => {
     const projectPath = await showProjectDirectoryDialog({
@@ -1640,9 +1341,9 @@ app.whenReady().then(() => {
       properties: ["openDirectory", "createDirectory"],
     });
     if (!projectPath) {
-      return projectListResult();
+      return projectManager.list();
     }
-    return addProject(projectPath);
+    return projectManager.add(projectPath);
   });
   ipcMain.handle("wuu:initialize", async () => {
     const result = await appServerClientPool.request<InitializeResult>("initialize");
