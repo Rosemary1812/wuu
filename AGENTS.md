@@ -126,6 +126,44 @@ returns for the current source. (`internal/tools/toolkit.go`
 `rebuildRegistry` is the only place tools are registered; if the
 list matches there, the running binary is current.)
 
+**A second, deeper trap:** killing the app-server alone is not
+enough. `electron-vite dev` runs the Electron main process
+(`desktop/src/main/index.ts`) as a separate Node process, and the
+main process **is not hot-reloaded by Vite** — only the renderer
+and preload are. If you change the main process source (e.g. add
+a new `ipcMain.handle("wuu:...", ...)` IPC handler in
+`desktop/src/main/index.ts`), the running main process keeps the
+old handler table. The renderer's preload gets hot-reloaded to the
+new version that invokes the new IPC channel, the invoke fires,
+the main process has no handler registered, and the renderer gets
+a TypeError / rejected promise. Symptom: the desktop goes to a
+white screen the moment something triggers the new IPC.
+
+We hit this with the Settings About build-info panel: the renderer
+called `window.wuu.getBuildInfo()`, the main process (started
+hours earlier) had no `wuu:build-info` handler, the Settings view
+crashed on mount. Killing the stale app-server did not help
+because the main process itself was the stale one.
+
+Recovery when this happens: full stack restart, not just
+app-server.
+
+```bash
+# Find the electron-vite + electron process tree
+ps -ef | grep -E "electron-vite|electron\.app/Contents/MacOS/Electron" | grep -v grep
+
+# Kill the whole tree
+pkill -f "electron-vite dev"        # node parent
+pkill -f "electron-vite"            # any stragglers
+pkill -f "/Electron Helper"         # renderer + gpu + utility helpers
+pkill -f "go run ./cmd/wuu"         # app-server parent
+```
+
+Then have the user run `cd desktop && npm run dev` again. Verify
+with `ps -ef | grep -E "electron|wuu" | grep -v grep` that every
+relevant process has a fresh start time before claiming the
+restart is complete.
+
 ## Hydra Orchestration Toolkit
 
 Hydra is a Lead-driven orchestration toolkit. You (the Lead) make strategic
