@@ -1,0 +1,239 @@
+:root {
+  color: #1f2328;
+  background: #f6f6f4;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-ui: 13px;
+  --font-body: 14px;
+  --font-content: 14px;
+  --font-title: 15px;
+  --font-heading: 18px;
+  --font-display: 24px;
+  --weight-medium: 560;
+  --weight-semibold: 620;
+  --weight-bold: 700;
+  --line-ui: 1.35;
+  --line-body: 1.55;
+  --menu-bg: rgba(255, 255, 255, 0.98);
+  --menu-border: rgba(31, 35, 40, 0.1);
+  --menu-hover: #f2f3f0;
+  --menu-radius: 12px;
+  --menu-shadow:
+    0 14px 34px rgba(20, 24, 28, 0.12),
+    0 2px 8px rgba(20, 24, 28, 0.08);
+  --menu-enter-duration: 140ms;
+  --menu-enter-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --search-enter-duration: 220ms;
+  --search-exit-duration: 180ms;
+  --search-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --collapse-motion-duration: 260ms;
+  --collapse-opacity-duration: 180ms;
+  --collapse-chevron-duration: 140ms;
+  --collapse-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --collapse-enter-offset-y: -2px;
+  --conversation-turn-gap: 30px;
+  --sidebar-glass-bg: linear-gradient(180deg, rgba(250, 251, 248, 0.82), rgba(241, 244, 239, 0.68));
+  --sidebar-glass-border: rgba(68, 76, 70, 0.13);
+  --sidebar-glass-highlight: rgba(255, 255, 255, 0.62);
+  --sidebar-glass-hover: rgba(255, 255, 255, 0.5);
+  --sidebar-glass-active: rgba(255, 255, 255, 0.72);
+  --sidebar-accent: #5f7e68;
+  /* Warning palette for the assistant turn bug visual. Reused from the
+     existing turn-notice warning tone so the desktop only ships a
+     single warning hue system. */
+  --turn-warning-border: #f3dfb7;
+  --turn-warning-bg: #fff3dc;
+  --turn-warning-text: #8a5b10;
+  --turn-warning-text-strong: #7a4e0d;
+  font-size: var(--font-ui);
+  letter-spacing: 0;
+  line-height: var(--line-ui);
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@keyframes menu-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--menu-enter-x, 0), var(--menu-enter-y, -4px), 0) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes conversation-search-overlay-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes conversation-search-overlay-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes conversation-search-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.982);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes conversation-search-dialog-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.986);
+  }
+}
+
+@keyframes conversation-search-progress {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes environment-panel-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0) scale(0.988);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes environment-panel-exit {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0) scale(0.986);
+  }
+}
+
+@keyframes session-active-mark-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scaleY(0.55);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scaleY(1);
+  }
+}
+
+@keyframes session-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes session-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+.os-theme-wuu {
+  --os-size: 10px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 3px;
+  --os-track-border-radius: 999px;
+  --os-track-bg: transparent;
+  --os-track-bg-hover: rgba(46, 50, 54, 0.06);
+  --os-track-bg-active: rgba(46, 50, 54, 0.08);
+  --os-handle-border-radius: 999px;
+  --os-handle-bg: rgba(82, 88, 94, 0.28);
+  --os-handle-bg-hover: rgba(56, 88, 118, 0.46);
+  --os-handle-bg-active: rgba(38, 70, 98, 0.62);
+  --os-handle-min-size: 42px;
+  --os-handle-interactive-area-offset: 4px;
+}
+
+.window-resizing *,
+.window-resizing *::before,
+.window-resizing *::after {
+  transition: none !important;
+  animation-play-state: paused !important;
+}
+
+.resizing-review-split,
+.resizing-right-panel,
+.resizing-review-split *,
+.resizing-right-panel * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.window-resizing .sidebar {
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+button,
+select,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  color: inherit;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
