@@ -40,6 +40,13 @@
   --sidebar-glass-hover: rgba(255, 255, 255, 0.5);
   --sidebar-glass-active: rgba(255, 255, 255, 0.72);
   --sidebar-accent: #5f7e68;
+  /* Warning palette for the assistant turn bug visual. Reused from the
+     existing turn-notice warning tone so the desktop only ships a
+     single warning hue system. */
+  --turn-warning-border: #f3dfb7;
+  --turn-warning-bg: #fff3dc;
+  --turn-warning-text: #8a5b10;
+  --turn-warning-text-strong: #7a4e0d;
   font-size: var(--font-ui);
   letter-spacing: 0;
   line-height: var(--line-ui);
@@ -5299,26 +5306,93 @@ button:disabled {
   width: min(var(--conversation-split-message-max-width), var(--conversation-split-message-max-inline));
 }
 
-.assistant-turn-process-lane,
-.assistant-turn-answer-lane {
+/* Front content ("过程"区): the collapsible timeline of reasoning,
+   tool calls, and commentary. Sits in the same shell column as the
+   body, separated from the body by a thin divider when both are
+   present. */
+.assistant-turn-front,
+.assistant-turn-final {
   display: grid;
   min-width: 0;
 }
 
-.assistant-turn-process-lane {
+.assistant-turn-front {
   gap: var(--conversation-process-gap);
 }
 
-.assistant-turn-answer-lane {
+.assistant-turn-final {
+  /* Commentary items in the front and final_answer items in the body
+     use the same visual style (regular body prose). The body
+     collapses to no gap so multiple final_answer items stack as a
+     continuous reply. */
   gap: 0;
 }
 
-.assistant-turn-shell:not(.has-answer-lane) .assistant-turn-answer-lane {
+.assistant-turn-shell:not(.has-body) .assistant-turn-final {
   display: none;
 }
 
-.assistant-turn-shell.has-process-lane.has-answer-lane {
+.assistant-turn-shell.has-front.has-body {
   gap: var(--conversation-process-answer-gap);
+}
+
+/* Divider between the front content and the body. Drawn only when
+   there is exactly one final_answer and the turn shape is normal.
+   Kept visually light on purpose — it separates "what the model did"
+   from "what the model said" without competing with either. */
+.answer-divider {
+  height: 1px;
+  margin: 2px 0;
+  background: rgba(31, 35, 40, 0.08);
+  border: 0;
+}
+
+/* Bug visual: a completed turn with the wrong reply shape (no
+   final_answer with text, or multiple final_answers). The border
+   uses the same warning tone as turn-notice.warning, the banner
+   carries an explicit "reply shape wrong" message. We never fake a
+   normal state when the data doesn't support it. */
+.assistant-turn-shell.bug-turn {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--turn-warning-border);
+  border-radius: 10px;
+  background: var(--turn-warning-bg);
+}
+
+.assistant-turn-bug-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: var(--conversation-process-gap);
+  color: var(--turn-warning-text);
+  font-size: var(--font-ui);
+  line-height: 1.45;
+}
+
+.assistant-turn-bug-icon {
+  display: grid;
+  width: 18px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: currentColor;
+}
+
+.assistant-turn-bug-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.assistant-turn-bug-copy strong {
+  color: var(--turn-warning-text-strong);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.assistant-turn-bug-copy span {
+  color: inherit;
+  font-size: var(--font-ui);
 }
 
 .message {

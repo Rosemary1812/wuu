@@ -6854,17 +6854,22 @@ function agentMessageBelongsToProcess(
   itemIndex: number,
   finalAgentMessageID: string | undefined,
 ): boolean {
+  // Legacy helper. The assistant turn layout no longer routes agent
+  // messages into a process lane — commentary renders in the front
+  // content (between tool calls) and final_answer renders in the
+  // final body. Both are still rendered through the normal
+  // renderThreadItem path; we keep this function so older call sites
+  // that import it for debug purposes continue to type-check.
   if (item.type !== "agent_message") {
     return false;
   }
   if (streamFieldValue(turn.id, item, "text").trim().length === 0) {
     return false;
   }
-  // Both commentary and final_answer text are the visible reply to the
-  // user, so they render in the answer lane. The process lane only
-  // carries tool activity (tool calls, reasoning blocks, etc.) and a
-  // status header — never the model's words.
-  if (item.phase === "commentary" || item.phase === "final_answer") {
+  if (item.phase === "commentary") {
+    return true;
+  }
+  if (item.phase === "final_answer") {
     return false;
   }
   if (
@@ -6875,10 +6880,6 @@ function agentMessageBelongsToProcess(
     return item.id !== finalAgentMessageID;
   }
   return agentMessageWithTextFollows(turn, itemIndex);
-}
-
-function compactProcessCheckpointText(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
 }
 
 function TurnNotice({
@@ -6978,10 +6979,47 @@ function TurnView({
 }
 
 type AssistantTurnDisplay = {
-  processEntries: TurnProcessEntry[];
-  processCheckpoint?: TurnProcessCheckpoint;
-  showProcessLane: boolean;
-  answerItems: AssistantTurnAnswerItem[];
+  /**
+   * Front content: the "process" lane. Carries reasoning, tool calls,
+   * context_compaction, and commentary in the order they appeared in
+   * the turn. Commentary renders here as a normal text block — same
+   * visual style as final_answer — because the two are structurally
+   * distinct (front vs body) rather than visually distinct.
+   */
+  frontEntries: TurnProcessEntry[];
+  /**
+   * Body: the user-facing reply. One entry per final_answer item in
+   * the turn, in chronological order. Empty when the turn produced no
+   * final answer.
+   */
+  finalAnswerItems: AssistantTurnAnswerItem[];
+  /**
+   * True when the completed turn has a malformed reply shape and the
+   * shell should draw the warning border + banner. The two cases are:
+   *   - 0 final_answer and the turn actually had text (commentary).
+   *     A pure-tool turn is allowed to complete without a final
+   *     answer (sub-agents do this routinely).
+   *   - ≥2 final_answer. There is no single primary reply to draw the
+   *     divider under; everything stays in the body.
+   */
+  isBuggy: boolean;
+  bugMessage?: string;
+  /**
+   * True only when there is exactly one final_answer and the turn is
+   * completed. The shell draws a thin horizontal divider between the
+   * front and the body in that case.
+   */
+  showDivider: boolean;
+  /**
+   * Initial collapse state of the front content. The user can always
+   * toggle the front afterwards, so this is purely a hint about the
+   * default render:
+   *   - in_progress: false (the user wants to watch the work)
+   *   - buggy: false (the user needs to see what went wrong)
+   *   - completed + ≤1 final_answer: true (the normal "I scrolled
+   *     past this turn" case)
+   */
+  frontDefaultCollapsed: boolean;
 };
 
 type AssistantTurnAnswerItem = {
@@ -6989,74 +7027,49 @@ type AssistantTurnAnswerItem = {
   streaming: boolean;
   element: JSX.Element;
   /**
-   * True when the turn has a reasoning block that the model just finished
-   * writing. The first answer item waits a short beat so the reasoning
-   * cursor can fully settle before the text cursor starts animating;
-   * otherwise the two cursors race and the user sees them "streaming at
-   * the same time" even though the underlying events are sequential.
+   * True when the turn has a reasoning block that the model just
+   * finished writing. The first text item (commentary or final_answer,
+   * whichever appears first chronologically) waits a short beat so
+   * the reasoning cursor can fully settle before its own cursor starts
+   * animating; otherwise the two cursors race and the user sees them
+   * "streaming at the same time" even though the underlying events
+   * are sequential.
    */
   pendingCompanionReasoning?: boolean;
 };
 
 type TurnProcessEntry = {
   key: string;
-  kind: "checkpoint" | "activity";
   element: JSX.Element;
   count?: number;
 };
 
-type TurnProcessCheckpoint = {
-  key: string;
-  text: string;
-};
-
-function buildAssistantTurnDisplay(
+export function buildAssistantTurnDisplay(
   turn: Turn,
-  actionableAgentMessageID: string | undefined,
+  _actionableAgentMessageID: string | undefined,
   renderThreadItem: (
     item: ThreadItem,
     streaming: boolean,
     pendingCompanionReasoning?: boolean,
   ) => JSX.Element | null,
 ): AssistantTurnDisplay | undefined {
-  const processEntries: TurnProcessEntry[] = [];
-  const answerItems: AssistantTurnAnswerItem[] = [];
-  let processCheckpoint: TurnProcessCheckpoint | undefined;
+  const frontEntries: TurnProcessEntry[] = [];
+  const finalAnswerItems: AssistantTurnAnswerItem[] = [];
   let sawAssistantWork = false;
-  // When the turn has a reasoning block, the first answer item waits a
-  // beat before starting its cursor so the reasoning cursor can finish
-  // settling. Reasoning and text are sequential on the wire; the visual
-  // race is purely a render-side artifact.
+  // When the turn has a reasoning block, the first text item (commentary
+  // or final_answer) waits a beat before starting its cursor so the
+  // reasoning cursor can finish settling. Reasoning and text are
+  // sequential on the wire; the visual race is purely a render-side
+  // artifact.
   const turnHasReasoning = turn.items.some(
     (item) => item.type === "reasoning",
   );
-  const finalAgentMessageID =
-    actionableAgentMessageID ?? explicitFinalAgentMessageItemID(turn);
+  let firstTextItemRendered = false;
 
-  function appendProcessEntry(entry: TurnProcessEntry | null): void {
+  function appendFrontEntry(entry: TurnProcessEntry | null): void {
     if (entry) {
-      processEntries.push(entry);
+      frontEntries.push(entry);
     }
-  }
-
-  function updateProcessCheckpoint(item: ThreadItem): void {
-    const text = compactProcessCheckpointText(
-      streamFieldValue(turn.id, item, "text"),
-    );
-    if (!text) {
-      return;
-    }
-    processCheckpoint = { key: item.id, text };
-    appendProcessEntry({
-      key: `${item.id}-checkpoint`,
-      kind: "checkpoint",
-      element: (
-        <TurnProcessCheckpointLine
-          key={`${item.id}-checkpoint`}
-          text={text}
-        />
-      ),
-    });
   }
 
   for (let index = 0; index < turn.items.length; index++) {
@@ -7069,32 +7082,37 @@ function buildAssistantTurnDisplay(
     if (item.type === "agent_message") {
       const streaming =
         turn.status === "in_progress" && item.status === "in_progress";
-      if (
-        agentMessageBelongsToProcess(
-          turn,
-          item,
-          index,
-          actionableAgentMessageID,
-        )
-      ) {
-        updateProcessCheckpoint(item);
-        continue;
-      }
       const text = streamFieldValue(turn.id, item, "text");
-      if (
-        text.trim().length === 0 &&
-        item.phase !== "final_answer" &&
-        !streaming
-      ) {
+      // Skip empty agent_message items that aren't actively streaming.
+      // runtime (model.go) already drops empty agent_message items at
+      // creation time, but a streaming item can briefly have an empty
+      // text before its first delta arrives.
+      if (text.trim().length === 0 && !streaming) {
         continue;
       }
+      const isFinalAnswer = item.phase === "final_answer";
+      const shouldDelayCursor =
+        turnHasReasoning && !firstTextItemRendered;
+      firstTextItemRendered = true;
       const rendered = renderThreadItem(
         item,
         streaming,
-        turnHasReasoning && answerItems.length === 0 ? true : undefined,
+        shouldDelayCursor ? true : undefined,
       );
-      if (rendered) {
-        answerItems.push({ item, streaming, element: rendered });
+      if (!rendered) {
+        continue;
+      }
+      if (isFinalAnswer) {
+        finalAnswerItems.push({ item, streaming, element: rendered });
+      } else {
+        // commentary (or any unphased agent_message) — render in front
+        // using the same visual style as a final_answer. The two are
+        // distinguished only by their structural position, not by
+        // decoration.
+        appendFrontEntry({
+          key: item.id,
+          element: rendered,
+        });
       }
       continue;
     }
@@ -7110,9 +7128,8 @@ function buildAssistantTurnDisplay(
         group.push(turn.items[nextIndex]);
         nextIndex++;
       }
-      appendProcessEntry({
+      appendFrontEntry({
         key: `${item.id}-activity`,
-        kind: "activity",
         element: (
           <ToolActivityTimeline
             key={`${item.id}-activity`}
@@ -7127,51 +7144,75 @@ function buildAssistantTurnDisplay(
       continue;
     }
 
+    // reasoning, context_compaction, error — render in the front
+    // content, in the order they arrived.
     const rendered = renderThreadItem(
       item,
       turn.status === "in_progress" && item.status === "in_progress",
     );
     if (rendered) {
-      appendProcessEntry({
+      appendFrontEntry({
         key: item.id,
-        kind: "activity",
         element: rendered,
       });
     }
   }
 
-  if (answerItems.length > 1 && finalAgentMessageID) {
-    const finalIndex = answerItems.findIndex(
-      (answer) => answer.item.id === finalAgentMessageID,
-    );
-    if (finalIndex > 0) {
-      const processAnswers = answerItems.splice(0, finalIndex);
-      for (const answer of processAnswers) {
-        appendProcessEntry({
-          key: `${answer.item.id}-answer-process`,
-          kind: "activity",
-          element: answer.element,
-        });
-      }
-    }
+  if (!sawAssistantWork) {
+    return undefined;
   }
-
-  const hasProcessContent =
-    processEntries.length > 0 || processCheckpoint !== undefined;
-  const hasAnswer = answerItems.length > 0;
-  const showProcessLane =
-    hasProcessContent ||
-    turn.status === "in_progress" ||
-    (sawAssistantWork && turn.status !== "completed");
-  if (!showProcessLane && !hasAnswer) {
+  if (frontEntries.length === 0 && finalAnswerItems.length === 0) {
     return undefined;
   }
 
+  const finalCount = finalAnswerItems.length;
+  const isInProgress = turn.status === "in_progress";
+  const isCompleted = turn.status === "completed";
+
+  let isBuggy = false;
+  let bugMessage: string | undefined;
+  if (isCompleted) {
+    if (finalCount === 0) {
+      // A turn with no text at all (only tool calls) is not a bug —
+      // sub-agents routinely complete a turn after making tool calls
+      // without ever speaking. A turn that *did* speak (commentary)
+      // but produced no final answer is a bug, because the model
+      // started a reply and then dropped it.
+      const hasCommentary = turn.items.some(
+        (item) =>
+          item.type === "agent_message" && item.phase === "commentary",
+      );
+      if (hasCommentary) {
+        isBuggy = true;
+        bugMessage = "这次请求没有产生最终回复";
+      }
+    } else if (finalCount > 1) {
+      isBuggy = true;
+      bugMessage = "这次请求产生了多个最终回复";
+    }
+  }
+
+  // The divider only makes sense when the body has exactly one entry
+  // and the turn shape is normal. in_progress never draws a divider
+  // (the body is still streaming), and the bug cases don't get a
+  // divider either (no single primary to anchor it under).
+  const showDivider = isCompleted && finalCount === 1 && !isBuggy;
+
+  // Front content default collapsed only in the "normal completed"
+  // case: in_progress forces expansion (the user wants to watch the
+  // work), bug cases force expansion (the user needs to see what went
+  // wrong), and completed + 0 final + no commentary is the pure-tool
+  // sub-agent case which the user typically wants to glance past.
+  const frontDefaultCollapsed =
+    isCompleted && finalCount <= 1 && !isBuggy;
+
   return {
-    processEntries,
-    processCheckpoint: hasAnswer ? undefined : processCheckpoint,
-    showProcessLane,
-    answerItems,
+    frontEntries,
+    finalAnswerItems,
+    isBuggy,
+    bugMessage,
+    showDivider,
+    frontDefaultCollapsed,
   };
 }
 
@@ -7182,239 +7223,65 @@ function AssistantTurnShell({
   turn: Turn;
   display: AssistantTurnDisplay;
 }): JSX.Element {
+  const hasFront = display.frontEntries.length > 0;
+  const hasBody = display.finalAnswerItems.length > 0;
+  const className = [
+    "assistant-turn-shell",
+    hasFront ? " has-front" : "",
+    hasBody ? " has-body" : "",
+    display.isBuggy ? " bug-turn" : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
   return (
-    <div
-      className={`assistant-turn-shell${display.showProcessLane ? " has-process-lane" : ""}${
-        display.answerItems.length > 0 ? " has-answer-lane" : ""
-      }`}
-    >
-      {display.showProcessLane ? (
-        <div className="assistant-turn-process-lane">
+    <div className={className}>
+      {hasFront ? (
+        <div className="assistant-turn-front">
           <TurnProcessGroup
             turn={turn}
-            entries={display.processEntries}
-            checkpoint={display.processCheckpoint}
-            autoCollapse={false}
+            entries={display.frontEntries}
+            defaultCollapsed={display.frontDefaultCollapsed}
             showTurnStatus
           />
         </div>
       ) : null}
-      <div className="assistant-turn-answer-lane">
-        {display.answerItems.map((answer) => (
+      {display.showDivider ? <div className="answer-divider" aria-hidden /> : null}
+      <div className="assistant-turn-final">
+        {display.finalAnswerItems.map((answer) => (
           <Fragment key={answer.item.id}>{answer.element}</Fragment>
         ))}
       </div>
+      {display.isBuggy && display.bugMessage ? (
+        <aside className="assistant-turn-bug-banner" role="alert">
+          <span className="assistant-turn-bug-icon" aria-hidden>
+            <Info size={15} />
+          </span>
+          <span className="assistant-turn-bug-copy">
+            <strong>回复异常</strong>
+            <span>{display.bugMessage}</span>
+          </span>
+        </aside>
+      ) : null}
     </div>
-  );
-}
-
-type TurnProcessCheckpointViewState = {
-  id: string;
-  currentText: string;
-  targetText: string;
-};
-
-const PROCESS_CHECKPOINT_PACE_MS = 24;
-const PROCESS_CHECKPOINT_SNAP = /[\s.,!?;:)\]，。！？；：、）】]/;
-
-function processCheckpointStep(remaining: number): number {
-  if (remaining <= 12) {
-    return 2;
-  }
-  if (remaining <= 48) {
-    return 4;
-  }
-  if (remaining <= 96) {
-    return 8;
-  }
-  return Math.min(24, Math.ceil(remaining / 8));
-}
-
-function nextProcessCheckpointIndex(text: string, start: number): number {
-  const end = Math.min(
-    text.length,
-    start + processCheckpointStep(text.length - start),
-  );
-  const max = Math.min(text.length, end + 8);
-  for (let index = end; index < max; index++) {
-    if (PROCESS_CHECKPOINT_SNAP.test(text[index] ?? "")) {
-      return index + 1;
-    }
-  }
-  return end;
-}
-
-function initialProcessCheckpointText(text: string, live: boolean): string {
-  if (!live || text.length === 0) {
-    return text;
-  }
-  return text.slice(0, nextProcessCheckpointIndex(text, 0));
-}
-
-function TurnProcessCheckpointText({
-  checkpoint,
-  live,
-  handoff = false,
-}: {
-  checkpoint: TurnProcessCheckpoint;
-  live: boolean;
-  handoff?: boolean;
-}): JSX.Element {
-  const [state, setState] = useState<TurnProcessCheckpointViewState>(() => ({
-    id: checkpoint.key,
-    currentText: initialProcessCheckpointText(checkpoint.text, live),
-    targetText: checkpoint.text,
-  }));
-  const stateRef = useRef(state);
-  const paceTimeoutRef = useRef<number | undefined>(undefined);
-  const prefersReducedMotion = useReducedMotion();
-
-  stateRef.current = state;
-
-  const clearPace = useCallback((): void => {
-    if (paceTimeoutRef.current === undefined) {
-      return;
-    }
-    window.clearTimeout(paceTimeoutRef.current);
-    paceTimeoutRef.current = undefined;
-  }, []);
-
-  const schedulePace = useCallback((): void => {
-    if (prefersReducedMotion) {
-      // Reduced motion: skip pacing and reveal the full target at once.
-      setState((current) =>
-        current.currentText === current.targetText
-          ? current
-          : { ...current, currentText: current.targetText },
-      );
-      return;
-    }
-    if (!live || paceTimeoutRef.current !== undefined) {
-      return;
-    }
-    paceTimeoutRef.current = window.setTimeout(() => {
-      paceTimeoutRef.current = undefined;
-      setState((current) => {
-        if (!live) {
-          return current;
-        }
-        if (!current.targetText.startsWith(current.currentText)) {
-          return { ...current, currentText: current.targetText };
-        }
-        if (current.currentText.length >= current.targetText.length) {
-          return current;
-        }
-        const nextIndex = nextProcessCheckpointIndex(
-          current.targetText,
-          current.currentText.length,
-        );
-        return {
-          ...current,
-          currentText: current.targetText.slice(0, nextIndex),
-        };
-      });
-    }, PROCESS_CHECKPOINT_PACE_MS);
-  }, [live, prefersReducedMotion]);
-
-  useLayoutEffect(() => {
-    clearPace();
-    setState((current) => {
-      if (checkpoint.key !== current.id) {
-        return {
-          id: checkpoint.key,
-          currentText: initialProcessCheckpointText(checkpoint.text, live),
-          targetText: checkpoint.text,
-        };
-      }
-      if (checkpoint.text === current.targetText) {
-        return current;
-      }
-      if (
-        !live ||
-        !checkpoint.text.startsWith(current.currentText) ||
-        checkpoint.text.length < current.currentText.length
-      ) {
-        return {
-          ...current,
-          currentText: checkpoint.text,
-          targetText: checkpoint.text,
-        };
-      }
-      return { ...current, targetText: checkpoint.text };
-    });
-  }, [checkpoint.key, checkpoint.text, clearPace, live]);
-
-  useEffect(() => {
-    if (!live) {
-      clearPace();
-      setState((current) =>
-        current.currentText === current.targetText
-          ? current
-          : { ...current, currentText: current.targetText },
-      );
-      return;
-    }
-    if (
-      state.targetText.startsWith(state.currentText) &&
-      state.currentText.length < state.targetText.length
-    ) {
-      schedulePace();
-    }
-  }, [clearPace, live, schedulePace, state.currentText, state.targetText]);
-
-  useEffect(() => {
-    return () => {
-      clearPace();
-    };
-  }, [clearPace]);
-
-  if (handoff) {
-    // Handoff: the previous turn is leaving; render a quiet placeholder
-    // for a moment so the next turn's checkpoint can appear in place
-    // without a hard swap.
-    return <span className="turn-process-checkpoint-spacer" aria-hidden />;
-  }
-
-  const isLive = live && state.currentText.length < state.targetText.length;
-  const trailingSpace = state.currentText.length === 0;
-  const visible = trailingSpace ? "\u00A0" : state.currentText;
-
-  return (
-    <span
-      className="turn-process-checkpoint"
-      data-live={isLive ? "true" : "false"}
-      title={checkpoint.text}
-    >
-      <span
-        className="turn-process-checkpoint-line"
-        aria-label={checkpoint.text}
-      >
-        <span className="turn-process-checkpoint-text">{visible}</span>
-        {isLive ? (
-          <span className="turn-process-checkpoint-cursor" aria-hidden />
-        ) : null}
-      </span>
-    </span>
   );
 }
 
 function TurnProcessGroup({
   turn,
   entries,
-  checkpoint,
-  autoCollapse,
+  defaultCollapsed,
   showTurnStatus,
 }: {
   turn: Turn;
   entries: TurnProcessEntry[];
-  checkpoint?: TurnProcessCheckpoint;
-  autoCollapse: boolean;
+  defaultCollapsed: boolean;
   showTurnStatus: boolean;
 }): JSX.Element {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(!defaultCollapsed);
   const detailsID = `${turn.id}-process-details`;
   const hasDetails = entries.length > 0;
-  const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${autoCollapse ? " auto-collapsed" : ""}${
+  const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${
     hasDetails ? "" : " no-details"
   }`;
   const processCount = entries.reduce(
@@ -7458,12 +7325,6 @@ function TurnProcessGroup({
             </span>
           ))}
         </span>
-        {checkpoint ? (
-          <TurnProcessCheckpointText
-            checkpoint={checkpoint}
-            live={turn.status === "in_progress" && !autoCollapse}
-          />
-        ) : null}
       </span>
       {hasDetails ? (
         <ChevronDown className="turn-process-chevron" size={15} />
@@ -7498,14 +7359,6 @@ function TurnProcessGroup({
           {entries.map((entry) => entry.element)}
         </CollapsibleDetails>
       ) : null}
-    </div>
-  );
-}
-
-function TurnProcessCheckpointLine({ text }: { text: string }): JSX.Element {
-  return (
-    <div className="turn-process-checkpoint-line">
-      <span>{text}</span>
     </div>
   );
 }
@@ -8577,35 +8430,4 @@ function parseTurnTimestampMs(value: string | null | undefined): number {
     return NaN;
   }
   return Date.parse(value);
-}
-
-/**
- * Returns `true` when the user has asked the OS to reduce motion. The
- * value is computed once on mount and updated when the user toggles the
- * system setting, so components can consult it synchronously in render.
- */
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState<boolean>(() => {
-    if (typeof window === "undefined" || !window.matchMedia) {
-      return false;
-    }
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) {
-      return undefined;
-    }
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (): void => {
-      setReduced(media.matches);
-    };
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", onChange);
-      return () => media.removeEventListener("change", onChange);
-    }
-    // Legacy Safari path.
-    media.addListener(onChange);
-    return () => media.removeListener(onChange);
-  }, []);
-  return reduced;
 }
