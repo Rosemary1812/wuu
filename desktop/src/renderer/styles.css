@@ -1518,11 +1518,11 @@ button:disabled {
   --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;
   --conversation-dialog-width: 920px;
-  --conversation-message-font-size: 15px;
-  --conversation-prose-line-height: 1.75;
-  --conversation-prose-block-gap: 16px;
-  --conversation-meta-line-height: 1.55;
-  --conversation-control-line-height: 1.45;
+  --conversation-message-font-size: 16px;
+  --conversation-prose-line-height: 1.85;
+  --conversation-prose-block-gap: 20px;
+  --conversation-meta-line-height: 1.6;
+  --conversation-control-line-height: 1.5;
   --conversation-shell-gap: 14px;
   --conversation-process-gap: 8px;
   --conversation-process-answer-gap: 10px;
