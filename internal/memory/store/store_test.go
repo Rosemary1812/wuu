@@ -72,14 +72,6 @@ func TestSentinelErrors_AreDistinct(t *testing.T) {
 	}
 }
 
-// TestFileProvider_SatisfiesProvider is a static guarantee. The
-// compile-time check at the bottom of store.go is the real test; this
-// exists so the constraint is also visible to a reader of the test
-// file.
-func TestFileProvider_SatisfiesProvider(t *testing.T) {
-	var _ Provider = (*FileProvider)(nil)
-}
-
 func TestFileProvider_Store_AssignsIDAndPersists(t *testing.T) {
 	dir := t.TempDir()
 	fp, err := NewFileProvider(dir)

@@ -86,22 +86,4 @@ describe("ThreadRowTitle", () => {
     expect(container.querySelector(".thread-row-title")?.getAttribute("data-title-swap")).toBe("3");
   });
 
-  it("uses the swap count as the React key so each swap remounts the span", () => {
-    // Different keys on subsequent renders prove the remount strategy works.
-    render({ title: "alpha" });
-    const initialKey = (container.querySelector(".thread-row-title") as HTMLElement | null)?.getAttribute("data-title-swap") ?? null;
-    expect(initialKey).toBeNull();
-
-    act(() => {
-      root!.render(<ThreadRowTitle title="beta" />);
-    });
-    const firstSwapKey = (container.querySelector(".thread-row-title") as HTMLElement | null)?.getAttribute("data-title-swap");
-    expect(firstSwapKey).toBe("1");
-
-    act(() => {
-      root!.render(<ThreadRowTitle title="gamma" />);
-    });
-    const secondSwapKey = (container.querySelector(".thread-row-title") as HTMLElement | null)?.getAttribute("data-title-swap");
-    expect(secondSwapKey).toBe("2");
-  });
 });

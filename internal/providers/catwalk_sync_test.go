@@ -196,12 +196,3 @@ func TestCatwalkSync_StoreCacheFailureDoesNotCrash(t *testing.T) {
 		t.Fatal("expected in-memory data despite cache write failure")
 	}
 }
-
-func TestDefaultCatwalkCachePath_NonEmpty(t *testing.T) {
-	// Smoke test: should yield SOME path, even if HOME isn't set
-	// (testing environment usually has it).
-	if got := DefaultCatwalkCachePath(); got == "" {
-		// Acceptable: no home dir resolvable. Don't fail.
-		t.Skip("no home directory resolvable in this environment")
-	}
-}
