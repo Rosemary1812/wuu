@@ -31,6 +31,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
+	"github.com/blueberrycongee/wuu/internal/version"
 )
 
 var errShutdown = errors.New("app-server shutdown requested")
@@ -464,14 +465,21 @@ func (s *Server) handleClientResponse(raw []byte) error {
 }
 
 func (s *Server) handleInitialize(req Request) error {
+	core := version.Info()
 	return s.writeResponse(req.ID, InitializeResult{
 		ProtocolVersion: ProtocolVersion,
-		Provider:        s.rt.ProviderName,
-		Model:           s.rt.Model,
-		Effort:          s.currentDisplayEffort(),
-		Variant:         s.currentVariant(),
-		WorkspaceRoot:   s.rt.RootDir,
-		Providers:       s.providerSummaries(),
+		Core: CoreBuildInfo{
+			Version: core.Version,
+			Commit:  core.Commit,
+			Date:    core.Date,
+			Dirty:   core.Dirty,
+		},
+		Provider:      s.rt.ProviderName,
+		Model:         s.rt.Model,
+		Effort:        s.currentDisplayEffort(),
+		Variant:       s.currentVariant(),
+		WorkspaceRoot: s.rt.RootDir,
+		Providers:     s.providerSummaries(),
 	}, nil)
 }
 

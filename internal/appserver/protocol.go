@@ -82,8 +82,20 @@ type Notification struct {
 	Params any    `json:"params,omitempty"`
 }
 
+// CoreBuildInfo mirrors the fields of version.BuildInfo that the desktop
+// needs to render the build identity of the wuu app-server. Kept as a
+// separate struct (rather than embedding version.BuildInfo) so the wire
+// schema stays stable even if the version package evolves.
+type CoreBuildInfo struct {
+	Version string `json:"version,omitempty"`
+	Commit  string `json:"commit,omitempty"`
+	Date    string `json:"date,omitempty"`
+	Dirty   bool   `json:"dirty,omitempty"`
+}
+
 type InitializeResult struct {
 	ProtocolVersion string            `json:"protocol_version"`
+	Core            CoreBuildInfo     `json:"core"`
 	Provider        string            `json:"provider"`
 	Model           string            `json:"model"`
 	Effort          string            `json:"effort,omitempty"`

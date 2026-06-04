@@ -132,6 +132,12 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	if initResult.ProtocolVersion != ProtocolVersion {
 		t.Fatalf("unexpected protocol version: %+v", initResult)
 	}
+	if initResult.Core.Version == "" {
+		t.Fatalf("expected core.version in initialize result, got %+v", initResult)
+	}
+	if initResult.Core.Commit == "" {
+		t.Fatalf("expected core.commit in initialize result, got %+v", initResult)
+	}
 	if initResult.Model != "fake-model" || initResult.Provider != "fake-provider" {
 		t.Fatalf("unexpected initialize result: %+v", initResult)
 	}
