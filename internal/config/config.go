@@ -14,6 +14,8 @@ const (
 	localPrimaryConfig   = ".wuu.json"
 	localFallbackConfig  = "wuu.json"
 	globalConfigRelative = ".config/wuu/config.json"
+
+	DefaultAgentName = "default"
 )
 
 // ErrConfigNotFound is returned by LoadFrom when none of the candidate
@@ -145,6 +147,9 @@ type ProviderModelConfig struct {
 
 // AgentConfig controls behavior of the local tool loop.
 type AgentConfig struct {
+	// Name identifies the agent profile. Profile-scoped state such as
+	// durable memory is shared across workspaces for the same agent name.
+	Name             string  `json:"name,omitempty"`
 	MaxSteps         int     `json:"max_steps"`
 	MaxContextTokens int     `json:"max_context_tokens"`
 	Temperature      float64 `json:"temperature"`
@@ -446,6 +451,7 @@ func Default() Config {
 			},
 		},
 		Agent: AgentConfig{
+			Name: DefaultAgentName,
 			// 0 = unlimited. Aligned with Claude Code, which has no
 			// default step cap; the model decides when to stop. Users
 			// who want a runaway safety net can set this explicitly.
@@ -511,6 +517,13 @@ func (a AgentConfig) UserSystemPrompt() string {
 		parts = append(parts, s)
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func (a AgentConfig) ProfileName() string {
+	if name := strings.TrimSpace(a.Name); name != "" {
+		return name
+	}
+	return DefaultAgentName
 }
 
 func isCodexSubscriptionProvider(providerType string) bool {
@@ -673,6 +686,9 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 }
 
 func applyDefaults(cfg *Config) {
+	if strings.TrimSpace(cfg.Agent.Name) == "" {
+		cfg.Agent.Name = DefaultAgentName
+	}
 	// max_steps = 0 means unlimited (no step cap, the model decides
 	// when to stop). Aligned with Claude Code's default behavior.
 	// Users who set an explicit positive value get a hard cap.

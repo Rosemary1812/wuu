@@ -94,6 +94,10 @@ func NewSession(opts Options) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace state directory: %w", err)
 	}
+	profileStateDir, err := statepath.ProfileDir(wuuHome, cfg.Agent.ProfileName())
+	if err != nil {
+		return nil, fmt.Errorf("resolve profile state directory: %w", err)
+	}
 
 	providerCfg, resolvedName, err := cfg.ResolveProvider(opts.ProviderName)
 	if err != nil {
@@ -133,11 +137,12 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetSkills(discoveredSkills)
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.ConfigureEditToolsForModel(toolModeModel)
-		// Attach the durable memory store. The provider is best-effort: if
-		// the workspace state directory is not writable we continue without
-		// memory rather than failing the whole session, because the memory
-		// tools already degrade gracefully when Env.Memory is nil.
-		if memProvider, memErr := memstore.NewFileProvider(statepath.MemoryDir(workspaceStateDir)); memErr == nil {
+		// Attach the durable profile memory store. The provider is
+		// best-effort: if the profile state directory is not writable we
+		// continue without memory rather than failing the whole session,
+		// because the memory tools already degrade gracefully when
+		// Env.Memory is nil.
+		if memProvider, memErr := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileStateDir)); memErr == nil {
 			kit.SetMemory(memProvider)
 		}
 		kit.SetOnFileChanged(func(absPath string) {

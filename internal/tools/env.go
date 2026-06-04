@@ -85,9 +85,9 @@ type Env struct {
 	OnPortsReported func(ports []int)
 
 	// Memory is the optional LLM-writable memory backend. When nil,
-	// the memory_* tools report that memory is not configured. The
+	// read_memory/write_memory report that memory is not configured. The
 	// constructor that builds Env is responsible for wiring a real
-	// Provider (typically a *store.FileProvider rooted under StateDir).
+	// Provider (typically a *store.FileProvider rooted under profile state).
 	// Memory tools may be registered even when this is nil; they will
 	// return a clear error at execution time instead of panicking.
 	Memory store.Provider

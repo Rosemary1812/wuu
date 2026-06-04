@@ -104,8 +104,42 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	if cfg.Agent.SystemPrompt != "" {
 		t.Fatalf("expected config system_prompt to remain user-owned, got %q", cfg.Agent.SystemPrompt)
 	}
+	if cfg.Agent.ProfileName() != DefaultAgentName {
+		t.Fatalf("expected default agent name %q, got %q", DefaultAgentName, cfg.Agent.ProfileName())
+	}
 	if DefaultSystemPrompt() == "" {
 		t.Fatal("expected built-in default system prompt")
+	}
+}
+
+func TestLoadFrom_AgentName(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "model": "gpt-4.1"
+    }
+  },
+  "agent": {
+    "name": "Mia"
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if cfg.Agent.ProfileName() != "Mia" {
+		t.Fatalf("ProfileName() = %q, want Mia", cfg.Agent.ProfileName())
 	}
 }
 

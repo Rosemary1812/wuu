@@ -72,6 +72,23 @@ func WorkspaceDir(wuuHome, rootDir string) (string, error) {
 	return filepath.Join(wuuHome, "workspaces", slug+"-"+hex.EncodeToString(sum[:])[:16]), nil
 }
 
+// ProfileDir returns a stable user-level state directory for one agent profile.
+func ProfileDir(wuuHome, agentName string) (string, error) {
+	if strings.TrimSpace(wuuHome) == "" {
+		return "", errors.New("wuu home is required")
+	}
+	name := strings.TrimSpace(agentName)
+	if name == "" {
+		name = "default"
+	}
+	sum := sha256.Sum256([]byte(name))
+	slug := sanitizeSlug(name)
+	if slug == "" {
+		slug = "profile"
+	}
+	return filepath.Join(wuuHome, "profiles", slug+"-"+hex.EncodeToString(sum[:])[:16]), nil
+}
+
 // RuntimeDir returns the workspace-scoped process runtime directory.
 func RuntimeDir(workspaceStateDir string) string {
 	return filepath.Join(workspaceStateDir, "runtime")
@@ -102,13 +119,13 @@ func ScheduledTasksLockPath(workspaceStateDir string) string {
 	return filepath.Join(workspaceStateDir, "scheduled_tasks.lock")
 }
 
-// MemoryDir returns the workspace-scoped directory for the durable memory
+// ProfileMemoryDir returns the profile-scoped directory for the durable memory
 // store. The store keeps an append-only JSONL log (entries.jsonl) plus its
 // own lockfile inside this directory; the directory is created lazily by
 // the store on first write, so it is safe to read here even before any
 // memory has been written.
-func MemoryDir(workspaceStateDir string) string {
-	return filepath.Join(workspaceStateDir, "memory")
+func ProfileMemoryDir(profileStateDir string) string {
+	return filepath.Join(profileStateDir, "memory")
 }
 
 func sanitizeSlug(input string) string {

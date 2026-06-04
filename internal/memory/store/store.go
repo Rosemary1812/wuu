@@ -7,8 +7,8 @@
 // the model can read from and write to during a session.
 //
 // The first and only supported backend is file-backed: entries live as
-// a JSONL log under a workspace-local directory, with an in-memory
-// index for fast recall. New backends (e.g. a remote memory service)
+// a JSONL log under a profile-local directory, with an in-memory index
+// for fast recall. New backends (e.g. a remote memory service)
 // implement the Provider interface and slot in via Env.
 package store
 
