@@ -15,6 +15,7 @@ package store
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -126,70 +127,37 @@ type Provider interface {
 	Delete(ctx context.Context, id ID) error
 }
 
-// FileProvider is the in-tree, file-backed Provider. The zero value
-// is not usable; construct one with NewFileProvider.
-//
-// In this package the type is a stub: it satisfies the Provider
-// interface so callers can wire it up, but every method returns
-// ErrNotImplemented. The real read/write/search semantics land in
-// subsequent commits.
+// FileProvider is the in-tree, file-backed Provider. The real
+// read/write/search/delete semantics live in file.go; this struct
+// declaration is here so both files can extend it with methods.
 type FileProvider struct {
 	// dir is the on-disk root for memory state. It is created by
-	// NewFileProvider if it does not yet exist.
+	// NewFileProvider (in file.go) if it does not yet exist.
 	dir string
-}
 
-// NewFileProvider creates a FileProvider rooted at dir. The directory
-// is created if missing. Passing an empty dir is an error; the
-// caller is expected to compute a path (typically under the workspace
-// state directory) before calling.
-func NewFileProvider(dir string) (*FileProvider, error) {
-	// We intentionally do not create the directory here yet — that
-	// will move into the real implementation. For now we only
-	// validate the argument so the constructor is meaningful.
-	if dir == "" {
-		return nil, errors.New("memory store: dir is required")
-	}
-	return &FileProvider{dir: dir}, nil
-}
+	// mu serializes all in-memory state and log writes. The Provider
+	// is safe for concurrent use from multiple goroutines within a
+	// single process. It does NOT coordinate across processes; if
+	// two wuu processes share a directory they will race on the log.
+	mu sync.Mutex
 
-// Dir returns the on-disk root. It is exposed for diagnostics and
-// tests; production code should not depend on the layout.
-func (f *FileProvider) Dir() string { return f.dir }
+	// entries is the in-memory index. It includes tombstoned
+	// entries; callers must filter via tombstones.
+	entries map[ID]*Entry
+
+	// tombstones tracks IDs that have been deleted. They are
+	// preserved in the log for crash safety and audit.
+	tombstones map[ID]struct{}
+
+	// loaded reports whether the on-disk log has been replayed into
+	// memory at least once. New writes call loadLocked on demand
+	// so a fresh Provider with no prior reads still works.
+	loaded bool
+}
 
 // Name reports the backend identifier.
 func (f *FileProvider) Name() string { return "file" }
 
-// Available is a stub that reports the backend is not yet wired up.
-// Subsequent commits will replace this with a real readiness check
-// (e.g. "index is loaded and dir is writable").
-func (f *FileProvider) Available(_ context.Context) error {
-	return ErrNotImplemented
-}
-
-// Store is a stub; it does not persist anything yet.
-func (f *FileProvider) Store(_ context.Context, _ Entry) (ID, error) {
-	return "", ErrNotImplemented
-}
-
-// Recall is a stub; it always returns an empty slice and
-// ErrNotImplemented.
-func (f *FileProvider) Recall(_ context.Context, _ RecallQuery) ([]Entry, error) {
-	return nil, ErrNotImplemented
-}
-
-// Search is a stub; it always returns an empty slice and
-// ErrNotImplemented.
-func (f *FileProvider) Search(_ context.Context, _ SearchQuery) ([]Entry, error) {
-	return nil, ErrNotImplemented
-}
-
-// Delete is a stub; it does not touch disk yet.
-func (f *FileProvider) Delete(_ context.Context, _ ID) error {
-	return ErrNotImplemented
-}
-
-// Compile-time check that FileProvider satisfies Provider. If the
-// interface drifts, this file will fail to build, which is the
-// correct signal.
-var _ Provider = (*FileProvider)(nil)
+// Dir returns the on-disk root. It is exposed for diagnostics and
+// tests; production code should not depend on the layout.
+func (f *FileProvider) Dir() string { return f.dir }
