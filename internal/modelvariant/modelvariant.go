@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 )
 
 type Variant struct {
@@ -133,62 +134,11 @@ func EffortIDs(variants []Variant) []string {
 }
 
 func CloneOptions(options map[string]any) map[string]any {
-	if len(options) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(options))
-	for key, value := range options {
-		if key == "disabled" {
-			continue
-		}
-		out[key] = cloneValue(value)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return provideroptions.CloneWithoutDisabled(options)
 }
 
 func mergeOptions(base, override map[string]any) map[string]any {
-	out := CloneOptions(base)
-	if len(override) == 0 {
-		return out
-	}
-	if out == nil {
-		out = make(map[string]any, len(override))
-	}
-	mergeOptionMap(out, override)
-	return out
-}
-
-func mergeOptionMap(dst, src map[string]any) {
-	for key, value := range src {
-		if key == "disabled" {
-			continue
-		}
-		if nested, ok := value.(map[string]any); ok {
-			if existing, ok := dst[key].(map[string]any); ok {
-				mergeOptionMap(existing, nested)
-				continue
-			}
-		}
-		dst[key] = cloneValue(value)
-	}
-}
-
-func cloneValue(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		return CloneOptions(typed)
-	case []any:
-		out := make([]any, len(typed))
-		for i, item := range typed {
-			out[i] = cloneValue(item)
-		}
-		return out
-	default:
-		return value
-	}
+	return provideroptions.MergeWithoutDisabled(base, override)
 }
 
 func variantsFromOptionMap(variants map[string]map[string]any) []Variant {

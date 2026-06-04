@@ -24,7 +24,18 @@ func (t *StartProcessTool) IsConcurrencySafe() bool { return false }
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "start_process", Description: "Start a managed background OS process in the workspace.",
-		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "cwd": map[string]any{"type": "string"}, "owner_kind": map[string]any{"type": "string", "enum": []string{"main_agent", "subagent"}}, "owner_id": map[string]any{"type": "string"}, "lifecycle": map[string]any{"type": "string", "enum": []string{"session", "managed"}}, "tty": map[string]any{"type": "boolean", "description": "Run the command inside a pseudo-terminal. Use for commands that require terminal semantics."}}, "required": []string{"command", "owner_kind"}},
+		InputSchema: objectSchema(
+			map[string]any{
+				"command":    stringSchema(""),
+				"cwd":        stringSchema(""),
+				"owner_kind": stringEnumSchema("main_agent", "subagent"),
+				"owner_id":   stringSchema(""),
+				"lifecycle":  stringEnumSchema("session", "managed"),
+				"tty":        booleanSchema("Run the command inside a pseudo-terminal. Use for commands that require terminal semantics."),
+			},
+			"command",
+			"owner_kind",
+		),
 	}
 }
 
@@ -67,7 +78,7 @@ func (t *ListProcessesTool) IsConcurrencySafe() bool { return true }
 func (t *ListProcessesTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "list_processes", Description: "List wuu-managed background OS processes.",
-		InputSchema: map[string]any{"type": "object"},
+		InputSchema: objectSchema(nil),
 	}
 }
 
@@ -98,7 +109,12 @@ func (t *StopProcessTool) IsConcurrencySafe() bool { return true }
 func (t *StopProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "stop_process", Description: "Stop a background process by process group, graceful then kill.",
-		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"process_id": map[string]any{"type": "string"}}, "required": []string{"process_id"}},
+		InputSchema: objectSchema(
+			map[string]any{
+				"process_id": stringSchema(""),
+			},
+			"process_id",
+		),
 	}
 }
 
@@ -138,16 +154,15 @@ func (t *ReadProcessOutputTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "read_process_output",
 		Description: "Read output from a managed background process log. Use offset_bytes plus wait_ms to yield until new output is available, then pass the returned end_offset in the next call for incremental polling.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"process_id":   map[string]any{"type": "string", "description": "Managed process id returned by start_process."},
-				"max_bytes":    map[string]any{"type": "integer", "description": "Maximum bytes to return. Default 32768."},
-				"offset_bytes": map[string]any{"type": "integer", "description": "Optional byte offset to read from. Use the previous end_offset to read only new output."},
-				"wait_ms":      map[string]any{"type": "integer", "description": "Optional maximum time to wait for output beyond offset_bytes before returning."},
+		InputSchema: objectSchema(
+			map[string]any{
+				"process_id":   stringSchema("Managed process id returned by start_process."),
+				"max_bytes":    integerSchema("Maximum bytes to return. Default 32768."),
+				"offset_bytes": integerSchema("Optional byte offset to read from. Use the previous end_offset to read only new output."),
+				"wait_ms":      integerSchema("Optional maximum time to wait for output beyond offset_bytes before returning."),
 			},
-			"required": []string{"process_id"},
-		},
+			"process_id",
+		),
 	}
 }
 
@@ -204,14 +219,14 @@ func (t *WriteStdinTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "write_stdin",
 		Description: "Write text to stdin for a running managed background process.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"process_id": map[string]any{"type": "string", "description": "Managed process id returned by start_process."},
-				"input":      map[string]any{"type": "string", "description": "Text to write to stdin. Include a trailing newline when the process is waiting for a line."},
+		InputSchema: objectSchema(
+			map[string]any{
+				"process_id": stringSchema("Managed process id returned by start_process."),
+				"input":      stringSchema("Text to write to stdin. Include a trailing newline when the process is waiting for a line."),
 			},
-			"required": []string{"process_id", "input"},
-		},
+			"process_id",
+			"input",
+		),
 	}
 }
 

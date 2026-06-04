@@ -1,0 +1,460 @@
+import { app } from "electron";
+import {
+  spawn as spawnChild,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import type {
+  AppServerNotification,
+  AppServerRequest,
+  AppServerResponse,
+  RuntimeContext,
+  ServerEvent,
+} from "../shared/protocol";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MAX_APP_SERVER_CLIENTS = 3;
+
+type PendingRequest = {
+  method: string;
+  params?: unknown;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+};
+
+type AppServerClientEvent =
+  | { kind: "notification"; message: AppServerNotification }
+  | { kind: "server-request"; message: Required<AppServerRequest> }
+  | { kind: "server-error"; message: string }
+  | { kind: "server-exit"; code: number | null };
+
+type ServerRequestRoute = {
+  client: AppServerClient;
+  serverID: string;
+};
+
+type WuuCommand = {
+  command: string;
+  args: string[];
+  cwd: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export class AppServerClientPool {
+  private clients = new Map<string, AppServerClient>();
+  private nextServerRequestRouteID = 1;
+  private serverRequestRoutes = new Map<string, ServerRequestRoute>();
+
+  constructor(
+    private readonly getRuntimeContext: () => RuntimeContext,
+    private readonly getActiveWorkdir: () => string | undefined,
+    private readonly emitToRenderer: (event: ServerEvent) => void,
+  ) {}
+
+  request<T>(method: string, params?: unknown): Promise<T> {
+    return this.client().request<T>(method, params);
+  }
+
+  respondToServerRequest(id: string, result: unknown): void {
+    const route = this.serverRequestRoutes.get(id);
+    if (!route) {
+      throw new Error("server request is no longer active");
+    }
+    this.serverRequestRoutes.delete(id);
+    route.client.respond(route.serverID, result);
+  }
+
+  rejectServerRequest(id: string, message: string): void {
+    const route = this.serverRequestRoutes.get(id);
+    if (!route) {
+      throw new Error("server request is no longer active");
+    }
+    this.serverRequestRoutes.delete(id);
+    route.client.reject(route.serverID, message);
+  }
+
+  shutdown(): void {
+    for (const client of this.clients.values()) {
+      client.dispose();
+    }
+    this.clients.clear();
+    this.serverRequestRoutes.clear();
+  }
+
+  private client(): AppServerClient {
+    const context = this.getRuntimeContext();
+    const workdir = resolve(context.cwd);
+    let client = this.clients.get(workdir);
+    if (!client) {
+      client = new AppServerClient(
+        workdir,
+        (source, event) => this.emitServerEvent(source, event),
+        () => this.evictIdleClients(),
+      );
+      this.clients.set(workdir, client);
+    }
+    client.touch();
+    this.evictIdleClients();
+    return client;
+  }
+
+  private emitServerEvent(
+    client: AppServerClient,
+    event: AppServerClientEvent,
+  ): void {
+    this.emitToRenderer(this.routeServerEvent(client, event));
+  }
+
+  private routeServerEvent(
+    client: AppServerClient,
+    event: AppServerClientEvent,
+  ): ServerEvent {
+    if (event.kind !== "server-request") {
+      return { ...event, workdir: client.workdir };
+    }
+    const publicID = `server-request-${this.nextServerRequestRouteID++}`;
+    this.serverRequestRoutes.set(publicID, {
+      client,
+      serverID: event.message.id,
+    });
+    return {
+      ...event,
+      workdir: client.workdir,
+      message: {
+        ...event.message,
+        id: publicID,
+      },
+    };
+  }
+
+  private evictIdleClients(): void {
+    if (this.clients.size <= MAX_APP_SERVER_CLIENTS) {
+      return;
+    }
+    const activeWorkdir = this.getActiveWorkdir();
+    const idleClients = [...this.clients.values()]
+      .filter((client) => client.workdir !== activeWorkdir && !client.isBusy())
+      .sort((a, b) => a.lastUsed() - b.lastUsed());
+    for (const client of idleClients) {
+      if (this.clients.size <= MAX_APP_SERVER_CLIENTS) {
+        return;
+      }
+      this.disposeClient(client);
+    }
+  }
+
+  private disposeClient(client: AppServerClient): void {
+    this.clients.delete(client.workdir);
+    this.dropServerRequestRoutesForClient(client);
+    client.dispose();
+  }
+
+  private dropServerRequestRoutesForClient(client: AppServerClient): void {
+    for (const [id, route] of this.serverRequestRoutes) {
+      if (route.client === client) {
+        this.serverRequestRoutes.delete(id);
+      }
+    }
+  }
+}
+
+class AppServerClient {
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private pending = new Map<string, PendingRequest>();
+  private runningThreadIDs = new Set<string>();
+  private nextRequestID = 1;
+  private stdoutBuffer = "";
+  private disposing = false;
+  private lastUsedAt = Date.now();
+
+  constructor(
+    readonly workdir: string,
+    private readonly emit: (
+      client: AppServerClient,
+      event: AppServerClientEvent,
+    ) => void,
+    private readonly onStateChange: () => void,
+  ) {}
+
+  request<T>(method: string, params?: unknown): Promise<T> {
+    this.touch();
+    this.ensureStarted();
+    const id = `client-${this.nextRequestID++}`;
+    const payload: AppServerRequest = { id, method, params };
+    return new Promise<T>((resolveRequest, rejectRequest) => {
+      this.pending.set(JSON.stringify(id), {
+        method,
+        params,
+        resolve: (value) => resolveRequest(value as T),
+        reject: rejectRequest,
+      });
+      this.write(payload);
+    });
+  }
+
+  respond(id: string, result: unknown): void {
+    this.touch();
+    this.ensureStarted();
+    this.write({ id, result });
+  }
+
+  reject(id: string, message: string): void {
+    this.touch();
+    this.ensureStarted();
+    this.write({
+      id,
+      error: {
+        code: "error",
+        message,
+      },
+    });
+  }
+
+  shutdown(): void {
+    if (!this.child) {
+      return;
+    }
+    try {
+      this.write({ id: "shutdown", method: "shutdown" });
+    } catch {
+      this.child.kill();
+    }
+  }
+
+  dispose(): void {
+    this.disposing = true;
+    for (const pending of this.pending.values()) {
+      pending.reject(new Error("app-server stopped"));
+    }
+    this.pending.clear();
+    this.shutdown();
+  }
+
+  touch(): void {
+    this.lastUsedAt = Date.now();
+  }
+
+  lastUsed(): number {
+    return this.lastUsedAt;
+  }
+
+  isBusy(): boolean {
+    return this.pending.size > 0 || this.runningThreadIDs.size > 0;
+  }
+
+  private ensureStarted(): void {
+    if (this.child && !this.child.killed) {
+      return;
+    }
+    const command = resolveWuuCommand(this.workdir);
+    this.child = spawnChild(
+      command.command,
+      [...command.args, "app-server", "--workdir", this.workdir],
+      {
+        cwd: command.cwd,
+        env: process.env,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+
+    this.child.stdout.setEncoding("utf8");
+    this.child.stdout.on("data", (chunk: string) => this.readStdout(chunk));
+    this.child.stderr.setEncoding("utf8");
+    this.child.stderr.on("data", (chunk: string) => {
+      const message = chunk.trim();
+      if (message) {
+        this.emit(this, { kind: "server-error", message });
+      }
+    });
+    this.child.on("exit", (code) => {
+      for (const pending of this.pending.values()) {
+        pending.reject(new Error("app-server exited"));
+      }
+      this.pending.clear();
+      this.runningThreadIDs.clear();
+      if (!this.disposing) {
+        this.emit(this, { kind: "server-exit", code });
+      }
+      this.onStateChange();
+      this.child = null;
+    });
+  }
+
+  private write(payload: unknown): void {
+    if (!this.child) {
+      throw new Error("app-server is not running");
+    }
+    this.child.stdin.write(`${JSON.stringify(payload)}\n`);
+  }
+
+  private readStdout(chunk: string): void {
+    this.stdoutBuffer += chunk;
+    for (;;) {
+      const index = this.stdoutBuffer.indexOf("\n");
+      if (index < 0) {
+        return;
+      }
+      const line = this.stdoutBuffer.slice(0, index).trim();
+      this.stdoutBuffer = this.stdoutBuffer.slice(index + 1);
+      if (line) {
+        this.handleLine(line);
+      }
+    }
+  }
+
+  private handleLine(line: string): void {
+    let message:
+      | AppServerResponse
+      | AppServerNotification
+      | Required<AppServerRequest>;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      this.emit(this, {
+        kind: "server-error",
+        message: `Invalid app-server JSON: ${line}`,
+      });
+      return;
+    }
+
+    const maybeRequest = message as Required<AppServerRequest>;
+    if (maybeRequest.method && maybeRequest.id !== undefined) {
+      this.emit(this, { kind: "server-request", message: maybeRequest });
+      return;
+    }
+
+    const maybeNotification = message as AppServerNotification;
+    if (maybeNotification.method) {
+      this.updateRunningFromNotification(maybeNotification);
+      this.emit(this, { kind: "notification", message: maybeNotification });
+      this.onStateChange();
+      return;
+    }
+
+    const response = message as AppServerResponse;
+    const key = JSON.stringify(response.id);
+    const pending = this.pending.get(key);
+    if (!pending) {
+      return;
+    }
+    this.pending.delete(key);
+    this.updateRunningFromResponse(
+      pending.method,
+      pending.params,
+      response.result,
+    );
+    this.onStateChange();
+    if (response.error) {
+      pending.reject(new Error(response.error.message));
+      return;
+    }
+    pending.resolve(response.result);
+  }
+
+  private updateRunningFromNotification(message: AppServerNotification): void {
+    const params = isRecord(message.params) ? message.params : undefined;
+    const threadID =
+      typeof params?.thread_id === "string" ? params.thread_id : undefined;
+    switch (message.method) {
+      case "turn/started":
+        if (threadID) {
+          this.runningThreadIDs.add(threadID);
+        }
+        return;
+      case "turn/completed":
+      case "turn/error":
+        if (threadID) {
+          this.runningThreadIDs.delete(threadID);
+        }
+        return;
+      case "thread/started":
+      case "thread/resumed":
+        this.updateRunningFromThread(params?.thread);
+        return;
+    }
+  }
+
+  private updateRunningFromResponse(
+    method: string,
+    params: unknown,
+    result: unknown,
+  ): void {
+    if (
+      method === "thread/list" &&
+      isRecord(result) &&
+      Array.isArray(result.threads)
+    ) {
+      for (const thread of result.threads) {
+        this.updateRunningFromThread(thread);
+      }
+      return;
+    }
+    if (
+      (method === "thread/start" ||
+        method === "thread/resume" ||
+        method === "thread/fork") &&
+      isRecord(result)
+    ) {
+      this.updateRunningFromThread(result.thread);
+      return;
+    }
+    if (
+      method === "turn/start" &&
+      isRecord(params) &&
+      typeof params.thread_id === "string"
+    ) {
+      const turn = isRecord(result) ? result.turn : undefined;
+      if (isRecord(turn) && turn.status === "in_progress") {
+        this.runningThreadIDs.add(params.thread_id);
+      }
+    }
+  }
+
+  private updateRunningFromThread(value: unknown): void {
+    if (!isRecord(value) || typeof value.id !== "string") {
+      return;
+    }
+    if (value.status === "in_progress") {
+      this.runningThreadIDs.add(value.id);
+    } else {
+      this.runningThreadIDs.delete(value.id);
+    }
+  }
+}
+
+function resolveWuuCommand(workdir: string): WuuCommand {
+  if (process.env.WUU_BIN) {
+    return { command: process.env.WUU_BIN, args: [], cwd: workdir };
+  }
+  const sourceRoot = wuuSourceRoot();
+  if (sourceRoot && process.env.WUU_DESKTOP_USE_GO_RUN !== "0") {
+    return { command: "go", args: ["run", "./cmd/wuu"], cwd: sourceRoot };
+  }
+  for (const candidate of [join(workdir, "bin", "wuu"), join(workdir, "wuu")]) {
+    if (existsSync(candidate)) {
+      return { command: candidate, args: [], cwd: workdir };
+    }
+  }
+  return { command: "wuu", args: [], cwd: workdir };
+}
+
+function wuuSourceRoot(): string | undefined {
+  const candidates = [
+    process.env.WUU_SOURCE_ROOT,
+    process.cwd(),
+    resolve(process.cwd(), ".."),
+    app.getAppPath(),
+    resolve(app.getAppPath(), ".."),
+    resolve(__dirname, "..", "..", ".."),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find(
+    (candidate) =>
+      existsSync(join(candidate, "go.mod")) &&
+      existsSync(join(candidate, "cmd", "wuu")),
+  );
+}

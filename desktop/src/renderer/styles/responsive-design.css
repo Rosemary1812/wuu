@@ -1,0 +1,424 @@
+@media (max-width: 920px) {
+  html.swiss-international .empty-home-inner {
+    width: min(720px, calc(100% - 48px));
+    grid-template-columns: 1fr;
+  }
+
+  .conversation-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-add-menu,
+  .codex-runtime-menu,
+  .composer-project-menu,
+  .composer-context-menu,
+  .slash-command-menu,
+  .run-debug-panel,
+  .environment-panel,
+  .environment-side-menu,
+  .environment-dialog,
+  .view-switch-loading,
+  .thread-list,
+  .thread-list::before,
+  .thread-row,
+  .project-row.active::before {
+    animation: none;
+  }
+}
+
+.conversation-pane.environment-panel-reserved .scroll-region,
+.conversation-pane.environment-panel-reserved .dock-composer-wrap {
+  padding-right: var(--environment-panel-reserved-width);
+}
+
+@media (max-width: 1060px) {
+  .environment-panel {
+    right: 16px;
+  }
+
+  .environment-side-menu,
+  .environment-side-menu.mode,
+  .environment-side-menu.branch,
+  .environment-side-menu.sources {
+    top: calc(100% + 8px);
+    right: 0;
+    bottom: auto;
+    width: 100%;
+    transform-origin: top right;
+    --menu-enter-x: 0;
+    --menu-enter-y: -4px;
+  }
+
+  .run-debug-panel {
+    position: fixed;
+    top: 60px;
+    right: 16px;
+    width: min(460px, calc(100vw - 32px));
+  }
+}
+
+@media (max-width: 1120px) {
+  .composer-bar {
+    gap: 6px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .permission-menu-anchor {
+    max-width: 120px;
+    flex-basis: 92px;
+  }
+
+  .codex-runtime-anchor {
+    max-width: 136px;
+    flex: 0 1 124px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .permission-menu-anchor {
+    max-width: 56px;
+    flex: 0 0 56px;
+  }
+
+  .permission-chip {
+    justify-content: center;
+    padding: 0 6px;
+  }
+
+  .permission-chip span {
+    display: none;
+  }
+
+  .codex-runtime-anchor {
+    max-width: 112px;
+    flex-basis: 104px;
+  }
+
+  .codex-runtime-trigger {
+    gap: 5px;
+    padding: 0 7px;
+  }
+}
+
+.primary-button,
+.secondary-button {
+  height: 36px;
+  border-radius: 8px;
+  font-weight: var(--weight-semibold);
+  padding: 0 14px;
+}
+
+.primary-button {
+  background: #24282c;
+  color: #fff;
+}
+
+.secondary-button {
+  background: #f0f0ed;
+  color: #3c4145;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell,
+  .sidebar,
+  .sidebar::before,
+  .sidebar-content,
+  .side-panel-toggle-pane,
+  .titlebar,
+  .scroll-region,
+  .composer-wrap,
+  .dock-composer-wrap,
+  .workspace-right-panel,
+  .workspace-right-panel-resizer,
+  .workspace-bottom-panel,
+  .nav-item,
+  .project-row,
+  .project-row-new-thread,
+  .project-row-chevron,
+  .project-row svg:not(.project-row-chevron),
+  .thread-list-collapse,
+  .thread-row,
+  .thread-row::before,
+  .thread-row-actions,
+  .thread-row-action,
+  .thread-list-more,
+  .collapsible-details,
+  .turn-process-chevron,
+  .turn-process-details,
+  .activity-chevron,
+  .activity-details,
+  .activity-timeline-item,
+  .message-actions,
+  .message-copy-button,
+  .settings-button,
+  .settings-switch,
+  .settings-switch-thumb,
+  .conversation-search-overlay,
+  .conversation-search-dialog,
+  .conversation-search-result,
+  .conversation-search-clear,
+  .conversation-search-status button {
+    transition: none;
+  }
+
+  .conversation-search-overlay,
+  .conversation-search-dialog,
+  .conversation-search-status.loading .conversation-search-status-text::before,
+  .conversation-search-error,
+  .conversation-search-empty,
+  .activity-timeline-item {
+    animation: none;
+  }
+
+  .conversation-search-clear:hover,
+  .conversation-search-clear:focus-visible,
+  .conversation-search-status button:hover,
+  .conversation-search-status button:focus-visible,
+  .conversation-search-result:hover,
+  .conversation-search-result.selected,
+  .conversation-search-result:active,
+  .message-actions {
+    transform: none;
+  }
+
+  .workspace-browser-loading-dot {
+    animation: none;
+  }
+
+  .workspace-browser-url-form,
+  .workspace-browser-url-form:focus-within,
+  .workspace-browser-url-form:has(.workspace-browser-url-input.has-error) {
+    transition: none;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Design tokens panel ("design-tokens-panel.tsx")
+
+   A floating button + side drawer that lets the user live-tune the
+   conversation flow's CSS variables without editing the stylesheet.
+   The drawer applies values via JS to .conversation-pane, which
+   override the CSS defaults (specificity-wise, inline style > class
+   rule) until "恢复默认" is pressed or the localStorage override
+   is cleared.
+   -------------------------------------------------------------------------- */
+
+.design-tokens-toggle {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(31, 35, 40, 0.85);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition:
+    background 120ms ease,
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.design-tokens-toggle:hover,
+.design-tokens-toggle:focus-visible {
+  background: rgba(31, 35, 40, 1);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  outline: 0;
+}
+
+.design-tokens-toggle[aria-expanded="true"] {
+  background: #1f2328;
+}
+
+.design-tokens-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  background: #fff;
+  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.08);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1f2328;
+}
+
+.design-tokens-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+}
+
+.design-tokens-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #1f2328;
+}
+
+.design-tokens-title h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.design-tokens-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6f7478;
+  cursor: pointer;
+}
+
+.design-tokens-close:hover,
+.design-tokens-close:focus-visible {
+  background: rgba(31, 35, 40, 0.06);
+  color: #1f2328;
+  outline: 0;
+}
+
+.design-tokens-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 18px 8px;
+}
+
+.design-token {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(31, 35, 40, 0.05);
+}
+
+.design-token:last-child {
+  border-bottom: 0;
+}
+
+.design-token-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.design-token-name {
+  color: #1f2328;
+  font-weight: 500;
+}
+
+.design-token-value {
+  color: #6f7478;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+/* Range input — keep it minimal so it matches the rest of the
+   panel's restrained look. The track is a flat gray line; the
+   thumb is a solid dark circle, no extra chrome. */
+.design-tokens-body input[type="range"] {
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.design-tokens-body input[type="range"]:focus-visible {
+  outline: 0;
+}
+
+.design-tokens-body input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  background: rgba(31, 35, 40, 0.12);
+  border-radius: 2px;
+}
+
+.design-tokens-body input[type="range"]::-moz-range-track {
+  height: 3px;
+  background: rgba(31, 35, 40, 0.12);
+  border-radius: 2px;
+  border: 0;
+}
+
+.design-tokens-body input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  background: #1f2328;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.design-tokens-body input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #1f2328;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.design-tokens-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid rgba(31, 35, 40, 0.08);
+}
+
+.design-tokens-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(31, 35, 40, 0.12);
+  border-radius: 6px;
+  background: transparent;
+  color: #1f2328;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.design-tokens-reset:hover,
+.design-tokens-reset:focus-visible {
+  background: rgba(31, 35, 40, 0.04);
+  outline: 0;
+}
+
+.design-tokens-hint {
+  color: #a1a5a9;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

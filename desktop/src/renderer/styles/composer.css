@@ -1,0 +1,1730 @@
+.composer-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow: visible;
+  padding: 14px 0 22px;
+  background: #fff;
+}
+
+.dock-composer-wrap {
+  position: relative;
+  z-index: 5;
+  grid-column: 1;
+  grid-row: 2;
+  align-self: end;
+  background: transparent;
+  pointer-events: none;
+  transition: padding-right var(--environment-flow-motion-duration) var(--environment-panel-motion-easing);
+  transition-delay: 0ms;
+}
+
+.conversation-pane.environment-panel-reserved .dock-composer-wrap {
+  transition-delay: var(--environment-flow-motion-delay);
+}
+
+.dock-composer-wrap::before {
+  position: absolute;
+  inset: 0 var(--conversation-scrollbar-gutter) 0 0;
+  z-index: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 24px, #fff 100%);
+  content: "";
+  pointer-events: none;
+}
+
+.dock-composer-wrap .composer-stack {
+  position: relative;
+  z-index: 1;
+  transform: translateX(calc(var(--conversation-scrollbar-gutter) / -2));
+  pointer-events: auto;
+}
+
+.hero-composer-wrap {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+}
+
+.composer-stack {
+  display: flex;
+  width: min(
+    var(--conversation-content-width),
+    calc(100% - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline))
+  );
+  min-width: 0;
+  flex-direction: column;
+  margin: 0 auto;
+}
+
+.hero-composer-wrap .composer-stack {
+  width: min(var(--conversation-content-width), 100%);
+}
+
+.composer-shell {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(20, 24, 28, 0.08);
+  overflow: visible;
+}
+
+.composer-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 1px solid #dededb;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.hero-composer-wrap .composer-shell {
+  width: 100%;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(20, 24, 28, 0.08);
+}
+
+.composer {
+  width: 100%;
+  min-height: 132px;
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  overflow: visible;
+}
+
+.hero-composer-wrap .composer {
+  min-height: 136px;
+  border-radius: 22px 22px 0 0;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+.composer-image-attachment {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 auto;
+  border: 1px solid #d9d9d5;
+  border-radius: 12px;
+  background: #f7f7f5;
+  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.06);
+}
+
+.composer-image-attachment img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 11px;
+  object-fit: cover;
+}
+
+.composer-image-attachment button {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid #d7d7d2;
+  border-radius: 999px;
+  background: #fff;
+  color: #4d5358;
+  box-shadow: 0 2px 8px rgba(20, 24, 28, 0.12);
+}
+
+.composer-image-attachment button:hover {
+  background: #f2f3f0;
+  color: #1f2328;
+}
+
+.composer-queue-strip {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  gap: 6px;
+  padding: 0 22px;
+  transform: translateY(1px);
+}
+
+.composer-queue-items {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.composer-queue-item {
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #e3e3df;
+  border-radius: 20px 20px 8px 8px;
+  background: #fff;
+  color: #6e7276;
+  font-size: var(--font-body);
+  padding: 0 14px 0 16px;
+  box-shadow: 0 8px 22px rgba(20, 24, 28, 0.04);
+}
+
+.composer-queue-item.guide {
+  border-color: #eaded7;
+}
+
+.composer-queue-corner {
+  flex: 0 0 auto;
+  color: #9b9fa3;
+}
+
+.composer-queue-item strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-queue-guide {
+  display: inline-flex;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  color: #73777b;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+  padding: 0 8px;
+}
+
+.composer-queue-guide:hover {
+  background: #f3f4f1;
+  color: #34393d;
+}
+
+.composer-queue-guide.active {
+  color: #99521e;
+}
+
+.composer-queue-guide.active:hover {
+  background: transparent;
+}
+
+.composer-queue-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: currentColor;
+}
+
+.composer-queue-icon:hover {
+  background: rgba(31, 35, 40, 0.08);
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 76px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 15px 18px 6px;
+  color: #1f2328;
+  font-size: var(--font-body);
+}
+
+.hero-composer-wrap .composer textarea {
+  min-height: 82px;
+  padding: 20px 24px 6px;
+}
+
+.composer textarea::placeholder {
+  color: #a0a3a5;
+}
+
+.composer textarea:disabled {
+  color: #6d7471;
+  cursor: default;
+}
+
+.composer-bar {
+  display: flex;
+  min-width: 0;
+  height: 50px;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+  padding: 0 10px 10px;
+}
+
+.composer-tool-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: transparent;
+  color: #8a8e91;
+}
+
+.composer-tool-button:hover {
+  background: #f1f2ef;
+  color: #22262a;
+}
+
+.composer-tool-button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.composer-slash-button span {
+  transform: translateY(-1px);
+  font-size: 19px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.permission-menu-anchor {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 160px;
+  flex: 1 1 120px;
+}
+
+.permission-chip {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  align-items: center;
+  gap: 7px;
+  border-radius: 8px;
+  background: transparent;
+  color: #ef5b18;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.permission-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission-chip:hover,
+.permission-chip[aria-expanded="true"] {
+  background: #fff3ec;
+}
+
+.composer-spacer {
+  min-width: 0;
+  flex: 1 1 8px;
+}
+
+.status-label {
+  min-width: 0;
+  overflow: hidden;
+  color: #858a8e;
+  font-size: var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-action-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease,
+    opacity 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.composer-send-button {
+  background: #ef5b18;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(239, 91, 24, 0.22);
+}
+
+.composer-send-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.composer-send-button:hover {
+  background: #c94c13;
+  box-shadow: 0 2px 6px rgba(239, 91, 24, 0.28);
+}
+
+.composer-send-button:disabled {
+  cursor: default;
+  background: #d2d4cf;
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+}
+
+.composer-send-button:disabled:hover {
+  background: #d2d4cf;
+}
+
+.composer-stop-button {
+  border-radius: 12px;
+  background: #b42318;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(180, 35, 24, 0.22);
+}
+
+.composer-stop-button:hover {
+  background: #8f1d15;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(180, 35, 24, 0.28);
+}
+
+.composer-context-bar {
+  display: flex;
+  min-width: 0;
+  height: 48px;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  border-top: 1px solid #eeeeeb;
+  border-radius: 0 0 18px 18px;
+  background: #f4f4f2;
+  padding: 0 12px;
+}
+
+.hero-composer-wrap .composer-context-bar {
+  border-radius: 0 0 22px 22px;
+  background: #f1f2ef;
+  padding: 0 24px;
+}
+
+.context-project-button {
+  display: inline-flex;
+  max-width: min(280px, 40%);
+  min-width: 0;
+  height: 32px;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: #e8e8e6;
+  color: #73777a;
+  font-size: var(--font-ui);
+  padding: 0 12px;
+  text-align: left;
+}
+
+.context-mode-chip,
+.context-branch-chip {
+  display: inline-flex;
+  max-width: min(360px, 44%);
+  height: 32px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  color: #81868a;
+  font-size: var(--font-ui);
+  padding: 0 12px;
+}
+
+.context-mode-chip {
+  flex: 0 0 auto;
+  background: #e8e8e6;
+}
+
+.context-mode-chip:hover,
+.context-mode-chip[aria-expanded="true"] {
+  background: #e8e8e6;
+  color: #25282b;
+}
+
+.context-branch-chip {
+  flex: 0 1 auto;
+  background: #e9e9e6;
+}
+
+.context-branch-chip:hover,
+.context-branch-chip[aria-expanded="true"] {
+  background: #dededc;
+  color: #25282b;
+}
+
+.context-mode-chip span,
+.context-branch-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-branch-chip small {
+  flex: 0 0 auto;
+  color: #8d9296;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.context-project-button:hover,
+.context-project-button[aria-expanded="true"] {
+  background: #dededc;
+  color: #25282b;
+}
+
+.context-project-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-menu-layer {
+  position: fixed;
+  z-index: 80;
+}
+
+.floating-menu-layer > .composer-project-menu,
+.floating-menu-layer > .composer-context-menu,
+.floating-menu-layer > .codex-runtime-menu {
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  max-width: calc(100vw - 16px);
+}
+
+.floating-menu-below > .composer-project-menu,
+.floating-menu-below > .composer-context-menu {
+  transform-origin: top left;
+  --menu-enter-y: -4px;
+}
+
+.floating-menu-below > .codex-runtime-menu {
+  transform-origin: top right;
+  --menu-enter-y: -4px;
+}
+
+.composer-project-menu {
+  position: absolute;
+  left: 12px;
+  bottom: 42px;
+  z-index: 30;
+  display: grid;
+  width: 300px;
+  max-height: min(360px, calc(100vh - 180px));
+  overflow: hidden;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 6px;
+  backdrop-filter: blur(16px);
+  transform-origin: bottom left;
+  --menu-enter-y: 4px;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.composer-context-menu {
+  position: absolute;
+  bottom: 42px;
+  left: 12px;
+  z-index: 30;
+  display: grid;
+  width: 244px;
+  max-height: min(340px, calc(100vh - 180px));
+  gap: 1px;
+  overflow-y: auto;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 6px;
+  backdrop-filter: blur(16px);
+  transform-origin: bottom left;
+  --menu-enter-y: 4px;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.hero-composer-wrap .composer-context-menu {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform-origin: top left;
+  --menu-enter-y: -4px;
+}
+
+.slash-command-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 35;
+  display: grid;
+  width: min(560px, 100%);
+  max-height: min(360px, calc(100vh - 190px));
+  overflow: hidden;
+  border: 1px solid rgba(31, 35, 40, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 14px 38px rgba(20, 24, 28, 0.08),
+    0 1px 4px rgba(20, 24, 28, 0.06);
+  padding: 6px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transform-origin: bottom center;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.hero-composer-wrap .slash-command-menu {
+  top: auto;
+  bottom: calc(100% + 10px);
+  transform-origin: bottom center;
+}
+
+.slash-command-list {
+  display: grid;
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.slash-command-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.slash-command-list::-webkit-scrollbar-track,
+.slash-command-list::-webkit-scrollbar-track-piece {
+  background: transparent;
+}
+
+.slash-command-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(82, 88, 94, 0.18);
+}
+
+.slash-command-item {
+  display: grid;
+  min-height: 46px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  background: transparent;
+  color: #25292d;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.slash-command-item:hover:not(:disabled),
+.slash-command-item.selected:not(:disabled) {
+  background: #f2f2f0;
+}
+
+.slash-command-item:active:not(:disabled) {
+  transform: scale(0.992);
+}
+
+.slash-command-item:disabled {
+  opacity: 0.48;
+}
+
+.slash-command-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  color: #6f7478;
+}
+
+.slash-command-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  line-height: 17px;
+}
+
+.slash-command-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #202327;
+  font-size: var(--font-content);
+  font-weight: var(--weight-medium);
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-copy small {
+  min-width: 0;
+  overflow: hidden;
+  color: #8d9296;
+  font-size: var(--font-ui);
+  font-weight: 400;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-name {
+  display: none;
+}
+
+.slash-command-empty {
+  color: #777d82;
+  font-size: var(--font-content);
+  line-height: 18px;
+  padding: 16px 12px 18px;
+  text-align: center;
+}
+
+.permission-menu-anchor .access-menu,
+.hero-composer-wrap .permission-menu-anchor .access-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: 260px;
+}
+
+.access-menu {
+  width: 260px;
+}
+
+.mode-menu {
+  left: 170px;
+  width: 224px;
+}
+
+.branch-menu {
+  left: 304px;
+  width: 300px;
+}
+
+.composer-context-menu button {
+  display: flex;
+  height: 34px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border-radius: 7px;
+  background: transparent;
+  color: #202427;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  padding: 0 9px;
+  text-align: left;
+}
+
+.composer-context-menu button:hover:not(:disabled) {
+  background: var(--menu-hover);
+}
+
+.composer-context-menu button:disabled {
+  opacity: 0.52;
+}
+
+.composer-context-menu button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-context-menu button svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.composer-menu-note,
+.composer-menu-empty {
+  display: grid;
+  gap: 4px;
+  padding: 8px 9px;
+  color: #777d82;
+  font-size: var(--font-sm);
+  line-height: 1.38;
+}
+
+.composer-menu-note strong {
+  color: #22262a;
+  font-size: var(--font-ui);
+}
+
+.composer-menu-note.warning strong {
+  color: #b45309;
+}
+
+.hero-composer-wrap .composer-project-menu {
+  top: calc(100% + 8px);
+  bottom: auto;
+  left: 12px;
+  transform-origin: top left;
+  --menu-enter-y: -4px;
+}
+
+.project-search {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #ececea;
+  border-radius: 8px;
+  background: #f8f8f6;
+  color: #81868a;
+  margin: 0 0 6px;
+  padding: 0 9px;
+}
+
+.project-search svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.project-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1f2328;
+}
+
+.project-search input::placeholder {
+  color: #9da1a4;
+}
+
+.project-picker-list {
+  max-height: 188px;
+  overflow: hidden;
+}
+
+.project-picker-list > [data-overlayscrollbars-contents] {
+  display: grid;
+  gap: 1px;
+}
+
+.composer-project-menu button {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 7px;
+  background: transparent;
+  color: #202427;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  padding: 0 9px;
+  text-align: left;
+}
+
+.composer-project-menu button:hover {
+  background: var(--menu-hover);
+}
+
+.composer-project-menu button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-project-menu svg {
+  width: 16px;
+  height: 16px;
+  color: #6b7176;
+  flex: 0 0 auto;
+}
+
+.project-picker-empty {
+  color: #8a8e91;
+  padding: 8px 9px;
+  font-size: var(--font-sm);
+}
+
+.project-picker-divider {
+  height: 1px;
+  background: #e8e8e5;
+  margin: 6px 0;
+}
+
+html.swiss-international {
+  color: #101820;
+  background: #f4f2ec;
+  font-family:
+    "Helvetica Neue", Helvetica, Arial, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-xs: 10px;
+  --font-sm: 11px;
+  --font-ui: 12px;
+  --font-body: 14px;
+  --font-content: 14px;
+  --font-title: 13px;
+  --font-heading: 22px;
+  --font-display: 34px;
+  --weight-medium: 500;
+  --weight-semibold: 700;
+  --weight-bold: 800;
+  --line-ui: 1.28;
+  --line-body: 1.58;
+  --menu-bg: #fffefa;
+  --menu-border: #101820;
+  --menu-hover: #ef3b2d;
+  --menu-radius: 0;
+  --menu-shadow: 8px 8px 0 #101820;
+  --sidebar-glass-bg: #e8e4d8;
+  --sidebar-glass-border: #101820;
+  --sidebar-glass-highlight: transparent;
+  --sidebar-glass-hover: #fffefa;
+  --sidebar-glass-active: #fffefa;
+  --sidebar-accent: #ef3b2d;
+  letter-spacing: -0.01em;
+}
+
+html.swiss-international::before {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(rgba(16, 24, 32, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 24, 32, 0.045) 1px, transparent 1px);
+  background-size: 24px 24px;
+  content: "";
+  pointer-events: none;
+}
+
+html.swiss-international body,
+html.swiss-international #root {
+  background: #f4f2ec;
+}
+
+html.swiss-international .app-shell {
+  background: #f4f2ec;
+  color: #101820;
+}
+
+html.swiss-international .app-shell::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--sidebar-width, 326px);
+  z-index: 0;
+  background:
+    linear-gradient(90deg, rgba(16, 24, 32, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(16, 24, 32, 0.06) 1px, transparent 1px);
+  background-size: 96px 100%, 100% 96px;
+  content: "";
+  pointer-events: none;
+}
+
+html.swiss-international .app-shell.sidebar-collapsed::before {
+  left: 0;
+}
+
+html.swiss-international .conversation-pane,
+html.swiss-international .workspace-bottom-panel {
+  z-index: 1;
+}
+
+html.swiss-international .workspace-right-panel {
+  z-index: 15;
+}
+
+html.swiss-international .sidebar {
+  z-index: 20;
+  border-right: 2px solid #101820;
+  background: #e8e4d8;
+  box-shadow: none;
+  padding: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.swiss-international .sidebar-content {
+  padding-right: 14px;
+  padding-left: 14px;
+}
+
+html.swiss-international .sidebar::before {
+  display: none;
+}
+
+html.swiss-international .traffic-spacer {
+  height: 64px;
+}
+
+html.swiss-international .primary-nav,
+html.swiss-international .project-list,
+html.swiss-international .pinned-thread-list,
+html.swiss-international .thread-list,
+html.swiss-international .workspace-tool-menu,
+html.swiss-international .workspace-tool-grid > [data-overlayscrollbars-contents] {
+  gap: 0;
+}
+
+html.swiss-international .project-list {
+  margin-top: 32px;
+}
+
+html.swiss-international .pinned-thread-section,
+html.swiss-international .pinned-thread-section + .project-list {
+  margin-top: 28px;
+}
+
+html.swiss-international .project-section-header {
+  height: 42px;
+  border-bottom: 2px solid #101820;
+  margin: 0 0 8px;
+  padding: 0 0 9px;
+}
+
+html.swiss-international .section-label,
+html.swiss-international .pinned-thread-label,
+html.swiss-international .run-debug-section h3,
+html.swiss-international .environment-runtime-summary,
+html.swiss-international .workspace-bottom-title {
+  color: #101820;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+html.swiss-international .nav-item,
+html.swiss-international .project-row,
+html.swiss-international .thread-row,
+html.swiss-international .settings-button,
+html.swiss-international .settings-back-button,
+html.swiss-international .settings-nav-item {
+  height: 34px;
+  border-radius: 0;
+  background: transparent;
+  color: #101820;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  box-shadow: none;
+  transform: none;
+}
+
+html.swiss-international .nav-item:hover,
+html.swiss-international .project-row:hover,
+html.swiss-international .thread-row:hover,
+html.swiss-international .settings-button:hover,
+html.swiss-international .settings-button[aria-expanded="true"],
+html.swiss-international .settings-back-button:hover,
+html.swiss-international .settings-nav-item:hover,
+html.swiss-international .settings-nav-item.active {
+  background: #fffefa;
+  color: #101820;
+  box-shadow: inset 4px 0 0 #ef3b2d;
+  transform: none;
+}
+
+html.swiss-international .nav-item:active,
+html.swiss-international .project-row:active,
+html.swiss-international .thread-row:active,
+html.swiss-international .settings-button:active {
+  transform: scale(0.985);
+}
+
+html.swiss-international .nav-item:focus-visible,
+html.swiss-international .project-row:focus-visible,
+html.swiss-international .thread-row:focus-visible,
+html.swiss-international .thread-row:focus-within,
+html.swiss-international .settings-button:focus-visible,
+html.swiss-international .icon-button:focus-visible,
+html.swiss-international .launch-preview-button:focus-visible,
+html.swiss-international .composer-tool-button:focus-visible,
+html.swiss-international .composer-action-button:focus-visible {
+  outline: 2px solid #0057ff;
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+html.swiss-international .project-row.active,
+html.swiss-international .project-row.pending-switch,
+html.swiss-international .thread-row.active {
+  background: #fffefa;
+  color: #101820;
+  box-shadow: inset 4px 0 0 #ef3b2d;
+  font-weight: 800;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.swiss-international .project-row.active::before,
+html.swiss-international .project-row.pending-switch::before,
+html.swiss-international .thread-row::before,
+html.swiss-international .thread-list::before,
+html.swiss-international .thread-child-agent-list::before {
+  border-radius: 0;
+  background: #101820;
+  box-shadow: none;
+}
+
+html.swiss-international .thread-row.running::before,
+html.swiss-international .thread-row.pending-switch::before {
+  background: #ef3b2d;
+  box-shadow: none;
+}
+
+html.swiss-international .thread-child-agent-row.pending-switch {
+  background: #fffefa;
+  color: #101820;
+}
+
+html.swiss-international .project-row .project-row-loading,
+html.swiss-international .thread-row-loading {
+  border-color: rgba(16, 24, 32, 0.24);
+  border-top-color: #ef3b2d;
+}
+
+html.swiss-international .project-row-chevron,
+html.swiss-international .project-row svg:not(.project-row-chevron),
+html.swiss-international .thread-child-agent-branch,
+html.swiss-international .workspace-panel-title svg,
+html.swiss-international .workspace-tool-card svg,
+html.swiss-international .workspace-tool-menu-icon,
+html.swiss-international .workspace-main-empty svg,
+html.swiss-international .empty-home-actions button > svg {
+  color: #101820;
+}
+
+html.swiss-international .project-add-button,
+html.swiss-international .project-row-new-thread,
+html.swiss-international .thread-row-action,
+html.swiss-international .icon-button,
+html.swiss-international .workspace-panel-tabs button,
+html.swiss-international .workspace-main-empty button,
+html.swiss-international .environment-create-branch button,
+html.swiss-international .composer-tool-button,
+html.swiss-international .composer-queue-icon,
+html.swiss-international .composer-image-attachment button {
+  border-radius: 0;
+  background: transparent;
+  color: #101820;
+  box-shadow: none;
+}
+
+html.swiss-international .project-row-new-thread,
+html.swiss-international .thread-row-action {
+  border: 1px solid #101820;
+  background: #fffefa;
+}
+
+html.swiss-international .project-add-button:hover,
+html.swiss-international .project-add-button[aria-expanded="true"],
+html.swiss-international .project-row-new-thread:hover,
+html.swiss-international .project-row-new-thread:focus-visible,
+html.swiss-international .thread-row-action:hover,
+html.swiss-international .thread-row-action:focus-visible,
+html.swiss-international .icon-button:hover,
+html.swiss-international .icon-button.active,
+html.swiss-international .workspace-toggle-button[aria-pressed="true"],
+html.swiss-international .workspace-panel-tabs button:hover,
+html.swiss-international .workspace-panel-tabs button.active,
+html.swiss-international .workspace-main-empty button:hover,
+html.swiss-international .composer-tool-button:hover,
+html.swiss-international .composer-queue-icon:hover {
+  background: #ef3b2d;
+  color: #fffefa;
+  box-shadow: none;
+}
+
+html.swiss-international .titlebar,
+html.swiss-international .workspace-panel-header,
+html.swiss-international .workspace-bottom-header,
+html.swiss-international .workspace-file-preview-header,
+html.swiss-international .workspace-diff-header,
+html.swiss-international .workspace-diff-detail-header,
+html.swiss-international .run-debug-header {
+  border-color: #101820;
+}
+
+html.swiss-international .conversation-pane,
+html.swiss-international .empty-home,
+html.swiss-international .project-empty-pane,
+html.swiss-international .workspace-scroll-region,
+html.swiss-international .scroll-region,
+html.swiss-international .workspace-right-panel,
+html.swiss-international .workspace-bottom-panel,
+html.swiss-international .workspace-terminal-screen,
+html.swiss-international .workspace-file-code-scroll,
+html.swiss-international .workspace-file-code,
+html.swiss-international .workspace-diff-code,
+html.swiss-international .workspace-diff-review,
+html.swiss-international .workspace-diff-detail,
+html.swiss-international .workspace-diff-files,
+html.swiss-international .composer-wrap {
+  background: #fffefa;
+  color: #101820;
+}
+
+html.swiss-international .titlebar {
+  border-bottom-width: 2px;
+  background: #fffefa;
+  padding-right: 28px;
+  padding-left: 28px;
+}
+
+html.swiss-international .title-block h1 {
+  color: #101820;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+html.swiss-international .title-actions {
+  gap: 8px;
+}
+
+html.swiss-international .launch-preview-button,
+html.swiss-international .primary-button,
+html.swiss-international .secondary-button,
+html.swiss-international .settings-inline-button,
+html.swiss-international .settings-card-footer button,
+html.swiss-international .project-empty-actions button,
+html.swiss-international .empty-home-actions button,
+html.swiss-international .workspace-main-empty button,
+html.swiss-international .workspace-terminal-restart {
+  border: 2px solid #101820;
+  border-radius: 0;
+  background: #fffefa;
+  color: #101820;
+  box-shadow: none;
+  font-weight: 800;
+}
+
+html.swiss-international .launch-preview-button:hover:not(:disabled),
+html.swiss-international .launch-preview-button.active,
+html.swiss-international .turn-progress-preview-button[aria-pressed="true"],
+html.swiss-international .run-debug-button.active,
+html.swiss-international .run-debug-button[aria-expanded="true"],
+html.swiss-international .style-toggle-button[aria-pressed="true"],
+html.swiss-international .primary-button,
+html.swiss-international .settings-inline-button:hover:not(:disabled),
+html.swiss-international .settings-card-footer button,
+html.swiss-international .composer-send-button,
+html.swiss-international .workspace-terminal-restart:hover {
+  background: #101820;
+  color: #fffefa;
+}
+
+html.swiss-international .style-toggle-button[aria-pressed="true"] {
+  border-color: #ef3b2d;
+  box-shadow: inset 6px 0 0 #ef3b2d;
+}
+
+html.swiss-international .empty-home {
+  align-items: stretch;
+  padding-bottom: 0;
+}
+
+html.swiss-international .empty-home-inner {
+  width: min(1040px, calc(100% - 96px));
+  grid-template-columns: minmax(0, 5fr) minmax(320px, 3fr);
+  align-items: start;
+  justify-items: stretch;
+  gap: 28px 48px;
+  padding-top: clamp(96px, 16vh, 176px);
+}
+
+html.swiss-international .empty-home h2 {
+  max-width: none;
+  color: #101820;
+  font-size: clamp(36px, 6vw, 76px);
+  font-weight: 800;
+  letter-spacing: -0.065em;
+  line-height: 0.92;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+html.swiss-international .hero-composer-wrap {
+  z-index: 2;
+  grid-column: 1 / -1;
+}
+
+html.swiss-international .empty-home-actions {
+  width: 100%;
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin-top: 0;
+}
+
+html.swiss-international .empty-home-actions button {
+  min-height: 92px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  border-width: 0 0 2px;
+  padding: 18px 0;
+}
+
+html.swiss-international .empty-home-actions button:first-child {
+  border-top-width: 2px;
+}
+
+html.swiss-international .empty-home-actions button:hover,
+html.swiss-international .project-empty-actions button:hover,
+html.swiss-international .workspace-tool-card:hover,
+html.swiss-international .workspace-tool-card.active,
+html.swiss-international .workspace-tool-menu-item:hover,
+html.swiss-international .workspace-tool-menu-item.active,
+html.swiss-international .workspace-diff-file:hover,
+html.swiss-international .workspace-diff-file.active,
+html.swiss-international .workspace-diff-tree-row:hover,
+html.swiss-international .workspace-diff-tree-row.active {
+  background: #ef3b2d;
+  color: #fffefa;
+}
+
+html.swiss-international .empty-home-actions strong {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+html.swiss-international .empty-home-actions small {
+  color: #555b60;
+}
+
+html.swiss-international .empty-home-actions button:hover small,
+html.swiss-international .workspace-tool-card:hover span,
+html.swiss-international .workspace-tool-card.active span,
+html.swiss-international .workspace-tool-menu-item:hover span,
+html.swiss-international .workspace-tool-menu-item.active span,
+html.swiss-international .workspace-tool-menu-item:hover svg,
+html.swiss-international .workspace-tool-menu-item.active svg,
+html.swiss-international .workspace-tool-menu-item:hover .workspace-tool-menu-icon,
+html.swiss-international .workspace-tool-menu-item.active .workspace-tool-menu-icon,
+html.swiss-international .workspace-diff-file:hover .workspace-diff-file-stats,
+html.swiss-international .workspace-diff-file.active .workspace-diff-file-stats {
+  color: #fffefa;
+}
+
+html.swiss-international .conversation-pane {
+  --conversation-flow-width: calc(var(--conversation-readable-width) + 40px);
+  --conversation-flow-padding-inline: clamp(24px, 5vw, 56px);
+}
+
+html.swiss-international .conversation-width {
+  max-width: var(--conversation-flow-width);
+  padding: 76px var(--conversation-flow-padding-inline) 32px;
+}
+
+html.swiss-international .turn {
+  --conversation-turn-gap: 20px;
+  gap: var(--conversation-turn-gap);
+  margin-bottom: 56px;
+}
+
+html.swiss-international .message {
+  max-width: min(760px, 78%);
+  border-radius: 0;
+  padding: 12px 16px;
+}
+
+html.swiss-international .user-message-block {
+  max-width: min(760px, 78%);
+}
+
+html.swiss-international .user-message {
+  border: 2px solid #101820;
+  background: #fffefa;
+  color: #101820;
+}
+
+html.swiss-international .message-copy-button {
+  border: 1px solid #101820;
+  border-radius: 0;
+  box-shadow: none;
+  background: #fffefa;
+  color: #101820;
+}
+
+html.swiss-international .message-copy-button:hover,
+html.swiss-international .message-copy-button:focus-visible {
+  box-shadow: none;
+  background: #ef3b2d;
+  color: #fffefa;
+}
+
+html.swiss-international .message-copy-button.copied {
+  background: #101820;
+  color: #fffefa;
+}
+
+html.swiss-international .message-copy-button.failed {
+  background: #ef3b2d;
+  color: #fffefa;
+}
+
+html.swiss-international .agent-block {
+  color: #101820;
+}
+
+html.swiss-international .system-line,
+html.swiss-international .turn-error,
+html.swiss-international .turn-notice,
+html.swiss-international pre,
+html.swiss-international .tool-result,
+html.swiss-international .turn-progress,
+html.swiss-international .run-debug-row,
+html.swiss-international .run-debug-item,
+html.swiss-international .run-debug-event {
+  border-color: #101820;
+  border-radius: 0;
+  background: #fffefa;
+  color: #101820;
+  box-shadow: none;
+}
+
+html.swiss-international .turn-error,
+html.swiss-international .turn-notice.error,
+html.swiss-international .workspace-diff-error,
+html.swiss-international .workspace-diff-line.delete,
+html.swiss-international .environment-dialog-error,
+html.swiss-international .run-debug-phase.error {
+  background: #ef3b2d;
+  color: #fffefa;
+}
+
+html.swiss-international .turn-notice.error .turn-notice-copy strong {
+  color: #fffefa;
+}
+
+html.swiss-international .composer-stack {
+  width: min(var(--conversation-flow-width), calc(100% - 32px));
+}
+
+html.swiss-international .hero-composer-wrap .composer-stack {
+  width: min(var(--conversation-content-width), 100%);
+}
+
+html.swiss-international .composer-shell,
+html.swiss-international .hero-composer-wrap .composer-shell {
+  border-radius: 0;
+  background: #fffefa;
+  box-shadow: 8px 8px 0 #101820;
+}
+
+html.swiss-international .composer-shell::after {
+  border: 2px solid #101820;
+  border-radius: 0;
+}
+
+html.swiss-international .composer,
+html.swiss-international .hero-composer-wrap .composer {
+  border-radius: 0;
+  background: #fffefa;
+}
+
+html.swiss-international .composer textarea {
+  color: #101820;
+  font-size: 15px;
+}
+
+html.swiss-international .composer textarea::placeholder {
+  color: #60666c;
+}
+
+html.swiss-international .composer-bar,
+html.swiss-international .composer-context-bar,
+html.swiss-international .hero-composer-wrap .composer-context-bar {
+  border-top: 2px solid #101820;
+  border-radius: 0;
+  background: #e8e4d8;
+}
+
+html.swiss-international .composer-send-button,
+html.swiss-international .composer-stop-button {
+  border: 2px solid #101820;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html.swiss-international .composer-send-button:hover,
+html.swiss-international .composer-stop-button,
+html.swiss-international .composer-stop-button:hover {
+  background: #ef3b2d;
+  color: #fffefa;
+  box-shadow: none;
+}
+
+html.swiss-international .composer-send-button:disabled,
+html.swiss-international .composer-send-button:disabled:hover {
+  border-color: #9aa0a6;
+  background: #d8d3c4;
+  color: #60666c;
+}
+
+html.swiss-international .context-project-button,
+html.swiss-international .context-mode-chip,
+html.swiss-international .context-branch-chip,
+html.swiss-international .permission-chip,
+html.swiss-international .run-debug-phase,
+html.swiss-international .workspace-diff-file-status {
+  border-radius: 0;
+  background: #fffefa;
+  color: #101820;
+}
+
+html.swiss-international .context-project-button:hover,
+html.swiss-international .context-project-button[aria-expanded="true"],
+html.swiss-international .context-mode-chip:hover,
+html.swiss-international .context-mode-chip[aria-expanded="true"],
+html.swiss-international .context-branch-chip:hover,
+html.swiss-international .context-branch-chip[aria-expanded="true"],
+html.swiss-international .permission-chip:hover,
+html.swiss-international .permission-chip[aria-expanded="true"] {
+  background: #101820;
+  color: #fffefa;
+}
+
+html.swiss-international .project-add-menu,
+html.swiss-international .composer-project-menu,
+html.swiss-international .composer-context-menu,
+html.swiss-international .codex-runtime-menu,
+html.swiss-international .slash-command-menu,
+html.swiss-international .run-debug-panel,
+html.swiss-international .environment-panel,
+html.swiss-international .environment-side-menu,
+html.swiss-international .environment-dialog {
+  border: 2px solid #101820;
+  border-radius: 0;
+  background: #fffefa;
+  box-shadow: 8px 8px 0 #101820;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.swiss-international .project-add-menu button,
+html.swiss-international .composer-project-menu button,
+html.swiss-international .composer-context-menu button,
+html.swiss-international .codex-runtime-menu button,
+html.swiss-international .environment-side-menu button,
+html.swiss-international .environment-source-item,
+html.swiss-international .environment-row,
+html.swiss-international .environment-footer-row {
+  border-radius: 0;
+  color: #101820;
+  font-weight: 700;
+}
+
+html.swiss-international .project-add-menu button:hover,
+html.swiss-international .composer-project-menu button:hover,
+html.swiss-international .composer-context-menu button:hover:not(:disabled),
+html.swiss-international .codex-runtime-menu button:hover,
+html.swiss-international .environment-side-menu button:hover:not(:disabled),
+html.swiss-international .environment-row:hover:not(:disabled),
+html.swiss-international .environment-row.active,
+html.swiss-international .environment-footer-row:hover,
+html.swiss-international .environment-footer-row.active {
+  background: #ef3b2d;
+  color: #fffefa;
+}
+
+html.swiss-international .slash-command-item {
+  border-radius: 0;
+}
+
+html.swiss-international .slash-command-item:hover:not(:disabled),
+html.swiss-international .slash-command-item.selected:not(:disabled) {
+  background: #ef3b2d;
+  color: #fffefa;
+}
+
+html.swiss-international .slash-command-item:hover:not(:disabled) .slash-command-copy strong,
+html.swiss-international .slash-command-item.selected:not(:disabled) .slash-command-copy strong,
+html.swiss-international .slash-command-item:hover:not(:disabled) .slash-command-copy small,
+html.swiss-international .slash-command-item.selected:not(:disabled) .slash-command-copy small,
+html.swiss-international .slash-command-item:hover:not(:disabled) .slash-command-name,
+html.swiss-international .slash-command-item.selected:not(:disabled) .slash-command-name,
+html.swiss-international .slash-command-item:hover:not(:disabled) .slash-command-icon,
+html.swiss-international .slash-command-item.selected:not(:disabled) .slash-command-icon {
+  color: #fffefa;
+}
+
+html.swiss-international .project-search,
+html.swiss-international .environment-search,
+html.swiss-international .settings-row input,
+html.swiss-international .settings-row select,
+html.swiss-international .settings-new-provider-label,
+html.swiss-international .environment-field input,
+html.swiss-international .environment-field textarea,
+html.swiss-international .workspace-diff-search {
+  border: 2px solid #101820;
+  border-radius: 0;
+  background: #fffefa;
+  color: #101820;
+}
+
+html.swiss-international .settings-switch {
+  border: 2px solid #101820;
+  border-radius: 0;
+  background: #fffefa;
+  box-shadow: none;
+}
+
+html.swiss-international .settings-switch[aria-checked="true"] {
+  background: #101820;
+}
+
+html.swiss-international .settings-switch-thumb {
+  top: 3px;
+  left: 3px;
+  border-radius: 0;
+  background: #ef3b2d;
+  box-shadow: none;
+}
+
+html.swiss-international .settings-shell,
+html.swiss-international .settings-main,
+html.swiss-international .settings-card,
+html.swiss-international .settings-row,
+html.swiss-international .workspace-file-tree-frame,
+html.swiss-international .workspace-tool-card,
+html.swiss-international .workspace-tool-menu-item,
+html.swiss-international .workspace-tool-menu-icon,
+html.swiss-international .workspace-panel-empty-icon,
+html.swiss-international .workspace-title-icon,
+html.swiss-international .workspace-diff-file,
+html.swiss-international .workspace-diff-tree-row,
+html.swiss-international .workspace-diff-file-status,
+html.swiss-international .message-image,
+html.swiss-international .composer-image-attachment,
+html.swiss-international .composer-queue-item,
+html.swiss-international .project-empty-actions button {
+  border-color: #101820;
+  border-radius: 0;
+  background: #fffefa;
+  box-shadow: none;
+}
+
+html.swiss-international .settings-sidebar,
+html.swiss-international .workspace-panel-empty-icon,
+html.swiss-international .workspace-title-icon,
+html.swiss-international .workspace-tool-menu-icon,
+html.swiss-international .workspace-tool-card,
+html.swiss-international .workspace-panel-tabs,
+html.swiss-international .workspace-diff-files,
+html.swiss-international .workspace-diff-tree,
+html.swiss-international .workspace-file-tree-frame,
+html.swiss-international .run-debug-scroll {
+  background: #e8e4d8;
+}
+
+html.swiss-international .settings-main {
+  border-left: 2px solid #101820;
+}
+
+html.swiss-international .workspace-right-panel,
+html.swiss-international .right-panel-open .workspace-right-panel,
+html.swiss-international .workspace-diff-detail {
+  border-left-color: #101820;
+}
+
+html.swiss-international .bottom-panel-open .workspace-bottom-panel,
+html.swiss-international .workspace-panel-tabs,
+html.swiss-international .workspace-diff-files,
+html.swiss-international .workspace-diff-detail,
+html.swiss-international .workspace-diff-file-scroll,
+html.swiss-international .workspace-diff-code-scroll,
+html.swiss-international .workspace-file-preview-header,
+html.swiss-international .workspace-diff-detail-header {
+  border-color: #101820;
+}
+
+html.swiss-international .workspace-tool-card,
+html.swiss-international .workspace-tool-menu-item {
+  border: 2px solid #101820;
+}
+
+html.swiss-international .workspace-tool-card strong,
+html.swiss-international .workspace-tool-menu-copy strong,
+html.swiss-international .workspace-panel-title,
+html.swiss-international .workspace-main-empty strong,
+html.swiss-international .workspace-file-preview-header strong,
+html.swiss-international .workspace-diff-header strong,
+html.swiss-international .workspace-diff-detail-header strong,
+html.swiss-international .settings-page h1,
+html.swiss-international .settings-section h2,
+html.swiss-international .settings-row strong,
+html.swiss-international .environment-dialog h2 {
+  color: #101820;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+html.swiss-international .workspace-tool-card span,
+html.swiss-international .workspace-tool-menu-copy span,
+html.swiss-international .workspace-main-empty span,
+html.swiss-international .workspace-file-preview-header span,
+html.swiss-international .workspace-diff-header span,
+html.swiss-international .workspace-diff-detail-header span,
+html.swiss-international .settings-section p,
+html.swiss-international .settings-row small,
+html.swiss-international .project-empty-content,
+html.swiss-international .turn-progress-label,
+html.swiss-international .turn-progress-detail,
+html.swiss-international .run-debug-row span,
+html.swiss-international .run-debug-event span,
+html.swiss-international .run-debug-event small,
+html.swiss-international .run-debug-item span {
+  color: #555b60;
+}
+
+html.swiss-international .workspace-diff-line.hunk,
+html.swiss-international .workspace-diff-file-status.renamed,
+html.swiss-international .workspace-diff-file-status.copied {
+  background: #0057ff;
+  color: #fffefa;
+}
+
+html.swiss-international .workspace-diff-line.add,
+html.swiss-international .workspace-diff-file-status.added,
+html.swiss-international .workspace-diff-file-status.untracked,
+html.swiss-international .run-debug-phase.success,
+html.swiss-international .run-debug-phase.running {
+  background: #0b8f3a;
+  color: #fffefa;
+}
+
+html.swiss-international .workspace-diff-line-number {
+  border-right-color: #101820;
+}
+
+html.swiss-international .os-theme-wuu {
+  --os-handle-border-radius: 0;
+  --os-handle-bg: rgba(16, 24, 32, 0.36);
+  --os-handle-bg-hover: #ef3b2d;
+  --os-handle-bg-active: #101820;
+}

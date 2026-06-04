@@ -23,6 +23,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -381,22 +382,11 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		BeforeRequest:           base.BeforeRequest,
 		Effort:                  base.Effort,
 		Variant:                 base.Variant,
-		ProviderOptions:         cloneProviderOptions(base.ProviderOptions),
+		ProviderOptions:         provideroptions.Clone(base.ProviderOptions),
 		StreamReconnectBudget:   base.StreamReconnectBudget,
 		StreamRetryInitialDelay: base.StreamRetryInitialDelay,
 		StreamRetryMaxDelay:     base.StreamRetryMaxDelay,
 	}
-}
-
-func cloneProviderOptions(input map[string]any) map[string]any {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
-	return out
 }
 
 func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType) {
