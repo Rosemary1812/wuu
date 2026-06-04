@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -96,7 +97,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		Temperature:     req.Temperature,
 		MaxOutputTokens: req.MaxTokens,
 		Stream:          stream,
-		Options:         cloneProviderOptions(req.ProviderOptions),
+		Options:         provideroptions.Clone(req.ProviderOptions),
 	}
 	if c.responsesStore != nil {
 		payload.Store = c.responsesStore
