@@ -3,8 +3,10 @@ package prompt
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/memory"
+	"github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/skills"
 )
 
@@ -114,6 +116,55 @@ func TestBuilder_AddSkills(t *testing.T) {
 	}
 	if strings.Contains(result, "hidden") {
 		t.Error("DisableModelInvoke skills should be excluded")
+	}
+}
+
+func TestBuilder_AddProfileMemoryGuidanceAndSnapshot(t *testing.T) {
+	entries := []store.Entry{
+		{
+			Content:   "User prefers concise Chinese replies",
+			Tags:      []string{"target:user", "tone"},
+			Source:    store.SourceUser,
+			CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			Content:   "Project uses make install for local CLI refresh",
+			Tags:      []string{"target:memory", "wuu"},
+			Source:    store.SourceAssistant,
+			CreatedAt: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	var b Builder
+	b.AddProfileMemory(entries)
+	result := b.Build()
+
+	for _, want := range []string{
+		"# Persistent Memory",
+		"`write_memory`",
+		"target=\"user\"",
+		"User prefers concise Chinese replies",
+		"Project uses make install",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("profile memory prompt missing %q:\n%s", want, result)
+		}
+	}
+	if strings.Contains(result, "target:user") || strings.Contains(result, "target:memory") {
+		t.Fatalf("internal target tags should not be rendered:\n%s", result)
+	}
+}
+
+func TestBuilder_AddProfileMemoryGuidanceWithoutEntries(t *testing.T) {
+	var b Builder
+	b.AddProfileMemory(nil)
+	result := b.Build()
+
+	if !strings.Contains(result, "# Persistent Memory") {
+		t.Fatalf("expected durable memory guidance, got:\n%s", result)
+	}
+	if strings.Contains(result, "Current Profile Memory Snapshot") {
+		t.Fatalf("empty profile memory should not render snapshot:\n%s", result)
 	}
 }
 

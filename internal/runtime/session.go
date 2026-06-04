@@ -127,6 +127,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	var toolExecutor agent.ToolExecutor
 	var toolkit *tools.Toolkit
+	var profileMemoryProvider memstore.Provider
 	if !opts.NoTools {
 		kit, newErr := tools.New(rootDir)
 		if newErr != nil {
@@ -144,6 +145,7 @@ func NewSession(opts Options) (*Session, error) {
 		// Env.Memory is nil.
 		if memProvider, memErr := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileStateDir)); memErr == nil {
 			kit.SetMemory(memProvider)
+			profileMemoryProvider = memProvider
 		}
 		kit.SetOnFileChanged(func(absPath string) {
 			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{
@@ -157,7 +159,8 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
-	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), cfg.Agent.UserSystemPrompt(), memoryFiles, discoveredSkills)
+	profileMemoryEntries := recallProfileMemory(context.Background(), profileMemoryProvider)
+	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), cfg.Agent.UserSystemPrompt(), memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, discoveredSkills)
 
 	if toolkit != nil {
 		if err := agentcontrol.EnsureSharedDir(workspaceStateDir); err != nil {
@@ -718,17 +721,31 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 	return memory.Discover(rootDir, homeDir, memOpts)
 }
 
-func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles []memory.File, discoveredSkills []skills.Skill) string {
+func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, discoveredSkills []skills.Skill) string {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
 	if strings.TrimSpace(userPrompt) != "" {
 		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
 	}
 	pb.AddMemory(memoryFiles)
+	if profileMemoryEnabled {
+		pb.AddProfileMemory(profileMemoryEntries)
+	}
 	pb.AddSkills(discoveredSkills)
 	if worktree.IsGitRepo(rootDir) {
 		gitCtx := prompt.NewGitContext(rootDir)
 		pb.AddGitContext(gitCtx.Collect())
 	}
 	return pb.Build()
+}
+
+func recallProfileMemory(ctx context.Context, provider memstore.Provider) []memstore.Entry {
+	if provider == nil {
+		return nil
+	}
+	entries, err := provider.Recall(ctx, memstore.RecallQuery{})
+	if err != nil {
+		return nil
+	}
+	return entries
 }

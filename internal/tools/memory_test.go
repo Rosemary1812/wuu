@@ -136,12 +136,14 @@ func newEnvWith(p store.Provider) *Env {
 }
 
 func decodeMemoryResult(t *testing.T, raw string) struct {
+	Target  string           `json:"target"`
 	Query   string           `json:"query"`
 	Count   int              `json:"count"`
 	Entries []memoryEntryDTO `json:"entries"`
 } {
 	t.Helper()
 	var resp struct {
+		Target  string           `json:"target"`
 		Query   string           `json:"query"`
 		Count   int              `json:"count"`
 		Entries []memoryEntryDTO `json:"entries"`
@@ -162,14 +164,14 @@ func TestWriteMemoryTool_Definition(t *testing.T) {
 	if !ok {
 		t.Fatalf("properties missing or wrong type: %T", def.InputSchema["properties"])
 	}
-	for _, key := range []string{"content", "tags", "source", "id"} {
+	for _, key := range []string{"target", "content", "tags", "source", "id"} {
 		if _, ok := props[key].(map[string]any); !ok {
 			t.Errorf("schema missing property %q", key)
 		}
 	}
 	required, _ := def.InputSchema["required"].([]string)
-	if len(required) != 1 || required[0] != "content" {
-		t.Errorf("required = %v, want [content]", required)
+	if strings.Join(required, ",") != "target,content" {
+		t.Errorf("required = %v, want [target content]", required)
 	}
 	if v, _ := def.InputSchema["additionalProperties"].(bool); v != false {
 		t.Errorf("additionalProperties = %v, want false", v)
@@ -194,6 +196,9 @@ func TestWriteMemoryTool_Execute(t *testing.T) {
 	if written, _ := resp["written"].(bool); !written {
 		t.Errorf("written = %v, want true", resp["written"])
 	}
+	if target, _ := resp["target"].(string); target != "memory" {
+		t.Errorf("default target = %q, want memory", target)
+	}
 	if src, _ := resp["source"].(string); src != "assistant" {
 		t.Errorf("default source = %q, want assistant", src)
 	}
@@ -205,13 +210,16 @@ func TestWriteMemoryTool_Execute(t *testing.T) {
 	if len(entries) != 1 || entries[0].Content != "user prefers dark mode" {
 		t.Fatalf("stored entries = %+v", entries)
 	}
+	if !testTagsMatch(entries[0].Tags, []string{"target:memory", "ui", "pref"}) {
+		t.Fatalf("stored tags = %+v", entries[0].Tags)
+	}
 }
 
 func TestWriteMemoryTool_Execute_WithCallerIDAndSource(t *testing.T) {
 	p := newTestProvider(t)
 	tool := NewWriteMemoryTool(newEnvWith(p))
 
-	out, err := tool.Execute(context.Background(), `{"content":"x","id":"caller-123","source":"user"}`)
+	out, err := tool.Execute(context.Background(), `{"target":"user","content":"x","id":"caller-123","source":"user"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -222,6 +230,9 @@ func TestWriteMemoryTool_Execute_WithCallerIDAndSource(t *testing.T) {
 	}
 	if got, _ := resp["source"].(string); got != "user" {
 		t.Errorf("source = %q, want user", got)
+	}
+	if got, _ := resp["target"].(string); got != "user" {
+		t.Errorf("target = %q, want user", got)
 	}
 }
 
@@ -242,6 +253,9 @@ func TestWriteMemoryTool_Execute_ErrorBranches(t *testing.T) {
 	}
 	if _, err := tool.Execute(context.Background(), `{"content":"x","source":"unknown"}`); err == nil || !strings.Contains(err.Error(), "source") {
 		t.Fatalf("bad source err = %v", err)
+	}
+	if _, err := tool.Execute(context.Background(), `{"target":"session","content":"x"}`); err == nil || !strings.Contains(err.Error(), "target") {
+		t.Fatalf("bad target err = %v", err)
 	}
 	if _, err := tool.Execute(context.Background(), `{not json`); err == nil {
 		t.Fatal("expected malformed JSON error")
@@ -266,7 +280,7 @@ func TestReadMemoryTool_Definition(t *testing.T) {
 	if !ok {
 		t.Fatalf("properties missing or wrong type: %T", def.InputSchema["properties"])
 	}
-	for _, key := range []string{"query", "tags", "limit", "since"} {
+	for _, key := range []string{"target", "query", "tags", "limit", "since"} {
 		if _, ok := props[key].(map[string]any); !ok {
 			t.Errorf("schema missing property %q", key)
 		}
@@ -315,6 +329,34 @@ func TestReadMemoryTool_Execute_QuerySearch(t *testing.T) {
 	}
 	if resp.Count != 2 {
 		t.Errorf("count = %d, want 2 (raw: %s)", resp.Count, out)
+	}
+}
+
+func TestReadMemoryTool_Execute_TargetFilter(t *testing.T) {
+	p := newTestProvider(t)
+	writer := NewWriteMemoryTool(newEnvWith(p))
+	if _, err := writer.Execute(context.Background(), `{"target":"memory","content":"Project uses make install","tags":["project"]}`); err != nil {
+		t.Fatalf("write memory: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if _, err := writer.Execute(context.Background(), `{"target":"user","content":"User prefers concise Chinese replies","tags":["preference"]}`); err != nil {
+		t.Fatalf("write user: %v", err)
+	}
+
+	reader := NewReadMemoryTool(newEnvWith(p))
+	out, err := reader.Execute(context.Background(), `{"target":"user","limit":5}`)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	resp := decodeMemoryResult(t, out)
+	if resp.Target != "user" {
+		t.Fatalf("target echo = %q, want user", resp.Target)
+	}
+	if resp.Count != 1 || resp.Entries[0].Content != "User prefers concise Chinese replies" || resp.Entries[0].Target != "user" {
+		t.Fatalf("target-filtered entries = %+v", resp.Entries)
+	}
+	if testTagsMatch(resp.Entries[0].Tags, []string{"target:user"}) {
+		t.Fatalf("internal target tag leaked to tool output: %+v", resp.Entries[0].Tags)
 	}
 }
 
@@ -382,6 +424,9 @@ func TestReadMemoryTool_Execute_ErrorBranches(t *testing.T) {
 	if _, err := tool.Execute(context.Background(), `{"since":"yesterday"}`); err == nil || !strings.Contains(err.Error(), "RFC3339") {
 		t.Fatalf("bad since err = %v", err)
 	}
+	if _, err := tool.Execute(context.Background(), `{"target":"session"}`); err == nil || !strings.Contains(err.Error(), "target") {
+		t.Fatalf("bad target err = %v", err)
+	}
 	if _, err := tool.Execute(context.Background(), `{`); err == nil {
 		t.Fatal("expected malformed JSON error")
 	}
@@ -429,7 +474,7 @@ func TestMemoryTools_EndToEndWithFileProvider(t *testing.T) {
 	dir := t.TempDir()
 
 	writer := NewWriteMemoryTool(newEnvWith(mustProvider(t, dir)))
-	out, err := writer.Execute(context.Background(), `{"content":"end-to-end test","tags":["e2e"],"source":"user"}`)
+	out, err := writer.Execute(context.Background(), `{"target":"user","content":"end-to-end test","tags":["e2e"],"source":"user"}`)
 	if err != nil {
 		t.Fatalf("writer.Execute: %v", err)
 	}
@@ -438,12 +483,12 @@ func TestMemoryTools_EndToEndWithFileProvider(t *testing.T) {
 	}
 
 	reader := NewReadMemoryTool(newEnvWith(mustProvider(t, dir)))
-	out, err = reader.Execute(context.Background(), `{"tags":["e2e"]}`)
+	out, err = reader.Execute(context.Background(), `{"target":"user","tags":["e2e"]}`)
 	if err != nil {
 		t.Fatalf("reader.Execute: %v", err)
 	}
 	resp := decodeMemoryResult(t, out)
-	if resp.Count != 1 || resp.Entries[0].Content != "end-to-end test" || resp.Entries[0].Source != "user" {
+	if resp.Count != 1 || resp.Entries[0].Content != "end-to-end test" || resp.Entries[0].Source != "user" || resp.Entries[0].Target != "user" {
 		t.Fatalf("readback result = %+v", resp.Entries)
 	}
 

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +99,71 @@ func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
 	}
 	if strings.HasPrefix(provider.Dir(), rt.StateDir+string(os.PathSeparator)) {
 		t.Fatalf("memory dir should be profile-scoped, got workspace path %q", provider.Dir())
+	}
+}
+
+func TestNewSessionInjectsProfileMemorySnapshot(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	wuuHome := filepath.Join(home, "state")
+	agentName := "Mia Agent"
+	t.Setenv("WUU_HOME", wuuHome)
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	profileDir, err := statepath.ProfileDir(wuuHome, agentName)
+	if err != nil {
+		t.Fatalf("ProfileDir: %v", err)
+	}
+	provider, err := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileDir))
+	if err != nil {
+		t.Fatalf("NewFileProvider: %v", err)
+	}
+	if _, err := provider.Store(context.Background(), memstore.Entry{
+		Content: "User prefers concise Chinese replies",
+		Tags:    []string{"target:user", "tone"},
+		Source:  memstore.SourceUser,
+	}); err != nil {
+		t.Fatalf("Store user memory: %v", err)
+	}
+	if _, err := provider.Store(context.Background(), memstore.Entry{
+		Content: "Project uses make install for local CLI refresh",
+		Tags:    []string{"target:memory", "wuu"},
+		Source:  memstore.SourceAssistant,
+	}); err != nil {
+		t.Fatalf("Store agent memory: %v", err)
+	}
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+			Agent: config.AgentConfig{Name: agentName},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	for _, want := range []string{
+		"# Persistent Memory",
+		"User prefers concise Chinese replies",
+		"Project uses make install",
+	} {
+		if !strings.Contains(rt.BaseSystemPrompt, want) {
+			t.Fatalf("BaseSystemPrompt missing %q:\n%s", want, rt.BaseSystemPrompt)
+		}
+	}
+	if strings.Contains(rt.BaseSystemPrompt, "target:user") || strings.Contains(rt.BaseSystemPrompt, "target:memory") {
+		t.Fatalf("internal target tags leaked into prompt:\n%s", rt.BaseSystemPrompt)
 	}
 }
 
