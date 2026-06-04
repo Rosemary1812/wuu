@@ -5728,7 +5728,7 @@ button:disabled {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: commentary-sweep 1.8s linear infinite;
+  animation: commentary-sweep 3s linear infinite;
 }
 
 .streaming-markdown.streaming-commentary-live .rich-paragraph,
@@ -5745,11 +5745,17 @@ button:disabled {
 }
 
 @keyframes commentary-sweep {
+  /* Bright spot path: starts off-screen left, sweeps across the
+     full text, exits off-screen right. The 200% position range
+     is intentional: with background-size 300% the bright peak
+     (50% of the gradient) lives 200% of the way through the
+     animation, so half the cycle is the visible sweep and the
+     other half is the eye-reset pause between sweeps. */
   from {
-    background-position: -100% 0;
+    background-position: -200% 0;
   }
   to {
-    background-position: 200% 0;
+    background-position: 0% 0;
   }
 }
 
@@ -7722,7 +7728,7 @@ button:disabled {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: commentary-sweep 1.8s linear infinite;
+  animation: commentary-sweep 3s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
