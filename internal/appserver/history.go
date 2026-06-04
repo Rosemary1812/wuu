@@ -29,6 +29,8 @@ type persistedImage struct {
 type persistedMessage struct {
 	Role             string                     `json:"role"`
 	Content          string                     `json:"content"`
+	ClientID         string                     `json:"client_id,omitempty"`
+	Steered          bool                       `json:"steered,omitempty"`
 	ReasoningContent string                     `json:"reasoning_content,omitempty"`
 	ReasoningBlocks  []providers.ReasoningBlock `json:"reasoning_blocks,omitempty"`
 	Images           []persistedImage           `json:"images,omitempty"`
@@ -86,7 +88,9 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 		msg := providers.ChatMessage{
 			Role:             role,
 			Name:             rec.Name,
+			ClientID:         rec.ClientID,
 			Content:          rec.Content,
+			Steered:          rec.Steered,
 			ReasoningContent: rec.ReasoningContent,
 			ReasoningBlocks:  append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
 			ToolCallID:       rec.ToolCallID,
@@ -212,6 +216,8 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 	out := persistedMessage{
 		Role:             strings.ToLower(msg.Role),
 		Content:          msg.Content,
+		ClientID:         msg.ClientID,
+		Steered:          msg.Steered,
 		ReasoningContent: msg.ReasoningContent,
 		ReasoningBlocks:  append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...),
 		ToolCallID:       msg.ToolCallID,

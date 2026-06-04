@@ -46,10 +46,11 @@ type threadState struct {
 
 	execRuntime *runtime.ThreadRuntime
 
-	mu          sync.Mutex
-	running     bool
-	currentTurn string
-	cancel      context.CancelFunc
+	mu            sync.Mutex
+	running       bool
+	currentTurn   string
+	cancel        context.CancelFunc
+	pendingSteers []providers.ChatMessage
 
 	nextItemIndex         int
 	activeAgentItemID     string
@@ -72,6 +73,10 @@ type Server struct {
 	agentCompletionMu            sync.Mutex
 	pendingAgentCompletionTurns  map[string][]providers.ChatMessage
 	drainingAgentCompletionTurns map[string]bool
+
+	queuedTurnMu        sync.Mutex
+	pendingQueuedTurns  map[string][]queuedTurn
+	drainingQueuedTurns map[string]bool
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
@@ -83,6 +88,8 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 
 		pendingAgentCompletionTurns:  make(map[string][]providers.ChatMessage),
 		drainingAgentCompletionTurns: make(map[string]bool),
+		pendingQueuedTurns:           make(map[string][]queuedTurn),
+		drainingQueuedTurns:          make(map[string]bool),
 	}
 	_ = rt
 	return s
@@ -150,6 +157,14 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadRegenerateTitle(ctx, req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
+	case MethodTurnQueue:
+		return s.handleTurnQueue(req)
+	case MethodTurnDequeue:
+		return s.handleTurnDequeue(req)
+	case MethodTurnSteer:
+		return s.handleTurnSteer(req)
+	case MethodTurnUnsteer:
+		return s.handleTurnUnsteer(req)
 	case MethodTurnInterrupt:
 		return s.handleTurnInterrupt(req)
 	case MethodShutdown:

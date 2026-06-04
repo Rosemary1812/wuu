@@ -97,7 +97,6 @@ import {
   composerImageFromFile,
   createComposerMessage,
   inputImagesFromComposer,
-  mergeGuideMessages,
   type ComposerImage,
   type QueuedComposerMessage,
 } from "./ComposerMessages";
@@ -643,8 +642,6 @@ export function App(): JSX.Element {
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
-  const drainingQueueRef = useRef(false);
-  const queueDrainPausedRef = useRef(false);
   const viewSwitchRequestRef = useRef(0);
   const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
   const runDebugEventIDRef = useRef(0);
@@ -804,24 +801,6 @@ export function App(): JSX.Element {
   }, [state]);
 
   useEffect(() => {
-    if (!isStateActiveThreadRunning(state)) {
-      void drainQueuedMessages();
-    }
-  }, [
-    state.activeContext?.cwd,
-    state.initialized?.model,
-    state.initialized?.provider,
-    state.running,
-    state.activePane,
-    state.thread?.id,
-    state.thread?.status,
-    state.thread?.turns,
-    state.secondaryThread?.id,
-    state.secondaryThread?.status,
-    state.secondaryThread?.turns,
-  ]);
-
-  useEffect(() => {
     let mounted = true;
     const off = window.wuu.onServerEvent((event) => {
       if (!mounted) {
@@ -844,6 +823,7 @@ export function App(): JSX.Element {
       if (serverEventShouldRefreshGit(event)) {
         scheduleGitStatusRefresh(600);
       }
+      syncPendingComposerMessagesFromServerEvent(event);
       setState((current) => reduceServerEvent(current, event));
     });
 
@@ -1946,13 +1926,61 @@ export function App(): JSX.Element {
   }
 
   function clearPendingComposerMessages(): void {
-    queueDrainPausedRef.current = false;
     setQueuedMessagesNow([]);
     setGuideMessagesNow([]);
   }
 
+  function removePendingComposerMessageByID(id: string): void {
+    if (!id) {
+      return;
+    }
+    const nextQueued = queuedMessagesRef.current.filter(
+      (message) => message.id !== id,
+    );
+    const nextGuides = guideMessagesRef.current.filter(
+      (message) => message.id !== id,
+    );
+    if (nextQueued.length !== queuedMessagesRef.current.length) {
+      setQueuedMessagesNow(nextQueued);
+    }
+    if (nextGuides.length !== guideMessagesRef.current.length) {
+      setGuideMessagesNow(nextGuides);
+    }
+  }
+
+  function syncPendingComposerMessagesFromServerEvent(event: ServerEvent): void {
+    if (event.kind !== "notification") {
+      return;
+    }
+    const params = isRecord(event.message.params)
+      ? event.message.params
+      : undefined;
+    if (!params) {
+      return;
+    }
+    if (event.message.method === "turn/started") {
+      const queueID = stringValue(params, "queue_id");
+      if (queueID) {
+        removePendingComposerMessageByID(queueID);
+      }
+      return;
+    }
+    if (event.message.method === "turn/dequeued") {
+      const queueID = stringValue(params, "queue_id");
+      if (queueID) {
+        removePendingComposerMessageByID(queueID);
+      }
+      return;
+    }
+    if (event.message.method === "item/completed") {
+      const item = threadItemFromRecord(recordValue(params, "item"));
+      if (item?.type === "user_message" && item.source_id) {
+        removePendingComposerMessageByID(item.source_id);
+      }
+    }
+  }
+
   function enqueueComposerMessage(message: QueuedComposerMessage): void {
-    queueDrainPausedRef.current = false;
     const next = [...queuedMessagesRef.current, message];
     setQueuedMessagesNow(next);
     setState((current) => ({
@@ -1961,20 +1989,40 @@ export function App(): JSX.Element {
     }));
   }
 
-  function removeQueuedMessage(id: string): void {
-    queueDrainPausedRef.current = false;
+  async function removeQueuedMessage(id: string): Promise<void> {
     setQueuedMessagesNow(
       queuedMessagesRef.current.filter((message) => message.id !== id),
     );
-    void drainQueuedMessages();
+    const targetThread = activeThreadForState(appStateRef.current);
+    if (!targetThread) {
+      return;
+    }
+    try {
+      await window.wuu.dequeueTurn(targetThread.id, id);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "取消排队失败",
+      }));
+    }
   }
 
-  function removeGuideMessage(id: string): void {
-    queueDrainPausedRef.current = false;
+  async function removeGuideMessage(id: string): Promise<void> {
     setGuideMessagesNow(
       guideMessagesRef.current.filter((message) => message.id !== id),
     );
-    void drainQueuedMessages();
+    const targetThread = activeThreadForState(appStateRef.current);
+    if (!targetThread) {
+      return;
+    }
+    try {
+      await window.wuu.unsteerTurn(targetThread.id, id);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "取消引导失败",
+      }));
+    }
   }
 
   async function guideQueuedMessage(id: string): Promise<void> {
@@ -1989,29 +2037,42 @@ export function App(): JSX.Element {
       ...queuedMessagesRef.current.slice(0, queuedIndex),
       ...queuedMessagesRef.current.slice(queuedIndex + 1),
     ];
-    queueDrainPausedRef.current = false;
-    setQueuedMessagesNow(remainingQueued);
-    setGuideMessagesNow([...guideMessagesRef.current, message]);
-    setState((current) => ({
-      ...current,
-      status: "引导已加入",
-    }));
-
     const currentState = appStateRef.current;
     if (!isStateActiveThreadRunning(currentState)) {
-      void drainQueuedMessages();
+      setQueuedMessagesNow(remainingQueued);
+      void sendComposerMessage(message);
       return;
     }
     const targetThread = activeThreadForState(currentState);
     if (!targetThread) {
       return;
     }
+    const turnID = activeTurnIDForThread(targetThread);
+    if (!turnID) {
+      setState((current) => ({
+        ...current,
+        status: "没有可引导的任务",
+      }));
+      return;
+    }
     try {
-      await window.wuu.interruptTurn(targetThread.id);
+      await window.wuu.steerTurn(
+        targetThread.id,
+        turnID,
+        message.text.trim(),
+        inputImagesFromComposer(message.images),
+        message.id,
+      );
+      setQueuedMessagesNow(remainingQueued);
+      setGuideMessagesNow([...guideMessagesRef.current, message]);
+      setState((current) => ({
+        ...current,
+        status: "已引导当前任务",
+      }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "interrupt failed",
+        status: error instanceof Error ? error.message : "引导失败",
       }));
     }
   }
@@ -4130,10 +4191,44 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     if (isStateActiveThreadRunning(currentState)) {
-      enqueueComposerMessage(message);
+      const queued = await queueComposerMessage(message, targetThread);
+      if (!queued) {
+        setPrompt(message.text);
+        setComposerImages(message.images);
+      }
       return;
     }
     await sendComposerMessage(message, true);
+  }
+
+  async function queueComposerMessage(
+    message: QueuedComposerMessage,
+    targetThread = activeThreadForState(appStateRef.current),
+  ): Promise<boolean> {
+    const currentState = appStateRef.current;
+    const text = message.text.trim();
+    const images = inputImagesFromComposer(message.images);
+    if (
+      (!text && images.length === 0) ||
+      !targetThread ||
+      targetThread.read_only ||
+      !currentState.activeContext ||
+      !currentState.initialized ||
+      viewSwitchPending
+    ) {
+      return false;
+    }
+    try {
+      await window.wuu.queueTurn(targetThread.id, text, images, message.id);
+      enqueueComposerMessage(message);
+      return true;
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "排队失败",
+      }));
+      return false;
+    }
   }
 
   async function sendComposerMessage(
@@ -4291,11 +4386,17 @@ export function App(): JSX.Element {
       return;
     }
     if (isThreadRunning(targetThread)) {
-      setState((current) => ({
-        ...current,
-        activePane: pane,
-        status: "该分支正在运行",
-      }));
+      const queued = await queueComposerMessage(message, targetThread);
+      if (queued) {
+        setSplitComposerDrafts((current) => ({
+          ...current,
+          [pane]: emptyComposerDraft(),
+        }));
+        setState((current) => ({
+          ...current,
+          activePane: pane,
+        }));
+      }
       return;
     }
     setSplitComposerDrafts((current) => ({
@@ -4398,56 +4499,6 @@ export function App(): JSX.Element {
       return false;
     }
     return true;
-  }
-
-  async function drainQueuedMessages(): Promise<void> {
-    if (drainingQueueRef.current || queueDrainPausedRef.current) {
-      return;
-    }
-    const currentState = appStateRef.current;
-    if (
-      isAnyThreadRunning(currentState) ||
-      !currentState.activeContext ||
-      !currentState.initialized
-    ) {
-      return;
-    }
-
-    const guidesToSend = guideMessagesRef.current;
-    let message: QueuedComposerMessage | undefined;
-    let restoreGuides: QueuedComposerMessage[] = [];
-    let restoreQueued: QueuedComposerMessage | undefined;
-
-    if (guidesToSend.length > 0) {
-      restoreGuides = guidesToSend;
-      message = mergeGuideMessages(guidesToSend);
-      setGuideMessagesNow([]);
-    } else if (queuedMessagesRef.current.length > 0) {
-      const [nextMessage, ...remainingMessages] = queuedMessagesRef.current;
-      message = nextMessage;
-      restoreQueued = nextMessage;
-      setQueuedMessagesNow(remainingMessages);
-    }
-
-    if (!message) {
-      return;
-    }
-
-    drainingQueueRef.current = true;
-    const sent = await sendComposerMessage(message);
-    drainingQueueRef.current = false;
-    if (!sent) {
-      queueDrainPausedRef.current = true;
-      if (restoreGuides.length > 0) {
-        setGuideMessagesNow([...restoreGuides, ...guideMessagesRef.current]);
-      } else if (restoreQueued) {
-        setQueuedMessagesNow([restoreQueued, ...queuedMessagesRef.current]);
-      }
-      setState((current) => ({
-        ...current,
-        status: "队列暂停",
-      }));
-    }
   }
 
   async function updateRuntimeSettings(
@@ -6629,6 +6680,19 @@ function isThreadRunning(thread: Thread | undefined): boolean {
     thread?.status === "in_progress" ||
     thread?.turns.some((turn) => turn.status === "in_progress"),
   );
+}
+
+function activeTurnIDForThread(thread: Thread | undefined): string | undefined {
+  if (!thread) {
+    return undefined;
+  }
+  for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+    const turn = thread.turns[index];
+    if (turn.status === "in_progress") {
+      return turn.id;
+    }
+  }
+  return undefined;
 }
 
 function isStateActiveThreadRunning(state: AppState): boolean {

@@ -62,6 +62,7 @@ func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMess
 	th.currentTurn = turnID
 	th.running = true
 	th.UpdatedAt = now
+	th.pendingSteers = nil
 	th.nextItemIndex = 0
 	th.activeAgentItemID = ""
 	th.activeReasoningItemID = ""
@@ -97,6 +98,7 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 		th.Turns = append(th.Turns, turn)
 		th.currentTurn = turnID
 		th.running = true
+		th.pendingSteers = nil
 		th.nextItemIndex = 0
 		return turn, true
 	}
@@ -117,6 +119,7 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	th.Turns[index] = turn
 	th.currentTurn = turn.ID
 	th.running = true
+	th.pendingSteers = nil
 	th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
 	if th.toolItems == nil {
 		th.toolItems = make(map[string]string)
@@ -145,6 +148,55 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 	}
 	th.replaceTurnLocked(turn)
 	return turn
+}
+
+func (th *threadState) takePendingSteersLocked(turnID string, now time.Time) ([]providers.ChatMessage, []outboundNotification) {
+	if len(th.pendingSteers) == 0 || turnID == "" || turnID != th.currentTurn {
+		return nil, nil
+	}
+	steers := append([]providers.ChatMessage(nil), th.pendingSteers...)
+	th.pendingSteers = nil
+	var out []outboundNotification
+	for i := range steers {
+		if strings.TrimSpace(steers[i].Role) == "" {
+			steers[i].Role = "user"
+		}
+		steers[i].Steered = true
+		item := chatMessageItem(th.nextItemIDLocked(turnID), steers[i])
+		if item.ID == "" {
+			continue
+		}
+		th.upsertItemLocked(turnID, item, now)
+		out = append(out, itemStarted(th.ID, turnID, item, now), itemCompleted(th.ID, turnID, item, now))
+	}
+	return steers, out
+}
+
+func (th *threadState) drainPendingSteersLocked() []providers.ChatMessage {
+	if len(th.pendingSteers) == 0 {
+		return nil
+	}
+	steers := append([]providers.ChatMessage(nil), th.pendingSteers...)
+	th.pendingSteers = nil
+	return steers
+}
+
+func (th *threadState) removePendingSteerLocked(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" || len(th.pendingSteers) == 0 {
+		return false
+	}
+	next := th.pendingSteers[:0]
+	removed := false
+	for _, msg := range th.pendingSteers {
+		if !removed && msg.ClientID == id {
+			removed = true
+			continue
+		}
+		next = append(next, msg)
+	}
+	th.pendingSteers = next
+	return removed
 }
 
 func maxTurnItemIndex(turn Turn) int {
@@ -659,6 +711,10 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 			continue
 		}
 		if msg.Role == "user" && !isToolResultMessage(msg) {
+			if msg.Steered && current != nil {
+				appendItem(chatMessageItem(nextItemID(current.ID), msg))
+				continue
+			}
 			turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
 			itemIndex = 0
 			toolItems = make(map[string]int)
@@ -738,12 +794,13 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 	switch msg.Role {
 	case "user":
 		return ThreadItem{
-			ID:     id,
-			Type:   ThreadItemUserMessage,
-			Status: ThreadItemStatusCompleted,
-			Role:   "user",
-			Text:   msg.Content,
-			Images: threadItemImages(msg.Images),
+			ID:       id,
+			SourceID: msg.ClientID,
+			Type:     ThreadItemUserMessage,
+			Status:   ThreadItemStatusCompleted,
+			Role:     "user",
+			Text:     msg.Content,
+			Images:   threadItemImages(msg.Images),
 		}
 	case "assistant":
 		if strings.TrimSpace(msg.Content) != "" {

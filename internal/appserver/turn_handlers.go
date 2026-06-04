@@ -16,6 +16,11 @@ import (
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
+type queuedTurn struct {
+	id  string
+	msg providers.ChatMessage
+}
+
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	var params TurnStartParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -79,6 +84,161 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 
 	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
 	return nil
+}
+
+func (s *Server) handleTurnQueue(req Request) error {
+	var params TurnQueueParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	params.ThreadID = strings.TrimSpace(params.ThreadID)
+	params.Prompt = strings.TrimSpace(params.Prompt)
+	if params.ThreadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	images, err := normalizeTurnStartImages(params.Images)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.Prompt == "" && len(images) == 0 {
+		return s.writeResponse(req.ID, nil, errors.New("prompt or image is required"))
+	}
+	th := s.thread(params.ThreadID)
+	if th == nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
+	}
+	th.mu.Lock()
+	readOnly := th.ReadOnly
+	th.mu.Unlock()
+	if readOnly {
+		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+	}
+
+	queueID := strings.TrimSpace(params.ClientID)
+	if queueID == "" {
+		queueID = session.NewID()
+	}
+	msg := providers.ChatMessage{
+		Role:     "user",
+		ClientID: queueID,
+		Content:  params.Prompt,
+		Images:   images,
+	}
+	queued := queuedTurnSummary(params.ThreadID, queuedTurn{id: queueID, msg: msg})
+	s.enqueueQueuedUserTurn(params.ThreadID, queuedTurn{id: queueID, msg: msg})
+	if err := s.writeResponse(req.ID, TurnQueueResult{Queued: queued}, nil); err != nil {
+		return err
+	}
+	_ = s.writeNotification(NotificationTurnQueued, TurnQueuedNotification{Queued: queued})
+	s.kickQueuedTurnDrain(params.ThreadID)
+	return nil
+}
+
+func (s *Server) handleTurnDequeue(req Request) error {
+	var params TurnDequeueParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	threadID := strings.TrimSpace(params.ThreadID)
+	queueID := strings.TrimSpace(params.QueueID)
+	if threadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	if queueID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("queue_id is required"))
+	}
+	removed := s.removeQueuedUserTurn(threadID, queueID)
+	if err := s.writeResponse(req.ID, OKResult{OK: removed}, nil); err != nil {
+		return err
+	}
+	if removed {
+		_ = s.writeNotification(NotificationTurnDequeued, TurnDequeuedNotification{
+			ThreadID: threadID,
+			QueueID:  queueID,
+		})
+	}
+	return nil
+}
+
+func (s *Server) handleTurnSteer(req Request) error {
+	var params TurnSteerParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	params.ThreadID = strings.TrimSpace(params.ThreadID)
+	params.Prompt = strings.TrimSpace(params.Prompt)
+	params.ExpectedTurnID = strings.TrimSpace(params.ExpectedTurnID)
+	if params.ThreadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	if params.ExpectedTurnID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("expected_turn_id is required"))
+	}
+	images, err := normalizeTurnStartImages(params.Images)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.Prompt == "" && len(images) == 0 {
+		return s.writeResponse(req.ID, nil, errors.New("prompt or image is required"))
+	}
+	th := s.thread(params.ThreadID)
+	if th == nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
+	}
+	clientID := strings.TrimSpace(params.ClientID)
+	if clientID == "" {
+		clientID = session.NewID()
+	}
+
+	th.mu.Lock()
+	if !th.running || th.currentTurn == "" {
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, errors.New("no active turn to steer"))
+	}
+	if params.ExpectedTurnID != th.currentTurn {
+		actual := th.currentTurn
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, fmt.Errorf("expected active turn id `%s` but found `%s`", params.ExpectedTurnID, actual))
+	}
+	turnID := th.currentTurn
+	th.pendingSteers = append(th.pendingSteers, providers.ChatMessage{
+		Role:     "user",
+		ClientID: clientID,
+		Content:  params.Prompt,
+		Images:   images,
+		Steered:  true,
+	})
+	th.mu.Unlock()
+	if s.removeQueuedUserTurn(params.ThreadID, clientID) {
+		_ = s.writeNotification(NotificationTurnDequeued, TurnDequeuedNotification{
+			ThreadID: params.ThreadID,
+			QueueID:  clientID,
+		})
+	}
+	return s.writeResponse(req.ID, TurnSteerResult{TurnID: turnID}, nil)
+}
+
+func (s *Server) handleTurnUnsteer(req Request) error {
+	var params TurnUnsteerParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	threadID := strings.TrimSpace(params.ThreadID)
+	steerID := strings.TrimSpace(params.SteerID)
+	if threadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	if steerID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("steer_id is required"))
+	}
+	th := s.thread(threadID)
+	if th == nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", threadID))
+	}
+	th.mu.Lock()
+	removed := th.removePendingSteerLocked(steerID)
+	th.mu.Unlock()
+	return s.writeResponse(req.ID, OKResult{OK: removed}, nil)
 }
 
 func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, error) {
@@ -208,6 +368,24 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner
 	}
+	baseBeforeStep := runner.BeforeStep
+	runner.BeforeStep = func() []providers.ChatMessage {
+		var messages []providers.ChatMessage
+		if baseBeforeStep != nil {
+			messages = append(messages, baseBeforeStep()...)
+		}
+		th.mu.Lock()
+		steers, batch := th.takePendingSteersLocked(turnID, time.Now().UTC())
+		th.mu.Unlock()
+		notifyBatch(batch)
+		if len(steers) > 0 {
+			messages = append(messages, steers...)
+		}
+		return messages
+	}
+	defer func() {
+		runner.BeforeStep = baseBeforeStep
+	}()
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
 		th.mu.Lock()
 		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
@@ -257,8 +435,12 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		titleHistory = cloneHistory(th.History)
 	}
 	turn := th.completeTurnLocked(turnID, status, err, now)
+	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
+	if len(unconsumedSteers) > 0 {
+		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))
+	}
 	if err != nil {
 		notify(NotificationTurnError, TurnErrorNotification{
 			ThreadID: th.ID,
@@ -267,6 +449,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 			Turn:     turn,
 		})
 		s.kickAgentCompletionDrain(th.ID)
+		s.kickQueuedTurnDrain(th.ID)
 		return
 	}
 	notify(NotificationTurnCompleted, TurnCompletedNotification{
@@ -278,6 +461,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	})
 	go s.generateThreadTitle(th.ID, titleHistory)
 	s.kickAgentCompletionDrain(th.ID)
+	s.kickQueuedTurnDrain(th.ID)
 }
 
 func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatMessage) {
@@ -301,6 +485,215 @@ func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatM
 	s.agentCompletionMu.Unlock()
 
 	s.kickAgentCompletionDrain(threadID)
+}
+
+func (s *Server) enqueueQueuedUserTurn(threadID string, entry queuedTurn) {
+	threadID = strings.TrimSpace(threadID)
+	entry.id = strings.TrimSpace(entry.id)
+	if threadID == "" || entry.id == "" || (strings.TrimSpace(entry.msg.Content) == "" && len(entry.msg.Images) == 0) {
+		return
+	}
+	if strings.TrimSpace(entry.msg.Role) == "" {
+		entry.msg.Role = "user"
+	}
+	entry.msg.ClientID = entry.id
+	entry.msg.Steered = false
+
+	s.queuedTurnMu.Lock()
+	if s.pendingQueuedTurns == nil {
+		s.pendingQueuedTurns = make(map[string][]queuedTurn)
+	}
+	s.pendingQueuedTurns[threadID] = append(s.pendingQueuedTurns[threadID], entry)
+	s.queuedTurnMu.Unlock()
+}
+
+func (s *Server) removeQueuedUserTurn(threadID, queueID string) bool {
+	threadID = strings.TrimSpace(threadID)
+	queueID = strings.TrimSpace(queueID)
+	if threadID == "" || queueID == "" {
+		return false
+	}
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	pending := s.pendingQueuedTurns[threadID]
+	next := pending[:0]
+	removed := false
+	for _, entry := range pending {
+		if !removed && entry.id == queueID {
+			removed = true
+			continue
+		}
+		next = append(next, entry)
+	}
+	if len(next) == 0 {
+		delete(s.pendingQueuedTurns, threadID)
+	} else {
+		s.pendingQueuedTurns[threadID] = next
+	}
+	return removed
+}
+
+func (s *Server) kickQueuedTurnDrain(threadID string) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return
+	}
+
+	s.queuedTurnMu.Lock()
+	if len(s.pendingQueuedTurns[threadID]) == 0 || s.drainingQueuedTurns[threadID] {
+		s.queuedTurnMu.Unlock()
+		return
+	}
+	if s.drainingQueuedTurns == nil {
+		s.drainingQueuedTurns = make(map[string]bool)
+	}
+	s.drainingQueuedTurns[threadID] = true
+	s.queuedTurnMu.Unlock()
+
+	go s.drainQueuedTurns(threadID)
+}
+
+func (s *Server) drainQueuedTurns(threadID string) {
+	th := s.thread(threadID)
+	if th == nil {
+		s.discardQueuedUserTurns(threadID)
+		s.clearQueuedTurnDrain(threadID)
+		return
+	}
+	if threadIsRunning(th) {
+		s.clearQueuedTurnDrain(threadID)
+		return
+	}
+
+	entry, ok := s.takeNextQueuedUserTurn(threadID)
+	if !ok {
+		s.clearQueuedTurnDrain(threadID)
+		return
+	}
+	started, err := s.startQueuedTurn(context.Background(), threadID, entry)
+	if err != nil {
+		providers.DebugLogf("start queued turn for thread %q: %v", threadID, err)
+	}
+	requeued := false
+	if !started && err == nil {
+		s.prependQueuedUserTurns(threadID, []queuedTurn{entry})
+		requeued = true
+	}
+	s.clearQueuedTurnDrain(threadID)
+	if requeued || s.hasQueuedUserTurns(threadID) {
+		s.kickQueuedTurnDrain(threadID)
+	}
+}
+
+func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry queuedTurn) (bool, error) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return false, errors.New("thread_id is required")
+	}
+	if strings.TrimSpace(entry.msg.Role) == "" {
+		entry.msg.Role = "user"
+	}
+	if strings.TrimSpace(entry.msg.Content) == "" && len(entry.msg.Images) == 0 {
+		return false, nil
+	}
+	entry.id = strings.TrimSpace(entry.id)
+	if entry.id == "" {
+		entry.id = session.NewID()
+	}
+	entry.msg.ClientID = entry.id
+	entry.msg.Steered = false
+
+	th := s.thread(threadID)
+	if th == nil {
+		return false, fmt.Errorf("thread %q not found", threadID)
+	}
+	threadRuntime, err := s.ensureThreadRuntime(th)
+	if err != nil {
+		return false, err
+	}
+
+	turnID := session.NewID()
+	turnCtx, cancel := context.WithCancel(ctx)
+	now := time.Now().UTC()
+
+	th.mu.Lock()
+	if th.running {
+		th.mu.Unlock()
+		cancel()
+		return false, nil
+	}
+	if th.ReadOnly {
+		th.mu.Unlock()
+		cancel()
+		return false, errors.New("thread is read-only")
+	}
+	if err := appendChatMessage(th.MemoryPath, entry.msg); err != nil {
+		th.mu.Unlock()
+		cancel()
+		return false, err
+	}
+	history := append([]providers.ChatMessage(nil), th.History...)
+	history = append(history, entry.msg)
+	th.History = history
+	th.cancel = cancel
+	turn := th.startTurnLocked(turnID, entry.msg, now)
+	th.mu.Unlock()
+
+	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+		ThreadID: threadID,
+		Turn:     turn,
+		QueueID:  entry.id,
+	})
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
+	return true, nil
+}
+
+func (s *Server) takeNextQueuedUserTurn(threadID string) (queuedTurn, bool) {
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	pending := s.pendingQueuedTurns[threadID]
+	if len(pending) == 0 {
+		return queuedTurn{}, false
+	}
+	entry := pending[0]
+	if len(pending) == 1 {
+		delete(s.pendingQueuedTurns, threadID)
+	} else {
+		s.pendingQueuedTurns[threadID] = append([]queuedTurn(nil), pending[1:]...)
+	}
+	return entry, true
+}
+
+func (s *Server) prependQueuedUserTurns(threadID string, entries []queuedTurn) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" || len(entries) == 0 {
+		return
+	}
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	if s.pendingQueuedTurns == nil {
+		s.pendingQueuedTurns = make(map[string][]queuedTurn)
+	}
+	existing := append([]queuedTurn(nil), s.pendingQueuedTurns[threadID]...)
+	s.pendingQueuedTurns[threadID] = append(append([]queuedTurn(nil), entries...), existing...)
+}
+
+func (s *Server) hasQueuedUserTurns(threadID string) bool {
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	return len(s.pendingQueuedTurns[threadID]) > 0
+}
+
+func (s *Server) discardQueuedUserTurns(threadID string) {
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	delete(s.pendingQueuedTurns, threadID)
+}
+
+func (s *Server) clearQueuedTurnDrain(threadID string) {
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	delete(s.drainingQueuedTurns, threadID)
 }
 
 func (s *Server) kickAgentCompletionDrain(threadID string) {
@@ -483,6 +876,40 @@ func combineAgentCompletionMessages(msgs []providers.ChatMessage) providers.Chat
 		Role:    "user",
 		Content: strings.Join(contents, "\n\n"),
 	}
+}
+
+func queuedTurnSummary(threadID string, entry queuedTurn) QueuedTurn {
+	preview := strings.TrimSpace(entry.msg.Content)
+	if preview == "" && len(entry.msg.Images) > 0 {
+		if len(entry.msg.Images) == 1 {
+			preview = "[Image #1]"
+		} else {
+			preview = fmt.Sprintf("[%d images]", len(entry.msg.Images))
+		}
+	}
+	return QueuedTurn{
+		ID:         entry.id,
+		ThreadID:   threadID,
+		Preview:    preview,
+		ImageCount: len(entry.msg.Images),
+	}
+}
+
+func queuedTurnsFromSteers(msgs []providers.ChatMessage) []queuedTurn {
+	if len(msgs) == 0 {
+		return nil
+	}
+	out := make([]queuedTurn, 0, len(msgs))
+	for _, msg := range msgs {
+		id := strings.TrimSpace(msg.ClientID)
+		if id == "" {
+			id = session.NewID()
+		}
+		msg.ClientID = id
+		msg.Steered = false
+		out = append(out, queuedTurn{id: id, msg: msg})
+	}
+	return out
 }
 
 func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool) error {

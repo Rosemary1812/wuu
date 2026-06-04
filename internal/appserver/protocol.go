@@ -25,6 +25,10 @@ const (
 	MethodThreadArchive         = "thread/archive"
 	MethodThreadRegenerateTitle = "thread/regenerate-title"
 	MethodTurnStart             = "turn/start"
+	MethodTurnQueue             = "turn/queue"
+	MethodTurnDequeue           = "turn/dequeue"
+	MethodTurnSteer             = "turn/steer"
+	MethodTurnUnsteer           = "turn/unsteer"
 	MethodTurnInterrupt         = "turn/interrupt"
 	MethodShutdown              = "shutdown"
 
@@ -32,6 +36,8 @@ const (
 	NotificationThreadResumed = "thread/resumed"
 	NotificationThreadUpdated = "thread/updated"
 	NotificationTurnStarted   = "turn/started"
+	NotificationTurnQueued    = "turn/queued"
+	NotificationTurnDequeued  = "turn/dequeued"
 	NotificationTurnEvent     = "turn/event"
 	NotificationTurnError     = "turn/error"
 	NotificationTurnCompleted = "turn/completed"
@@ -273,6 +279,46 @@ type TurnStartResult struct {
 	Turn Turn `json:"turn"`
 }
 
+type TurnQueueParams struct {
+	ThreadID string           `json:"thread_id"`
+	Prompt   string           `json:"prompt"`
+	Images   []TurnStartImage `json:"images,omitempty"`
+	ClientID string           `json:"client_id,omitempty"`
+}
+
+type QueuedTurn struct {
+	ID         string `json:"id"`
+	ThreadID   string `json:"thread_id"`
+	Preview    string `json:"preview,omitempty"`
+	ImageCount int    `json:"image_count,omitempty"`
+}
+
+type TurnQueueResult struct {
+	Queued QueuedTurn `json:"queued"`
+}
+
+type TurnDequeueParams struct {
+	ThreadID string `json:"thread_id"`
+	QueueID  string `json:"queue_id"`
+}
+
+type TurnSteerParams struct {
+	ThreadID       string           `json:"thread_id"`
+	Prompt         string           `json:"prompt"`
+	Images         []TurnStartImage `json:"images,omitempty"`
+	ExpectedTurnID string           `json:"expected_turn_id"`
+	ClientID       string           `json:"client_id,omitempty"`
+}
+
+type TurnSteerResult struct {
+	TurnID string `json:"turn_id"`
+}
+
+type TurnUnsteerParams struct {
+	ThreadID string `json:"thread_id"`
+	SteerID  string `json:"steer_id"`
+}
+
 type TurnInterruptParams struct {
 	ThreadID string `json:"thread_id"`
 }
@@ -315,6 +361,16 @@ type ThreadRegenerateTitleResult struct {
 type TurnStartedNotification struct {
 	ThreadID string `json:"thread_id"`
 	Turn     Turn   `json:"turn"`
+	QueueID  string `json:"queue_id,omitempty"`
+}
+
+type TurnQueuedNotification struct {
+	Queued QueuedTurn `json:"queued"`
+}
+
+type TurnDequeuedNotification struct {
+	ThreadID string `json:"thread_id"`
+	QueueID  string `json:"queue_id"`
 }
 
 type TurnEventNotification struct {
@@ -460,6 +516,7 @@ const (
 
 type ThreadItem struct {
 	ID        string                     `json:"id"`
+	SourceID  string                     `json:"source_id,omitempty"`
 	Type      ThreadItemType             `json:"type"`
 	Status    ThreadItemStatus           `json:"status,omitempty"`
 	Phase     ThreadItemPhase            `json:"phase,omitempty"`

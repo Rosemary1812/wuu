@@ -367,6 +367,54 @@ app.whenReady().then(() => {
         images: images ?? [],
       }),
   );
+  ipcMain.handle(
+    "wuu:turn-queue",
+    (
+      _event,
+      threadId: string,
+      prompt: string,
+      images?: InputImage[],
+      clientId?: string,
+    ) =>
+      appServerClientPool.request("turn/queue", {
+        thread_id: threadId,
+        prompt,
+        images: images ?? [],
+        client_id: clientId,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:turn-dequeue",
+    (_event, threadId: string, queueId: string) =>
+      appServerClientPool.request<{ ok: boolean }>("turn/dequeue", {
+        thread_id: threadId,
+        queue_id: queueId,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:turn-steer",
+    (
+      _event,
+      threadId: string,
+      expectedTurnId: string,
+      prompt: string,
+      images?: InputImage[],
+      clientId?: string,
+    ) =>
+      appServerClientPool.request("turn/steer", {
+        thread_id: threadId,
+        expected_turn_id: expectedTurnId,
+        prompt,
+        images: images ?? [],
+        client_id: clientId,
+      }),
+  );
+  ipcMain.handle("wuu:turn-unsteer", (_event, threadId: string, steerId: string) =>
+    appServerClientPool.request<{ ok: boolean }>("turn/unsteer", {
+      thread_id: threadId,
+      steer_id: steerId,
+    }),
+  );
   ipcMain.handle("wuu:turn-interrupt", (_event, threadId: string) =>
     appServerClientPool.request<{ ok: boolean }>("turn/interrupt", {
       thread_id: threadId,

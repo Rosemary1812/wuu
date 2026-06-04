@@ -95,6 +95,40 @@ func TestThreadStateCarriesToolCallDisplay(t *testing.T) {
 	}
 }
 
+func TestTurnsFromHistoryKeepsSteeredUserMessageInCurrentTurn(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	turns := turnsFromHistory("thread", []providers.ChatMessage{
+		{Role: "user", Content: "start"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_1",
+				Name:      "read_file",
+				Arguments: `{}`,
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_1", Name: "read_file", Content: "file"},
+		{Role: "user", ClientID: "steer-1", Content: "steer now", Steered: true},
+		{Role: "assistant", Content: "done"},
+	}, now)
+
+	if len(turns) != 1 {
+		t.Fatalf("steered user message should not create a new turn, got %+v", turns)
+	}
+	var userItems []ThreadItem
+	for _, item := range turns[0].Items {
+		if item.Type == ThreadItemUserMessage {
+			userItems = append(userItems, item)
+		}
+	}
+	if len(userItems) != 2 {
+		t.Fatalf("expected original and steered user items, got %+v", turns[0].Items)
+	}
+	if userItems[1].Text != "steer now" || userItems[1].SourceID != "steer-1" {
+		t.Fatalf("unexpected steered user item: %+v", userItems[1])
+	}
+}
+
 func TestThreadStateReplacesActiveAgentMessageText(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)

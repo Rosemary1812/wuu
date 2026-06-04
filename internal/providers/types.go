@@ -43,9 +43,13 @@ type ReasoningBlock struct {
 
 // ChatMessage is a generic multi-provider chat message.
 type ChatMessage struct {
-	Role    string
-	Name    string
-	Content string
+	Role     string
+	Name     string
+	ClientID string
+	Content  string
+	// Steered marks user input that was injected into an already-running turn.
+	// Providers ignore this; app-server history uses it to restore turn items.
+	Steered bool
 	// ReasoningContent stores provider-emitted hidden reasoning that
 	// must be replayed in follow-up assistant tool-call messages for
 	// providers like Kimi when thinking mode is enabled.

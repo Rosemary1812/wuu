@@ -389,6 +389,7 @@ export type Turn = {
 
 export type ThreadItem = {
   id: string;
+  source_id?: string;
   type: ThreadItemType;
   status?: ThreadItemStatus;
   phase?: ThreadItemPhase;
@@ -417,6 +418,13 @@ export type PlanUpdate = {
 export type InputImage = {
   media_type: string;
   data: string;
+};
+
+export type QueuedTurn = {
+  id: string;
+  thread_id: string;
+  preview?: string;
+  image_count?: number;
 };
 
 export type ServerEvent = {
@@ -471,6 +479,21 @@ export type WuuDesktopApi = {
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
   startTurn: (threadId: string, prompt: string, images?: InputImage[]) => Promise<{ turn: Turn }>;
+  queueTurn: (
+    threadId: string,
+    prompt: string,
+    images?: InputImage[],
+    clientId?: string,
+  ) => Promise<{ queued: QueuedTurn }>;
+  dequeueTurn: (threadId: string, queueId: string) => Promise<{ ok: boolean }>;
+  steerTurn: (
+    threadId: string,
+    expectedTurnId: string,
+    prompt: string,
+    images?: InputImage[],
+    clientId?: string,
+  ) => Promise<{ turn_id: string }>;
+  unsteerTurn: (threadId: string, steerId: string) => Promise<{ ok: boolean }>;
   interruptTurn: (threadId: string) => Promise<{ ok: boolean }>;
   respondToServerRequest: (id: string, result: unknown) => Promise<void>;
   rejectServerRequest: (id: string, message: string) => Promise<void>;

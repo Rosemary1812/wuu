@@ -102,6 +102,40 @@ func (noopToolExecutor) Execute(_ context.Context, _ providers.ToolCall) (string
 	return "", nil
 }
 
+type blockingToolExecutor struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newBlockingToolExecutor() *blockingToolExecutor {
+	return &blockingToolExecutor{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (b *blockingToolExecutor) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{
+		Name:        "wait_for_steer",
+		Description: "wait for a steer test signal",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+	}}
+}
+
+func (b *blockingToolExecutor) Execute(ctx context.Context, _ providers.ToolCall) (string, error) {
+	b.once.Do(func() { close(b.started) })
+	select {
+	case <-b.release:
+		return `{"ok":true}`, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
 func (b *lockedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -919,6 +953,161 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].ID != threadID || sessions[0].Entries != 2 || sessions[0].Summary != "hello" {
 		t.Fatalf("unexpected session index: %+v", sessions)
+	}
+}
+
+func TestServerQueuesUserTurnWhileThreadIsRunning(t *testing.T) {
+	client := newBlockingStreamClient("done")
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Client = client
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	startReq := fmt.Sprintf(`{"id":"2","method":"turn/start","params":{"thread_id":%q,"prompt":"first"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(startReq)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	<-client.started
+
+	queueReq := fmt.Sprintf(`{"id":"3","method":"turn/queue","params":{"thread_id":%q,"prompt":"queued follow-up","client_id":"queued-1"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(queueReq)); err != nil {
+		t.Fatalf("turn/queue: %v", err)
+	}
+	queueResult := remarshal[TurnQueueResult](t, responseByID(t, parseOutput(t, out.String()), "3")["result"])
+	if queueResult.Queued.ID != "queued-1" || queueResult.Queued.ThreadID != threadID {
+		t.Fatalf("unexpected queue result: %+v", queueResult)
+	}
+
+	close(client.release)
+	msgs := waitForTurnCompletedCountForThread(t, out, threadID, 2)
+	var queuedStarted bool
+	for _, msg := range msgs {
+		if msg["method"] != NotificationTurnStarted {
+			continue
+		}
+		params := msg["params"].(map[string]any)
+		if params["thread_id"] == threadID && params["queue_id"] == "queued-1" {
+			queuedStarted = true
+			break
+		}
+	}
+	if !queuedStarted {
+		t.Fatalf("queued turn did not publish queue_id; output:\n%s", out.String())
+	}
+
+	th := srv.thread(threadID)
+	th.mu.Lock()
+	history := append([]providers.ChatMessage(nil), th.History...)
+	th.mu.Unlock()
+	var found bool
+	for _, msg := range history {
+		if msg.Role == "user" && msg.Content == "queued follow-up" && msg.ClientID == "queued-1" && !msg.Steered {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("history missing queued user turn: %+v", history)
+	}
+}
+
+func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{
+				ToolCalls: []providers.ToolCall{{
+					ID:        "call_1",
+					Name:      "wait_for_steer",
+					Arguments: `{}`,
+				}},
+			},
+			{Content: "done after steer"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	blockingTool := newBlockingToolExecutor()
+	rt.StreamRunner.Tools = blockingTool
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	startReq := fmt.Sprintf(`{"id":"2","method":"turn/start","params":{"thread_id":%q,"prompt":"start"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(startReq)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	started := remarshal[TurnStartResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+
+	<-blockingTool.started
+	badSteerReq := fmt.Sprintf(`{"id":"bad-steer","method":"turn/steer","params":{"thread_id":%q,"expected_turn_id":"wrong-turn","prompt":"wrong"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(badSteerReq)); err != nil {
+		t.Fatalf("bad turn/steer: %v", err)
+	}
+	badSteerResp := responseByID(t, parseOutput(t, out.String()), "bad-steer")
+	if badSteerResp["error"] == nil {
+		t.Fatalf("expected steer mismatch error, got %+v", badSteerResp)
+	}
+
+	steerReq := fmt.Sprintf(`{"id":"3","method":"turn/steer","params":{"thread_id":%q,"expected_turn_id":%q,"prompt":"steer now","client_id":"steer-1"}}`, threadID, started.Turn.ID)
+	if err := srv.handleLine(context.Background(), []byte(steerReq)); err != nil {
+		t.Fatalf("turn/steer: %v", err)
+	}
+	steerResult := remarshal[TurnSteerResult](t, responseByID(t, parseOutput(t, out.String()), "3")["result"])
+	if steerResult.TurnID != started.Turn.ID {
+		t.Fatalf("unexpected steer result: %+v", steerResult)
+	}
+
+	close(blockingTool.release)
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethodForThread(t, msgs, NotificationTurnCompleted, threadID)["params"])
+	var foundItem bool
+	for _, item := range completed.Turn.Items {
+		if item.Type == ThreadItemUserMessage && item.Text == "steer now" && item.SourceID == "steer-1" {
+			foundItem = true
+			break
+		}
+	}
+	if !foundItem {
+		t.Fatalf("completed turn missing steer item: %+v", completed.Turn.Items)
+	}
+
+	client.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), client.requests...)
+	client.mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("expected two provider requests, got %d", len(requests))
+	}
+	var foundSteerInSecondRequest bool
+	for _, msg := range requests[1].Messages {
+		if msg.Role == "user" && msg.Content == "steer now" && msg.ClientID == "steer-1" && msg.Steered {
+			foundSteerInSecondRequest = true
+			break
+		}
+	}
+	if !foundSteerInSecondRequest {
+		t.Fatalf("second provider request missing steer: %+v", requests[1].Messages)
+	}
+
+	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	var foundPersisted bool
+	for _, msg := range persisted {
+		if msg.Role == "user" && msg.Content == "steer now" && msg.ClientID == "steer-1" && msg.Steered {
+			foundPersisted = true
+			break
+		}
+	}
+	if !foundPersisted {
+		t.Fatalf("persisted history missing steered input: %+v", persisted)
 	}
 }
 
@@ -1975,7 +2164,6 @@ func TestServerTurnItemsIncludeReasoningAndAgentMessage(t *testing.T) {
 		t.Fatalf("expected one reasoning and one agent item, got reasoning=%d agent=%d turn=%+v", reasoning, agent, completed.Turn)
 	}
 }
-
 
 func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
