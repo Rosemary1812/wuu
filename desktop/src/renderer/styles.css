@@ -7672,11 +7672,11 @@ button:disabled {
 }
 
 /* Row 2 of the fold header: live commentary preview. Pinned to
-   col 2 row 2 in the toggle grid, so the preview text starts at
-   the same x as the status text in row 1. The row-2 avatar slot
-   (speech-bubble placeholder) is a sibling in col 1, not a child
-   of this element, so it lines up with the row-1 brain slot
-   exactly. The text itself stays on a single line via ellipsis. */
+    col 2 row 2 in the toggle grid, so the preview text starts at
+    the same x as the status text in row 1. The row-2 avatar slot
+    (speech-bubble placeholder) is a sibling in col 1, not a child
+    of this element, so it lines up with the row-1 brain slot
+    exactly. The text itself stays on a single line via ellipsis. */
 .turn-process-preview {
   display: flex;
   min-width: 0;
@@ -7693,6 +7693,44 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Live commentary sweep on the fold header preview.
+   The body commentary gets the sweep via .streaming-markdown
+   .streaming-commentary-live; this is the same animation
+   applied to the fold header preview row so the user sees the
+   sweep on the row they're actually looking at. Uses the same
+   color stops (#5a6064 base, #1f2328 bright) and the same
+   1.8s loop. The animation lives on the text element directly
+   because the .turn-process-preview wrapper has its own
+   background-clip concerns (it's a flex container in the
+   grid). prefers-reduced-motion: reduce drops to static
+   muted text, same fallback as the body variant. */
+.turn-process-preview.is-live .turn-process-preview-text {
+  --commentary-sweep-base: #5a6064;
+  --commentary-sweep-bright: #1f2328;
+  background-image: linear-gradient(
+    90deg,
+    var(--commentary-sweep-base) 0%,
+    var(--commentary-sweep-base) 45%,
+    var(--commentary-sweep-bright) 50%,
+    var(--commentary-sweep-base) 55%,
+    var(--commentary-sweep-base) 100%
+  );
+  background-size: 300% 100%;
+  background-position: -100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: commentary-sweep 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-process-preview.is-live .turn-process-preview-text {
+    background-image: none;
+    color: inherit;
+    animation: none;
+  }
 }
 
 .turn-process-chevron {

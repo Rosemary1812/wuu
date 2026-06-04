@@ -7408,7 +7408,11 @@ function TurnProcessGroup({
         ))}
       </span>
       {hasPreview ? (
-        <span className="turn-process-preview">
+        <span
+          className={`turn-process-preview${
+            turn.status === "in_progress" ? " is-live" : ""
+          }`}
+        >
           <span className="turn-process-preview-text">
             {latestCommentaryPreview}
           </span>
