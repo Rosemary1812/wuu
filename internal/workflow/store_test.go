@@ -202,6 +202,50 @@ func TestStoreListRunsSortsByCreatedAt(t *testing.T) {
 	}
 }
 
+func TestStoreSavesAndLoadsTeamPlan(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.CreateRun(Run{ID: "team-run", Status: RunStateRunning}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	plan, err := store.SaveTeamPlan(TeamPlan{
+		RunID: "team-run",
+		Members: []TeamMember{
+			{ID: "qa", Role: "QA reviewer", Mode: TeamMemberReuseProfile, AgentProfile: "qa_laowang", TaskName: "qa_check"},
+			{ID: "docs", Role: "Docs reviewer", Mode: TeamMemberEphemeral, TaskName: "docs_check"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveTeamPlan: %v", err)
+	}
+	if plan.CreatedAt.IsZero() || plan.UpdatedAt.IsZero() {
+		t.Fatalf("team plan timestamps missing: %+v", plan)
+	}
+	loaded, err := store.LoadTeamPlan("team-run")
+	if err != nil {
+		t.Fatalf("LoadTeamPlan: %v", err)
+	}
+	if len(loaded.Members) != 2 || loaded.Members[0].AgentProfile != "qa_laowang" || loaded.Members[1].Mode != TeamMemberEphemeral {
+		t.Fatalf("loaded team plan mismatch: %+v", loaded)
+	}
+	events, err := store.ListEvents("team-run")
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	if events[len(events)-1].Type != EventTeamPlanRecorded {
+		t.Fatalf("expected team plan event, got %+v", events)
+	}
+}
+
+func TestStoreRejectsInvalidTeamPlan(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.SaveTeamPlan(TeamPlan{
+		RunID:   "team-run",
+		Members: []TeamMember{{ID: "bad", Role: "QA", Mode: TeamMemberEphemeral, AgentProfile: "qa"}},
+	}); err == nil {
+		t.Fatal("expected ephemeral member with agent_profile to be rejected")
+	}
+}
+
 func TestStoreRejectsUnsafeAndDuplicateIDs(t *testing.T) {
 	store := NewStore(t.TempDir())
 	if _, err := store.CreateRun(Run{ID: "../escape"}); err == nil {

@@ -181,6 +181,30 @@ func ListProfiles(wuuHome string) ([]ProfileSummary, error) {
 	return out, nil
 }
 
+func LoadProfile(wuuHome, name string) (ProfileSummary, bool, error) {
+	wuuHome = strings.TrimSpace(wuuHome)
+	if wuuHome == "" {
+		return ProfileSummary{}, false, fmt.Errorf("wuu home is required")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || strings.EqualFold(name, "default") {
+		return ProfileSummary{}, false, fmt.Errorf("profile name must be a non-default named agent")
+	}
+	dir, err := statepath.ProfileDir(wuuHome, name)
+	if err != nil {
+		return ProfileSummary{}, false, err
+	}
+	exists, err := profileDirExists(dir)
+	if err != nil || !exists {
+		return ProfileSummary{}, false, err
+	}
+	profile, _, err := EnsureProfile(ProfileEnsureOptions{WuuHome: wuuHome, Name: name, Source: "agent"})
+	if err != nil {
+		return ProfileSummary{}, false, err
+	}
+	return profile, true, nil
+}
+
 func EnsureProfile(opts ProfileEnsureOptions) (ProfileSummary, bool, error) {
 	wuuHome := strings.TrimSpace(opts.WuuHome)
 	if wuuHome == "" {

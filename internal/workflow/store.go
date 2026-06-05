@@ -69,6 +69,33 @@ type AgentRun struct {
 	Error         string        `json:"error,omitempty"`
 }
 
+type TeamMemberMode string
+
+const (
+	TeamMemberReuseProfile  TeamMemberMode = "reuse_profile"
+	TeamMemberCreateProfile TeamMemberMode = "create_profile"
+	TeamMemberEphemeral     TeamMemberMode = "ephemeral"
+)
+
+type TeamPlan struct {
+	RunID     string       `json:"run_id"`
+	Members   []TeamMember `json:"members,omitempty"`
+	CreatedAt time.Time    `json:"created_at"`
+	UpdatedAt time.Time    `json:"updated_at"`
+}
+
+type TeamMember struct {
+	ID             string         `json:"id"`
+	Role           string         `json:"role"`
+	Mode           TeamMemberMode `json:"mode"`
+	AgentProfile   string         `json:"agent_profile,omitempty"`
+	TaskName       string         `json:"task_name,omitempty"`
+	PhaseID        string         `json:"phase_id,omitempty"`
+	Prompt         string         `json:"prompt,omitempty"`
+	Reason         string         `json:"reason,omitempty"`
+	CreatedProfile bool           `json:"created_profile,omitempty"`
+}
+
 type RunStatusUpdate struct {
 	Status       RunState
 	Message      string
@@ -114,6 +141,7 @@ const (
 	EventMemoryCandidateReviewed EventType = "memory_candidate_reviewed"
 	EventFileCheckpointCreated   EventType = "file_checkpoint_created"
 	EventFileCheckpointRestored  EventType = "file_checkpoint_restored"
+	EventTeamPlanRecorded        EventType = "team_plan_recorded"
 )
 
 type Event struct {
@@ -442,6 +470,61 @@ func (s *Store) ListAgentRuns(runID string) ([]AgentRun, error) {
 		return agents[i].PhaseID < agents[j].PhaseID
 	})
 	return agents, nil
+}
+
+func (s *Store) SaveTeamPlan(plan TeamPlan) (TeamPlan, error) {
+	if s == nil || s.dir == "" {
+		return plan, nil
+	}
+	runID, err := validateStoreID("workflow run", plan.RunID)
+	if err != nil {
+		return TeamPlan{}, err
+	}
+	plan.RunID = runID
+	now := time.Now().UTC()
+	var existing TeamPlan
+	path := s.teamPlanPath(runID)
+	if err := readJSONFile(path, &existing); err == nil {
+		if !existing.CreatedAt.IsZero() {
+			plan.CreatedAt = existing.CreatedAt
+		}
+	} else if !os.IsNotExist(err) {
+		return TeamPlan{}, err
+	}
+	if plan.CreatedAt.IsZero() {
+		plan.CreatedAt = now
+	}
+	plan.UpdatedAt = now
+	if err := validateTeamPlan(plan); err != nil {
+		return TeamPlan{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := writeJSONFile(path, plan); err != nil {
+		return TeamPlan{}, err
+	}
+	if err := s.appendEventLocked(Event{Type: EventTeamPlanRecorded, RunID: plan.RunID, Message: fmt.Sprintf("%d members", len(plan.Members))}); err != nil {
+		return TeamPlan{}, err
+	}
+	return plan, nil
+}
+
+func (s *Store) LoadTeamPlan(runID string) (TeamPlan, error) {
+	if s == nil || s.dir == "" {
+		return TeamPlan{}, nil
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return TeamPlan{}, err
+	}
+	var plan TeamPlan
+	if err := readJSONFile(s.teamPlanPath(runID), &plan); err != nil {
+		if os.IsNotExist(err) {
+			return TeamPlan{RunID: runID}, nil
+		}
+		return TeamPlan{}, err
+	}
+	return plan, nil
 }
 
 func (s *Store) AttachAgentRunToPhase(runID, phaseID, agentRunID string) (Run, error) {
@@ -953,6 +1036,10 @@ func (s *Store) memoryCandidatesPath(runID string) string {
 	return filepath.Join(s.runDir(runID), "memory-candidates.json")
 }
 
+func (s *Store) teamPlanPath(runID string) string {
+	return filepath.Join(s.runDir(runID), "team-plan.json")
+}
+
 func (s *Store) loadMemoryCandidatesLocked(runID string) ([]MemoryCandidate, error) {
 	var candidates []MemoryCandidate
 	path := s.memoryCandidatesPath(runID)
@@ -997,6 +1084,39 @@ func validateStoreID(kind, id string) (string, error) {
 		}
 	}
 	return id, nil
+}
+
+func validateTeamPlan(plan TeamPlan) error {
+	if _, err := validateStoreID("workflow run", plan.RunID); err != nil {
+		return err
+	}
+	ids := make(map[string]struct{}, len(plan.Members))
+	for _, member := range plan.Members {
+		id, err := validateStoreID("workflow team member", member.ID)
+		if err != nil {
+			return err
+		}
+		if _, exists := ids[id]; exists {
+			return fmt.Errorf("workflow team member id %q is duplicated", id)
+		}
+		ids[id] = struct{}{}
+		if strings.TrimSpace(member.Role) == "" {
+			return fmt.Errorf("workflow team member %q requires role", id)
+		}
+		switch member.Mode {
+		case TeamMemberReuseProfile, TeamMemberCreateProfile:
+			if strings.TrimSpace(member.AgentProfile) == "" {
+				return fmt.Errorf("workflow team member %q mode %q requires agent_profile", id, member.Mode)
+			}
+		case TeamMemberEphemeral:
+			if strings.TrimSpace(member.AgentProfile) != "" {
+				return fmt.Errorf("workflow team member %q mode ephemeral must not set agent_profile", id)
+			}
+		default:
+			return fmt.Errorf("workflow team member %q has unsupported mode %q", id, member.Mode)
+		}
+	}
+	return nil
 }
 
 func trimStrings(values []string) []string {

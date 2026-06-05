@@ -495,6 +495,7 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 						"pause_run",
 						"resume_run",
 						"set_phase_status",
+						"record_team_plan",
 						"record_agent_run",
 						"record_await_results",
 						"retry_agent_run",
@@ -627,6 +628,24 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"enum":        []string{"memory", "user"},
 					"description": "Memory target for record_memory_candidate. Defaults to memory.",
 				},
+				"team_plan": map[string]any{
+					"type":        "array",
+					"description": "Dynamic workflow team plan chosen by the orchestrator before spawning agents. Use mode reuse_profile for existing durable profiles, create_profile for new recurring durable identities, and ephemeral for one-off memoryless workers.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"id":            map[string]any{"type": "string", "description": "Optional stable team member id."},
+							"role":          map[string]any{"type": "string", "description": "Role needed for this workflow run."},
+							"mode":          map[string]any{"type": "string", "enum": []string{"reuse_profile", "create_profile", "ephemeral"}},
+							"agent_profile": map[string]any{"type": "string", "description": "Profile name for reuse_profile/create_profile; omit for ephemeral."},
+							"task_name":     map[string]any{"type": "string", "description": "Suggested spawn_agent task_name."},
+							"phase_id":      map[string]any{"type": "string", "description": "Optional planned phase id for this member."},
+							"prompt":        map[string]any{"type": "string", "description": "Optional task brief to use when spawning this member."},
+							"reason":        map[string]any{"type": "string", "description": "Why this member should reuse/create a profile or stay ephemeral."},
+						},
+						"required": []string{"role", "mode"},
+					},
+				},
 				"tags": map[string]any{
 					"type":        "array",
 					"description": "Tags for record_memory_candidate.",
@@ -647,34 +666,46 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 }
 
 type workflowControlArgs struct {
-	Action       string                `json:"action"`
-	RunID        string                `json:"run_id"`
-	Status       string                `json:"status"`
-	Message      string                `json:"message"`
-	PauseReason  string                `json:"pause_reason"`
-	ResumeHint   string                `json:"resume_hint"`
-	RollbackHint string                `json:"rollback_hint"`
-	PhaseID      string                `json:"phase_id"`
-	AgentRunID   string                `json:"agent_run_id"`
-	AgentID      string                `json:"agent_id"`
-	TaskName     string                `json:"task_name"`
-	AgentProfile string                `json:"agent_profile"`
-	Prompt       string                `json:"prompt"`
-	ReportPath   string                `json:"report_path"`
-	ChangedFiles []string              `json:"changed_files"`
-	Artifacts    []string              `json:"artifacts"`
-	Paths        []string              `json:"paths"`
-	CheckpointID string                `json:"checkpoint_id"`
-	RetryCount   int                   `json:"retry_count"`
-	MaxRetries   int                   `json:"max_retries"`
-	RetryReason  string                `json:"retry_reason"`
-	AwaitResults []workflowAwaitResult `json:"await_results"`
-	Content      string                `json:"content"`
-	CandidateID  string                `json:"candidate_id"`
-	Target       string                `json:"target"`
-	Tags         []string              `json:"tags"`
-	Source       string                `json:"source"`
-	CompleteRun  bool                  `json:"complete_run"`
+	Action       string                    `json:"action"`
+	RunID        string                    `json:"run_id"`
+	Status       string                    `json:"status"`
+	Message      string                    `json:"message"`
+	PauseReason  string                    `json:"pause_reason"`
+	ResumeHint   string                    `json:"resume_hint"`
+	RollbackHint string                    `json:"rollback_hint"`
+	PhaseID      string                    `json:"phase_id"`
+	AgentRunID   string                    `json:"agent_run_id"`
+	AgentID      string                    `json:"agent_id"`
+	TaskName     string                    `json:"task_name"`
+	AgentProfile string                    `json:"agent_profile"`
+	Prompt       string                    `json:"prompt"`
+	ReportPath   string                    `json:"report_path"`
+	ChangedFiles []string                  `json:"changed_files"`
+	Artifacts    []string                  `json:"artifacts"`
+	Paths        []string                  `json:"paths"`
+	CheckpointID string                    `json:"checkpoint_id"`
+	RetryCount   int                       `json:"retry_count"`
+	MaxRetries   int                       `json:"max_retries"`
+	RetryReason  string                    `json:"retry_reason"`
+	AwaitResults []workflowAwaitResult     `json:"await_results"`
+	Content      string                    `json:"content"`
+	CandidateID  string                    `json:"candidate_id"`
+	Target       string                    `json:"target"`
+	TeamPlan     []workflowTeamMemberInput `json:"team_plan"`
+	Tags         []string                  `json:"tags"`
+	Source       string                    `json:"source"`
+	CompleteRun  bool                      `json:"complete_run"`
+}
+
+type workflowTeamMemberInput struct {
+	ID           string `json:"id"`
+	Role         string `json:"role"`
+	Mode         string `json:"mode"`
+	AgentProfile string `json:"agent_profile"`
+	TaskName     string `json:"task_name"`
+	PhaseID      string `json:"phase_id"`
+	Prompt       string `json:"prompt"`
+	Reason       string `json:"reason"`
 }
 
 type workflowAwaitResult struct {
@@ -766,6 +797,25 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 			return "", err
 		}
 		return mustJSON(map[string]any{"action": action, "run": run})
+
+	case "record_team_plan":
+		plan, err := workflowTeamPlanFromControlArgs(t.env, store, args)
+		if err != nil {
+			return "", err
+		}
+		plan, err = store.SaveTeamPlan(plan)
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{
+			"action":    action,
+			"team_plan": plan,
+			"next_steps": []string{
+				"Spawn reuse_profile and create_profile members with spawn_agent.agent_profile set to the recorded profile.",
+				"Spawn ephemeral members without agent_profile.",
+				"After spawning, bind each result back with workflow_control action=record_agent_run or record_await_results.",
+			},
+		})
 
 	case "record_agent_run":
 		agent, err := workflowAgentRunFromControlArgs(args)
@@ -1035,6 +1085,123 @@ func workflowAgentRunFromControlArgs(args workflowControlArgs) (workflow.AgentRu
 		agent.AgentID = agent.ID
 	}
 	return agent, nil
+}
+
+func workflowTeamPlanFromControlArgs(env *Env, store *workflow.Store, args workflowControlArgs) (workflow.TeamPlan, error) {
+	if len(args.TeamPlan) == 0 {
+		return workflow.TeamPlan{}, errors.New("workflow_control record_team_plan requires team_plan")
+	}
+	run, err := store.LoadRun(args.RunID)
+	if err != nil {
+		return workflow.TeamPlan{}, err
+	}
+	if run.DefinitionName != "" {
+		if def, ok := env.FindWorkflow(run.DefinitionName); ok && def.MaxAgents > 0 && len(args.TeamPlan) > def.MaxAgents {
+			return workflow.TeamPlan{}, fmt.Errorf("workflow %q supports at most %d planned agents", def.Name, def.MaxAgents)
+		}
+	}
+	wuuHome, err := statepath.Home("")
+	if err != nil {
+		return workflow.TeamPlan{}, err
+	}
+
+	used := make(map[string]int, len(args.TeamPlan))
+	members := make([]workflow.TeamMember, 0, len(args.TeamPlan))
+	for _, input := range args.TeamPlan {
+		role := strings.TrimSpace(input.Role)
+		if role == "" {
+			return workflow.TeamPlan{}, errors.New("workflow_control record_team_plan requires every team member role")
+		}
+		mode, err := parseWorkflowTeamMemberMode(input.Mode, input.AgentProfile)
+		if err != nil {
+			return workflow.TeamPlan{}, err
+		}
+		memberID := workflowTeamMemberID(input.ID, role, input.AgentProfile, used)
+		member := workflow.TeamMember{
+			ID:           memberID,
+			Role:         role,
+			Mode:         mode,
+			AgentProfile: strings.TrimSpace(input.AgentProfile),
+			TaskName:     strings.TrimSpace(input.TaskName),
+			PhaseID:      strings.TrimSpace(input.PhaseID),
+			Prompt:       strings.TrimSpace(input.Prompt),
+			Reason:       strings.TrimSpace(input.Reason),
+		}
+		if member.TaskName == "" {
+			member.TaskName = member.ID
+		}
+		switch member.Mode {
+		case workflow.TeamMemberReuseProfile:
+			if member.AgentProfile == "" {
+				return workflow.TeamPlan{}, fmt.Errorf("team member %q mode reuse_profile requires agent_profile", member.ID)
+			}
+			if _, ok, err := workflow.LoadProfile(wuuHome, member.AgentProfile); err != nil {
+				return workflow.TeamPlan{}, err
+			} else if !ok {
+				return workflow.TeamPlan{}, fmt.Errorf("team member %q reuses missing profile %q; choose create_profile or ephemeral", member.ID, member.AgentProfile)
+			}
+		case workflow.TeamMemberCreateProfile:
+			if member.AgentProfile == "" {
+				return workflow.TeamPlan{}, fmt.Errorf("team member %q mode create_profile requires agent_profile", member.ID)
+			}
+			profile, created, err := workflow.EnsureProfile(workflow.ProfileEnsureOptions{
+				WuuHome:      wuuHome,
+				Name:         member.AgentProfile,
+				Source:       "workflow",
+				WorkflowName: run.DefinitionName,
+				Role:         member.Role,
+				Description:  member.Reason,
+			})
+			if err != nil {
+				return workflow.TeamPlan{}, err
+			}
+			member.AgentProfile = profile.Name
+			member.CreatedProfile = created
+		case workflow.TeamMemberEphemeral:
+			if member.AgentProfile != "" {
+				return workflow.TeamPlan{}, fmt.Errorf("team member %q mode ephemeral must not set agent_profile", member.ID)
+			}
+		}
+		members = append(members, member)
+	}
+	return workflow.TeamPlan{RunID: strings.TrimSpace(args.RunID), Members: members}, nil
+}
+
+func parseWorkflowTeamMemberMode(raw, agentProfile string) (workflow.TeamMemberMode, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		if strings.TrimSpace(agentProfile) != "" {
+			return workflow.TeamMemberReuseProfile, nil
+		}
+		return workflow.TeamMemberEphemeral, nil
+	case "reuse", "reuse_profile":
+		return workflow.TeamMemberReuseProfile, nil
+	case "create", "create_profile":
+		return workflow.TeamMemberCreateProfile, nil
+	case "ephemeral", "memoryless":
+		return workflow.TeamMemberEphemeral, nil
+	default:
+		return "", fmt.Errorf("unsupported workflow team member mode %q", raw)
+	}
+}
+
+func workflowTeamMemberID(rawID, role, profile string, used map[string]int) string {
+	base := slugWorkflowID(rawID)
+	if base == "" {
+		base = slugWorkflowID(role)
+	}
+	if base == "" {
+		base = slugWorkflowID(profile)
+	}
+	if base == "" {
+		base = "member"
+	}
+	count := used[base]
+	used[base] = count + 1
+	if count == 0 {
+		return base
+	}
+	return fmt.Sprintf("%s_%d", base, count+1)
 }
 
 func workflowAgentRunFromAwaitResult(runID, phaseID string, result workflowAwaitResult) (workflow.AgentRun, error) {
@@ -1586,9 +1753,14 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
+	teamPlan, err := store.LoadTeamPlan(runID)
+	if err != nil {
+		return "", err
+	}
 	result := map[string]any{
 		"run":               run,
 		"agent_runs":        agents,
+		"team_plan":         teamPlan,
 		"memory_candidates": memoryCandidates,
 		"file_checkpoints":  fileCheckpoints,
 	}
