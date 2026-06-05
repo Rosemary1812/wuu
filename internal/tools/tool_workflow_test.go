@@ -537,6 +537,50 @@ func TestCreateWorkflowPausesForMissingRequiredProfiles(t *testing.T) {
 	}
 }
 
+func TestWorkflowControlEnforcesMaxAgents(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+	kit.SetWorkflows([]workflow.Definition{{
+		Name:      "tiny-team",
+		Content:   "## Phases\n\n1. Work\n",
+		MaxAgents: 1,
+	}})
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: `{"definition_name":"tiny-team","run_id":"workflow-agent-cap"}`,
+	}); err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_agent_run",
+			"run_id":"workflow-agent-cap",
+			"agent_id":"agent-1",
+			"task_name":"first"
+		}`,
+	}); err != nil {
+		t.Fatalf("record first agent: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_agent_run",
+			"run_id":"workflow-agent-cap",
+			"agent_id":"agent-2",
+			"task_name":"second"
+		}`,
+	}); err == nil {
+		t.Fatal("expected max agent cap to reject second agent")
+	}
+}
+
 func TestWorkflowControlPauseResumeAndRetryAgentRun(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()

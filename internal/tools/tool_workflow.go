@@ -772,6 +772,13 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		if err != nil {
 			return "", err
 		}
+		existingRun, err := store.LoadRun(agent.WorkflowRunID)
+		if err != nil {
+			return "", err
+		}
+		if err := enforceWorkflowAgentCap(t.env, store, existingRun, []string{agent.ID}); err != nil {
+			return "", err
+		}
 		if err := store.UpsertAgentRun(agent); err != nil {
 			return "", err
 		}
@@ -794,13 +801,28 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		if len(args.AwaitResults) == 0 {
 			return "", errors.New("workflow_control record_await_results requires await_results")
 		}
-		agents := make([]workflow.AgentRun, 0, len(args.AwaitResults))
-		var run workflow.Run
+		run, err := store.LoadRun(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		agentsToRecord := make([]workflow.AgentRun, 0, len(args.AwaitResults))
 		for _, result := range args.AwaitResults {
 			agent, err := workflowAgentRunFromAwaitResult(args.RunID, args.PhaseID, result)
 			if err != nil {
 				return "", err
 			}
+			agentsToRecord = append(agentsToRecord, agent)
+		}
+		candidateIDs := make([]string, 0, len(agentsToRecord))
+		for _, agent := range agentsToRecord {
+			candidateIDs = append(candidateIDs, agent.ID)
+		}
+		if err := enforceWorkflowAgentCap(t.env, store, run, candidateIDs); err != nil {
+			return "", err
+		}
+
+		agents := make([]workflow.AgentRun, 0, len(agentsToRecord))
+		for _, agent := range agentsToRecord {
 			if err := store.UpsertAgentRun(agent); err != nil {
 				return "", err
 			}
@@ -815,9 +837,6 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 				return "", err
 			}
 			agents = append(agents, loaded)
-		}
-		if run.ID == "" {
-			run, _ = store.LoadRun(args.RunID)
 		}
 		return mustJSON(map[string]any{"action": action, "run": run, "agent_runs": agents})
 
@@ -1100,6 +1119,45 @@ func firstWorkflowText(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func enforceWorkflowAgentCap(env *Env, store *workflow.Store, run workflow.Run, candidateIDs []string) error {
+	capacity := workflowAgentCap(env, run)
+	existing, err := store.ListAgentRuns(run.ID)
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(existing)+len(candidateIDs))
+	for _, agent := range existing {
+		seen[agent.ID] = struct{}{}
+	}
+	newCount := 0
+	for _, id := range candidateIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		newCount++
+	}
+	if len(existing)+newCount > capacity {
+		return fmt.Errorf("workflow run %q would exceed max agent runs (%d)", run.ID, capacity)
+	}
+	return nil
+}
+
+func workflowAgentCap(env *Env, run workflow.Run) int {
+	const hardCap = 100
+	capacity := hardCap
+	if env != nil && strings.TrimSpace(run.DefinitionName) != "" {
+		if def, ok := env.FindWorkflow(run.DefinitionName); ok && def.MaxAgents > 0 && def.MaxAgents < capacity {
+			capacity = def.MaxAgents
+		}
+	}
+	return capacity
 }
 
 func createWorkflowFileCheckpoint(env *Env, store *workflow.Store, args workflowControlArgs) (workflow.FileCheckpoint, error) {
