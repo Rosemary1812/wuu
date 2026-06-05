@@ -1,9 +1,4 @@
 @media (max-width: 920px) {
-  html.swiss-international .empty-home-inner {
-    width: min(720px, calc(100% - 48px));
-    grid-template-columns: 1fr;
-  }
-
   .conversation-split {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);

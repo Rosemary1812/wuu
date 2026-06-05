@@ -413,7 +413,6 @@ const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
 const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
 const WORKSPACE_RIGHT_PANEL_STEP = 32;
 const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
-const SWISS_STYLE_KEY = "wuu.desktop.swissInternationalStyle";
 const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
@@ -431,7 +430,6 @@ const ENABLE_LAUNCH_PREVIEW = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_RUN_DEBUG_PANEL = Boolean(
   RENDERER_ENV?.DEV || RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true",
 );
-const ENABLE_SWISS_STYLE_TOGGLE = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
@@ -491,13 +489,6 @@ function initialWorkspaceRightPanelWidth(): number {
     stored,
     WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
     WORKSPACE_RIGHT_PANEL_MAX_WIDTH,
-  );
-}
-
-function initialSwissStyleEnabled(): boolean {
-  return (
-    ENABLE_SWISS_STYLE_TOGGLE &&
-    window.localStorage.getItem(SWISS_STYLE_KEY) === "true"
   );
 }
 
@@ -626,9 +617,6 @@ export function App(): JSX.Element {
   >(undefined);
   const [debugControlsEnabled, setDebugControlsEnabled] = useState(
     initialDebugControlsEnabled,
-  );
-  const [swissStyleEnabled, setSwissStyleEnabled] = useState(
-    initialSwissStyleEnabled,
   );
   const [draggingSessionTabID, setDraggingSessionTabID] = useState<
     string | undefined
@@ -1045,18 +1033,6 @@ export function App(): JSX.Element {
   useEffect(() => {
     scheduleStreamScroll();
   }, [state.thread?.turns, state.secondaryThread?.turns]);
-
-  useEffect(() => {
-    const enabled =
-      debugControlsVisible && ENABLE_SWISS_STYLE_TOGGLE && swissStyleEnabled;
-    document.documentElement.classList.toggle("swiss-international", enabled);
-    if (ENABLE_SWISS_STYLE_TOGGLE) {
-      window.localStorage.setItem(SWISS_STYLE_KEY, String(swissStyleEnabled));
-    }
-    return () => {
-      document.documentElement.classList.remove("swiss-international");
-    };
-  }, [debugControlsVisible, swissStyleEnabled]);
 
   useEffect(() => {
     if (ENABLE_DEBUG_CONTROLS) {
@@ -5399,23 +5375,6 @@ export function App(): JSX.Element {
             {renderTitleContent()}
           </div>
           <div className="title-actions">
-            {debugControlsVisible && ENABLE_SWISS_STYLE_TOGGLE ? (
-              <button
-                className={`launch-preview-button style-toggle-button${swissStyleEnabled ? " active" : ""}`}
-                type="button"
-                aria-label={
-                  swissStyleEnabled
-                    ? "关闭瑞士国际主义风格"
-                    : "开启瑞士国际主义风格"
-                }
-                aria-pressed={swissStyleEnabled}
-                title="开发专用：切换瑞士国际主义风格"
-                onClick={() => setSwissStyleEnabled((enabled) => !enabled)}
-              >
-                <Square size={15} />
-                <span>Swiss</span>
-              </button>
-            ) : null}
             {debugControlsVisible && ENABLE_LAUNCH_PREVIEW ? (
               <button
                 className="launch-preview-button"
