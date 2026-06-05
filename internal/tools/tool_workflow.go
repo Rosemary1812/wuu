@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -307,7 +308,9 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 						"set_run_status",
 						"set_phase_status",
 						"record_agent_run",
+						"record_await_results",
 						"write_final_report",
+						"generate_final_report",
 						"record_memory_candidate",
 						"review_memory_candidate",
 					},
@@ -363,6 +366,30 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"description": "Artifact paths from await_agents / agent_report.",
 					"items":       map[string]any{"type": "string"},
 				},
+				"await_results": map[string]any{
+					"type":        "array",
+					"description": "Raw results array returned by await_agents. Used by record_await_results to import multiple Agent Runs at once.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"agent_id":       map[string]any{"type": "string"},
+							"task_name":      map[string]any{"type": "string"},
+							"agent_profile":  map[string]any{"type": "string"},
+							"agent_path":     map[string]any{"type": "string"},
+							"status":         map[string]any{"type": "string"},
+							"result":         map[string]any{"type": "string"},
+							"error":          map[string]any{"type": "string"},
+							"changed_files":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"report_path":    map[string]any{"type": "string"},
+							"report_missing": map[string]any{"type": "boolean"},
+							"artifacts":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"worktree_path":  map[string]any{"type": "string"},
+							"input_tokens":   map[string]any{"type": "integer"},
+							"output_tokens":  map[string]any{"type": "integer"},
+							"duration_ms":    map[string]any{"type": "integer"},
+						},
+					},
+				},
 				"content": map[string]any{
 					"type":        "string",
 					"description": "Final report markdown for write_final_report, or memory candidate content for record_memory_candidate.",
@@ -396,25 +423,44 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 }
 
 type workflowControlArgs struct {
-	Action       string   `json:"action"`
-	RunID        string   `json:"run_id"`
-	Status       string   `json:"status"`
-	Message      string   `json:"message"`
-	PhaseID      string   `json:"phase_id"`
-	AgentRunID   string   `json:"agent_run_id"`
-	AgentID      string   `json:"agent_id"`
-	TaskName     string   `json:"task_name"`
-	AgentProfile string   `json:"agent_profile"`
-	Prompt       string   `json:"prompt"`
-	ReportPath   string   `json:"report_path"`
-	ChangedFiles []string `json:"changed_files"`
-	Artifacts    []string `json:"artifacts"`
-	Content      string   `json:"content"`
-	CandidateID  string   `json:"candidate_id"`
-	Target       string   `json:"target"`
-	Tags         []string `json:"tags"`
-	Source       string   `json:"source"`
-	CompleteRun  bool     `json:"complete_run"`
+	Action       string                `json:"action"`
+	RunID        string                `json:"run_id"`
+	Status       string                `json:"status"`
+	Message      string                `json:"message"`
+	PhaseID      string                `json:"phase_id"`
+	AgentRunID   string                `json:"agent_run_id"`
+	AgentID      string                `json:"agent_id"`
+	TaskName     string                `json:"task_name"`
+	AgentProfile string                `json:"agent_profile"`
+	Prompt       string                `json:"prompt"`
+	ReportPath   string                `json:"report_path"`
+	ChangedFiles []string              `json:"changed_files"`
+	Artifacts    []string              `json:"artifacts"`
+	AwaitResults []workflowAwaitResult `json:"await_results"`
+	Content      string                `json:"content"`
+	CandidateID  string                `json:"candidate_id"`
+	Target       string                `json:"target"`
+	Tags         []string              `json:"tags"`
+	Source       string                `json:"source"`
+	CompleteRun  bool                  `json:"complete_run"`
+}
+
+type workflowAwaitResult struct {
+	AgentID       string   `json:"agent_id"`
+	TaskName      string   `json:"task_name"`
+	AgentProfile  string   `json:"agent_profile"`
+	AgentPath     string   `json:"agent_path"`
+	Status        string   `json:"status"`
+	Result        string   `json:"result"`
+	Error         string   `json:"error"`
+	ChangedFiles  []string `json:"changed_files"`
+	ReportPath    string   `json:"report_path"`
+	ReportMissing bool     `json:"report_missing"`
+	Artifacts     []string `json:"artifacts"`
+	WorktreePath  string   `json:"worktree_path"`
+	InputTokens   int      `json:"input_tokens"`
+	OutputTokens  int      `json:"output_tokens"`
+	DurationMS    int64    `json:"duration_ms"`
 }
 
 func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (string, error) {
@@ -483,6 +529,37 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		}
 		return mustJSON(map[string]any{"action": action, "run": run, "agent_run": loaded})
 
+	case "record_await_results":
+		if len(args.AwaitResults) == 0 {
+			return "", errors.New("workflow_control record_await_results requires await_results")
+		}
+		agents := make([]workflow.AgentRun, 0, len(args.AwaitResults))
+		var run workflow.Run
+		for _, result := range args.AwaitResults {
+			agent, err := workflowAgentRunFromAwaitResult(args.RunID, args.PhaseID, result)
+			if err != nil {
+				return "", err
+			}
+			if err := store.UpsertAgentRun(agent); err != nil {
+				return "", err
+			}
+			if strings.TrimSpace(agent.PhaseID) != "" {
+				run, err = store.AttachAgentRunToPhase(agent.WorkflowRunID, agent.PhaseID, agent.ID)
+				if err != nil {
+					return "", err
+				}
+			}
+			loaded, err := store.LoadAgentRun(agent.WorkflowRunID, agent.ID)
+			if err != nil {
+				return "", err
+			}
+			agents = append(agents, loaded)
+		}
+		if run.ID == "" {
+			run, _ = store.LoadRun(args.RunID)
+		}
+		return mustJSON(map[string]any{"action": action, "run": run, "agent_runs": agents})
+
 	case "write_final_report":
 		content := strings.TrimSpace(args.Content)
 		if content == "" {
@@ -503,6 +580,41 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 			}
 		}
 		return mustJSON(map[string]any{"action": action, "run": run, "final_report_path": path})
+
+	case "generate_final_report":
+		run, err := store.LoadRun(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		agents, err := store.ListAgentRuns(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		candidates, err := store.ListMemoryCandidates(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		if args.CompleteRun {
+			if err := validateWorkflowReadyToComplete(run, agents); err != nil {
+				return "", err
+			}
+		}
+		report := renderGeneratedWorkflowFinalReport(run, agents, candidates)
+		path, err := store.WriteFinalReport(args.RunID, report)
+		if err != nil {
+			return "", err
+		}
+		run, err = store.LoadRun(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		if args.CompleteRun {
+			run, err = store.UpdateRunStatus(args.RunID, workflow.RunStateCompleted, args.Message)
+			if err != nil {
+				return "", err
+			}
+		}
+		return mustJSON(map[string]any{"action": action, "run": run, "final_report_path": path, "content": report})
 
 	case "record_memory_candidate":
 		content := strings.TrimSpace(args.Content)
@@ -584,11 +696,248 @@ func workflowAgentRunFromControlArgs(args workflowControlArgs) (workflow.AgentRu
 	return agent, nil
 }
 
+func workflowAgentRunFromAwaitResult(runID, phaseID string, result workflowAwaitResult) (workflow.AgentRun, error) {
+	agentRunID := strings.TrimSpace(result.AgentID)
+	if agentRunID == "" {
+		agentRunID = strings.TrimSpace(result.TaskName)
+	}
+	if agentRunID == "" {
+		agentRunID = slugWorkflowID(result.AgentPath)
+	}
+	if agentRunID == "" {
+		return workflow.AgentRun{}, errors.New("workflow_control record_await_results requires each result to include agent_id, task_name, or agent_path")
+	}
+	status, err := workflowStatusFromAwaitResult(result)
+	if err != nil {
+		return workflow.AgentRun{}, err
+	}
+	agent := workflow.AgentRun{
+		ID:            agentRunID,
+		WorkflowRunID: strings.TrimSpace(runID),
+		PhaseID:       strings.TrimSpace(phaseID),
+		AgentID:       strings.TrimSpace(result.AgentID),
+		AgentPath:     strings.TrimSpace(result.AgentPath),
+		TaskName:      strings.TrimSpace(result.TaskName),
+		AgentProfile:  strings.TrimSpace(result.AgentProfile),
+		Status:        status,
+		Result:        strings.TrimSpace(result.Result),
+		ReportPath:    strings.TrimSpace(result.ReportPath),
+		ReportMissing: result.ReportMissing,
+		ChangedFiles:  trimWorkflowStringSlice(result.ChangedFiles),
+		Artifacts:     trimWorkflowStringSlice(result.Artifacts),
+		WorktreePath:  strings.TrimSpace(result.WorktreePath),
+		InputTokens:   result.InputTokens,
+		OutputTokens:  result.OutputTokens,
+		DurationMS:    result.DurationMS,
+		Error:         strings.TrimSpace(result.Error),
+	}
+	if agent.AgentID == "" {
+		agent.AgentID = agent.ID
+	}
+	return agent, nil
+}
+
+func workflowStatusFromAwaitResult(result workflowAwaitResult) (workflow.AgentRunState, error) {
+	if result.ReportMissing {
+		return workflow.AgentRunStateAwaitingReport, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(result.Status)) {
+	case "", "pending", "queued":
+		return workflow.AgentRunStateQueued, nil
+	case "starting":
+		return workflow.AgentRunStateStarting, nil
+	case "running":
+		return workflow.AgentRunStateRunning, nil
+	case "awaiting_report":
+		return workflow.AgentRunStateAwaitingReport, nil
+	case "completed", "complete":
+		return workflow.AgentRunStateCompleted, nil
+	case "failed", "failure", "error", "stuck", "not_found":
+		return workflow.AgentRunStateFailed, nil
+	case "cancelled", "canceled":
+		return workflow.AgentRunStateCancelled, nil
+	default:
+		return "", fmt.Errorf("unsupported await agent status %q", result.Status)
+	}
+}
+
 func trimWorkflowStringSlice(values []string) []string {
 	out := make([]string, 0, len(values))
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
 			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func validateWorkflowReadyToComplete(run workflow.Run, agents []workflow.AgentRun) error {
+	for _, phase := range run.Phases {
+		if !workflow.IsTerminalPhaseState(phase.Status) {
+			return fmt.Errorf("workflow phase %q is %s; cannot complete run", phase.ID, phase.Status)
+		}
+	}
+	for _, agent := range agents {
+		if !workflow.IsTerminalAgentRunState(agent.Status) {
+			return fmt.Errorf("workflow agent run %q is %s; cannot complete run", agent.ID, agent.Status)
+		}
+	}
+	return nil
+}
+
+func renderGeneratedWorkflowFinalReport(run workflow.Run, agents []workflow.AgentRun, candidates []workflow.MemoryCandidate) string {
+	var b strings.Builder
+	b.WriteString("# Workflow Final Report\n\n")
+	fmt.Fprintf(&b, "- Run: `%s`\n", run.ID)
+	if run.DefinitionName != "" {
+		fmt.Fprintf(&b, "- Workflow: `%s`\n", run.DefinitionName)
+	}
+	if strings.TrimSpace(run.Arguments) != "" {
+		fmt.Fprintf(&b, "- Arguments: %s\n", strings.TrimSpace(run.Arguments))
+	}
+	fmt.Fprintf(&b, "- Status: `%s`\n", run.Status)
+	if !run.StartedAt.IsZero() {
+		fmt.Fprintf(&b, "- Started: %s\n", run.StartedAt.Format(time.RFC3339))
+	}
+	if !run.CompletedAt.IsZero() {
+		fmt.Fprintf(&b, "- Completed: %s\n", run.CompletedAt.Format(time.RFC3339))
+	}
+
+	if len(run.Phases) > 0 {
+		b.WriteString("\n## Phases\n\n")
+		for _, phase := range run.Phases {
+			fmt.Fprintf(&b, "- `%s`: %s", phase.ID, phase.Status)
+			if phase.Name != "" {
+				fmt.Fprintf(&b, " - %s", phase.Name)
+			}
+			if len(phase.AgentRunIDs) > 0 {
+				fmt.Fprintf(&b, " (agents: %s)", strings.Join(phase.AgentRunIDs, ", "))
+			}
+			if phase.Error != "" {
+				fmt.Fprintf(&b, " - %s", phase.Error)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n## Agent Runs\n\n")
+	if len(agents) == 0 {
+		b.WriteString("No Agent Runs recorded.\n")
+	} else {
+		for _, agent := range agents {
+			label := agent.TaskName
+			if label == "" {
+				label = agent.ID
+			}
+			fmt.Fprintf(&b, "- `%s`: %s", agent.ID, agent.Status)
+			if label != agent.ID {
+				fmt.Fprintf(&b, " - %s", label)
+			}
+			if agent.AgentProfile != "" {
+				fmt.Fprintf(&b, " [profile: `%s`]", agent.AgentProfile)
+			}
+			if agent.ReportMissing {
+				b.WriteString(" [missing agent_report]")
+			}
+			b.WriteString("\n")
+			if agent.ReportPath != "" {
+				fmt.Fprintf(&b, "  - Report: %s\n", agent.ReportPath)
+			}
+			if agent.Error != "" {
+				fmt.Fprintf(&b, "  - Error: %s\n", agent.Error)
+			}
+			if excerpt := trimReportExcerpt(agent.Result, 240); excerpt != "" {
+				fmt.Fprintf(&b, "  - Result: %s\n", excerpt)
+			}
+			if len(agent.ChangedFiles) > 0 {
+				fmt.Fprintf(&b, "  - Changed files: %s\n", strings.Join(agent.ChangedFiles, ", "))
+			}
+			if len(agent.Artifacts) > 0 {
+				fmt.Fprintf(&b, "  - Artifacts: %s\n", strings.Join(agent.Artifacts, ", "))
+			}
+		}
+	}
+
+	changed := uniqueWorkflowStringsFromAgents(agents, func(agent workflow.AgentRun) []string {
+		return agent.ChangedFiles
+	})
+	if len(changed) > 0 {
+		b.WriteString("\n## Changed Files\n\n")
+		for _, path := range changed {
+			fmt.Fprintf(&b, "- %s\n", path)
+		}
+	}
+
+	b.WriteString("\n## Memory Candidates\n\n")
+	if len(candidates) == 0 {
+		b.WriteString("No memory candidates recorded.\n")
+	} else {
+		for _, candidate := range candidates {
+			fmt.Fprintf(&b, "- `%s` [%s/%s]: %s", candidate.ID, candidate.Target, candidate.Status, candidate.Content)
+			if candidate.AgentProfile != "" {
+				fmt.Fprintf(&b, " (profile: `%s`)", candidate.AgentProfile)
+			}
+			if candidate.Reason != "" {
+				fmt.Fprintf(&b, " - %s", candidate.Reason)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	open := workflowOpenItems(run, agents)
+	if len(open) > 0 {
+		b.WriteString("\n## Open Items\n\n")
+		for _, item := range open {
+			fmt.Fprintf(&b, "- %s\n", item)
+		}
+	}
+	return b.String()
+}
+
+func trimReportExcerpt(value string, maxRunes int) string {
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if value == "" || maxRunes <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	if maxRunes <= 3 {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-3]) + "..."
+}
+
+func uniqueWorkflowStringsFromAgents(agents []workflow.AgentRun, collect func(workflow.AgentRun) []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, agent := range agents {
+		for _, value := range collect(agent) {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func workflowOpenItems(run workflow.Run, agents []workflow.AgentRun) []string {
+	var out []string
+	for _, phase := range run.Phases {
+		if !workflow.IsTerminalPhaseState(phase.Status) {
+			out = append(out, fmt.Sprintf("Phase `%s` is `%s`.", phase.ID, phase.Status))
+		}
+	}
+	for _, agent := range agents {
+		if !workflow.IsTerminalAgentRunState(agent.Status) {
+			out = append(out, fmt.Sprintf("Agent Run `%s` is `%s`.", agent.ID, agent.Status))
 		}
 	}
 	return out
@@ -938,7 +1287,8 @@ func workflowNextSteps(status workflow.RunState) []string {
 		return []string{
 			"Spawn workflow agents with spawn_agent, setting agent_profile for durable named profiles.",
 			"Require each workflow agent to call agent_report before treating its work as complete.",
-			"Use workflow_status to inspect durable progress before final synthesis.",
+			"Use await_agents when synthesis depends on agent output, then workflow_control action=record_await_results to bind results to the workflow run.",
+			"Use workflow_control action=generate_final_report after all blocking phases and agent runs are complete.",
 		}
 	}
 }

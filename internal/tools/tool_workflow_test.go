@@ -231,3 +231,130 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		t.Fatalf("expected run and plan events, got %+v", status.Events)
 	}
 }
+
+func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "create_workflow",
+		Arguments: `{
+			"run_id":"workflow-await-run",
+			"plan":"## Phases\n\n1. QA",
+			"phases":[{"id":"qa","name":"QA"}]
+		}`,
+	}); err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"set_phase_status","run_id":"workflow-await-run","phase_id":"qa","status":"running"}`,
+	}); err != nil {
+		t.Fatalf("set phase running: %v", err)
+	}
+	awaitingResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_await_results",
+			"run_id":"workflow-await-run",
+			"phase_id":"qa",
+			"await_results":[{
+				"agent_id":"agent-qa",
+				"task_name":"qa_check",
+				"agent_profile":"qa_reviewer",
+				"agent_path":"/qa_check",
+				"status":"completed",
+				"result":"QA finished but skipped the structured handoff.",
+				"report_missing":true,
+				"changed_files":["desktop/src/App.tsx"],
+				"input_tokens":12,
+				"output_tokens":34,
+				"duration_ms":56
+			}]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("record_await_results awaiting: %v", err)
+	}
+	var awaiting struct {
+		AgentRuns []workflow.AgentRun `json:"agent_runs"`
+	}
+	if err := json.Unmarshal([]byte(awaitingResp), &awaiting); err != nil {
+		t.Fatalf("parse awaiting response: %v", err)
+	}
+	if len(awaiting.AgentRuns) != 1 || awaiting.AgentRuns[0].Status != workflow.AgentRunStateAwaitingReport || !awaiting.AgentRuns[0].ReportMissing {
+		t.Fatalf("await result should be awaiting_report: %+v", awaiting.AgentRuns)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"generate_final_report","run_id":"workflow-await-run","complete_run":true}`,
+	}); err == nil {
+		t.Fatal("expected completion to reject awaiting_report agent")
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_await_results",
+			"run_id":"workflow-await-run",
+			"phase_id":"qa",
+			"await_results":[{
+				"agent_id":"agent-qa",
+				"task_name":"qa_check",
+				"agent_profile":"qa_reviewer",
+				"agent_path":"/qa_check",
+				"status":"completed",
+				"result":"QA passed after adding the structured handoff.",
+				"report_path":"reports/agent-qa.md",
+				"changed_files":["desktop/src/App.tsx"],
+				"artifacts":["reports/agent-qa.md"],
+				"input_tokens":12,
+				"output_tokens":34,
+				"duration_ms":56
+			}]
+		}`,
+	}); err != nil {
+		t.Fatalf("record_await_results completed: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"set_phase_status","run_id":"workflow-await-run","phase_id":"qa","status":"completed"}`,
+	}); err != nil {
+		t.Fatalf("set phase completed: %v", err)
+	}
+	finalResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"generate_final_report","run_id":"workflow-await-run","complete_run":true}`,
+	})
+	if err != nil {
+		t.Fatalf("generate_final_report: %v", err)
+	}
+	var final struct {
+		Run             workflow.Run `json:"run"`
+		FinalReportPath string       `json:"final_report_path"`
+		Content         string       `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(finalResp), &final); err != nil {
+		t.Fatalf("parse final report response: %v", err)
+	}
+	if final.Run.Status != workflow.RunStateCompleted || final.FinalReportPath == "" {
+		t.Fatalf("workflow should complete: %+v", final)
+	}
+	for _, want := range []string{"reports/agent-qa.md", "desktop/src/App.tsx", "QA passed after adding"} {
+		if !strings.Contains(final.Content, want) {
+			t.Fatalf("generated report missing %q:\n%s", want, final.Content)
+		}
+	}
+	data, err := os.ReadFile(final.FinalReportPath)
+	if err != nil {
+		t.Fatalf("read final report: %v", err)
+	}
+	if !strings.Contains(string(data), "Workflow Final Report") {
+		t.Fatalf("final report file not written correctly:\n%s", string(data))
+	}
+}

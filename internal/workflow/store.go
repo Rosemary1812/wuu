@@ -43,13 +43,20 @@ type AgentRun struct {
 	WorkflowRunID string        `json:"workflow_run_id"`
 	PhaseID       string        `json:"phase_id,omitempty"`
 	AgentID       string        `json:"agent_id,omitempty"`
+	AgentPath     string        `json:"agent_path,omitempty"`
 	TaskName      string        `json:"task_name,omitempty"`
 	AgentProfile  string        `json:"agent_profile,omitempty"`
 	Status        AgentRunState `json:"status"`
 	Prompt        string        `json:"prompt,omitempty"`
+	Result        string        `json:"result,omitempty"`
 	ReportPath    string        `json:"report_path,omitempty"`
+	ReportMissing bool          `json:"report_missing,omitempty"`
 	ChangedFiles  []string      `json:"changed_files,omitempty"`
 	Artifacts     []string      `json:"artifacts,omitempty"`
+	WorktreePath  string        `json:"worktree_path,omitempty"`
+	InputTokens   int           `json:"input_tokens,omitempty"`
+	OutputTokens  int           `json:"output_tokens,omitempty"`
+	DurationMS    int64         `json:"duration_ms,omitempty"`
 	StartedAt     time.Time     `json:"started_at,omitempty"`
 	CompletedAt   time.Time     `json:"completed_at,omitempty"`
 	Error         string        `json:"error,omitempty"`
@@ -767,6 +774,9 @@ func mergeAgentRun(existing, next AgentRun) AgentRun {
 	if next.AgentID == "" {
 		next.AgentID = existing.AgentID
 	}
+	if next.AgentPath == "" {
+		next.AgentPath = existing.AgentPath
+	}
 	if next.TaskName == "" {
 		next.TaskName = existing.TaskName
 	}
@@ -776,14 +786,34 @@ func mergeAgentRun(existing, next AgentRun) AgentRun {
 	if next.Prompt == "" {
 		next.Prompt = existing.Prompt
 	}
+	if next.Result == "" {
+		next.Result = existing.Result
+	}
 	if next.ReportPath == "" {
 		next.ReportPath = existing.ReportPath
+	}
+	if next.ReportPath != "" || next.Status == AgentRunStateCompleted {
+		next.ReportMissing = false
+	} else if !next.ReportMissing {
+		next.ReportMissing = existing.ReportMissing
 	}
 	if next.ChangedFiles == nil {
 		next.ChangedFiles = existing.ChangedFiles
 	}
 	if next.Artifacts == nil {
 		next.Artifacts = existing.Artifacts
+	}
+	if next.WorktreePath == "" {
+		next.WorktreePath = existing.WorktreePath
+	}
+	if next.InputTokens == 0 {
+		next.InputTokens = existing.InputTokens
+	}
+	if next.OutputTokens == 0 {
+		next.OutputTokens = existing.OutputTokens
+	}
+	if next.DurationMS == 0 {
+		next.DurationMS = existing.DurationMS
 	}
 	if next.StartedAt.IsZero() {
 		next.StartedAt = existing.StartedAt
