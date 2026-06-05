@@ -105,6 +105,65 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		t.Fatalf("expected plan file: %v", err)
 	}
 
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"set_phase_status","run_id":"workflow-test-run","phase_id":"clarify_product_intent","status":"running"}`,
+	}); err != nil {
+		t.Fatalf("workflow_control set phase running: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_agent_run",
+			"run_id":"workflow-test-run",
+			"phase_id":"clarify_product_intent",
+			"agent_id":"agent-1",
+			"task_name":"clarify_intent",
+			"agent_profile":"product_planner",
+			"status":"running",
+			"prompt":"Clarify product intent"
+		}`,
+	}); err != nil {
+		t.Fatalf("workflow_control record agent running: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_agent_run",
+			"run_id":"workflow-test-run",
+			"agent_id":"agent-1",
+			"status":"awaiting_report",
+			"report_path":"reports/agent-1.md",
+			"changed_files":["docs/plan.md"],
+			"artifacts":["reports/agent-1.md"]
+		}`,
+	}); err != nil {
+		t.Fatalf("workflow_control record agent awaiting_report: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"set_phase_status","run_id":"workflow-test-run","phase_id":"clarify_product_intent","status":"completed"}`,
+	}); err != nil {
+		t.Fatalf("workflow_control set phase completed: %v", err)
+	}
+	finalResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"write_final_report","run_id":"workflow-test-run","content":"# Final\n\nDone.","complete_run":true}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_control final report: %v", err)
+	}
+	var final struct {
+		Run             workflow.Run `json:"run"`
+		FinalReportPath string       `json:"final_report_path"`
+	}
+	if err := json.Unmarshal([]byte(finalResp), &final); err != nil {
+		t.Fatalf("parse final response: %v", err)
+	}
+	if final.Run.Status != workflow.RunStateCompleted || final.FinalReportPath == "" {
+		t.Fatalf("unexpected final response: %+v", final)
+	}
+
 	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "workflow_status",
 		Arguments: `{"run_id":"workflow-test-run","include_events":true}`,
@@ -122,6 +181,15 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if status.Run.ID != "workflow-test-run" || status.Run.PlanPath == "" {
 		t.Fatalf("unexpected status: %+v", status.Run)
+	}
+	if status.Run.Status != workflow.RunStateCompleted || status.Run.FinalReportPath == "" {
+		t.Fatalf("workflow should be completed with final report: %+v", status.Run)
+	}
+	if len(status.Run.Phases[0].AgentRunIDs) != 1 || status.Run.Phases[0].AgentRunIDs[0] != "agent-1" {
+		t.Fatalf("agent run should be attached to phase: %+v", status.Run.Phases[0])
+	}
+	if len(status.AgentRuns) != 1 || status.AgentRuns[0].Status != workflow.AgentRunStateAwaitingReport || len(status.AgentRuns[0].ChangedFiles) != 1 {
+		t.Fatalf("unexpected agent runs: %+v", status.AgentRuns)
 	}
 	if len(status.Events) < 2 {
 		t.Fatalf("expected run and plan events, got %+v", status.Events)

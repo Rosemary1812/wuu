@@ -279,15 +279,29 @@ func (s *Store) UpsertAgentRun(agent AgentRun) error {
 	}
 	agent.WorkflowRunID = runID
 	agent.ID = agentID
-	if agent.Status == "" {
-		agent.Status = AgentRunStateQueued
-	}
-	if err := ValidateAgentRunTransition("", agent.Status); err != nil {
-		return err
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := os.MkdirAll(s.agentDir(agent.WorkflowRunID), 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(s.agentDir(agent.WorkflowRunID), agent.ID+".json")
+	var existing AgentRun
+	if err := readJSONFile(path, &existing); err == nil {
+		if agent.Status == "" {
+			agent.Status = existing.Status
+		}
+		if err := ValidateAgentRunTransition(existing.Status, agent.Status); err != nil {
+			return err
+		}
+		agent = mergeAgentRun(existing, agent)
+	} else if os.IsNotExist(err) {
+		if agent.Status == "" {
+			agent.Status = AgentRunStateQueued
+		}
+		if err := ValidateAgentRunTransition("", agent.Status); err != nil {
+			return err
+		}
+	} else {
 		return err
 	}
 	if agent.Status == AgentRunStateRunning && agent.StartedAt.IsZero() {
@@ -296,7 +310,7 @@ func (s *Store) UpsertAgentRun(agent AgentRun) error {
 	if IsTerminalAgentRunState(agent.Status) && agent.CompletedAt.IsZero() {
 		agent.CompletedAt = time.Now().UTC()
 	}
-	if err := writeJSONFile(filepath.Join(s.agentDir(agent.WorkflowRunID), agent.ID+".json"), agent); err != nil {
+	if err := writeJSONFile(path, agent); err != nil {
 		return err
 	}
 	return s.appendEventLocked(Event{Type: EventAgentRunUpserted, RunID: agent.WorkflowRunID, PhaseID: agent.PhaseID, AgentRunID: agent.ID, Status: string(agent.Status)})
@@ -358,6 +372,34 @@ func (s *Store) ListAgentRuns(runID string) ([]AgentRun, error) {
 		return agents[i].PhaseID < agents[j].PhaseID
 	})
 	return agents, nil
+}
+
+func (s *Store) AttachAgentRunToPhase(runID, phaseID, agentRunID string) (Run, error) {
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return Run{}, err
+	}
+	agentRunID, err = validateStoreID("workflow agent run", agentRunID)
+	if err != nil {
+		return Run{}, err
+	}
+	run, err := s.LoadRun(runID)
+	if err != nil {
+		return Run{}, err
+	}
+	for i := range run.Phases {
+		if run.Phases[i].ID != phaseID {
+			continue
+		}
+		if !containsString(run.Phases[i].AgentRunIDs, agentRunID) {
+			run.Phases[i].AgentRunIDs = append(run.Phases[i].AgentRunIDs, agentRunID)
+		}
+		if err := s.SaveRun(run); err != nil {
+			return Run{}, err
+		}
+		return run, nil
+	}
+	return Run{}, fmt.Errorf("workflow phase %q not found", phaseID)
 }
 
 func (s *Store) UpdateAgentRunStatus(runID, agentRunID string, status AgentRunState, message string) (AgentRun, error) {
@@ -533,6 +575,55 @@ func validateStoreID(kind, id string) (string, error) {
 		}
 	}
 	return id, nil
+}
+
+func mergeAgentRun(existing, next AgentRun) AgentRun {
+	if next.WorkflowRunID == "" {
+		next.WorkflowRunID = existing.WorkflowRunID
+	}
+	if next.PhaseID == "" {
+		next.PhaseID = existing.PhaseID
+	}
+	if next.AgentID == "" {
+		next.AgentID = existing.AgentID
+	}
+	if next.TaskName == "" {
+		next.TaskName = existing.TaskName
+	}
+	if next.AgentProfile == "" {
+		next.AgentProfile = existing.AgentProfile
+	}
+	if next.Prompt == "" {
+		next.Prompt = existing.Prompt
+	}
+	if next.ReportPath == "" {
+		next.ReportPath = existing.ReportPath
+	}
+	if next.ChangedFiles == nil {
+		next.ChangedFiles = existing.ChangedFiles
+	}
+	if next.Artifacts == nil {
+		next.Artifacts = existing.Artifacts
+	}
+	if next.StartedAt.IsZero() {
+		next.StartedAt = existing.StartedAt
+	}
+	if next.CompletedAt.IsZero() {
+		next.CompletedAt = existing.CompletedAt
+	}
+	if next.Error == "" {
+		next.Error = existing.Error
+	}
+	return next
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func writeJSONFile(path string, value any) error {

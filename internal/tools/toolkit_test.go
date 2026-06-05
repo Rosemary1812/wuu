@@ -660,6 +660,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "write_stdin", kind: ToolKindProcess, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "create_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
+		{name: "workflow_control", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "workflow_status", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "apply_patch", kind: ToolKindFile, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},

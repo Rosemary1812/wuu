@@ -213,7 +213,7 @@ description: Weekly QA sweep.
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, name := range []string{"list_workflows", "load_workflow", "create_workflow", "workflow_status"} {
+	for _, name := range []string{"list_workflows", "load_workflow", "create_workflow", "workflow_control", "workflow_status"} {
 		if !defs[name] {
 			t.Fatalf("workflow tool %q missing from Definitions()", name)
 		}

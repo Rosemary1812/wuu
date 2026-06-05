@@ -280,6 +280,258 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 }
 
 // ---------------------------------------------------------------------------
+// workflow_control
+// ---------------------------------------------------------------------------
+
+type WorkflowControlTool struct{ env *Env }
+
+func NewWorkflowControlTool(env *Env) *WorkflowControlTool { return &WorkflowControlTool{env: env} }
+
+func (t *WorkflowControlTool) Name() string            { return "workflow_control" }
+func (t *WorkflowControlTool) IsReadOnly() bool        { return false }
+func (t *WorkflowControlTool) IsConcurrencySafe() bool { return false }
+
+func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{
+		Name: "workflow_control",
+		Description: "Update durable Workflow Run state after planning, spawning agents, awaiting agents, or synthesizing results. " +
+			"Use this to bind spawn_agent / await_agents outputs back to a workflow run. The runtime enforces valid run, phase, " +
+			"and agent-run state transitions; do not invent states. If await_agents reports report_missing=true, record the " +
+			"agent run as awaiting_report instead of completed.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action": map[string]any{
+					"type": "string",
+					"enum": []string{
+						"set_run_status",
+						"set_phase_status",
+						"record_agent_run",
+						"write_final_report",
+					},
+					"description": "Control action to perform.",
+				},
+				"run_id": map[string]any{
+					"type":        "string",
+					"description": "Workflow run id.",
+				},
+				"status": map[string]any{
+					"type":        "string",
+					"description": "New status for set_run_status, set_phase_status, or record_agent_run.",
+				},
+				"message": map[string]any{
+					"type":        "string",
+					"description": "Optional reason, error, blocker, or status note.",
+				},
+				"phase_id": map[string]any{
+					"type":        "string",
+					"description": "Phase id for set_phase_status or record_agent_run.",
+				},
+				"agent_run_id": map[string]any{
+					"type":        "string",
+					"description": "Workflow-local Agent Run id. Defaults to agent_id for record_agent_run.",
+				},
+				"agent_id": map[string]any{
+					"type":        "string",
+					"description": "Agent id returned by spawn_agent / await_agents.",
+				},
+				"task_name": map[string]any{
+					"type":        "string",
+					"description": "Task name returned by spawn_agent / await_agents.",
+				},
+				"agent_profile": map[string]any{
+					"type":        "string",
+					"description": "Durable Agent Profile used for this run, if any.",
+				},
+				"prompt": map[string]any{
+					"type":        "string",
+					"description": "Task prompt or brief used for the agent run.",
+				},
+				"report_path": map[string]any{
+					"type":        "string",
+					"description": "Structured agent_report path returned by await_agents.",
+				},
+				"changed_files": map[string]any{
+					"type":        "array",
+					"description": "Changed files from await_agents / agent_report.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"artifacts": map[string]any{
+					"type":        "array",
+					"description": "Artifact paths from await_agents / agent_report.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "Final report markdown for write_final_report.",
+				},
+				"complete_run": map[string]any{
+					"type":        "boolean",
+					"description": "For write_final_report, also transition the run to completed.",
+				},
+			},
+			"required": []string{"action", "run_id"},
+		},
+	}
+}
+
+type workflowControlArgs struct {
+	Action       string   `json:"action"`
+	RunID        string   `json:"run_id"`
+	Status       string   `json:"status"`
+	Message      string   `json:"message"`
+	PhaseID      string   `json:"phase_id"`
+	AgentRunID   string   `json:"agent_run_id"`
+	AgentID      string   `json:"agent_id"`
+	TaskName     string   `json:"task_name"`
+	AgentProfile string   `json:"agent_profile"`
+	Prompt       string   `json:"prompt"`
+	ReportPath   string   `json:"report_path"`
+	ChangedFiles []string `json:"changed_files"`
+	Artifacts    []string `json:"artifacts"`
+	Content      string   `json:"content"`
+	CompleteRun  bool     `json:"complete_run"`
+}
+
+func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (string, error) {
+	var args workflowControlArgs
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return "", err
+	}
+	action := strings.TrimSpace(args.Action)
+	if action == "" {
+		return "", errors.New("workflow_control requires action")
+	}
+	if strings.TrimSpace(args.RunID) == "" {
+		return "", errors.New("workflow_control requires run_id")
+	}
+	store, err := t.env.WorkflowStore()
+	if err != nil {
+		return "", fmt.Errorf("resolve workflow store: %w", err)
+	}
+
+	switch action {
+	case "set_run_status":
+		status, err := parseWorkflowRunState(args.Status)
+		if err != nil {
+			return "", err
+		}
+		run, err := store.UpdateRunStatus(args.RunID, status, args.Message)
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "run": run})
+
+	case "set_phase_status":
+		if strings.TrimSpace(args.PhaseID) == "" {
+			return "", errors.New("workflow_control set_phase_status requires phase_id")
+		}
+		status, err := parseWorkflowPhaseState(args.Status)
+		if err != nil {
+			return "", err
+		}
+		run, err := store.UpdatePhaseStatus(args.RunID, args.PhaseID, status, args.Message)
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "run": run})
+
+	case "record_agent_run":
+		agent, err := workflowAgentRunFromControlArgs(args)
+		if err != nil {
+			return "", err
+		}
+		if err := store.UpsertAgentRun(agent); err != nil {
+			return "", err
+		}
+		var run workflow.Run
+		if strings.TrimSpace(agent.PhaseID) != "" {
+			run, err = store.AttachAgentRunToPhase(agent.WorkflowRunID, agent.PhaseID, agent.ID)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			run, _ = store.LoadRun(agent.WorkflowRunID)
+		}
+		loaded, err := store.LoadAgentRun(agent.WorkflowRunID, agent.ID)
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "run": run, "agent_run": loaded})
+
+	case "write_final_report":
+		content := strings.TrimSpace(args.Content)
+		if content == "" {
+			return "", errors.New("workflow_control write_final_report requires content")
+		}
+		path, err := store.WriteFinalReport(args.RunID, content)
+		if err != nil {
+			return "", err
+		}
+		run, err := store.LoadRun(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		if args.CompleteRun {
+			run, err = store.UpdateRunStatus(args.RunID, workflow.RunStateCompleted, args.Message)
+			if err != nil {
+				return "", err
+			}
+		}
+		return mustJSON(map[string]any{"action": action, "run": run, "final_report_path": path})
+
+	default:
+		return "", fmt.Errorf("unsupported workflow_control action %q", action)
+	}
+}
+
+func workflowAgentRunFromControlArgs(args workflowControlArgs) (workflow.AgentRun, error) {
+	agentRunID := strings.TrimSpace(args.AgentRunID)
+	if agentRunID == "" {
+		agentRunID = strings.TrimSpace(args.AgentID)
+	}
+	if agentRunID == "" {
+		return workflow.AgentRun{}, errors.New("workflow_control record_agent_run requires agent_run_id or agent_id")
+	}
+	var status workflow.AgentRunState
+	if strings.TrimSpace(args.Status) != "" {
+		parsed, err := parseWorkflowAgentRunState(args.Status)
+		if err != nil {
+			return workflow.AgentRun{}, err
+		}
+		status = parsed
+	}
+	agent := workflow.AgentRun{
+		ID:            agentRunID,
+		WorkflowRunID: strings.TrimSpace(args.RunID),
+		PhaseID:       strings.TrimSpace(args.PhaseID),
+		AgentID:       strings.TrimSpace(args.AgentID),
+		TaskName:      strings.TrimSpace(args.TaskName),
+		AgentProfile:  strings.TrimSpace(args.AgentProfile),
+		Status:        status,
+		Prompt:        strings.TrimSpace(args.Prompt),
+		ReportPath:    strings.TrimSpace(args.ReportPath),
+		ChangedFiles:  trimWorkflowStringSlice(args.ChangedFiles),
+		Artifacts:     trimWorkflowStringSlice(args.Artifacts),
+		Error:         strings.TrimSpace(args.Message),
+	}
+	if agent.AgentID == "" {
+		agent.AgentID = agent.ID
+	}
+	return agent, nil
+}
+
+func trimWorkflowStringSlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
 // workflow_status
 // ---------------------------------------------------------------------------
 
@@ -373,6 +625,71 @@ func parseInitialWorkflowStatus(raw string) (workflow.RunState, error) {
 		return workflow.RunStateApprovalPending, nil
 	default:
 		return "", fmt.Errorf("invalid initial_status %q", raw)
+	}
+}
+
+func parseWorkflowRunState(raw string) (workflow.RunState, error) {
+	switch strings.TrimSpace(raw) {
+	case string(workflow.RunStateDraft):
+		return workflow.RunStateDraft, nil
+	case string(workflow.RunStateApprovalPending):
+		return workflow.RunStateApprovalPending, nil
+	case string(workflow.RunStateRunning):
+		return workflow.RunStateRunning, nil
+	case string(workflow.RunStatePaused):
+		return workflow.RunStatePaused, nil
+	case string(workflow.RunStateCompleted):
+		return workflow.RunStateCompleted, nil
+	case string(workflow.RunStateFailed):
+		return workflow.RunStateFailed, nil
+	case string(workflow.RunStateCancelled):
+		return workflow.RunStateCancelled, nil
+	default:
+		return "", fmt.Errorf("invalid workflow run status %q", raw)
+	}
+}
+
+func parseWorkflowPhaseState(raw string) (workflow.PhaseState, error) {
+	switch strings.TrimSpace(raw) {
+	case string(workflow.PhaseStatePending):
+		return workflow.PhaseStatePending, nil
+	case string(workflow.PhaseStateRunnable):
+		return workflow.PhaseStateRunnable, nil
+	case string(workflow.PhaseStateRunning):
+		return workflow.PhaseStateRunning, nil
+	case string(workflow.PhaseStateCompleted):
+		return workflow.PhaseStateCompleted, nil
+	case string(workflow.PhaseStateBlocked):
+		return workflow.PhaseStateBlocked, nil
+	case string(workflow.PhaseStateFailed):
+		return workflow.PhaseStateFailed, nil
+	case string(workflow.PhaseStateSkipped):
+		return workflow.PhaseStateSkipped, nil
+	default:
+		return "", fmt.Errorf("invalid workflow phase status %q", raw)
+	}
+}
+
+func parseWorkflowAgentRunState(raw string) (workflow.AgentRunState, error) {
+	switch strings.TrimSpace(raw) {
+	case string(workflow.AgentRunStateQueued):
+		return workflow.AgentRunStateQueued, nil
+	case string(workflow.AgentRunStateStarting):
+		return workflow.AgentRunStateStarting, nil
+	case string(workflow.AgentRunStateRunning):
+		return workflow.AgentRunStateRunning, nil
+	case string(workflow.AgentRunStateAwaitingReport):
+		return workflow.AgentRunStateAwaitingReport, nil
+	case string(workflow.AgentRunStateCompleted):
+		return workflow.AgentRunStateCompleted, nil
+	case string(workflow.AgentRunStateFailed):
+		return workflow.AgentRunStateFailed, nil
+	case string(workflow.AgentRunStateRetrying):
+		return workflow.AgentRunStateRetrying, nil
+	case string(workflow.AgentRunStateCancelled):
+		return workflow.AgentRunStateCancelled, nil
+	default:
+		return "", fmt.Errorf("invalid workflow agent run status %q", raw)
 	}
 }
 

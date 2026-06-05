@@ -47,6 +47,11 @@ func TestToolkitToolDisplayFormatsBuiltInTools(t *testing.T) {
 			call: providers.ToolCall{Name: "create_workflow", Arguments: `{"definition_name":"feature-delivery"}`},
 			want: providers.ToolCallDisplay{Kind: "workflow", Text: "创建工作流 feature-delivery"},
 		},
+		{
+			name: "workflow control",
+			call: providers.ToolCall{Name: "workflow_control", Arguments: `{"action":"record_agent_run"}`},
+			want: providers.ToolCallDisplay{Kind: "workflow", Text: "更新工作流 record_agent_run"},
+		},
 	}
 
 	for _, tt := range tests {

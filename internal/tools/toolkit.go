@@ -155,6 +155,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewListWorkflowsTool(e),
 		NewLoadWorkflowTool(e),
 		NewCreateWorkflowTool(e),
+		NewWorkflowControlTool(e),
 		NewWorkflowStatusTool(e),
 		// Planning
 		NewUpdatePlanTool(e),

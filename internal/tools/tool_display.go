@@ -92,6 +92,12 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("workflow", "创建工作流")
 		}
 		return toolDisplay("workflow", "创建工作流 "+displayTruncate(workflow, 70))
+	case "workflow_control":
+		action := displayString(args, "action")
+		if action == "" {
+			return toolDisplay("workflow", "更新工作流")
+		}
+		return toolDisplay("workflow", "更新工作流 "+displayTruncate(action, 70))
 	case "workflow_status":
 		return toolDisplay("workflow", "查看工作流状态 "+displayTarget(displayString(args, "run_id"), ""))
 	case "update_plan":

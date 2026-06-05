@@ -199,6 +199,58 @@ func TestStoreRejectsUnsafeAndDuplicateIDs(t *testing.T) {
 	}
 }
 
+func TestStoreAgentRunUpsertMergesAndValidatesTransitions(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.CreateRun(Run{
+		ID:     "run-agent",
+		Phases: []Phase{{ID: "plan", Name: "Plan", Status: PhaseStatePending}},
+	}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if err := store.UpsertAgentRun(AgentRun{
+		ID:            "agent-1",
+		WorkflowRunID: "run-agent",
+		PhaseID:       "plan",
+		AgentID:       "agent-1",
+		TaskName:      "inspect",
+		Status:        AgentRunStateRunning,
+		Prompt:        "inspect the code",
+	}); err != nil {
+		t.Fatalf("UpsertAgentRun initial: %v", err)
+	}
+	if err := store.UpsertAgentRun(AgentRun{
+		ID:            "agent-1",
+		WorkflowRunID: "run-agent",
+		Status:        AgentRunStateAwaitingReport,
+		ReportPath:    "reports/agent-1.md",
+		ChangedFiles:  []string{"internal/workflow/store.go"},
+	}); err != nil {
+		t.Fatalf("UpsertAgentRun update: %v", err)
+	}
+	agent, err := store.LoadAgentRun("run-agent", "agent-1")
+	if err != nil {
+		t.Fatalf("LoadAgentRun: %v", err)
+	}
+	if agent.PhaseID != "plan" || agent.Prompt != "inspect the code" || len(agent.ChangedFiles) != 1 {
+		t.Fatalf("agent fields were not merged: %+v", agent)
+	}
+	if err := store.UpsertAgentRun(AgentRun{
+		ID:            "agent-1",
+		WorkflowRunID: "run-agent",
+		Status:        AgentRunStateRunning,
+	}); err == nil {
+		t.Fatal("expected invalid agent run transition to be rejected")
+	}
+
+	updated, err := store.AttachAgentRunToPhase("run-agent", "plan", "agent-1")
+	if err != nil {
+		t.Fatalf("AttachAgentRunToPhase: %v", err)
+	}
+	if len(updated.Phases[0].AgentRunIDs) != 1 || updated.Phases[0].AgentRunIDs[0] != "agent-1" {
+		t.Fatalf("agent run was not attached to phase: %+v", updated.Phases[0])
+	}
+}
+
 func TestStoreUsesExpectedLayout(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
