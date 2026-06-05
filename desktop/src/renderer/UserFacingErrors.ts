@@ -9,11 +9,47 @@ export type UserFacingErrorCategory =
 export type UserFacingErrorTone = "neutral" | "warning" | "auth" | "error";
 export type UserFacingErrorContext = "turn" | "tool" | "status";
 
+/**
+ * Kinds map to renderer-side handlers. The data layer doesn't decide
+ * what the action does — it just declares the intent. The UI layer
+ * (TurnNotice / NoticeActions) maps each kind to a concrete handler.
+ *
+ * Keep this set small. Anything renderer-specific (a "Copy" button,
+ * a "Submit feedback" link) belongs to a particular surface, not the
+ * error model.
+ */
+export type UserFacingErrorActionKind =
+  | "retry"
+  | "switchModel"
+  | "compactContext"
+  | "reauth"
+  | "openSettings"
+  | "copyDebug"
+  | "submitFeedback";
+
+export type UserFacingErrorAction = {
+  /** Stable identifier — used for analytics, tests, and keying. */
+  kind: UserFacingErrorActionKind;
+  /** Visible label. Short, sentence-case, no trailing punctuation. */
+  label: string;
+  /** Optional payload passed to the handler verbatim. */
+  payload?: Record<string, unknown>;
+  /** Secondary actions are visually de-emphasized in the notice. */
+  variant?: "primary" | "secondary";
+};
+
 export type UserFacingErrorDisplay = {
   category: UserFacingErrorCategory;
   tone: UserFacingErrorTone;
   title: string;
   detail: string;
+  /**
+   * Concrete next-step the user can take. The renderer renders these
+   * as inline text links beneath the notice copy. Absence (empty
+   * array) is a valid signal that the user can't do anything useful
+   * right now — the notice stays as text-only.
+   */
+  recommendedActions: UserFacingErrorAction[];
 };
 
 export function rawErrorMessage(error: unknown, fallback = ""): string {
@@ -34,36 +70,69 @@ export function userFacingErrorForMessage(
   const category = classifyUserFacingError(message, context);
   switch (category) {
     case "cancelled":
-      return { category, tone: "neutral", title: "已停止", detail: "这次请求已停止，可以继续发送消息。" };
+      return {
+        category,
+        tone: "neutral",
+        title: "已停止",
+        detail: "这次请求已停止，可以继续发送消息。",
+        recommendedActions: [
+          { kind: "retry", label: "重新发送", variant: "primary" },
+        ],
+      };
     case "network":
-      return { category, tone: "error", title: "连接暂时不可用", detail: "没有完成这次请求。请稍后重试。" };
+      return {
+        category,
+        tone: "error",
+        title: "连接暂时不可用",
+        detail: "没有完成这次请求。可以重试，或换一个 provider 继续。",
+        recommendedActions: [
+          { kind: "retry", label: "重试", variant: "primary" },
+          { kind: "switchModel", label: "切换备用 provider", variant: "secondary" },
+        ],
+      };
     case "auth":
       return {
         category,
         tone: "auth",
         title: "需要重新登录或检查权限",
-        detail: "当前凭据或权限不足，处理没有完成。"
+        detail: "当前凭据或权限不足，处理没有完成。",
+        recommendedActions: [
+          { kind: "reauth", label: "重新连接", variant: "primary" },
+          { kind: "openSettings", label: "查看设置", variant: "secondary", payload: { focus: "providers" } },
+        ],
       };
     case "provider":
       return {
         category,
         tone: "error",
         title: "模型没有完成请求",
-        detail: "可以调整输入、切换模型，或稍后重试。"
+        detail:
+          "可能是上下文超出窗口或被限流。可以压缩上下文，或换一个模型。",
+        recommendedActions: [
+          { kind: "compactContext", label: "压缩上下文", variant: "primary" },
+          { kind: "switchModel", label: "切换模型", variant: "secondary" },
+        ],
       };
     case "tool":
       return {
         category,
         tone: "error",
         title: "工具调用失败",
-        detail: "某个工具没有完成。原始错误已留在调试信息中。"
+        detail: "某个工具没有完成。原始错误已留在调试信息中。",
+        recommendedActions: [
+          { kind: "retry", label: "重试这个工具", variant: "primary" },
+          { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
+        ],
       };
     case "local":
       return {
         category,
         tone: "error",
         title: "本地操作失败",
-        detail: "无法完成本地文件、命令或权限相关操作。"
+        detail: "无法完成本地文件、命令或权限相关操作。",
+        recommendedActions: [
+          { kind: "openSettings", label: "查看权限设置", variant: "secondary", payload: { focus: "workspace" } },
+        ],
       };
     case "internal":
     default:
@@ -71,7 +140,12 @@ export function userFacingErrorForMessage(
         category: "internal",
         tone: "error",
         title: "wuu 遇到内部错误",
-        detail: "请重试；如果反复出现，可以复制调试信息排查。"
+        detail: "可以重试一次；如果反复出现，把调试信息反馈给我们。",
+        recommendedActions: [
+          { kind: "retry", label: "重试", variant: "primary" },
+          { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
+          { kind: "submitFeedback", label: "提交反馈", variant: "secondary" },
+        ],
       };
   }
 }
