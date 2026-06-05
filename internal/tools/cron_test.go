@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/cron"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func TestScheduleCronTool_DefaultsToSessionOnly(t *testing.T) {
@@ -62,6 +63,45 @@ func TestScheduleCronTool_DurablePersistsToDisk(t *testing.T) {
 	}
 	if len(fileTasks) != 1 {
 		t.Fatalf("expected 1 durable task, got %d", len(fileTasks))
+	}
+}
+
+func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
+	dir := t.TempDir()
+	stateDir := filepath.Join(dir, "state")
+	env := &Env{
+		RootDir:  dir,
+		StateDir: stateDir,
+		Workflows: []workflow.Definition{{
+			Name:        "weekly-qa",
+			Description: "Run weekly QA.",
+		}},
+	}
+	tool := NewScheduleCronTool(env)
+
+	result, err := tool.Execute(context.Background(), `{
+		"cron":"*/5 * * * *",
+		"workflow_name":"weekly-qa",
+		"workflow_arguments":"settings search",
+		"recurring":true,
+		"durable":true
+	}`)
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(result, `"kind":"workflow"`) || !strings.Contains(result, `"workflow_name":"weekly-qa"`) {
+		t.Fatalf("expected workflow result, got %s", result)
+	}
+
+	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
+	if err != nil {
+		t.Fatalf("file store list: %v", err)
+	}
+	if len(fileTasks) != 1 || !fileTasks[0].IsWorkflow() {
+		t.Fatalf("expected one workflow task, got %+v", fileTasks)
+	}
+	if fileTasks[0].WorkflowArguments != "settings search" || fileTasks[0].Prompt == "" {
+		t.Fatalf("workflow task metadata missing: %+v", fileTasks[0])
 	}
 }
 

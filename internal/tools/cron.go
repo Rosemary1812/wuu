@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/cron"
@@ -24,7 +25,8 @@ func (t *ScheduleCronTool) IsConcurrencySafe() bool  { return false }
 func (t *ScheduleCronTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "schedule_cron",
-		Description: "Create a scheduled task that runs a prompt at cron intervals. " +
+		Description: "Create a scheduled task that runs a prompt or saved workflow at cron intervals. " +
+			"Use workflow_name for scheduled, repeatable, multi-agent work so the scheduler can start a Workflow Run instead of an ordinary chat loop. " +
 			"The task can be recurring (runs repeatedly until deleted or expired) or one-shot (runs once).",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -35,7 +37,15 @@ func (t *ScheduleCronTool) Definition() providers.ToolDefinition {
 				},
 				"prompt": map[string]any{
 					"type":        "string",
-					"description": "The prompt to execute each time the task fires.",
+					"description": "The prompt to execute each time the task fires. Required unless workflow_name is set.",
+				},
+				"workflow_name": map[string]any{
+					"type":        "string",
+					"description": "Optional saved workflow definition name to run when the task fires.",
+				},
+				"workflow_arguments": map[string]any{
+					"type":        "string",
+					"description": "Arguments passed to the saved workflow when it fires.",
 				},
 				"recurring": map[string]any{
 					"type":        "boolean",
@@ -46,23 +56,42 @@ func (t *ScheduleCronTool) Definition() providers.ToolDefinition {
 					"description": "If true, persist to disk and survive restarts. If false (default), session-only.",
 				},
 			},
-			"required": []string{"cron", "prompt"},
+			"required": []string{"cron"},
 		},
 	}
 }
 
 func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Cron      string `json:"cron"`
-		Prompt    string `json:"prompt"`
-		Recurring bool   `json:"recurring"`
-		Durable   bool   `json:"durable"`
+		Cron              string `json:"cron"`
+		Prompt            string `json:"prompt"`
+		WorkflowName      string `json:"workflow_name"`
+		WorkflowArguments string `json:"workflow_arguments"`
+		Recurring         bool   `json:"recurring"`
+		Durable           bool   `json:"durable"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	if args.Cron == "" || args.Prompt == "" {
-		return "", fmt.Errorf("schedule_cron requires cron and prompt")
+	args.Cron = strings.TrimSpace(args.Cron)
+	args.Prompt = strings.TrimSpace(args.Prompt)
+	args.WorkflowName = strings.TrimSpace(args.WorkflowName)
+	args.WorkflowArguments = strings.TrimSpace(args.WorkflowArguments)
+	if args.Cron == "" {
+		return "", fmt.Errorf("schedule_cron requires cron")
+	}
+	if args.Prompt == "" && args.WorkflowName == "" {
+		return "", fmt.Errorf("schedule_cron requires prompt or workflow_name")
+	}
+	if args.WorkflowName != "" {
+		wf, ok := t.env.FindWorkflow(args.WorkflowName)
+		if !ok {
+			return "", fmt.Errorf("workflow %q not found. available: %s", args.WorkflowName, strings.Join(t.env.WorkflowNames(), ", "))
+		}
+		args.WorkflowName = wf.Name
+		if args.Prompt == "" {
+			args.Prompt = scheduledWorkflowPrompt(wf.Name, args.WorkflowArguments)
+		}
 	}
 
 	ce, err := cron.ParseCronExpression(args.Cron)
@@ -91,11 +120,13 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 	}
 
 	task := cron.Task{
-		ID:        cron.GenerateTaskID(),
-		Cron:      args.Cron,
-		Prompt:    args.Prompt,
-		CreatedAt: time.Now().UnixMilli(),
-		Recurring: args.Recurring,
+		ID:                cron.GenerateTaskID(),
+		Cron:              args.Cron,
+		Prompt:            args.Prompt,
+		WorkflowName:      args.WorkflowName,
+		WorkflowArguments: args.WorkflowArguments,
+		CreatedAt:         time.Now().UnixMilli(),
+		Recurring:         args.Recurring,
 	}
 
 	storeLabel := "session-only"
@@ -109,13 +140,23 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 	}
 
 	result := map[string]any{
-		"id":         task.ID,
-		"schedule":   args.Cron,
-		"prompt":     args.Prompt,
-		"type":       map[bool]string{true: "recurring", false: "one-shot"}[args.Recurring],
-		"durability": storeLabel,
+		"id":                 task.ID,
+		"schedule":           args.Cron,
+		"prompt":             args.Prompt,
+		"kind":               map[bool]string{true: "workflow", false: "prompt"}[task.IsWorkflow()],
+		"workflow_name":      task.WorkflowName,
+		"workflow_arguments": task.WorkflowArguments,
+		"type":               map[bool]string{true: "recurring", false: "one-shot"}[args.Recurring],
+		"durability":         storeLabel,
 	}
 	return mustJSON(result)
+}
+
+func scheduledWorkflowPrompt(name, arguments string) string {
+	if strings.TrimSpace(arguments) == "" {
+		return fmt.Sprintf("Run workflow %s.", name)
+	}
+	return fmt.Sprintf("Run workflow %s with arguments: %s", name, strings.TrimSpace(arguments))
 }
 
 type CancelCronTool struct{ env *Env }
@@ -218,10 +259,13 @@ func (t *ListCronTool) Execute(ctx context.Context, argsJSON string) (string, er
 			typeLabel += " [session-only]"
 		}
 		items = append(items, map[string]any{
-			"id":       task.ID,
-			"schedule": task.Cron,
-			"type":     typeLabel,
-			"prompt":   task.Prompt,
+			"id":                 task.ID,
+			"schedule":           task.Cron,
+			"type":               typeLabel,
+			"kind":               map[bool]string{true: "workflow", false: "prompt"}[task.IsWorkflow()],
+			"prompt":             task.Prompt,
+			"workflow_name":      task.WorkflowName,
+			"workflow_arguments": task.WorkflowArguments,
 		})
 	}
 	for _, task := range fileTasks {

@@ -6,11 +6,12 @@ import (
 )
 
 type SchedulerConfig struct {
-	Store        *TaskStore
-	SessionStore *SessionTaskStore
-	OnFire       func(task Task)
-	IsOwner      func() bool
-	IsKilled     func() bool
+	Store          *TaskStore
+	SessionStore   *SessionTaskStore
+	OnFire         func(task Task)
+	OnWorkflowFire func(task Task)
+	IsOwner        func() bool
+	IsKilled       func() bool
 }
 
 type Scheduler struct {
@@ -134,6 +135,10 @@ func (s *Scheduler) check() {
 				delete(s.inFlight, key)
 				s.mu.Unlock()
 			}()
+			if t.IsWorkflow() && s.cfg.OnWorkflowFire != nil {
+				s.cfg.OnWorkflowFire(t)
+				return
+			}
 			if s.cfg.OnFire != nil {
 				s.cfg.OnFire(t)
 			}

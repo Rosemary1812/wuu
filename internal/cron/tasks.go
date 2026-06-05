@@ -19,12 +19,18 @@ const (
 )
 
 type Task struct {
-	ID          string `json:"id"`
-	Cron        string `json:"cron"`
-	Prompt      string `json:"prompt"`
-	CreatedAt   int64  `json:"createdAt"`
-	LastFiredAt int64  `json:"lastFiredAt,omitempty"`
-	Recurring   bool   `json:"recurring"`
+	ID                string `json:"id"`
+	Cron              string `json:"cron"`
+	Prompt            string `json:"prompt,omitempty"`
+	WorkflowName      string `json:"workflowName,omitempty"`
+	WorkflowArguments string `json:"workflowArguments,omitempty"`
+	CreatedAt         int64  `json:"createdAt"`
+	LastFiredAt       int64  `json:"lastFiredAt,omitempty"`
+	Recurring         bool   `json:"recurring"`
+}
+
+func (t Task) IsWorkflow() bool {
+	return strings.TrimSpace(t.WorkflowName) != ""
 }
 
 func (t Task) NextFireAt() (time.Time, error) {
