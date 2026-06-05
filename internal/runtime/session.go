@@ -880,6 +880,13 @@ func newProfileMemoryProvider(wuuHome, profileName string) (*memstore.FileProvid
 	if name == "" || strings.EqualFold(name, config.DefaultAgentName) {
 		return nil, fmt.Errorf("profile memory requires a named agent profile")
 	}
+	if _, _, err := workflow.EnsureProfile(workflow.ProfileEnsureOptions{
+		WuuHome: wuuHome,
+		Name:    name,
+		Source:  "agent",
+	}); err != nil {
+		return nil, err
+	}
 	profileStateDir, err := statepath.ProfileDir(wuuHome, name)
 	if err != nil {
 		return nil, fmt.Errorf("resolve profile state directory: %w", err)
