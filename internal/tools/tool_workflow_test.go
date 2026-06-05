@@ -367,6 +367,70 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	}
 }
 
+func TestCreateWorkflowPausesForMissingRequiredProfiles(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	t.Setenv("WUU_HOME", t.TempDir())
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+	kit.SetWorkflows([]workflow.Definition{{
+		Name:                 "feature-delivery",
+		Description:          "Deliver a feature.",
+		Content:              "## Phases\n\n1. Plan\n",
+		Profiles:             []workflow.ProfileRef{{Name: "frontend_owner", Required: true}},
+		AllowProfileCreation: "ask",
+	}})
+
+	createResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: `{"definition_name":"feature-delivery","run_id":"workflow-missing-profile"}`,
+	})
+	if err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+	var created struct {
+		Status            workflow.RunState            `json:"status"`
+		Phases            []workflow.Phase             `json:"phases"`
+		ProfileResolution []workflow.ProfileResolution `json:"profile_resolution"`
+	}
+	if err := json.Unmarshal([]byte(createResp), &created); err != nil {
+		t.Fatalf("parse create response: %v", err)
+	}
+	if created.Status != workflow.RunStatePaused {
+		t.Fatalf("workflow should pause for missing required profile: %+v", created)
+	}
+	if len(created.Phases) != 1 || created.Phases[0].Status != workflow.PhaseStatePending {
+		t.Fatalf("paused workflow should not mark first phase runnable: %+v", created.Phases)
+	}
+	if len(created.ProfileResolution) != 1 || created.ProfileResolution[0].Action != "pause_missing_required" {
+		t.Fatalf("missing required profile resolution not returned: %+v", created.ProfileResolution)
+	}
+
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-missing-profile"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status: %v", err)
+	}
+	var status struct {
+		Run               workflow.Run                 `json:"run"`
+		ProfileResolution []workflow.ProfileResolution `json:"profile_resolution"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
+		t.Fatalf("parse status response: %v", err)
+	}
+	if status.Run.Status != workflow.RunStatePaused || status.Run.PauseReason == "" || status.Run.ResumeHint == "" {
+		t.Fatalf("paused run metadata missing: %+v", status.Run)
+	}
+	if len(status.ProfileResolution) != 1 || status.ProfileResolution[0].Name != "frontend_owner" {
+		t.Fatalf("status should include profile resolution: %+v", status.ProfileResolution)
+	}
+}
+
 func TestWorkflowControlPauseResumeAndRetryAgentRun(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()

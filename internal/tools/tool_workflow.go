@@ -9,6 +9,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
@@ -228,6 +229,22 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		body = t.env.ProcessWorkflowBody(def, args.Arguments)
 	}
 
+	var profileResolution []workflow.ProfileResolution
+	pauseReason := ""
+	resumeHint := ""
+	if def.Name != "" {
+		profileResolution, err = resolveWorkflowProfilesForDefinition(def, workflow.AutoCreateProfiles(def.AllowProfileCreation))
+		if err != nil {
+			return "", err
+		}
+		missingRequired := workflow.MissingRequiredProfiles(profileResolution)
+		if status == workflow.RunStateRunning && len(missingRequired) > 0 {
+			status = workflow.RunStatePaused
+			pauseReason = "Missing required Agent Profiles: " + strings.Join(workflowProfileResolutionNames(missingRequired), ", ")
+			resumeHint = "Create or choose the required Agent Profiles, then resume the workflow run."
+		}
+	}
+
 	plan := strings.TrimSpace(args.Plan)
 	if plan == "" {
 		plan = strings.TrimSpace(body)
@@ -255,6 +272,8 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		Arguments:      strings.TrimSpace(args.Arguments),
 		Status:         status,
 		Phases:         phases,
+		PauseReason:    pauseReason,
+		ResumeHint:     resumeHint,
 	})
 	if err != nil {
 		return "", err
@@ -269,14 +288,15 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	}
 
 	return mustJSON(map[string]any{
-		"run_id":          run.ID,
-		"status":          run.Status,
-		"definition_name": run.DefinitionName,
-		"definition_path": run.DefinitionPath,
-		"plan_path":       planPath,
-		"phases":          run.Phases,
-		"next_steps":      workflowNextSteps(status),
-		"workflow_status": map[string]string{"run_id": run.ID},
+		"run_id":             run.ID,
+		"status":             run.Status,
+		"definition_name":    run.DefinitionName,
+		"definition_path":    run.DefinitionPath,
+		"plan_path":          planPath,
+		"phases":             run.Phases,
+		"profile_resolution": profileResolution,
+		"next_steps":         workflowNextSteps(status),
+		"workflow_status":    map[string]string{"run_id": run.ID},
 	})
 }
 
@@ -1169,6 +1189,15 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 		"agent_runs":        agents,
 		"memory_candidates": memoryCandidates,
 	}
+	if run.DefinitionName != "" {
+		if def, ok := t.env.FindWorkflow(run.DefinitionName); ok {
+			profileResolution, err := resolveWorkflowProfilesForDefinition(def, false)
+			if err != nil {
+				return "", err
+			}
+			result["profile_resolution"] = profileResolution
+		}
+	}
 	if args.IncludeEvents {
 		events, err := store.ListEvents(runID)
 		if err != nil {
@@ -1177,6 +1206,31 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 		result["events"] = tailWorkflowEvents(events, args.EventLimit)
 	}
 	return mustJSON(result)
+}
+
+func resolveWorkflowProfilesForDefinition(def workflow.Definition, createMissing bool) ([]workflow.ProfileResolution, error) {
+	if len(def.Profiles) == 0 {
+		return nil, nil
+	}
+	wuuHome, err := statepath.Home("")
+	if err != nil {
+		return nil, err
+	}
+	return workflow.ResolveProfiles(workflow.ProfileResolutionOptions{
+		WuuHome:       wuuHome,
+		Definition:    def,
+		CreateMissing: createMissing,
+	})
+}
+
+func workflowProfileResolutionNames(resolutions []workflow.ProfileResolution) []string {
+	names := make([]string, 0, len(resolutions))
+	for _, resolution := range resolutions {
+		if strings.TrimSpace(resolution.Name) != "" {
+			names = append(names, resolution.Name)
+		}
+	}
+	return names
 }
 
 func parseInitialWorkflowStatus(raw string) (workflow.RunState, error) {
