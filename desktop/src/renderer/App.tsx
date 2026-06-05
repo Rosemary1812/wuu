@@ -197,6 +197,7 @@ import {
   statusMessageForError,
   statusToneClass,
   userFacingErrorForMessage,
+  type UserFacingErrorAction,
   type UserFacingErrorDisplay,
 } from "./UserFacingErrors";
 import {
@@ -2466,6 +2467,7 @@ export function App(): JSX.Element {
                   onForkMessage={(turnID, itemID) =>
                     void forkThreadFromMessage(thread, turnID, itemID)
                   }
+                  onNoticeAction={handleNoticeAction}
                 />
               </Fragment>
             ))}
@@ -4888,6 +4890,59 @@ export function App(): JSX.Element {
     await window.wuu.interruptTurn(thread.id);
   }
 
+  /**
+   * Dispatch for UserFacingError recommended actions. The data layer
+   * (UserFacingErrors.ts) only declares what an action IS — this is
+   * where we decide what each one DOES. New action kinds go here; the
+   * data layer does not need to know.
+   *
+   * Most actions are still TODO because they need their own UI hooks
+   * (model picker, OAuth flow, feedback dialog). openSettings and
+   * copyDebug are wired because the existing surfaces are sufficient.
+   */
+  function handleNoticeAction(action: UserFacingErrorAction): void {
+    switch (action.kind) {
+      case "openSettings": {
+        setSettingsOpen(true);
+        // payload.focus can be "providers" | "workspace" — the
+        // settings view will read this in a follow-up patch.
+        return;
+      }
+      case "copyDebug": {
+        // Snapshot whatever the user can see right now. Doesn't
+        // include a turn ID because the action is generic; if a
+        // turn-scoped variant is needed, pass turn.id via payload.
+        const snapshot = JSON.stringify(
+          {
+            kind: "wuu-notice-debug",
+            category: action.payload,
+            at: new Date().toISOString(),
+            status: appStateRef.current.status,
+          },
+          null,
+          2,
+        );
+        void navigator.clipboard.writeText(snapshot).catch(() => {
+          /* clipboard unavailable — best-effort */
+        });
+        return;
+      }
+      // TODO(wuu): wire these up as the corresponding UI surfaces
+      // (model picker, OAuth re-auth dialog, context-compact action,
+      // feedback submission flow) land. The data layer is already
+      // emitting the right actions; the dispatch table is the only
+      // thing left.
+      case "retry":
+      case "switchModel":
+      case "compactContext":
+      case "reauth":
+      case "submitFeedback":
+        return;
+      default:
+        return;
+    }
+  }
+
   async function interruptPane(pane: ConversationPaneID): Promise<void> {
     const thread = threadForPane(appStateRef.current, pane);
     if (!thread) {
@@ -5527,6 +5582,7 @@ export function App(): JSX.Element {
                               )
                           : undefined
                       }
+                      onNoticeAction={handleNoticeAction}
                     />
                   </Fragment>
                 ))}
@@ -7180,10 +7236,19 @@ function turnHasAssistantOutput(turn: Turn): boolean {
 
 function TurnNotice({
   display,
+  onAction,
 }: {
   display: UserFacingErrorDisplay;
+  /**
+   * Called when the user activates a recommended action. The data
+   * layer only declares what the action is; this callback decides
+   * what the action does. If omitted, the action renders as a button
+   * but does nothing — useful for first-render fallback only.
+   */
+  onAction?: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const Icon = turnNoticeIcon(display);
+  const actions = display.recommendedActions;
   return (
     <aside
       className={`turn-notice ${display.tone}`}
@@ -7192,11 +7257,29 @@ function TurnNotice({
       }
     >
       <span className="turn-notice-icon" aria-hidden="true">
-        <Icon size={17} />
+        <Icon size={14} />
       </span>
       <span className="turn-notice-copy">
         <strong>{display.title}</strong>
         <span>{display.detail}</span>
+        {actions.length > 0 ? (
+          <span className="turn-notice-actions">
+            {actions.map((action) => (
+              <button
+                key={action.kind}
+                type="button"
+                className={
+                  action.variant === "secondary"
+                    ? "turn-notice-action secondary"
+                    : "turn-notice-action"
+                }
+                onClick={onAction ? () => onAction(action) : undefined}
+              >
+                {action.label}
+              </button>
+            ))}
+          </span>
+        ) : null}
       </span>
     </aside>
   );
@@ -7221,12 +7304,14 @@ function TurnView({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onNoticeAction,
 }: {
   turn: Turn;
   cwd?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const actionableAgentMessageID =
     turn.status === "completed"
@@ -7251,6 +7336,7 @@ function TurnView({
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
+        onNoticeAction={onNoticeAction}
       />
     );
   }
@@ -7269,7 +7355,7 @@ function TurnView({
       {assistantDisplay ? (
         <AssistantTurnShell turn={turn} display={assistantDisplay} />
       ) : null}
-      {notice ? <TurnNotice display={notice} /> : null}
+      {notice ? <TurnNotice display={notice} onAction={onNoticeAction} /> : null}
     </section>
   );
 }
@@ -7696,6 +7782,7 @@ function ThreadItemView({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onNoticeAction,
 }: {
   turnID: string;
   turnStatus: Turn["status"];
@@ -7707,6 +7794,7 @@ function ThreadItemView({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   switch (item.type) {
     case "user_message": {
@@ -7816,7 +7904,7 @@ function ThreadItemView({
       return <div className="system-line">{item.text}</div>;
     case "error":
       return (
-        <TurnNotice display={userFacingErrorForMessage(item.error, "turn")} />
+        <TurnNotice display={userFacingErrorForMessage(item.error, "turn")} onAction={onNoticeAction} />
       );
     default:
       return null;
