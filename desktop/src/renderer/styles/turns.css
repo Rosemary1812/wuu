@@ -3098,41 +3098,103 @@ pre {
   background: #fff;
 }
 
-.system-line,
-.turn-error,
-.turn-notice {
-  border-radius: 8px;
-  padding: 10px 12px;
-  line-height: 1.45;
-}
+/*
+ * Editorial notice system.
+ *
+ * No rounded boxes, no fill colors. The notice lives in the conversation
+ * flow as inline editorial copy, marked off by a 2px left rule and a
+ * compact icon. Color is reserved for the rule + icon; the text always
+ * stays in the same gray scale as the body prose. This keeps error
+ * states from competing with the conversation itself.
+ *
+ * Three sibling elements share the same base:
+ *   - .turn-notice   → status/terminal/error tone banners
+ *   - .turn-error    → legacy hard-error (kept for back-compat with
+ *                       anything that still emits raw .turn-error)
+ *   - .system-line   → in-flow editorial line (context compaction,
+ *                       system notes). No fill, no border — it sits in
+ *                       the prose as if it were written by the author.
+ */
 
-.system-line {
-  background: #f3f4f1;
-  color: #6e7478;
+.turn-notice,
+.turn-error {
+  border-radius: 0;
+  padding: 4px 0 4px 14px;
+  line-height: var(--line-body);
+  background: transparent;
+  border: 0;
+  border-left: 2px solid currentColor;
 }
 
 .turn-error {
-  border: 1px solid #f1c2bf;
-  background: #fff2f0;
   color: #b42318;
 }
 
-.turn-notice {
+/* Actions sit beneath the copy as inline text links. We deliberately
+   do not give them button chrome — that would re-introduce the
+   "card" feel we're moving away from. */
+.turn-notice-actions {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border: 1px solid #e4e5e1;
-  background: #f3f4f1;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  row-gap: 4px;
+  margin-top: 6px;
+  font-size: var(--font-ui);
+  line-height: 1.4;
+}
+
+.turn-notice-action {
+  color: #1f2328;
+  text-decoration: none;
+  border-bottom: 1px solid #c8c9c5;
+  padding-bottom: 1px;
+  cursor: pointer;
+  background: transparent;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  font: inherit;
+  font-size: var(--font-ui);
+  line-height: 1.4;
+  padding: 0 0 1px;
+}
+
+.turn-notice-action:hover {
+  border-bottom-color: #1f2328;
+}
+
+.turn-notice-action.secondary {
   color: #6e7478;
+  border-bottom-color: transparent;
+}
+
+.turn-notice-action.secondary:hover {
+  color: #4f5559;
+  border-bottom-color: #c8c9c5;
+}
+
+.turn-notice {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  column-gap: 10px;
+  align-items: start;
+  color: #6e7478;
+  max-width: 580px;
 }
 
 .turn-notice-icon {
   display: grid;
-  width: 18px;
-  height: 20px;
+  width: 14px;
+  height: 16px;
   flex: 0 0 auto;
   place-items: center;
   color: currentColor;
+  margin-top: 3px;
+}
+
+.turn-notice-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .turn-notice-copy {
@@ -3142,44 +3204,57 @@ pre {
 }
 
 .turn-notice-copy strong {
-  color: #4f5559;
+  color: #1f2328;
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
+  line-height: 1.35;
 }
 
 .turn-notice-copy span {
-  color: inherit;
+  color: #4f5559;
   font-size: var(--font-ui);
+  line-height: 1.5;
 }
 
 .turn-notice.warning {
-  border-color: #f3dfb7;
-  background: #fff3dc;
   color: #8a5b10;
 }
 
-.turn-notice.warning .turn-notice-copy strong {
-  color: #7a4e0d;
-}
-
 .turn-notice.auth {
-  border-color: #fed7aa;
-  background: #fff3ec;
-  color: #b45309;
-}
-
-.turn-notice.auth .turn-notice-copy strong {
   color: #9a3412;
 }
 
 .turn-notice.error {
-  border-color: #f1c2bf;
-  background: #fff2f0;
   color: #b42318;
 }
 
-.turn-notice.error .turn-notice-copy strong {
-  color: #b42318;
+/*
+ * system-line is no longer a "status block". It's an inline editorial
+ * note in the conversation — a thin top rule plus a short sentence
+ * introduced by an em-dash. Treated as prose, not chrome.
+ */
+.system-line {
+  border: 0;
+  border-top: 1px solid #ececea;
+  border-radius: 0;
+  background: transparent;
+  color: #6e7478;
+  padding: 10px 0 0;
+  margin-top: 4px;
+  line-height: var(--line-body);
+  max-width: 580px;
+}
+
+.system-line::before {
+  content: "—";
+  color: #b4b8bb;
+  margin-right: 8px;
+  user-select: none;
+}
+
+.system-line strong {
+  color: #4f5559;
+  font-weight: var(--weight-semibold);
 }
 
 .empty-home {
