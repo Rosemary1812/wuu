@@ -205,6 +205,10 @@ func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
 	sb.WriteString("10. Use `save_workflow` when an ad hoc plan should become a reusable project or user workflow definition.\n")
 	sb.WriteString("11. For scheduled workflow-shaped tasks, use `schedule_cron` with workflow_name so the scheduled agent prompt can start the Workflow Run.\n")
 	sb.WriteString("12. Record long-term memory candidates through `workflow_control`; do not write profile memory directly from ordinary workflow progress.\n\n")
+	sb.WriteString(AgentBriefContractText())
+	sb.WriteString("\n\n")
+	sb.WriteString(WorkflowBriefExtensionText())
+	sb.WriteString("\n\n")
 	sb.WriteString("**Workflow catalog:**\n\n")
 	for _, wf := range visible {
 		desc := wf.Description

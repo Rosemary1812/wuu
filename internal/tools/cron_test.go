@@ -109,6 +109,9 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	if !strings.Contains(fileTasks[0].Prompt, "record the dynamic team") {
 		t.Fatalf("workflow task prompt missing team planning instruction: %q", fileTasks[0].Prompt)
 	}
+	if !strings.Contains(fileTasks[0].Prompt, "Base Agent Brief Contract") || !strings.Contains(fileTasks[0].Prompt, "Workflow Context Extension") {
+		t.Fatalf("workflow task prompt missing shared brief contract: %q", fileTasks[0].Prompt)
+	}
 }
 
 func TestCancelCronTool(t *testing.T) {

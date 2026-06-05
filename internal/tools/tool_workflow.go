@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	prompttext "github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -641,7 +642,7 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 							"agent_profile": map[string]any{"type": "string", "description": "Profile name for reuse_profile/create_profile; omit for ephemeral."},
 							"task_name":     map[string]any{"type": "string", "description": "Suggested spawn_agent task_name."},
 							"phase_id":      map[string]any{"type": "string", "description": "Optional planned phase id for this member."},
-							"prompt":        map[string]any{"type": "string", "description": "Optional task brief to use when spawning this member."},
+							"prompt":        map[string]any{"type": "string", "description": "Optional task brief to use when spawning this member. " + prompttext.AgentBriefContractSummary() + " " + prompttext.WorkflowBriefExtensionSummary()},
 							"reason":        map[string]any{"type": "string", "description": "Why this member should reuse/create a profile or stay ephemeral."},
 						},
 						"required": []string{"role", "mode"},
@@ -812,6 +813,8 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 			"action":    action,
 			"team_plan": plan,
 			"next_steps": []string{
+				"Write each spawn_agent.message from the Base Agent Brief Contract, adding only the small context extension that applies.",
+				"Add the Workflow Context Extension for workflow team members.",
 				"Spawn reuse_profile and create_profile members with spawn_agent.agent_profile set to the recorded profile.",
 				"Spawn ephemeral members without agent_profile.",
 				"After spawning, bind each result back with workflow_control action=record_agent_run or record_await_results.",
@@ -2181,6 +2184,7 @@ func workflowNextSteps(status workflow.RunState) []string {
 	default:
 		return []string{
 			"Call list_agent_profiles, choose reuse_profile/create_profile/ephemeral members for this run, then record the dynamic team with workflow_control action=record_team_plan.",
+			"Write each team member prompt from the Base Agent Brief Contract and add the Workflow Context Extension.",
 			"Spawn reuse_profile/create_profile members with spawn_agent.agent_profile set to the recorded profile; spawn ephemeral members without agent_profile.",
 			"Require each workflow agent to call agent_report before treating its work as complete.",
 			"Create file checkpoints before risky direct edits that may need rollback.",

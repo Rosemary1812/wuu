@@ -1299,6 +1299,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"delegation materially improves",
 			"Keep work local",
 			"concrete brief",
+			"Base Agent Brief Contract",
 			"destructive or broad experiments",
 			"overlapping or uncertain concurrent writes",
 			"generated outputs/formatters",
@@ -1315,7 +1316,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
-			"message":       {"Concrete task brief", "acceptance criteria", "fully self-contained"},
+			"message":       {"Concrete task brief", "Base Agent Brief Contract", "acceptance criteria", "fully self-contained"},
 			"agent_profile": {"durable Workflow Agent/Profile", "memory-bearing agent", "ordinary memoryless child tasks"},
 			"isolation":     {"destructive or broad experiments", "overlapping or uncertain concurrent writes", "explicit sandbox requests"},
 			"fork_turns":    {"inherited user intent", "fully self-contained", "recent context"},

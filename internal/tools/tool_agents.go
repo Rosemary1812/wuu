@@ -13,6 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
+	prompttext "github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -46,8 +47,11 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Workflow Agent/Profile with durable memory; the profile name is the agent's long-lived identity, while " +
 			"task_name is only this child task's path segment. Do not set agent_profile for routine one-off delegation. " +
 			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
-			"Write a concrete brief with task, background, scope/non-goals, starting points, acceptance criteria, " +
-			"deliverables, and constraints; do not make the child infer missing acceptance criteria from a vague ask. " +
+			"Write a concrete brief using the shared Base Agent Brief Contract. " +
+			prompttext.AgentBriefContractSummary() + " " +
+			prompttext.ProfileBriefExtensionSummary() + " " +
+			prompttext.EphemeralBriefExtensionSummary() + " " +
+			"Do not make the child infer missing acceptance criteria from a vague ask. " +
 			"By default the spawn runs INPLACE in the user's repo, so any files the worker " +
 			"creates or edits land directly in the working tree. Set isolation='worktree' ONLY " +
 			"for destructive or broad experiments, overlapping or uncertain concurrent writes, " +
@@ -87,7 +91,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"message": map[string]any{
 					"type":        "string",
-					"description": "Concrete task brief. Include task, relevant background, scope/non-goals, starting points, acceptance criteria, deliverables, and constraints. With the default fork_turns='all', the worker also inherits your current conversation history; with fork_turns='none', this message must be fully self-contained.",
+					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() + " With the default fork_turns='all', the worker also inherits your current conversation history; with fork_turns='none', this message must be fully self-contained.",
 				},
 				"isolation": map[string]any{
 					"type":        "string",

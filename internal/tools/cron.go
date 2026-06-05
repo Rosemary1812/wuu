@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/cron"
+	prompttext "github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
@@ -165,6 +166,11 @@ func scheduledWorkflowPrompt(name, arguments, extraPrompt string) string {
 	}
 	sb.WriteString("\n\nUse the workflow tools to load the workflow definition and create a Workflow Run. Let create_workflow choose the run ID unless the user explicitly provided one.")
 	sb.WriteString(" After creating the run, call list_agent_profiles, decide which roles reuse an existing Agent Profile, create a new recurring profile, or stay ephemeral, then record the dynamic team with workflow_control action=record_team_plan before spawning agents.")
+	sb.WriteString(" Write each team member prompt from the shared Base Agent Brief Contract; add the Workflow Context Extension only because this is workflow work.")
+	sb.WriteString("\n\n")
+	sb.WriteString(prompttext.AgentBriefContractSummary())
+	sb.WriteString(" ")
+	sb.WriteString(prompttext.WorkflowBriefExtensionSummary())
 	if extra := strings.TrimSpace(extraPrompt); extra != "" {
 		fmt.Fprintf(&sb, "\n\nAdditional instruction:\n%s", extra)
 	}
