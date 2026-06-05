@@ -243,6 +243,10 @@ var agentRunTransitions = map[AgentRunState]map[AgentRunState]bool{
 		AgentRunStateRetrying:  true,
 		AgentRunStateCancelled: true,
 	},
+	AgentRunStateFailed: {
+		AgentRunStateRetrying:  true,
+		AgentRunStateCancelled: true,
+	},
 	AgentRunStateRetrying: {
 		AgentRunStateQueued:    true,
 		AgentRunStateStarting:  true,

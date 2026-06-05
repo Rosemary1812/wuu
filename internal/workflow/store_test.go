@@ -32,6 +32,9 @@ func TestStateTransitions(t *testing.T) {
 	if err := ValidateAgentRunTransition(AgentRunStateFailed, AgentRunStateRunning); err == nil {
 		t.Fatal("failed agent -> running should be invalid")
 	}
+	if err := ValidateAgentRunTransition(AgentRunStateFailed, AgentRunStateRetrying); err != nil {
+		t.Fatalf("failed agent -> retrying should be valid: %v", err)
+	}
 	if err := ValidateAgentRunTransition("", AgentRunState("missing")); err == nil {
 		t.Fatal("unknown initial agent run state should be invalid")
 	}
@@ -69,6 +72,25 @@ func TestStoreCreatesAndUpdatesWorkflowRun(t *testing.T) {
 	}
 	if running.StartedAt.IsZero() {
 		t.Fatal("running transition should set StartedAt")
+	}
+	paused, err := store.UpdateRunStatusWithDetails("run_1", RunStatusUpdate{
+		Status:       RunStatePaused,
+		PauseReason:  "file conflict",
+		ResumeHint:   "resolve changed files before continuing",
+		RollbackHint: "restore checkpoint before retrying",
+	})
+	if err != nil {
+		t.Fatalf("UpdateRunStatus paused: %v", err)
+	}
+	if paused.PauseReason != "file conflict" || paused.ResumeHint == "" || paused.RollbackHint == "" {
+		t.Fatalf("pause metadata not persisted: %+v", paused)
+	}
+	running, err = store.UpdateRunStatus("run_1", RunStateRunning, "resolved")
+	if err != nil {
+		t.Fatalf("UpdateRunStatus resume running: %v", err)
+	}
+	if running.PauseReason != "" || running.ResumeHint != "" || running.RollbackHint != "" {
+		t.Fatalf("active pause metadata should clear on resume: %+v", running)
 	}
 
 	if _, err := store.UpdatePhaseStatus("run_1", "plan", PhaseStateRunnable, ""); err != nil {
@@ -248,6 +270,41 @@ func TestStoreAgentRunUpsertMergesAndValidatesTransitions(t *testing.T) {
 	}
 	if len(updated.Phases[0].AgentRunIDs) != 1 || updated.Phases[0].AgentRunIDs[0] != "agent-1" {
 		t.Fatalf("agent run was not attached to phase: %+v", updated.Phases[0])
+	}
+}
+
+func TestStoreRequestAgentRunRetryIsBounded(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.CreateRun(Run{ID: "run-retry"}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if err := store.UpsertAgentRun(AgentRun{
+		ID:            "agent-retry",
+		WorkflowRunID: "run-retry",
+		Status:        AgentRunStateFailed,
+		Error:         "provider timeout",
+	}); err != nil {
+		t.Fatalf("UpsertAgentRun failed: %v", err)
+	}
+	retrying, err := store.RequestAgentRunRetry("run-retry", "agent-retry", AgentRetryRequest{
+		Reason:       "transient provider failure",
+		MaxRetries:   1,
+		RollbackHint: "keep isolated worktree",
+	})
+	if err != nil {
+		t.Fatalf("RequestAgentRunRetry: %v", err)
+	}
+	if retrying.Status != AgentRunStateRetrying || retrying.RetryCount != 1 || retrying.MaxRetries != 1 {
+		t.Fatalf("retry metadata mismatch: %+v", retrying)
+	}
+	if retrying.RetryReason != "transient provider failure" || retrying.RollbackHint == "" {
+		t.Fatalf("retry reason metadata mismatch: %+v", retrying)
+	}
+	if _, err := store.UpdateAgentRunStatus("run-retry", "agent-retry", AgentRunStateFailed, "retry failed"); err != nil {
+		t.Fatalf("UpdateAgentRunStatus failed: %v", err)
+	}
+	if _, err := store.RequestAgentRunRetry("run-retry", "agent-retry", AgentRetryRequest{MaxRetries: 1}); err == nil {
+		t.Fatal("expected retry limit to be enforced")
 	}
 }
 

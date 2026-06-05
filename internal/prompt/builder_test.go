@@ -140,6 +140,8 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"feature-delivery",
 		"`create_workflow`",
 		"`workflow_control`",
+		"pause_run",
+		"retry_agent_run",
 		"frontend_owner",
 		"qa_reviewer (required)",
 		"memory candidates",

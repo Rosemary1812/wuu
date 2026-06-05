@@ -25,6 +25,9 @@ type Run struct {
 	CompletedAt     time.Time `json:"completed_at,omitempty"`
 	PlanPath        string    `json:"plan_path,omitempty"`
 	FinalReportPath string    `json:"final_report_path,omitempty"`
+	PauseReason     string    `json:"pause_reason,omitempty"`
+	ResumeHint      string    `json:"resume_hint,omitempty"`
+	RollbackHint    string    `json:"rollback_hint,omitempty"`
 	Error           string    `json:"error,omitempty"`
 }
 
@@ -57,9 +60,27 @@ type AgentRun struct {
 	InputTokens   int           `json:"input_tokens,omitempty"`
 	OutputTokens  int           `json:"output_tokens,omitempty"`
 	DurationMS    int64         `json:"duration_ms,omitempty"`
+	RetryCount    int           `json:"retry_count,omitempty"`
+	MaxRetries    int           `json:"max_retries,omitempty"`
+	RetryReason   string        `json:"retry_reason,omitempty"`
+	RollbackHint  string        `json:"rollback_hint,omitempty"`
 	StartedAt     time.Time     `json:"started_at,omitempty"`
 	CompletedAt   time.Time     `json:"completed_at,omitempty"`
 	Error         string        `json:"error,omitempty"`
+}
+
+type RunStatusUpdate struct {
+	Status       RunState
+	Message      string
+	PauseReason  string
+	ResumeHint   string
+	RollbackHint string
+}
+
+type AgentRetryRequest struct {
+	Reason       string
+	MaxRetries   int
+	RollbackHint string
 }
 
 type EventType string
@@ -70,6 +91,7 @@ const (
 	EventPhaseStatusChanged      EventType = "phase_status_changed"
 	EventAgentRunUpserted        EventType = "agent_run_upserted"
 	EventAgentRunStatusChanged   EventType = "agent_run_status_changed"
+	EventAgentRunRetryRequested  EventType = "agent_run_retry_requested"
 	EventPlanWritten             EventType = "plan_written"
 	EventFinalReportWritten      EventType = "final_report_written"
 	EventMemoryCandidateAdded    EventType = "memory_candidate_added"
@@ -208,29 +230,47 @@ func (s *Store) ListRuns() ([]Run, error) {
 }
 
 func (s *Store) UpdateRunStatus(runID string, status RunState, message string) (Run, error) {
+	return s.UpdateRunStatusWithDetails(runID, RunStatusUpdate{Status: status, Message: message})
+}
+
+func (s *Store) UpdateRunStatusWithDetails(runID string, update RunStatusUpdate) (Run, error) {
 	run, err := s.LoadRun(runID)
 	if err != nil {
 		return Run{}, err
 	}
-	if err := ValidateRunTransition(run.Status, status); err != nil {
+	if err := ValidateRunTransition(run.Status, update.Status); err != nil {
 		return Run{}, err
 	}
 	now := time.Now().UTC()
-	run.Status = status
+	run.Status = update.Status
 	run.UpdatedAt = now
-	if status == RunStateRunning && run.StartedAt.IsZero() {
+	if update.Status == RunStateRunning && run.StartedAt.IsZero() {
 		run.StartedAt = now
 	}
-	if IsTerminalRunState(status) && run.CompletedAt.IsZero() {
+	if IsTerminalRunState(update.Status) && run.CompletedAt.IsZero() {
 		run.CompletedAt = now
 	}
-	if status == RunStateFailed {
-		run.Error = strings.TrimSpace(message)
+	switch update.Status {
+	case RunStatePaused:
+		run.PauseReason = firstNonEmpty(update.PauseReason, update.Message)
+		run.ResumeHint = strings.TrimSpace(update.ResumeHint)
+		run.RollbackHint = strings.TrimSpace(update.RollbackHint)
+	case RunStateRunning, RunStateCompleted, RunStateCancelled:
+		run.PauseReason = ""
+		run.ResumeHint = ""
+		run.RollbackHint = ""
+	}
+	if update.Status == RunStateFailed {
+		run.Error = strings.TrimSpace(update.Message)
 	}
 	if err := s.SaveRun(run); err != nil {
 		return Run{}, err
 	}
-	if err := s.AppendEvent(Event{Type: EventRunStatusChanged, RunID: run.ID, Status: string(status), Message: message}); err != nil {
+	eventMessage := strings.TrimSpace(update.Message)
+	if eventMessage == "" {
+		eventMessage = strings.TrimSpace(update.PauseReason)
+	}
+	if err := s.AppendEvent(Event{Type: EventRunStatusChanged, RunID: run.ID, Status: string(update.Status), Message: eventMessage}); err != nil {
 		return Run{}, err
 	}
 	return run, nil
@@ -311,6 +351,9 @@ func (s *Store) UpsertAgentRun(agent AgentRun) error {
 			return err
 		}
 	} else {
+		return err
+	}
+	if err := validateAgentRetryBounds(agent); err != nil {
 		return err
 	}
 	if agent.Status == AgentRunStateRunning && agent.StartedAt.IsZero() {
@@ -437,6 +480,45 @@ func (s *Store) UpdateAgentRunStatus(runID, agentRunID string, status AgentRunSt
 		return AgentRun{}, err
 	}
 	return agent, nil
+}
+
+func (s *Store) RequestAgentRunRetry(runID, agentRunID string, request AgentRetryRequest) (AgentRun, error) {
+	agent, err := s.LoadAgentRun(runID, agentRunID)
+	if err != nil {
+		return AgentRun{}, err
+	}
+	if err := ValidateAgentRunTransition(agent.Status, AgentRunStateRetrying); err != nil {
+		return AgentRun{}, err
+	}
+	maxRetries := request.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = agent.MaxRetries
+	}
+	if maxRetries <= 0 {
+		maxRetries = 2
+	}
+	if agent.RetryCount >= maxRetries {
+		return AgentRun{}, fmt.Errorf("workflow agent run %q retry limit reached (%d/%d)", agent.ID, agent.RetryCount, maxRetries)
+	}
+	agent.Status = AgentRunStateRetrying
+	agent.RetryCount++
+	agent.MaxRetries = maxRetries
+	agent.RetryReason = firstNonEmpty(request.Reason, agent.Error)
+	agent.RollbackHint = strings.TrimSpace(request.RollbackHint)
+	if err := s.UpsertAgentRun(agent); err != nil {
+		return AgentRun{}, err
+	}
+	if err := s.AppendEvent(Event{
+		Type:       EventAgentRunRetryRequested,
+		RunID:      runID,
+		PhaseID:    agent.PhaseID,
+		AgentRunID: agent.ID,
+		Status:     string(AgentRunStateRetrying),
+		Message:    agent.RetryReason,
+	}); err != nil {
+		return AgentRun{}, err
+	}
+	return s.LoadAgentRun(runID, agentRunID)
 }
 
 func (s *Store) WritePlan(runID, content string) (string, error) {
@@ -815,6 +897,20 @@ func mergeAgentRun(existing, next AgentRun) AgentRun {
 	if next.DurationMS == 0 {
 		next.DurationMS = existing.DurationMS
 	}
+	if next.MaxRetries == 0 {
+		next.MaxRetries = existing.MaxRetries
+	}
+	if next.Status == AgentRunStateRetrying && next.RetryCount == 0 {
+		next.RetryCount = existing.RetryCount + 1
+	} else if next.RetryCount == 0 {
+		next.RetryCount = existing.RetryCount
+	}
+	if next.RetryReason == "" {
+		next.RetryReason = existing.RetryReason
+	}
+	if next.RollbackHint == "" {
+		next.RollbackHint = existing.RollbackHint
+	}
 	if next.StartedAt.IsZero() {
 		next.StartedAt = existing.StartedAt
 	}
@@ -825,6 +921,25 @@ func mergeAgentRun(existing, next AgentRun) AgentRun {
 		next.Error = existing.Error
 	}
 	return next
+}
+
+func validateAgentRetryBounds(agent AgentRun) error {
+	if agent.Status != AgentRunStateRetrying || agent.MaxRetries <= 0 {
+		return nil
+	}
+	if agent.RetryCount > agent.MaxRetries {
+		return fmt.Errorf("workflow agent run %q retry limit exceeded (%d/%d)", agent.ID, agent.RetryCount, agent.MaxRetries)
+	}
+	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func containsString(values []string, target string) bool {

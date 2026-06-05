@@ -298,7 +298,8 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 		Description: "Update durable Workflow Run state after planning, spawning agents, awaiting agents, or synthesizing results. " +
 			"Use this to bind spawn_agent / await_agents outputs back to a workflow run. The runtime enforces valid run, phase, " +
 			"and agent-run state transitions; do not invent states. If await_agents reports report_missing=true, record the " +
-			"agent run as awaiting_report instead of completed.",
+			"agent run as awaiting_report instead of completed. Use pause_run / resume_run for blocked workflow recovery and " +
+			"retry_agent_run for bounded Agent Run retries.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -306,9 +307,12 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"type": "string",
 					"enum": []string{
 						"set_run_status",
+						"pause_run",
+						"resume_run",
 						"set_phase_status",
 						"record_agent_run",
 						"record_await_results",
+						"retry_agent_run",
 						"write_final_report",
 						"generate_final_report",
 						"record_memory_candidate",
@@ -327,6 +331,18 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 				"message": map[string]any{
 					"type":        "string",
 					"description": "Optional reason, error, blocker, or status note.",
+				},
+				"pause_reason": map[string]any{
+					"type":        "string",
+					"description": "Structured active pause reason for pause_run or set_run_status status=paused.",
+				},
+				"resume_hint": map[string]any{
+					"type":        "string",
+					"description": "What must happen before a paused workflow can resume.",
+				},
+				"rollback_hint": map[string]any{
+					"type":        "string",
+					"description": "Optional runtime rollback or checkpoint guidance for a paused workflow or retried agent run.",
 				},
 				"phase_id": map[string]any{
 					"type":        "string",
@@ -365,6 +381,18 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"type":        "array",
 					"description": "Artifact paths from await_agents / agent_report.",
 					"items":       map[string]any{"type": "string"},
+				},
+				"retry_count": map[string]any{
+					"type":        "integer",
+					"description": "Recorded retry count for record_agent_run. retry_agent_run increments this automatically.",
+				},
+				"max_retries": map[string]any{
+					"type":        "integer",
+					"description": "Bounded retry limit for retry_agent_run. Defaults to 2 when unset.",
+				},
+				"retry_reason": map[string]any{
+					"type":        "string",
+					"description": "Structured reason for retrying an Agent Run.",
 				},
 				"await_results": map[string]any{
 					"type":        "array",
@@ -427,6 +455,9 @@ type workflowControlArgs struct {
 	RunID        string                `json:"run_id"`
 	Status       string                `json:"status"`
 	Message      string                `json:"message"`
+	PauseReason  string                `json:"pause_reason"`
+	ResumeHint   string                `json:"resume_hint"`
+	RollbackHint string                `json:"rollback_hint"`
 	PhaseID      string                `json:"phase_id"`
 	AgentRunID   string                `json:"agent_run_id"`
 	AgentID      string                `json:"agent_id"`
@@ -436,6 +467,9 @@ type workflowControlArgs struct {
 	ReportPath   string                `json:"report_path"`
 	ChangedFiles []string              `json:"changed_files"`
 	Artifacts    []string              `json:"artifacts"`
+	RetryCount   int                   `json:"retry_count"`
+	MaxRetries   int                   `json:"max_retries"`
+	RetryReason  string                `json:"retry_reason"`
 	AwaitResults []workflowAwaitResult `json:"await_results"`
 	Content      string                `json:"content"`
 	CandidateID  string                `json:"candidate_id"`
@@ -486,7 +520,36 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		if err != nil {
 			return "", err
 		}
-		run, err := store.UpdateRunStatus(args.RunID, status, args.Message)
+		run, err := store.UpdateRunStatusWithDetails(args.RunID, workflow.RunStatusUpdate{
+			Status:       status,
+			Message:      args.Message,
+			PauseReason:  args.PauseReason,
+			ResumeHint:   args.ResumeHint,
+			RollbackHint: args.RollbackHint,
+		})
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "run": run})
+
+	case "pause_run":
+		run, err := store.UpdateRunStatusWithDetails(args.RunID, workflow.RunStatusUpdate{
+			Status:       workflow.RunStatePaused,
+			Message:      args.Message,
+			PauseReason:  args.PauseReason,
+			ResumeHint:   args.ResumeHint,
+			RollbackHint: args.RollbackHint,
+		})
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "run": run})
+
+	case "resume_run":
+		run, err := store.UpdateRunStatusWithDetails(args.RunID, workflow.RunStatusUpdate{
+			Status:  workflow.RunStateRunning,
+			Message: args.Message,
+		})
 		if err != nil {
 			return "", err
 		}
@@ -560,10 +623,49 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		}
 		return mustJSON(map[string]any{"action": action, "run": run, "agent_runs": agents})
 
+	case "retry_agent_run":
+		agentRunID := strings.TrimSpace(args.AgentRunID)
+		if agentRunID == "" {
+			agentRunID = strings.TrimSpace(args.AgentID)
+		}
+		if agentRunID == "" {
+			return "", errors.New("workflow_control retry_agent_run requires agent_run_id or agent_id")
+		}
+		reason := firstWorkflowText(args.RetryReason, args.Message)
+		agent, err := store.RequestAgentRunRetry(args.RunID, agentRunID, workflow.AgentRetryRequest{
+			Reason:       reason,
+			MaxRetries:   args.MaxRetries,
+			RollbackHint: args.RollbackHint,
+		})
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{
+			"action":    action,
+			"agent_run": agent,
+			"next_steps": []string{
+				"Spawn or message the same Agent Profile with the retry context.",
+				"After the retry finishes, use await_agents and record_await_results again.",
+			},
+		})
+
 	case "write_final_report":
 		content := strings.TrimSpace(args.Content)
 		if content == "" {
 			return "", errors.New("workflow_control write_final_report requires content")
+		}
+		if args.CompleteRun {
+			run, err := store.LoadRun(args.RunID)
+			if err != nil {
+				return "", err
+			}
+			agents, err := store.ListAgentRuns(args.RunID)
+			if err != nil {
+				return "", err
+			}
+			if err := validateWorkflowReadyToComplete(run, agents); err != nil {
+				return "", err
+			}
 		}
 		path, err := store.WriteFinalReport(args.RunID, content)
 		if err != nil {
@@ -688,6 +790,10 @@ func workflowAgentRunFromControlArgs(args workflowControlArgs) (workflow.AgentRu
 		ReportPath:    strings.TrimSpace(args.ReportPath),
 		ChangedFiles:  trimWorkflowStringSlice(args.ChangedFiles),
 		Artifacts:     trimWorkflowStringSlice(args.Artifacts),
+		RetryCount:    args.RetryCount,
+		MaxRetries:    args.MaxRetries,
+		RetryReason:   strings.TrimSpace(args.RetryReason),
+		RollbackHint:  strings.TrimSpace(args.RollbackHint),
 		Error:         strings.TrimSpace(args.Message),
 	}
 	if agent.AgentID == "" {
@@ -771,6 +877,15 @@ func trimWorkflowStringSlice(values []string) []string {
 	return out
 }
 
+func firstWorkflowText(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func validateWorkflowReadyToComplete(run workflow.Run, agents []workflow.AgentRun) error {
 	for _, phase := range run.Phases {
 		if !workflow.IsTerminalPhaseState(phase.Status) {
@@ -780,6 +895,9 @@ func validateWorkflowReadyToComplete(run workflow.Run, agents []workflow.AgentRu
 	for _, agent := range agents {
 		if !workflow.IsTerminalAgentRunState(agent.Status) {
 			return fmt.Errorf("workflow agent run %q is %s; cannot complete run", agent.ID, agent.Status)
+		}
+		if agent.Status == workflow.AgentRunStateCompleted && strings.TrimSpace(agent.ReportPath) == "" {
+			return fmt.Errorf("workflow agent run %q completed without agent_report; cannot complete run", agent.ID)
 		}
 	}
 	return nil
@@ -796,6 +914,15 @@ func renderGeneratedWorkflowFinalReport(run workflow.Run, agents []workflow.Agen
 		fmt.Fprintf(&b, "- Arguments: %s\n", strings.TrimSpace(run.Arguments))
 	}
 	fmt.Fprintf(&b, "- Status: `%s`\n", run.Status)
+	if run.PauseReason != "" {
+		fmt.Fprintf(&b, "- Pause reason: %s\n", run.PauseReason)
+	}
+	if run.ResumeHint != "" {
+		fmt.Fprintf(&b, "- Resume hint: %s\n", run.ResumeHint)
+	}
+	if run.RollbackHint != "" {
+		fmt.Fprintf(&b, "- Rollback hint: %s\n", run.RollbackHint)
+	}
 	if !run.StartedAt.IsZero() {
 		fmt.Fprintf(&b, "- Started: %s\n", run.StartedAt.Format(time.RFC3339))
 	}
@@ -839,9 +966,22 @@ func renderGeneratedWorkflowFinalReport(run workflow.Run, agents []workflow.Agen
 			if agent.ReportMissing {
 				b.WriteString(" [missing agent_report]")
 			}
+			if agent.RetryCount > 0 {
+				if agent.MaxRetries > 0 {
+					fmt.Fprintf(&b, " [retries: %d/%d]", agent.RetryCount, agent.MaxRetries)
+				} else {
+					fmt.Fprintf(&b, " [retries: %d]", agent.RetryCount)
+				}
+			}
 			b.WriteString("\n")
 			if agent.ReportPath != "" {
 				fmt.Fprintf(&b, "  - Report: %s\n", agent.ReportPath)
+			}
+			if agent.RetryReason != "" {
+				fmt.Fprintf(&b, "  - Retry reason: %s\n", agent.RetryReason)
+			}
+			if agent.RollbackHint != "" {
+				fmt.Fprintf(&b, "  - Rollback hint: %s\n", agent.RollbackHint)
 			}
 			if agent.Error != "" {
 				fmt.Fprintf(&b, "  - Error: %s\n", agent.Error)
@@ -930,6 +1070,13 @@ func uniqueWorkflowStringsFromAgents(agents []workflow.AgentRun, collect func(wo
 
 func workflowOpenItems(run workflow.Run, agents []workflow.AgentRun) []string {
 	var out []string
+	if run.Status == workflow.RunStatePaused {
+		if run.PauseReason != "" {
+			out = append(out, fmt.Sprintf("Workflow is paused: %s", run.PauseReason))
+		} else {
+			out = append(out, "Workflow is paused.")
+		}
+	}
 	for _, phase := range run.Phases {
 		if !workflow.IsTerminalPhaseState(phase.Status) {
 			out = append(out, fmt.Sprintf("Phase `%s` is `%s`.", phase.ID, phase.Status))
@@ -1283,6 +1430,12 @@ func workflowNextSteps(status workflow.RunState) []string {
 		return []string{"Review or refine the plan, then transition the run to running before spawning agents."}
 	case workflow.RunStateApprovalPending:
 		return []string{"Ask for the required approval, then resume the workflow run when approved."}
+	case workflow.RunStatePaused:
+		return []string{
+			"Inspect workflow_status for pause_reason, resume_hint, blocked phases, and Agent Runs.",
+			"Resolve the blocker or rollback concern, then use workflow_control action=resume_run.",
+			"If a specific Agent Run should be retried, use workflow_control action=retry_agent_run before spawning or messaging it again.",
+		}
 	default:
 		return []string{
 			"Spawn workflow agents with spawn_agent, setting agent_profile for durable named profiles.",

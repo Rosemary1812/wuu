@@ -132,13 +132,13 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 			"action":"record_agent_run",
 			"run_id":"workflow-test-run",
 			"agent_id":"agent-1",
-			"status":"awaiting_report",
+			"status":"completed",
 			"report_path":"reports/agent-1.md",
 			"changed_files":["docs/plan.md"],
 			"artifacts":["reports/agent-1.md"]
 		}`,
 	}); err != nil {
-		t.Fatalf("workflow_control record agent awaiting_report: %v", err)
+		t.Fatalf("workflow_control record agent completed: %v", err)
 	}
 	memoryResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name: "workflow_control",
@@ -177,6 +177,14 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		Arguments: `{"action":"set_phase_status","run_id":"workflow-test-run","phase_id":"clarify_product_intent","status":"completed"}`,
 	}); err != nil {
 		t.Fatalf("workflow_control set phase completed: %v", err)
+	}
+	for _, phaseID := range []string{"implement_scoped_change", "review_and_test"} {
+		if _, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "workflow_control",
+			Arguments: `{"action":"set_phase_status","run_id":"workflow-test-run","phase_id":"` + phaseID + `","status":"skipped"}`,
+		}); err != nil {
+			t.Fatalf("workflow_control skip phase %s: %v", phaseID, err)
+		}
 	}
 	finalResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "workflow_control",
@@ -221,7 +229,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if len(status.Run.Phases[0].AgentRunIDs) != 1 || status.Run.Phases[0].AgentRunIDs[0] != "agent-1" {
 		t.Fatalf("agent run should be attached to phase: %+v", status.Run.Phases[0])
 	}
-	if len(status.AgentRuns) != 1 || status.AgentRuns[0].Status != workflow.AgentRunStateAwaitingReport || len(status.AgentRuns[0].ChangedFiles) != 1 {
+	if len(status.AgentRuns) != 1 || status.AgentRuns[0].Status != workflow.AgentRunStateCompleted || len(status.AgentRuns[0].ChangedFiles) != 1 {
 		t.Fatalf("unexpected agent runs: %+v", status.AgentRuns)
 	}
 	if len(status.MemoryCandidates) != 1 || status.MemoryCandidates[0].Status != workflow.MemoryCandidateRejected {
@@ -356,5 +364,118 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "Workflow Final Report") {
 		t.Fatalf("final report file not written correctly:\n%s", string(data))
+	}
+}
+
+func TestWorkflowControlPauseResumeAndRetryAgentRun(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "create_workflow",
+		Arguments: `{
+			"run_id":"workflow-recovery-run",
+			"plan":"## Phases\n\n1. Implement",
+			"phases":[{"id":"implement","name":"Implement"}]
+		}`,
+	}); err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+	pauseResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"pause_run",
+			"run_id":"workflow-recovery-run",
+			"pause_reason":"file conflict",
+			"resume_hint":"resolve conflict before retrying",
+			"rollback_hint":"use the agent worktree checkpoint"
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("pause_run: %v", err)
+	}
+	var paused struct {
+		Run workflow.Run `json:"run"`
+	}
+	if err := json.Unmarshal([]byte(pauseResp), &paused); err != nil {
+		t.Fatalf("parse pause response: %v", err)
+	}
+	if paused.Run.Status != workflow.RunStatePaused || paused.Run.PauseReason != "file conflict" || paused.Run.ResumeHint == "" {
+		t.Fatalf("pause metadata missing: %+v", paused.Run)
+	}
+	resumeResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"resume_run","run_id":"workflow-recovery-run","message":"conflict resolved"}`,
+	})
+	if err != nil {
+		t.Fatalf("resume_run: %v", err)
+	}
+	var resumed struct {
+		Run workflow.Run `json:"run"`
+	}
+	if err := json.Unmarshal([]byte(resumeResp), &resumed); err != nil {
+		t.Fatalf("parse resume response: %v", err)
+	}
+	if resumed.Run.Status != workflow.RunStateRunning || resumed.Run.PauseReason != "" || resumed.Run.ResumeHint != "" {
+		t.Fatalf("resume should clear active pause metadata: %+v", resumed.Run)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_agent_run",
+			"run_id":"workflow-recovery-run",
+			"phase_id":"implement",
+			"agent_id":"agent-impl",
+			"task_name":"implementation",
+			"agent_profile":"frontend_owner",
+			"status":"failed",
+			"message":"provider timeout"
+		}`,
+	}); err != nil {
+		t.Fatalf("record failed agent: %v", err)
+	}
+	retryResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"retry_agent_run",
+			"run_id":"workflow-recovery-run",
+			"agent_id":"agent-impl",
+			"retry_reason":"transient provider failure",
+			"max_retries":1,
+			"rollback_hint":"reuse the isolated worktree"
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("retry_agent_run: %v", err)
+	}
+	var retry struct {
+		AgentRun workflow.AgentRun `json:"agent_run"`
+	}
+	if err := json.Unmarshal([]byte(retryResp), &retry); err != nil {
+		t.Fatalf("parse retry response: %v", err)
+	}
+	if retry.AgentRun.Status != workflow.AgentRunStateRetrying || retry.AgentRun.RetryCount != 1 || retry.AgentRun.MaxRetries != 1 {
+		t.Fatalf("retry metadata missing: %+v", retry.AgentRun)
+	}
+	if retry.AgentRun.RetryReason != "transient provider failure" || retry.AgentRun.RollbackHint == "" {
+		t.Fatalf("retry reason missing: %+v", retry.AgentRun)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"record_agent_run","run_id":"workflow-recovery-run","agent_id":"agent-impl","status":"failed","message":"retry failed"}`,
+	}); err != nil {
+		t.Fatalf("record retry failed: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"retry_agent_run","run_id":"workflow-recovery-run","agent_id":"agent-impl","max_retries":1}`,
+	}); err == nil {
+		t.Fatal("expected retry_agent_run to enforce max_retries")
 	}
 }
