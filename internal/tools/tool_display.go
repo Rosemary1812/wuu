@@ -86,6 +86,12 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("workflow", "加载工作流")
 		}
 		return toolDisplay("workflow", "加载工作流 "+displayTruncate(workflow, 70))
+	case "save_workflow":
+		workflow := strings.TrimPrefix(displayString(args, "name"), "/")
+		if workflow == "" {
+			return toolDisplay("workflow", "保存工作流")
+		}
+		return toolDisplay("workflow", "保存工作流 "+displayTruncate(workflow, 70))
 	case "create_workflow":
 		workflow := strings.TrimPrefix(displayString(args, "definition_name"), "/")
 		if workflow == "" {

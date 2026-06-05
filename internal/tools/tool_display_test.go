@@ -48,6 +48,11 @@ func TestToolkitToolDisplayFormatsBuiltInTools(t *testing.T) {
 			want: providers.ToolCallDisplay{Kind: "workflow", Text: "创建工作流 feature-delivery"},
 		},
 		{
+			name: "save workflow",
+			call: providers.ToolCall{Name: "save_workflow", Arguments: `{"name":"feature-delivery"}`},
+			want: providers.ToolCallDisplay{Kind: "workflow", Text: "保存工作流 feature-delivery"},
+		},
+		{
 			name: "workflow control",
 			call: providers.ToolCall{Name: "workflow_control", Arguments: `{"action":"record_agent_run"}`},
 			want: providers.ToolCallDisplay{Kind: "workflow", Text: "更新工作流 record_agent_run"},

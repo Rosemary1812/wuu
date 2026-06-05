@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -132,6 +134,169 @@ func (t *LoadWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 		"memory_policy":          wf.MemoryPolicy,
 		"suggested_phase_names":  extractWorkflowPhaseNames(body),
 		"content":                body,
+	})
+}
+
+// ---------------------------------------------------------------------------
+// save_workflow
+// ---------------------------------------------------------------------------
+
+type SaveWorkflowTool struct{ env *Env }
+
+func NewSaveWorkflowTool(env *Env) *SaveWorkflowTool { return &SaveWorkflowTool{env: env} }
+
+func (t *SaveWorkflowTool) Name() string            { return "save_workflow" }
+func (t *SaveWorkflowTool) IsReadOnly() bool        { return false }
+func (t *SaveWorkflowTool) IsConcurrencySafe() bool { return false }
+
+func (t *SaveWorkflowTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{
+		Name: "save_workflow",
+		Description: "Save an ad hoc or reusable workflow definition to a portable WORKFLOW.md file. " +
+			"Use this when the user wants to reuse, share, or schedule a workflow that was created during the current session.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{
+					"type":        "string",
+					"description": "Stable workflow name. A project WORKFLOW.md is written under .claude/workflows/<name>/ by default.",
+				},
+				"description": map[string]any{
+					"type":        "string",
+					"description": "Short workflow description for discovery.",
+				},
+				"when_to_use": map[string]any{
+					"type":        "string",
+					"description": "When the workflow should be selected.",
+				},
+				"argument_hint": map[string]any{
+					"type":        "string",
+					"description": "Optional slash-command style argument hint.",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "Markdown workflow body. Required unless run_id is provided.",
+				},
+				"run_id": map[string]any{
+					"type":        "string",
+					"description": "Optional Workflow Run id to turn into a reusable definition when content is omitted.",
+				},
+				"scope": map[string]any{
+					"type":        "string",
+					"enum":        []string{"project", "user"},
+					"description": "Where to save the workflow. Defaults to project.",
+				},
+				"overwrite": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to replace an existing WORKFLOW.md. Defaults false.",
+				},
+				"version": map[string]any{"type": "string"},
+				"max_agents": map[string]any{
+					"type":        "integer",
+					"description": "Optional workflow agent cap.",
+				},
+				"max_concurrency": map[string]any{
+					"type":        "integer",
+					"description": "Optional workflow concurrency cap.",
+				},
+				"profiles": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":     map[string]any{"type": "string"},
+							"required": map[string]any{"type": "boolean"},
+						},
+						"required": []string{"name"},
+					},
+				},
+				"allow_profile_creation": map[string]any{
+					"type":        "string",
+					"description": "Profile creation policy, for example ask or auto.",
+				},
+				"memory_policy": map[string]any{
+					"type":        "string",
+					"description": "Workflow memory policy, for example report-candidates-only.",
+				},
+			},
+			"required": []string{"name"},
+		},
+	}
+}
+
+type saveWorkflowArgs struct {
+	Name                 string                `json:"name"`
+	Description          string                `json:"description"`
+	WhenToUse            string                `json:"when_to_use"`
+	ArgumentHint         string                `json:"argument_hint"`
+	Content              string                `json:"content"`
+	RunID                string                `json:"run_id"`
+	Scope                string                `json:"scope"`
+	Overwrite            bool                  `json:"overwrite"`
+	Version              string                `json:"version"`
+	MaxAgents            int                   `json:"max_agents"`
+	MaxConcurrency       int                   `json:"max_concurrency"`
+	Profiles             []workflow.ProfileRef `json:"profiles"`
+	AllowProfileCreation string                `json:"allow_profile_creation"`
+	MemoryPolicy         string                `json:"memory_policy"`
+}
+
+func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, error) {
+	var args saveWorkflowArgs
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(strings.TrimPrefix(args.Name, "/"))
+	if name == "" {
+		return "", errors.New("save_workflow requires name")
+	}
+	body := strings.TrimSpace(args.Content)
+	if body == "" && strings.TrimSpace(args.RunID) != "" {
+		store, err := t.env.WorkflowStore()
+		if err != nil {
+			return "", fmt.Errorf("resolve workflow store: %w", err)
+		}
+		run, err := store.LoadRun(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		body = reusableWorkflowBodyFromRun(run)
+	}
+	if body == "" {
+		return "", errors.New("save_workflow requires content or run_id")
+	}
+	path, source, err := workflowDefinitionPath(t.env.RootDir, args.Scope, name)
+	if err != nil {
+		return "", err
+	}
+	if !args.Overwrite {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return "", fmt.Errorf("workflow definition already exists at %s; set overwrite=true to replace it", path)
+		} else if !os.IsNotExist(statErr) {
+			return "", statErr
+		}
+	}
+	content := renderWorkflowDefinitionMarkdown(args, name, body)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+	def, err := workflow.LoadDefinitionFile(path, source)
+	if err != nil {
+		return "", err
+	}
+	t.env.Workflows = upsertWorkflowDefinition(t.env.Workflows, def)
+	return mustJSON(map[string]any{
+		"name":     def.Name,
+		"path":     def.Path,
+		"source":   def.Source,
+		"workflow": def,
+		"next_steps": []string{
+			"Use list_workflows or load_workflow to inspect the saved definition.",
+			"Use schedule_cron with workflow_name when this saved workflow should run on a schedule.",
+		},
 	})
 }
 
@@ -1453,6 +1618,118 @@ func markdownListItemText(value string) string {
 		return ""
 	}
 	return strings.TrimSpace(value[idx+1:])
+}
+
+func workflowDefinitionPath(rootDir, scope, name string) (string, string, error) {
+	dirName := slugWorkflowID(name)
+	if dirName == "" {
+		return "", "", fmt.Errorf("invalid workflow name %q", name)
+	}
+	switch strings.TrimSpace(scope) {
+	case "", "project":
+		return filepath.Join(rootDir, ".claude", "workflows", dirName, "WORKFLOW.md"), "project", nil
+	case "user":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", "", err
+		}
+		return filepath.Join(home, ".claude", "workflows", dirName, "WORKFLOW.md"), "user", nil
+	default:
+		return "", "", fmt.Errorf("invalid workflow scope %q", scope)
+	}
+}
+
+func renderWorkflowDefinitionMarkdown(args saveWorkflowArgs, name, body string) string {
+	var b strings.Builder
+	b.WriteString("---\n")
+	fmt.Fprintf(&b, "name: %s\n", workflowFrontmatterScalar(name))
+	if strings.TrimSpace(args.Description) != "" {
+		fmt.Fprintf(&b, "description: %s\n", workflowFrontmatterScalar(args.Description))
+	}
+	if strings.TrimSpace(args.WhenToUse) != "" {
+		fmt.Fprintf(&b, "when-to-use: %s\n", workflowFrontmatterScalar(args.WhenToUse))
+	}
+	if strings.TrimSpace(args.ArgumentHint) != "" {
+		fmt.Fprintf(&b, "argument-hint: %s\n", workflowFrontmatterScalar(args.ArgumentHint))
+	}
+	if strings.TrimSpace(args.Version) != "" {
+		fmt.Fprintf(&b, "version: %s\n", workflowFrontmatterScalar(args.Version))
+	}
+	if args.MaxAgents > 0 {
+		fmt.Fprintf(&b, "max-agents: %d\n", args.MaxAgents)
+	}
+	if args.MaxConcurrency > 0 {
+		fmt.Fprintf(&b, "max-concurrency: %d\n", args.MaxConcurrency)
+	}
+	if len(args.Profiles) > 0 {
+		b.WriteString("profiles:\n")
+		for _, profile := range args.Profiles {
+			profileName := strings.TrimSpace(profile.Name)
+			if profileName == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "  - name: %s\n", workflowFrontmatterScalar(profileName))
+			if profile.Required {
+				b.WriteString("    required: true\n")
+			}
+		}
+	}
+	if strings.TrimSpace(args.AllowProfileCreation) != "" {
+		fmt.Fprintf(&b, "allow-profile-creation: %s\n", workflowFrontmatterScalar(args.AllowProfileCreation))
+	}
+	if strings.TrimSpace(args.MemoryPolicy) != "" {
+		fmt.Fprintf(&b, "memory-policy: %s\n", workflowFrontmatterScalar(args.MemoryPolicy))
+	}
+	b.WriteString("---\n\n")
+	b.WriteString(strings.TrimSpace(body))
+	b.WriteString("\n")
+	return b.String()
+}
+
+func workflowFrontmatterScalar(value string) string {
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if value == "" {
+		return `""`
+	}
+	return value
+}
+
+func reusableWorkflowBodyFromRun(run workflow.Run) string {
+	var b strings.Builder
+	b.WriteString("## Intent\n\n")
+	if strings.TrimSpace(run.Arguments) != "" {
+		fmt.Fprintf(&b, "Repeat the process used for: %s\n", strings.TrimSpace(run.Arguments))
+	} else {
+		b.WriteString("Repeat this workflow for similar future work.\n")
+	}
+	if len(run.Phases) > 0 {
+		b.WriteString("\n## Phases\n\n")
+		for i, phase := range run.Phases {
+			name := strings.TrimSpace(phase.Name)
+			if name == "" {
+				name = phase.ID
+			}
+			fmt.Fprintf(&b, "%d. %s\n", i+1, name)
+		}
+	}
+	b.WriteString("\n## Output\n\n")
+	b.WriteString("The final report must include shipped behavior, changed files, verification, open risks, and memory candidates.\n")
+	return b.String()
+}
+
+func upsertWorkflowDefinition(existing []workflow.Definition, def workflow.Definition) []workflow.Definition {
+	for i := range existing {
+		if existing[i].Name == def.Name {
+			next := make([]workflow.Definition, len(existing))
+			copy(next, existing)
+			next[i] = def
+			return next
+		}
+	}
+	next := make([]workflow.Definition, 0, len(existing)+1)
+	next = append(next, existing...)
+	next = append(next, def)
+	return next
 }
 
 func renderWorkflowPlan(def workflow.Definition, arguments, plan string, phases []workflow.Phase) string {

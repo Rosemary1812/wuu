@@ -135,6 +135,10 @@ func findWorkflowMD(dir string) string {
 	return ""
 }
 
+func LoadDefinitionFile(path, source string) (Definition, error) {
+	return parseDefinitionFile(path, source)
+}
+
 func parseDefinitionFile(path, source string) (Definition, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

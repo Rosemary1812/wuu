@@ -240,6 +240,111 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 }
 
+func TestSaveWorkflowWritesProjectDefinitionAndRegistersIt(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	saveResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "save_workflow",
+		Arguments: `{
+			"name":"feature-delivery",
+			"description":"Deliver a feature through QA.",
+			"when_to_use":"Use for feature work.",
+			"argument_hint":"<feature request>",
+			"content":"## Intent\n\nShip a feature.\n\n## Phases\n\n1. Plan\n2. Implement\n3. QA\n",
+			"profiles":[{"name":"frontend_owner","required":true},{"name":"qa_reviewer"}],
+			"allow_profile_creation":"ask",
+			"memory_policy":"report-candidates-only"
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("save_workflow: %v", err)
+	}
+	var saved struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(saveResp), &saved); err != nil {
+		t.Fatalf("parse save response: %v", err)
+	}
+	if saved.Name != "feature-delivery" || saved.Path == "" {
+		t.Fatalf("unexpected save response: %+v", saved)
+	}
+	if _, err := os.Stat(saved.Path); err != nil {
+		t.Fatalf("expected workflow file: %v", err)
+	}
+
+	listResp, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_workflows", Arguments: `{}`})
+	if err != nil {
+		t.Fatalf("list_workflows: %v", err)
+	}
+	if !strings.Contains(listResp, "feature-delivery") {
+		t.Fatalf("saved workflow should be registered: %s", listResp)
+	}
+	loadResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "load_workflow",
+		Arguments: `{"name":"feature-delivery","arguments":"settings search"}`,
+	})
+	if err != nil {
+		t.Fatalf("load_workflow: %v", err)
+	}
+	for _, want := range []string{"Ship a feature", "frontend_owner", "report-candidates-only"} {
+		if !strings.Contains(loadResp, want) {
+			t.Fatalf("loaded workflow missing %q:\n%s", want, loadResp)
+		}
+	}
+}
+
+func TestSaveWorkflowCanUseRunPlan(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "create_workflow",
+		Arguments: `{
+			"run_id":"workflow-template-source",
+			"arguments":"settings search",
+			"phases":[{"id":"plan","name":"Plan"},{"id":"qa","name":"QA"}],
+			"plan":"## Intent\n\nBuild settings search.\n\n## Phases\n\n1. Plan\n2. QA\n"
+		}`,
+	}); err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+	saveResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "save_workflow",
+		Arguments: `{"name":"settings-qa","run_id":"workflow-template-source"}`,
+	})
+	if err != nil {
+		t.Fatalf("save_workflow from run: %v", err)
+	}
+	var saved struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(saveResp), &saved); err != nil {
+		t.Fatalf("parse save response: %v", err)
+	}
+	data, err := os.ReadFile(saved.Path)
+	if err != nil {
+		t.Fatalf("read saved workflow: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{"name: settings-qa", "## Phases", "Plan", "QA"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("saved run workflow missing %q:\n%s", want, content)
+		}
+	}
+}
+
 func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()
