@@ -164,6 +164,7 @@ func scheduledWorkflowPrompt(name, arguments, extraPrompt string) string {
 		fmt.Fprintf(&sb, "\n\nWorkflow arguments:\n%s", args)
 	}
 	sb.WriteString("\n\nUse the workflow tools to load the workflow definition and create a Workflow Run. Let create_workflow choose the run ID unless the user explicitly provided one.")
+	sb.WriteString(" After creating the run, call list_agent_profiles, decide which roles reuse an existing Agent Profile, create a new recurring profile, or stay ephemeral, then record the dynamic team with workflow_control action=record_team_plan before spawning agents.")
 	if extra := strings.TrimSpace(extraPrompt); extra != "" {
 		fmt.Fprintf(&sb, "\n\nAdditional instruction:\n%s", extra)
 	}

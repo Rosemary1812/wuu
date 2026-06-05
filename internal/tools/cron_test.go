@@ -106,6 +106,9 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	if !strings.Contains(fileTasks[0].Prompt, `Start the saved workflow "weekly-qa"`) {
 		t.Fatalf("workflow task prompt missing workflow instruction: %q", fileTasks[0].Prompt)
 	}
+	if !strings.Contains(fileTasks[0].Prompt, "record the dynamic team") {
+		t.Fatalf("workflow task prompt missing team planning instruction: %q", fileTasks[0].Prompt)
+	}
 }
 
 func TestCancelCronTool(t *testing.T) {

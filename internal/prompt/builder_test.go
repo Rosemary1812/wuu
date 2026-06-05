@@ -139,7 +139,9 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 	for _, want := range []string{
 		"feature-delivery",
 		"`create_workflow`",
+		"`list_agent_profiles`",
 		"`workflow_control`",
+		"record_team_plan",
 		"`save_workflow`",
 		"`schedule_cron`",
 		"pause_run",

@@ -317,9 +317,10 @@ func (t *CreateWorkflowTool) Definition() providers.ToolDefinition {
 		Name: "create_workflow",
 		Description: "Create a durable Workflow Run from a reusable workflow definition or an ad hoc plan. " +
 			"This records the workflow state, phase plan, event log, and plan artifact. It does not automatically " +
-			"spawn agents; after creating a running workflow, use spawn_agent with agent_profile when named durable " +
-			"profiles should work on phases, require agent_report before completion, then inspect progress with " +
-			"workflow_status. Use this instead of manually carrying long-running workflow state in chat context.",
+			"spawn agents; after creating a running workflow, list_agent_profiles, record a dynamic team plan with " +
+			"workflow_control action=record_team_plan, then use spawn_agent with agent_profile for reuse_profile/create_profile " +
+			"members and without agent_profile for ephemeral workers. Require agent_report before completion, then inspect progress " +
+			"with workflow_status. Use this instead of manually carrying long-running workflow state in chat context.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -2179,7 +2180,8 @@ func workflowNextSteps(status workflow.RunState) []string {
 		}
 	default:
 		return []string{
-			"Spawn workflow agents with spawn_agent, setting agent_profile for durable named profiles.",
+			"Call list_agent_profiles, choose reuse_profile/create_profile/ephemeral members for this run, then record the dynamic team with workflow_control action=record_team_plan.",
+			"Spawn reuse_profile/create_profile members with spawn_agent.agent_profile set to the recorded profile; spawn ephemeral members without agent_profile.",
 			"Require each workflow agent to call agent_report before treating its work as complete.",
 			"Create file checkpoints before risky direct edits that may need rollback.",
 			"Use await_agents when synthesis depends on agent output, then workflow_control action=record_await_results to bind results to the workflow run.",
