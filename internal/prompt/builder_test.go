@@ -142,6 +142,7 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"`workflow_control`",
 		"frontend_owner",
 		"qa_reviewer (required)",
+		"memory candidates",
 	} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("workflow prompt missing %q:\n%s", want, result)

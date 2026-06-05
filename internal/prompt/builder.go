@@ -197,7 +197,8 @@ func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
 	sb.WriteString("2. When a workflow applies, call `load_workflow` with its name and user arguments to inspect the full definition.\n")
 	sb.WriteString("3. Call `create_workflow` to create a durable Workflow Run with phases and a plan.\n")
 	sb.WriteString("4. Use `spawn_agent` for actual work. Set `agent_profile` only for durable named profiles; omit it for temporary workers.\n")
-	sb.WriteString("5. Use `workflow_control` to record phase and Agent Run status, and `workflow_status` to inspect progress before synthesis.\n\n")
+	sb.WriteString("5. Use `workflow_control` to record phase and Agent Run status, and `workflow_status` to inspect progress before synthesis.\n")
+	sb.WriteString("6. Record long-term memory candidates through `workflow_control`; do not write profile memory directly from ordinary workflow progress.\n\n")
 	sb.WriteString("**Workflow catalog:**\n\n")
 	for _, wf := range visible {
 		desc := wf.Description

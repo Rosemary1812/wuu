@@ -251,6 +251,47 @@ func TestStoreAgentRunUpsertMergesAndValidatesTransitions(t *testing.T) {
 	}
 }
 
+func TestStoreMemoryCandidates(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.CreateRun(Run{ID: "run-memory"}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	candidate, err := store.AddMemoryCandidate(MemoryCandidate{
+		RunID:        "run-memory",
+		AgentRunID:   "agent-1",
+		AgentProfile: "qa_reviewer",
+		Content:      "QA reviewer learned that visual checks run before release.",
+		Tags:         []string{" qa ", "", "release"},
+		Source:       "agent_report",
+	})
+	if err != nil {
+		t.Fatalf("AddMemoryCandidate: %v", err)
+	}
+	if candidate.ID == "" || candidate.Target != "memory" || candidate.Status != MemoryCandidatePending {
+		t.Fatalf("unexpected candidate defaults: %+v", candidate)
+	}
+	if len(candidate.Tags) != 2 || candidate.Tags[0] != "qa" {
+		t.Fatalf("tags not trimmed: %+v", candidate.Tags)
+	}
+	reviewed, err := store.UpdateMemoryCandidateStatus("run-memory", candidate.ID, MemoryCandidateRejected, "temporary release detail")
+	if err != nil {
+		t.Fatalf("UpdateMemoryCandidateStatus: %v", err)
+	}
+	if reviewed.Status != MemoryCandidateRejected || reviewed.ReviewedAt.IsZero() {
+		t.Fatalf("candidate was not reviewed: %+v", reviewed)
+	}
+	candidates, err := store.ListMemoryCandidates("run-memory")
+	if err != nil {
+		t.Fatalf("ListMemoryCandidates: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Status != MemoryCandidateRejected {
+		t.Fatalf("unexpected candidates: %+v", candidates)
+	}
+	if _, err := store.AddMemoryCandidate(MemoryCandidate{RunID: "run-memory", Content: "bad", Target: "profile"}); err == nil {
+		t.Fatal("expected invalid memory target to be rejected")
+	}
+}
+
 func TestStoreUsesExpectedLayout(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)

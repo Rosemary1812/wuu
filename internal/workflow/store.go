@@ -58,13 +58,15 @@ type AgentRun struct {
 type EventType string
 
 const (
-	EventRunCreated            EventType = "run_created"
-	EventRunStatusChanged      EventType = "run_status_changed"
-	EventPhaseStatusChanged    EventType = "phase_status_changed"
-	EventAgentRunUpserted      EventType = "agent_run_upserted"
-	EventAgentRunStatusChanged EventType = "agent_run_status_changed"
-	EventPlanWritten           EventType = "plan_written"
-	EventFinalReportWritten    EventType = "final_report_written"
+	EventRunCreated              EventType = "run_created"
+	EventRunStatusChanged        EventType = "run_status_changed"
+	EventPhaseStatusChanged      EventType = "phase_status_changed"
+	EventAgentRunUpserted        EventType = "agent_run_upserted"
+	EventAgentRunStatusChanged   EventType = "agent_run_status_changed"
+	EventPlanWritten             EventType = "plan_written"
+	EventFinalReportWritten      EventType = "final_report_written"
+	EventMemoryCandidateAdded    EventType = "memory_candidate_added"
+	EventMemoryCandidateReviewed EventType = "memory_candidate_reviewed"
 )
 
 type Event struct {
@@ -476,6 +478,145 @@ func (s *Store) WriteFinalReport(runID, content string) (string, error) {
 	return path, s.AppendEvent(Event{Type: EventFinalReportWritten, RunID: runID, Artifact: path})
 }
 
+func (s *Store) AddMemoryCandidate(candidate MemoryCandidate) (MemoryCandidate, error) {
+	if s == nil || s.dir == "" {
+		return candidate, nil
+	}
+	runID, err := validateStoreID("workflow run", candidate.RunID)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	if _, err := s.LoadRun(runID); err != nil {
+		return MemoryCandidate{}, err
+	}
+	content := strings.TrimSpace(candidate.Content)
+	if content == "" {
+		return MemoryCandidate{}, fmt.Errorf("workflow memory candidate content is required")
+	}
+	target := strings.TrimSpace(candidate.Target)
+	if target == "" {
+		target = "memory"
+	}
+	if target != "memory" && target != "user" {
+		return MemoryCandidate{}, fmt.Errorf("workflow memory candidate target must be memory or user")
+	}
+	status := candidate.Status
+	if status == "" {
+		status = MemoryCandidatePending
+	}
+	if err := ValidateMemoryCandidateStatus(status); err != nil {
+		return MemoryCandidate{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	candidates, err := s.loadMemoryCandidatesLocked(runID)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	id := strings.TrimSpace(candidate.ID)
+	if id == "" {
+		id = nextMemoryCandidateID(candidates)
+	}
+	id, err = validateStoreID("workflow memory candidate", id)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	for _, existing := range candidates {
+		if existing.ID == id {
+			return MemoryCandidate{}, fmt.Errorf("workflow memory candidate %q already exists", id)
+		}
+	}
+	now := time.Now().UTC()
+	candidate.ID = id
+	candidate.RunID = runID
+	candidate.AgentRunID = strings.TrimSpace(candidate.AgentRunID)
+	candidate.AgentProfile = strings.TrimSpace(candidate.AgentProfile)
+	candidate.Target = target
+	candidate.Content = content
+	candidate.Tags = trimStrings(candidate.Tags)
+	candidate.Source = strings.TrimSpace(candidate.Source)
+	candidate.Status = status
+	candidate.Reason = strings.TrimSpace(candidate.Reason)
+	if candidate.CreatedAt.IsZero() {
+		candidate.CreatedAt = now
+	}
+	if candidate.Status != MemoryCandidatePending && candidate.ReviewedAt.IsZero() {
+		candidate.ReviewedAt = now
+	}
+	candidates = append(candidates, candidate)
+	if err := writeJSONFile(s.memoryCandidatesPath(runID), candidates); err != nil {
+		return MemoryCandidate{}, err
+	}
+	if err := s.appendEventLocked(Event{
+		Type:       EventMemoryCandidateAdded,
+		RunID:      runID,
+		AgentRunID: candidate.AgentRunID,
+		Status:     string(candidate.Status),
+		Message:    candidate.ID,
+	}); err != nil {
+		return MemoryCandidate{}, err
+	}
+	return candidate, nil
+}
+
+func (s *Store) ListMemoryCandidates(runID string) ([]MemoryCandidate, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadMemoryCandidatesLocked(runID)
+}
+
+func (s *Store) UpdateMemoryCandidateStatus(runID, candidateID string, status MemoryCandidateStatus, reason string) (MemoryCandidate, error) {
+	if s == nil || s.dir == "" {
+		return MemoryCandidate{}, nil
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	candidateID, err = validateStoreID("workflow memory candidate", candidateID)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	if err := ValidateMemoryCandidateStatus(status); err != nil {
+		return MemoryCandidate{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	candidates, err := s.loadMemoryCandidatesLocked(runID)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	for i := range candidates {
+		if candidates[i].ID != candidateID {
+			continue
+		}
+		candidates[i].Status = status
+		candidates[i].Reason = strings.TrimSpace(reason)
+		candidates[i].ReviewedAt = time.Now().UTC()
+		if err := writeJSONFile(s.memoryCandidatesPath(runID), candidates); err != nil {
+			return MemoryCandidate{}, err
+		}
+		if err := s.appendEventLocked(Event{
+			Type:    EventMemoryCandidateReviewed,
+			RunID:   runID,
+			Status:  string(status),
+			Message: candidateID,
+		}); err != nil {
+			return MemoryCandidate{}, err
+		}
+		return candidates[i], nil
+	}
+	return MemoryCandidate{}, fmt.Errorf("workflow memory candidate %q not found", candidateID)
+}
+
 func (s *Store) AppendEvent(event Event) error {
 	if s == nil || s.dir == "" {
 		return nil
@@ -556,6 +697,35 @@ func (s *Store) agentDir(runID string) string {
 	return filepath.Join(s.runDir(runID), "agents")
 }
 
+func (s *Store) memoryCandidatesPath(runID string) string {
+	return filepath.Join(s.runDir(runID), "memory-candidates.json")
+}
+
+func (s *Store) loadMemoryCandidatesLocked(runID string) ([]MemoryCandidate, error) {
+	var candidates []MemoryCandidate
+	path := s.memoryCandidatesPath(runID)
+	if err := readJSONFile(path, &candidates); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return candidates, nil
+}
+
+func nextMemoryCandidateID(candidates []MemoryCandidate) string {
+	used := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		used[candidate.ID] = struct{}{}
+	}
+	for i := len(candidates) + 1; ; i++ {
+		id := fmt.Sprintf("candidate-%d", i)
+		if _, ok := used[id]; !ok {
+			return id
+		}
+	}
+}
+
 func validateStoreID(kind, id string) (string, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -575,6 +745,16 @@ func validateStoreID(kind, id string) (string, error) {
 		}
 	}
 	return id, nil
+}
+
+func trimStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func mergeAgentRun(existing, next AgentRun) AgentRun {

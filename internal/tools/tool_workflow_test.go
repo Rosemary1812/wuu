@@ -140,6 +140,38 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("workflow_control record agent awaiting_report: %v", err)
 	}
+	memoryResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_memory_candidate",
+			"run_id":"workflow-test-run",
+			"candidate_id":"candidate-qa",
+			"agent_run_id":"agent-1",
+			"agent_profile":"product_planner",
+			"content":"Settings search requires QA before release.",
+			"target":"memory",
+			"tags":[" feature ","qa"],
+			"source":"agent_report"
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_control record memory candidate: %v", err)
+	}
+	var memoryResult struct {
+		MemoryCandidate workflow.MemoryCandidate `json:"memory_candidate"`
+	}
+	if err := json.Unmarshal([]byte(memoryResp), &memoryResult); err != nil {
+		t.Fatalf("parse memory candidate response: %v", err)
+	}
+	if memoryResult.MemoryCandidate.Status != workflow.MemoryCandidatePending {
+		t.Fatalf("memory candidate should start pending: %+v", memoryResult.MemoryCandidate)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"review_memory_candidate","run_id":"workflow-test-run","candidate_id":"candidate-qa","status":"rejected","message":"temporary task fact"}`,
+	}); err != nil {
+		t.Fatalf("workflow_control review memory candidate: %v", err)
+	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "workflow_control",
 		Arguments: `{"action":"set_phase_status","run_id":"workflow-test-run","phase_id":"clarify_product_intent","status":"completed"}`,
@@ -172,9 +204,10 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		t.Fatalf("workflow_status: %v", err)
 	}
 	var status struct {
-		Run       workflow.Run        `json:"run"`
-		AgentRuns []workflow.AgentRun `json:"agent_runs"`
-		Events    []workflow.Event    `json:"events"`
+		Run              workflow.Run               `json:"run"`
+		AgentRuns        []workflow.AgentRun        `json:"agent_runs"`
+		MemoryCandidates []workflow.MemoryCandidate `json:"memory_candidates"`
+		Events           []workflow.Event           `json:"events"`
 	}
 	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
 		t.Fatalf("parse status response: %v", err)
@@ -190,6 +223,9 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if len(status.AgentRuns) != 1 || status.AgentRuns[0].Status != workflow.AgentRunStateAwaitingReport || len(status.AgentRuns[0].ChangedFiles) != 1 {
 		t.Fatalf("unexpected agent runs: %+v", status.AgentRuns)
+	}
+	if len(status.MemoryCandidates) != 1 || status.MemoryCandidates[0].Status != workflow.MemoryCandidateRejected {
+		t.Fatalf("unexpected memory candidates: %+v", status.MemoryCandidates)
 	}
 	if len(status.Events) < 2 {
 		t.Fatalf("expected run and plan events, got %+v", status.Events)

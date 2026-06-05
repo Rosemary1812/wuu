@@ -308,6 +308,8 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 						"set_phase_status",
 						"record_agent_run",
 						"write_final_report",
+						"record_memory_candidate",
+						"review_memory_candidate",
 					},
 					"description": "Control action to perform.",
 				},
@@ -363,7 +365,25 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Final report markdown for write_final_report.",
+					"description": "Final report markdown for write_final_report, or memory candidate content for record_memory_candidate.",
+				},
+				"candidate_id": map[string]any{
+					"type":        "string",
+					"description": "Memory candidate id for review_memory_candidate.",
+				},
+				"target": map[string]any{
+					"type":        "string",
+					"enum":        []string{"memory", "user"},
+					"description": "Memory target for record_memory_candidate. Defaults to memory.",
+				},
+				"tags": map[string]any{
+					"type":        "array",
+					"description": "Tags for record_memory_candidate.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"source": map[string]any{
+					"type":        "string",
+					"description": "Source label for record_memory_candidate, for example agent_report or workflow.",
 				},
 				"complete_run": map[string]any{
 					"type":        "boolean",
@@ -390,6 +410,10 @@ type workflowControlArgs struct {
 	ChangedFiles []string `json:"changed_files"`
 	Artifacts    []string `json:"artifacts"`
 	Content      string   `json:"content"`
+	CandidateID  string   `json:"candidate_id"`
+	Target       string   `json:"target"`
+	Tags         []string `json:"tags"`
+	Source       string   `json:"source"`
 	CompleteRun  bool     `json:"complete_run"`
 }
 
@@ -479,6 +503,45 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 			}
 		}
 		return mustJSON(map[string]any{"action": action, "run": run, "final_report_path": path})
+
+	case "record_memory_candidate":
+		content := strings.TrimSpace(args.Content)
+		if content == "" {
+			return "", errors.New("workflow_control record_memory_candidate requires content")
+		}
+		candidate, err := store.AddMemoryCandidate(workflow.MemoryCandidate{
+			ID:           strings.TrimSpace(args.CandidateID),
+			RunID:        strings.TrimSpace(args.RunID),
+			AgentRunID:   strings.TrimSpace(args.AgentRunID),
+			AgentProfile: strings.TrimSpace(args.AgentProfile),
+			Target:       strings.TrimSpace(args.Target),
+			Content:      content,
+			Tags:         trimWorkflowStringSlice(args.Tags),
+			Source:       strings.TrimSpace(args.Source),
+			Reason:       strings.TrimSpace(args.Message),
+		})
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "memory_candidate": candidate})
+
+	case "review_memory_candidate":
+		candidateID := strings.TrimSpace(args.CandidateID)
+		if candidateID == "" {
+			return "", errors.New("workflow_control review_memory_candidate requires candidate_id")
+		}
+		status, err := parseWorkflowMemoryCandidateStatus(args.Status)
+		if err != nil {
+			return "", err
+		}
+		if status == workflow.MemoryCandidatePending {
+			return "", errors.New("workflow_control review_memory_candidate requires accepted or rejected status")
+		}
+		candidate, err := store.UpdateMemoryCandidateStatus(args.RunID, candidateID, status, args.Message)
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "memory_candidate": candidate})
 
 	default:
 		return "", fmt.Errorf("unsupported workflow_control action %q", action)
@@ -601,9 +664,14 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
+	memoryCandidates, err := store.ListMemoryCandidates(runID)
+	if err != nil {
+		return "", err
+	}
 	result := map[string]any{
-		"run":        run,
-		"agent_runs": agents,
+		"run":               run,
+		"agent_runs":        agents,
+		"memory_candidates": memoryCandidates,
 	}
 	if args.IncludeEvents {
 		events, err := store.ListEvents(runID)
@@ -690,6 +758,19 @@ func parseWorkflowAgentRunState(raw string) (workflow.AgentRunState, error) {
 		return workflow.AgentRunStateCancelled, nil
 	default:
 		return "", fmt.Errorf("invalid workflow agent run status %q", raw)
+	}
+}
+
+func parseWorkflowMemoryCandidateStatus(raw string) (workflow.MemoryCandidateStatus, error) {
+	switch strings.TrimSpace(raw) {
+	case string(workflow.MemoryCandidatePending):
+		return workflow.MemoryCandidatePending, nil
+	case string(workflow.MemoryCandidateAccepted):
+		return workflow.MemoryCandidateAccepted, nil
+	case string(workflow.MemoryCandidateRejected):
+		return workflow.MemoryCandidateRejected, nil
+	default:
+		return "", fmt.Errorf("invalid workflow memory candidate status %q", raw)
 	}
 }
 
