@@ -349,6 +349,49 @@ func TestStoreMemoryCandidates(t *testing.T) {
 	}
 }
 
+func TestStoreFileCheckpoints(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.CreateRun(Run{ID: "run-checkpoint"}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	dir, err := store.CheckpointDir("run-checkpoint", "checkpoint-1")
+	if err != nil {
+		t.Fatalf("CheckpointDir: %v", err)
+	}
+	if dir == "" {
+		t.Fatal("expected checkpoint dir")
+	}
+	checkpoint, err := store.SaveFileCheckpoint(FileCheckpoint{
+		ID:     "checkpoint-1",
+		RunID:  "run-checkpoint",
+		Reason: "before retry",
+		Files:  []FileCheckpointFile{{Path: "README.md", Existed: true, SnapshotPath: "files/readme.snapshot", Size: 12}},
+	})
+	if err != nil {
+		t.Fatalf("SaveFileCheckpoint: %v", err)
+	}
+	if checkpoint.CreatedAt.IsZero() {
+		t.Fatalf("checkpoint should set CreatedAt: %+v", checkpoint)
+	}
+	listed, err := store.ListFileCheckpoints("run-checkpoint")
+	if err != nil {
+		t.Fatalf("ListFileCheckpoints: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != "checkpoint-1" {
+		t.Fatalf("unexpected checkpoints: %+v", listed)
+	}
+	restored, err := store.MarkFileCheckpointRestored("run-checkpoint", "checkpoint-1", "restore")
+	if err != nil {
+		t.Fatalf("MarkFileCheckpointRestored: %v", err)
+	}
+	if restored.RestoredAt.IsZero() {
+		t.Fatalf("checkpoint should set RestoredAt: %+v", restored)
+	}
+	if _, err := store.SaveFileCheckpoint(FileCheckpoint{ID: "checkpoint-1", RunID: "run-checkpoint"}); err == nil {
+		t.Fatal("expected duplicate checkpoint to be rejected")
+	}
+}
+
 func TestStoreUsesExpectedLayout(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)

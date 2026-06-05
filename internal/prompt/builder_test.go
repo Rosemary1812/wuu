@@ -144,6 +144,7 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"`schedule_cron`",
 		"pause_run",
 		"retry_agent_run",
+		"restore_file_checkpoint",
 		"frontend_owner",
 		"qa_reviewer (required)",
 		"memory candidates",

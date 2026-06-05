@@ -83,6 +83,22 @@ type AgentRetryRequest struct {
 	RollbackHint string
 }
 
+type FileCheckpoint struct {
+	ID         string               `json:"id"`
+	RunID      string               `json:"run_id"`
+	Reason     string               `json:"reason,omitempty"`
+	Files      []FileCheckpointFile `json:"files,omitempty"`
+	CreatedAt  time.Time            `json:"created_at"`
+	RestoredAt time.Time            `json:"restored_at,omitempty"`
+}
+
+type FileCheckpointFile struct {
+	Path         string `json:"path"`
+	Existed      bool   `json:"existed"`
+	SnapshotPath string `json:"snapshot_path,omitempty"`
+	Size         int64  `json:"size,omitempty"`
+}
+
 type EventType string
 
 const (
@@ -96,6 +112,8 @@ const (
 	EventFinalReportWritten      EventType = "final_report_written"
 	EventMemoryCandidateAdded    EventType = "memory_candidate_added"
 	EventMemoryCandidateReviewed EventType = "memory_candidate_reviewed"
+	EventFileCheckpointCreated   EventType = "file_checkpoint_created"
+	EventFileCheckpointRestored  EventType = "file_checkpoint_restored"
 )
 
 type Event struct {
@@ -704,6 +722,151 @@ func (s *Store) UpdateMemoryCandidateStatus(runID, candidateID string, status Me
 		return candidates[i], nil
 	}
 	return MemoryCandidate{}, fmt.Errorf("workflow memory candidate %q not found", candidateID)
+}
+
+func (s *Store) CheckpointDir(runID, checkpointID string) (string, error) {
+	if s == nil || s.dir == "" {
+		return "", fmt.Errorf("workflow store not configured")
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return "", err
+	}
+	checkpointID, err = validateStoreID("workflow file checkpoint", checkpointID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.runDir(runID), "checkpoints", checkpointID), nil
+}
+
+func (s *Store) SaveFileCheckpoint(checkpoint FileCheckpoint) (FileCheckpoint, error) {
+	if s == nil || s.dir == "" {
+		return checkpoint, nil
+	}
+	runID, err := validateStoreID("workflow run", checkpoint.RunID)
+	if err != nil {
+		return FileCheckpoint{}, err
+	}
+	if _, err := s.LoadRun(runID); err != nil {
+		return FileCheckpoint{}, err
+	}
+	checkpointID, err := validateStoreID("workflow file checkpoint", checkpoint.ID)
+	if err != nil {
+		return FileCheckpoint{}, err
+	}
+	checkpoint.RunID = runID
+	checkpoint.ID = checkpointID
+	checkpoint.Reason = strings.TrimSpace(checkpoint.Reason)
+	if checkpoint.CreatedAt.IsZero() {
+		checkpoint.CreatedAt = time.Now().UTC()
+	}
+	for i := range checkpoint.Files {
+		checkpoint.Files[i].Path = strings.TrimSpace(checkpoint.Files[i].Path)
+		checkpoint.Files[i].SnapshotPath = strings.TrimSpace(checkpoint.Files[i].SnapshotPath)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dir := filepath.Join(s.runDir(runID), "checkpoints", checkpointID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return FileCheckpoint{}, err
+	}
+	path := filepath.Join(dir, "checkpoint.json")
+	if _, err := os.Stat(path); err == nil {
+		return FileCheckpoint{}, fmt.Errorf("workflow file checkpoint %q already exists", checkpointID)
+	} else if !os.IsNotExist(err) {
+		return FileCheckpoint{}, err
+	}
+	if err := writeJSONFile(path, checkpoint); err != nil {
+		return FileCheckpoint{}, err
+	}
+	if err := s.appendEventLocked(Event{
+		Type:     EventFileCheckpointCreated,
+		RunID:    runID,
+		Status:   checkpointID,
+		Message:  checkpoint.Reason,
+		Artifact: path,
+	}); err != nil {
+		return FileCheckpoint{}, err
+	}
+	return checkpoint, nil
+}
+
+func (s *Store) LoadFileCheckpoint(runID, checkpointID string) (FileCheckpoint, error) {
+	if s == nil || s.dir == "" {
+		return FileCheckpoint{}, fmt.Errorf("workflow store not configured")
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return FileCheckpoint{}, err
+	}
+	checkpointID, err = validateStoreID("workflow file checkpoint", checkpointID)
+	if err != nil {
+		return FileCheckpoint{}, err
+	}
+	var checkpoint FileCheckpoint
+	if err := readJSONFile(filepath.Join(s.runDir(runID), "checkpoints", checkpointID, "checkpoint.json"), &checkpoint); err != nil {
+		return FileCheckpoint{}, err
+	}
+	return checkpoint, nil
+}
+
+func (s *Store) ListFileCheckpoints(runID string) ([]FileCheckpoint, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(s.runDir(runID), "checkpoints")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	checkpoints := make([]FileCheckpoint, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		checkpoint, err := s.LoadFileCheckpoint(runID, entry.Name())
+		if err != nil {
+			continue
+		}
+		checkpoints = append(checkpoints, checkpoint)
+	}
+	sort.Slice(checkpoints, func(i, j int) bool {
+		return checkpoints[i].CreatedAt.Before(checkpoints[j].CreatedAt)
+	})
+	return checkpoints, nil
+}
+
+func (s *Store) MarkFileCheckpointRestored(runID, checkpointID, message string) (FileCheckpoint, error) {
+	checkpoint, err := s.LoadFileCheckpoint(runID, checkpointID)
+	if err != nil {
+		return FileCheckpoint{}, err
+	}
+	checkpoint.RestoredAt = time.Now().UTC()
+	dir, err := s.CheckpointDir(runID, checkpointID)
+	if err != nil {
+		return FileCheckpoint{}, err
+	}
+	if err := writeJSONFile(filepath.Join(dir, "checkpoint.json"), checkpoint); err != nil {
+		return FileCheckpoint{}, err
+	}
+	if err := s.AppendEvent(Event{
+		Type:     EventFileCheckpointRestored,
+		RunID:    checkpoint.RunID,
+		Status:   checkpoint.ID,
+		Message:  strings.TrimSpace(message),
+		Artifact: filepath.Join(dir, "checkpoint.json"),
+	}); err != nil {
+		return FileCheckpoint{}, err
+	}
+	return checkpoint, nil
 }
 
 func (s *Store) AppendEvent(event Event) error {

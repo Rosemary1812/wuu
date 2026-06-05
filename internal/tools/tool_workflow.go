@@ -484,7 +484,7 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 			"Use this to bind spawn_agent / await_agents outputs back to a workflow run. The runtime enforces valid run, phase, " +
 			"and agent-run state transitions; do not invent states. If await_agents reports report_missing=true, record the " +
 			"agent run as awaiting_report instead of completed. Use pause_run / resume_run for blocked workflow recovery and " +
-			"retry_agent_run for bounded Agent Run retries.",
+			"retry_agent_run for bounded Agent Run retries. Use create_file_checkpoint / restore_file_checkpoint for scoped file rollback.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -502,6 +502,8 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 						"generate_final_report",
 						"record_memory_candidate",
 						"review_memory_candidate",
+						"create_file_checkpoint",
+						"restore_file_checkpoint",
 					},
 					"description": "Control action to perform.",
 				},
@@ -566,6 +568,15 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"type":        "array",
 					"description": "Artifact paths from await_agents / agent_report.",
 					"items":       map[string]any{"type": "string"},
+				},
+				"paths": map[string]any{
+					"type":        "array",
+					"description": "Workspace-relative file paths for create_file_checkpoint.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"checkpoint_id": map[string]any{
+					"type":        "string",
+					"description": "File checkpoint id for create_file_checkpoint or restore_file_checkpoint.",
 				},
 				"retry_count": map[string]any{
 					"type":        "integer",
@@ -652,6 +663,8 @@ type workflowControlArgs struct {
 	ReportPath   string                `json:"report_path"`
 	ChangedFiles []string              `json:"changed_files"`
 	Artifacts    []string              `json:"artifacts"`
+	Paths        []string              `json:"paths"`
+	CheckpointID string                `json:"checkpoint_id"`
 	RetryCount   int                   `json:"retry_count"`
 	MaxRetries   int                   `json:"max_retries"`
 	RetryReason  string                `json:"retry_reason"`
@@ -881,12 +894,16 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		if err != nil {
 			return "", err
 		}
+		checkpoints, err := store.ListFileCheckpoints(args.RunID)
+		if err != nil {
+			return "", err
+		}
 		if args.CompleteRun {
 			if err := validateWorkflowReadyToComplete(run, agents); err != nil {
 				return "", err
 			}
 		}
-		report := renderGeneratedWorkflowFinalReport(run, agents, candidates)
+		report := renderGeneratedWorkflowFinalReport(run, agents, candidates, checkpoints)
 		path, err := store.WriteFinalReport(args.RunID, report)
 		if err != nil {
 			return "", err
@@ -941,6 +958,20 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 			return "", err
 		}
 		return mustJSON(map[string]any{"action": action, "memory_candidate": candidate})
+
+	case "create_file_checkpoint":
+		checkpoint, err := createWorkflowFileCheckpoint(t.env, store, args)
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "file_checkpoint": checkpoint})
+
+	case "restore_file_checkpoint":
+		checkpoint, restored, err := restoreWorkflowFileCheckpoint(t.env, store, args)
+		if err != nil {
+			return "", err
+		}
+		return mustJSON(map[string]any{"action": action, "file_checkpoint": checkpoint, "restored_files": restored})
 
 	default:
 		return "", fmt.Errorf("unsupported workflow_control action %q", action)
@@ -1071,6 +1102,136 @@ func firstWorkflowText(values ...string) string {
 	return ""
 }
 
+func createWorkflowFileCheckpoint(env *Env, store *workflow.Store, args workflowControlArgs) (workflow.FileCheckpoint, error) {
+	if len(args.Paths) == 0 {
+		return workflow.FileCheckpoint{}, errors.New("workflow_control create_file_checkpoint requires paths")
+	}
+	if _, err := store.LoadRun(args.RunID); err != nil {
+		return workflow.FileCheckpoint{}, err
+	}
+	checkpointID := strings.TrimSpace(args.CheckpointID)
+	if checkpointID == "" {
+		checkpointID = "checkpoint-" + session.NewID()
+	}
+	checkpointDir, err := store.CheckpointDir(args.RunID, checkpointID)
+	if err != nil {
+		return workflow.FileCheckpoint{}, err
+	}
+	filesDir := filepath.Join(checkpointDir, "files")
+	if err := os.MkdirAll(filesDir, 0o755); err != nil {
+		return workflow.FileCheckpoint{}, err
+	}
+
+	seen := map[string]struct{}{}
+	files := make([]workflow.FileCheckpointFile, 0, len(args.Paths))
+	for _, rawPath := range args.Paths {
+		absPath, err := env.ResolvePath(rawPath)
+		if err != nil {
+			return workflow.FileCheckpoint{}, err
+		}
+		relPath, err := filepath.Rel(env.RootDir, absPath)
+		if err != nil {
+			return workflow.FileCheckpoint{}, err
+		}
+		relPath = filepath.ToSlash(relPath)
+		if _, ok := seen[relPath]; ok {
+			continue
+		}
+		seen[relPath] = struct{}{}
+
+		entry := workflow.FileCheckpointFile{Path: relPath}
+		data, readErr := os.ReadFile(absPath)
+		if readErr == nil {
+			entry.Existed = true
+			entry.Size = int64(len(data))
+			entry.SnapshotPath = filepath.ToSlash(filepath.Join("files", workflowCheckpointSnapshotName(len(files), relPath)))
+			if err := os.WriteFile(filepath.Join(checkpointDir, filepath.FromSlash(entry.SnapshotPath)), data, 0o644); err != nil {
+				return workflow.FileCheckpoint{}, err
+			}
+		} else if !os.IsNotExist(readErr) {
+			return workflow.FileCheckpoint{}, readErr
+		}
+		files = append(files, entry)
+	}
+	if len(files) == 0 {
+		return workflow.FileCheckpoint{}, errors.New("workflow_control create_file_checkpoint requires at least one valid path")
+	}
+	return store.SaveFileCheckpoint(workflow.FileCheckpoint{
+		ID:     checkpointID,
+		RunID:  strings.TrimSpace(args.RunID),
+		Reason: firstWorkflowText(args.Message, args.RollbackHint),
+		Files:  files,
+	})
+}
+
+func restoreWorkflowFileCheckpoint(env *Env, store *workflow.Store, args workflowControlArgs) (workflow.FileCheckpoint, []string, error) {
+	checkpointID := strings.TrimSpace(args.CheckpointID)
+	if checkpointID == "" {
+		return workflow.FileCheckpoint{}, nil, errors.New("workflow_control restore_file_checkpoint requires checkpoint_id")
+	}
+	checkpoint, err := store.LoadFileCheckpoint(args.RunID, checkpointID)
+	if err != nil {
+		return workflow.FileCheckpoint{}, nil, err
+	}
+	checkpointDir, err := store.CheckpointDir(args.RunID, checkpointID)
+	if err != nil {
+		return workflow.FileCheckpoint{}, nil, err
+	}
+	restored := make([]string, 0, len(checkpoint.Files))
+	for _, file := range checkpoint.Files {
+		if strings.TrimSpace(file.Path) == "" {
+			continue
+		}
+		absPath, err := env.ResolvePath(file.Path)
+		if err != nil {
+			return workflow.FileCheckpoint{}, nil, err
+		}
+		if !file.Existed {
+			if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
+				return workflow.FileCheckpoint{}, nil, err
+			}
+			restored = append(restored, file.Path)
+			continue
+		}
+		snapshotAbs, err := checkpointSnapshotAbsPath(checkpointDir, file.SnapshotPath)
+		if err != nil {
+			return workflow.FileCheckpoint{}, nil, err
+		}
+		data, err := os.ReadFile(snapshotAbs)
+		if err != nil {
+			return workflow.FileCheckpoint{}, nil, err
+		}
+		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+			return workflow.FileCheckpoint{}, nil, err
+		}
+		if err := os.WriteFile(absPath, data, 0o644); err != nil {
+			return workflow.FileCheckpoint{}, nil, err
+		}
+		restored = append(restored, file.Path)
+	}
+	checkpoint, err = store.MarkFileCheckpointRestored(args.RunID, checkpointID, args.Message)
+	if err != nil {
+		return workflow.FileCheckpoint{}, nil, err
+	}
+	return checkpoint, restored, nil
+}
+
+func workflowCheckpointSnapshotName(index int, relPath string) string {
+	slug := slugWorkflowID(relPath)
+	if slug == "" {
+		slug = "file"
+	}
+	return fmt.Sprintf("%03d-%s.snapshot", index+1, slug)
+}
+
+func checkpointSnapshotAbsPath(checkpointDir, snapshotPath string) (string, error) {
+	snapshotPath = filepath.Clean(filepath.FromSlash(strings.TrimSpace(snapshotPath)))
+	if snapshotPath == "" || filepath.IsAbs(snapshotPath) || snapshotPath == "." || strings.HasPrefix(snapshotPath, ".."+string(filepath.Separator)) || snapshotPath == ".." {
+		return "", fmt.Errorf("invalid checkpoint snapshot path %q", snapshotPath)
+	}
+	return filepath.Join(checkpointDir, snapshotPath), nil
+}
+
 func validateWorkflowReadyToComplete(run workflow.Run, agents []workflow.AgentRun) error {
 	for _, phase := range run.Phases {
 		if !workflow.IsTerminalPhaseState(phase.Status) {
@@ -1088,7 +1249,7 @@ func validateWorkflowReadyToComplete(run workflow.Run, agents []workflow.AgentRu
 	return nil
 }
 
-func renderGeneratedWorkflowFinalReport(run workflow.Run, agents []workflow.AgentRun, candidates []workflow.MemoryCandidate) string {
+func renderGeneratedWorkflowFinalReport(run workflow.Run, agents []workflow.AgentRun, candidates []workflow.MemoryCandidate, checkpoints []workflow.FileCheckpoint) string {
 	var b strings.Builder
 	b.WriteString("# Workflow Final Report\n\n")
 	fmt.Fprintf(&b, "- Run: `%s`\n", run.ID)
@@ -1204,6 +1365,20 @@ func renderGeneratedWorkflowFinalReport(run workflow.Run, agents []workflow.Agen
 			}
 			if candidate.Reason != "" {
 				fmt.Fprintf(&b, " - %s", candidate.Reason)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	if len(checkpoints) > 0 {
+		b.WriteString("\n## File Checkpoints\n\n")
+		for _, checkpoint := range checkpoints {
+			fmt.Fprintf(&b, "- `%s`: %d file(s)", checkpoint.ID, len(checkpoint.Files))
+			if checkpoint.Reason != "" {
+				fmt.Fprintf(&b, " - %s", checkpoint.Reason)
+			}
+			if !checkpoint.RestoredAt.IsZero() {
+				fmt.Fprintf(&b, " [restored: %s]", checkpoint.RestoredAt.Format(time.RFC3339))
 			}
 			b.WriteString("\n")
 		}
@@ -1349,10 +1524,15 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
+	fileCheckpoints, err := store.ListFileCheckpoints(runID)
+	if err != nil {
+		return "", err
+	}
 	result := map[string]any{
 		"run":               run,
 		"agent_runs":        agents,
 		"memory_candidates": memoryCandidates,
+		"file_checkpoints":  fileCheckpoints,
 	}
 	if run.DefinitionName != "" {
 		if def, ok := t.env.FindWorkflow(run.DefinitionName); ok {
@@ -1771,6 +1951,7 @@ func workflowNextSteps(status workflow.RunState) []string {
 		return []string{
 			"Spawn workflow agents with spawn_agent, setting agent_profile for durable named profiles.",
 			"Require each workflow agent to call agent_report before treating its work as complete.",
+			"Create file checkpoints before risky direct edits that may need rollback.",
 			"Use await_agents when synthesis depends on agent output, then workflow_control action=record_await_results to bind results to the workflow run.",
 			"Use workflow_control action=generate_final_report after all blocking phases and agent runs are complete.",
 		}

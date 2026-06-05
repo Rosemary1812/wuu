@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -646,5 +647,81 @@ func TestWorkflowControlPauseResumeAndRetryAgentRun(t *testing.T) {
 		Arguments: `{"action":"retry_agent_run","run_id":"workflow-recovery-run","agent_id":"agent-impl","max_retries":1}`,
 	}); err == nil {
 		t.Fatal("expected retry_agent_run to enforce max_retries")
+	}
+}
+
+func TestWorkflowControlFileCheckpointRestore(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("before\n"), 0o644); err != nil {
+		t.Fatalf("write notes: %v", err)
+	}
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "create_workflow",
+		Arguments: `{
+			"run_id":"workflow-checkpoint-run",
+			"plan":"## Phases\n\n1. Edit",
+			"phases":[{"id":"edit","name":"Edit"}]
+		}`,
+	}); err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+	checkpointResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"create_file_checkpoint",
+			"run_id":"workflow-checkpoint-run",
+			"checkpoint_id":"checkpoint-before-edit",
+			"paths":["notes.txt"],
+			"message":"before editing notes"
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("create_file_checkpoint: %v", err)
+	}
+	var checkpointResult struct {
+		FileCheckpoint workflow.FileCheckpoint `json:"file_checkpoint"`
+	}
+	if err := json.Unmarshal([]byte(checkpointResp), &checkpointResult); err != nil {
+		t.Fatalf("parse checkpoint response: %v", err)
+	}
+	if len(checkpointResult.FileCheckpoint.Files) != 1 || !checkpointResult.FileCheckpoint.Files[0].Existed {
+		t.Fatalf("checkpoint file metadata missing: %+v", checkpointResult.FileCheckpoint)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("after\n"), 0o644); err != nil {
+		t.Fatalf("modify notes: %v", err)
+	}
+	restoreResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"restore_file_checkpoint","run_id":"workflow-checkpoint-run","checkpoint_id":"checkpoint-before-edit","message":"rollback failed edit"}`,
+	})
+	if err != nil {
+		t.Fatalf("restore_file_checkpoint: %v", err)
+	}
+	if !strings.Contains(restoreResp, "notes.txt") {
+		t.Fatalf("restore response should include restored file: %s", restoreResp)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "notes.txt"))
+	if err != nil {
+		t.Fatalf("read notes after restore: %v", err)
+	}
+	if string(data) != "before\n" {
+		t.Fatalf("file was not restored: %q", string(data))
+	}
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-checkpoint-run"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status: %v", err)
+	}
+	if !strings.Contains(statusResp, "checkpoint-before-edit") {
+		t.Fatalf("workflow_status should include checkpoint: %s", statusResp)
 	}
 }
