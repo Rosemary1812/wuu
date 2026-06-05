@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -307,7 +306,7 @@ func NewSession(opts Options) (*Session, error) {
 }
 
 func (s *Session) StartCronScheduler() error {
-	if s == nil || s.Toolkit == nil {
+	if s == nil || s.StreamRunner == nil {
 		return nil
 	}
 	if s.CronScheduler != nil {
@@ -326,9 +325,6 @@ func (s *Session) StartCronScheduler() error {
 		SessionStore: cron.NewSessionTaskStore(stateDir),
 		OnFire: func(task cron.Task) {
 			s.runScheduledPrompt(task)
-		},
-		OnWorkflowFire: func(task cron.Task) {
-			s.startScheduledWorkflow(task)
 		},
 		IsOwner: func() bool {
 			if ownsDurableTasks {
@@ -362,38 +358,6 @@ func (s *Session) runScheduledPrompt(task cron.Task) {
 	}
 	if _, err := runner.Run(context.Background(), prompt); err != nil {
 		providers.DebugLogf("cron prompt task %q failed: %v", task.ID, err)
-	}
-}
-
-func (s *Session) startScheduledWorkflow(task cron.Task) {
-	workflowName := strings.TrimSpace(task.WorkflowName)
-	if workflowName == "" || s.Toolkit == nil {
-		return
-	}
-	toolkit := s.Toolkit
-	if s.StreamRunner != nil {
-		if threadRT, err := s.NewThreadRuntime(scheduledCronSessionID("cron-workflow", task.ID)); err == nil && threadRT.Toolkit != nil {
-			toolkit = threadRT.Toolkit
-		} else if err != nil {
-			providers.DebugLogf("cron workflow task %q using shared toolkit after thread runtime error: %v", task.ID, err)
-		}
-	}
-
-	args := map[string]string{
-		"definition_name": workflowName,
-		"arguments":       strings.TrimSpace(task.WorkflowArguments),
-		"initial_status":  string(workflow.RunStateRunning),
-	}
-	payload, err := json.Marshal(args)
-	if err != nil {
-		providers.DebugLogf("cron workflow task %q failed to encode arguments: %v", task.ID, err)
-		return
-	}
-	if _, err := toolkit.Execute(context.Background(), providers.ToolCall{
-		Name:      "create_workflow",
-		Arguments: string(payload),
-	}); err != nil {
-		providers.DebugLogf("cron workflow task %q failed: %v", task.ID, err)
 	}
 }
 

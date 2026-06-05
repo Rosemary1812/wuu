@@ -97,11 +97,14 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("file store list: %v", err)
 	}
-	if len(fileTasks) != 1 || !fileTasks[0].IsWorkflow() {
+	if len(fileTasks) != 1 || fileTasks[0].Metadata["kind"] != "workflow" {
 		t.Fatalf("expected one workflow task, got %+v", fileTasks)
 	}
-	if fileTasks[0].WorkflowArguments != "settings search" || fileTasks[0].Prompt == "" {
+	if fileTasks[0].Metadata["workflow_arguments"] != "settings search" || fileTasks[0].Prompt == "" {
 		t.Fatalf("workflow task metadata missing: %+v", fileTasks[0])
+	}
+	if !strings.Contains(fileTasks[0].Prompt, `Start the saved workflow "weekly-qa"`) {
+		t.Fatalf("workflow task prompt missing workflow instruction: %q", fileTasks[0].Prompt)
 	}
 }
 

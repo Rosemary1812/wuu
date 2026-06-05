@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/cron"
@@ -58,66 +59,58 @@ func writeSessionTestFile(t *testing.T, path, content string) {
 	}
 }
 
-func TestCronSchedulerStartsWorkflowRuns(t *testing.T) {
+func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(t.TempDir(), "state")
 	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "wuu-home"))
 
-	kit, err := tools.New(root)
-	if err != nil {
-		t.Fatalf("tools.New: %v", err)
-	}
-	kit.SetStateDir(stateDir)
-	kit.SetWorkflows([]workflow.Definition{{
-		Name:    "weekly-qa",
-		Content: "# Weekly QA\n\n## Phases\n\n- Inspect\n- Report\n",
-		Source:  "project",
-		Path:    filepath.Join(root, ".claude", "workflows", "weekly-qa", "WORKFLOW.md"),
-		Dir:     filepath.Join(root, ".claude", "workflows", "weekly-qa"),
-	}})
-
 	taskStore := cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir))
+	prompt := "Run workflow weekly-qa with arguments: settings search"
 	if err := taskStore.Add(cron.Task{
-		ID:                "workflow-1",
-		Cron:              "* * * * *",
-		WorkflowName:      "weekly-qa",
-		WorkflowArguments: "settings search",
-		CreatedAt:         time.Now().Add(-2 * time.Minute).UnixMilli(),
-		Recurring:         false,
+		ID:        "prompt-1",
+		Cron:      "* * * * *",
+		Prompt:    prompt,
+		Metadata:  map[string]string{"kind": "workflow", "workflow_name": "weekly-qa"},
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+		Recurring: false,
 	}); err != nil {
 		t.Fatalf("taskStore.Add: %v", err)
 	}
 
-	rt := &Session{RootDir: root, StateDir: stateDir, Toolkit: kit}
+	client := &sessionRecordingClient{}
+	rt := &Session{
+		RootDir:  root,
+		StateDir: stateDir,
+		StreamRunner: &agent.StreamRunner{
+			Client: client,
+			Model:  "test-model",
+		},
+	}
 	if err := rt.StartCronScheduler(); err != nil {
 		t.Fatalf("StartCronScheduler: %v", err)
 	}
 	t.Cleanup(func() { _, _ = rt.Cleanup() })
 
-	workflowStore := workflow.NewStore(stateDir)
-	var runs []workflow.Run
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		runs, err = workflowStore.ListRuns()
-		if err != nil {
-			t.Fatalf("ListRuns: %v", err)
-		}
-		if len(runs) > 0 {
+		req := client.LastRequest()
+		if len(req.Messages) > 0 {
+			foundPrompt := false
+			for _, msg := range req.Messages {
+				if msg.Role == "user" && msg.Content == prompt {
+					foundPrompt = true
+					break
+				}
+			}
+			if !foundPrompt {
+				t.Fatalf("unexpected scheduled prompt request: %+v", req.Messages)
+			}
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if len(runs) != 1 {
-		t.Fatalf("expected one workflow run from scheduled task, got %+v", runs)
-	}
-	if runs[0].DefinitionName != "weekly-qa" || runs[0].Arguments != "settings search" {
-		t.Fatalf("unexpected workflow run metadata: %+v", runs[0])
-	}
-	if runs[0].Status != workflow.RunStateRunning {
-		t.Fatalf("workflow run status = %q, want running", runs[0].Status)
-	}
-	if len(runs[0].Phases) != 2 || runs[0].Phases[0].Status != workflow.PhaseStateRunnable {
-		t.Fatalf("workflow phases not initialized from definition: %+v", runs[0].Phases)
+	if len(client.LastRequest().Messages) == 0 {
+		t.Fatal("expected scheduled prompt to run")
 	}
 
 	tasks, err := taskStore.List()

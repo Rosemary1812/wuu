@@ -140,40 +140,37 @@ func TestScheduler_sessionTasksFireWithoutOwnerLock(t *testing.T) {
 	}
 }
 
-func TestScheduler_routesWorkflowTasks(t *testing.T) {
+func TestScheduler_firesMetadataTasksThroughPromptCallback(t *testing.T) {
 	store := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
 
-	var promptFired atomic.Int32
-	var workflowFired atomic.Int32
+	done := make(chan Task, 1)
 	s := NewScheduler(SchedulerConfig{
-		Store:  store,
-		OnFire: func(Task) { promptFired.Add(1) },
-		OnWorkflowFire: func(task Task) {
-			if task.WorkflowName != "weekly-qa" {
-				t.Fatalf("unexpected workflow task: %+v", task)
-			}
-			workflowFired.Add(1)
+		Store: store,
+		OnFire: func(task Task) {
+			done <- task
 		},
 		IsOwner: func() bool { return true },
 	})
 
 	if err := store.Add(Task{
-		ID:                "workflow-1",
-		Cron:              "* * * * *",
-		WorkflowName:      "weekly-qa",
-		WorkflowArguments: "settings",
-		CreatedAt:         time.Now().Add(-2 * time.Minute).UnixMilli(),
-		Recurring:         false,
+		ID:        "workflow-1",
+		Cron:      "* * * * *",
+		Prompt:    "Run workflow weekly-qa with arguments: settings",
+		Metadata:  map[string]string{"kind": "workflow", "workflow_name": "weekly-qa"},
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+		Recurring: false,
 	}); err != nil {
 		t.Fatalf("store.Add: %v", err)
 	}
 
 	s.check()
 
-	if workflowFired.Load() != 1 {
-		t.Fatalf("expected workflow fire, got %d", workflowFired.Load())
-	}
-	if promptFired.Load() != 0 {
-		t.Fatalf("workflow task should not use prompt OnFire when OnWorkflowFire is set, got %d", promptFired.Load())
+	select {
+	case task := <-done:
+		if task.Prompt == "" || task.Metadata["workflow_name"] != "weekly-qa" {
+			t.Fatalf("unexpected fired task: %+v", task)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for task fire")
 	}
 }
