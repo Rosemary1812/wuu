@@ -206,6 +206,9 @@ description: Weekly QA sweep.
 	if feature.Source != "project" || feature.Description != "Project feature workflow." {
 		t.Fatalf("project workflow should override user workflow: %+v", feature)
 	}
+	if !strings.Contains(rt.BaseSystemPrompt, "Project feature workflow.") || !strings.Contains(rt.BaseSystemPrompt, "`create_workflow`") {
+		t.Fatalf("workflow catalog not injected into system prompt:\n%s", rt.BaseSystemPrompt)
+	}
 	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 2 {
 		t.Fatalf("toolkit workflows not wired: %+v", rt.Toolkit)
 	}

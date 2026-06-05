@@ -8,6 +8,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/memory"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func TestBuilder_StaticBeforeDynamic(t *testing.T) {
@@ -119,6 +120,38 @@ func TestBuilder_AddSkills(t *testing.T) {
 	}
 }
 
+func TestBuilder_AddWorkflows(t *testing.T) {
+	workflows := []workflow.Definition{
+		{
+			Name:         "feature-delivery",
+			Description:  "Deliver a feature",
+			WhenToUse:    "When feature work spans implementation and QA",
+			ArgumentHint: "<feature request>",
+			Profiles:     []workflow.ProfileRef{{Name: "frontend_owner"}, {Name: "qa_reviewer", Required: true}},
+		},
+		{Name: "hidden", Description: "Hidden workflow", DisableModelInvoke: true},
+	}
+
+	var b Builder
+	b.AddWorkflows(workflows)
+	result := b.Build()
+
+	for _, want := range []string{
+		"feature-delivery",
+		"`create_workflow`",
+		"`workflow_control`",
+		"frontend_owner",
+		"qa_reviewer (required)",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("workflow prompt missing %q:\n%s", want, result)
+		}
+	}
+	if strings.Contains(result, "hidden") {
+		t.Fatal("DisableModelInvoke workflows should be excluded")
+	}
+}
+
 func TestBuilder_AddProfileMemoryGuidanceAndSnapshot(t *testing.T) {
 	entries := []store.Entry{
 		{
@@ -225,6 +258,9 @@ func TestBuilder_FullAssembly(t *testing.T) {
 	b.AddSkills([]skills.Skill{
 		{Name: "test", Description: "Run tests"},
 	})
+	b.AddWorkflows([]workflow.Definition{
+		{Name: "feature", Description: "Feature workflow"},
+	})
 	b.AddGitContext("Branch: main")
 
 	result := b.Build()
@@ -237,7 +273,7 @@ func TestBuilder_FullAssembly(t *testing.T) {
 	}
 
 	// All sections present.
-	for _, want := range []string{"coding agent", "Coordinator", "project rules", "test", "Branch: main"} {
+	for _, want := range []string{"coding agent", "Coordinator", "project rules", "test", "feature", "Branch: main"} {
 		if !strings.Contains(result, want) {
 			t.Errorf("missing %q in output", want)
 		}

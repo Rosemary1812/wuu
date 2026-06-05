@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/memory"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 const (
@@ -173,12 +174,72 @@ func (b *Builder) AddSkills(sks []skills.Skill) {
 	b.AddSection("skills", strings.TrimRight(sb.String(), "\n"), false)
 }
 
+// AddWorkflows adds reusable workflow definitions to session guidance.
+func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
+	visible := make([]workflow.Definition, 0, len(workflows))
+	for _, wf := range workflows {
+		if wf.DisableModelInvoke {
+			continue
+		}
+		visible = append(visible, wf)
+	}
+	if len(visible) == 0 {
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# Workflow guidance\n\n")
+	sb.WriteString("## Workflows\n\n")
+	sb.WriteString("The following workflows are available in this session. A workflow is a reusable, durable, multi-agent process. ")
+	sb.WriteString("Use workflows for long-running, scheduled, repeatable, or multi-phase work where chat context should not be the only state store.\n\n")
+	sb.WriteString("**How to use workflows:**\n")
+	sb.WriteString("1. Match the user's intent against the workflow catalog below.\n")
+	sb.WriteString("2. When a workflow applies, call `load_workflow` with its name and user arguments to inspect the full definition.\n")
+	sb.WriteString("3. Call `create_workflow` to create a durable Workflow Run with phases and a plan.\n")
+	sb.WriteString("4. Use `spawn_agent` for actual work. Set `agent_profile` only for durable named profiles; omit it for temporary workers.\n")
+	sb.WriteString("5. Use `workflow_control` to record phase and Agent Run status, and `workflow_status` to inspect progress before synthesis.\n\n")
+	sb.WriteString("**Workflow catalog:**\n\n")
+	for _, wf := range visible {
+		desc := wf.Description
+		if desc == "" {
+			desc = "(no description)"
+		}
+		fmt.Fprintf(&sb, "- **%s**: %s", wf.Name, desc)
+		if wf.WhenToUse != "" {
+			fmt.Fprintf(&sb, "\n  _When to use:_ %s", wf.WhenToUse)
+		}
+		if wf.ArgumentHint != "" {
+			fmt.Fprintf(&sb, "\n  _Arguments:_ `%s`", wf.ArgumentHint)
+		}
+		if len(wf.Profiles) > 0 {
+			fmt.Fprintf(&sb, "\n  _Profiles:_ %s", workflowProfileNames(wf.Profiles))
+		}
+		sb.WriteString("\n")
+	}
+	b.AddSection("workflows", strings.TrimRight(sb.String(), "\n"), false)
+}
+
 // AddGitContext adds git status information as a dynamic section.
 func (b *Builder) AddGitContext(gitInfo string) {
 	if strings.TrimSpace(gitInfo) == "" {
 		return
 	}
 	b.AddSection("git_context", "# Git Context\n\n"+gitInfo, false)
+}
+
+func workflowProfileNames(profiles []workflow.ProfileRef) string {
+	names := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		name := strings.TrimSpace(profile.Name)
+		if name == "" {
+			continue
+		}
+		if profile.Required {
+			name += " (required)"
+		}
+		names = append(names, name)
+	}
+	return strings.Join(names, ", ")
 }
 
 // Build returns the assembled system prompt. Static sections appear

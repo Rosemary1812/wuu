@@ -171,7 +171,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
 	profileMemoryEntries := recallProfileMemory(context.Background(), profileMemoryProvider)
-	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills)
+	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 
 	if toolkit != nil {
 		if err := agentcontrol.EnsureSharedDir(workspaceStateDir); err != nil {
@@ -199,7 +199,7 @@ func NewSession(opts Options) (*Session, error) {
 			HistoryDir:      "",
 			WorkerSysPrompt: baseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills)
+				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 			},
 			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := tools.New(workerRoot)
@@ -360,7 +360,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				HarnessDir:      filepath.Join(artifactDir, "harness"),
 				WorkerSysPrompt: s.BaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills)
+					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills, s.Workflows)
 				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 					workerKit, err := s.Toolkit.CloneForRoot(workerRoot)
@@ -804,7 +804,7 @@ func newProfileMemoryProvider(wuuHome, profileName string) (*memstore.FileProvid
 	return memstore.NewFileProvider(statepath.ProfileMemoryDir(profileStateDir))
 }
 
-func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt string, memoryFiles []memory.File, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill) (string, error) {
+func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt string, memoryFiles []memory.File, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) (string, error) {
 	name := strings.TrimSpace(profileName)
 	if name == "" || strings.EqualFold(name, config.DefaultAgentName) {
 		return "", nil
@@ -814,10 +814,10 @@ func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt stri
 		return "", err
 	}
 	entries := recallProfileMemory(context.Background(), provider)
-	return buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userPrompt, memoryFiles, entries, true, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills), nil
+	return buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userPrompt, memoryFiles, entries, true, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
 }
 
-func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill) string {
+func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
 	if strings.TrimSpace(userPrompt) != "" {
@@ -828,6 +828,7 @@ func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt string, memoryFiles [
 		pb.AddProfileMemoryWithLimits(profileMemoryEntries, profileMemoryCharLimit, profileUserMemoryCharLimit)
 	}
 	pb.AddSkills(discoveredSkills)
+	pb.AddWorkflows(discoveredWorkflows)
 	if worktree.IsGitRepo(rootDir) {
 		gitCtx := prompt.NewGitContext(rootDir)
 		pb.AddGitContext(gitCtx.Collect())
