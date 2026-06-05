@@ -2,7 +2,9 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
@@ -74,6 +77,8 @@ type Session struct {
 	WuuHome                     string
 	CoordinatorPreamble         string
 	ExperimentalCoordinatorMode bool
+	CronScheduler               *cron.Scheduler
+	CronLock                    *cron.Lock
 }
 
 // ThreadRuntime owns the mutable execution state for one app-server
@@ -301,6 +306,112 @@ func NewSession(opts Options) (*Session, error) {
 	}, nil
 }
 
+func (s *Session) StartCronScheduler() error {
+	if s == nil || s.Toolkit == nil {
+		return nil
+	}
+	if s.CronScheduler != nil {
+		return nil
+	}
+	stateDir := strings.TrimSpace(s.StateDir)
+	if stateDir == "" {
+		return fmt.Errorf("workspace state directory is required for cron scheduler")
+	}
+
+	lockID := fmt.Sprintf("runtime-%d-%d", os.Getpid(), time.Now().UnixNano())
+	lock := cron.NewLock(statepath.ScheduledTasksLockPath(stateDir), lockID)
+	ownsDurableTasks := false
+	scheduler := cron.NewScheduler(cron.SchedulerConfig{
+		Store:        cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir)),
+		SessionStore: cron.NewSessionTaskStore(stateDir),
+		OnFire: func(task cron.Task) {
+			s.runScheduledPrompt(task)
+		},
+		OnWorkflowFire: func(task cron.Task) {
+			s.startScheduledWorkflow(task)
+		},
+		IsOwner: func() bool {
+			if ownsDurableTasks {
+				return true
+			}
+			ok, err := lock.TryAcquire()
+			if err != nil {
+				providers.DebugLogf("cron scheduler lock acquire failed: %v", err)
+				return false
+			}
+			ownsDurableTasks = ok
+			return ok
+		},
+	})
+	s.CronLock = lock
+	s.CronScheduler = scheduler
+	scheduler.Start()
+	return nil
+}
+
+func (s *Session) runScheduledPrompt(task cron.Task) {
+	prompt := strings.TrimSpace(task.Prompt)
+	if prompt == "" || s.StreamRunner == nil {
+		return
+	}
+	runner := s.StreamRunner
+	if threadRT, err := s.NewThreadRuntime(scheduledCronSessionID("cron-task", task.ID)); err == nil && threadRT.StreamRunner != nil {
+		runner = threadRT.StreamRunner
+	} else if err != nil {
+		providers.DebugLogf("cron prompt task %q using shared runner after thread runtime error: %v", task.ID, err)
+	}
+	if _, err := runner.Run(context.Background(), prompt); err != nil {
+		providers.DebugLogf("cron prompt task %q failed: %v", task.ID, err)
+	}
+}
+
+func (s *Session) startScheduledWorkflow(task cron.Task) {
+	workflowName := strings.TrimSpace(task.WorkflowName)
+	if workflowName == "" || s.Toolkit == nil {
+		return
+	}
+	toolkit := s.Toolkit
+	if s.StreamRunner != nil {
+		if threadRT, err := s.NewThreadRuntime(scheduledCronSessionID("cron-workflow", task.ID)); err == nil && threadRT.Toolkit != nil {
+			toolkit = threadRT.Toolkit
+		} else if err != nil {
+			providers.DebugLogf("cron workflow task %q using shared toolkit after thread runtime error: %v", task.ID, err)
+		}
+	}
+
+	args := map[string]string{
+		"definition_name": workflowName,
+		"arguments":       strings.TrimSpace(task.WorkflowArguments),
+		"initial_status":  string(workflow.RunStateRunning),
+	}
+	payload, err := json.Marshal(args)
+	if err != nil {
+		providers.DebugLogf("cron workflow task %q failed to encode arguments: %v", task.ID, err)
+		return
+	}
+	if _, err := toolkit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: string(payload),
+	}); err != nil {
+		providers.DebugLogf("cron workflow task %q failed: %v", task.ID, err)
+	}
+}
+
+func scheduledCronSessionID(prefix, taskID string) string {
+	id := strings.TrimSpace(taskID)
+	var safe strings.Builder
+	for i := 0; i < len(id); i++ {
+		ch := id[i]
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
+			safe.WriteByte(ch)
+		}
+	}
+	if safe.Len() == 0 {
+		safe.WriteString("task")
+	}
+	return fmt.Sprintf("%s-%s-%d", prefix, safe.String(), time.Now().UnixNano())
+}
+
 // NewThreadRuntime creates a per-conversation execution runtime from the
 // shared workspace runtime. It intentionally does not mutate Session.Toolkit or
 // Session.AgentControl; those remain the legacy single-session runtime used by
@@ -520,6 +631,14 @@ func (s *Session) SetSessionID(id string) {
 func (s *Session) Cleanup() (process.CleanupResult, error) {
 	if s == nil {
 		return process.CleanupResult{}, nil
+	}
+	if s.CronScheduler != nil {
+		s.CronScheduler.Stop()
+		s.CronScheduler = nil
+	}
+	if s.CronLock != nil {
+		s.CronLock.Release()
+		s.CronLock = nil
 	}
 	if s.AgentControl != nil {
 		_ = s.AgentControl.CleanupSession()

@@ -11,6 +11,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/cron"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -54,6 +55,77 @@ func writeSessionTestFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func TestCronSchedulerStartsWorkflowRuns(t *testing.T) {
+	root := t.TempDir()
+	stateDir := filepath.Join(t.TempDir(), "state")
+	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "wuu-home"))
+
+	kit, err := tools.New(root)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+	kit.SetWorkflows([]workflow.Definition{{
+		Name:    "weekly-qa",
+		Content: "# Weekly QA\n\n## Phases\n\n- Inspect\n- Report\n",
+		Source:  "project",
+		Path:    filepath.Join(root, ".claude", "workflows", "weekly-qa", "WORKFLOW.md"),
+		Dir:     filepath.Join(root, ".claude", "workflows", "weekly-qa"),
+	}})
+
+	taskStore := cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir))
+	if err := taskStore.Add(cron.Task{
+		ID:                "workflow-1",
+		Cron:              "* * * * *",
+		WorkflowName:      "weekly-qa",
+		WorkflowArguments: "settings search",
+		CreatedAt:         time.Now().Add(-2 * time.Minute).UnixMilli(),
+		Recurring:         false,
+	}); err != nil {
+		t.Fatalf("taskStore.Add: %v", err)
+	}
+
+	rt := &Session{RootDir: root, StateDir: stateDir, Toolkit: kit}
+	if err := rt.StartCronScheduler(); err != nil {
+		t.Fatalf("StartCronScheduler: %v", err)
+	}
+	t.Cleanup(func() { _, _ = rt.Cleanup() })
+
+	workflowStore := workflow.NewStore(stateDir)
+	var runs []workflow.Run
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		runs, err = workflowStore.ListRuns()
+		if err != nil {
+			t.Fatalf("ListRuns: %v", err)
+		}
+		if len(runs) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected one workflow run from scheduled task, got %+v", runs)
+	}
+	if runs[0].DefinitionName != "weekly-qa" || runs[0].Arguments != "settings search" {
+		t.Fatalf("unexpected workflow run metadata: %+v", runs[0])
+	}
+	if runs[0].Status != workflow.RunStateRunning {
+		t.Fatalf("workflow run status = %q, want running", runs[0].Status)
+	}
+	if len(runs[0].Phases) != 2 || runs[0].Phases[0].Status != workflow.PhaseStateRunnable {
+		t.Fatalf("workflow phases not initialized from definition: %+v", runs[0].Phases)
+	}
+
+	tasks, err := taskStore.List()
+	if err != nil {
+		t.Fatalf("taskStore.List: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("one-shot workflow task should be removed after firing, got %+v", tasks)
 	}
 }
 
