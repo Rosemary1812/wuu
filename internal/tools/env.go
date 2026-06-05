@@ -12,6 +12,7 @@ import (
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 // ReadFileEntry tracks a successful read_file invocation for dedup
@@ -70,6 +71,7 @@ type Env struct {
 	ProcessMgr   *proc.Manager
 	AgentControl *agentcontrol.AgentControl
 	Skills       []skills.Skill
+	Workflows    []workflow.Definition
 	// OnFileChanged is called after write_file/edit_file successfully
 	// modifies a file. Enables FileChanged hook dispatch without
 	// coupling the tools package to the hooks package.
@@ -225,4 +227,37 @@ func (e *Env) ProcessSkillBody(ctx context.Context, skill skills.Skill, argument
 		Shell:            skill.Shell,
 		AllowInlineShell: true,
 	})
+}
+
+// FindWorkflow looks up a workflow definition by name.
+func (e *Env) FindWorkflow(name string) (workflow.Definition, bool) {
+	return workflow.Find(e.Workflows, name)
+}
+
+// WorkflowNames returns all available workflow definition names.
+func (e *Env) WorkflowNames() []string {
+	out := make([]string, 0, len(e.Workflows))
+	for _, wf := range e.Workflows {
+		out = append(out, wf.Name)
+	}
+	return out
+}
+
+// ProcessWorkflowBody performs workflow-safe variable substitution. Workflow
+// definitions do not execute inline shell; they produce orchestration plans.
+func (e *Env) ProcessWorkflowBody(def workflow.Definition, arguments string) string {
+	return workflow.ProcessBody(def.Content, workflow.ProcessOptions{
+		Arguments:   arguments,
+		WorkflowDir: def.Dir,
+		SessionID:   e.SessionID,
+	})
+}
+
+// WorkflowStore returns a durable workflow store rooted in workspace state.
+func (e *Env) WorkflowStore() (*workflow.Store, error) {
+	stateDir, err := e.WorkspaceStateDir()
+	if err != nil {
+		return nil, err
+	}
+	return workflow.NewStore(stateDir), nil
 }

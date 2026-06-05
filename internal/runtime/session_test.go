@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 type sessionRecordingClient struct {
@@ -44,6 +45,16 @@ func (c *sessionRecordingClient) LastRequest() providers.ChatRequest {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.last
+}
+
+func writeSessionTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 func TestNewSessionUsesUserStateNotWorkspaceDotWuu(t *testing.T) {
@@ -128,6 +139,83 @@ func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
 	for _, name := range []string{"read_memory", "write_memory"} {
 		if defs[name] {
 			t.Fatalf("default profile should not expose %s", name)
+		}
+	}
+}
+
+func TestNewSessionDiscoversWorkflowDefinitions(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	writeSessionTestFile(t, filepath.Join(home, ".claude", "workflows", "feature-delivery", "WORKFLOW.md"), `---
+name: feature-delivery
+description: User feature workflow.
+---
+
+## Phases
+
+1. User phase
+`)
+	writeSessionTestFile(t, filepath.Join(root, ".claude", "workflows", "feature-delivery", "WORKFLOW.md"), `---
+name: feature-delivery
+description: Project feature workflow.
+---
+
+## Phases
+
+1. Project phase
+`)
+	writeSessionTestFile(t, filepath.Join(home, ".claude", "workflows", "weekly-qa", "WORKFLOW.md"), `---
+name: weekly-qa
+description: Weekly QA sweep.
+---
+
+## Phases
+
+1. Inspect
+`)
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if len(rt.Workflows) != 2 {
+		t.Fatalf("Workflows = %+v", rt.Workflows)
+	}
+	feature, ok := workflow.Find(rt.Workflows, "feature-delivery")
+	if !ok {
+		t.Fatal("feature-delivery workflow not found")
+	}
+	if feature.Source != "project" || feature.Description != "Project feature workflow." {
+		t.Fatalf("project workflow should override user workflow: %+v", feature)
+	}
+	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 2 {
+		t.Fatalf("toolkit workflows not wired: %+v", rt.Toolkit)
+	}
+	defs := map[string]bool{}
+	for _, def := range rt.Toolkit.Definitions() {
+		defs[def.Name] = true
+	}
+	for _, name := range []string{"list_workflows", "load_workflow", "create_workflow", "workflow_status"} {
+		if !defs[name] {
+			t.Fatalf("workflow tool %q missing from Definitions()", name)
 		}
 	}
 }

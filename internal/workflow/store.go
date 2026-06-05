@@ -95,9 +95,11 @@ func (s *Store) Dir() string {
 }
 
 func (s *Store) CreateRun(run Run) (Run, error) {
-	if run.ID == "" {
-		return Run{}, fmt.Errorf("workflow run id is required")
+	runID, err := validateStoreID("workflow run", run.ID)
+	if err != nil {
+		return Run{}, err
 	}
+	run.ID = runID
 	if run.Status == "" {
 		run.Status = RunStateDraft
 	}
@@ -117,6 +119,14 @@ func (s *Store) CreateRun(run Run) (Run, error) {
 	if IsTerminalRunState(run.Status) && run.CompletedAt.IsZero() {
 		run.CompletedAt = now
 	}
+	if s != nil && s.dir != "" {
+		runPath := filepath.Join(s.runDir(run.ID), "run.json")
+		if _, err := os.Stat(runPath); err == nil {
+			return Run{}, fmt.Errorf("workflow run %q already exists", run.ID)
+		} else if !os.IsNotExist(err) {
+			return Run{}, err
+		}
+	}
 	if err := s.SaveRun(run); err != nil {
 		return Run{}, err
 	}
@@ -130,9 +140,11 @@ func (s *Store) SaveRun(run Run) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	if run.ID == "" {
-		return fmt.Errorf("workflow run id is required")
+	runID, err := validateStoreID("workflow run", run.ID)
+	if err != nil {
+		return err
 	}
+	run.ID = runID
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := os.MkdirAll(s.runDir(run.ID), 0755); err != nil {
@@ -146,9 +158,9 @@ func (s *Store) LoadRun(runID string) (Run, error) {
 	if s == nil || s.dir == "" {
 		return Run{}, fmt.Errorf("workflow store not configured")
 	}
-	runID = strings.TrimSpace(runID)
-	if runID == "" {
-		return Run{}, fmt.Errorf("workflow run id is required")
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return Run{}, err
 	}
 	var run Run
 	if err := readJSONFile(filepath.Join(s.runDir(runID), "run.json"), &run); err != nil {
@@ -257,12 +269,16 @@ func (s *Store) UpsertAgentRun(agent AgentRun) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	if agent.WorkflowRunID == "" {
-		return fmt.Errorf("workflow run id is required")
+	runID, err := validateStoreID("workflow run", agent.WorkflowRunID)
+	if err != nil {
+		return err
 	}
-	if agent.ID == "" {
-		return fmt.Errorf("workflow agent run id is required")
+	agentID, err := validateStoreID("workflow agent run", agent.ID)
+	if err != nil {
+		return err
 	}
+	agent.WorkflowRunID = runID
+	agent.ID = agentID
 	if agent.Status == "" {
 		agent.Status = AgentRunStateQueued
 	}
@@ -290,11 +306,58 @@ func (s *Store) LoadAgentRun(runID, agentRunID string) (AgentRun, error) {
 	if s == nil || s.dir == "" {
 		return AgentRun{}, fmt.Errorf("workflow store not configured")
 	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return AgentRun{}, err
+	}
+	agentRunID, err = validateStoreID("workflow agent run", agentRunID)
+	if err != nil {
+		return AgentRun{}, err
+	}
 	var agent AgentRun
 	if err := readJSONFile(filepath.Join(s.agentDir(runID), agentRunID+".json"), &agent); err != nil {
 		return AgentRun{}, err
 	}
 	return agent, nil
+}
+
+func (s *Store) ListAgentRuns(runID string) ([]AgentRun, error) {
+	if s == nil || s.dir == "" {
+		return nil, nil
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return nil, err
+	}
+	dir := s.agentDir(runID)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	agents := make([]AgentRun, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+			continue
+		}
+		var agent AgentRun
+		if err := readJSONFile(filepath.Join(dir, entry.Name()), &agent); err != nil {
+			continue
+		}
+		agents = append(agents, agent)
+	}
+	sort.Slice(agents, func(i, j int) bool {
+		if agents[i].PhaseID == agents[j].PhaseID {
+			if agents[i].TaskName == agents[j].TaskName {
+				return agents[i].ID < agents[j].ID
+			}
+			return agents[i].TaskName < agents[j].TaskName
+		}
+		return agents[i].PhaseID < agents[j].PhaseID
+	})
+	return agents, nil
 }
 
 func (s *Store) UpdateAgentRunStatus(runID, agentRunID string, status AgentRunState, message string) (AgentRun, error) {
@@ -329,6 +392,10 @@ func (s *Store) WritePlan(runID, content string) (string, error) {
 	if s == nil || s.dir == "" {
 		return "", nil
 	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return "", err
+	}
 	path := filepath.Join(s.runDir(runID), "plan.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return "", err
@@ -347,6 +414,10 @@ func (s *Store) WritePlan(runID, content string) (string, error) {
 func (s *Store) WriteFinalReport(runID, content string) (string, error) {
 	if s == nil || s.dir == "" {
 		return "", nil
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return "", err
 	}
 	path := filepath.Join(s.runDir(runID), "final-report.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -376,6 +447,10 @@ func (s *Store) ListEvents(runID string) ([]Event, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return nil, err
+	}
 	path := filepath.Join(s.runDir(runID), "events.jsonl")
 	file, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -404,9 +479,11 @@ func (s *Store) ListEvents(runID string) ([]Event, error) {
 }
 
 func (s *Store) appendEventLocked(event Event) error {
-	if event.RunID == "" {
-		return fmt.Errorf("workflow event run id is required")
+	runID, err := validateStoreID("workflow event run", event.RunID)
+	if err != nil {
+		return err
 	}
+	event.RunID = runID
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = time.Now().UTC()
 	}
@@ -435,6 +512,27 @@ func (s *Store) runDir(runID string) string {
 
 func (s *Store) agentDir(runID string) string {
 	return filepath.Join(s.runDir(runID), "agents")
+}
+
+func validateStoreID(kind, id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", fmt.Errorf("%s id is required", kind)
+	}
+	if id == "." || id == ".." {
+		return "", fmt.Errorf("%s id %q is invalid", kind, id)
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.':
+		default:
+			return "", fmt.Errorf("%s id %q contains invalid character %q", kind, id, r)
+		}
+	}
+	return id, nil
 }
 
 func writeJSONFile(path string, value any) error {

@@ -21,6 +21,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 const (
@@ -150,6 +151,11 @@ func (t *Toolkit) rebuildRegistry() {
 		NewWebFetchTool(e),
 		// Skills
 		NewLoadSkillTool(e),
+		// Workflows
+		NewListWorkflowsTool(e),
+		NewLoadWorkflowTool(e),
+		NewCreateWorkflowTool(e),
+		NewWorkflowStatusTool(e),
 		// Planning
 		NewUpdatePlanTool(e),
 		// Agent orchestration
@@ -204,9 +210,19 @@ func (t *Toolkit) SetSkills(s []skills.Skill) {
 	t.env.Skills = s
 }
 
+// SetWorkflows attaches the discovered workflow definitions.
+func (t *Toolkit) SetWorkflows(w []workflow.Definition) {
+	t.env.Workflows = w
+}
+
 // Skills returns the currently registered skills (read-only).
 func (t *Toolkit) Skills() []skills.Skill {
 	return t.env.Skills
+}
+
+// Workflows returns the currently registered workflow definitions (read-only).
+func (t *Toolkit) Workflows() []workflow.Definition {
+	return t.env.Workflows
 }
 
 // SetMemory attaches the memory store provider. Definitions exposes the

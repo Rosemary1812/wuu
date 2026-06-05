@@ -8,19 +8,20 @@ import "strings"
 type ToolKind string
 
 const (
-	ToolKindFile            ToolKind = "file"
-	ToolKindSearch          ToolKind = "search"
-	ToolKindDiscovery       ToolKind = "discovery"
-	ToolKindShell           ToolKind = "shell"
-	ToolKindGit             ToolKind = "git"
-	ToolKindWeb             ToolKind = "web"
-	ToolKindSkill           ToolKind = "skill"
-	ToolKindPlan            ToolKind = "plan"
-	ToolKindAgent           ToolKind = "agent"
-	ToolKindProcess         ToolKind = "process"
-	ToolKindSchedule        ToolKind = "schedule"
-	ToolKindMCP             ToolKind = "mcp"
-	ToolKindUnknown         ToolKind = "unknown"
+	ToolKindFile      ToolKind = "file"
+	ToolKindSearch    ToolKind = "search"
+	ToolKindDiscovery ToolKind = "discovery"
+	ToolKindShell     ToolKind = "shell"
+	ToolKindGit       ToolKind = "git"
+	ToolKindWeb       ToolKind = "web"
+	ToolKindSkill     ToolKind = "skill"
+	ToolKindWorkflow  ToolKind = "workflow"
+	ToolKindPlan      ToolKind = "plan"
+	ToolKindAgent     ToolKind = "agent"
+	ToolKindProcess   ToolKind = "process"
+	ToolKindSchedule  ToolKind = "schedule"
+	ToolKindMCP       ToolKind = "mcp"
+	ToolKindUnknown   ToolKind = "unknown"
 )
 
 // ToolExposure describes whether a known tool is currently visible to the
@@ -115,6 +116,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindWeb
 	case "load_skill":
 		return ToolKindSkill
+	case "list_workflows", "load_workflow", "create_workflow", "workflow_status":
+		return ToolKindWorkflow
 	case "update_plan":
 		return ToolKindPlan
 	case "spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "agent_report":

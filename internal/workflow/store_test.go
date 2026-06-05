@@ -180,6 +180,25 @@ func TestStoreListRunsSortsByCreatedAt(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsUnsafeAndDuplicateIDs(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.CreateRun(Run{ID: "../escape"}); err == nil {
+		t.Fatal("expected unsafe run id to be rejected")
+	}
+	if _, err := store.CreateRun(Run{ID: "safe-run"}); err != nil {
+		t.Fatalf("CreateRun safe-run: %v", err)
+	}
+	if _, err := store.CreateRun(Run{ID: "safe-run"}); err == nil {
+		t.Fatal("expected duplicate run id to be rejected")
+	}
+	if err := store.UpsertAgentRun(AgentRun{ID: "../agent", WorkflowRunID: "safe-run"}); err == nil {
+		t.Fatal("expected unsafe agent run id to be rejected")
+	}
+	if _, err := store.ListAgentRuns("../escape"); err == nil {
+		t.Fatal("expected unsafe list run id to be rejected")
+	}
+}
+
 func TestStoreUsesExpectedLayout(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
@@ -188,6 +207,13 @@ func TestStoreUsesExpectedLayout(t *testing.T) {
 	}
 	if err := store.UpsertAgentRun(AgentRun{ID: "agent_1", WorkflowRunID: "layout"}); err != nil {
 		t.Fatalf("UpsertAgentRun: %v", err)
+	}
+	agents, err := store.ListAgentRuns("layout")
+	if err != nil {
+		t.Fatalf("ListAgentRuns: %v", err)
+	}
+	if len(agents) != 1 || agents[0].ID != "agent_1" {
+		t.Fatalf("unexpected agent runs: %+v", agents)
 	}
 
 	for _, path := range []string{

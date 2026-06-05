@@ -28,6 +28,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 	"github.com/blueberrycongee/wuu/internal/worktree"
 )
 
@@ -59,6 +60,7 @@ type Session struct {
 	TitleClient                 providers.Client
 	HookDispatcher              *hooks.Dispatcher
 	Skills                      []skills.Skill
+	Workflows                   []workflow.Definition
 	Memory                      []memory.File
 	ProfileMemoryNudgeInterval  int
 	ProfileMemoryCharLimit      int
@@ -123,6 +125,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	hookDispatcher := buildHookDispatcher(cfg)
 	discoveredSkills := discoverSkills(rootDir, opts.HomeDir)
+	discoveredWorkflows := discoverWorkflows(rootDir, opts.HomeDir)
 
 	processMgr, err := process.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
 	if err != nil {
@@ -142,6 +145,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetStateDir(workspaceStateDir)
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
+		kit.SetWorkflows(discoveredWorkflows)
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.ConfigureEditToolsForModel(toolModeModel)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
@@ -211,6 +215,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetStateDir(workerStateDir)
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
+				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
 				wkit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 				wkit.ConfigureEditToolsForModel(toolModeModel)
@@ -279,6 +284,7 @@ func NewSession(opts Options) (*Session, error) {
 		TitleClient:                 client,
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
+		Workflows:                   discoveredWorkflows,
 		Memory:                      memoryFiles,
 		ProfileMemoryNudgeInterval:  profileMemoryNudgeInterval,
 		ProfileMemoryCharLimit:      profileMemoryCharLimit,
@@ -372,6 +378,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 					workerKit.SetStateDir(workerStateDir)
 					workerKit.SetProcessManager(s.ProcessManager)
 					workerKit.SetSkills(s.Skills)
+					workerKit.SetWorkflows(s.Workflows)
 					workerKit.SetAgentControl(control)
 					if strings.TrimSpace(meta.AgentProfile) != "" {
 						memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
@@ -397,6 +404,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		kit.SetStateDir(stateDir)
 		kit.SetProcessManager(s.ProcessManager)
 		kit.SetSkills(s.Skills)
+		kit.SetWorkflows(s.Workflows)
 		kit.SetAgentControl(agentControl)
 		kit.SetSessionID(id)
 		kit.SetSessionDir(artifactDir)
@@ -661,6 +669,15 @@ func discoverSkills(rootDir, homeDir string) []skills.Skill {
 		userSkillsDir = filepath.Join(homeDir, ".claude", "skills")
 	}
 	return skills.MergeWithBundled(skills.Discover(projectSkillsDir, userSkillsDir))
+}
+
+func discoverWorkflows(rootDir, homeDir string) []workflow.Definition {
+	projectWorkflowsDir := filepath.Join(rootDir, ".claude", "workflows")
+	userWorkflowsDir := ""
+	if homeDir != "" {
+		userWorkflowsDir = filepath.Join(homeDir, ".claude", "workflows")
+	}
+	return workflow.Discover(projectWorkflowsDir, userWorkflowsDir)
 }
 
 func connectMCPServers(cfg config.Config, toolkit *tools.Toolkit) {
