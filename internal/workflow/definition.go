@@ -1,0 +1,373 @@
+package workflow
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+// Definition is a reusable workflow asset discovered from project or user
+// workflow directories. It describes orchestration intent; a Definition is not
+// a running workflow instance.
+type Definition struct {
+	Name        string
+	Description string
+	WhenToUse   string
+	Content     string
+	Source      string
+	Path        string
+	Dir         string
+
+	ArgumentHint         string
+	UserInvocable        bool
+	DisableModelInvoke   bool
+	Version              string
+	MaxAgents            int
+	MaxConcurrency       int
+	Profiles             []ProfileRef
+	AllowProfileCreation string
+	MemoryPolicy         string
+}
+
+// ProfileRef describes a named Agent Profile that a workflow can use.
+type ProfileRef struct {
+	Name     string `json:"name"`
+	Required bool   `json:"required,omitempty"`
+}
+
+// Discover scans user and project workflow directories. Project workflows
+// override user workflows with the same name.
+func Discover(projectDir, userDir string) []Definition {
+	userWorkflows := scanDir(userDir, "user")
+	projectWorkflows := scanDir(projectDir, "project")
+
+	byName := make(map[string]Definition, len(userWorkflows)+len(projectWorkflows))
+	for _, wf := range userWorkflows {
+		byName[wf.Name] = wf
+	}
+	for _, wf := range projectWorkflows {
+		byName[wf.Name] = wf
+	}
+
+	result := make([]Definition, 0, len(byName))
+	for _, wf := range byName {
+		result = append(result, wf)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result
+}
+
+// Find returns a workflow by name. A leading slash is tolerated.
+func Find(workflows []Definition, name string) (Definition, bool) {
+	name = canonicalName(name)
+	for _, wf := range workflows {
+		if wf.Name == name {
+			return wf, true
+		}
+	}
+	return Definition{}, false
+}
+
+func scanDir(dir, source string) []Definition {
+	if dir == "" {
+		return nil
+	}
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var workflows []Definition
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if entry.IsDir() {
+			workflowFile := findWorkflowMD(path)
+			if workflowFile == "" {
+				continue
+			}
+			wf, parseErr := parseDefinitionFile(workflowFile, source)
+			if parseErr != nil {
+				continue
+			}
+			wf.Name = canonicalName(wf.Name)
+			wf.Dir = path
+			workflows = append(workflows, wf)
+			continue
+		}
+
+		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+			continue
+		}
+		wf, parseErr := parseDefinitionFile(path, source)
+		if parseErr != nil {
+			continue
+		}
+		wf.Name = canonicalName(wf.Name)
+		wf.Dir = filepath.Dir(path)
+		workflows = append(workflows, wf)
+	}
+	return workflows
+}
+
+func findWorkflowMD(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.EqualFold(entry.Name(), "WORKFLOW.md") {
+			return filepath.Join(dir, entry.Name())
+		}
+	}
+	return ""
+}
+
+func parseDefinitionFile(path, source string) (Definition, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Definition{}, err
+	}
+	return parseDefinitionContent(string(data), filepath.Base(path), source, filepath.Dir(path), path)
+}
+
+func parseDefinitionContent(content, filename, source, dir, path string) (Definition, error) {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return Definition{}, fmt.Errorf("no frontmatter")
+	}
+	closeIndex := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			closeIndex = i
+			break
+		}
+	}
+	if closeIndex < 0 {
+		return Definition{}, fmt.Errorf("unterminated frontmatter")
+	}
+
+	wf := Definition{
+		Source:        source,
+		Path:          path,
+		Dir:           dir,
+		UserInvocable: true,
+	}
+	parseFrontmatter(&wf, lines[1:closeIndex])
+	if wf.Name == "" {
+		if strings.EqualFold(filename, "WORKFLOW.md") {
+			wf.Name = filepath.Base(dir)
+		} else {
+			wf.Name = strings.TrimSuffix(filename, filepath.Ext(filename))
+		}
+	}
+	wf.Name = canonicalName(wf.Name)
+	wf.Content = strings.Join(lines[closeIndex+1:], "\n")
+	if wf.Description == "" {
+		wf.Description = firstMarkdownLine(wf.Content)
+	}
+	return wf, nil
+}
+
+func parseFrontmatter(wf *Definition, lines []string) {
+	for i := 0; i < len(lines); i++ {
+		key, value, ok := splitYAMLLine(lines[i])
+		if !ok {
+			continue
+		}
+		switch key {
+		case "name":
+			wf.Name = value
+		case "description":
+			wf.Description = value
+		case "when-to-use", "when_to_use":
+			wf.WhenToUse = value
+		case "argument-hint", "argument_hint":
+			wf.ArgumentHint = value
+		case "user-invocable", "user_invocable":
+			wf.UserInvocable = parseBool(value, true)
+		case "disable-model-invocation", "disable_model_invocation":
+			wf.DisableModelInvoke = parseBool(value, false)
+		case "version":
+			wf.Version = value
+		case "max-agents", "max_agents":
+			wf.MaxAgents = parseInt(value)
+		case "max-concurrency", "max_concurrency":
+			wf.MaxConcurrency = parseInt(value)
+		case "profiles":
+			if value != "" {
+				wf.Profiles = profileRefsFromNames(parseList(value))
+				continue
+			}
+			profiles, next := parseProfileBlock(lines, i+1)
+			wf.Profiles = profiles
+			i = next - 1
+		case "allow-profile-creation", "allow_profile_creation":
+			wf.AllowProfileCreation = value
+		case "memory-policy", "memory_policy":
+			wf.MemoryPolicy = value
+		}
+	}
+}
+
+func parseProfileBlock(lines []string, start int) ([]ProfileRef, int) {
+	var out []ProfileRef
+	var current *ProfileRef
+	i := start
+	for i < len(lines) {
+		raw := lines[i]
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			i++
+			continue
+		}
+		if !isIndented(raw) && !strings.HasPrefix(trimmed, "- ") {
+			break
+		}
+		if strings.HasPrefix(trimmed, "- ") {
+			if current != nil && current.Name != "" {
+				out = append(out, *current)
+			}
+			current = &ProfileRef{}
+			item := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+			if item != "" {
+				applyProfileItem(current, item)
+			}
+			i++
+			continue
+		}
+		if current != nil {
+			applyProfileItem(current, trimmed)
+		}
+		i++
+	}
+	if current != nil && current.Name != "" {
+		out = append(out, *current)
+	}
+	return out, i
+}
+
+func applyProfileItem(profile *ProfileRef, item string) {
+	key, value, ok := splitAnyYAMLLine(item)
+	if !ok {
+		profile.Name = trimQuotes(item)
+		return
+	}
+	switch key {
+	case "name":
+		profile.Name = value
+	case "required":
+		profile.Required = parseBool(value, false)
+	}
+}
+
+func profileRefsFromNames(names []string) []ProfileRef {
+	out := make([]ProfileRef, 0, len(names))
+	for _, name := range names {
+		name = trimQuotes(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		out = append(out, ProfileRef{Name: name})
+	}
+	return out
+}
+
+func isIndented(line string) bool {
+	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
+}
+
+func canonicalName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.TrimPrefix(name, "/")
+	return name
+}
+
+func splitYAMLLine(line string) (key, value string, ok bool) {
+	if isIndented(line) {
+		return "", "", false
+	}
+	return splitAnyYAMLLine(line)
+}
+
+func splitAnyYAMLLine(line string) (key, value string, ok bool) {
+	idx := strings.Index(line, ":")
+	if idx < 0 {
+		return "", "", false
+	}
+	key = strings.TrimSpace(line[:idx])
+	value = trimQuotes(strings.TrimSpace(line[idx+1:]))
+	return key, value, key != ""
+}
+
+func trimQuotes(value string) string {
+	return strings.Trim(value, `"'`)
+}
+
+func parseList(value string) []string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "[")
+	value = strings.TrimSuffix(value, "]")
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = trimQuotes(strings.TrimSpace(part))
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func parseBool(value string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "yes", "1", "on":
+		return true
+	case "false", "no", "0", "off":
+		return false
+	}
+	return def
+}
+
+func parseInt(value string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+func firstMarkdownLine(content string) string {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		line = strings.TrimLeft(line, "#")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if len(line) > 200 {
+			line = line[:200] + "..."
+		}
+		return line
+	}
+	return ""
+}
