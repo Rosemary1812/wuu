@@ -212,16 +212,17 @@ type SpawnRequest struct {
 
 // SpawnResult is what the spawn_agent tool returns to the model.
 type SpawnResult struct {
-	AgentID      string `json:"agent_id"`
-	TaskName     string `json:"task_name,omitempty"`
-	AgentProfile string `json:"agent_profile,omitempty"`
-	AgentPath    string `json:"agent_path,omitempty"`
-	Status       string `json:"status"`
-	Isolation    string `json:"isolation"`               // "inplace" or "worktree"
-	WorktreePath string `json:"worktree_path,omitempty"` // empty for inplace spawns
-	Result       string `json:"result,omitempty"`
-	Error        string `json:"error,omitempty"`
-	DurationMS   int64  `json:"duration_ms,omitempty"`
+	AgentID      string   `json:"agent_id"`
+	TaskName     string   `json:"task_name,omitempty"`
+	AgentProfile string   `json:"agent_profile,omitempty"`
+	AgentPath    string   `json:"agent_path,omitempty"`
+	Status       string   `json:"status"`
+	Isolation    string   `json:"isolation"`               // "inplace" or "worktree"
+	WorktreePath string   `json:"worktree_path,omitempty"` // empty for inplace spawns
+	Result       string   `json:"result,omitempty"`
+	Error        string   `json:"error,omitempty"`
+	DurationMS   int64    `json:"duration_ms,omitempty"`
+	NextSteps    []string `json:"next_steps,omitempty"`
 }
 
 type preparedSpawn struct {
@@ -308,6 +309,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			AgentPath:    threadMeta.Path,
 			Status:       "queued",
 			Isolation:    string(isolation),
+			NextSteps:    spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
 		}, nil
 	}
 
@@ -417,6 +419,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		Status:       string(sa.Status),
 		Isolation:    string(isolation),
 	}
+	result.NextSteps = spawnResultNextSteps(result.Status, req.Synchronous, result.Isolation, result.AgentPath)
 	if worktreeRef != nil {
 		result.WorktreePath = worktreeRef.Path
 	}
@@ -444,8 +447,50 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	if !snap.CompletedAt.IsZero() && !snap.StartedAt.IsZero() {
 		result.DurationMS = snap.CompletedAt.Sub(snap.StartedAt).Milliseconds()
 	}
+	result.NextSteps = spawnResultNextSteps(result.Status, true, result.Isolation, result.AgentPath)
 
 	return result, nil
+}
+
+func spawnResultNextSteps(status string, synchronous bool, isolation string, agentPath string) []string {
+	pathHint := strings.TrimSpace(agentPath)
+	if pathHint == "" {
+		pathHint = "this agent"
+	}
+	worktreeHint := ""
+	if IsolationMode(isolation) == IsolationWorktree {
+		worktreeHint = " Inspect worktree_path and the worker's patch artifacts before merging or relying on file changes."
+	}
+	switch subagent.Status(strings.TrimSpace(status)) {
+	case subagent.StatusQueued:
+		return []string{
+			"The worker is queued; do not spawn a duplicate for the same task unless requirements change.",
+			"Continue non-overlapping local work when available, or use await_agents with " + pathHint + " only when synthesis depends on this output.",
+		}
+	case subagent.StatusRunning:
+		return []string{
+			"Continue non-overlapping local work when available; the worker will report through the mailbox when it finishes.",
+			"Use await_agents with " + pathHint + " only when the next step depends on this worker's output." + worktreeHint,
+		}
+	case subagent.StatusCompleted:
+		if synchronous {
+			return []string{
+				"Inspect the worker result and any agent_report artifacts before relying on the handoff.",
+				"Use await_agents or workflow_control only if this result must be joined into a larger agent team or workflow record." + worktreeHint,
+			}
+		}
+		return []string{
+			"Inspect the worker's mailbox result and agent_report artifacts before relying on the handoff." + worktreeHint,
+		}
+	case subagent.StatusFailed:
+		return []string{
+			"Inspect error and any partial artifacts, then decide whether to retry with a narrower brief, rollback, or ask the user.",
+		}
+	default:
+		return []string{
+			"Inspect the worker status before deciding whether to continue local work, await the worker, retry, or close the task.",
+		}
+	}
 }
 
 // ForkRequest is the internal shape of a spawn_agent invocation with
@@ -541,6 +586,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			AgentPath:    threadMeta.Path,
 			Status:       "queued",
 			Isolation:    string(isolation),
+			NextSteps:    spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
 		}, nil
 	}
 
@@ -652,6 +698,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		Status:       string(sa.Status),
 		Isolation:    string(isolation),
 	}
+	result.NextSteps = spawnResultNextSteps(result.Status, req.Synchronous, result.Isolation, result.AgentPath)
 	if worktreeRef != nil {
 		result.WorktreePath = worktreeRef.Path
 	}
@@ -678,6 +725,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	if !snap.CompletedAt.IsZero() && !snap.StartedAt.IsZero() {
 		result.DurationMS = snap.CompletedAt.Sub(snap.StartedAt).Milliseconds()
 	}
+	result.NextSteps = spawnResultNextSteps(result.Status, true, result.Isolation, result.AgentPath)
 	return result, nil
 }
 

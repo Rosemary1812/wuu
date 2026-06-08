@@ -528,6 +528,9 @@ func TestAwaitFromWarnsOnOverlappingChangedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Spawn first: %v", err)
 	}
+	if !spawnStepsContain(first.NextSteps, "agent_report") {
+		t.Fatalf("synchronous spawn should suggest inspecting handoff artifacts, got %+v", first.NextSteps)
+	}
 	second, err := c.Spawn(context.Background(), SpawnRequest{Type: "worker", TaskName: "edit_two", Prompt: "two", Synchronous: true})
 	if err != nil {
 		t.Fatalf("Spawn second: %v", err)
@@ -575,6 +578,9 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
+	}
+	if !spawnStepsContain(res.NextSteps, "non-overlapping") || !spawnStepsContain(res.NextSteps, "await_agents") {
+		t.Fatalf("async spawn should guide non-blocking follow-up, got %+v", res.NextSteps)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
@@ -1846,6 +1852,16 @@ func subagentSnapshotWithError(err error) subagent.SubAgentSnapshot {
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func spawnStepsContain(steps []string, needle string) bool {
+	needle = strings.ToLower(needle)
+	for _, step := range steps {
+		if strings.Contains(strings.ToLower(step), needle) {
 			return true
 		}
 	}
