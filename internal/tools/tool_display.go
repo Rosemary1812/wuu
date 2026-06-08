@@ -58,6 +58,12 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("command", "运行命令")
 		}
 		return toolDisplay("command", "运行 "+displayTruncate(command, 100))
+	case "run_test":
+		command := displayString(args, "command")
+		if command == "" {
+			return toolDisplay("test", "运行测试")
+		}
+		return toolDisplay("test", "验证 "+displayTruncate(command, 100))
 	case "git":
 		return toolDisplay("command", displayGitLabel(args))
 	case "web_search":

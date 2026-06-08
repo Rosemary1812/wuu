@@ -12,6 +12,7 @@ const (
 	ToolKindSearch    ToolKind = "search"
 	ToolKindDiscovery ToolKind = "discovery"
 	ToolKindShell     ToolKind = "shell"
+	ToolKindTest      ToolKind = "test"
 	ToolKindGit       ToolKind = "git"
 	ToolKindWeb       ToolKind = "web"
 	ToolKindSkill     ToolKind = "skill"
@@ -110,6 +111,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindDiscovery
 	case "run_shell":
 		return ToolKindShell
+	case "run_test":
+		return ToolKindTest
 	case "git":
 		return ToolKindGit
 	case "web_search", "web_fetch":

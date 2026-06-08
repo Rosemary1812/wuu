@@ -144,6 +144,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewGlobTool(e),
 		// Shell
 		NewShellTool(e),
+		NewRunTestTool(e),
 		// Git
 		NewGitTool(e),
 		// Web

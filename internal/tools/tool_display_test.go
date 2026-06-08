@@ -43,6 +43,11 @@ func TestToolkitToolDisplayFormatsBuiltInTools(t *testing.T) {
 			want: providers.ToolCallDisplay{Kind: "command", Text: "运行 npm run typecheck"},
 		},
 		{
+			name: "test",
+			call: providers.ToolCall{Name: "run_test", Arguments: `{"command":"go test ./internal/tools"}`},
+			want: providers.ToolCallDisplay{Kind: "test", Text: "验证 go test ./internal/tools"},
+		},
+		{
 			name: "create workflow",
 			call: providers.ToolCall{Name: "create_workflow", Arguments: `{"definition_name":"feature-delivery"}`},
 			want: providers.ToolCallDisplay{Kind: "workflow", Text: "创建工作流 feature-delivery"},

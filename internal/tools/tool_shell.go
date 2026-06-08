@@ -92,11 +92,41 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 		timeout = maxShellTimeoutSeconds
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	result, err := executeShellCommand(ctx, t.env, args.Command, timeout)
+	if err != nil {
+		return "", err
+	}
+	return mustJSON(result)
+}
+
+type shellExecutionResult struct {
+	Command             string             `json:"command"`
+	Classification      ToolClassification `json:"classification"`
+	ExitCode            int                `json:"exit_code"`
+	DurationMS          int64              `json:"duration_ms"`
+	TimedOut            bool               `json:"timed_out"`
+	Truncated           bool               `json:"truncated"`
+	Output              string             `json:"output"`
+	StdoutTail          string             `json:"stdout_tail"`
+	StderrTail          string             `json:"stderr_tail"`
+	StdoutBytes         int                `json:"stdout_bytes"`
+	StderrBytes         int                `json:"stderr_bytes"`
+	StdoutTailTruncated bool               `json:"stdout_tail_truncated"`
+	StderrTailTruncated bool               `json:"stderr_tail_truncated"`
+}
+
+func executeShellCommand(ctx context.Context, env *Env, command string, timeoutSeconds int) (shellExecutionResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if env == nil {
+		env = &Env{}
+	}
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, "bash", "-lc", args.Command)
-	cmd.Dir = t.env.RootDir
+	cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
+	cmd.Dir = env.RootDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 
 	var stdout bytes.Buffer
@@ -115,7 +145,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 		} else if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			exitCode = 124
 		} else {
-			return "", fmt.Errorf("run command: %w", err)
+			return shellExecutionResult{}, fmt.Errorf("run command: %w", err)
 		}
 	}
 
@@ -126,22 +156,21 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	stdoutTail, stdoutTailTruncated := tailString(stdoutText, maxShellTailBytes)
 	stderrTail, stderrTailTruncated := tailString(stderrText, maxShellTailBytes)
 
-	result := map[string]any{
-		"command":               args.Command,
-		"classification":        classifyShellCommand(args.Command),
-		"exit_code":             exitCode,
-		"duration_ms":           durationMS,
-		"timed_out":             errors.Is(runCtx.Err(), context.DeadlineExceeded),
-		"truncated":             truncated,
-		"output":                trimmed,
-		"stdout_tail":           stdoutTail,
-		"stderr_tail":           stderrTail,
-		"stdout_bytes":          len(stdoutText),
-		"stderr_bytes":          len(stderrText),
-		"stdout_tail_truncated": stdoutTailTruncated,
-		"stderr_tail_truncated": stderrTailTruncated,
-	}
-	return mustJSON(result)
+	return shellExecutionResult{
+		Command:             command,
+		Classification:      classifyShellCommand(command),
+		ExitCode:            exitCode,
+		DurationMS:          durationMS,
+		TimedOut:            errors.Is(runCtx.Err(), context.DeadlineExceeded),
+		Truncated:           truncated,
+		Output:              trimmed,
+		StdoutTail:          stdoutTail,
+		StderrTail:          stderrTail,
+		StdoutBytes:         len(stdoutText),
+		StderrBytes:         len(stderrText),
+		StdoutTailTruncated: stdoutTailTruncated,
+		StderrTailTruncated: stderrTailTruncated,
+	}, nil
 }
 
 func tailString(value string, maxBytes int) (string, bool) {

@@ -755,6 +755,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
+		{name: "run_test", kind: ToolKindTest, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "wait_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: true, concurrencySafe: true},
 		{name: "await_agents", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: true, concurrencySafe: true},
@@ -949,6 +950,103 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "shell command may read secrets" {
 		t.Fatalf("secret-reading shell metadata = %+v, want high-risk secret classification", meta)
+	}
+}
+
+func TestToolkit_RunTestToolExecutesVerificationCommand(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/run-test\n\ngo 1.22\n")
+	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package runtest
+
+import "testing"
+
+func TestOK(t *testing.T) {}
+`)
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"go test ./...","scope":"targeted","purpose":"verify test wrapper"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_test: %v", err)
+	}
+	var got struct {
+		Passed         bool               `json:"passed"`
+		ExitCode       int                `json:"exit_code"`
+		Scope          string             `json:"scope"`
+		Classification ToolClassification `json:"classification"`
+		FailureSummary testFailureSummary `json:"failure_summary"`
+	}
+	if err := json.Unmarshal([]byte(resp), &got); err != nil {
+		t.Fatalf("parse run_test response: %v\n%s", err, resp)
+	}
+	if !got.Passed || got.ExitCode != 0 || got.Scope != "targeted" {
+		t.Fatalf("unexpected run_test success response: %+v", got)
+	}
+	if got.Classification.Risk != ToolRiskMedium || got.Classification.Reason != "local verification command" {
+		t.Fatalf("unexpected run_test classification: %+v", got.Classification)
+	}
+	if got.FailureSummary.Failed {
+		t.Fatalf("passing test should not report failure summary: %+v", got.FailureSummary)
+	}
+}
+
+func TestToolkit_RunTestToolSummarizesFailures(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/run-test\n\ngo 1.22\n")
+	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package runtest
+
+import "testing"
+
+func TestBroken(t *testing.T) {
+	t.Fatalf("expected 1 got 2")
+}
+`)
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"go test ./...","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_test should return failed test output, not tool error: %v", err)
+	}
+	var got struct {
+		Passed         bool               `json:"passed"`
+		ExitCode       int                `json:"exit_code"`
+		FailureSummary testFailureSummary `json:"failure_summary"`
+	}
+	if err := json.Unmarshal([]byte(resp), &got); err != nil {
+		t.Fatalf("parse run_test response: %v\n%s", err, resp)
+	}
+	if got.Passed || got.ExitCode == 0 || !got.FailureSummary.Failed {
+		t.Fatalf("unexpected failed run_test response: %+v", got)
+	}
+	if len(got.FailureSummary.FailingTests) == 0 || got.FailureSummary.FailingTests[0] != "TestBroken" {
+		t.Fatalf("failure summary missing failing test: %+v", got.FailureSummary)
+	}
+}
+
+func TestToolkit_RunTestToolRejectsNonVerificationCommands(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"pwd"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "local verification commands") {
+		t.Fatalf("expected non-verification command rejection, got %v", err)
 	}
 }
 

@@ -51,7 +51,7 @@ func TestLookupWorkerType_Unknown(t *testing.T) {
 func TestFilterToolsForWorker_Worker(t *testing.T) {
 	wt, _ := LookupWorkerType("worker")
 	full := []string{
-		"read_file", "write_file", "edit_file", "run_shell",
+		"read_file", "write_file", "edit_file", "run_shell", "run_test",
 		"grep", "glob", "spawn_agent", "send_message", "followup_task",
 		"wait_agent", "close_agent", "list_agents",
 	}
@@ -61,7 +61,7 @@ func TestFilterToolsForWorker_Worker(t *testing.T) {
 		allowed[n] = true
 	}
 	// Worker has nil AllowedTools → all non-orchestration tools allowed.
-	for _, expected := range []string{"read_file", "write_file", "edit_file", "run_shell", "grep", "glob"} {
+	for _, expected := range []string{"read_file", "write_file", "edit_file", "run_shell", "run_test", "grep", "glob"} {
 		if !allowed[expected] {
 			t.Errorf("worker missing %s", expected)
 		}

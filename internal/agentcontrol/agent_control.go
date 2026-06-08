@@ -1921,7 +1921,7 @@ When the user's intent is unclear, the task depends on requirements or tradeoffs
 
 ## Workers
 
-Workers have the full tool set including read_file, write_file, edit_file, run_shell, grep, glob, and git. They execute tasks autonomously.
+Workers have the full tool set including read_file, write_file, edit_file, run_shell, run_test, grep, glob, and git. They execute tasks autonomously.
 
 ## Task Workflow
 

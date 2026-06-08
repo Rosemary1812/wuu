@@ -145,6 +145,8 @@ func classifyToolRisk(_ string, kind ToolKind, readOnly bool) ToolRisk {
 	switch kind {
 	case ToolKindShell, ToolKindGit:
 		return ToolRiskHigh
+	case ToolKindTest:
+		return ToolRiskMedium
 	case ToolKindFile:
 		if readOnly {
 			return ToolRiskLow
