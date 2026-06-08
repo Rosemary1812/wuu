@@ -3,35 +3,23 @@ package prompt
 import (
 	"fmt"
 	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 )
 
-type HarnessFamily string
+type HarnessFamily = modelprofile.Family
 
 const (
-	HarnessFamilyPortable HarnessFamily = "portable"
-	HarnessFamilyClaude   HarnessFamily = "claude"
-	HarnessFamilyCodex    HarnessFamily = "codex"
-	HarnessFamilyGPT      HarnessFamily = "gpt"
-	HarnessFamilyGemini   HarnessFamily = "gemini"
-	HarnessFamilyKimi     HarnessFamily = "kimi"
+	HarnessFamilyPortable = modelprofile.FamilyPortable
+	HarnessFamilyClaude   = modelprofile.FamilyClaude
+	HarnessFamilyCodex    = modelprofile.FamilyCodex
+	HarnessFamilyGPT      = modelprofile.FamilyGPT
+	HarnessFamilyGemini   = modelprofile.FamilyGemini
+	HarnessFamilyKimi     = modelprofile.FamilyKimi
 )
 
 func HarnessFamilyForModel(providerName, model string) HarnessFamily {
-	id := strings.ToLower(strings.TrimSpace(providerName + "/" + model))
-	switch {
-	case strings.Contains(id, "claude") || strings.Contains(id, "anthropic"):
-		return HarnessFamilyClaude
-	case strings.Contains(id, "codex"):
-		return HarnessFamilyCodex
-	case strings.Contains(id, "gpt") || strings.Contains(id, "openai"):
-		return HarnessFamilyGPT
-	case strings.Contains(id, "gemini"):
-		return HarnessFamilyGemini
-	case strings.Contains(id, "kimi") || strings.Contains(id, "moonshot"):
-		return HarnessFamilyKimi
-	default:
-		return HarnessFamilyPortable
-	}
+	return modelprofile.Resolve(providerName, model).Family
 }
 
 func (b *Builder) AddHarnessAdapter(providerName, model string) {
@@ -48,27 +36,34 @@ func HarnessAdapterText(providerName, model string) string {
 	if providerName == "" && model == "" {
 		return ""
 	}
-	family := HarnessFamilyForModel(providerName, model)
+	profile := modelprofile.Resolve(providerName, model)
 	header := "# Harness Adapter\n\n" +
-		fmt.Sprintf("Provider/model: %s/%s. Treat model behavior, prompts, tools, and subagents as one harness. Follow the model-family guidance below when choosing workflow, subagent, and tool style.\n\n", providerName, model)
-	switch family {
-	case HarnessFamilyClaude:
+		fmt.Sprintf("Provider/model: %s/%s. Profile family: %s. Default write mode: %s. Treat model behavior, prompts, tools, and subagents as one harness. Follow the model-family guidance below when choosing workflow, subagent, and tool style.\n\n", providerName, model, profile.Family, profile.Workflow.DefaultWriteMode)
+	switch profile.Family {
+	case modelprofile.FamilyClaude:
 		return header + strings.Join([]string{
 			"- Prefer the script driver for executable workflow definitions: load the saved script, call run_workflow, and let the script manage phase/spawn/await/synthesize state under the same Workflow Run and Workflow Team model.",
 			"- Use subagents for parallel research, verification, and isolated implementation when the worker brief is explicit and self-contained.",
 			"- Keep workflow and worker state in Workflow Run state, Agent Reports, and artifacts instead of carrying long-running state only in chat.",
 		}, "\n")
-	case HarnessFamilyCodex, HarnessFamilyGPT:
+	case modelprofile.FamilyCodex, modelprofile.FamilyGPT:
 		return header + strings.Join([]string{
 			"- Prefer compact, tool-contract-driven control flow: inspect, plan only when useful, execute, verify, and report.",
+			"- Prefer apply_patch when it is exposed for this model profile; otherwise use exact edit_file replacements and write_file only for new or explicitly rewritten files.",
 			"- Use workflow drivers only when durable state, scheduling, repeatability, or multi-agent coordination matters; do not turn ordinary implementation into workflow ceremony.",
 			"- Use specialized modes such as review or goal tracking as separate task modes when available instead of folding every task into workflow state.",
 		}, "\n")
-	case HarnessFamilyGemini, HarnessFamilyKimi:
+	case modelprofile.FamilyGemini, modelprofile.FamilyKimi, modelprofile.FamilyDeepSeek, modelprofile.FamilyQwen:
 		return header + strings.Join([]string{
 			"- Treat tool schemas and tool descriptions as the source of truth; avoid relying on model-family-specific aliases or hidden conventions.",
 			"- Prefer portable primitives: spawn_agent for delegated workers, run_workflow for the script driver, create_workflow for agent-managed workflow state.",
 			"- Keep prompts explicit about required inputs, expected outputs, and tool result handling.",
+		}, "\n")
+	case modelprofile.FamilyLocal:
+		return header + strings.Join([]string{
+			"- Use a conservative local-model harness path: small context, few tools, explicit file evidence, and short autonomous loops.",
+			"- Prefer read/search plus small guarded edits; ask for review before broad writes, shell execution, or risky workflow branching.",
+			"- Keep task briefs explicit and self-contained when delegation or workflow execution depends on another agent.",
 		}, "\n")
 	default:
 		return header + strings.Join([]string{

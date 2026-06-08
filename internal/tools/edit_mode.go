@@ -1,6 +1,6 @@
 package tools
 
-import "strings"
+import "github.com/blueberrycongee/wuu/internal/modelprofile"
 
 type EditToolMode string
 
@@ -9,16 +9,16 @@ const (
 	EditToolModePatch EditToolMode = "patch"
 )
 
-// EditToolModeForModel follows OpenCode's current split: GPT-family models
-// except GPT-4 and OSS variants get apply_patch; other models keep edit/write.
+// EditToolModeForModel keeps the legacy one-argument helper for tests and
+// callers that only know the API model. New runtime code should pass provider
+// name too so the model profile can use both signals.
 func EditToolModeForModel(model string) EditToolMode {
-	id := strings.ToLower(strings.TrimSpace(model))
-	if idx := strings.LastIndex(id, "/"); idx >= 0 {
-		id = id[idx+1:]
-	}
-	if strings.Contains(id, "gpt-") &&
-		!strings.Contains(id, "gpt-4") &&
-		!strings.Contains(id, "oss") {
+	return EditToolModeForProviderModel("", model)
+}
+
+func EditToolModeForProviderModel(providerName, model string) EditToolMode {
+	profile := modelprofile.Resolve(providerName, model)
+	if profile.Workflow.DefaultWriteMode == modelprofile.WriteModePatch {
 		return EditToolModePatch
 	}
 	return EditToolModeText
@@ -26,6 +26,10 @@ func EditToolModeForModel(model string) EditToolMode {
 
 func (t *Toolkit) ConfigureEditToolsForModel(model string) {
 	t.SetEditToolMode(EditToolModeForModel(model))
+}
+
+func (t *Toolkit) ConfigureEditToolsForProviderModel(providerName, model string) {
+	t.SetEditToolMode(EditToolModeForProviderModel(providerName, model))
 }
 
 func (t *Toolkit) SetEditToolMode(mode EditToolMode) {

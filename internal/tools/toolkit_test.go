@@ -704,6 +704,24 @@ func TestToolkit_EditToolModeForModelMatchesOpenCodeRule(t *testing.T) {
 	}
 }
 
+func TestToolkit_EditToolModeForProviderModelUsesProfileFamily(t *testing.T) {
+	tests := []struct {
+		provider string
+		model    string
+		want     EditToolMode
+	}{
+		{provider: "openai", model: "gpt-5-codex", want: EditToolModePatch},
+		{provider: "anthropic", model: "claude-sonnet-4-5", want: EditToolModeText},
+		{provider: "google", model: "gemini-2.5-pro", want: EditToolModeText},
+		{provider: "ollama", model: "llama-coder", want: EditToolModeText},
+	}
+	for _, tt := range tests {
+		if got := EditToolModeForProviderModel(tt.provider, tt.model); got != tt.want {
+			t.Fatalf("EditToolModeForProviderModel(%q, %q) = %s, want %s", tt.provider, tt.model, got, tt.want)
+		}
+	}
+}
+
 func TestToolkit_EditToolModeControlsDefinitionsAndExecution(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
