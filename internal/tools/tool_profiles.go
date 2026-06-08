@@ -23,8 +23,8 @@ func (t *ListAgentProfilesTool) IsConcurrencySafe() bool { return true }
 func (t *ListAgentProfilesTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "list_agent_profiles",
-		Description: "List durable named Agent Profiles that can be reused when planning a dynamic workflow team. " +
-			"Use this before deciding whether a workflow role should reuse an existing memory-bearing profile, create a new profile, or use an ephemeral memoryless worker.",
+		Description: "List durable named Agent Profiles that can be reused by subagents, workflow teams, or other recurring delegated roles. " +
+			"Use this before deciding whether a role should reuse an existing memory-bearing profile, create a new profile, or use an ephemeral memoryless worker.",
 		InputSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -57,8 +57,8 @@ func (t *CreateAgentProfileTool) IsConcurrencySafe() bool { return true }
 func (t *CreateAgentProfileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "create_agent_profile",
-		Description: "Create or update a durable named Agent Profile identity for recurring workflow roles. " +
-			"Use only when the role is likely to recur or the user/workflow policy asks for a named memory-bearing agent; use ephemeral spawn_agent without agent_profile for one-off workers.",
+		Description: "Create or update a durable named Agent Profile identity for recurring subagent or workflow roles. " +
+			"Use only when the role is likely to recur or the user, workflow, or agent policy asks for a named memory-bearing agent; use ephemeral spawn_agent without agent_profile for one-off workers.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -76,7 +76,7 @@ func (t *CreateAgentProfileTool) Definition() providers.ToolDefinition {
 				},
 				"workflow_name": map[string]any{
 					"type":        "string",
-					"description": "Optional workflow definition name that motivated this profile.",
+					"description": "Optional workflow definition name that motivated this profile. Leave empty for general subagent identities.",
 				},
 			},
 			"required": []string{"name"},

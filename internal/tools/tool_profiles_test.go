@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -63,5 +64,35 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 	}
 	if listed.Count != 1 || listed.Profiles[0].Name != "qa_laowang" || listed.Profiles[0].Role != "QA reviewer" {
 		t.Fatalf("unexpected profile list: %+v", listed)
+	}
+}
+
+func TestAgentProfileToolDescriptionsAreGeneralDelegationProfiles(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	descriptions := map[string]string{}
+	for _, def := range kit.Definitions() {
+		switch def.Name {
+		case "list_agent_profiles", "create_agent_profile":
+			descriptions[def.Name] = def.Description
+		}
+	}
+	for _, name := range []string{"list_agent_profiles", "create_agent_profile"} {
+		desc := descriptions[name]
+		if desc == "" {
+			t.Fatalf("%s definition missing", name)
+		}
+		for _, want := range []string{"subagent", "recurring", "memory-bearing"} {
+			if !strings.Contains(desc, want) {
+				t.Fatalf("%s description missing %q: %q", name, want, desc)
+			}
+		}
+		if strings.Contains(desc, "recurring workflow roles") || strings.Contains(desc, "dynamic workflow team") {
+			t.Fatalf("%s description should not make profiles workflow-only: %q", name, desc)
+		}
 	}
 }

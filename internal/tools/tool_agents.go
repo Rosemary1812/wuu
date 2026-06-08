@@ -44,7 +44,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Use a child only when delegation materially improves the task: independent investigation, " +
 			"parallel implementation slices, risky verification, or work that benefits from a separate context. " +
 			"Ordinary child agents are memoryless. Set agent_profile only when the user asks to wake or use a named " +
-			"Workflow Agent/Profile with durable memory; the profile name is the agent's long-lived identity, while " +
+			"Agent Profile with durable memory, or when a workflow/profile policy requires one; the profile name is the agent's long-lived identity, while " +
 			"task_name is only this child task's path segment. Do not set agent_profile for routine one-off delegation. " +
 			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
 			"Write a concrete brief using the shared Base Agent Brief Contract. " +
@@ -87,7 +87,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"agent_profile": map[string]any{
 					"type":        "string",
-					"description": "Optional durable Workflow Agent/Profile name to wake for this task. Use only when the user explicitly wants a named memory-bearing agent; omit for ordinary memoryless child tasks. This is the long-lived agent identity, not the task path segment.",
+					"description": "Optional durable Agent Profile name to wake for this task. Use only when the user explicitly wants a named memory-bearing agent or a workflow/profile policy requires one; omit for ordinary memoryless child tasks. This is the long-lived agent identity, not the task path segment.",
 				},
 				"message": map[string]any{
 					"type":        "string",
