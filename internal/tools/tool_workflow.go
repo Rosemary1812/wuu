@@ -642,6 +642,9 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		if !ok {
 			return "", fmt.Errorf("workflow %q not found. available: %s", args.DefinitionName, strings.Join(t.env.WorkflowNames(), ", "))
 		}
+		if workflowDefinitionKind(found) == workflow.DefinitionKindScript {
+			return "", fmt.Errorf("workflow %q is kind=script; use run_workflow so the script driver owns phase/spawn/await/synthesis control", found.Name)
+		}
 		def = found
 		body = t.env.ProcessWorkflowBody(def, args.Arguments)
 	}

@@ -421,6 +421,15 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 		t.Fatalf("script workflow should not expose markdown phase suggestions: %+v", loaded.SuggestedPhaseNames)
 	}
 
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: `{"definition_name":"dynamic-review","run_id":"wrong-driver"}`,
+	}); err == nil {
+		t.Fatal("create_workflow should reject script workflow definitions")
+	} else if !strings.Contains(err.Error(), "kind=script") || !strings.Contains(err.Error(), "run_workflow") {
+		t.Fatalf("create_workflow script rejection should point to run_workflow, got: %v", err)
+	}
+
 	runResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name: "run_workflow",
 		Arguments: `{
