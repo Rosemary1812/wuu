@@ -159,6 +159,12 @@ func TestToolkit_Git_CommitAllowedOnStagedChanges(t *testing.T) {
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("commit: %v", p)
 	}
+	if sha, _ := p["commit_sha"].(string); len(sha) != 40 {
+		t.Fatalf("commit response missing full commit sha: %+v", p)
+	}
+	if subject, _ := p["commit_subject"].(string); subject != "Add staged file" {
+		t.Fatalf("commit response subject = %q, want Add staged file", subject)
+	}
 	log := runBash(t, root, "git log -1 --format=%s")
 	if strings.TrimSpace(log) != "Add staged file" {
 		t.Fatalf("unexpected commit message: %q", log)

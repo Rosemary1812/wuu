@@ -538,10 +538,38 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 		"timed_out":        timedOut,
 		"next_suggestions": gitNextSuggestions(subcmd, exitCode, timedOut),
 	}
+	if subcmd == "commit" && exitCode == 0 && !timedOut {
+		if commit, err := latestCommitMetadata(env, ctx); err == nil {
+			result["commit_sha"] = commit.SHA
+			result["commit_subject"] = commit.Subject
+		}
+	}
 	if truncated {
 		result["truncated"] = true
 	}
 	return mustJSON(result)
+}
+
+type gitCommitMetadata struct {
+	SHA     string
+	Subject string
+}
+
+func latestCommitMetadata(env *Env, ctx context.Context) (gitCommitMetadata, error) {
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, "git", "--no-optional-locks", "log", "-1", "--format=%H%x00%s")
+	cmd.Dir = env.RootDir
+	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
+	out, err := cmd.Output()
+	if err != nil {
+		return gitCommitMetadata{}, fmt.Errorf("read latest commit: %w", err)
+	}
+	parts := strings.SplitN(strings.TrimRight(string(out), "\n"), "\x00", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+		return gitCommitMetadata{}, errors.New("latest commit metadata missing")
+	}
+	return gitCommitMetadata{SHA: strings.TrimSpace(parts[0]), Subject: strings.TrimSpace(parts[1])}, nil
 }
 
 // ── structured git status ───────────────────────────────────────────
