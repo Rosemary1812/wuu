@@ -805,6 +805,24 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	}); err == nil {
 		t.Fatal("expected completion to reject awaiting_report agent")
 	}
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-await-run"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status awaiting: %v", err)
+	}
+	var awaitingStatus struct {
+		TeamArbitration workflow.TeamArbitration `json:"team_arbitration"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &awaitingStatus); err != nil {
+		t.Fatalf("parse awaiting workflow_status: %v", err)
+	}
+	if awaitingStatus.TeamArbitration.Status != "attention_required" ||
+		len(awaitingStatus.TeamArbitration.MissingReports) != 1 ||
+		awaitingStatus.TeamArbitration.MissingReports[0] != "agent-qa" {
+		t.Fatalf("workflow_status should surface missing report arbitration: %+v", awaitingStatus.TeamArbitration)
+	}
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name: "workflow_control",
@@ -835,6 +853,22 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 		Arguments: `{"action":"set_phase_status","run_id":"workflow-await-run","phase_id":"qa","status":"completed"}`,
 	}); err != nil {
 		t.Fatalf("set phase completed: %v", err)
+	}
+	statusResp, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-await-run"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status completed: %v", err)
+	}
+	var completedStatus struct {
+		TeamArbitration workflow.TeamArbitration `json:"team_arbitration"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &completedStatus); err != nil {
+		t.Fatalf("parse completed workflow_status: %v", err)
+	}
+	if completedStatus.TeamArbitration.Status != "clear" {
+		t.Fatalf("workflow_status should clear arbitration after report: %+v", completedStatus.TeamArbitration)
 	}
 	finalResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "workflow_control",

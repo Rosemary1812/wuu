@@ -13,6 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/tools"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func TestRunVersionAliasForwardsJSONFlag(t *testing.T) {
@@ -319,6 +320,53 @@ func TestEvalModelProfileObservation(t *testing.T) {
 	}
 	if got.DefaultWriteMode != "patch" || !got.FreeformTool || !got.AllowParallelReadOnly {
 		t.Fatalf("unexpected model profile strategy: %+v", got)
+	}
+}
+
+func TestEvalWorkflowObservationsIncludeTeamArbitration(t *testing.T) {
+	store := workflow.NewStore(t.TempDir())
+	if _, err := store.CreateRun(workflow.Run{ID: "team-run", Status: workflow.RunStateRunning}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	for _, agent := range []workflow.AgentRun{
+		{
+			ID:            "agent-a",
+			WorkflowRunID: "team-run",
+			Status:        workflow.AgentRunStateCompleted,
+			ReportMissing: true,
+			ChangedFiles:  []string{"shared.go"},
+		},
+		{
+			ID:            "agent-b",
+			WorkflowRunID: "team-run",
+			Status:        workflow.AgentRunStateFailed,
+			ChangedFiles:  []string{"shared.go"},
+		},
+	} {
+		if err := store.UpsertAgentRun(agent); err != nil {
+			t.Fatalf("UpsertAgentRun(%s): %v", agent.ID, err)
+		}
+	}
+
+	got, warnings := evalWorkflowObservations(store)
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected one workflow observation, got %+v", got)
+	}
+	arbitration := got[0].TeamArbitration
+	if arbitration.Status != "attention_required" {
+		t.Fatalf("unexpected arbitration status: %+v", arbitration)
+	}
+	if len(arbitration.MissingReports) != 1 || arbitration.MissingReports[0] != "agent-a" {
+		t.Fatalf("missing reports not preserved: %+v", arbitration)
+	}
+	if len(arbitration.FailedAgentRuns) != 1 || arbitration.FailedAgentRuns[0] != "agent-b" {
+		t.Fatalf("failed runs not preserved: %+v", arbitration)
+	}
+	if len(arbitration.ChangedFileOverlaps) != 1 || arbitration.ChangedFileOverlaps[0].File != "shared.go" {
+		t.Fatalf("changed-file overlap not preserved: %+v", arbitration)
 	}
 }
 

@@ -124,6 +124,7 @@ type WorkflowRunObservation struct {
 	ScriptPath      string                        `json:"script_path,omitempty"`
 	FinalReportPath string                        `json:"final_report_path,omitempty"`
 	WorkflowTeam    *WorkflowTeamObservation      `json:"workflow_team,omitempty"`
+	TeamArbitration WorkflowTeamArbitration       `json:"team_arbitration,omitempty"`
 	Phases          []WorkflowPhaseObservation    `json:"phases,omitempty"`
 	AgentRuns       []WorkflowAgentRunObservation `json:"agent_runs,omitempty"`
 	EventCount      int                           `json:"event_count,omitempty"`
@@ -143,6 +144,20 @@ type WorkflowTeamMemberObservation struct {
 	TaskName       string `json:"task_name,omitempty"`
 	PhaseID        string `json:"phase_id,omitempty"`
 	CreatedProfile bool   `json:"created_profile,omitempty"`
+}
+
+type WorkflowTeamArbitration struct {
+	Status              string                                  `json:"status,omitempty"`
+	OpenAgentRuns       []string                                `json:"open_agent_runs,omitempty"`
+	MissingReports      []string                                `json:"missing_reports,omitempty"`
+	FailedAgentRuns     []string                                `json:"failed_agent_runs,omitempty"`
+	ChangedFileOverlaps []WorkflowChangedFileOverlapObservation `json:"changed_file_overlaps,omitempty"`
+	NextActions         []string                                `json:"next_actions,omitempty"`
+}
+
+type WorkflowChangedFileOverlapObservation struct {
+	File        string   `json:"file"`
+	AgentRunIDs []string `json:"agent_run_ids"`
 }
 
 type WorkflowPhaseObservation struct {

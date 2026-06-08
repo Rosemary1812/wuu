@@ -843,6 +843,7 @@ func evalWorkflowObservations(store *workflow.Store) ([]evalharness.WorkflowRunO
 			warnings = append(warnings, "list workflow agent runs for "+run.ID+": "+evalSafePreview(err.Error(), evalTextPreviewLimit))
 		} else {
 			item.AgentRuns = evalWorkflowAgentRunObservations(agents)
+			item.TeamArbitration = evalWorkflowTeamArbitration(workflow.AnalyzeTeamArbitration(agents))
 		}
 		events, err := store.ListEvents(run.ID)
 		if err != nil {
@@ -853,6 +854,24 @@ func evalWorkflowObservations(store *workflow.Store) ([]evalharness.WorkflowRunO
 		out = append(out, item)
 	}
 	return out, warnings
+}
+
+func evalWorkflowTeamArbitration(in workflow.TeamArbitration) evalharness.WorkflowTeamArbitration {
+	overlaps := make([]evalharness.WorkflowChangedFileOverlapObservation, 0, len(in.ChangedFileOverlaps))
+	for _, overlap := range in.ChangedFileOverlaps {
+		overlaps = append(overlaps, evalharness.WorkflowChangedFileOverlapObservation{
+			File:        overlap.File,
+			AgentRunIDs: append([]string(nil), overlap.AgentRunIDs...),
+		})
+	}
+	return evalharness.WorkflowTeamArbitration{
+		Status:              in.Status,
+		OpenAgentRuns:       append([]string(nil), in.OpenAgentRuns...),
+		MissingReports:      append([]string(nil), in.MissingReports...),
+		FailedAgentRuns:     append([]string(nil), in.FailedAgentRuns...),
+		ChangedFileOverlaps: overlaps,
+		NextActions:         append([]string(nil), in.NextActions...),
+	}
 }
 
 func evalWorkflowTeamObservation(team workflow.TeamPlan) *evalharness.WorkflowTeamObservation {

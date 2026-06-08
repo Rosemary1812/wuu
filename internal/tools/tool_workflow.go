@@ -2116,6 +2116,7 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 		"agent_runs":        agents,
 		"workflow_team":     teamPlan,
 		"team_plan":         teamPlan,
+		"team_arbitration":  workflow.AnalyzeTeamArbitration(agents),
 		"memory_candidates": memoryCandidates,
 		"file_checkpoints":  fileCheckpoints,
 	}
