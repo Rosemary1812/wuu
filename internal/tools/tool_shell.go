@@ -37,20 +37,7 @@ func (t *ShellTool) Classify(argsJSON string) ToolClassification {
 			Reason:          "invalid shell invocation",
 		}
 	}
-	if shellCommandLooksReadOnly(args.Command) {
-		return ToolClassification{
-			ReadOnly:        true,
-			ConcurrencySafe: true,
-			Risk:            ToolRiskLow,
-			Reason:          "simple read-only shell command",
-		}
-	}
-	return ToolClassification{
-		ReadOnly:        false,
-		ConcurrencySafe: false,
-		Risk:            ToolRiskHigh,
-		Reason:          "shell command is not proven read-only",
-	}
+	return classifyShellCommand(args.Command)
 }
 
 func (t *ShellTool) Definition() providers.ToolDefinition {
@@ -141,6 +128,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 
 	result := map[string]any{
 		"command":               args.Command,
+		"classification":        classifyShellCommand(args.Command),
 		"exit_code":             exitCode,
 		"duration_ms":           durationMS,
 		"timed_out":             errors.Is(runCtx.Err(), context.DeadlineExceeded),
@@ -164,30 +152,171 @@ func tailString(value string, maxBytes int) (string, bool) {
 }
 
 func shellCommandLooksReadOnly(command string) bool {
+	return classifyShellCommand(command).ReadOnly
+}
+
+func classifyShellCommand(command string) ToolClassification {
 	command = strings.TrimSpace(command)
 	if command == "" {
-		return false
+		return highRiskShellClassification("empty shell command", false)
 	}
 	if strings.ContainsAny(command, "\n;&|><`$()") {
-		return false
+		return highRiskShellClassification("shell command uses shell metacharacters", false)
 	}
 	fields := strings.Fields(command)
 	if len(fields) == 0 {
-		return false
+		return highRiskShellClassification("empty shell command", false)
 	}
 	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
 		fields = fields[1:]
 	}
 	if len(fields) == 0 {
-		return false
+		return highRiskShellClassification("environment-only shell command", false)
+	}
+	if shellFieldsTouchSensitivePath(fields) {
+		return highRiskShellClassification("shell command may read secrets", false)
+	}
+	if shellFieldsLookDestructive(fields) {
+		return highRiskShellClassification("destructive shell command", true)
 	}
 	switch fields[0] {
 	case "pwd", "ls", "cat", "head", "tail", "wc", "file", "stat", "du",
 		"rg", "grep":
-		return true
-	default:
+		return ToolClassification{
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+			Risk:            ToolRiskLow,
+			Reason:          "simple read-only shell command",
+		}
+	}
+	if shellFieldsLookLikeVerification(fields) {
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Risk:            ToolRiskMedium,
+			Reason:          "local verification command",
+		}
+	}
+	if shellFieldsLookLikePackageOrNetworkMutation(fields) {
+		return highRiskShellClassification("package, network, or external mutation command", true)
+	}
+	return highRiskShellClassification("shell command is not proven read-only or verification-only", false)
+}
+
+func highRiskShellClassification(reason string, destructive bool) ToolClassification {
+	return ToolClassification{
+		ReadOnly:        false,
+		ConcurrencySafe: false,
+		Destructive:     destructive,
+		Risk:            ToolRiskHigh,
+		Reason:          reason,
+	}
+}
+
+func shellFieldsTouchSensitivePath(fields []string) bool {
+	for _, field := range fields[1:] {
+		lower := strings.ToLower(strings.Trim(field, `"'`))
+		if strings.Contains(lower, ".env") ||
+			strings.Contains(lower, "credential") ||
+			strings.Contains(lower, "credentials") ||
+			strings.Contains(lower, "secret") ||
+			strings.Contains(lower, ".netrc") ||
+			strings.Contains(lower, ".npmrc") ||
+			strings.Contains(lower, ".pypirc") ||
+			strings.Contains(lower, ".pgpass") {
+			return true
+		}
+	}
+	return false
+}
+
+func shellFieldsLookDestructive(fields []string) bool {
+	if len(fields) == 0 {
 		return false
 	}
+	switch fields[0] {
+	case "rm", "rmdir", "unlink", "mv", "chmod", "chown", "sudo", "dd", "truncate":
+		return true
+	case "git":
+		if len(fields) > 1 {
+			switch fields[1] {
+			case "reset", "clean", "push", "tag", "checkout", "switch", "merge", "rebase", "commit":
+				return true
+			}
+		}
+	case "docker", "kubectl", "terraform":
+		return true
+	}
+	return false
+}
+
+func shellFieldsLookLikeVerification(fields []string) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	switch fields[0] {
+	case "go":
+		return len(fields) > 1 && oneOf(fields[1], "test", "vet", "build", "list")
+	case "cargo":
+		return len(fields) > 1 && oneOf(fields[1], "test", "check", "build", "clippy")
+	case "pytest", "ruff", "mypy", "tsc":
+		return true
+	case "python", "python3":
+		return len(fields) > 2 && fields[1] == "-m" && oneOf(fields[2], "pytest", "mypy")
+	case "npm", "pnpm", "yarn", "bun":
+		return packageManagerCommandLooksLikeVerification(fields)
+	case "make":
+		return len(fields) > 1 && makeTargetLooksLikeVerification(fields[1])
+	case "uv":
+		return len(fields) > 2 && fields[1] == "run" && shellFieldsLookLikeVerification(fields[2:])
+	}
+	return false
+}
+
+func packageManagerCommandLooksLikeVerification(fields []string) bool {
+	if len(fields) < 2 {
+		return false
+	}
+	switch fields[1] {
+	case "test", "lint", "build", "check", "typecheck":
+		return true
+	case "run":
+		return len(fields) > 2 && makeTargetLooksLikeVerification(fields[2])
+	}
+	return false
+}
+
+func makeTargetLooksLikeVerification(target string) bool {
+	target = strings.ToLower(strings.TrimSpace(target))
+	return oneOf(target, "test", "tests", "check", "lint", "typecheck", "build", "verify", "ci")
+}
+
+func shellFieldsLookLikePackageOrNetworkMutation(fields []string) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	switch fields[0] {
+	case "npm", "pnpm", "yarn", "bun":
+		if len(fields) > 1 {
+			return oneOf(fields[1], "install", "i", "add", "remove", "update", "upgrade", "publish", "exec", "dlx")
+		}
+	case "pip", "pip3", "uv":
+		if len(fields) > 1 {
+			return oneOf(fields[1], "install", "add", "remove", "sync", "publish")
+		}
+	case "curl", "wget", "ssh", "scp", "rsync", "gh":
+		return true
+	}
+	return false
+}
+
+func oneOf(value string, candidates ...string) bool {
+	for _, candidate := range candidates {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func looksLikeEnvAssignment(value string) bool {

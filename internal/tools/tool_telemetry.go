@@ -14,25 +14,26 @@ import (
 // ToolExecutionRecord captures benchmark-oriented facts about one tool
 // execution. It deliberately excludes arguments and output content.
 type ToolExecutionRecord struct {
-	Name                string           `json:"name"`
-	CallID              string           `json:"call_id,omitempty"`
-	Kind                ToolKind         `json:"kind"`
-	Exposure            ToolExposure     `json:"exposure"`
-	Risk                ToolRisk         `json:"risk"`
-	PolicyAction        ToolPolicyAction `json:"policy_action"`
-	PolicyReason        string           `json:"policy_reason,omitempty"`
-	ReadOnly            bool             `json:"read_only"`
-	ConcurrencySafe     bool             `json:"concurrency_safe"`
-	StartedAt           time.Time        `json:"started_at"`
-	DurationMS          int64            `json:"duration_ms"`
-	RevisionBefore      string           `json:"revision_before,omitempty"`
-	RevisionAfter       string           `json:"revision_after,omitempty"`
-	Success             bool             `json:"success"`
-	Error               string           `json:"error,omitempty"`
-	RawOutputBytes      int              `json:"raw_output_bytes"`
-	ReturnedOutputBytes int              `json:"returned_output_bytes"`
-	ResultBudgeted      bool             `json:"result_budgeted"`
-	ResultRef           string           `json:"result_ref,omitempty"`
+	Name                 string           `json:"name"`
+	CallID               string           `json:"call_id,omitempty"`
+	Kind                 ToolKind         `json:"kind"`
+	Exposure             ToolExposure     `json:"exposure"`
+	Risk                 ToolRisk         `json:"risk"`
+	ClassificationReason string           `json:"classification_reason,omitempty"`
+	PolicyAction         ToolPolicyAction `json:"policy_action"`
+	PolicyReason         string           `json:"policy_reason,omitempty"`
+	ReadOnly             bool             `json:"read_only"`
+	ConcurrencySafe      bool             `json:"concurrency_safe"`
+	StartedAt            time.Time        `json:"started_at"`
+	DurationMS           int64            `json:"duration_ms"`
+	RevisionBefore       string           `json:"revision_before,omitempty"`
+	RevisionAfter        string           `json:"revision_after,omitempty"`
+	Success              bool             `json:"success"`
+	Error                string           `json:"error,omitempty"`
+	RawOutputBytes       int              `json:"raw_output_bytes"`
+	ReturnedOutputBytes  int              `json:"returned_output_bytes"`
+	ResultBudgeted       bool             `json:"result_budgeted"`
+	ResultRef            string           `json:"result_ref,omitempty"`
 }
 
 type toolTelemetry struct {
@@ -98,24 +99,25 @@ func (t *Toolkit) recordToolExecution(
 	err error,
 ) {
 	record := ToolExecutionRecord{
-		Name:                call.Name,
-		CallID:              call.ID,
-		Kind:                info.Kind,
-		Exposure:            info.Exposure,
-		Risk:                info.Risk,
-		PolicyAction:        decision.Action,
-		PolicyReason:        decision.Reason,
-		ReadOnly:            info.ReadOnly,
-		ConcurrencySafe:     info.ConcurrencySafe,
-		StartedAt:           startedAt,
-		DurationMS:          time.Since(startedAt).Milliseconds(),
-		RevisionBefore:      revisionBefore,
-		RevisionAfter:       revisionAfter,
-		Success:             err == nil,
-		RawOutputBytes:      len(result),
-		ReturnedOutputBytes: len(returned),
-		ResultBudgeted:      resultBudgeted,
-		ResultRef:           resultRef,
+		Name:                 call.Name,
+		CallID:               call.ID,
+		Kind:                 info.Kind,
+		Exposure:             info.Exposure,
+		Risk:                 info.Risk,
+		ClassificationReason: info.Reason,
+		PolicyAction:         decision.Action,
+		PolicyReason:         decision.Reason,
+		ReadOnly:             info.ReadOnly,
+		ConcurrencySafe:      info.ConcurrencySafe,
+		StartedAt:            startedAt,
+		DurationMS:           time.Since(startedAt).Milliseconds(),
+		RevisionBefore:       revisionBefore,
+		RevisionAfter:        revisionAfter,
+		Success:              err == nil,
+		RawOutputBytes:       len(result),
+		ReturnedOutputBytes:  len(returned),
+		ResultBudgeted:       resultBudgeted,
+		ResultRef:            resultRef,
 	}
 	if err != nil {
 		record.Error = err.Error()

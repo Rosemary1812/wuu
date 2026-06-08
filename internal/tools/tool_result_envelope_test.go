@@ -8,23 +8,24 @@ import (
 
 func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	record := ToolExecutionRecord{
-		Name:                "run_shell",
-		CallID:              "call_1",
-		Kind:                ToolKindShell,
-		Exposure:            ToolExposureDirect,
-		Risk:                ToolRiskHigh,
-		PolicyAction:        ToolPolicyAllow,
-		ReadOnly:            false,
-		ConcurrencySafe:     false,
-		DurationMS:          42,
-		RevisionBefore:      "git:before:worktree:aaa",
-		RevisionAfter:       "git:after:worktree:bbb",
-		Success:             false,
-		Error:               "authorization: bearer secret-token",
-		RawOutputBytes:      1024,
-		ReturnedOutputBytes: 256,
-		ResultBudgeted:      true,
-		ResultRef:           "/tmp/wuu/tool-results/call_1.txt",
+		Name:                 "run_shell",
+		CallID:               "call_1",
+		Kind:                 ToolKindShell,
+		Exposure:             ToolExposureDirect,
+		Risk:                 ToolRiskHigh,
+		ClassificationReason: "destructive shell command",
+		PolicyAction:         ToolPolicyAllow,
+		ReadOnly:             false,
+		ConcurrencySafe:      false,
+		DurationMS:           42,
+		RevisionBefore:       "git:before:worktree:aaa",
+		RevisionAfter:        "git:after:worktree:bbb",
+		Success:              false,
+		Error:                "authorization: bearer secret-token",
+		RawOutputBytes:       1024,
+		ReturnedOutputBytes:  256,
+		ResultBudgeted:       true,
+		ResultRef:            "/tmp/wuu/tool-results/call_1.txt",
 	}
 
 	envelope := record.ResultEnvelope()
@@ -50,6 +51,9 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"revision_before":"git:before:worktree:aaa"`) || !strings.Contains(string(raw), `"revision_after":"git:after:worktree:bbb"`) {
 		t.Fatalf("envelope should include revisions: %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"classification_reason":"destructive shell command"`) {
+		t.Fatalf("envelope should include classification reason: %s", string(raw))
 	}
 }
 

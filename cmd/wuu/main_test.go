@@ -247,24 +247,25 @@ func TestEvalSafePreviewRedactsSecretsAndTruncates(t *testing.T) {
 
 func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	records := []tools.ToolExecutionRecord{{
-		Name:                "run_shell",
-		CallID:              "call_1",
-		Kind:                tools.ToolKindShell,
-		Exposure:            tools.ToolExposureDirect,
-		Risk:                tools.ToolRiskHigh,
-		PolicyAction:        tools.ToolPolicyAllow,
-		PolicyReason:        "risk policy",
-		ReadOnly:            false,
-		ConcurrencySafe:     false,
-		DurationMS:          42,
-		RevisionBefore:      "git:before:worktree:aaa",
-		RevisionAfter:       "git:after:worktree:bbb",
-		Success:             false,
-		Error:               "authorization: bearer abc123",
-		RawOutputBytes:      1024,
-		ReturnedOutputBytes: 256,
-		ResultBudgeted:      true,
-		ResultRef:           "/tmp/wuu/tool-results/call_1.txt",
+		Name:                 "run_shell",
+		CallID:               "call_1",
+		Kind:                 tools.ToolKindShell,
+		Exposure:             tools.ToolExposureDirect,
+		Risk:                 tools.ToolRiskHigh,
+		ClassificationReason: "destructive shell command",
+		PolicyAction:         tools.ToolPolicyAllow,
+		PolicyReason:         "risk policy",
+		ReadOnly:             false,
+		ConcurrencySafe:      false,
+		DurationMS:           42,
+		RevisionBefore:       "git:before:worktree:aaa",
+		RevisionAfter:        "git:after:worktree:bbb",
+		Success:              false,
+		Error:                "authorization: bearer abc123",
+		RawOutputBytes:       1024,
+		ReturnedOutputBytes:  256,
+		ResultBudgeted:       true,
+		ResultRef:            "/tmp/wuu/tool-results/call_1.txt",
 	}}
 
 	got := evalToolObservations(records)
@@ -276,6 +277,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if got[0].PolicyReason != "risk policy" {
 		t.Fatalf("policy reason not preserved: %+v", got[0])
+	}
+	if got[0].ClassificationReason != "destructive shell command" {
+		t.Fatalf("classification reason not preserved: %+v", got[0])
 	}
 	if got[0].RevisionBefore != records[0].RevisionBefore || got[0].RevisionAfter != records[0].RevisionAfter {
 		t.Fatalf("revisions not preserved: %+v", got[0])

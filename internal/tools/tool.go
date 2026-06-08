@@ -40,11 +40,11 @@ type Tool interface {
 // invocation. Static Tool methods are the fallback; tools with argument-driven
 // behavior can implement InputClassifyingTool.
 type ToolClassification struct {
-	ReadOnly        bool
-	ConcurrencySafe bool
-	Destructive     bool
-	Risk            ToolRisk
-	Reason          string
+	ReadOnly        bool     `json:"read_only"`
+	ConcurrencySafe bool     `json:"concurrency_safe"`
+	Destructive     bool     `json:"destructive"`
+	Risk            ToolRisk `json:"risk"`
+	Reason          string   `json:"reason"`
 }
 
 // InputClassifyingTool lets tools classify a specific call from its JSON

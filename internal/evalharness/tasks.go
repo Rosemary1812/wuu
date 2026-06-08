@@ -93,26 +93,27 @@ type ModelProfileObservation struct {
 }
 
 type ToolObservation struct {
-	Name                string               `json:"name"`
-	CallID              string               `json:"call_id,omitempty"`
-	Kind                string               `json:"kind,omitempty"`
-	Exposure            string               `json:"exposure,omitempty"`
-	Risk                string               `json:"risk,omitempty"`
-	PolicyAction        string               `json:"policy_action,omitempty"`
-	PolicyReason        string               `json:"policy_reason,omitempty"`
-	ReadOnly            bool                 `json:"read_only"`
-	ConcurrencySafe     bool                 `json:"concurrency_safe"`
-	StartedAt           time.Time            `json:"started_at,omitempty"`
-	DurationMS          int64                `json:"duration_ms"`
-	RevisionBefore      string               `json:"revision_before,omitempty"`
-	RevisionAfter       string               `json:"revision_after,omitempty"`
-	Success             bool                 `json:"success"`
-	Error               string               `json:"error,omitempty"`
-	RawOutputBytes      int                  `json:"raw_output_bytes,omitempty"`
-	ReturnedOutputBytes int                  `json:"returned_output_bytes,omitempty"`
-	ResultBudgeted      bool                 `json:"result_budgeted,omitempty"`
-	ResultRef           string               `json:"result_ref,omitempty"`
-	ResultEnvelope      *toolresult.Envelope `json:"result_envelope,omitempty"`
+	Name                 string               `json:"name"`
+	CallID               string               `json:"call_id,omitempty"`
+	Kind                 string               `json:"kind,omitempty"`
+	Exposure             string               `json:"exposure,omitempty"`
+	Risk                 string               `json:"risk,omitempty"`
+	ClassificationReason string               `json:"classification_reason,omitempty"`
+	PolicyAction         string               `json:"policy_action,omitempty"`
+	PolicyReason         string               `json:"policy_reason,omitempty"`
+	ReadOnly             bool                 `json:"read_only"`
+	ConcurrencySafe      bool                 `json:"concurrency_safe"`
+	StartedAt            time.Time            `json:"started_at,omitempty"`
+	DurationMS           int64                `json:"duration_ms"`
+	RevisionBefore       string               `json:"revision_before,omitempty"`
+	RevisionAfter        string               `json:"revision_after,omitempty"`
+	Success              bool                 `json:"success"`
+	Error                string               `json:"error,omitempty"`
+	RawOutputBytes       int                  `json:"raw_output_bytes,omitempty"`
+	ReturnedOutputBytes  int                  `json:"returned_output_bytes,omitempty"`
+	ResultBudgeted       bool                 `json:"result_budgeted,omitempty"`
+	ResultRef            string               `json:"result_ref,omitempty"`
+	ResultEnvelope       *toolresult.Envelope `json:"result_envelope,omitempty"`
 }
 
 type WorkflowRunObservation struct {

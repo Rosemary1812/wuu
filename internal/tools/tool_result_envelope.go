@@ -17,6 +17,7 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 			"kind":                  string(record.Kind),
 			"exposure":              string(record.Exposure),
 			"risk":                  string(record.Risk),
+			"classification_reason": record.ClassificationReason,
 			"policy_action":         string(record.PolicyAction),
 			"policy_reason":         record.PolicyReason,
 			"read_only":             record.ReadOnly,

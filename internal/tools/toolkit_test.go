@@ -928,6 +928,28 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) {
 		t.Fatalf("redirecting shell metadata = %+v, want high-risk serial", meta)
 	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"go test ./..."}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskMedium) || meta.Reason != "local verification command" {
+		t.Fatalf("go test metadata = %+v, want medium-risk verification", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"cat .env"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "shell command may read secrets" {
+		t.Fatalf("secret-reading shell metadata = %+v, want high-risk secret classification", meta)
+	}
 }
 
 func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
@@ -1099,6 +1121,30 @@ func TestToolkit_ToolTelemetry_RecordsSuccess(t *testing.T) {
 	}
 	if record.RawOutputBytes != len(resp) || record.ReturnedOutputBytes != len(resp) || record.ResultBudgeted {
 		t.Fatalf("unexpected output sizing: %+v response_len=%d", record, len(resp))
+	}
+}
+
+func TestToolkit_ToolTelemetry_RecordsClassificationReason(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-shell",
+		Name:      "run_shell",
+		Arguments: `{"command":"pwd"}`,
+	}); err != nil {
+		t.Fatalf("run_shell: %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	if records[0].ClassificationReason != "simple read-only shell command" {
+		t.Fatalf("classification reason not recorded: %+v", records[0])
 	}
 }
 
