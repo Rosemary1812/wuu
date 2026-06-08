@@ -639,6 +639,67 @@ func TestToolkit_ApplyPatchRejectsAmbiguousUpdate(t *testing.T) {
 	}
 }
 
+func TestToolkit_ApplyPatchRejectsSensitivePaths(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+	mustWriteFile(t, filepath.Join(root, ".env"), "API_KEY=secret\n")
+
+	cases := []struct {
+		name    string
+		patch   string
+		dryRun  bool
+		wantOp  string
+		leakKey string
+	}{
+		{
+			name: "dry-run update",
+			patch: `*** Begin Patch
+*** Update File: .env
+@@
+-API_KEY=secret
++API_KEY=changed
+*** End Patch`,
+			dryRun:  true,
+			wantOp:  "update",
+			leakKey: "API_KEY=secret",
+		},
+		{
+			name: "add",
+			patch: `*** Begin Patch
+*** Add File: secrets/config.txt
++token=secret
+*** End Patch`,
+			wantOp:  "add",
+			leakKey: "token=secret",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			args, err := json.Marshal(map[string]any{"patchText": tc.patch, "dry_run": tc.dryRun})
+			if err != nil {
+				t.Fatalf("marshal args: %v", err)
+			}
+			_, err = kit.Execute(context.Background(), providers.ToolCall{
+				Name:      "apply_patch",
+				Arguments: string(args),
+			})
+			if err == nil {
+				t.Fatalf("expected sensitive path rejection for %s", tc.name)
+			}
+			if !strings.Contains(err.Error(), "sensitive path") || !strings.Contains(err.Error(), tc.wantOp) {
+				t.Fatalf("expected sensitive path %s guidance, got: %v", tc.wantOp, err)
+			}
+			if strings.Contains(err.Error(), tc.leakKey) {
+				t.Fatalf("apply_patch sensitive path error leaked content for %s: %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestToolkit_ToolMetadata_ClassifiesApplyPatchDryRun(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

@@ -344,6 +344,9 @@ func (t *ApplyPatchTool) applyAddHunk(hunk applyPatchHunk, dryRun bool) (applyPa
 	if err != nil {
 		return applyPatchFileResult{}, err
 	}
+	if err := t.rejectSensitivePatchPath(resolved, "add"); err != nil {
+		return applyPatchFileResult{}, err
+	}
 	if _, err := os.Stat(resolved); err == nil {
 		return applyPatchFileResult{}, fmt.Errorf("file already exists: %s", hunk.Path)
 	} else if !os.IsNotExist(err) {
@@ -382,6 +385,9 @@ func (t *ApplyPatchTool) applyUpdateHunk(hunk applyPatchHunk, dryRun bool) (appl
 	if err != nil {
 		return applyPatchFileResult{}, err
 	}
+	if err := t.rejectSensitivePatchPath(resolved, "update"); err != nil {
+		return applyPatchFileResult{}, err
+	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return applyPatchFileResult{}, fmt.Errorf("read file to update %s: %w", hunk.Path, err)
@@ -408,6 +414,9 @@ func (t *ApplyPatchTool) applyUpdateHunk(hunk applyPatchHunk, dryRun bool) (appl
 	if hunk.MovePath != "" {
 		target, err = t.env.ResolvePath(hunk.MovePath)
 		if err != nil {
+			return applyPatchFileResult{}, err
+		}
+		if err := t.rejectSensitivePatchPath(target, "move to"); err != nil {
 			return applyPatchFileResult{}, err
 		}
 		if _, err := os.Stat(target); err == nil {
@@ -454,6 +463,9 @@ func (t *ApplyPatchTool) applyDeleteHunk(hunk applyPatchHunk, dryRun bool) (appl
 	if err != nil {
 		return applyPatchFileResult{}, err
 	}
+	if err := t.rejectSensitivePatchPath(resolved, "delete"); err != nil {
+		return applyPatchFileResult{}, err
+	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return applyPatchFileResult{}, fmt.Errorf("read file to delete %s: %w", hunk.Path, err)
@@ -481,6 +493,14 @@ func (t *ApplyPatchTool) applyDeleteHunk(hunk applyPatchHunk, dryRun bool) (appl
 		Action: "delete",
 		Diff:   computeDiff(string(oldBytes), "", 3),
 	}, nil
+}
+
+func (t *ApplyPatchTool) rejectSensitivePatchPath(absPath, action string) error {
+	displayPath := t.env.NormalizeDisplayPath(absPath)
+	if reason, ok := sensitivePathReason(displayPath); ok {
+		return fmt.Errorf("apply_patch refuses to %s sensitive path %q (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", action, displayPath, reason)
+	}
+	return nil
 }
 
 func (t *ApplyPatchTool) notifyFileChanged(absPath string) {
