@@ -75,6 +75,7 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 		Workflows: []workflow.Definition{{
 			Name:        "weekly-qa",
 			Description: "Run weekly QA.",
+			Kind:        workflow.DefinitionKindMarkdown,
 		}},
 	}
 	tool := NewScheduleCronTool(env)
@@ -100,6 +101,9 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	if len(fileTasks) != 1 || fileTasks[0].Metadata["kind"] != "workflow" {
 		t.Fatalf("expected one workflow task, got %+v", fileTasks)
 	}
+	if fileTasks[0].Metadata["workflow_kind"] != workflow.DefinitionKindMarkdown {
+		t.Fatalf("expected markdown workflow kind metadata, got %+v", fileTasks[0].Metadata)
+	}
 	if fileTasks[0].Metadata["workflow_arguments"] != "settings search" || fileTasks[0].Prompt == "" {
 		t.Fatalf("workflow task metadata missing: %+v", fileTasks[0])
 	}
@@ -109,8 +113,53 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	if !strings.Contains(fileTasks[0].Prompt, "record the dynamic team") {
 		t.Fatalf("workflow task prompt missing team planning instruction: %q", fileTasks[0].Prompt)
 	}
+	if !strings.Contains(fileTasks[0].Prompt, "create_workflow") {
+		t.Fatalf("manual workflow task prompt should use create_workflow: %q", fileTasks[0].Prompt)
+	}
 	if !strings.Contains(fileTasks[0].Prompt, "Base Agent Brief Contract") || !strings.Contains(fileTasks[0].Prompt, "Workflow Context Extension") {
 		t.Fatalf("workflow task prompt missing shared brief contract: %q", fileTasks[0].Prompt)
+	}
+}
+
+func TestScheduleCronTool_SavesScriptWorkflowTaskUsesRunWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	stateDir := filepath.Join(dir, "state")
+	env := &Env{
+		RootDir:  dir,
+		StateDir: stateDir,
+		Workflows: []workflow.Definition{{
+			Name:        "dynamic-qa",
+			Description: "Run dynamic QA.",
+			Kind:        workflow.DefinitionKindScript,
+		}},
+	}
+	tool := NewScheduleCronTool(env)
+
+	_, err := tool.Execute(context.Background(), `{
+		"cron":"*/5 * * * *",
+		"workflow_name":"dynamic-qa",
+		"workflow_arguments":"settings search",
+		"recurring":true,
+		"durable":true
+	}`)
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
+	if err != nil {
+		t.Fatalf("file store list: %v", err)
+	}
+	if len(fileTasks) != 1 || fileTasks[0].Metadata["workflow_kind"] != workflow.DefinitionKindScript {
+		t.Fatalf("expected one script workflow task, got %+v", fileTasks)
+	}
+	for _, want := range []string{"load_workflow", "run_workflow", "definition_name", "script owns phases"} {
+		if !strings.Contains(fileTasks[0].Prompt, want) {
+			t.Fatalf("script workflow prompt missing %q: %q", want, fileTasks[0].Prompt)
+		}
+	}
+	if strings.Contains(fileTasks[0].Prompt, "record the dynamic team") || strings.Contains(fileTasks[0].Prompt, "call create_workflow") {
+		t.Fatalf("script workflow prompt should not use manual workflow path: %q", fileTasks[0].Prompt)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	prompttext "github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func taskStorePath(stateDir string) string {
@@ -27,7 +28,7 @@ func (t *ScheduleCronTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "schedule_cron",
 		Description: "Create a scheduled task that runs a prompt or saved workflow at cron intervals. " +
-			"Use workflow_name for scheduled, repeatable, multi-agent work; it is converted into a prompt that asks the agent to start the saved workflow. " +
+			"Use workflow_name for scheduled, repeatable, multi-agent work; script workflows are started with run_workflow, while Markdown/manual workflows are started with create_workflow. " +
 			"The task can be recurring (runs repeatedly until deleted or expired) or one-shot (runs once).",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -78,6 +79,7 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 	args.Prompt = strings.TrimSpace(args.Prompt)
 	args.WorkflowName = strings.TrimSpace(args.WorkflowName)
 	args.WorkflowArguments = strings.TrimSpace(args.WorkflowArguments)
+	workflowKind := ""
 	if args.Cron == "" {
 		return "", fmt.Errorf("schedule_cron requires cron")
 	}
@@ -90,7 +92,8 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 			return "", fmt.Errorf("workflow %q not found. available: %s", args.WorkflowName, strings.Join(t.env.WorkflowNames(), ", "))
 		}
 		args.WorkflowName = wf.Name
-		args.Prompt = scheduledWorkflowPrompt(wf.Name, args.WorkflowArguments, args.Prompt)
+		workflowKind = workflowDefinitionKind(wf)
+		args.Prompt = scheduledWorkflowPrompt(wf.Name, workflowKind, args.WorkflowArguments, args.Prompt)
 	}
 
 	ce, err := cron.ParseCronExpression(args.Cron)
@@ -124,6 +127,7 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 			"kind":               "workflow",
 			"workflow_name":      args.WorkflowName,
 			"workflow_arguments": args.WorkflowArguments,
+			"workflow_kind":      workflowKind,
 		}
 	}
 	task := cron.Task{
@@ -151,6 +155,7 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 		"prompt":             args.Prompt,
 		"kind":               taskKind(task),
 		"workflow_name":      task.Metadata["workflow_name"],
+		"workflow_kind":      task.Metadata["workflow_kind"],
 		"workflow_arguments": task.Metadata["workflow_arguments"],
 		"type":               map[bool]string{true: "recurring", false: "one-shot"}[args.Recurring],
 		"durability":         storeLabel,
@@ -158,15 +163,21 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 	return mustJSON(result)
 }
 
-func scheduledWorkflowPrompt(name, arguments, extraPrompt string) string {
+func scheduledWorkflowPrompt(name, kind, arguments, extraPrompt string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Scheduled task fired. Start the saved workflow %q.", name)
 	if args := strings.TrimSpace(arguments); args != "" {
 		fmt.Fprintf(&sb, "\n\nWorkflow arguments:\n%s", args)
 	}
-	sb.WriteString("\n\nUse the workflow tools to load the workflow definition and create a Workflow Run. Let create_workflow choose the run ID unless the user explicitly provided one.")
-	sb.WriteString(" After creating the run, call list_agent_profiles, decide which roles reuse an existing Agent Profile, create a new recurring profile, or stay ephemeral, then record the dynamic team with workflow_control action=record_team_plan before spawning agents.")
-	sb.WriteString(" Write each team member prompt from the shared Base Agent Brief Contract; add the Workflow Context Extension only because this is workflow work.")
+	switch kind {
+	case workflow.DefinitionKindScript:
+		sb.WriteString("\n\nUse load_workflow to inspect the saved script definition, then call run_workflow with definition_name and workflow arguments. Use the script workflow path for this run.")
+		sb.WriteString(" Let run_workflow choose the run ID unless the user explicitly provided one. The script owns phases, worker spawns, awaits, and synthesis through the workflow runtime.")
+	default:
+		sb.WriteString("\n\nUse the workflow tools to load the workflow definition and create a Workflow Run. Let create_workflow choose the run ID unless the user explicitly provided one.")
+		sb.WriteString(" After creating the run, call list_agent_profiles, decide which roles reuse an existing Agent Profile, create a new recurring profile, or stay ephemeral, then record the dynamic team with workflow_control action=record_team_plan before spawning agents.")
+		sb.WriteString(" Write each team member prompt from the shared Base Agent Brief Contract; add the Workflow Context Extension only because this is workflow work.")
+	}
 	sb.WriteString("\n\n")
 	sb.WriteString(prompttext.AgentBriefContractSummary())
 	sb.WriteString(" ")
