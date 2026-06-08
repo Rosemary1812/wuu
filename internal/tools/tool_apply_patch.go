@@ -23,6 +23,35 @@ func (t *ApplyPatchTool) Name() string            { return "apply_patch" }
 func (t *ApplyPatchTool) IsReadOnly() bool        { return false }
 func (t *ApplyPatchTool) IsConcurrencySafe() bool { return false }
 
+func (t *ApplyPatchTool) Classify(argsJSON string) ToolClassification {
+	var args struct {
+		DryRun  bool `json:"dry_run"`
+		DryRun2 bool `json:"dryRun"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Risk:            ToolRiskHigh,
+			Reason:          "invalid patch invocation",
+		}
+	}
+	if args.DryRun || args.DryRun2 {
+		return ToolClassification{
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+			Risk:            ToolRiskLow,
+			Reason:          "patch dry-run preview",
+		}
+	}
+	return ToolClassification{
+		ReadOnly:        false,
+		ConcurrencySafe: false,
+		Risk:            ToolRiskHigh,
+		Reason:          "patch applies workspace changes",
+	}
+}
+
 func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "apply_patch",
@@ -33,6 +62,7 @@ func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 			"- Supported operations: *** Add File, *** Update File, optional *** Move to, and *** Delete File\n" +
 			"- Prefix added lines with +, removed lines with -, and unchanged context lines with a space\n" +
 			"- Paths are relative to the workspace root and cannot escape it\n" +
+			"- Set dry_run=true to validate anchors and preview structured diffs without mutating files\n" +
 			"- Returns changed_files, hunk_count, provenance, and per-file structured diffs showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -40,6 +70,10 @@ func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 				"patchText": map[string]any{
 					"type":        "string",
 					"description": "The full patch text, including *** Begin Patch and *** End Patch markers.",
+				},
+				"dry_run": map[string]any{
+					"type":        "boolean",
+					"description": "Validate and preview the patch without writing files or firing file-change hooks.",
 				},
 			},
 			"required": []string{"patchText"},
@@ -52,6 +86,8 @@ func (t *ApplyPatchTool) Execute(_ context.Context, argsJSON string) (string, er
 		PatchText  string `json:"patchText"`
 		Patch      string `json:"patch"`
 		PatchText2 string `json:"patch_text"`
+		DryRun     bool   `json:"dry_run"`
+		DryRun2    bool   `json:"dryRun"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -75,10 +111,11 @@ func (t *ApplyPatchTool) Execute(_ context.Context, argsJSON string) (string, er
 		return "", errors.New("apply_patch verification failed: no hunks found")
 	}
 
+	dryRun := args.DryRun || args.DryRun2
 	files := make([]applyPatchFileResult, 0, len(patch.Hunks))
 	changedFiles := make([]string, 0, len(patch.Hunks))
 	for _, hunk := range patch.Hunks {
-		result, err := t.applyHunk(hunk)
+		result, err := t.applyHunk(hunk, dryRun)
 		if err != nil {
 			return "", fmt.Errorf("apply_patch verification failed: %w", err)
 		}
@@ -87,7 +124,7 @@ func (t *ApplyPatchTool) Execute(_ context.Context, argsJSON string) (string, er
 	}
 
 	return mustJSON(map[string]any{
-		"dry_run":       false,
+		"dry_run":       dryRun,
 		"hunk_count":    len(patch.Hunks),
 		"changed_files": uniqueNonEmptyStrings(changedFiles),
 		"provenance": map[string]any{
@@ -281,20 +318,20 @@ func parseApplyPatchChunks(lines []string, start, end int) ([]applyPatchChunk, i
 	return chunks, i, nil
 }
 
-func (t *ApplyPatchTool) applyHunk(hunk applyPatchHunk) (applyPatchFileResult, error) {
+func (t *ApplyPatchTool) applyHunk(hunk applyPatchHunk, dryRun bool) (applyPatchFileResult, error) {
 	switch hunk.Type {
 	case "add":
-		return t.applyAddHunk(hunk)
+		return t.applyAddHunk(hunk, dryRun)
 	case "update":
-		return t.applyUpdateHunk(hunk)
+		return t.applyUpdateHunk(hunk, dryRun)
 	case "delete":
-		return t.applyDeleteHunk(hunk)
+		return t.applyDeleteHunk(hunk, dryRun)
 	default:
 		return applyPatchFileResult{}, fmt.Errorf("unknown hunk type %q", hunk.Type)
 	}
 }
 
-func (t *ApplyPatchTool) applyAddHunk(hunk applyPatchHunk) (applyPatchFileResult, error) {
+func (t *ApplyPatchTool) applyAddHunk(hunk applyPatchHunk, dryRun bool) (applyPatchFileResult, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
 		return applyPatchFileResult{}, err
@@ -305,6 +342,16 @@ func (t *ApplyPatchTool) applyAddHunk(hunk applyPatchHunk) (applyPatchFileResult
 		return applyPatchFileResult{}, fmt.Errorf("stat file: %w", err)
 	}
 	content := joinPatchLines(hunk.Contents)
+	if dryRun {
+		return applyPatchFileResult{
+			Path:   t.env.NormalizeDisplayPath(resolved),
+			Action: "add",
+			Diff: DiffResult{
+				NewFile: true,
+				Lines:   countContentLines(content),
+			},
+		}, nil
+	}
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
 		return applyPatchFileResult{}, fmt.Errorf("create parent directory: %w", err)
 	}
@@ -322,7 +369,7 @@ func (t *ApplyPatchTool) applyAddHunk(hunk applyPatchHunk) (applyPatchFileResult
 	}, nil
 }
 
-func (t *ApplyPatchTool) applyUpdateHunk(hunk applyPatchHunk) (applyPatchFileResult, error) {
+func (t *ApplyPatchTool) applyUpdateHunk(hunk applyPatchHunk, dryRun bool) (applyPatchFileResult, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
 		return applyPatchFileResult{}, err
@@ -364,6 +411,14 @@ func (t *ApplyPatchTool) applyUpdateHunk(hunk applyPatchHunk) (applyPatchFileRes
 		displayMovePath = t.env.NormalizeDisplayPath(target)
 	}
 
+	if dryRun {
+		return applyPatchFileResult{
+			Path:     t.env.NormalizeDisplayPath(resolved),
+			MovePath: displayMovePath,
+			Action:   action,
+			Diff:     computeDiff(oldContent, newContent, 3),
+		}, nil
+	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return applyPatchFileResult{}, fmt.Errorf("create parent directory: %w", err)
 	}
@@ -386,7 +441,7 @@ func (t *ApplyPatchTool) applyUpdateHunk(hunk applyPatchHunk) (applyPatchFileRes
 	}, nil
 }
 
-func (t *ApplyPatchTool) applyDeleteHunk(hunk applyPatchHunk) (applyPatchFileResult, error) {
+func (t *ApplyPatchTool) applyDeleteHunk(hunk applyPatchHunk, dryRun bool) (applyPatchFileResult, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
 		return applyPatchFileResult{}, err
@@ -401,6 +456,13 @@ func (t *ApplyPatchTool) applyDeleteHunk(hunk applyPatchHunk) (applyPatchFileRes
 	oldBytes, err := os.ReadFile(resolved)
 	if err != nil {
 		return applyPatchFileResult{}, fmt.Errorf("read file: %w", err)
+	}
+	if dryRun {
+		return applyPatchFileResult{
+			Path:   t.env.NormalizeDisplayPath(resolved),
+			Action: "delete",
+			Diff:   computeDiff(string(oldBytes), "", 3),
+		}, nil
 	}
 	if err := os.Remove(resolved); err != nil {
 		return applyPatchFileResult{}, fmt.Errorf("delete file: %w", err)

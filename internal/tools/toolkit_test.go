@@ -303,6 +303,87 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 }
 
+func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+	changedHookCalls := 0
+	kit.SetOnFileChanged(func(string) {
+		changedHookCalls++
+	})
+
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "line one\nline two\nline three\n")
+	mustWriteFile(t, filepath.Join(root, "remove.txt"), "remove me\n")
+	mustWriteFile(t, filepath.Join(root, "oldname.txt"), "old name\n")
+
+	patchText := `*** Begin Patch
+*** Update File: a.txt
+@@
+ line one
+-line two
++line 2
+ line three
+*** Add File: dir/new.txt
++created
+*** Delete File: remove.txt
+*** Update File: oldname.txt
+*** Move to: renamed.txt
+@@
+-old name
++new name
+*** End Patch`
+	args, err := json.Marshal(map[string]any{"patchText": patchText, "dry_run": true})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	})
+	if err != nil {
+		t.Fatalf("apply_patch dry-run: %v", err)
+	}
+	var parsed struct {
+		DryRun       bool     `json:"dry_run"`
+		HunkCount    int      `json:"hunk_count"`
+		ChangedFiles []string `json:"changed_files"`
+		Files        []struct {
+			Action string `json:"action"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse apply_patch response: %v", err)
+	}
+	if !parsed.DryRun || parsed.HunkCount != 4 || len(parsed.Files) != 4 {
+		t.Fatalf("unexpected dry-run summary: %+v", parsed)
+	}
+	wantChanged := []string{"a.txt", "dir/new.txt", "remove.txt", "renamed.txt"}
+	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
+		t.Fatalf("changed_files = %+v, want %+v", parsed.ChangedFiles, wantChanged)
+	}
+	if changedHookCalls != 0 {
+		t.Fatalf("dry-run should not fire file-change hooks, got %d", changedHookCalls)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "line one\nline two\nline three\n" {
+		t.Fatalf("dry-run mutated update file: %q", got)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "remove.txt")); got != "remove me\n" {
+		t.Fatalf("dry-run deleted file content: %q", got)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "oldname.txt")); got != "old name\n" {
+		t.Fatalf("dry-run moved source content: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "dir/new.txt")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run should not create new file, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "renamed.txt")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run should not create move target, stat err=%v", err)
+	}
+}
+
 func TestToolkit_ApplyPatchRejectsAmbiguousUpdate(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -327,6 +408,37 @@ func TestToolkit_ApplyPatchRejectsAmbiguousUpdate(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("expected ambiguous update error, got %v", err)
+	}
+}
+
+func TestToolkit_ToolMetadata_ClassifiesApplyPatchDryRun(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+
+	meta, ok := kit.ToolMetadata(providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: `{"patchText":"*** Begin Patch\n*** End Patch","dry_run":true}`,
+	})
+	if !ok {
+		t.Fatal("apply_patch metadata not found")
+	}
+	if !meta.ReadOnly || !meta.ConcurrencySafe || meta.Risk != string(ToolRiskLow) || meta.Reason != "patch dry-run preview" {
+		t.Fatalf("dry-run apply_patch metadata = %+v, want low-risk read-only preview", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: `{"patchText":"*** Begin Patch\n*** End Patch"}`,
+	})
+	if !ok {
+		t.Fatal("apply_patch metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) || meta.Reason != "patch applies workspace changes" {
+		t.Fatalf("mutating apply_patch metadata = %+v, want high-risk write", meta)
 	}
 }
 
