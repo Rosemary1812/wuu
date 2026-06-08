@@ -370,7 +370,7 @@ func grepWithRipgrep(rootDir, pattern, searchRoot, include string, opts grepOpti
 		matches = append(matches, grepMatch{
 			File:    filepath.ToSlash(rel),
 			Line:    event.Data.LineNumber,
-			Content: strings.TrimRight(event.Data.Lines.Text, "\r\n"),
+			Content: grepMatchContentForPath(filepath.ToSlash(rel), strings.TrimRight(event.Data.Lines.Text, "\r\n")),
 		})
 		if len(matches) >= limit {
 			break
@@ -436,7 +436,7 @@ func grepWithFallback(rootDir, pattern, searchRoot, include string, opts grepOpt
 				matches = append(matches, grepMatch{
 					File:    rel,
 					Line:    lineNum,
-					Content: line,
+					Content: grepMatchContentForPath(rel, line),
 				})
 				if len(matches) >= limit {
 					break
@@ -458,6 +458,13 @@ func grepWithFallback(rootDir, pattern, searchRoot, include string, opts grepOpt
 		return matches[i].File < matches[j].File
 	})
 	return matches, nil
+}
+
+func grepMatchContentForPath(path, content string) string {
+	if isSensitivePath(path) {
+		return "[REDACTED: sensitive file content]"
+	}
+	return content
 }
 
 func globWithRipgrep(rootDir, searchRoot, pattern string, limit int) ([]string, error) {

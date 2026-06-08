@@ -264,15 +264,7 @@ func highRiskShellClassification(reason string, destructive bool) ToolClassifica
 
 func shellFieldsTouchSensitivePath(fields []string) bool {
 	for _, field := range fields[1:] {
-		lower := strings.ToLower(strings.Trim(field, `"'`))
-		if strings.Contains(lower, ".env") ||
-			strings.Contains(lower, "credential") ||
-			strings.Contains(lower, "credentials") ||
-			strings.Contains(lower, "secret") ||
-			strings.Contains(lower, ".netrc") ||
-			strings.Contains(lower, ".npmrc") ||
-			strings.Contains(lower, ".pypirc") ||
-			strings.Contains(lower, ".pgpass") {
+		if isSensitivePath(field) {
 			return true
 		}
 	}

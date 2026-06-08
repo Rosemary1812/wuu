@@ -88,6 +88,10 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	if err != nil {
 		return "", err
 	}
+	displayPath := t.env.NormalizeDisplayPath(resolved)
+	if reason, ok := sensitivePathReason(displayPath); ok {
+		return "", fmt.Errorf("read_file refuses to read sensitive path %q (%s). Use a safer metadata command or ask the user for explicit secret handling", displayPath, reason)
+	}
 
 	info, err := os.Stat(resolved)
 	if err != nil {

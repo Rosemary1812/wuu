@@ -301,6 +301,26 @@ func TestToolkit_ReadFileRejectsDirectory(t *testing.T) {
 	}
 }
 
+func TestToolkit_ReadFileRejectsSensitivePaths(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, ".env"), "API_KEY=secret\n")
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":".env"}`,
+	})
+	if err == nil {
+		t.Fatal("expected sensitive path rejection")
+	}
+	if !strings.Contains(err.Error(), "sensitive path") || !strings.Contains(err.Error(), "explicit secret handling") {
+		t.Fatalf("expected sensitive path guidance, got: %v", err)
+	}
+}
+
 func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -2472,9 +2492,15 @@ func TestToolkit_GrepRipgrepIncludesHiddenFiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse grep response: %v", err)
 	}
-	want := []grepMatch{{File: ".env", Line: 1, Content: "API_KEY=secret"}, {File: "visible.env", Line: 1, Content: "API_KEY=visible"}}
+	want := []grepMatch{
+		{File: ".env", Line: 1, Content: "[REDACTED: sensitive file content]"},
+		{File: "visible.env", Line: 1, Content: "[REDACTED: sensitive file content]"},
+	}
 	if !reflect.DeepEqual(parsed.Matches, want) {
 		t.Fatalf("unexpected hidden grep matches: got %+v want %+v", parsed.Matches, want)
+	}
+	if strings.Contains(resp, "API_KEY=secret") || strings.Contains(resp, "API_KEY=visible") {
+		t.Fatalf("grep response leaked sensitive file content: %s", resp)
 	}
 }
 
@@ -2747,11 +2773,14 @@ func TestToolkit_GrepFallbackIncludesHiddenDirectories(t *testing.T) {
 		t.Fatalf("parse grep response: %v", err)
 	}
 	want := []grepMatch{
-		{File: ".hidden/app.env", Line: 1, Content: "API_KEY=hidden"},
-		{File: "visible/app.env", Line: 1, Content: "API_KEY=visible"},
+		{File: ".hidden/app.env", Line: 1, Content: "[REDACTED: sensitive file content]"},
+		{File: "visible/app.env", Line: 1, Content: "[REDACTED: sensitive file content]"},
 	}
 	if !reflect.DeepEqual(parsed.Matches, want) {
 		t.Fatalf("unexpected hidden grep fallback matches: got %+v want %+v", parsed.Matches, want)
+	}
+	if strings.Contains(resp, "API_KEY=hidden") || strings.Contains(resp, "API_KEY=visible") {
+		t.Fatalf("grep fallback response leaked sensitive file content: %s", resp)
 	}
 }
 
