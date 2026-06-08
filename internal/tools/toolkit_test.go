@@ -107,6 +107,90 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	}
 }
 
+func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "old\n")
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"a.txt","content":"new\n"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "read_file") || !strings.Contains(err.Error(), "expected_old_sha") {
+		t.Fatalf("expected existing-file guard, got: %v", err)
+	}
+
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	var readParsed struct {
+		FileSHA string `json:"file_sha"`
+	}
+	if err := json.Unmarshal([]byte(readResp), &readParsed); err != nil {
+		t.Fatalf("parse read response: %v", err)
+	}
+	if readParsed.FileSHA == "" {
+		t.Fatalf("read_file missing file_sha: %s", readResp)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"a.txt","content":"new\n","expected_old_sha":"sha256:0000"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
+		t.Fatalf("expected expected_old_sha mismatch, got: %v", err)
+	}
+
+	writeResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"a.txt","content":"new\n","expected_old_sha":"` + readParsed.FileSHA + `"}`,
+	})
+	if err != nil {
+		t.Fatalf("write_file with expected_old_sha: %v", err)
+	}
+	var writeParsed struct {
+		OldFileSHA string `json:"old_file_sha"`
+		NewFileSHA string `json:"new_file_sha"`
+	}
+	if err := json.Unmarshal([]byte(writeResp), &writeParsed); err != nil {
+		t.Fatalf("parse write response: %v", err)
+	}
+	if writeParsed.OldFileSHA != readParsed.FileSHA || !strings.HasPrefix(writeParsed.NewFileSHA, "sha256:") {
+		t.Fatalf("unexpected write sha metadata: %+v", writeParsed)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"a.txt","content":"again\n","create_only":true}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected create_only to reject existing file, got: %v", err)
+	}
+
+	mustWriteFile(t, filepath.Join(root, "b.txt"), "first\n")
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"b.txt"}`,
+	}); err != nil {
+		t.Fatalf("read b.txt: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "b.txt"), "external\n")
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"b.txt","content":"agent\n"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed since last read") {
+		t.Fatalf("expected stale read rejection, got: %v", err)
+	}
+}
+
 func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

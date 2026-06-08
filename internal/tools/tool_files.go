@@ -325,6 +325,8 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 			"Usage:\n" +
 			"- Prefer edit_file for modifying existing files — it only sends the diff\n" +
 			"- Only use this tool to create new files or for complete rewrites\n" +
+			"- Existing files require expected_old_sha from read_file or a fresh prior read_file result\n" +
+			"- Set create_only=true when the file must not already exist\n" +
 			"- Returns a structured diff showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -337,6 +339,14 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "File content.",
 				},
+				"expected_old_sha": map[string]any{
+					"type":        "string",
+					"description": "Optional sha256 digest from read_file file_sha for the current existing file content.",
+				},
+				"create_only": map[string]any{
+					"type":        "boolean",
+					"description": "If true, fail when the target file already exists.",
+				},
 			},
 			"required": []string{"path", "content"},
 		},
@@ -345,8 +355,10 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 
 func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
+		Path           string `json:"path"`
+		Content        string `json:"content"`
+		ExpectedOldSHA string `json:"expected_old_sha"`
+		CreateOnly     bool   `json:"create_only"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -360,7 +372,19 @@ func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (string, err
 		return "", err
 	}
 
-	oldContent, _ := os.ReadFile(resolved)
+	oldContent, readErr := os.ReadFile(resolved)
+	fileExists := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return "", fmt.Errorf("read existing file: %w", readErr)
+	}
+	if args.CreateOnly && fileExists {
+		return "", fmt.Errorf("file already exists: %s", args.Path)
+	}
+	if fileExists {
+		if err := t.validateExistingWrite(resolved, oldContent, strings.TrimSpace(args.ExpectedOldSHA)); err != nil {
+			return "", err
+		}
+	}
 
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
 		return "", fmt.Errorf("create parent directory: %w", err)
@@ -375,9 +399,11 @@ func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (string, err
 	result := map[string]any{
 		"path":          t.env.NormalizeDisplayPath(resolved),
 		"written_bytes": len(args.Content),
+		"new_file_sha":  formatFileSHA(sha256Hex([]byte(args.Content))),
 	}
 
-	if len(oldContent) > 0 {
+	if fileExists {
+		result["old_file_sha"] = formatFileSHA(sha256Hex(oldContent))
 		result["diff"] = computeDiff(string(oldContent), args.Content, 3)
 	} else {
 		lineCount := strings.Count(args.Content, "\n")
@@ -387,6 +413,39 @@ func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (string, err
 		result["diff"] = DiffResult{NewFile: true, Lines: lineCount}
 	}
 	return mustJSON(result)
+}
+
+func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte, expectedOldSHA string) error {
+	currentSHA := sha256Hex(oldContent)
+	if expectedOldSHA != "" {
+		if normalizeFileSHA(expectedOldSHA) != currentSHA {
+			return errors.New("expected_old_sha does not match current file. Use read_file again before overwriting")
+		}
+		return nil
+	}
+	readEntry, ok := t.env.GetReadEntry(resolved)
+	if !ok {
+		return errors.New("existing file has not been read yet. Use read_file first or pass expected_old_sha from read_file before overwriting")
+	}
+	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
+		return errors.New("file changed since last read. Use read_file again before overwriting")
+	}
+	if readEntry.ContentSHA256 == "" {
+		info, err := os.Stat(resolved)
+		if err != nil {
+			return fmt.Errorf("stat file: %w", err)
+		}
+		if !readEntryMatchesInfo(readEntry, info) {
+			return errors.New("file changed since last read. Use read_file again before overwriting")
+		}
+	}
+	return nil
+}
+
+func normalizeFileSHA(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "sha256:")
+	return strings.ToLower(value)
 }
 
 // ---------------------------------------------------------------------------
