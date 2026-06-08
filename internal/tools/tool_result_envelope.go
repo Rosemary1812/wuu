@@ -10,6 +10,7 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 	envelope := toolresult.Envelope{
 		OK:         record.Success,
 		ToolCallID: record.CallID,
+		Revision:   record.RevisionAfter,
 		Summary:    toolResultSummary(record),
 		Data: map[string]any{
 			"name":                  record.Name,
@@ -21,6 +22,8 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 			"read_only":             record.ReadOnly,
 			"concurrency_safe":      record.ConcurrencySafe,
 			"duration_ms":           record.DurationMS,
+			"revision_before":       record.RevisionBefore,
+			"revision_after":        record.RevisionAfter,
 			"raw_output_bytes":      record.RawOutputBytes,
 			"returned_output_bytes": record.ReturnedOutputBytes,
 			"result_budgeted":       record.ResultBudgeted,

@@ -1080,6 +1080,57 @@ func TestToolkit_ToolTelemetry_RecordsSuccess(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolTelemetry_RecordsWorkspaceRevision(t *testing.T) {
+	root := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "hello\n")
+	runGit("add", "a.txt")
+	runGit("commit", "-m", "initial")
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-read",
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	}); err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-write",
+		Name:      "write_file",
+		Arguments: `{"path":"a.txt","content":"hello again\n"}`,
+	}); err != nil {
+		t.Fatalf("write_file: %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 2 {
+		t.Fatalf("expected two records, got %+v", records)
+	}
+	if records[0].RevisionBefore == "" || records[0].RevisionAfter == "" {
+		t.Fatalf("read record missing revisions: %+v", records[0])
+	}
+	if records[0].RevisionBefore != records[0].RevisionAfter {
+		t.Fatalf("read-only record should not change revision: %+v", records[0])
+	}
+	if records[1].RevisionBefore == "" || records[1].RevisionAfter == "" || records[1].RevisionBefore == records[1].RevisionAfter {
+		t.Fatalf("write record should change worktree revision: %+v", records[1])
+	}
+}
+
 func TestToolkit_ToolTelemetry_RecordsToolError(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

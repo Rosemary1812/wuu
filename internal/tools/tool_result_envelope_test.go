@@ -17,6 +17,8 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 		ReadOnly:            false,
 		ConcurrencySafe:     false,
 		DurationMS:          42,
+		RevisionBefore:      "git:before:worktree:aaa",
+		RevisionAfter:       "git:after:worktree:bbb",
 		Success:             false,
 		Error:               "authorization: bearer secret-token",
 		RawOutputBytes:      1024,
@@ -26,7 +28,7 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 
 	envelope := record.ResultEnvelope()
-	if envelope.OK || envelope.ToolCallID != "call_1" || envelope.DataRef != record.ResultRef {
+	if envelope.OK || envelope.ToolCallID != "call_1" || envelope.DataRef != record.ResultRef || envelope.Revision != record.RevisionAfter {
 		t.Fatalf("unexpected envelope identity: %+v", envelope)
 	}
 	if envelope.Summary != "run_shell failed in 42ms" {
@@ -45,6 +47,9 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"error_present":true`) {
 		t.Fatalf("envelope should retain error presence without raw error: %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"revision_before":"git:before:worktree:aaa"`) || !strings.Contains(string(raw), `"revision_after":"git:after:worktree:bbb"`) {
+		t.Fatalf("envelope should include revisions: %s", string(raw))
 	}
 }
 

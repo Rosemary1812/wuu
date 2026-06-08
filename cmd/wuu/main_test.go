@@ -257,6 +257,8 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 		ReadOnly:            false,
 		ConcurrencySafe:     false,
 		DurationMS:          42,
+		RevisionBefore:      "git:before:worktree:aaa",
+		RevisionAfter:       "git:after:worktree:bbb",
 		Success:             false,
 		Error:               "authorization: bearer abc123",
 		RawOutputBytes:      1024,
@@ -275,6 +277,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	if got[0].PolicyReason != "risk policy" {
 		t.Fatalf("policy reason not preserved: %+v", got[0])
 	}
+	if got[0].RevisionBefore != records[0].RevisionBefore || got[0].RevisionAfter != records[0].RevisionAfter {
+		t.Fatalf("revisions not preserved: %+v", got[0])
+	}
 	if strings.Contains(got[0].Error, "abc123") {
 		t.Fatalf("error secret leaked: %q", got[0].Error)
 	}
@@ -283,6 +288,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if got[0].ResultEnvelope == nil || got[0].ResultEnvelope.DataRef != records[0].ResultRef {
 		t.Fatalf("result envelope missing ref: %+v", got[0].ResultEnvelope)
+	}
+	if got[0].ResultEnvelope.Revision != records[0].RevisionAfter {
+		t.Fatalf("result envelope missing revision: %+v", got[0].ResultEnvelope)
 	}
 	rawEnvelope, err := json.Marshal(got[0].ResultEnvelope)
 	if err != nil {

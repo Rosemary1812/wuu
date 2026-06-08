@@ -797,6 +797,8 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			ConcurrencySafe:     record.ConcurrencySafe,
 			StartedAt:           record.StartedAt,
 			DurationMS:          record.DurationMS,
+			RevisionBefore:      record.RevisionBefore,
+			RevisionAfter:       record.RevisionAfter,
 			Success:             record.Success,
 			Error:               evalSafePreview(record.Error, evalTextPreviewLimit),
 			RawOutputBytes:      record.RawOutputBytes,

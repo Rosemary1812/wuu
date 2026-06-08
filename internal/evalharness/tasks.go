@@ -104,6 +104,8 @@ type ToolObservation struct {
 	ConcurrencySafe     bool                 `json:"concurrency_safe"`
 	StartedAt           time.Time            `json:"started_at,omitempty"`
 	DurationMS          int64                `json:"duration_ms"`
+	RevisionBefore      string               `json:"revision_before,omitempty"`
+	RevisionAfter       string               `json:"revision_after,omitempty"`
 	Success             bool                 `json:"success"`
 	Error               string               `json:"error,omitempty"`
 	RawOutputBytes      int                  `json:"raw_output_bytes,omitempty"`
