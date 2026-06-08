@@ -465,7 +465,7 @@ func (t *ListFilesTool) Definition() providers.ToolDefinition {
 		Name: "list_files",
 		Description: "Lists entries under a directory in the workspace.\n\n" +
 			"Usage:\n" +
-			"- Returns name, is_dir, and size for each entry\n" +
+			"- Returns name, path, is_dir, and size for each entry\n" +
 			"- Defaults to workspace root when path is omitted\n" +
 			"- Truncated at 1000 entries for large directories",
 		InputSchema: map[string]any{
@@ -518,6 +518,7 @@ func (t *ListFilesTool) Execute(_ context.Context, argsJSON string) (string, err
 
 		item := map[string]any{
 			"name":   entry.Name(),
+			"path":   t.env.NormalizeDisplayPath(filepath.Join(resolved, entry.Name())),
 			"is_dir": entry.IsDir(),
 		}
 		if !entry.IsDir() {
@@ -530,12 +531,27 @@ func (t *ListFilesTool) Execute(_ context.Context, argsJSON string) (string, err
 	}
 
 	result := map[string]any{
-		"path":      t.env.NormalizeDisplayPath(resolved),
-		"total":     len(entries),
-		"truncated": len(entries) > limit,
-		"entries":   resultEntries,
+		"path":                t.env.NormalizeDisplayPath(resolved),
+		"total":               len(entries),
+		"truncated":           len(entries) > limit,
+		"omitted_entry_count": max(len(entries)-limit, 0),
+		"entries":             resultEntries,
+		"next_suggestions":    listFilesNextSuggestions(len(entries), len(resultEntries), len(entries) > limit),
 	}
 	return mustJSON(result)
+}
+
+func listFilesNextSuggestions(total, returned int, truncated bool) []string {
+	if truncated {
+		return []string{"narrow the list_files path or use glob to find candidate files before reading"}
+	}
+	if total == 0 {
+		return []string{"try a parent directory or glob if the expected files are elsewhere"}
+	}
+	if returned == 0 {
+		return []string{"inspect a parent directory or use glob to locate files"}
+	}
+	return []string{"use read_file on specific file paths or list_files on subdirectories before editing"}
 }
 
 // ---------------------------------------------------------------------------

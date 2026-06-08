@@ -704,6 +704,55 @@ func TestToolkit_ListFilesRejectsFile(t *testing.T) {
 	}
 }
 
+func TestToolkit_ListFilesReturnsEntryPathsAndSuggestions(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "dir", "a.txt"), "hello\n")
+	if err := os.MkdirAll(filepath.Join(root, "dir", "sub"), 0o755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "list_files",
+		Arguments: `{"path":"dir"}`,
+	})
+	if err != nil {
+		t.Fatalf("list_files: %v", err)
+	}
+	var parsed struct {
+		Path              string `json:"path"`
+		Total             int    `json:"total"`
+		OmittedEntryCount int    `json:"omitted_entry_count"`
+		Entries           []struct {
+			Name  string `json:"name"`
+			Path  string `json:"path"`
+			IsDir bool   `json:"is_dir"`
+			Size  int64  `json:"size,omitempty"`
+		} `json:"entries"`
+		Suggestions []string `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse list_files response: %v", err)
+	}
+	if parsed.Path != "dir" || parsed.Total != 2 || parsed.OmittedEntryCount != 0 {
+		t.Fatalf("unexpected list_files metadata: %+v", parsed)
+	}
+	wantPaths := []string{"dir/a.txt", "dir/sub"}
+	gotPaths := make([]string, 0, len(parsed.Entries))
+	for _, entry := range parsed.Entries {
+		gotPaths = append(gotPaths, entry.Path)
+	}
+	if !reflect.DeepEqual(gotPaths, wantPaths) {
+		t.Fatalf("entry paths = %+v, want %+v", gotPaths, wantPaths)
+	}
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "read_file") {
+		t.Fatalf("list_files response missing next suggestion: %+v", parsed.Suggestions)
+	}
+}
+
 func TestToolkit_PathEscapeBlocked(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
