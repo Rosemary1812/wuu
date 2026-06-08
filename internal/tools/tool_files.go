@@ -556,6 +556,7 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 		Description: "Performs exact string replacement in a file.\n\n" +
 			"Usage:\n" +
 			"- You must read the file before editing — edits are rejected if the file has not been read\n" +
+			"- Or pass expected_old_sha from read_file to guard the exact file version being edited\n" +
 			"- Provide old_text (must match exactly once) and new_text\n" +
 			"- Use replace_all=true to replace every occurrence instead of requiring unique match\n" +
 			"- The edit will FAIL if old_text is not unique — provide more context or use replace_all\n" +
@@ -582,6 +583,10 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 					"type":        "boolean",
 					"description": "Replace all occurrences. Default false (must match exactly once).",
 				},
+				"expected_old_sha": map[string]any{
+					"type":        "string",
+					"description": "Optional sha256 digest from read_file file_sha for the current existing file content.",
+				},
 			},
 			"required": []string{"path", "old_text", "new_text"},
 		},
@@ -590,10 +595,11 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 
 func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Path       string `json:"path"`
-		OldText    string `json:"old_text"`
-		NewText    string `json:"new_text"`
-		ReplaceAll bool   `json:"replace_all"`
+		Path           string `json:"path"`
+		OldText        string `json:"old_text"`
+		NewText        string `json:"new_text"`
+		ReplaceAll     bool   `json:"replace_all"`
+		ExpectedOldSHA string `json:"expected_old_sha"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -613,12 +619,6 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 		return "", err
 	}
 
-	// Must-read-first guard: reject edit if file hasn't been read.
-	readEntry, ok := t.env.GetReadEntry(resolved)
-	if !ok {
-		return "", errors.New("file has not been read yet. Use read_file first to inspect the file before editing")
-	}
-
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return "", fmt.Errorf("stat file: %w", err)
@@ -627,19 +627,13 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 		return "", fmt.Errorf("path is a directory: %s. Use read_file to inspect the file before editing", args.Path)
 	}
 
-	if readEntry.Size != 0 && readEntry.Size != info.Size() {
-		return "", errors.New("file changed since last read. Use read_file again before editing")
-	}
-
 	content, err := os.ReadFile(resolved)
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
 	}
-	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != sha256Hex(content) {
-		return "", errors.New("file changed since last read. Use read_file again before editing")
-	}
-	if readEntry.ContentSHA256 == "" && !readEntryMatchesInfo(readEntry, info) {
-		return "", errors.New("file changed since last read. Use read_file again before editing")
+	oldSHA := sha256Hex(content)
+	if err := t.validateEditBaseline(resolved, info, oldSHA, strings.TrimSpace(args.ExpectedOldSHA)); err != nil {
+		return "", err
 	}
 
 	text := string(content)
@@ -667,10 +661,36 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 
 	diff := computeDiff(text, newContent, 3)
 	result := map[string]any{
-		"path": t.env.NormalizeDisplayPath(resolved),
-		"diff": diff,
+		"path":             t.env.NormalizeDisplayPath(resolved),
+		"old_file_sha":     formatFileSHA(oldSHA),
+		"new_file_sha":     formatFileSHA(sha256Hex([]byte(newContent))),
+		"diff":             diff,
+		"next_suggestions": []string{"run targeted validation with run_test or inspect the resulting diff before finishing"},
 	}
 	return mustJSON(result)
+}
+
+func (t *EditFileTool) validateEditBaseline(resolved string, info os.FileInfo, currentSHA, expectedOldSHA string) error {
+	if expectedOldSHA != "" {
+		if normalizeFileSHA(expectedOldSHA) != currentSHA {
+			return errors.New("expected_old_sha does not match current file. Use read_file again before editing")
+		}
+		return nil
+	}
+	readEntry, ok := t.env.GetReadEntry(resolved)
+	if !ok {
+		return errors.New("file has not been read yet. Use read_file first or pass expected_old_sha from read_file before editing")
+	}
+	if readEntry.Size != 0 && readEntry.Size != info.Size() {
+		return errors.New("file changed since last read. Use read_file again before editing")
+	}
+	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
+		return errors.New("file changed since last read. Use read_file again before editing")
+	}
+	if readEntry.ContentSHA256 == "" && !readEntryMatchesInfo(readEntry, info) {
+		return errors.New("file changed since last read. Use read_file again before editing")
+	}
+	return nil
 }
 
 func readEntryMatchesInfo(entry ReadFileEntry, info os.FileInfo) bool {

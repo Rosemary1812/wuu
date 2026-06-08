@@ -368,6 +368,58 @@ func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
 	}
 }
 
+func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "alpha\n")
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":"a.txt","old_text":"alpha","new_text":"bravo"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
+		t.Fatalf("expected edit_file to require read or expected_old_sha, got: %v", err)
+	}
+
+	oldSHA := formatFileSHA(sha256Hex([]byte("alpha\n")))
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":"a.txt","old_text":"alpha","new_text":"bravo","expected_old_sha":"` + oldSHA + `"}`,
+	})
+	if err != nil {
+		t.Fatalf("edit_file with expected_old_sha: %v", err)
+	}
+	var parsed struct {
+		OldFileSHA  string   `json:"old_file_sha"`
+		NewFileSHA  string   `json:"new_file_sha"`
+		Suggestions []string `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse edit response: %v", err)
+	}
+	if parsed.OldFileSHA != oldSHA || !strings.HasPrefix(parsed.NewFileSHA, "sha256:") {
+		t.Fatalf("unexpected edit sha metadata: %+v", parsed)
+	}
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "run_test") {
+		t.Fatalf("edit_file response missing validation suggestion: %+v", parsed.Suggestions)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "bravo\n" {
+		t.Fatalf("unexpected edited content: %q", got)
+	}
+
+	mustWriteFile(t, filepath.Join(root, "b.txt"), "one\n")
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":"b.txt","old_text":"one","new_text":"two","expected_old_sha":"sha256:0000"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
+		t.Fatalf("expected expected_old_sha mismatch, got: %v", err)
+	}
+}
+
 func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
