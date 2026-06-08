@@ -33,7 +33,7 @@ func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 			"- Supported operations: *** Add File, *** Update File, optional *** Move to, and *** Delete File\n" +
 			"- Prefix added lines with +, removed lines with -, and unchanged context lines with a space\n" +
 			"- Paths are relative to the workspace root and cannot escape it\n" +
-			"- Returns per-file structured diffs showing what changed",
+			"- Returns changed_files, hunk_count, provenance, and per-file structured diffs showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -76,15 +76,24 @@ func (t *ApplyPatchTool) Execute(_ context.Context, argsJSON string) (string, er
 	}
 
 	files := make([]applyPatchFileResult, 0, len(patch.Hunks))
+	changedFiles := make([]string, 0, len(patch.Hunks))
 	for _, hunk := range patch.Hunks {
 		result, err := t.applyHunk(hunk)
 		if err != nil {
 			return "", fmt.Errorf("apply_patch verification failed: %w", err)
 		}
 		files = append(files, result)
+		changedFiles = append(changedFiles, result.changedPath())
 	}
 
 	return mustJSON(map[string]any{
+		"dry_run":       false,
+		"hunk_count":    len(patch.Hunks),
+		"changed_files": uniqueNonEmptyStrings(changedFiles),
+		"provenance": map[string]any{
+			"tool":   "apply_patch",
+			"source": "model_tool_call",
+		},
 		"files": files,
 	})
 }
@@ -113,6 +122,27 @@ type applyPatchFileResult struct {
 	MovePath string     `json:"move_path,omitempty"`
 	Action   string     `json:"action"`
 	Diff     DiffResult `json:"diff"`
+}
+
+func (r applyPatchFileResult) changedPath() string {
+	if strings.TrimSpace(r.MovePath) != "" {
+		return strings.TrimSpace(r.MovePath)
+	}
+	return strings.TrimSpace(r.Path)
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func parseApplyPatch(raw string) (applyPatch, error) {

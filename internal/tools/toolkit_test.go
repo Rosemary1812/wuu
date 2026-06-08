@@ -263,6 +263,28 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 		!strings.Contains(resp, `"action":"delete"`) || !strings.Contains(resp, `"action":"move"`) {
 		t.Fatalf("expected per-file actions in response: %s", resp)
 	}
+	var parsed struct {
+		DryRun       bool     `json:"dry_run"`
+		HunkCount    int      `json:"hunk_count"`
+		ChangedFiles []string `json:"changed_files"`
+		Provenance   struct {
+			Tool   string `json:"tool"`
+			Source string `json:"source"`
+		} `json:"provenance"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse apply_patch response: %v", err)
+	}
+	if parsed.DryRun || parsed.HunkCount != 4 {
+		t.Fatalf("unexpected patch summary: %+v", parsed)
+	}
+	wantChanged := []string{"a.txt", "dir/new.txt", "remove.txt", "renamed.txt"}
+	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
+		t.Fatalf("changed_files = %+v, want %+v", parsed.ChangedFiles, wantChanged)
+	}
+	if parsed.Provenance.Tool != "apply_patch" || parsed.Provenance.Source != "model_tool_call" {
+		t.Fatalf("unexpected provenance: %+v", parsed.Provenance)
+	}
 
 	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "line one\nline 2\nline three\n" {
 		t.Fatalf("unexpected updated content: %q", got)
