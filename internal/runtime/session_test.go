@@ -682,6 +682,11 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	if rt.StreamRunner.APIModel != "gpt-5.5" {
 		t.Fatalf("APIModel = %q", rt.StreamRunner.APIModel)
 	}
+	for _, want := range []string{"# Harness Adapter", "Provider/model: openai/gpt-5.5", "tool-contract-driven"} {
+		if !strings.Contains(rt.BaseSystemPrompt, want) {
+			t.Fatalf("BaseSystemPrompt missing harness adapter text %q:\n%s", want, rt.BaseSystemPrompt)
+		}
+	}
 	if got := rt.StreamRunner.ProviderOptions["serviceTier"]; got != "priority" {
 		t.Fatalf("ProviderOptions serviceTier = %#v", got)
 	}
