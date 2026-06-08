@@ -105,22 +105,33 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		failureSummary.Failed = true
 	}
 	return mustJSON(map[string]any{
-		"command":         shellResult.Command,
-		"scope":           scope,
-		"purpose":         args.Purpose,
-		"classification":  classification,
-		"passed":          shellResult.ExitCode == 0 && !shellResult.TimedOut,
-		"exit_code":       shellResult.ExitCode,
-		"duration_ms":     shellResult.DurationMS,
-		"timed_out":       shellResult.TimedOut,
-		"truncated":       shellResult.Truncated,
-		"output":          shellResult.Output,
-		"stdout_tail":     shellResult.StdoutTail,
-		"stderr_tail":     shellResult.StderrTail,
-		"stdout_bytes":    shellResult.StdoutBytes,
-		"stderr_bytes":    shellResult.StderrBytes,
-		"failure_summary": failureSummary,
+		"command":          shellResult.Command,
+		"scope":            scope,
+		"purpose":          redactToolOutput(args.Purpose),
+		"classification":   classification,
+		"passed":           shellResult.ExitCode == 0 && !shellResult.TimedOut,
+		"exit_code":        shellResult.ExitCode,
+		"duration_ms":      shellResult.DurationMS,
+		"timed_out":        shellResult.TimedOut,
+		"truncated":        shellResult.Truncated,
+		"output":           shellResult.Output,
+		"stdout_tail":      shellResult.StdoutTail,
+		"stderr_tail":      shellResult.StderrTail,
+		"stdout_bytes":     shellResult.StdoutBytes,
+		"stderr_bytes":     shellResult.StderrBytes,
+		"failure_summary":  failureSummary,
+		"next_suggestions": runTestNextSuggestions(shellResult, failureSummary),
 	})
+}
+
+func runTestNextSuggestions(shellResult shellExecutionResult, failureSummary testFailureSummary) []string {
+	if shellResult.TimedOut {
+		return []string{"narrow the verification scope before rerunning, or raise timeout only if the broad test is required"}
+	}
+	if shellResult.ExitCode != 0 || failureSummary.Failed {
+		return []string{"inspect failure_summary, form a concrete hypothesis, read implicated files, patch minimally, then rerun targeted verification"}
+	}
+	return []string{"record this verification in the final response and inspect the final diff before finishing"}
 }
 
 type testFailureSummary struct {

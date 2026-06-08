@@ -124,15 +124,23 @@ func (t *ApplyPatchTool) Execute(_ context.Context, argsJSON string) (string, er
 	}
 
 	return mustJSON(map[string]any{
-		"dry_run":       dryRun,
-		"hunk_count":    len(patch.Hunks),
-		"changed_files": uniqueNonEmptyStrings(changedFiles),
+		"dry_run":          dryRun,
+		"hunk_count":       len(patch.Hunks),
+		"changed_files":    uniqueNonEmptyStrings(changedFiles),
+		"next_suggestions": applyPatchNextSuggestions(dryRun),
 		"provenance": map[string]any{
 			"tool":   "apply_patch",
 			"source": "model_tool_call",
 		},
 		"files": files,
 	})
+}
+
+func applyPatchNextSuggestions(dryRun bool) []string {
+	if dryRun {
+		return []string{"inspect the previewed diffs, then rerun apply_patch without dry_run only if the preview matches the intended change"}
+	}
+	return []string{"run targeted validation with run_test, then inspect the resulting diff before finishing"}
 }
 
 type applyPatch struct {

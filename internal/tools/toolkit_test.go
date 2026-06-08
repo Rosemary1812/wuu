@@ -267,6 +267,7 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 		DryRun       bool     `json:"dry_run"`
 		HunkCount    int      `json:"hunk_count"`
 		ChangedFiles []string `json:"changed_files"`
+		Suggestions  []string `json:"next_suggestions"`
 		Provenance   struct {
 			Tool   string `json:"tool"`
 			Source string `json:"source"`
@@ -284,6 +285,9 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 	if parsed.Provenance.Tool != "apply_patch" || parsed.Provenance.Source != "model_tool_call" {
 		t.Fatalf("unexpected provenance: %+v", parsed.Provenance)
+	}
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "run_test") {
+		t.Fatalf("apply_patch response missing validation suggestion: %+v", parsed.Suggestions)
 	}
 
 	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "line one\nline 2\nline three\n" {
@@ -350,6 +354,7 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 		DryRun       bool     `json:"dry_run"`
 		HunkCount    int      `json:"hunk_count"`
 		ChangedFiles []string `json:"changed_files"`
+		Suggestions  []string `json:"next_suggestions"`
 		Files        []struct {
 			Action string `json:"action"`
 		} `json:"files"`
@@ -363,6 +368,9 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 	wantChanged := []string{"a.txt", "dir/new.txt", "remove.txt", "renamed.txt"}
 	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
 		t.Fatalf("changed_files = %+v, want %+v", parsed.ChangedFiles, wantChanged)
+	}
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "without dry_run") {
+		t.Fatalf("apply_patch dry-run response missing apply suggestion: %+v", parsed.Suggestions)
 	}
 	if changedHookCalls != 0 {
 		t.Fatalf("dry-run should not fire file-change hooks, got %d", changedHookCalls)
@@ -1092,6 +1100,7 @@ func TestOK(t *testing.T) {}
 		Scope          string             `json:"scope"`
 		Classification ToolClassification `json:"classification"`
 		FailureSummary testFailureSummary `json:"failure_summary"`
+		Suggestions    []string           `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(resp), &got); err != nil {
 		t.Fatalf("parse run_test response: %v\n%s", err, resp)
@@ -1104,6 +1113,9 @@ func TestOK(t *testing.T) {}
 	}
 	if got.FailureSummary.Failed {
 		t.Fatalf("passing test should not report failure summary: %+v", got.FailureSummary)
+	}
+	if len(got.Suggestions) == 0 || !strings.Contains(strings.Join(got.Suggestions, " "), "final response") {
+		t.Fatalf("passing run_test response missing finish suggestion: %+v", got.Suggestions)
 	}
 }
 
@@ -1134,6 +1146,7 @@ func TestBroken(t *testing.T) {
 		Passed         bool               `json:"passed"`
 		ExitCode       int                `json:"exit_code"`
 		FailureSummary testFailureSummary `json:"failure_summary"`
+		Suggestions    []string           `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(resp), &got); err != nil {
 		t.Fatalf("parse run_test response: %v\n%s", err, resp)
@@ -1146,6 +1159,9 @@ func TestBroken(t *testing.T) {
 	}
 	if strings.Contains(resp, "secret-value") || !strings.Contains(resp, "[REDACTED]") {
 		t.Fatalf("run_test response should redact secret-like output: %s", resp)
+	}
+	if len(got.Suggestions) == 0 || !strings.Contains(strings.Join(got.Suggestions, " "), "hypothesis") {
+		t.Fatalf("failed run_test response missing debug suggestion: %+v", got.Suggestions)
 	}
 }
 
@@ -1986,6 +2002,9 @@ func TestToolkit_RunShell(t *testing.T) {
 	}
 	if parsed["duration_ms"].(float64) < 0 {
 		t.Fatalf("unexpected duration: %v", parsed["duration_ms"])
+	}
+	if suggestions, ok := parsed["next_suggestions"].([]any); !ok || len(suggestions) == 0 {
+		t.Fatalf("run_shell response missing next_suggestions: %+v", parsed)
 	}
 }
 

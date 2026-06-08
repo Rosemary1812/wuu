@@ -113,6 +113,7 @@ type shellExecutionResult struct {
 	StderrBytes         int                `json:"stderr_bytes"`
 	StdoutTailTruncated bool               `json:"stdout_tail_truncated"`
 	StderrTailTruncated bool               `json:"stderr_tail_truncated"`
+	NextSuggestions     []string           `json:"next_suggestions,omitempty"`
 }
 
 func executeShellCommand(ctx context.Context, env *Env, command string, timeoutSeconds int) (shellExecutionResult, error) {
@@ -158,13 +159,15 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
 	stdoutTail, stdoutTailTruncated := tailString(redactedStdout, maxShellTailBytes)
 	stderrTail, stderrTailTruncated := tailString(redactedStderr, maxShellTailBytes)
+	classification := classifyShellCommand(command)
+	timedOut := errors.Is(runCtx.Err(), context.DeadlineExceeded)
 
 	return shellExecutionResult{
 		Command:             redactedCommand,
-		Classification:      classifyShellCommand(command),
+		Classification:      classification,
 		ExitCode:            exitCode,
 		DurationMS:          durationMS,
-		TimedOut:            errors.Is(runCtx.Err(), context.DeadlineExceeded),
+		TimedOut:            timedOut,
 		Truncated:           truncated,
 		Output:              trimmed,
 		StdoutTail:          stdoutTail,
@@ -173,7 +176,21 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 		StderrBytes:         len(stderrText),
 		StdoutTailTruncated: stdoutTailTruncated,
 		StderrTailTruncated: stderrTailTruncated,
+		NextSuggestions:     shellNextSuggestions(exitCode, timedOut, classification),
 	}, nil
+}
+
+func shellNextSuggestions(exitCode int, timedOut bool, classification ToolClassification) []string {
+	if timedOut {
+		return []string{"narrow the command scope or increase timeout only if the long-running command is necessary"}
+	}
+	if exitCode != 0 {
+		return []string{"inspect the redacted stdout/stderr tails, then retry with corrected inputs or use run_test for verification commands"}
+	}
+	if classification.ReadOnly {
+		return []string{"use the returned observation as evidence for the next action"}
+	}
+	return []string{"inspect git diff or relevant artifacts before continuing"}
 }
 
 func tailString(value string, maxBytes int) (string, bool) {
