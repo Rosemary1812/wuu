@@ -11,11 +11,13 @@ func TestScheduler_fireOneShot(t *testing.T) {
 	store := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
 
 	var fired atomic.Int32
+	done := make(chan struct{}, 1)
 	onFire := func(task Task) {
 		if task.Prompt == "" {
 			t.Fatal("expected fired task prompt")
 		}
 		fired.Add(1)
+		done <- struct{}{}
 	}
 
 	s := NewScheduler(SchedulerConfig{
@@ -38,6 +40,12 @@ func TestScheduler_fireOneShot(t *testing.T) {
 
 	s.check()
 
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for one-shot task fire")
+	}
+
 	if fired.Load() != 1 {
 		t.Fatalf("expected 1 fire, got %d", fired.Load())
 	}
@@ -52,9 +60,13 @@ func TestScheduler_recurringUpdatesLastFired(t *testing.T) {
 	store := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
 
 	var fired atomic.Int32
+	done := make(chan struct{}, 1)
 	s := NewScheduler(SchedulerConfig{
-		Store:   store,
-		OnFire:  func(Task) { fired.Add(1) },
+		Store: store,
+		OnFire: func(Task) {
+			fired.Add(1)
+			done <- struct{}{}
+		},
 		IsOwner: func() bool { return true },
 	})
 
@@ -70,6 +82,12 @@ func TestScheduler_recurringUpdatesLastFired(t *testing.T) {
 	s.Start()
 	defer s.Stop()
 	s.check()
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for recurring task fire")
+	}
 
 	if fired.Load() != 1 {
 		t.Fatalf("expected 1 fire, got %d", fired.Load())
