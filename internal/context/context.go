@@ -37,6 +37,8 @@ const (
 	BlockSystemContract    BlockKind = "SYSTEM_CONTRACT"
 	BlockProjectRules      BlockKind = "PROJECT_RULES"
 	BlockTask              BlockKind = "TASK"
+	BlockTaskState         BlockKind = "TASK_STATE"
+	BlockConstraintLedger  BlockKind = "CONSTRAINT_LEDGER"
 	BlockWorkflowState     BlockKind = "WORKFLOW_STATE"
 	BlockRepoMap           BlockKind = "REPO_MAP"
 	BlockActiveFiles       BlockKind = "ACTIVE_FILES"
@@ -154,6 +156,10 @@ func CompileBlocks(blocks []Block) string {
 	return b.String()
 }
 
+func FormatSystemReminderBlocks(blocks ...Block) string {
+	return "<system-reminder>\n" + CompileBlocks(blocks) + "\n</system-reminder>"
+}
+
 func renderBlock(block Block) string {
 	content := strings.TrimSpace(block.Content)
 	if content == "" {
@@ -217,7 +223,7 @@ func FormatSystemReminder(env EnvInfo, sections ...string) string {
 		}
 	}
 
-	return "<system-reminder>\n" + CompileBlocks(blocks) + "\n</system-reminder>"
+	return FormatSystemReminderBlocks(blocks...)
 }
 
 // IsSystemReminder reports whether the given metadata/content belongs to an

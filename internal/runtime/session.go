@@ -273,7 +273,7 @@ func NewSession(opts Options) (*Session, error) {
 		ContextWindowOverride: contextWindow,
 		MaxInputTokens:        ResolveInputWindow(providerCfg.Model, ruleProviderCfg, contextWindow),
 		DisableAutoCompact:    cfg.Agent.DisableAutoCompact,
-		BeforeRequest:         EnvContextInjector(rootDir, agentControl, agentthread.RootPath),
+		BeforeRequest:         EnvContextInjector(rootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
 		AfterTurn:             afterTurn,
 	}
 
@@ -492,7 +492,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 	}
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
-	runner.BeforeRequest = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath)
+	runner.BeforeRequest = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	if kit != nil {
 		memoryLimit, userLimit := kit.MemoryLimits()
 		if memoryReviewer := newProfileMemoryReviewScheduler(kit.Memory(), s.ProfileMemoryNudgeInterval, memoryLimit, userLimit); memoryReviewer != nil {
@@ -695,10 +695,17 @@ func isCodexSubscriptionProviderType(providerType string) bool {
 
 // EnvContextInjector returns dynamic runtime context injected into each model
 // request without persisting it in conversation history.
-func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, currentPath string) func() []providers.ChatMessage {
+func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, currentPath string, blockProviders ...func() []wuucontext.Block) func() []providers.ChatMessage {
 	return func() []providers.ChatMessage {
 		env := wuucontext.Snapshot(rootDir)
-		reminder := wuucontext.FormatSystemReminder(env)
+		blocks := []wuucontext.Block{wuucontext.EnvironmentBlock(env)}
+		for _, provider := range blockProviders {
+			if provider == nil {
+				continue
+			}
+			blocks = append(blocks, provider()...)
+		}
+		reminder := wuucontext.FormatSystemReminderBlocks(blocks...)
 		if control != nil {
 			if agentReminder := control.ActiveTaskReminder(currentPath); agentReminder != "" {
 				reminder += "\n\n" + agentReminder
@@ -710,6 +717,13 @@ func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, curr
 			Content: reminder,
 		}}
 	}
+}
+
+func toolkitContextBlockProvider(toolkit *tools.Toolkit) func() []wuucontext.Block {
+	if toolkit == nil {
+		return nil
+	}
+	return toolkit.PlanContextBlocks
 }
 
 func setupCatwalk(cfg config.Config) {

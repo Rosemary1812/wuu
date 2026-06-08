@@ -12,6 +12,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -41,6 +42,28 @@ func (c *sessionRecordingClient) StreamChat(_ context.Context, req providers.Cha
 	ch <- providers.StreamEvent{Type: providers.EventDone}
 	close(ch)
 	return ch, nil
+}
+
+func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
+	inject := EnvContextInjector(t.TempDir(), nil, "", func() []wuucontext.Block {
+		return []wuucontext.Block{{
+			Kind:    wuucontext.BlockTaskState,
+			Title:   "Current visible task plan",
+			Source:  "update_plan",
+			Content: "plan:\n- [in_progress] edit",
+		}}
+	})
+
+	msgs := inject()
+	if len(msgs) != 1 {
+		t.Fatalf("expected one context message, got %+v", msgs)
+	}
+	content := msgs[0].Content
+	for _, want := range []string{"<system-reminder>", "[ENVIRONMENT]", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("injected context missing %q:\n%s", want, content)
+		}
+	}
 }
 
 func (c *sessionRecordingClient) LastRequest() providers.ChatRequest {

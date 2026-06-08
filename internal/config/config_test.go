@@ -570,6 +570,10 @@ func TestDefaultSystemPrompt_UpdatePlanDiscipline(t *testing.T) {
 		"exactly one item in_progress",
 		"mark every item completed",
 		"trivial one-step tasks",
+		"constraint ledger",
+		"pre_write_check",
+		"pre_finish_check",
+		"[CONSTRAINT_LEDGER]",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include update_plan guidance %q: %q", want, prompt)
