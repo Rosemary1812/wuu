@@ -325,6 +325,7 @@ func TestConfig_ToolPolicy(t *testing.T) {
   "agent": {
     "system_prompt": "test",
     "tool_policy": {
+      "profile": "balanced",
       "default_action": "allow",
       "tools": {
         "run_shell": "require_approval"
@@ -350,6 +351,9 @@ func TestConfig_ToolPolicy(t *testing.T) {
 	if cfg.Agent.ToolPolicy.DefaultAction != "allow" {
 		t.Fatalf("default_action = %q, want allow", cfg.Agent.ToolPolicy.DefaultAction)
 	}
+	if cfg.Agent.ToolPolicy.Profile != "balanced" {
+		t.Fatalf("profile = %q, want balanced", cfg.Agent.ToolPolicy.Profile)
+	}
 	if cfg.Agent.ToolPolicy.Tools["run_shell"] != "require_approval" {
 		t.Fatalf("run_shell action = %q, want require_approval", cfg.Agent.ToolPolicy.Tools["run_shell"])
 	}
@@ -358,6 +362,37 @@ func TestConfig_ToolPolicy(t *testing.T) {
 	}
 	if cfg.Agent.ToolPolicy.Risks["high"] != "deny" {
 		t.Fatalf("high risk action = %q, want deny", cfg.Agent.ToolPolicy.Risks["high"])
+	}
+}
+
+func TestConfig_ToolPolicyRejectsInvalidProfile(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test",
+    "tool_policy": {
+      "profile": "reckless"
+    }
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, _, err := LoadFrom(workdir, "")
+	if err == nil || !strings.Contains(err.Error(), "agent.tool_policy.profile") {
+		t.Fatalf("expected invalid policy profile error, got %v", err)
 	}
 }
 

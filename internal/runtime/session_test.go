@@ -753,6 +753,7 @@ func TestMCPToolOverridesFromConfig(t *testing.T) {
 
 func TestToolPolicyFromConfig(t *testing.T) {
 	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
+		Profile:       "balanced",
 		DefaultAction: "allow",
 		Tools: map[string]string{
 			"run_shell": "require_approval",
@@ -776,6 +777,28 @@ func TestToolPolicyFromConfig(t *testing.T) {
 	}
 	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyDeny {
 		t.Fatalf("high risk action = %s, want deny", policy.RiskActions[tools.ToolRiskHigh])
+	}
+}
+
+func TestToolPolicyFromConfigAppliesProfileDefaults(t *testing.T) {
+	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
+		Profile: "enterprise_restricted",
+		Risks: map[string]string{
+			"medium": "allow",
+		},
+	})
+
+	if policy.DefaultAction != tools.ToolPolicyDeny {
+		t.Fatalf("DefaultAction = %s, want deny", policy.DefaultAction)
+	}
+	if policy.RiskActions[tools.ToolRiskLow] != tools.ToolPolicyAllow {
+		t.Fatalf("low risk action = %s, want allow", policy.RiskActions[tools.ToolRiskLow])
+	}
+	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyDeny {
+		t.Fatalf("high risk action = %s, want deny", policy.RiskActions[tools.ToolRiskHigh])
+	}
+	if policy.RiskActions[tools.ToolRiskMedium] != tools.ToolPolicyAllow {
+		t.Fatalf("explicit medium risk override = %s, want allow", policy.RiskActions[tools.ToolRiskMedium])
 	}
 }
 

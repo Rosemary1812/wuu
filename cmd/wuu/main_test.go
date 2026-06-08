@@ -253,6 +253,7 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 		Exposure:            tools.ToolExposureDirect,
 		Risk:                tools.ToolRiskHigh,
 		PolicyAction:        tools.ToolPolicyAllow,
+		PolicyReason:        "risk policy",
 		ReadOnly:            false,
 		ConcurrencySafe:     false,
 		DurationMS:          42,
@@ -270,6 +271,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if got[0].Name != "run_shell" || got[0].Kind != "shell" || got[0].RawOutputBytes != 1024 || !got[0].ResultBudgeted {
 		t.Fatalf("metadata not preserved: %+v", got[0])
+	}
+	if got[0].PolicyReason != "risk policy" {
+		t.Fatalf("policy reason not preserved: %+v", got[0])
 	}
 	if strings.Contains(got[0].Error, "abc123") {
 		t.Fatalf("error secret leaked: %q", got[0].Error)

@@ -231,6 +231,7 @@ type AgentConfig struct {
 // ToolPolicyConfig configures the runtime policy layer that runs before tool
 // execution. Empty means local high-trust mode: allow all tools.
 type ToolPolicyConfig struct {
+	Profile       string            `json:"profile,omitempty"`
 	DefaultAction string            `json:"default_action,omitempty"`
 	Tools         map[string]string `json:"tools,omitempty"`
 	Kinds         map[string]string `json:"kinds,omitempty"`
@@ -396,6 +397,9 @@ func (c Config) Validate() error {
 }
 
 func validateToolPolicyConfig(policy ToolPolicyConfig) error {
+	if err := validateToolPolicyProfile(policy.Profile); err != nil {
+		return err
+	}
 	if err := validateToolPolicyAction("agent.tool_policy.default_action", policy.DefaultAction); err != nil {
 		return err
 	}
@@ -428,6 +432,15 @@ func validateToolPolicyConfig(policy ToolPolicyConfig) error {
 		}
 	}
 	return nil
+}
+
+func validateToolPolicyProfile(profile string) error {
+	switch strings.TrimSpace(profile) {
+	case "", "safe", "balanced", "autonomous", "enterprise_restricted":
+		return nil
+	default:
+		return fmt.Errorf("agent.tool_policy.profile must be one of safe, balanced, autonomous, enterprise_restricted")
+	}
 }
 
 func validateToolPolicyAction(path, action string) error {

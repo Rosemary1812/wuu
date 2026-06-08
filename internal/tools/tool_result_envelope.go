@@ -17,6 +17,7 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 			"exposure":              string(record.Exposure),
 			"risk":                  string(record.Risk),
 			"policy_action":         string(record.PolicyAction),
+			"policy_reason":         record.PolicyReason,
 			"read_only":             record.ReadOnly,
 			"concurrency_safe":      record.ConcurrencySafe,
 			"duration_ms":           record.DurationMS,

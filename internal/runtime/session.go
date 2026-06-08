@@ -808,12 +808,23 @@ func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolO
 }
 
 func ToolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
-	return tools.ToolPolicy{
-		DefaultAction: toolPolicyAction(in.DefaultAction),
-		ToolActions:   toolPolicyToolActions(in.Tools),
-		KindActions:   toolPolicyKindActions(in.Kinds),
-		RiskActions:   toolPolicyRiskActions(in.Risks),
+	policy, ok := tools.PolicyForProfile(tools.ToolPolicyProfile(strings.TrimSpace(in.Profile)))
+	if !ok {
+		policy = tools.ToolPolicy{}
 	}
+	if action := toolPolicyAction(in.DefaultAction); action != "" {
+		policy.DefaultAction = action
+	}
+	if actions := toolPolicyToolActions(in.Tools); len(actions) > 0 {
+		policy.ToolActions = mergeToolPolicyToolActions(policy.ToolActions, actions)
+	}
+	if actions := toolPolicyKindActions(in.Kinds); len(actions) > 0 {
+		policy.KindActions = mergeToolPolicyKindActions(policy.KindActions, actions)
+	}
+	if actions := toolPolicyRiskActions(in.Risks); len(actions) > 0 {
+		policy.RiskActions = mergeToolPolicyRiskActions(policy.RiskActions, actions)
+	}
+	return policy
 }
 
 func toolPolicyToolActions(in map[string]string) map[string]tools.ToolPolicyAction {
@@ -854,6 +865,39 @@ func toolPolicyRiskActions(in map[string]string) map[tools.ToolRisk]tools.ToolPo
 		if risk != "" {
 			out[tools.ToolRisk(risk)] = toolPolicyAction(action)
 		}
+	}
+	return out
+}
+
+func mergeToolPolicyToolActions(base, override map[string]tools.ToolPolicyAction) map[string]tools.ToolPolicyAction {
+	out := make(map[string]tools.ToolPolicyAction, len(base)+len(override))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range override {
+		out[k] = v
+	}
+	return out
+}
+
+func mergeToolPolicyKindActions(base, override map[tools.ToolKind]tools.ToolPolicyAction) map[tools.ToolKind]tools.ToolPolicyAction {
+	out := make(map[tools.ToolKind]tools.ToolPolicyAction, len(base)+len(override))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range override {
+		out[k] = v
+	}
+	return out
+}
+
+func mergeToolPolicyRiskActions(base, override map[tools.ToolRisk]tools.ToolPolicyAction) map[tools.ToolRisk]tools.ToolPolicyAction {
+	out := make(map[tools.ToolRisk]tools.ToolPolicyAction, len(base)+len(override))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range override {
+		out[k] = v
 	}
 	return out
 }

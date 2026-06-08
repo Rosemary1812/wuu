@@ -80,6 +80,7 @@ type ToolObservation struct {
 	Exposure            string               `json:"exposure,omitempty"`
 	Risk                string               `json:"risk,omitempty"`
 	PolicyAction        string               `json:"policy_action,omitempty"`
+	PolicyReason        string               `json:"policy_reason,omitempty"`
 	ReadOnly            bool                 `json:"read_only"`
 	ConcurrencySafe     bool                 `json:"concurrency_safe"`
 	StartedAt           time.Time            `json:"started_at,omitempty"`

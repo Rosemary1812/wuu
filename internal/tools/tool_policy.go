@@ -22,6 +22,15 @@ const (
 	ToolPolicyRequireApproval ToolPolicyAction = "require_approval"
 )
 
+type ToolPolicyProfile string
+
+const (
+	ToolPolicyProfileSafe                 ToolPolicyProfile = "safe"
+	ToolPolicyProfileBalanced             ToolPolicyProfile = "balanced"
+	ToolPolicyProfileAutonomous           ToolPolicyProfile = "autonomous"
+	ToolPolicyProfileEnterpriseRestricted ToolPolicyProfile = "enterprise_restricted"
+)
+
 // ToolPolicy decides whether a tool call may run. The zero value is the local
 // high-trust mode: every call is allowed unless an explicit override says
 // otherwise.
@@ -37,6 +46,46 @@ type ToolPolicyDecision struct {
 	Action ToolPolicyAction `json:"action"`
 	Risk   ToolRisk         `json:"risk"`
 	Reason string           `json:"reason,omitempty"`
+}
+
+func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {
+	switch profile {
+	case "":
+		return ToolPolicy{}, true
+	case ToolPolicyProfileSafe:
+		return ToolPolicy{
+			DefaultAction: ToolPolicyDeny,
+			RiskActions: map[ToolRisk]ToolPolicyAction{
+				ToolRiskLow:    ToolPolicyAllow,
+				ToolRiskMedium: ToolPolicyRequireApproval,
+				ToolRiskHigh:   ToolPolicyRequireApproval,
+			},
+		}, true
+	case ToolPolicyProfileBalanced:
+		return ToolPolicy{
+			DefaultAction: ToolPolicyAllow,
+			RiskActions: map[ToolRisk]ToolPolicyAction{
+				ToolRiskLow:    ToolPolicyAllow,
+				ToolRiskMedium: ToolPolicyAllow,
+				ToolRiskHigh:   ToolPolicyRequireApproval,
+			},
+		}, true
+	case ToolPolicyProfileAutonomous:
+		return ToolPolicy{
+			DefaultAction: ToolPolicyAllow,
+		}, true
+	case ToolPolicyProfileEnterpriseRestricted:
+		return ToolPolicy{
+			DefaultAction: ToolPolicyDeny,
+			RiskActions: map[ToolRisk]ToolPolicyAction{
+				ToolRiskLow:    ToolPolicyAllow,
+				ToolRiskMedium: ToolPolicyRequireApproval,
+				ToolRiskHigh:   ToolPolicyDeny,
+			},
+		}, true
+	default:
+		return ToolPolicy{}, false
+	}
 }
 
 func (p ToolPolicy) Decide(info ToolInfo) ToolPolicyDecision {

@@ -17,6 +17,7 @@ type ToolExecutionRecord struct {
 	Exposure            ToolExposure     `json:"exposure"`
 	Risk                ToolRisk         `json:"risk"`
 	PolicyAction        ToolPolicyAction `json:"policy_action"`
+	PolicyReason        string           `json:"policy_reason,omitempty"`
 	ReadOnly            bool             `json:"read_only"`
 	ConcurrencySafe     bool             `json:"concurrency_safe"`
 	StartedAt           time.Time        `json:"started_at"`
@@ -94,6 +95,7 @@ func (t *Toolkit) recordToolExecution(
 		Exposure:            info.Exposure,
 		Risk:                info.Risk,
 		PolicyAction:        decision.Action,
+		PolicyReason:        decision.Reason,
 		ReadOnly:            info.ReadOnly,
 		ConcurrencySafe:     info.ConcurrencySafe,
 		StartedAt:           startedAt,

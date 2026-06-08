@@ -741,6 +741,7 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			Exposure:            string(record.Exposure),
 			Risk:                string(record.Risk),
 			PolicyAction:        string(record.PolicyAction),
+			PolicyReason:        record.PolicyReason,
 			ReadOnly:            record.ReadOnly,
 			ConcurrencySafe:     record.ConcurrencySafe,
 			StartedAt:           record.StartedAt,
