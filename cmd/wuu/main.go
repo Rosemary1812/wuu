@@ -12,18 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
-	"github.com/blueberrycongee/wuu/internal/modelcatalog"
-	"github.com/blueberrycongee/wuu/internal/modelvariant"
-	processruntime "github.com/blueberrycongee/wuu/internal/process"
-	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
-	"github.com/blueberrycongee/wuu/internal/statepath"
+	sessionid "github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
@@ -262,68 +257,25 @@ func runTask(args []string) error {
 		return err
 	}
 
-	providerCfg, resolvedName, err := cfg.ResolveProvider(*providerName)
+	rt, err := runtime.NewSession(runtime.Options{
+		RootDir:       rootDir,
+		HomeDir:       os.Getenv("HOME"),
+		ConfigPath:    configPath,
+		Config:        cfg,
+		ProviderName:  *providerName,
+		ModelOverride: *modelOverride,
+		NoTools:       *noTools,
+	})
 	if err != nil {
 		return err
 	}
-	if *modelOverride != "" {
-		providerCfg.Model = *modelOverride
-	}
-	_, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
-	toolModeModel := modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model)
+	defer rt.Cleanup()
+	rt.SetSessionID("cli-" + sessionid.NewID())
 
-	client, err := providerfactory.BuildStreamClient(providerCfg, resolvedName)
-	if err != nil {
-		return err
+	runner := rt.StreamRunner
+	if runner == nil {
+		return errors.New("stream runner is not configured")
 	}
-
-	var toolExecutor agent.ToolExecutor
-	var processMgr *processruntime.Manager
-	wuuHome, err := statepath.Home(os.Getenv("HOME"))
-	if err != nil {
-		return err
-	}
-	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, rootDir)
-	if err != nil {
-		return err
-	}
-	processMgr, err = processruntime.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
-	if err != nil {
-		return err
-	}
-	if !*noTools {
-		kit, newErr := tools.New(rootDir)
-		if newErr != nil {
-			return newErr
-		}
-		// Default normal mode: main agent retains all tools including write_file,
-		// edit_file, and run_shell. Coordinator mode can be entered at runtime via
-		// the /coordinator slash command.
-		kit.SetStateDir(workspaceStateDir)
-		kit.SetProcessManager(processMgr)
-		kit.SetToolPolicy(runtime.ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
-		kit.ConfigureEditToolsForModel(toolModeModel)
-		toolExecutor = kit
-	}
-
-	modelSelection := modelvariant.Resolve(providerCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
-	runner := agent.StreamRunner{
-		Client:          client,
-		Tools:           toolExecutor,
-		Model:           providerCfg.Model,
-		SystemPrompt:    cfg.Agent.SystemPrompt,
-		MaxSteps:        cfg.Agent.MaxSteps,
-		Temperature:     cfg.Agent.Temperature,
-		Effort:          modelSelection.LegacyEffort,
-		Variant:         modelSelection.Variant,
-		ProviderOptions: modelSelection.ProviderOptions,
-		ContextWindowOverride: runtime.ResolveContextWindow(
-			providerCfg.Model,
-			providerCfg.ContextWindow,
-			cfg.Agent.MaxContextTokens,
-		),
-	}
-
 	if *maxSteps > 0 {
 		runner.MaxSteps = *maxSteps
 	}
@@ -351,7 +303,7 @@ func runTask(args []string) error {
 		return err
 	}
 
-	fmt.Printf("provider: %s\nmodel: %s\nconfig: %s\n\n", resolvedName, providerCfg.Model, configPath)
+	fmt.Printf("provider: %s\nmodel: %s\nconfig: %s\n\n", rt.ProviderName, rt.Model, configPath)
 	fmt.Println(answer)
 	return nil
 }
