@@ -559,6 +559,17 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 	if !strings.Contains(prompt, "git commit -e") {
 		t.Fatalf("default system prompt must forbid interactive git: %q", prompt)
 	}
+	for _, want := range []string{
+		"verification ledger",
+		"final diff",
+		"validation commands",
+		"workflow reports",
+		"unverified scope",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("default system prompt must include finish verification guidance %q: %q", want, prompt)
+		}
+	}
 }
 
 func TestDefaultSystemPrompt_UpdatePlanDiscipline(t *testing.T) {
