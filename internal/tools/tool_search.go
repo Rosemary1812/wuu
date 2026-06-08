@@ -26,8 +26,8 @@ type GrepTool struct{ env *Env }
 func NewGrepTool(env *Env) *GrepTool { return &GrepTool{env: env} }
 
 func (t *GrepTool) Name() string            { return "grep" }
-func (t *GrepTool) IsReadOnly() bool         { return true }
-func (t *GrepTool) IsConcurrencySafe() bool  { return true }
+func (t *GrepTool) IsReadOnly() bool        { return true }
+func (t *GrepTool) IsConcurrencySafe() bool { return true }
 
 func (t *GrepTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -137,10 +137,11 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 			return "", err
 		}
 		result := map[string]any{
-			"pattern":   args.Pattern,
-			"total":     len(files),
-			"truncated": len(files) >= limit,
-			"files":     files,
+			"pattern":          args.Pattern,
+			"total":            len(files),
+			"truncated":        len(files) >= limit,
+			"files":            files,
+			"next_suggestions": searchNextSuggestions("grep", "files_with_matches", len(files), len(files) >= limit),
 		}
 		return mustJSON(result)
 
@@ -150,10 +151,11 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 			return "", err
 		}
 		result := map[string]any{
-			"pattern":   args.Pattern,
-			"total":     total,
-			"truncated": len(counts) >= limit,
-			"counts":    counts,
+			"pattern":          args.Pattern,
+			"total":            total,
+			"truncated":        len(counts) >= limit,
+			"counts":           counts,
+			"next_suggestions": searchNextSuggestions("grep", "count", total, len(counts) >= limit),
 		}
 		return mustJSON(result)
 
@@ -166,10 +168,11 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 			}
 		}
 		result := map[string]any{
-			"pattern":   args.Pattern,
-			"total":     len(matches),
-			"truncated": len(matches) >= limit,
-			"matches":   matches,
+			"pattern":          args.Pattern,
+			"total":            len(matches),
+			"truncated":        len(matches) >= limit,
+			"matches":          matches,
+			"next_suggestions": searchNextSuggestions("grep", "content", len(matches), len(matches) >= limit),
 		}
 		out, err := mustJSON(result)
 		if err != nil {
@@ -191,8 +194,8 @@ type GlobTool struct{ env *Env }
 func NewGlobTool(env *Env) *GlobTool { return &GlobTool{env: env} }
 
 func (t *GlobTool) Name() string            { return "glob" }
-func (t *GlobTool) IsReadOnly() bool         { return true }
-func (t *GlobTool) IsConcurrencySafe() bool  { return true }
+func (t *GlobTool) IsReadOnly() bool        { return true }
+func (t *GlobTool) IsConcurrencySafe() bool { return true }
 
 func (t *GlobTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -251,12 +254,43 @@ func (t *GlobTool) Execute(_ context.Context, argsJSON string) (string, error) {
 	}
 
 	result := map[string]any{
-		"pattern":   args.Pattern,
-		"total":     len(matches),
-		"truncated": len(matches) >= limit,
-		"files":     matches,
+		"pattern":          args.Pattern,
+		"total":            len(matches),
+		"truncated":        len(matches) >= limit,
+		"files":            matches,
+		"next_suggestions": searchNextSuggestions("glob", "", len(matches), len(matches) >= limit),
 	}
 	return mustJSON(result)
+}
+
+func searchNextSuggestions(toolName, outputMode string, total int, truncated bool) []string {
+	if truncated {
+		switch toolName {
+		case "glob":
+			return []string{"narrow the glob pattern or path before reading files"}
+		default:
+			return []string{"narrow the grep pattern, path, or include filter before reading matches"}
+		}
+	}
+	if total == 0 {
+		switch toolName {
+		case "glob":
+			return []string{"try a broader glob pattern or inspect the directory with list_files"}
+		default:
+			return []string{"try a broader or case-insensitive grep pattern, or use glob to find candidate files first"}
+		}
+	}
+	if toolName == "glob" {
+		return []string{"use read_file for specific candidate files or grep within the matched set before editing"}
+	}
+	switch outputMode {
+	case "files_with_matches":
+		return []string{"use grep output_mode=content or read_file on the most relevant matched files"}
+	case "count":
+		return []string{"rerun grep with output_mode=content for the highest-value files before editing"}
+	default:
+		return []string{"read_file the relevant match ranges before editing or making a conclusion"}
+	}
 }
 
 // ---------------------------------------------------------------------------

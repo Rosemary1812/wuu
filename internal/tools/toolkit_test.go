@@ -2293,6 +2293,59 @@ func TestToolkit_GrepRipgrepIncludesHiddenFiles(t *testing.T) {
 	}
 }
 
+func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc target() {}\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	grepResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "grep",
+		Arguments: `{"pattern":"target"}`,
+	})
+	if err != nil {
+		t.Fatalf("grep: %v", err)
+	}
+	var grepParsed struct {
+		Matches     []grepMatch `json:"matches"`
+		Suggestions []string    `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(grepResp), &grepParsed); err != nil {
+		t.Fatalf("parse grep response: %v", err)
+	}
+	if len(grepParsed.Matches) != 1 {
+		t.Fatalf("unexpected grep matches: %+v", grepParsed.Matches)
+	}
+	if len(grepParsed.Suggestions) == 0 || !strings.Contains(strings.Join(grepParsed.Suggestions, " "), "read_file") {
+		t.Fatalf("grep response missing read_file suggestion: %+v", grepParsed.Suggestions)
+	}
+
+	globResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "glob",
+		Arguments: `{"pattern":"*.missing"}`,
+	})
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	var globParsed struct {
+		Files       []string `json:"files"`
+		Suggestions []string `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(globResp), &globParsed); err != nil {
+		t.Fatalf("parse glob response: %v", err)
+	}
+	if len(globParsed.Files) != 0 {
+		t.Fatalf("unexpected glob matches: %+v", globParsed.Files)
+	}
+	if len(globParsed.Suggestions) == 0 || !strings.Contains(strings.Join(globParsed.Suggestions, " "), "broader glob") {
+		t.Fatalf("empty glob response missing broaden suggestion: %+v", globParsed.Suggestions)
+	}
+}
+
 func TestToolkit_GlobRipgrepFirst(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
