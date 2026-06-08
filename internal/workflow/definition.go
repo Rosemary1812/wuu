@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+)
+
+const (
+	DefinitionKindMarkdown = "markdown"
+	DefinitionKindScript   = "script"
 )
 
 // Definition is a reusable workflow asset discovered from project or user
@@ -17,6 +23,7 @@ type Definition struct {
 	Name        string
 	Description string
 	WhenToUse   string
+	Kind        string
 	Content     string
 	Source      string
 	Path        string
@@ -91,11 +98,11 @@ func scanDir(dir, source string) []Definition {
 	for _, entry := range entries {
 		path := filepath.Join(dir, entry.Name())
 		if entry.IsDir() {
-			workflowFile := findWorkflowMD(path)
+			workflowFile := findWorkflowFile(path)
 			if workflowFile == "" {
 				continue
 			}
-			wf, parseErr := parseDefinitionFile(workflowFile, source)
+			wf, parseErr := loadDefinitionFile(workflowFile, source)
 			if parseErr != nil {
 				continue
 			}
@@ -105,10 +112,10 @@ func scanDir(dir, source string) []Definition {
 			continue
 		}
 
-		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+		if !isDefinitionFile(entry.Name()) {
 			continue
 		}
-		wf, parseErr := parseDefinitionFile(path, source)
+		wf, parseErr := loadDefinitionFile(path, source)
 		if parseErr != nil {
 			continue
 		}
@@ -119,24 +126,156 @@ func scanDir(dir, source string) []Definition {
 	return workflows
 }
 
-func findWorkflowMD(dir string) string {
+func findWorkflowFile(dir string) string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return ""
 	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if strings.EqualFold(entry.Name(), "WORKFLOW.md") {
-			return filepath.Join(dir, entry.Name())
+	for _, target := range []string{"WORKFLOW.js", "WORKFLOW.md"} {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			if strings.EqualFold(entry.Name(), target) {
+				return filepath.Join(dir, entry.Name())
+			}
 		}
 	}
 	return ""
 }
 
+func isDefinitionFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return ext == ".md" || ext == ".js"
+}
+
 func LoadDefinitionFile(path, source string) (Definition, error) {
-	return parseDefinitionFile(path, source)
+	return loadDefinitionFile(path, source)
+}
+
+func loadDefinitionFile(path, source string) (Definition, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".js":
+		return parseScriptDefinitionFile(path, source)
+	default:
+		return parseDefinitionFile(path, source)
+	}
+}
+
+func parseScriptDefinitionFile(path, source string) (Definition, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Definition{}, err
+	}
+	return parseScriptDefinitionContent(string(data), filepath.Base(path), source, filepath.Dir(path), path), nil
+}
+
+func parseScriptDefinitionContent(content, filename, source, dir, path string) Definition {
+	wf := Definition{
+		Kind:          DefinitionKindScript,
+		Source:        source,
+		Path:          path,
+		Dir:           dir,
+		UserInvocable: true,
+		Content:       content,
+	}
+	parseScriptMetadata(&wf, content)
+	if wf.Name == "" {
+		if strings.EqualFold(filename, "WORKFLOW.js") {
+			wf.Name = filepath.Base(dir)
+		} else {
+			wf.Name = strings.TrimSuffix(filename, filepath.Ext(filename))
+		}
+	}
+	wf.Name = canonicalName(wf.Name)
+	if wf.Description == "" {
+		wf.Description = firstScriptDescription(content)
+	}
+	return wf
+}
+
+func parseScriptMetadata(wf *Definition, content string) {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "//") {
+			key, value, ok := splitScriptMetadataLine(strings.TrimSpace(strings.TrimPrefix(line, "//")))
+			if ok {
+				applyDefinitionMetadata(wf, key, value)
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "/*") || strings.HasPrefix(line, "*") || strings.HasPrefix(line, "*/") {
+			continue
+		}
+		break
+	}
+}
+
+func splitScriptMetadataLine(line string) (key, value string, ok bool) {
+	key, value, ok = splitAnyYAMLLine(line)
+	if !ok {
+		return "", "", false
+	}
+	if !scriptMetadataKeys[strings.ToLower(key)] {
+		return "", "", false
+	}
+	return key, value, true
+}
+
+var scriptMetadataKeys = map[string]bool{
+	"name":                     true,
+	"description":              true,
+	"when-to-use":              true,
+	"when_to_use":              true,
+	"argument-hint":            true,
+	"argument_hint":            true,
+	"user-invocable":           true,
+	"user_invocable":           true,
+	"disable-model-invocation": true,
+	"disable_model_invocation": true,
+	"version":                  true,
+	"max-agents":               true,
+	"max_agents":               true,
+	"max-concurrency":          true,
+	"max_concurrency":          true,
+	"profiles":                 true,
+	"allow-profile-creation":   true,
+	"allow_profile_creation":   true,
+	"memory-policy":            true,
+	"memory_policy":            true,
+}
+
+var scriptDescriptionPattern = regexp.MustCompile(`^\s*//\s*(.+?)\s*$`)
+
+func firstScriptDescription(content string) string {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		matches := scriptDescriptionPattern.FindStringSubmatch(line)
+		if len(matches) != 2 {
+			break
+		}
+		key, _, ok := splitScriptMetadataLine(matches[1])
+		if ok && key != "" {
+			continue
+		}
+		desc := strings.TrimSpace(matches[1])
+		if desc == "" {
+			continue
+		}
+		if len(desc) > 200 {
+			desc = desc[:200] + "..."
+		}
+		return desc
+	}
+	return ""
 }
 
 func parseDefinitionFile(path, source string) (Definition, error) {
@@ -164,6 +303,7 @@ func parseDefinitionContent(content, filename, source, dir, path string) (Defini
 	}
 
 	wf := Definition{
+		Kind:          DefinitionKindMarkdown,
 		Source:        source,
 		Path:          path,
 		Dir:           dir,
@@ -191,39 +331,47 @@ func parseFrontmatter(wf *Definition, lines []string) {
 		if !ok {
 			continue
 		}
-		switch key {
-		case "name":
-			wf.Name = value
-		case "description":
-			wf.Description = value
-		case "when-to-use", "when_to_use":
-			wf.WhenToUse = value
-		case "argument-hint", "argument_hint":
-			wf.ArgumentHint = value
-		case "user-invocable", "user_invocable":
-			wf.UserInvocable = parseBool(value, true)
-		case "disable-model-invocation", "disable_model_invocation":
-			wf.DisableModelInvoke = parseBool(value, false)
-		case "version":
-			wf.Version = value
-		case "max-agents", "max_agents":
-			wf.MaxAgents = parseInt(value)
-		case "max-concurrency", "max_concurrency":
-			wf.MaxConcurrency = parseInt(value)
-		case "profiles":
-			if value != "" {
-				wf.Profiles = profileRefsFromNames(parseList(value))
-				continue
-			}
+		switch applyDefinitionMetadata(wf, key, value) {
+		case "profiles-block":
 			profiles, next := parseProfileBlock(lines, i+1)
 			wf.Profiles = profiles
 			i = next - 1
-		case "allow-profile-creation", "allow_profile_creation":
-			wf.AllowProfileCreation = value
-		case "memory-policy", "memory_policy":
-			wf.MemoryPolicy = value
 		}
 	}
+}
+
+func applyDefinitionMetadata(wf *Definition, key, value string) string {
+	switch key {
+	case "name":
+		wf.Name = value
+	case "description":
+		wf.Description = value
+	case "when-to-use", "when_to_use":
+		wf.WhenToUse = value
+	case "argument-hint", "argument_hint":
+		wf.ArgumentHint = value
+	case "user-invocable", "user_invocable":
+		wf.UserInvocable = parseBool(value, true)
+	case "disable-model-invocation", "disable_model_invocation":
+		wf.DisableModelInvoke = parseBool(value, false)
+	case "version":
+		wf.Version = value
+	case "max-agents", "max_agents":
+		wf.MaxAgents = parseInt(value)
+	case "max-concurrency", "max_concurrency":
+		wf.MaxConcurrency = parseInt(value)
+	case "profiles":
+		if value != "" {
+			wf.Profiles = profileRefsFromNames(parseList(value))
+			return ""
+		}
+		return "profiles-block"
+	case "allow-profile-creation", "allow_profile_creation":
+		wf.AllowProfileCreation = value
+	case "memory-policy", "memory_policy":
+		wf.MemoryPolicy = value
+	}
+	return ""
 }
 
 func parseProfileBlock(lines []string, start int) ([]ProfileRef, int) {

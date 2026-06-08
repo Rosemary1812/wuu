@@ -662,6 +662,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "list_agent_profiles", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "create_agent_profile", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "create_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
+		{name: "run_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "save_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "workflow_control", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "workflow_status", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},

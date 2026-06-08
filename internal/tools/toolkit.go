@@ -157,6 +157,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewSaveWorkflowTool(e),
 		NewListAgentProfilesTool(e),
 		NewCreateAgentProfileTool(e),
+		NewRunWorkflowTool(e),
 		NewCreateWorkflowTool(e),
 		NewWorkflowControlTool(e),
 		NewWorkflowStatusTool(e),

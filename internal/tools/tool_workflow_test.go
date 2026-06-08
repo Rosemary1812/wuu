@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
@@ -346,6 +351,309 @@ func TestSaveWorkflowCanUseRunPlan(t *testing.T) {
 	}
 }
 
+func TestSaveAndRunScriptWorkflow(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	script := `
+phase("Plan", () => {
+  const current = status();
+  if (!current.run || current.run.id !== "workflow-script-run") {
+    throw new Error("status did not expose the current run");
+  }
+});
+phase({id: "qa", name: "QA"}, () => {});
+synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
+`
+	saveArgs, err := mustJSON(map[string]any{
+		"name":            "dynamic-review",
+		"description":     "Run a dynamic JavaScript workflow.",
+		"kind":            "script",
+		"content":         script,
+		"max_agents":      8,
+		"max_concurrency": 3,
+	})
+	if err != nil {
+		t.Fatalf("build save args: %v", err)
+	}
+	saveResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "save_workflow",
+		Arguments: saveArgs,
+	})
+	if err != nil {
+		t.Fatalf("save_workflow script: %v", err)
+	}
+	var saved struct {
+		Kind string `json:"kind"`
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(saveResp), &saved); err != nil {
+		t.Fatalf("parse save response: %v", err)
+	}
+	if saved.Kind != workflow.DefinitionKindScript || filepath.Base(saved.Path) != "WORKFLOW.js" {
+		t.Fatalf("unexpected saved script workflow: %+v", saved)
+	}
+
+	loadResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "load_workflow",
+		Arguments: `{"name":"dynamic-review","arguments":"{\"feature\":\"settings\"}"}`,
+	})
+	if err != nil {
+		t.Fatalf("load_workflow script: %v", err)
+	}
+	var loaded struct {
+		Kind                string   `json:"kind"`
+		Content             string   `json:"content"`
+		SuggestedPhaseNames []string `json:"suggested_phase_names"`
+	}
+	if err := json.Unmarshal([]byte(loadResp), &loaded); err != nil {
+		t.Fatalf("parse load response: %v", err)
+	}
+	if loaded.Kind != workflow.DefinitionKindScript || !strings.Contains(loaded.Content, "synthesize") {
+		t.Fatalf("unexpected loaded script workflow: %+v", loaded)
+	}
+	if loaded.SuggestedPhaseNames != nil {
+		t.Fatalf("script workflow should not expose markdown phase suggestions: %+v", loaded.SuggestedPhaseNames)
+	}
+
+	runResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "run_workflow",
+		Arguments: `{
+			"definition_name":"dynamic-review",
+			"arguments":"{\"feature\":\"settings\"}",
+			"run_id":"workflow-script-run",
+			"background":false
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("run_workflow: %v", err)
+	}
+	var ran struct {
+		RunID      string            `json:"run_id"`
+		Status     workflow.RunState `json:"status"`
+		ScriptPath string            `json:"script_path"`
+		Background bool              `json:"background"`
+	}
+	if err := json.Unmarshal([]byte(runResp), &ran); err != nil {
+		t.Fatalf("parse run response: %v", err)
+	}
+	if ran.RunID != "workflow-script-run" || ran.Status != workflow.RunStateCompleted || ran.Background {
+		t.Fatalf("unexpected run response: %+v", ran)
+	}
+	if _, err := os.Stat(ran.ScriptPath); err != nil {
+		t.Fatalf("script artifact not written: %v", err)
+	}
+
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-script-run","include_events":true}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status: %v", err)
+	}
+	var status struct {
+		Run    workflow.Run     `json:"run"`
+		Events []workflow.Event `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
+		t.Fatalf("parse status response: %v", err)
+	}
+	if status.Run.Status != workflow.RunStateCompleted || len(status.Run.Phases) != 2 {
+		t.Fatalf("script run state mismatch: %+v", status.Run)
+	}
+	if status.Run.Phases[0].ID != "plan" || status.Run.Phases[1].ID != "qa" {
+		t.Fatalf("script phases not recorded: %+v", status.Run.Phases)
+	}
+	if status.Run.ScriptPath == "" || status.Run.FinalReportPath == "" {
+		t.Fatalf("script/final artifacts missing: %+v", status.Run)
+	}
+	report, err := os.ReadFile(status.Run.FinalReportPath)
+	if err != nil {
+		t.Fatalf("read final report: %v", err)
+	}
+	if !strings.Contains(string(report), "Dynamic workflow complete for settings") {
+		t.Fatalf("final report mismatch:\n%s", string(report))
+	}
+	if !workflowEventsContain(status.Events, workflow.EventScriptWritten) {
+		t.Fatalf("expected script_written event, got %+v", status.Events)
+	}
+}
+
+func TestRunScriptWorkflowSpawnsAndAwaitsAgent(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &workflowFakeClient{content: "agent done"},
+		DefaultModel: "fake-model",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
+		SessionID:    "workflow-script-session",
+		HistoryDir:   filepath.Join(stateDir, "workers"),
+		ThreadDir:    filepath.Join(stateDir, "threads"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return workflowNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopWorkflowAgentControl(control)
+	kit.SetAgentControl(control)
+	kit.SetAgentIdentity("root", agentthread.RootPath)
+
+	script := `
+phase("Workers", () => {
+  const spawned = spawnAgent({taskName: "qa", message: "Run QA.", synchronous: true});
+  if (spawned.status !== "completed" || spawned.result !== "agent done") {
+    throw new Error("spawnAgent did not return the completed worker result");
+  }
+  const awaited = awaitAgents([spawned.agentId]);
+  if (!awaited.results || awaited.results.length !== 1 || awaited.results[0].result !== "agent done") {
+    throw new Error("awaitAgents did not return the worker result");
+  }
+  synthesize("# Final\n\n" + awaited.results[0].result);
+});
+`
+	runResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "run_workflow",
+		Arguments: `{
+			"script":` + strconv.Quote(script) + `,
+			"run_id":"workflow-script-spawn-run",
+			"background":false
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("run_workflow: %v", err)
+	}
+	var ran struct {
+		Status workflow.RunState `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(runResp), &ran); err != nil {
+		t.Fatalf("parse run response: %v", err)
+	}
+	if ran.Status != workflow.RunStateCompleted {
+		t.Fatalf("workflow should complete: %+v", ran)
+	}
+
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-script-spawn-run"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status: %v", err)
+	}
+	var status struct {
+		Run       workflow.Run        `json:"run"`
+		AgentRuns []workflow.AgentRun `json:"agent_runs"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
+		t.Fatalf("parse status response: %v", err)
+	}
+	if len(status.AgentRuns) != 1 || status.AgentRuns[0].TaskName != "qa" || status.AgentRuns[0].Result != "agent done" {
+		t.Fatalf("agent run not recorded from script runtime: %+v", status.AgentRuns)
+	}
+	if len(status.Run.Phases) != 1 || len(status.Run.Phases[0].AgentRunIDs) != 1 {
+		t.Fatalf("agent run should attach to current phase: %+v", status.Run.Phases)
+	}
+}
+
+func TestRunScriptWorkflowSupportsSpawnPrimitive(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &workflowFakeClient{content: "spawn primitive done"},
+		DefaultModel: "fake-model",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
+		SessionID:    "workflow-spawn-primitive-session",
+		HistoryDir:   filepath.Join(stateDir, "workers"),
+		ThreadDir:    filepath.Join(stateDir, "threads"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return workflowNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopWorkflowAgentControl(control)
+	kit.SetAgentControl(control)
+	kit.SetAgentIdentity("root", agentthread.RootPath)
+
+	script := `
+phase("Spawn primitive", () => {
+  const spawned = spawn("qa_reviewer", {prompt: "Run QA.", synchronous: true});
+  if (spawned.taskName !== "qa_reviewer_1") {
+    throw new Error("spawn did not derive a stable task name: " + spawned.taskName);
+  }
+  if (spawned.agentProfile) {
+    throw new Error("spawn role label should not become an Agent Profile");
+  }
+  if (spawned.status !== "completed" || spawned.result !== "spawn primitive done") {
+    throw new Error("spawn did not return the completed worker result");
+  }
+  synthesize("# Final\n\n" + spawned.result);
+});
+`
+	runResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "run_workflow",
+		Arguments: `{
+			"script":` + strconv.Quote(script) + `,
+			"run_id":"workflow-spawn-primitive-run",
+			"background":false
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("run_workflow: %v", err)
+	}
+	var ran struct {
+		Status workflow.RunState `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(runResp), &ran); err != nil {
+		t.Fatalf("parse run response: %v", err)
+	}
+	if ran.Status != workflow.RunStateCompleted {
+		t.Fatalf("workflow should complete: %+v", ran)
+	}
+
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-spawn-primitive-run"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status: %v", err)
+	}
+	var status struct {
+		AgentRuns []workflow.AgentRun `json:"agent_runs"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
+		t.Fatalf("parse status response: %v", err)
+	}
+	if len(status.AgentRuns) != 1 {
+		t.Fatalf("expected one agent run, got %+v", status.AgentRuns)
+	}
+	run := status.AgentRuns[0]
+	if run.TaskName != "qa_reviewer_1" || run.AgentProfile != "" || !strings.Contains(run.Prompt, "Role: qa_reviewer") {
+		t.Fatalf("spawn primitive metadata mismatch: %+v", run)
+	}
+}
+
 func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()
@@ -534,6 +842,100 @@ func TestCreateWorkflowPausesForMissingRequiredProfiles(t *testing.T) {
 	}
 	if len(status.ProfileResolution) != 1 || status.ProfileResolution[0].Name != "frontend_owner" {
 		t.Fatalf("status should include profile resolution: %+v", status.ProfileResolution)
+	}
+}
+
+func TestWorkflowControlResumeStartsInitiallyPausedScriptWorkflow(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	wuuHome := t.TempDir()
+	t.Setenv("WUU_HOME", wuuHome)
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+	kit.SetWorkflows([]workflow.Definition{{
+		Name:                 "script-profile-gate",
+		Kind:                 workflow.DefinitionKindScript,
+		Content:              `phase("Finish", () => { synthesize("# Final\n\nresumed for " + args.feature); });`,
+		Profiles:             []workflow.ProfileRef{{Name: "frontend_owner", Required: true}},
+		AllowProfileCreation: "ask",
+	}})
+
+	runResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_workflow",
+		Arguments: `{"definition_name":"script-profile-gate","arguments":"{\"feature\":\"settings\"}","run_id":"workflow-script-profile-gate"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_workflow: %v", err)
+	}
+	var started struct {
+		Status     workflow.RunState `json:"status"`
+		Background bool              `json:"background"`
+	}
+	if err := json.Unmarshal([]byte(runResp), &started); err != nil {
+		t.Fatalf("parse run response: %v", err)
+	}
+	if started.Status != workflow.RunStatePaused || started.Background {
+		t.Fatalf("workflow should wait for required profile before starting: %+v", started)
+	}
+
+	if _, _, err := workflow.EnsureProfile(workflow.ProfileEnsureOptions{
+		WuuHome:      wuuHome,
+		Name:         "frontend_owner",
+		WorkflowName: "script-profile-gate",
+		Role:         "Frontend owner",
+	}); err != nil {
+		t.Fatalf("EnsureProfile: %v", err)
+	}
+	resumeResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"resume_run","run_id":"workflow-script-profile-gate","message":"profile ready"}`,
+	})
+	if err != nil {
+		t.Fatalf("resume_run: %v", err)
+	}
+	var resumed struct {
+		Run        workflow.Run `json:"run"`
+		Background bool         `json:"background"`
+	}
+	if err := json.Unmarshal([]byte(resumeResp), &resumed); err != nil {
+		t.Fatalf("parse resume response: %v", err)
+	}
+	if resumed.Run.Status != workflow.RunStateRunning || !resumed.Background {
+		t.Fatalf("resume should start the saved script in background: %+v", resumed)
+	}
+
+	var status struct {
+		Run workflow.Run `json:"run"`
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "workflow_status",
+			Arguments: `{"run_id":"workflow-script-profile-gate"}`,
+		})
+		if err != nil {
+			t.Fatalf("workflow_status: %v", err)
+		}
+		if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
+			t.Fatalf("parse status response: %v", err)
+		}
+		if status.Run.Status == workflow.RunStateCompleted {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if status.Run.Status != workflow.RunStateCompleted || status.Run.FinalReportPath == "" {
+		t.Fatalf("resumed script workflow should complete: %+v", status.Run)
+	}
+	data, err := os.ReadFile(status.Run.FinalReportPath)
+	if err != nil {
+		t.Fatalf("read final report: %v", err)
+	}
+	if !strings.Contains(string(data), "resumed for settings") {
+		t.Fatalf("final report mismatch:\n%s", string(data))
 	}
 }
 
@@ -872,4 +1274,47 @@ func TestWorkflowControlFileCheckpointRestore(t *testing.T) {
 	if !strings.Contains(statusResp, "checkpoint-before-edit") {
 		t.Fatalf("workflow_status should include checkpoint: %s", statusResp)
 	}
+}
+
+func workflowEventsContain(events []workflow.Event, eventType workflow.EventType) bool {
+	for _, event := range events {
+		if event.Type == eventType {
+			return true
+		}
+	}
+	return false
+}
+
+type workflowFakeClient struct {
+	content string
+}
+
+func (f *workflowFakeClient) Chat(context.Context, providers.ChatRequest) (providers.ChatResponse, error) {
+	return providers.ChatResponse{Content: f.content}, nil
+}
+
+func (f *workflowFakeClient) StreamChat(context.Context, providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	ch := make(chan providers.StreamEvent, 2)
+	if f.content != "" {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: f.content}
+	}
+	ch <- providers.StreamEvent{Type: providers.EventDone}
+	close(ch)
+	return ch, nil
+}
+
+type workflowNoopExecutor struct{}
+
+func (workflowNoopExecutor) Definitions() []providers.ToolDefinition { return nil }
+
+func (workflowNoopExecutor) Execute(context.Context, providers.ToolCall) (string, error) {
+	return "", nil
+}
+
+func stopWorkflowAgentControl(control *agentcontrol.AgentControl) {
+	if control == nil {
+		return
+	}
+	control.StopAll()
+	time.Sleep(100 * time.Millisecond)
 }

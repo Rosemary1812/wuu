@@ -294,7 +294,7 @@ export function SplitPaneComposer({
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const statusText = status === "ready" ? "" : status;
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
-    disabled: readOnly || images.length > 0,
+    disabled: readOnly || hasAttachments,
     prompt,
     queryHistory,
     queryHistorySessionID,
@@ -689,7 +689,7 @@ export function Composer({
   const selectedSlashCommand = slashMenuOpen ? visibleSlashCommands[selectedSlashIndex] : undefined;
   const slashMenuID = `composer-slash-commands-${variant}`;
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
-    disabled: readOnly || images.length > 0,
+    disabled: readOnly || hasAttachments,
     prompt,
     queryHistory,
     queryHistorySessionID,

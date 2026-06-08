@@ -117,6 +117,56 @@ Run release readiness checks.
 	}
 }
 
+func TestParseScriptDefinitionFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "dynamic-review")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	path := filepath.Join(dir, "WORKFLOW.js")
+	content := `// name: dynamic-review
+// description: Run a dynamic review team
+// when-to-use: Use when multiple reviewers should work in parallel.
+// argument-hint: <review scope>
+// max-agents: 8
+// max-concurrency: 3
+// profiles: qa_reviewer, code_reviewer
+// allow-profile-creation: ask
+// memory-policy: report-candidates-only
+
+phase("Plan", () => {});
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	wf, err := LoadDefinitionFile(path, "project")
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	if wf.Kind != DefinitionKindScript {
+		t.Fatalf("Kind = %q", wf.Kind)
+	}
+	if wf.Name != "dynamic-review" || wf.Description != "Run a dynamic review team" {
+		t.Fatalf("metadata not parsed: %+v", wf)
+	}
+	if wf.WhenToUse == "" || wf.ArgumentHint != "<review scope>" {
+		t.Fatalf("usage fields not parsed: %+v", wf)
+	}
+	if wf.MaxAgents != 8 || wf.MaxConcurrency != 3 {
+		t.Fatalf("limits not parsed: %+v", wf)
+	}
+	wantProfiles := []ProfileRef{{Name: "qa_reviewer"}, {Name: "code_reviewer"}}
+	if !reflect.DeepEqual(wf.Profiles, wantProfiles) {
+		t.Fatalf("Profiles = %+v, want %+v", wf.Profiles, wantProfiles)
+	}
+	if wf.AllowProfileCreation != "ask" || wf.MemoryPolicy != "report-candidates-only" {
+		t.Fatalf("policy fields not parsed: %+v", wf)
+	}
+	if wf.Content != content {
+		t.Fatalf("script content should be preserved")
+	}
+}
+
 func TestDiscoverProjectOverridesUserAndFindAllowsSlash(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "project")

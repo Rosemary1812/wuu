@@ -195,14 +195,14 @@ func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
 	sb.WriteString("**How to use workflows:**\n")
 	sb.WriteString("1. Match the user's intent against the workflow catalog below.\n")
 	sb.WriteString("2. When a workflow applies, call `load_workflow` with its name and user arguments to inspect the full definition.\n")
-	sb.WriteString("3. Call `create_workflow` to create a durable Workflow Run with phases and a plan.\n")
-	sb.WriteString("4. Before spawning workflow agents, call `list_agent_profiles`, decide which roles reuse profiles, create profiles, or stay ephemeral, then record that dynamic team with `workflow_control` action=record_team_plan.\n")
-	sb.WriteString("5. Use `spawn_agent` for actual work. Set `agent_profile` for reuse_profile/create_profile team members; omit it for ephemeral workers.\n")
-	sb.WriteString("6. Use `workflow_control` to record phase and Agent Run status, and `workflow_status` to inspect progress before synthesis.\n")
-	sb.WriteString("7. The dynamic Agent instances for a run are temporary; durable memory belongs to named Agent Profiles, while project/global memory remains shared background.\n")
-	sb.WriteString("8. Use `workflow_control` pause_run, resume_run, and retry_agent_run for blocked recovery instead of hiding recovery state in prose.\n")
+	sb.WriteString("3. For dynamic JavaScript workflow scripts, call `run_workflow`. Inside the script, prefer `phase(...)`, `spawn(...)`, `awaitAgents(...)`, and `synthesize(...)`; the script keeps orchestration state in the Workflow Run while workers do shell/file work.\n")
+	sb.WriteString("4. Use `create_workflow` only for Markdown/manual workflow plans where the model will explicitly manage phases with `workflow_control`.\n")
+	sb.WriteString("5. Before using durable agent identities in a manual workflow, call `list_agent_profiles`, decide which roles reuse profiles, create profiles, or stay ephemeral, then record that dynamic team with `workflow_control` action=record_team_plan.\n")
+	sb.WriteString("6. Use `spawn_agent` for manual workflow work. Set `agent_profile` for reuse_profile/create_profile team members; omit it for ephemeral workers.\n")
+	sb.WriteString("7. Use `workflow_status` to inspect progress before synthesis, and use `workflow_control` actions like pause_run, resume_run, retry_agent_run, create_file_checkpoint, restore_file_checkpoint, and record_memory_candidate for manual run recovery.\n")
+	sb.WriteString("8. The dynamic Agent instances for a run are temporary; durable memory belongs to named Agent Profiles, while project/global memory remains shared background.\n")
 	sb.WriteString("9. Use workflow file checkpoints before risky direct edits and restore_file_checkpoint for scoped rollback.\n")
-	sb.WriteString("10. Use `save_workflow` when an ad hoc plan should become a reusable project or user workflow definition.\n")
+	sb.WriteString("10. Use `save_workflow` when an ad hoc script or plan should become a reusable project or user workflow definition.\n")
 	sb.WriteString("11. For scheduled workflow-shaped tasks, use `schedule_cron` with workflow_name so the scheduled agent prompt can start the Workflow Run.\n")
 	sb.WriteString("12. Record long-term memory candidates through `workflow_control`; do not write profile memory directly from ordinary workflow progress.\n\n")
 	sb.WriteString(AgentBriefContractText())
@@ -221,6 +221,9 @@ func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
 		}
 		if wf.ArgumentHint != "" {
 			fmt.Fprintf(&sb, "\n  _Arguments:_ `%s`", wf.ArgumentHint)
+		}
+		if wf.Kind != "" {
+			fmt.Fprintf(&sb, "\n  _Kind:_ %s", wf.Kind)
 		}
 		if len(wf.Profiles) > 0 {
 			fmt.Fprintf(&sb, "\n  _Profiles:_ %s", workflowProfileNames(wf.Profiles))

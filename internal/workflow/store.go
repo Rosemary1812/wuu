@@ -24,6 +24,7 @@ type Run struct {
 	StartedAt       time.Time `json:"started_at,omitempty"`
 	CompletedAt     time.Time `json:"completed_at,omitempty"`
 	PlanPath        string    `json:"plan_path,omitempty"`
+	ScriptPath      string    `json:"script_path,omitempty"`
 	FinalReportPath string    `json:"final_report_path,omitempty"`
 	PauseReason     string    `json:"pause_reason,omitempty"`
 	ResumeHint      string    `json:"resume_hint,omitempty"`
@@ -136,6 +137,7 @@ const (
 	EventAgentRunStatusChanged   EventType = "agent_run_status_changed"
 	EventAgentRunRetryRequested  EventType = "agent_run_retry_requested"
 	EventPlanWritten             EventType = "plan_written"
+	EventScriptWritten           EventType = "script_written"
 	EventFinalReportWritten      EventType = "final_report_written"
 	EventMemoryCandidateAdded    EventType = "memory_candidate_added"
 	EventMemoryCandidateReviewed EventType = "memory_candidate_reviewed"
@@ -355,6 +357,40 @@ func (s *Store) UpdatePhaseStatus(runID, phaseID string, status PhaseState, mess
 		return Run{}, err
 	}
 	if err := s.AppendEvent(Event{Type: EventPhaseStatusChanged, RunID: run.ID, PhaseID: phaseID, Status: string(status), Message: message}); err != nil {
+		return Run{}, err
+	}
+	return run, nil
+}
+
+func (s *Store) EnsurePhase(runID string, phase Phase) (Run, error) {
+	run, err := s.LoadRun(runID)
+	if err != nil {
+		return Run{}, err
+	}
+	phaseID, err := validateStoreID("workflow phase", phase.ID)
+	if err != nil {
+		return Run{}, err
+	}
+	phase.ID = phaseID
+	if strings.TrimSpace(phase.Name) == "" {
+		phase.Name = phase.ID
+	}
+	if phase.Status == "" {
+		phase.Status = PhaseStateRunnable
+	}
+	if err := ValidatePhaseTransition("", phase.Status); err != nil {
+		return Run{}, err
+	}
+	for i := range run.Phases {
+		if run.Phases[i].ID == phase.ID {
+			return run, nil
+		}
+	}
+	run.Phases = append(run.Phases, phase)
+	if err := s.SaveRun(run); err != nil {
+		return Run{}, err
+	}
+	if err := s.AppendEvent(Event{Type: EventPhaseStatusChanged, RunID: run.ID, PhaseID: phase.ID, Status: string(phase.Status), Message: "phase created"}); err != nil {
 		return Run{}, err
 	}
 	return run, nil
@@ -643,6 +679,29 @@ func (s *Store) WritePlan(runID, content string) (string, error) {
 		_ = s.SaveRun(run)
 	}
 	return path, s.AppendEvent(Event{Type: EventPlanWritten, RunID: runID, Artifact: path})
+}
+
+func (s *Store) WriteScript(runID, content string) (string, error) {
+	if s == nil || s.dir == "" {
+		return "", nil
+	}
+	runID, err := validateStoreID("workflow run", runID)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(s.runDir(runID), "workflow.js")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", err
+	}
+	run, err := s.LoadRun(runID)
+	if err == nil {
+		run.ScriptPath = path
+		_ = s.SaveRun(run)
+	}
+	return path, s.AppendEvent(Event{Type: EventScriptWritten, RunID: runID, Artifact: path})
 }
 
 func (s *Store) WriteFinalReport(runID, content string) (string, error) {

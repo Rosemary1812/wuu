@@ -48,6 +48,7 @@ func (t *ListWorkflowsTool) Execute(_ context.Context, _ string) (string, error)
 			"name":                   wf.Name,
 			"description":            wf.Description,
 			"when_to_use":            wf.WhenToUse,
+			"kind":                   workflowDefinitionKind(wf),
 			"source":                 wf.Source,
 			"path":                   wf.Path,
 			"argument_hint":          wf.ArgumentHint,
@@ -84,8 +85,9 @@ func (t *LoadWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "load_workflow",
 		Description: "Load the full body of a reusable workflow definition. Workflow definitions are portable " +
-			"orchestration assets, similar to skills, but they are used to create durable workflow runs. The returned " +
-			"body may contain ${ARGUMENTS}, ${CLAUDE_WORKFLOW_DIR}, and ${CLAUDE_SESSION_ID} substitutions.",
+			"orchestration assets, similar to skills, but they are used to create durable workflow runs. Markdown " +
+			"workflow bodies may contain ${ARGUMENTS}, ${CLAUDE_WORKFLOW_DIR}, and ${CLAUDE_SESSION_ID} substitutions; " +
+			"script workflows are returned as raw JavaScript and receive arguments through the args global when run.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -118,11 +120,17 @@ func (t *LoadWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 	if !ok {
 		return "", fmt.Errorf("workflow %q not found. available: %s", args.Name, strings.Join(t.env.WorkflowNames(), ", "))
 	}
-	body := t.env.ProcessWorkflowBody(wf, args.Arguments)
+	body := wf.Content
+	suggestedPhaseNames := []string(nil)
+	if workflowDefinitionKind(wf) != workflow.DefinitionKindScript {
+		body = t.env.ProcessWorkflowBody(wf, args.Arguments)
+		suggestedPhaseNames = extractWorkflowPhaseNames(body)
+	}
 	return mustJSON(map[string]any{
 		"name":                   wf.Name,
 		"description":            wf.Description,
 		"when_to_use":            wf.WhenToUse,
+		"kind":                   workflowDefinitionKind(wf),
 		"source":                 wf.Source,
 		"path":                   wf.Path,
 		"dir":                    wf.Dir,
@@ -133,7 +141,7 @@ func (t *LoadWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 		"profiles":               wf.Profiles,
 		"allow_profile_creation": wf.AllowProfileCreation,
 		"memory_policy":          wf.MemoryPolicy,
-		"suggested_phase_names":  extractWorkflowPhaseNames(body),
+		"suggested_phase_names":  suggestedPhaseNames,
 		"content":                body,
 	})
 }
@@ -153,7 +161,7 @@ func (t *SaveWorkflowTool) IsConcurrencySafe() bool { return false }
 func (t *SaveWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "save_workflow",
-		Description: "Save an ad hoc or reusable workflow definition to a portable WORKFLOW.md file. " +
+		Description: "Save an ad hoc or reusable workflow definition to a portable WORKFLOW.md or WORKFLOW.js file. " +
 			"Use this when the user wants to reuse, share, or schedule a workflow that was created during the current session.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -176,7 +184,12 @@ func (t *SaveWorkflowTool) Definition() providers.ToolDefinition {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Markdown workflow body. Required unless run_id is provided.",
+					"description": "Markdown workflow body or JavaScript workflow script. Required unless run_id is provided.",
+				},
+				"kind": map[string]any{
+					"type":        "string",
+					"enum":        []string{"markdown", "script"},
+					"description": "Definition kind. Defaults to markdown. Use script to save a dynamic JavaScript workflow.",
 				},
 				"run_id": map[string]any{
 					"type":        "string",
@@ -231,6 +244,7 @@ type saveWorkflowArgs struct {
 	WhenToUse            string                `json:"when_to_use"`
 	ArgumentHint         string                `json:"argument_hint"`
 	Content              string                `json:"content"`
+	Kind                 string                `json:"kind"`
 	RunID                string                `json:"run_id"`
 	Scope                string                `json:"scope"`
 	Overwrite            bool                  `json:"overwrite"`
@@ -251,6 +265,10 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 	if name == "" {
 		return "", errors.New("save_workflow requires name")
 	}
+	kind, err := normalizeWorkflowDefinitionKind(args.Kind)
+	if err != nil {
+		return "", err
+	}
 	body := strings.TrimSpace(args.Content)
 	if body == "" && strings.TrimSpace(args.RunID) != "" {
 		store, err := t.env.WorkflowStore()
@@ -261,12 +279,21 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 		if err != nil {
 			return "", err
 		}
-		body = reusableWorkflowBodyFromRun(run)
+		if strings.TrimSpace(run.ScriptPath) != "" {
+			data, readErr := os.ReadFile(run.ScriptPath)
+			if readErr == nil {
+				body = strings.TrimSpace(string(data))
+				kind = workflow.DefinitionKindScript
+			}
+		}
+		if body == "" {
+			body = reusableWorkflowBodyFromRun(run)
+		}
 	}
 	if body == "" {
 		return "", errors.New("save_workflow requires content or run_id")
 	}
-	path, source, err := workflowDefinitionPath(t.env.RootDir, args.Scope, name)
+	path, source, err := workflowDefinitionPath(t.env.RootDir, args.Scope, name, kind)
 	if err != nil {
 		return "", err
 	}
@@ -278,6 +305,9 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 		}
 	}
 	content := renderWorkflowDefinitionMarkdown(args, name, body)
+	if kind == workflow.DefinitionKindScript {
+		content = renderWorkflowDefinitionScript(args, name, body)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
@@ -293,6 +323,7 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 		"name":     def.Name,
 		"path":     def.Path,
 		"source":   def.Source,
+		"kind":     workflowDefinitionKind(def),
 		"workflow": def,
 		"next_steps": []string{
 			"Use list_workflows or load_workflow to inspect the saved definition.",
@@ -304,6 +335,224 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 // ---------------------------------------------------------------------------
 // create_workflow
 // ---------------------------------------------------------------------------
+
+type RunWorkflowTool struct{ env *Env }
+
+func NewRunWorkflowTool(env *Env) *RunWorkflowTool { return &RunWorkflowTool{env: env} }
+
+func (t *RunWorkflowTool) Name() string            { return "run_workflow" }
+func (t *RunWorkflowTool) IsReadOnly() bool        { return false }
+func (t *RunWorkflowTool) IsConcurrencySafe() bool { return false }
+
+func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{
+		Name: "run_workflow",
+		Description: "Run a dynamic workflow JavaScript script. Use this for executable .js workflows: " +
+			"the script runs in a restricted orchestration runtime, creates durable Workflow Run state, can open dynamic " +
+			"phases, use the spawn primitive to create worker agents, await worker agents, and write the final report. " +
+			"The script cannot directly run shell commands or edit files; it delegates work to agents. " +
+			"Default caps are 16 concurrent worker spawns and 1000 total agents unless a lower definition or caller cap is set. " +
+			"Use create_workflow only for Markdown/manual workflow plans.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"definition_name": map[string]any{
+					"type":        "string",
+					"description": "Optional saved script workflow name. The definition must be kind=script unless script is also supplied.",
+				},
+				"arguments": map[string]any{
+					"type":        "string",
+					"description": "Arguments exposed to the script as args. JSON strings become objects; other strings stay strings.",
+				},
+				"script": map[string]any{
+					"type":        "string",
+					"description": "Ad hoc JavaScript workflow script. Omit when running a saved .js workflow definition.",
+				},
+				"run_id": map[string]any{
+					"type":        "string",
+					"description": "Optional caller-provided run id. Omit for an auto-generated id.",
+				},
+				"background": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to start the script in the background. Defaults true.",
+				},
+				"max_agents": map[string]any{
+					"type":        "integer",
+					"description": "Optional override for this run's total agent cap.",
+				},
+				"max_concurrency": map[string]any{
+					"type":        "integer",
+					"description": "Optional override for this run's spawnAgents batch cap.",
+				},
+			},
+		},
+	}
+}
+
+func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		DefinitionName string `json:"definition_name"`
+		Arguments      string `json:"arguments"`
+		Script         string `json:"script"`
+		RunID          string `json:"run_id"`
+		Background     *bool  `json:"background"`
+		MaxAgents      int    `json:"max_agents"`
+		MaxConcurrency int    `json:"max_concurrency"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return "", err
+	}
+
+	var def workflow.Definition
+	if strings.TrimSpace(args.DefinitionName) != "" {
+		found, ok := t.env.FindWorkflow(args.DefinitionName)
+		if !ok {
+			return "", fmt.Errorf("workflow %q not found. available: %s", args.DefinitionName, strings.Join(t.env.WorkflowNames(), ", "))
+		}
+		def = found
+	}
+
+	script := args.Script
+	if strings.TrimSpace(script) == "" {
+		if def.Name == "" {
+			return "", errors.New("run_workflow requires definition_name or script")
+		}
+		if workflowDefinitionKind(def) != workflow.DefinitionKindScript {
+			return "", fmt.Errorf("workflow %q is kind=%s; run_workflow requires a script workflow", def.Name, workflowDefinitionKind(def))
+		}
+		script = def.Content
+	}
+	if strings.TrimSpace(script) == "" {
+		return "", errors.New("run_workflow requires a non-empty script")
+	}
+
+	status := workflow.RunStateRunning
+	profileResolution := []workflow.ProfileResolution(nil)
+	pauseReason := ""
+	resumeHint := ""
+	var err error
+	if def.Name != "" {
+		profileResolution, err = resolveWorkflowProfilesForDefinition(def, workflow.AutoCreateProfiles(def.AllowProfileCreation))
+		if err != nil {
+			return "", err
+		}
+		missingRequired := workflow.MissingRequiredProfiles(profileResolution)
+		if len(missingRequired) > 0 {
+			status = workflow.RunStatePaused
+			pauseReason = "Missing required Agent Profiles: " + strings.Join(workflowProfileResolutionNames(missingRequired), ", ")
+			resumeHint = "Create or choose the required Agent Profiles, then resume the workflow run."
+		}
+	}
+
+	runID := strings.TrimSpace(args.RunID)
+	if runID == "" {
+		runID = "workflow-" + session.NewID()
+	}
+	store, err := t.env.WorkflowStore()
+	if err != nil {
+		return "", fmt.Errorf("resolve workflow store: %w", err)
+	}
+	run, err := store.CreateRun(workflow.Run{
+		ID:             runID,
+		DefinitionName: def.Name,
+		DefinitionPath: def.Path,
+		Arguments:      strings.TrimSpace(args.Arguments),
+		Status:         status,
+		PauseReason:    pauseReason,
+		ResumeHint:     resumeHint,
+	})
+	if err != nil {
+		return "", err
+	}
+	scriptPath, err := store.WriteScript(run.ID, script)
+	if err != nil {
+		return "", err
+	}
+	run.ScriptPath = scriptPath
+
+	background := true
+	if args.Background != nil {
+		background = *args.Background
+	}
+	maxAgents := args.MaxAgents
+	if maxAgents <= 0 {
+		maxAgents = def.MaxAgents
+	}
+	maxConcurrency := args.MaxConcurrency
+	if maxConcurrency <= 0 {
+		maxConcurrency = def.MaxConcurrency
+	}
+	runtime := newWorkflowScriptRuntime(t.env, store, run, script, maxAgents, maxConcurrency)
+
+	if status == workflow.RunStateRunning {
+		if background {
+			go func() {
+				_, _ = runtime.Run(context.Background())
+			}()
+		} else {
+			run, err = runtime.Run(ctx)
+			if err != nil {
+				return "", err
+			}
+		}
+	}
+
+	return mustJSON(map[string]any{
+		"run_id":             run.ID,
+		"status":             run.Status,
+		"definition_name":    run.DefinitionName,
+		"definition_path":    run.DefinitionPath,
+		"script_path":        scriptPath,
+		"background":         background && status == workflow.RunStateRunning,
+		"profile_resolution": profileResolution,
+		"next_steps":         runWorkflowNextSteps(run.Status),
+		"workflow_status":    map[string]string{"run_id": run.ID},
+	})
+}
+
+func newWorkflowScriptRuntime(env *Env, store *workflow.Store, run workflow.Run, script string, maxAgents, maxConcurrency int) *workflow.ScriptRuntime {
+	return workflow.NewScriptRuntime(workflow.ScriptRuntimeOptions{
+		Store:            store,
+		AgentControl:     env.AgentControl,
+		RootDir:          env.RootDir,
+		CurrentAgentID:   env.AgentID,
+		CurrentAgentPath: env.AgentPath,
+		RunID:            run.ID,
+		DefinitionName:   run.DefinitionName,
+		DefinitionPath:   run.DefinitionPath,
+		Arguments:        strings.TrimSpace(run.Arguments),
+		Script:           script,
+		MaxAgents:        maxAgents,
+		MaxConcurrency:   maxConcurrency,
+	})
+}
+
+func shouldStartInitialPausedScriptRun(run workflow.Run) bool {
+	return run.Status == workflow.RunStatePaused &&
+		run.StartedAt.IsZero() &&
+		strings.TrimSpace(run.ScriptPath) != ""
+}
+
+func unresolvedRequiredProfilesForRun(env *Env, run workflow.Run) ([]workflow.ProfileResolution, error) {
+	if env == nil || strings.TrimSpace(run.DefinitionName) == "" {
+		return nil, nil
+	}
+	def, ok := env.FindWorkflow(run.DefinitionName)
+	if !ok {
+		return nil, nil
+	}
+	return resolveWorkflowProfilesForDefinition(def, false)
+}
+
+func workflowScriptLimitsForRun(env *Env, run workflow.Run) (maxAgents, maxConcurrency int) {
+	if env == nil || strings.TrimSpace(run.DefinitionName) == "" {
+		return 0, 0
+	}
+	if def, ok := env.FindWorkflow(run.DefinitionName); ok {
+		return def.MaxAgents, def.MaxConcurrency
+	}
+	return 0, 0
+}
 
 type CreateWorkflowTool struct{ env *Env }
 
@@ -777,6 +1026,34 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		return mustJSON(map[string]any{"action": action, "run": run})
 
 	case "resume_run":
+		previous, err := store.LoadRun(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		startInitialScriptRun := shouldStartInitialPausedScriptRun(previous)
+		var profileResolution []workflow.ProfileResolution
+		resumeScript := ""
+		resumeMaxAgents := 0
+		resumeMaxConcurrency := 0
+		if startInitialScriptRun {
+			profileResolution, err = unresolvedRequiredProfilesForRun(t.env, previous)
+			if err != nil {
+				return "", err
+			}
+			if missing := workflow.MissingRequiredProfiles(profileResolution); len(missing) > 0 {
+				return "", fmt.Errorf("cannot resume workflow run %q: missing required Agent Profiles: %s", previous.ID, strings.Join(workflowProfileResolutionNames(missing), ", "))
+			}
+			scriptPath := strings.TrimSpace(previous.ScriptPath)
+			if scriptPath == "" {
+				return "", errors.New("workflow script path is empty")
+			}
+			data, err := os.ReadFile(scriptPath)
+			if err != nil {
+				return "", fmt.Errorf("read workflow script: %w", err)
+			}
+			resumeScript = string(data)
+			resumeMaxAgents, resumeMaxConcurrency = workflowScriptLimitsForRun(t.env, previous)
+		}
 		run, err := store.UpdateRunStatusWithDetails(args.RunID, workflow.RunStatusUpdate{
 			Status:  workflow.RunStateRunning,
 			Message: args.Message,
@@ -784,7 +1061,20 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		if err != nil {
 			return "", err
 		}
-		return mustJSON(map[string]any{"action": action, "run": run})
+		background := false
+		if startInitialScriptRun {
+			runtime := newWorkflowScriptRuntime(t.env, store, run, resumeScript, resumeMaxAgents, resumeMaxConcurrency)
+			go func() {
+				_, _ = runtime.Run(context.Background())
+			}()
+			background = true
+		}
+		return mustJSON(map[string]any{
+			"action":             action,
+			"run":                run,
+			"background":         background,
+			"profile_resolution": profileResolution,
+		})
 
 	case "set_phase_status":
 		if strings.TrimSpace(args.PhaseID) == "" {
@@ -1321,7 +1611,7 @@ func enforceWorkflowAgentCap(env *Env, store *workflow.Store, run workflow.Run, 
 }
 
 func workflowAgentCap(env *Env, run workflow.Run) int {
-	const hardCap = 100
+	const hardCap = workflow.DefaultScriptMaxAgents
 	capacity := hardCap
 	if env != nil && strings.TrimSpace(run.DefinitionName) != "" {
 		if def, ok := env.FindWorkflow(run.DefinitionName); ok && def.MaxAgents > 0 && def.MaxAgents < capacity {
@@ -2034,22 +2324,44 @@ func markdownListItemText(value string) string {
 	return strings.TrimSpace(value[idx+1:])
 }
 
-func workflowDefinitionPath(rootDir, scope, name string) (string, string, error) {
+func workflowDefinitionPath(rootDir, scope, name, kind string) (string, string, error) {
 	dirName := slugWorkflowID(name)
 	if dirName == "" {
 		return "", "", fmt.Errorf("invalid workflow name %q", name)
 	}
+	filename := "WORKFLOW.md"
+	if kind == workflow.DefinitionKindScript {
+		filename = "WORKFLOW.js"
+	}
 	switch strings.TrimSpace(scope) {
 	case "", "project":
-		return filepath.Join(rootDir, ".claude", "workflows", dirName, "WORKFLOW.md"), "project", nil
+		return filepath.Join(rootDir, ".claude", "workflows", dirName, filename), "project", nil
 	case "user":
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", "", err
 		}
-		return filepath.Join(home, ".claude", "workflows", dirName, "WORKFLOW.md"), "user", nil
+		return filepath.Join(home, ".claude", "workflows", dirName, filename), "user", nil
 	default:
 		return "", "", fmt.Errorf("invalid workflow scope %q", scope)
+	}
+}
+
+func workflowDefinitionKind(def workflow.Definition) string {
+	if def.Kind == workflow.DefinitionKindScript {
+		return workflow.DefinitionKindScript
+	}
+	return workflow.DefinitionKindMarkdown
+}
+
+func normalizeWorkflowDefinitionKind(raw string) (string, error) {
+	switch strings.TrimSpace(raw) {
+	case "", workflow.DefinitionKindMarkdown:
+		return workflow.DefinitionKindMarkdown, nil
+	case workflow.DefinitionKindScript:
+		return workflow.DefinitionKindScript, nil
+	default:
+		return "", fmt.Errorf("invalid workflow kind %q", raw)
 	}
 }
 
@@ -2095,6 +2407,50 @@ func renderWorkflowDefinitionMarkdown(args saveWorkflowArgs, name, body string) 
 		fmt.Fprintf(&b, "memory-policy: %s\n", workflowFrontmatterScalar(args.MemoryPolicy))
 	}
 	b.WriteString("---\n\n")
+	b.WriteString(strings.TrimSpace(body))
+	b.WriteString("\n")
+	return b.String()
+}
+
+func renderWorkflowDefinitionScript(args saveWorkflowArgs, name, body string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "// name: %s\n", workflowFrontmatterScalar(name))
+	if strings.TrimSpace(args.Description) != "" {
+		fmt.Fprintf(&b, "// description: %s\n", workflowFrontmatterScalar(args.Description))
+	}
+	if strings.TrimSpace(args.WhenToUse) != "" {
+		fmt.Fprintf(&b, "// when-to-use: %s\n", workflowFrontmatterScalar(args.WhenToUse))
+	}
+	if strings.TrimSpace(args.ArgumentHint) != "" {
+		fmt.Fprintf(&b, "// argument-hint: %s\n", workflowFrontmatterScalar(args.ArgumentHint))
+	}
+	if strings.TrimSpace(args.Version) != "" {
+		fmt.Fprintf(&b, "// version: %s\n", workflowFrontmatterScalar(args.Version))
+	}
+	if args.MaxAgents > 0 {
+		fmt.Fprintf(&b, "// max-agents: %d\n", args.MaxAgents)
+	}
+	if args.MaxConcurrency > 0 {
+		fmt.Fprintf(&b, "// max-concurrency: %d\n", args.MaxConcurrency)
+	}
+	if len(args.Profiles) > 0 {
+		names := make([]string, 0, len(args.Profiles))
+		for _, profile := range args.Profiles {
+			if strings.TrimSpace(profile.Name) != "" {
+				names = append(names, strings.TrimSpace(profile.Name))
+			}
+		}
+		if len(names) > 0 {
+			fmt.Fprintf(&b, "// profiles: %s\n", strings.Join(names, ", "))
+		}
+	}
+	if strings.TrimSpace(args.AllowProfileCreation) != "" {
+		fmt.Fprintf(&b, "// allow-profile-creation: %s\n", workflowFrontmatterScalar(args.AllowProfileCreation))
+	}
+	if strings.TrimSpace(args.MemoryPolicy) != "" {
+		fmt.Fprintf(&b, "// memory-policy: %s\n", workflowFrontmatterScalar(args.MemoryPolicy))
+	}
+	b.WriteString("\n")
 	b.WriteString(strings.TrimSpace(body))
 	b.WriteString("\n")
 	return b.String()
@@ -2190,6 +2546,34 @@ func workflowNextSteps(status workflow.RunState) []string {
 			"Create file checkpoints before risky direct edits that may need rollback.",
 			"Use await_agents when synthesis depends on agent output, then workflow_control action=record_await_results to bind results to the workflow run.",
 			"Use workflow_control action=generate_final_report after all blocking phases and agent runs are complete.",
+		}
+	}
+}
+
+func runWorkflowNextSteps(status workflow.RunState) []string {
+	switch status {
+	case workflow.RunStatePaused:
+		return []string{
+			"Inspect workflow_status for pause_reason, resume_hint, and profile_resolution.",
+			"Create or choose the required Agent Profiles, then use workflow_control action=resume_run.",
+		}
+	case workflow.RunStateCompleted:
+		return []string{
+			"Inspect workflow_status for the final report, phases, Agent Runs, and event log.",
+			"Use save_workflow with run_id if this ad hoc script should become a reusable workflow.",
+		}
+	case workflow.RunStateFailed:
+		return []string{
+			"Inspect workflow_status and the saved workflow.js artifact for the script failure.",
+			"Fix the script or blocked agent output, then start a new workflow run.",
+		}
+	case workflow.RunStateCancelled:
+		return []string{"Inspect workflow_status for cancellation context before starting a new workflow run."}
+	default:
+		return []string{
+			"Use workflow_status to monitor phases, Agent Runs, and the event log while the script runs.",
+			"Use workflow_control action=pause_run/resume_run if the script needs to pause between orchestration steps.",
+			"Use awaitAgents in the script for fan-in and synthesize for the final report.",
 		}
 	}
 }

@@ -20,6 +20,8 @@ thirdparty/
 # Local AI agent/editor config
 CLAUDE.md
 AGENTS.md
+.mavis/
+.opencode/
 
 # Local docs/notes
 /doc/
