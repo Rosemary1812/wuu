@@ -331,6 +331,7 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 			"- Only use this tool to create new files or for complete rewrites\n" +
 			"- Existing files require expected_old_sha from read_file or a fresh prior read_file result\n" +
 			"- Set create_only=true when the file must not already exist\n" +
+			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected\n" +
 			"- Returns a structured diff showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -373,6 +374,9 @@ func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (string, err
 
 	resolved, err := t.env.ResolvePath(args.Path)
 	if err != nil {
+		return "", err
+	}
+	if err := rejectSensitiveToolPath(t.env, "write_file", "write", resolved); err != nil {
 		return "", err
 	}
 
@@ -583,6 +587,7 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 			"- old_text and new_text must differ — identical values are rejected\n" +
 			"- Use empty new_text to delete a section\n" +
 			"- Prefer this over write_file for modifications — it only sends the diff\n" +
+			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected\n" +
 			"- Returns a structured diff showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -636,6 +641,9 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 
 	resolved, err := t.env.ResolvePath(args.Path)
 	if err != nil {
+		return "", err
+	}
+	if err := rejectSensitiveToolPath(t.env, "edit_file", "edit", resolved); err != nil {
 		return "", err
 	}
 

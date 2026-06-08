@@ -191,6 +191,31 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	}
 }
 
+func TestToolkit_WriteFileRejectsSensitivePaths(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":".env","content":"API_KEY=secret\n"}`,
+	})
+	if err == nil {
+		t.Fatal("expected sensitive path rejection")
+	}
+	if !strings.Contains(err.Error(), "write_file refuses") || !strings.Contains(err.Error(), "sensitive path") {
+		t.Fatalf("expected write_file sensitive path guidance, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "API_KEY") {
+		t.Fatalf("write_file sensitive path error leaked content: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".env")); !os.IsNotExist(statErr) {
+		t.Fatalf("write_file should not create sensitive file, stat err=%v", statErr)
+	}
+}
+
 func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -437,6 +462,33 @@ func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
 		t.Fatalf("expected expected_old_sha mismatch, got: %v", err)
+	}
+}
+
+func TestToolkit_EditFileRejectsSensitivePaths(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, ".env"), "API_KEY=secret\n")
+	oldSHA := formatFileSHA(sha256Hex([]byte("API_KEY=secret\n")))
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":".env","old_text":"API_KEY=secret","new_text":"API_KEY=changed","expected_old_sha":"` + oldSHA + `"}`,
+	})
+	if err == nil {
+		t.Fatal("expected sensitive path rejection")
+	}
+	if !strings.Contains(err.Error(), "edit_file refuses") || !strings.Contains(err.Error(), "sensitive path") {
+		t.Fatalf("expected edit_file sensitive path guidance, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "API_KEY") {
+		t.Fatalf("edit_file sensitive path error leaked content: %v", err)
+	}
+	if got := mustReadFile(t, filepath.Join(root, ".env")); got != "API_KEY=secret\n" {
+		t.Fatalf("edit_file should not mutate sensitive file: %q", got)
 	}
 }
 

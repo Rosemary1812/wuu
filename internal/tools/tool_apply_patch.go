@@ -496,11 +496,7 @@ func (t *ApplyPatchTool) applyDeleteHunk(hunk applyPatchHunk, dryRun bool) (appl
 }
 
 func (t *ApplyPatchTool) rejectSensitivePatchPath(absPath, action string) error {
-	displayPath := t.env.NormalizeDisplayPath(absPath)
-	if reason, ok := sensitivePathReason(displayPath); ok {
-		return fmt.Errorf("apply_patch refuses to %s sensitive path %q (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", action, displayPath, reason)
-	}
-	return nil
+	return rejectSensitiveToolPath(t.env, "apply_patch", action, absPath)
 }
 
 func (t *ApplyPatchTool) notifyFileChanged(absPath string) {

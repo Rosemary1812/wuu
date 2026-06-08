@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -33,4 +34,12 @@ func sensitivePathReason(path string) (string, bool) {
 func isSensitivePath(path string) bool {
 	_, ok := sensitivePathReason(path)
 	return ok
+}
+
+func rejectSensitiveToolPath(env *Env, toolName, action, absPath string) error {
+	displayPath := env.NormalizeDisplayPath(absPath)
+	if reason, ok := sensitivePathReason(displayPath); ok {
+		return fmt.Errorf("%s refuses to %s sensitive path %q (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", toolName, action, displayPath, reason)
+	}
+	return nil
 }
