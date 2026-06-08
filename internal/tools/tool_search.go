@@ -15,7 +15,10 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
+
+const maxGrepMatchContentBytes = 4 * 1024
 
 // ---------------------------------------------------------------------------
 // grep
@@ -167,21 +170,7 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 				return "", err
 			}
 		}
-		result := map[string]any{
-			"pattern":          args.Pattern,
-			"total":            len(matches),
-			"truncated":        len(matches) >= limit,
-			"matches":          matches,
-			"next_suggestions": searchNextSuggestions("grep", "content", len(matches), len(matches) >= limit),
-		}
-		out, err := mustJSON(result)
-		if err != nil {
-			return "", err
-		}
-		if len(out) > maxGrepOutputBytes {
-			out = out[:maxGrepOutputBytes]
-		}
-		return out, nil
+		return grepContentResultJSON(args.Pattern, matches, len(matches) >= limit)
 	}
 }
 
@@ -290,6 +279,44 @@ func searchNextSuggestions(toolName, outputMode string, total int, truncated boo
 		return []string{"rerun grep with output_mode=content for the highest-value files before editing"}
 	default:
 		return []string{"read_file the relevant match ranges before editing or making a conclusion"}
+	}
+}
+
+func grepContentResultJSON(pattern string, matches []grepMatch, hitLimit bool) (string, error) {
+	total := len(matches)
+	budgetedMatches := make([]grepMatch, len(matches))
+	contentTruncated := false
+	for i, match := range matches {
+		if len(match.Content) > maxGrepMatchContentBytes {
+			match.Content = stringutil.HeadTail(match.Content, maxGrepMatchContentBytes/2, maxGrepMatchContentBytes/4, "\n...[line truncated]...\n")
+			contentTruncated = true
+		}
+		budgetedMatches[i] = match
+	}
+
+	omitted := 0
+	for {
+		truncated := hitLimit || contentTruncated || omitted > 0
+		result := map[string]any{
+			"pattern":              pattern,
+			"total":                total,
+			"truncated":            truncated,
+			"matches":              budgetedMatches,
+			"omitted_match_count":  omitted,
+			"content_truncated":    contentTruncated,
+			"next_suggestions":     searchNextSuggestions("grep", "content", total, truncated),
+			"result_budget_bytes":  maxGrepOutputBytes,
+			"returned_match_count": len(budgetedMatches),
+		}
+		out, err := mustJSON(result)
+		if err != nil {
+			return "", err
+		}
+		if len(out) <= maxGrepOutputBytes || len(budgetedMatches) == 0 {
+			return out, nil
+		}
+		budgetedMatches = budgetedMatches[:len(budgetedMatches)-1]
+		omitted++
 	}
 }
 

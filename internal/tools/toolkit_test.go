@@ -2346,6 +2346,49 @@ func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
 	}
 }
 
+func TestToolkit_GrepLargeContentReturnsValidBudgetedJSON(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	var content strings.Builder
+	for i := 0; i < 120; i++ {
+		fmt.Fprintf(&content, "target-%03d %s\n", i, strings.Repeat("x", 500))
+	}
+	if err := os.WriteFile(filepath.Join(root, "large.txt"), []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "grep",
+		Arguments: `{"pattern":"target"}`,
+	})
+	if err != nil {
+		t.Fatalf("grep: %v", err)
+	}
+	if len(resp) > maxGrepOutputBytes {
+		t.Fatalf("grep response length = %d, want <= %d", len(resp), maxGrepOutputBytes)
+	}
+	var parsed struct {
+		Total              int         `json:"total"`
+		Truncated          bool        `json:"truncated"`
+		Matches            []grepMatch `json:"matches"`
+		OmittedMatchCount  int         `json:"omitted_match_count"`
+		ReturnedMatchCount int         `json:"returned_match_count"`
+		Suggestions        []string    `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("grep response must stay valid JSON after budgeting: %v\n%s", err, resp)
+	}
+	if !parsed.Truncated || parsed.OmittedMatchCount == 0 || parsed.ReturnedMatchCount != len(parsed.Matches) || parsed.ReturnedMatchCount >= parsed.Total {
+		t.Fatalf("unexpected budgeted grep metadata: %+v", parsed)
+	}
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "narrow") {
+		t.Fatalf("budgeted grep response missing narrowing suggestion: %+v", parsed.Suggestions)
+	}
+}
+
 func TestToolkit_GlobRipgrepFirst(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
