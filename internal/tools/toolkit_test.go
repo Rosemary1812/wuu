@@ -64,6 +64,47 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	if !strings.Contains(readResp, "hello") {
 		t.Fatalf("unexpected read response: %s", readResp)
 	}
+	var readParsed struct {
+		FileSHA string `json:"file_sha"`
+		Content string `json:"content"`
+		Range   struct {
+			StartLine int `json:"start_line"`
+			EndLine   int `json:"end_line"`
+		} `json:"range"`
+		OmittedRanges []map[string]int `json:"omitted_ranges"`
+		Suggestions   []string         `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(readResp), &readParsed); err != nil {
+		t.Fatalf("parse read response: %v", err)
+	}
+	if !strings.HasPrefix(readParsed.FileSHA, "sha256:") {
+		t.Fatalf("read_file response missing file_sha: %+v", readParsed)
+	}
+	if readParsed.Range.StartLine != 1 || readParsed.Range.EndLine != 1 || len(readParsed.OmittedRanges) != 0 {
+		t.Fatalf("unexpected read range metadata: %+v", readParsed)
+	}
+	if len(readParsed.Suggestions) == 0 || !strings.Contains(strings.Join(readParsed.Suggestions, " "), "file_sha") {
+		t.Fatalf("read_file response missing evidence suggestion: %+v", readParsed.Suggestions)
+	}
+
+	unchangedResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"dir/a.txt"}`,
+	})
+	if err != nil {
+		t.Fatalf("second read_file: %v", err)
+	}
+	var unchangedParsed struct {
+		FileSHA     string   `json:"file_sha"`
+		Unchanged   bool     `json:"unchanged"`
+		Suggestions []string `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(unchangedResp), &unchangedParsed); err != nil {
+		t.Fatalf("parse unchanged read response: %v", err)
+	}
+	if !unchangedParsed.Unchanged || unchangedParsed.FileSHA != readParsed.FileSHA || len(unchangedParsed.Suggestions) == 0 {
+		t.Fatalf("unexpected unchanged read metadata: %+v", unchangedParsed)
+	}
 }
 
 func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
@@ -104,17 +145,40 @@ func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 	}
 
 	var parsed struct {
-		Content    string `json:"content"`
-		NumLines   int    `json:"num_lines"`
-		StartLine  int    `json:"start_line"`
-		TotalLines int    `json:"total_lines"`
-		Truncated  bool   `json:"truncated"`
+		FileSHA string `json:"file_sha"`
+		Content string `json:"content"`
+		Range   struct {
+			StartLine int `json:"start_line"`
+			EndLine   int `json:"end_line"`
+		} `json:"range"`
+		NumLines      int              `json:"num_lines"`
+		StartLine     int              `json:"start_line"`
+		TotalLines    int              `json:"total_lines"`
+		Truncated     bool             `json:"truncated"`
+		OmittedRanges []map[string]int `json:"omitted_ranges"`
+		Suggestions   []string         `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse response: %v", err)
 	}
 	if parsed.NumLines != 3 || parsed.StartLine != 3001 || parsed.TotalLines != 5000 || !parsed.Truncated {
 		t.Fatalf("unexpected metadata: %+v", parsed)
+	}
+	if !strings.HasPrefix(parsed.FileSHA, "sha256:") {
+		t.Fatalf("read_file response missing file_sha: %+v", parsed)
+	}
+	if parsed.Range.StartLine != 3001 || parsed.Range.EndLine != 3003 {
+		t.Fatalf("unexpected range metadata: %+v", parsed.Range)
+	}
+	wantOmitted := []map[string]int{
+		{"start_line": 1, "end_line": 3000},
+		{"start_line": 3004, "end_line": 5000},
+	}
+	if !reflect.DeepEqual(parsed.OmittedRanges, wantOmitted) {
+		t.Fatalf("omitted_ranges = %+v, want %+v", parsed.OmittedRanges, wantOmitted)
+	}
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "omitted range") {
+		t.Fatalf("read_file response missing omitted-range suggestion: %+v", parsed.Suggestions)
 	}
 	for _, want := range []string{"  3001\tline-3001", "  3002\tline-3002", "  3003\tline-3003"} {
 		if !strings.Contains(parsed.Content, want) {

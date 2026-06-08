@@ -35,6 +35,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"- The path parameter is relative to the workspace root\n" +
 			"- Returns content with cat -n style line number prefixes (number + tab)\n" +
 			"- Use offset (1-based line) and limit to read specific portions of large files\n" +
+			"- Results include file_sha, range, omitted_ranges, and next_suggestions for follow-up reads\n" +
 			"- Files >256KB are rejected unless limit is provided\n" +
 			"- Repeated reads of the same file/range return a stub if the file is unchanged\n" +
 			"- This tool can only read files, not directories — use list_files for directories\n" +
@@ -126,9 +127,12 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 			}
 			if unchanged {
 				result := map[string]any{
-					"path":      t.env.NormalizeDisplayPath(resolved),
-					"unchanged": true,
-					"message":   "File unchanged since last read. Refer to the earlier read result.",
+					"path":             t.env.NormalizeDisplayPath(resolved),
+					"file_sha":         formatFileSHA(contentHash),
+					"range":            readFileRangeMetadata(args.Offset, len(readResult.Lines)),
+					"unchanged":        true,
+					"message":          "File unchanged since last read. Refer to the earlier read result.",
+					"next_suggestions": []string{"use the earlier read result as evidence, or request a different offset/limit if more context is needed"},
 				}
 				return mustJSON(result)
 			}
@@ -153,14 +157,66 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	})
 
 	result := map[string]any{
-		"path":        t.env.NormalizeDisplayPath(resolved),
-		"content":     buf.String(),
-		"num_lines":   len(readResult.Lines),
-		"start_line":  args.Offset,
-		"total_lines": readResult.TotalLines,
-		"truncated":   args.Offset <= readResult.TotalLines && args.Offset-1+len(readResult.Lines) < readResult.TotalLines,
+		"path":             t.env.NormalizeDisplayPath(resolved),
+		"file_sha":         formatFileSHA(contentHash),
+		"content":          buf.String(),
+		"num_lines":        len(readResult.Lines),
+		"start_line":       args.Offset,
+		"total_lines":      readResult.TotalLines,
+		"range":            readFileRangeMetadata(args.Offset, len(readResult.Lines)),
+		"omitted_ranges":   readFileOmittedRanges(readResult.TotalLines, args.Offset, len(readResult.Lines)),
+		"truncated":        args.Offset <= readResult.TotalLines && args.Offset-1+len(readResult.Lines) < readResult.TotalLines,
+		"next_suggestions": readFileNextSuggestions(readResult.TotalLines, args.Offset, len(readResult.Lines)),
 	}
 	return mustJSON(result)
+}
+
+func formatFileSHA(hexDigest string) string {
+	if strings.TrimSpace(hexDigest) == "" {
+		return ""
+	}
+	return "sha256:" + hexDigest
+}
+
+func readFileRangeMetadata(offset, lineCount int) map[string]int {
+	endLine := offset + lineCount - 1
+	if lineCount == 0 {
+		endLine = offset - 1
+	}
+	return map[string]int{
+		"start_line": offset,
+		"end_line":   endLine,
+	}
+}
+
+func readFileOmittedRanges(totalLines, offset, lineCount int) []map[string]int {
+	var ranges []map[string]int
+	if totalLines <= 0 {
+		return ranges
+	}
+	if offset > 1 {
+		beforeEnd := min(offset-1, totalLines)
+		if beforeEnd >= 1 {
+			ranges = append(ranges, map[string]int{"start_line": 1, "end_line": beforeEnd})
+		}
+	}
+	endLine := offset + lineCount - 1
+	if lineCount == 0 {
+		endLine = offset - 1
+	}
+	if endLine < totalLines {
+		afterStart := max(endLine+1, 1)
+		ranges = append(ranges, map[string]int{"start_line": afterStart, "end_line": totalLines})
+	}
+	return ranges
+}
+
+func readFileNextSuggestions(totalLines, offset, lineCount int) []string {
+	omitted := readFileOmittedRanges(totalLines, offset, lineCount)
+	if len(omitted) > 0 {
+		return []string{"read an omitted range or nearby surrounding lines if the current excerpt is insufficient before editing"}
+	}
+	return []string{"use this file_sha and excerpt as grounded evidence for subsequent edits or analysis"}
 }
 
 type readFileLineRangeResult struct {
