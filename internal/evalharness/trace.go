@@ -1,0 +1,104 @@
+package evalharness
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type TraceEvent struct {
+	Type      string    `json:"type"`
+	TaskID    string    `json:"task_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	Data      any       `json:"data,omitempty"`
+}
+
+type TraceTask struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Success            bool     `json:"success"`
+	DurationMS         int64    `json:"duration_ms"`
+	Turns              int      `json:"turns"`
+	ToolCalls          int      `json:"tool_calls"`
+	ToolNames          []string `json:"tool_names,omitempty"`
+	MissingTools       []string `json:"missing_tools,omitempty"`
+	MissingErrors      []string `json:"missing_errors,omitempty"`
+	InputTokens        int      `json:"input_tokens"`
+	OutputTokens       int      `json:"output_tokens"`
+	VerificationReason string   `json:"verification_reason,omitempty"`
+	Error              string   `json:"error,omitempty"`
+	Workdir            string   `json:"workdir,omitempty"`
+}
+
+func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
+	taskID := result.TaskID
+	events := []TraceEvent{{
+		Type:      "task",
+		TaskID:    taskID,
+		CreatedAt: createdAt,
+		Data: TraceTask{
+			ID:                 result.TaskID,
+			Name:               result.TaskName,
+			Success:            result.Success,
+			DurationMS:         result.DurationMS,
+			Turns:              result.Turns,
+			ToolCalls:          result.ToolCalls,
+			ToolNames:          append([]string(nil), result.ToolNames...),
+			MissingTools:       append([]string(nil), result.MissingTools...),
+			MissingErrors:      append([]string(nil), result.MissingErrors...),
+			InputTokens:        result.InputTokens,
+			OutputTokens:       result.OutputTokens,
+			VerificationReason: result.VerificationReason,
+			Error:              result.Error,
+			Workdir:            result.Workdir,
+		},
+	}}
+	if result.Observability == nil {
+		return events
+	}
+	obs := result.Observability
+	if obs.ModelProfile != nil {
+		events = append(events, TraceEvent{Type: "model_profile", TaskID: taskID, CreatedAt: createdAt, Data: obs.ModelProfile})
+	}
+	if len(obs.ToolRecords) > 0 {
+		events = append(events, TraceEvent{Type: "tool_records", TaskID: taskID, CreatedAt: createdAt, Data: obs.ToolRecords})
+	}
+	if len(obs.WorkflowRuns) > 0 {
+		events = append(events, TraceEvent{Type: "workflow_runs", TaskID: taskID, CreatedAt: createdAt, Data: obs.WorkflowRuns})
+	}
+	if len(obs.HarnessTasks) > 0 {
+		events = append(events, TraceEvent{Type: "harness_tasks", TaskID: taskID, CreatedAt: createdAt, Data: obs.HarnessTasks})
+	}
+	if len(obs.HarnessReports) > 0 {
+		events = append(events, TraceEvent{Type: "harness_reports", TaskID: taskID, CreatedAt: createdAt, Data: obs.HarnessReports})
+	}
+	events = append(events, TraceEvent{Type: "final", TaskID: taskID, CreatedAt: createdAt, Data: map[string]any{
+		"success":              result.Success,
+		"verification_reason":  result.VerificationReason,
+		"error":                result.Error,
+		"final_answer_preview": obs.FinalAnswerPreview,
+		"warnings":             append([]string(nil), obs.Warnings...),
+	}})
+	return events
+}
+
+func WriteTrace(path string, result Result) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	createdAt := time.Now().UTC()
+	for _, event := range TraceEvents(result, createdAt) {
+		if err := encoder.Encode(event); err != nil {
+			return err
+		}
+	}
+	return nil
+}

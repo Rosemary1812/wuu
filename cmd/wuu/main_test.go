@@ -310,6 +310,32 @@ func TestEvalModelProfileObservation(t *testing.T) {
 	}
 }
 
+func TestPersistEvalTraceWritesSessionArtifact(t *testing.T) {
+	sessionDir := t.TempDir()
+	result := evalharness.Result{
+		TaskID:   "task-1",
+		TaskName: "Task One",
+		Observability: &evalharness.Observability{
+			SessionDir:         sessionDir,
+			FinalAnswerPreview: "done",
+			ModelProfile:       &evalharness.ModelProfileObservation{ProviderName: "openai", Model: "gpt-5-codex", Family: "codex"},
+		},
+	}
+
+	persistEvalTrace(&result)
+
+	if result.Observability.TracePath == "" {
+		t.Fatalf("trace path not recorded: %+v", result.Observability)
+	}
+	data, err := os.ReadFile(result.Observability.TracePath)
+	if err != nil {
+		t.Fatalf("read trace: %v", err)
+	}
+	if !strings.Contains(string(data), `"type":"model_profile"`) || !strings.Contains(string(data), `"type":"final"`) {
+		t.Fatalf("trace missing expected events:\n%s", string(data))
+	}
+}
+
 func TestSetTemporaryEnvRestoresPreviousValue(t *testing.T) {
 	t.Setenv("WUU_HOME", "/tmp/original-wuu-home")
 	restore := setTemporaryEnv("WUU_HOME", "/tmp/eval-wuu-home")

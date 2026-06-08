@@ -61,6 +61,7 @@ type Observability struct {
 	SessionID          string                     `json:"session_id,omitempty"`
 	StateDir           string                     `json:"state_dir,omitempty"`
 	SessionDir         string                     `json:"session_dir,omitempty"`
+	TracePath          string                     `json:"trace_path,omitempty"`
 	HarnessDir         string                     `json:"harness_dir,omitempty"`
 	WorkflowDir        string                     `json:"workflow_dir,omitempty"`
 	TaskWorkdir        string                     `json:"task_workdir,omitempty"`

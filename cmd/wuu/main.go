@@ -659,6 +659,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	}
 	result.Observability = collectEvalObservability(rt, evalSessionID, taskRoot, cfg.KeepWorkdir, runResult.Content)
 	result.DurationMS = time.Since(started).Milliseconds()
+	persistEvalTrace(&result)
 	return result
 }
 
@@ -730,6 +731,23 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 		obs.Warnings = append(obs.Warnings, warnings...)
 	}
 	return obs
+}
+
+func persistEvalTrace(result *evalharness.Result) {
+	if result == nil || result.Observability == nil {
+		return
+	}
+	obs := result.Observability
+	if strings.TrimSpace(obs.SessionDir) == "" {
+		obs.Warnings = append(obs.Warnings, "eval trace unavailable: session dir is empty")
+		return
+	}
+	tracePath := filepath.Join(obs.SessionDir, "eval-trace.jsonl")
+	obs.TracePath = tracePath
+	if err := evalharness.WriteTrace(tracePath, *result); err != nil {
+		obs.Warnings = append(obs.Warnings, "write eval trace: "+evalSafePreview(err.Error(), evalTextPreviewLimit))
+		obs.TracePath = ""
+	}
 }
 
 func evalModelProfileObservation(rt *runtime.Session) *evalharness.ModelProfileObservation {
