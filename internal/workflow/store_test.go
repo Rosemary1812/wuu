@@ -20,6 +20,9 @@ func TestStateTransitions(t *testing.T) {
 	if err := ValidatePhaseTransition(PhaseStateBlocked, PhaseStateRunning); err != nil {
 		t.Fatalf("blocked -> running should be valid: %v", err)
 	}
+	if err := ValidatePhaseTransition(PhaseStateRunnable, PhaseStateCompleted); err != nil {
+		t.Fatalf("runnable -> completed should be valid: %v", err)
+	}
 	if err := ValidatePhaseTransition(PhaseStateCompleted, PhaseStateRunning); err == nil {
 		t.Fatal("completed phase -> running should be invalid")
 	}
@@ -173,6 +176,36 @@ func TestStoreCreatesAndUpdatesWorkflowRun(t *testing.T) {
 	}
 	if events[0].Type != EventRunCreated || events[0].RunID != "run_1" {
 		t.Fatalf("first event mismatch: %+v", events[0])
+	}
+}
+
+func TestStoreCompletesRunnablePhaseDirectly(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.CreateRun(Run{
+		ID:     "run_direct_phase_complete",
+		Status: RunStateRunning,
+		Phases: []Phase{{
+			ID:     "team_work",
+			Name:   "Team work",
+			Status: PhaseStateRunnable,
+		}},
+	}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	updated, err := store.UpdatePhaseStatus("run_direct_phase_complete", "team_work", PhaseStateCompleted, "done")
+	if err != nil {
+		t.Fatalf("UpdatePhaseStatus completed: %v", err)
+	}
+	phase := updated.Phases[0]
+	if phase.Status != PhaseStateCompleted {
+		t.Fatalf("phase status = %q, want completed", phase.Status)
+	}
+	if phase.StartedAt.IsZero() {
+		t.Fatal("directly completed phase should set StartedAt")
+	}
+	if phase.CompletedAt.IsZero() {
+		t.Fatal("directly completed phase should set CompletedAt")
 	}
 }
 

@@ -347,6 +347,9 @@ func (s *Store) UpdatePhaseStatus(runID, phaseID string, status PhaseState, mess
 	if status == PhaseStateRunning && run.Phases[idx].StartedAt.IsZero() {
 		run.Phases[idx].StartedAt = now
 	}
+	if IsTerminalPhaseState(status) && run.Phases[idx].StartedAt.IsZero() {
+		run.Phases[idx].StartedAt = now
+	}
 	if IsTerminalPhaseState(status) && run.Phases[idx].CompletedAt.IsZero() {
 		run.Phases[idx].CompletedAt = now
 	}

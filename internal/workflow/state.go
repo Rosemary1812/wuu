@@ -201,10 +201,11 @@ var phaseTransitions = map[PhaseState]map[PhaseState]bool{
 		PhaseStateFailed:   true,
 	},
 	PhaseStateRunnable: {
-		PhaseStateRunning: true,
-		PhaseStateBlocked: true,
-		PhaseStateSkipped: true,
-		PhaseStateFailed:  true,
+		PhaseStateRunning:   true,
+		PhaseStateCompleted: true,
+		PhaseStateBlocked:   true,
+		PhaseStateSkipped:   true,
+		PhaseStateFailed:    true,
 	},
 	PhaseStateRunning: {
 		PhaseStateCompleted: true,
