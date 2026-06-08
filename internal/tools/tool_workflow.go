@@ -60,6 +60,7 @@ func (t *ListWorkflowsTool) Execute(_ context.Context, _ string) (string, error)
 			"profiles":               wf.Profiles,
 			"allow_profile_creation": wf.AllowProfileCreation,
 			"memory_policy":          wf.MemoryPolicy,
+			"next_steps":             workflowDefinitionNextSteps(wf),
 		}
 		items = append(items, item)
 	}
@@ -143,6 +144,7 @@ func (t *LoadWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 		"memory_policy":          wf.MemoryPolicy,
 		"suggested_phase_names":  suggestedPhaseNames,
 		"content":                body,
+		"next_steps":             workflowDefinitionNextSteps(wf),
 	})
 }
 
@@ -2423,6 +2425,19 @@ func workflowDefinitionKind(def workflow.Definition) string {
 		return workflow.DefinitionKindScript
 	}
 	return workflow.DefinitionKindMarkdown
+}
+
+func workflowDefinitionNextSteps(def workflow.Definition) []string {
+	if workflowDefinitionKind(def) == workflow.DefinitionKindScript {
+		return []string{
+			"Use run_workflow with definition_name to start this script-driven workflow.",
+			"Let the script driver own phase/spawn/await/synthesis control; inspect workflow_status for durable run state.",
+		}
+	}
+	return []string{
+		"Use create_workflow with definition_name to start an agent-managed Workflow Run.",
+		"After create_workflow, list Agent Profiles, record the Workflow Team, spawn agents, await results, and bind them back with workflow_control.",
+	}
 }
 
 func normalizeWorkflowDefinitionKind(raw string) (string, error) {

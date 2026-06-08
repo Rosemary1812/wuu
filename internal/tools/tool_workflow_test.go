@@ -47,7 +47,8 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	var listed struct {
 		Count     int `json:"count"`
 		Workflows []struct {
-			Name string `json:"name"`
+			Name      string   `json:"name"`
+			NextSteps []string `json:"next_steps"`
 		} `json:"workflows"`
 	}
 	if err := json.Unmarshal([]byte(listResp), &listed); err != nil {
@@ -55,6 +56,9 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if listed.Count != 1 || listed.Workflows[0].Name != "feature-delivery" {
 		t.Fatalf("unexpected workflow list: %+v", listed)
+	}
+	if !workflowStepsContain(listed.Workflows[0].NextSteps, "create_workflow") {
+		t.Fatalf("markdown workflow list item should point to create_workflow: %+v", listed.Workflows[0].NextSteps)
 	}
 
 	loadResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -67,6 +71,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	var loaded struct {
 		Content             string   `json:"content"`
 		SuggestedPhaseNames []string `json:"suggested_phase_names"`
+		NextSteps           []string `json:"next_steps"`
 	}
 	if err := json.Unmarshal([]byte(loadResp), &loaded); err != nil {
 		t.Fatalf("parse load response: %v", err)
@@ -76,6 +81,9 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if len(loaded.SuggestedPhaseNames) != 3 || loaded.SuggestedPhaseNames[0] != "Clarify product intent" {
 		t.Fatalf("unexpected suggested phases: %+v", loaded.SuggestedPhaseNames)
+	}
+	if !workflowStepsContain(loaded.NextSteps, "create_workflow") {
+		t.Fatalf("markdown workflow load should point to create_workflow: %+v", loaded.NextSteps)
 	}
 
 	createResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -414,6 +422,7 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 		Kind                string   `json:"kind"`
 		Content             string   `json:"content"`
 		SuggestedPhaseNames []string `json:"suggested_phase_names"`
+		NextSteps           []string `json:"next_steps"`
 	}
 	if err := json.Unmarshal([]byte(loadResp), &loaded); err != nil {
 		t.Fatalf("parse load response: %v", err)
@@ -423,6 +432,9 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 	}
 	if loaded.SuggestedPhaseNames != nil {
 		t.Fatalf("script workflow should not expose markdown phase suggestions: %+v", loaded.SuggestedPhaseNames)
+	}
+	if !workflowStepsContain(loaded.NextSteps, "run_workflow") {
+		t.Fatalf("script workflow load should point to run_workflow: %+v", loaded.NextSteps)
 	}
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
