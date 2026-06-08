@@ -532,10 +532,11 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
 
 	result := map[string]any{
-		"subcommand": subcmd,
-		"exit_code":  exitCode,
-		"output":     trimmed,
-		"timed_out":  timedOut,
+		"subcommand":       subcmd,
+		"exit_code":        exitCode,
+		"output":           trimmed,
+		"timed_out":        timedOut,
+		"next_suggestions": gitNextSuggestions(subcmd, exitCode, timedOut),
 	}
 	if truncated {
 		result["truncated"] = true
@@ -613,18 +614,54 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 	trimmed, truncated := truncate(rawOutput, maxShellOutputBytes)
 
 	result := map[string]any{
-		"subcommand": "status",
-		"exit_code":  exitCode,
-		"staged":     staged,
-		"unstaged":   unstaged,
-		"untracked":  untracked,
-		"output":     trimmed,
-		"timed_out":  timedOut,
+		"subcommand":       "status",
+		"exit_code":        exitCode,
+		"staged":           staged,
+		"unstaged":         unstaged,
+		"untracked":        untracked,
+		"output":           trimmed,
+		"timed_out":        timedOut,
+		"next_suggestions": gitStatusNextSuggestions(staged, unstaged, untracked, exitCode, timedOut),
 	}
 	if truncated {
 		result["truncated"] = true
 	}
 	return mustJSON(result)
+}
+
+func gitNextSuggestions(subcmd string, exitCode int, timedOut bool) []string {
+	if timedOut {
+		return []string{"retry with a narrower git command or inspect repository state with git status"}
+	}
+	if exitCode != 0 {
+		return []string{"inspect the git output, then correct the command or run git status before retrying"}
+	}
+	switch subcmd {
+	case "diff", "show", "log", "blame", "grep":
+		return []string{"use this git output as evidence, or read_file relevant paths before editing"}
+	case "commit":
+		return []string{"confirm git status is clean or contains only intentional remaining changes"}
+	case "push":
+		return []string{"confirm the remote update succeeded and report the pushed branch"}
+	default:
+		return []string{"use this git output as evidence for the next action"}
+	}
+}
+
+func gitStatusNextSuggestions(staged, unstaged []fileEntry, untracked []string, exitCode int, timedOut bool) []string {
+	if timedOut {
+		return []string{"retry git status with narrower flags or inspect repository state with git diff"}
+	}
+	if exitCode != 0 {
+		return []string{"inspect git status output and resolve repository errors before continuing"}
+	}
+	if len(staged) == 0 && len(unstaged) == 0 && len(untracked) == 0 {
+		return []string{"working tree is clean; use prior validation evidence before finishing"}
+	}
+	if len(unstaged) > 0 || len(untracked) > 0 {
+		return []string{"run git diff or read_file relevant paths before deciding what to stage, commit, or report"}
+	}
+	return []string{"review staged changes with git diff --cached before committing"}
 }
 
 // parseGitPorcelain parses `git status --porcelain` output into

@@ -95,6 +95,23 @@ func TestToolkit_Git_ReadOnlySubcommands(t *testing.T) {
 		if p["exit_code"].(float64) != 0 {
 			t.Errorf("git %s: exit_code=%v output=%v", sub, p["exit_code"], p["output"])
 		}
+		if suggestions, ok := p["next_suggestions"].([]any); !ok || len(suggestions) == 0 {
+			t.Errorf("git %s missing next_suggestions: %+v", sub, p)
+		}
+	}
+}
+
+func TestToolkit_GitStatusSuggestsDiffForDirtyTree(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'dirty\n' >> hello.txt")
+
+	p := gitCall(t, kit, "status")
+	if p["exit_code"].(float64) != 0 {
+		t.Fatalf("git status: %+v", p)
+	}
+	suggestions, ok := p["next_suggestions"].([]any)
+	if !ok || len(suggestions) == 0 || !strings.Contains(fmt.Sprint(suggestions), "git diff") {
+		t.Fatalf("dirty status should suggest git diff: %+v", p)
 	}
 }
 
@@ -153,6 +170,10 @@ func TestToolkit_Git_CommitWithoutStagedChangesFailsCleanly(t *testing.T) {
 	p := gitCall(t, kit, "commit", "-m", "Nothing to commit")
 	if p["exit_code"].(float64) == 0 {
 		t.Fatalf("expected non-zero exit for empty commit: %v", p)
+	}
+	suggestions, ok := p["next_suggestions"].([]any)
+	if !ok || len(suggestions) == 0 || !strings.Contains(fmt.Sprint(suggestions), "git status") {
+		t.Fatalf("failed commit should suggest git status: %+v", p)
 	}
 }
 
