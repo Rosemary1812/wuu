@@ -31,6 +31,36 @@ type EnvInfo struct {
 	GitStatus string // short summary, not full porcelain
 }
 
+type BlockKind string
+
+const (
+	BlockSystemContract    BlockKind = "SYSTEM_CONTRACT"
+	BlockProjectRules      BlockKind = "PROJECT_RULES"
+	BlockTask              BlockKind = "TASK"
+	BlockWorkflowState     BlockKind = "WORKFLOW_STATE"
+	BlockRepoMap           BlockKind = "REPO_MAP"
+	BlockActiveFiles       BlockKind = "ACTIVE_FILES"
+	BlockRecentDiff        BlockKind = "RECENT_DIFF"
+	BlockTestFailures      BlockKind = "TEST_FAILURES"
+	BlockWebEvidence       BlockKind = "WEB_EVIDENCE"
+	BlockMemory            BlockKind = "MEMORY"
+	BlockToolResultSummary BlockKind = "TOOL_RESULT_SUMMARY"
+	BlockEnvironment       BlockKind = "ENVIRONMENT"
+	BlockAdditionalContext BlockKind = "ADDITIONAL_CONTEXT"
+)
+
+type Block struct {
+	Kind        BlockKind
+	Title       string
+	Source      string
+	Content     string
+	TokenBudget int
+}
+
+type Compiler struct {
+	Blocks []Block
+}
+
 // defaultSnapshotCacheTTL is the time-to-live for cached git snapshots.
 // In a tight multi-step tool loop this avoids spawning git subprocesses on
 // every model round (~20 ms saved per hit). 2 s is short enough that a user
@@ -105,13 +135,54 @@ func snapshotFresh(cwd string) EnvInfo {
 	return info
 }
 
-// FormatSystemReminder formats environment info and optional extra
-// context sections (memory, skills) into a <system-reminder> block
-// suitable for injection into a user message.
-func FormatSystemReminder(env EnvInfo, sections ...string) string {
-	var b strings.Builder
+func (c Compiler) Compile() string {
+	return CompileBlocks(c.Blocks)
+}
 
-	// Environment section
+func CompileBlocks(blocks []Block) string {
+	var b strings.Builder
+	for _, block := range blocks {
+		rendered := renderBlock(block)
+		if rendered == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(rendered)
+	}
+	return b.String()
+}
+
+func renderBlock(block Block) string {
+	content := strings.TrimSpace(block.Content)
+	if content == "" {
+		return ""
+	}
+	kind := block.Kind
+	if strings.TrimSpace(string(kind)) == "" {
+		kind = BlockAdditionalContext
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "[%s]\n", kind)
+	if title := strings.TrimSpace(block.Title); title != "" {
+		fmt.Fprintf(&b, "title: %s\n", title)
+	}
+	if source := strings.TrimSpace(block.Source); source != "" {
+		fmt.Fprintf(&b, "source: %s\n", source)
+	}
+	if block.TokenBudget > 0 {
+		fmt.Fprintf(&b, "token_budget: %d\n", block.TokenBudget)
+	}
+	if b.Len() > len(kind)+3 {
+		b.WriteString("\n")
+	}
+	b.WriteString(content)
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func EnvironmentBlock(env EnvInfo) Block {
+	var b strings.Builder
 	b.WriteString("# Environment\n")
 	b.WriteString(fmt.Sprintf("- CWD: %s\n", env.CWD))
 	b.WriteString(fmt.Sprintf("- Date: %s\n", env.Date))
@@ -121,18 +192,32 @@ func FormatSystemReminder(env EnvInfo, sections ...string) string {
 	if env.GitStatus != "" {
 		b.WriteString(fmt.Sprintf("- Git status: %s\n", env.GitStatus))
 	}
+	return Block{
+		Kind:    BlockEnvironment,
+		Title:   "Runtime environment",
+		Source:  "runtime.snapshot",
+		Content: strings.TrimRight(b.String(), "\n"),
+	}
+}
 
-	// Append extra sections (memory, skills, etc.)
-	for _, sec := range sections {
+// FormatSystemReminder formats environment info and optional extra
+// context sections (memory, skills) into a <system-reminder> block
+// suitable for injection into a user message.
+func FormatSystemReminder(env EnvInfo, sections ...string) string {
+	blocks := []Block{EnvironmentBlock(env)}
+	for i, sec := range sections {
 		sec = strings.TrimSpace(sec)
 		if sec != "" {
-			b.WriteString("\n")
-			b.WriteString(sec)
-			b.WriteString("\n")
+			blocks = append(blocks, Block{
+				Kind:    BlockAdditionalContext,
+				Title:   fmt.Sprintf("Additional context %d", i+1),
+				Source:  "runtime.injector",
+				Content: sec,
+			})
 		}
 	}
 
-	return "<system-reminder>\n" + strings.TrimRight(b.String(), "\n") + "\n</system-reminder>"
+	return "<system-reminder>\n" + CompileBlocks(blocks) + "\n</system-reminder>"
 }
 
 // IsSystemReminder reports whether the given metadata/content belongs to an

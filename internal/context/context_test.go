@@ -3,6 +3,7 @@ package context
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -57,5 +58,55 @@ func TestSnapshotCacheDifferentCWD(t *testing.T) {
 	// Second call with different CWD must not reuse first CWD.
 	if info2.CWD != "/tmp/fake-b" {
 		t.Fatalf("expected CWD /tmp/fake-b, got %q", info2.CWD)
+	}
+}
+
+func TestCompileBlocksRendersTypedContext(t *testing.T) {
+	got := CompileBlocks([]Block{
+		{Kind: BlockProjectRules, Title: "Rules", Source: "AGENTS.md", Content: "Use gofmt.", TokenBudget: 200},
+		{Kind: BlockRecentDiff, Content: "   "},
+		{Kind: BlockTestFailures, Content: "go test failed"},
+	})
+
+	for _, want := range []string{
+		"[PROJECT_RULES]",
+		"title: Rules",
+		"source: AGENTS.md",
+		"token_budget: 200",
+		"Use gofmt.",
+		"[TEST_FAILURES]",
+		"go test failed",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("compiled context missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "[RECENT_DIFF]") {
+		t.Fatalf("empty blocks should be skipped:\n%s", got)
+	}
+}
+
+func TestFormatSystemReminderUsesTypedEnvironmentBlock(t *testing.T) {
+	got := FormatSystemReminder(EnvInfo{
+		CWD:       "/repo",
+		Date:      "2026-06-09",
+		GitBranch: "main",
+		GitStatus: "clean",
+	}, "# Extra\n\nUse targeted tests.")
+
+	for _, want := range []string{
+		"<system-reminder>",
+		"[ENVIRONMENT]",
+		"title: Runtime environment",
+		"source: runtime.snapshot",
+		"# Environment",
+		"- CWD: /repo",
+		"[ADDITIONAL_CONTEXT]",
+		"Use targeted tests.",
+		"</system-reminder>",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("system reminder missing %q:\n%s", want, got)
+		}
 	}
 }
