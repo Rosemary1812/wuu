@@ -654,6 +654,89 @@ phase("Spawn primitive", () => {
 	}
 }
 
+func TestRunScriptWorkflowSupportsSpawnBatchAlias(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &workflowFakeClient{content: "batch worker done"},
+		DefaultModel: "fake-model",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
+		SessionID:    "workflow-spawn-batch-session",
+		HistoryDir:   filepath.Join(stateDir, "workers"),
+		ThreadDir:    filepath.Join(stateDir, "threads"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return workflowNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopWorkflowAgentControl(control)
+	kit.SetAgentControl(control)
+	kit.SetAgentIdentity("root", agentthread.RootPath)
+
+	script := `
+phase("Batch", () => {
+  const spawned = spawnBatch([
+    {taskName: "qa_1", message: "Run QA 1.", synchronous: true},
+    {taskName: "qa_2", message: "Run QA 2.", synchronous: true}
+  ]);
+  if (!spawned || spawned.length !== 2) {
+    throw new Error("spawnBatch should return two spawn results");
+  }
+  if (spawned[0].status !== "completed" || spawned[1].status !== "completed") {
+    throw new Error("spawnBatch did not return completed synchronous results");
+  }
+  synthesize("# Final\n\n" + spawned.map((item) => item.result).join("\n"));
+});
+`
+	runResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "run_workflow",
+		Arguments: `{
+			"script":` + strconv.Quote(script) + `,
+			"run_id":"workflow-spawn-batch-run",
+			"background":false,
+			"max_concurrency":2
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("run_workflow: %v", err)
+	}
+	var ran struct {
+		Status workflow.RunState `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(runResp), &ran); err != nil {
+		t.Fatalf("parse run response: %v", err)
+	}
+	if ran.Status != workflow.RunStateCompleted {
+		t.Fatalf("workflow should complete: %+v", ran)
+	}
+
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-spawn-batch-run"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status: %v", err)
+	}
+	var status struct {
+		AgentRuns []workflow.AgentRun `json:"agent_runs"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
+		t.Fatalf("parse status response: %v", err)
+	}
+	if len(status.AgentRuns) != 2 {
+		t.Fatalf("expected two agent runs, got %+v", status.AgentRuns)
+	}
+}
+
 func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()

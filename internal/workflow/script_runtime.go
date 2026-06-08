@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -165,13 +166,15 @@ func (r *ScriptRuntime) installGlobals(ctx context.Context, vm *goja.Runtime) {
 		}
 		return vm.ToValue(scriptObject(value))
 	})
-	_ = vm.Set("spawnAgents", func(call goja.FunctionCall) goja.Value {
+	spawnBatch := func(call goja.FunctionCall) goja.Value {
 		value, err := r.spawnAgents(ctx, vm, call.Argument(0))
 		if err != nil {
 			panic(vm.NewGoError(err))
 		}
 		return vm.ToValue(scriptObject(value))
-	})
+	}
+	_ = vm.Set("spawnBatch", spawnBatch)
+	_ = vm.Set("spawnAgents", spawnBatch)
 	_ = vm.Set("awaitAgents", func(call goja.FunctionCall) goja.Value {
 		value, err := r.awaitAgents(ctx, vm, call.Argument(0))
 		if err != nil {
@@ -239,9 +242,25 @@ func (r *ScriptRuntime) spawnAgents(ctx context.Context, vm *goja.Runtime, value
 	if goja.IsUndefined(value) || goja.IsNull(value) {
 		return nil, errors.New("spawnAgents requires an array of spawn specs")
 	}
-	var specs []ScriptSpawnSpec
-	if err := vm.ExportTo(value, &specs); err != nil {
-		return nil, fmt.Errorf("parse spawnAgents specs: %w", err)
+	object := value.ToObject(vm)
+	if object == nil {
+		return nil, errors.New("spawnAgents requires an array of spawn specs")
+	}
+	lengthValue := object.Get("length")
+	if goja.IsUndefined(lengthValue) || goja.IsNull(lengthValue) {
+		return nil, errors.New("spawnAgents requires an array of spawn specs")
+	}
+	length := int(lengthValue.ToInteger())
+	if length < 0 {
+		return nil, errors.New("spawnAgents requires a valid array length")
+	}
+	specs := make([]ScriptSpawnSpec, 0, length)
+	for i := 0; i < length; i++ {
+		spec, err := parseScriptSpawnSpec(vm, object.Get(strconv.Itoa(i)))
+		if err != nil {
+			return nil, fmt.Errorf("parse spawnAgents spec %d: %w", i, err)
+		}
+		specs = append(specs, spec)
 	}
 	if len(specs) > r.maxConcurrency {
 		return nil, fmt.Errorf("spawnAgents requested %d agents; max_concurrency is %d", len(specs), r.maxConcurrency)

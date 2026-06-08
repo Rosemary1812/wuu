@@ -33,7 +33,7 @@ func (t *ListWorkflowsTool) Definition() providers.ToolDefinition {
 		Name: "list_workflows",
 		Description: "List reusable workflow definitions discovered from project and user workflow directories. " +
 			"Use this when the user asks for a repeatable, long-running, scheduled, or multi-agent task and you need " +
-			"to choose a saved workflow before creating a durable workflow run.",
+			"to choose a saved workflow before creating workflow run state.",
 		InputSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -85,7 +85,7 @@ func (t *LoadWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "load_workflow",
 		Description: "Load the full body of a reusable workflow definition. Workflow definitions are portable " +
-			"orchestration assets, similar to skills, but they are used to create durable workflow runs. Markdown " +
+			"orchestration assets, similar to skills, but they are used to create durable workflow run state. Markdown " +
 			"workflow bodies may contain ${ARGUMENTS}, ${CLAUDE_WORKFLOW_DIR}, and ${CLAUDE_SESSION_ID} substitutions; " +
 			"script workflows are returned as raw JavaScript and receive arguments through the args global when run.",
 		InputSchema: map[string]any{
@@ -351,7 +351,7 @@ func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
 			"the script runs in a restricted orchestration runtime, creates durable Workflow Run state, can open dynamic " +
 			"phases, use the spawn primitive to create worker agents, await worker agents, and write the final report. " +
 			"The script cannot directly run shell commands or edit files; it delegates work to agents. " +
-			"Default caps are 16 concurrent worker spawns and 1000 total agents unless a lower definition or caller cap is set. " +
+			"Default caps are 1000 total worker spawns and 16 agents per spawnBatch/spawnAgents batch unless a lower definition or caller cap is set. " +
 			"Use create_workflow only for Markdown/manual workflow plans.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -382,7 +382,7 @@ func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
 				},
 				"max_concurrency": map[string]any{
 					"type":        "integer",
-					"description": "Optional override for this run's spawnAgents batch cap.",
+					"description": "Optional override for this run's spawnBatch/spawnAgents batch size cap.",
 				},
 			},
 		},
@@ -565,7 +565,7 @@ func (t *CreateWorkflowTool) IsConcurrencySafe() bool { return true }
 func (t *CreateWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "create_workflow",
-		Description: "Create a durable Workflow Run from a reusable workflow definition or an ad hoc plan. " +
+		Description: "Create durable Workflow Run state from a reusable workflow definition or an ad hoc plan. " +
 			"This records the workflow state, phase plan, event log, and plan artifact. It does not automatically " +
 			"spawn agents; after creating a running workflow, list_agent_profiles, record a dynamic team plan with " +
 			"workflow_control action=record_team_plan, then use spawn_agent with agent_profile for reuse_profile/create_profile " +
