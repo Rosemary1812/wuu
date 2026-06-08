@@ -1340,6 +1340,17 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "shell command may read secrets" {
 		t.Fatalf("secret-reading shell metadata = %+v, want high-risk secret classification", meta)
 	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"env | grep TOKEN"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "shell command may expose environment secrets" {
+		t.Fatalf("environment dump shell metadata = %+v, want high-risk environment classification", meta)
+	}
 }
 
 func TestToolkit_RunTestToolExecutesVerificationCommand(t *testing.T) {
@@ -2323,6 +2334,27 @@ func TestToolkit_RunShellRejectsSensitivePathAccess(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), "API_KEY") || strings.Contains(err.Error(), "API_KEY=secret") {
 			t.Fatalf("run_shell sensitive path error leaked file content for %q: %v", command, err)
+		}
+	}
+}
+
+func TestToolkit_RunShellRejectsEnvironmentDump(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	for _, command := range []string{"env", "printenv PATH", "env | grep TOKEN"} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "run_shell",
+			Arguments: `{"command":"` + command + `"}`,
+		})
+		if err == nil {
+			t.Fatalf("expected environment dump rejection for %q", command)
+		}
+		if !strings.Contains(err.Error(), "environment variables") || !strings.Contains(err.Error(), "secrets") {
+			t.Fatalf("expected environment dump guidance for %q, got: %v", command, err)
 		}
 	}
 }

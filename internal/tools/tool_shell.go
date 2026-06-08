@@ -83,6 +83,9 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("run_shell requires command")
 	}
+	if shellCommandDumpsEnvironment(args.Command) {
+		return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
+	}
 	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
 		return "", fmt.Errorf("run_shell refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
 	}
@@ -212,9 +215,7 @@ func classifyShellCommand(command string) ToolClassification {
 	if command == "" {
 		return highRiskShellClassification("empty shell command", false)
 	}
-	if strings.ContainsAny(command, "\n;&|><`$()") {
-		return highRiskShellClassification("shell command uses shell metacharacters", false)
-	}
+	hasShellMetacharacters := strings.ContainsAny(command, "\n;&|><`$()")
 	fields := strings.Fields(command)
 	if len(fields) == 0 {
 		return highRiskShellClassification("empty shell command", false)
@@ -225,8 +226,14 @@ func classifyShellCommand(command string) ToolClassification {
 	if len(fields) == 0 {
 		return highRiskShellClassification("environment-only shell command", false)
 	}
+	if shellFieldsDumpEnvironment(command, fields) {
+		return highRiskShellClassification("shell command may expose environment secrets", false)
+	}
 	if shellFieldsTouchSensitivePath(fields) {
 		return highRiskShellClassification("shell command may read secrets", false)
+	}
+	if hasShellMetacharacters {
+		return highRiskShellClassification("shell command uses shell metacharacters", false)
 	}
 	if shellFieldsLookDestructive(fields) {
 		return highRiskShellClassification("destructive shell command", true)
@@ -262,6 +269,36 @@ func highRiskShellClassification(reason string, destructive bool) ToolClassifica
 		Destructive:     destructive,
 		Risk:            ToolRiskHigh,
 		Reason:          reason,
+	}
+}
+
+func shellCommandDumpsEnvironment(command string) bool {
+	fields := strings.Fields(strings.TrimSpace(command))
+	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
+		fields = fields[1:]
+	}
+	return shellFieldsDumpEnvironment(command, fields)
+}
+
+func shellFieldsDumpEnvironment(command string, fields []string) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	switch fields[0] {
+	case "printenv", "set", "export":
+		return true
+	case "env":
+		if strings.ContainsAny(command, "\n;&|><`$()") {
+			return true
+		}
+		for _, field := range fields[1:] {
+			if !strings.HasPrefix(field, "-") && !looksLikeEnvAssignment(field) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
 	}
 }
 
