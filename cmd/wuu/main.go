@@ -577,6 +577,9 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	} else {
 		defer os.RemoveAll(taskRoot)
 	}
+	if cfg.Task.IsolateWuuHome {
+		defer setTemporaryEnv("WUU_HOME", filepath.Join(taskRoot, ".wuu-home"))()
+	}
 
 	ctx := context.Background()
 	if cfg.Timeout > 0 {
@@ -656,6 +659,18 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	result.Observability = collectEvalObservability(rt, evalSessionID, taskRoot, cfg.KeepWorkdir, runResult.Content)
 	result.DurationMS = time.Since(started).Milliseconds()
 	return result
+}
+
+func setTemporaryEnv(key, value string) func() {
+	previous, existed := os.LookupEnv(key)
+	_ = os.Setenv(key, value)
+	return func() {
+		if existed {
+			_ = os.Setenv(key, previous)
+			return
+		}
+		_ = os.Unsetenv(key)
+	}
 }
 
 const (

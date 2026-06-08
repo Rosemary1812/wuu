@@ -275,6 +275,31 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 }
 
+func TestSetTemporaryEnvRestoresPreviousValue(t *testing.T) {
+	t.Setenv("WUU_HOME", "/tmp/original-wuu-home")
+	restore := setTemporaryEnv("WUU_HOME", "/tmp/eval-wuu-home")
+	if got := os.Getenv("WUU_HOME"); got != "/tmp/eval-wuu-home" {
+		t.Fatalf("WUU_HOME = %q, want temporary value", got)
+	}
+	restore()
+	if got := os.Getenv("WUU_HOME"); got != "/tmp/original-wuu-home" {
+		t.Fatalf("WUU_HOME = %q, want original value", got)
+	}
+}
+
+func TestSetTemporaryEnvUnsetsMissingValue(t *testing.T) {
+	t.Setenv("WUU_HOME", "placeholder")
+	os.Unsetenv("WUU_HOME")
+	restore := setTemporaryEnv("WUU_HOME", "/tmp/eval-wuu-home")
+	if got := os.Getenv("WUU_HOME"); got != "/tmp/eval-wuu-home" {
+		t.Fatalf("WUU_HOME = %q, want temporary value", got)
+	}
+	restore()
+	if _, ok := os.LookupEnv("WUU_HOME"); ok {
+		t.Fatal("WUU_HOME should be unset after restore")
+	}
+}
+
 func TestResolveContextWindow_PrefersProviderOverride(t *testing.T) {
 	if got := runtime.ResolveContextWindow("gpt-5.4", 777, 555); got != 777 {
 		t.Fatalf("expected provider override, got %d", got)

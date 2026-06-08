@@ -22,6 +22,7 @@ type Task struct {
 	Prompt         string
 	RequiredTools  []string
 	RequiredErrors []ToolErrorRequirement
+	IsolateWuuHome bool
 	Setup          func(root string) error
 	Configure      func(root string, cfg config.Config) config.Config
 	Verify         func(ctx context.Context, root, answer string) (Verification, error)
@@ -237,6 +238,23 @@ func Catalog() []Task {
 			RequiredTools: []string{"spawn_agent", "wait_agent"},
 			Setup:         setupEmptyTask,
 			Verify:        verifySubAgentWorkerFile,
+		},
+		{
+			ID:          "dynamic_workflow_team",
+			Name:        "Run a dynamic workflow team",
+			Description: "Main agent must record a workflow team plan, create a durable profile member, spawn workers, await them, and complete the run.",
+			Prompt: "Create a manual workflow run with run_id='eval_dynamic_team' and one phase id='team_work'. " +
+				"First call list_agent_profiles. Then call create_workflow for the run. Next, record a dynamic team plan with workflow_control action=record_team_plan containing exactly two members: " +
+				"one create_profile member with role='Marker writer', agent_profile='eval_team_marker_writer', task_name='alpha_writer', phase_id='team_work'; " +
+				"and one ephemeral member with role='Independent verifier', task_name='beta_writer', phase_id='team_work'. " +
+				"Spawn both workers with fork_turns='none' and self-contained briefs from the Base Agent Brief Contract plus the Workflow Context Extension. " +
+				"The create_profile worker must use agent_profile='eval_team_marker_writer' and write team_alpha.txt containing TEAM_ALPHA_DONE. " +
+				"The ephemeral worker must omit agent_profile and write team_beta.txt containing TEAM_BETA_DONE. " +
+				"Require both workers to call agent_report. Await both with await_agents, bind the results back to the workflow using workflow_control action=record_await_results, then write a final workflow report with complete_run=true. Do not write team_alpha.txt or team_beta.txt yourself.",
+			RequiredTools:  []string{"list_agent_profiles", "create_workflow", "workflow_control", "spawn_agent", "await_agents"},
+			IsolateWuuHome: true,
+			Setup:          setupEmptyTask,
+			Verify:         verifyDynamicWorkflowTeam,
 		},
 	}
 }
@@ -490,6 +508,23 @@ func verifySubAgentWorkerFile(_ context.Context, root, _ string) (Verification, 
 		return Verification{Passed: false, Reason: "worker_result.txt does not contain SUBAGENT_EVAL_DONE"}, nil
 	}
 	return Verification{Passed: true, Reason: "observed sub-agent worker marker"}, nil
+}
+
+func verifyDynamicWorkflowTeam(_ context.Context, root, _ string) (Verification, error) {
+	required := map[string]string{
+		"team_alpha.txt": "TEAM_ALPHA_DONE",
+		"team_beta.txt":  "TEAM_BETA_DONE",
+	}
+	for name, marker := range required {
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			return Verification{Passed: false, Reason: name + " was not written"}, nil
+		}
+		if !strings.Contains(string(data), marker) {
+			return Verification{Passed: false, Reason: name + " does not contain " + marker}, nil
+		}
+	}
+	return Verification{Passed: true, Reason: "observed dynamic workflow team markers"}, nil
 }
 
 func writeFiles(root string, files map[string]string) error {

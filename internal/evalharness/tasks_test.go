@@ -324,3 +324,47 @@ func TestMultiAgentWorkerVerification(t *testing.T) {
 		t.Fatalf("worker marker should pass verification: %s", passed.Reason)
 	}
 }
+
+func TestDynamicWorkflowTeamVerification(t *testing.T) {
+	task, ok := ByID("dynamic_workflow_team")
+	if !ok {
+		t.Fatal("missing dynamic_workflow_team task")
+	}
+	if !task.IsolateWuuHome {
+		t.Fatal("dynamic workflow team eval should isolate WUU_HOME")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing markers: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing team markers should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "team_alpha.txt"), []byte("TEAM_ALPHA_DONE\n"), 0o644); err != nil {
+		t.Fatalf("write alpha marker: %v", err)
+	}
+	failed, err = VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing beta marker: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing beta marker should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "team_beta.txt"), []byte("TEAM_BETA_DONE\n"), 0o644); err != nil {
+		t.Fatalf("write beta marker: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask team markers: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("team markers should pass verification: %s", passed.Reason)
+	}
+}
