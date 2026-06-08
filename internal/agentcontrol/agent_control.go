@@ -65,6 +65,10 @@ type AgentControl struct {
 	maxParallel   int
 	queueMu       sync.Mutex
 	queued        []preparedSpawn
+	statusCh      chan subagent.Notification
+	statusStop    chan struct{}
+	statusDone    chan struct{}
+	closeOnce     sync.Once
 }
 
 // Config holds the dependencies needed to build an AgentControl.
@@ -141,7 +145,13 @@ func New(cfg Config) (*AgentControl, error) {
 	c.registerRootThread()
 	statusCh := make(chan subagent.Notification, 64)
 	mgr.Subscribe(statusCh)
-	go c.consumeWorkerStatus(statusCh)
+	c.statusCh = statusCh
+	c.statusStop = make(chan struct{})
+	c.statusDone = make(chan struct{})
+	go func() {
+		defer close(c.statusDone)
+		c.consumeWorkerStatus(statusCh)
+	}()
 	_ = c.restoreQueuedSpawns()
 	go c.maybeStartQueued(context.Background())
 	return c, nil
@@ -151,6 +161,25 @@ func New(cfg Config) (*AgentControl, error) {
 // (Subscribe, etc.).
 func (c *AgentControl) Manager() *subagent.Manager {
 	return c.manager
+}
+
+// Close stops AgentControl-owned background consumers. It does not cancel
+// running workers; callers should StopAll first when they need cancellation.
+func (c *AgentControl) Close() {
+	if c == nil {
+		return
+	}
+	c.closeOnce.Do(func() {
+		if c.manager != nil && c.statusCh != nil {
+			c.manager.Unsubscribe(c.statusCh)
+		}
+		if c.statusStop != nil {
+			close(c.statusStop)
+		}
+		if c.statusDone != nil {
+			<-c.statusDone
+		}
+	})
 }
 
 // HarnessStore exposes the durable task graph store for tests and UI adapters.
@@ -1710,31 +1739,40 @@ func writeUntrackedArchive(root, archivePath string, files []string) error {
 }
 
 func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
-	for n := range ch {
-		if c == nil || c.threads == nil {
-			continue
+	for {
+		select {
+		case n := <-ch:
+			c.consumeWorkerNotification(n)
+		case <-c.statusStop:
+			return
 		}
-		status := threadStatusFromSubAgent(n.Status)
-		if current, ok := c.threads.Resolve(n.AgentID); ok {
-			if isActiveAgentThreadStatus(status) && isFinalAgentThreadStatus(current.Status) {
-				continue
-			}
-			if isFinalAgentThreadStatus(status) && current.Status == status {
-				continue
-			}
+	}
+}
+
+func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
+	if c == nil || c.threads == nil {
+		return
+	}
+	status := threadStatusFromSubAgent(n.Status)
+	if current, ok := c.threads.Resolve(n.AgentID); ok {
+		if isActiveAgentThreadStatus(status) && isFinalAgentThreadStatus(current.Status) {
+			return
 		}
-		c.recordHarnessStatus(n)
-		meta, ok := c.threads.UpdateStatus(n.AgentID, status, time.Now().UTC())
-		if !ok {
-			continue
+		if isFinalAgentThreadStatus(status) && current.Status == status {
+			return
 		}
-		_ = c.threadStore.RecordStatus(meta)
-		if isFinalSubAgentStatus(n.Status) {
-			if !c.deliverNestedResultToParent(context.Background(), n.Snapshot) && c.isRootChildSnapshot(n.Snapshot) {
-				_ = c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath))
-			}
-			go c.maybeStartQueued(context.Background())
+	}
+	c.recordHarnessStatus(n)
+	meta, ok := c.threads.UpdateStatus(n.AgentID, status, time.Now().UTC())
+	if !ok {
+		return
+	}
+	_ = c.threadStore.RecordStatus(meta)
+	if isFinalSubAgentStatus(n.Status) {
+		if !c.deliverNestedResultToParent(context.Background(), n.Snapshot) && c.isRootChildSnapshot(n.Snapshot) {
+			_ = c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath))
 		}
+		go c.maybeStartQueued(context.Background())
 	}
 }
 

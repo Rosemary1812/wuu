@@ -394,6 +394,7 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(c.Close)
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
 		TaskName:    "structured_report",
@@ -470,6 +471,7 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(c.Close)
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        "worker",
 		TaskName:    "await_report",
@@ -530,6 +532,7 @@ func TestAwaitFromWarnsOnOverlappingChangedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(c.Close)
 	first, err := c.Spawn(context.Background(), SpawnRequest{Type: "worker", TaskName: "edit_one", Prompt: "one", Synchronous: true})
 	if err != nil {
 		t.Fatalf("Spawn first: %v", err)
@@ -577,6 +580,7 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(c.Close)
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:     "worker",
 		TaskName: "await_timeout",
