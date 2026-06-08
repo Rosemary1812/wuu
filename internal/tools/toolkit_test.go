@@ -1115,7 +1115,7 @@ func TestToolkit_RunTestToolSummarizesFailures(t *testing.T) {
 import "testing"
 
 func TestBroken(t *testing.T) {
-	t.Fatalf("expected 1 got 2")
+	t.Fatalf("expected 1 got 2 API_KEY=secret-value-1234567890")
 }
 `)
 	kit, err := New(root)
@@ -1143,6 +1143,9 @@ func TestBroken(t *testing.T) {
 	}
 	if len(got.FailureSummary.FailingTests) == 0 || got.FailureSummary.FailingTests[0] != "TestBroken" {
 		t.Fatalf("failure summary missing failing test: %+v", got.FailureSummary)
+	}
+	if strings.Contains(resp, "secret-value") || !strings.Contains(resp, "[REDACTED]") {
+		t.Fatalf("run_test response should redact secret-like output: %s", resp)
 	}
 }
 
@@ -1983,6 +1986,31 @@ func TestToolkit_RunShell(t *testing.T) {
 	}
 	if parsed["duration_ms"].(float64) < 0 {
 		t.Fatalf("unexpected duration: %v", parsed["duration_ms"])
+	}
+}
+
+func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"printf 'API_KEY=secret-value-1234567890\nAuthorization: Bearer abcdefghijklmnop\nsk-testsecret123456\n'"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_shell: %v", err)
+	}
+
+	for _, leaked := range []string{"secret-value", "abcdefghijklmnop", "sk-testsecret"} {
+		if strings.Contains(resp, leaked) {
+			t.Fatalf("run_shell response leaked %q: %s", leaked, resp)
+		}
+	}
+	if strings.Count(resp, "[REDACTED]") < 3 {
+		t.Fatalf("expected redaction markers, got: %s", resp)
 	}
 }
 

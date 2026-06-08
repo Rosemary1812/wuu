@@ -151,13 +151,16 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 
 	stdoutText := stdout.String()
 	stderrText := stderr.String()
-	output := stdoutText + stderrText
+	redactedStdout := redactToolOutput(stdoutText)
+	redactedStderr := redactToolOutput(stderrText)
+	redactedCommand := redactToolOutput(command)
+	output := redactedStdout + redactedStderr
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
-	stdoutTail, stdoutTailTruncated := tailString(stdoutText, maxShellTailBytes)
-	stderrTail, stderrTailTruncated := tailString(stderrText, maxShellTailBytes)
+	stdoutTail, stdoutTailTruncated := tailString(redactedStdout, maxShellTailBytes)
+	stderrTail, stderrTailTruncated := tailString(redactedStderr, maxShellTailBytes)
 
 	return shellExecutionResult{
-		Command:             command,
+		Command:             redactedCommand,
 		Classification:      classifyShellCommand(command),
 		ExitCode:            exitCode,
 		DurationMS:          durationMS,
