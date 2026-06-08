@@ -110,11 +110,11 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	if !strings.Contains(fileTasks[0].Prompt, `Start the saved workflow "weekly-qa"`) {
 		t.Fatalf("workflow task prompt missing workflow instruction: %q", fileTasks[0].Prompt)
 	}
-	if !strings.Contains(fileTasks[0].Prompt, "record the dynamic team") {
+	if !strings.Contains(fileTasks[0].Prompt, "record the Workflow Team") {
 		t.Fatalf("workflow task prompt missing team planning instruction: %q", fileTasks[0].Prompt)
 	}
 	if !strings.Contains(fileTasks[0].Prompt, "create_workflow") {
-		t.Fatalf("manual workflow task prompt should use create_workflow: %q", fileTasks[0].Prompt)
+		t.Fatalf("agent-managed workflow task prompt should use create_workflow: %q", fileTasks[0].Prompt)
 	}
 	if !strings.Contains(fileTasks[0].Prompt, "Base Agent Brief Contract") || !strings.Contains(fileTasks[0].Prompt, "Workflow Context Extension") {
 		t.Fatalf("workflow task prompt missing shared brief contract: %q", fileTasks[0].Prompt)
@@ -153,13 +153,13 @@ func TestScheduleCronTool_SavesScriptWorkflowTaskUsesRunWorkflow(t *testing.T) {
 	if len(fileTasks) != 1 || fileTasks[0].Metadata["workflow_kind"] != workflow.DefinitionKindScript {
 		t.Fatalf("expected one script workflow task, got %+v", fileTasks)
 	}
-	for _, want := range []string{"load_workflow", "run_workflow", "definition_name", "script owns phases"} {
+	for _, want := range []string{"load_workflow", "run_workflow", "definition_name", "script driver"} {
 		if !strings.Contains(fileTasks[0].Prompt, want) {
 			t.Fatalf("script workflow prompt missing %q: %q", want, fileTasks[0].Prompt)
 		}
 	}
-	if strings.Contains(fileTasks[0].Prompt, "record the dynamic team") || strings.Contains(fileTasks[0].Prompt, "call create_workflow") {
-		t.Fatalf("script workflow prompt should not use manual workflow path: %q", fileTasks[0].Prompt)
+	if strings.Contains(fileTasks[0].Prompt, "record the Workflow Team") || strings.Contains(fileTasks[0].Prompt, "call create_workflow") {
+		t.Fatalf("script workflow prompt should not use agent-managed workflow path: %q", fileTasks[0].Prompt)
 	}
 }
 

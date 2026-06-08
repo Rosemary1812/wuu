@@ -138,14 +138,17 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 
 	for _, want := range []string{
 		"feature-delivery",
+		"agent-led",
 		"durable run state",
 		"`run_workflow`",
+		"script driver",
 		"`spawn(...)`",
 		"`spawnBatch([...])`",
 		"`create_workflow`",
 		"`list_agent_profiles`",
 		"`workflow_control`",
-		"record_team_plan",
+		"record_workflow_team",
+		"Workflow Team",
 		"Base Agent Brief Contract",
 		"Workflow Context Extension",
 		"`save_workflow`",

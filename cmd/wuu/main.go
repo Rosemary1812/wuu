@@ -774,6 +774,12 @@ func evalWorkflowObservations(store *workflow.Store) ([]evalharness.WorkflowRunO
 			FinalReportPath: run.FinalReportPath,
 			Phases:          evalWorkflowPhaseObservations(run.Phases),
 		}
+		team, err := store.LoadTeamPlan(run.ID)
+		if err != nil {
+			warnings = append(warnings, "load workflow team for "+run.ID+": "+evalSafePreview(err.Error(), evalTextPreviewLimit))
+		} else if len(team.Members) > 0 {
+			item.WorkflowTeam = evalWorkflowTeamObservation(team)
+		}
 		agents, err := store.ListAgentRuns(run.ID)
 		if err != nil {
 			warnings = append(warnings, "list workflow agent runs for "+run.ID+": "+evalSafePreview(err.Error(), evalTextPreviewLimit))
@@ -789,6 +795,26 @@ func evalWorkflowObservations(store *workflow.Store) ([]evalharness.WorkflowRunO
 		out = append(out, item)
 	}
 	return out, warnings
+}
+
+func evalWorkflowTeamObservation(team workflow.TeamPlan) *evalharness.WorkflowTeamObservation {
+	out := &evalharness.WorkflowTeamObservation{
+		CreatedAt: team.CreatedAt,
+		UpdatedAt: team.UpdatedAt,
+		Members:   make([]evalharness.WorkflowTeamMemberObservation, 0, len(team.Members)),
+	}
+	for _, member := range team.Members {
+		out.Members = append(out.Members, evalharness.WorkflowTeamMemberObservation{
+			ID:             member.ID,
+			Role:           member.Role,
+			Mode:           string(member.Mode),
+			AgentProfile:   member.AgentProfile,
+			TaskName:       member.TaskName,
+			PhaseID:        member.PhaseID,
+			CreatedProfile: member.CreatedProfile,
+		})
+	}
+	return out
 }
 
 func evalWorkflowPhaseObservations(phases []workflow.Phase) []evalharness.WorkflowPhaseObservation {

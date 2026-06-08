@@ -372,7 +372,7 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 `
 	saveArgs, err := mustJSON(map[string]any{
 		"name":            "dynamic-review",
-		"description":     "Run a dynamic JavaScript workflow.",
+		"description":     "Run a script-driven workflow.",
 		"kind":            "script",
 		"content":         script,
 		"max_agents":      8,
@@ -554,8 +554,9 @@ phase("Workers", () => {
 		t.Fatalf("workflow_status: %v", err)
 	}
 	var status struct {
-		Run       workflow.Run        `json:"run"`
-		AgentRuns []workflow.AgentRun `json:"agent_runs"`
+		Run          workflow.Run        `json:"run"`
+		AgentRuns    []workflow.AgentRun `json:"agent_runs"`
+		WorkflowTeam workflow.TeamPlan   `json:"workflow_team"`
 	}
 	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
 		t.Fatalf("parse status response: %v", err)
@@ -565,6 +566,9 @@ phase("Workers", () => {
 	}
 	if len(status.Run.Phases) != 1 || len(status.Run.Phases[0].AgentRunIDs) != 1 {
 		t.Fatalf("agent run should attach to current phase: %+v", status.Run.Phases)
+	}
+	if len(status.WorkflowTeam.Members) != 1 || status.WorkflowTeam.Members[0].TaskName != "qa" || status.WorkflowTeam.Members[0].Mode != workflow.TeamMemberEphemeral {
+		t.Fatalf("script driver should record workflow team member: %+v", status.WorkflowTeam)
 	}
 }
 
@@ -1022,7 +1026,7 @@ func TestWorkflowControlResumeStartsInitiallyPausedScriptWorkflow(t *testing.T) 
 	}
 }
 
-func TestWorkflowControlRecordsDynamicTeamPlan(t *testing.T) {
+func TestWorkflowControlRecordsWorkflowTeam(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()
 	wuuHome := t.TempDir()
@@ -1053,9 +1057,9 @@ func TestWorkflowControlRecordsDynamicTeamPlan(t *testing.T) {
 	recordResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name: "workflow_control",
 		Arguments: `{
-			"action":"record_team_plan",
+			"action":"record_workflow_team",
 			"run_id":"workflow-team-plan",
-			"team_plan":[
+			"team":[
 				{"role":"QA reviewer","mode":"reuse_profile","agent_profile":"qa_laowang","task_name":"qa_check","phase_id":"qa","reason":"Existing QA profile knows this project."},
 				{"role":"Screenshot tester","mode":"create_profile","agent_profile":"screenshot_qa","task_name":"screenshot_check","reason":"Recurring visual QA role."},
 				{"role":"Docs checker","mode":"ephemeral","task_name":"docs_check","reason":"One-off docs review."}
@@ -1063,19 +1067,21 @@ func TestWorkflowControlRecordsDynamicTeamPlan(t *testing.T) {
 		}`,
 	})
 	if err != nil {
-		t.Fatalf("record_team_plan: %v", err)
+		t.Fatalf("record_workflow_team: %v", err)
 	}
 	var recorded struct {
-		TeamPlan workflow.TeamPlan `json:"team_plan"`
+		Action       string            `json:"action"`
+		WorkflowTeam workflow.TeamPlan `json:"workflow_team"`
+		TeamPlan     workflow.TeamPlan `json:"team_plan"`
 	}
 	if err := json.Unmarshal([]byte(recordResp), &recorded); err != nil {
 		t.Fatalf("parse record response: %v", err)
 	}
-	if len(recorded.TeamPlan.Members) != 3 {
-		t.Fatalf("unexpected team plan: %+v", recorded.TeamPlan)
+	if recorded.Action != "record_workflow_team" || len(recorded.WorkflowTeam.Members) != 3 || len(recorded.TeamPlan.Members) != 3 {
+		t.Fatalf("unexpected workflow team response: %+v", recorded)
 	}
-	if !recorded.TeamPlan.Members[1].CreatedProfile {
-		t.Fatalf("create_profile member should create profile: %+v", recorded.TeamPlan.Members[1])
+	if !recorded.WorkflowTeam.Members[1].CreatedProfile {
+		t.Fatalf("create_profile member should create profile: %+v", recorded.WorkflowTeam.Members[1])
 	}
 	if _, ok, err := workflow.LoadProfile(wuuHome, "screenshot_qa"); err != nil || !ok {
 		t.Fatalf("created profile missing, ok=%t err=%v", ok, err)
@@ -1089,13 +1095,93 @@ func TestWorkflowControlRecordsDynamicTeamPlan(t *testing.T) {
 		t.Fatalf("workflow_status: %v", err)
 	}
 	var status struct {
-		TeamPlan workflow.TeamPlan `json:"team_plan"`
+		WorkflowTeam workflow.TeamPlan `json:"workflow_team"`
+		TeamPlan     workflow.TeamPlan `json:"team_plan"`
 	}
 	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
 		t.Fatalf("parse status response: %v", err)
 	}
-	if len(status.TeamPlan.Members) != 3 || status.TeamPlan.Members[0].AgentProfile != "qa_laowang" || status.TeamPlan.Members[2].AgentProfile != "" {
-		t.Fatalf("status team plan mismatch: %+v", status.TeamPlan)
+	if len(status.WorkflowTeam.Members) != 3 || status.WorkflowTeam.Members[0].AgentProfile != "qa_laowang" || status.WorkflowTeam.Members[2].AgentProfile != "" {
+		t.Fatalf("status workflow team mismatch: %+v", status.WorkflowTeam)
+	}
+	if len(status.TeamPlan.Members) != len(status.WorkflowTeam.Members) {
+		t.Fatalf("compat team_plan alias mismatch: %+v", status)
+	}
+}
+
+func TestWorkflowControlDefinitionPrefersWorkflowTeamName(t *testing.T) {
+	tool := NewWorkflowControlTool(&Env{})
+	data, err := json.Marshal(tool.Definition().InputSchema)
+	if err != nil {
+		t.Fatalf("marshal input schema: %v", err)
+	}
+	schema := string(data)
+	if !strings.Contains(schema, "record_workflow_team") {
+		t.Fatalf("workflow_control schema should expose record_workflow_team: %s", schema)
+	}
+	if strings.Contains(schema, "record_team_plan") {
+		t.Fatalf("workflow_control schema should not expose deprecated record_team_plan: %s", schema)
+	}
+}
+
+func TestWorkflowControlInfersAwaitResultPhaseFromWorkflowTeam(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "create_workflow",
+		Arguments: `{
+			"run_id":"workflow-team-await-phase",
+			"plan":"## Phases\n\n1. QA",
+			"phases":[{"id":"qa","name":"QA"}]
+		}`,
+	}); err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_workflow_team",
+			"run_id":"workflow-team-await-phase",
+			"team":[{"role":"QA reviewer","mode":"ephemeral","task_name":"qa_check","phase_id":"qa"}]
+		}`,
+	}); err != nil {
+		t.Fatalf("record_workflow_team: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_await_results",
+			"run_id":"workflow-team-await-phase",
+			"await_results":[{"agent_id":"worker-qa","task_name":"qa_check","status":"completed","report_path":"reports/worker-qa.md"}]
+		}`,
+	}); err != nil {
+		t.Fatalf("record_await_results: %v", err)
+	}
+
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"workflow-team-await-phase"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status: %v", err)
+	}
+	var status struct {
+		Run       workflow.Run        `json:"run"`
+		AgentRuns []workflow.AgentRun `json:"agent_runs"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
+		t.Fatalf("parse status response: %v", err)
+	}
+	if len(status.AgentRuns) != 1 || status.AgentRuns[0].PhaseID != "qa" {
+		t.Fatalf("await result phase was not inferred from workflow team: %+v", status.AgentRuns)
+	}
+	if len(status.Run.Phases) != 1 || len(status.Run.Phases[0].AgentRunIDs) != 1 || status.Run.Phases[0].AgentRunIDs[0] != "worker-qa" {
+		t.Fatalf("inferred agent run should attach to phase: %+v", status.Run.Phases)
 	}
 }
 

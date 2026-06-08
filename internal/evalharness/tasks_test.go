@@ -325,13 +325,13 @@ func TestMultiAgentWorkerVerification(t *testing.T) {
 	}
 }
 
-func TestDynamicWorkflowTeamVerification(t *testing.T) {
-	task, ok := ByID("dynamic_workflow_team")
+func TestAgentLedWorkflowTeamVerification(t *testing.T) {
+	task, ok := ByID("agent_led_workflow_team")
 	if !ok {
-		t.Fatal("missing dynamic_workflow_team task")
+		t.Fatal("missing agent_led_workflow_team task")
 	}
 	if !task.IsolateWuuHome {
-		t.Fatal("dynamic workflow team eval should isolate WUU_HOME")
+		t.Fatal("agent-led workflow team eval should isolate WUU_HOME")
 	}
 	root := t.TempDir()
 	if err := SetupTask(task, root); err != nil {

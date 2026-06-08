@@ -189,7 +189,7 @@ func (t *SaveWorkflowTool) Definition() providers.ToolDefinition {
 				"kind": map[string]any{
 					"type":        "string",
 					"enum":        []string{"markdown", "script"},
-					"description": "Definition kind. Defaults to markdown. Use script to save a dynamic JavaScript workflow.",
+					"description": "Definition kind. Defaults to markdown. Use script to save a script-driven workflow.",
 				},
 				"run_id": map[string]any{
 					"type":        "string",
@@ -347,12 +347,13 @@ func (t *RunWorkflowTool) IsConcurrencySafe() bool { return false }
 func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "run_workflow",
-		Description: "Run a dynamic workflow JavaScript script. Use this for executable .js workflows: " +
-			"the script runs in a restricted orchestration runtime, creates durable Workflow Run state, can open dynamic " +
-			"phases, use the spawn primitive to create worker agents, await worker agents, and write the final report. " +
-			"The script cannot directly run shell commands or edit files; it delegates work to agents. " +
+		Description: "Run a workflow through the script driver. The natural-language agent remains the entry point; " +
+			"use this when a saved WORKFLOW.js definition or ad hoc script should own repeatable phase/spawn/await/synthesis control. " +
+			"The script creates the same durable Workflow Run, Workflow Team, Agent Run, and final-report state as agent-managed workflows. " +
+			"Inside the script, use phase(), spawn(), spawnBatch([...]), awaitAgents(), and synthesize(). Workers do shell/file work; " +
+			"the script only coordinates and persists state. " +
 			"Default caps are 1000 total worker spawns and 16 agents per spawnBatch/spawnAgents batch unless a lower definition or caller cap is set. " +
-			"Use create_workflow only for Markdown/manual workflow plans.",
+			"Use create_workflow when the agent should manage the run directly.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -565,12 +566,12 @@ func (t *CreateWorkflowTool) IsConcurrencySafe() bool { return true }
 func (t *CreateWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "create_workflow",
-		Description: "Create durable Workflow Run state from a reusable workflow definition or an ad hoc plan. " +
+		Description: "Create an agent-managed Workflow Run from a reusable workflow definition or an ad hoc plan. " +
 			"This records the workflow state, phase plan, event log, and plan artifact. It does not automatically " +
-			"spawn agents; after creating a running workflow, list_agent_profiles, record a dynamic team plan with " +
-			"workflow_control action=record_team_plan, then use spawn_agent with agent_profile for reuse_profile/create_profile " +
+			"spawn agents; after creating a running workflow, list_agent_profiles, record the Workflow Team with " +
+			"workflow_control action=record_workflow_team, then use spawn_agent with agent_profile for reuse_profile/create_profile " +
 			"members and without agent_profile for ephemeral workers. Require agent_report before completion, then inspect progress " +
-			"with workflow_status. Use this instead of manually carrying long-running workflow state in chat context.",
+			"with workflow_status. This is the direct agent-managed driver under the same natural-language workflow entry point.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -747,7 +748,7 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 						"pause_run",
 						"resume_run",
 						"set_phase_status",
-						"record_team_plan",
+						"record_workflow_team",
 						"record_agent_run",
 						"record_await_results",
 						"retry_agent_run",
@@ -880,24 +881,8 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"enum":        []string{"memory", "user"},
 					"description": "Memory target for record_memory_candidate. Defaults to memory.",
 				},
-				"team_plan": map[string]any{
-					"type":        "array",
-					"description": "Dynamic workflow team plan chosen by the orchestrator before spawning agents. Use mode reuse_profile for existing durable profiles, create_profile for new recurring durable identities, and ephemeral for one-off memoryless workers.",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"id":            map[string]any{"type": "string", "description": "Optional stable team member id."},
-							"role":          map[string]any{"type": "string", "description": "Role needed for this workflow run."},
-							"mode":          map[string]any{"type": "string", "enum": []string{"reuse_profile", "create_profile", "ephemeral"}},
-							"agent_profile": map[string]any{"type": "string", "description": "Profile name for reuse_profile/create_profile; omit for ephemeral."},
-							"task_name":     map[string]any{"type": "string", "description": "Suggested spawn_agent task_name."},
-							"phase_id":      map[string]any{"type": "string", "description": "Optional planned phase id for this member."},
-							"prompt":        map[string]any{"type": "string", "description": "Optional task brief to use when spawning this member. " + prompttext.AgentBriefContractSummary() + " " + prompttext.WorkflowBriefExtensionSummary()},
-							"reason":        map[string]any{"type": "string", "description": "Why this member should reuse/create a profile or stay ephemeral."},
-						},
-						"required": []string{"role", "mode"},
-					},
-				},
+				"team":      workflowTeamInputSchema("Workflow Team members chosen by the agent before spawning workflow workers. Use mode reuse_profile for existing durable profiles, create_profile for new recurring durable identities, and ephemeral for one-off memoryless workers."),
+				"team_plan": workflowTeamInputSchema("Compatibility alias for team. Prefer team with action=record_workflow_team."),
 				"tags": map[string]any{
 					"type":        "array",
 					"description": "Tags for record_memory_candidate.",
@@ -913,6 +898,27 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 				},
 			},
 			"required": []string{"action", "run_id"},
+		},
+	}
+}
+
+func workflowTeamInputSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description,
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":            map[string]any{"type": "string", "description": "Optional stable team member id."},
+				"role":          map[string]any{"type": "string", "description": "Role needed for this workflow run."},
+				"mode":          map[string]any{"type": "string", "enum": []string{"reuse_profile", "create_profile", "ephemeral"}},
+				"agent_profile": map[string]any{"type": "string", "description": "Profile name for reuse_profile/create_profile; omit for ephemeral."},
+				"task_name":     map[string]any{"type": "string", "description": "Suggested spawn_agent task_name."},
+				"phase_id":      map[string]any{"type": "string", "description": "Optional planned phase id for this member."},
+				"prompt":        map[string]any{"type": "string", "description": "Optional task brief to use when spawning this member. " + prompttext.AgentBriefContractSummary() + " " + prompttext.WorkflowBriefExtensionSummary()},
+				"reason":        map[string]any{"type": "string", "description": "Why this member should reuse/create a profile or stay ephemeral."},
+			},
+			"required": []string{"role", "mode"},
 		},
 	}
 }
@@ -943,6 +949,7 @@ type workflowControlArgs struct {
 	Content      string                    `json:"content"`
 	CandidateID  string                    `json:"candidate_id"`
 	Target       string                    `json:"target"`
+	Team         []workflowTeamMemberInput `json:"team"`
 	TeamPlan     []workflowTeamMemberInput `json:"team_plan"`
 	Tags         []string                  `json:"tags"`
 	Source       string                    `json:"source"`
@@ -1091,7 +1098,7 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		}
 		return mustJSON(map[string]any{"action": action, "run": run})
 
-	case "record_team_plan":
+	case "record_workflow_team", "record_team_plan":
 		plan, err := workflowTeamPlanFromControlArgs(t.env, store, args)
 		if err != nil {
 			return "", err
@@ -1101,8 +1108,9 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 			return "", err
 		}
 		return mustJSON(map[string]any{
-			"action":    action,
-			"team_plan": plan,
+			"action":        "record_workflow_team",
+			"workflow_team": plan,
+			"team_plan":     plan,
 			"next_steps": []string{
 				"Write each spawn_agent.message from the Base Agent Brief Contract, adding only the small context extension that applies.",
 				"Add the Workflow Context Extension for workflow team members.",
@@ -1150,9 +1158,17 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		if err != nil {
 			return "", err
 		}
+		teamPlan, err := store.LoadTeamPlan(args.RunID)
+		if err != nil {
+			return "", err
+		}
 		agentsToRecord := make([]workflow.AgentRun, 0, len(args.AwaitResults))
 		for _, result := range args.AwaitResults {
-			agent, err := workflowAgentRunFromAwaitResult(args.RunID, args.PhaseID, result)
+			phaseID := strings.TrimSpace(args.PhaseID)
+			if phaseID == "" {
+				phaseID = workflowTeamPhaseForAwaitResult(teamPlan, result)
+			}
+			agent, err := workflowAgentRunFromAwaitResult(args.RunID, phaseID, result)
 			if err != nil {
 				return "", err
 			}
@@ -1383,15 +1399,16 @@ func workflowAgentRunFromControlArgs(args workflowControlArgs) (workflow.AgentRu
 }
 
 func workflowTeamPlanFromControlArgs(env *Env, store *workflow.Store, args workflowControlArgs) (workflow.TeamPlan, error) {
-	if len(args.TeamPlan) == 0 {
-		return workflow.TeamPlan{}, errors.New("workflow_control record_team_plan requires team_plan")
+	inputs := workflowTeamInputs(args)
+	if len(inputs) == 0 {
+		return workflow.TeamPlan{}, errors.New("workflow_control record_workflow_team requires team")
 	}
 	run, err := store.LoadRun(args.RunID)
 	if err != nil {
 		return workflow.TeamPlan{}, err
 	}
 	if run.DefinitionName != "" {
-		if def, ok := env.FindWorkflow(run.DefinitionName); ok && def.MaxAgents > 0 && len(args.TeamPlan) > def.MaxAgents {
+		if def, ok := env.FindWorkflow(run.DefinitionName); ok && def.MaxAgents > 0 && len(inputs) > def.MaxAgents {
 			return workflow.TeamPlan{}, fmt.Errorf("workflow %q supports at most %d planned agents", def.Name, def.MaxAgents)
 		}
 	}
@@ -1400,12 +1417,12 @@ func workflowTeamPlanFromControlArgs(env *Env, store *workflow.Store, args workf
 		return workflow.TeamPlan{}, err
 	}
 
-	used := make(map[string]int, len(args.TeamPlan))
-	members := make([]workflow.TeamMember, 0, len(args.TeamPlan))
-	for _, input := range args.TeamPlan {
+	used := make(map[string]int, len(inputs))
+	members := make([]workflow.TeamMember, 0, len(inputs))
+	for _, input := range inputs {
 		role := strings.TrimSpace(input.Role)
 		if role == "" {
-			return workflow.TeamPlan{}, errors.New("workflow_control record_team_plan requires every team member role")
+			return workflow.TeamPlan{}, errors.New("workflow_control record_workflow_team requires every team member role")
 		}
 		mode, err := parseWorkflowTeamMemberMode(input.Mode, input.AgentProfile)
 		if err != nil {
@@ -1462,6 +1479,13 @@ func workflowTeamPlanFromControlArgs(env *Env, store *workflow.Store, args workf
 	return workflow.TeamPlan{RunID: strings.TrimSpace(args.RunID), Members: members}, nil
 }
 
+func workflowTeamInputs(args workflowControlArgs) []workflowTeamMemberInput {
+	if len(args.Team) > 0 {
+		return args.Team
+	}
+	return args.TeamPlan
+}
+
 func parseWorkflowTeamMemberMode(raw, agentProfile string) (workflow.TeamMemberMode, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
@@ -1497,6 +1521,41 @@ func workflowTeamMemberID(rawID, role, profile string, used map[string]int) stri
 		return base
 	}
 	return fmt.Sprintf("%s_%d", base, count+1)
+}
+
+func workflowTeamPhaseForAwaitResult(plan workflow.TeamPlan, result workflowAwaitResult) string {
+	candidates := map[string]struct{}{}
+	for _, value := range []string{
+		result.TaskName,
+		result.AgentPath,
+		workflowTaskNameFromAgentPath(result.AgentPath),
+		result.AgentID,
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			candidates[value] = struct{}{}
+		}
+	}
+	for _, member := range plan.Members {
+		phaseID := strings.TrimSpace(member.PhaseID)
+		if phaseID == "" {
+			continue
+		}
+		for _, value := range []string{member.TaskName, member.ID} {
+			if _, ok := candidates[strings.TrimSpace(value)]; ok {
+				return phaseID
+			}
+		}
+	}
+	return ""
+}
+
+func workflowTaskNameFromAgentPath(path string) string {
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	if path == "" {
+		return ""
+	}
+	parts := strings.Split(path, "/")
+	return strings.TrimSpace(parts[len(parts)-1])
 }
 
 func workflowAgentRunFromAwaitResult(runID, phaseID string, result workflowAwaitResult) (workflow.AgentRun, error) {
@@ -2055,6 +2114,7 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 	result := map[string]any{
 		"run":               run,
 		"agent_runs":        agents,
+		"workflow_team":     teamPlan,
 		"team_plan":         teamPlan,
 		"memory_candidates": memoryCandidates,
 		"file_checkpoints":  fileCheckpoints,
@@ -2540,7 +2600,7 @@ func workflowNextSteps(status workflow.RunState) []string {
 		}
 	default:
 		return []string{
-			"Call list_agent_profiles, choose reuse_profile/create_profile/ephemeral members for this run, then record the dynamic team with workflow_control action=record_team_plan.",
+			"Call list_agent_profiles, choose reuse_profile/create_profile/ephemeral members for this run, then record the Workflow Team with workflow_control action=record_workflow_team.",
 			"Write each team member prompt from the Base Agent Brief Contract and add the Workflow Context Extension.",
 			"Spawn reuse_profile/create_profile members with spawn_agent.agent_profile set to the recorded profile; spawn ephemeral members without agent_profile.",
 			"Require each workflow agent to call agent_report before treating its work as complete.",

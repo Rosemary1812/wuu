@@ -97,9 +97,26 @@ type WorkflowRunObservation struct {
 	Error           string                        `json:"error,omitempty"`
 	ScriptPath      string                        `json:"script_path,omitempty"`
 	FinalReportPath string                        `json:"final_report_path,omitempty"`
+	WorkflowTeam    *WorkflowTeamObservation      `json:"workflow_team,omitempty"`
 	Phases          []WorkflowPhaseObservation    `json:"phases,omitempty"`
 	AgentRuns       []WorkflowAgentRunObservation `json:"agent_runs,omitempty"`
 	EventCount      int                           `json:"event_count,omitempty"`
+}
+
+type WorkflowTeamObservation struct {
+	Members   []WorkflowTeamMemberObservation `json:"members,omitempty"`
+	CreatedAt time.Time                       `json:"created_at,omitempty"`
+	UpdatedAt time.Time                       `json:"updated_at,omitempty"`
+}
+
+type WorkflowTeamMemberObservation struct {
+	ID             string `json:"id,omitempty"`
+	Role           string `json:"role,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+	AgentProfile   string `json:"agent_profile,omitempty"`
+	TaskName       string `json:"task_name,omitempty"`
+	PhaseID        string `json:"phase_id,omitempty"`
+	CreatedProfile bool   `json:"created_profile,omitempty"`
 }
 
 type WorkflowPhaseObservation struct {
@@ -240,11 +257,11 @@ func Catalog() []Task {
 			Verify:        verifySubAgentWorkerFile,
 		},
 		{
-			ID:          "dynamic_workflow_team",
-			Name:        "Run a dynamic workflow team",
-			Description: "Main agent must record a workflow team plan, create a durable profile member, spawn workers, await them, and complete the run.",
-			Prompt: "Create a manual workflow run with run_id='eval_dynamic_team' and one phase id='team_work'. " +
-				"First call list_agent_profiles. Then call create_workflow for the run. Next, record a dynamic team plan with workflow_control action=record_team_plan containing exactly two members: " +
+			ID:          "agent_led_workflow_team",
+			Name:        "Run an agent-led workflow team",
+			Description: "Main agent must record a Workflow Team, create a durable profile member, spawn workers, await them, and complete the run.",
+			Prompt: "Create an agent-managed workflow run with run_id='eval_agent_led_team' and one phase id='team_work'. " +
+				"First call list_agent_profiles. Then call create_workflow for the run. Next, record a Workflow Team with workflow_control action=record_workflow_team containing exactly two members in the team field: " +
 				"one create_profile member with role='Marker writer', agent_profile='eval_team_marker_writer', task_name='alpha_writer', phase_id='team_work'; " +
 				"and one ephemeral member with role='Independent verifier', task_name='beta_writer', phase_id='team_work'. " +
 				"Spawn both workers with fork_turns='none' and self-contained briefs from the Base Agent Brief Contract plus the Workflow Context Extension. " +
@@ -524,7 +541,7 @@ func verifyDynamicWorkflowTeam(_ context.Context, root, _ string) (Verification,
 			return Verification{Passed: false, Reason: name + " does not contain " + marker}, nil
 		}
 	}
-	return Verification{Passed: true, Reason: "observed dynamic workflow team markers"}, nil
+	return Verification{Passed: true, Reason: "observed agent-led workflow team markers"}, nil
 }
 
 func writeFiles(root string, files map[string]string) error {

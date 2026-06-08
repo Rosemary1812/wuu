@@ -391,6 +391,9 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 	if err := r.recordSpawnResult(out, prompt); err != nil {
 		return out, err
 	}
+	if err := r.recordWorkflowTeamMember(out, prompt); err != nil {
+		return out, err
+	}
 	r.rememberSpawnedAgent(out.AgentID)
 	if spec.Synchronous && strings.TrimSpace(out.AgentID) != "" {
 		refreshed, err := r.awaitAgentTargets(ctx, []string{out.AgentID})
@@ -491,9 +494,15 @@ func (r *ScriptRuntime) status() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	team, err := r.opts.Store.LoadTeamPlan(r.opts.RunID)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
-		"run":       scriptObject(run),
-		"agentRuns": scriptObject(agents),
+		"run":          scriptObject(run),
+		"agentRuns":    scriptObject(agents),
+		"workflowTeam": scriptObject(team),
+		"teamPlan":     scriptObject(team),
 	}, nil
 }
 
@@ -584,6 +593,84 @@ func (r *ScriptRuntime) recordAwaitResult(result agentcontrol.AwaitAgentsResult)
 		}
 	}
 	return nil
+}
+
+func (r *ScriptRuntime) recordWorkflowTeamMember(result ScriptSpawnResult, prompt string) error {
+	id := scriptWorkflowTeamMemberID(result)
+	if id == "" {
+		return nil
+	}
+	mode := TeamMemberEphemeral
+	agentProfile := strings.TrimSpace(result.AgentProfile)
+	if agentProfile != "" {
+		mode = TeamMemberReuseProfile
+	}
+	taskName := strings.TrimSpace(result.TaskName)
+	if taskName == "" {
+		taskName = id
+	}
+	member := TeamMember{
+		ID:           id,
+		Role:         "Workflow script worker",
+		Mode:         mode,
+		AgentProfile: agentProfile,
+		TaskName:     taskName,
+		PhaseID:      strings.TrimSpace(r.currentPhaseID),
+		Prompt:       strings.TrimSpace(prompt),
+		Reason:       "Spawned by workflow script driver.",
+	}
+
+	plan, err := r.opts.Store.LoadTeamPlan(r.opts.RunID)
+	if err != nil {
+		return err
+	}
+	plan.RunID = r.opts.RunID
+	for i := range plan.Members {
+		if plan.Members[i].ID != member.ID {
+			continue
+		}
+		member.CreatedProfile = plan.Members[i].CreatedProfile
+		plan.Members[i] = member
+		_, err := r.opts.Store.SaveTeamPlan(plan)
+		return err
+	}
+	plan.Members = append(plan.Members, member)
+	_, err = r.opts.Store.SaveTeamPlan(plan)
+	return err
+}
+
+func scriptWorkflowTeamMemberID(result ScriptSpawnResult) string {
+	for _, raw := range []string{result.TaskName, result.AgentID, result.AgentPath} {
+		if id := sanitizeScriptWorkflowTeamMemberID(raw); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func sanitizeScriptWorkflowTeamMemberID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastSep := false
+	for _, r := range raw {
+		ok := r >= 'a' && r <= 'z' ||
+			r >= 'A' && r <= 'Z' ||
+			r >= '0' && r <= '9' ||
+			r == '-' || r == '_' || r == '.'
+		if ok {
+			b.WriteRune(r)
+			lastSep = false
+			continue
+		}
+		if !lastSep {
+			b.WriteByte('_')
+			lastSep = true
+		}
+	}
+	return strings.Trim(b.String(), "._-")
 }
 
 func (r *ScriptRuntime) rememberSpawnedAgent(id string) {
