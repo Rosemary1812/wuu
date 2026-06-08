@@ -3,6 +3,8 @@ package tools
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,6 +24,28 @@ const (
 	webFetchMaxBytes = 1 * 1024 * 1024 // 1MB
 	webFetchTimeout  = 30 * time.Second
 )
+
+type webEvidence struct {
+	ID                   string `json:"id"`
+	Kind                 string `json:"kind"`
+	Source               string `json:"source"`
+	SourceTier           string `json:"source_tier"`
+	RetrievedAt          string `json:"retrieved_at"`
+	VersionMatchedToRepo string `json:"version_matched_to_repo"`
+}
+
+func newWebEvidence(kind, source, sourceTier string, retrievedAt time.Time) webEvidence {
+	retrievedAt = retrievedAt.UTC()
+	sum := sha256.Sum256([]byte(kind + "\x00" + source + "\x00" + retrievedAt.Format(time.RFC3339Nano)))
+	return webEvidence{
+		ID:                   "web_" + hex.EncodeToString(sum[:])[:16],
+		Kind:                 kind,
+		Source:               source,
+		SourceTier:           sourceTier,
+		RetrievedAt:          retrievedAt.Format(time.RFC3339Nano),
+		VersionMatchedToRepo: "unknown",
+	}
+}
 
 // isBlockedIP returns true if the IP should not be reachable from web_fetch.
 // Covers loopback (127/8, ::1), RFC1918 private space, link-local
@@ -152,6 +176,7 @@ func webSearchExecute(ctx context.Context, argsJSON string) (string, error) {
 		return "", fmt.Errorf("web_search requires query")
 	}
 	maxResults := 10
+	evidence := newWebEvidence("search", "https://lite.duckduckgo.com/lite/", "search_index", time.Now())
 
 	if ctx == nil {
 		ctx = context.Background()
@@ -162,13 +187,16 @@ func webSearchExecute(ctx context.Context, argsJSON string) (string, error) {
 	results, err := duckDuckGoSearch(ctx, args.Query, maxResults)
 	if err != nil {
 		return mustJSON(map[string]any{
-			"error": fmt.Sprintf("search failed: %s", err),
+			"query":    args.Query,
+			"evidence": evidence,
+			"error":    fmt.Sprintf("search failed: %s", err),
 		})
 	}
 
 	return mustJSON(map[string]any{
-		"query":   args.Query,
-		"results": results,
+		"query":    args.Query,
+		"evidence": evidence,
+		"results":  results,
 	})
 }
 
@@ -318,18 +346,22 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	if strings.TrimSpace(args.URL) == "" {
 		return "", fmt.Errorf("web_fetch requires url")
 	}
+	source := strings.TrimSpace(args.URL)
+	evidence := newWebEvidence("fetch", source, "web_page", time.Now())
 
-	parsed, parseErr := url.Parse(strings.TrimSpace(args.URL))
+	parsed, parseErr := url.Parse(source)
 	if parseErr != nil {
 		return mustJSON(map[string]any{
-			"url":   args.URL,
-			"error": fmt.Sprintf("invalid URL: %s", parseErr),
+			"url":      args.URL,
+			"evidence": evidence,
+			"error":    fmt.Sprintf("invalid URL: %s", parseErr),
 		})
 	}
 	if err := validateFetchURL(parsed); err != nil {
 		return mustJSON(map[string]any{
-			"url":   args.URL,
-			"error": err.Error(),
+			"url":      args.URL,
+			"evidence": evidence,
+			"error":    err.Error(),
 		})
 	}
 
@@ -342,7 +374,9 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", parsed.String(), nil)
 	if err != nil {
 		return mustJSON(map[string]any{
-			"error": fmt.Sprintf("invalid URL: %s", err),
+			"url":      args.URL,
+			"evidence": evidence,
+			"error":    fmt.Sprintf("invalid URL: %s", err),
 		})
 	}
 	req.Header.Set("User-Agent", randomUA())
@@ -353,8 +387,9 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		return mustJSON(map[string]any{
-			"url":   args.URL,
-			"error": fmt.Sprintf("fetch failed: %s", err),
+			"url":      args.URL,
+			"evidence": evidence,
+			"error":    fmt.Sprintf("fetch failed: %s", err),
 		})
 	}
 	defer resp.Body.Close()
@@ -362,6 +397,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return mustJSON(map[string]any{
 			"url":         args.URL,
+			"evidence":    evidence,
 			"status_code": resp.StatusCode,
 			"error":       fmt.Sprintf("HTTP %d", resp.StatusCode),
 		})
@@ -370,8 +406,9 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, webFetchMaxBytes+1))
 	if err != nil {
 		return mustJSON(map[string]any{
-			"url":   args.URL,
-			"error": fmt.Sprintf("read body: %s", err),
+			"url":      args.URL,
+			"evidence": evidence,
+			"error":    fmt.Sprintf("read body: %s", err),
 		})
 	}
 
@@ -392,6 +429,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 
 	return mustJSON(map[string]any{
 		"url":          args.URL,
+		"evidence":     evidence,
 		"content_type": contentType,
 		"content":      content,
 		"size":         len(body),

@@ -2,10 +2,12 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIsBlockedIP(t *testing.T) {
@@ -86,6 +88,61 @@ func TestWebFetchExecuteBlocksInternal(t *testing.T) {
 		if !strings.Contains(out, "blocked") {
 			t.Errorf("webFetchExecute(%s) = %s, expected 'blocked'", args, out)
 		}
+	}
+}
+
+func TestNewWebEvidenceMetadata(t *testing.T) {
+	ts := time.Date(2026, 6, 9, 8, 7, 6, 5, time.UTC)
+	ev := newWebEvidence("fetch", "https://example.com/docs", "web_page", ts)
+
+	if !strings.HasPrefix(ev.ID, "web_") || len(ev.ID) != len("web_")+16 {
+		t.Fatalf("unexpected evidence id: %q", ev.ID)
+	}
+	if ev.Kind != "fetch" {
+		t.Fatalf("Kind = %q, want fetch", ev.Kind)
+	}
+	if ev.Source != "https://example.com/docs" {
+		t.Fatalf("Source = %q", ev.Source)
+	}
+	if ev.SourceTier != "web_page" {
+		t.Fatalf("SourceTier = %q, want web_page", ev.SourceTier)
+	}
+	if ev.RetrievedAt != "2026-06-09T08:07:06.000000005Z" {
+		t.Fatalf("RetrievedAt = %q", ev.RetrievedAt)
+	}
+	if ev.VersionMatchedToRepo != "unknown" {
+		t.Fatalf("VersionMatchedToRepo = %q, want unknown", ev.VersionMatchedToRepo)
+	}
+}
+
+func TestWebFetchBlockedIncludesEvidence(t *testing.T) {
+	out, err := webFetchExecute(context.Background(), `{"url":"http://127.0.0.1/"}`)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+
+	var got struct {
+		URL      string      `json:"url"`
+		Evidence webEvidence `json:"evidence"`
+		Error    string      `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal result: %v\n%s", err, out)
+	}
+	if got.Error == "" {
+		t.Fatalf("expected error in result: %s", out)
+	}
+	if got.Evidence.Kind != "fetch" {
+		t.Fatalf("evidence kind = %q, want fetch", got.Evidence.Kind)
+	}
+	if got.Evidence.Source != "http://127.0.0.1/" {
+		t.Fatalf("evidence source = %q", got.Evidence.Source)
+	}
+	if got.Evidence.SourceTier != "web_page" {
+		t.Fatalf("evidence source tier = %q, want web_page", got.Evidence.SourceTier)
+	}
+	if got.Evidence.RetrievedAt == "" {
+		t.Fatalf("expected retrieved_at evidence metadata")
 	}
 }
 
