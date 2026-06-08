@@ -1,0 +1,66 @@
+package tools
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
+	record := ToolExecutionRecord{
+		Name:                "run_shell",
+		CallID:              "call_1",
+		Kind:                ToolKindShell,
+		Exposure:            ToolExposureDirect,
+		Risk:                ToolRiskHigh,
+		PolicyAction:        ToolPolicyAllow,
+		ReadOnly:            false,
+		ConcurrencySafe:     false,
+		DurationMS:          42,
+		Success:             false,
+		Error:               "authorization: bearer secret-token",
+		RawOutputBytes:      1024,
+		ReturnedOutputBytes: 256,
+		ResultBudgeted:      true,
+		ResultRef:           "/tmp/wuu/tool-results/call_1.txt",
+	}
+
+	envelope := record.ResultEnvelope()
+	if envelope.OK || envelope.ToolCallID != "call_1" || envelope.DataRef != record.ResultRef {
+		t.Fatalf("unexpected envelope identity: %+v", envelope)
+	}
+	if envelope.Summary != "run_shell failed in 42ms" {
+		t.Fatalf("unexpected summary: %q", envelope.Summary)
+	}
+	if len(envelope.NextSuggestions) == 0 {
+		t.Fatalf("expected next suggestions: %+v", envelope)
+	}
+
+	raw, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+	if strings.Contains(string(raw), "secret-token") || strings.Contains(string(raw), "authorization") {
+		t.Fatalf("envelope leaked raw error: %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"error_present":true`) {
+		t.Fatalf("envelope should retain error presence without raw error: %s", string(raw))
+	}
+}
+
+func TestToolExecutionRecordResultEnvelopeMarksTruncatedWithoutRef(t *testing.T) {
+	record := ToolExecutionRecord{
+		Name:           "grep_repo",
+		Kind:           ToolKindSearch,
+		Success:        true,
+		ResultBudgeted: true,
+	}
+
+	envelope := record.ResultEnvelope()
+	if !envelope.Truncated {
+		t.Fatalf("expected truncated envelope without result ref: %+v", envelope)
+	}
+	if len(envelope.Warnings) == 0 {
+		t.Fatalf("expected truncation warning: %+v", envelope)
+	}
+}

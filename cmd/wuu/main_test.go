@@ -261,6 +261,7 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 		RawOutputBytes:      1024,
 		ReturnedOutputBytes: 256,
 		ResultBudgeted:      true,
+		ResultRef:           "/tmp/wuu/tool-results/call_1.txt",
 	}}
 
 	got := evalToolObservations(records)
@@ -272,6 +273,19 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if strings.Contains(got[0].Error, "abc123") {
 		t.Fatalf("error secret leaked: %q", got[0].Error)
+	}
+	if got[0].ResultRef != records[0].ResultRef {
+		t.Fatalf("result ref not preserved: %+v", got[0])
+	}
+	if got[0].ResultEnvelope == nil || got[0].ResultEnvelope.DataRef != records[0].ResultRef {
+		t.Fatalf("result envelope missing ref: %+v", got[0].ResultEnvelope)
+	}
+	rawEnvelope, err := json.Marshal(got[0].ResultEnvelope)
+	if err != nil {
+		t.Fatalf("marshal result envelope: %v", err)
+	}
+	if strings.Contains(string(rawEnvelope), "abc123") || strings.Contains(string(rawEnvelope), "authorization") {
+		t.Fatalf("result envelope leaked raw error: %s", string(rawEnvelope))
 	}
 }
 

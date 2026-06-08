@@ -733,6 +733,7 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.ToolObservation {
 	out := make([]evalharness.ToolObservation, 0, len(records))
 	for _, record := range records {
+		envelope := record.ResultEnvelope()
 		out = append(out, evalharness.ToolObservation{
 			Name:                record.Name,
 			CallID:              record.CallID,
@@ -749,6 +750,8 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			RawOutputBytes:      record.RawOutputBytes,
 			ReturnedOutputBytes: record.ReturnedOutputBytes,
 			ResultBudgeted:      record.ResultBudgeted,
+			ResultRef:           record.ResultRef,
+			ResultEnvelope:      &envelope,
 		})
 	}
 	return out

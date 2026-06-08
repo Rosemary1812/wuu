@@ -51,6 +51,30 @@ func TestMaybePersistResult_OverThreshold_WithSessionDir(t *testing.T) {
 	}
 }
 
+func TestMaybePersistResultWithRef_OverThreshold_WithSessionDir(t *testing.T) {
+	sessionDir := t.TempDir()
+	result := strings.Repeat("a", 200) + strings.Repeat("z", 200)
+
+	got, ref, budgeted := MaybePersistResultWithRef(sessionDir, "shell", "call-42", result, 100)
+
+	if !budgeted {
+		t.Fatal("expected budgeted result")
+	}
+	if ref == "" {
+		t.Fatal("expected persisted result ref")
+	}
+	if !strings.Contains(got, ref) {
+		t.Fatalf("returned reference should include result ref %q:\n%s", ref, got)
+	}
+	data, err := os.ReadFile(ref)
+	if err != nil {
+		t.Fatalf("read persisted ref: %v", err)
+	}
+	if string(data) != result {
+		t.Fatal("persisted content doesn't match original")
+	}
+}
+
 func TestMaybePersistResult_DefaultThreshold(t *testing.T) {
 	// Under default threshold (50K) should pass through.
 	result := strings.Repeat("x", 40_000)

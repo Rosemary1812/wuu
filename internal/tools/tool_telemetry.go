@@ -26,6 +26,7 @@ type ToolExecutionRecord struct {
 	RawOutputBytes      int              `json:"raw_output_bytes"`
 	ReturnedOutputBytes int              `json:"returned_output_bytes"`
 	ResultBudgeted      bool             `json:"result_budgeted"`
+	ResultRef           string           `json:"result_ref,omitempty"`
 }
 
 type toolTelemetry struct {
@@ -58,17 +59,19 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	startedAt := time.Now()
 
 	if err := decision.blockingError(call.Name); err != nil {
-		t.recordToolExecution(call, info, decision, startedAt, "", "", err)
+		t.recordToolExecution(call, info, decision, startedAt, "", "", "", false, err)
 		return "", err
 	}
 
 	result, err := tool.Execute(ctx, call.Arguments)
 	returned := result
+	resultRef := ""
+	resultBudgeted := false
 	if err == nil {
-		returned = MaybePersistResult(t.env.SessionDir, call.Name, call.ID, result, defaultResultBudget)
+		returned, resultRef, resultBudgeted = MaybePersistResultWithRef(t.env.SessionDir, call.Name, call.ID, result, defaultResultBudget)
 	}
 
-	t.recordToolExecution(call, info, decision, startedAt, result, returned, err)
+	t.recordToolExecution(call, info, decision, startedAt, result, returned, resultRef, resultBudgeted, err)
 
 	return returned, err
 }
@@ -80,6 +83,8 @@ func (t *Toolkit) recordToolExecution(
 	startedAt time.Time,
 	result string,
 	returned string,
+	resultRef string,
+	resultBudgeted bool,
 	err error,
 ) {
 	record := ToolExecutionRecord{
@@ -96,7 +101,8 @@ func (t *Toolkit) recordToolExecution(
 		Success:             err == nil,
 		RawOutputBytes:      len(result),
 		ReturnedOutputBytes: len(returned),
-		ResultBudgeted:      returned != result,
+		ResultBudgeted:      resultBudgeted,
+		ResultRef:           resultRef,
 	}
 	if err != nil {
 		record.Error = err.Error()

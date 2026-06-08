@@ -1,0 +1,63 @@
+package tools
+
+import (
+	"fmt"
+
+	"github.com/blueberrycongee/wuu/internal/toolresult"
+)
+
+func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
+	envelope := toolresult.Envelope{
+		OK:         record.Success,
+		ToolCallID: record.CallID,
+		Summary:    toolResultSummary(record),
+		Data: map[string]any{
+			"name":                  record.Name,
+			"kind":                  string(record.Kind),
+			"exposure":              string(record.Exposure),
+			"risk":                  string(record.Risk),
+			"policy_action":         string(record.PolicyAction),
+			"read_only":             record.ReadOnly,
+			"concurrency_safe":      record.ConcurrencySafe,
+			"duration_ms":           record.DurationMS,
+			"raw_output_bytes":      record.RawOutputBytes,
+			"returned_output_bytes": record.ReturnedOutputBytes,
+			"result_budgeted":       record.ResultBudgeted,
+			"error_present":         record.Error != "",
+		},
+		DataRef:   record.ResultRef,
+		Truncated: record.ResultBudgeted && record.ResultRef == "",
+	}
+	if record.ResultBudgeted && record.ResultRef != "" {
+		envelope.Warnings = append(envelope.Warnings, "tool output was persisted outside the model context")
+	}
+	if record.ResultBudgeted && record.ResultRef == "" {
+		envelope.Warnings = append(envelope.Warnings, "tool output was truncated because no result artifact was available")
+	}
+	envelope.NextSuggestions = toolResultNextSuggestions(record)
+	return envelope
+}
+
+func toolResultSummary(record ToolExecutionRecord) string {
+	status := "succeeded"
+	if !record.Success {
+		status = "failed"
+	}
+	if record.DurationMS > 0 {
+		return fmt.Sprintf("%s %s in %dms", record.Name, status, record.DurationMS)
+	}
+	return fmt.Sprintf("%s %s", record.Name, status)
+}
+
+func toolResultNextSuggestions(record ToolExecutionRecord) []string {
+	if !record.Success {
+		return []string{"inspect the redacted error summary and retry with corrected inputs or a safer tool"}
+	}
+	if record.ResultBudgeted && record.ResultRef != "" {
+		return []string{"read the persisted result artifact if the compact preview is insufficient"}
+	}
+	if record.ReadOnly {
+		return []string{"use the returned observation as evidence for the next action"}
+	}
+	return []string{"inspect the resulting diff or run the relevant validation before finishing"}
+}

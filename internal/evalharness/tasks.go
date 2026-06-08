@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // Task is one deterministic local evaluation scenario.
@@ -73,21 +74,23 @@ type Observability struct {
 }
 
 type ToolObservation struct {
-	Name                string    `json:"name"`
-	CallID              string    `json:"call_id,omitempty"`
-	Kind                string    `json:"kind,omitempty"`
-	Exposure            string    `json:"exposure,omitempty"`
-	Risk                string    `json:"risk,omitempty"`
-	PolicyAction        string    `json:"policy_action,omitempty"`
-	ReadOnly            bool      `json:"read_only"`
-	ConcurrencySafe     bool      `json:"concurrency_safe"`
-	StartedAt           time.Time `json:"started_at,omitempty"`
-	DurationMS          int64     `json:"duration_ms"`
-	Success             bool      `json:"success"`
-	Error               string    `json:"error,omitempty"`
-	RawOutputBytes      int       `json:"raw_output_bytes,omitempty"`
-	ReturnedOutputBytes int       `json:"returned_output_bytes,omitempty"`
-	ResultBudgeted      bool      `json:"result_budgeted,omitempty"`
+	Name                string               `json:"name"`
+	CallID              string               `json:"call_id,omitempty"`
+	Kind                string               `json:"kind,omitempty"`
+	Exposure            string               `json:"exposure,omitempty"`
+	Risk                string               `json:"risk,omitempty"`
+	PolicyAction        string               `json:"policy_action,omitempty"`
+	ReadOnly            bool                 `json:"read_only"`
+	ConcurrencySafe     bool                 `json:"concurrency_safe"`
+	StartedAt           time.Time            `json:"started_at,omitempty"`
+	DurationMS          int64                `json:"duration_ms"`
+	Success             bool                 `json:"success"`
+	Error               string               `json:"error,omitempty"`
+	RawOutputBytes      int                  `json:"raw_output_bytes,omitempty"`
+	ReturnedOutputBytes int                  `json:"returned_output_bytes,omitempty"`
+	ResultBudgeted      bool                 `json:"result_budgeted,omitempty"`
+	ResultRef           string               `json:"result_ref,omitempty"`
+	ResultEnvelope      *toolresult.Envelope `json:"result_envelope,omitempty"`
 }
 
 type WorkflowRunObservation struct {

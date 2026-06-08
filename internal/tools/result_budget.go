@@ -41,25 +41,30 @@ const (
 // the result is truncated to threshold as a fallback (matching the
 // old behaviour).
 func MaybePersistResult(sessionDir, toolName, callID, result string, threshold int) string {
+	returned, _, _ := MaybePersistResultWithRef(sessionDir, toolName, callID, result, threshold)
+	return returned
+}
+
+func MaybePersistResultWithRef(sessionDir, toolName, callID, result string, threshold int) (returned, resultRef string, budgeted bool) {
 	if threshold <= 0 {
 		threshold = defaultResultBudget
 	}
 	if len(result) <= threshold {
-		return result
+		return result, "", false
 	}
 
 	// Try disk persistence first.
 	if sessionDir != "" {
 		path, err := persistResult(sessionDir, callID, result)
 		if err == nil {
-			return buildReference(path, result, len(result))
+			return buildReference(path, result, len(result)), path, true
 		}
 		// Fall through to truncation on write failure.
 	}
 
 	// Fallback: hard truncation (preserves old behaviour when no
 	// session dir is available).
-	return result[:threshold] + "\n\n[truncated — output too large]"
+	return result[:threshold] + "\n\n[truncated — output too large]", "", true
 }
 
 // EnforceAggregateBudget trims tool result messages so that their
