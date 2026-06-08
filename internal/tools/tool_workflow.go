@@ -2091,6 +2091,10 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 		return mustJSON(map[string]any{
 			"runs":  reverseWorkflowRuns(runs),
 			"count": len(runs),
+			"next_steps": []string{
+				"Pass run_id to workflow_status to inspect a specific Workflow Run.",
+				"Use create_workflow for agent-managed runs or run_workflow for script-driven definitions when starting new workflow work.",
+			},
 		})
 	}
 
@@ -2114,14 +2118,16 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
+	arbitration := workflow.AnalyzeTeamArbitration(agents)
 	result := map[string]any{
 		"run":               run,
 		"agent_runs":        agents,
 		"workflow_team":     teamPlan,
 		"team_plan":         teamPlan,
-		"team_arbitration":  workflow.AnalyzeTeamArbitration(agents),
+		"team_arbitration":  arbitration,
 		"memory_candidates": memoryCandidates,
 		"file_checkpoints":  fileCheckpoints,
+		"next_steps":        workflowStatusNextSteps(run, agents, teamPlan, arbitration),
 	}
 	if run.DefinitionName != "" {
 		if def, ok := t.env.FindWorkflow(run.DefinitionName); ok {
@@ -2641,6 +2647,64 @@ func runWorkflowNextSteps(status workflow.RunState) []string {
 			"Use awaitAgents in the script for fan-in and synthesize for the final report.",
 		}
 	}
+}
+
+func workflowStatusNextSteps(run workflow.Run, agents []workflow.AgentRun, teamPlan workflow.TeamPlan, arbitration workflow.TeamArbitration) []string {
+	switch run.Status {
+	case workflow.RunStateDraft, workflow.RunStateApprovalPending, workflow.RunStatePaused:
+		return workflowNextSteps(run.Status)
+	case workflow.RunStateCompleted:
+		return []string{
+			"Inspect final_report_path, agent reports, and events as the durable record of the completed workflow.",
+			"Use save_workflow with run_id only if this run should become a reusable workflow definition.",
+		}
+	case workflow.RunStateFailed:
+		return []string{
+			"Inspect run error, failed Agent Runs, file checkpoints, and events before deciding whether to retry, rollback, or start a new run.",
+		}
+	case workflow.RunStateCancelled:
+		return []string{
+			"Treat this run as closed unless the user asks to start a replacement Workflow Run.",
+		}
+	}
+
+	if strings.TrimSpace(run.ScriptPath) != "" {
+		if arbitration.Status == "attention_required" {
+			return append(copyWorkflowSteps(arbitration.NextActions), "After resolving script worker issues, inspect workflow_status again for final_report_path or remaining events.")
+		}
+		return []string{
+			"The script driver owns phase/spawn/await/synthesis control; inspect events and final_report_path, and pause the run if it appears stuck.",
+		}
+	}
+
+	if len(agents) > 0 && arbitration.Status == "attention_required" {
+		return append(copyWorkflowSteps(arbitration.NextActions), "After resolving arbitration issues, update phase state and inspect workflow_status again before synthesis.")
+	}
+	if len(teamPlan.Members) == 0 {
+		return []string{
+			"Call list_agent_profiles, choose reuse_profile/create_profile/ephemeral members for this run, then record the Workflow Team with workflow_control action=record_workflow_team.",
+		}
+	}
+	if len(agents) == 0 {
+		return []string{
+			"Spawn the recorded Workflow Team members with spawn_agent, setting agent_profile only for reuse_profile/create_profile members.",
+			"After workers finish, bind outputs back with workflow_control action=record_await_results.",
+		}
+	}
+	if err := validateWorkflowReadyToComplete(run, agents); err == nil {
+		return []string{
+			"Use workflow_control action=generate_final_report or write_final_report with complete_run=true.",
+		}
+	}
+	return []string{
+		"Continue runnable or active phases, await or record worker results, then inspect workflow_status again before synthesis.",
+	}
+}
+
+func copyWorkflowSteps(steps []string) []string {
+	out := make([]string, len(steps))
+	copy(out, steps)
+	return out
 }
 
 func reverseWorkflowRuns(runs []workflow.Run) []workflow.Run {

@@ -222,6 +222,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		AgentRuns        []workflow.AgentRun        `json:"agent_runs"`
 		MemoryCandidates []workflow.MemoryCandidate `json:"memory_candidates"`
 		Events           []workflow.Event           `json:"events"`
+		NextSteps        []string                   `json:"next_steps"`
 	}
 	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
 		t.Fatalf("parse status response: %v", err)
@@ -243,6 +244,9 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if len(status.Events) < 2 {
 		t.Fatalf("expected run and plan events, got %+v", status.Events)
+	}
+	if !workflowStepsContain(status.NextSteps, "final_report_path") {
+		t.Fatalf("completed workflow_status should point to final report artifacts: %+v", status.NextSteps)
 	}
 }
 
@@ -823,6 +827,7 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	}
 	var awaitingStatus struct {
 		TeamArbitration workflow.TeamArbitration `json:"team_arbitration"`
+		NextSteps       []string                 `json:"next_steps"`
 	}
 	if err := json.Unmarshal([]byte(statusResp), &awaitingStatus); err != nil {
 		t.Fatalf("parse awaiting workflow_status: %v", err)
@@ -831,6 +836,9 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 		len(awaitingStatus.TeamArbitration.MissingReports) != 1 ||
 		awaitingStatus.TeamArbitration.MissingReports[0] != "agent-qa" {
 		t.Fatalf("workflow_status should surface missing report arbitration: %+v", awaitingStatus.TeamArbitration)
+	}
+	if !workflowStepsContain(awaitingStatus.NextSteps, "agent_report") {
+		t.Fatalf("awaiting workflow_status should guide the agent to collect report handoffs: %+v", awaitingStatus.NextSteps)
 	}
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -1491,6 +1499,16 @@ func TestWorkflowControlFileCheckpointRestore(t *testing.T) {
 func workflowEventsContain(events []workflow.Event, eventType workflow.EventType) bool {
 	for _, event := range events {
 		if event.Type == eventType {
+			return true
+		}
+	}
+	return false
+}
+
+func workflowStepsContain(steps []string, needle string) bool {
+	needle = strings.ToLower(needle)
+	for _, step := range steps {
+		if strings.Contains(strings.ToLower(step), needle) {
 			return true
 		}
 	}
