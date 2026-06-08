@@ -171,15 +171,20 @@ func parseScriptDefinitionFile(path, source string) (Definition, error) {
 }
 
 func parseScriptDefinitionContent(content, filename, source, dir, path string) Definition {
+	body := content
 	wf := Definition{
 		Kind:          DefinitionKindScript,
 		Source:        source,
 		Path:          path,
 		Dir:           dir,
 		UserInvocable: true,
-		Content:       content,
 	}
-	parseScriptMetadata(&wf, content)
+	if frontmatter, stripped, ok := splitLeadingFrontmatter(content); ok {
+		parseFrontmatter(&wf, frontmatter)
+		body = stripped
+	}
+	wf.Content = body
+	parseScriptMetadata(&wf, body)
 	if wf.Name == "" {
 		if strings.EqualFold(filename, "WORKFLOW.js") {
 			wf.Name = filepath.Base(dir)
@@ -189,7 +194,7 @@ func parseScriptDefinitionContent(content, filename, source, dir, path string) D
 	}
 	wf.Name = canonicalName(wf.Name)
 	if wf.Description == "" {
-		wf.Description = firstScriptDescription(content)
+		wf.Description = firstScriptDescription(body)
 	}
 	return wf
 }
@@ -287,19 +292,9 @@ func parseDefinitionFile(path, source string) (Definition, error) {
 }
 
 func parseDefinitionContent(content, filename, source, dir, path string) (Definition, error) {
-	lines := strings.Split(content, "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+	frontmatter, body, ok := splitLeadingFrontmatter(content)
+	if !ok {
 		return Definition{}, fmt.Errorf("no frontmatter")
-	}
-	closeIndex := -1
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == "---" {
-			closeIndex = i
-			break
-		}
-	}
-	if closeIndex < 0 {
-		return Definition{}, fmt.Errorf("unterminated frontmatter")
 	}
 
 	wf := Definition{
@@ -309,7 +304,7 @@ func parseDefinitionContent(content, filename, source, dir, path string) (Defini
 		Dir:           dir,
 		UserInvocable: true,
 	}
-	parseFrontmatter(&wf, lines[1:closeIndex])
+	parseFrontmatter(&wf, frontmatter)
 	if wf.Name == "" {
 		if strings.EqualFold(filename, "WORKFLOW.md") {
 			wf.Name = filepath.Base(dir)
@@ -318,11 +313,29 @@ func parseDefinitionContent(content, filename, source, dir, path string) (Defini
 		}
 	}
 	wf.Name = canonicalName(wf.Name)
-	wf.Content = strings.Join(lines[closeIndex+1:], "\n")
+	wf.Content = body
 	if wf.Description == "" {
 		wf.Description = firstMarkdownLine(wf.Content)
 	}
 	return wf, nil
+}
+
+func splitLeadingFrontmatter(content string) (frontmatter []string, body string, ok bool) {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return nil, content, false
+	}
+	closeIndex := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			closeIndex = i
+			break
+		}
+	}
+	if closeIndex < 0 {
+		return nil, content, false
+	}
+	return lines[1:closeIndex], strings.Join(lines[closeIndex+1:], "\n"), true
 }
 
 func parseFrontmatter(wf *Definition, lines []string) {

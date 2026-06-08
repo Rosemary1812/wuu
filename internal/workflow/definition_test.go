@@ -167,6 +167,49 @@ phase("Plan", () => {});
 	}
 }
 
+func TestParseScriptDefinitionFileSupportsFrontmatter(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "bugfix-smoke")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	path := filepath.Join(dir, "WORKFLOW.js")
+	content := `---
+name: bugfix-smoke
+description: Fix a scoped bug through a dynamic workflow.
+when_to_use: Use for small implementation bugs.
+argument_hint: <bug summary>
+max_agents: 3
+max_concurrency: 2
+profiles: [go_bugfix_worker]
+---
+
+phase("Investigate", () => {});
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	wf, err := LoadDefinitionFile(path, "project")
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	if wf.Kind != DefinitionKindScript {
+		t.Fatalf("Kind = %q", wf.Kind)
+	}
+	if wf.Name != "bugfix-smoke" || wf.Description != "Fix a scoped bug through a dynamic workflow." {
+		t.Fatalf("frontmatter metadata not parsed: %+v", wf)
+	}
+	if wf.ArgumentHint != "<bug summary>" || wf.MaxAgents != 3 || wf.MaxConcurrency != 2 {
+		t.Fatalf("frontmatter fields not parsed: %+v", wf)
+	}
+	if !reflect.DeepEqual(wf.Profiles, []ProfileRef{{Name: "go_bugfix_worker"}}) {
+		t.Fatalf("Profiles = %+v", wf.Profiles)
+	}
+	if wf.Content != "\nphase(\"Investigate\", () => {});\n" {
+		t.Fatalf("script frontmatter should be stripped from executable content: %q", wf.Content)
+	}
+}
+
 func TestDiscoverProjectOverridesUserAndFindAllowsSlash(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "project")
