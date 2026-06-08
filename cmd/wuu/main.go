@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	"github.com/blueberrycongee/wuu/internal/harness"
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -699,6 +700,7 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 		return obs
 	}
 	obs.StateDir = strings.TrimSpace(rt.StateDir)
+	obs.ModelProfile = evalModelProfileObservation(rt)
 	if obs.StateDir != "" {
 		obs.SessionDir = statepath.SessionArtifactDir(obs.StateDir, sessionID)
 		obs.WorkflowDir = filepath.Join(obs.StateDir, "workflows")
@@ -728,6 +730,37 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 		obs.Warnings = append(obs.Warnings, warnings...)
 	}
 	return obs
+}
+
+func evalModelProfileObservation(rt *runtime.Session) *evalharness.ModelProfileObservation {
+	if rt == nil {
+		return nil
+	}
+	apiModel := ""
+	if rt.StreamRunner != nil {
+		apiModel = strings.TrimSpace(rt.StreamRunner.APIModel)
+	}
+	modelForProfile := apiModel
+	if modelForProfile == "" {
+		modelForProfile = strings.TrimSpace(rt.Model)
+	}
+	profile := modelprofile.Resolve(rt.ProviderName, modelForProfile)
+	return &evalharness.ModelProfileObservation{
+		ProviderName:              rt.ProviderName,
+		Model:                     rt.Model,
+		APIModel:                  apiModel,
+		Family:                    string(profile.Family),
+		ToolCalling:               string(profile.APIShape.ToolCalling),
+		FreeformTool:              profile.APIShape.FreeformTool,
+		ParallelToolCalls:         profile.APIShape.ParallelToolCalls,
+		ContextWindowTokens:       profile.Context.WindowTokens,
+		DefaultWriteMode:          string(profile.Workflow.DefaultWriteMode),
+		DefaultSearchBudget:       profile.Workflow.DefaultSearchBudget,
+		DefaultMaxAutonomousSteps: profile.Workflow.DefaultMaxAutonomousSteps,
+		NeedsReadBeforeWrite:      profile.Workflow.NeedsReadBeforeWrite,
+		AllowParallelReadOnly:     profile.Workflow.AllowParallelReadOnly,
+		AllowDirectShell:          profile.Workflow.AllowDirectShell,
+	}
 }
 
 func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.ToolObservation {

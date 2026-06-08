@@ -293,6 +293,23 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 }
 
+func TestEvalModelProfileObservation(t *testing.T) {
+	got := evalModelProfileObservation(&runtime.Session{
+		ProviderName: "openai",
+		Model:        "gpt-5-codex",
+	})
+
+	if got == nil {
+		t.Fatal("expected model profile observation")
+	}
+	if got.ProviderName != "openai" || got.Model != "gpt-5-codex" || got.Family != "codex" {
+		t.Fatalf("unexpected model profile identity: %+v", got)
+	}
+	if got.DefaultWriteMode != "patch" || !got.FreeformTool || !got.AllowParallelReadOnly {
+		t.Fatalf("unexpected model profile strategy: %+v", got)
+	}
+}
+
 func TestSetTemporaryEnvRestoresPreviousValue(t *testing.T) {
 	t.Setenv("WUU_HOME", "/tmp/original-wuu-home")
 	restore := setTemporaryEnv("WUU_HOME", "/tmp/eval-wuu-home")

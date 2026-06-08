@@ -66,11 +66,29 @@ type Observability struct {
 	TaskWorkdir        string                     `json:"task_workdir,omitempty"`
 	TaskWorkdirKept    bool                       `json:"task_workdir_kept,omitempty"`
 	FinalAnswerPreview string                     `json:"final_answer_preview,omitempty"`
+	ModelProfile       *ModelProfileObservation   `json:"model_profile,omitempty"`
 	ToolRecords        []ToolObservation          `json:"tool_records,omitempty"`
 	WorkflowRuns       []WorkflowRunObservation   `json:"workflow_runs,omitempty"`
 	HarnessTasks       []HarnessTaskObservation   `json:"harness_tasks,omitempty"`
 	HarnessReports     []HarnessReportObservation `json:"harness_reports,omitempty"`
 	Warnings           []string                   `json:"warnings,omitempty"`
+}
+
+type ModelProfileObservation struct {
+	ProviderName              string `json:"provider_name,omitempty"`
+	Model                     string `json:"model,omitempty"`
+	APIModel                  string `json:"api_model,omitempty"`
+	Family                    string `json:"family,omitempty"`
+	ToolCalling               string `json:"tool_calling,omitempty"`
+	FreeformTool              bool   `json:"freeform_tool,omitempty"`
+	ParallelToolCalls         bool   `json:"parallel_tool_calls,omitempty"`
+	ContextWindowTokens       int    `json:"context_window_tokens,omitempty"`
+	DefaultWriteMode          string `json:"default_write_mode,omitempty"`
+	DefaultSearchBudget       int    `json:"default_search_budget,omitempty"`
+	DefaultMaxAutonomousSteps int    `json:"default_max_autonomous_steps,omitempty"`
+	NeedsReadBeforeWrite      bool   `json:"needs_read_before_write,omitempty"`
+	AllowParallelReadOnly     bool   `json:"allow_parallel_read_only,omitempty"`
+	AllowDirectShell          bool   `json:"allow_direct_shell,omitempty"`
 }
 
 type ToolObservation struct {
