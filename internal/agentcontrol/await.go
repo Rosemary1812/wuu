@@ -14,9 +14,10 @@ import (
 )
 
 type AwaitAgentsResult struct {
-	TimedOut bool               `json:"timed_out"`
-	Warnings []string           `json:"warnings,omitempty"`
-	Results  []AwaitAgentResult `json:"results"`
+	TimedOut  bool               `json:"timed_out"`
+	Warnings  []string           `json:"warnings,omitempty"`
+	Results   []AwaitAgentResult `json:"results"`
+	NextSteps []string           `json:"next_steps,omitempty"`
 }
 
 type AwaitAgentResult struct {
@@ -49,7 +50,9 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 	}
 	resolved := c.resolveAwaitTargets(currentPath, targets)
 	if len(resolved) == 0 {
-		return AwaitAgentsResult{Results: []AwaitAgentResult{}}, nil
+		result := AwaitAgentsResult{Results: []AwaitAgentResult{}}
+		result.NextSteps = awaitAgentsNextSteps(result)
+		return result, nil
 	}
 
 	ch := make(chan subagent.Notification, 16)
@@ -59,6 +62,7 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 	for {
 		result := c.awaitSnapshot(resolved)
 		if awaitComplete(result.Results) {
+			result.NextSteps = awaitAgentsNextSteps(result)
 			return result, nil
 		}
 		select {
@@ -66,6 +70,7 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 		case <-time.After(50 * time.Millisecond):
 		case <-ctx.Done():
 			result.TimedOut = true
+			result.NextSteps = awaitAgentsNextSteps(result)
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return result, nil
 			}
@@ -193,6 +198,43 @@ func (c *AgentControl) awaitSnapshot(targets []awaitTarget) AwaitAgentsResult {
 		results = append(results, c.awaitResultForTarget(target))
 	}
 	return AwaitAgentsResult{Warnings: changedFileOverlapWarnings(results), Results: results}
+}
+
+func awaitAgentsNextSteps(result AwaitAgentsResult) []string {
+	if len(result.Results) == 0 {
+		return []string{"No active or matching child agents were found; continue local work or spawn_agent only if delegation is still needed."}
+	}
+	if result.TimedOut {
+		return []string{
+			"Some child agents are still active; continue non-overlapping local work when possible.",
+			"Call await_agents again with explicit targets only when synthesis or integration is blocked on their output.",
+		}
+	}
+
+	steps := make([]string, 0, 4)
+	if awaitResultsHaveStatus(result.Results, string(harness.TaskStatusAwaitingReport)) {
+		steps = append(steps, "Follow up with agents in awaiting_report or verify their raw result before relying on the handoff; require agent_report for durable evidence.")
+	}
+	if awaitResultsHaveStatus(result.Results, string(harness.TaskStatusFailed)) || awaitResultsHaveStatus(result.Results, string(subagent.StatusFailed)) {
+		steps = append(steps, "Inspect failed agent errors and artifacts, then decide whether to retry with a narrower brief, rollback, or ask the user.")
+	}
+	if len(result.Warnings) > 0 {
+		steps = append(steps, "Resolve await_agents warnings, especially overlapping changed files, before synthesis or merge decisions.")
+	}
+	if len(steps) == 0 {
+		steps = append(steps, "Use agent reports, changed_files, artifacts, and results to synthesize the parent answer.")
+	}
+	steps = append(steps, "If these agents belong to a Workflow Run, bind this await_agents result with workflow_control action=record_await_results.")
+	return steps
+}
+
+func awaitResultsHaveStatus(results []AwaitAgentResult, status string) bool {
+	for _, result := range results {
+		if result.Status == status {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult {

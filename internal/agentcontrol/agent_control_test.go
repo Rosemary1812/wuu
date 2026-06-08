@@ -487,6 +487,9 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusAwaitingReport) || !awaited.Results[0].ReportMissing {
 		t.Fatalf("expected awaiting_report result, got %+v", awaited)
 	}
+	if !spawnStepsContain(awaited.NextSteps, "agent_report") {
+		t.Fatalf("await_agents should guide missing report handoff, got %+v", awaited.NextSteps)
+	}
 
 	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
 		Outcome:      "completed",
@@ -503,6 +506,9 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	}
 	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || awaited.Results[0].ReportPath != report.ReportPath || len(awaited.Results[0].ChangedFiles) != 1 {
 		t.Fatalf("expected completed result with report path, got %+v", awaited)
+	}
+	if !spawnStepsContain(awaited.NextSteps, "workflow_control") {
+		t.Fatalf("await_agents should guide workflow binding after successful join, got %+v", awaited.NextSteps)
 	}
 	waitForHarnessEvent(t, c.HarnessStore(), harness.EventRunCompleted, res.AgentID)
 }
@@ -590,6 +596,9 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 	}
 	if !awaited.TimedOut || len(awaited.Results) != 1 || awaited.Results[0].Status != string(subagent.StatusRunning) {
 		t.Fatalf("expected timed out running result, got %+v", awaited)
+	}
+	if !spawnStepsContain(awaited.NextSteps, "non-overlapping") || !spawnStepsContain(awaited.NextSteps, "explicit targets") {
+		t.Fatalf("timed out await should guide non-blocking follow-up, got %+v", awaited.NextSteps)
 	}
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
