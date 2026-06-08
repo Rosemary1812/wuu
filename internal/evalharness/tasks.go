@@ -38,20 +38,122 @@ type Verification struct {
 }
 
 type Result struct {
-	TaskID             string   `json:"task_id"`
-	TaskName           string   `json:"task_name"`
-	Success            bool     `json:"success"`
-	DurationMS         int64    `json:"duration_ms"`
-	Turns              int      `json:"turns"`
-	ToolCalls          int      `json:"tool_calls"`
-	ToolNames          []string `json:"tool_names,omitempty"`
-	MissingTools       []string `json:"missing_tools,omitempty"`
-	MissingErrors      []string `json:"missing_errors,omitempty"`
-	InputTokens        int      `json:"input_tokens"`
-	OutputTokens       int      `json:"output_tokens"`
-	VerificationReason string   `json:"verification_reason,omitempty"`
-	Error              string   `json:"error,omitempty"`
-	Workdir            string   `json:"workdir,omitempty"`
+	TaskID             string         `json:"task_id"`
+	TaskName           string         `json:"task_name"`
+	Success            bool           `json:"success"`
+	DurationMS         int64          `json:"duration_ms"`
+	Turns              int            `json:"turns"`
+	ToolCalls          int            `json:"tool_calls"`
+	ToolNames          []string       `json:"tool_names,omitempty"`
+	MissingTools       []string       `json:"missing_tools,omitempty"`
+	MissingErrors      []string       `json:"missing_errors,omitempty"`
+	InputTokens        int            `json:"input_tokens"`
+	OutputTokens       int            `json:"output_tokens"`
+	VerificationReason string         `json:"verification_reason,omitempty"`
+	Error              string         `json:"error,omitempty"`
+	Workdir            string         `json:"workdir,omitempty"`
+	Observability      *Observability `json:"observability,omitempty"`
+}
+
+type Observability struct {
+	SessionID          string                     `json:"session_id,omitempty"`
+	StateDir           string                     `json:"state_dir,omitempty"`
+	SessionDir         string                     `json:"session_dir,omitempty"`
+	HarnessDir         string                     `json:"harness_dir,omitempty"`
+	WorkflowDir        string                     `json:"workflow_dir,omitempty"`
+	TaskWorkdir        string                     `json:"task_workdir,omitempty"`
+	TaskWorkdirKept    bool                       `json:"task_workdir_kept,omitempty"`
+	FinalAnswerPreview string                     `json:"final_answer_preview,omitempty"`
+	ToolRecords        []ToolObservation          `json:"tool_records,omitempty"`
+	WorkflowRuns       []WorkflowRunObservation   `json:"workflow_runs,omitempty"`
+	HarnessTasks       []HarnessTaskObservation   `json:"harness_tasks,omitempty"`
+	HarnessReports     []HarnessReportObservation `json:"harness_reports,omitempty"`
+	Warnings           []string                   `json:"warnings,omitempty"`
+}
+
+type ToolObservation struct {
+	Name                string    `json:"name"`
+	CallID              string    `json:"call_id,omitempty"`
+	Kind                string    `json:"kind,omitempty"`
+	Exposure            string    `json:"exposure,omitempty"`
+	Risk                string    `json:"risk,omitempty"`
+	PolicyAction        string    `json:"policy_action,omitempty"`
+	ReadOnly            bool      `json:"read_only"`
+	ConcurrencySafe     bool      `json:"concurrency_safe"`
+	StartedAt           time.Time `json:"started_at,omitempty"`
+	DurationMS          int64     `json:"duration_ms"`
+	Success             bool      `json:"success"`
+	Error               string    `json:"error,omitempty"`
+	RawOutputBytes      int       `json:"raw_output_bytes,omitempty"`
+	ReturnedOutputBytes int       `json:"returned_output_bytes,omitempty"`
+	ResultBudgeted      bool      `json:"result_budgeted,omitempty"`
+}
+
+type WorkflowRunObservation struct {
+	ID              string                        `json:"id"`
+	DefinitionName  string                        `json:"definition_name,omitempty"`
+	Status          string                        `json:"status"`
+	Error           string                        `json:"error,omitempty"`
+	ScriptPath      string                        `json:"script_path,omitempty"`
+	FinalReportPath string                        `json:"final_report_path,omitempty"`
+	Phases          []WorkflowPhaseObservation    `json:"phases,omitempty"`
+	AgentRuns       []WorkflowAgentRunObservation `json:"agent_runs,omitempty"`
+	EventCount      int                           `json:"event_count,omitempty"`
+}
+
+type WorkflowPhaseObservation struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name,omitempty"`
+	Status      string   `json:"status"`
+	Error       string   `json:"error,omitempty"`
+	AgentRunIDs []string `json:"agent_run_ids,omitempty"`
+}
+
+type WorkflowAgentRunObservation struct {
+	ID            string   `json:"id"`
+	PhaseID       string   `json:"phase_id,omitempty"`
+	AgentID       string   `json:"agent_id,omitempty"`
+	AgentPath     string   `json:"agent_path,omitempty"`
+	TaskName      string   `json:"task_name,omitempty"`
+	AgentProfile  string   `json:"agent_profile,omitempty"`
+	Status        string   `json:"status"`
+	ReportPath    string   `json:"report_path,omitempty"`
+	ReportMissing bool     `json:"report_missing,omitempty"`
+	ChangedFiles  []string `json:"changed_files,omitempty"`
+	Artifacts     []string `json:"artifacts,omitempty"`
+	WorktreePath  string   `json:"worktree_path,omitempty"`
+	InputTokens   int      `json:"input_tokens,omitempty"`
+	OutputTokens  int      `json:"output_tokens,omitempty"`
+	DurationMS    int64    `json:"duration_ms,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+type HarnessTaskObservation struct {
+	ID            string   `json:"id"`
+	ParentID      string   `json:"parent_id,omitempty"`
+	Path          string   `json:"path,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	Role          string   `json:"role,omitempty"`
+	Status        string   `json:"status"`
+	ReportPath    string   `json:"report_path,omitempty"`
+	ArtifactPaths []string `json:"artifact_paths,omitempty"`
+	InputTokens   int      `json:"input_tokens,omitempty"`
+	OutputTokens  int      `json:"output_tokens,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+type HarnessReportObservation struct {
+	ID           string   `json:"id"`
+	TaskID       string   `json:"task_id,omitempty"`
+	RunID        string   `json:"run_id,omitempty"`
+	AgentID      string   `json:"agent_id,omitempty"`
+	AgentPath    string   `json:"agent_path,omitempty"`
+	Outcome      string   `json:"outcome"`
+	Summary      string   `json:"summary,omitempty"`
+	ChangedFiles []string `json:"changed_files,omitempty"`
+	Verification []string `json:"verification,omitempty"`
+	Artifacts    []string `json:"artifacts,omitempty"`
+	ReportPath   string   `json:"report_path,omitempty"`
 }
 
 func Catalog() []Task {

@@ -231,6 +231,50 @@ func TestMissingRequiredToolErrors(t *testing.T) {
 	}
 }
 
+func TestEvalSafePreviewRedactsSecretsAndTruncates(t *testing.T) {
+	got := evalSafePreview("access_token=secret-value-1234567890 keep", 200)
+	if strings.Contains(got, "secret-value") {
+		t.Fatalf("secret leaked in preview: %q", got)
+	}
+	if !strings.Contains(got, "[REDACTED]") {
+		t.Fatalf("redaction marker missing: %q", got)
+	}
+	truncated := evalSafePreview(strings.Repeat("x", 40), 20)
+	if !strings.Contains(truncated, "truncated") {
+		t.Fatalf("expected truncation marker: %q", truncated)
+	}
+}
+
+func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
+	records := []tools.ToolExecutionRecord{{
+		Name:                "run_shell",
+		CallID:              "call_1",
+		Kind:                tools.ToolKindShell,
+		Exposure:            tools.ToolExposureDirect,
+		Risk:                tools.ToolRiskHigh,
+		PolicyAction:        tools.ToolPolicyAllow,
+		ReadOnly:            false,
+		ConcurrencySafe:     false,
+		DurationMS:          42,
+		Success:             false,
+		Error:               "authorization: bearer abc123",
+		RawOutputBytes:      1024,
+		ReturnedOutputBytes: 256,
+		ResultBudgeted:      true,
+	}}
+
+	got := evalToolObservations(records)
+	if len(got) != 1 {
+		t.Fatalf("expected one observation, got %+v", got)
+	}
+	if got[0].Name != "run_shell" || got[0].Kind != "shell" || got[0].RawOutputBytes != 1024 || !got[0].ResultBudgeted {
+		t.Fatalf("metadata not preserved: %+v", got[0])
+	}
+	if strings.Contains(got[0].Error, "abc123") {
+		t.Fatalf("error secret leaked: %q", got[0].Error)
+	}
+}
+
 func TestResolveContextWindow_PrefersProviderOverride(t *testing.T) {
 	if got := runtime.ResolveContextWindow("gpt-5.4", 777, 555); got != 777 {
 		t.Fatalf("expected provider override, got %d", got)

@@ -9,18 +9,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
+	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	sessionid "github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/version"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func main() {
@@ -605,6 +609,8 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		result.DurationMS = time.Since(started).Milliseconds()
 		return result
 	}
+	evalSessionID := "eval-" + cfg.Task.ID + "-" + sessionid.NewID()
+	rt.SetSessionID(evalSessionID)
 	defer func() {
 		_, _ = rt.Cleanup()
 	}()
@@ -647,8 +653,237 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	if runErr != nil {
 		result.Error = runErr.Error()
 	}
+	result.Observability = collectEvalObservability(rt, evalSessionID, taskRoot, cfg.KeepWorkdir, runResult.Content)
 	result.DurationMS = time.Since(started).Milliseconds()
 	return result
+}
+
+const (
+	evalAnswerPreviewLimit = 4000
+	evalTextPreviewLimit   = 1000
+)
+
+var evalSecretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._~+/\-=]+`),
+	regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret)\s*[:=]\s*["']?[^"'\s,;]+`),
+}
+
+func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, keepWorkdir bool, finalAnswer string) *evalharness.Observability {
+	obs := &evalharness.Observability{
+		SessionID:          strings.TrimSpace(sessionID),
+		FinalAnswerPreview: evalSafePreview(finalAnswer, evalAnswerPreviewLimit),
+		TaskWorkdirKept:    keepWorkdir,
+	}
+	if keepWorkdir {
+		obs.TaskWorkdir = taskRoot
+	} else {
+		obs.Warnings = append(obs.Warnings, "task workdir is removed after eval; pass --keep-workdirs to inspect it")
+	}
+	if rt == nil {
+		obs.Warnings = append(obs.Warnings, "runtime session is unavailable")
+		return obs
+	}
+	obs.StateDir = strings.TrimSpace(rt.StateDir)
+	if obs.StateDir != "" {
+		obs.SessionDir = statepath.SessionArtifactDir(obs.StateDir, sessionID)
+		obs.WorkflowDir = filepath.Join(obs.StateDir, "workflows")
+	}
+	if rt.Toolkit != nil {
+		obs.ToolRecords = evalToolObservations(rt.Toolkit.ToolTelemetry())
+	}
+	if rt.AgentControl != nil && rt.AgentControl.HarnessStore() != nil {
+		store := rt.AgentControl.HarnessStore()
+		obs.HarnessDir = store.Dir()
+		tasks, err := store.ListTasks()
+		if err != nil {
+			obs.Warnings = append(obs.Warnings, "list harness tasks: "+evalSafePreview(err.Error(), evalTextPreviewLimit))
+		} else {
+			obs.HarnessTasks = evalHarnessTaskObservations(tasks)
+		}
+		reports, err := store.ListReports()
+		if err != nil {
+			obs.Warnings = append(obs.Warnings, "list harness reports: "+evalSafePreview(err.Error(), evalTextPreviewLimit))
+		} else {
+			obs.HarnessReports = evalHarnessReportObservations(reports)
+		}
+	}
+	if obs.StateDir != "" {
+		runs, warnings := evalWorkflowObservations(workflow.NewStore(obs.StateDir))
+		obs.WorkflowRuns = runs
+		obs.Warnings = append(obs.Warnings, warnings...)
+	}
+	return obs
+}
+
+func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.ToolObservation {
+	out := make([]evalharness.ToolObservation, 0, len(records))
+	for _, record := range records {
+		out = append(out, evalharness.ToolObservation{
+			Name:                record.Name,
+			CallID:              record.CallID,
+			Kind:                string(record.Kind),
+			Exposure:            string(record.Exposure),
+			Risk:                string(record.Risk),
+			PolicyAction:        string(record.PolicyAction),
+			ReadOnly:            record.ReadOnly,
+			ConcurrencySafe:     record.ConcurrencySafe,
+			StartedAt:           record.StartedAt,
+			DurationMS:          record.DurationMS,
+			Success:             record.Success,
+			Error:               evalSafePreview(record.Error, evalTextPreviewLimit),
+			RawOutputBytes:      record.RawOutputBytes,
+			ReturnedOutputBytes: record.ReturnedOutputBytes,
+			ResultBudgeted:      record.ResultBudgeted,
+		})
+	}
+	return out
+}
+
+func evalWorkflowObservations(store *workflow.Store) ([]evalharness.WorkflowRunObservation, []string) {
+	if store == nil {
+		return nil, nil
+	}
+	runs, err := store.ListRuns()
+	if err != nil {
+		return nil, []string{"list workflow runs: " + evalSafePreview(err.Error(), evalTextPreviewLimit)}
+	}
+	out := make([]evalharness.WorkflowRunObservation, 0, len(runs))
+	warnings := []string(nil)
+	for _, run := range runs {
+		item := evalharness.WorkflowRunObservation{
+			ID:              run.ID,
+			DefinitionName:  run.DefinitionName,
+			Status:          string(run.Status),
+			Error:           evalSafePreview(run.Error, evalTextPreviewLimit),
+			ScriptPath:      run.ScriptPath,
+			FinalReportPath: run.FinalReportPath,
+			Phases:          evalWorkflowPhaseObservations(run.Phases),
+		}
+		agents, err := store.ListAgentRuns(run.ID)
+		if err != nil {
+			warnings = append(warnings, "list workflow agent runs for "+run.ID+": "+evalSafePreview(err.Error(), evalTextPreviewLimit))
+		} else {
+			item.AgentRuns = evalWorkflowAgentRunObservations(agents)
+		}
+		events, err := store.ListEvents(run.ID)
+		if err != nil {
+			warnings = append(warnings, "list workflow events for "+run.ID+": "+evalSafePreview(err.Error(), evalTextPreviewLimit))
+		} else {
+			item.EventCount = len(events)
+		}
+		out = append(out, item)
+	}
+	return out, warnings
+}
+
+func evalWorkflowPhaseObservations(phases []workflow.Phase) []evalharness.WorkflowPhaseObservation {
+	out := make([]evalharness.WorkflowPhaseObservation, 0, len(phases))
+	for _, phase := range phases {
+		out = append(out, evalharness.WorkflowPhaseObservation{
+			ID:          phase.ID,
+			Name:        phase.Name,
+			Status:      string(phase.Status),
+			Error:       evalSafePreview(phase.Error, evalTextPreviewLimit),
+			AgentRunIDs: append([]string(nil), phase.AgentRunIDs...),
+		})
+	}
+	return out
+}
+
+func evalWorkflowAgentRunObservations(agents []workflow.AgentRun) []evalharness.WorkflowAgentRunObservation {
+	out := make([]evalharness.WorkflowAgentRunObservation, 0, len(agents))
+	for _, agent := range agents {
+		out = append(out, evalharness.WorkflowAgentRunObservation{
+			ID:            agent.ID,
+			PhaseID:       agent.PhaseID,
+			AgentID:       agent.AgentID,
+			AgentPath:     agent.AgentPath,
+			TaskName:      agent.TaskName,
+			AgentProfile:  agent.AgentProfile,
+			Status:        string(agent.Status),
+			ReportPath:    agent.ReportPath,
+			ReportMissing: agent.ReportMissing,
+			ChangedFiles:  append([]string(nil), agent.ChangedFiles...),
+			Artifacts:     append([]string(nil), agent.Artifacts...),
+			WorktreePath:  agent.WorktreePath,
+			InputTokens:   agent.InputTokens,
+			OutputTokens:  agent.OutputTokens,
+			DurationMS:    agent.DurationMS,
+			Error:         evalSafePreview(agent.Error, evalTextPreviewLimit),
+		})
+	}
+	return out
+}
+
+func evalHarnessTaskObservations(tasks []harness.Task) []evalharness.HarnessTaskObservation {
+	out := make([]evalharness.HarnessTaskObservation, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, evalharness.HarnessTaskObservation{
+			ID:            task.ID,
+			ParentID:      task.ParentID,
+			Path:          task.Path,
+			Name:          task.Name,
+			Role:          task.Role,
+			Status:        string(task.Status),
+			ReportPath:    task.ReportPath,
+			ArtifactPaths: append([]string(nil), task.ArtifactPaths...),
+			InputTokens:   task.InputTokens,
+			OutputTokens:  task.OutputTokens,
+			Error:         evalSafePreview(task.Error, evalTextPreviewLimit),
+		})
+	}
+	return out
+}
+
+func evalHarnessReportObservations(reports []harness.Report) []evalharness.HarnessReportObservation {
+	out := make([]evalharness.HarnessReportObservation, 0, len(reports))
+	for _, report := range reports {
+		out = append(out, evalharness.HarnessReportObservation{
+			ID:           report.ID,
+			TaskID:       report.TaskID,
+			RunID:        report.RunID,
+			AgentID:      report.AgentID,
+			AgentPath:    report.AgentPath,
+			Outcome:      report.Outcome,
+			Summary:      evalSafePreview(report.Summary, evalTextPreviewLimit),
+			ChangedFiles: append([]string(nil), report.ChangedFiles...),
+			Verification: evalSafeStringSlice(report.Verification, evalTextPreviewLimit),
+			Artifacts:    append([]string(nil), report.Artifacts...),
+			ReportPath:   report.ReportPath,
+		})
+	}
+	return out
+}
+
+func evalSafeStringSlice(values []string, limit int) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, evalSafePreview(value, limit))
+	}
+	return out
+}
+
+func evalSafePreview(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	for _, pattern := range evalSecretPatterns {
+		value = pattern.ReplaceAllStringFunc(value, func(match string) string {
+			idx := strings.IndexAny(match, ":=")
+			if idx >= 0 {
+				return strings.TrimSpace(match[:idx]) + ": [REDACTED]"
+			}
+			return "[REDACTED]"
+		})
+	}
+	if limit > 0 && len(value) > limit {
+		value = value[:limit] + "... [truncated]"
+	}
+	return value
 }
 
 func resolveEvalTasks(input string) ([]evalharness.Task, error) {
