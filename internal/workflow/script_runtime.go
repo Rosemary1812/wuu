@@ -39,6 +39,7 @@ type ScriptRuntime struct {
 	opts            ScriptRuntimeOptions
 	currentPhaseID  string
 	spawnSeq        int
+	spawnedAgentIDs []string
 	maxAgents       int
 	maxConcurrency  int
 	completedByUser bool
@@ -390,6 +391,17 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 	if err := r.recordSpawnResult(out, prompt); err != nil {
 		return out, err
 	}
+	r.rememberSpawnedAgent(out.AgentID)
+	if spec.Synchronous && strings.TrimSpace(out.AgentID) != "" {
+		refreshed, err := r.awaitAgentTargets(ctx, []string{out.AgentID})
+		if err != nil {
+			return out, err
+		}
+		if err := r.recordAwaitResult(refreshed); err != nil {
+			return out, err
+		}
+		out = refreshSpawnResultFromAwait(out, refreshed)
+	}
 	return out, nil
 }
 
@@ -410,7 +422,11 @@ func (r *ScriptRuntime) awaitAgents(ctx context.Context, vm *goja.Runtime, value
 		waitCtx, cancel = context.WithTimeout(ctx, time.Duration(args.TimeoutMS)*time.Millisecond)
 		defer cancel()
 	}
-	result, err := r.opts.AgentControl.AwaitFrom(r.currentAgentPath(), waitCtx, args.Targets)
+	targets := args.Targets
+	if len(targets) == 0 {
+		targets = r.defaultAwaitTargets()
+	}
+	result, err := r.awaitAgentTargets(waitCtx, targets)
 	if err != nil {
 		return result, err
 	}
@@ -418,6 +434,10 @@ func (r *ScriptRuntime) awaitAgents(ctx context.Context, vm *goja.Runtime, value
 		return result, err
 	}
 	return result, nil
+}
+
+func (r *ScriptRuntime) awaitAgentTargets(ctx context.Context, targets []string) (agentcontrol.AwaitAgentsResult, error) {
+	return r.opts.AgentControl.AwaitFrom(r.currentAgentPath(), ctx, targets)
 }
 
 func (r *ScriptRuntime) synthesize(ctx context.Context, vm *goja.Runtime, value goja.Value) (map[string]any, error) {
@@ -564,6 +584,97 @@ func (r *ScriptRuntime) recordAwaitResult(result agentcontrol.AwaitAgentsResult)
 		}
 	}
 	return nil
+}
+
+func (r *ScriptRuntime) rememberSpawnedAgent(id string) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return
+	}
+	for _, existing := range r.spawnedAgentIDs {
+		if existing == id {
+			return
+		}
+	}
+	r.spawnedAgentIDs = append(r.spawnedAgentIDs, id)
+}
+
+func (r *ScriptRuntime) defaultAwaitTargets() []string {
+	seen := map[string]struct{}{}
+	targets := make([]string, 0, len(r.spawnedAgentIDs))
+	for _, id := range r.spawnedAgentIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		targets = append(targets, id)
+	}
+	if r.opts.Store == nil {
+		return targets
+	}
+	agents, err := r.opts.Store.ListAgentRuns(r.opts.RunID)
+	if err != nil {
+		return targets
+	}
+	for _, agent := range agents {
+		id := strings.TrimSpace(agent.ID)
+		if id == "" {
+			id = strings.TrimSpace(agent.AgentID)
+		}
+		if id == "" {
+			id = strings.TrimSpace(agent.AgentPath)
+		}
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		targets = append(targets, id)
+	}
+	return targets
+}
+
+func refreshSpawnResultFromAwait(spawned ScriptSpawnResult, result agentcontrol.AwaitAgentsResult) ScriptSpawnResult {
+	for _, item := range result.Results {
+		if strings.TrimSpace(item.AgentID) != strings.TrimSpace(spawned.AgentID) {
+			continue
+		}
+		if item.ReportMissing {
+			return spawned
+		}
+		if strings.TrimSpace(item.Status) != "" {
+			spawned.Status = item.Status
+		}
+		if strings.TrimSpace(item.Result) != "" {
+			spawned.Result = item.Result
+		}
+		if strings.TrimSpace(item.Error) != "" {
+			spawned.Error = item.Error
+		}
+		if strings.TrimSpace(item.AgentPath) != "" {
+			spawned.AgentPath = item.AgentPath
+		}
+		if strings.TrimSpace(item.TaskName) != "" {
+			spawned.TaskName = item.TaskName
+		}
+		if strings.TrimSpace(item.AgentProfile) != "" {
+			spawned.AgentProfile = item.AgentProfile
+		}
+		if strings.TrimSpace(item.WorktreePath) != "" {
+			spawned.WorktreePath = item.WorktreePath
+		}
+		if item.DurationMS > 0 {
+			spawned.DurationMS = item.DurationMS
+		}
+		return spawned
+	}
+	return spawned
 }
 
 func (r *ScriptRuntime) ensureAgentCapacity(count int) error {

@@ -518,7 +518,7 @@ phase("Workers", () => {
   if (spawned.status !== "completed" || spawned.result !== "agent done") {
     throw new Error("spawnAgent did not return the completed worker result");
   }
-  const awaited = awaitAgents([spawned.agentId]);
+  const awaited = awaitAgents();
   if (!awaited.results || awaited.results.length !== 1 || awaited.results[0].result !== "agent done") {
     throw new Error("awaitAgents did not return the worker result");
   }
