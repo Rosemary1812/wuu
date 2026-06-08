@@ -83,6 +83,9 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("run_shell requires command")
 	}
+	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+		return "", fmt.Errorf("run_shell refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
+	}
 
 	timeout := args.TimeoutSeconds
 	if timeout <= 0 {
@@ -264,11 +267,42 @@ func highRiskShellClassification(reason string, destructive bool) ToolClassifica
 
 func shellFieldsTouchSensitivePath(fields []string) bool {
 	for _, field := range fields[1:] {
-		if isSensitivePath(field) {
+		if _, ok := shellSensitivePathTokenReason(field); ok {
 			return true
 		}
 	}
 	return false
+}
+
+func shellCommandSensitivePathReason(command string) (string, bool) {
+	for _, field := range strings.Fields(command) {
+		if reason, ok := shellSensitivePathTokenReason(field); ok {
+			return reason, true
+		}
+	}
+	return "", false
+}
+
+func shellSensitivePathTokenReason(field string) (string, bool) {
+	token := shellPathToken(field)
+	if token == "" || strings.HasPrefix(token, "-") {
+		return "", false
+	}
+	lower := strings.ToLower(token)
+	switch {
+	case strings.Contains(lower, ".env"), strings.Contains(lower, ".netrc"), strings.Contains(lower, ".npmrc"), strings.Contains(lower, ".pypirc"), strings.Contains(lower, ".pgpass"):
+		return sensitivePathReason(token)
+	case strings.Contains(lower, "/") || strings.Contains(lower, "."):
+		return sensitivePathReason(token)
+	case lower == "secret" || lower == "secrets" || lower == "credential" || lower == "credentials" || lower == "private_key":
+		return sensitivePathReason(token)
+	default:
+		return "", false
+	}
+}
+
+func shellPathToken(field string) string {
+	return strings.Trim(field, " \t\r\n\"'`(){}[]<>|&;,:")
 }
 
 func shellFieldsLookDestructive(fields []string) bool {

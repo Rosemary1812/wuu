@@ -2302,6 +2302,31 @@ func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
 	}
 }
 
+func TestToolkit_RunShellRejectsSensitivePathAccess(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, ".env"), "API_KEY=secret\n")
+
+	for _, command := range []string{"cat .env", "cat .env && echo done"} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "run_shell",
+			Arguments: `{"command":"` + command + `"}`,
+		})
+		if err == nil {
+			t.Fatalf("expected sensitive path rejection for %q", command)
+		}
+		if !strings.Contains(err.Error(), "sensitive paths") || !strings.Contains(err.Error(), "explicit secret handling") {
+			t.Fatalf("expected sensitive path guidance for %q, got: %v", command, err)
+		}
+		if strings.Contains(err.Error(), "API_KEY") || strings.Contains(err.Error(), "API_KEY=secret") {
+			t.Fatalf("run_shell sensitive path error leaked file content for %q: %v", command, err)
+		}
+	}
+}
+
 func TestToolkit_RunShellStructuredFailureOutput(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
