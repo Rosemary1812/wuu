@@ -708,7 +708,12 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	if rt.StreamRunner.APIModel != "gpt-5.5" {
 		t.Fatalf("APIModel = %q", rt.StreamRunner.APIModel)
 	}
-	for _, want := range []string{"# Harness Adapter", "Provider/model: openai/gpt-5.5", "tool-contract-driven"} {
+	for _, want := range []string{
+		"# Harness Adapter",
+		"Provider/model: openai/gpt-5.5",
+		"same product regardless of provider, model family, or BYOK backend",
+		"Do not choose direct work, subagents, or workflows based on provider/model family or brand.",
+	} {
 		if !strings.Contains(rt.BaseSystemPrompt, want) {
 			t.Fatalf("BaseSystemPrompt missing harness adapter text %q:\n%s", want, rt.BaseSystemPrompt)
 		}
@@ -730,7 +735,12 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 
 	prompt := rt.RefreshSystemPrompt("openai", "gpt-5-codex")
 
-	for _, want := range []string{"# Harness Adapter", "Provider/model: openai/gpt-5-codex", "tool-contract-driven", "Prefer concise answers."} {
+	for _, want := range []string{
+		"# Harness Adapter",
+		"Provider/model: openai/gpt-5-codex",
+		"same product regardless of provider, model family, or BYOK backend",
+		"Prefer concise answers.",
+	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("refreshed prompt missing %q:\n%s", want, prompt)
 		}

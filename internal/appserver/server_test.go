@@ -491,7 +491,7 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 		t.Fatalf("runtime APIModel not updated: %q", rt.StreamRunner.APIModel)
 	}
 	if !strings.Contains(rt.StreamRunner.SystemPrompt, "Provider/model: fake-provider/gpt-5.5") ||
-		!strings.Contains(rt.StreamRunner.SystemPrompt, "tool-contract-driven") ||
+		!strings.Contains(rt.StreamRunner.SystemPrompt, "same product regardless of provider, model family, or BYOK backend") ||
 		strings.Contains(rt.StreamRunner.SystemPrompt, "fake-model") {
 		t.Fatalf("runtime system prompt not rebuilt for model profile:\n%s", rt.StreamRunner.SystemPrompt)
 	}

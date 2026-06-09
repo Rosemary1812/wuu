@@ -5,45 +5,41 @@ import (
 	"testing"
 )
 
-func TestHarnessFamilyForModel(t *testing.T) {
-	tests := []struct {
-		provider string
-		model    string
-		want     HarnessFamily
-	}{
-		{provider: "anthropic", model: "claude-sonnet-4-5", want: HarnessFamilyClaude},
-		{provider: "openai", model: "gpt-5-codex", want: HarnessFamilyCodex},
-		{provider: "openai", model: "gpt-5.5", want: HarnessFamilyGPT},
-		{provider: "google", model: "gemini-2.5-pro", want: HarnessFamilyGemini},
-		{provider: "moonshot", model: "kimi-k2", want: HarnessFamilyKimi},
-		{provider: "custom", model: "local-model", want: HarnessFamilyPortable},
-	}
-	for _, tt := range tests {
-		if got := HarnessFamilyForModel(tt.provider, tt.model); got != tt.want {
-			t.Fatalf("HarnessFamilyForModel(%q, %q) = %s, want %s", tt.provider, tt.model, got, tt.want)
-		}
-	}
-}
-
-func TestHarnessAdapterTextSelectsModelFamilyGuidance(t *testing.T) {
+func TestHarnessAdapterTextUsesProviderAgnosticGuidance(t *testing.T) {
 	claude := HarnessAdapterText("anthropic", "claude-sonnet-4-5")
-	for _, want := range []string{"# Harness Adapter", "start_workflow", "driver=auto", "script driver", "run_workflow", "subagents"} {
-		if !strings.Contains(claude, want) {
-			t.Fatalf("claude adapter missing %q:\n%s", want, claude)
-		}
-	}
-
 	codex := HarnessAdapterText("openai", "gpt-5-codex")
-	for _, want := range []string{"tool-contract-driven", "start_workflow", "driver=auto", "lower-level workflow drivers", "review or goal tracking"} {
-		if !strings.Contains(codex, want) {
-			t.Fatalf("codex adapter missing %q:\n%s", want, codex)
-		}
-	}
+	local := HarnessAdapterText("ollama", "llama-coder")
 
-	portable := HarnessAdapterText("custom", "local-model")
-	for _, want := range []string{"portable harness path", "tool descriptions exactly", "start_workflow", "spawn_agent"} {
-		if !strings.Contains(portable, want) {
-			t.Fatalf("portable adapter missing %q:\n%s", want, portable)
+	for name, text := range map[string]string{
+		"claude": claude,
+		"codex":  codex,
+		"local":  local,
+	} {
+		for _, want := range []string{
+			"# Harness Adapter",
+			"same product regardless of provider, model family, or BYOK backend",
+			"natural-language agent loop as the unified entry point",
+			"Do not choose direct work, subagents, or workflows based on provider/model family or brand.",
+			"Choose execution shape from the user's task",
+			"Treat provider/model differences as compatibility details only",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("%s adapter missing %q:\n%s", name, want, text)
+			}
+		}
+
+		for _, forbidden := range []string{
+			"Profile family",
+			"Default write mode",
+			"script driver",
+			"tool-contract-driven",
+			"portable harness path",
+			"conservative local-model harness path",
+			"Follow the model-family guidance",
+		} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s adapter should not include family-specific guidance %q:\n%s", name, forbidden, text)
+			}
 		}
 	}
 }
