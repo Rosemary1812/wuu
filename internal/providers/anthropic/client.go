@@ -247,7 +247,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 }
 
 func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool) (anthropicRequest, error) {
-	normalized, err := providers.NormalizeAndValidateMessages(req.Messages)
+	normalized, err := providers.NormalizeAndValidateMessagesForModel(req.Model, req.Messages)
 	if err != nil {
 		return anthropicRequest{}, err
 	}

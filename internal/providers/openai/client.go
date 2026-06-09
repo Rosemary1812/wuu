@@ -137,13 +137,13 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
 
-	normalized, err := providers.NormalizeAndValidateMessages(req.Messages)
+	normalized, err := providers.NormalizeAndValidateMessagesForModel(req.Model, req.Messages)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
 	req.Messages = normalized
 	for _, msg := range req.Messages {
-		mapped := mapMessage(msg)
+		mapped := mapMessage(req.Model, msg)
 		if mapped.Role != "tool" && mapped.ToolCallID == "" {
 			if n := len(payload.Messages); n > 0 && payload.Messages[n-1].Role == mapped.Role && payload.Messages[n-1].ToolCallID == "" {
 				payload.Messages[n-1].Content = mergeContent(payload.Messages[n-1].Content, mapped.Content)
@@ -258,13 +258,13 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
-	normalized, err := providers.NormalizeAndValidateMessages(req.Messages)
+	normalized, err := providers.NormalizeAndValidateMessagesForModel(req.Model, req.Messages)
 	if err != nil {
 		return nil, err
 	}
 	req.Messages = normalized
 	for _, msg := range req.Messages {
-		mapped := mapMessage(msg)
+		mapped := mapMessage(req.Model, msg)
 		if mapped.Role != "tool" && mapped.ToolCallID == "" {
 			if n := len(payload.Messages); n > 0 && payload.Messages[n-1].Role == mapped.Role && payload.Messages[n-1].ToolCallID == "" {
 				payload.Messages[n-1].Content = mergeContent(payload.Messages[n-1].Content, mapped.Content)
@@ -550,12 +550,15 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 	}
 }
 
-func mapMessage(msg providers.ChatMessage) chatMessage {
+func mapMessage(model string, msg providers.ChatMessage) chatMessage {
 	mapped := chatMessage{
-		Role:             msg.Role,
-		Name:             msg.Name,
-		ToolCallID:       msg.ToolCallID,
-		ReasoningContent: msg.ReasoningContent,
+		Role:       msg.Role,
+		Name:       msg.Name,
+		ToolCallID: msg.ToolCallID,
+	}
+	if strings.EqualFold(msg.Role, "assistant") && (msg.ReasoningContent != "" || providers.IsDeepSeekModel(model)) {
+		reasoningContent := msg.ReasoningContent
+		mapped.ReasoningContent = &reasoningContent
 	}
 
 	if (len(msg.Images) > 0 || len(msg.Files) > 0) && strings.EqualFold(msg.Role, "user") {
@@ -879,7 +882,7 @@ type chatMessage struct {
 	Content          any        `json:"content,omitempty"`
 	Name             string     `json:"name,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
-	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ReasoningContent *string    `json:"reasoning_content,omitempty"`
 	ToolCalls        []toolCall `json:"tool_calls,omitempty"`
 }
 

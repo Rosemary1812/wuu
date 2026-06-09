@@ -319,6 +319,29 @@ func TestBuildAnthropicRequest_SmooshesSystemReminderIntoToolResult(t *testing.T
 	}
 }
 
+func TestBuildAnthropicRequest_ScrubsClaudeToolCallIDs(t *testing.T) {
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-opus-4.7",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "check repo"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{
+				{ID: "tool.1/2", Name: "git", Arguments: `{"subcommand":"status"}`},
+			}},
+			{Role: "tool", ToolCallID: "tool.1/2", Name: "git", Content: `{"exit_code":0}`},
+		},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+
+	if got := payload.Messages[1].Content[0].ID; got != "tool_1_2" {
+		t.Fatalf("tool_use id = %q", got)
+	}
+	if got := payload.Messages[2].Content[0].ToolUseID; got != "tool_1_2" {
+		t.Fatalf("tool_result id = %q", got)
+	}
+}
+
 func TestBuildAnthropicRequest_LeavesRegularUserTextOutsideToolResult(t *testing.T) {
 	payload, err := buildAnthropicRequest(providers.ChatRequest{
 		Model: "claude-test",

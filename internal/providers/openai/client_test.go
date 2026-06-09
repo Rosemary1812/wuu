@@ -588,6 +588,98 @@ func TestChat_SendsReasoningContentInAssistantToolCallMessage(t *testing.T) {
 	}
 }
 
+func TestChat_SendsEmptyReasoningContentForDeepSeekAssistantReplay(t *testing.T) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if len(body.Messages) != 2 {
+			t.Fatalf("expected 2 messages, got %d", len(body.Messages))
+		}
+		assistant := body.Messages[1]
+		value, exists := assistant["reasoning_content"]
+		if !exists || value != "" {
+			t.Fatalf("expected empty reasoning_content key, got exists=%v value=%#v body=%#v", exists, value, assistant)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "deepseek-v4",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "previous answer"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+func TestChat_AppliesMistralMessageCompatibility(t *testing.T) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Role       string `json:"role"`
+				Content    string `json:"content"`
+				ToolCallID string `json:"tool_call_id"`
+				ToolCalls  []struct {
+					ID string `json:"id"`
+				} `json:"tool_calls"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if len(body.Messages) != 5 {
+			t.Fatalf("expected assistant separator message, got %#v", body.Messages)
+		}
+		if body.Messages[1].ToolCalls[0].ID != "call12345" || body.Messages[2].ToolCallID != "call12345" {
+			t.Fatalf("expected scrubbed Mistral tool call IDs, got %#v", body.Messages)
+		}
+		if body.Messages[3].Role != "assistant" || body.Messages[3].Content != "Done." || body.Messages[4].Role != "user" {
+			t.Fatalf("expected Done separator before user, got %#v", body.Messages)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "mistral-large-latest",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_123456789_extra", Name: "read", Arguments: `{}`}}},
+			{Role: "tool", ToolCallID: "call_123456789_extra", Content: "ok"},
+			{Role: "user", Content: "next"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_ParsesReasoningContent(t *testing.T) {
 	t.Helper()
 

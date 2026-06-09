@@ -79,7 +79,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		return responsesRequest{}, errors.New("messages is required")
 	}
 
-	normalized, err := providers.NormalizeAndValidateMessages(req.Messages)
+	normalized, err := providers.NormalizeAndValidateMessagesForModel(req.Model, req.Messages)
 	if err != nil {
 		return responsesRequest{}, err
 	}
