@@ -246,6 +246,7 @@ type applyPatchHunkPlan struct {
 type applyPatchJournalManifest struct {
 	ID                      string                      `json:"id"`
 	CreatedAt               time.Time                   `json:"created_at"`
+	RestoredAt              time.Time                   `json:"restored_at,omitempty"`
 	Tool                    string                      `json:"tool"`
 	SessionID               string                      `json:"session_id,omitempty"`
 	AgentID                 string                      `json:"agent_id,omitempty"`
@@ -910,6 +911,21 @@ func writeApplyPatchJournalManifest(path string, manifest applyPatchJournalManif
 		return fmt.Errorf("replace patch journal manifest: %w", err)
 	}
 	return nil
+}
+
+func loadApplyPatchJournalManifest(path string) (applyPatchJournalManifest, error) {
+	var manifest applyPatchJournalManifest
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return manifest, fmt.Errorf("read patch journal manifest: %w", err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return manifest, fmt.Errorf("load patch journal manifest: %w", err)
+	}
+	if manifest.ManifestPath == "" {
+		manifest.ManifestPath = path
+	}
+	return manifest, nil
 }
 
 func (t *ApplyPatchTool) rejectSensitivePatchPath(absPath, action string) error {

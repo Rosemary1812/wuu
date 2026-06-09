@@ -1251,6 +1251,190 @@ func TestToolkit_CheckpointCreateListRestore(t *testing.T) {
 	}
 }
 
+func TestToolkit_CheckpointRestorePatchJournal(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+	sessionDir := filepath.Join(t.TempDir(), "session")
+	kit.SetSessionDir(sessionDir)
+	changed := map[string]int{}
+	kit.SetOnFileChanged(func(absPath string) {
+		changed[kit.env.NormalizeDisplayPath(absPath)]++
+	})
+
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "before\n")
+	patchText := `*** Begin Patch
+*** Update File: a.txt
+@@
+-before
++after
+*** Add File: scratch.txt
++temporary
+*** End Patch`
+	args, err := json.Marshal(map[string]any{
+		"patchText": patchText,
+		"expected_old_shas": map[string]string{
+			"a.txt": formatFileSHA(sha256Hex([]byte("before\n"))),
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal patch args: %v", err)
+	}
+	patchResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	})
+	if err != nil {
+		t.Fatalf("apply_patch: %v", err)
+	}
+	var patched struct {
+		PatchJournalPath string `json:"patch_journal_path"`
+	}
+	if err := json.Unmarshal([]byte(patchResp), &patched); err != nil {
+		t.Fatalf("parse apply_patch response: %v\n%s", err, patchResp)
+	}
+	if patched.PatchJournalPath == "" {
+		t.Fatalf("apply_patch response missing patch journal path: %s", patchResp)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "after\n" {
+		t.Fatalf("fixture patch did not update a.txt: %q", got)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "scratch.txt")); got != "temporary\n" {
+		t.Fatalf("fixture patch did not create scratch.txt: %q", got)
+	}
+
+	restoreArgs, err := json.Marshal(map[string]any{
+		"action":             "restore_patch_journal",
+		"patch_journal_path": patched.PatchJournalPath,
+		"reason":             "rollback applied patch",
+	})
+	if err != nil {
+		t.Fatalf("marshal restore args: %v", err)
+	}
+	restoreResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "checkpoint",
+		Arguments: string(restoreArgs),
+	})
+	if err != nil {
+		t.Fatalf("restore patch journal: %v", err)
+	}
+	var restored struct {
+		Action            string                    `json:"action"`
+		PatchJournalPath  string                    `json:"patch_journal_path"`
+		ManifestPath      string                    `json:"manifest_path"`
+		WorkspaceRevision string                    `json:"workspace_revision"`
+		RestoredFiles     []checkpointRestoreResult `json:"restored_files"`
+		PatchJournal      applyPatchJournalManifest `json:"patch_journal"`
+	}
+	if err := json.Unmarshal([]byte(restoreResp), &restored); err != nil {
+		t.Fatalf("parse restore response: %v\n%s", err, restoreResp)
+	}
+	if restored.Action != "restore_patch_journal" || restored.PatchJournalPath != patched.PatchJournalPath ||
+		restored.ManifestPath != patched.PatchJournalPath || len(restored.RestoredFiles) != 2 ||
+		!strings.HasPrefix(restored.WorkspaceRevision, "fs:worktree:") || restored.PatchJournal.RestoredAt.IsZero() {
+		t.Fatalf("unexpected restore response: %+v", restored)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "before\n" {
+		t.Fatalf("patch journal restore did not restore a.txt: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "scratch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("patch journal restore should remove scratch.txt, stat err=%v", err)
+	}
+	if changed["a.txt"] == 0 || changed["scratch.txt"] == 0 {
+		t.Fatalf("restore should notify changed paths, got %+v", changed)
+	}
+
+	var manifest applyPatchJournalManifest
+	data, err := os.ReadFile(patched.PatchJournalPath)
+	if err != nil {
+		t.Fatalf("read patch journal manifest: %v", err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("parse restored journal manifest: %v\n%s", err, data)
+	}
+	if manifest.RestoredAt.IsZero() {
+		t.Fatalf("patch journal manifest should be marked restored: %+v", manifest)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 2 || !containsString(records[1].ArtifactRefs, patched.PatchJournalPath) {
+		t.Fatalf("restore telemetry missing patch journal artifact: %+v", records)
+	}
+}
+
+func TestToolkit_CheckpointRestorePatchJournalRejectsExternalSnapshot(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+	kit.SetSessionDir(filepath.Join(t.TempDir(), "session"))
+
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "before\n")
+	patchText := `*** Begin Patch
+*** Update File: a.txt
+@@
+-before
++after
+*** End Patch`
+	args, err := json.Marshal(map[string]any{
+		"patchText": patchText,
+		"expected_old_shas": map[string]string{
+			"a.txt": formatFileSHA(sha256Hex([]byte("before\n"))),
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal patch args: %v", err)
+	}
+	patchResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	})
+	if err != nil {
+		t.Fatalf("apply_patch: %v", err)
+	}
+	var patched struct {
+		PatchJournalPath string `json:"patch_journal_path"`
+	}
+	if err := json.Unmarshal([]byte(patchResp), &patched); err != nil {
+		t.Fatalf("parse apply_patch response: %v\n%s", err, patchResp)
+	}
+	manifest, err := loadApplyPatchJournalManifest(patched.PatchJournalPath)
+	if err != nil {
+		t.Fatalf("load patch journal: %v", err)
+	}
+	if len(manifest.Snapshots) == 0 {
+		t.Fatalf("patch journal missing snapshots: %+v", manifest)
+	}
+	externalSnapshot := filepath.Join(t.TempDir(), "outside.snapshot")
+	mustWriteFile(t, externalSnapshot, "leaked\n")
+	manifest.Snapshots[0].SnapshotPath = externalSnapshot
+	if err := writeApplyPatchJournalManifest(patched.PatchJournalPath, manifest); err != nil {
+		t.Fatalf("rewrite patch journal: %v", err)
+	}
+
+	restoreArgs, err := json.Marshal(map[string]any{
+		"action":             "restore_patch_journal",
+		"patch_journal_path": patched.PatchJournalPath,
+	})
+	if err != nil {
+		t.Fatalf("marshal restore args: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "checkpoint",
+		Arguments: string(restoreArgs),
+	})
+	if err == nil || !strings.Contains(err.Error(), "outside the journal files directory") {
+		t.Fatalf("expected external snapshot rejection, got: %v", err)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "after\n" {
+		t.Fatalf("failed restore should not mutate workspace: %q", got)
+	}
+}
+
 func TestToolkit_ListFilesRejectsFile(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
