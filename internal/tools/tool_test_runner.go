@@ -132,8 +132,20 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		failureSummary.Failed = true
 	}
 	failed := shellResult.ExitCode != 0 || shellResult.TimedOut || failureSummary.Failed
-	t.env.RecordTestRun(commandHash, revision, failed)
 	fullLogRef, fullLogBytes, fullLogErr := persistRunTestLog(t.env.SessionDir, commandHash, scope, args.Purpose, shellResult)
+	t.env.RecordTestRunResult(testRunEntry{
+		CommandHash:    commandHash,
+		Revision:       revision,
+		Failed:         failed,
+		Command:        command,
+		Scope:          scope,
+		Purpose:        args.Purpose,
+		ExitCode:       shellResult.ExitCode,
+		TimedOut:       shellResult.TimedOut,
+		DurationMS:     shellResult.DurationMS,
+		FailureSummary: failureSummary,
+		FullLogRef:     fullLogRef,
+	})
 	result := map[string]any{
 		"command":            shellResult.Command,
 		"scope":              scope,

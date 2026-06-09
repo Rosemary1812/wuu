@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 
@@ -2129,6 +2130,80 @@ func TestBroken(t *testing.T) {
 	}
 	if len(got.Suggestions) == 0 || !strings.Contains(strings.Join(got.Suggestions, " "), "hypothesis") {
 		t.Fatalf("failed run_test response missing debug suggestion: %+v", got.Suggestions)
+	}
+}
+
+func TestToolkit_RunTestFailureContextBlockTracksStaleness(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/failure-context\n\ngo 1.22\n")
+	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package failurecontext
+
+import "testing"
+
+func TestBroken(t *testing.T) {
+	t.Fatalf("expected 1 got 2 API_KEY=secret-value-1234567890")
+}
+`)
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	sessionDir := filepath.Join(t.TempDir(), "session")
+	kit.SetSessionDir(sessionDir)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"go test ./...","scope":"targeted","purpose":"capture failure context API_KEY=secret-value-1234567890"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_test should return failed test output, not tool error: %v", err)
+	}
+	if !strings.Contains(resp, "[REDACTED]") {
+		t.Fatalf("run_test response should redact secret-like output: %s", resp)
+	}
+
+	block, ok := kit.TestFailureContextBlock()
+	if !ok {
+		t.Fatal("expected test failure context block")
+	}
+	if block.Kind != wuucontext.BlockTestFailures || block.Source != "run_test" {
+		t.Fatalf("unexpected context block metadata: %+v", block)
+	}
+	if !strings.Contains(block.Content, "status: current") ||
+		!strings.Contains(block.Content, "command: go test ./...") ||
+		!strings.Contains(block.Content, "scope: targeted") ||
+		!strings.Contains(block.Content, "purpose: capture failure context API_KEY=[REDACTED]") ||
+		!strings.Contains(block.Content, "failure_revision: fs:worktree:") ||
+		!strings.Contains(block.Content, "current_revision: fs:worktree:") ||
+		!strings.Contains(block.Content, "full_log_ref: "+sessionDir) ||
+		!strings.Contains(block.Content, "failing_tests:\n- TestBroken") ||
+		!strings.Contains(block.Content, "next_suggestion: inspect implicated files") {
+		t.Fatalf("unexpected current failure context:\n%s", block.Content)
+	}
+	if strings.Contains(block.Content, "secret-value") {
+		t.Fatalf("failure context should redact secret-like text:\n%s", block.Content)
+	}
+
+	blocks := kit.ContextBlocks()
+	found := false
+	for _, candidate := range blocks {
+		if candidate.Kind == wuucontext.BlockTestFailures {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ContextBlocks missing TEST_FAILURES block: %+v", blocks)
+	}
+
+	mustWriteFile(t, filepath.Join(root, "pkg.go"), "package failurecontext\n")
+	block, ok = kit.TestFailureContextBlock()
+	if !ok {
+		t.Fatal("expected stale test failure context block")
+	}
+	if !strings.Contains(block.Content, "status: possibly_stale") ||
+		!strings.Contains(block.Content, "next_suggestion: workspace changed since this failure") {
+		t.Fatalf("unexpected stale failure context:\n%s", block.Content)
 	}
 }
 

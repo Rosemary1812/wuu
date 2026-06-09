@@ -726,7 +726,7 @@ func toolkitContextBlockProvider(toolkit *tools.Toolkit) func() []wuucontext.Blo
 	if toolkit == nil {
 		return nil
 	}
-	return toolkit.PlanContextBlocks
+	return toolkit.ContextBlocks
 }
 
 func setupCatwalk(cfg config.Config) {

@@ -109,6 +109,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	env := *t.env
 	env.RootDir = abs
 	env.readState = nil
+	env.testState = testRunState{}
 	env.planState = planState{}
 	env.toolTelemetry = toolTelemetry{}
 

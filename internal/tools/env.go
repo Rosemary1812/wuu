@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
@@ -56,9 +57,18 @@ func (r *readFileState) getEntry(absPath string) (ReadFileEntry, bool) {
 }
 
 type testRunEntry struct {
-	CommandHash string
-	Revision    string
-	Failed      bool
+	CommandHash    string
+	Revision       string
+	Failed         bool
+	Command        string
+	Scope          string
+	Purpose        string
+	ExitCode       int
+	TimedOut       bool
+	DurationMS     int64
+	FailureSummary testFailureSummary
+	FullLogRef     string
+	CreatedAt      time.Time
 }
 
 type testRunState struct {
@@ -70,13 +80,24 @@ func (s *testRunState) record(commandHash, revision string, failed bool) {
 	if commandHash == "" || revision == "" {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.records = append(s.records, testRunEntry{
+	s.recordEntry(testRunEntry{
 		CommandHash: commandHash,
 		Revision:    revision,
 		Failed:      failed,
+		CreatedAt:   time.Now().UTC(),
 	})
+}
+
+func (s *testRunState) recordEntry(entry testRunEntry) {
+	if entry.CommandHash == "" || entry.Revision == "" {
+		return
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, entry)
 }
 
 func (s *testRunState) consecutiveFailures(commandHash, revision string) int {
@@ -97,6 +118,17 @@ func (s *testRunState) consecutiveFailures(commandHash, revision string) int {
 		count++
 	}
 	return count
+}
+
+func (s *testRunState) latestFailure() (testRunEntry, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := len(s.records) - 1; i >= 0; i-- {
+		if s.records[i].Failed {
+			return s.records[i], true
+		}
+	}
+	return testRunEntry{}, false
 }
 
 // Env holds shared runtime state that individual tools receive at
@@ -179,8 +211,16 @@ func (e *Env) RecordTestRun(commandHash, revision string, failed bool) {
 	e.testState.record(commandHash, revision, failed)
 }
 
+func (e *Env) RecordTestRunResult(entry testRunEntry) {
+	e.testState.recordEntry(entry)
+}
+
 func (e *Env) ConsecutiveTestFailures(commandHash, revision string) int {
 	return e.testState.consecutiveFailures(commandHash, revision)
+}
+
+func (e *Env) LatestTestFailure() (testRunEntry, bool) {
+	return e.testState.latestFailure()
 }
 
 // ResolvePath resolves a user-supplied relative or absolute path to
