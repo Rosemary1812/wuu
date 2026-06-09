@@ -501,6 +501,8 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 	}
 
 	return mustJSON(map[string]any{
+		"driver":             "script",
+		"entrypoint":         "natural_language_agent",
 		"run_id":             run.ID,
 		"status":             run.Status,
 		"definition_name":    run.DefinitionName,
@@ -710,6 +712,8 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	}
 
 	return mustJSON(map[string]any{
+		"driver":             "agent_managed",
+		"entrypoint":         "natural_language_agent",
 		"run_id":             run.ID,
 		"status":             run.Status,
 		"definition_name":    run.DefinitionName,
