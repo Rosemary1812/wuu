@@ -115,7 +115,12 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 	commandHash := sha256Hex([]byte(command))
 	previousFailures := t.env.ConsecutiveTestFailures(commandHash, revision)
 	if revision != "" && previousFailures >= maxRepeatedRunTestFailures {
-		return "", fmt.Errorf("run_test refuses to rerun the same command after %d failed attempts at unchanged workspace revision. Change code, narrow the command, or inspect failure_summary before rerunning", previousFailures)
+		return "", repeatedRunTestFailureError{
+			PreviousFailures: previousFailures,
+			MaxFailures:      maxRepeatedRunTestFailures,
+			Revision:         revision,
+			CommandHash:      commandHash,
+		}
 	}
 
 	shellResult, err := executeShellCommand(ctx, t.env, command, timeout)
@@ -177,6 +182,25 @@ func persistRunTestLog(sessionDir, commandHash, scope, purpose string, shellResu
 		return "", 0, evalSafeToolError(err)
 	}
 	return path, len(content), ""
+}
+
+type repeatedRunTestFailureError struct {
+	PreviousFailures int
+	MaxFailures      int
+	Revision         string
+	CommandHash      string
+}
+
+func (e repeatedRunTestFailureError) Error() string {
+	return fmt.Sprintf(
+		"run_test blocked repeated failing command: error_kind=repeated_failure_same_revision previous_failed_runs=%d max_failed_runs_without_revision_change=%d workspace_revision=%s command_hash=%s safe_retry=%q model_next_action=%q",
+		e.PreviousFailures,
+		e.MaxFailures,
+		e.Revision,
+		commandHashPrefix(e.CommandHash),
+		"change code, narrow the command, or inspect failure_summary/full_log_ref before rerunning",
+		"read the latest failure evidence, form a new hypothesis, patch minimally, then rerun targeted verification after the workspace revision changes",
+	)
 }
 
 func commandHashPrefix(commandHash string) string {

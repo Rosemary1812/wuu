@@ -1950,7 +1950,11 @@ func TestBroken(t *testing.T) {
 		}
 	}
 	_, err = kit.Execute(context.Background(), call)
-	if err == nil || !strings.Contains(err.Error(), "unchanged workspace revision") {
+	if err == nil || !strings.Contains(err.Error(), "error_kind=repeated_failure_same_revision") ||
+		!strings.Contains(err.Error(), "workspace_revision=") ||
+		!strings.Contains(err.Error(), "command_hash=") ||
+		!strings.Contains(err.Error(), "safe_retry=") ||
+		!strings.Contains(err.Error(), "model_next_action=") {
 		t.Fatalf("expected repeated failure guard, got: %v", err)
 	}
 
