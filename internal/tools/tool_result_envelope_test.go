@@ -21,7 +21,8 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 		RevisionBefore:       "git:before:worktree:aaa",
 		RevisionAfter:        "git:after:worktree:bbb",
 		Success:              false,
-		Error:                "authorization: bearer secret-token",
+		Error:                "authorization: bearer secret-token error_kind=approval_required",
+		ErrorKind:            "approval_required",
 		RawOutputBytes:       1024,
 		ReturnedOutputBytes:  256,
 		ResultBudgeted:       true,
@@ -49,6 +50,9 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"error_present":true`) {
 		t.Fatalf("envelope should retain error presence without raw error: %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"error_kind":"approval_required"`) {
+		t.Fatalf("envelope should include error kind: %s", string(raw))
 	}
 	if !strings.Contains(string(raw), `"revision_before":"git:before:worktree:aaa"`) || !strings.Contains(string(raw), `"revision_after":"git:after:worktree:bbb"`) {
 		t.Fatalf("envelope should include revisions: %s", string(raw))

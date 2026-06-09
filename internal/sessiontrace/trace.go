@@ -72,6 +72,7 @@ type ToolSummary struct {
 	ByKind         map[string]int `json:"by_kind,omitempty"`
 	ByRisk         map[string]int `json:"by_risk,omitempty"`
 	ByPolicyAction map[string]int `json:"by_policy_action,omitempty"`
+	ByErrorKind    map[string]int `json:"by_error_kind,omitempty"`
 }
 
 func Path(sessionDir string) string {
@@ -170,6 +171,7 @@ func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
 			ByKind:         map[string]int{},
 			ByRisk:         map[string]int{},
 			ByPolicyAction: map[string]int{},
+			ByErrorKind:    map[string]int{},
 		}
 	}
 	summary.ToolSummary.Total++
@@ -186,6 +188,9 @@ func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
 	}
 	if action := strings.TrimSpace(string(record.PolicyAction)); action != "" {
 		summary.ToolSummary.ByPolicyAction[action]++
+	}
+	if errorKind := strings.TrimSpace(record.ErrorKind); errorKind != "" {
+		summary.ToolSummary.ByErrorKind[errorKind]++
 	}
 }
 

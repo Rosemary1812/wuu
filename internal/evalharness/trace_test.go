@@ -195,6 +195,7 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				Kind:         "shell",
 				Risk:         "high",
 				PolicyAction: "deny",
+				ErrorKind:    "policy_denied",
 				Success:      false,
 			}},
 			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", Status: "completed"}},
@@ -231,7 +232,10 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if summary.ToolSummary == nil || summary.ToolSummary.Total != 2 || summary.ToolSummary.Succeeded != 1 || summary.ToolSummary.Failed != 1 {
 		t.Fatalf("replay missing tool summary: %+v", summary.ToolSummary)
 	}
-	if summary.ToolSummary.ByKind["file"] != 1 || summary.ToolSummary.ByRisk["high"] != 1 || summary.ToolSummary.ByPolicyAction["deny"] != 1 {
+	if summary.ToolSummary.ByKind["file"] != 1 ||
+		summary.ToolSummary.ByRisk["high"] != 1 ||
+		summary.ToolSummary.ByPolicyAction["deny"] != 1 ||
+		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 {
 		t.Fatalf("replay tool summary missing dimensions: %+v", summary.ToolSummary)
 	}
 	if len(summary.WorkflowRunIDs) != 1 || summary.WorkflowRunIDs[0] != "run-1" {

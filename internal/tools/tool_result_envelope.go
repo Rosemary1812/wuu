@@ -29,6 +29,7 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 			"returned_output_bytes": record.ReturnedOutputBytes,
 			"result_budgeted":       record.ResultBudgeted,
 			"error_present":         record.Error != "",
+			"error_kind":            record.ErrorKind,
 		},
 		DataRef:   record.ResultRef,
 		Truncated: record.ResultBudgeted && record.ResultRef == "",

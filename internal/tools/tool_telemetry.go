@@ -44,6 +44,7 @@ type ToolExecutionRecord struct {
 	RevisionAfter        string           `json:"revision_after,omitempty"`
 	Success              bool             `json:"success"`
 	Error                string           `json:"error,omitempty"`
+	ErrorKind            string           `json:"error_kind,omitempty"`
 	RawOutputBytes       int              `json:"raw_output_bytes"`
 	ReturnedOutputBytes  int              `json:"returned_output_bytes"`
 	ResultBudgeted       bool             `json:"result_budgeted"`
@@ -167,6 +168,7 @@ func (t *Toolkit) recordToolExecution(
 	}
 	if err != nil {
 		record.Error = err.Error()
+		record.ErrorKind = extractToolErrorKind(record.Error)
 	}
 	t.env.toolTelemetry.record(record)
 }
@@ -256,6 +258,39 @@ func appendUniqueString(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
+}
+
+func extractToolErrorKind(message string) string {
+	const marker = "error_kind="
+	idx := strings.Index(message, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := message[idx+len(marker):]
+	if rest == "" {
+		return ""
+	}
+	if rest[0] == '"' || rest[0] == '\'' {
+		quote := rest[0]
+		rest = rest[1:]
+		end := strings.IndexByte(rest, quote)
+		if end >= 0 {
+			return strings.TrimSpace(rest[:end])
+		}
+	}
+	end := 0
+	for end < len(rest) {
+		ch := rest[end]
+		if (ch >= 'a' && ch <= 'z') ||
+			(ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') ||
+			ch == '_' || ch == '-' {
+			end++
+			continue
+		}
+		break
+	}
+	return strings.TrimSpace(rest[:end])
 }
 
 func extractToolArtifactRefs(result, resultRef string) []string {

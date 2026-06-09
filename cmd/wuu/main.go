@@ -1013,6 +1013,7 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			RevisionAfter:        record.RevisionAfter,
 			Success:              record.Success,
 			Error:                evalSafePreview(record.Error, evalTextPreviewLimit),
+			ErrorKind:            record.ErrorKind,
 			RawOutputBytes:       record.RawOutputBytes,
 			ReturnedOutputBytes:  record.ReturnedOutputBytes,
 			ResultBudgeted:       record.ResultBudgeted,

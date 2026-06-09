@@ -3418,7 +3418,7 @@ func TestToolkit_ToolPolicy_DeniesByRisk(t *testing.T) {
 	if record.Name != "run_shell" || record.Risk != ToolRiskHigh || record.PolicyAction != ToolPolicyDeny {
 		t.Fatalf("unexpected policy record: %+v", record)
 	}
-	if record.Success || record.Error == "" || record.RawOutputBytes != 0 || record.ReturnedOutputBytes != 0 {
+	if record.Success || record.Error == "" || record.ErrorKind != "policy_denied" || record.RawOutputBytes != 0 || record.ReturnedOutputBytes != 0 {
 		t.Fatalf("denied tool should be recorded as failed without output: %+v", record)
 	}
 	envelope := record.ResultEnvelope()
@@ -3572,6 +3572,9 @@ func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
 		t.Fatalf("expected 1 telemetry record, got %d", len(records))
 	}
 	record := records[0]
+	if record.ErrorKind != "approval_required" {
+		t.Fatalf("approval-required record missing error kind: %+v", record)
+	}
 	if record.ApprovalRef == "" {
 		t.Fatalf("approval-required record missing approval ref: %+v", record)
 	}
@@ -3600,7 +3603,9 @@ func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
 		t.Fatalf("approval policy envelope missing approval ref: %+v", envelope)
 	}
 	block, ok := kit.ToolResultSummaryContextBlock()
-	if !ok || !strings.Contains(block.Content, "approval_ref=$SESSION_DIR/approvals/call-shell.json") {
+	if !ok ||
+		!strings.Contains(block.Content, "error_kind=approval_required") ||
+		!strings.Contains(block.Content, "approval_ref=$SESSION_DIR/approvals/call-shell.json") {
 		t.Fatalf("tool result context missing approval ref:\n%s", block.Content)
 	}
 }

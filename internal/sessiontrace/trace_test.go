@@ -70,6 +70,7 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 			Kind:         tools.ToolKindShell,
 			Risk:         tools.ToolRiskHigh,
 			PolicyAction: tools.ToolPolicyDeny,
+			ErrorKind:    "policy_denied",
 			Success:      false,
 		}},
 	); err != nil {
@@ -97,7 +98,8 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	}
 	if summary.ToolSummary.ByKind[string(tools.ToolKindShell)] != 1 ||
 		summary.ToolSummary.ByRisk[string(tools.ToolRiskHigh)] != 1 ||
-		summary.ToolSummary.ByPolicyAction[string(tools.ToolPolicyDeny)] != 1 {
+		summary.ToolSummary.ByPolicyAction[string(tools.ToolPolicyDeny)] != 1 ||
+		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 {
 		t.Fatalf("tool summary dimensions missing: %+v", summary.ToolSummary)
 	}
 	if summary.Final == nil || summary.Final.Status != "completed" || summary.Final.FinalAnswerPreview != "done" {

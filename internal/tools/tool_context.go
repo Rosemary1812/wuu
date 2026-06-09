@@ -362,6 +362,9 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 			fmt.Fprintf(&b, " artifact_refs=%s", strings.Join(redactedContextArtifactRefs(t.env, record.ArtifactRefs, 4), ","))
 		}
 		if strings.TrimSpace(record.Error) != "" {
+			if record.ErrorKind != "" {
+				fmt.Fprintf(&b, " error_kind=%s", compactContextLine(redactToolOutput(record.ErrorKind)))
+			}
 			fmt.Fprintf(&b, " error=%s", compactContextLine(redactToolOutput(record.Error)))
 		}
 		b.WriteString("\n")

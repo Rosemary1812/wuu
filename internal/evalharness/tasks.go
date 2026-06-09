@@ -162,6 +162,7 @@ type ToolObservation struct {
 	RevisionAfter        string               `json:"revision_after,omitempty"`
 	Success              bool                 `json:"success"`
 	Error                string               `json:"error,omitempty"`
+	ErrorKind            string               `json:"error_kind,omitempty"`
 	RawOutputBytes       int                  `json:"raw_output_bytes,omitempty"`
 	ReturnedOutputBytes  int                  `json:"returned_output_bytes,omitempty"`
 	ResultBudgeted       bool                 `json:"result_budgeted,omitempty"`

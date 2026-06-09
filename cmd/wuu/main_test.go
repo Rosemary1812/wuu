@@ -351,6 +351,7 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 		RevisionAfter:        "git:after:worktree:bbb",
 		Success:              false,
 		Error:                "authorization: bearer abc123",
+		ErrorKind:            "approval_required",
 		RawOutputBytes:       1024,
 		ReturnedOutputBytes:  256,
 		ResultBudgeted:       true,
@@ -378,6 +379,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	if strings.Contains(got[0].Error, "abc123") {
 		t.Fatalf("error secret leaked: %q", got[0].Error)
 	}
+	if got[0].ErrorKind != "approval_required" {
+		t.Fatalf("error kind not preserved: %+v", got[0])
+	}
 	if got[0].ResultRef != records[0].ResultRef {
 		t.Fatalf("result ref not preserved: %+v", got[0])
 	}
@@ -399,6 +403,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if got[0].ResultEnvelope.Data["approval_ref"] != records[0].ApprovalRef {
 		t.Fatalf("result envelope missing approval ref: %+v", got[0].ResultEnvelope)
+	}
+	if got[0].ResultEnvelope.Data["error_kind"] != records[0].ErrorKind {
+		t.Fatalf("result envelope missing error kind: %+v", got[0].ResultEnvelope)
 	}
 	rawEnvelope, err := json.Marshal(got[0].ResultEnvelope)
 	if err != nil {

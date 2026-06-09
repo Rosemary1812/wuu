@@ -77,6 +77,7 @@ type ToolReplaySummary struct {
 	ByKind         map[string]int `json:"by_kind,omitempty"`
 	ByRisk         map[string]int `json:"by_risk,omitempty"`
 	ByPolicyAction map[string]int `json:"by_policy_action,omitempty"`
+	ByErrorKind    map[string]int `json:"by_error_kind,omitempty"`
 }
 
 type TraceReplayFinal struct {
@@ -327,6 +328,7 @@ func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
 			ByKind:         map[string]int{},
 			ByRisk:         map[string]int{},
 			ByPolicyAction: map[string]int{},
+			ByErrorKind:    map[string]int{},
 		}
 	}
 	summary.ToolSummary.Total++
@@ -343,5 +345,8 @@ func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
 	}
 	if action := strings.TrimSpace(record.PolicyAction); action != "" {
 		summary.ToolSummary.ByPolicyAction[action]++
+	}
+	if errorKind := strings.TrimSpace(record.ErrorKind); errorKind != "" {
+		summary.ToolSummary.ByErrorKind[errorKind]++
 	}
 }
