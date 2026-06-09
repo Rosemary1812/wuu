@@ -4621,6 +4621,11 @@ func TestToolkit_SpawnAgentDefinitionIncludesForkTurnsAndAgentProfile(t *testing
 		if _, ok := props["agent_profile"]; !ok {
 			t.Fatalf("spawn_agent schema must expose agent_profile: %#v", d.InputSchema)
 		}
+		agentType, _ := props["agent_type"].(map[string]any)
+		enum, _ := agentType["enum"].([]string)
+		if !reflect.DeepEqual(enum, []string{"worker", "research", "verification"}) {
+			t.Fatalf("spawn_agent agent_type enum = %#v, want worker/research/verification", agentType["enum"])
+		}
 		return
 	}
 	t.Fatal("spawn_agent must be present in tool definitions")
@@ -4671,6 +4676,8 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"Preserve fork_turns='all'",
 			"user intent",
 			"prior analysis",
+			"research",
+			"verification",
 			"Ordinary child agents are memoryless",
 			"agent_profile",
 		} {
@@ -4680,6 +4687,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
+			"agent_type":    {"worker", "research", "verification"},
 			"message":       {"Concrete task brief", "Base Agent Brief Contract", "acceptance criteria", "fully self-contained"},
 			"agent_profile": {"durable Agent Profile", "memory-bearing agent", "workflow/profile policy", "ordinary memoryless child tasks"},
 			"isolation":     {"destructive or broad experiments", "overlapping or uncertain concurrent writes", "explicit sandbox requests"},

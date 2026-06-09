@@ -56,12 +56,14 @@ func TestResearchPreset_OutputShape(t *testing.T) {
 	}
 }
 
-func TestSystemPromptPreamble_ContainsOrchestrationRules(t *testing.T) {
+func TestSystemPromptPreamble_ContainsAgentToolRules(t *testing.T) {
 	preamble := SystemPromptPreamble()
 	for _, want := range []string{
-		"orchestration",
+		"optional Agent tool",
+		"main agent owns the user conversation",
 		"worker",
-		"spawn_agent",
+		"research",
+		"verification",
 		"fork_turns",
 		"send_message",
 		"followup_task",
@@ -69,8 +71,11 @@ func TestSystemPromptPreamble_ContainsOrchestrationRules(t *testing.T) {
 		"parallel",
 	} {
 		if !strings.Contains(preamble, want) {
-			t.Errorf("SystemPromptPreamble missing orchestration concept %q", want)
+			t.Errorf("SystemPromptPreamble missing agent-tool concept %q", want)
 		}
+	}
+	if strings.Contains(preamble, "You are an orchestration agent") {
+		t.Fatalf("SystemPromptPreamble should not make orchestration the main identity:\n%s", preamble)
 	}
 }
 
@@ -117,7 +122,7 @@ func TestSystemPromptPreamble_ContainsDelegationDiscipline(t *testing.T) {
 	preamble := SystemPromptPreamble()
 	for _, want := range []string{
 		"trivial tasks",
-		"higher-level work",
+		"delegation materially improves",
 		"critical path",
 		"blocks your immediate next step",
 	} {

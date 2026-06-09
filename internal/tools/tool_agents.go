@@ -33,14 +33,14 @@ func (t *SpawnAgentTool) IsConcurrencySafe() bool { return true }
 func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "spawn_agent",
-		Description: "Spawn a named child agent to work on a focused task. If your current task is " +
+		Description: "Spawn a named child agent to work on a focused task. Available agent_type values: " +
+			"worker for general implementation/testing/exploration, research for read-only codebase investigation, " +
+			"and verification for read-only adversarial review. If your current task is " +
 			"/root/task1 and you spawn task_name='task_3', the child has canonical task name " +
 			"/root/task1/task_3 and can be addressed as task_3 from the current agent or by its " +
 			"canonical path from elsewhere. The child has its own context, the same tool " +
-			"tool set, and can spawn its own sub-agents. It can message you and other running " +
-			"agents, and its final answer is delivered to you when it finishes. There is exactly " +
-			"one worker type, 'worker'; specialized roles (verification, read-only research) are " +
-			"injected by pasting the appropriate preset block at the start of the prompt. " +
+			"tool set, and can message you and other running agents. Its final answer is delivered " +
+			"to you when it finishes. " +
 			"Use a child only when delegation materially improves the task: independent investigation, " +
 			"parallel implementation slices, risky verification, or work that benefits from a separate context. " +
 			"Ordinary child agents are memoryless. Set agent_profile only when the user asks to wake or use a named " +
@@ -83,7 +83,8 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"agent_type": map[string]any{
 					"type":        "string",
-					"description": "Worker type. Only 'worker' is supported; omit to use the default.",
+					"enum":        []string{"worker", "research", "verification"},
+					"description": "Child agent type. Use 'worker' for general implementation/testing/exploration, 'research' for read-only investigation, or 'verification' for read-only adversarial review. Omit to use 'worker'.",
 				},
 				"agent_profile": map[string]any{
 					"type":        "string",
