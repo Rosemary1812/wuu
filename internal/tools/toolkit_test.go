@@ -2074,6 +2074,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "checkpoint", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "ast_search", kind: ToolKindSearch, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
+		{name: "semantic_search", kind: ToolKindSearch, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "run_test", kind: ToolKindTest, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
@@ -4629,6 +4630,71 @@ func TestToolkit_ASTSearchFindsDefinitionsImportsAndCalls(t *testing.T) {
 	}
 	if len(callParsed.Matches) != 1 || callParsed.Matches[0].File != "main.go" || callParsed.Matches[0].Line != 10 || callParsed.Matches[0].Kind != "call" {
 		t.Fatalf("unexpected call matches: %+v", callParsed.Matches)
+	}
+}
+
+func TestToolkit_SemanticSearchRanksConceptCandidates(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "checkout", "discount.go"), `package checkout
+
+// CartDiscountTotal computes the final checkout total after promo discounts.
+func CartDiscountTotal(subtotalCents int, discountCents int) int {
+	return subtotalCents - discountCents
+}
+`)
+	mustWriteFile(t, filepath.Join(root, "auth", "session.go"), `package auth
+
+func ExpireSession() {}
+`)
+	mustWriteFile(t, filepath.Join(root, ".env"), "CHECKOUT_DISCOUNT_TOTAL=secret\n")
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "semantic_search",
+		Arguments: `{"query":"checkout discount total","include":"*.go","max_results":5}`,
+	})
+	if err != nil {
+		t.Fatalf("semantic_search: %v", err)
+	}
+	if strings.Contains(resp, "secret") || strings.Contains(resp, ".env") {
+		t.Fatalf("semantic_search response leaked sensitive path/content: %s", resp)
+	}
+	var parsed struct {
+		Query             string                `json:"query"`
+		Terms             []string              `json:"terms"`
+		WorkspaceRevision string                `json:"workspace_revision"`
+		Total             int                   `json:"total"`
+		Returned          int                   `json:"returned"`
+		Matches           []semanticSearchMatch `json:"matches"`
+		Suggestions       []string              `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse semantic_search response: %v\n%s", err, resp)
+	}
+	if parsed.Query != "checkout discount total" || len(parsed.Terms) != 3 {
+		t.Fatalf("unexpected query metadata: %+v", parsed)
+	}
+	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("semantic_search response missing filesystem workspace revision: %+v", parsed)
+	}
+	if parsed.Total == 0 || parsed.Returned == 0 || len(parsed.Matches) == 0 {
+		t.Fatalf("semantic_search should return at least one candidate: %+v", parsed)
+	}
+	top := parsed.Matches[0]
+	if top.File != "checkout/discount.go" || top.Score <= 0 || len(top.LineMatches) == 0 {
+		t.Fatalf("unexpected top semantic candidate: %+v", top)
+	}
+	if !containsString(top.MatchedTerms, "checkout") || !containsString(top.MatchedTerms, "discount") || !containsString(top.MatchedTerms, "total") {
+		t.Fatalf("top candidate missing matched query terms: %+v", top.MatchedTerms)
+	}
+	if top.ReadFileRange["start_line"] < 1 || !strings.Contains(top.ReadFileSuggestion, "read_file") {
+		t.Fatalf("top candidate missing read_file guidance: %+v", top)
+	}
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "confirm") {
+		t.Fatalf("semantic_search response missing confirmation suggestion: %+v", parsed.Suggestions)
 	}
 }
 
