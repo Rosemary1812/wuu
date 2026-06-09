@@ -1710,6 +1710,7 @@ func TestBroken(t *testing.T) {
 		ExitCode       int                `json:"exit_code"`
 		FailureSummary testFailureSummary `json:"failure_summary"`
 		Suggestions    []string           `json:"next_suggestions"`
+		Revision       string             `json:"workspace_revision"`
 	}
 	if err := json.Unmarshal([]byte(resp), &got); err != nil {
 		t.Fatalf("parse run_test response: %v\n%s", err, resp)
@@ -1719,6 +1720,9 @@ func TestBroken(t *testing.T) {
 	}
 	if len(got.FailureSummary.FailingTests) == 0 || got.FailureSummary.FailingTests[0] != "TestBroken" {
 		t.Fatalf("failure summary missing failing test: %+v", got.FailureSummary)
+	}
+	if !strings.HasPrefix(got.Revision, "fs:worktree:") {
+		t.Fatalf("run_test response missing filesystem workspace revision: %+v", got)
 	}
 	if strings.Contains(resp, "secret-value") || !strings.Contains(resp, "[REDACTED]") {
 		t.Fatalf("run_test response should redact secret-like output: %s", resp)
@@ -2057,6 +2061,9 @@ func TestToolkit_ToolTelemetry_RecordsSuccess(t *testing.T) {
 	if record.RawOutputBytes != len(resp) || record.ReturnedOutputBytes != len(resp) || record.ResultBudgeted {
 		t.Fatalf("unexpected output sizing: %+v response_len=%d", record, len(resp))
 	}
+	if !strings.HasPrefix(record.RevisionBefore, "fs:worktree:") || record.RevisionBefore != record.RevisionAfter {
+		t.Fatalf("read-only non-git record should preserve filesystem revision: %+v", record)
+	}
 }
 
 func TestToolkit_ToolTelemetry_RecordsClassificationReason(t *testing.T) {
@@ -2131,6 +2138,43 @@ func TestToolkit_ToolTelemetry_RecordsWorkspaceRevision(t *testing.T) {
 	}
 	if records[1].RevisionBefore == "" || records[1].RevisionAfter == "" || records[1].RevisionBefore == records[1].RevisionAfter {
 		t.Fatalf("write record should change worktree revision: %+v", records[1])
+	}
+}
+
+func TestToolkit_ToolTelemetry_RecordsFilesystemWorkspaceRevision(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "hello\n")
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-read",
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	}); err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-write",
+		Name:      "write_file",
+		Arguments: `{"path":"a.txt","content":"hello again\n"}`,
+	}); err != nil {
+		t.Fatalf("write_file: %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 2 {
+		t.Fatalf("expected two records, got %+v", records)
+	}
+	if !strings.HasPrefix(records[0].RevisionBefore, "fs:worktree:") || records[0].RevisionBefore != records[0].RevisionAfter {
+		t.Fatalf("read record should have stable fs revision: %+v", records[0])
+	}
+	if !strings.HasPrefix(records[1].RevisionBefore, "fs:worktree:") ||
+		!strings.HasPrefix(records[1].RevisionAfter, "fs:worktree:") ||
+		records[1].RevisionBefore == records[1].RevisionAfter {
+		t.Fatalf("write record should change fs revision: %+v", records[1])
 	}
 }
 

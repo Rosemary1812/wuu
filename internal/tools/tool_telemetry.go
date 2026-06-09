@@ -4,11 +4,23 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+)
+
+const (
+	workspaceRevisionTimeout       = 500 * time.Millisecond
+	workspaceDigestMaxFiles        = 5000
+	workspaceDigestMaxBytes        = 32 * 1024 * 1024
+	workspaceDigestMaxBytesPerFile = 1024 * 1024
 )
 
 // ToolExecutionRecord captures benchmark-oriented facts about one tool
@@ -132,26 +144,132 @@ func workspaceRevision(ctx context.Context, rootDir string) string {
 	if rootDir == "" {
 		return ""
 	}
-	revCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	revCtx, cancel := context.WithTimeout(ctx, workspaceRevisionTimeout)
 	defer cancel()
 	headCmd := exec.CommandContext(revCtx, "git", "rev-parse", "HEAD")
 	headCmd.Dir = rootDir
 	headOut, err := headCmd.Output()
-	if err != nil {
+	if err == nil {
+		statusCmd := exec.CommandContext(revCtx, "git", "status", "--porcelain=v1", "-z")
+		statusCmd.Dir = rootDir
+		statusOut, err := statusCmd.Output()
+		if err == nil {
+			sum := sha256.Sum256(statusOut)
+			head := string(headOut)
+			if len(head) >= 12 {
+				head = head[:12]
+			}
+			return "git:" + trimRevisionToken(head) + ":worktree:" + hex.EncodeToString(sum[:])[:16]
+		}
+	}
+
+	digest, ok := filesystemWorkspaceRevision(revCtx, rootDir)
+	if !ok {
 		return ""
 	}
-	statusCmd := exec.CommandContext(revCtx, "git", "status", "--porcelain=v1", "-z")
-	statusCmd.Dir = rootDir
-	statusOut, err := statusCmd.Output()
+	return "fs:worktree:" + digest[:16]
+}
+
+func filesystemWorkspaceRevision(ctx context.Context, rootDir string) (string, bool) {
+	root, err := filepath.Abs(rootDir)
 	if err != nil {
-		return ""
+		return "", false
 	}
-	sum := sha256.Sum256(statusOut)
-	head := string(headOut)
-	if len(head) >= 12 {
-		head = head[:12]
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return "", false
 	}
-	return "git:" + trimRevisionToken(head) + ":worktree:" + hex.EncodeToString(sum[:])[:16]
+
+	hash := sha256.New()
+	fileCount := 0
+	var byteCount int64
+	truncated := false
+
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			if isSkippedDir(name) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		mode := info.Mode()
+		if mode.Type() != 0 {
+			recordSpecialWorkspaceEntry(hash, rel, mode, path)
+			return nil
+		}
+		if fileCount >= workspaceDigestMaxFiles || byteCount >= workspaceDigestMaxBytes {
+			truncated = true
+			return filepath.SkipAll
+		}
+		fileCount++
+		fileDigest, copied, err := digestWorkspaceFile(path, workspaceDigestMaxBytesPerFile, workspaceDigestMaxBytes-byteCount)
+		if err != nil {
+			fmt.Fprintf(hash, "file\t%s\tunreadable\t%d\n", rel, info.Size())
+			return nil
+		}
+		byteCount += copied
+		if copied < info.Size() {
+			truncated = true
+		}
+		fmt.Fprintf(hash, "file\t%s\t%d\t%x\n", rel, info.Size(), fileDigest)
+		return nil
+	})
+	if err != nil && !errors.Is(err, filepath.SkipAll) {
+		return "", false
+	}
+	fmt.Fprintf(hash, "summary\tfiles=%d\tbytes=%d\ttruncated=%t\n", fileCount, byteCount, truncated)
+	return hex.EncodeToString(hash.Sum(nil)), true
+}
+
+func recordSpecialWorkspaceEntry(hash io.Writer, rel string, mode os.FileMode, path string) {
+	if mode&os.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
+		if err == nil {
+			fmt.Fprintf(hash, "symlink\t%s\t%s\n", rel, target)
+			return
+		}
+	}
+	fmt.Fprintf(hash, "special\t%s\t%s\n", rel, mode.Type().String())
+}
+
+func digestWorkspaceFile(path string, perFileLimit, remainingLimit int64) ([]byte, int64, error) {
+	if remainingLimit <= 0 {
+		return nil, 0, nil
+	}
+	limit := perFileLimit
+	if remainingLimit < limit {
+		limit = remainingLimit
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	copied, err := io.CopyN(hash, file, limit)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, copied, err
+	}
+	return hash.Sum(nil), copied, nil
 }
 
 func trimRevisionToken(value string) string {
