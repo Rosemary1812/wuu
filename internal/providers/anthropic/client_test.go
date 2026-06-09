@@ -380,8 +380,11 @@ func TestBuildAnthropicRequest_SendsProviderOptions(t *testing.T) {
 			{Role: "user", Content: "hello"},
 		},
 		ProviderOptions: map[string]any{
-			"effort": "high",
-			"speed":  "fast",
+			"effort":      "high",
+			"speed":       "fast",
+			"temperature": 1.0,
+			"topP":        0.95,
+			"topK":        40,
 			"thinking": map[string]any{
 				"type":         "enabled",
 				"budgetTokens": 4096,
@@ -403,6 +406,34 @@ func TestBuildAnthropicRequest_SendsProviderOptions(t *testing.T) {
 	}
 	if payload.Speed != "fast" {
 		t.Fatalf("unexpected speed: %q", payload.Speed)
+	}
+	if payload.Temperature == nil || *payload.Temperature != 1.0 {
+		t.Fatalf("unexpected temperature: %+v", payload.Temperature)
+	}
+	if payload.TopP == nil || *payload.TopP != 0.95 {
+		t.Fatalf("unexpected top_p: %+v", payload.TopP)
+	}
+	if payload.TopK == nil || *payload.TopK != 40 {
+		t.Fatalf("unexpected top_k: %+v", payload.TopK)
+	}
+}
+
+func TestBuildAnthropicRequest_DoesNotOverrideExplicitTemperatureWithProviderOption(t *testing.T) {
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "hello"},
+		},
+		Temperature: 0.2,
+		ProviderOptions: map[string]any{
+			"temperature": 1.0,
+		},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if payload.Temperature == nil || *payload.Temperature != 0.2 {
+		t.Fatalf("unexpected temperature: %+v", payload.Temperature)
 	}
 }
 

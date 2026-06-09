@@ -316,6 +316,89 @@ func TestChat_FiltersUnsupportedProviderOptions(t *testing.T) {
 	}
 }
 
+func TestChat_SendsSamplingProviderOptions(t *testing.T) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if body["temperature"] != float64(1) {
+			t.Fatalf("expected temperature=1, got %#v", body["temperature"])
+		}
+		if body["top_p"] != 0.95 {
+			t.Fatalf("expected top_p=0.95, got %#v", body["top_p"])
+		}
+		if body["top_k"] != float64(40) {
+			t.Fatalf("expected top_k=40, got %#v", body["top_k"])
+		}
+		if _, exists := body["topP"]; exists {
+			t.Fatalf("did not expect camel-case topP on wire: %#v", body)
+		}
+		if _, exists := body["topK"]; exists {
+			t.Fatalf("did not expect camel-case topK on wire: %#v", body)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "minimax-m2.1",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		ProviderOptions: map[string]any{
+			"temperature": 1.0,
+			"topP":        0.95,
+			"topK":        40,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+func TestChat_DoesNotOverrideExplicitTemperatureWithProviderOption(t *testing.T) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if body["temperature"] != 0.2 {
+			t.Fatalf("expected explicit temperature=0.2, got %#v", body["temperature"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:       "minimax-m2.1",
+		Messages:    []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Temperature: 0.2,
+		ProviderOptions: map[string]any{
+			"temperature": 1.0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_SendsSnakeCasePromptCacheKeyForOpenRouter(t *testing.T) {
 	t.Helper()
 
@@ -1387,6 +1470,56 @@ func TestResponsesChat_FiltersUnsupportedProviderOptions(t *testing.T) {
 			"enable_thinking":    true,
 			"thinking":           map[string]any{"type": "enabled"},
 			"metadata":           map[string]any{"eval": "provider-options"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+func TestResponsesChat_SendsSamplingProviderOptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if body["temperature"] != float64(1) {
+			t.Fatalf("expected temperature=1, got %#v", body["temperature"])
+		}
+		if body["top_p"] != 0.95 {
+			t.Fatalf("expected top_p=0.95, got %#v", body["top_p"])
+		}
+		if body["top_k"] != float64(20) {
+			t.Fatalf("expected top_k=20, got %#v", body["top_k"])
+		}
+		if _, exists := body["topP"]; exists {
+			t.Fatalf("did not expect camel-case topP on wire: %#v", body)
+		}
+		if _, exists := body["topK"]; exists {
+			t.Fatalf("did not expect camel-case topK on wire: %#v", body)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "minimax-m2",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		ProviderOptions: map[string]any{
+			"temperature": 1.0,
+			"topP":        0.95,
+			"topK":        20,
 		},
 	})
 	if err != nil {

@@ -346,6 +346,17 @@ func applyAnthropicProviderOptions(payload *anthropicRequest, options map[string
 	if speed, ok := options["speed"].(string); ok && strings.TrimSpace(speed) != "" {
 		payload.Speed = strings.TrimSpace(speed)
 	}
+	if payload.Temperature == nil {
+		if temperature, ok := providerOptionFloat(options["temperature"]); ok {
+			payload.Temperature = &temperature
+		}
+	}
+	if topP, ok := providerOptionFloat(options["topP"]); ok {
+		payload.TopP = &topP
+	}
+	if topK, ok := providerOptionInt(options["topK"]); ok {
+		payload.TopK = &topK
+	}
 }
 
 func applyAnthropicThinkingOption(payload *anthropicRequest, option map[string]any) {
@@ -386,6 +397,27 @@ func providerOptionInt(value any) (int, bool) {
 			return 0, false
 		}
 		return int(parsed), true
+	default:
+		return 0, false
+	}
+}
+
+func providerOptionFloat(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case json.Number:
+		n, err := typed.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return n, true
 	default:
 		return 0, false
 	}
@@ -905,6 +937,8 @@ type anthropicRequest struct {
 	System       any                    `json:"system,omitempty"`
 	MaxTokens    int                    `json:"max_tokens"`
 	Temperature  *float64               `json:"temperature,omitempty"`
+	TopP         *float64               `json:"top_p,omitempty"`
+	TopK         *int                   `json:"top_k,omitempty"`
 	Messages     []anthropicMessage     `json:"messages"`
 	Tools        []anthropicTool        `json:"tools,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`

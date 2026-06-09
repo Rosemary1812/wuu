@@ -832,6 +832,14 @@ func mergeChatProviderOptions(object map[string]any, options map[string]any, for
 			object["max_tokens"] = value
 		case "promptCacheKey":
 			object["promptCacheKey"] = value
+		case "temperature":
+			if _, exists := object["temperature"]; !exists {
+				object["temperature"] = value
+			}
+		case "topP":
+			object["top_p"] = value
+		case "topK":
+			object["top_k"] = value
 		case "include":
 			// OpenAI Responses uses include for encrypted reasoning replay.
 			// Chat Completions endpoints commonly reject it as an unknown field.

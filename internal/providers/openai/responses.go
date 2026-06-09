@@ -165,6 +165,14 @@ func mergeResponsesProviderOptions(object map[string]any, options map[string]any
 			object["max_output_tokens"] = value
 		case "promptCacheKey":
 			object["prompt_cache_key"] = value
+		case "temperature":
+			if _, exists := object["temperature"]; !exists {
+				object["temperature"] = value
+			}
+		case "topP":
+			object["top_p"] = value
+		case "topK":
+			object["top_k"] = value
 		default:
 			if responsesProviderOptionUnsupported(key) {
 				continue
