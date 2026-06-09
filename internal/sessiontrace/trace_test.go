@@ -29,16 +29,22 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 		},
 		[]tools.ToolInfo{{Name: "read_file", Kind: tools.ToolKindFile, Risk: tools.ToolRiskLow, ReadOnly: true}},
 		[]tools.ToolExecutionRecord{{Name: "read_file", Kind: tools.ToolKindFile, Risk: tools.ToolRiskLow, Success: true, RawOutputBytes: 100}},
+		[]RequestContextRecord{{
+			StepIndex:         0,
+			TransientMessages: 1,
+			ContentBytes:      100,
+			BlockKinds:        []string{"ENVIRONMENT", "TASK"},
+		}},
 	)
 	if err != nil {
 		t.Fatalf("AppendTurn: %v", err)
 	}
 
 	events := readTraceEvents(t, path)
-	if len(events) != 4 {
-		t.Fatalf("expected 4 events, got %d: %+v", len(events), events)
+	if len(events) != 5 {
+		t.Fatalf("expected 5 events, got %d: %+v", len(events), events)
 	}
-	wantTypes := []string{"turn", "tool_inventory", "tool_records", "final"}
+	wantTypes := []string{"turn", "context_requests", "tool_inventory", "tool_records", "final"}
 	for i, want := range wantTypes {
 		if events[i].Type != want || events[i].ThreadID != "thread-1" || events[i].TurnID != "turn-1" {
 			t.Fatalf("unexpected event %d: %+v", i, events[i])
@@ -73,6 +79,12 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 			ErrorKind:    "policy_denied",
 			Success:      false,
 		}},
+		[]RequestContextRecord{{
+			StepIndex:         0,
+			TransientMessages: 2,
+			ContentBytes:      240,
+			BlockKinds:        []string{"ENVIRONMENT", "TOOL_POLICY"},
+		}},
 	); err != nil {
 		t.Fatalf("AppendTurn: %v", err)
 	}
@@ -81,7 +93,7 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReplayTrace: %v", err)
 	}
-	if summary.Mode != "session_trace_replay" || !summary.Complete || summary.EventCount != 4 {
+	if summary.Mode != "session_trace_replay" || !summary.Complete || summary.EventCount != 5 {
 		t.Fatalf("unexpected replay summary: %+v", summary)
 	}
 	if summary.LatestTurn == nil || summary.LatestTurn.ThreadID != "thread-1" || summary.LatestTurn.Model != "gpt-test" {
@@ -89,6 +101,11 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	}
 	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "semantic_search" {
 		t.Fatalf("tool inventory missing: %+v", summary.ToolInventory)
+	}
+	if len(summary.ContextRequests) != 1 ||
+		summary.ContextRequests[0].TransientMessages != 2 ||
+		!containsString(summary.ContextBlockKinds, "TOOL_POLICY") {
+		t.Fatalf("context requests missing: %+v", summary)
 	}
 	if len(summary.ToolNames) != 2 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "run_shell" {
 		t.Fatalf("tool records missing: %+v", summary.ToolNames)
@@ -127,4 +144,13 @@ func readTraceEvents(t *testing.T, path string) []Event {
 		t.Fatalf("scan trace: %v", err)
 	}
 	return events
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

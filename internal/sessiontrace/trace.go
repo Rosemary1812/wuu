@@ -51,18 +51,27 @@ type FinalRecord struct {
 }
 
 type ReplaySummary struct {
-	Path          string           `json:"path,omitempty"`
-	Mode          string           `json:"mode"`
-	EventCount    int              `json:"event_count"`
-	EventTypes    map[string]int   `json:"event_types,omitempty"`
-	Turns         []TurnRecord     `json:"turns,omitempty"`
-	LatestTurn    *TurnRecord      `json:"latest_turn,omitempty"`
-	ToolInventory []tools.ToolInfo `json:"tool_inventory,omitempty"`
-	ToolNames     []string         `json:"tool_names,omitempty"`
-	ToolSummary   *ToolSummary     `json:"tool_summary,omitempty"`
-	Final         *FinalRecord     `json:"final,omitempty"`
-	Complete      bool             `json:"complete"`
-	Warnings      []string         `json:"warnings,omitempty"`
+	Path              string                 `json:"path,omitempty"`
+	Mode              string                 `json:"mode"`
+	EventCount        int                    `json:"event_count"`
+	EventTypes        map[string]int         `json:"event_types,omitempty"`
+	Turns             []TurnRecord           `json:"turns,omitempty"`
+	LatestTurn        *TurnRecord            `json:"latest_turn,omitempty"`
+	ContextRequests   []RequestContextRecord `json:"context_requests,omitempty"`
+	ContextBlockKinds []string               `json:"context_block_kinds,omitempty"`
+	ToolInventory     []tools.ToolInfo       `json:"tool_inventory,omitempty"`
+	ToolNames         []string               `json:"tool_names,omitempty"`
+	ToolSummary       *ToolSummary           `json:"tool_summary,omitempty"`
+	Final             *FinalRecord           `json:"final,omitempty"`
+	Complete          bool                   `json:"complete"`
+	Warnings          []string               `json:"warnings,omitempty"`
+}
+
+type RequestContextRecord struct {
+	StepIndex         int      `json:"step_index"`
+	TransientMessages int      `json:"transient_messages,omitempty"`
+	ContentBytes      int      `json:"content_bytes,omitempty"`
+	BlockKinds        []string `json:"block_kinds,omitempty"`
 }
 
 type ToolSummary struct {
@@ -138,6 +147,13 @@ func replayEvent(summary *ReplaySummary, eventType string, data json.RawMessage)
 		}
 		summary.Turns = append(summary.Turns, turn)
 		summary.LatestTurn = &summary.Turns[len(summary.Turns)-1]
+	case "context_requests":
+		var records []RequestContextRecord
+		if err := json.Unmarshal(data, &records); err != nil {
+			return err
+		}
+		summary.ContextRequests = append(summary.ContextRequests, records...)
+		summary.addContextBlockKinds(records)
 	case "tool_inventory":
 		var inventory []tools.ToolInfo
 		if err := json.Unmarshal(data, &inventory); err != nil {
@@ -163,6 +179,23 @@ func replayEvent(summary *ReplaySummary, eventType string, data json.RawMessage)
 		summary.Final = &final
 	}
 	return nil
+}
+
+func (summary *ReplaySummary) addContextBlockKinds(records []RequestContextRecord) {
+	seen := make(map[string]bool, len(summary.ContextBlockKinds))
+	for _, kind := range summary.ContextBlockKinds {
+		seen[kind] = true
+	}
+	for _, record := range records {
+		for _, kind := range record.BlockKinds {
+			kind = strings.TrimSpace(kind)
+			if kind == "" || seen[kind] {
+				continue
+			}
+			seen[kind] = true
+			summary.ContextBlockKinds = append(summary.ContextBlockKinds, kind)
+		}
+	}
 }
 
 func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
@@ -194,7 +227,7 @@ func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
 	}
 }
 
-func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord) error {
+func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord, contextRequests ...[]RequestContextRecord) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil
@@ -217,6 +250,15 @@ func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []too
 		CreatedAt: createdAt,
 		Data:      turn,
 	}}
+	if len(contextRequests) > 0 && len(contextRequests[0]) > 0 {
+		events = append(events, Event{
+			Type:      "context_requests",
+			ThreadID:  turn.ThreadID,
+			TurnID:    turn.TurnID,
+			CreatedAt: createdAt,
+			Data:      append([]RequestContextRecord(nil), contextRequests[0]...),
+		})
+	}
 	if len(inventory) > 0 {
 		events = append(events, Event{
 			Type:      "tool_inventory",

@@ -628,6 +628,12 @@ func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
 		agent.LoopResult{Content: "done", InputTokens: 11, OutputTokens: 7},
 		nil,
 		toolRecordStart,
+		[]sessiontrace.RequestContextRecord{{
+			StepIndex:         0,
+			TransientMessages: 1,
+			ContentBytes:      120,
+			BlockKinds:        []string{"ENVIRONMENT", "TOOL_POLICY"},
+		}},
 	)
 	if err != nil {
 		t.Fatalf("persistCLIRunTrace: %v", err)
@@ -647,6 +653,11 @@ func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
 	}
 	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "read_file" {
 		t.Fatalf("trace should include only this run's tool record: %+v", summary.ToolNames)
+	}
+	if len(summary.ContextRequests) != 1 ||
+		summary.ContextRequests[0].TransientMessages != 1 ||
+		!containsString(summary.ContextBlockKinds, "TOOL_POLICY") {
+		t.Fatalf("trace should preserve request context metadata: %+v", summary)
 	}
 }
 
@@ -813,4 +824,13 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 
 	return strings.TrimSpace(buf.String())
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

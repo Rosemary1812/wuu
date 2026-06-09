@@ -312,11 +312,22 @@ func runTask(args []string) error {
 	if rt.Toolkit != nil {
 		toolRecordStart = len(rt.Toolkit.ToolTelemetry())
 	}
+	var contextRequests []sessiontrace.RequestContextRecord
+	baseOnRequestContext := runner.OnRequestContext
+	runner.OnRequestContext = func(info agent.RequestContextInfo) {
+		if baseOnRequestContext != nil {
+			baseOnRequestContext(info)
+		}
+		contextRequests = append(contextRequests, sessionTraceRequestContext(info))
+	}
+	defer func() {
+		runner.OnRequestContext = baseOnRequestContext
+	}()
 	startedAt := time.Now().UTC()
 	history := cliRunInitialHistory(runner, prompt)
 	res, err := runner.RunWithCallback(ctx, history, runner.OnEvent)
 	completedAt := time.Now().UTC()
-	tracePath, traceErr := persistCLIRunTrace(rt, runner, cliSessionID, startedAt, completedAt, res, err, toolRecordStart)
+	tracePath, traceErr := persistCLIRunTrace(rt, runner, cliSessionID, startedAt, completedAt, res, err, toolRecordStart, contextRequests)
 	if traceErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: write session trace: %v\n", traceErr)
 	}
@@ -341,7 +352,7 @@ func cliRunInitialHistory(runner *agent.StreamRunner, prompt string) []providers
 	return append(history, providers.ChatMessage{Role: "user", Content: prompt})
 }
 
-func persistCLIRunTrace(rt *runtime.Session, runner *agent.StreamRunner, sessionID string, startedAt, completedAt time.Time, res agent.LoopResult, runErr error, toolRecordStart int) (string, error) {
+func persistCLIRunTrace(rt *runtime.Session, runner *agent.StreamRunner, sessionID string, startedAt, completedAt time.Time, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord) (string, error) {
 	if rt == nil || rt.Toolkit == nil {
 		return "", nil
 	}
@@ -390,10 +401,19 @@ func persistCLIRunTrace(rt *runtime.Session, runner *agent.StreamRunner, session
 	} else if toolRecordStart >= len(records) {
 		records = nil
 	}
-	if err := sessiontrace.AppendTurn(tracePath, turn, final, rt.Toolkit.ToolInfos(), records); err != nil {
+	if err := sessiontrace.AppendTurn(tracePath, turn, final, rt.Toolkit.ToolInfos(), records, contextRequests); err != nil {
 		return "", err
 	}
 	return tracePath, nil
+}
+
+func sessionTraceRequestContext(info agent.RequestContextInfo) sessiontrace.RequestContextRecord {
+	return sessiontrace.RequestContextRecord{
+		StepIndex:         info.StepIndex,
+		TransientMessages: info.TransientMessages,
+		ContentBytes:      info.ContentBytes,
+		BlockKinds:        append([]string(nil), info.BlockKinds...),
+	}
 }
 
 type evalReport struct {
@@ -1643,6 +1663,12 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 		if summary.LatestTurn.InputTokens > 0 || summary.LatestTurn.OutputTokens > 0 {
 			fmt.Printf("  tokens: input=%d output=%d\n", summary.LatestTurn.InputTokens, summary.LatestTurn.OutputTokens)
 		}
+	}
+	if len(summary.ContextRequests) > 0 {
+		fmt.Printf("  context_requests: %d\n", len(summary.ContextRequests))
+	}
+	if len(summary.ContextBlockKinds) > 0 {
+		fmt.Printf("  context_blocks: %s\n", strings.Join(summary.ContextBlockKinds, ","))
 	}
 	if len(summary.ToolInventory) > 0 {
 		fmt.Printf("  tool_inventory: %d tools\n", len(summary.ToolInventory))

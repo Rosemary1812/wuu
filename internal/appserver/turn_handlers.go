@@ -440,6 +440,19 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		toolRecordStart = len(threadRuntime.Toolkit.ToolTelemetry())
 	}
 	baseBeforeStep := runner.BeforeStep
+	baseOnRequestContext := runner.OnRequestContext
+	var contextRequests []sessiontrace.RequestContextRecord
+	runner.OnRequestContext = func(info agent.RequestContextInfo) {
+		if baseOnRequestContext != nil {
+			baseOnRequestContext(info)
+		}
+		contextRequests = append(contextRequests, sessiontrace.RequestContextRecord{
+			StepIndex:         info.StepIndex,
+			TransientMessages: info.TransientMessages,
+			ContentBytes:      info.ContentBytes,
+			BlockKinds:        append([]string(nil), info.BlockKinds...),
+		})
+	}
 	runner.BeforeStep = func() []providers.ChatMessage {
 		var messages []providers.ChatMessage
 		if baseBeforeStep != nil {
@@ -456,6 +469,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	}
 	defer func() {
 		runner.BeforeStep = baseBeforeStep
+		runner.OnRequestContext = baseOnRequestContext
 	}()
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
 		th.mu.Lock()
@@ -509,7 +523,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
-	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart)
+	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart, contextRequests)
 	if traceErr != nil {
 		tracePath = ""
 	}
@@ -541,7 +555,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	s.kickQueuedTurnDrain(th.ID)
 }
 
-func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int) (string, error) {
+func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord) (string, error) {
 	if threadRuntime == nil || threadRuntime.Toolkit == nil {
 		return "", nil
 	}
@@ -591,7 +605,7 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 	} else if toolRecordStart >= len(records) {
 		records = nil
 	}
-	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records); err != nil {
+	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records, contextRequests); err != nil {
 		return "", err
 	}
 	return tracePath, nil
