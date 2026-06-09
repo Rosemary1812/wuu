@@ -17,6 +17,8 @@ type Run struct {
 	DefinitionName  string    `json:"definition_name,omitempty"`
 	DefinitionPath  string    `json:"definition_path,omitempty"`
 	Arguments       string    `json:"arguments,omitempty"`
+	Driver          string    `json:"driver,omitempty"`
+	Entrypoint      string    `json:"entrypoint,omitempty"`
 	Status          RunState  `json:"status"`
 	Phases          []Phase   `json:"phases,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -31,6 +33,12 @@ type Run struct {
 	RollbackHint    string    `json:"rollback_hint,omitempty"`
 	Error           string    `json:"error,omitempty"`
 }
+
+const (
+	RunDriverAgentManaged             = "agent_managed"
+	RunDriverScript                   = "script"
+	RunEntrypointNaturalLanguageAgent = "natural_language_agent"
+)
 
 type Phase struct {
 	ID          string     `json:"id"`
@@ -181,6 +189,9 @@ func (s *Store) CreateRun(run Run) (Run, error) {
 	run.ID = runID
 	if run.Status == "" {
 		run.Status = RunStateDraft
+	}
+	if strings.TrimSpace(run.Entrypoint) == "" && strings.TrimSpace(run.Driver) != "" {
+		run.Entrypoint = RunEntrypointNaturalLanguageAgent
 	}
 	if err := ValidateRunTransition("", run.Status); err != nil {
 		return Run{}, err
@@ -679,6 +690,12 @@ func (s *Store) WritePlan(runID, content string) (string, error) {
 	run, err := s.LoadRun(runID)
 	if err == nil {
 		run.PlanPath = path
+		if strings.TrimSpace(run.Driver) == "" {
+			run.Driver = RunDriverAgentManaged
+		}
+		if strings.TrimSpace(run.Entrypoint) == "" {
+			run.Entrypoint = RunEntrypointNaturalLanguageAgent
+		}
 		_ = s.SaveRun(run)
 	}
 	return path, s.AppendEvent(Event{Type: EventPlanWritten, RunID: runID, Artifact: path})
@@ -702,6 +719,12 @@ func (s *Store) WriteScript(runID, content string) (string, error) {
 	run, err := s.LoadRun(runID)
 	if err == nil {
 		run.ScriptPath = path
+		if strings.TrimSpace(run.Driver) == "" {
+			run.Driver = RunDriverScript
+		}
+		if strings.TrimSpace(run.Entrypoint) == "" {
+			run.Entrypoint = RunEntrypointNaturalLanguageAgent
+		}
 		_ = s.SaveRun(run)
 	}
 	return path, s.AppendEvent(Event{Type: EventScriptWritten, RunID: runID, Artifact: path})

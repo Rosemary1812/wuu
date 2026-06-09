@@ -148,6 +148,13 @@ func TestStoreCreatesAndUpdatesWorkflowRun(t *testing.T) {
 	if _, err := os.Stat(planPath); err != nil {
 		t.Fatalf("plan file not written: %v", err)
 	}
+	plannedRun, err := store.LoadRun("run_1")
+	if err != nil {
+		t.Fatalf("LoadRun after WritePlan: %v", err)
+	}
+	if plannedRun.Driver != RunDriverAgentManaged || plannedRun.Entrypoint != RunEntrypointNaturalLanguageAgent {
+		t.Fatalf("WritePlan should default durable driver fields: %+v", plannedRun)
+	}
 	reportPath, err := store.WriteFinalReport("run_1", "final report")
 	if err != nil {
 		t.Fatalf("WriteFinalReport: %v", err)
@@ -176,6 +183,24 @@ func TestStoreCreatesAndUpdatesWorkflowRun(t *testing.T) {
 	}
 	if events[0].Type != EventRunCreated || events[0].RunID != "run_1" {
 		t.Fatalf("first event mismatch: %+v", events[0])
+	}
+
+	scriptRun, err := store.CreateRun(Run{ID: "script_run", Status: RunStateRunning})
+	if err != nil {
+		t.Fatalf("CreateRun script_run: %v", err)
+	}
+	if scriptRun.Entrypoint != "" {
+		t.Fatalf("run without driver should not invent entrypoint at creation: %+v", scriptRun)
+	}
+	if _, err := store.WriteScript("script_run", "synthesize('done')"); err != nil {
+		t.Fatalf("WriteScript: %v", err)
+	}
+	scriptRun, err = store.LoadRun("script_run")
+	if err != nil {
+		t.Fatalf("LoadRun script_run: %v", err)
+	}
+	if scriptRun.Driver != RunDriverScript || scriptRun.Entrypoint != RunEntrypointNaturalLanguageAgent {
+		t.Fatalf("WriteScript should default durable driver fields: %+v", scriptRun)
 	}
 }
 

@@ -243,6 +243,9 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if status.Run.ID != "workflow-test-run" || status.Run.PlanPath == "" {
 		t.Fatalf("unexpected status: %+v", status.Run)
 	}
+	if status.Run.Driver != workflow.RunDriverAgentManaged || status.Run.Entrypoint != workflow.RunEntrypointNaturalLanguageAgent {
+		t.Fatalf("workflow_status should retain agent-managed driver fields: %+v", status.Run)
+	}
 	if status.Run.Status != workflow.RunStateCompleted || status.Run.FinalReportPath == "" {
 		t.Fatalf("workflow should be completed with final report: %+v", status.Run)
 	}
@@ -495,6 +498,9 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 	}
 	if status.Run.Status != workflow.RunStateCompleted || len(status.Run.Phases) != 2 {
 		t.Fatalf("script run state mismatch: %+v", status.Run)
+	}
+	if status.Run.Driver != workflow.RunDriverScript || status.Run.Entrypoint != workflow.RunEntrypointNaturalLanguageAgent {
+		t.Fatalf("workflow_status should retain script driver fields: %+v", status.Run)
 	}
 	if status.Run.Phases[0].ID != "plan" || status.Run.Phases[1].ID != "qa" {
 		t.Fatalf("script phases not recorded: %+v", status.Run.Phases)

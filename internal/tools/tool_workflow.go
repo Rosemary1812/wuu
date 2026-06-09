@@ -460,6 +460,8 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		DefinitionName: def.Name,
 		DefinitionPath: def.Path,
 		Arguments:      strings.TrimSpace(args.Arguments),
+		Driver:         workflow.RunDriverScript,
+		Entrypoint:     workflow.RunEntrypointNaturalLanguageAgent,
 		Status:         status,
 		PauseReason:    pauseReason,
 		ResumeHint:     resumeHint,
@@ -501,8 +503,8 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 	}
 
 	return mustJSON(map[string]any{
-		"driver":             "script",
-		"entrypoint":         "natural_language_agent",
+		"driver":             run.Driver,
+		"entrypoint":         run.Entrypoint,
 		"run_id":             run.ID,
 		"status":             run.Status,
 		"definition_name":    run.DefinitionName,
@@ -694,6 +696,8 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		DefinitionName: def.Name,
 		DefinitionPath: def.Path,
 		Arguments:      strings.TrimSpace(args.Arguments),
+		Driver:         workflow.RunDriverAgentManaged,
+		Entrypoint:     workflow.RunEntrypointNaturalLanguageAgent,
 		Status:         status,
 		Phases:         phases,
 		PauseReason:    pauseReason,
@@ -712,8 +716,8 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	}
 
 	return mustJSON(map[string]any{
-		"driver":             "agent_managed",
-		"entrypoint":         "natural_language_agent",
+		"driver":             run.Driver,
+		"entrypoint":         run.Entrypoint,
 		"run_id":             run.ID,
 		"status":             run.Status,
 		"definition_name":    run.DefinitionName,
@@ -2095,7 +2099,7 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 			return "", err
 		}
 		return mustJSON(map[string]any{
-			"runs":  reverseWorkflowRuns(runs),
+			"runs":  reverseWorkflowRunsWithDriverDefaults(runs),
 			"count": len(runs),
 			"next_steps": []string{
 				"Pass run_id to workflow_status to inspect a specific Workflow Run.",
@@ -2108,6 +2112,7 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
+	run = workflowRunWithDriverDefaults(run)
 	agents, err := store.ListAgentRuns(runID)
 	if err != nil {
 		return "", err
@@ -2732,6 +2737,28 @@ func reverseWorkflowRuns(runs []workflow.Run) []workflow.Run {
 		out[i] = runs[len(runs)-1-i]
 	}
 	return out
+}
+
+func reverseWorkflowRunsWithDriverDefaults(runs []workflow.Run) []workflow.Run {
+	out := reverseWorkflowRuns(runs)
+	for i := range out {
+		out[i] = workflowRunWithDriverDefaults(out[i])
+	}
+	return out
+}
+
+func workflowRunWithDriverDefaults(run workflow.Run) workflow.Run {
+	if strings.TrimSpace(run.Driver) == "" {
+		if strings.TrimSpace(run.ScriptPath) != "" {
+			run.Driver = workflow.RunDriverScript
+		} else {
+			run.Driver = workflow.RunDriverAgentManaged
+		}
+	}
+	if strings.TrimSpace(run.Entrypoint) == "" {
+		run.Entrypoint = workflow.RunEntrypointNaturalLanguageAgent
+	}
+	return run
 }
 
 func tailWorkflowEvents(events []workflow.Event, limit int) []workflow.Event {
