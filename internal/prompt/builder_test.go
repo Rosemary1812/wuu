@@ -140,6 +140,8 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"feature-delivery",
 		"agent-led",
 		"durable run state",
+		"`start_workflow`",
+		"driver=auto",
 		"`run_workflow`",
 		"script driver",
 		"`driver`",

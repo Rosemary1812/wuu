@@ -335,7 +335,125 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 }
 
 // ---------------------------------------------------------------------------
-// create_workflow
+// start_workflow
+// ---------------------------------------------------------------------------
+
+type StartWorkflowTool struct{ env *Env }
+
+func NewStartWorkflowTool(env *Env) *StartWorkflowTool { return &StartWorkflowTool{env: env} }
+
+func (t *StartWorkflowTool) Name() string            { return "start_workflow" }
+func (t *StartWorkflowTool) IsReadOnly() bool        { return false }
+func (t *StartWorkflowTool) IsConcurrencySafe() bool { return false }
+
+func (t *StartWorkflowTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{
+		Name: "start_workflow",
+		Description: "Start a workflow through the unified natural-language agent entry point. " +
+			"Prefer this over choosing run_workflow/create_workflow yourself: driver=auto dispatches saved kind=script definitions or ad hoc scripts to the script driver, and markdown/ad hoc plans to the agent-managed driver. " +
+			"The returned driver field tells you whether phase/spawn/await/synthesis control is script-owned or agent-managed. " +
+			"Use run_workflow or create_workflow directly only when a lower-level driver is explicitly required.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"definition_name": map[string]any{
+					"type":        "string",
+					"description": "Optional saved workflow definition name.",
+				},
+				"arguments": map[string]any{
+					"type":        "string",
+					"description": "Arguments for the saved workflow or script.",
+				},
+				"driver": map[string]any{
+					"type":        "string",
+					"enum":        []string{"auto", "script", "agent_managed"},
+					"description": "Driver override. Defaults to auto, which uses the saved workflow kind or script field.",
+				},
+				"run_id": map[string]any{
+					"type":        "string",
+					"description": "Optional caller-provided run id. Omit for an auto-generated id.",
+				},
+				"script": map[string]any{
+					"type":        "string",
+					"description": "Ad hoc WORKFLOW.js script. When present, auto uses the script driver.",
+				},
+				"background": map[string]any{
+					"type":        "boolean",
+					"description": "Script driver only. Defaults to true; set false to run synchronously.",
+				},
+				"max_agents": map[string]any{
+					"type":        "integer",
+					"description": "Script driver cap for total worker spawns.",
+				},
+				"max_concurrency": map[string]any{
+					"type":        "integer",
+					"description": "Script driver cap for agents in one spawnBatch/spawnAgents call.",
+				},
+				"plan": map[string]any{
+					"type":        "string",
+					"description": "Agent-managed driver plan. If omitted with definition_name, the workflow definition body is used.",
+				},
+				"phases": map[string]any{
+					"type":        "array",
+					"description": "Agent-managed driver phase plan.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"id":   map[string]any{"type": "string", "description": "Optional stable phase id."},
+							"name": map[string]any{"type": "string", "description": "Human-readable phase name."},
+						},
+						"required": []string{"name"},
+					},
+				},
+				"initial_status": map[string]any{
+					"type":        "string",
+					"enum":        []string{"draft", "approval_pending", "running"},
+					"description": "Agent-managed driver initial run state. Defaults to running.",
+				},
+			},
+		},
+	}
+}
+
+func (t *StartWorkflowTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		DefinitionName string `json:"definition_name"`
+		Driver         string `json:"driver"`
+		Script         string `json:"script"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return "", err
+	}
+	driver := strings.TrimSpace(args.Driver)
+	if driver == "" {
+		driver = "auto"
+	}
+	switch driver {
+	case "auto":
+		if strings.TrimSpace(args.Script) != "" {
+			return NewRunWorkflowTool(t.env).Execute(ctx, argsJSON)
+		}
+		if strings.TrimSpace(args.DefinitionName) != "" {
+			found, ok := t.env.FindWorkflow(args.DefinitionName)
+			if !ok {
+				return "", fmt.Errorf("workflow %q not found. available: %s", args.DefinitionName, strings.Join(t.env.WorkflowNames(), ", "))
+			}
+			if workflowDefinitionKind(found) == workflow.DefinitionKindScript {
+				return NewRunWorkflowTool(t.env).Execute(ctx, argsJSON)
+			}
+		}
+		return NewCreateWorkflowTool(t.env).Execute(ctx, argsJSON)
+	case "script":
+		return NewRunWorkflowTool(t.env).Execute(ctx, argsJSON)
+	case "agent_managed":
+		return NewCreateWorkflowTool(t.env).Execute(ctx, argsJSON)
+	default:
+		return "", fmt.Errorf("start_workflow driver must be auto, script, or agent_managed")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// run_workflow
 // ---------------------------------------------------------------------------
 
 type RunWorkflowTool struct{ env *Env }
@@ -2101,7 +2219,7 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 			"count": len(runs),
 			"next_steps": []string{
 				"Pass run_id to workflow_status to inspect a specific Workflow Run.",
-				"Use create_workflow for agent-managed runs or run_workflow for script-driven definitions when starting new workflow work.",
+				"Use start_workflow with driver=auto when starting new workflow work.",
 			},
 		})
 	}
@@ -2436,12 +2554,14 @@ func workflowDefinitionKind(def workflow.Definition) string {
 func workflowDefinitionNextSteps(def workflow.Definition) []string {
 	if workflowDefinitionKind(def) == workflow.DefinitionKindScript {
 		return []string{
-			"Use run_workflow with definition_name to start this script-driven workflow.",
+			"Use start_workflow with definition_name and driver=auto to start this script-driven workflow.",
+			"Use run_workflow directly only when you must force the lower-level script driver.",
 			"Let the script driver own phase/spawn/await/synthesis control; inspect workflow_status for durable run state.",
 		}
 	}
 	return []string{
-		"Use create_workflow with definition_name to start an agent-managed Workflow Run.",
+		"Use start_workflow with definition_name and driver=auto to start an agent-managed Workflow Run.",
+		"Use create_workflow directly only when you must force the lower-level agent-managed driver.",
 		"After create_workflow, list Agent Profiles, record the Workflow Team, spawn agents, await results, and bind them back with workflow_control.",
 	}
 }

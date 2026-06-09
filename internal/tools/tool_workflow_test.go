@@ -57,8 +57,8 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if listed.Count != 1 || listed.Workflows[0].Name != "feature-delivery" {
 		t.Fatalf("unexpected workflow list: %+v", listed)
 	}
-	if !workflowStepsContain(listed.Workflows[0].NextSteps, "create_workflow") {
-		t.Fatalf("markdown workflow list item should point to create_workflow: %+v", listed.Workflows[0].NextSteps)
+	if !workflowStepsContain(listed.Workflows[0].NextSteps, "start_workflow") {
+		t.Fatalf("markdown workflow list item should point to start_workflow: %+v", listed.Workflows[0].NextSteps)
 	}
 
 	loadResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -82,8 +82,36 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if len(loaded.SuggestedPhaseNames) != 3 || loaded.SuggestedPhaseNames[0] != "Clarify product intent" {
 		t.Fatalf("unexpected suggested phases: %+v", loaded.SuggestedPhaseNames)
 	}
-	if !workflowStepsContain(loaded.NextSteps, "create_workflow") {
-		t.Fatalf("markdown workflow load should point to create_workflow: %+v", loaded.NextSteps)
+	if !workflowStepsContain(loaded.NextSteps, "start_workflow") {
+		t.Fatalf("markdown workflow load should point to start_workflow: %+v", loaded.NextSteps)
+	}
+
+	startResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "start_workflow",
+		Arguments: `{
+			"definition_name":"feature-delivery",
+			"arguments":"settings search",
+			"run_id":"workflow-start-run"
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("start_workflow: %v", err)
+	}
+	var started struct {
+		Driver     string            `json:"driver"`
+		Entrypoint string            `json:"entrypoint"`
+		RunID      string            `json:"run_id"`
+		Status     workflow.RunState `json:"status"`
+		Phases     []workflow.Phase  `json:"phases"`
+	}
+	if err := json.Unmarshal([]byte(startResp), &started); err != nil {
+		t.Fatalf("parse start response: %v", err)
+	}
+	if started.Driver != "agent_managed" || started.Entrypoint != "natural_language_agent" || started.RunID != "workflow-start-run" {
+		t.Fatalf("unexpected start response: %+v", started)
+	}
+	if len(started.Phases) != 3 || started.Phases[0].Status != workflow.PhaseStateRunnable {
+		t.Fatalf("unexpected start phases: %+v", started.Phases)
 	}
 
 	createResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -383,7 +411,7 @@ func TestSaveAndRunScriptWorkflow(t *testing.T) {
 	script := `
 phase("Plan", () => {
   const current = status();
-  if (!current.run || current.run.id !== "workflow-script-run") {
+  if (!current.run || current.run.id.indexOf("workflow-script-") !== 0) {
     throw new Error("status did not expose the current run");
   }
 });
@@ -441,8 +469,8 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 	if loaded.SuggestedPhaseNames != nil {
 		t.Fatalf("script workflow should not expose markdown phase suggestions: %+v", loaded.SuggestedPhaseNames)
 	}
-	if !workflowStepsContain(loaded.NextSteps, "run_workflow") {
-		t.Fatalf("script workflow load should point to run_workflow: %+v", loaded.NextSteps)
+	if !workflowStepsContain(loaded.NextSteps, "start_workflow") {
+		t.Fatalf("script workflow load should point to start_workflow: %+v", loaded.NextSteps)
 	}
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -452,6 +480,35 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 		t.Fatal("create_workflow should reject script workflow definitions")
 	} else if !strings.Contains(err.Error(), "kind=script") || !strings.Contains(err.Error(), "run_workflow") {
 		t.Fatalf("create_workflow script rejection should point to run_workflow, got: %v", err)
+	}
+
+	startResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "start_workflow",
+		Arguments: `{
+			"definition_name":"dynamic-review",
+			"arguments":"{\"feature\":\"settings\"}",
+			"run_id":"workflow-script-start",
+			"background":false
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("start_workflow script: %v", err)
+	}
+	var started struct {
+		Driver     string            `json:"driver"`
+		RunID      string            `json:"run_id"`
+		Status     workflow.RunState `json:"status"`
+		ScriptPath string            `json:"script_path"`
+		Background bool              `json:"background"`
+	}
+	if err := json.Unmarshal([]byte(startResp), &started); err != nil {
+		t.Fatalf("parse script start response: %v", err)
+	}
+	if started.Driver != "script" || started.RunID != "workflow-script-start" || started.Status != workflow.RunStateCompleted || started.Background {
+		t.Fatalf("unexpected script start response: %+v", started)
+	}
+	if _, err := os.Stat(started.ScriptPath); err != nil {
+		t.Fatalf("script start artifact not written: %v", err)
 	}
 
 	runResp, err := kit.Execute(context.Background(), providers.ToolCall{

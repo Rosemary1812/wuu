@@ -106,6 +106,12 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("agent", "创建长期 Agent")
 		}
 		return toolDisplay("agent", "创建长期 Agent "+displayTruncate(profile, 70))
+	case "start_workflow":
+		workflow := strings.TrimPrefix(displayString(args, "definition_name"), "/")
+		if workflow == "" {
+			return toolDisplay("workflow", "启动工作流")
+		}
+		return toolDisplay("workflow", "启动工作流 "+displayTruncate(workflow, 70))
 	case "create_workflow":
 		workflow := strings.TrimPrefix(displayString(args, "definition_name"), "/")
 		if workflow == "" {

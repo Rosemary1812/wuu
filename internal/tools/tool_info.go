@@ -119,7 +119,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindWeb
 	case "load_skill":
 		return ToolKindSkill
-	case "list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "run_workflow", "create_workflow", "workflow_control", "workflow_status":
+	case "list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status":
 		return ToolKindWorkflow
 	case "update_plan":
 		return ToolKindPlan
