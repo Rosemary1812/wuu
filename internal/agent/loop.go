@@ -24,6 +24,11 @@ const maxTruncationRecoveries = 3
 // re-introducing the topic.
 const truncationContinuePrompt = "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces."
 
+const (
+	taskContractMaxMessages       = 3
+	taskContractMaxDirectiveRunes = 1200
+)
+
 // EmptyAnswerError is returned when the model completes a turn without
 // producing any text content or tool calls. StopReason carries the
 // provider's finish signal (e.g. "stop", "end_turn") when one was
@@ -173,6 +178,9 @@ func RunToolLoop(
 		requestMessages := messages
 		if cfg.BeforeRequest != nil {
 			transient := cfg.BeforeRequest()
+			if contract, ok := taskContractReminder(messages); ok {
+				transient = append(transient, contract)
+			}
 			if len(transient) > 0 {
 				requestMessages = make([]providers.ChatMessage, 0, len(messages)+len(transient))
 				requestMessages = append(requestMessages, messages...)
@@ -367,6 +375,88 @@ func RunToolLoop(
 		InputTokens:      totalIn,
 		OutputTokens:     totalOut,
 	}, fmt.Errorf("max steps exceeded (%d)", cfg.MaxSteps)
+}
+
+func taskContractReminder(messages []providers.ChatMessage) (providers.ChatMessage, bool) {
+	directives := recentUserDirectives(messages, taskContractMaxMessages)
+	if len(directives) == 0 {
+		return providers.ChatMessage{}, false
+	}
+
+	var task strings.Builder
+	task.WriteString("# Active Task Contract\n")
+	task.WriteString("- Treat the newest non-reminder user directive below as the current source of truth.\n")
+	task.WriteString("- Older directives remain active only when they do not conflict with a newer directive.\n")
+	task.WriteString("- Do not broaden scope beyond these directives without asking the user.\n\n")
+	task.WriteString("Recent user directives, newest last:\n")
+	for i, directive := range directives {
+		fmt.Fprintf(&task, "%d. %s\n", i+1, directive)
+	}
+
+	ledger := strings.Join([]string{
+		"# Constraint Ledger",
+		"- Pre-write: re-check explicit user constraints before file edits, shell side effects, workflow changes, or commits.",
+		"- Pre-write: if a newer user directive conflicts with an older one, follow the newer directive and do not carry stale work forward.",
+		"- Pre-finish: verify requested deliverables, tests, and atomic commit requirements; report any unmet criterion or skipped verification.",
+		"- Pre-finish: keep the final answer scoped to what changed, what passed, and what remains.",
+	}, "\n")
+
+	content := wuucontext.FormatSystemReminderBlocks(
+		wuucontext.Block{
+			Kind:    wuucontext.BlockTask,
+			Title:   "Active task contract",
+			Source:  "runtime.task_contract",
+			Content: strings.TrimRight(task.String(), "\n"),
+		},
+		wuucontext.Block{
+			Kind:    wuucontext.BlockConstraintLedger,
+			Title:   "Constraint ledger",
+			Source:  "runtime.task_contract",
+			Content: ledger,
+		},
+	)
+	return providers.ChatMessage{
+		Role:    "user",
+		Name:    wuucontext.SystemReminderMessageName,
+		Content: content,
+	}, true
+}
+
+func recentUserDirectives(messages []providers.ChatMessage, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	out := make([]string, 0, limit)
+	for i := len(messages) - 1; i >= 0 && len(out) < limit; i-- {
+		msg := messages[i]
+		if msg.Role != "user" || wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+			continue
+		}
+		content := compactDirectiveContent(msg.Content, taskContractMaxDirectiveRunes)
+		if content == "" {
+			continue
+		}
+		out = append(out, content)
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
+func compactDirectiveContent(content string, maxRunes int) string {
+	content = strings.TrimSpace(strings.Join(strings.Fields(content), " "))
+	if content == "" {
+		return ""
+	}
+	if maxRunes <= 0 {
+		return content
+	}
+	runes := []rune(content)
+	if len(runes) <= maxRunes {
+		return content
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
 }
 
 // proactiveCompactThreshold returns the absolute token count at which

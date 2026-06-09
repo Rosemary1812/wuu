@@ -153,6 +153,15 @@ func userMsg(content string) providers.ChatMessage {
 	return providers.ChatMessage{Role: "user", Content: content}
 }
 
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPartitionToolCallsUsesCallArguments(t *testing.T) {
 	calls := []providers.ToolCall{
 		{ID: "safe_1", Name: "run_shell", Arguments: `{"kind":"safe"}`},
@@ -794,8 +803,13 @@ func TestRunToolLoop_BeforeRequestInjectsTransientMessages(t *testing.T) {
 		t.Fatalf("expected one step call, got %d", len(step.calls))
 	}
 	msgs := step.calls[0].Messages
-	if len(msgs) != 2 || msgs[1].Content != reminder {
+	if len(msgs) != 3 || msgs[1].Content != reminder {
 		t.Fatalf("expected transient request message, got %+v", msgs)
+	}
+	if !strings.Contains(msgs[2].Content, "[TASK]") ||
+		!strings.Contains(msgs[2].Content, "[CONSTRAINT_LEDGER]") ||
+		!strings.Contains(msgs[2].Content, "hi") {
+		t.Fatalf("expected task contract reminder, got %+v", msgs[2])
 	}
 	if len(res.NewMessages) != 1 || res.NewMessages[0].Content != "ok" {
 		t.Fatalf("transient request context should not persist, got %+v", res.NewMessages)
@@ -803,11 +817,69 @@ func TestRunToolLoop_BeforeRequestInjectsTransientMessages(t *testing.T) {
 	if len(contexts) != 1 {
 		t.Fatalf("expected one request context summary, got %+v", contexts)
 	}
-	if contexts[0].StepIndex != 0 || contexts[0].TransientMessages != 1 || contexts[0].ContentBytes == 0 {
+	if contexts[0].StepIndex != 0 || contexts[0].TransientMessages != 2 || contexts[0].ContentBytes == 0 {
 		t.Fatalf("unexpected request context metadata: %+v", contexts[0])
 	}
-	if len(contexts[0].BlockKinds) != 1 || contexts[0].BlockKinds[0] != string(wuucontext.BlockEnvironment) {
+	for _, want := range []string{string(wuucontext.BlockEnvironment), string(wuucontext.BlockTask), string(wuucontext.BlockConstraintLedger)} {
+		if !containsString(contexts[0].BlockKinds, want) {
+			t.Fatalf("request context missing block kind %s: %+v", want, contexts[0])
+		}
+	}
+	if len(contexts[0].BlockKinds) != 3 {
 		t.Fatalf("unexpected request context block kinds: %+v", contexts[0])
+	}
+}
+
+func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	reminder := wuucontext.FormatSystemReminderBlocks(wuucontext.Block{
+		Kind:    wuucontext.BlockEnvironment,
+		Source:  "test",
+		Content: "ignore me",
+	})
+	longDirective := "final constraint " + strings.Repeat("x", taskContractMaxDirectiveRunes+100)
+	history := []providers.ChatMessage{
+		userMsg("first request"),
+		{
+			Role:    "user",
+			Name:    wuucontext.SystemReminderMessageName,
+			Content: reminder,
+		},
+		userMsg("second request"),
+		userMsg(longDirective),
+	}
+
+	cfg := LoopConfig{
+		Model: "m",
+		BeforeRequest: func() []providers.ChatMessage {
+			return []providers.ChatMessage{{
+				Role:    "user",
+				Name:    wuucontext.SystemReminderMessageName,
+				Content: reminder,
+			}}
+		},
+	}
+	if _, err := RunToolLoop(context.Background(), history, cfg, step); err != nil {
+		t.Fatal(err)
+	}
+	msgs := step.calls[0].Messages
+	if len(msgs) != len(history)+2 {
+		t.Fatalf("expected history plus environment and task contract, got %+v", msgs)
+	}
+	contract := msgs[len(msgs)-1].Content
+	if strings.Contains(contract, "ignore me") {
+		t.Fatalf("task contract should ignore system reminders: %s", contract)
+	}
+	for _, want := range []string{"first request", "second request", "final constraint"} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("task contract missing %q: %s", want, contract)
+		}
+	}
+	if !strings.Contains(contract, "...") {
+		t.Fatalf("task contract should truncate long directives: %s", contract)
+	}
+	if strings.Contains(contract, strings.Repeat("x", taskContractMaxDirectiveRunes+50)) {
+		t.Fatalf("task contract leaked unbounded directive: %s", contract)
 	}
 }
 

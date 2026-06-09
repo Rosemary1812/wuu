@@ -924,11 +924,13 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if contextParams.Event.RequestContext == nil {
 		t.Fatalf("request context missing from turn event: %+v", contextParams.Event)
 	}
-	if contextParams.Event.RequestContext.TransientMessages != 1 || contextParams.Event.RequestContext.ContentBytes == 0 {
+	if contextParams.Event.RequestContext.TransientMessages != 2 || contextParams.Event.RequestContext.ContentBytes == 0 {
 		t.Fatalf("unexpected request context metadata: %+v", contextParams.Event.RequestContext)
 	}
-	if len(contextParams.Event.RequestContext.BlockKinds) == 0 || contextParams.Event.RequestContext.BlockKinds[0] != "ENVIRONMENT" {
-		t.Fatalf("unexpected request context block kinds: %+v", contextParams.Event.RequestContext)
+	for _, want := range []string{"ENVIRONMENT", "TASK", "CONSTRAINT_LEDGER"} {
+		if !testStringSliceContains(contextParams.Event.RequestContext.BlockKinds, want) {
+			t.Fatalf("request context missing block kind %s: %+v", want, contextParams.Event.RequestContext)
+		}
 	}
 	delta := notificationByMethod(t, msgs, NotificationAgentMessageDelta)
 	deltaParams := remarshal[AgentMessageDeltaNotification](t, delta["params"])
@@ -2949,6 +2951,15 @@ func notificationsByMethod(msgs []map[string]any, method string) []map[string]an
 		}
 	}
 	return out
+}
+
+func testStringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func requestByMethod(t *testing.T, msgs []map[string]any, method string) map[string]any {
