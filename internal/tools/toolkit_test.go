@@ -227,6 +227,56 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	if !strings.Contains(err.Error(), "error_kind=stale_file_baseline") || !strings.Contains(err.Error(), "model_next_action=") {
 		t.Fatalf("expected structured stale baseline guidance, got: %v", err)
 	}
+
+	largeContent := strings.Repeat("large existing file line\n", 1800)
+	largePath := filepath.Join(root, "large.txt")
+	mustWriteFile(t, largePath, largeContent)
+	largeReadResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"large.txt","range":{"start_line":1,"end_line":1}}`,
+	})
+	if err != nil {
+		t.Fatalf("read large.txt: %v", err)
+	}
+	var largeRead struct {
+		FileSHA string `json:"file_sha"`
+	}
+	if err := json.Unmarshal([]byte(largeReadResp), &largeRead); err != nil {
+		t.Fatalf("parse large read response: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"large.txt","content":"replacement\n","expected_old_sha":"` + largeRead.FileSHA + `"}`,
+	})
+	if err == nil ||
+		!strings.Contains(err.Error(), "error_kind=broad_overwrite") ||
+		!strings.Contains(err.Error(), "overwrite_policy") ||
+		!strings.Contains(err.Error(), "edit_file/apply_patch") {
+		t.Fatalf("expected broad overwrite rejection, got: %v", err)
+	}
+	if got := mustReadFile(t, largePath); got != largeContent {
+		t.Fatalf("broad overwrite rejection should not mutate file: got %d bytes", len(got))
+	}
+	writeLargeResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"large.txt","content":"replacement\n","expected_old_sha":"` + largeRead.FileSHA + `","overwrite_policy":"explicit_user_requested"}`,
+	})
+	if err != nil {
+		t.Fatalf("write_file explicit broad overwrite: %v", err)
+	}
+	var writeLarge struct {
+		OldFileSHA string     `json:"old_file_sha"`
+		Diff       DiffResult `json:"diff"`
+	}
+	if err := json.Unmarshal([]byte(writeLargeResp), &writeLarge); err != nil {
+		t.Fatalf("parse broad overwrite response: %v\n%s", err, writeLargeResp)
+	}
+	if writeLarge.OldFileSHA != largeRead.FileSHA || mustReadFile(t, largePath) != "replacement\n" {
+		t.Fatalf("explicit broad overwrite did not apply: %+v", writeLarge)
+	}
+	if !writeLarge.Diff.Truncated || writeLarge.Diff.OldLines <= 0 || writeLarge.Diff.NewLines != 1 || len(writeLarge.Diff.Hunks) != 0 {
+		t.Fatalf("broad overwrite should return compact diff summary: %+v", writeLarge.Diff)
+	}
 }
 
 func TestToolkit_WriteFileRejectsSensitivePaths(t *testing.T) {

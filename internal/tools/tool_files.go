@@ -354,6 +354,8 @@ type WriteFileTool struct{ env *Env }
 
 func NewWriteFileTool(env *Env) *WriteFileTool { return &WriteFileTool{env: env} }
 
+const maxImplicitWriteFileOverwriteBytes = 32 * 1024
+
 func (t *WriteFileTool) Name() string            { return "write_file" }
 func (t *WriteFileTool) IsReadOnly() bool        { return false }
 func (t *WriteFileTool) IsConcurrencySafe() bool { return false }
@@ -366,6 +368,7 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 			"- Prefer edit_file for modifying existing files — it only sends the diff\n" +
 			"- Only use this tool to create new files or for complete rewrites\n" +
 			"- Existing files require expected_old_sha from read_file or a fresh prior read_file result\n" +
+			"- Existing files larger than 32KB require overwrite_policy=\"explicit_user_requested\" or generated-file policy; use edit_file/apply_patch for ordinary source edits\n" +
 			"- Set create_only=true when the file must not already exist\n" +
 			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected\n" +
 			"- Returns workspace_revision and a structured diff showing what changed",
@@ -388,6 +391,11 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 					"type":        "boolean",
 					"description": "If true, fail when the target file already exists.",
 				},
+				"overwrite_policy": map[string]any{
+					"type":        "string",
+					"enum":        []string{"small_file", "generated", "explicit_user_requested"},
+					"description": "Required for broad existing-file rewrites. Omit for new files and small existing files; use explicit_user_requested only when the user asked for a full rewrite.",
+				},
 			},
 			"required": []string{"path", "content"},
 		},
@@ -396,10 +404,11 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 
 func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Path           string `json:"path"`
-		Content        string `json:"content"`
-		ExpectedOldSHA string `json:"expected_old_sha"`
-		CreateOnly     bool   `json:"create_only"`
+		Path            string `json:"path"`
+		Content         string `json:"content"`
+		ExpectedOldSHA  string `json:"expected_old_sha"`
+		CreateOnly      bool   `json:"create_only"`
+		OverwritePolicy string `json:"overwrite_policy"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -428,6 +437,9 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 		if err := t.validateExistingWrite(resolved, oldContent, strings.TrimSpace(args.ExpectedOldSHA)); err != nil {
 			return "", err
 		}
+		if err := validateWriteFileOverwriteScope(t.env, resolved, oldContent, args.Content, args.OverwritePolicy); err != nil {
+			return "", err
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
@@ -449,7 +461,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 
 	if fileExists {
 		result["old_file_sha"] = formatFileSHA(sha256Hex(oldContent))
-		result["diff"] = computeDiff(string(oldContent), args.Content, 3)
+		result["diff"] = writeFileDiffResult(oldContent, args.Content)
 	} else {
 		lineCount := strings.Count(args.Content, "\n")
 		if len(args.Content) > 0 && !strings.HasSuffix(args.Content, "\n") {
@@ -458,6 +470,29 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 		result["diff"] = DiffResult{NewFile: true, Lines: lineCount}
 	}
 	return mustJSON(result)
+}
+
+func writeFileDiffResult(oldContent []byte, newContent string) DiffResult {
+	if len(oldContent) > maxImplicitWriteFileOverwriteBytes || len(newContent) > maxImplicitWriteFileOverwriteBytes {
+		return DiffResult{
+			OldLines:  countTextLines(string(oldContent)),
+			NewLines:  countTextLines(newContent),
+			Truncated: true,
+			Summary:   "large full-file rewrite; inline diff omitted from tool result",
+		}
+	}
+	return computeDiff(string(oldContent), newContent, 3)
+}
+
+func countTextLines(content string) int {
+	if content == "" {
+		return 0
+	}
+	lines := strings.Count(content, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		lines++
+	}
+	return lines
 }
 
 func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte, expectedOldSHA string) error {
@@ -485,6 +520,68 @@ func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte
 		}
 	}
 	return nil
+}
+
+func validateWriteFileOverwriteScope(env *Env, resolved string, oldContent []byte, newContent, overwritePolicy string) error {
+	policy := strings.ToLower(strings.TrimSpace(overwritePolicy))
+	if policy != "" && !oneOf(policy, "small_file", "generated", "explicit_user_requested") {
+		return fmt.Errorf("write_file invalid overwrite_policy %q: use small_file, generated, or explicit_user_requested", overwritePolicy)
+	}
+	if string(oldContent) == newContent {
+		return nil
+	}
+	if len(oldContent) <= maxImplicitWriteFileOverwriteBytes {
+		return nil
+	}
+	displayPath := resolved
+	if env != nil {
+		displayPath = env.NormalizeDisplayPath(resolved)
+	}
+	switch policy {
+	case "explicit_user_requested":
+		return nil
+	case "generated":
+		if writeFilePathLooksGenerated(displayPath) {
+			return nil
+		}
+		return broadWriteFileOverwriteError(displayPath, len(oldContent), policy, "generated policy only applies to generated/build artifact paths")
+	case "small_file":
+		return broadWriteFileOverwriteError(displayPath, len(oldContent), policy, "small_file policy cannot overwrite files larger than the implicit small-file limit")
+	default:
+		return broadWriteFileOverwriteError(displayPath, len(oldContent), policy, "large existing file overwrite requires explicit policy")
+	}
+}
+
+func broadWriteFileOverwriteError(path string, size int, policy, reason string) error {
+	return fmt.Errorf(
+		"write_file refuses broad existing-file overwrite: error_kind=broad_overwrite path=%s current_size_bytes=%d max_implicit_overwrite_bytes=%d overwrite_policy=%q reason=%q safe_retry=%q model_next_action=%q",
+		path,
+		size,
+		maxImplicitWriteFileOverwriteBytes,
+		policy,
+		reason,
+		"Use edit_file/apply_patch for scoped edits, or retry write_file with overwrite_policy=explicit_user_requested only if the user explicitly requested a full rewrite.",
+		"prefer a scoped edit tool; if a full rewrite is truly required, explain the reason and use an explicit overwrite policy",
+	)
+}
+
+func writeFilePathLooksGenerated(path string) bool {
+	normalized := strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
+	if normalized == "" {
+		return false
+	}
+	parts := strings.Split(normalized, "/")
+	for _, part := range parts {
+		switch part {
+		case "generated", "gen", "dist", "build", "out", "coverage":
+			return true
+		}
+	}
+	base := parts[len(parts)-1]
+	return strings.Contains(base, ".generated.") ||
+		strings.Contains(base, ".gen.") ||
+		strings.HasSuffix(base, ".pb.go") ||
+		strings.HasSuffix(base, ".min.js")
 }
 
 func normalizeFileSHA(value string) string {

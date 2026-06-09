@@ -21,9 +21,13 @@ type DiffHunk struct {
 
 // DiffResult is the structured diff included in tool results.
 type DiffResult struct {
-	Hunks   []DiffHunk `json:"hunks,omitempty"`
-	NewFile bool       `json:"new_file,omitempty"`
-	Lines   int        `json:"lines,omitempty"` // total lines for new files
+	Hunks     []DiffHunk `json:"hunks,omitempty"`
+	NewFile   bool       `json:"new_file,omitempty"`
+	Lines     int        `json:"lines,omitempty"` // total lines for new files
+	OldLines  int        `json:"old_lines,omitempty"`
+	NewLines  int        `json:"new_lines,omitempty"`
+	Truncated bool       `json:"truncated,omitempty"`
+	Summary   string     `json:"summary,omitempty"`
 }
 
 // computeDiff generates unified diff hunks between old and new text.
