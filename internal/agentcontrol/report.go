@@ -33,6 +33,7 @@ type AgentReportRequest struct {
 }
 
 type AgentReportResult struct {
+	Action     string   `json:"action"`
 	TaskID     string   `json:"task_id"`
 	AgentID    string   `json:"agent_id"`
 	AgentPath  string   `json:"agent_path,omitempty"`
@@ -118,6 +119,7 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 		})
 	}
 	return AgentReportResult{
+		Action:     "agent_report",
 		TaskID:     id,
 		AgentID:    id,
 		AgentPath:  path,

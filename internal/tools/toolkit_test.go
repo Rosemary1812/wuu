@@ -12,6 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -1885,6 +1888,104 @@ func TestToolkit_FileToolTelemetryRecordsResultActions(t *testing.T) {
 	want := []string{"read_file:read", "list_files:list", "write_file:create", "edit_file:edit", "write_file:overwrite"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("file tool result actions = %+v, want %+v", got, want)
+	}
+}
+
+func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &workflowFakeClient{content: "agent done"},
+		DefaultModel: "fake-model",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
+		SessionID:    "agent-telemetry-session",
+		HistoryDir:   filepath.Join(root, ".wuu", "sessions", "agent-telemetry-session", "workers"),
+		ThreadDir:    filepath.Join(root, ".wuu", "sessions", "agent-telemetry-session", "threads"),
+		HarnessDir:   filepath.Join(root, ".wuu", "sessions", "agent-telemetry-session", "harness"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return workflowNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopWorkflowAgentControl(control)
+	kit.SetAgentControl(control)
+	kit.SetAgentIdentity("root", agentthread.RootPath)
+
+	spawnedJSON, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "spawn_agent",
+		Arguments: `{"task_name":"inspect_team","message":"Finish the worker task.","synchronous":true,"fork_turns":"none"}`,
+	})
+	if err != nil {
+		t.Fatalf("spawn_agent: %v", err)
+	}
+	var spawned struct {
+		Action    string `json:"action"`
+		AgentID   string `json:"agent_id"`
+		AgentPath string `json:"agent_path"`
+	}
+	if err := json.Unmarshal([]byte(spawnedJSON), &spawned); err != nil {
+		t.Fatalf("decode spawn_agent result: %v", err)
+	}
+	if spawned.Action != "spawn_agent" || spawned.AgentID == "" || spawned.AgentPath == "" {
+		t.Fatalf("unexpected spawn_agent result: %s", spawnedJSON)
+	}
+
+	childKit, err := New(root)
+	if err != nil {
+		t.Fatalf("New child kit: %v", err)
+	}
+	childKit.SetAgentControl(control)
+	childKit.SetAgentIdentity(spawned.AgentID, spawned.AgentPath)
+	if _, err := childKit.Execute(context.Background(), providers.ToolCall{
+		Name:      "agent_report",
+		Arguments: `{"outcome":"completed","summary":"Worker submitted structured handoff.","changed_files":["internal/tools/tool_agents.go"],"work_done":["Recorded the handoff."]}`,
+	}); err != nil {
+		t.Fatalf("agent_report: %v", err)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "await_agents",
+		Arguments: fmt.Sprintf(`{"targets":["%s"],"timeout_ms":1000}`, spawned.AgentID),
+	}); err != nil {
+		t.Fatalf("await_agents: %v", err)
+	}
+	listJSON, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_agents", Arguments: `{}`})
+	if err != nil {
+		t.Fatalf("list_agents: %v", err)
+	}
+	var listed struct {
+		Action string           `json:"action"`
+		Agents []map[string]any `json:"agents"`
+	}
+	if err := json.Unmarshal([]byte(listJSON), &listed); err != nil {
+		t.Fatalf("decode list_agents result: %v", err)
+	}
+	if listed.Action != "list_agents" || len(listed.Agents) != 1 {
+		t.Fatalf("unexpected list_agents result: %s", listJSON)
+	}
+
+	rootActions := map[string]string{}
+	for _, record := range kit.ToolTelemetry() {
+		rootActions[record.Name] = record.ResultAction
+	}
+	for toolName, want := range map[string]string{
+		"spawn_agent":  "spawn_agent",
+		"await_agents": "await_agents",
+		"list_agents":  "list_agents",
+	} {
+		if rootActions[toolName] != want {
+			t.Fatalf("%s telemetry action = %q, want %q (records=%+v)", toolName, rootActions[toolName], want, kit.ToolTelemetry())
+		}
+	}
+	childRecords := childKit.ToolTelemetry()
+	if len(childRecords) != 1 || childRecords[0].Name != "agent_report" || childRecords[0].ResultAction != "agent_report" {
+		t.Fatalf("agent_report telemetry action mismatch: %+v", childRecords)
 	}
 }
 

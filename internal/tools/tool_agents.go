@@ -356,7 +356,7 @@ func (t *SendAgentMessageTool) Execute(_ context.Context, argsJSON string) (stri
 	if err := executeAgentMessage(t.env, argsJSON); err != nil {
 		return "", err
 	}
-	return `{"status":"sent"}`, nil
+	return `{"action":"send_message","status":"sent"}`, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +388,9 @@ func (t *FollowupTaskTool) Execute(ctx context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
-	out, err := json.Marshal(snapshotForJSON(snap))
+	resp := snapshotForJSON(snap)
+	resp.Action = "followup_task"
+	out, err := json.Marshal(resp)
 	if err != nil {
 		return "", err
 	}
@@ -451,6 +453,7 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 		message = "Wait completed."
 	}
 	out, err := json.Marshal(map[string]any{
+		"action":    "wait_agent",
 		"message":   message,
 		"timed_out": !completed,
 	})
@@ -572,7 +575,7 @@ func (t *CloseAgentTool) Execute(_ context.Context, argsJSON string) (string, er
 	if !t.env.AgentControl.StopFrom(currentAgentPath(t.env), args.Target) {
 		return "", fmt.Errorf("agent %q not found", args.Target)
 	}
-	return `{"status":"closed"}`, nil
+	return `{"action":"close_agent","status":"closed"}`, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -615,7 +618,14 @@ func (t *ListAgentsTool) Execute(_ context.Context, argsJSON string) (string, er
 		return "", err
 	}
 	list := t.env.AgentControl.ListFrom(currentAgentPath(t.env), args.PathPrefix)
-	out, err := json.Marshal(list)
+	agents := make([]agentSnapshotResponse, 0, len(list))
+	for _, snap := range list {
+		agents = append(agents, snapshotForJSON(snap))
+	}
+	out, err := json.Marshal(map[string]any{
+		"action": "list_agents",
+		"agents": agents,
+	})
 	if err != nil {
 		return "", err
 	}
@@ -790,6 +800,7 @@ func currentAgentPath(env *Env) string {
 }
 
 type agentSnapshotResponse struct {
+	Action       string    `json:"action,omitempty"`
 	ID           string    `json:"id"`
 	Type         string    `json:"type"`
 	TaskName     string    `json:"task_name,omitempty"`

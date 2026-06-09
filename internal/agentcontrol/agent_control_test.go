@@ -481,10 +481,16 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
+	if res.Action != "spawn_agent" {
+		t.Fatalf("Spawn result action = %q, want spawn_agent", res.Action)
+	}
 
 	awaited, err := c.AwaitFrom(agentthread.RootPath, context.Background(), []string{res.AgentID})
 	if err != nil {
 		t.Fatalf("AwaitFrom: %v", err)
+	}
+	if awaited.Action != "await_agents" {
+		t.Fatalf("AwaitFrom result action = %q, want await_agents", awaited.Action)
 	}
 	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusAwaitingReport) || !awaited.Results[0].ReportMissing {
 		t.Fatalf("expected awaiting_report result, got %+v", awaited)
@@ -501,6 +507,9 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	if report.Action != "agent_report" {
+		t.Fatalf("AgentReport result action = %q, want agent_report", report.Action)
 	}
 	awaited, err = c.AwaitFrom(agentthread.RootPath, context.Background(), []string{res.AgentID})
 	if err != nil {

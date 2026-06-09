@@ -14,6 +14,7 @@ import (
 )
 
 type AwaitAgentsResult struct {
+	Action    string             `json:"action"`
 	TimedOut  bool               `json:"timed_out"`
 	Warnings  []string           `json:"warnings,omitempty"`
 	Results   []AwaitAgentResult `json:"results"`
@@ -50,7 +51,7 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 	}
 	resolved := c.resolveAwaitTargets(currentPath, targets)
 	if len(resolved) == 0 {
-		result := AwaitAgentsResult{Results: []AwaitAgentResult{}}
+		result := AwaitAgentsResult{Action: "await_agents", Results: []AwaitAgentResult{}}
 		result.NextSteps = awaitAgentsNextSteps(result)
 		return result, nil
 	}
@@ -197,7 +198,7 @@ func (c *AgentControl) awaitSnapshot(targets []awaitTarget) AwaitAgentsResult {
 	for _, target := range targets {
 		results = append(results, c.awaitResultForTarget(target))
 	}
-	return AwaitAgentsResult{Warnings: changedFileOverlapWarnings(results), Results: results}
+	return AwaitAgentsResult{Action: "await_agents", Warnings: changedFileOverlapWarnings(results), Results: results}
 }
 
 func awaitAgentsNextSteps(result AwaitAgentsResult) []string {

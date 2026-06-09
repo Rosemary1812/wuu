@@ -241,6 +241,7 @@ type SpawnRequest struct {
 
 // SpawnResult is what the spawn_agent tool returns to the model.
 type SpawnResult struct {
+	Action       string   `json:"action"`
 	AgentID      string   `json:"agent_id"`
 	TaskName     string   `json:"task_name,omitempty"`
 	AgentProfile string   `json:"agent_profile,omitempty"`
@@ -332,6 +333,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			return nil, err
 		}
 		return &SpawnResult{
+			Action:       "spawn_agent",
 			AgentID:      workerID,
 			TaskName:     threadMeta.TaskName,
 			AgentProfile: threadMeta.AgentProfile,
@@ -441,6 +443,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	}
 
 	result := &SpawnResult{
+		Action:       "spawn_agent",
 		AgentID:      sa.ID,
 		TaskName:     threadMeta.TaskName,
 		AgentProfile: threadMeta.AgentProfile,
@@ -609,6 +612,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			return nil, err
 		}
 		return &SpawnResult{
+			Action:       "spawn_agent",
 			AgentID:      workerID,
 			TaskName:     threadMeta.TaskName,
 			AgentProfile: threadMeta.AgentProfile,
@@ -720,6 +724,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	}
 
 	result := &SpawnResult{
+		Action:       "spawn_agent",
 		AgentID:      sa.ID,
 		TaskName:     threadMeta.TaskName,
 		AgentProfile: threadMeta.AgentProfile,
