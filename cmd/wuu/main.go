@@ -1654,6 +1654,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 		if len(summary.ToolSummary.ByResultAction) > 0 {
 			fmt.Printf("  result_actions: %s\n", formatCountMap(summary.ToolSummary.ByResultAction))
 		}
+		if blocks := formatEvalPolicyBlocks(summary.ToolSummary.PolicyBlocks); blocks != "" {
+			fmt.Printf("  policy_blocks: %s\n", blocks)
+		}
 		if repeated := formatEvalRepeatedArguments(summary.ToolSummary.RepeatedArguments); repeated != "" {
 			fmt.Printf("  repeated_arguments: %s\n", repeated)
 		}
@@ -1743,6 +1746,9 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 		if len(summary.ToolSummary.ByResultAction) > 0 {
 			fmt.Printf("  result_actions: %s\n", formatCountMap(summary.ToolSummary.ByResultAction))
 		}
+		if blocks := formatSessionPolicyBlocks(summary.ToolSummary.PolicyBlocks); blocks != "" {
+			fmt.Printf("  policy_blocks: %s\n", blocks)
+		}
 		if repeated := formatSessionRepeatedArguments(summary.ToolSummary.RepeatedArguments); repeated != "" {
 			fmt.Printf("  repeated_arguments: %s\n", repeated)
 		}
@@ -1758,6 +1764,48 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 	for _, warning := range summary.Warnings {
 		fmt.Printf("  warning: %s\n", warning)
 	}
+}
+
+func formatEvalPolicyBlocks(values []evalharness.ToolPolicyBlockSummary) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		if part := formatPolicyBlockLabel(value.ToolName, value.CallID, value.PolicyAction, value.ErrorKind, value.ApprovalRef); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatSessionPolicyBlocks(values []sessiontrace.ToolPolicyBlockSummary) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		if part := formatPolicyBlockLabel(value.ToolName, value.CallID, value.PolicyAction, value.ErrorKind, value.ApprovalRef); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatPolicyBlockLabel(toolName, callID, action, errorKind, approvalRef string) string {
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return ""
+	}
+	parts := []string{toolName}
+	if action = strings.TrimSpace(action); action != "" {
+		parts = append(parts, action)
+	}
+	if errorKind = strings.TrimSpace(errorKind); errorKind != "" {
+		parts = append(parts, errorKind)
+	}
+	label := strings.Join(parts, ":")
+	if callID = strings.TrimSpace(callID); callID != "" {
+		label += ":call_id=" + callID
+	}
+	if approvalRef = strings.TrimSpace(approvalRef); approvalRef != "" {
+		label += ":approval_ref=" + approvalRef
+	}
+	return label
 }
 
 func formatEvalRepeatedArguments(values []evalharness.ToolRepeatedArgumentSummary) string {

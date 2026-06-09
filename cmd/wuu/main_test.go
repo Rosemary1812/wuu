@@ -776,6 +776,44 @@ func TestRunEvalReplayTraceJSON(t *testing.T) {
 	}
 }
 
+func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
+	tracePath := filepath.Join(t.TempDir(), "eval-trace.jsonl")
+	approvalRef := "/tmp/wuu/session/approvals/call-process.json"
+	if err := evalharness.WriteTrace(tracePath, evalharness.Result{
+		TaskID:   "task-1",
+		TaskName: "Task One",
+		Success:  true,
+		Observability: &evalharness.Observability{
+			ToolRecords: []evalharness.ToolObservation{{
+				Name:            "start_process",
+				CallID:          "call-process",
+				Kind:            "process",
+				Risk:            "high",
+				PolicyAction:    "require_approval",
+				ErrorKind:       "approval_required",
+				ApprovalRef:     approvalRef,
+				ArgumentsSHA256: strings.Repeat("e", 64),
+				Success:         false,
+			}},
+		},
+	}); err != nil {
+		t.Fatalf("write trace: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"eval", "--replay-trace", tracePath}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "policy_blocks: start_process:require_approval:approval_required:call_id=call-process:approval_ref="+approvalRef) {
+		t.Fatalf("replay text output missing policy blocks:\n%s", output)
+	}
+	if strings.Contains(output, strings.Repeat("e", 64)) {
+		t.Fatalf("replay text output should not print argument fingerprints by default:\n%s", output)
+	}
+}
+
 func TestRunEvalReplaySessionTraceJSON(t *testing.T) {
 	tracePath := filepath.Join(t.TempDir(), "session-trace.jsonl")
 	if err := sessiontrace.AppendTurn(tracePath,
@@ -834,6 +872,44 @@ func TestRunEvalReplaySessionTraceJSON(t *testing.T) {
 		fileSummary.ToolSummary.RepeatedArguments[0].ArgumentsSHA256 != strings.Repeat("d", 64) ||
 		fileSummary.ToolSummary.RepeatedArguments[0].Count != 2 {
 		t.Fatalf("session replay output should include repeated argument summary: %+v", fileSummary.ToolSummary)
+	}
+}
+
+func TestRunEvalReplaySessionTraceTextPrintsPolicyBlocks(t *testing.T) {
+	tracePath := filepath.Join(t.TempDir(), "session-trace.jsonl")
+	if err := sessiontrace.AppendTurn(tracePath,
+		sessiontrace.TurnRecord{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Status:   "completed",
+		},
+		sessiontrace.FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
+		nil,
+		[]tools.ToolExecutionRecord{{
+			Name:            "run_shell",
+			CallID:          "call-shell",
+			Kind:            tools.ToolKindShell,
+			Risk:            tools.ToolRiskHigh,
+			PolicyAction:    tools.ToolPolicyDeny,
+			ErrorKind:       "policy_denied",
+			ArgumentsSHA256: strings.Repeat("f", 64),
+			Success:         false,
+		}},
+	); err != nil {
+		t.Fatalf("write session trace: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"eval", "--replay-trace", tracePath}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "policy_blocks: run_shell:deny:policy_denied:call_id=call-shell") {
+		t.Fatalf("session replay text output missing policy blocks:\n%s", output)
+	}
+	if strings.Contains(output, strings.Repeat("f", 64)) {
+		t.Fatalf("session replay text output should not print argument fingerprints by default:\n%s", output)
 	}
 }
 
