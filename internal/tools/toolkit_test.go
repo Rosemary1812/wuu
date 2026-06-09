@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -520,7 +521,15 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 -old name
 +new name
 *** End Patch`
-	args, err := json.Marshal(map[string]string{"patchText": patchText})
+	expectedOldSHAs := map[string]string{
+		"a.txt":       formatFileSHA(sha256Hex([]byte("line one\nline two\nline three\n"))),
+		"remove.txt":  formatFileSHA(sha256Hex([]byte("remove me\n"))),
+		"oldname.txt": formatFileSHA(sha256Hex([]byte("old name\n"))),
+	}
+	args, err := json.Marshal(map[string]any{
+		"patchText":         patchText,
+		"expected_old_shas": expectedOldSHAs,
+	})
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
@@ -544,6 +553,12 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 			Tool   string `json:"tool"`
 			Source string `json:"source"`
 		} `json:"provenance"`
+		Files []struct {
+			Path       string `json:"path"`
+			Action     string `json:"action"`
+			OldFileSHA string `json:"old_file_sha"`
+			NewFileSHA string `json:"new_file_sha"`
+		} `json:"files"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse apply_patch response: %v", err)
@@ -560,6 +575,25 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "run_test") {
 		t.Fatalf("apply_patch response missing validation suggestion: %+v", parsed.Suggestions)
+	}
+	seenSHA := map[string]struct {
+		old string
+		new string
+	}{}
+	for _, file := range parsed.Files {
+		seenSHA[file.Path] = struct {
+			old string
+			new string
+		}{old: file.OldFileSHA, new: file.NewFileSHA}
+	}
+	if got := seenSHA["a.txt"]; got.old != expectedOldSHAs["a.txt"] || !strings.HasPrefix(got.new, "sha256:") {
+		t.Fatalf("update sha metadata = %+v", got)
+	}
+	if got := seenSHA["dir/new.txt"]; got.old != "" || !strings.HasPrefix(got.new, "sha256:") {
+		t.Fatalf("add sha metadata = %+v", got)
+	}
+	if got := seenSHA["remove.txt"]; got.old != expectedOldSHAs["remove.txt"] || got.new != "" {
+		t.Fatalf("delete sha metadata = %+v", got)
 	}
 
 	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "line one\nline 2\nline three\n" {
@@ -664,6 +698,101 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestToolkit_ApplyPatchGuardsExistingFiles(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "alpha\n")
+
+	patchText := `*** Begin Patch
+*** Update File: a.txt
+@@
+-alpha
++bravo
+*** End Patch`
+	args, err := json.Marshal(map[string]string{"patchText": patchText})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	})
+	if err == nil || !strings.Contains(err.Error(), "read_file") || !strings.Contains(err.Error(), "expected_old_shas") {
+		t.Fatalf("expected apply_patch baseline guard, got: %v", err)
+	}
+
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	var readParsed struct {
+		FileSHA string `json:"file_sha"`
+	}
+	if err := json.Unmarshal([]byte(readResp), &readParsed); err != nil {
+		t.Fatalf("parse read response: %v", err)
+	}
+	if readParsed.FileSHA == "" {
+		t.Fatalf("read_file missing file_sha: %s", readResp)
+	}
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "changed\n")
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed since last read") {
+		t.Fatalf("expected stale read rejection, got: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name: "apply_patch",
+		Arguments: `{"patchText":` + strconv.Quote(`*** Begin Patch
+*** Update File: a.txt
+@@
+-changed
++bravo
+*** End Patch`) + `,"expected_old_sha":"sha256:0000"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
+		t.Fatalf("expected expected_old_sha mismatch, got: %v", err)
+	}
+
+	currentSHA := formatFileSHA(sha256Hex([]byte("changed\n")))
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "apply_patch",
+		Arguments: `{"patchText":` + strconv.Quote(`*** Begin Patch
+*** Update File: a.txt
+@@
+-changed
++bravo
+*** End Patch`) + `,"expected_old_sha":"` + currentSHA + `"}`,
+	})
+	if err != nil {
+		t.Fatalf("apply_patch with expected_old_sha: %v", err)
+	}
+	var parsed struct {
+		Files []struct {
+			OldFileSHA string `json:"old_file_sha"`
+			NewFileSHA string `json:"new_file_sha"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse apply_patch response: %v", err)
+	}
+	if len(parsed.Files) != 1 || parsed.Files[0].OldFileSHA != currentSHA || !strings.HasPrefix(parsed.Files[0].NewFileSHA, "sha256:") {
+		t.Fatalf("unexpected patch sha metadata: %+v", parsed.Files)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "bravo\n" {
+		t.Fatalf("unexpected patched content: %q", got)
+	}
+}
+
 func TestToolkit_ApplyPatchRejectsAmbiguousUpdate(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -678,7 +807,7 @@ func TestToolkit_ApplyPatchRejectsAmbiguousUpdate(t *testing.T) {
 @@
 -same
 +different
-*** End Patch`})
+*** End Patch`, "expected_old_sha": formatFileSHA(sha256Hex([]byte("same\nsame\n")))})
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
@@ -797,7 +926,7 @@ func TestToolkit_ApplyPatchAppendsAtEndOfFile(t *testing.T) {
 @@
 *** End of File
 +second
-*** End Patch`})
+*** End Patch`, "expected_old_sha": formatFileSHA(sha256Hex([]byte("first\n")))})
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
