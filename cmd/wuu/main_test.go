@@ -805,6 +805,30 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 				EventLogPath: "/tmp/wuu/workflows/run-1/events.jsonl",
 				Driver:       "agent_managed",
 				Status:       "completed",
+				AgentRuns: []evalharness.WorkflowAgentRunObservation{{
+					ID:           "alpha-writer",
+					TaskName:     "write alpha marker",
+					AgentProfile: "marker-writer",
+					Status:       "completed",
+					ReportPath:   "/tmp/wuu/workflows/run-1/agents/alpha/report.md",
+					WorktreePath: "/tmp/wuu/worktrees/alpha",
+					ChangedFiles: []string{"team_alpha.txt"},
+				}, {
+					ID:            "beta-writer",
+					TaskName:      "write beta marker",
+					Status:        "awaiting_report",
+					ReportMissing: true,
+					ChangedFiles:  []string{"team_alpha.txt", "team_beta.txt"},
+				}},
+				TeamArbitration: evalharness.WorkflowTeamArbitration{
+					Status:         "awaiting_reports",
+					MissingReports: []string{"beta-writer"},
+					ChangedFileOverlaps: []evalharness.WorkflowChangedFileOverlapObservation{{
+						File:        "team_alpha.txt",
+						AgentRunIDs: []string{"alpha-writer", "beta-writer"},
+					}},
+					NextActions: []string{"await_reports"},
+				},
 			}},
 		},
 	}); err != nil {
@@ -822,6 +846,15 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	}
 	if !strings.Contains(output, "workflow_runs: run-1:driver=agent_managed:status=completed:event_log=/tmp/wuu/workflows/run-1/events.jsonl:run_dir=/tmp/wuu/workflows/run-1") {
 		t.Fatalf("replay text output missing workflow artifact paths:\n%s", output)
+	}
+	if !strings.Contains(output, "workflow_agents: run-1/alpha-writer:task=write alpha marker:profile=marker-writer:status=completed:report=/tmp/wuu/workflows/run-1/agents/alpha/report.md:worktree=/tmp/wuu/worktrees/alpha:changed=team_alpha.txt") {
+		t.Fatalf("replay text output missing workflow agent report paths:\n%s", output)
+	}
+	if !strings.Contains(output, "run-1/beta-writer:task=write beta marker:status=awaiting_report:report_missing=true:changed=team_alpha.txt|team_beta.txt") {
+		t.Fatalf("replay text output missing workflow agent missing-report state:\n%s", output)
+	}
+	if !strings.Contains(output, "workflow_arbitration: run-1:status=awaiting_reports:missing_reports=beta-writer:overlaps=team_alpha.txt=alpha-writer+beta-writer:next=await_reports") {
+		t.Fatalf("replay text output missing workflow arbitration summary:\n%s", output)
 	}
 	if strings.Contains(output, strings.Repeat("e", 64)) {
 		t.Fatalf("replay text output should not print argument fingerprints by default:\n%s", output)

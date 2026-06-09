@@ -1672,6 +1672,12 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	if runs := formatEvalWorkflowRuns(summary.WorkflowRuns, summary.WorkflowRunIDs); runs != "" {
 		fmt.Printf("  workflow_runs: %s\n", runs)
 	}
+	if agents := formatEvalWorkflowAgents(summary.WorkflowRuns); agents != "" {
+		fmt.Printf("  workflow_agents: %s\n", agents)
+	}
+	if arbitration := formatEvalWorkflowArbitration(summary.WorkflowRuns); arbitration != "" {
+		fmt.Printf("  workflow_arbitration: %s\n", arbitration)
+	}
 	if summary.Observability != nil {
 		if summary.Observability.SessionID != "" {
 			fmt.Printf("  session_id: %s\n", summary.Observability.SessionID)
@@ -1795,6 +1801,120 @@ func formatEvalWorkflowRuns(runs []evalharness.WorkflowRunObservation, fallbackI
 		return strings.Join(parts, ",")
 	}
 	return strings.Join(fallbackIDs, ",")
+}
+
+func formatEvalWorkflowAgents(runs []evalharness.WorkflowRunObservation) string {
+	parts := []string(nil)
+	for _, run := range runs {
+		runID := strings.TrimSpace(run.ID)
+		for _, agent := range run.AgentRuns {
+			agentID := strings.TrimSpace(agent.ID)
+			if agentID == "" {
+				continue
+			}
+			if runID != "" {
+				agentID = runID + "/" + agentID
+			}
+			labelParts := []string{agentID}
+			if task := strings.TrimSpace(agent.TaskName); task != "" {
+				labelParts = append(labelParts, "task="+task)
+			}
+			if profile := strings.TrimSpace(agent.AgentProfile); profile != "" {
+				labelParts = append(labelParts, "profile="+profile)
+			}
+			if status := strings.TrimSpace(agent.Status); status != "" {
+				labelParts = append(labelParts, "status="+status)
+			}
+			if report := strings.TrimSpace(agent.ReportPath); report != "" {
+				labelParts = append(labelParts, "report="+report)
+			}
+			if agent.ReportMissing {
+				labelParts = append(labelParts, "report_missing=true")
+			}
+			if worktree := strings.TrimSpace(agent.WorktreePath); worktree != "" {
+				labelParts = append(labelParts, "worktree="+worktree)
+			}
+			if changed := formatDelimitedValues(agent.ChangedFiles, "|"); changed != "" {
+				labelParts = append(labelParts, "changed="+changed)
+			}
+			if artifacts := formatDelimitedValues(agent.Artifacts, "|"); artifacts != "" {
+				labelParts = append(labelParts, "artifacts="+artifacts)
+			}
+			if errText := strings.TrimSpace(agent.Error); errText != "" {
+				labelParts = append(labelParts, "error="+firstLine(errText))
+			}
+			parts = append(parts, strings.Join(labelParts, ":"))
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatEvalWorkflowArbitration(runs []evalharness.WorkflowRunObservation) string {
+	parts := []string(nil)
+	for _, run := range runs {
+		arbitration := run.TeamArbitration
+		if arbitration.Status == "" &&
+			len(arbitration.OpenAgentRuns) == 0 &&
+			len(arbitration.MissingReports) == 0 &&
+			len(arbitration.FailedAgentRuns) == 0 &&
+			len(arbitration.ChangedFileOverlaps) == 0 &&
+			len(arbitration.NextActions) == 0 {
+			continue
+		}
+		id := strings.TrimSpace(run.ID)
+		if id == "" {
+			id = "workflow"
+		}
+		labelParts := []string{id}
+		if status := strings.TrimSpace(arbitration.Status); status != "" {
+			labelParts = append(labelParts, "status="+status)
+		}
+		if open := formatDelimitedValues(arbitration.OpenAgentRuns, "|"); open != "" {
+			labelParts = append(labelParts, "open="+open)
+		}
+		if missing := formatDelimitedValues(arbitration.MissingReports, "|"); missing != "" {
+			labelParts = append(labelParts, "missing_reports="+missing)
+		}
+		if failed := formatDelimitedValues(arbitration.FailedAgentRuns, "|"); failed != "" {
+			labelParts = append(labelParts, "failed="+failed)
+		}
+		if overlaps := formatEvalWorkflowChangedFileOverlaps(arbitration.ChangedFileOverlaps); overlaps != "" {
+			labelParts = append(labelParts, "overlaps="+overlaps)
+		}
+		if next := formatDelimitedValues(arbitration.NextActions, "|"); next != "" {
+			labelParts = append(labelParts, "next="+next)
+		}
+		parts = append(parts, strings.Join(labelParts, ":"))
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatEvalWorkflowChangedFileOverlaps(overlaps []evalharness.WorkflowChangedFileOverlapObservation) string {
+	parts := make([]string, 0, len(overlaps))
+	for _, overlap := range overlaps {
+		file := strings.TrimSpace(overlap.File)
+		if file == "" {
+			continue
+		}
+		agents := formatDelimitedValues(overlap.AgentRunIDs, "+")
+		if agents != "" {
+			parts = append(parts, file+"="+agents)
+		} else {
+			parts = append(parts, file)
+		}
+	}
+	return strings.Join(parts, "|")
+}
+
+func formatDelimitedValues(values []string, separator string) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			parts = append(parts, value)
+		}
+	}
+	return strings.Join(parts, separator)
 }
 
 func formatEvalPolicyBlocks(values []evalharness.ToolPolicyBlockSummary) string {
