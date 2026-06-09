@@ -114,6 +114,7 @@ import {
   type CodexRuntimeMenu,
   type ComposerVariant,
   type FloatingMenuOwner,
+  type ToolPolicyProfile,
 } from "./ComposerView";
 import {
   QueryHistoryPopover,
@@ -2355,6 +2356,9 @@ export function App(): JSX.Element {
         }
         onSelectRuntimeEffort={(nextVariant) =>
           void selectRuntimeEffort(nextVariant)
+        }
+        onSelectToolPolicyProfile={(profile) =>
+          void selectToolPolicyProfile(profile)
         }
         onOpenSettings={() => {
           closeProjectMenus();
@@ -4685,11 +4689,14 @@ export function App(): JSX.Element {
     effort?: string,
     connection?: RuntimeConnectionUpdate,
     variant?: string,
+    toolPolicyProfile?: string,
   ): Promise<void> {
     const nextProvider = provider.trim();
     const nextModel = model.trim();
     const nextEffort = effort === undefined ? undefined : effort.trim();
     const nextVariant = variant === undefined ? undefined : variant.trim();
+    const nextToolPolicyProfile =
+      toolPolicyProfile === undefined ? undefined : toolPolicyProfile.trim();
     const nextConnection =
       connection === undefined
         ? undefined
@@ -4710,6 +4717,19 @@ export function App(): JSX.Element {
       Boolean(nextConnection?.api_key) ||
       (nextConnection?.base_url !== undefined &&
         nextConnection.base_url !== (currentProvider?.base_url ?? ""));
+    const currentToolPolicyProfile =
+      state.initialized?.tool_policy?.profile ?? "";
+    const currentToolPolicy = state.initialized?.tool_policy;
+    const currentToolPolicyHasOverrides = Boolean(
+      currentToolPolicy?.default_action ||
+        Object.keys(currentToolPolicy?.tools ?? {}).length > 0 ||
+        Object.keys(currentToolPolicy?.kinds ?? {}).length > 0 ||
+        Object.keys(currentToolPolicy?.risks ?? {}).length > 0,
+    );
+    const toolPolicyChanged =
+      nextToolPolicyProfile !== undefined &&
+      (nextToolPolicyProfile !== currentToolPolicyProfile ||
+        currentToolPolicyHasOverrides);
     if (
       !nextProvider ||
       !nextModel ||
@@ -4721,7 +4741,8 @@ export function App(): JSX.Element {
           nextEffort === (state.initialized.effort ?? "")) &&
         (nextVariant === undefined ||
           nextVariant === (state.initialized.variant ?? "")) &&
-        !connectionChanged)
+        !connectionChanged &&
+        !toolPolicyChanged)
     ) {
       return;
     }
@@ -4732,6 +4753,7 @@ export function App(): JSX.Element {
         nextEffort,
         nextConnection,
         nextVariant,
+        nextToolPolicyProfile,
       );
       setState((current) => {
         const initialized = current.initialized
@@ -4741,6 +4763,7 @@ export function App(): JSX.Element {
               model: updated.model,
               effort: updated.effort ?? "",
               variant: updated.variant ?? "",
+              tool_policy: updated.tool_policy ?? current.initialized.tool_policy,
               providers: updated.providers ?? current.initialized.providers,
             }
           : current.initialized;
@@ -4856,6 +4879,23 @@ export function App(): JSX.Element {
       nextVariant,
     );
     setCodexRuntimeMenu(null);
+  }
+
+  async function selectToolPolicyProfile(
+    profile: ToolPolicyProfile,
+  ): Promise<void> {
+    if (!state.initialized || anyThreadIsRunning) {
+      return;
+    }
+    await updateRuntimeSettings(
+      state.initialized.provider,
+      state.initialized.model,
+      undefined,
+      undefined,
+      undefined,
+      profile,
+    );
+    setAccessMenuOpen(false);
   }
 
   async function interrupt(): Promise<void> {

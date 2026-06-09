@@ -70,6 +70,7 @@ export type ConfigModelUpdateResult = {
   model: string;
   effort?: string;
   variant?: string;
+  tool_policy?: ToolPolicySummary;
   providers?: ProviderSummary[];
 };
 
@@ -494,7 +495,8 @@ export type WuuDesktopApi = {
     model: string,
     effort?: string,
     connection?: RuntimeConnectionUpdate,
-    variant?: string
+    variant?: string,
+    toolPolicyProfile?: string
   ) => Promise<ConfigModelUpdateResult>;
   listSkills: () => Promise<SkillListResult>;
   startThread: () => Promise<{ thread: Thread }>;

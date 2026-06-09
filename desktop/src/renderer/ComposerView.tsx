@@ -46,7 +46,8 @@ import type {
   InitializeResult,
   ProviderModelSummary,
   ProviderSummary,
-  RuntimeContext
+  RuntimeContext,
+  ToolPolicySummary
 } from "../shared/protocol";
 import {
   buildComposerSlashCommands,
@@ -96,6 +97,48 @@ export type FloatingMenuOwner =
   | "composer-query-history";
 export type FloatingMenuPlacement = "above" | "below" | "middle";
 export type FloatingMenuAlign = "left" | "right";
+export type ToolPolicyProfile = "safe" | "balanced" | "autonomous" | "enterprise_restricted";
+
+type ToolPolicyProfileOption = {
+  profile: ToolPolicyProfile;
+  label: string;
+  chipLabel: string;
+  short: string;
+  description: string;
+  tone?: "danger";
+};
+
+const TOOL_POLICY_PROFILE_OPTIONS: ToolPolicyProfileOption[] = [
+  {
+    profile: "safe",
+    label: "默认",
+    chipLabel: "默认权限",
+    short: "写入前确认",
+    description: "中高风险动作先确认，适合日常开发"
+  },
+  {
+    profile: "balanced",
+    label: "自动",
+    chipLabel: "自动权限",
+    short: "高风险确认",
+    description: "低中风险自动执行，高风险动作先确认"
+  },
+  {
+    profile: "autonomous",
+    label: "危险",
+    chipLabel: "危险权限",
+    short: "尽量自主",
+    description: "尽量自主执行，适合临时高信任场景",
+    tone: "danger"
+  },
+  {
+    profile: "enterprise_restricted",
+    label: "严格",
+    chipLabel: "严格权限",
+    short: "高风险拒绝",
+    description: "高风险动作直接拒绝，适合受控环境"
+  }
+];
 
 export function isInsideFloatingMenu(target: Node, owner: FloatingMenuOwner): boolean {
   const element = target instanceof Element ? target : target.parentElement;
@@ -104,6 +147,27 @@ export function isInsideFloatingMenu(target: Node, owner: FloatingMenuOwner): bo
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+export function toolPolicyProfileFromSummary(policy?: ToolPolicySummary): ToolPolicyProfile {
+  const profile = policy?.profile?.trim();
+  if (profile === "safe" || profile === "balanced" || profile === "autonomous" || profile === "enterprise_restricted") {
+    return profile;
+  }
+  return "autonomous";
+}
+
+export function toolPolicyHasPresetOverrides(policy?: ToolPolicySummary): boolean {
+  return Boolean(
+    policy?.default_action ||
+      Object.keys(policy?.tools ?? {}).length > 0 ||
+      Object.keys(policy?.kinds ?? {}).length > 0 ||
+      Object.keys(policy?.risks ?? {}).length > 0
+  );
+}
+
+function toolPolicyProfileOption(profile: ToolPolicyProfile): ToolPolicyProfileOption {
+  return TOOL_POLICY_PROFILE_OPTIONS.find((option) => option.profile === profile) ?? TOOL_POLICY_PROFILE_OPTIONS[2];
 }
 
 function textareaSelectionAtStart(textarea: HTMLTextAreaElement): boolean {
@@ -588,6 +652,7 @@ export function Composer({
   onToggleCodexRuntimeMenu,
   onSelectRuntimeModel,
   onSelectRuntimeEffort,
+  onSelectToolPolicyProfile,
   onToggleModeMenu,
   onToggleBranchMenu,
   onOpenSettings,
@@ -642,6 +707,7 @@ export function Composer({
   onToggleCodexRuntimeMenu: (menu: Exclude<CodexRuntimeMenu, null>) => void;
   onSelectRuntimeModel: (provider: string, model: string, variant?: string) => void;
   onSelectRuntimeEffort: (variant: string) => void;
+  onSelectToolPolicyProfile: (profile: ToolPolicyProfile) => void;
   onToggleModeMenu: () => void;
   onToggleBranchMenu: () => void;
   onOpenSettings: () => void;
@@ -681,6 +747,10 @@ export function Composer({
     [activeContext, initialized, running]
   );
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
+  const toolPolicyHasOverrides = toolPolicyHasPresetOverrides(initialized?.tool_policy);
+  const toolPolicyProfile = toolPolicyProfileFromSummary(initialized?.tool_policy);
+  const toolPolicyOption = toolPolicyProfileOption(toolPolicyProfile);
+  const toolPolicyChipLabel = toolPolicyHasOverrides ? "自定义权限" : toolPolicyOption.chipLabel;
   const visibleSlashCommands = useMemo(
     () => filterComposerSlashCommands(slashCommands, slashQuery),
     [slashCommands, slashQuery]
@@ -935,10 +1005,12 @@ export function Composer({
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={accessMenuOpen}
+                aria-label={`权限模式：${toolPolicyChipLabel}`}
+                disabled={!initialized || readOnly || running}
                 onClick={onToggleAccessMenu}
               >
                 <ShieldCheck size={16} />
-                <span>完全访问权限</span>
+                <span>{toolPolicyChipLabel}</span>
                 <ChevronDown size={15} />
               </button>
               {accessMenuOpen ? (
@@ -948,9 +1020,13 @@ export function Composer({
                   placement="above"
                   align="left"
                   offset={6}
-                  width={260}
+                  width={300}
                 >
-                  <AccessMenu />
+                  <AccessMenu
+                    policy={initialized?.tool_policy}
+                    disabled={!initialized || readOnly || running}
+                    onSelect={onSelectToolPolicyProfile}
+                  />
                 </FloatingMenuPortal>
               ) : null}
             </div>
@@ -1440,13 +1516,43 @@ function normalizedVariantForRuntimeModel(
   return "";
 }
 
-function AccessMenu(): JSX.Element {
+function AccessMenu({
+  policy,
+  disabled,
+  onSelect
+}: {
+  policy?: ToolPolicySummary;
+  disabled: boolean;
+  onSelect: (profile: ToolPolicyProfile) => void;
+}): JSX.Element {
+  const hasOverrides = toolPolicyHasPresetOverrides(policy);
+  const profile = toolPolicyProfileFromSummary(policy);
+  const activeProfile = hasOverrides ? undefined : profile;
   return (
     <div className="composer-context-menu access-menu" role="menu">
-      <div className="composer-menu-note">
-        <strong>完全访问权限</strong>
-        <span>wuu 可以读取并修改当前工作区文件，适合直接做开发任务。</span>
-      </div>
+      {hasOverrides ? (
+        <div className="composer-menu-note">
+          <strong>自定义权限</strong>
+          <span>当前配置包含高级覆盖；选择任一模式会改为该预设</span>
+        </div>
+      ) : null}
+      {TOOL_POLICY_PROFILE_OPTIONS.map((option) => (
+        <button
+          key={option.profile}
+          className={`permission-mode-option${option.tone === "danger" ? " danger" : ""}`}
+          role="menuitemradio"
+          aria-checked={activeProfile === option.profile}
+          type="button"
+          disabled={disabled}
+          onClick={() => onSelect(option.profile)}
+        >
+          <span>
+            <strong>{option.label}</strong>
+            <small>{option.short}</small>
+          </span>
+          {activeProfile === option.profile ? <Check size={16} /> : null}
+        </button>
+      ))}
     </div>
   );
 }

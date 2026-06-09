@@ -301,6 +301,7 @@ app.whenReady().then(() => {
         create_provider?: boolean;
       },
       variant?: string,
+      toolPolicyProfile?: string,
     ) =>
       appServerClientPool.request<ConfigModelUpdateResult>("config/model/update", {
         provider,
@@ -314,6 +315,9 @@ app.whenReady().then(() => {
         ...(connection?.create_provider ? { create_provider: true } : {}),
         ...(effort === undefined ? {} : { effort }),
         ...(variant === undefined ? {} : { variant }),
+        ...(toolPolicyProfile === undefined
+          ? {}
+          : { tool_policy_profile: toolPolicyProfile }),
       }),
   );
   ipcMain.handle("wuu:skill-list", () => appServerClientPool.request("skill/list"));

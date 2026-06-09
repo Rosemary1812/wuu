@@ -379,6 +379,11 @@
   background: #fff3ec;
 }
 
+.permission-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .composer-spacer {
   min-width: 0;
   flex: 1 1 8px;
@@ -751,11 +756,13 @@
   top: auto;
   bottom: calc(100% + 6px);
   left: 0;
-  width: 260px;
+  width: 300px;
 }
 
 .access-menu {
-  width: 260px;
+  background: #fff;
+  backdrop-filter: none;
+  width: 300px;
 }
 
 .mode-menu {
@@ -791,12 +798,50 @@
   opacity: 0.52;
 }
 
+.composer-context-menu .permission-mode-option {
+  height: auto;
+  min-height: 48px;
+  justify-content: space-between;
+  padding: 7px 9px;
+}
+
 .composer-context-menu button span {
   min-width: 0;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.permission-mode-option span {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.permission-mode-option strong {
+  color: #202427;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  line-height: 18px;
+}
+
+.permission-mode-option small {
+  overflow: hidden;
+  color: #777d82;
+  font-size: var(--font-sm);
+  font-weight: 400;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission-mode-option.danger strong {
+  color: #b42318;
+}
+
+.composer-context-menu .permission-mode-option[aria-checked="true"] {
+  background: #eef6f0;
 }
 
 .composer-context-menu button svg {
