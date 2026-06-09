@@ -10,6 +10,7 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	record := ToolExecutionRecord{
 		Name:                 "run_shell",
 		CallID:               "call_1",
+		ArgumentsSHA256:      strings.Repeat("a", 64),
 		Kind:                 ToolKindShell,
 		Exposure:             ToolExposureDirect,
 		Risk:                 ToolRiskHigh,
@@ -60,6 +61,9 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"classification_reason":"destructive shell command"`) {
 		t.Fatalf("envelope should include classification reason: %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"arguments_sha256":"`+strings.Repeat("a", 64)+`"`) {
+		t.Fatalf("envelope should include argument fingerprint: %s", string(raw))
 	}
 	if !strings.Contains(string(raw), `"approval_ref":"/tmp/wuu/approvals/call_1.json"`) {
 		t.Fatalf("envelope should include approval ref: %s", string(raw))

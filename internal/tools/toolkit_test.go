@@ -3028,6 +3028,9 @@ func TestToolkit_ToolTelemetry_RecordsSuccess(t *testing.T) {
 	if record.Name != "read_file" || record.CallID != "call-read" {
 		t.Fatalf("unexpected record identity: %+v", record)
 	}
+	if record.ArgumentsSHA256 != toolArgumentsSHA256(`{"path":"a.txt"}`) {
+		t.Fatalf("unexpected argument fingerprint: %+v", record)
+	}
 	if record.Kind != ToolKindFile || record.Exposure != ToolExposureDirect {
 		t.Fatalf("unexpected record classification: %+v", record)
 	}
@@ -3242,6 +3245,7 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 	}
 	kit.env.toolTelemetry.record(ToolExecutionRecord{
 		Name:                "run_test",
+		ArgumentsSHA256:     strings.Repeat("b", 64),
 		Kind:                ToolKindTest,
 		Exposure:            ToolExposureDirect,
 		Risk:                ToolRiskMedium,
@@ -3277,6 +3281,7 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 		"name=read_file kind=file status=ok",
 		"name=read_file kind=file status=error",
 		"name=run_test kind=test status=ok risk=medium",
+		"args_sha256=" + strings.Repeat("b", 64),
 		"raw_output_bytes=4096 returned_output_bytes=512",
 		"result_budgeted=true",
 		"patch_risk=level=medium,files=2,hunks=2,+7/-2,multi_file=true",

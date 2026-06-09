@@ -1020,6 +1020,7 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 		out = append(out, evalharness.ToolObservation{
 			Name:                 record.Name,
 			CallID:               record.CallID,
+			ArgumentsSHA256:      record.ArgumentsSHA256,
 			Kind:                 string(record.Kind),
 			Exposure:             string(record.Exposure),
 			Risk:                 string(record.Risk),

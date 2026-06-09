@@ -30,6 +30,7 @@ const (
 type ToolExecutionRecord struct {
 	Name                 string           `json:"name"`
 	CallID               string           `json:"call_id,omitempty"`
+	ArgumentsSHA256      string           `json:"arguments_sha256,omitempty"`
 	Kind                 ToolKind         `json:"kind"`
 	Exposure             ToolExposure     `json:"exposure"`
 	Risk                 ToolRisk         `json:"risk"`
@@ -160,6 +161,7 @@ func (t *Toolkit) recordToolExecution(
 	record := ToolExecutionRecord{
 		Name:                 call.Name,
 		CallID:               call.ID,
+		ArgumentsSHA256:      toolArgumentsSHA256(call.Arguments),
 		Kind:                 info.Kind,
 		Exposure:             info.Exposure,
 		Risk:                 info.Risk,
@@ -188,6 +190,11 @@ func (t *Toolkit) recordToolExecution(
 	t.env.toolTelemetry.record(record)
 }
 
+func toolArgumentsSHA256(arguments string) string {
+	sum := sha256.Sum256([]byte(arguments))
+	return hex.EncodeToString(sum[:])
+}
+
 func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo, decision ToolPolicyDecision, createdAt time.Time, revision string) string {
 	if t == nil || t.env == nil || strings.TrimSpace(t.env.SessionDir) == "" || decision.Action != ToolPolicyRequireApproval {
 		return ""
@@ -197,7 +204,6 @@ func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo,
 	if len(argsPreview) > 1200 {
 		argsPreview = argsPreview[:1200] + "\n...[truncated]"
 	}
-	argsSum := sha256.Sum256([]byte(call.Arguments))
 	request := toolApprovalRequest{
 		ID:                   id,
 		ToolName:             call.Name,
@@ -211,7 +217,7 @@ func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo,
 		Destructive:          info.Destructive,
 		CreatedAt:            createdAt.UTC(),
 		Revision:             revision,
-		ArgumentsSHA256:      hex.EncodeToString(argsSum[:]),
+		ArgumentsSHA256:      toolArgumentsSHA256(call.Arguments),
 		ArgumentsPreview:     argsPreview,
 		ModelNextAction:      "ask the user for approval or choose a lower-risk alternative",
 		ApprovalOptions:      []string{"ask_user", "choose_lower_risk_alternative", "stop"},

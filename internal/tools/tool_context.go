@@ -342,6 +342,9 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		if record.PolicyAction != "" {
 			fmt.Fprintf(&b, " policy=%s", record.PolicyAction)
 		}
+		if record.ArgumentsSHA256 != "" {
+			fmt.Fprintf(&b, " args_sha256=%s", record.ArgumentsSHA256)
+		}
 		if record.RevisionBefore != "" {
 			fmt.Fprintf(&b, " revision_before=%s", record.RevisionBefore)
 		}

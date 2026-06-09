@@ -148,6 +148,7 @@ type ToolInventoryObservation struct {
 type ToolObservation struct {
 	Name                 string                `json:"name"`
 	CallID               string                `json:"call_id,omitempty"`
+	ArgumentsSHA256      string                `json:"arguments_sha256,omitempty"`
 	Kind                 string                `json:"kind,omitempty"`
 	Exposure             string                `json:"exposure,omitempty"`
 	Risk                 string                `json:"risk,omitempty"`
