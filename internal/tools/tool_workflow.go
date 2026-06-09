@@ -1123,7 +1123,6 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		return mustJSON(map[string]any{
 			"action":        "record_workflow_team",
 			"workflow_team": plan,
-			"team_plan":     plan,
 			"next_steps": []string{
 				"Write each spawn_agent.message from the Base Agent Brief Contract, adding only the small context extension that applies.",
 				"Add the Workflow Context Extension for workflow team members.",
@@ -2134,7 +2133,6 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 		"run":               run,
 		"agent_runs":        agents,
 		"workflow_team":     teamPlan,
-		"team_plan":         teamPlan,
 		"team_arbitration":  arbitration,
 		"memory_candidates": memoryCandidates,
 		"file_checkpoints":  fileCheckpoints,

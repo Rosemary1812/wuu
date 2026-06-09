@@ -1151,13 +1151,15 @@ func TestWorkflowControlRecordsWorkflowTeam(t *testing.T) {
 	var recorded struct {
 		Action       string            `json:"action"`
 		WorkflowTeam workflow.TeamPlan `json:"workflow_team"`
-		TeamPlan     workflow.TeamPlan `json:"team_plan"`
 	}
 	if err := json.Unmarshal([]byte(recordResp), &recorded); err != nil {
 		t.Fatalf("parse record response: %v", err)
 	}
-	if recorded.Action != "record_workflow_team" || len(recorded.WorkflowTeam.Members) != 3 || len(recorded.TeamPlan.Members) != 3 {
+	if recorded.Action != "record_workflow_team" || len(recorded.WorkflowTeam.Members) != 3 {
 		t.Fatalf("unexpected workflow team response: %+v", recorded)
+	}
+	if strings.Contains(recordResp, `"team_plan"`) {
+		t.Fatalf("record_workflow_team should expose only workflow_team, got: %s", recordResp)
 	}
 	if !recorded.WorkflowTeam.Members[1].CreatedProfile {
 		t.Fatalf("create_profile member should create profile: %+v", recorded.WorkflowTeam.Members[1])
@@ -1175,7 +1177,6 @@ func TestWorkflowControlRecordsWorkflowTeam(t *testing.T) {
 	}
 	var status struct {
 		WorkflowTeam workflow.TeamPlan `json:"workflow_team"`
-		TeamPlan     workflow.TeamPlan `json:"team_plan"`
 	}
 	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
 		t.Fatalf("parse status response: %v", err)
@@ -1183,8 +1184,8 @@ func TestWorkflowControlRecordsWorkflowTeam(t *testing.T) {
 	if len(status.WorkflowTeam.Members) != 3 || status.WorkflowTeam.Members[0].AgentProfile != "qa_laowang" || status.WorkflowTeam.Members[2].AgentProfile != "" {
 		t.Fatalf("status workflow team mismatch: %+v", status.WorkflowTeam)
 	}
-	if len(status.TeamPlan.Members) != len(status.WorkflowTeam.Members) {
-		t.Fatalf("compat team_plan alias mismatch: %+v", status)
+	if strings.Contains(statusResp, `"team_plan"`) {
+		t.Fatalf("workflow_status should expose only workflow_team, got: %s", statusResp)
 	}
 }
 
