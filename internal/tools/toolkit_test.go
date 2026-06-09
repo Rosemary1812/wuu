@@ -3255,6 +3255,14 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 		ResultBudgeted:      true,
 		ResultRef:           "/tmp/result-API_KEY=secret-value-1234567890.json",
 		ArtifactRefs:        []string{"/tmp/artifact-API_KEY=secret-value-1234567890.log"},
+		PatchRiskSummary: &ToolPatchRisk{
+			FileCount:    2,
+			HunkCount:    2,
+			AddedLines:   7,
+			DeletedLines: 2,
+			MultiFile:    true,
+			RiskLevel:    "medium",
+		},
 	})
 
 	block, ok := kit.ToolResultSummaryContextBlock()
@@ -3271,6 +3279,7 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 		"name=run_test kind=test status=ok risk=medium",
 		"raw_output_bytes=4096 returned_output_bytes=512",
 		"result_budgeted=true",
+		"patch_risk=level=medium,files=2,hunks=2,+7/-2,multi_file=true",
 		"result_ref=/tmp/result-API_KEY=[REDACTED]",
 		"artifact_refs=/tmp/artifact-API_KEY=[REDACTED]",
 		"tool arguments and output bodies are intentionally omitted",

@@ -358,6 +358,9 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		if record.ApprovalRef != "" {
 			fmt.Fprintf(&b, " approval_ref=%s", compactContextLine(redactToolOutput(contextArtifactRef(t.env, record.ApprovalRef))))
 		}
+		if record.PatchRiskSummary != nil {
+			fmt.Fprintf(&b, " patch_risk=%s", compactToolPatchRisk(*record.PatchRiskSummary))
+		}
 		if len(record.ArtifactRefs) > 0 {
 			fmt.Fprintf(&b, " artifact_refs=%s", strings.Join(redactedContextArtifactRefs(t.env, record.ArtifactRefs, 4), ","))
 		}
@@ -378,6 +381,35 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		TokenBudget: 800,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
+}
+
+func compactToolPatchRisk(risk ToolPatchRisk) string {
+	parts := []string(nil)
+	if level := strings.TrimSpace(risk.RiskLevel); level != "" {
+		parts = append(parts, "level="+level)
+	}
+	if risk.FileCount > 0 {
+		parts = append(parts, fmt.Sprintf("files=%d", risk.FileCount))
+	}
+	if risk.HunkCount > 0 {
+		parts = append(parts, fmt.Sprintf("hunks=%d", risk.HunkCount))
+	}
+	if risk.AddedLines > 0 || risk.DeletedLines > 0 {
+		parts = append(parts, fmt.Sprintf("+%d/-%d", risk.AddedLines, risk.DeletedLines))
+	}
+	if risk.MultiFile {
+		parts = append(parts, "multi_file=true")
+	}
+	if risk.ContainsDelete {
+		parts = append(parts, "contains_delete=true")
+	}
+	if risk.ContainsMove {
+		parts = append(parts, "contains_move=true")
+	}
+	if len(parts) == 0 {
+		return "unknown"
+	}
+	return strings.Join(parts, ",")
 }
 
 func writeTestFailureSummaryContext(b *strings.Builder, summary testFailureSummary) {
