@@ -2,12 +2,14 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -131,6 +133,7 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 			return "", fmt.Errorf("apply_patch verification failed: %w", err)
 		}
 	}
+	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
 
 	files := make([]applyPatchFileResult, 0, len(patch.Hunks))
 	changedFiles := make([]string, 0, len(patch.Hunks))
@@ -145,8 +148,10 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		changedFiles = append(changedFiles, plan.Result.changedPath())
 	}
 
+	var snapshots []patchPathSnapshot
 	if !dryRun {
-		snapshots, err := snapshotPatchPlans(plans)
+		var err error
+		snapshots, err = snapshotPatchPlans(plans)
 		if err != nil {
 			return "", fmt.Errorf("apply_patch verification failed: %w", err)
 		}
@@ -156,19 +161,39 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		}
 		t.notifyPatchPlans(plans)
 	}
+	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
+	warnings := []string(nil)
+	var journal *applyPatchJournalManifest
+	if !dryRun {
+		var err error
+		journal, err = t.writePatchJournal(patchText, files, uniqueNonEmptyStrings(changedFiles), len(patch.Hunks), revisionBefore, revisionAfter, snapshots)
+		if err != nil {
+			warnings = append(warnings, "patch journal could not be written: "+err.Error())
+		}
+	}
 
-	return mustJSON(map[string]any{
+	result := map[string]any{
 		"dry_run":            dryRun,
 		"hunk_count":         len(patch.Hunks),
 		"changed_files":      uniqueNonEmptyStrings(changedFiles),
-		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"workspace_revision": revisionAfter,
 		"next_suggestions":   applyPatchNextSuggestions(dryRun),
 		"provenance": map[string]any{
 			"tool":   "apply_patch",
 			"source": "model_tool_call",
 		},
 		"files": files,
-	})
+	}
+	if journal != nil {
+		result["patch_journal"] = journal
+		result["patch_journal_path"] = journal.ManifestPath
+		result["manifest_path"] = journal.ManifestPath
+		result["patch_path"] = journal.PatchPath
+	}
+	if len(warnings) > 0 {
+		result["warnings"] = warnings
+	}
+	return mustJSON(result)
 }
 
 func applyPatchNextSuggestions(dryRun bool) []string {
@@ -216,6 +241,33 @@ type applyPatchHunkPlan struct {
 	RemoveSource bool
 	DeleteSource bool
 	NotifyPaths  []string
+}
+
+type applyPatchJournalManifest struct {
+	ID                      string                      `json:"id"`
+	CreatedAt               time.Time                   `json:"created_at"`
+	Tool                    string                      `json:"tool"`
+	SessionID               string                      `json:"session_id,omitempty"`
+	AgentID                 string                      `json:"agent_id,omitempty"`
+	WorkspaceRevisionBefore string                      `json:"workspace_revision_before,omitempty"`
+	WorkspaceRevisionAfter  string                      `json:"workspace_revision_after,omitempty"`
+	ChangedFiles            []string                    `json:"changed_files"`
+	HunkCount               int                         `json:"hunk_count"`
+	ManifestPath            string                      `json:"manifest_path"`
+	PatchPath               string                      `json:"patch_path"`
+	Snapshots               []applyPatchJournalSnapshot `json:"snapshots,omitempty"`
+	Files                   []applyPatchFileResult      `json:"files"`
+	Provenance              map[string]string           `json:"provenance"`
+	RollbackHint            string                      `json:"rollback_hint,omitempty"`
+}
+
+type applyPatchJournalSnapshot struct {
+	Path         string `json:"path"`
+	Existed      bool   `json:"existed"`
+	FileSHA      string `json:"file_sha,omitempty"`
+	Size         int64  `json:"size,omitempty"`
+	Mode         string `json:"mode,omitempty"`
+	SnapshotPath string `json:"snapshot_path,omitempty"`
 }
 
 func (r applyPatchFileResult) changedPath() string {
@@ -762,6 +814,102 @@ func (t *ApplyPatchTool) notifyPatchPlans(plans []applyPatchHunkPlan) {
 			t.notifyFileChanged(path)
 		}
 	}
+}
+
+func (t *ApplyPatchTool) writePatchJournal(patchText string, files []applyPatchFileResult, changedFiles []string, hunkCount int, revisionBefore, revisionAfter string, snapshots []patchPathSnapshot) (*applyPatchJournalManifest, error) {
+	root := strings.TrimSpace(t.env.SessionDir)
+	if root == "" {
+		root = t.env.StateDir
+	}
+	if root == "" {
+		return nil, errors.New("no session or state directory configured")
+	}
+	patchID := generatedApplyPatchJournalID(patchText)
+	dir := filepath.Join(root, "patch-journal", patchID)
+	filesDir := filepath.Join(dir, "files")
+	if err := os.MkdirAll(filesDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create patch journal directory: %w", err)
+	}
+
+	patchPath := filepath.Join(dir, "patch.txt")
+	if err := os.WriteFile(patchPath, []byte(patchText), 0o644); err != nil {
+		return nil, fmt.Errorf("write patch artifact: %w", err)
+	}
+	journalSnapshots, err := t.writePatchJournalSnapshots(filesDir, snapshots)
+	if err != nil {
+		return nil, err
+	}
+
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifest := applyPatchJournalManifest{
+		ID:                      patchID,
+		CreatedAt:               time.Now().UTC(),
+		Tool:                    "apply_patch",
+		SessionID:               strings.TrimSpace(t.env.SessionID),
+		AgentID:                 strings.TrimSpace(t.env.AgentID),
+		WorkspaceRevisionBefore: revisionBefore,
+		WorkspaceRevisionAfter:  revisionAfter,
+		ChangedFiles:            append([]string(nil), changedFiles...),
+		HunkCount:               hunkCount,
+		ManifestPath:            manifestPath,
+		PatchPath:               patchPath,
+		Snapshots:               journalSnapshots,
+		Files:                   append([]applyPatchFileResult(nil), files...),
+		Provenance: map[string]string{
+			"tool":   "apply_patch",
+			"source": "model_tool_call",
+		},
+		RollbackHint: "Use the snapshots in this journal or a prior checkpoint to reconstruct rollback, then inspect git diff and rerun validation.",
+	}
+	if err := writeApplyPatchJournalManifest(manifestPath, manifest); err != nil {
+		return nil, err
+	}
+	return &manifest, nil
+}
+
+func (t *ApplyPatchTool) writePatchJournalSnapshots(filesDir string, snapshots []patchPathSnapshot) ([]applyPatchJournalSnapshot, error) {
+	out := make([]applyPatchJournalSnapshot, 0, len(snapshots))
+	for i, snapshot := range snapshots {
+		entry := applyPatchJournalSnapshot{
+			Path:    t.env.NormalizeDisplayPath(snapshot.Path),
+			Existed: snapshot.Exists,
+		}
+		if snapshot.Exists {
+			entry.FileSHA = formatFileSHA(sha256Hex(snapshot.Content))
+			entry.Size = int64(len(snapshot.Content))
+			entry.Mode = fmt.Sprintf("%04o", snapshot.Mode.Perm())
+			snapshotName := fmt.Sprintf("%03d-%s.snapshot", i, sha256Hex([]byte(entry.Path))[:12])
+			snapshotPath := filepath.Join(filesDir, snapshotName)
+			if err := os.WriteFile(snapshotPath, snapshot.Content, snapshot.Mode.Perm()); err != nil {
+				return nil, fmt.Errorf("write patch journal snapshot %s: %w", entry.Path, err)
+			}
+			entry.SnapshotPath = snapshotPath
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+func generatedApplyPatchJournalID(patchText string) string {
+	hash := sha256Hex([]byte(patchText))
+	return "patch-" + time.Now().UTC().Format("20060102T150405.000000000Z") + "-" + hash[:12]
+}
+
+func writeApplyPatchJournalManifest(path string, manifest applyPatchJournalManifest) error {
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal patch journal: %w", err)
+	}
+	data = append(data, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write patch journal manifest: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("replace patch journal manifest: %w", err)
+	}
+	return nil
 }
 
 func (t *ApplyPatchTool) rejectSensitivePatchPath(absPath, action string) error {

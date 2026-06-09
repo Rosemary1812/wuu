@@ -593,6 +593,9 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	kit.SetEditToolMode(EditToolModePatch)
+	sessionDir := filepath.Join(t.TempDir(), "session")
+	kit.SetSessionID("session-apply-patch")
+	kit.SetSessionDir(sessionDir)
 
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "line one\nline two\nline three\n")
 	mustWriteFile(t, filepath.Join(root, "remove.txt"), "remove me\n")
@@ -647,7 +650,11 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 			Tool   string `json:"tool"`
 			Source string `json:"source"`
 		} `json:"provenance"`
-		Files []struct {
+		PatchJournalPath string                    `json:"patch_journal_path"`
+		ManifestPath     string                    `json:"manifest_path"`
+		PatchPath        string                    `json:"patch_path"`
+		PatchJournal     applyPatchJournalManifest `json:"patch_journal"`
+		Files            []struct {
 			Path       string `json:"path"`
 			Action     string `json:"action"`
 			OldFileSHA string `json:"old_file_sha"`
@@ -672,6 +679,45 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "run_test") {
 		t.Fatalf("apply_patch response missing validation suggestion: %+v", parsed.Suggestions)
+	}
+	if parsed.PatchJournalPath == "" || parsed.ManifestPath != parsed.PatchJournalPath || parsed.PatchPath == "" {
+		t.Fatalf("apply_patch response missing journal artifact paths: %+v", parsed)
+	}
+	if !strings.HasPrefix(parsed.PatchJournalPath, filepath.Join(sessionDir, "patch-journal")) ||
+		!strings.HasPrefix(parsed.PatchPath, filepath.Join(sessionDir, "patch-journal")) {
+		t.Fatalf("journal paths should be session-scoped: manifest=%q patch=%q", parsed.PatchJournalPath, parsed.PatchPath)
+	}
+	if parsed.PatchJournal.ID == "" || parsed.PatchJournal.SessionID != "session-apply-patch" ||
+		parsed.PatchJournal.HunkCount != 4 || parsed.PatchJournal.PatchPath != parsed.PatchPath {
+		t.Fatalf("unexpected inline patch journal: %+v", parsed.PatchJournal)
+	}
+	if got := mustReadFile(t, parsed.PatchPath); got != patchText {
+		t.Fatalf("patch artifact mismatch:\n%s", got)
+	}
+	var manifest applyPatchJournalManifest
+	data, err := os.ReadFile(parsed.PatchJournalPath)
+	if err != nil {
+		t.Fatalf("read patch journal manifest: %v", err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("parse patch journal manifest: %v\n%s", err, data)
+	}
+	if manifest.ID != parsed.PatchJournal.ID || manifest.Tool != "apply_patch" ||
+		manifest.WorkspaceRevisionBefore == "" || manifest.WorkspaceRevisionAfter != parsed.WorkspaceRevision ||
+		!reflect.DeepEqual(manifest.ChangedFiles, wantChanged) || len(manifest.Snapshots) != 5 {
+		t.Fatalf("unexpected patch journal manifest: %+v", manifest)
+	}
+	for _, snapshot := range manifest.Snapshots {
+		if snapshot.Path == "a.txt" && (!snapshot.Existed || snapshot.FileSHA != expectedOldSHAs["a.txt"] || snapshot.SnapshotPath == "") {
+			t.Fatalf("unexpected a.txt snapshot: %+v", snapshot)
+		}
+		if snapshot.Path == "dir/new.txt" && snapshot.Existed {
+			t.Fatalf("added file should be recorded as absent before patch: %+v", snapshot)
+		}
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || !containsString(records[0].ArtifactRefs, parsed.PatchJournalPath) || !containsString(records[0].ArtifactRefs, parsed.PatchPath) {
+		t.Fatalf("patch telemetry missing journal artifacts: %+v", records)
 	}
 	seenSHA := map[string]struct {
 		old string
