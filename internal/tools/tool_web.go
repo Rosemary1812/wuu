@@ -36,6 +36,11 @@ func (t *WebSearchTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Search query.",
 				},
+				"version_hint": map[string]any{
+					"type":        "string",
+					"description": "Optional repo dependency or API version this search should be matched against, for example next@15.2.1.",
+				},
+				"package_context": webPackageContextSchema(),
 			},
 			"required": []string{"query"},
 		},
@@ -80,6 +85,11 @@ func (t *WebFetchTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "URL to fetch.",
 				},
+				"version_hint": map[string]any{
+					"type":        "string",
+					"description": "Optional repo dependency or API version this fetch should be matched against, for example next@15.2.1.",
+				},
+				"package_context": webPackageContextSchema(),
 			},
 			"required": []string{"url"},
 		},
@@ -92,6 +102,27 @@ func (t *WebFetchTool) Execute(ctx context.Context, argsJSON string) (string, er
 		recordWebEvidenceResult(t.env, t.Name(), result)
 	}
 	return result, err
+}
+
+func webPackageContextSchema() map[string]any {
+	return map[string]any{
+		"type":        "object",
+		"description": "Optional package coordinates from the repo so web evidence can be checked against the installed dependency version.",
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Package or library name from the repo.",
+			},
+			"version": map[string]any{
+				"type":        "string",
+				"description": "Version found in the repo manifest or lockfile.",
+			},
+			"ecosystem": map[string]any{
+				"type":        "string",
+				"description": "Package ecosystem, for example npm, pypi, go, cargo, or maven.",
+			},
+		},
+	}
 }
 
 func recordWebEvidenceResult(env *Env, toolName, result string) {

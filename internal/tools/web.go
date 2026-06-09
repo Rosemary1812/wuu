@@ -34,6 +34,12 @@ type webEvidence struct {
 	VersionMatchedToRepo string `json:"version_matched_to_repo"`
 }
 
+type webPackageContext struct {
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	Ecosystem string `json:"ecosystem"`
+}
+
 func newWebEvidence(kind, source, sourceTier string, retrievedAt time.Time) webEvidence {
 	retrievedAt = retrievedAt.UTC()
 	sum := sha256.Sum256([]byte(kind + "\x00" + source + "\x00" + retrievedAt.Format(time.RFC3339Nano)))
@@ -45,6 +51,55 @@ func newWebEvidence(kind, source, sourceTier string, retrievedAt time.Time) webE
 		RetrievedAt:          retrievedAt.Format(time.RFC3339Nano),
 		VersionMatchedToRepo: "unknown",
 	}
+}
+
+func applyWebEvidenceVersionContext(evidence *webEvidence, versionHint string, pkg webPackageContext) {
+	if evidence == nil {
+		return
+	}
+	version := webVersionMatchedToRepo(versionHint, pkg)
+	if version != "" {
+		evidence.VersionMatchedToRepo = version
+	}
+}
+
+func webVersionMatchedToRepo(versionHint string, pkg webPackageContext) string {
+	versionHint = strings.TrimSpace(versionHint)
+	if versionHint != "" {
+		return compactWebEvidenceValue(versionHint)
+	}
+	name := strings.TrimSpace(pkg.Name)
+	version := strings.TrimSpace(pkg.Version)
+	ecosystem := strings.TrimSpace(pkg.Ecosystem)
+	if name == "" && version == "" && ecosystem == "" {
+		return ""
+	}
+	parts := make([]string, 0, 3)
+	if ecosystem != "" {
+		parts = append(parts, ecosystem)
+	}
+	label := name
+	if version != "" {
+		if label != "" {
+			label += "@" + version
+		} else {
+			label = version
+		}
+	}
+	if label != "" {
+		parts = append(parts, label)
+	}
+	return compactWebEvidenceValue(strings.Join(parts, " "))
+}
+
+func compactWebEvidenceValue(value string) string {
+	value = strings.TrimSpace(strings.Join(strings.Fields(value), " "))
+	const maxRunes = 160
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
 }
 
 // isBlockedIP returns true if the IP should not be reachable from web_fetch.
@@ -167,7 +222,9 @@ func randomAcceptLang() string {
 
 func webSearchExecute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Query string `json:"query"`
+		Query          string            `json:"query"`
+		VersionHint    string            `json:"version_hint"`
+		PackageContext webPackageContext `json:"package_context"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -177,6 +234,7 @@ func webSearchExecute(ctx context.Context, argsJSON string) (string, error) {
 	}
 	maxResults := 10
 	evidence := newWebEvidence("search", "https://lite.duckduckgo.com/lite/", "search_index", time.Now())
+	applyWebEvidenceVersionContext(&evidence, args.VersionHint, args.PackageContext)
 
 	if ctx == nil {
 		ctx = context.Background()
@@ -338,7 +396,9 @@ func cleanDDGURL(raw string) string {
 
 func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		URL string `json:"url"`
+		URL            string            `json:"url"`
+		VersionHint    string            `json:"version_hint"`
+		PackageContext webPackageContext `json:"package_context"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -348,6 +408,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	}
 	source := strings.TrimSpace(args.URL)
 	evidence := newWebEvidence("fetch", source, "web_page", time.Now())
+	applyWebEvidenceVersionContext(&evidence, args.VersionHint, args.PackageContext)
 
 	parsed, parseErr := url.Parse(source)
 	if parseErr != nil {

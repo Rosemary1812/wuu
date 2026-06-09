@@ -118,8 +118,29 @@ func TestNewWebEvidenceMetadata(t *testing.T) {
 	}
 }
 
+func TestWebEvidenceVersionContext(t *testing.T) {
+	ev := newWebEvidence("fetch", "https://example.com/docs", "web_page", time.Now())
+	applyWebEvidenceVersionContext(&ev, "", webPackageContext{
+		Name:      "next",
+		Version:   "15.2.1",
+		Ecosystem: "npm",
+	})
+	if ev.VersionMatchedToRepo != "npm next@15.2.1" {
+		t.Fatalf("VersionMatchedToRepo = %q", ev.VersionMatchedToRepo)
+	}
+
+	applyWebEvidenceVersionContext(&ev, "repo uses react@19.0.0", webPackageContext{
+		Name:      "react",
+		Version:   "18.3.1",
+		Ecosystem: "npm",
+	})
+	if ev.VersionMatchedToRepo != "repo uses react@19.0.0" {
+		t.Fatalf("version_hint should win, got %q", ev.VersionMatchedToRepo)
+	}
+}
+
 func TestWebFetchBlockedIncludesEvidence(t *testing.T) {
-	out, err := webFetchExecute(context.Background(), `{"url":"http://127.0.0.1/"}`)
+	out, err := webFetchExecute(context.Background(), `{"url":"http://127.0.0.1/","package_context":{"name":"next","version":"15.2.1","ecosystem":"npm"}}`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -146,6 +167,9 @@ func TestWebFetchBlockedIncludesEvidence(t *testing.T) {
 	}
 	if got.Evidence.RetrievedAt == "" {
 		t.Fatalf("expected retrieved_at evidence metadata")
+	}
+	if got.Evidence.VersionMatchedToRepo != "npm next@15.2.1" {
+		t.Fatalf("version_matched_to_repo = %q", got.Evidence.VersionMatchedToRepo)
 	}
 }
 
