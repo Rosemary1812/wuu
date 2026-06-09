@@ -67,6 +67,18 @@ func gitCall(t *testing.T, kit *Toolkit, subcmd string, args ...string) map[stri
 	return p
 }
 
+func requireGitWorkspaceRevision(t *testing.T, p map[string]any) string {
+	t.Helper()
+	rev, ok := p["workspace_revision"].(string)
+	if !ok || rev == "" {
+		t.Fatalf("git response missing workspace_revision: %+v", p)
+	}
+	if !strings.HasPrefix(rev, "git:") {
+		t.Fatalf("workspace_revision = %q, want git: prefix", rev)
+	}
+	return rev
+}
+
 func gitErr(t *testing.T, kit *Toolkit, subcmd string, args ...string) string {
 	t.Helper()
 	aj, _ := json.Marshal(map[string]any{"subcommand": subcmd, "args": args})
@@ -98,6 +110,7 @@ func TestToolkit_Git_ReadOnlySubcommands(t *testing.T) {
 		if suggestions, ok := p["next_suggestions"].([]any); !ok || len(suggestions) == 0 {
 			t.Errorf("git %s missing next_suggestions: %+v", sub, p)
 		}
+		requireGitWorkspaceRevision(t, p)
 	}
 }
 
@@ -165,6 +178,7 @@ func TestToolkit_Git_CommitAllowedOnStagedChanges(t *testing.T) {
 	if subject, _ := p["commit_subject"].(string); subject != "Add staged file" {
 		t.Fatalf("commit response subject = %q, want Add staged file", subject)
 	}
+	requireGitWorkspaceRevision(t, p)
 	log := runBash(t, root, "git log -1 --format=%s")
 	if strings.TrimSpace(log) != "Add staged file" {
 		t.Fatalf("unexpected commit message: %q", log)

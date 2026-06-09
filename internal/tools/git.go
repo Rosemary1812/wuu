@@ -546,11 +546,12 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
 
 	result := map[string]any{
-		"subcommand":       subcmd,
-		"exit_code":        exitCode,
-		"output":           trimmed,
-		"timed_out":        timedOut,
-		"next_suggestions": gitNextSuggestions(subcmd, exitCode, timedOut),
+		"subcommand":         subcmd,
+		"exit_code":          exitCode,
+		"output":             trimmed,
+		"timed_out":          timedOut,
+		"workspace_revision": workspaceRevision(ctx, env.RootDir),
+		"next_suggestions":   gitNextSuggestions(subcmd, exitCode, timedOut),
 	}
 	if subcmd == "commit" && exitCode == 0 && !timedOut {
 		if commit, err := latestCommitMetadata(env, ctx); err == nil {
@@ -659,14 +660,15 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 	trimmed, truncated := truncate(rawOutput, maxShellOutputBytes)
 
 	result := map[string]any{
-		"subcommand":       "status",
-		"exit_code":        exitCode,
-		"staged":           staged,
-		"unstaged":         unstaged,
-		"untracked":        untracked,
-		"output":           trimmed,
-		"timed_out":        timedOut,
-		"next_suggestions": gitStatusNextSuggestions(staged, unstaged, untracked, exitCode, timedOut),
+		"subcommand":         "status",
+		"exit_code":          exitCode,
+		"staged":             staged,
+		"unstaged":           unstaged,
+		"untracked":          untracked,
+		"output":             trimmed,
+		"timed_out":          timedOut,
+		"workspace_revision": workspaceRevision(ctx, env.RootDir),
+		"next_suggestions":   gitStatusNextSuggestions(staged, unstaged, untracked, exitCode, timedOut),
 	}
 	if truncated {
 		result["truncated"] = true
