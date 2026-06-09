@@ -65,6 +65,7 @@ func (t *ListWorkflowsTool) Execute(_ context.Context, _ string) (string, error)
 		items = append(items, item)
 	}
 	return mustJSON(map[string]any{
+		"action":    "list_workflows",
 		"workflows": items,
 		"count":     len(items),
 	})
@@ -129,6 +130,7 @@ func (t *LoadWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 		suggestedPhaseNames = extractWorkflowPhaseNames(body)
 	}
 	return mustJSON(map[string]any{
+		"action":                 "load_workflow",
 		"name":                   wf.Name,
 		"description":            wf.Description,
 		"when_to_use":            wf.WhenToUse,
@@ -323,6 +325,7 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 	}
 	t.env.Workflows = upsertWorkflowDefinition(t.env.Workflows, def)
 	return mustJSON(map[string]any{
+		"action":   "save_workflow",
 		"name":     def.Name,
 		"path":     def.Path,
 		"source":   def.Source,

@@ -45,7 +45,8 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		t.Fatalf("list_workflows: %v", err)
 	}
 	var listed struct {
-		Count     int `json:"count"`
+		Action    string `json:"action"`
+		Count     int    `json:"count"`
 		Workflows []struct {
 			Name      string   `json:"name"`
 			NextSteps []string `json:"next_steps"`
@@ -53,6 +54,9 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(listResp), &listed); err != nil {
 		t.Fatalf("parse list response: %v", err)
+	}
+	if listed.Action != "list_workflows" {
+		t.Fatalf("list action = %q, want list_workflows", listed.Action)
 	}
 	if listed.Count != 1 || listed.Workflows[0].Name != "feature-delivery" {
 		t.Fatalf("unexpected workflow list: %+v", listed)
@@ -69,12 +73,16 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		t.Fatalf("load_workflow: %v", err)
 	}
 	var loaded struct {
+		Action              string   `json:"action"`
 		Content             string   `json:"content"`
 		SuggestedPhaseNames []string `json:"suggested_phase_names"`
 		NextSteps           []string `json:"next_steps"`
 	}
 	if err := json.Unmarshal([]byte(loadResp), &loaded); err != nil {
 		t.Fatalf("parse load response: %v", err)
+	}
+	if loaded.Action != "load_workflow" {
+		t.Fatalf("load action = %q, want load_workflow", loaded.Action)
 	}
 	if !strings.Contains(loaded.Content, "Build settings search.") {
 		t.Fatalf("workflow arguments were not substituted: %s", loaded.Content)
@@ -84,6 +92,10 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if !workflowStepsContain(loaded.NextSteps, "start_workflow") {
 		t.Fatalf("markdown workflow load should point to start_workflow: %+v", loaded.NextSteps)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 2 || records[0].ResultAction != "list_workflows" || records[1].ResultAction != "load_workflow" {
+		t.Fatalf("workflow definition telemetry actions mismatch: %+v", records)
 	}
 
 	startResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -322,11 +334,15 @@ func TestSaveWorkflowWritesProjectDefinitionAndRegistersIt(t *testing.T) {
 		t.Fatalf("save_workflow: %v", err)
 	}
 	var saved struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
+		Action string `json:"action"`
+		Name   string `json:"name"`
+		Path   string `json:"path"`
 	}
 	if err := json.Unmarshal([]byte(saveResp), &saved); err != nil {
 		t.Fatalf("parse save response: %v", err)
+	}
+	if saved.Action != "save_workflow" {
+		t.Fatalf("save action = %q, want save_workflow", saved.Action)
 	}
 	if saved.Name != "feature-delivery" || saved.Path == "" {
 		t.Fatalf("unexpected save response: %+v", saved)
