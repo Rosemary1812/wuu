@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -124,7 +127,8 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 	}
 	failed := shellResult.ExitCode != 0 || shellResult.TimedOut || failureSummary.Failed
 	t.env.RecordTestRun(commandHash, revision, failed)
-	return mustJSON(map[string]any{
+	fullLogRef, fullLogBytes, fullLogErr := persistRunTestLog(t.env.SessionDir, commandHash, scope, args.Purpose, shellResult)
+	result := map[string]any{
 		"command":            shellResult.Command,
 		"scope":              scope,
 		"purpose":            redactToolOutput(args.Purpose),
@@ -146,7 +150,75 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 			"max_failed_runs_without_revision_change": maxRepeatedRunTestFailures,
 		},
 		"next_suggestions": runTestNextSuggestions(shellResult, failureSummary),
-	})
+	}
+	if fullLogRef != "" {
+		result["full_log_ref"] = fullLogRef
+		result["full_log_bytes"] = fullLogBytes
+	} else if fullLogErr != "" {
+		result["full_log_error"] = fullLogErr
+	}
+	return mustJSON(result)
+}
+
+func persistRunTestLog(sessionDir, commandHash, scope, purpose string, shellResult shellExecutionResult) (path string, bytes int, errSummary string) {
+	sessionDir = strings.TrimSpace(sessionDir)
+	if sessionDir == "" {
+		return "", 0, ""
+	}
+	dir := filepath.Join(sessionDir, "tool-results", "run-test-logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", 0, evalSafeToolError(err)
+	}
+	name := fmt.Sprintf("%s-%s.log", time.Now().UTC().Format("20060102T150405.000000000Z"), commandHashPrefix(commandHash))
+	path = filepath.Join(dir, name)
+	content := buildRunTestLog(scope, purpose, shellResult)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return "", 0, evalSafeToolError(err)
+	}
+	return path, len(content), ""
+}
+
+func commandHashPrefix(commandHash string) string {
+	commandHash = strings.TrimSpace(commandHash)
+	if len(commandHash) > 12 {
+		return commandHash[:12]
+	}
+	if commandHash == "" {
+		return "unknown"
+	}
+	return commandHash
+}
+
+func buildRunTestLog(scope, purpose string, shellResult shellExecutionResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "command: %s\n", shellResult.Command)
+	fmt.Fprintf(&b, "scope: %s\n", strings.TrimSpace(scope))
+	if strings.TrimSpace(purpose) != "" {
+		fmt.Fprintf(&b, "purpose: %s\n", redactToolOutput(purpose))
+	}
+	fmt.Fprintf(&b, "exit_code: %d\n", shellResult.ExitCode)
+	fmt.Fprintf(&b, "duration_ms: %d\n", shellResult.DurationMS)
+	fmt.Fprintf(&b, "timed_out: %t\n", shellResult.TimedOut)
+	fmt.Fprintf(&b, "stdout_bytes: %d\n", shellResult.StdoutBytes)
+	fmt.Fprintf(&b, "stderr_bytes: %d\n\n", shellResult.StderrBytes)
+	b.WriteString("--- stdout (redacted) ---\n")
+	b.WriteString(shellResult.redactedStdout)
+	if !strings.HasSuffix(shellResult.redactedStdout, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString("\n--- stderr (redacted) ---\n")
+	b.WriteString(shellResult.redactedStderr)
+	if !strings.HasSuffix(shellResult.redactedStderr, "\n") {
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func evalSafeToolError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return redactToolOutput(err.Error())
 }
 
 func runTestNextSuggestions(shellResult shellExecutionResult, failureSummary testFailureSummary) []string {

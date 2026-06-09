@@ -1697,6 +1697,8 @@ func TestBroken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	sessionDir := filepath.Join(t.TempDir(), "session")
+	kit.SetSessionDir(sessionDir)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "run_test",
@@ -1711,6 +1713,8 @@ func TestBroken(t *testing.T) {
 		FailureSummary testFailureSummary `json:"failure_summary"`
 		Suggestions    []string           `json:"next_suggestions"`
 		Revision       string             `json:"workspace_revision"`
+		FullLogRef     string             `json:"full_log_ref"`
+		FullLogBytes   int                `json:"full_log_bytes"`
 	}
 	if err := json.Unmarshal([]byte(resp), &got); err != nil {
 		t.Fatalf("parse run_test response: %v\n%s", err, resp)
@@ -1723,6 +1727,23 @@ func TestBroken(t *testing.T) {
 	}
 	if !strings.HasPrefix(got.Revision, "fs:worktree:") {
 		t.Fatalf("run_test response missing filesystem workspace revision: %+v", got)
+	}
+	if got.FullLogRef == "" || got.FullLogBytes <= 0 {
+		t.Fatalf("run_test response missing full log artifact: %+v", got)
+	}
+	if !strings.HasPrefix(got.FullLogRef, filepath.Join(sessionDir, "tool-results", "run-test-logs")) {
+		t.Fatalf("full log ref outside session dir: %q", got.FullLogRef)
+	}
+	logData, err := os.ReadFile(got.FullLogRef)
+	if err != nil {
+		t.Fatalf("read full log artifact: %v", err)
+	}
+	logText := string(logData)
+	if strings.Contains(logText, "secret-value") || !strings.Contains(logText, "[REDACTED]") {
+		t.Fatalf("full log artifact should be redacted:\n%s", logText)
+	}
+	if !strings.Contains(logText, "TestBroken") || !strings.Contains(logText, "exit_code: 1") {
+		t.Fatalf("full log artifact missing failure evidence:\n%s", logText)
 	}
 	if strings.Contains(resp, "secret-value") || !strings.Contains(resp, "[REDACTED]") {
 		t.Fatalf("run_test response should redact secret-like output: %s", resp)

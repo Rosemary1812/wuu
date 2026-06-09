@@ -120,6 +120,8 @@ type shellExecutionResult struct {
 	StdoutTailTruncated bool               `json:"stdout_tail_truncated"`
 	StderrTailTruncated bool               `json:"stderr_tail_truncated"`
 	NextSuggestions     []string           `json:"next_suggestions,omitempty"`
+	redactedStdout      string
+	redactedStderr      string
 }
 
 func executeShellCommand(ctx context.Context, env *Env, command string, timeoutSeconds int) (shellExecutionResult, error) {
@@ -183,6 +185,8 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 		StdoutTailTruncated: stdoutTailTruncated,
 		StderrTailTruncated: stderrTailTruncated,
 		NextSuggestions:     shellNextSuggestions(exitCode, timedOut, classification),
+		redactedStdout:      redactedStdout,
+		redactedStderr:      redactedStderr,
 	}, nil
 }
 
