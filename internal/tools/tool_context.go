@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -257,10 +258,10 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 			b.WriteString(" result_budgeted=true")
 		}
 		if record.ResultRef != "" {
-			fmt.Fprintf(&b, " result_ref=%s", compactContextLine(redactToolOutput(record.ResultRef)))
+			fmt.Fprintf(&b, " result_ref=%s", compactContextLine(redactToolOutput(contextArtifactRef(t.env, record.ResultRef))))
 		}
 		if len(record.ArtifactRefs) > 0 {
-			fmt.Fprintf(&b, " artifact_refs=%s", strings.Join(redactedCompactStrings(record.ArtifactRefs, 4), ","))
+			fmt.Fprintf(&b, " artifact_refs=%s", strings.Join(redactedContextArtifactRefs(t.env, record.ArtifactRefs, 4), ","))
 		}
 		if strings.TrimSpace(record.Error) != "" {
 			fmt.Fprintf(&b, " error=%s", compactContextLine(redactToolOutput(record.Error)))
@@ -333,11 +334,48 @@ func compactContextLine(value string) string {
 	return value
 }
 
-func redactedCompactStrings(values []string, limit int) []string {
+func redactedContextArtifactRefs(env *Env, values []string, limit int) []string {
 	values = limitStrings(values, limit)
 	out := make([]string, 0, len(values))
 	for _, value := range values {
-		out = append(out, compactContextLine(redactToolOutput(value)))
+		out = append(out, compactContextLine(redactToolOutput(contextArtifactRef(env, value))))
 	}
 	return out
+}
+
+func contextArtifactRef(env *Env, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || env == nil {
+		return value
+	}
+	if rel, ok := relativeContextRef("$SESSION_DIR", env.SessionDir, value); ok {
+		return rel
+	}
+	if rel, ok := relativeContextRef("$STATE_DIR", env.StateDir, value); ok {
+		return rel
+	}
+	if rel, ok := relativeContextRef("$WORKSPACE", env.RootDir, value); ok {
+		return rel
+	}
+	return value
+}
+
+func relativeContextRef(prefix, base, value string) (string, bool) {
+	base = strings.TrimSpace(base)
+	if prefix == "" || base == "" || value == "" {
+		return "", false
+	}
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", false
+	}
+	absValue, err := filepath.Abs(value)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(absBase, absValue)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return prefix + "/" + filepath.ToSlash(rel), true
 }

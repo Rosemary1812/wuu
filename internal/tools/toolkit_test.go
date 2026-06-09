@@ -3082,6 +3082,54 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolResultSummaryContextBlockShortensArtifactRefs(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	root = kit.env.RootDir
+	stateDir := filepath.Join(root, ".wuu-state")
+	sessionDir := filepath.Join(stateDir, "sessions", "session-1")
+	kit.SetStateDir(stateDir)
+	kit.SetSessionDir(sessionDir)
+
+	kit.env.toolTelemetry.record(ToolExecutionRecord{
+		Name:                "workflow_status",
+		Kind:                ToolKindWorkflow,
+		Exposure:            ToolExposureDirect,
+		Risk:                ToolRiskLow,
+		PolicyAction:        ToolPolicyAllow,
+		Success:             true,
+		ResultRef:           filepath.Join(sessionDir, "tool-results", "large.json"),
+		RawOutputBytes:      1200,
+		ReturnedOutputBytes: 400,
+		ArtifactRefs: []string{
+			filepath.Join(sessionDir, "harness", "reports", "worker.md"),
+			filepath.Join(stateDir, "workflows", "run-1", "final-report.md"),
+			filepath.Join(root, "local-artifacts", "note.txt"),
+		},
+	})
+
+	block, ok := kit.ToolResultSummaryContextBlock()
+	if !ok {
+		t.Fatal("expected tool result summary context block")
+	}
+	for _, want := range []string{
+		"result_ref=$SESSION_DIR/tool-results/large.json",
+		"artifact_refs=$SESSION_DIR/harness/reports/worker.md,$STATE_DIR/workflows/run-1/final-report.md,$WORKSPACE/local-artifacts/note.txt",
+	} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("tool summary missing shortened ref %q:\n%s", want, block.Content)
+		}
+	}
+	for _, leaked := range []string{sessionDir, stateDir, root} {
+		if strings.Contains(block.Content, leaked) {
+			t.Fatalf("tool summary should not include absolute artifact path %q:\n%s", leaked, block.Content)
+		}
+	}
+}
+
 func TestToolkit_ActiveFilesContextBlockTracksReadFiles(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "dir", "a.txt"), "line one\nAPI_KEY=secret-value-1234567890\nline three\nline four\n")
