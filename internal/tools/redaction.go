@@ -4,7 +4,7 @@ import "regexp"
 
 var toolOutputRedactors = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}`),
-	regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|authorization|password|passwd|secret)\s*[:=]\s*["']?[^"'\s,;]+`),
+	regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|authorization|password|passwd|secret)\s*[:=]\s*["']?[^"'\s,;]+`),
 	regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{8,}\b`),
 	regexp.MustCompile(`\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b`),
 }

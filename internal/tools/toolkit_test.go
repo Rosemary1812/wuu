@@ -3966,7 +3966,7 @@ func TestToolkit_RunShell(t *testing.T) {
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "run_shell",
-		Arguments: `{"command":"echo hi"}`,
+		Arguments: `{"command":"echo hi","purpose":"confirm shell purpose metadata"}`,
 	})
 	if err != nil {
 		t.Fatalf("run_shell: %v", err)
@@ -3981,6 +3981,9 @@ func TestToolkit_RunShell(t *testing.T) {
 	}
 	if !strings.Contains(parsed["output"].(string), "hi") {
 		t.Fatalf("unexpected output: %v", parsed["output"])
+	}
+	if parsed["purpose"].(string) != "confirm shell purpose metadata" {
+		t.Fatalf("unexpected purpose: %+v", parsed)
 	}
 	if !strings.Contains(parsed["stdout_tail"].(string), "hi") {
 		t.Fatalf("unexpected stdout tail: %v", parsed["stdout_tail"])
@@ -4010,13 +4013,13 @@ func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "run_shell",
-		Arguments: `{"command":"printf 'API_KEY=secret-value-1234567890\nAuthorization: Bearer abcdefghijklmnop\nsk-testsecret123456\n'"}`,
+		Arguments: `{"command":"printf 'API_KEY=secret-value-1234567890\nAuthorization: Bearer abcdefghijklmnop\nsk-testsecret123456\n'","purpose":"diagnose TOKEN=purpose-secret-value-1234567890"}`,
 	})
 	if err != nil {
 		t.Fatalf("run_shell: %v", err)
 	}
 
-	for _, leaked := range []string{"secret-value", "abcdefghijklmnop", "sk-testsecret"} {
+	for _, leaked := range []string{"secret-value", "abcdefghijklmnop", "sk-testsecret", "purpose-secret"} {
 		if strings.Contains(resp, leaked) {
 			t.Fatalf("run_shell response leaked %q: %s", leaked, resp)
 		}
@@ -4046,10 +4049,13 @@ func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
 		t.Fatalf("read full log artifact: %v", err)
 	}
 	logText := string(logData)
-	for _, leaked := range []string{"secret-value", "abcdefghijklmnop", "sk-testsecret"} {
+	for _, leaked := range []string{"secret-value", "abcdefghijklmnop", "sk-testsecret", "purpose-secret"} {
 		if strings.Contains(logText, leaked) {
 			t.Fatalf("run_shell full log leaked %q:\n%s", leaked, logText)
 		}
+	}
+	if !strings.Contains(logText, "purpose: diagnose TOKEN=[REDACTED]") {
+		t.Fatalf("full log artifact missing redacted purpose:\n%s", logText)
 	}
 	if strings.Count(logText, "[REDACTED]") < 3 || !strings.Contains(logText, "exit_code: 0") {
 		t.Fatalf("full log artifact missing redacted evidence:\n%s", logText)

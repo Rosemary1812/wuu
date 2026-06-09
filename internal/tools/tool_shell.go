@@ -67,6 +67,10 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 					"type":        "integer",
 					"description": "Max runtime in seconds (1-3600).",
 				},
+				"purpose": map[string]any{
+					"type":        "string",
+					"description": "Why this command is needed. Stored in redacted logs for replay and audit.",
+				},
 			},
 			"required": []string{"command"},
 		},
@@ -77,6 +81,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	var args struct {
 		Command        string `json:"command"`
 		TimeoutSeconds int    `json:"timeout_seconds"`
+		Purpose        string `json:"purpose"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -112,6 +117,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if err != nil {
 		return "", err
 	}
+	result.Purpose = redactToolOutput(args.Purpose)
 	fullLogRef, fullLogBytes, fullLogErr := persistShellLog(t.env.SessionDir, result)
 	if fullLogRef != "" {
 		result.FullLogRef = fullLogRef
@@ -124,6 +130,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 
 type shellExecutionResult struct {
 	Command             string             `json:"command"`
+	Purpose             string             `json:"purpose,omitempty"`
 	Classification      ToolClassification `json:"classification"`
 	ExitCode            int                `json:"exit_code"`
 	DurationMS          int64              `json:"duration_ms"`
@@ -167,6 +174,9 @@ func persistShellLog(sessionDir string, shellResult shellExecutionResult) (path 
 func buildShellLog(shellResult shellExecutionResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "command: %s\n", shellResult.Command)
+	if strings.TrimSpace(shellResult.Purpose) != "" {
+		fmt.Fprintf(&b, "purpose: %s\n", shellResult.Purpose)
+	}
 	fmt.Fprintf(&b, "exit_code: %d\n", shellResult.ExitCode)
 	fmt.Fprintf(&b, "duration_ms: %d\n", shellResult.DurationMS)
 	fmt.Fprintf(&b, "timed_out: %t\n", shellResult.TimedOut)
