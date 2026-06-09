@@ -197,7 +197,7 @@ func filesystemWorkspaceRevision(ctx context.Context, rootDir string) (string, b
 		}
 		name := entry.Name()
 		if entry.IsDir() {
-			if isSkippedDir(name) {
+			if isWorkspaceRevisionSkippedDir(name) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -238,6 +238,15 @@ func filesystemWorkspaceRevision(ctx context.Context, rootDir string) (string, b
 	}
 	fmt.Fprintf(hash, "summary\tfiles=%d\tbytes=%d\ttruncated=%t\n", fileCount, byteCount, truncated)
 	return hex.EncodeToString(hash.Sum(nil)), true
+}
+
+func isWorkspaceRevisionSkippedDir(name string) bool {
+	switch name {
+	case ".wuu-home":
+		return true
+	default:
+		return isSkippedDir(name)
+	}
 }
 
 func recordSpecialWorkspaceEntry(hash io.Writer, rel string, mode os.FileMode, path string) {

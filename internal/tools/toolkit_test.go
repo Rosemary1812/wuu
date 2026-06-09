@@ -2178,6 +2178,27 @@ func TestToolkit_ToolTelemetry_RecordsFilesystemWorkspaceRevision(t *testing.T) 
 	}
 }
 
+func TestWorkspaceRevisionIgnoresInternalStateDirs(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "hello\n")
+
+	before := workspaceRevision(context.Background(), root)
+	if !strings.HasPrefix(before, "fs:worktree:") {
+		t.Fatalf("expected filesystem revision, got %q", before)
+	}
+	mustWriteFile(t, filepath.Join(root, ".wuu-home", "sessions", "eval", "trace.jsonl"), "{}\n")
+	mustWriteFile(t, filepath.Join(root, ".wuu", "sessions", "eval", "trace.jsonl"), "{}\n")
+	afterState := workspaceRevision(context.Background(), root)
+	if afterState != before {
+		t.Fatalf("internal state dirs should not change workspace revision: before=%s after=%s", before, afterState)
+	}
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "hello again\n")
+	afterUserFile := workspaceRevision(context.Background(), root)
+	if afterUserFile == before || !strings.HasPrefix(afterUserFile, "fs:worktree:") {
+		t.Fatalf("workspace file change should update filesystem revision: before=%s after=%s", before, afterUserFile)
+	}
+}
+
 func TestToolkit_ToolTelemetry_RecordsToolError(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
