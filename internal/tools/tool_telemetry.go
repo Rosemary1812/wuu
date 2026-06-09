@@ -23,6 +23,7 @@ const (
 	workspaceDigestMaxFiles        = 5000
 	workspaceDigestMaxBytes        = 32 * 1024 * 1024
 	workspaceDigestMaxBytesPerFile = 1024 * 1024
+	repeatedToolInputPriorLimit    = 2
 )
 
 // ToolExecutionRecord captures benchmark-oriented facts about one tool
@@ -122,6 +123,17 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, err)
 		return "", err
 	}
+	if priorRepeats := t.repeatedToolInputCount(call, revisionBefore); priorRepeats >= repeatedToolInputPriorLimit {
+		err := repeatedToolInputError{
+			ToolName:        call.Name,
+			ArgumentsSHA256: toolArgumentsSHA256(call.Arguments),
+			Revision:        revisionBefore,
+			PriorRepeats:    priorRepeats,
+			MaxPriorRepeats: repeatedToolInputPriorLimit,
+		}
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", err)
+		return "", err
+	}
 
 	result, err := tool.Execute(ctx, call.Arguments)
 	if info.Kind == ToolKindMCP {
@@ -138,6 +150,57 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, "", err)
 
 	return returned, err
+}
+
+type repeatedToolInputError struct {
+	ToolName        string
+	ArgumentsSHA256 string
+	Revision        string
+	PriorRepeats    int
+	MaxPriorRepeats int
+}
+
+func (e repeatedToolInputError) Error() string {
+	return fmt.Sprintf(
+		"tool %q blocked repeated identical input: error_kind=repeated_tool_input args_sha256=%s prior_repeats=%d max_prior_repeats=%d workspace_revision=%s safe_retry=%q model_next_action=%q",
+		e.ToolName,
+		e.ArgumentsSHA256,
+		e.PriorRepeats,
+		e.MaxPriorRepeats,
+		e.Revision,
+		"inspect prior tool evidence, change the input, wait for new evidence, or change the workspace before retrying",
+		"stop repeating the same call; use existing observations or choose a different next action",
+	)
+}
+
+func (t *Toolkit) repeatedToolInputCount(call providers.ToolCall, revision string) int {
+	if t == nil || t.env == nil || isRepeatablePollingTool(call.Name) {
+		return 0
+	}
+	revision = strings.TrimSpace(revision)
+	if revision == "" {
+		return 0
+	}
+	argumentsSHA256 := toolArgumentsSHA256(call.Arguments)
+	var count int
+	for _, record := range t.env.toolTelemetry.snapshot() {
+		if record.Name != call.Name ||
+			record.ArgumentsSHA256 != argumentsSHA256 ||
+			strings.TrimSpace(record.RevisionBefore) != revision {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+func isRepeatablePollingTool(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "await_agents", "wait_agent", "workflow_status", "read_process_output", "list_processes", "report_listening_ports", "run_test":
+		return true
+	default:
+		return false
+	}
 }
 
 func (t *Toolkit) recordToolExecution(

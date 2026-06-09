@@ -3051,6 +3051,77 @@ func TestToolkit_ToolTelemetry_RecordsSuccess(t *testing.T) {
 	}
 }
 
+func TestToolkit_RepeatedToolInputGuardBlocksThirdIdenticalCall(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "hello\n")
+
+	call := providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	}
+	for i := 0; i < 2; i++ {
+		call.ID = fmt.Sprintf("call-read-%d", i+1)
+		if _, err := kit.Execute(context.Background(), call); err != nil {
+			t.Fatalf("read_file attempt %d: %v", i+1, err)
+		}
+	}
+	call.ID = "call-read-3"
+	_, err = kit.Execute(context.Background(), call)
+	if err == nil ||
+		!strings.Contains(err.Error(), "error_kind=repeated_tool_input") ||
+		!strings.Contains(err.Error(), "model_next_action") {
+		t.Fatalf("expected repeated input guard, got %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 3 {
+		t.Fatalf("expected 3 telemetry records, got %d", len(records))
+	}
+	record := records[2]
+	if record.Name != "read_file" ||
+		record.CallID != "call-read-3" ||
+		record.Success ||
+		record.ErrorKind != "repeated_tool_input" ||
+		record.ArgumentsSHA256 != toolArgumentsSHA256(call.Arguments) ||
+		record.RawOutputBytes != 0 ||
+		record.ReturnedOutputBytes != 0 {
+		t.Fatalf("unexpected repeated input telemetry: %+v", record)
+	}
+	if !strings.Contains(strings.Join(record.ResultEnvelope().NextSuggestions, " "), "prior observations") {
+		t.Fatalf("repeated input envelope missing recovery guidance: %+v", record.ResultEnvelope())
+	}
+	block, ok := kit.ToolResultSummaryContextBlock()
+	if !ok ||
+		!strings.Contains(block.Content, "repeated_arguments:") ||
+		!strings.Contains(block.Content, "error_kind=repeated_tool_input") {
+		t.Fatalf("tool summary missing repeated input guard evidence:\n%s", block.Content)
+	}
+}
+
+func TestToolkit_RepeatedToolInputGuardExemptsPollingTools(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	revision := workspaceRevision(context.Background(), kit.env.RootDir)
+	hash := toolArgumentsSHA256(`{"run_id":"run-1"}`)
+	kit.env.toolTelemetry.record(ToolExecutionRecord{Name: "workflow_status", ArgumentsSHA256: hash, RevisionBefore: revision})
+	kit.env.toolTelemetry.record(ToolExecutionRecord{Name: "workflow_status", ArgumentsSHA256: hash, RevisionBefore: revision})
+
+	got := kit.repeatedToolInputCount(providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"run-1"}`,
+	}, revision)
+	if got != 0 {
+		t.Fatalf("workflow_status should be exempt from repeated input guard, got count %d", got)
+	}
+}
+
 func TestToolkit_ToolTelemetry_RecordsClassificationReason(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

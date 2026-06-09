@@ -67,6 +67,9 @@ func toolResultSummary(record ToolExecutionRecord) string {
 
 func toolResultNextSuggestions(record ToolExecutionRecord) []string {
 	if !record.Success {
+		if record.ErrorKind == "repeated_tool_input" {
+			return []string{"use prior observations instead of repeating the same tool input, or change the input/workspace before retrying"}
+		}
 		switch record.PolicyAction {
 		case ToolPolicyDeny:
 			return []string{"choose a lower-risk tool or explain that policy blocks the requested action"}

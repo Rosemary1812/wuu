@@ -609,6 +609,9 @@ func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "target.txt"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "old.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatalf("write old fixture: %v", err)
+	}
 	kit, err := tools.New(root)
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
@@ -618,7 +621,7 @@ func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		ID:        "old-call",
 		Name:      "read_file",
-		Arguments: `{"path":"target.txt"}`,
+		Arguments: `{"path":"old.txt"}`,
 	}); err != nil {
 		t.Fatalf("old read: %v", err)
 	}
