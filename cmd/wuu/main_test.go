@@ -399,6 +399,35 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 }
 
+func TestEvalToolInventoryObservationsAreSchemaFree(t *testing.T) {
+	infos := []tools.ToolInfo{{
+		Name:            "read_file",
+		Kind:            tools.ToolKindFile,
+		Exposure:        tools.ToolExposureDirect,
+		Risk:            tools.ToolRiskLow,
+		ReadOnly:        true,
+		ConcurrencySafe: true,
+		Reason:          "safe metadata without schema",
+	}}
+
+	got := evalToolInventoryObservations(infos)
+	if len(got) != 1 {
+		t.Fatalf("expected one tool inventory item, got %+v", got)
+	}
+	if got[0].Name != "read_file" || got[0].Kind != "file" || got[0].Exposure != "direct" || got[0].Risk != "low" || !got[0].ReadOnly || !got[0].ConcurrencySafe {
+		t.Fatalf("tool inventory metadata not preserved: %+v", got[0])
+	}
+	raw, err := json.Marshal(got[0])
+	if err != nil {
+		t.Fatalf("marshal tool inventory: %v", err)
+	}
+	for _, forbidden := range []string{"description", "input_schema", "parameters", "properties"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("tool inventory leaked schema-like field %q: %s", forbidden, string(raw))
+		}
+	}
+}
+
 func TestEvalModelProfileObservation(t *testing.T) {
 	got := evalModelProfileObservation(&runtime.Session{
 		ProviderName: "openai",

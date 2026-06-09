@@ -50,21 +50,22 @@ type TraceObservability struct {
 }
 
 type TraceReplaySummary struct {
-	Path              string                   `json:"path,omitempty"`
-	Mode              string                   `json:"mode"`
-	EventCount        int                      `json:"event_count"`
-	EventTypes        map[string]int           `json:"event_types,omitempty"`
-	Task              *TraceTask               `json:"task,omitempty"`
-	Observability     *TraceObservability      `json:"observability,omitempty"`
-	ModelProfile      *ModelProfileObservation `json:"model_profile,omitempty"`
-	ContextBlockKinds []string                 `json:"context_block_kinds,omitempty"`
-	ToolNames         []string                 `json:"tool_names,omitempty"`
-	WorkflowRunIDs    []string                 `json:"workflow_run_ids,omitempty"`
-	HarnessTaskIDs    []string                 `json:"harness_task_ids,omitempty"`
-	HarnessReportIDs  []string                 `json:"harness_report_ids,omitempty"`
-	Final             *TraceReplayFinal        `json:"final,omitempty"`
-	Complete          bool                     `json:"complete"`
-	Warnings          []string                 `json:"warnings,omitempty"`
+	Path              string                     `json:"path,omitempty"`
+	Mode              string                     `json:"mode"`
+	EventCount        int                        `json:"event_count"`
+	EventTypes        map[string]int             `json:"event_types,omitempty"`
+	Task              *TraceTask                 `json:"task,omitempty"`
+	Observability     *TraceObservability        `json:"observability,omitempty"`
+	ModelProfile      *ModelProfileObservation   `json:"model_profile,omitempty"`
+	ContextBlockKinds []string                   `json:"context_block_kinds,omitempty"`
+	ToolInventory     []ToolInventoryObservation `json:"tool_inventory,omitempty"`
+	ToolNames         []string                   `json:"tool_names,omitempty"`
+	WorkflowRunIDs    []string                   `json:"workflow_run_ids,omitempty"`
+	HarnessTaskIDs    []string                   `json:"harness_task_ids,omitempty"`
+	HarnessReportIDs  []string                   `json:"harness_report_ids,omitempty"`
+	Final             *TraceReplayFinal          `json:"final,omitempty"`
+	Complete          bool                       `json:"complete"`
+	Warnings          []string                   `json:"warnings,omitempty"`
 }
 
 type TraceReplayFinal struct {
@@ -126,6 +127,9 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 	}
 	if len(obs.ContextRequests) > 0 {
 		events = append(events, TraceEvent{Type: "context_requests", TaskID: taskID, CreatedAt: createdAt, Data: obs.ContextRequests})
+	}
+	if len(obs.ToolInventory) > 0 {
+		events = append(events, TraceEvent{Type: "tool_inventory", TaskID: taskID, CreatedAt: createdAt, Data: obs.ToolInventory})
 	}
 	if len(obs.ToolRecords) > 0 {
 		events = append(events, TraceEvent{Type: "tool_records", TaskID: taskID, CreatedAt: createdAt, Data: obs.ToolRecords})
@@ -259,6 +263,12 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 				summary.ToolNames = append(summary.ToolNames, record.Name)
 			}
 		}
+	case "tool_inventory":
+		var inventory []ToolInventoryObservation
+		if err := json.Unmarshal(data, &inventory); err != nil {
+			return err
+		}
+		summary.ToolInventory = append(summary.ToolInventory, inventory...)
 	case "workflow_runs":
 		var runs []WorkflowRunObservation
 		if err := json.Unmarshal(data, &runs); err != nil {

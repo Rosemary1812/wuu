@@ -55,6 +55,13 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				ContentBytes:      512,
 				BlockKinds:        []string{"ENVIRONMENT", "REPO_MAP"},
 			}},
+			ToolInventory: []ToolInventoryObservation{{
+				Name:     "read_file",
+				Kind:     "file",
+				Exposure: "direct",
+				Risk:     "low",
+				ReadOnly: true,
+			}},
 			ToolRecords: []ToolObservation{{
 				Name:           "run_shell",
 				Success:        true,
@@ -66,7 +73,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		},
 	}, time.Unix(100, 0).UTC())
 
-	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_records", "workflow_runs", "harness_tasks", "harness_reports", "final"}
+	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_inventory", "tool_records", "workflow_runs", "harness_tasks", "harness_reports", "final"}
 	if len(events) != len(wantTypes) {
 		t.Fatalf("event count = %d, want %d: %+v", len(events), len(wantTypes), events)
 	}
@@ -170,6 +177,13 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				Kind:   "TASK",
 				Source: "system_reminder",
 			}},
+			ToolInventory: []ToolInventoryObservation{{
+				Name:     "read_file",
+				Kind:     "file",
+				Exposure: "direct",
+				Risk:     "low",
+				ReadOnly: true,
+			}},
 			ToolRecords: []ToolObservation{{
 				Name:    "read_file",
 				Success: true,
@@ -187,7 +201,7 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReplayTrace: %v", err)
 	}
-	if !summary.Complete || summary.Mode != "deterministic_trace_replay" || summary.EventCount != 9 {
+	if !summary.Complete || summary.Mode != "deterministic_trace_replay" || summary.EventCount != 10 {
 		t.Fatalf("unexpected replay summary envelope: %+v", summary)
 	}
 	if summary.Task == nil || summary.Task.ID != "task-1" || summary.Final == nil || !summary.Final.Success {
@@ -198,6 +212,9 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	}
 	if len(summary.ContextBlockKinds) != 1 || summary.ContextBlockKinds[0] != "TASK" {
 		t.Fatalf("replay missing context block kinds: %+v", summary.ContextBlockKinds)
+	}
+	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "read_file" || summary.ToolInventory[0].Exposure != "direct" {
+		t.Fatalf("replay missing tool inventory: %+v", summary.ToolInventory)
 	}
 	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "read_file" {
 		t.Fatalf("replay missing tool records: %+v", summary.ToolNames)

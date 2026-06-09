@@ -93,6 +93,7 @@ type Observability struct {
 	ModelProfile       *ModelProfileObservation    `json:"model_profile,omitempty"`
 	ContextBlocks      []ContextBlockObservation   `json:"context_blocks,omitempty"`
 	ContextRequests    []ContextRequestObservation `json:"context_requests,omitempty"`
+	ToolInventory      []ToolInventoryObservation  `json:"tool_inventory,omitempty"`
 	ToolRecords        []ToolObservation           `json:"tool_records,omitempty"`
 	WorkflowRuns       []WorkflowRunObservation    `json:"workflow_runs,omitempty"`
 	HarnessTasks       []HarnessTaskObservation    `json:"harness_tasks,omitempty"`
@@ -131,6 +132,17 @@ type ModelProfileObservation struct {
 	NeedsReadBeforeWrite      bool   `json:"needs_read_before_write,omitempty"`
 	AllowParallelReadOnly     bool   `json:"allow_parallel_read_only,omitempty"`
 	AllowDirectShell          bool   `json:"allow_direct_shell,omitempty"`
+}
+
+type ToolInventoryObservation struct {
+	Name            string `json:"name"`
+	Kind            string `json:"kind,omitempty"`
+	Exposure        string `json:"exposure,omitempty"`
+	Risk            string `json:"risk,omitempty"`
+	ReadOnly        bool   `json:"read_only"`
+	ConcurrencySafe bool   `json:"concurrency_safe"`
+	Destructive     bool   `json:"destructive"`
+	Reason          string `json:"reason,omitempty"`
 }
 
 type ToolObservation struct {

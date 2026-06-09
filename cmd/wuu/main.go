@@ -762,6 +762,7 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 		obs.WorkflowDir = filepath.Join(obs.StateDir, "workflows")
 	}
 	if rt.Toolkit != nil {
+		obs.ToolInventory = evalToolInventoryObservations(rt.Toolkit.ToolInfos())
 		obs.ToolRecords = evalToolObservations(rt.Toolkit.ToolTelemetry())
 	}
 	if rt.AgentControl != nil && rt.AgentControl.HarnessStore() != nil {
@@ -920,6 +921,23 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			ResultRef:            record.ResultRef,
 			ArtifactRefs:         append([]string(nil), record.ArtifactRefs...),
 			ResultEnvelope:       &envelope,
+		})
+	}
+	return out
+}
+
+func evalToolInventoryObservations(infos []tools.ToolInfo) []evalharness.ToolInventoryObservation {
+	out := make([]evalharness.ToolInventoryObservation, 0, len(infos))
+	for _, info := range infos {
+		out = append(out, evalharness.ToolInventoryObservation{
+			Name:            info.Name,
+			Kind:            string(info.Kind),
+			Exposure:        string(info.Exposure),
+			Risk:            string(info.Risk),
+			ReadOnly:        info.ReadOnly,
+			ConcurrencySafe: info.ConcurrencySafe,
+			Destructive:     info.Destructive,
+			Reason:          evalSafePreview(info.Reason, evalTextPreviewLimit),
 		})
 	}
 	return out
@@ -1460,6 +1478,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	}
 	if summary.ModelProfile != nil {
 		fmt.Printf("  model_profile: %s/%s family=%s write_mode=%s\n", summary.ModelProfile.ProviderName, summary.ModelProfile.Model, summary.ModelProfile.Family, summary.ModelProfile.DefaultWriteMode)
+	}
+	if len(summary.ToolInventory) > 0 {
+		fmt.Printf("  tool_inventory: %d tools\n", len(summary.ToolInventory))
 	}
 	if len(summary.ToolNames) > 0 {
 		fmt.Printf("  tool_records: %s\n", strings.Join(summary.ToolNames, ","))
