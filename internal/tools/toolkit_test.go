@@ -707,6 +707,60 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestToolkit_ApplyPatchRejectsInvalidPatchAtomically(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetEditToolMode(EditToolModePatch)
+	changedHookCalls := 0
+	kit.SetOnFileChanged(func(string) {
+		changedHookCalls++
+	})
+
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "alpha\n")
+	mustWriteFile(t, filepath.Join(root, "b.txt"), "beta\n")
+
+	patchText := `*** Begin Patch
+*** Update File: a.txt
+@@
+-alpha
++ALPHA
+*** Update File: b.txt
+@@
+-missing
++BETA
+*** End Patch`
+	args, err := json.Marshal(map[string]any{
+		"patchText": patchText,
+		"expected_old_shas": map[string]string{
+			"a.txt": formatFileSHA(sha256Hex([]byte("alpha\n"))),
+			"b.txt": formatFileSHA(sha256Hex([]byte("beta\n"))),
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(args),
+	})
+	if err == nil || !strings.Contains(err.Error(), "apply_patch verification failed") ||
+		!strings.Contains(err.Error(), "b.txt") {
+		t.Fatalf("expected failed verification for b.txt, got: %v", err)
+	}
+	if changedHookCalls != 0 {
+		t.Fatalf("failed patch should not fire file-change hooks, got %d", changedHookCalls)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "alpha\n" {
+		t.Fatalf("failed patch mutated first file: %q", got)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "b.txt")); got != "beta\n" {
+		t.Fatalf("failed patch mutated second file: %q", got)
+	}
+}
+
 func TestToolkit_ApplyPatchGuardsExistingFiles(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

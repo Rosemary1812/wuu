@@ -133,13 +133,27 @@ func (t *ApplyPatchTool) Execute(_ context.Context, argsJSON string) (string, er
 
 	files := make([]applyPatchFileResult, 0, len(patch.Hunks))
 	changedFiles := make([]string, 0, len(patch.Hunks))
+	plans := make([]applyPatchHunkPlan, 0, len(patch.Hunks))
 	for _, hunk := range patch.Hunks {
-		result, err := t.applyHunk(hunk, dryRun)
+		plan, err := t.planHunk(hunk)
 		if err != nil {
 			return "", fmt.Errorf("apply_patch verification failed: %w", err)
 		}
-		files = append(files, result)
-		changedFiles = append(changedFiles, result.changedPath())
+		plans = append(plans, plan)
+		files = append(files, plan.Result)
+		changedFiles = append(changedFiles, plan.Result.changedPath())
+	}
+
+	if !dryRun {
+		snapshots, err := snapshotPatchPlans(plans)
+		if err != nil {
+			return "", fmt.Errorf("apply_patch verification failed: %w", err)
+		}
+		if err := t.commitPatchPlans(plans); err != nil {
+			_ = rollbackPatchSnapshots(snapshots)
+			return "", fmt.Errorf("apply_patch apply failed: %w", err)
+		}
+		t.notifyPatchPlans(plans)
 	}
 
 	return mustJSON(map[string]any{
@@ -188,6 +202,18 @@ type applyPatchFileResult struct {
 	OldFileSHA string     `json:"old_file_sha,omitempty"`
 	NewFileSHA string     `json:"new_file_sha,omitempty"`
 	Diff       DiffResult `json:"diff"`
+}
+
+type applyPatchHunkPlan struct {
+	Result       applyPatchFileResult
+	SourceAbs    string
+	TargetAbs    string
+	Content      []byte
+	Mode         os.FileMode
+	WriteTarget  bool
+	RemoveSource bool
+	DeleteSource bool
+	NotifyPaths  []string
 }
 
 func (r applyPatchFileResult) changedPath() string {
@@ -479,185 +505,261 @@ func parseApplyPatchChunks(lines []string, start, end int) ([]applyPatchChunk, i
 	return chunks, i, nil
 }
 
-func (t *ApplyPatchTool) applyHunk(hunk applyPatchHunk, dryRun bool) (applyPatchFileResult, error) {
+func (t *ApplyPatchTool) planHunk(hunk applyPatchHunk) (applyPatchHunkPlan, error) {
 	switch hunk.Type {
 	case "add":
-		return t.applyAddHunk(hunk, dryRun)
+		return t.planAddHunk(hunk)
 	case "update":
-		return t.applyUpdateHunk(hunk, dryRun)
+		return t.planUpdateHunk(hunk)
 	case "delete":
-		return t.applyDeleteHunk(hunk, dryRun)
+		return t.planDeleteHunk(hunk)
 	default:
-		return applyPatchFileResult{}, fmt.Errorf("unknown hunk type %q", hunk.Type)
+		return applyPatchHunkPlan{}, fmt.Errorf("unknown hunk type %q", hunk.Type)
 	}
 }
 
-func (t *ApplyPatchTool) applyAddHunk(hunk applyPatchHunk, dryRun bool) (applyPatchFileResult, error) {
+func (t *ApplyPatchTool) planAddHunk(hunk applyPatchHunk) (applyPatchHunkPlan, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
-		return applyPatchFileResult{}, err
+		return applyPatchHunkPlan{}, err
 	}
 	if err := t.rejectSensitivePatchPath(resolved, "add"); err != nil {
-		return applyPatchFileResult{}, err
+		return applyPatchHunkPlan{}, err
 	}
 	if _, err := os.Stat(resolved); err == nil {
-		return applyPatchFileResult{}, fmt.Errorf("file already exists: %s", hunk.Path)
+		return applyPatchHunkPlan{}, fmt.Errorf("file already exists: %s", hunk.Path)
 	} else if !os.IsNotExist(err) {
-		return applyPatchFileResult{}, fmt.Errorf("stat file: %w", err)
+		return applyPatchHunkPlan{}, fmt.Errorf("stat file: %w", err)
 	}
-	content := joinPatchLines(hunk.Contents)
-	newSHA := formatFileSHA(sha256Hex([]byte(content)))
-	if dryRun {
-		return applyPatchFileResult{
+	content := []byte(joinPatchLines(hunk.Contents))
+	return applyPatchHunkPlan{
+		Result: applyPatchFileResult{
 			Path:       t.env.NormalizeDisplayPath(resolved),
 			Action:     "add",
-			NewFileSHA: newSHA,
+			NewFileSHA: formatFileSHA(sha256Hex(content)),
 			Diff: DiffResult{
 				NewFile: true,
-				Lines:   countContentLines(content),
+				Lines:   countContentLines(string(content)),
 			},
-		}, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("create parent directory: %w", err)
-	}
-	if err := os.WriteFile(resolved, []byte(content), 0o644); err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("write file: %w", err)
-	}
-	t.notifyFileChanged(resolved)
-	return applyPatchFileResult{
-		Path:       t.env.NormalizeDisplayPath(resolved),
-		Action:     "add",
-		NewFileSHA: newSHA,
-		Diff: DiffResult{
-			NewFile: true,
-			Lines:   countContentLines(content),
 		},
+		TargetAbs:   resolved,
+		Content:     content,
+		Mode:        0o644,
+		WriteTarget: true,
+		NotifyPaths: []string{resolved},
 	}, nil
 }
 
-func (t *ApplyPatchTool) applyUpdateHunk(hunk applyPatchHunk, dryRun bool) (applyPatchFileResult, error) {
+func (t *ApplyPatchTool) planUpdateHunk(hunk applyPatchHunk) (applyPatchHunkPlan, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
-		return applyPatchFileResult{}, err
+		return applyPatchHunkPlan{}, err
 	}
 	if err := t.rejectSensitivePatchPath(resolved, "update"); err != nil {
-		return applyPatchFileResult{}, err
+		return applyPatchHunkPlan{}, err
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("read file to update %s: %w", hunk.Path, err)
+		return applyPatchHunkPlan{}, fmt.Errorf("read file to update %s: %w", hunk.Path, err)
 	}
 	if info.IsDir() {
-		return applyPatchFileResult{}, fmt.Errorf("path is a directory: %s", hunk.Path)
+		return applyPatchHunkPlan{}, fmt.Errorf("path is a directory: %s", hunk.Path)
 	}
 	oldBytes, err := os.ReadFile(resolved)
 	if err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("read file: %w", err)
+		return applyPatchHunkPlan{}, fmt.Errorf("read file: %w", err)
 	}
-	oldSHA := formatFileSHA(sha256Hex(oldBytes))
 	oldContent := string(oldBytes)
 	newContent, err := applyPatchChunks(oldContent, hunk.Chunks)
 	if err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("%s: %w", hunk.Path, err)
+		return applyPatchHunkPlan{}, fmt.Errorf("%s: %w", hunk.Path, err)
 	}
-	newSHA := formatFileSHA(sha256Hex([]byte(newContent)))
 	if newContent == oldContent && hunk.MovePath == "" {
-		return applyPatchFileResult{}, fmt.Errorf("no changes for %s", hunk.Path)
+		return applyPatchHunkPlan{}, fmt.Errorf("no changes for %s", hunk.Path)
 	}
 
 	target := resolved
 	action := "update"
 	displayMovePath := ""
+	removeSource := false
+	notifyPaths := []string{resolved}
 	if hunk.MovePath != "" {
 		target, err = t.env.ResolvePath(hunk.MovePath)
 		if err != nil {
-			return applyPatchFileResult{}, err
+			return applyPatchHunkPlan{}, err
 		}
 		if err := t.rejectSensitivePatchPath(target, "move to"); err != nil {
-			return applyPatchFileResult{}, err
+			return applyPatchHunkPlan{}, err
 		}
 		if _, err := os.Stat(target); err == nil {
-			return applyPatchFileResult{}, fmt.Errorf("move target already exists: %s", hunk.MovePath)
+			return applyPatchHunkPlan{}, fmt.Errorf("move target already exists: %s", hunk.MovePath)
 		} else if !os.IsNotExist(err) {
-			return applyPatchFileResult{}, fmt.Errorf("stat move target: %w", err)
+			return applyPatchHunkPlan{}, fmt.Errorf("stat move target: %w", err)
 		}
 		action = "move"
 		displayMovePath = t.env.NormalizeDisplayPath(target)
+		removeSource = true
+		notifyPaths = []string{target, resolved}
 	}
 
-	if dryRun {
-		return applyPatchFileResult{
+	newBytes := []byte(newContent)
+	return applyPatchHunkPlan{
+		Result: applyPatchFileResult{
 			Path:       t.env.NormalizeDisplayPath(resolved),
 			MovePath:   displayMovePath,
 			Action:     action,
-			OldFileSHA: oldSHA,
-			NewFileSHA: newSHA,
+			OldFileSHA: formatFileSHA(sha256Hex(oldBytes)),
+			NewFileSHA: formatFileSHA(sha256Hex(newBytes)),
 			Diff:       computeDiff(oldContent, newContent, 3),
-		}, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("create parent directory: %w", err)
-	}
-	if err := os.WriteFile(target, []byte(newContent), info.Mode().Perm()); err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("write file: %w", err)
-	}
-	t.notifyFileChanged(target)
-	if hunk.MovePath != "" {
-		if err := os.Remove(resolved); err != nil {
-			return applyPatchFileResult{}, fmt.Errorf("remove moved source: %w", err)
-		}
-		t.notifyFileChanged(resolved)
-	}
-
-	return applyPatchFileResult{
-		Path:       t.env.NormalizeDisplayPath(resolved),
-		MovePath:   displayMovePath,
-		Action:     action,
-		OldFileSHA: oldSHA,
-		NewFileSHA: newSHA,
-		Diff:       computeDiff(oldContent, newContent, 3),
+		},
+		SourceAbs:    resolved,
+		TargetAbs:    target,
+		Content:      newBytes,
+		Mode:         info.Mode().Perm(),
+		WriteTarget:  true,
+		RemoveSource: removeSource,
+		NotifyPaths:  notifyPaths,
 	}, nil
 }
 
-func (t *ApplyPatchTool) applyDeleteHunk(hunk applyPatchHunk, dryRun bool) (applyPatchFileResult, error) {
+func (t *ApplyPatchTool) planDeleteHunk(hunk applyPatchHunk) (applyPatchHunkPlan, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
-		return applyPatchFileResult{}, err
+		return applyPatchHunkPlan{}, err
 	}
 	if err := t.rejectSensitivePatchPath(resolved, "delete"); err != nil {
-		return applyPatchFileResult{}, err
+		return applyPatchHunkPlan{}, err
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("read file to delete %s: %w", hunk.Path, err)
+		return applyPatchHunkPlan{}, fmt.Errorf("read file to delete %s: %w", hunk.Path, err)
 	}
 	if info.IsDir() {
-		return applyPatchFileResult{}, fmt.Errorf("path is a directory: %s", hunk.Path)
+		return applyPatchHunkPlan{}, fmt.Errorf("path is a directory: %s", hunk.Path)
 	}
 	oldBytes, err := os.ReadFile(resolved)
 	if err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("read file: %w", err)
+		return applyPatchHunkPlan{}, fmt.Errorf("read file: %w", err)
 	}
-	oldSHA := formatFileSHA(sha256Hex(oldBytes))
-	if dryRun {
-		return applyPatchFileResult{
+	return applyPatchHunkPlan{
+		Result: applyPatchFileResult{
 			Path:       t.env.NormalizeDisplayPath(resolved),
 			Action:     "delete",
-			OldFileSHA: oldSHA,
+			OldFileSHA: formatFileSHA(sha256Hex(oldBytes)),
 			Diff:       computeDiff(string(oldBytes), "", 3),
-		}, nil
-	}
-	if err := os.Remove(resolved); err != nil {
-		return applyPatchFileResult{}, fmt.Errorf("delete file: %w", err)
-	}
-	t.notifyFileChanged(resolved)
-	return applyPatchFileResult{
-		Path:       t.env.NormalizeDisplayPath(resolved),
-		Action:     "delete",
-		OldFileSHA: oldSHA,
-		Diff:       computeDiff(string(oldBytes), "", 3),
+		},
+		SourceAbs:    resolved,
+		DeleteSource: true,
+		NotifyPaths:  []string{resolved},
 	}, nil
+}
+
+type patchPathSnapshot struct {
+	Path    string
+	Exists  bool
+	Content []byte
+	Mode    os.FileMode
+}
+
+func snapshotPatchPlans(plans []applyPatchHunkPlan) ([]patchPathSnapshot, error) {
+	seen := map[string]bool{}
+	paths := make([]string, 0, len(plans)*2)
+	addPath := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
+		paths = append(paths, path)
+	}
+	for _, plan := range plans {
+		addPath(plan.SourceAbs)
+		addPath(plan.TargetAbs)
+	}
+
+	snapshots := make([]patchPathSnapshot, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				snapshots = append(snapshots, patchPathSnapshot{Path: path})
+				continue
+			}
+			return nil, fmt.Errorf("snapshot %s: %w", path, err)
+		}
+		if info.IsDir() {
+			return nil, fmt.Errorf("snapshot path is a directory: %s", path)
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot %s: %w", path, err)
+		}
+		snapshots = append(snapshots, patchPathSnapshot{
+			Path:    path,
+			Exists:  true,
+			Content: content,
+			Mode:    info.Mode().Perm(),
+		})
+	}
+	return snapshots, nil
+}
+
+func rollbackPatchSnapshots(snapshots []patchPathSnapshot) error {
+	var firstErr error
+	for i := len(snapshots) - 1; i >= 0; i-- {
+		snapshot := snapshots[i]
+		if snapshot.Exists {
+			if err := os.MkdirAll(filepath.Dir(snapshot.Path), 0o755); err != nil && firstErr == nil {
+				firstErr = err
+				continue
+			}
+			if err := os.WriteFile(snapshot.Path, snapshot.Content, snapshot.Mode); err != nil && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if err := os.Remove(snapshot.Path); err != nil && !os.IsNotExist(err) && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func (t *ApplyPatchTool) commitPatchPlans(plans []applyPatchHunkPlan) error {
+	for _, plan := range plans {
+		if plan.WriteTarget {
+			if err := os.MkdirAll(filepath.Dir(plan.TargetAbs), 0o755); err != nil {
+				return fmt.Errorf("create parent directory: %w", err)
+			}
+			if err := os.WriteFile(plan.TargetAbs, plan.Content, plan.Mode); err != nil {
+				return fmt.Errorf("write file: %w", err)
+			}
+		}
+		if plan.RemoveSource {
+			if err := os.Remove(plan.SourceAbs); err != nil {
+				return fmt.Errorf("remove moved source: %w", err)
+			}
+		}
+		if plan.DeleteSource {
+			if err := os.Remove(plan.SourceAbs); err != nil {
+				return fmt.Errorf("delete file: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (t *ApplyPatchTool) notifyPatchPlans(plans []applyPatchHunkPlan) {
+	seen := map[string]bool{}
+	for _, plan := range plans {
+		for _, path := range plan.NotifyPaths {
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			t.notifyFileChanged(path)
+		}
+	}
 }
 
 func (t *ApplyPatchTool) rejectSensitivePatchPath(absPath, action string) error {
