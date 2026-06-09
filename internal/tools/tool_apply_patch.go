@@ -66,7 +66,7 @@ func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 			"- Set dry_run=true to validate anchors and preview structured diffs without mutating files\n" +
 			"- Updating, moving, or deleting existing files requires a fresh prior read_file result or expected_old_shas mapping each source path to read_file file_sha\n" +
 			"- expected_old_sha may be used for a single existing-file patch; use expected_old_shas for multi-file patches\n" +
-			"- Returns changed_files, hunk_count, provenance, per-file old/new sha, and structured diffs showing what changed",
+			"- Returns workspace_revision, changed_files, hunk_count, provenance, per-file old/new sha, and structured diffs showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -93,7 +93,7 @@ func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 	}
 }
 
-func (t *ApplyPatchTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		PatchText       string            `json:"patchText"`
 		Patch           string            `json:"patch"`
@@ -158,10 +158,11 @@ func (t *ApplyPatchTool) Execute(_ context.Context, argsJSON string) (string, er
 	}
 
 	return mustJSON(map[string]any{
-		"dry_run":          dryRun,
-		"hunk_count":       len(patch.Hunks),
-		"changed_files":    uniqueNonEmptyStrings(changedFiles),
-		"next_suggestions": applyPatchNextSuggestions(dryRun),
+		"dry_run":            dryRun,
+		"hunk_count":         len(patch.Hunks),
+		"changed_files":      uniqueNonEmptyStrings(changedFiles),
+		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"next_suggestions":   applyPatchNextSuggestions(dryRun),
 		"provenance": map[string]any{
 			"tool":   "apply_patch",
 			"source": "model_tool_call",

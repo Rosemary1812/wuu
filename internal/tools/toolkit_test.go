@@ -594,11 +594,12 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 		t.Fatalf("expected per-file actions in response: %s", resp)
 	}
 	var parsed struct {
-		DryRun       bool     `json:"dry_run"`
-		HunkCount    int      `json:"hunk_count"`
-		ChangedFiles []string `json:"changed_files"`
-		Suggestions  []string `json:"next_suggestions"`
-		Provenance   struct {
+		DryRun            bool     `json:"dry_run"`
+		HunkCount         int      `json:"hunk_count"`
+		ChangedFiles      []string `json:"changed_files"`
+		WorkspaceRevision string   `json:"workspace_revision"`
+		Suggestions       []string `json:"next_suggestions"`
+		Provenance        struct {
 			Tool   string `json:"tool"`
 			Source string `json:"source"`
 		} `json:"provenance"`
@@ -614,6 +615,9 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 	if parsed.DryRun || parsed.HunkCount != 4 {
 		t.Fatalf("unexpected patch summary: %+v", parsed)
+	}
+	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("apply_patch response missing filesystem workspace revision: %+v", parsed)
 	}
 	wantChanged := []string{"a.txt", "dir/new.txt", "remove.txt", "renamed.txt"}
 	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
@@ -706,11 +710,12 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 		t.Fatalf("apply_patch dry-run: %v", err)
 	}
 	var parsed struct {
-		DryRun       bool     `json:"dry_run"`
-		HunkCount    int      `json:"hunk_count"`
-		ChangedFiles []string `json:"changed_files"`
-		Suggestions  []string `json:"next_suggestions"`
-		Files        []struct {
+		DryRun            bool     `json:"dry_run"`
+		HunkCount         int      `json:"hunk_count"`
+		ChangedFiles      []string `json:"changed_files"`
+		WorkspaceRevision string   `json:"workspace_revision"`
+		Suggestions       []string `json:"next_suggestions"`
+		Files             []struct {
 			Action string `json:"action"`
 		} `json:"files"`
 	}
@@ -719,6 +724,9 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 	}
 	if !parsed.DryRun || parsed.HunkCount != 4 || len(parsed.Files) != 4 {
 		t.Fatalf("unexpected dry-run summary: %+v", parsed)
+	}
+	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("apply_patch dry-run response missing filesystem workspace revision: %+v", parsed)
 	}
 	wantChanged := []string{"a.txt", "dir/new.txt", "remove.txt", "renamed.txt"}
 	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
