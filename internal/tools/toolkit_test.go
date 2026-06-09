@@ -3268,6 +3268,19 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 			RiskLevel:    "medium",
 		},
 	})
+	kit.env.toolTelemetry.record(ToolExecutionRecord{
+		Name:             "run_test",
+		ArgumentsSHA256:  strings.Repeat("b", 64),
+		Kind:             ToolKindTest,
+		Exposure:         ToolExposureDirect,
+		Risk:             ToolRiskMedium,
+		PolicyAction:     ToolPolicyAllow,
+		DurationMS:       99,
+		Success:          true,
+		RawOutputBytes:   2048,
+		ResultBudgeted:   true,
+		PatchRiskSummary: nil,
+	})
 
 	block, ok := kit.ToolResultSummaryContextBlock()
 	if !ok {
@@ -3285,6 +3298,9 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 		"raw_output_bytes=4096 returned_output_bytes=512",
 		"result_budgeted=true",
 		"patch_risk=level=medium,files=2,hunks=2,+7/-2,multi_file=true",
+		"repeated_arguments:",
+		"name=run_test args_sha256=" + strings.Repeat("b", 64) + " count=2",
+		"repeated identical tool inputs can indicate a loop",
 		"result_ref=/tmp/result-API_KEY=[REDACTED]",
 		"artifact_refs=/tmp/artifact-API_KEY=[REDACTED]",
 		"tool arguments and output bodies are intentionally omitted",

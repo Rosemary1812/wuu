@@ -375,6 +375,13 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		}
 		b.WriteString("\n")
 	}
+	if repeated := repeatedToolArguments(records[start:]); len(repeated) > 0 {
+		b.WriteString("repeated_arguments:\n")
+		for _, item := range repeated {
+			fmt.Fprintf(&b, "- name=%s args_sha256=%s count=%d\n", item.ToolName, item.ArgumentsSHA256, item.Count)
+		}
+		b.WriteString("warning: repeated identical tool inputs can indicate a loop; inspect prior evidence before retrying.\n")
+	}
 	b.WriteString("note: tool arguments and output bodies are intentionally omitted; use artifact/result refs when needed.\n")
 
 	return wuucontext.Block{
@@ -384,6 +391,44 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		TokenBudget: 800,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
+}
+
+type repeatedToolArgument struct {
+	ToolName        string
+	ArgumentsSHA256 string
+	Count           int
+}
+
+func repeatedToolArguments(records []ToolExecutionRecord) []repeatedToolArgument {
+	counts := map[string]repeatedToolArgument{}
+	for _, record := range records {
+		toolName := strings.TrimSpace(record.Name)
+		argumentsSHA256 := strings.TrimSpace(record.ArgumentsSHA256)
+		if toolName == "" || argumentsSHA256 == "" {
+			continue
+		}
+		key := toolName + "\x00" + argumentsSHA256
+		item := counts[key]
+		if item.Count == 0 {
+			item.ToolName = toolName
+			item.ArgumentsSHA256 = argumentsSHA256
+		}
+		item.Count++
+		counts[key] = item
+	}
+	repeated := make([]repeatedToolArgument, 0, len(counts))
+	for _, item := range counts {
+		if item.Count > 1 {
+			repeated = append(repeated, item)
+		}
+	}
+	sort.Slice(repeated, func(i, j int) bool {
+		if repeated[i].ToolName != repeated[j].ToolName {
+			return repeated[i].ToolName < repeated[j].ToolName
+		}
+		return repeated[i].ArgumentsSHA256 < repeated[j].ArgumentsSHA256
+	})
+	return repeated
 }
 
 func compactToolPatchRisk(risk ToolPatchRisk) string {
