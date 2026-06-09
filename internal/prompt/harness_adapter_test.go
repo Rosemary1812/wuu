@@ -27,21 +27,21 @@ func TestHarnessFamilyForModel(t *testing.T) {
 
 func TestHarnessAdapterTextSelectsModelFamilyGuidance(t *testing.T) {
 	claude := HarnessAdapterText("anthropic", "claude-sonnet-4-5")
-	for _, want := range []string{"# Harness Adapter", "script driver", "run_workflow", "subagents"} {
+	for _, want := range []string{"# Harness Adapter", "start_workflow", "driver=auto", "script driver", "run_workflow", "subagents"} {
 		if !strings.Contains(claude, want) {
 			t.Fatalf("claude adapter missing %q:\n%s", want, claude)
 		}
 	}
 
 	codex := HarnessAdapterText("openai", "gpt-5-codex")
-	for _, want := range []string{"tool-contract-driven", "workflow drivers", "review or goal tracking"} {
+	for _, want := range []string{"tool-contract-driven", "start_workflow", "driver=auto", "lower-level workflow drivers", "review or goal tracking"} {
 		if !strings.Contains(codex, want) {
 			t.Fatalf("codex adapter missing %q:\n%s", want, codex)
 		}
 	}
 
 	portable := HarnessAdapterText("custom", "local-model")
-	for _, want := range []string{"portable harness path", "tool descriptions exactly", "spawn_agent"} {
+	for _, want := range []string{"portable harness path", "tool descriptions exactly", "start_workflow", "spawn_agent"} {
 		if !strings.Contains(portable, want) {
 			t.Fatalf("portable adapter missing %q:\n%s", want, portable)
 		}
