@@ -25,6 +25,9 @@ func TestPolicyForProfile(t *testing.T) {
 		if !ok {
 			continue
 		}
+		if tt.profile != "" && tt.wantSupported && policy.Profile != tt.profile {
+			t.Fatalf("PolicyForProfile(%q).Profile = %s, want %s", tt.profile, policy.Profile, tt.profile)
+		}
 		if policy.DefaultAction != tt.wantDefault {
 			t.Fatalf("PolicyForProfile(%q).DefaultAction = %s, want %s", tt.profile, policy.DefaultAction, tt.wantDefault)
 		}

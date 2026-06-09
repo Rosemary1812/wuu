@@ -46,6 +46,7 @@ const (
 	BlockTestFailures      BlockKind = "TEST_FAILURES"
 	BlockWebEvidence       BlockKind = "WEB_EVIDENCE"
 	BlockMemory            BlockKind = "MEMORY"
+	BlockToolPolicy        BlockKind = "TOOL_POLICY"
 	BlockToolResultSummary BlockKind = "TOOL_RESULT_SUMMARY"
 	BlockEnvironment       BlockKind = "ENVIRONMENT"
 	BlockAdditionalContext BlockKind = "ADDITIONAL_CONTEXT"

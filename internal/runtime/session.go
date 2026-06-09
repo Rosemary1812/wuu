@@ -834,6 +834,9 @@ func ToolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
 	if !ok {
 		policy = tools.ToolPolicy{}
 	}
+	if profile := strings.TrimSpace(in.Profile); profile != "" {
+		policy.Profile = tools.ToolPolicyProfile(profile)
+	}
 	if action := toolPolicyAction(in.DefaultAction); action != "" {
 		policy.DefaultAction = action
 	}

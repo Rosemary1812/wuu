@@ -795,6 +795,9 @@ func TestToolPolicyFromConfig(t *testing.T) {
 	if policy.DefaultAction != tools.ToolPolicyAllow {
 		t.Fatalf("DefaultAction = %s, want allow", policy.DefaultAction)
 	}
+	if policy.Profile != tools.ToolPolicyProfileBalanced {
+		t.Fatalf("Profile = %s, want balanced", policy.Profile)
+	}
 	if policy.ToolActions["run_shell"] != tools.ToolPolicyRequireApproval {
 		t.Fatalf("run_shell action = %s, want require_approval", policy.ToolActions["run_shell"])
 	}

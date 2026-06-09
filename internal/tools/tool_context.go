@@ -15,7 +15,11 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 	if t == nil {
 		return nil
 	}
-	blocks := t.PlanContextBlocks()
+	var blocks []wuucontext.Block
+	if block, ok := t.ToolPolicyContextBlock(); ok {
+		blocks = append(blocks, block)
+	}
+	blocks = append(blocks, t.PlanContextBlocks()...)
 	if block, ok := t.ActiveFilesContextBlock(); ok {
 		blocks = append(blocks, block)
 	}
@@ -29,6 +33,97 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 		blocks = append(blocks, block)
 	}
 	return blocks
+}
+
+func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
+	if t == nil || !hasConfiguredToolPolicy(t.toolPolicy) {
+		return wuucontext.Block{}, false
+	}
+	var b strings.Builder
+	if t.toolPolicy.Profile != "" {
+		fmt.Fprintf(&b, "profile: %s\n", t.toolPolicy.Profile)
+	}
+	if t.toolPolicy.DefaultAction != "" {
+		fmt.Fprintf(&b, "default_action: %s\n", t.toolPolicy.DefaultAction)
+	}
+	writeToolPolicyActions(&b, "risk_actions", toolPolicyRiskActionLines(t.toolPolicy.RiskActions))
+	writeToolPolicyActions(&b, "kind_actions", toolPolicyKindActionLines(t.toolPolicy.KindActions))
+	writeToolPolicyActions(&b, "tool_actions", toolPolicyToolActionLines(t.toolPolicy.ToolActions))
+	b.WriteString("note: require_approval means ask the user; do not set approval flags yourself unless the user explicitly approved that action.\n")
+
+	return wuucontext.Block{
+		Kind:        wuucontext.BlockToolPolicy,
+		Title:       "Runtime tool policy",
+		Source:      "runtime.tool_policy",
+		TokenBudget: 350,
+		Content:     strings.TrimRight(b.String(), "\n"),
+	}, true
+}
+
+func hasConfiguredToolPolicy(policy ToolPolicy) bool {
+	return policy.Profile != "" ||
+		policy.DefaultAction != "" ||
+		len(policy.ToolActions) > 0 ||
+		len(policy.KindActions) > 0 ||
+		len(policy.RiskActions) > 0
+}
+
+func writeToolPolicyActions(b *strings.Builder, title string, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "%s:\n", title)
+	for _, line := range lines {
+		fmt.Fprintf(b, "- %s\n", line)
+	}
+}
+
+func toolPolicyRiskActionLines(actions map[ToolRisk]ToolPolicyAction) []string {
+	if len(actions) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(actions))
+	for risk := range actions {
+		keys = append(keys, string(risk))
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key+": "+string(actions[ToolRisk(key)]))
+	}
+	return out
+}
+
+func toolPolicyKindActionLines(actions map[ToolKind]ToolPolicyAction) []string {
+	if len(actions) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(actions))
+	for kind := range actions {
+		keys = append(keys, string(kind))
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key+": "+string(actions[ToolKind(key)]))
+	}
+	return out
+}
+
+func toolPolicyToolActionLines(actions map[string]ToolPolicyAction) []string {
+	if len(actions) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(actions))
+	for name := range actions {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key+": "+string(actions[key]))
+	}
+	return out
 }
 
 func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {

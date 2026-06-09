@@ -3427,6 +3427,56 @@ func TestToolkit_ToolPolicy_DeniesByRisk(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolPolicyContextBlock(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, ok := kit.ToolPolicyContextBlock(); ok {
+		t.Fatal("empty policy should not inject a context block")
+	}
+
+	policy, ok := PolicyForProfile(ToolPolicyProfileBalanced)
+	if !ok {
+		t.Fatal("balanced policy missing")
+	}
+	policy.ToolActions = map[string]ToolPolicyAction{
+		"run_shell": ToolPolicyRequireApproval,
+	}
+	policy.KindActions = map[ToolKind]ToolPolicyAction{
+		ToolKindWeb: ToolPolicyDeny,
+	}
+	kit.SetToolPolicy(policy)
+
+	block, ok := kit.ToolPolicyContextBlock()
+	if !ok {
+		t.Fatal("expected tool policy context block")
+	}
+	if block.Kind != wuucontext.BlockToolPolicy || block.Source != "runtime.tool_policy" {
+		t.Fatalf("unexpected policy block metadata: %+v", block)
+	}
+	for _, want := range []string{
+		"profile: balanced",
+		"default_action: allow",
+		"risk_actions:",
+		"high: require_approval",
+		"kind_actions:",
+		"web: deny",
+		"tool_actions:",
+		"run_shell: require_approval",
+		"require_approval means ask the user",
+	} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("policy block missing %q:\n%s", want, block.Content)
+		}
+	}
+	blocks := kit.ContextBlocks()
+	if len(blocks) == 0 || blocks[0].Kind != wuucontext.BlockToolPolicy {
+		t.Fatalf("ContextBlocks should inject tool policy first: %+v", blocks)
+	}
+}
+
 func TestToolkit_ToolPolicy_ToolOverrideBeatsRisk(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

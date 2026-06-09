@@ -35,6 +35,7 @@ const (
 // high-trust mode: every call is allowed unless an explicit override says
 // otherwise.
 type ToolPolicy struct {
+	Profile       ToolPolicyProfile
 	DefaultAction ToolPolicyAction
 	ToolActions   map[string]ToolPolicyAction
 	KindActions   map[ToolKind]ToolPolicyAction
@@ -54,6 +55,7 @@ func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {
 		return ToolPolicy{}, true
 	case ToolPolicyProfileSafe:
 		return ToolPolicy{
+			Profile:       profile,
 			DefaultAction: ToolPolicyDeny,
 			RiskActions: map[ToolRisk]ToolPolicyAction{
 				ToolRiskLow:    ToolPolicyAllow,
@@ -63,6 +65,7 @@ func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {
 		}, true
 	case ToolPolicyProfileBalanced:
 		return ToolPolicy{
+			Profile:       profile,
 			DefaultAction: ToolPolicyAllow,
 			RiskActions: map[ToolRisk]ToolPolicyAction{
 				ToolRiskLow:    ToolPolicyAllow,
@@ -72,10 +75,12 @@ func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {
 		}, true
 	case ToolPolicyProfileAutonomous:
 		return ToolPolicy{
+			Profile:       profile,
 			DefaultAction: ToolPolicyAllow,
 		}, true
 	case ToolPolicyProfileEnterpriseRestricted:
 		return ToolPolicy{
+			Profile:       profile,
 			DefaultAction: ToolPolicyDeny,
 			RiskActions: map[ToolRisk]ToolPolicyAction{
 				ToolRiskLow:    ToolPolicyAllow,
