@@ -119,6 +119,7 @@ describe("Composer permission menu", () => {
     expect(toolPolicyProfileFromSummary()).toBe("autonomous");
     expect(toolPolicyProfileFromSummary({ profile: "safe" })).toBe("safe");
     expect(toolPolicyProfileFromSummary({ profile: "balanced" })).toBe("balanced");
+    expect(toolPolicyProfileFromSummary({ profile: "auto" })).toBe("auto");
     expect(toolPolicyHasPresetOverrides({ profile: "safe" })).toBe(false);
     expect(
       toolPolicyHasPresetOverrides({
@@ -151,6 +152,37 @@ describe("Composer permission menu", () => {
 
     act(() => {
       automaticOption?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(onSelectToolPolicyProfile).toHaveBeenCalledWith("auto");
+  });
+
+  it("keeps the balanced permission mode separate from automatic mode", () => {
+    const onSelectToolPolicyProfile = vi.fn();
+    renderComposer({
+      accessMenuOpen: true,
+      toolPolicy: { profile: "safe" },
+      onSelectToolPolicyProfile,
+    });
+
+    const labels = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "button[role=\"menuitemradio\"] strong",
+      ),
+    ).map((label) => label.textContent?.trim());
+    expect(labels).toEqual(["默认", "平衡", "自动", "危险", "严格"]);
+
+    const balancedOption = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "button[role=\"menuitemradio\"]",
+      ),
+    ).find((button) => button.textContent?.includes("平衡"));
+    expect(balancedOption).not.toBeUndefined();
+
+    act(() => {
+      balancedOption?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
     });

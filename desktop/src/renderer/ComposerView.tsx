@@ -97,7 +97,12 @@ export type FloatingMenuOwner =
   | "composer-query-history";
 export type FloatingMenuPlacement = "above" | "below" | "middle";
 export type FloatingMenuAlign = "left" | "right";
-export type ToolPolicyProfile = "safe" | "balanced" | "autonomous" | "enterprise_restricted";
+export type ToolPolicyProfile =
+  | "safe"
+  | "balanced"
+  | "auto"
+  | "autonomous"
+  | "enterprise_restricted";
 
 type ToolPolicyProfileOption = {
   profile: ToolPolicyProfile;
@@ -118,10 +123,17 @@ const TOOL_POLICY_PROFILE_OPTIONS: ToolPolicyProfileOption[] = [
   },
   {
     profile: "balanced",
-    label: "自动",
-    chipLabel: "自动权限",
+    label: "平衡",
+    chipLabel: "平衡权限",
     short: "高风险确认",
     description: "低中风险自动执行，高风险动作先确认"
+  },
+  {
+    profile: "auto",
+    label: "自动",
+    chipLabel: "自动权限",
+    short: "智能判定",
+    description: "非低风险动作交给自动判定，必要时拦截或要求确认"
   },
   {
     profile: "autonomous",
@@ -151,7 +163,13 @@ function clamp(value: number, min: number, max: number): number {
 
 export function toolPolicyProfileFromSummary(policy?: ToolPolicySummary): ToolPolicyProfile {
   const profile = policy?.profile?.trim();
-  if (profile === "safe" || profile === "balanced" || profile === "autonomous" || profile === "enterprise_restricted") {
+  if (
+    profile === "safe" ||
+    profile === "balanced" ||
+    profile === "auto" ||
+    profile === "autonomous" ||
+    profile === "enterprise_restricted"
+  ) {
     return profile;
   }
   return "autonomous";
@@ -167,7 +185,7 @@ export function toolPolicyHasPresetOverrides(policy?: ToolPolicySummary): boolea
 }
 
 function toolPolicyProfileOption(profile: ToolPolicyProfile): ToolPolicyProfileOption {
-  return TOOL_POLICY_PROFILE_OPTIONS.find((option) => option.profile === profile) ?? TOOL_POLICY_PROFILE_OPTIONS[2];
+  return TOOL_POLICY_PROFILE_OPTIONS.find((option) => option.profile === profile) ?? TOOL_POLICY_PROFILE_OPTIONS[3];
 }
 
 function textareaSelectionAtStart(textarea: HTMLTextAreaElement): boolean {
