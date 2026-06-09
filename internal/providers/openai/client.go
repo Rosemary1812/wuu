@@ -832,9 +832,25 @@ func mergeChatProviderOptions(object map[string]any, options map[string]any, for
 			object["max_tokens"] = value
 		case "promptCacheKey":
 			object["promptCacheKey"] = value
+		case "include":
+			// OpenAI Responses uses include for encrypted reasoning replay.
+			// Chat Completions endpoints commonly reject it as an unknown field.
+			continue
 		default:
+			if chatProviderOptionIsAISDKOnly(key) {
+				continue
+			}
 			mergeProviderOptionValue(object, key, value)
 		}
+	}
+}
+
+func chatProviderOptionIsAISDKOnly(key string) bool {
+	switch key {
+	case "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway":
+		return true
+	default:
+		return false
 	}
 }
 

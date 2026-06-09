@@ -166,8 +166,21 @@ func mergeResponsesProviderOptions(object map[string]any, options map[string]any
 		case "promptCacheKey":
 			object["prompt_cache_key"] = value
 		default:
+			if responsesProviderOptionUnsupported(key) {
+				continue
+			}
 			mergeProviderOptionValue(object, key, value)
 		}
+	}
+}
+
+func responsesProviderOptionUnsupported(key string) bool {
+	switch key {
+	case "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway",
+		"usage", "chat_template_args", "enable_thinking", "thinking":
+		return true
+	default:
+		return false
 	}
 }
 

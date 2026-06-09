@@ -271,6 +271,51 @@ func TestChat_SendsPromptCacheKeyForOpenAICompatible(t *testing.T) {
 	}
 }
 
+func TestChat_FiltersUnsupportedProviderOptions(t *testing.T) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		for _, key := range []string{"include", "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway"} {
+			if _, exists := body[key]; exists {
+				t.Fatalf("chat payload should filter %s: %#v", key, body)
+			}
+		}
+		if body["metadata"] == nil {
+			t.Fatalf("chat payload should keep ordinary provider options: %#v", body)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		ProviderOptions: map[string]any{
+			"include":         []any{"reasoning.encrypted_content"},
+			"toolStreaming":   false,
+			"thinkingConfig":  map[string]any{"includeThoughts": true},
+			"reasoningConfig": map[string]any{"type": "enabled"},
+			"modelParams":     map[string]any{"reasoning_effort": "high"},
+			"gateway":         map[string]any{"caching": "auto"},
+			"metadata":        map[string]any{"eval": "provider-options"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_SendsSnakeCasePromptCacheKeyForOpenRouter(t *testing.T) {
 	t.Helper()
 
@@ -1292,6 +1337,60 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 	wantUsage := &providers.TokenUsage{InputTokens: 7, OutputTokens: 4, CacheReadTokens: 3}
 	if !reflect.DeepEqual(resp.Usage, wantUsage) {
 		t.Fatalf("got usage %+v, want %+v", resp.Usage, wantUsage)
+	}
+}
+
+func TestResponsesChat_FiltersUnsupportedProviderOptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		for _, key := range []string{"toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway", "usage", "chat_template_args", "enable_thinking", "thinking"} {
+			if _, exists := body[key]; exists {
+				t.Fatalf("responses payload should filter %s: %#v", key, body)
+			}
+		}
+		if _, exists := body["include"]; !exists {
+			t.Fatalf("responses payload should keep include: %#v", body)
+		}
+		if body["metadata"] == nil {
+			t.Fatalf("responses payload should keep ordinary provider options: %#v", body)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		ProviderOptions: map[string]any{
+			"include":            []any{"reasoning.encrypted_content"},
+			"toolStreaming":      false,
+			"thinkingConfig":     map[string]any{"includeThoughts": true},
+			"reasoningConfig":    map[string]any{"type": "enabled"},
+			"modelParams":        map[string]any{"reasoning_effort": "high"},
+			"gateway":            map[string]any{"caching": "auto"},
+			"usage":              map[string]any{"include": true},
+			"chat_template_args": map[string]any{"enable_thinking": true},
+			"enable_thinking":    true,
+			"thinking":           map[string]any{"type": "enabled"},
+			"metadata":           map[string]any{"eval": "provider-options"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
 	}
 }
 
