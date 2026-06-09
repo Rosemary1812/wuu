@@ -1800,6 +1800,12 @@ func TestBroken(t *testing.T) {
 	if len(got.FailureSummary.FailingTests) == 0 || got.FailureSummary.FailingTests[0] != "TestBroken" {
 		t.Fatalf("failure summary missing failing test: %+v", got.FailureSummary)
 	}
+	if len(got.FailureSummary.Locations) == 0 ||
+		got.FailureSummary.Locations[0].Path != "pkg_test.go" ||
+		got.FailureSummary.Locations[0].Line <= 0 ||
+		strings.Contains(got.FailureSummary.Locations[0].Text, "secret-value") {
+		t.Fatalf("failure summary missing redacted file location: %+v", got.FailureSummary)
+	}
 	if !strings.HasPrefix(got.Revision, "fs:worktree:") {
 		t.Fatalf("run_test response missing filesystem workspace revision: %+v", got)
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -232,16 +233,25 @@ func runTestNextSuggestions(shellResult shellExecutionResult, failureSummary tes
 }
 
 type testFailureSummary struct {
-	Failed       bool     `json:"failed"`
-	FailingTests []string `json:"failing_tests,omitempty"`
-	Indicators   []string `json:"indicators,omitempty"`
-	Snippets     []string `json:"snippets,omitempty"`
+	Failed       bool                  `json:"failed"`
+	FailingTests []string              `json:"failing_tests,omitempty"`
+	Indicators   []string              `json:"indicators,omitempty"`
+	Locations    []testFailureLocation `json:"locations,omitempty"`
+	Snippets     []string              `json:"snippets,omitempty"`
+}
+
+type testFailureLocation struct {
+	Path   string `json:"path"`
+	Line   int    `json:"line,omitempty"`
+	Column int    `json:"column,omitempty"`
+	Text   string `json:"text,omitempty"`
 }
 
 var (
-	goFailLine     = regexp.MustCompile(`^--- FAIL:\s+([^\s(]+)`)
-	pytestFailLine = regexp.MustCompile(`^FAILED\s+([^\s]+)`)
-	jsFailLine     = regexp.MustCompile(`^\s*FAIL\s+(.+)$`)
+	goFailLine       = regexp.MustCompile(`^--- FAIL:\s+([^\s(]+)`)
+	pytestFailLine   = regexp.MustCompile(`^FAILED\s+([^\s]+)`)
+	jsFailLine       = regexp.MustCompile(`^\s*FAIL\s+(.+)$`)
+	fileLocationLine = regexp.MustCompile(`([A-Za-z0-9_./\\-]+\.(?:go|py|js|jsx|ts|tsx|rs|java|kt|kts|c|cc|cpp|cxx|h|hpp|cs|rb|php|swift|m|mm)):(\d+)(?::(\d+))?`)
 )
 
 func summarizeTestFailure(output string) testFailureSummary {
@@ -252,11 +262,13 @@ func summarizeTestFailure(output string) testFailureSummary {
 	lines := strings.Split(output, "\n")
 	seenTests := map[string]struct{}{}
 	seenIndicators := map[string]struct{}{}
+	seenLocations := map[string]struct{}{}
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
+		addFailureLocations(&summary.Locations, seenLocations, trimmed)
 		if match := goFailLine.FindStringSubmatch(trimmed); len(match) == 2 {
 			addUnique(&summary.FailingTests, seenTests, match[1])
 			addTestSnippet(&summary.Snippets, lines, i)
@@ -289,6 +301,9 @@ func summarizeTestFailure(output string) testFailureSummary {
 	if len(summary.Indicators) > 8 {
 		summary.Indicators = summary.Indicators[:8]
 	}
+	if len(summary.Locations) > 8 {
+		summary.Locations = summary.Locations[:8]
+	}
 	if len(summary.Snippets) > 8 {
 		summary.Snippets = summary.Snippets[:8]
 	}
@@ -305,6 +320,42 @@ func addUnique(values *[]string, seen map[string]struct{}, value string) {
 	}
 	seen[value] = struct{}{}
 	*values = append(*values, value)
+}
+
+func addFailureLocations(values *[]testFailureLocation, seen map[string]struct{}, line string) {
+	for _, match := range fileLocationLine.FindAllStringSubmatch(line, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		path := strings.TrimSpace(strings.ReplaceAll(match[1], "\\", "/"))
+		lineNumber, err := strconv.Atoi(match[2])
+		if path == "" || err != nil || lineNumber <= 0 {
+			continue
+		}
+		columnNumber := 0
+		if len(match) > 3 && strings.TrimSpace(match[3]) != "" {
+			columnNumber, _ = strconv.Atoi(match[3])
+		}
+		key := fmt.Sprintf("%s:%d:%d", path, lineNumber, columnNumber)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		*values = append(*values, testFailureLocation{
+			Path:   path,
+			Line:   lineNumber,
+			Column: columnNumber,
+			Text:   truncateFailureLocationText(line),
+		})
+	}
+}
+
+func truncateFailureLocationText(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= 240 {
+		return value
+	}
+	return value[:240] + "..."
 }
 
 func addTestSnippet(snippets *[]string, lines []string, idx int) {
