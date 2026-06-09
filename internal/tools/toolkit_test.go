@@ -2654,6 +2654,7 @@ func TestOK(t *testing.T) {}
 		t.Fatalf("run_test: %v", err)
 	}
 	var got struct {
+		Action         string             `json:"action"`
 		Passed         bool               `json:"passed"`
 		ExitCode       int                `json:"exit_code"`
 		Scope          string             `json:"scope"`
@@ -2664,7 +2665,7 @@ func TestOK(t *testing.T) {}
 	if err := json.Unmarshal([]byte(resp), &got); err != nil {
 		t.Fatalf("parse run_test response: %v\n%s", err, resp)
 	}
-	if !got.Passed || got.ExitCode != 0 || got.Scope != "targeted" {
+	if got.Action != "run" || !got.Passed || got.ExitCode != 0 || got.Scope != "targeted" {
 		t.Fatalf("unexpected run_test success response: %+v", got)
 	}
 	if got.Classification.Risk != ToolRiskMedium || got.Classification.Reason != "local verification command" {
@@ -2675,6 +2676,10 @@ func TestOK(t *testing.T) {}
 	}
 	if len(got.Suggestions) == 0 || !strings.Contains(strings.Join(got.Suggestions, " "), "final response") {
 		t.Fatalf("passing run_test response missing finish suggestion: %+v", got.Suggestions)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || records[0].ResultAction != "run" {
+		t.Fatalf("run_test telemetry missing result action: %+v", records)
 	}
 }
 
@@ -4457,6 +4462,9 @@ func TestToolkit_RunShell(t *testing.T) {
 	if parsed["exit_code"].(float64) != 0 {
 		t.Fatalf("unexpected exit code: %v", parsed["exit_code"])
 	}
+	if parsed["action"].(string) != "run" {
+		t.Fatalf("unexpected run_shell action: %+v", parsed)
+	}
 	if !strings.Contains(parsed["output"].(string), "hi") {
 		t.Fatalf("unexpected output: %v", parsed["output"])
 	}
@@ -4477,6 +4485,10 @@ func TestToolkit_RunShell(t *testing.T) {
 	}
 	if suggestions, ok := parsed["next_suggestions"].([]any); !ok || len(suggestions) == 0 {
 		t.Fatalf("run_shell response missing next_suggestions: %+v", parsed)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || records[0].ResultAction != "run" {
+		t.Fatalf("run_shell telemetry missing result action: %+v", records)
 	}
 }
 

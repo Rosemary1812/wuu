@@ -129,6 +129,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 }
 
 type shellExecutionResult struct {
+	Action              string             `json:"action"`
 	Command             string             `json:"command"`
 	Purpose             string             `json:"purpose,omitempty"`
 	Classification      ToolClassification `json:"classification"`
@@ -243,6 +244,7 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 	timedOut := errors.Is(runCtx.Err(), context.DeadlineExceeded)
 
 	return shellExecutionResult{
+		Action:              "run",
 		Command:             redactedCommand,
 		Classification:      classification,
 		ExitCode:            exitCode,

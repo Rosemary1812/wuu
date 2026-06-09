@@ -147,6 +147,7 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		FullLogRef:     fullLogRef,
 	})
 	result := map[string]any{
+		"action":             "run",
 		"command":            shellResult.Command,
 		"scope":              scope,
 		"purpose":            redactToolOutput(args.Purpose),
