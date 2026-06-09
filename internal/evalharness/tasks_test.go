@@ -701,6 +701,9 @@ func TestAgentLedWorkflowTeamVerification(t *testing.T) {
 	if !evalTaskRequiresTool(task, "start_workflow") || evalTaskRequiresTool(task, "create_workflow") {
 		t.Fatalf("agent-led workflow team eval should require start_workflow, got %+v", task.RequiredTools)
 	}
+	if !evalTaskForbidsTool(task, "create_workflow") || !evalTaskForbidsTool(task, "run_workflow") {
+		t.Fatalf("agent-led workflow team eval should forbid lower-level drivers, got %+v", task.ForbiddenTools)
+	}
 	root := t.TempDir()
 	if err := SetupTask(task, root); err != nil {
 		t.Fatalf("SetupTask: %v", err)
@@ -742,6 +745,15 @@ func TestAgentLedWorkflowTeamVerification(t *testing.T) {
 
 func evalTaskRequiresTool(task Task, name string) bool {
 	for _, tool := range task.RequiredTools {
+		if tool == name {
+			return true
+		}
+	}
+	return false
+}
+
+func evalTaskForbidsTool(task Task, name string) bool {
+	for _, tool := range task.ForbiddenTools {
 		if tool == name {
 			return true
 		}

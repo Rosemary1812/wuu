@@ -814,6 +814,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		result.MissingErrors = missingRequiredToolErrors(cfg.Task.RequiredErrors, records)
 	}
 	result.MissingTools = missingRequiredTools(cfg.Task.RequiredTools, result.ToolNames)
+	result.ForbiddenToolsUsed = forbiddenToolsUsed(cfg.Task.ForbiddenTools, result.ToolNames)
 	result.MissingToolCalls = missingRequiredToolCalls(cfg.Task.RequiredToolCalls, runResult.NewMessages)
 	result.MissingToolSeq = missingRequiredToolSequence(cfg.Task.RequiredToolSequence, runResult.NewMessages)
 
@@ -821,7 +822,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	if verifyErr != nil {
 		result.Error = verifyErr.Error()
 	} else {
-		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0 && len(result.MissingToolCalls) == 0 && len(result.MissingToolSeq) == 0 && len(result.MissingErrors) == 0
+		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0 && len(result.ForbiddenToolsUsed) == 0 && len(result.MissingToolCalls) == 0 && len(result.MissingToolSeq) == 0 && len(result.MissingErrors) == 0
 		result.VerificationReason = verification.Reason
 		result.VerificationEvidence = verification.Evidence
 	}
@@ -1377,6 +1378,27 @@ func missingRequiredTools(required []string, used []string) []string {
 	return missing
 }
 
+func forbiddenToolsUsed(forbidden []string, used []string) []string {
+	if len(forbidden) == 0 || len(used) == 0 {
+		return nil
+	}
+	forbiddenSet := map[string]bool{}
+	for _, name := range forbidden {
+		if name != "" {
+			forbiddenSet[name] = true
+		}
+	}
+	out := make([]string, 0, len(forbidden))
+	seen := map[string]bool{}
+	for _, name := range used {
+		if forbiddenSet[name] && !seen[name] {
+			out = append(out, name)
+			seen[name] = true
+		}
+	}
+	return out
+}
+
 func missingRequiredToolCalls(required []evalharness.ToolCallRequirement, messages []providers.ChatMessage) []string {
 	if len(required) == 0 {
 		return nil
@@ -1605,6 +1627,9 @@ func printEvalReport(report evalReport) {
 		if len(result.MissingTools) > 0 {
 			fmt.Printf("  missing_tools: %s\n", strings.Join(result.MissingTools, ","))
 		}
+		if len(result.ForbiddenToolsUsed) > 0 {
+			fmt.Printf("  forbidden_tools: %s\n", strings.Join(result.ForbiddenToolsUsed, ","))
+		}
 		if len(result.MissingToolCalls) > 0 {
 			fmt.Printf("  missing_tool_calls: %s\n", strings.Join(result.MissingToolCalls, ","))
 		}
@@ -1651,6 +1676,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	}
 	if len(summary.ToolNames) > 0 {
 		fmt.Printf("  tool_records: %s\n", strings.Join(summary.ToolNames, ","))
+	}
+	if summary.Task != nil && len(summary.Task.ForbiddenToolsUsed) > 0 {
+		fmt.Printf("  forbidden_tools: %s\n", strings.Join(summary.Task.ForbiddenToolsUsed, ","))
 	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)

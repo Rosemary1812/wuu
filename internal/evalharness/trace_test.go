@@ -20,6 +20,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		ToolCalls:          1,
 		ToolNames:          []string{"run_shell"},
 		ToolSequence:       []string{"read_file", "run_shell", "run_shell"},
+		ForbiddenToolsUsed: []string{"create_workflow"},
 		MissingToolCalls:   []string{"checkpoint action=restore"},
 		MissingToolSeq:     []string{"apply_patch contains=checkpoint_result.txt"},
 		InputTokens:        10,
@@ -86,6 +87,13 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 			t.Fatalf("event %d missing stable metadata: %+v", i, events[i])
 		}
 	}
+	task, ok := events[0].Data.(TraceTask)
+	if !ok {
+		t.Fatalf("task event data has wrong type: %#v", events[0].Data)
+	}
+	if len(task.ForbiddenToolsUsed) != 1 || task.ForbiddenToolsUsed[0] != "create_workflow" {
+		t.Fatalf("task event missing forbidden tools: %+v", task)
+	}
 	obs, ok := events[1].Data.(TraceObservability)
 	if !ok {
 		t.Fatalf("observability event data has wrong type: %#v", events[1].Data)
@@ -106,10 +114,6 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if len(contextRequests) != 1 || contextRequests[0].StepIndex != 0 || len(contextRequests[0].BlockKinds) != 2 {
 		t.Fatalf("context_requests event missing request metadata: %+v", contextRequests)
-	}
-	task, ok := events[0].Data.(TraceTask)
-	if !ok {
-		t.Fatalf("task event data has wrong type: %#v", events[0].Data)
 	}
 	if len(task.MissingToolCalls) != 1 || task.MissingToolCalls[0] != "checkpoint action=restore" {
 		t.Fatalf("task event missing tool call requirements: %+v", task)

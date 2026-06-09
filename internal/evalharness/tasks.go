@@ -22,6 +22,7 @@ type Task struct {
 	Description          string
 	Prompt               string
 	RequiredTools        []string
+	ForbiddenTools       []string
 	RequiredToolCalls    []ToolCallRequirement
 	RequiredToolSequence []ToolCallRequirement
 	RequiredErrors       []ToolErrorRequirement
@@ -68,6 +69,7 @@ type Result struct {
 	ToolNames            []string               `json:"tool_names,omitempty"`
 	ToolSequence         []string               `json:"tool_sequence,omitempty"`
 	MissingTools         []string               `json:"missing_tools,omitempty"`
+	ForbiddenToolsUsed   []string               `json:"forbidden_tools,omitempty"`
 	MissingToolCalls     []string               `json:"missing_tool_calls,omitempty"`
 	MissingToolSeq       []string               `json:"missing_tool_sequence,omitempty"`
 	MissingErrors        []string               `json:"missing_errors,omitempty"`
@@ -497,6 +499,7 @@ func Catalog() []Task {
 				"The ephemeral worker must omit agent_profile and write team_beta.txt containing TEAM_BETA_DONE. " +
 				"Require both workers to call agent_report. Await both with await_agents, bind the results back to the workflow using workflow_control action=record_await_results, then write a final workflow report with complete_run=true. Do not write team_alpha.txt or team_beta.txt yourself.",
 			RequiredTools:  []string{"list_agent_profiles", "start_workflow", "workflow_control", "spawn_agent", "await_agents"},
+			ForbiddenTools: []string{"create_workflow", "run_workflow"},
 			IsolateWuuHome: true,
 			Setup:          setupEmptyTask,
 			Verify:         verifyDynamicWorkflowTeam,

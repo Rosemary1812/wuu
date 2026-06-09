@@ -219,6 +219,11 @@ func TestMissingRequiredTools(t *testing.T) {
 	if got := missingRequiredTools([]string{"tool_search"}, []string{"tool_search"}); len(got) != 0 {
 		t.Fatalf("expected no missing tools, got %+v", got)
 	}
+
+	forbidden := forbiddenToolsUsed([]string{"create_workflow", "run_workflow"}, []string{"start_workflow", "create_workflow", "create_workflow"})
+	if len(forbidden) != 1 || forbidden[0] != "create_workflow" {
+		t.Fatalf("unexpected forbidden tools: %+v", forbidden)
+	}
 }
 
 func TestToolNameSequencePreservesRepeatedCalls(t *testing.T) {
@@ -784,9 +789,10 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	tracePath := filepath.Join(t.TempDir(), "eval-trace.jsonl")
 	approvalRef := "/tmp/wuu/session/approvals/call-process.json"
 	if err := evalharness.WriteTrace(tracePath, evalharness.Result{
-		TaskID:   "task-1",
-		TaskName: "Task One",
-		Success:  true,
+		TaskID:             "task-1",
+		TaskName:           "Task One",
+		Success:            true,
+		ForbiddenToolsUsed: []string{"create_workflow"},
 		Observability: &evalharness.Observability{
 			ToolRecords: []evalharness.ToolObservation{{
 				Name:            "start_process",
@@ -855,6 +861,9 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	}
 	if !strings.Contains(output, "workflow_arbitration: run-1:status=awaiting_reports:missing_reports=beta-writer:overlaps=team_alpha.txt=alpha-writer+beta-writer:next=await_reports") {
 		t.Fatalf("replay text output missing workflow arbitration summary:\n%s", output)
+	}
+	if !strings.Contains(output, "forbidden_tools: create_workflow") {
+		t.Fatalf("replay text output missing forbidden tools:\n%s", output)
 	}
 	if strings.Contains(output, strings.Repeat("e", 64)) {
 		t.Fatalf("replay text output should not print argument fingerprints by default:\n%s", output)
