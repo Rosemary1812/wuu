@@ -297,7 +297,7 @@ description: Weekly QA sweep.
 	if feature.Source != "project" || feature.Description != "Project feature workflow." {
 		t.Fatalf("project workflow should override user workflow: %+v", feature)
 	}
-	if !strings.Contains(rt.BaseSystemPrompt, "Project feature workflow.") || !strings.Contains(rt.BaseSystemPrompt, "`create_workflow`") {
+	if !strings.Contains(rt.BaseSystemPrompt, "Project feature workflow.") || !strings.Contains(rt.BaseSystemPrompt, "`start_workflow`") {
 		t.Fatalf("workflow catalog not injected into system prompt:\n%s", rt.BaseSystemPrompt)
 	}
 	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 2 {
@@ -307,7 +307,7 @@ description: Weekly QA sweep.
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "create_workflow", "workflow_control", "workflow_status"} {
+	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "create_workflow", "workflow_control", "workflow_status"} {
 		if !defs[name] {
 			t.Fatalf("workflow tool %q missing from Definitions()", name)
 		}
