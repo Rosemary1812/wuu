@@ -1842,6 +1842,52 @@ func TestToolkit_ListFilesReturnsEntryPathsAndSuggestions(t *testing.T) {
 	}
 }
 
+func TestToolkit_FileToolTelemetryRecordsResultActions(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "one\n")
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "read_file", Arguments: `{"path":"a.txt"}`}); err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_files", Arguments: `{}`}); err != nil {
+		t.Fatalf("list_files: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "write_file", Arguments: `{"path":"new.txt","content":"new\n"}`}); err != nil {
+		t.Fatalf("write_file create: %v", err)
+	}
+	oneSHA := formatFileSHA(sha256Hex([]byte("one\n")))
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":"a.txt","old_text":"one","new_text":"two","expected_old_sha":"` + oneSHA + `"}`,
+	}); err != nil {
+		t.Fatalf("edit_file: %v", err)
+	}
+	twoSHA := formatFileSHA(sha256Hex([]byte("two\n")))
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"a.txt","content":"three\n","expected_old_sha":"` + twoSHA + `"}`,
+	}); err != nil {
+		t.Fatalf("write_file overwrite: %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 5 {
+		t.Fatalf("expected five telemetry records, got %+v", records)
+	}
+	got := make([]string, 0, len(records))
+	for _, record := range records {
+		got = append(got, record.Name+":"+record.ResultAction)
+	}
+	want := []string{"read_file:read", "list_files:list", "write_file:create", "edit_file:edit", "write_file:overwrite"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("file tool result actions = %+v, want %+v", got, want)
+	}
+}
+
 func TestToolkit_PathEscapeBlocked(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

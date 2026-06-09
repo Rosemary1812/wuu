@@ -231,6 +231,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 			}
 			if unchanged {
 				result := map[string]any{
+					"action":             "read_unchanged",
 					"path":               t.env.NormalizeDisplayPath(resolved),
 					"file_sha":           formatFileSHA(contentHash),
 					"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
@@ -265,6 +266,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	})
 
 	result := map[string]any{
+		"action":             "read",
 		"path":               t.env.NormalizeDisplayPath(resolved),
 		"file_sha":           formatFileSHA(contentHash),
 		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
@@ -836,6 +838,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 
 	result := map[string]any{
+		"action":             "create",
 		"path":               t.env.NormalizeDisplayPath(resolved),
 		"written_bytes":      len(args.Content),
 		"new_file_sha":       formatFileSHA(sha256Hex([]byte(args.Content))),
@@ -843,6 +846,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 
 	if fileExists {
+		result["action"] = "overwrite"
 		result["old_file_sha"] = formatFileSHA(sha256Hex(oldContent))
 		result["diff"] = writeFileDiffResult(oldContent, args.Content)
 	} else {
@@ -1066,6 +1070,7 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 
 	result := map[string]any{
+		"action":              "list",
 		"path":                t.env.NormalizeDisplayPath(resolved),
 		"workspace_revision":  workspaceRevision(ctx, t.env.RootDir),
 		"total":               len(entries),
@@ -1227,6 +1232,7 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 
 	diff := computeDiff(text, newContent, 3)
 	result := map[string]any{
+		"action":             "edit",
 		"path":               t.env.NormalizeDisplayPath(resolved),
 		"old_file_sha":       formatFileSHA(oldSHA),
 		"new_file_sha":       formatFileSHA(sha256Hex([]byte(newContent))),
