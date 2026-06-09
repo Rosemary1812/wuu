@@ -84,6 +84,9 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("run_shell requires command")
 	}
+	if shellCommandInvokesGit(args.Command) {
+		return "", errors.New("run_shell refuses to execute git commands; use the restricted git tool instead")
+	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
 	}
@@ -290,6 +293,9 @@ func classifyShellCommand(command string) ToolClassification {
 	if shellFieldsTouchSensitivePath(fields) {
 		return highRiskShellClassification("shell command may read secrets", false)
 	}
+	if shellCommandInvokesGit(command) {
+		return highRiskShellClassification("git command must use restricted git tool", true)
+	}
 	if hasShellMetacharacters {
 		if shellCommandLooksLikeDirectoryScopedVerification(command) {
 			return ToolClassification{
@@ -326,6 +332,60 @@ func classifyShellCommand(command string) ToolClassification {
 		return highRiskShellClassification("package, network, or external mutation command", true)
 	}
 	return highRiskShellClassification("shell command is not proven read-only or verification-only", false)
+}
+
+func shellCommandInvokesGit(command string) bool {
+	for _, segment := range splitShellCommandSegments(command) {
+		fields := strings.Fields(segment)
+		for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
+			fields = fields[1:]
+		}
+		if len(fields) == 0 {
+			continue
+		}
+		switch fields[0] {
+		case "command", "exec":
+			fields = fields[1:]
+		case "env":
+			fields = stripEnvCommandPrefix(fields[1:])
+		}
+		if len(fields) > 0 && fields[0] == "git" {
+			return true
+		}
+	}
+	return false
+}
+
+func splitShellCommandSegments(command string) []string {
+	return strings.FieldsFunc(command, func(r rune) bool {
+		switch r {
+		case '\n', ';', '&', '|', '(', ')', '`':
+			return true
+		default:
+			return false
+		}
+	})
+}
+
+func stripEnvCommandPrefix(fields []string) []string {
+	for len(fields) > 0 {
+		field := fields[0]
+		if looksLikeEnvAssignment(field) {
+			fields = fields[1:]
+			continue
+		}
+		if strings.HasPrefix(field, "-") {
+			fields = fields[1:]
+			if field == "-u" || field == "--unset" || field == "-C" || field == "--chdir" {
+				if len(fields) > 0 {
+					fields = fields[1:]
+				}
+			}
+			continue
+		}
+		break
+	}
+	return fields
 }
 
 func shellCommandLooksLikeDirectoryScopedVerification(command string) bool {

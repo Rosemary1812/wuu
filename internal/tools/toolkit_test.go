@@ -1926,6 +1926,28 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "shell command may expose environment secrets" {
 		t.Fatalf("environment dump shell metadata = %+v, want high-risk environment classification", meta)
 	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git status"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "git command must use restricted git tool" {
+		t.Fatalf("git shell metadata = %+v, want high-risk restricted-git guidance", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"cd pkg && git status"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "git command must use restricted git tool" {
+		t.Fatalf("nested git shell metadata = %+v, want high-risk restricted-git guidance", meta)
+	}
 }
 
 func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
@@ -3687,43 +3709,27 @@ func TestToolkit_RunShellSetsNonInteractiveEnv(t *testing.T) {
 	}
 }
 
-func TestToolkit_RunShellGitCommitEditUsesNonInteractiveEditor(t *testing.T) {
+func TestToolkit_RunShellRejectsGitCommandBypass(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	cmd := strings.Join([]string{
-		"git init -q",
-		"git config user.email test@example.com",
-		"git config user.name test",
-		"printf 'one\\n' > note.txt",
-		"git add note.txt",
-		"git commit -qm init",
-		"printf 'two\\n' > note.txt",
-		"git add note.txt",
-		"git commit -e -m second",
-		"git log -1 --format=%s",
-	}, " && ")
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
-		Arguments: `{"command":"` + cmd + `","timeout_seconds":10}`,
-	})
-	if err != nil {
-		t.Fatalf("run_shell: %v", err)
-	}
-
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse response: %v", err)
-	}
-	if parsed["exit_code"].(float64) != 0 {
-		t.Fatalf("unexpected exit code: %v output=%q", parsed["exit_code"], parsed["output"])
-	}
-	lines := strings.Split(strings.TrimSpace(parsed["output"].(string)), "\n")
-	if got := lines[len(lines)-1]; got != "second" {
-		t.Fatalf("unexpected git log output: %q", got)
+	for _, command := range []string{
+		"git status",
+		"cd pkg && git status",
+		"env FOO=bar git status",
+		"command git status",
+		"printf hi && `git status`",
+	} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "run_shell",
+			Arguments: fmt.Sprintf(`{"command":%q,"timeout_seconds":10}`, command),
+		})
+		if err == nil || !strings.Contains(err.Error(), "restricted git tool") {
+			t.Fatalf("expected restricted git guidance for %q, got %v", command, err)
+		}
 	}
 }
 
