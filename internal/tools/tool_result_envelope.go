@@ -18,6 +18,7 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 			"exposure":              string(record.Exposure),
 			"risk":                  string(record.Risk),
 			"arguments_sha256":      record.ArgumentsSHA256,
+			"result_action":         record.ResultAction,
 			"classification_reason": record.ClassificationReason,
 			"policy_action":         string(record.PolicyAction),
 			"policy_reason":         record.PolicyReason,

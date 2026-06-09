@@ -1463,6 +1463,13 @@ func TestToolkit_CheckpointCreateListRestore(t *testing.T) {
 	if listed.Checkpoints[0].RestoredAt.IsZero() {
 		t.Fatalf("checkpoint restore should persist restored_at: %+v", listed.Checkpoints[0])
 	}
+	records := kit.ToolTelemetry()
+	if len(records) != 3 ||
+		records[0].ResultAction != "create" ||
+		records[1].ResultAction != "restore" ||
+		records[2].ResultAction != "list" {
+		t.Fatalf("checkpoint telemetry missing result actions: %+v", records)
+	}
 }
 
 func TestToolkit_CheckpointRestorePatchJournal(t *testing.T) {
@@ -1573,7 +1580,7 @@ func TestToolkit_CheckpointRestorePatchJournal(t *testing.T) {
 		t.Fatalf("patch journal manifest should be marked restored: %+v", manifest)
 	}
 	records := kit.ToolTelemetry()
-	if len(records) != 2 || !containsString(records[1].ArtifactRefs, patched.PatchJournalPath) {
+	if len(records) != 2 || records[1].ResultAction != "restore_patch_journal" || !containsString(records[1].ArtifactRefs, patched.PatchJournalPath) {
 		t.Fatalf("restore telemetry missing patch journal artifact: %+v", records)
 	}
 }
@@ -3317,6 +3324,7 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 	kit.env.toolTelemetry.record(ToolExecutionRecord{
 		Name:                "run_test",
 		ArgumentsSHA256:     strings.Repeat("b", 64),
+		ResultAction:        "run",
 		Kind:                ToolKindTest,
 		Exposure:            ToolExposureDirect,
 		Risk:                ToolRiskMedium,
@@ -3366,6 +3374,7 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 		"name=read_file kind=file status=error",
 		"name=run_test kind=test status=ok risk=medium",
 		"args_sha256=" + strings.Repeat("b", 64),
+		"result_action=run",
 		"raw_output_bytes=4096 returned_output_bytes=512",
 		"result_budgeted=true",
 		"patch_risk=level=medium,files=2,hunks=2,+7/-2,multi_file=true",

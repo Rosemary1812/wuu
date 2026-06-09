@@ -345,6 +345,9 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		if record.ArgumentsSHA256 != "" {
 			fmt.Fprintf(&b, " args_sha256=%s", record.ArgumentsSHA256)
 		}
+		if record.ResultAction != "" {
+			fmt.Fprintf(&b, " result_action=%s", compactContextLine(redactToolOutput(record.ResultAction)))
+		}
 		if record.RevisionBefore != "" {
 			fmt.Fprintf(&b, " revision_before=%s", record.RevisionBefore)
 		}

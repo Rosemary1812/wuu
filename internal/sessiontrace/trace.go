@@ -131,6 +131,7 @@ type ToolSummary struct {
 	ByKind            map[string]int                `json:"by_kind,omitempty"`
 	ByRisk            map[string]int                `json:"by_risk,omitempty"`
 	ByPolicyAction    map[string]int                `json:"by_policy_action,omitempty"`
+	ByResultAction    map[string]int                `json:"by_result_action,omitempty"`
 	ByErrorKind       map[string]int                `json:"by_error_kind,omitempty"`
 	RepeatedArguments []ToolRepeatedArgumentSummary `json:"repeated_arguments,omitempty"`
 	argumentCounts    map[string]ToolRepeatedArgumentSummary
@@ -263,6 +264,7 @@ func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
 			ByKind:         map[string]int{},
 			ByRisk:         map[string]int{},
 			ByPolicyAction: map[string]int{},
+			ByResultAction: map[string]int{},
 			ByErrorKind:    map[string]int{},
 		}
 	}
@@ -281,10 +283,22 @@ func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
 	if action := strings.TrimSpace(string(record.PolicyAction)); action != "" {
 		summary.ToolSummary.ByPolicyAction[action]++
 	}
+	if resultAction := toolResultActionKey(record.Name, record.ResultAction); resultAction != "" {
+		summary.ToolSummary.ByResultAction[resultAction]++
+	}
 	if errorKind := strings.TrimSpace(record.ErrorKind); errorKind != "" {
 		summary.ToolSummary.ByErrorKind[errorKind]++
 	}
 	summary.addRepeatedToolArguments(record.Name, record.ArgumentsSHA256)
+}
+
+func toolResultActionKey(toolName, action string) string {
+	toolName = strings.TrimSpace(toolName)
+	action = strings.TrimSpace(action)
+	if toolName == "" || action == "" {
+		return ""
+	}
+	return toolName + ":" + action
 }
 
 func (summary *ReplaySummary) addRepeatedToolArguments(toolName, argumentsSHA256 string) {

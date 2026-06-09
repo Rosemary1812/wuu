@@ -79,6 +79,7 @@ type ToolReplaySummary struct {
 	ByKind            map[string]int                `json:"by_kind,omitempty"`
 	ByRisk            map[string]int                `json:"by_risk,omitempty"`
 	ByPolicyAction    map[string]int                `json:"by_policy_action,omitempty"`
+	ByResultAction    map[string]int                `json:"by_result_action,omitempty"`
 	ByErrorKind       map[string]int                `json:"by_error_kind,omitempty"`
 	RepeatedArguments []ToolRepeatedArgumentSummary `json:"repeated_arguments,omitempty"`
 	PatchRisk         *PatchRiskReplaySummary       `json:"patch_risk,omitempty"`
@@ -364,6 +365,9 @@ func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
 	if action := strings.TrimSpace(record.PolicyAction); action != "" {
 		summary.ToolSummary.ByPolicyAction[action]++
 	}
+	if resultAction := toolResultActionKey(record.Name, record.ResultAction); resultAction != "" {
+		summary.ToolSummary.ByResultAction[resultAction]++
+	}
 	if errorKind := strings.TrimSpace(record.ErrorKind); errorKind != "" {
 		summary.ToolSummary.ByErrorKind[errorKind]++
 	}
@@ -381,8 +385,18 @@ func (summary *TraceReplaySummary) ensureToolSummary() {
 		ByKind:         map[string]int{},
 		ByRisk:         map[string]int{},
 		ByPolicyAction: map[string]int{},
+		ByResultAction: map[string]int{},
 		ByErrorKind:    map[string]int{},
 	}
+}
+
+func toolResultActionKey(toolName, action string) string {
+	toolName = strings.TrimSpace(toolName)
+	action = strings.TrimSpace(action)
+	if toolName == "" || action == "" {
+		return ""
+	}
+	return toolName + ":" + action
 }
 
 func (summary *TraceReplaySummary) addRepeatedToolArguments(toolName, argumentsSHA256 string) {

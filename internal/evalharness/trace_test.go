@@ -204,6 +204,7 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				Success:         true,
 			}, {
 				Name:         "apply_patch",
+				ResultAction: "apply",
 				Kind:         "file",
 				Risk:         "high",
 				PolicyAction: "allow",
@@ -218,6 +219,7 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				},
 			}, {
 				Name:         "run_shell",
+				ResultAction: "restore",
 				Kind:         "shell",
 				Risk:         "high",
 				PolicyAction: "deny",
@@ -268,6 +270,8 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if summary.ToolSummary.ByKind["file"] != 3 ||
 		summary.ToolSummary.ByRisk["high"] != 2 ||
 		summary.ToolSummary.ByPolicyAction["deny"] != 1 ||
+		summary.ToolSummary.ByResultAction["apply_patch:apply"] != 1 ||
+		summary.ToolSummary.ByResultAction["run_shell:restore"] != 1 ||
 		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 {
 		t.Fatalf("replay tool summary missing dimensions: %+v", summary.ToolSummary)
 	}

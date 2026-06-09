@@ -11,6 +11,7 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 		Name:                 "run_shell",
 		CallID:               "call_1",
 		ArgumentsSHA256:      strings.Repeat("a", 64),
+		ResultAction:         "restore",
 		Kind:                 ToolKindShell,
 		Exposure:             ToolExposureDirect,
 		Risk:                 ToolRiskHigh,
@@ -64,6 +65,9 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"arguments_sha256":"`+strings.Repeat("a", 64)+`"`) {
 		t.Fatalf("envelope should include argument fingerprint: %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"result_action":"restore"`) {
+		t.Fatalf("envelope should include result action: %s", string(raw))
 	}
 	if !strings.Contains(string(raw), `"approval_ref":"/tmp/wuu/approvals/call_1.json"`) {
 		t.Fatalf("envelope should include approval ref: %s", string(raw))

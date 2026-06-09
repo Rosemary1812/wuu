@@ -1021,6 +1021,7 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			Name:                 record.Name,
 			CallID:               record.CallID,
 			ArgumentsSHA256:      record.ArgumentsSHA256,
+			ResultAction:         record.ResultAction,
 			Kind:                 string(record.Kind),
 			Exposure:             string(record.Exposure),
 			Risk:                 string(record.Risk),
@@ -1650,6 +1651,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
+		if len(summary.ToolSummary.ByResultAction) > 0 {
+			fmt.Printf("  result_actions: %s\n", formatCountMap(summary.ToolSummary.ByResultAction))
+		}
 		if repeated := formatEvalRepeatedArguments(summary.ToolSummary.RepeatedArguments); repeated != "" {
 			fmt.Printf("  repeated_arguments: %s\n", repeated)
 		}
@@ -1736,6 +1740,9 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
+		if len(summary.ToolSummary.ByResultAction) > 0 {
+			fmt.Printf("  result_actions: %s\n", formatCountMap(summary.ToolSummary.ByResultAction))
+		}
 		if repeated := formatSessionRepeatedArguments(summary.ToolSummary.RepeatedArguments); repeated != "" {
 			fmt.Printf("  repeated_arguments: %s\n", repeated)
 		}

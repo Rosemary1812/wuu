@@ -339,6 +339,7 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 		Name:                 "run_shell",
 		CallID:               "call_1",
 		ArgumentsSHA256:      strings.Repeat("c", 64),
+		ResultAction:         "restore",
 		Kind:                 tools.ToolKindShell,
 		Exposure:             tools.ToolExposureDirect,
 		Risk:                 tools.ToolRiskHigh,
@@ -371,6 +372,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if got[0].ArgumentsSHA256 != records[0].ArgumentsSHA256 {
 		t.Fatalf("argument fingerprint not preserved: %+v", got[0])
+	}
+	if got[0].ResultAction != "restore" {
+		t.Fatalf("result action not preserved: %+v", got[0])
 	}
 	if got[0].PolicyReason != "risk policy" {
 		t.Fatalf("policy reason not preserved: %+v", got[0])
@@ -420,6 +424,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if got[0].ResultEnvelope.Data["arguments_sha256"] != records[0].ArgumentsSHA256 {
 		t.Fatalf("result envelope missing argument fingerprint: %+v", got[0].ResultEnvelope)
+	}
+	if got[0].ResultEnvelope.Data["result_action"] != records[0].ResultAction {
+		t.Fatalf("result envelope missing result action: %+v", got[0].ResultEnvelope)
 	}
 	rawEnvelope, err := json.Marshal(got[0].ResultEnvelope)
 	if err != nil {

@@ -32,6 +32,7 @@ type ToolExecutionRecord struct {
 	Name                 string           `json:"name"`
 	CallID               string           `json:"call_id,omitempty"`
 	ArgumentsSHA256      string           `json:"arguments_sha256,omitempty"`
+	ResultAction         string           `json:"result_action,omitempty"`
 	Kind                 ToolKind         `json:"kind"`
 	Exposure             ToolExposure     `json:"exposure"`
 	Risk                 ToolRisk         `json:"risk"`
@@ -225,6 +226,7 @@ func (t *Toolkit) recordToolExecution(
 		Name:                 call.Name,
 		CallID:               call.ID,
 		ArgumentsSHA256:      toolArgumentsSHA256(call.Arguments),
+		ResultAction:         extractToolResultAction(result),
 		Kind:                 info.Kind,
 		Exposure:             info.Exposure,
 		Risk:                 info.Risk,
@@ -256,6 +258,45 @@ func (t *Toolkit) recordToolExecution(
 func toolArgumentsSHA256(arguments string) string {
 	sum := sha256.Sum256([]byte(arguments))
 	return hex.EncodeToString(sum[:])
+}
+
+func extractToolResultAction(result string) string {
+	result = strings.TrimSpace(result)
+	if result == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		return ""
+	}
+	action, _ := payload["action"].(string)
+	return sanitizeShortToolValue(action, 80)
+}
+
+func sanitizeShortToolValue(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if value == "" || limit <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+		if b.Len() >= limit {
+			break
+		}
+	}
+	return strings.Trim(b.String(), "-._")
 }
 
 func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo, decision ToolPolicyDecision, createdAt time.Time, revision string) string {
