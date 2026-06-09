@@ -622,6 +622,7 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 	}
 
 	return mustJSON(map[string]any{
+		"action":             "run_workflow",
 		"driver":             run.Driver,
 		"entrypoint":         run.Entrypoint,
 		"run_id":             run.ID,
@@ -836,6 +837,7 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	}
 
 	return mustJSON(map[string]any{
+		"action":             "create_workflow",
 		"driver":             run.Driver,
 		"entrypoint":         run.Entrypoint,
 		"run_id":             run.ID,

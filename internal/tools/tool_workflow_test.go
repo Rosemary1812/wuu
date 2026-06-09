@@ -98,6 +98,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		t.Fatalf("start_workflow: %v", err)
 	}
 	var started struct {
+		Action     string            `json:"action"`
 		Driver     string            `json:"driver"`
 		Entrypoint string            `json:"entrypoint"`
 		RunID      string            `json:"run_id"`
@@ -107,7 +108,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if err := json.Unmarshal([]byte(startResp), &started); err != nil {
 		t.Fatalf("parse start response: %v", err)
 	}
-	if started.Driver != "agent_managed" || started.Entrypoint != "natural_language_agent" || started.RunID != "workflow-start-run" {
+	if started.Action != "create_workflow" || started.Driver != "agent_managed" || started.Entrypoint != "natural_language_agent" || started.RunID != "workflow-start-run" {
 		t.Fatalf("unexpected start response: %+v", started)
 	}
 	if len(started.Phases) != 3 || started.Phases[0].Status != workflow.PhaseStateRunnable {
@@ -126,6 +127,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		t.Fatalf("create_workflow: %v", err)
 	}
 	var created struct {
+		Action     string            `json:"action"`
 		Driver     string            `json:"driver"`
 		Entrypoint string            `json:"entrypoint"`
 		RunID      string            `json:"run_id"`
@@ -136,7 +138,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if err := json.Unmarshal([]byte(createResp), &created); err != nil {
 		t.Fatalf("parse create response: %v", err)
 	}
-	if created.Driver != "agent_managed" || created.Entrypoint != "natural_language_agent" {
+	if created.Action != "create_workflow" || created.Driver != "agent_managed" || created.Entrypoint != "natural_language_agent" {
 		t.Fatalf("unexpected workflow driver fields: %+v", created)
 	}
 	if created.RunID != "workflow-test-run" || created.Status != workflow.RunStateRunning {
@@ -501,6 +503,7 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 		t.Fatalf("start_workflow script: %v", err)
 	}
 	var started struct {
+		Action     string            `json:"action"`
 		Driver     string            `json:"driver"`
 		RunID      string            `json:"run_id"`
 		Status     workflow.RunState `json:"status"`
@@ -510,7 +513,7 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 	if err := json.Unmarshal([]byte(startResp), &started); err != nil {
 		t.Fatalf("parse script start response: %v", err)
 	}
-	if started.Driver != "script" || started.RunID != "workflow-script-start" || started.Status != workflow.RunStateCompleted || started.Background {
+	if started.Action != "run_workflow" || started.Driver != "script" || started.RunID != "workflow-script-start" || started.Status != workflow.RunStateCompleted || started.Background {
 		t.Fatalf("unexpected script start response: %+v", started)
 	}
 	if _, err := os.Stat(started.ScriptPath); err != nil {
@@ -530,6 +533,7 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 		t.Fatalf("run_workflow: %v", err)
 	}
 	var ran struct {
+		Action     string            `json:"action"`
 		RunID      string            `json:"run_id"`
 		Status     workflow.RunState `json:"status"`
 		ScriptPath string            `json:"script_path"`
@@ -538,7 +542,7 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 	if err := json.Unmarshal([]byte(runResp), &ran); err != nil {
 		t.Fatalf("parse run response: %v", err)
 	}
-	if ran.RunID != "workflow-script-run" || ran.Status != workflow.RunStateCompleted || ran.Background {
+	if ran.Action != "run_workflow" || ran.RunID != "workflow-script-run" || ran.Status != workflow.RunStateCompleted || ran.Background {
 		t.Fatalf("unexpected run response: %+v", ran)
 	}
 	if _, err := os.Stat(ran.ScriptPath); err != nil {
