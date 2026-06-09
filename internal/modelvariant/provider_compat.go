@@ -50,6 +50,7 @@ func BaseOptionsForProvider(providerName string, provider config.ProviderConfig,
 		result = map[string]any{}
 	}
 
+	applyCompatSamplingDefaults(result, desc)
 	if desc.APINPM == compatNPMVertexAnthropic || (desc.APINPM == compatNPMAnthropic && !strings.Contains(desc.APIID, "claude")) {
 		result["toolStreaming"] = false
 	}
@@ -125,6 +126,42 @@ func BaseOptionsForProvider(providerName string, provider config.ProviderConfig,
 		result["gateway"] = map[string]any{"caching": "auto"}
 	}
 	return nilIfEmpty(result)
+}
+
+func applyCompatSamplingDefaults(result map[string]any, desc compatModelDescriptor) {
+	id := desc.ModelID
+	apiID := desc.APIID
+	if strings.Contains(id, "qwen") {
+		setOptionDefault(result, "temperature", 0.55)
+		setOptionDefault(result, "topP", 1.0)
+	}
+	if strings.Contains(id, "gemini") {
+		setOptionDefault(result, "temperature", 1.0)
+		setOptionDefault(result, "topP", 0.95)
+		setOptionDefault(result, "topK", 64)
+	}
+	if strings.Contains(id, "glm-4.6") || strings.Contains(id, "glm-4.7") {
+		setOptionDefault(result, "temperature", 1.0)
+	}
+	if strings.Contains(id, "minimax-m2") {
+		setOptionDefault(result, "temperature", 1.0)
+		setOptionDefault(result, "topP", 0.95)
+		if strings.Contains(id, "m2.") || strings.Contains(id, "m25") || strings.Contains(id, "m21") {
+			setOptionDefault(result, "topK", 40)
+		} else {
+			setOptionDefault(result, "topK", 20)
+		}
+	}
+	if strings.Contains(id, "kimi-k2") {
+		if strings.Contains(id, "thinking") || strings.Contains(id, "k2.") || strings.Contains(id, "k2p") || strings.Contains(id, "k2-5") {
+			setOptionDefault(result, "temperature", 1.0)
+		} else {
+			setOptionDefault(result, "temperature", 0.6)
+		}
+	}
+	if strings.Contains(apiID, "kimi-k2.5") || strings.Contains(apiID, "kimi-k2p5") || strings.Contains(apiID, "kimi-k2-5") {
+		setOptionDefault(result, "topP", 0.95)
+	}
 }
 
 func inferredOptionsForProvider(providerName string, provider config.ProviderConfig, model string) map[string]map[string]any {

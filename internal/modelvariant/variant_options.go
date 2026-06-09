@@ -9,6 +9,13 @@ func nilIfEmpty(options map[string]any) map[string]any {
 	return options
 }
 
+func setOptionDefault(options map[string]any, key string, value any) {
+	if _, ok := options[key]; ok {
+		return
+	}
+	options[key] = value
+}
+
 func compatGoogleThinkingLevelEfforts(apiID string) []string {
 	id := strings.ToLower(apiID)
 	if !strings.Contains(id, "gemini-3") {

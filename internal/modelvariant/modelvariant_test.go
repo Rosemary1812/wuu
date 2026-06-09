@@ -1,6 +1,7 @@
 package modelvariant
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -183,6 +184,142 @@ func TestSummariesMatchProviderCompatForMiniMaxM3(t *testing.T) {
 	}
 }
 
+func TestResolveMatchesProviderCompatSamplingDefaults(t *testing.T) {
+	tests := []struct {
+		name        string
+		provider    config.ProviderConfig
+		providerID  string
+		wantTemp    float64
+		wantTopP    any
+		wantTopK    any
+		wantOptions map[string]any
+	}{
+		{
+			name: "minimax m2.1",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				Model: "minimax-m2.1",
+			},
+			wantTemp: 1.0,
+			wantTopP: 0.95,
+			wantTopK: 40,
+		},
+		{
+			name: "minimax m2",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				Model: "minimax-m2",
+			},
+			wantTemp: 1.0,
+			wantTopP: 0.95,
+			wantTopK: 20,
+		},
+		{
+			name: "kimi k2 base",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				Model: "kimi-k2-0905-preview",
+			},
+			wantTemp: 0.6,
+		},
+		{
+			name: "kimi k2.5",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				Model: "kimi-k2.5",
+			},
+			wantTemp: 1.0,
+			wantTopP: 0.95,
+		},
+		{
+			name:       "opencode kimi thinking",
+			providerID: "opencode",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				Model: "kimi-k2-thinking",
+			},
+			wantTemp: 1.0,
+			wantOptions: map[string]any{
+				"chat_template_args": map[string]any{"enable_thinking": true},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			selection := ResolveForProvider(tc.providerID, tc.provider, tc.provider.Model, "", "")
+			if got := selection.ProviderOptions["temperature"]; got != tc.wantTemp {
+				t.Fatalf("temperature = %#v, want %#v; options=%#v", got, tc.wantTemp, selection.ProviderOptions)
+			}
+			if tc.wantTopP == nil {
+				if _, ok := selection.ProviderOptions["topP"]; ok {
+					t.Fatalf("topP should be unset: %#v", selection.ProviderOptions)
+				}
+			} else if got := selection.ProviderOptions["topP"]; got != tc.wantTopP {
+				t.Fatalf("topP = %#v, want %#v; options=%#v", got, tc.wantTopP, selection.ProviderOptions)
+			}
+			if tc.wantTopK == nil {
+				if _, ok := selection.ProviderOptions["topK"]; ok {
+					t.Fatalf("topK should be unset: %#v", selection.ProviderOptions)
+				}
+			} else if got := selection.ProviderOptions["topK"]; got != tc.wantTopK {
+				t.Fatalf("topK = %#v, want %#v; options=%#v", got, tc.wantTopK, selection.ProviderOptions)
+			}
+			for key, want := range tc.wantOptions {
+				if got := selection.ProviderOptions[key]; !optionEqual(got, want) {
+					t.Fatalf("%s = %#v, want %#v; options=%#v", key, got, want, selection.ProviderOptions)
+				}
+			}
+		})
+	}
+}
+
+func TestResolveKeepsExplicitProviderCompatSamplingOptions(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:  "anthropic",
+		Model: "claude-sonnet-4.6",
+		Models: map[string]config.ProviderModelConfig{
+			"claude-sonnet-4.6": {
+				Options: map[string]any{
+					"temperature": 0.2,
+				},
+			},
+		},
+	}
+
+	selection := Resolve(provider, provider.Model, "", "")
+	if got := selection.ProviderOptions["temperature"]; got != 0.2 {
+		t.Fatalf("temperature = %#v, want 0.2; options=%#v", got, selection.ProviderOptions)
+	}
+}
+
+func TestResolveDoesNotOverwriteConfiguredSamplingOptions(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:  "openai-compatible",
+		Model: "minimax-m2.1",
+		Models: map[string]config.ProviderModelConfig{
+			"minimax-m2.1": {
+				Options: map[string]any{
+					"temperature": 0.7,
+					"topP":        0.8,
+					"topK":        7,
+				},
+			},
+		},
+	}
+
+	selection := Resolve(provider, provider.Model, "", "")
+	if got := selection.ProviderOptions["temperature"]; got != 0.7 {
+		t.Fatalf("temperature = %#v; options=%#v", got, selection.ProviderOptions)
+	}
+	if got := selection.ProviderOptions["topP"]; got != 0.8 {
+		t.Fatalf("topP = %#v; options=%#v", got, selection.ProviderOptions)
+	}
+	if got := selection.ProviderOptions["topK"]; got != 7 {
+		t.Fatalf("topK = %#v; options=%#v", got, selection.ProviderOptions)
+	}
+}
+
 func TestSummariesMatchProviderCompatForAnthropicOpus47Aliases(t *testing.T) {
 	provider := config.ProviderConfig{
 		Type:  "anthropic",
@@ -337,4 +474,8 @@ func variantIDs(variants []Variant) []string {
 		out = append(out, variant.ID)
 	}
 	return out
+}
+
+func optionEqual(got, want any) bool {
+	return reflect.DeepEqual(got, want)
 }
