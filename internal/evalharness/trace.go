@@ -31,6 +31,18 @@ type TraceTask struct {
 	Workdir            string   `json:"workdir,omitempty"`
 }
 
+type TraceObservability struct {
+	SessionID       string   `json:"session_id,omitempty"`
+	StateDir        string   `json:"state_dir,omitempty"`
+	SessionDir      string   `json:"session_dir,omitempty"`
+	TracePath       string   `json:"trace_path,omitempty"`
+	HarnessDir      string   `json:"harness_dir,omitempty"`
+	WorkflowDir     string   `json:"workflow_dir,omitempty"`
+	TaskWorkdir     string   `json:"task_workdir,omitempty"`
+	TaskWorkdirKept bool     `json:"task_workdir_kept,omitempty"`
+	Warnings        []string `json:"warnings,omitempty"`
+}
+
 func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 	taskID := result.TaskID
 	events := []TraceEvent{{
@@ -58,6 +70,17 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 		return events
 	}
 	obs := result.Observability
+	events = append(events, TraceEvent{Type: "observability", TaskID: taskID, CreatedAt: createdAt, Data: TraceObservability{
+		SessionID:       obs.SessionID,
+		StateDir:        obs.StateDir,
+		SessionDir:      obs.SessionDir,
+		TracePath:       obs.TracePath,
+		HarnessDir:      obs.HarnessDir,
+		WorkflowDir:     obs.WorkflowDir,
+		TaskWorkdir:     obs.TaskWorkdir,
+		TaskWorkdirKept: obs.TaskWorkdirKept,
+		Warnings:        append([]string(nil), obs.Warnings...),
+	}})
 	if obs.ModelProfile != nil {
 		events = append(events, TraceEvent{Type: "model_profile", TaskID: taskID, CreatedAt: createdAt, Data: obs.ModelProfile})
 	}
