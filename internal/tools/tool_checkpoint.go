@@ -326,7 +326,12 @@ func (t *CheckpointTool) restoreCheckpoint(ctx context.Context, checkpointID str
 		restored = append(restored, checkpointRestoreResult{Path: plan.DisplayPath, Action: plan.Action})
 	}
 	manifest.RestoredAt = time.Now().UTC()
-	return mustJSON(map[string]any{
+	warnings := []string(nil)
+	if err := writeCheckpointManifest(manifestPath, manifest); err != nil {
+		warnings = append(warnings, "checkpoint restored but manifest could not be marked restored: "+err.Error())
+	}
+
+	result := map[string]any{
 		"action":             "restore",
 		"checkpoint_id":      checkpointID,
 		"reason":             strings.TrimSpace(reason),
@@ -334,7 +339,11 @@ func (t *CheckpointTool) restoreCheckpoint(ctx context.Context, checkpointID str
 		"checkpoint":         manifest,
 		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 		"next_suggestions":   []string{"inspect git diff and rerun targeted validation after rollback"},
-	})
+	}
+	if len(warnings) > 0 {
+		result["warnings"] = warnings
+	}
+	return mustJSON(result)
 }
 
 func (t *CheckpointTool) restorePatchJournal(ctx context.Context, patchJournalPath, patchJournalID string, paths []string, reason string) (string, error) {

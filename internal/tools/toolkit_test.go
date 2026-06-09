@@ -1249,6 +1249,9 @@ func TestToolkit_CheckpointCreateListRestore(t *testing.T) {
 	if listed.Count != 1 || listed.Checkpoints[0].ID != "before-edit" {
 		t.Fatalf("unexpected checkpoint list: %+v", listed)
 	}
+	if listed.Checkpoints[0].RestoredAt.IsZero() {
+		t.Fatalf("checkpoint restore should persist restored_at: %+v", listed.Checkpoints[0])
+	}
 }
 
 func TestToolkit_CheckpointRestorePatchJournal(t *testing.T) {
