@@ -793,6 +793,7 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 		TaskName:           "Task One",
 		Success:            true,
 		ForbiddenToolsUsed: []string{"create_workflow"},
+		WorkflowIssues:     []string{"run-1:missing_reports=beta-writer"},
 		VerificationEvidence: []evalharness.VerificationEvidence{{
 			Check:   "go tests",
 			Passed:  true,
@@ -875,7 +876,10 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	if !strings.Contains(output, "forbidden_tools: create_workflow") {
 		t.Fatalf("replay text output missing forbidden tools:\n%s", output)
 	}
-	if !strings.Contains(output, "validation: status=incomplete tools=1 evidence=1 missing=1 failures=0") {
+	if !strings.Contains(output, "workflow_issues: run-1:missing_reports=beta-writer") {
+		t.Fatalf("replay text output missing workflow issues:\n%s", output)
+	}
+	if !strings.Contains(output, "validation: status=incomplete tools=1 evidence=1 missing=2 failures=0") {
 		t.Fatalf("replay text output missing validation summary:\n%s", output)
 	}
 	if !strings.Contains(output, "validation_evidence: go tests:passed:command=go test ./...") {
@@ -884,8 +888,39 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	if !strings.Contains(output, "validation_missing: forbidden_tool:create_workflow") {
 		t.Fatalf("replay text output missing validation missing requirements:\n%s", output)
 	}
+	if !strings.Contains(output, "workflow_issue:run-1:missing_reports=beta-writer") {
+		t.Fatalf("replay text output missing workflow validation issue:\n%s", output)
+	}
 	if strings.Contains(output, strings.Repeat("e", 64)) {
 		t.Fatalf("replay text output should not print argument fingerprints by default:\n%s", output)
+	}
+}
+
+func TestApplyEvalWorkflowIssuesFailsResult(t *testing.T) {
+	result := evalharness.Result{
+		TaskID:  "task-1",
+		Success: true,
+		Observability: &evalharness.Observability{
+			WorkflowRuns: []evalharness.WorkflowRunObservation{{
+				ID:     "run-1",
+				Status: "completed",
+				TeamArbitration: evalharness.WorkflowTeamArbitration{
+					Status:         "attention_required",
+					MissingReports: []string{"worker-1"},
+				},
+			}},
+		},
+	}
+
+	applyEvalWorkflowIssues(&result)
+
+	if result.Success {
+		t.Fatalf("workflow issues should fail eval result: %+v", result)
+	}
+	if len(result.WorkflowIssues) != 2 ||
+		result.WorkflowIssues[0] != "run-1:arbitration=attention_required" ||
+		result.WorkflowIssues[1] != "run-1:missing_reports=worker-1" {
+		t.Fatalf("workflow issues not summarized: %+v", result.WorkflowIssues)
 	}
 }
 

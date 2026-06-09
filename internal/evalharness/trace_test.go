@@ -23,6 +23,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		ForbiddenToolsUsed: []string{"create_workflow"},
 		MissingToolCalls:   []string{"checkpoint action=restore"},
 		MissingToolSeq:     []string{"apply_patch contains=checkpoint_result.txt"},
+		WorkflowIssues:     []string{"run-1:missing_reports=worker-1"},
 		InputTokens:        10,
 		OutputTokens:       20,
 		VerificationReason: "passed",
@@ -120,6 +121,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if len(task.MissingToolSeq) != 1 || task.MissingToolSeq[0] != "apply_patch contains=checkpoint_result.txt" {
 		t.Fatalf("task event missing tool sequence requirements: %+v", task)
+	}
+	if len(task.WorkflowIssues) != 1 || task.WorkflowIssues[0] != "run-1:missing_reports=worker-1" {
+		t.Fatalf("task event missing workflow issues: %+v", task)
 	}
 	if len(task.ToolSequence) != 3 || task.ToolSequence[0] != "read_file" || task.ToolSequence[2] != "run_shell" {
 		t.Fatalf("task event missing tool sequence: %+v", task)
@@ -418,6 +422,7 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 		TaskName:           "Task One",
 		Success:            false,
 		ForbiddenToolsUsed: []string{"run_workflow"},
+		WorkflowIssues:     []string{"run-1:missing_reports=worker-1"},
 		VerificationEvidence: []VerificationEvidence{{
 			Check:    "marker",
 			Passed:   false,
@@ -441,7 +446,9 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 	if summary.Status != "incomplete" {
 		t.Fatalf("validation status = %q, want incomplete: %+v", summary.Status, summary)
 	}
-	if len(summary.Missing) != 1 || summary.Missing[0] != "forbidden_tool:run_workflow" {
+	if len(summary.Missing) != 2 ||
+		summary.Missing[0] != "forbidden_tool:run_workflow" ||
+		summary.Missing[1] != "workflow_issue:run-1:missing_reports=worker-1" {
 		t.Fatalf("validation missing requirements not summarized: %+v", summary.Missing)
 	}
 	if len(summary.Failures) != 2 ||
@@ -451,5 +458,45 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 	}
 	if len(summary.ToolCalls) != 1 || summary.ToolCalls[0].ResultRef != "/tmp/wuu/test.log" {
 		t.Fatalf("validation tool call not summarized: %+v", summary.ToolCalls)
+	}
+}
+
+func TestWorkflowValidationIssuesSummarizesArbitration(t *testing.T) {
+	issues := WorkflowValidationIssues([]WorkflowRunObservation{{
+		ID:     "run-1",
+		Status: "completed",
+		TeamArbitration: WorkflowTeamArbitration{
+			Status:          "attention_required",
+			OpenAgentRuns:   []string{"agent-open"},
+			MissingReports:  []string{"agent-missing"},
+			FailedAgentRuns: []string{"agent-failed"},
+			ChangedFileOverlaps: []WorkflowChangedFileOverlapObservation{{
+				File:        "shared.go",
+				AgentRunIDs: []string{"agent-b", "agent-a"},
+			}},
+		},
+	}, {
+		ID:     "run-2",
+		Status: "running",
+	}})
+	want := []string{
+		"run-1:arbitration=attention_required",
+		"run-1:failed=agent-failed",
+		"run-1:missing_reports=agent-missing",
+		"run-1:open=agent-open",
+		"run-1:overlap=shared.go=agent-a+agent-b",
+		"run-2:status=running",
+	}
+	if strings.Join(issues, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("workflow issues = %+v, want %+v", issues, want)
+	}
+	if clear := WorkflowValidationIssues([]WorkflowRunObservation{{
+		ID:     "run-clear",
+		Status: "completed",
+		TeamArbitration: WorkflowTeamArbitration{
+			Status: "clear",
+		},
+	}}); len(clear) != 0 {
+		t.Fatalf("clear workflow should not produce issues: %+v", clear)
 	}
 }

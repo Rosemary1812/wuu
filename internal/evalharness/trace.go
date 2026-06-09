@@ -32,6 +32,7 @@ type TraceTask struct {
 	MissingToolCalls     []string               `json:"missing_tool_calls,omitempty"`
 	MissingToolSeq       []string               `json:"missing_tool_sequence,omitempty"`
 	MissingErrors        []string               `json:"missing_errors,omitempty"`
+	WorkflowIssues       []string               `json:"workflow_issues,omitempty"`
 	InputTokens          int                    `json:"input_tokens"`
 	OutputTokens         int                    `json:"output_tokens"`
 	VerificationReason   string                 `json:"verification_reason,omitempty"`
@@ -173,6 +174,7 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 			MissingToolCalls:     append([]string(nil), result.MissingToolCalls...),
 			MissingToolSeq:       append([]string(nil), result.MissingToolSeq...),
 			MissingErrors:        append([]string(nil), result.MissingErrors...),
+			WorkflowIssues:       append([]string(nil), result.WorkflowIssues...),
 			InputTokens:          result.InputTokens,
 			OutputTokens:         result.OutputTokens,
 			VerificationReason:   result.VerificationReason,
@@ -262,6 +264,7 @@ func BuildValidationSummary(result Result) *ValidationReplaySummary {
 			MissingToolCalls:     append([]string(nil), result.MissingToolCalls...),
 			MissingToolSeq:       append([]string(nil), result.MissingToolSeq...),
 			MissingErrors:        append([]string(nil), result.MissingErrors...),
+			WorkflowIssues:       append([]string(nil), result.WorkflowIssues...),
 			VerificationReason:   result.VerificationReason,
 			VerificationEvidence: append([]VerificationEvidence(nil), result.VerificationEvidence...),
 			Error:                result.Error,
@@ -619,6 +622,7 @@ func (summary *TraceReplaySummary) finalizeValidationSummary() {
 		missing = appendPrefixedTraceStrings(missing, "missing_tool_call", summary.Task.MissingToolCalls)
 		missing = appendPrefixedTraceStrings(missing, "missing_tool_sequence", summary.Task.MissingToolSeq)
 		missing = appendPrefixedTraceStrings(missing, "missing_error", summary.Task.MissingErrors)
+		missing = appendPrefixedTraceStrings(missing, "workflow_issue", summary.Task.WorkflowIssues)
 	}
 	var failures []string
 	for _, item := range evidence {
@@ -698,6 +702,58 @@ func validationNextActions(validation *ValidationReplaySummary) []string {
 	default:
 		return []string{"run or record relevant validation before claiming success"}
 	}
+}
+
+func WorkflowValidationIssues(runs []WorkflowRunObservation) []string {
+	var issues []string
+	for _, run := range runs {
+		runID := strings.TrimSpace(run.ID)
+		if runID == "" {
+			runID = "workflow"
+		}
+		if status := strings.TrimSpace(run.Status); status != "" && status != "completed" {
+			issues = appendUniqueTraceString(issues, runID+":status="+status)
+		}
+		arbitration := run.TeamArbitration
+		if status := strings.TrimSpace(arbitration.Status); status != "" && status != "clear" {
+			issues = appendUniqueTraceString(issues, runID+":arbitration="+status)
+		}
+		issues = appendWorkflowIssueValues(issues, runID, "open", arbitration.OpenAgentRuns)
+		issues = appendWorkflowIssueValues(issues, runID, "missing_reports", arbitration.MissingReports)
+		issues = appendWorkflowIssueValues(issues, runID, "failed", arbitration.FailedAgentRuns)
+		for _, overlap := range arbitration.ChangedFileOverlaps {
+			file := strings.TrimSpace(overlap.File)
+			if file == "" {
+				continue
+			}
+			agents := strings.Join(trimmedTraceStrings(overlap.AgentRunIDs), "+")
+			label := runID + ":overlap=" + file
+			if agents != "" {
+				label += "=" + agents
+			}
+			issues = appendUniqueTraceString(issues, label)
+		}
+	}
+	sort.Strings(issues)
+	return issues
+}
+
+func appendWorkflowIssueValues(dst []string, runID, label string, values []string) []string {
+	for _, value := range trimmedTraceStrings(values) {
+		dst = appendUniqueTraceString(dst, runID+":"+label+"="+value)
+	}
+	return dst
+}
+
+func trimmedTraceStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, value)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (summary *TraceReplaySummary) addPatchRiskObservation(risk PatchRiskObservation) {

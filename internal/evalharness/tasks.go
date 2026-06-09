@@ -73,6 +73,7 @@ type Result struct {
 	MissingToolCalls     []string                 `json:"missing_tool_calls,omitempty"`
 	MissingToolSeq       []string                 `json:"missing_tool_sequence,omitempty"`
 	MissingErrors        []string                 `json:"missing_errors,omitempty"`
+	WorkflowIssues       []string                 `json:"workflow_issues,omitempty"`
 	InputTokens          int                      `json:"input_tokens"`
 	OutputTokens         int                      `json:"output_tokens"`
 	VerificationReason   string                   `json:"verification_reason,omitempty"`

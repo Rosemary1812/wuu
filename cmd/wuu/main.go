@@ -830,10 +830,21 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		result.Error = runErr.Error()
 	}
 	result.Observability = collectEvalObservability(rt, evalSessionID, taskRoot, cfg.KeepWorkdir, runResult.Content, contextRequests)
+	applyEvalWorkflowIssues(&result)
 	result.Validation = evalharness.BuildValidationSummary(result)
 	result.DurationMS = time.Since(started).Milliseconds()
 	persistEvalTrace(&result)
 	return result
+}
+
+func applyEvalWorkflowIssues(result *evalharness.Result) {
+	if result == nil || result.Observability == nil {
+		return
+	}
+	result.WorkflowIssues = evalharness.WorkflowValidationIssues(result.Observability.WorkflowRuns)
+	if len(result.WorkflowIssues) > 0 {
+		result.Success = false
+	}
 }
 
 func setTemporaryEnv(key, value string) func() {
@@ -1640,6 +1651,9 @@ func printEvalReport(report evalReport) {
 		if len(result.MissingErrors) > 0 {
 			fmt.Printf("  missing_errors: %s\n", strings.Join(result.MissingErrors, ","))
 		}
+		if len(result.WorkflowIssues) > 0 {
+			fmt.Printf("  workflow_issues: %s\n", strings.Join(result.WorkflowIssues, ","))
+		}
 		if result.Validation != nil {
 			fmt.Printf("  validation: status=%s tools=%d evidence=%d missing=%d failures=%d\n",
 				result.Validation.Status, len(result.Validation.ToolCalls), len(result.Validation.Evidence), len(result.Validation.Missing), len(result.Validation.Failures))
@@ -1684,6 +1698,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	}
 	if summary.Task != nil && len(summary.Task.ForbiddenToolsUsed) > 0 {
 		fmt.Printf("  forbidden_tools: %s\n", strings.Join(summary.Task.ForbiddenToolsUsed, ","))
+	}
+	if summary.Task != nil && len(summary.Task.WorkflowIssues) > 0 {
+		fmt.Printf("  workflow_issues: %s\n", strings.Join(summary.Task.WorkflowIssues, ","))
 	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
