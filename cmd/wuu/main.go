@@ -380,6 +380,7 @@ func persistCLIRunTrace(rt *runtime.Session, runner *agent.StreamRunner, session
 		ProviderName:     rt.ProviderName,
 		Model:            model,
 		APIModel:         apiModel,
+		ModelProfile:     sessiontrace.NewModelProfileRecord(rt.ProviderName, model, apiModel),
 		StartedAt:        &startedAt,
 		CompletedAt:      &completedAt,
 		DurationMS:       &durationMS,
@@ -1657,7 +1658,10 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 	}
 	fmt.Printf("session trace replay: status=%s thread=%s turn=%s events=%d complete=%t mode=%s\n", status, threadID, turnID, summary.EventCount, summary.Complete, summary.Mode)
 	if summary.LatestTurn != nil {
-		if summary.LatestTurn.ProviderName != "" || summary.LatestTurn.Model != "" {
+		if summary.LatestTurn.ModelProfile != nil {
+			profile := summary.LatestTurn.ModelProfile
+			fmt.Printf("  model_profile: %s/%s api_model=%s family=%s write_mode=%s\n", profile.ProviderName, profile.Model, profile.APIModel, profile.Family, profile.DefaultWriteMode)
+		} else if summary.LatestTurn.ProviderName != "" || summary.LatestTurn.Model != "" {
 			fmt.Printf("  model_profile: %s/%s api_model=%s\n", summary.LatestTurn.ProviderName, summary.LatestTurn.Model, summary.LatestTurn.APIModel)
 		}
 		if summary.LatestTurn.InputTokens > 0 || summary.LatestTurn.OutputTokens > 0 {

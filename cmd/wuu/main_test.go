@@ -651,6 +651,11 @@ func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
 	if summary.LatestTurn.InputTokens != 11 || summary.LatestTurn.OutputTokens != 7 || summary.Final == nil || summary.Final.FinalAnswerPreview != "done" {
 		t.Fatalf("trace did not preserve final metadata: %+v", summary)
 	}
+	if summary.LatestTurn.ModelProfile == nil ||
+		summary.LatestTurn.ModelProfile.Family != "gpt" ||
+		summary.LatestTurn.ModelProfile.DefaultWriteMode != "patch" {
+		t.Fatalf("trace should include model profile strategy: %+v", summary.LatestTurn.ModelProfile)
+	}
 	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "read_file" {
 		t.Fatalf("trace should include only this run's tool record: %+v", summary.ToolNames)
 	}

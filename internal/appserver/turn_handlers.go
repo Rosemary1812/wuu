@@ -584,6 +584,7 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 		ProviderName:     providerName,
 		Model:            model,
 		APIModel:         apiModel,
+		ModelProfile:     sessiontrace.NewModelProfileRecord(providerName, model, apiModel),
 		StartedAt:        turn.StartedAt,
 		CompletedAt:      turn.CompletedAt,
 		DurationMS:       turn.DurationMS,

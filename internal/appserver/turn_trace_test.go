@@ -75,7 +75,7 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 		t.Fatalf("read session trace: %v", err)
 	}
 	trace := string(data)
-	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"name":"read_file"`, `"ENVIRONMENT"`} {
+	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`} {
 		if !strings.Contains(trace, want) {
 			t.Fatalf("session trace missing %s:\n%s", want, trace)
 		}

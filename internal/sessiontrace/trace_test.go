@@ -20,6 +20,8 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			Status:       "completed",
 			ProviderName: "openai",
 			Model:        "gpt-test",
+			APIModel:     "gpt-5-codex",
+			ModelProfile: NewModelProfileRecord("openai", "gpt-test", "gpt-5-codex"),
 			InputTokens:  12,
 			OutputTokens: 34,
 		},
@@ -54,6 +56,11 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read trace: %v", err)
 	}
+	if !strings.Contains(string(raw), `"model_profile"`) ||
+		!strings.Contains(string(raw), `"family":"codex"`) ||
+		!strings.Contains(string(raw), `"default_write_mode":"patch"`) {
+		t.Fatalf("trace should include model profile metadata:\n%s", raw)
+	}
 	if strings.Contains(string(raw), "secret-value") || !strings.Contains(string(raw), "[REDACTED]") {
 		t.Fatalf("trace should redact secret-like final previews:\n%s", raw)
 	}
@@ -62,7 +69,7 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session-trace.jsonl")
 	if err := AppendTurn(path,
-		TurnRecord{ThreadID: "thread-1", TurnID: "turn-1", Status: "completed", Model: "gpt-test"},
+		TurnRecord{ThreadID: "thread-1", TurnID: "turn-1", Status: "completed", ProviderName: "openai", Model: "gpt-test", APIModel: "gpt-5-codex", ModelProfile: NewModelProfileRecord("openai", "gpt-test", "gpt-5-codex")},
 		FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
 		[]tools.ToolInfo{{Name: "semantic_search", Kind: tools.ToolKindSearch, Risk: tools.ToolRiskLow, ReadOnly: true}},
 		[]tools.ToolExecutionRecord{{
@@ -98,6 +105,11 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	}
 	if summary.LatestTurn == nil || summary.LatestTurn.ThreadID != "thread-1" || summary.LatestTurn.Model != "gpt-test" {
 		t.Fatalf("latest turn missing: %+v", summary.LatestTurn)
+	}
+	if summary.LatestTurn.ModelProfile == nil ||
+		summary.LatestTurn.ModelProfile.Family != "codex" ||
+		summary.LatestTurn.ModelProfile.DefaultWriteMode != "patch" {
+		t.Fatalf("model profile missing from replay: %+v", summary.LatestTurn.ModelProfile)
 	}
 	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "semantic_search" {
 		t.Fatalf("tool inventory missing: %+v", summary.ToolInventory)

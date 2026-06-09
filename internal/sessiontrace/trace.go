@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -27,19 +28,67 @@ type Event struct {
 }
 
 type TurnRecord struct {
-	ThreadID         string     `json:"thread_id"`
-	TurnID           string     `json:"turn_id"`
-	Status           string     `json:"status"`
-	ProviderName     string     `json:"provider_name,omitempty"`
-	Model            string     `json:"model,omitempty"`
-	APIModel         string     `json:"api_model,omitempty"`
-	StartedAt        *time.Time `json:"started_at,omitempty"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
-	DurationMS       *int64     `json:"duration_ms,omitempty"`
-	InputTokens      int        `json:"input_tokens,omitempty"`
-	OutputTokens     int        `json:"output_tokens,omitempty"`
-	HistoryRewritten bool       `json:"history_rewritten,omitempty"`
-	Error            string     `json:"error,omitempty"`
+	ThreadID         string              `json:"thread_id"`
+	TurnID           string              `json:"turn_id"`
+	Status           string              `json:"status"`
+	ProviderName     string              `json:"provider_name,omitempty"`
+	Model            string              `json:"model,omitempty"`
+	APIModel         string              `json:"api_model,omitempty"`
+	ModelProfile     *ModelProfileRecord `json:"model_profile,omitempty"`
+	StartedAt        *time.Time          `json:"started_at,omitempty"`
+	CompletedAt      *time.Time          `json:"completed_at,omitempty"`
+	DurationMS       *int64              `json:"duration_ms,omitempty"`
+	InputTokens      int                 `json:"input_tokens,omitempty"`
+	OutputTokens     int                 `json:"output_tokens,omitempty"`
+	HistoryRewritten bool                `json:"history_rewritten,omitempty"`
+	Error            string              `json:"error,omitempty"`
+}
+
+type ModelProfileRecord struct {
+	ProviderName              string `json:"provider_name,omitempty"`
+	Model                     string `json:"model,omitempty"`
+	APIModel                  string `json:"api_model,omitempty"`
+	Family                    string `json:"family,omitempty"`
+	ToolCalling               string `json:"tool_calling,omitempty"`
+	FreeformTool              bool   `json:"freeform_tool,omitempty"`
+	ParallelToolCalls         bool   `json:"parallel_tool_calls,omitempty"`
+	ContextWindowTokens       int    `json:"context_window_tokens,omitempty"`
+	DefaultWriteMode          string `json:"default_write_mode,omitempty"`
+	DefaultSearchBudget       int    `json:"default_search_budget,omitempty"`
+	DefaultMaxAutonomousSteps int    `json:"default_max_autonomous_steps,omitempty"`
+	NeedsReadBeforeWrite      bool   `json:"needs_read_before_write,omitempty"`
+	AllowParallelReadOnly     bool   `json:"allow_parallel_read_only,omitempty"`
+	AllowDirectShell          bool   `json:"allow_direct_shell,omitempty"`
+}
+
+func NewModelProfileRecord(providerName, model, apiModel string) *ModelProfileRecord {
+	providerName = strings.TrimSpace(providerName)
+	model = strings.TrimSpace(model)
+	apiModel = strings.TrimSpace(apiModel)
+	if providerName == "" && model == "" && apiModel == "" {
+		return nil
+	}
+	modelForProfile := apiModel
+	if modelForProfile == "" {
+		modelForProfile = model
+	}
+	profile := modelprofile.Resolve(providerName, modelForProfile)
+	return &ModelProfileRecord{
+		ProviderName:              providerName,
+		Model:                     model,
+		APIModel:                  apiModel,
+		Family:                    string(profile.Family),
+		ToolCalling:               string(profile.APIShape.ToolCalling),
+		FreeformTool:              profile.APIShape.FreeformTool,
+		ParallelToolCalls:         profile.APIShape.ParallelToolCalls,
+		ContextWindowTokens:       profile.Context.WindowTokens,
+		DefaultWriteMode:          string(profile.Workflow.DefaultWriteMode),
+		DefaultSearchBudget:       profile.Workflow.DefaultSearchBudget,
+		DefaultMaxAutonomousSteps: profile.Workflow.DefaultMaxAutonomousSteps,
+		NeedsReadBeforeWrite:      profile.Workflow.NeedsReadBeforeWrite,
+		AllowParallelReadOnly:     profile.Workflow.AllowParallelReadOnly,
+		AllowDirectShell:          profile.Workflow.AllowDirectShell,
+	}
 }
 
 type FinalRecord struct {
