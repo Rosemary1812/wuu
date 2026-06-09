@@ -73,11 +73,19 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
 		[]tools.ToolInfo{{Name: "semantic_search", Kind: tools.ToolKindSearch, Risk: tools.ToolRiskLow, ReadOnly: true}},
 		[]tools.ToolExecutionRecord{{
-			Name:         "semantic_search",
-			Kind:         tools.ToolKindSearch,
-			Risk:         tools.ToolRiskLow,
-			PolicyAction: tools.ToolPolicyAllow,
-			Success:      true,
+			Name:            "semantic_search",
+			ArgumentsSHA256: strings.Repeat("b", 64),
+			Kind:            tools.ToolKindSearch,
+			Risk:            tools.ToolRiskLow,
+			PolicyAction:    tools.ToolPolicyAllow,
+			Success:         true,
+		}, {
+			Name:            "semantic_search",
+			ArgumentsSHA256: strings.Repeat("b", 64),
+			Kind:            tools.ToolKindSearch,
+			Risk:            tools.ToolRiskLow,
+			PolicyAction:    tools.ToolPolicyAllow,
+			Success:         true,
 		}, {
 			Name:         "run_shell",
 			Kind:         tools.ToolKindShell,
@@ -119,10 +127,10 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		!containsString(summary.ContextBlockKinds, "TOOL_POLICY") {
 		t.Fatalf("context requests missing: %+v", summary)
 	}
-	if len(summary.ToolNames) != 2 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "run_shell" {
+	if len(summary.ToolNames) != 3 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "semantic_search" || summary.ToolNames[2] != "run_shell" {
 		t.Fatalf("tool records missing: %+v", summary.ToolNames)
 	}
-	if summary.ToolSummary == nil || summary.ToolSummary.Total != 2 || summary.ToolSummary.Succeeded != 1 || summary.ToolSummary.Failed != 1 {
+	if summary.ToolSummary == nil || summary.ToolSummary.Total != 3 || summary.ToolSummary.Succeeded != 2 || summary.ToolSummary.Failed != 1 {
 		t.Fatalf("tool summary missing: %+v", summary.ToolSummary)
 	}
 	if summary.ToolSummary.ByKind[string(tools.ToolKindShell)] != 1 ||
@@ -130,6 +138,12 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		summary.ToolSummary.ByPolicyAction[string(tools.ToolPolicyDeny)] != 1 ||
 		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 {
 		t.Fatalf("tool summary dimensions missing: %+v", summary.ToolSummary)
+	}
+	if len(summary.ToolSummary.RepeatedArguments) != 1 ||
+		summary.ToolSummary.RepeatedArguments[0].ToolName != "semantic_search" ||
+		summary.ToolSummary.RepeatedArguments[0].ArgumentsSHA256 != strings.Repeat("b", 64) ||
+		summary.ToolSummary.RepeatedArguments[0].Count != 2 {
+		t.Fatalf("tool summary missing repeated arguments: %+v", summary.ToolSummary.RepeatedArguments)
 	}
 	if summary.Final == nil || summary.Final.Status != "completed" || summary.Final.FinalAnswerPreview != "done" {
 		t.Fatalf("final summary missing: %+v", summary.Final)

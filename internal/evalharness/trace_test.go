@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -185,11 +186,19 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				ReadOnly: true,
 			}},
 			ToolRecords: []ToolObservation{{
-				Name:         "read_file",
-				Kind:         "file",
-				Risk:         "low",
-				PolicyAction: "allow",
-				Success:      true,
+				Name:            "read_file",
+				ArgumentsSHA256: strings.Repeat("a", 64),
+				Kind:            "file",
+				Risk:            "low",
+				PolicyAction:    "allow",
+				Success:         true,
+			}, {
+				Name:            "read_file",
+				ArgumentsSHA256: strings.Repeat("a", 64),
+				Kind:            "file",
+				Risk:            "low",
+				PolicyAction:    "allow",
+				Success:         true,
 			}, {
 				Name:         "apply_patch",
 				Kind:         "file",
@@ -240,17 +249,23 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "read_file" || summary.ToolInventory[0].Exposure != "direct" {
 		t.Fatalf("replay missing tool inventory: %+v", summary.ToolInventory)
 	}
-	if len(summary.ToolNames) != 3 || summary.ToolNames[0] != "read_file" || summary.ToolNames[1] != "apply_patch" || summary.ToolNames[2] != "run_shell" {
+	if len(summary.ToolNames) != 4 || summary.ToolNames[0] != "read_file" || summary.ToolNames[1] != "read_file" || summary.ToolNames[2] != "apply_patch" || summary.ToolNames[3] != "run_shell" {
 		t.Fatalf("replay missing tool records: %+v", summary.ToolNames)
 	}
-	if summary.ToolSummary == nil || summary.ToolSummary.Total != 3 || summary.ToolSummary.Succeeded != 2 || summary.ToolSummary.Failed != 1 {
+	if summary.ToolSummary == nil || summary.ToolSummary.Total != 4 || summary.ToolSummary.Succeeded != 3 || summary.ToolSummary.Failed != 1 {
 		t.Fatalf("replay missing tool summary: %+v", summary.ToolSummary)
 	}
-	if summary.ToolSummary.ByKind["file"] != 2 ||
+	if summary.ToolSummary.ByKind["file"] != 3 ||
 		summary.ToolSummary.ByRisk["high"] != 2 ||
 		summary.ToolSummary.ByPolicyAction["deny"] != 1 ||
 		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 {
 		t.Fatalf("replay tool summary missing dimensions: %+v", summary.ToolSummary)
+	}
+	if len(summary.ToolSummary.RepeatedArguments) != 1 ||
+		summary.ToolSummary.RepeatedArguments[0].ToolName != "read_file" ||
+		summary.ToolSummary.RepeatedArguments[0].ArgumentsSHA256 != strings.Repeat("a", 64) ||
+		summary.ToolSummary.RepeatedArguments[0].Count != 2 {
+		t.Fatalf("replay tool summary missing repeated arguments: %+v", summary.ToolSummary.RepeatedArguments)
 	}
 	if summary.ToolSummary.PatchRisk == nil ||
 		summary.ToolSummary.PatchRisk.Total != 1 ||

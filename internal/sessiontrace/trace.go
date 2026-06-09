@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -124,13 +125,21 @@ type RequestContextRecord struct {
 }
 
 type ToolSummary struct {
-	Total          int            `json:"total"`
-	Succeeded      int            `json:"succeeded"`
-	Failed         int            `json:"failed"`
-	ByKind         map[string]int `json:"by_kind,omitempty"`
-	ByRisk         map[string]int `json:"by_risk,omitempty"`
-	ByPolicyAction map[string]int `json:"by_policy_action,omitempty"`
-	ByErrorKind    map[string]int `json:"by_error_kind,omitempty"`
+	Total             int                           `json:"total"`
+	Succeeded         int                           `json:"succeeded"`
+	Failed            int                           `json:"failed"`
+	ByKind            map[string]int                `json:"by_kind,omitempty"`
+	ByRisk            map[string]int                `json:"by_risk,omitempty"`
+	ByPolicyAction    map[string]int                `json:"by_policy_action,omitempty"`
+	ByErrorKind       map[string]int                `json:"by_error_kind,omitempty"`
+	RepeatedArguments []ToolRepeatedArgumentSummary `json:"repeated_arguments,omitempty"`
+	argumentCounts    map[string]ToolRepeatedArgumentSummary
+}
+
+type ToolRepeatedArgumentSummary struct {
+	ToolName        string `json:"tool_name"`
+	ArgumentsSHA256 string `json:"arguments_sha256"`
+	Count           int    `json:"count"`
 }
 
 func Path(sessionDir string) string {
@@ -180,6 +189,7 @@ func ReplayTrace(path string) (ReplaySummary, error) {
 	if summary.Final == nil {
 		summary.Warnings = append(summary.Warnings, "trace has no final event")
 	}
+	summary.finalizeToolSummary()
 	summary.Complete = summary.EventTypes["turn"] > 0 && summary.EventTypes["final"] > 0
 	return summary, nil
 }
@@ -274,6 +284,50 @@ func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
 	if errorKind := strings.TrimSpace(record.ErrorKind); errorKind != "" {
 		summary.ToolSummary.ByErrorKind[errorKind]++
 	}
+	summary.addRepeatedToolArguments(record.Name, record.ArgumentsSHA256)
+}
+
+func (summary *ReplaySummary) addRepeatedToolArguments(toolName, argumentsSHA256 string) {
+	toolName = strings.TrimSpace(toolName)
+	argumentsSHA256 = strings.TrimSpace(argumentsSHA256)
+	if toolName == "" || argumentsSHA256 == "" {
+		return
+	}
+	if summary.ToolSummary == nil {
+		summary.ToolSummary = &ToolSummary{}
+	}
+	if summary.ToolSummary.argumentCounts == nil {
+		summary.ToolSummary.argumentCounts = map[string]ToolRepeatedArgumentSummary{}
+	}
+	key := toolName + "\x00" + argumentsSHA256
+	entry := summary.ToolSummary.argumentCounts[key]
+	if entry.Count == 0 {
+		entry.ToolName = toolName
+		entry.ArgumentsSHA256 = argumentsSHA256
+	}
+	entry.Count++
+	summary.ToolSummary.argumentCounts[key] = entry
+}
+
+func (summary *ReplaySummary) finalizeToolSummary() {
+	if summary.ToolSummary == nil || len(summary.ToolSummary.argumentCounts) == 0 {
+		return
+	}
+	summary.ToolSummary.RepeatedArguments = summary.ToolSummary.RepeatedArguments[:0]
+	for _, entry := range summary.ToolSummary.argumentCounts {
+		if entry.Count > 1 {
+			summary.ToolSummary.RepeatedArguments = append(summary.ToolSummary.RepeatedArguments, entry)
+		}
+	}
+	sort.Slice(summary.ToolSummary.RepeatedArguments, func(i, j int) bool {
+		left := summary.ToolSummary.RepeatedArguments[i]
+		right := summary.ToolSummary.RepeatedArguments[j]
+		if left.ToolName != right.ToolName {
+			return left.ToolName < right.ToolName
+		}
+		return left.ArgumentsSHA256 < right.ArgumentsSHA256
+	})
+	summary.ToolSummary.argumentCounts = nil
 }
 
 func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord, contextRequests ...[]RequestContextRecord) error {

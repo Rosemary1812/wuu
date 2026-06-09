@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -71,14 +72,22 @@ type TraceReplaySummary struct {
 }
 
 type ToolReplaySummary struct {
-	Total          int                     `json:"total"`
-	Succeeded      int                     `json:"succeeded"`
-	Failed         int                     `json:"failed"`
-	ByKind         map[string]int          `json:"by_kind,omitempty"`
-	ByRisk         map[string]int          `json:"by_risk,omitempty"`
-	ByPolicyAction map[string]int          `json:"by_policy_action,omitempty"`
-	ByErrorKind    map[string]int          `json:"by_error_kind,omitempty"`
-	PatchRisk      *PatchRiskReplaySummary `json:"patch_risk,omitempty"`
+	Total             int                           `json:"total"`
+	Succeeded         int                           `json:"succeeded"`
+	Failed            int                           `json:"failed"`
+	ByKind            map[string]int                `json:"by_kind,omitempty"`
+	ByRisk            map[string]int                `json:"by_risk,omitempty"`
+	ByPolicyAction    map[string]int                `json:"by_policy_action,omitempty"`
+	ByErrorKind       map[string]int                `json:"by_error_kind,omitempty"`
+	RepeatedArguments []ToolRepeatedArgumentSummary `json:"repeated_arguments,omitempty"`
+	PatchRisk         *PatchRiskReplaySummary       `json:"patch_risk,omitempty"`
+	argumentCounts    map[string]ToolRepeatedArgumentSummary
+}
+
+type ToolRepeatedArgumentSummary struct {
+	ToolName        string `json:"tool_name"`
+	ArgumentsSHA256 string `json:"arguments_sha256"`
+	Count           int    `json:"count"`
 }
 
 type PatchRiskReplaySummary struct {
@@ -241,6 +250,7 @@ func ReplayTrace(path string) (TraceReplaySummary, error) {
 		summary.Warnings = append(summary.Warnings, "trace has no final event; using task success as replay outcome")
 		summary.Final = &TraceReplayFinal{Success: summary.Task.Success, VerificationReason: summary.Task.VerificationReason, Error: summary.Task.Error}
 	}
+	summary.finalizeToolSummary()
 	summary.Complete = summary.EventTypes["task"] > 0 && summary.EventTypes["final"] > 0
 	return summary, nil
 }
@@ -355,6 +365,7 @@ func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
 	if errorKind := strings.TrimSpace(record.ErrorKind); errorKind != "" {
 		summary.ToolSummary.ByErrorKind[errorKind]++
 	}
+	summary.addRepeatedToolArguments(record.Name, record.ArgumentsSHA256)
 	if record.PatchRiskSummary != nil {
 		summary.addPatchRiskObservation(*record.PatchRiskSummary)
 	}
@@ -370,6 +381,47 @@ func (summary *TraceReplaySummary) ensureToolSummary() {
 		ByPolicyAction: map[string]int{},
 		ByErrorKind:    map[string]int{},
 	}
+}
+
+func (summary *TraceReplaySummary) addRepeatedToolArguments(toolName, argumentsSHA256 string) {
+	toolName = strings.TrimSpace(toolName)
+	argumentsSHA256 = strings.TrimSpace(argumentsSHA256)
+	if toolName == "" || argumentsSHA256 == "" {
+		return
+	}
+	summary.ensureToolSummary()
+	if summary.ToolSummary.argumentCounts == nil {
+		summary.ToolSummary.argumentCounts = map[string]ToolRepeatedArgumentSummary{}
+	}
+	key := toolName + "\x00" + argumentsSHA256
+	entry := summary.ToolSummary.argumentCounts[key]
+	if entry.Count == 0 {
+		entry.ToolName = toolName
+		entry.ArgumentsSHA256 = argumentsSHA256
+	}
+	entry.Count++
+	summary.ToolSummary.argumentCounts[key] = entry
+}
+
+func (summary *TraceReplaySummary) finalizeToolSummary() {
+	if summary.ToolSummary == nil || len(summary.ToolSummary.argumentCounts) == 0 {
+		return
+	}
+	summary.ToolSummary.RepeatedArguments = summary.ToolSummary.RepeatedArguments[:0]
+	for _, entry := range summary.ToolSummary.argumentCounts {
+		if entry.Count > 1 {
+			summary.ToolSummary.RepeatedArguments = append(summary.ToolSummary.RepeatedArguments, entry)
+		}
+	}
+	sort.Slice(summary.ToolSummary.RepeatedArguments, func(i, j int) bool {
+		left := summary.ToolSummary.RepeatedArguments[i]
+		right := summary.ToolSummary.RepeatedArguments[j]
+		if left.ToolName != right.ToolName {
+			return left.ToolName < right.ToolName
+		}
+		return left.ArgumentsSHA256 < right.ArgumentsSHA256
+	})
+	summary.ToolSummary.argumentCounts = nil
 }
 
 func (summary *TraceReplaySummary) addPatchRiskObservation(risk PatchRiskObservation) {

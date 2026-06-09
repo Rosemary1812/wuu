@@ -630,6 +630,13 @@ func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("new read: %v", err)
 	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "new-call-repeat",
+		Name:      "read_file",
+		Arguments: `{"path":"target.txt"}`,
+	}); err != nil {
+		t.Fatalf("repeat read: %v", err)
+	}
 
 	startedAt := time.Now().UTC().Add(-time.Second)
 	completedAt := time.Now().UTC()
@@ -670,8 +677,15 @@ func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
 		summary.LatestTurn.ModelProfile.DefaultWriteMode != "patch" {
 		t.Fatalf("trace should include model profile strategy: %+v", summary.LatestTurn.ModelProfile)
 	}
-	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "read_file" {
+	if len(summary.ToolNames) != 2 || summary.ToolNames[0] != "read_file" || summary.ToolNames[1] != "read_file" {
 		t.Fatalf("trace should include only this run's tool record: %+v", summary.ToolNames)
+	}
+	if summary.ToolSummary == nil ||
+		len(summary.ToolSummary.RepeatedArguments) != 1 ||
+		summary.ToolSummary.RepeatedArguments[0].ToolName != "read_file" ||
+		summary.ToolSummary.RepeatedArguments[0].Count != 2 ||
+		summary.ToolSummary.RepeatedArguments[0].ArgumentsSHA256 == "" {
+		t.Fatalf("trace should summarize repeated tool arguments: %+v", summary.ToolSummary)
 	}
 	if len(summary.ContextRequests) != 1 ||
 		summary.ContextRequests[0].TransientMessages != 1 ||
@@ -694,8 +708,13 @@ func TestRunEvalReplayTraceJSON(t *testing.T) {
 			FinalAnswerPreview: "done",
 			ModelProfile:       &evalharness.ModelProfileObservation{ProviderName: "openai", Model: "gpt-5-codex", Family: "codex"},
 			ToolRecords: []evalharness.ToolObservation{{
-				Name:    "read_file",
-				Success: true,
+				Name:            "read_file",
+				ArgumentsSHA256: strings.Repeat("c", 64),
+				Success:         true,
+			}, {
+				Name:            "read_file",
+				ArgumentsSHA256: strings.Repeat("c", 64),
+				Success:         true,
 			}},
 		},
 	}); err != nil {
@@ -724,8 +743,15 @@ func TestRunEvalReplayTraceJSON(t *testing.T) {
 	if err := json.Unmarshal(data, &fileSummary); err != nil {
 		t.Fatalf("parse replay output file: %v", err)
 	}
-	if fileSummary.Mode != "deterministic_trace_replay" || len(fileSummary.ToolNames) != 1 || fileSummary.ToolNames[0] != "read_file" {
+	if fileSummary.Mode != "deterministic_trace_replay" || len(fileSummary.ToolNames) != 2 || fileSummary.ToolNames[0] != "read_file" || fileSummary.ToolNames[1] != "read_file" {
 		t.Fatalf("unexpected replay output file: %+v", fileSummary)
+	}
+	if fileSummary.ToolSummary == nil ||
+		len(fileSummary.ToolSummary.RepeatedArguments) != 1 ||
+		fileSummary.ToolSummary.RepeatedArguments[0].ToolName != "read_file" ||
+		fileSummary.ToolSummary.RepeatedArguments[0].ArgumentsSHA256 != strings.Repeat("c", 64) ||
+		fileSummary.ToolSummary.RepeatedArguments[0].Count != 2 {
+		t.Fatalf("replay output should include repeated argument summary: %+v", fileSummary.ToolSummary)
 	}
 }
 
@@ -741,7 +767,17 @@ func TestRunEvalReplaySessionTraceJSON(t *testing.T) {
 		},
 		sessiontrace.FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
 		[]tools.ToolInfo{{Name: "semantic_search", Kind: tools.ToolKindSearch, Risk: tools.ToolRiskLow, ReadOnly: true}},
-		[]tools.ToolExecutionRecord{{Name: "semantic_search", Kind: tools.ToolKindSearch, Success: true}},
+		[]tools.ToolExecutionRecord{{
+			Name:            "semantic_search",
+			ArgumentsSHA256: strings.Repeat("d", 64),
+			Kind:            tools.ToolKindSearch,
+			Success:         true,
+		}, {
+			Name:            "semantic_search",
+			ArgumentsSHA256: strings.Repeat("d", 64),
+			Kind:            tools.ToolKindSearch,
+			Success:         true,
+		}},
 	); err != nil {
 		t.Fatalf("write session trace: %v", err)
 	}
@@ -768,8 +804,15 @@ func TestRunEvalReplaySessionTraceJSON(t *testing.T) {
 	if err := json.Unmarshal(data, &fileSummary); err != nil {
 		t.Fatalf("parse session replay output file: %v", err)
 	}
-	if len(fileSummary.ToolNames) != 1 || fileSummary.ToolNames[0] != "semantic_search" || fileSummary.Final == nil || fileSummary.Final.Status != "completed" {
+	if len(fileSummary.ToolNames) != 2 || fileSummary.ToolNames[0] != "semantic_search" || fileSummary.ToolNames[1] != "semantic_search" || fileSummary.Final == nil || fileSummary.Final.Status != "completed" {
 		t.Fatalf("unexpected session replay output file: %+v", fileSummary)
+	}
+	if fileSummary.ToolSummary == nil ||
+		len(fileSummary.ToolSummary.RepeatedArguments) != 1 ||
+		fileSummary.ToolSummary.RepeatedArguments[0].ToolName != "semantic_search" ||
+		fileSummary.ToolSummary.RepeatedArguments[0].ArgumentsSHA256 != strings.Repeat("d", 64) ||
+		fileSummary.ToolSummary.RepeatedArguments[0].Count != 2 {
+		t.Fatalf("session replay output should include repeated argument summary: %+v", fileSummary.ToolSummary)
 	}
 }
 

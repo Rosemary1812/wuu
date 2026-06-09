@@ -1647,6 +1647,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
+		if repeated := formatEvalRepeatedArguments(summary.ToolSummary.RepeatedArguments); repeated != "" {
+			fmt.Printf("  repeated_arguments: %s\n", repeated)
+		}
 		if summary.ToolSummary.PatchRisk != nil {
 			risk := summary.ToolSummary.PatchRisk
 			fmt.Printf("  patch_risk: total=%d levels=%s files=%d hunks=%d +%d -%d\n",
@@ -1730,6 +1733,9 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
+		if repeated := formatSessionRepeatedArguments(summary.ToolSummary.RepeatedArguments); repeated != "" {
+			fmt.Printf("  repeated_arguments: %s\n", repeated)
+		}
 	}
 	if summary.Final != nil {
 		if summary.Final.Error != "" {
@@ -1742,6 +1748,28 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 	for _, warning := range summary.Warnings {
 		fmt.Printf("  warning: %s\n", warning)
 	}
+}
+
+func formatEvalRepeatedArguments(values []evalharness.ToolRepeatedArgumentSummary) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		if value.ToolName == "" || value.ArgumentsSHA256 == "" || value.Count < 2 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s:%s=%d", value.ToolName, value.ArgumentsSHA256, value.Count))
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatSessionRepeatedArguments(values []sessiontrace.ToolRepeatedArgumentSummary) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		if value.ToolName == "" || value.ArgumentsSHA256 == "" || value.Count < 2 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s:%s=%d", value.ToolName, value.ArgumentsSHA256, value.Count))
+	}
+	return strings.Join(parts, ",")
 }
 
 func firstLine(value string) string {
