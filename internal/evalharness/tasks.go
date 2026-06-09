@@ -253,6 +253,16 @@ func Catalog() []Task {
 			Verify:        verifyGoTests,
 		},
 		{
+			ID:          "git_test_failure_fix",
+			Name:        "Fix a failing unit test in git",
+			Description: "Small committed Go module with one implementation bug; eval verifies tests and final git diff.",
+			Prompt: "This workspace is a git repo. Use run_test to reproduce the failure, find the implementation bug, " +
+				"fix source code without changing tests, use run_test again to verify tests pass, then inspect the final git diff with the git tool before answering. The final diff should only change calc.go.",
+			RequiredTools: []string{"run_test", "git"},
+			Setup:         setupGitTestFailureFix,
+			Verify:        verifyGitTestFailureFix,
+		},
+		{
 			ID:            "multi_file_pricing",
 			Name:          "Fix behavior across two files",
 			Description:   "Go package where the final behavior requires edits in two implementation files.",
@@ -421,6 +431,24 @@ func TestAdd(t *testing.T) {
 	return writeFiles(root, files)
 }
 
+func setupGitTestFailureFix(root string) error {
+	if err := setupTestFailureFix(root); err != nil {
+		return err
+	}
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "eval@example.com"},
+		{"config", "user.name", "Eval"},
+		{"add", "go.mod", "calc.go", "calc_test.go"},
+		{"commit", "-m", "initial"},
+	} {
+		if err := runEvalGit(root, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func setupMultiFilePricing(root string) error {
 	files := map[string]string{
 		"go.mod": `module pricingeval
@@ -573,6 +601,62 @@ func verifyGoTests(ctx context.Context, root, _ string) (Verification, error) {
 	return passVerification(strings.TrimSpace(output.String()), evidence), nil
 }
 
+func verifyGitTestFailureFix(ctx context.Context, root, answer string) (Verification, error) {
+	testVerification, err := verifyGoTests(ctx, root, answer)
+	if err != nil {
+		return Verification{}, err
+	}
+	diffEvidence, err := verifyGitDiffOnlyCalcGo(ctx, root)
+	if err != nil {
+		return Verification{}, err
+	}
+	evidence := append([]VerificationEvidence(nil), testVerification.Evidence...)
+	evidence = append(evidence, diffEvidence)
+	if !testVerification.Passed {
+		return failVerification(testVerification.Reason, evidence...), nil
+	}
+	if !diffEvidence.Passed {
+		return failVerification(diffEvidence.Summary, evidence...), nil
+	}
+	return passVerification("go tests passed and git diff only changes calc.go", evidence...), nil
+}
+
+func verifyGitDiffOnlyCalcGo(ctx context.Context, root string) (VerificationEvidence, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, "git", "diff", "--name-only")
+	cmd.Dir = root
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	err := cmd.Run()
+	evidence := VerificationEvidence{
+		Check:    "git diff files",
+		Command:  "git diff --name-only",
+		Expected: "calc.go",
+		Observed: verificationObserved(output.String()),
+	}
+	if cmdCtx.Err() != nil {
+		evidence.Passed = false
+		evidence.Summary = "git diff timed out"
+		return evidence, nil
+	}
+	if err != nil {
+		evidence.Passed = false
+		evidence.Summary = "git diff failed"
+		return evidence, nil
+	}
+	files := strings.Fields(output.String())
+	if len(files) != 1 || files[0] != "calc.go" {
+		evidence.Passed = false
+		evidence.Summary = "final diff should only change calc.go"
+		return evidence, nil
+	}
+	evidence.Passed = true
+	evidence.Summary = "final diff only changes calc.go"
+	return evidence, nil
+}
+
 func verifyObservedReadyFile(_ context.Context, root, _ string) (Verification, error) {
 	data, err := os.ReadFile(filepath.Join(root, "observed.txt"))
 	evidence := VerificationEvidence{Check: "observed readiness marker", Path: "observed.txt", Expected: "contains READY_FOR_EVAL"}
@@ -590,6 +674,15 @@ func verifyObservedReadyFile(_ context.Context, root, _ string) (Verification, e
 	evidence.Passed = true
 	evidence.Summary = "observed readiness marker"
 	return passVerification("observed readiness marker", evidence), nil
+}
+
+func runEvalGit(root string, args ...string) error {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git %v: %w\n%s", args, err, string(out))
+	}
+	return nil
 }
 
 func verifyDeferredToolFoundFile(_ context.Context, root, _ string) (Verification, error) {

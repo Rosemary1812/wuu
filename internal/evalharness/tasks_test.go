@@ -72,6 +72,61 @@ func Add(a, b int) int {
 	}
 }
 
+func TestGitTestFailureFixVerification(t *testing.T) {
+	task, ok := ByID("git_test_failure_fix")
+	if !ok {
+		t.Fatal("missing git_test_failure_fix task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	status := exec.Command("git", "status", "--porcelain")
+	status.Dir = root
+	if out, err := status.CombinedOutput(); err != nil || len(out) != 0 {
+		t.Fatalf("expected clean git fixture, err=%v out=%s", err, string(out))
+	}
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask failed module: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("buggy git fixture should fail verification")
+	}
+
+	fixed := `package evaltask
+
+func Add(a, b int) int {
+	return a + b
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "calc.go"), []byte(fixed), 0o644); err != nil {
+		t.Fatalf("write fixed file: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask fixed module: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("fixed git fixture should pass verification: %s", passed.Reason)
+	}
+	if len(passed.Evidence) < 2 || passed.Evidence[1].Check != "git diff files" || !passed.Evidence[1].Passed {
+		t.Fatalf("fixed fixture should include passing git diff evidence: %+v", passed.Evidence)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "calc_test.go"), []byte("package evaltask\n"), 0o644); err != nil {
+		t.Fatalf("write changed test file: %v", err)
+	}
+	failed, err = VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask changed test: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("changing tests should fail git diff verification")
+	}
+}
+
 func TestLongProcessOutputVerification(t *testing.T) {
 	task, ok := ByID("long_process_output")
 	if !ok {

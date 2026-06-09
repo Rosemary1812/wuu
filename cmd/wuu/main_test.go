@@ -161,6 +161,7 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 	})
 
 	if !strings.Contains(output, "test_failure_fix") ||
+		!strings.Contains(output, "git_test_failure_fix") ||
 		!strings.Contains(output, "multi_file_pricing") ||
 		!strings.Contains(output, "long_process_output") ||
 		!strings.Contains(output, "tool_search_deferred") ||
