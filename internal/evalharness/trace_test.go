@@ -42,6 +42,13 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 			TaskWorkdirKept:    true,
 			FinalAnswerPreview: "done",
 			ModelProfile:       &ModelProfileObservation{ProviderName: "openai", Model: "gpt-5-codex", Family: "codex"},
+			ContextBlocks: []ContextBlockObservation{{
+				Kind:         "ACTIVE_FILES",
+				Title:        "Files read in this session",
+				Source:       "read_file",
+				TokenBudget:  700,
+				ContentBytes: 120,
+			}},
 			ToolRecords: []ToolObservation{{
 				Name:           "run_shell",
 				Success:        true,
@@ -53,7 +60,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		},
 	}, time.Unix(100, 0).UTC())
 
-	wantTypes := []string{"task", "observability", "model_profile", "tool_records", "workflow_runs", "harness_tasks", "harness_reports", "final"}
+	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "tool_records", "workflow_runs", "harness_tasks", "harness_reports", "final"}
 	if len(events) != len(wantTypes) {
 		t.Fatalf("event count = %d, want %d: %+v", len(events), len(wantTypes), events)
 	}
@@ -71,6 +78,13 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if obs.SessionID != "eval-task-1" || obs.TracePath == "" || !obs.TaskWorkdirKept {
 		t.Fatalf("observability event missing artifact pointers: %+v", obs)
+	}
+	contextBlocks, ok := events[3].Data.([]ContextBlockObservation)
+	if !ok {
+		t.Fatalf("context_blocks event data has wrong type: %#v", events[3].Data)
+	}
+	if len(contextBlocks) != 1 || contextBlocks[0].Kind != "ACTIVE_FILES" || contextBlocks[0].ContentBytes == 0 {
+		t.Fatalf("context_blocks event missing block metadata: %+v", contextBlocks)
 	}
 	task, ok := events[0].Data.(TraceTask)
 	if !ok {

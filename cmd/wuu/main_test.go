@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -412,6 +413,53 @@ func TestEvalModelProfileObservation(t *testing.T) {
 	}
 	if got.DefaultWriteMode != "patch" || !got.FreeformTool || !got.AllowParallelReadOnly {
 		t.Fatalf("unexpected model profile strategy: %+v", got)
+	}
+}
+
+func TestEvalContextBlockObservationsSummarizeRuntimeBlocks(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/eval\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nconst token = \"super-secret-token\"\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	kit, err := tools.New(root)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"main.go","offset":1,"limit":3}`,
+	}); err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+
+	got := evalContextBlockObservations(&runtime.Session{
+		RootDir: root,
+		Toolkit: kit,
+	})
+	byKind := make(map[string]evalharness.ContextBlockObservation)
+	for _, block := range got {
+		if block.Kind == "" {
+			t.Fatalf("context block kind missing: %+v", block)
+		}
+		if block.ContentBytes <= 0 || strings.TrimSpace(block.ContentPreview) == "" {
+			t.Fatalf("context block missing preview metadata: %+v", block)
+		}
+		if strings.Contains(block.ContentPreview, "super-secret-token") {
+			t.Fatalf("context block preview leaked file body: %+v", block)
+		}
+		byKind[block.Kind] = block
+	}
+	for _, kind := range []string{"ENVIRONMENT", "REPO_MAP", "ACTIVE_FILES", "TOOL_RESULT_SUMMARY"} {
+		if _, ok := byKind[kind]; !ok {
+			t.Fatalf("missing context block kind %s in %+v", kind, got)
+		}
+	}
+	active := byKind["ACTIVE_FILES"]
+	if active.Source != "read_file" || active.TokenBudget == 0 || !strings.Contains(active.ContentPreview, "main.go") {
+		t.Fatalf("active files block missing read metadata: %+v", active)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
@@ -681,8 +682,9 @@ func setTemporaryEnv(key, value string) func() {
 }
 
 const (
-	evalAnswerPreviewLimit = 4000
-	evalTextPreviewLimit   = 1000
+	evalAnswerPreviewLimit       = 4000
+	evalTextPreviewLimit         = 1000
+	evalContextBlockPreviewLimit = 800
 )
 
 var evalSecretPatterns = []*regexp.Regexp{
@@ -707,6 +709,7 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 	}
 	obs.StateDir = strings.TrimSpace(rt.StateDir)
 	obs.ModelProfile = evalModelProfileObservation(rt)
+	obs.ContextBlocks = evalContextBlockObservations(rt)
 	if obs.StateDir != "" {
 		obs.SessionDir = statepath.SessionArtifactDir(obs.StateDir, sessionID)
 		obs.WorkflowDir = filepath.Join(obs.StateDir, "workflows")
@@ -784,6 +787,44 @@ func evalModelProfileObservation(rt *runtime.Session) *evalharness.ModelProfileO
 		AllowParallelReadOnly:     profile.Workflow.AllowParallelReadOnly,
 		AllowDirectShell:          profile.Workflow.AllowDirectShell,
 	}
+}
+
+func evalContextBlockObservations(rt *runtime.Session) []evalharness.ContextBlockObservation {
+	if rt == nil {
+		return nil
+	}
+	rootDir := strings.TrimSpace(rt.RootDir)
+	if rootDir == "" {
+		return nil
+	}
+	blocks := []wuucontext.Block{
+		wuucontext.EnvironmentBlock(wuucontext.Snapshot(rootDir)),
+	}
+	if block, ok := wuucontext.RepoMapBlock(rootDir, wuucontext.RepoMapOptions{}); ok {
+		blocks = append(blocks, block)
+	}
+	if block, ok := wuucontext.RecentDiffBlock(rootDir, wuucontext.RecentDiffOptions{}); ok {
+		blocks = append(blocks, block)
+	}
+	if rt.Toolkit != nil {
+		blocks = append(blocks, rt.Toolkit.ContextBlocks()...)
+	}
+	out := make([]evalharness.ContextBlockObservation, 0, len(blocks))
+	for _, block := range blocks {
+		content := strings.TrimSpace(block.Content)
+		if strings.TrimSpace(string(block.Kind)) == "" || content == "" {
+			continue
+		}
+		out = append(out, evalharness.ContextBlockObservation{
+			Kind:           string(block.Kind),
+			Title:          strings.TrimSpace(block.Title),
+			Source:         strings.TrimSpace(block.Source),
+			TokenBudget:    block.TokenBudget,
+			ContentBytes:   len([]byte(content)),
+			ContentPreview: evalSafePreview(content, evalContextBlockPreviewLimit),
+		})
+	}
+	return out
 }
 
 func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.ToolObservation {

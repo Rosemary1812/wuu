@@ -91,11 +91,21 @@ type Observability struct {
 	TaskWorkdirKept    bool                       `json:"task_workdir_kept,omitempty"`
 	FinalAnswerPreview string                     `json:"final_answer_preview,omitempty"`
 	ModelProfile       *ModelProfileObservation   `json:"model_profile,omitempty"`
+	ContextBlocks      []ContextBlockObservation  `json:"context_blocks,omitempty"`
 	ToolRecords        []ToolObservation          `json:"tool_records,omitempty"`
 	WorkflowRuns       []WorkflowRunObservation   `json:"workflow_runs,omitempty"`
 	HarnessTasks       []HarnessTaskObservation   `json:"harness_tasks,omitempty"`
 	HarnessReports     []HarnessReportObservation `json:"harness_reports,omitempty"`
 	Warnings           []string                   `json:"warnings,omitempty"`
+}
+
+type ContextBlockObservation struct {
+	Kind           string `json:"kind"`
+	Title          string `json:"title,omitempty"`
+	Source         string `json:"source,omitempty"`
+	TokenBudget    int    `json:"token_budget,omitempty"`
+	ContentBytes   int    `json:"content_bytes,omitempty"`
+	ContentPreview string `json:"content_preview,omitempty"`
 }
 
 type ModelProfileObservation struct {
