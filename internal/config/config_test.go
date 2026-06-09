@@ -325,7 +325,7 @@ func TestConfig_ToolPolicy(t *testing.T) {
   "agent": {
     "system_prompt": "test",
     "tool_policy": {
-      "profile": "balanced",
+      "profile": "auto",
       "default_action": "allow",
       "tools": {
         "run_shell": "require_approval"
@@ -334,6 +334,7 @@ func TestConfig_ToolPolicy(t *testing.T) {
         "web": "allow"
       },
       "risks": {
+        "medium": "auto_classify",
         "high": "deny"
       }
     }
@@ -351,14 +352,17 @@ func TestConfig_ToolPolicy(t *testing.T) {
 	if cfg.Agent.ToolPolicy.DefaultAction != "allow" {
 		t.Fatalf("default_action = %q, want allow", cfg.Agent.ToolPolicy.DefaultAction)
 	}
-	if cfg.Agent.ToolPolicy.Profile != "balanced" {
-		t.Fatalf("profile = %q, want balanced", cfg.Agent.ToolPolicy.Profile)
+	if cfg.Agent.ToolPolicy.Profile != "auto" {
+		t.Fatalf("profile = %q, want auto", cfg.Agent.ToolPolicy.Profile)
 	}
 	if cfg.Agent.ToolPolicy.Tools["run_shell"] != "require_approval" {
 		t.Fatalf("run_shell action = %q, want require_approval", cfg.Agent.ToolPolicy.Tools["run_shell"])
 	}
 	if cfg.Agent.ToolPolicy.Kinds["web"] != "allow" {
 		t.Fatalf("web action = %q, want allow", cfg.Agent.ToolPolicy.Kinds["web"])
+	}
+	if cfg.Agent.ToolPolicy.Risks["medium"] != "auto_classify" {
+		t.Fatalf("medium risk action = %q, want auto_classify", cfg.Agent.ToolPolicy.Risks["medium"])
 	}
 	if cfg.Agent.ToolPolicy.Risks["high"] != "deny" {
 		t.Fatalf("high risk action = %q, want deny", cfg.Agent.ToolPolicy.Risks["high"])
@@ -1111,7 +1115,7 @@ func TestUpdateProviderRuntimePersistsToolPolicyProfilePreset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	profile := "safe"
+	profile := "auto"
 	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, &profile); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
@@ -1120,7 +1124,7 @@ func TestUpdateProviderRuntimePersistsToolPolicyProfilePreset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if cfg.Agent.ToolPolicy.Profile != "safe" {
+	if cfg.Agent.ToolPolicy.Profile != "auto" {
 		t.Fatalf("tool policy profile not persisted: %+v", cfg.Agent.ToolPolicy)
 	}
 	if cfg.Agent.ToolPolicy.DefaultAction != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 || len(cfg.Agent.ToolPolicy.Risks) != 0 {

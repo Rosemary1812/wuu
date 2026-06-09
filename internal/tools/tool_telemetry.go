@@ -39,6 +39,8 @@ type ToolExecutionRecord struct {
 	ClassificationReason string           `json:"classification_reason,omitempty"`
 	PolicyAction         ToolPolicyAction `json:"policy_action"`
 	PolicyReason         string           `json:"policy_reason,omitempty"`
+	AutoModeDecision     AutoModeDecision `json:"auto_mode_decision,omitempty"`
+	AutoModeReason       string           `json:"auto_mode_reason,omitempty"`
 	ReadOnly             bool             `json:"read_only"`
 	ConcurrencySafe      bool             `json:"concurrency_safe"`
 	StartedAt            time.Time        `json:"started_at"`
@@ -119,6 +121,13 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	startedAt := time.Now()
 	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
 
+	if autoDecision, err := t.applyAutoModeDecision(ctx, call, info, decision); err != nil {
+		decision = autoDecision
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", err)
+		return "", err
+	} else {
+		decision = autoDecision
+	}
 	if err := decision.blockingError(call.Name); err != nil {
 		approvalRef := t.persistApprovalRequest(call, info, decision, startedAt, revisionBefore)
 		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, err)
@@ -151,6 +160,40 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, "", err)
 
 	return returned, err
+}
+
+func (t *Toolkit) applyAutoModeDecision(ctx context.Context, call providers.ToolCall, info ToolInfo, decision ToolPolicyDecision) (ToolPolicyDecision, error) {
+	if decision.Action != ToolPolicyAutoClassify {
+		return decision, nil
+	}
+	if t == nil || t.autoModeClassifier == nil {
+		decision.AutoModeDecision = AutoModeDecisionDeny
+		decision.AutoModeReason = "auto classifier is unavailable"
+		return decision, autoModeBlockError(call.Name, decision, "auto_classifier_unavailable")
+	}
+	workspaceRoot := ""
+	if t.env != nil {
+		workspaceRoot = t.env.RootDir
+	}
+	result, err := t.autoModeClassifier.Classify(ctx, AutoModeClassifyRequest{
+		ToolName:      call.Name,
+		CallID:        call.ID,
+		ArgumentsJSON: call.Arguments,
+		WorkspaceRoot: workspaceRoot,
+		Info:          info,
+	})
+	if err != nil {
+		decision.AutoModeDecision = AutoModeDecisionDeny
+		decision.AutoModeReason = "auto classifier failed: " + strings.TrimSpace(err.Error())
+		return decision, autoModeBlockError(call.Name, decision, "auto_classifier_error")
+	}
+	result = normalizeAutoModeResult(result)
+	decision.AutoModeDecision = result.Decision
+	decision.AutoModeReason = result.Reason
+	if result.Decision != AutoModeDecisionAllow {
+		return decision, autoModeBlockError(call.Name, decision, "auto_mode_denied")
+	}
+	return decision, nil
 }
 
 type repeatedToolInputError struct {
@@ -233,6 +276,8 @@ func (t *Toolkit) recordToolExecution(
 		ClassificationReason: info.Reason,
 		PolicyAction:         decision.Action,
 		PolicyReason:         decision.Reason,
+		AutoModeDecision:     decision.AutoModeDecision,
+		AutoModeReason:       decision.AutoModeReason,
 		ReadOnly:             info.ReadOnly,
 		ConcurrencySafe:      info.ConcurrencySafe,
 		StartedAt:            startedAt,

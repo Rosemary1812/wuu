@@ -50,6 +50,7 @@ type Toolkit struct {
 	exposureMu             sync.RWMutex
 	activatedDeferredTools map[string]struct{}
 	toolPolicy             ToolPolicy
+	autoModeClassifier     AutoModeClassifier
 	// mcpManager, when set, exposes MCP server tools alongside built-in
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
@@ -81,7 +82,7 @@ func New(rootDir string) (*Toolkit, error) {
 		RootDir:  abs,
 		StateDir: stateDir,
 	}
-	t := &Toolkit{env: env}
+	t := &Toolkit{env: env, autoModeClassifier: DefaultAutoModeClassifier{}}
 	t.rebuildRegistry()
 	t.SetEditToolMode(EditToolModeText)
 	return t, nil
@@ -115,9 +116,10 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	env.toolTelemetry = toolTelemetry{}
 
 	clone := &Toolkit{
-		env:        &env,
-		toolPolicy: t.toolPolicy,
-		mcpManager: t.mcpManager,
+		env:                &env,
+		toolPolicy:         t.toolPolicy,
+		autoModeClassifier: t.autoModeClassifier,
+		mcpManager:         t.mcpManager,
 	}
 	if len(t.disabledTools) > 0 {
 		clone.disabledTools = make(map[string]struct{}, len(t.disabledTools))
@@ -327,6 +329,12 @@ func (t *Toolkit) SetMCPManager(m *mcp.Manager) {
 // SetToolPolicy installs the runtime policy used before executing known tools.
 func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
 	t.toolPolicy = policy
+}
+
+// SetAutoModeClassifier installs the classifier used by the auto permission
+// profile. Passing nil makes auto mode fail closed for non-low-risk calls.
+func (t *Toolkit) SetAutoModeClassifier(classifier AutoModeClassifier) {
+	t.autoModeClassifier = classifier
 }
 
 // AgentControl returns the attached agent control runtime, or nil.

@@ -4005,6 +4005,167 @@ func TestToolkit_ToolPolicy_UsesInputClassification(t *testing.T) {
 	}
 }
 
+type recordingAutoModeClassifier struct {
+	result   AutoModeClassifyResult
+	err      error
+	requests []AutoModeClassifyRequest
+}
+
+func (c *recordingAutoModeClassifier) Classify(ctx context.Context, request AutoModeClassifyRequest) (AutoModeClassifyResult, error) {
+	c.requests = append(c.requests, request)
+	return c.result, c.err
+}
+
+func TestToolkit_AutoMode_AllowsLowRiskWithoutClassifier(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	policy, ok := PolicyForProfile(ToolPolicyProfileAuto)
+	if !ok {
+		t.Fatal("auto policy missing")
+	}
+	classifier := &recordingAutoModeClassifier{
+		result: AutoModeClassifyResult{Decision: AutoModeDecisionDeny, Reason: "should not be used for low-risk calls"},
+	}
+	kit.SetToolPolicy(policy)
+	kit.SetAutoModeClassifier(classifier)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-pwd",
+		Name:      "run_shell",
+		Arguments: `{"command":"pwd"}`,
+	})
+	if err != nil {
+		t.Fatalf("low-risk shell command should bypass auto classifier: %v", err)
+	}
+	if !strings.Contains(resp, root) {
+		t.Fatalf("unexpected response: %s", resp)
+	}
+	if len(classifier.requests) != 0 {
+		t.Fatalf("low-risk tool should not call auto classifier: %+v", classifier.requests)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || records[0].PolicyAction != ToolPolicyAllow || records[0].AutoModeDecision != "" {
+		t.Fatalf("unexpected low-risk auto mode telemetry: %+v", records)
+	}
+}
+
+func TestToolkit_AutoMode_UsesClassifierForWorkspaceWrite(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	policy, ok := PolicyForProfile(ToolPolicyProfileAuto)
+	if !ok {
+		t.Fatal("auto policy missing")
+	}
+	classifier := &recordingAutoModeClassifier{
+		result: AutoModeClassifyResult{Decision: AutoModeDecisionAllow, Reason: "workspace edit is scoped"},
+	}
+	kit.SetToolPolicy(policy)
+	kit.SetAutoModeClassifier(classifier)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-write",
+		Name:      "write_file",
+		Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
+	})
+	if err != nil {
+		t.Fatalf("write_file should be auto-approved by classifier: %v", err)
+	}
+	if !strings.Contains(resp, `"action":"create"`) {
+		t.Fatalf("unexpected response: %s", resp)
+	}
+	if len(classifier.requests) != 1 {
+		t.Fatalf("expected one auto classifier request, got %+v", classifier.requests)
+	}
+	request := classifier.requests[0]
+	if request.ToolName != "write_file" || request.Info.Kind != ToolKindFile || request.Info.Risk != ToolRiskHigh {
+		t.Fatalf("unexpected auto classifier request: %+v", request)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	record := records[0]
+	if record.PolicyAction != ToolPolicyAutoClassify || record.AutoModeDecision != AutoModeDecisionAllow || record.AutoModeReason != "workspace edit is scoped" || !record.Success {
+		t.Fatalf("unexpected auto-approved telemetry: %+v", record)
+	}
+}
+
+func TestToolkit_AutoMode_BlocksClassifierDeniedShell(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	policy, ok := PolicyForProfile(ToolPolicyProfileAuto)
+	if !ok {
+		t.Fatal("auto policy missing")
+	}
+	classifier := &recordingAutoModeClassifier{
+		result: AutoModeClassifyResult{Decision: AutoModeDecisionDeny, Reason: "destructive shell command"},
+	}
+	kit.SetToolPolicy(policy)
+	kit.SetAutoModeClassifier(classifier)
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-rm",
+		Name:      "run_shell",
+		Arguments: `{"command":"rm -rf build"}`,
+	})
+	if err == nil ||
+		!strings.Contains(err.Error(), "error_kind=auto_mode_denied") ||
+		!strings.Contains(err.Error(), "destructive shell command") {
+		t.Fatalf("expected auto mode denial, got %v", err)
+	}
+	if len(classifier.requests) != 1 {
+		t.Fatalf("expected one auto classifier request, got %+v", classifier.requests)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	record := records[0]
+	if record.PolicyAction != ToolPolicyAutoClassify || record.AutoModeDecision != AutoModeDecisionDeny || record.ErrorKind != "auto_mode_denied" || record.RawOutputBytes != 0 || record.Success {
+		t.Fatalf("unexpected auto-denied telemetry: %+v", record)
+	}
+	envelope := record.ResultEnvelope()
+	if !strings.Contains(strings.Join(envelope.NextSuggestions, " "), "approval") {
+		t.Fatalf("auto-denied envelope missing recovery guidance: %+v", envelope)
+	}
+}
+
+func TestToolkit_AutoMode_FailsClosedWithoutClassifier(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	policy, ok := PolicyForProfile(ToolPolicyProfileAuto)
+	if !ok {
+		t.Fatal("auto policy missing")
+	}
+	kit.SetToolPolicy(policy)
+	kit.SetAutoModeClassifier(nil)
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-write",
+		Name:      "write_file",
+		Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=auto_classifier_unavailable") {
+		t.Fatalf("expected auto classifier unavailable error, got %v", err)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || records[0].ErrorKind != "auto_classifier_unavailable" || records[0].AutoModeDecision != AutoModeDecisionDeny {
+		t.Fatalf("unexpected fail-closed telemetry: %+v", records)
+	}
+}
+
 func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

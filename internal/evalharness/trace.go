@@ -481,7 +481,18 @@ func toolResultActionKey(toolName, action string) string {
 func (summary *TraceReplaySummary) addToolPolicyBlock(record ToolObservation) {
 	action := strings.TrimSpace(record.PolicyAction)
 	errorKind := strings.TrimSpace(record.ErrorKind)
-	if action != "deny" && action != "require_approval" && errorKind != "policy_denied" && errorKind != "approval_required" {
+	autoModeBlocked := action == "auto_classify" &&
+		(errorKind == "auto_mode_denied" ||
+			errorKind == "auto_classifier_unavailable" ||
+			errorKind == "auto_classifier_error")
+	if action != "deny" &&
+		action != "require_approval" &&
+		!autoModeBlocked &&
+		errorKind != "policy_denied" &&
+		errorKind != "approval_required" &&
+		errorKind != "auto_mode_denied" &&
+		errorKind != "auto_classifier_unavailable" &&
+		errorKind != "auto_classifier_error" {
 		return
 	}
 	toolName := strings.TrimSpace(record.Name)
@@ -506,6 +517,8 @@ func (summary *TraceReplaySummary) addToolPolicyBlock(record ToolObservation) {
 func modelNextActionForPolicyBlock(action, errorKind string) string {
 	switch {
 	case action == "require_approval" || errorKind == "approval_required":
+		return "ask the user for approval or choose a lower-risk alternative"
+	case action == "auto_classify" || errorKind == "auto_mode_denied" || errorKind == "auto_classifier_unavailable" || errorKind == "auto_classifier_error":
 		return "ask the user for approval or choose a lower-risk alternative"
 	case action == "deny" || errorKind == "policy_denied":
 		return "choose a lower-risk tool or explain that policy blocks the requested action"

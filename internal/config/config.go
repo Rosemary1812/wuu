@@ -436,19 +436,19 @@ func validateToolPolicyConfig(policy ToolPolicyConfig) error {
 
 func validateToolPolicyProfile(profile string) error {
 	switch strings.TrimSpace(profile) {
-	case "", "safe", "balanced", "autonomous", "enterprise_restricted":
+	case "", "safe", "balanced", "auto", "autonomous", "enterprise_restricted":
 		return nil
 	default:
-		return fmt.Errorf("agent.tool_policy.profile must be one of safe, balanced, autonomous, enterprise_restricted")
+		return fmt.Errorf("agent.tool_policy.profile must be one of safe, balanced, auto, autonomous, enterprise_restricted")
 	}
 }
 
 func validateToolPolicyAction(path, action string) error {
 	switch strings.TrimSpace(action) {
-	case "", "allow", "deny", "require_approval":
+	case "", "allow", "deny", "require_approval", "auto_classify":
 		return nil
 	default:
-		return fmt.Errorf("%s must be one of allow, deny, require_approval", path)
+		return fmt.Errorf("%s must be one of allow, deny, require_approval, auto_classify", path)
 	}
 }
 

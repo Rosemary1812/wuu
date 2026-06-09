@@ -20,6 +20,7 @@ const (
 	ToolPolicyAllow           ToolPolicyAction = "allow"
 	ToolPolicyDeny            ToolPolicyAction = "deny"
 	ToolPolicyRequireApproval ToolPolicyAction = "require_approval"
+	ToolPolicyAutoClassify    ToolPolicyAction = "auto_classify"
 )
 
 type ToolPolicyProfile string
@@ -27,6 +28,7 @@ type ToolPolicyProfile string
 const (
 	ToolPolicyProfileSafe                 ToolPolicyProfile = "safe"
 	ToolPolicyProfileBalanced             ToolPolicyProfile = "balanced"
+	ToolPolicyProfileAuto                 ToolPolicyProfile = "auto"
 	ToolPolicyProfileAutonomous           ToolPolicyProfile = "autonomous"
 	ToolPolicyProfileEnterpriseRestricted ToolPolicyProfile = "enterprise_restricted"
 )
@@ -44,9 +46,11 @@ type ToolPolicy struct {
 
 // ToolPolicyDecision is produced before each known tool call executes.
 type ToolPolicyDecision struct {
-	Action ToolPolicyAction `json:"action"`
-	Risk   ToolRisk         `json:"risk"`
-	Reason string           `json:"reason,omitempty"`
+	Action           ToolPolicyAction `json:"action"`
+	Risk             ToolRisk         `json:"risk"`
+	Reason           string           `json:"reason,omitempty"`
+	AutoModeDecision AutoModeDecision `json:"auto_mode_decision,omitempty"`
+	AutoModeReason   string           `json:"auto_mode_reason,omitempty"`
 }
 
 func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {
@@ -71,6 +75,16 @@ func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {
 				ToolRiskLow:    ToolPolicyAllow,
 				ToolRiskMedium: ToolPolicyAllow,
 				ToolRiskHigh:   ToolPolicyRequireApproval,
+			},
+		}, true
+	case ToolPolicyProfileAuto:
+		return ToolPolicy{
+			Profile:       profile,
+			DefaultAction: ToolPolicyAutoClassify,
+			RiskActions: map[ToolRisk]ToolPolicyAction{
+				ToolRiskLow:    ToolPolicyAllow,
+				ToolRiskMedium: ToolPolicyAutoClassify,
+				ToolRiskHigh:   ToolPolicyAutoClassify,
 			},
 		}, true
 	case ToolPolicyProfileAutonomous:
@@ -151,6 +165,21 @@ func (d ToolPolicyDecision) blockingError(toolName string) error {
 	}
 }
 
+func autoModeBlockError(toolName string, decision ToolPolicyDecision, kind string) error {
+	reason := decision.AutoModeReason
+	if reason == "" {
+		reason = decision.Reason
+	}
+	return toolPolicyBlockError{
+		Kind:            kind,
+		ToolName:        toolName,
+		Action:          decision.Action,
+		Risk:            decision.Risk,
+		PolicyReason:    reason,
+		ModelNextAction: "ask the user for approval or choose a lower-risk alternative",
+	}
+}
+
 type toolPolicyBlockError struct {
 	Kind            string
 	ToolName        string
@@ -174,7 +203,7 @@ func (e toolPolicyBlockError) Error() string {
 
 func IsValidToolPolicyAction(action ToolPolicyAction) bool {
 	switch action {
-	case "", ToolPolicyAllow, ToolPolicyDeny, ToolPolicyRequireApproval:
+	case "", ToolPolicyAllow, ToolPolicyDeny, ToolPolicyRequireApproval, ToolPolicyAutoClassify:
 		return true
 	default:
 		return false

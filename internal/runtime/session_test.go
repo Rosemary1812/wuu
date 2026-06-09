@@ -899,6 +899,28 @@ func TestToolPolicyFromConfigAppliesProfileDefaults(t *testing.T) {
 	}
 }
 
+func TestToolPolicyFromConfigAppliesAutoProfileDefaults(t *testing.T) {
+	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
+		Profile: "auto",
+	})
+
+	if policy.Profile != tools.ToolPolicyProfileAuto {
+		t.Fatalf("Profile = %s, want auto", policy.Profile)
+	}
+	if policy.DefaultAction != tools.ToolPolicyAutoClassify {
+		t.Fatalf("DefaultAction = %s, want auto_classify", policy.DefaultAction)
+	}
+	if policy.RiskActions[tools.ToolRiskLow] != tools.ToolPolicyAllow {
+		t.Fatalf("low risk action = %s, want allow", policy.RiskActions[tools.ToolRiskLow])
+	}
+	if policy.RiskActions[tools.ToolRiskMedium] != tools.ToolPolicyAutoClassify {
+		t.Fatalf("medium risk action = %s, want auto_classify", policy.RiskActions[tools.ToolRiskMedium])
+	}
+	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyAutoClassify {
+		t.Fatalf("high risk action = %s, want auto_classify", policy.RiskActions[tools.ToolRiskHigh])
+	}
+}
+
 func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

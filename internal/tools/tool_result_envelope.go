@@ -22,6 +22,8 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 			"classification_reason": record.ClassificationReason,
 			"policy_action":         string(record.PolicyAction),
 			"policy_reason":         record.PolicyReason,
+			"auto_mode_decision":    string(record.AutoModeDecision),
+			"auto_mode_reason":      record.AutoModeReason,
 			"read_only":             record.ReadOnly,
 			"concurrency_safe":      record.ConcurrencySafe,
 			"duration_ms":           record.DurationMS,
@@ -76,6 +78,12 @@ func toolResultNextSuggestions(record ToolExecutionRecord) []string {
 			return []string{"choose a lower-risk tool or explain that policy blocks the requested action"}
 		case ToolPolicyRequireApproval:
 			return []string{"ask the user for approval or choose a lower-risk alternative"}
+		case ToolPolicyAutoClassify:
+			if record.ErrorKind == "auto_mode_denied" ||
+				record.ErrorKind == "auto_classifier_unavailable" ||
+				record.ErrorKind == "auto_classifier_error" {
+				return []string{"ask the user for approval or choose a lower-risk alternative"}
+			}
 		}
 		return []string{"inspect the redacted error summary and retry with corrected inputs or a safer tool"}
 	}

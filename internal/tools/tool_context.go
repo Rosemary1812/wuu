@@ -49,7 +49,7 @@ func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
 	writeToolPolicyActions(&b, "risk_actions", toolPolicyRiskActionLines(t.toolPolicy.RiskActions))
 	writeToolPolicyActions(&b, "kind_actions", toolPolicyKindActionLines(t.toolPolicy.KindActions))
 	writeToolPolicyActions(&b, "tool_actions", toolPolicyToolActionLines(t.toolPolicy.ToolActions))
-	b.WriteString("note: require_approval means ask the user; do not set approval flags yourself unless the user explicitly approved that action.\n")
+	b.WriteString("note: require_approval means ask the user; auto_classify means let auto mode decide before execution; do not set approval flags yourself unless the user explicitly approved that action.\n")
 
 	return wuucontext.Block{
 		Kind:        wuucontext.BlockToolPolicy,
