@@ -439,6 +439,65 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new runtime toolkit: %v", err)
+	}
+	threadKit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new thread toolkit: %v", err)
+	}
+	rt.Toolkit = kit
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	thread := newThreadState("thread-1", nil, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	thread.execRuntime = &runtime.ThreadRuntime{
+		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
+		Toolkit:      threadKit,
+	}
+	srv.threads[thread.ID] = thread
+
+	if defs := toolDefinitionNames(rt.Toolkit.Definitions()); defs["apply_patch"] || !defs["edit_file"] {
+		t.Fatalf("fixture should start in text edit mode: %+v", defs)
+	}
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"gpt-5.5"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	if rt.StreamRunner.APIModel != "gpt-5.5" {
+		t.Fatalf("runtime APIModel not updated: %q", rt.StreamRunner.APIModel)
+	}
+	if defs := toolDefinitionNames(rt.Toolkit.Definitions()); !defs["apply_patch"] || defs["edit_file"] || defs["write_file"] {
+		t.Fatalf("runtime toolkit should switch to patch edit mode: %+v", defs)
+	}
+	thread.mu.Lock()
+	defer thread.mu.Unlock()
+	if thread.ModelProvider != "fake-provider" || thread.Model != "gpt-5.5" {
+		t.Fatalf("idle thread model metadata not updated: provider=%q model=%q", thread.ModelProvider, thread.Model)
+	}
+	if thread.execRuntime.StreamRunner.APIModel != "gpt-5.5" {
+		t.Fatalf("idle thread APIModel not updated: %q", thread.execRuntime.StreamRunner.APIModel)
+	}
+	if defs := toolDefinitionNames(thread.execRuntime.Toolkit.Definitions()); !defs["apply_patch"] || defs["edit_file"] || defs["write_file"] {
+		t.Fatalf("idle thread toolkit should switch to patch edit mode: %+v", defs)
+	}
+}
+
 func TestServerConfigModelUpdateSwitchesProvider(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
@@ -2829,6 +2888,14 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 			SystemPrompt: "system prompt",
 		},
 	}
+}
+
+func toolDefinitionNames(defs []providers.ToolDefinition) map[string]bool {
+	names := make(map[string]bool, len(defs))
+	for _, def := range defs {
+		names[def.Name] = true
+	}
+	return names
 }
 
 func parseOutput(t *testing.T, output string) []map[string]any {

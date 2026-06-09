@@ -218,15 +218,19 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 
 	s.rt.ProviderName = resolvedName
 	s.rt.Model = model
+	apiModel := modelcatalog.APIModel(ruleProviderCfg, model)
 	if client != nil {
 		s.rt.TitleClient = client
+	}
+	if s.rt.Toolkit != nil {
+		s.rt.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
 	}
 	if s.rt.StreamRunner != nil {
 		if client != nil {
 			s.rt.StreamRunner.Client = client
 		}
 		s.rt.StreamRunner.Model = model
-		s.rt.StreamRunner.APIModel = modelcatalog.APIModel(ruleProviderCfg, model)
+		s.rt.StreamRunner.APIModel = apiModel
 		s.rt.StreamRunner.Effort = selection.LegacyEffort
 		s.rt.StreamRunner.Variant = selection.Variant
 		s.rt.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)
@@ -236,7 +240,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			cfg.Agent.MaxContextTokens,
 		)
 	}
-	s.updateIdleThreadRuntime(resolvedName, model)
+	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel)
 
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
 		Provider:  resolvedName,
@@ -334,7 +338,7 @@ func skillSummaries(items []skills.Skill) []SkillSummary {
 	return out
 }
 
-func (s *Server) updateIdleThreadRuntime(providerName, model string) {
+func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, apiModel string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, th := range s.threads {
@@ -342,13 +346,19 @@ func (s *Server) updateIdleThreadRuntime(providerName, model string) {
 		if !th.running {
 			th.ModelProvider = providerName
 			th.Model = model
-			if th.execRuntime != nil && th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
-				th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
-				th.execRuntime.StreamRunner.Model = model
-				th.execRuntime.StreamRunner.Effort = s.currentEffort()
-				th.execRuntime.StreamRunner.Variant = s.currentVariant()
-				th.execRuntime.StreamRunner.ProviderOptions = s.currentProviderOptions()
-				th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
+			if th.execRuntime != nil {
+				if th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
+					th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
+					th.execRuntime.StreamRunner.Model = model
+					th.execRuntime.StreamRunner.APIModel = apiModel
+					th.execRuntime.StreamRunner.Effort = s.currentEffort()
+					th.execRuntime.StreamRunner.Variant = s.currentVariant()
+					th.execRuntime.StreamRunner.ProviderOptions = s.currentProviderOptions()
+					th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
+				}
+				if th.execRuntime.Toolkit != nil {
+					th.execRuntime.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
+				}
 			}
 		}
 		th.mu.Unlock()
