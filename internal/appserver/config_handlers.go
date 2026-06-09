@@ -35,6 +35,7 @@ func (s *Server) handleInitialize(req Request) error {
 		Effort:        s.currentDisplayEffort(),
 		Variant:       s.currentVariant(),
 		WorkspaceRoot: s.rt.RootDir,
+		ToolPolicy:    s.currentToolPolicySummary(),
 		Providers:     s.providerSummaries(),
 	}, nil)
 }
@@ -48,8 +49,34 @@ func (s *Server) handleConfigRead(req Request) error {
 		ConfigPath:    s.rt.ConfigPath,
 		WorkspaceRoot: s.rt.RootDir,
 		SessionDir:    s.rt.SessionDir,
+		ToolPolicy:    s.currentToolPolicySummary(),
 		Providers:     s.providerSummaries(),
 	}, nil)
+}
+
+func (s *Server) currentToolPolicySummary() ToolPolicySummary {
+	if s == nil || s.rt == nil {
+		return ToolPolicySummary{}
+	}
+	policy := s.rt.ToolPolicy
+	return ToolPolicySummary{
+		Profile:       strings.TrimSpace(policy.Profile),
+		DefaultAction: strings.TrimSpace(policy.DefaultAction),
+		Tools:         cloneStringMap(policy.Tools),
+		Kinds:         cloneStringMap(policy.Kinds),
+		Risks:         cloneStringMap(policy.Risks),
+	}
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Server) handleConfigModelUpdate(req Request) error {

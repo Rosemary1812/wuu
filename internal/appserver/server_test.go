@@ -151,6 +151,12 @@ func (b *lockedBuffer) String() string {
 
 func TestServerInitializeAndConfigRead(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
+	rt.ToolPolicy = config.ToolPolicyConfig{
+		Profile:       "balanced",
+		DefaultAction: "allow",
+		Tools:         map[string]string{"run_shell": "require_approval"},
+		Risks:         map[string]string{"high": "deny"},
+	}
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
@@ -176,11 +182,17 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	if initResult.Model != "fake-model" || initResult.Provider != "fake-provider" {
 		t.Fatalf("unexpected initialize result: %+v", initResult)
 	}
+	if initResult.ToolPolicy.Profile != "balanced" || initResult.ToolPolicy.Tools["run_shell"] != "require_approval" {
+		t.Fatalf("initialize missing tool policy summary: %+v", initResult.ToolPolicy)
+	}
 
 	configMsg := responseByID(t, msgs, "2")
 	configResult := remarshal[ConfigReadResult](t, configMsg["result"])
 	if configResult.ConfigPath == "" || configResult.SessionDir == "" {
 		t.Fatalf("expected config paths, got %+v", configResult)
+	}
+	if configResult.ToolPolicy.Profile != "balanced" || configResult.ToolPolicy.Risks["high"] != "deny" {
+		t.Fatalf("config/read missing tool policy summary: %+v", configResult.ToolPolicy)
 	}
 }
 

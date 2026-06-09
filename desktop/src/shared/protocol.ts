@@ -53,7 +53,16 @@ export type InitializeResult = {
   effort?: string;
   variant?: string;
   workspace_root: string;
+  tool_policy?: ToolPolicySummary;
   providers?: ProviderSummary[];
+};
+
+export type ToolPolicySummary = {
+  profile?: string;
+  default_action?: string;
+  tools?: Record<string, string>;
+  kinds?: Record<string, string>;
+  risks?: Record<string, string>;
 };
 
 export type ConfigModelUpdateResult = {

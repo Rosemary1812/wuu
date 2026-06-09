@@ -107,6 +107,7 @@ type InitializeResult struct {
 	Effort          string            `json:"effort,omitempty"`
 	Variant         string            `json:"variant,omitempty"`
 	WorkspaceRoot   string            `json:"workspace_root"`
+	ToolPolicy      ToolPolicySummary `json:"tool_policy"`
 	Providers       []ProviderSummary `json:"providers,omitempty"`
 }
 
@@ -118,7 +119,16 @@ type ConfigReadResult struct {
 	ConfigPath    string            `json:"config_path"`
 	WorkspaceRoot string            `json:"workspace_root"`
 	SessionDir    string            `json:"session_dir"`
+	ToolPolicy    ToolPolicySummary `json:"tool_policy"`
 	Providers     []ProviderSummary `json:"providers,omitempty"`
+}
+
+type ToolPolicySummary struct {
+	Profile       string            `json:"profile,omitempty"`
+	DefaultAction string            `json:"default_action,omitempty"`
+	Tools         map[string]string `json:"tools,omitempty"`
+	Kinds         map[string]string `json:"kinds,omitempty"`
+	Risks         map[string]string `json:"risks,omitempty"`
 }
 
 type ConfigModelUpdateParams struct {
