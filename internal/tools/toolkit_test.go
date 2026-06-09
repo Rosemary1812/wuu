@@ -424,6 +424,108 @@ func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 	}
 }
 
+func TestToolkit_ReadFileBySymbolAndContext(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	source := strings.Join([]string{
+		"package demo",
+		"",
+		"func helper() string {",
+		`	return "helper"`,
+		"}",
+		"",
+		"func Target() string {",
+		`	value := "target"`,
+		"	if value != \"\" {",
+		"		return value",
+		"	}",
+		`	return "empty"`,
+		"}",
+		"",
+		"func after() string {",
+		`	return "after"`,
+		"}",
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"main.go","symbol":{"name":"Target","kind":"function"},"context_lines":0}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file by symbol: %v", err)
+	}
+	var parsed struct {
+		Content string `json:"content"`
+		Range   struct {
+			StartLine int `json:"start_line"`
+			EndLine   int `json:"end_line"`
+		} `json:"range"`
+		Symbol struct {
+			Name             string `json:"name"`
+			RequestedKind    string `json:"requested_kind"`
+			MatchedKind      string `json:"matched_kind"`
+			StartLine        int    `json:"start_line"`
+			EndLine          int    `json:"end_line"`
+			ContextStartLine int    `json:"context_start_line"`
+			ContextEndLine   int    `json:"context_end_line"`
+			ContextLines     int    `json:"context_lines"`
+		} `json:"symbol"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse symbol response: %v", err)
+	}
+	if parsed.Symbol.Name != "Target" || parsed.Symbol.RequestedKind != "function" || parsed.Symbol.MatchedKind != "function" {
+		t.Fatalf("unexpected symbol metadata: %+v", parsed.Symbol)
+	}
+	if parsed.Range.StartLine != 7 || parsed.Range.EndLine != 13 || parsed.Symbol.StartLine != 7 || parsed.Symbol.EndLine != 13 || parsed.Symbol.ContextLines != 0 {
+		t.Fatalf("unexpected symbol range metadata: range=%+v symbol=%+v", parsed.Range, parsed.Symbol)
+	}
+	if !strings.Contains(parsed.Content, "Target() string") || strings.Contains(parsed.Content, "func helper") || strings.Contains(parsed.Content, "func after") {
+		t.Fatalf("symbol content should be limited to target function:\n%s", parsed.Content)
+	}
+
+	rangeResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"main.go","range":{"start_line":8,"end_line":9},"context_lines":1}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file range with context: %v", err)
+	}
+	var rangeParsed struct {
+		Content string `json:"content"`
+		Range   struct {
+			StartLine int `json:"start_line"`
+			EndLine   int `json:"end_line"`
+		} `json:"range"`
+	}
+	if err := json.Unmarshal([]byte(rangeResp), &rangeParsed); err != nil {
+		t.Fatalf("parse context response: %v", err)
+	}
+	if rangeParsed.Range.StartLine != 7 || rangeParsed.Range.EndLine != 10 {
+		t.Fatalf("unexpected context-expanded range: %+v", rangeParsed.Range)
+	}
+	for _, want := range []string{"     7\tfunc Target", "     8\t\tvalue", "     9\t\tif value", "    10\t\t\treturn value"} {
+		if !strings.Contains(rangeParsed.Content, want) {
+			t.Fatalf("context-expanded response missing %q:\n%s", want, rangeParsed.Content)
+		}
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"main.go","symbol":{"name":"Target"},"range":{"start_line":7,"end_line":13}}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "symbol instead of range") {
+		t.Fatalf("expected symbol/range rejection, got %v", err)
+	}
+}
+
 func TestToolkit_ReadFileRejectsDirectory(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

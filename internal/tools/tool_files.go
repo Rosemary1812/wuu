@@ -34,7 +34,8 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"Usage:\n" +
 			"- The path parameter is relative to the workspace root\n" +
 			"- Returns content with cat -n style line number prefixes (number + tab)\n" +
-			"- Use range.start_line/range.end_line, or offset (1-based line) plus limit, to read specific portions of large files\n" +
+			"- Use range.start_line/range.end_line, symbol.name, or offset (1-based line) plus limit, to read specific portions of large files\n" +
+			"- Use context_lines with range/limit/symbol when nearby surrounding context is needed before editing\n" +
 			"- Results include file_sha, workspace_revision, range, omitted_ranges, and next_suggestions for follow-up reads\n" +
 			"- Files >256KB are rejected unless limit is provided\n" +
 			"- Repeated reads of the same file/range return a stub if the file is unchanged\n" +
@@ -70,6 +71,25 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 					},
 					"required": []string{"start_line", "end_line"},
 				},
+				"symbol": map[string]any{
+					"type":        "object",
+					"description": "Read a conservative definition range for a named Go, TypeScript/JavaScript, or Python symbol. Use instead of range or offset/limit.",
+					"properties": map[string]any{
+						"name": map[string]any{
+							"type":        "string",
+							"description": "Function, class, type, interface, variable, or constant name to locate.",
+						},
+						"kind": map[string]any{
+							"type":        "string",
+							"description": "Optional expected kind such as function, method, class, type, interface, variable, or constant.",
+						},
+					},
+					"required": []string{"name"},
+				},
+				"context_lines": map[string]any{
+					"type":        "integer",
+					"description": "Optional surrounding lines to include before and after a range, limit, or symbol match. Max 200.",
+				},
 			},
 			"required": []string{"path"},
 		},
@@ -81,11 +101,17 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		StartLine int `json:"start_line"`
 		EndLine   int `json:"end_line"`
 	}
+	type symbolArgs struct {
+		Name string `json:"name"`
+		Kind string `json:"kind"`
+	}
 	var args struct {
-		Path   string         `json:"path"`
-		Offset int            `json:"offset"`
-		Limit  *int           `json:"limit"`
-		Range  *lineRangeArgs `json:"range"`
+		Path         string         `json:"path"`
+		Offset       int            `json:"offset"`
+		Limit        *int           `json:"limit"`
+		Range        *lineRangeArgs `json:"range"`
+		Symbol       *symbolArgs    `json:"symbol"`
+		ContextLines *int           `json:"context_lines"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -93,29 +119,15 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	if strings.TrimSpace(args.Path) == "" {
 		return "", errors.New("read_file requires path")
 	}
-	if args.Range != nil {
-		if args.Offset > 0 || args.Limit != nil {
-			return "", errors.New("read_file accepts either range or offset/limit, not both")
+	contextLines := 0
+	if args.ContextLines != nil {
+		if *args.ContextLines < 0 {
+			return "", errors.New("read_file context_lines must be non-negative")
 		}
-		if args.Range.StartLine <= 0 {
-			return "", errors.New("read_file range.start_line must be positive")
+		if *args.ContextLines > maxReadFileContextLines {
+			return "", fmt.Errorf("read_file context_lines must be <= %d", maxReadFileContextLines)
 		}
-		if args.Range.EndLine < args.Range.StartLine {
-			return "", errors.New("read_file range.end_line must be greater than or equal to range.start_line")
-		}
-		args.Offset = args.Range.StartLine
-		rangeLimit := args.Range.EndLine - args.Range.StartLine + 1
-		args.Limit = &rangeLimit
-	}
-	if args.Offset <= 0 {
-		args.Offset = 1
-	}
-	limit := 0
-	if args.Limit != nil {
-		if *args.Limit <= 0 {
-			return "", errors.New("read_file limit must be positive")
-		}
-		limit = *args.Limit
+		contextLines = *args.ContextLines
 	}
 
 	resolved, err := t.env.ResolvePath(args.Path)
@@ -142,8 +154,62 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	if info.IsDir() {
 		return "", fmt.Errorf("path is a directory: %s. Use list_files to inspect directories or read_file on a file inside it", args.Path)
 	}
-	if args.Limit == nil && info.Size() > int64(defaultMaxFileBytes) {
+	if args.Symbol == nil && args.Range == nil && args.Limit == nil && info.Size() > int64(defaultMaxFileBytes) {
 		return "", fmt.Errorf("file too large (%d bytes, max %d). Use offset and limit to read portions", info.Size(), defaultMaxFileBytes)
+	}
+
+	var symbolSelection *readFileSymbolSelection
+	if args.Symbol != nil {
+		if args.Range != nil || args.Offset > 0 || args.Limit != nil {
+			return "", errors.New("read_file accepts symbol instead of range or offset/limit")
+		}
+		symbolContextLines := contextLines
+		if args.ContextLines == nil {
+			symbolContextLines = readFileSymbolDefaultAround
+		}
+		selection, err := findReadFileSymbolRange(resolved, strings.TrimSpace(args.Symbol.Name), strings.TrimSpace(args.Symbol.Kind), symbolContextLines)
+		if err != nil {
+			return "", err
+		}
+		symbolSelection = &selection
+		args.Offset = selection.ContextStartLine
+		rangeLimit := selection.ContextEndLine - selection.ContextStartLine + 1
+		args.Limit = &rangeLimit
+	} else if args.Range != nil {
+		if args.Offset > 0 || args.Limit != nil {
+			return "", errors.New("read_file accepts either range or offset/limit, not both")
+		}
+		if args.Range.StartLine <= 0 {
+			return "", errors.New("read_file range.start_line must be positive")
+		}
+		if args.Range.EndLine < args.Range.StartLine {
+			return "", errors.New("read_file range.end_line must be greater than or equal to range.start_line")
+		}
+		args.Offset = max(1, args.Range.StartLine-contextLines)
+		rangeEnd := args.Range.EndLine + contextLines
+		rangeLimit := rangeEnd - args.Offset + 1
+		args.Limit = &rangeLimit
+	} else if args.Limit != nil && contextLines > 0 {
+		if args.Offset <= 0 {
+			args.Offset = 1
+		}
+		start := max(1, args.Offset-contextLines)
+		end := args.Offset + *args.Limit - 1 + contextLines
+		rangeLimit := end - start + 1
+		args.Offset = start
+		args.Limit = &rangeLimit
+	} else if contextLines > 0 {
+		return "", errors.New("read_file context_lines requires range, symbol, or offset/limit")
+	}
+	if args.Offset <= 0 {
+		args.Offset = 1
+	}
+	limit := 0
+	if args.Limit != nil {
+		if *args.Limit <= 0 {
+			return "", errors.New("read_file limit must be positive")
+		}
+		limit = *args.Limit
 	}
 
 	maxSelectedBytes := defaultMaxFileBytes
@@ -172,6 +238,9 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 					"unchanged":          true,
 					"message":            "File unchanged since last read. Refer to the earlier read result.",
 					"next_suggestions":   []string{"use the earlier read result as evidence, or request a different offset/limit if more context is needed"},
+				}
+				if symbolSelection != nil {
+					result["symbol"] = symbolSelection.Metadata()
 				}
 				return mustJSON(result)
 			}
@@ -208,7 +277,321 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		"truncated":          args.Offset <= readResult.TotalLines && args.Offset-1+len(readResult.Lines) < readResult.TotalLines,
 		"next_suggestions":   readFileNextSuggestions(readResult.TotalLines, args.Offset, len(readResult.Lines)),
 	}
+	if symbolSelection != nil {
+		result["symbol"] = symbolSelection.Metadata()
+	}
 	return mustJSON(result)
+}
+
+const (
+	maxReadFileContextLines     = 200
+	maxReadFileSymbolScanBytes  = 2 * 1024 * 1024
+	readFileSymbolDefaultAround = 20
+)
+
+type readFileSymbolSelection struct {
+	Name             string
+	RequestedKind    string
+	MatchedKind      string
+	StartLine        int
+	EndLine          int
+	ContextStartLine int
+	ContextEndLine   int
+	ContextLines     int
+}
+
+func (s readFileSymbolSelection) Metadata() map[string]any {
+	out := map[string]any{
+		"name":               s.Name,
+		"matched_kind":       s.MatchedKind,
+		"start_line":         s.StartLine,
+		"end_line":           s.EndLine,
+		"context_start_line": s.ContextStartLine,
+		"context_end_line":   s.ContextEndLine,
+		"context_lines":      s.ContextLines,
+	}
+	if strings.TrimSpace(s.RequestedKind) != "" {
+		out["requested_kind"] = s.RequestedKind
+	}
+	return out
+}
+
+func findReadFileSymbolRange(path, name, kind string, contextLines int) (readFileSymbolSelection, error) {
+	if name == "" {
+		return readFileSymbolSelection{}, errors.New("read_file symbol.name is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return readFileSymbolSelection{}, fmt.Errorf("stat file for symbol lookup: %w", err)
+	}
+	if info.Size() > maxReadFileSymbolScanBytes {
+		return readFileSymbolSelection{}, fmt.Errorf("file too large for symbol lookup (%d bytes, max %d). Use grep_repo to find the symbol and read_file range to inspect it", info.Size(), maxReadFileSymbolScanBytes)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return readFileSymbolSelection{}, fmt.Errorf("read file for symbol lookup: %w", err)
+	}
+	lines := splitReadFileLines(string(data))
+	for i, line := range lines {
+		matchedKind, ok := matchReadFileSymbolLine(line, name, kind, filepath.Ext(path))
+		if !ok {
+			continue
+		}
+		startLine := i + 1
+		endLine := inferReadFileSymbolEnd(lines, i, filepath.Ext(path))
+		contextStart := max(1, startLine-contextLines)
+		contextEnd := min(len(lines), endLine+contextLines)
+		return readFileSymbolSelection{
+			Name:             name,
+			RequestedKind:    kind,
+			MatchedKind:      matchedKind,
+			StartLine:        startLine,
+			EndLine:          endLine,
+			ContextStartLine: contextStart,
+			ContextEndLine:   contextEnd,
+			ContextLines:     contextLines,
+		}, nil
+	}
+	return readFileSymbolSelection{}, fmt.Errorf("symbol %q not found in %s. Use grep_repo to locate candidate definitions, then read_file the matched range", name, filepath.Base(path))
+}
+
+func splitReadFileLines(content string) []string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = strings.TrimSuffix(content, "\n")
+	if content == "" {
+		return nil
+	}
+	return strings.Split(content, "\n")
+}
+
+func matchReadFileSymbolLine(line, name, kind, ext string) (string, bool) {
+	expected := normalizeReadFileSymbolKind(kind)
+	trimmed := strings.TrimSpace(line)
+	switch strings.ToLower(ext) {
+	case ".go":
+		return matchGoSymbolLine(trimmed, name, expected)
+	case ".py":
+		return matchPythonSymbolLine(trimmed, name, expected)
+	case ".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs", ".cts", ".cjs":
+		return matchTypeScriptSymbolLine(trimmed, name, expected)
+	default:
+		return matchPortableSymbolLine(trimmed, name, expected)
+	}
+}
+
+func normalizeReadFileSymbolKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "func":
+		return "function"
+	case "const":
+		return "constant"
+	case "var":
+		return "variable"
+	default:
+		return strings.ToLower(strings.TrimSpace(kind))
+	}
+}
+
+func symbolKindAllowed(actual, expected string) bool {
+	expected = normalizeReadFileSymbolKind(expected)
+	if expected == "" || expected == actual {
+		return true
+	}
+	return expected == "function" && actual == "method"
+}
+
+func matchGoSymbolLine(line, name, expected string) (string, bool) {
+	if rest, ok := strings.CutPrefix(line, "func "); ok {
+		kind := "function"
+		rest = strings.TrimSpace(rest)
+		if strings.HasPrefix(rest, "(") {
+			if _, afterReceiver, ok := strings.Cut(rest, ")"); ok {
+				rest = strings.TrimSpace(afterReceiver)
+				kind = "method"
+			}
+		}
+		if identifierBefore(rest, "(") == name && symbolKindAllowed(kind, expected) {
+			return kind, true
+		}
+	}
+	for _, spec := range []struct {
+		prefix string
+		kind   string
+	}{
+		{"type ", "type"},
+		{"var ", "variable"},
+		{"const ", "constant"},
+	} {
+		if rest, ok := strings.CutPrefix(line, spec.prefix); ok {
+			if firstIdentifier(rest) == name && symbolKindAllowed(spec.kind, expected) {
+				return spec.kind, true
+			}
+		}
+	}
+	return "", false
+}
+
+func matchPythonSymbolLine(line, name, expected string) (string, bool) {
+	for _, prefix := range []string{"def ", "async def "} {
+		if rest, ok := strings.CutPrefix(line, prefix); ok {
+			if identifierBefore(rest, "(") == name && symbolKindAllowed("function", expected) {
+				return "function", true
+			}
+		}
+	}
+	if rest, ok := strings.CutPrefix(line, "class "); ok {
+		if identifierBeforeAny(rest, "(:") == name && symbolKindAllowed("class", expected) {
+			return "class", true
+		}
+	}
+	return "", false
+}
+
+func matchTypeScriptSymbolLine(line, name, expected string) (string, bool) {
+	line = trimTypeScriptModifiers(line)
+	for _, spec := range []struct {
+		prefix string
+		kind   string
+	}{
+		{"function ", "function"},
+		{"async function ", "function"},
+		{"class ", "class"},
+		{"interface ", "interface"},
+		{"type ", "type"},
+		{"const ", "constant"},
+		{"let ", "variable"},
+		{"var ", "variable"},
+	} {
+		if rest, ok := strings.CutPrefix(line, spec.prefix); ok {
+			nameEnd := "("
+			if spec.kind != "function" {
+				nameEnd = " =:{<"
+			}
+			if identifierBeforeAny(rest, nameEnd) == name && symbolKindAllowed(spec.kind, expected) {
+				return spec.kind, true
+			}
+		}
+	}
+	return "", false
+}
+
+func matchPortableSymbolLine(line, name, expected string) (string, bool) {
+	for _, marker := range []string{"function ", "def ", "class ", "type ", "interface ", "const ", "let ", "var "} {
+		if strings.Contains(line, marker+name) && symbolKindAllowed("symbol", expected) {
+			return "symbol", true
+		}
+	}
+	return "", false
+}
+
+func trimTypeScriptModifiers(line string) string {
+	for {
+		trimmed := strings.TrimSpace(line)
+		for _, prefix := range []string{"export default ", "export ", "default ", "declare ", "abstract "} {
+			if rest, ok := strings.CutPrefix(trimmed, prefix); ok {
+				line = rest
+				goto next
+			}
+		}
+		return trimmed
+	next:
+	}
+}
+
+func identifierBefore(value, sep string) string {
+	if before, _, ok := strings.Cut(value, sep); ok {
+		return strings.TrimSpace(before)
+	}
+	return firstIdentifier(value)
+}
+
+func identifierBeforeAny(value, separators string) string {
+	end := len(value)
+	for _, sep := range separators {
+		if idx := strings.IndexRune(value, sep); idx >= 0 && idx < end {
+			end = idx
+		}
+	}
+	return strings.TrimSpace(value[:end])
+}
+
+func firstIdentifier(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	for i, r := range value {
+		if !(r == '_' || r == '$' || r == '-' || r == '.' || r == '#' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z') {
+			return value[:i]
+		}
+	}
+	return value
+}
+
+func inferReadFileSymbolEnd(lines []string, startIdx int, ext string) int {
+	if startIdx < 0 || startIdx >= len(lines) {
+		return 0
+	}
+	if strings.ToLower(ext) == ".py" {
+		return inferPythonSymbolEnd(lines, startIdx)
+	}
+	if end := inferBraceSymbolEnd(lines, startIdx); end > 0 {
+		return end
+	}
+	return startIdx + 1
+}
+
+func inferPythonSymbolEnd(lines []string, startIdx int) int {
+	startIndent := leadingWhitespaceCount(lines[startIdx])
+	endIdx := startIdx
+	for i := startIdx + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" {
+			endIdx = i
+			continue
+		}
+		if leadingWhitespaceCount(lines[i]) <= startIndent && !strings.HasPrefix(trimmed, "#") {
+			break
+		}
+		endIdx = i
+	}
+	return endIdx + 1
+}
+
+func inferBraceSymbolEnd(lines []string, startIdx int) int {
+	balance := 0
+	opened := false
+	for i := startIdx; i < len(lines); i++ {
+		for _, r := range lines[i] {
+			switch r {
+			case '{':
+				balance++
+				opened = true
+			case '}':
+				if balance > 0 {
+					balance--
+				}
+			}
+		}
+		if opened && balance == 0 {
+			return i + 1
+		}
+		if !opened && i > startIdx && strings.TrimSpace(lines[i]) == "" {
+			return i
+		}
+	}
+	return startIdx + 1
+}
+
+func leadingWhitespaceCount(line string) int {
+	count := 0
+	for _, r := range line {
+		if r != ' ' && r != '\t' {
+			break
+		}
+		count++
+	}
+	return count
 }
 
 func formatFileSHA(hexDigest string) string {
