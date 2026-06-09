@@ -25,6 +25,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	sessionid "github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/version"
@@ -446,7 +447,25 @@ func runEval(args []string) error {
 func runEvalTraceReplay(tracePath string, jsonOutput bool, outputPath string) error {
 	summary, err := evalharness.ReplayTrace(tracePath)
 	if err != nil {
-		return err
+		sessionSummary, sessionErr := sessiontrace.ReplayTrace(tracePath)
+		if sessionErr != nil {
+			return fmt.Errorf("replay eval trace: %w; replay session trace: %v", err, sessionErr)
+		}
+		if outputPath != "" {
+			if err := writeSessionTraceReplaySummary(outputPath, sessionSummary); err != nil {
+				return err
+			}
+		}
+		if jsonOutput {
+			data, err := json.MarshalIndent(sessionSummary, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(data))
+			return nil
+		}
+		printSessionTraceReplay(sessionSummary)
+		return nil
 	}
 	if outputPath != "" {
 		if err := writeEvalReplaySummary(outputPath, summary); err != nil {
@@ -1423,6 +1442,18 @@ func writeEvalReplaySummary(path string, summary evalharness.TraceReplaySummary)
 	return os.WriteFile(resolved, append(data, '\n'), 0o644)
 }
 
+func writeSessionTraceReplaySummary(path string, summary sessiontrace.ReplaySummary) error {
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return err
+	}
+	resolved, err := resolveRuntimePath("", path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(resolved, append(data, '\n'), 0o644)
+}
+
 func printEvalReport(report evalReport) {
 	fmt.Printf("eval: %d/%d passed in %dms\n", report.Summary.Passed, report.Summary.Total, report.DurationMS)
 	for _, result := range report.Results {
@@ -1502,6 +1533,45 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 		}
 		if summary.Final.Error != "" {
 			fmt.Printf("  error: %s\n", firstLine(summary.Final.Error))
+		}
+	}
+	for _, warning := range summary.Warnings {
+		fmt.Printf("  warning: %s\n", warning)
+	}
+}
+
+func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
+	status := ""
+	if summary.Final != nil {
+		status = summary.Final.Status
+	}
+	threadID := ""
+	turnID := ""
+	if summary.LatestTurn != nil {
+		threadID = summary.LatestTurn.ThreadID
+		turnID = summary.LatestTurn.TurnID
+	}
+	fmt.Printf("session trace replay: status=%s thread=%s turn=%s events=%d complete=%t mode=%s\n", status, threadID, turnID, summary.EventCount, summary.Complete, summary.Mode)
+	if summary.LatestTurn != nil {
+		if summary.LatestTurn.ProviderName != "" || summary.LatestTurn.Model != "" {
+			fmt.Printf("  model_profile: %s/%s api_model=%s\n", summary.LatestTurn.ProviderName, summary.LatestTurn.Model, summary.LatestTurn.APIModel)
+		}
+		if summary.LatestTurn.InputTokens > 0 || summary.LatestTurn.OutputTokens > 0 {
+			fmt.Printf("  tokens: input=%d output=%d\n", summary.LatestTurn.InputTokens, summary.LatestTurn.OutputTokens)
+		}
+	}
+	if len(summary.ToolInventory) > 0 {
+		fmt.Printf("  tool_inventory: %d tools\n", len(summary.ToolInventory))
+	}
+	if len(summary.ToolNames) > 0 {
+		fmt.Printf("  tool_records: %s\n", strings.Join(summary.ToolNames, ","))
+	}
+	if summary.Final != nil {
+		if summary.Final.Error != "" {
+			fmt.Printf("  error: %s\n", firstLine(summary.Final.Error))
+		}
+		if summary.Final.FinalAnswerPreview != "" {
+			fmt.Printf("  final: %s\n", firstLine(summary.Final.FinalAnswerPreview))
 		}
 	}
 	for _, warning := range summary.Warnings {

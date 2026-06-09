@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
@@ -619,6 +620,50 @@ func TestRunEvalReplayTraceJSON(t *testing.T) {
 	}
 	if fileSummary.Mode != "deterministic_trace_replay" || len(fileSummary.ToolNames) != 1 || fileSummary.ToolNames[0] != "read_file" {
 		t.Fatalf("unexpected replay output file: %+v", fileSummary)
+	}
+}
+
+func TestRunEvalReplaySessionTraceJSON(t *testing.T) {
+	tracePath := filepath.Join(t.TempDir(), "session-trace.jsonl")
+	if err := sessiontrace.AppendTurn(tracePath,
+		sessiontrace.TurnRecord{
+			ThreadID:     "thread-1",
+			TurnID:       "turn-1",
+			Status:       "completed",
+			ProviderName: "openai",
+			Model:        "gpt-test",
+		},
+		sessiontrace.FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
+		[]tools.ToolInfo{{Name: "semantic_search", Kind: tools.ToolKindSearch, Risk: tools.ToolRiskLow, ReadOnly: true}},
+		[]tools.ToolExecutionRecord{{Name: "semantic_search", Kind: tools.ToolKindSearch, Success: true}},
+	); err != nil {
+		t.Fatalf("write session trace: %v", err)
+	}
+	outputPath := filepath.Join(t.TempDir(), "session-replay.json")
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"eval", "--replay-trace", tracePath, "--json", "--output", outputPath}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+
+	var stdoutSummary sessiontrace.ReplaySummary
+	if err := json.Unmarshal([]byte(output), &stdoutSummary); err != nil {
+		t.Fatalf("expected session replay JSON output, got %q: %v", output, err)
+	}
+	if stdoutSummary.Mode != "session_trace_replay" || stdoutSummary.LatestTurn == nil || stdoutSummary.LatestTurn.ThreadID != "thread-1" {
+		t.Fatalf("unexpected stdout session replay summary: %+v", stdoutSummary)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read session replay output: %v", err)
+	}
+	var fileSummary sessiontrace.ReplaySummary
+	if err := json.Unmarshal(data, &fileSummary); err != nil {
+		t.Fatalf("parse session replay output file: %v", err)
+	}
+	if len(fileSummary.ToolNames) != 1 || fileSummary.ToolNames[0] != "semantic_search" || fileSummary.Final == nil || fileSummary.Final.Status != "completed" {
+		t.Fatalf("unexpected session replay output file: %+v", fileSummary)
 	}
 }
 

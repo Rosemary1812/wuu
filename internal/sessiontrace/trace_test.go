@@ -53,6 +53,38 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	}
 }
 
+func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session-trace.jsonl")
+	if err := AppendTurn(path,
+		TurnRecord{ThreadID: "thread-1", TurnID: "turn-1", Status: "completed", Model: "gpt-test"},
+		FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
+		[]tools.ToolInfo{{Name: "semantic_search", Kind: tools.ToolKindSearch, Risk: tools.ToolRiskLow, ReadOnly: true}},
+		[]tools.ToolExecutionRecord{{Name: "semantic_search", Kind: tools.ToolKindSearch, Success: true}},
+	); err != nil {
+		t.Fatalf("AppendTurn: %v", err)
+	}
+
+	summary, err := ReplayTrace(path)
+	if err != nil {
+		t.Fatalf("ReplayTrace: %v", err)
+	}
+	if summary.Mode != "session_trace_replay" || !summary.Complete || summary.EventCount != 4 {
+		t.Fatalf("unexpected replay summary: %+v", summary)
+	}
+	if summary.LatestTurn == nil || summary.LatestTurn.ThreadID != "thread-1" || summary.LatestTurn.Model != "gpt-test" {
+		t.Fatalf("latest turn missing: %+v", summary.LatestTurn)
+	}
+	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "semantic_search" {
+		t.Fatalf("tool inventory missing: %+v", summary.ToolInventory)
+	}
+	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "semantic_search" {
+		t.Fatalf("tool records missing: %+v", summary.ToolNames)
+	}
+	if summary.Final == nil || summary.Final.Status != "completed" || summary.Final.FinalAnswerPreview != "done" {
+		t.Fatalf("final summary missing: %+v", summary.Final)
+	}
+}
+
 func readTraceEvents(t *testing.T, path string) []Event {
 	t.Helper()
 	file, err := os.Open(path)

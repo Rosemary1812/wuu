@@ -1,7 +1,9 @@
 package sessiontrace
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -48,12 +50,107 @@ type FinalRecord struct {
 	Error              string `json:"error,omitempty"`
 }
 
+type ReplaySummary struct {
+	Path          string           `json:"path,omitempty"`
+	Mode          string           `json:"mode"`
+	EventCount    int              `json:"event_count"`
+	EventTypes    map[string]int   `json:"event_types,omitempty"`
+	Turns         []TurnRecord     `json:"turns,omitempty"`
+	LatestTurn    *TurnRecord      `json:"latest_turn,omitempty"`
+	ToolInventory []tools.ToolInfo `json:"tool_inventory,omitempty"`
+	ToolNames     []string         `json:"tool_names,omitempty"`
+	Final         *FinalRecord     `json:"final,omitempty"`
+	Complete      bool             `json:"complete"`
+	Warnings      []string         `json:"warnings,omitempty"`
+}
+
 func Path(sessionDir string) string {
 	sessionDir = strings.TrimSpace(sessionDir)
 	if sessionDir == "" {
 		return ""
 	}
 	return filepath.Join(sessionDir, "session-trace.jsonl")
+}
+
+func ReplayTrace(path string) (ReplaySummary, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return ReplaySummary{}, err
+	}
+	defer file.Close()
+
+	summary := ReplaySummary{
+		Path:       path,
+		Mode:       "session_trace_replay",
+		EventTypes: make(map[string]int),
+	}
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	line := 0
+	for scanner.Scan() {
+		line++
+		var event struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data,omitempty"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return ReplaySummary{}, fmt.Errorf("decode trace line %d: %w", line, err)
+		}
+		summary.EventCount++
+		summary.EventTypes[event.Type]++
+		if err := replayEvent(&summary, event.Type, event.Data); err != nil {
+			return ReplaySummary{}, fmt.Errorf("replay trace line %d type %q: %w", line, event.Type, err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return ReplaySummary{}, err
+	}
+	if len(summary.Turns) == 0 {
+		return ReplaySummary{}, fmt.Errorf("trace %s has no turn event", path)
+	}
+	if summary.Final == nil {
+		summary.Warnings = append(summary.Warnings, "trace has no final event")
+	}
+	summary.Complete = summary.EventTypes["turn"] > 0 && summary.EventTypes["final"] > 0
+	return summary, nil
+}
+
+func replayEvent(summary *ReplaySummary, eventType string, data json.RawMessage) error {
+	if len(data) == 0 {
+		return nil
+	}
+	switch eventType {
+	case "turn":
+		var turn TurnRecord
+		if err := json.Unmarshal(data, &turn); err != nil {
+			return err
+		}
+		summary.Turns = append(summary.Turns, turn)
+		summary.LatestTurn = &summary.Turns[len(summary.Turns)-1]
+	case "tool_inventory":
+		var inventory []tools.ToolInfo
+		if err := json.Unmarshal(data, &inventory); err != nil {
+			return err
+		}
+		summary.ToolInventory = inventory
+	case "tool_records":
+		var records []tools.ToolExecutionRecord
+		if err := json.Unmarshal(data, &records); err != nil {
+			return err
+		}
+		for _, record := range records {
+			if strings.TrimSpace(record.Name) != "" {
+				summary.ToolNames = append(summary.ToolNames, record.Name)
+			}
+		}
+	case "final":
+		var final FinalRecord
+		if err := json.Unmarshal(data, &final); err != nil {
+			return err
+		}
+		summary.Final = &final
+	}
+	return nil
 }
 
 func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord) error {
