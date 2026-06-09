@@ -924,6 +924,12 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	if len(records) != 1 || !containsString(records[0].ArtifactRefs, parsed.PatchJournalPath) || !containsString(records[0].ArtifactRefs, parsed.PatchPath) {
 		t.Fatalf("patch telemetry missing journal artifacts: %+v", records)
 	}
+	if records[0].PatchRiskSummary == nil ||
+		records[0].PatchRiskSummary.RiskLevel != "high" ||
+		records[0].PatchRiskSummary.FileCount != 4 ||
+		records[0].PatchRiskSummary.Actions["move"] != 1 {
+		t.Fatalf("patch telemetry missing risk summary: %+v", records[0].PatchRiskSummary)
+	}
 	seenSHA := map[string]struct {
 		old string
 		new string

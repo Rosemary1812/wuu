@@ -46,6 +46,9 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 	if record.ApprovalRef != "" {
 		envelope.Data["approval_ref"] = record.ApprovalRef
 	}
+	if record.PatchRiskSummary != nil {
+		envelope.Data["patch_risk_summary"] = record.PatchRiskSummary
+	}
 	envelope.NextSuggestions = toolResultNextSuggestions(record)
 	return envelope
 }

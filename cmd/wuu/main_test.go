@@ -358,6 +358,7 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 		ResultRef:            "/tmp/wuu/tool-results/call_1.txt",
 		ArtifactRefs:         []string{"/tmp/wuu/tool-results/call_1.txt", "/tmp/wuu/tool-results/run-test-logs/call_1.log"},
 		ApprovalRef:          "/tmp/wuu/approvals/call_1.json",
+		PatchRiskSummary:     &tools.ToolPatchRisk{FileCount: 2, HunkCount: 2, AddedLines: 8, DeletedLines: 3, Actions: map[string]int{"update": 2}, MultiFile: true, RiskLevel: "medium"},
 	}}
 
 	got := evalToolObservations(records)
@@ -390,6 +391,12 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if got[0].ApprovalRef != records[0].ApprovalRef {
 		t.Fatalf("approval ref not preserved: %+v", got[0])
+	}
+	if got[0].PatchRiskSummary == nil ||
+		got[0].PatchRiskSummary.RiskLevel != "medium" ||
+		got[0].PatchRiskSummary.Actions["update"] != 2 ||
+		!got[0].PatchRiskSummary.MultiFile {
+		t.Fatalf("patch risk summary not preserved: %+v", got[0].PatchRiskSummary)
 	}
 	if got[0].ResultEnvelope == nil || got[0].ResultEnvelope.DataRef != records[0].ResultRef {
 		t.Fatalf("result envelope missing ref: %+v", got[0].ResultEnvelope)

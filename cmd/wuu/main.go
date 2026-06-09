@@ -1041,10 +1041,36 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			ResultRef:            record.ResultRef,
 			ArtifactRefs:         append([]string(nil), record.ArtifactRefs...),
 			ApprovalRef:          record.ApprovalRef,
+			PatchRiskSummary:     evalPatchRiskObservation(record.PatchRiskSummary),
 			ResultEnvelope:       &envelope,
 		})
 	}
 	return out
+}
+
+func evalPatchRiskObservation(risk *tools.ToolPatchRisk) *evalharness.PatchRiskObservation {
+	if risk == nil {
+		return nil
+	}
+	actions := map[string]int(nil)
+	if len(risk.Actions) > 0 {
+		actions = make(map[string]int, len(risk.Actions))
+		for action, count := range risk.Actions {
+			actions[action] = count
+		}
+	}
+	return &evalharness.PatchRiskObservation{
+		FileCount:      risk.FileCount,
+		HunkCount:      risk.HunkCount,
+		AddedLines:     risk.AddedLines,
+		DeletedLines:   risk.DeletedLines,
+		Actions:        actions,
+		MultiFile:      risk.MultiFile,
+		ContainsDelete: risk.ContainsDelete,
+		ContainsMove:   risk.ContainsMove,
+		RiskLevel:      risk.RiskLevel,
+		ReviewHint:     risk.ReviewHint,
+	}
 }
 
 func evalToolInventoryObservations(infos []tools.ToolInfo) []evalharness.ToolInventoryObservation {
@@ -1620,6 +1646,11 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
+		if summary.ToolSummary.PatchRisk != nil {
+			risk := summary.ToolSummary.PatchRisk
+			fmt.Printf("  patch_risk: total=%d levels=%s files=%d hunks=%d +%d -%d\n",
+				risk.Total, formatCountMap(risk.ByLevel), risk.FileCount, risk.HunkCount, risk.AddedLines, risk.DeletedLines)
+		}
 	}
 	if len(summary.WorkflowRunIDs) > 0 {
 		fmt.Printf("  workflow_runs: %s\n", strings.Join(summary.WorkflowRunIDs, ","))
@@ -1643,6 +1674,22 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	for _, warning := range summary.Warnings {
 		fmt.Printf("  warning: %s\n", warning)
 	}
+}
+
+func formatCountMap(values map[string]int) string {
+	if len(values) == 0 {
+		return "none"
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", key, values[key]))
+	}
+	return strings.Join(parts, ",")
 }
 
 func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {

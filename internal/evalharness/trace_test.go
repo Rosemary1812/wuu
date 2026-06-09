@@ -191,6 +191,20 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				PolicyAction: "allow",
 				Success:      true,
 			}, {
+				Name:         "apply_patch",
+				Kind:         "file",
+				Risk:         "high",
+				PolicyAction: "allow",
+				Success:      true,
+				PatchRiskSummary: &PatchRiskObservation{
+					FileCount:    2,
+					HunkCount:    2,
+					AddedLines:   8,
+					DeletedLines: 3,
+					MultiFile:    true,
+					RiskLevel:    "medium",
+				},
+			}, {
 				Name:         "run_shell",
 				Kind:         "shell",
 				Risk:         "high",
@@ -226,17 +240,27 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "read_file" || summary.ToolInventory[0].Exposure != "direct" {
 		t.Fatalf("replay missing tool inventory: %+v", summary.ToolInventory)
 	}
-	if len(summary.ToolNames) != 2 || summary.ToolNames[0] != "read_file" || summary.ToolNames[1] != "run_shell" {
+	if len(summary.ToolNames) != 3 || summary.ToolNames[0] != "read_file" || summary.ToolNames[1] != "apply_patch" || summary.ToolNames[2] != "run_shell" {
 		t.Fatalf("replay missing tool records: %+v", summary.ToolNames)
 	}
-	if summary.ToolSummary == nil || summary.ToolSummary.Total != 2 || summary.ToolSummary.Succeeded != 1 || summary.ToolSummary.Failed != 1 {
+	if summary.ToolSummary == nil || summary.ToolSummary.Total != 3 || summary.ToolSummary.Succeeded != 2 || summary.ToolSummary.Failed != 1 {
 		t.Fatalf("replay missing tool summary: %+v", summary.ToolSummary)
 	}
-	if summary.ToolSummary.ByKind["file"] != 1 ||
-		summary.ToolSummary.ByRisk["high"] != 1 ||
+	if summary.ToolSummary.ByKind["file"] != 2 ||
+		summary.ToolSummary.ByRisk["high"] != 2 ||
 		summary.ToolSummary.ByPolicyAction["deny"] != 1 ||
 		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 {
 		t.Fatalf("replay tool summary missing dimensions: %+v", summary.ToolSummary)
+	}
+	if summary.ToolSummary.PatchRisk == nil ||
+		summary.ToolSummary.PatchRisk.Total != 1 ||
+		summary.ToolSummary.PatchRisk.ByLevel["medium"] != 1 ||
+		summary.ToolSummary.PatchRisk.MultiFile != 1 ||
+		summary.ToolSummary.PatchRisk.FileCount != 2 ||
+		summary.ToolSummary.PatchRisk.HunkCount != 2 ||
+		summary.ToolSummary.PatchRisk.AddedLines != 8 ||
+		summary.ToolSummary.PatchRisk.DeletedLines != 3 {
+		t.Fatalf("replay tool summary missing patch risk: %+v", summary.ToolSummary.PatchRisk)
 	}
 	if len(summary.WorkflowRunIDs) != 1 || summary.WorkflowRunIDs[0] != "run-1" {
 		t.Fatalf("replay missing workflow runs: %+v", summary.WorkflowRunIDs)

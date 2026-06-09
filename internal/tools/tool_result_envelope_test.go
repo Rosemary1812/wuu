@@ -28,6 +28,7 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 		ResultBudgeted:       true,
 		ResultRef:            "/tmp/wuu/tool-results/call_1.txt",
 		ApprovalRef:          "/tmp/wuu/approvals/call_1.json",
+		PatchRiskSummary:     &ToolPatchRisk{FileCount: 2, HunkCount: 2, RiskLevel: "medium", MultiFile: true},
 	}
 
 	envelope := record.ResultEnvelope()
@@ -62,6 +63,9 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"approval_ref":"/tmp/wuu/approvals/call_1.json"`) {
 		t.Fatalf("envelope should include approval ref: %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"patch_risk_summary"`) || !strings.Contains(string(raw), `"risk_level":"medium"`) {
+		t.Fatalf("envelope should include patch risk summary: %s", string(raw))
 	}
 }
 

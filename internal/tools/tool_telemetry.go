@@ -51,6 +51,20 @@ type ToolExecutionRecord struct {
 	ResultRef            string           `json:"result_ref,omitempty"`
 	ArtifactRefs         []string         `json:"artifact_refs,omitempty"`
 	ApprovalRef          string           `json:"approval_ref,omitempty"`
+	PatchRiskSummary     *ToolPatchRisk   `json:"patch_risk_summary,omitempty"`
+}
+
+type ToolPatchRisk struct {
+	FileCount      int            `json:"file_count"`
+	HunkCount      int            `json:"hunk_count"`
+	AddedLines     int            `json:"added_lines"`
+	DeletedLines   int            `json:"deleted_lines"`
+	Actions        map[string]int `json:"actions,omitempty"`
+	MultiFile      bool           `json:"multi_file,omitempty"`
+	ContainsDelete bool           `json:"contains_delete,omitempty"`
+	ContainsMove   bool           `json:"contains_move,omitempty"`
+	RiskLevel      string         `json:"risk_level"`
+	ReviewHint     string         `json:"review_hint,omitempty"`
 }
 
 type toolApprovalRequest struct {
@@ -165,6 +179,7 @@ func (t *Toolkit) recordToolExecution(
 		ResultRef:            resultRef,
 		ArtifactRefs:         artifactRefs,
 		ApprovalRef:          approvalRef,
+		PatchRiskSummary:     extractToolPatchRisk(call.Name, result),
 	}
 	if err != nil {
 		record.Error = err.Error()
@@ -312,6 +327,27 @@ func extractToolArtifactRefs(result, resultRef string) []string {
 	}
 	collectToolArtifactRefs(payload, add)
 	return out
+}
+
+func extractToolPatchRisk(toolName, result string) *ToolPatchRisk {
+	if toolName != "apply_patch" || strings.TrimSpace(result) == "" {
+		return nil
+	}
+	var payload struct {
+		RiskSummary ToolPatchRisk `json:"risk_summary"`
+	}
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		return nil
+	}
+	if strings.TrimSpace(payload.RiskSummary.RiskLevel) == "" &&
+		payload.RiskSummary.FileCount == 0 &&
+		payload.RiskSummary.HunkCount == 0 {
+		return nil
+	}
+	if payload.RiskSummary.Actions == nil {
+		payload.RiskSummary.Actions = map[string]int{}
+	}
+	return &payload.RiskSummary
 }
 
 func collectToolArtifactRefs(value any, add func(string)) {

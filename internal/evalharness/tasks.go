@@ -146,30 +146,44 @@ type ToolInventoryObservation struct {
 }
 
 type ToolObservation struct {
-	Name                 string               `json:"name"`
-	CallID               string               `json:"call_id,omitempty"`
-	Kind                 string               `json:"kind,omitempty"`
-	Exposure             string               `json:"exposure,omitempty"`
-	Risk                 string               `json:"risk,omitempty"`
-	ClassificationReason string               `json:"classification_reason,omitempty"`
-	PolicyAction         string               `json:"policy_action,omitempty"`
-	PolicyReason         string               `json:"policy_reason,omitempty"`
-	ReadOnly             bool                 `json:"read_only"`
-	ConcurrencySafe      bool                 `json:"concurrency_safe"`
-	StartedAt            time.Time            `json:"started_at,omitempty"`
-	DurationMS           int64                `json:"duration_ms"`
-	RevisionBefore       string               `json:"revision_before,omitempty"`
-	RevisionAfter        string               `json:"revision_after,omitempty"`
-	Success              bool                 `json:"success"`
-	Error                string               `json:"error,omitempty"`
-	ErrorKind            string               `json:"error_kind,omitempty"`
-	RawOutputBytes       int                  `json:"raw_output_bytes,omitempty"`
-	ReturnedOutputBytes  int                  `json:"returned_output_bytes,omitempty"`
-	ResultBudgeted       bool                 `json:"result_budgeted,omitempty"`
-	ResultRef            string               `json:"result_ref,omitempty"`
-	ArtifactRefs         []string             `json:"artifact_refs,omitempty"`
-	ApprovalRef          string               `json:"approval_ref,omitempty"`
-	ResultEnvelope       *toolresult.Envelope `json:"result_envelope,omitempty"`
+	Name                 string                `json:"name"`
+	CallID               string                `json:"call_id,omitempty"`
+	Kind                 string                `json:"kind,omitempty"`
+	Exposure             string                `json:"exposure,omitempty"`
+	Risk                 string                `json:"risk,omitempty"`
+	ClassificationReason string                `json:"classification_reason,omitempty"`
+	PolicyAction         string                `json:"policy_action,omitempty"`
+	PolicyReason         string                `json:"policy_reason,omitempty"`
+	ReadOnly             bool                  `json:"read_only"`
+	ConcurrencySafe      bool                  `json:"concurrency_safe"`
+	StartedAt            time.Time             `json:"started_at,omitempty"`
+	DurationMS           int64                 `json:"duration_ms"`
+	RevisionBefore       string                `json:"revision_before,omitempty"`
+	RevisionAfter        string                `json:"revision_after,omitempty"`
+	Success              bool                  `json:"success"`
+	Error                string                `json:"error,omitempty"`
+	ErrorKind            string                `json:"error_kind,omitempty"`
+	RawOutputBytes       int                   `json:"raw_output_bytes,omitempty"`
+	ReturnedOutputBytes  int                   `json:"returned_output_bytes,omitempty"`
+	ResultBudgeted       bool                  `json:"result_budgeted,omitempty"`
+	ResultRef            string                `json:"result_ref,omitempty"`
+	ArtifactRefs         []string              `json:"artifact_refs,omitempty"`
+	ApprovalRef          string                `json:"approval_ref,omitempty"`
+	PatchRiskSummary     *PatchRiskObservation `json:"patch_risk_summary,omitempty"`
+	ResultEnvelope       *toolresult.Envelope  `json:"result_envelope,omitempty"`
+}
+
+type PatchRiskObservation struct {
+	FileCount      int            `json:"file_count"`
+	HunkCount      int            `json:"hunk_count"`
+	AddedLines     int            `json:"added_lines"`
+	DeletedLines   int            `json:"deleted_lines"`
+	Actions        map[string]int `json:"actions,omitempty"`
+	MultiFile      bool           `json:"multi_file,omitempty"`
+	ContainsDelete bool           `json:"contains_delete,omitempty"`
+	ContainsMove   bool           `json:"contains_move,omitempty"`
+	RiskLevel      string         `json:"risk_level"`
+	ReviewHint     string         `json:"review_hint,omitempty"`
 }
 
 type WorkflowRunObservation struct {
@@ -302,6 +316,20 @@ func Catalog() []Task {
 			RequiredTools: []string{"run_test"},
 			Setup:         setupMultiFilePricing,
 			Verify:        verifyGoTests,
+		},
+		{
+			ID:          "patch_review_risk",
+			Name:        "Record patch review risk for a multi-file fix",
+			Description: "Git-backed Go package where the agent must use one multi-file apply_patch and verify the resulting diff.",
+			Prompt: "This workspace is a git repo. Use run_test to reproduce the failing pricing tests, then read the relevant pricing source files. " +
+				"Fix the behavior with a single apply_patch call that updates both pricing/subtotal.go and pricing/tax.go. Do not change tests. " +
+				"Use run_test to verify go test ./... passes, then inspect the final git diff before answering.",
+			RequiredTools: []string{"run_test", "read_file", "apply_patch", "git"},
+			RequiredToolCalls: []ToolCallRequirement{
+				{ToolName: "apply_patch", ArgsContains: []string{"pricing/subtotal.go", "pricing/tax.go"}},
+			},
+			Setup:  setupPatchReviewRisk,
+			Verify: verifyPatchReviewRisk,
 		},
 		{
 			ID:          "ast_search_navigation",
@@ -581,6 +609,24 @@ func TestTotalWithTax(t *testing.T) {
 	return writeFiles(root, files)
 }
 
+func setupPatchReviewRisk(root string) error {
+	if err := setupMultiFilePricing(root); err != nil {
+		return err
+	}
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "eval@example.com"},
+		{"config", "user.name", "Eval"},
+		{"add", "go.mod", "pricing/subtotal.go", "pricing/tax.go", "pricing/pricing_test.go"},
+		{"commit", "-m", "initial"},
+	} {
+		if err := runEvalGit(root, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func setupASTSearchNavigation(root string) error {
 	files := map[string]string{
 		"go.mod": `module inventoryeval
@@ -799,7 +845,7 @@ func verifyGitTestFailureFix(ctx context.Context, root, answer string) (Verifica
 	if err != nil {
 		return Verification{}, err
 	}
-	diffEvidence, err := verifyGitDiffOnlyCalcGo(ctx, root)
+	diffEvidence, err := verifyGitDiffOnly(ctx, root, []string{"calc.go"})
 	if err != nil {
 		return Verification{}, err
 	}
@@ -814,7 +860,28 @@ func verifyGitTestFailureFix(ctx context.Context, root, answer string) (Verifica
 	return passVerification("go tests passed and git diff only changes calc.go", evidence...), nil
 }
 
-func verifyGitDiffOnlyCalcGo(ctx context.Context, root string) (VerificationEvidence, error) {
+func verifyPatchReviewRisk(ctx context.Context, root, answer string) (Verification, error) {
+	testVerification, err := verifyGoTests(ctx, root, answer)
+	if err != nil {
+		return Verification{}, err
+	}
+	wantFiles := []string{"pricing/subtotal.go", "pricing/tax.go"}
+	diffEvidence, err := verifyGitDiffOnly(ctx, root, wantFiles)
+	if err != nil {
+		return Verification{}, err
+	}
+	evidence := append([]VerificationEvidence(nil), testVerification.Evidence...)
+	evidence = append(evidence, diffEvidence)
+	if !testVerification.Passed {
+		return failVerification(testVerification.Reason, evidence...), nil
+	}
+	if !diffEvidence.Passed {
+		return failVerification(diffEvidence.Summary, evidence...), nil
+	}
+	return passVerification("go tests passed and git diff only changes pricing source files", evidence...), nil
+}
+
+func verifyGitDiffOnly(ctx context.Context, root string, wantFiles []string) (VerificationEvidence, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "git", "diff", "--name-only")
@@ -826,7 +893,7 @@ func verifyGitDiffOnlyCalcGo(ctx context.Context, root string) (VerificationEvid
 	evidence := VerificationEvidence{
 		Check:    "git diff files",
 		Command:  "git diff --name-only",
-		Expected: "calc.go",
+		Expected: strings.Join(wantFiles, "\n"),
 		Observed: verificationObserved(output.String()),
 	}
 	if cmdCtx.Err() != nil {
@@ -840,14 +907,26 @@ func verifyGitDiffOnlyCalcGo(ctx context.Context, root string) (VerificationEvid
 		return evidence, nil
 	}
 	files := strings.Fields(output.String())
-	if len(files) != 1 || files[0] != "calc.go" {
+	if !stringSlicesEqual(files, wantFiles) {
 		evidence.Passed = false
-		evidence.Summary = "final diff should only change calc.go"
+		evidence.Summary = "final diff should only change expected files"
 		return evidence, nil
 	}
 	evidence.Passed = true
-	evidence.Summary = "final diff only changes calc.go"
+	evidence.Summary = "final diff only changes expected files"
 	return evidence, nil
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func verifyObservedReadyFile(_ context.Context, root, _ string) (Verification, error) {

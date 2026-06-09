@@ -71,13 +71,26 @@ type TraceReplaySummary struct {
 }
 
 type ToolReplaySummary struct {
+	Total          int                     `json:"total"`
+	Succeeded      int                     `json:"succeeded"`
+	Failed         int                     `json:"failed"`
+	ByKind         map[string]int          `json:"by_kind,omitempty"`
+	ByRisk         map[string]int          `json:"by_risk,omitempty"`
+	ByPolicyAction map[string]int          `json:"by_policy_action,omitempty"`
+	ByErrorKind    map[string]int          `json:"by_error_kind,omitempty"`
+	PatchRisk      *PatchRiskReplaySummary `json:"patch_risk,omitempty"`
+}
+
+type PatchRiskReplaySummary struct {
 	Total          int            `json:"total"`
-	Succeeded      int            `json:"succeeded"`
-	Failed         int            `json:"failed"`
-	ByKind         map[string]int `json:"by_kind,omitempty"`
-	ByRisk         map[string]int `json:"by_risk,omitempty"`
-	ByPolicyAction map[string]int `json:"by_policy_action,omitempty"`
-	ByErrorKind    map[string]int `json:"by_error_kind,omitempty"`
+	ByLevel        map[string]int `json:"by_level,omitempty"`
+	MultiFile      int            `json:"multi_file,omitempty"`
+	ContainsDelete int            `json:"contains_delete,omitempty"`
+	ContainsMove   int            `json:"contains_move,omitempty"`
+	FileCount      int            `json:"file_count"`
+	HunkCount      int            `json:"hunk_count"`
+	AddedLines     int            `json:"added_lines"`
+	DeletedLines   int            `json:"deleted_lines"`
 }
 
 type TraceReplayFinal struct {
@@ -323,14 +336,7 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 }
 
 func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
-	if summary.ToolSummary == nil {
-		summary.ToolSummary = &ToolReplaySummary{
-			ByKind:         map[string]int{},
-			ByRisk:         map[string]int{},
-			ByPolicyAction: map[string]int{},
-			ByErrorKind:    map[string]int{},
-		}
-	}
+	summary.ensureToolSummary()
 	summary.ToolSummary.Total++
 	if record.Success {
 		summary.ToolSummary.Succeeded++
@@ -349,4 +355,44 @@ func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
 	if errorKind := strings.TrimSpace(record.ErrorKind); errorKind != "" {
 		summary.ToolSummary.ByErrorKind[errorKind]++
 	}
+	if record.PatchRiskSummary != nil {
+		summary.addPatchRiskObservation(*record.PatchRiskSummary)
+	}
+}
+
+func (summary *TraceReplaySummary) ensureToolSummary() {
+	if summary.ToolSummary != nil {
+		return
+	}
+	summary.ToolSummary = &ToolReplaySummary{
+		ByKind:         map[string]int{},
+		ByRisk:         map[string]int{},
+		ByPolicyAction: map[string]int{},
+		ByErrorKind:    map[string]int{},
+	}
+}
+
+func (summary *TraceReplaySummary) addPatchRiskObservation(risk PatchRiskObservation) {
+	summary.ensureToolSummary()
+	if summary.ToolSummary.PatchRisk == nil {
+		summary.ToolSummary.PatchRisk = &PatchRiskReplaySummary{ByLevel: map[string]int{}}
+	}
+	patchRisk := summary.ToolSummary.PatchRisk
+	patchRisk.Total++
+	if level := strings.TrimSpace(risk.RiskLevel); level != "" {
+		patchRisk.ByLevel[level]++
+	}
+	if risk.MultiFile {
+		patchRisk.MultiFile++
+	}
+	if risk.ContainsDelete {
+		patchRisk.ContainsDelete++
+	}
+	if risk.ContainsMove {
+		patchRisk.ContainsMove++
+	}
+	patchRisk.FileCount += risk.FileCount
+	patchRisk.HunkCount += risk.HunkCount
+	patchRisk.AddedLines += risk.AddedLines
+	patchRisk.DeletedLines += risk.DeletedLines
 }

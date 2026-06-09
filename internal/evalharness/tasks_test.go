@@ -127,6 +127,78 @@ func Add(a, b int) int {
 	}
 }
 
+func TestPatchReviewRiskVerification(t *testing.T) {
+	task, ok := ByID("patch_review_risk")
+	if !ok {
+		t.Fatal("missing patch_review_risk task")
+	}
+	if !evalTaskRequiresTool(task, "apply_patch") || !evalTaskRequiresTool(task, "git") {
+		t.Fatalf("patch review risk should require apply_patch/git, got %+v", task.RequiredTools)
+	}
+	if len(task.RequiredToolCalls) != 1 ||
+		task.RequiredToolCalls[0].ToolName != "apply_patch" ||
+		len(task.RequiredToolCalls[0].ArgsContains) != 2 {
+		t.Fatalf("patch review risk should require one multi-file apply_patch call, got %+v", task.RequiredToolCalls)
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask failed module: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("buggy patch review risk fixture should fail verification")
+	}
+
+	subtotal := `package pricing
+
+func Subtotal(cents []int) int {
+	total := 0
+	for _, item := range cents {
+		total += item
+	}
+	return total
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "pricing", "subtotal.go"), []byte(subtotal), 0o644); err != nil {
+		t.Fatalf("write subtotal: %v", err)
+	}
+	tax := `package pricing
+
+func TotalWithTax(cents []int, taxBasisPoints int) int {
+	subtotal := Subtotal(cents)
+	return subtotal + subtotal*taxBasisPoints/10000
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "pricing", "tax.go"), []byte(tax), 0o644); err != nil {
+		t.Fatalf("write tax: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask fixed module: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("fixed patch review risk fixture should pass verification: %s", passed.Reason)
+	}
+	if len(passed.Evidence) < 2 || passed.Evidence[1].Check != "git diff files" || !passed.Evidence[1].Passed {
+		t.Fatalf("fixed fixture should include passing git diff evidence: %+v", passed.Evidence)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "pricing", "pricing_test.go"), []byte("package pricing\n"), 0o644); err != nil {
+		t.Fatalf("write changed test file: %v", err)
+	}
+	failed, err = VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask changed test: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("changing tests should fail patch review risk verification")
+	}
+}
+
 func TestASTSearchNavigationVerification(t *testing.T) {
 	task, ok := ByID("ast_search_navigation")
 	if !ok {
