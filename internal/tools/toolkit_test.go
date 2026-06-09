@@ -3046,6 +3046,9 @@ func TestToolkit_RunShell(t *testing.T) {
 	if parsed["duration_ms"].(float64) < 0 {
 		t.Fatalf("unexpected duration: %v", parsed["duration_ms"])
 	}
+	if revision, _ := parsed["workspace_revision"].(string); !strings.HasPrefix(revision, "fs:worktree:") {
+		t.Fatalf("run_shell response missing filesystem workspace revision: %+v", parsed)
+	}
 	if suggestions, ok := parsed["next_suggestions"].([]any); !ok || len(suggestions) == 0 {
 		t.Fatalf("run_shell response missing next_suggestions: %+v", parsed)
 	}
@@ -3077,11 +3080,15 @@ func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
 		t.Fatalf("expected redaction markers, got: %s", resp)
 	}
 	var parsed struct {
-		FullLogRef   string `json:"full_log_ref"`
-		FullLogBytes int    `json:"full_log_bytes"`
+		FullLogRef        string `json:"full_log_ref"`
+		FullLogBytes      int    `json:"full_log_bytes"`
+		WorkspaceRevision string `json:"workspace_revision"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse run_shell response: %v\n%s", err, resp)
+	}
+	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("run_shell response missing filesystem workspace revision: %+v", parsed)
 	}
 	if parsed.FullLogRef == "" || parsed.FullLogBytes <= 0 {
 		t.Fatalf("run_shell response missing full log artifact: %+v", parsed)
@@ -3101,6 +3108,9 @@ func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
 	}
 	if strings.Count(logText, "[REDACTED]") < 3 || !strings.Contains(logText, "exit_code: 0") {
 		t.Fatalf("full log artifact missing redacted evidence:\n%s", logText)
+	}
+	if !strings.Contains(logText, "workspace_revision: "+parsed.WorkspaceRevision) {
+		t.Fatalf("full log artifact missing workspace revision:\n%s", logText)
 	}
 	records := kit.ToolTelemetry()
 	if len(records) != 1 || !containsString(records[0].ArtifactRefs, parsed.FullLogRef) {

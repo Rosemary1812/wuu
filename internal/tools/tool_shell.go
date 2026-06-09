@@ -52,7 +52,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"Instructions:\n" +
 			"- Commands must be non-interactive; never rely on editors, pagers, or terminal prompts\n" +
 			"- Default timeout is 300s, max 3600s\n" +
-			"- Results include exit_code, duration_ms, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
+			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
 			"- For git operations, prefer the git tool over run_shell",
@@ -125,6 +125,7 @@ type shellExecutionResult struct {
 	StderrTail          string             `json:"stderr_tail"`
 	StdoutBytes         int                `json:"stdout_bytes"`
 	StderrBytes         int                `json:"stderr_bytes"`
+	WorkspaceRevision   string             `json:"workspace_revision"`
 	StdoutTailTruncated bool               `json:"stdout_tail_truncated"`
 	StderrTailTruncated bool               `json:"stderr_tail_truncated"`
 	FullLogRef          string             `json:"full_log_ref,omitempty"`
@@ -161,7 +162,8 @@ func buildShellLog(shellResult shellExecutionResult) string {
 	fmt.Fprintf(&b, "duration_ms: %d\n", shellResult.DurationMS)
 	fmt.Fprintf(&b, "timed_out: %t\n", shellResult.TimedOut)
 	fmt.Fprintf(&b, "stdout_bytes: %d\n", shellResult.StdoutBytes)
-	fmt.Fprintf(&b, "stderr_bytes: %d\n\n", shellResult.StderrBytes)
+	fmt.Fprintf(&b, "stderr_bytes: %d\n", shellResult.StderrBytes)
+	fmt.Fprintf(&b, "workspace_revision: %s\n\n", shellResult.WorkspaceRevision)
 	b.WriteString("--- stdout (redacted) ---\n")
 	b.WriteString(shellResult.redactedStdout)
 	if !strings.HasSuffix(shellResult.redactedStdout, "\n") {
@@ -233,6 +235,7 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 		StderrTail:          stderrTail,
 		StdoutBytes:         len(stdoutText),
 		StderrBytes:         len(stderrText),
+		WorkspaceRevision:   workspaceRevision(ctx, env.RootDir),
 		StdoutTailTruncated: stdoutTailTruncated,
 		StderrTailTruncated: stderrTailTruncated,
 		NextSuggestions:     shellNextSuggestions(exitCode, timedOut, classification),
