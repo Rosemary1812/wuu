@@ -41,7 +41,7 @@ func (t *ListAgentProfilesTool) Execute(ctx context.Context, argsJSON string) (s
 	if err != nil {
 		return "", err
 	}
-	return mustJSON(map[string]any{"profiles": profiles, "count": len(profiles)})
+	return mustJSON(map[string]any{"action": "list_agent_profiles", "profiles": profiles, "count": len(profiles)})
 }
 
 type CreateAgentProfileTool struct{ env *Env }
@@ -114,6 +114,7 @@ func (t *CreateAgentProfileTool) Execute(ctx context.Context, argsJSON string) (
 		return "", err
 	}
 	return mustJSON(map[string]any{
+		"action":  "create_agent_profile",
 		"profile": profile,
 		"created": created,
 		"next_steps": []string{

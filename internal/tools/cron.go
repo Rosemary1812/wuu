@@ -150,6 +150,7 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 	}
 
 	result := map[string]any{
+		"action":             "schedule_cron",
 		"id":                 task.ID,
 		"schedule":           args.Cron,
 		"prompt":             args.Prompt,
@@ -243,7 +244,7 @@ func (t *CancelCronTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return "", fmt.Errorf("failed to cancel task: %w", err)
 	}
 
-	result := map[string]any{"cancelled": args.ID}
+	result := map[string]any{"action": "cancel_cron", "cancelled": args.ID}
 	return mustJSON(result)
 }
 
@@ -311,5 +312,5 @@ func (t *ListCronTool) Execute(ctx context.Context, argsJSON string) (string, er
 		appendTask(task, true)
 	}
 
-	return mustJSON(map[string]any{"tasks": items, "count": len(items)})
+	return mustJSON(map[string]any{"action": "list_cron", "tasks": items, "count": len(items)})
 }

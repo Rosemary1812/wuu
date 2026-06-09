@@ -2132,6 +2132,7 @@ func TestToolkit_UpdatePlan_ReturnsConciseResult(t *testing.T) {
 		t.Fatalf("update_plan: %v", err)
 	}
 	var parsed struct {
+		Action      string     `json:"action"`
 		Status      string     `json:"status"`
 		Explanation string     `json:"explanation"`
 		Plan        []PlanItem `json:"plan"`
@@ -2139,11 +2140,15 @@ func TestToolkit_UpdatePlan_ReturnsConciseResult(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse response: %v", err)
 	}
-	if parsed.Status != "updated" || parsed.Explanation != "" {
+	if parsed.Action != "update_plan" || parsed.Status != "updated" || parsed.Explanation != "" {
 		t.Fatalf("unexpected response metadata: %+v", parsed)
 	}
 	if len(parsed.Plan) != 0 {
 		t.Fatalf("tool result should not echo plan: %+v", parsed.Plan)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || records[0].ResultAction != "update_plan" {
+		t.Fatalf("update_plan telemetry missing result action: %+v", records)
 	}
 }
 
@@ -3211,13 +3216,21 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
+		Action       string   `json:"action"`
 		ExposedTools []string `json:"exposed_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search response: %v", err)
 	}
+	if parsed.Action != "tool_search" {
+		t.Fatalf("tool_search action = %q, want tool_search", parsed.Action)
+	}
 	if !reflect.DeepEqual(parsed.ExposedTools, []string{"mcp_docs_search"}) {
 		t.Fatalf("exposed tools = %+v, want mcp_docs_search", parsed.ExposedTools)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) == 0 || records[len(records)-1].ResultAction != "tool_search" {
+		t.Fatalf("tool_search telemetry missing result action: %+v", records)
 	}
 	if !definitionNames(kit.Definitions())["mcp_docs_search"] {
 		t.Fatal("mcp_docs_search should be exposed after tool_search")

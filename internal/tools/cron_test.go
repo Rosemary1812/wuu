@@ -23,6 +23,9 @@ func TestScheduleCronTool_DefaultsToSessionOnly(t *testing.T) {
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
+	if !strings.Contains(result, `"action":"schedule_cron"`) {
+		t.Fatalf("expected schedule_cron action, got %s", result)
+	}
 
 	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
 	if err != nil {
@@ -55,6 +58,9 @@ func TestScheduleCronTool_DurablePersistsToDisk(t *testing.T) {
 	}
 	if result == "" {
 		t.Fatal("expected non-empty result")
+	}
+	if !strings.Contains(result, `"action":"schedule_cron"`) {
+		t.Fatalf("expected schedule_cron action, got %s", result)
 	}
 
 	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
@@ -92,6 +98,9 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	}
 	if !strings.Contains(result, `"kind":"workflow"`) || !strings.Contains(result, `"workflow_name":"weekly-qa"`) {
 		t.Fatalf("expected workflow result, got %s", result)
+	}
+	if !strings.Contains(result, `"action":"schedule_cron"`) {
+		t.Fatalf("expected schedule_cron action, got %s", result)
 	}
 
 	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
@@ -184,6 +193,9 @@ func TestCancelCronTool(t *testing.T) {
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
+	if !strings.Contains(result, `"action":"cancel_cron"`) {
+		t.Fatalf("expected cancel_cron action, got %s", result)
+	}
 
 	sessionTasks, err := sessionStore.List()
 	if err != nil {
@@ -214,6 +226,9 @@ func TestListCronTool(t *testing.T) {
 	}
 	if result == "" {
 		t.Fatal("expected non-empty result")
+	}
+	if !strings.Contains(result, `"action":"list_cron"`) {
+		t.Fatalf("expected list_cron action, got %s", result)
 	}
 	if !strings.Contains(result, "[session-only]") {
 		t.Fatalf("expected session-only task in result, got %s", result)

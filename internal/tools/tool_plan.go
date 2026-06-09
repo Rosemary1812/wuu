@@ -289,7 +289,7 @@ func (t *UpdatePlanTool) Execute(_ context.Context, argsJSON string) (string, er
 	if t.env.OnPlanUpdated != nil {
 		t.env.OnPlanUpdated(snapshot)
 	}
-	return mustJSON(map[string]string{"status": "updated"})
+	return mustJSON(map[string]string{"action": "update_plan", "status": "updated"})
 }
 
 func decodePlanSnapshot(raw string) (PlanSnapshot, error) {

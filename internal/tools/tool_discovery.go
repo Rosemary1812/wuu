@@ -74,6 +74,7 @@ func (t *ToolSearchTool) Execute(_ context.Context, argsJSON string) (string, er
 	t.toolkit.activateDeferredTools(names...)
 
 	return mustJSON(map[string]any{
+		"action":            "tool_search",
 		"query":             query,
 		"matched":           len(matches),
 		"exposed_tools":     names,

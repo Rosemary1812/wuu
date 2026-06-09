@@ -33,7 +33,8 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 		t.Fatalf("create_agent_profile: %v", err)
 	}
 	var created struct {
-		Created bool `json:"created"`
+		Action  string `json:"action"`
+		Created bool   `json:"created"`
 		Profile struct {
 			Name         string `json:"name"`
 			Role         string `json:"role"`
@@ -44,6 +45,9 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(createResp), &created); err != nil {
 		t.Fatalf("parse create response: %v", err)
 	}
+	if created.Action != "create_agent_profile" {
+		t.Fatalf("create action = %q, want create_agent_profile", created.Action)
+	}
 	if !created.Created || created.Profile.Name != "qa_laowang" || created.Profile.Role != "QA reviewer" || created.Profile.WorkflowName != "release-qa" {
 		t.Fatalf("unexpected create response: %+v", created)
 	}
@@ -53,7 +57,8 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 		t.Fatalf("list_agent_profiles: %v", err)
 	}
 	var listed struct {
-		Count    int `json:"count"`
+		Action   string `json:"action"`
+		Count    int    `json:"count"`
 		Profiles []struct {
 			Name string `json:"name"`
 			Role string `json:"role"`
@@ -62,8 +67,15 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(listResp), &listed); err != nil {
 		t.Fatalf("parse list response: %v", err)
 	}
+	if listed.Action != "list_agent_profiles" {
+		t.Fatalf("list action = %q, want list_agent_profiles", listed.Action)
+	}
 	if listed.Count != 1 || listed.Profiles[0].Name != "qa_laowang" || listed.Profiles[0].Role != "QA reviewer" {
 		t.Fatalf("unexpected profile list: %+v", listed)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 2 || records[0].ResultAction != "create_agent_profile" || records[1].ResultAction != "list_agent_profiles" {
+		t.Fatalf("profile telemetry actions mismatch: %+v", records)
 	}
 }
 
