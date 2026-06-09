@@ -107,6 +107,7 @@ func (t *ASTSearchTool) Execute(ctx context.Context, argsJSON string) (string, e
 		return "", err
 	}
 	result := map[string]any{
+		"action":             "ast_search",
 		"query":              args.Query,
 		"kind":               kind,
 		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),

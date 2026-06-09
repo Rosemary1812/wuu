@@ -4956,6 +4956,7 @@ func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
 		t.Fatalf("grep: %v", err)
 	}
 	var grepParsed struct {
+		Action            string      `json:"action"`
 		Matches           []grepMatch `json:"matches"`
 		WorkspaceRevision string      `json:"workspace_revision"`
 		Suggestions       []string    `json:"next_suggestions"`
@@ -4965,6 +4966,9 @@ func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
 	}
 	if len(grepParsed.Matches) != 1 {
 		t.Fatalf("unexpected grep matches: %+v", grepParsed.Matches)
+	}
+	if grepParsed.Action != "grep" {
+		t.Fatalf("grep action = %q, want grep", grepParsed.Action)
 	}
 	if !strings.HasPrefix(grepParsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("grep response missing filesystem workspace revision: %+v", grepParsed)
@@ -4981,6 +4985,7 @@ func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
 		t.Fatalf("glob: %v", err)
 	}
 	var globParsed struct {
+		Action            string   `json:"action"`
 		Files             []string `json:"files"`
 		WorkspaceRevision string   `json:"workspace_revision"`
 		Suggestions       []string `json:"next_suggestions"`
@@ -4991,11 +4996,41 @@ func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
 	if len(globParsed.Files) != 0 {
 		t.Fatalf("unexpected glob matches: %+v", globParsed.Files)
 	}
+	if globParsed.Action != "glob" {
+		t.Fatalf("glob action = %q, want glob", globParsed.Action)
+	}
 	if !strings.HasPrefix(globParsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("glob response missing filesystem workspace revision: %+v", globParsed)
 	}
 	if len(globParsed.Suggestions) == 0 || !strings.Contains(strings.Join(globParsed.Suggestions, " "), "broader glob") {
 		t.Fatalf("empty glob response missing broaden suggestion: %+v", globParsed.Suggestions)
+	}
+	for _, mode := range []string{"files_with_matches", "count"} {
+		resp, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "grep",
+			Arguments: `{"pattern":"target","output_mode":"` + mode + `"}`,
+		})
+		if err != nil {
+			t.Fatalf("grep %s: %v", mode, err)
+		}
+		var parsed struct {
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+			t.Fatalf("parse grep %s response: %v", mode, err)
+		}
+		if parsed.Action != "grep" {
+			t.Fatalf("grep %s action = %q, want grep", mode, parsed.Action)
+		}
+	}
+	records := kit.ToolTelemetry()
+	gotActions := make([]string, 0, len(records))
+	for _, record := range records {
+		gotActions = append(gotActions, record.Name+":"+record.ResultAction)
+	}
+	wantActions := []string{"grep:grep", "glob:glob", "grep:grep", "grep:grep"}
+	if !reflect.DeepEqual(gotActions, wantActions) {
+		t.Fatalf("search telemetry missing result actions: %+v", records)
 	}
 }
 
@@ -5047,6 +5082,7 @@ func TestToolkit_ASTSearchFindsDefinitionsImportsAndCalls(t *testing.T) {
 		t.Fatalf("ast_search definition: %v", err)
 	}
 	var defParsed struct {
+		Action  string `json:"action"`
 		Query   string `json:"query"`
 		Kind    string `json:"kind"`
 		Matches []struct {
@@ -5062,6 +5098,9 @@ func TestToolkit_ASTSearchFindsDefinitionsImportsAndCalls(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(defResp), &defParsed); err != nil {
 		t.Fatalf("parse definition response: %v", err)
+	}
+	if defParsed.Action != "ast_search" {
+		t.Fatalf("ast_search action = %q, want ast_search", defParsed.Action)
 	}
 	if defParsed.Query != "Target" || defParsed.Kind != "function" || len(defParsed.Matches) != 1 {
 		t.Fatalf("unexpected definition response: %+v", defParsed)
@@ -5145,6 +5184,7 @@ func TestToolkit_RepoMapReturnsStructuredWorkspaceSummary(t *testing.T) {
 		t.Fatalf("repo_map should skip generated/internal state paths: %s", resp)
 	}
 	var parsed struct {
+		Action            string `json:"action"`
 		WorkspaceRevision string `json:"workspace_revision"`
 		Summary           struct {
 			FilesScanned int `json:"files_scanned"`
@@ -5162,6 +5202,9 @@ func TestToolkit_RepoMapReturnsStructuredWorkspaceSummary(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse repo_map response: %v\n%s", err, resp)
+	}
+	if parsed.Action != "repo_map" {
+		t.Fatalf("repo_map action = %q, want repo_map", parsed.Action)
 	}
 	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("repo_map response missing workspace revision: %+v", parsed)
@@ -5210,6 +5253,7 @@ func ExpireSession() {}
 		t.Fatalf("semantic_search response leaked sensitive path/content: %s", resp)
 	}
 	var parsed struct {
+		Action            string                `json:"action"`
 		Query             string                `json:"query"`
 		Terms             []string              `json:"terms"`
 		WorkspaceRevision string                `json:"workspace_revision"`
@@ -5220,6 +5264,9 @@ func ExpireSession() {}
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse semantic_search response: %v\n%s", err, resp)
+	}
+	if parsed.Action != "semantic_search" {
+		t.Fatalf("semantic_search action = %q, want semantic_search", parsed.Action)
 	}
 	if parsed.Query != "checkout discount total" || len(parsed.Terms) != 3 {
 		t.Fatalf("unexpected query metadata: %+v", parsed)

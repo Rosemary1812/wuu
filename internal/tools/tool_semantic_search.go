@@ -114,6 +114,7 @@ func (t *SemanticSearchTool) Execute(ctx context.Context, argsJSON string) (stri
 		matches = matches[:limit]
 	}
 	out := map[string]any{
+		"action":             "semantic_search",
 		"query":              args.Query,
 		"terms":              terms,
 		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),

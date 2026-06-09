@@ -83,6 +83,7 @@ func (t *RepoMapTool) Execute(ctx context.Context, argsJSON string) (string, err
 		return "", errors.New("repo_map found no files to summarize")
 	}
 	result := map[string]any{
+		"action":             "repo_map",
 		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 		"summary":            summary,
 		"next_suggestions": []string{

@@ -141,6 +141,7 @@ func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error)
 			return "", err
 		}
 		result := map[string]any{
+			"action":             "grep",
 			"pattern":            args.Pattern,
 			"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 			"total":              len(files),
@@ -156,6 +157,7 @@ func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error)
 			return "", err
 		}
 		result := map[string]any{
+			"action":             "grep",
 			"pattern":            args.Pattern,
 			"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 			"total":              total,
@@ -247,6 +249,7 @@ func (t *GlobTool) Execute(ctx context.Context, argsJSON string) (string, error)
 	}
 
 	result := map[string]any{
+		"action":             "glob",
 		"pattern":            args.Pattern,
 		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 		"total":              len(matches),
@@ -303,6 +306,7 @@ func grepContentResultJSON(pattern string, matches []grepMatch, hitLimit bool, r
 	for {
 		truncated := hitLimit || contentTruncated || omitted > 0
 		result := map[string]any{
+			"action":               "grep",
 			"pattern":              pattern,
 			"workspace_revision":   revision,
 			"total":                total,
