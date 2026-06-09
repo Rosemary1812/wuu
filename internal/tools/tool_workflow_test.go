@@ -273,6 +273,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		t.Fatalf("workflow_status: %v", err)
 	}
 	var status struct {
+		Action           string                     `json:"action"`
 		Run              workflow.Run               `json:"run"`
 		AgentRuns        []workflow.AgentRun        `json:"agent_runs"`
 		MemoryCandidates []workflow.MemoryCandidate `json:"memory_candidates"`
@@ -281,6 +282,9 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
 		t.Fatalf("parse status response: %v", err)
+	}
+	if status.Action != "workflow_status" {
+		t.Fatalf("workflow_status action = %q, want workflow_status", status.Action)
 	}
 	if status.Run.ID != "workflow-test-run" || status.Run.PlanPath == "" {
 		t.Fatalf("unexpected status: %+v", status.Run)
@@ -305,6 +309,10 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if !workflowStepsContain(status.NextSteps, "final_report_path") {
 		t.Fatalf("completed workflow_status should point to final report artifacts: %+v", status.NextSteps)
+	}
+	statusRecords := kit.ToolTelemetry()
+	if len(statusRecords) == 0 || statusRecords[len(statusRecords)-1].ResultAction != "workflow_status" {
+		t.Fatalf("workflow_status telemetry missing result action: %+v", statusRecords)
 	}
 }
 

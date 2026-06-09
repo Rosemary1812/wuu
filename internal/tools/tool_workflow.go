@@ -2222,8 +2222,9 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 			return "", err
 		}
 		return mustJSON(map[string]any{
-			"runs":  reverseWorkflowRunsWithDriverDefaults(runs),
-			"count": len(runs),
+			"action": "workflow_status",
+			"runs":   reverseWorkflowRunsWithDriverDefaults(runs),
+			"count":  len(runs),
 			"next_steps": []string{
 				"Pass run_id to workflow_status to inspect a specific Workflow Run.",
 				"Use start_workflow with driver=auto when starting new workflow work.",
@@ -2254,6 +2255,7 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 	}
 	arbitration := workflow.AnalyzeTeamArbitration(agents)
 	result := map[string]any{
+		"action":            "workflow_status",
 		"run":               run,
 		"agent_runs":        agents,
 		"workflow_team":     teamPlan,
