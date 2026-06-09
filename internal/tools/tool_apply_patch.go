@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -852,12 +853,62 @@ func findPatchChunk(lines, oldLines []string, cursor int, endOfFile bool) (int, 
 		matches = findLineSequence(lines, oldLines, 0)
 	}
 	if len(matches) == 0 {
-		return 0, fmt.Errorf("failed to find expected lines:\n%s", strings.Join(oldLines, "\n"))
+		return 0, patchChunkMatchError{
+			Kind:       "anchor_not_found",
+			Expected:   oldLines,
+			Candidates: closestPatchChunkCandidates(lines, oldLines, 3),
+		}
 	}
 	if len(matches) > 1 {
-		return 0, fmt.Errorf("expected lines are ambiguous (%d matches); add more context", len(matches))
+		return 0, patchChunkMatchError{
+			Kind:       "ambiguous_anchor",
+			Expected:   oldLines,
+			MatchCount: len(matches),
+			Candidates: patchChunkMatchCandidates(lines, oldLines, matches, 5),
+		}
 	}
 	return matches[0], nil
+}
+
+type patchChunkCandidate struct {
+	StartLine int
+	EndLine   int
+	Score     int
+	Snippet   []string
+}
+
+type patchChunkMatchError struct {
+	Kind       string
+	Expected   []string
+	MatchCount int
+	Candidates []patchChunkCandidate
+}
+
+func (e patchChunkMatchError) Error() string {
+	var b strings.Builder
+	switch e.Kind {
+	case "ambiguous_anchor":
+		fmt.Fprintf(&b, "ambiguous_anchor: expected lines matched %d locations; add more context", e.MatchCount)
+	default:
+		b.WriteString("anchor_not_found: failed to find expected lines")
+	}
+	if len(e.Expected) > 0 {
+		b.WriteString("\nexpected:\n")
+		b.WriteString(formatPatchErrorLines(e.Expected, 0, 8))
+	}
+	if len(e.Candidates) > 0 {
+		b.WriteString("\ncandidates:\n")
+		for _, candidate := range e.Candidates {
+			fmt.Fprintf(&b, "- lines %d-%d", candidate.StartLine, candidate.EndLine)
+			if candidate.Score > 0 {
+				fmt.Fprintf(&b, " score=%d", candidate.Score)
+			}
+			b.WriteString(":\n")
+			b.WriteString(formatPatchErrorLines(candidate.Snippet, candidate.StartLine, 6))
+		}
+	}
+	b.WriteString("\nsafe_retry: read_file the target range and regenerate the patch against the current file_sha")
+	return b.String()
 }
 
 func findLineSequence(lines, needle []string, start int) []int {
@@ -878,4 +929,96 @@ func findLineSequence(lines, needle []string, start int) []int {
 		}
 	}
 	return matches
+}
+
+func closestPatchChunkCandidates(lines, needle []string, limit int) []patchChunkCandidate {
+	if len(lines) == 0 || len(needle) == 0 || limit <= 0 {
+		return nil
+	}
+	windowLen := len(needle)
+	if windowLen > len(lines) {
+		windowLen = len(lines)
+	}
+	candidates := make([]patchChunkCandidate, 0, len(lines)-windowLen+1)
+	for start := 0; start <= len(lines)-windowLen; start++ {
+		window := lines[start : start+windowLen]
+		candidates = append(candidates, patchChunkCandidate{
+			StartLine: start + 1,
+			EndLine:   start + windowLen,
+			Score:     patchChunkCandidateScore(window, needle),
+			Snippet:   append([]string(nil), window...),
+		})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Score != candidates[j].Score {
+			return candidates[i].Score > candidates[j].Score
+		}
+		return candidates[i].StartLine < candidates[j].StartLine
+	})
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates
+}
+
+func patchChunkMatchCandidates(lines, needle []string, matches []int, limit int) []patchChunkCandidate {
+	if len(matches) == 0 || limit <= 0 {
+		return nil
+	}
+	if len(matches) > limit {
+		matches = matches[:limit]
+	}
+	out := make([]patchChunkCandidate, 0, len(matches))
+	for _, start := range matches {
+		end := start + len(needle)
+		if end > len(lines) {
+			end = len(lines)
+		}
+		out = append(out, patchChunkCandidate{
+			StartLine: start + 1,
+			EndLine:   end,
+			Score:     len(needle) * 2,
+			Snippet:   append([]string(nil), lines[start:end]...),
+		})
+	}
+	return out
+}
+
+func patchChunkCandidateScore(window, needle []string) int {
+	score := 0
+	max := len(window)
+	if len(needle) < max {
+		max = len(needle)
+	}
+	for i := 0; i < max; i++ {
+		windowLine := strings.TrimSpace(window[i])
+		needleLine := strings.TrimSpace(needle[i])
+		switch {
+		case windowLine == needleLine:
+			score += 2
+		case windowLine != "" && needleLine != "" && (strings.Contains(windowLine, needleLine) || strings.Contains(needleLine, windowLine)):
+			score++
+		}
+	}
+	return score
+}
+
+func formatPatchErrorLines(lines []string, startLine, limit int) string {
+	var b strings.Builder
+	omitted := 0
+	if len(lines) > limit {
+		omitted = len(lines) - limit
+		lines = lines[:limit]
+	}
+	for i, line := range lines {
+		if startLine > 0 {
+			fmt.Fprintf(&b, "  %d| %s\n", startLine+i, line)
+			continue
+		}
+		fmt.Fprintf(&b, "  %s\n", line)
+	}
+	if omitted > 0 {
+		fmt.Fprintf(&b, "  ... %d more lines omitted\n", omitted)
+	}
+	return b.String()
 }

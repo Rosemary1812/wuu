@@ -750,6 +750,12 @@ func TestToolkit_ApplyPatchRejectsInvalidPatchAtomically(t *testing.T) {
 		!strings.Contains(err.Error(), "b.txt") {
 		t.Fatalf("expected failed verification for b.txt, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "anchor_not_found") ||
+		!strings.Contains(err.Error(), "candidates") ||
+		!strings.Contains(err.Error(), "1| beta") ||
+		!strings.Contains(err.Error(), "safe_retry") {
+		t.Fatalf("expected recoverable patch guidance, got: %v", err)
+	}
 	if changedHookCalls != 0 {
 		t.Fatalf("failed patch should not fire file-change hooks, got %d", changedHookCalls)
 	}
@@ -880,6 +886,12 @@ func TestToolkit_ApplyPatchRejectsAmbiguousUpdate(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("expected ambiguous update error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "ambiguous_anchor") ||
+		!strings.Contains(err.Error(), "lines 1-1") ||
+		!strings.Contains(err.Error(), "lines 2-2") ||
+		!strings.Contains(err.Error(), "safe_retry") {
+		t.Fatalf("expected ambiguous anchor recovery guidance, got %v", err)
 	}
 }
 
