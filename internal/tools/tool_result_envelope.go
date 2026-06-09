@@ -59,6 +59,12 @@ func toolResultSummary(record ToolExecutionRecord) string {
 
 func toolResultNextSuggestions(record ToolExecutionRecord) []string {
 	if !record.Success {
+		switch record.PolicyAction {
+		case ToolPolicyDeny:
+			return []string{"choose a lower-risk tool or explain that policy blocks the requested action"}
+		case ToolPolicyRequireApproval:
+			return []string{"ask the user for approval or choose a lower-risk alternative"}
+		}
 		return []string{"inspect the redacted error summary and retry with corrected inputs or a safer tool"}
 	}
 	if record.ResultBudgeted && record.ResultRef != "" {

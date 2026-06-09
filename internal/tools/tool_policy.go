@@ -124,12 +124,47 @@ func (p ToolPolicy) actionFor(info ToolInfo) (ToolPolicyAction, string) {
 func (d ToolPolicyDecision) blockingError(toolName string) error {
 	switch d.Action {
 	case ToolPolicyDeny:
-		return fmt.Errorf("tool %q denied by policy (%s risk)", toolName, d.Risk)
+		return toolPolicyBlockError{
+			Kind:            "policy_denied",
+			ToolName:        toolName,
+			Action:          d.Action,
+			Risk:            d.Risk,
+			PolicyReason:    d.Reason,
+			ModelNextAction: "choose a lower-risk tool or explain that policy blocks the requested action",
+		}
 	case ToolPolicyRequireApproval:
-		return fmt.Errorf("tool %q requires approval by policy (%s risk), but approval UI is not available yet", toolName, d.Risk)
+		return toolPolicyBlockError{
+			Kind:            "approval_required",
+			ToolName:        toolName,
+			Action:          d.Action,
+			Risk:            d.Risk,
+			PolicyReason:    d.Reason,
+			ModelNextAction: "ask the user for approval or choose a lower-risk alternative",
+		}
 	default:
 		return nil
 	}
+}
+
+type toolPolicyBlockError struct {
+	Kind            string
+	ToolName        string
+	Action          ToolPolicyAction
+	Risk            ToolRisk
+	PolicyReason    string
+	ModelNextAction string
+}
+
+func (e toolPolicyBlockError) Error() string {
+	return fmt.Sprintf(
+		"tool %q blocked by policy: error_kind=%s policy_action=%s risk=%s policy_reason=%q model_next_action=%q approval_options=[ask_user, choose_lower_risk_alternative, stop]",
+		e.ToolName,
+		e.Kind,
+		e.Action,
+		e.Risk,
+		e.PolicyReason,
+		e.ModelNextAction,
+	)
 }
 
 func IsValidToolPolicyAction(action ToolPolicyAction) bool {

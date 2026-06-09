@@ -2359,7 +2359,9 @@ func TestToolkit_ToolPolicy_DeniesByRisk(t *testing.T) {
 		Name:      "run_shell",
 		Arguments: `{"command":"printf hi"}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "denied by policy") {
+	if err == nil || !strings.Contains(err.Error(), "error_kind=policy_denied") ||
+		!strings.Contains(err.Error(), "policy_action=deny") ||
+		!strings.Contains(err.Error(), "model_next_action") {
 		t.Fatalf("expected policy denial, got %v", err)
 	}
 
@@ -2373,6 +2375,10 @@ func TestToolkit_ToolPolicy_DeniesByRisk(t *testing.T) {
 	}
 	if record.Success || record.Error == "" || record.RawOutputBytes != 0 || record.ReturnedOutputBytes != 0 {
 		t.Fatalf("denied tool should be recorded as failed without output: %+v", record)
+	}
+	envelope := record.ResultEnvelope()
+	if !strings.Contains(strings.Join(envelope.NextSuggestions, " "), "lower-risk tool") {
+		t.Fatalf("denied policy envelope missing recovery guidance: %+v", envelope)
 	}
 }
 
@@ -2437,8 +2443,40 @@ func TestToolkit_ToolPolicy_UsesInputClassification(t *testing.T) {
 		Name:      "run_shell",
 		Arguments: `{"command":"echo hi > out.txt"}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "denied by policy") {
+	if err == nil || !strings.Contains(err.Error(), "error_kind=policy_denied") {
 		t.Fatalf("write-like shell command should be denied by high-risk policy, got %v", err)
+	}
+}
+
+func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetToolPolicy(ToolPolicy{
+		RiskActions: map[ToolRisk]ToolPolicyAction{
+			ToolRiskHigh: ToolPolicyRequireApproval,
+		},
+	})
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-shell",
+		Name:      "run_shell",
+		Arguments: `{"command":"printf hi > out.txt"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_required") ||
+		!strings.Contains(err.Error(), "approval_options") ||
+		!strings.Contains(err.Error(), "ask the user for approval") {
+		t.Fatalf("expected approval guidance, got %v", err)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	envelope := records[0].ResultEnvelope()
+	if !strings.Contains(strings.Join(envelope.NextSuggestions, " "), "approval") {
+		t.Fatalf("approval policy envelope missing recovery guidance: %+v", envelope)
 	}
 }
 
