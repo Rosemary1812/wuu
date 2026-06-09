@@ -141,6 +141,43 @@ func (s *testRunState) latestFailure() (testRunEntry, bool) {
 	return testRunEntry{}, false
 }
 
+type webEvidenceEntry struct {
+	ToolName    string
+	Evidence    webEvidence
+	Error       string
+	ResultCount int
+	StatusCode  int
+	ContentType string
+	Size        int
+	Truncated   bool
+	CreatedAt   time.Time
+}
+
+type webEvidenceState struct {
+	mu      sync.RWMutex
+	entries []webEvidenceEntry
+}
+
+func (s *webEvidenceState) record(entry webEvidenceEntry) {
+	if entry.Evidence.ID == "" {
+		return
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entries = append(s.entries, entry)
+}
+
+func (s *webEvidenceState) snapshot() []webEvidenceEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]webEvidenceEntry, len(s.entries))
+	copy(out, s.entries)
+	return out
+}
+
 // Env holds shared runtime state that individual tools receive at
 // construction time. It replaces the old approach of making every
 // handler a method on *Toolkit.
@@ -189,6 +226,7 @@ type Env struct {
 	readState *readFileState
 	testState testRunState
 	planState planState
+	webState  webEvidenceState
 
 	toolTelemetry toolTelemetry
 }
@@ -238,6 +276,14 @@ func (e *Env) ConsecutiveTestFailures(commandHash, revision string) int {
 
 func (e *Env) LatestTestFailure() (testRunEntry, bool) {
 	return e.testState.latestFailure()
+}
+
+func (e *Env) RecordWebEvidence(entry webEvidenceEntry) {
+	e.webState.record(entry)
+}
+
+func (e *Env) WebEvidenceEntries() []webEvidenceEntry {
+	return e.webState.snapshot()
 }
 
 // ResolvePath resolves a user-supplied relative or absolute path to

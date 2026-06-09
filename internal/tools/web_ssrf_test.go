@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 func TestIsBlockedIP(t *testing.T) {
@@ -143,6 +146,70 @@ func TestWebFetchBlockedIncludesEvidence(t *testing.T) {
 	}
 	if got.Evidence.RetrievedAt == "" {
 		t.Fatalf("expected retrieved_at evidence metadata")
+	}
+}
+
+func TestToolkitWebEvidenceContextBlockTracksMetadataOnly(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "fetch-localhost",
+		Name:      "web_fetch",
+		Arguments: `{"url":"http://127.0.0.1/"}`,
+	})
+	if err != nil {
+		t.Fatalf("web_fetch: %v", err)
+	}
+	if !strings.Contains(resp, "blocked") {
+		t.Fatalf("fixture should be blocked: %s", resp)
+	}
+
+	block, ok := kit.WebEvidenceContextBlock()
+	if !ok {
+		t.Fatal("expected web evidence context block")
+	}
+	if block.Kind != wuucontext.BlockWebEvidence || block.Source != "web_tools" {
+		t.Fatalf("unexpected context block metadata: %+v", block)
+	}
+	for _, want := range []string{
+		"recent_web_evidence:",
+		"tool=web_fetch",
+		"kind=fetch",
+		"status=error",
+		"source_tier=web_page",
+		"source=http://127.0.0.1/",
+		"version_matched_to_repo=unknown",
+		"blocked",
+		"web content bodies and search snippets are intentionally omitted",
+	} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("web evidence context missing %q:\n%s", want, block.Content)
+		}
+	}
+	if strings.Contains(block.Content, `"content"`) || strings.Contains(block.Content, "Content-Type") {
+		t.Fatalf("web evidence context should not expose fetched bodies or raw payloads:\n%s", block.Content)
+	}
+
+	found := false
+	for _, candidate := range kit.ContextBlocks() {
+		if candidate.Kind == wuucontext.BlockWebEvidence {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ContextBlocks missing WEB_EVIDENCE block")
+	}
+
+	clone, err := kit.CloneForRoot(t.TempDir())
+	if err != nil {
+		t.Fatalf("CloneForRoot: %v", err)
+	}
+	if block, ok := clone.WebEvidenceContextBlock(); ok {
+		t.Fatalf("clone should not inherit web evidence state: %+v", block)
 	}
 }
 

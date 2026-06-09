@@ -21,6 +21,9 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 	if block, ok := t.TestFailureContextBlock(); ok {
 		blocks = append(blocks, block)
 	}
+	if block, ok := t.WebEvidenceContextBlock(); ok {
+		blocks = append(blocks, block)
+	}
 	if block, ok := t.ToolResultSummaryContextBlock(); ok {
 		blocks = append(blocks, block)
 	}
@@ -138,6 +141,77 @@ func activeFileReadRange(entry ReadFileEntry) string {
 		return fmt.Sprintf("%d-%d", start, start+entry.Limit-1)
 	}
 	return fmt.Sprintf("%d-EOF", start)
+}
+
+func (t *Toolkit) WebEvidenceContextBlock() (wuucontext.Block, bool) {
+	if t == nil || t.env == nil {
+		return wuucontext.Block{}, false
+	}
+	entries := t.env.WebEvidenceEntries()
+	if len(entries) == 0 {
+		return wuucontext.Block{}, false
+	}
+	const maxEntries = 8
+	start := 0
+	if len(entries) > maxEntries {
+		start = len(entries) - maxEntries
+	}
+
+	var b strings.Builder
+	b.WriteString("recent_web_evidence:\n")
+	for i, entry := range entries[start:] {
+		evidence := entry.Evidence
+		status := "ok"
+		if strings.TrimSpace(entry.Error) != "" {
+			status = "error"
+		}
+		fmt.Fprintf(&b, "- #%d id=%s tool=%s kind=%s status=%s source_tier=%s source=%s",
+			start+i+1,
+			strings.TrimSpace(evidence.ID),
+			strings.TrimSpace(entry.ToolName),
+			strings.TrimSpace(evidence.Kind),
+			status,
+			strings.TrimSpace(evidence.SourceTier),
+			compactContextLine(redactToolOutput(evidence.Source)),
+		)
+		if evidence.RetrievedAt != "" {
+			fmt.Fprintf(&b, " retrieved_at=%s", strings.TrimSpace(evidence.RetrievedAt))
+		}
+		if evidence.VersionMatchedToRepo != "" {
+			fmt.Fprintf(&b, " version_matched_to_repo=%s", compactContextLine(redactToolOutput(evidence.VersionMatchedToRepo)))
+		}
+		if entry.ResultCount > 0 {
+			fmt.Fprintf(&b, " result_count=%d", entry.ResultCount)
+		}
+		if entry.StatusCode > 0 {
+			fmt.Fprintf(&b, " status_code=%d", entry.StatusCode)
+		}
+		if strings.TrimSpace(entry.ContentType) != "" {
+			fmt.Fprintf(&b, " content_type=%s", compactContextLine(redactToolOutput(entry.ContentType)))
+		}
+		if entry.Size > 0 {
+			fmt.Fprintf(&b, " size_bytes=%d", entry.Size)
+		}
+		if entry.Truncated {
+			b.WriteString(" truncated=true")
+		}
+		if strings.TrimSpace(entry.Error) != "" {
+			fmt.Fprintf(&b, " error=%s", compactContextLine(redactToolOutput(entry.Error)))
+		}
+		b.WriteString("\n")
+	}
+	if omitted := len(entries) - (len(entries) - start); omitted > 0 {
+		fmt.Fprintf(&b, "omitted_older_evidence: %d\n", omitted)
+	}
+	b.WriteString("note: web content bodies and search snippets are intentionally omitted; treat web claims as evidence and verify them against repo dependency versions before editing.\n")
+
+	return wuucontext.Block{
+		Kind:        wuucontext.BlockWebEvidence,
+		Title:       "Recent web evidence",
+		Source:      "web_tools",
+		TokenBudget: 800,
+		Content:     strings.TrimRight(b.String(), "\n"),
+	}, true
 }
 
 func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {

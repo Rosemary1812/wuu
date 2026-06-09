@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -42,7 +43,11 @@ func (t *WebSearchTool) Definition() providers.ToolDefinition {
 }
 
 func (t *WebSearchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	return webSearchExecute(ctx, argsJSON)
+	result, err := webSearchExecute(ctx, argsJSON)
+	if err == nil {
+		recordWebEvidenceResult(t.env, t.Name(), result)
+	}
+	return result, err
 }
 
 // ---------------------------------------------------------------------------
@@ -82,5 +87,37 @@ func (t *WebFetchTool) Definition() providers.ToolDefinition {
 }
 
 func (t *WebFetchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	return webFetchExecute(ctx, argsJSON)
+	result, err := webFetchExecute(ctx, argsJSON)
+	if err == nil {
+		recordWebEvidenceResult(t.env, t.Name(), result)
+	}
+	return result, err
+}
+
+func recordWebEvidenceResult(env *Env, toolName, result string) {
+	if env == nil || result == "" {
+		return
+	}
+	var payload struct {
+		Evidence    webEvidence       `json:"evidence"`
+		Error       string            `json:"error"`
+		Results     []json.RawMessage `json:"results"`
+		StatusCode  int               `json:"status_code"`
+		ContentType string            `json:"content_type"`
+		Size        int               `json:"size"`
+		Truncated   bool              `json:"truncated"`
+	}
+	if err := json.Unmarshal([]byte(result), &payload); err != nil || payload.Evidence.ID == "" {
+		return
+	}
+	env.RecordWebEvidence(webEvidenceEntry{
+		ToolName:    toolName,
+		Evidence:    payload.Evidence,
+		Error:       payload.Error,
+		ResultCount: len(payload.Results),
+		StatusCode:  payload.StatusCode,
+		ContentType: payload.ContentType,
+		Size:        payload.Size,
+		Truncated:   payload.Truncated,
+	})
 }

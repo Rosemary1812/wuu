@@ -111,6 +111,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	env.readState = nil
 	env.testState = testRunState{}
 	env.planState = planState{}
+	env.webState = webEvidenceState{}
 	env.toolTelemetry = toolTelemetry{}
 
 	clone := &Toolkit{
