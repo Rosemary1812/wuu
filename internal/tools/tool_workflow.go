@@ -894,8 +894,7 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"enum":        []string{"memory", "user"},
 					"description": "Memory target for record_memory_candidate. Defaults to memory.",
 				},
-				"team":      workflowTeamInputSchema("Workflow Team members chosen by the agent before spawning workflow workers. Use mode reuse_profile for existing durable profiles, create_profile for new recurring durable identities, and ephemeral for one-off memoryless workers."),
-				"team_plan": workflowTeamInputSchema("Compatibility alias for team. Prefer team with action=record_workflow_team."),
+				"team": workflowTeamInputSchema("Workflow Team members chosen by the agent before spawning workflow workers. Use mode reuse_profile for existing durable profiles, create_profile for new recurring durable identities, and ephemeral for one-off memoryless workers."),
 				"tags": map[string]any{
 					"type":        "array",
 					"description": "Tags for record_memory_candidate.",

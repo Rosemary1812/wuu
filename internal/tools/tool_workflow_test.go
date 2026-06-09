@@ -1202,6 +1202,9 @@ func TestWorkflowControlDefinitionPrefersWorkflowTeamName(t *testing.T) {
 	if strings.Contains(schema, "record_team_plan") {
 		t.Fatalf("workflow_control schema should not expose deprecated record_team_plan: %s", schema)
 	}
+	if strings.Contains(schema, "team_plan") {
+		t.Fatalf("workflow_control schema should not expose deprecated team_plan field: %s", schema)
+	}
 }
 
 func TestWorkflowControlInfersAwaitResultPhaseFromWorkflowTeam(t *testing.T) {
