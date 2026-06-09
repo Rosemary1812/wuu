@@ -828,11 +828,12 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 		t.Fatalf("expected per-file actions in response: %s", resp)
 	}
 	var parsed struct {
-		DryRun            bool     `json:"dry_run"`
-		HunkCount         int      `json:"hunk_count"`
-		ChangedFiles      []string `json:"changed_files"`
-		WorkspaceRevision string   `json:"workspace_revision"`
-		Suggestions       []string `json:"next_suggestions"`
+		DryRun            bool                  `json:"dry_run"`
+		HunkCount         int                   `json:"hunk_count"`
+		ChangedFiles      []string              `json:"changed_files"`
+		RiskSummary       applyPatchRiskSummary `json:"risk_summary"`
+		WorkspaceRevision string                `json:"workspace_revision"`
+		Suggestions       []string              `json:"next_suggestions"`
 		Provenance        struct {
 			Tool   string `json:"tool"`
 			Source string `json:"source"`
@@ -853,6 +854,20 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 	if parsed.DryRun || parsed.HunkCount != 4 {
 		t.Fatalf("unexpected patch summary: %+v", parsed)
+	}
+	if parsed.RiskSummary.FileCount != 4 ||
+		parsed.RiskSummary.HunkCount != 4 ||
+		parsed.RiskSummary.AddedLines != 3 ||
+		parsed.RiskSummary.DeletedLines != 3 ||
+		parsed.RiskSummary.Actions["update"] != 1 ||
+		parsed.RiskSummary.Actions["add"] != 1 ||
+		parsed.RiskSummary.Actions["delete"] != 1 ||
+		parsed.RiskSummary.Actions["move"] != 1 ||
+		!parsed.RiskSummary.MultiFile ||
+		!parsed.RiskSummary.ContainsDelete ||
+		!parsed.RiskSummary.ContainsMove ||
+		parsed.RiskSummary.RiskLevel != "high" {
+		t.Fatalf("unexpected patch risk summary: %+v", parsed.RiskSummary)
 	}
 	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("apply_patch response missing filesystem workspace revision: %+v", parsed)
@@ -877,6 +892,9 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	if parsed.PatchJournal.ID == "" || parsed.PatchJournal.SessionID != "session-apply-patch" ||
 		parsed.PatchJournal.HunkCount != 4 || parsed.PatchJournal.PatchPath != parsed.PatchPath {
 		t.Fatalf("unexpected inline patch journal: %+v", parsed.PatchJournal)
+	}
+	if parsed.PatchJournal.RiskSummary.RiskLevel != "high" || parsed.PatchJournal.RiskSummary.AddedLines != 3 {
+		t.Fatalf("patch journal missing risk summary: %+v", parsed.PatchJournal.RiskSummary)
 	}
 	if got := mustReadFile(t, parsed.PatchPath); got != patchText {
 		t.Fatalf("patch artifact mismatch:\n%s", got)

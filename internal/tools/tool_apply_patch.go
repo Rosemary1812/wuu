@@ -163,10 +163,11 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
 	warnings := []string(nil)
+	riskSummary := summarizeApplyPatchRisk(files, len(patch.Hunks))
 	var journal *applyPatchJournalManifest
 	if !dryRun {
 		var err error
-		journal, err = t.writePatchJournal(patchText, files, uniqueNonEmptyStrings(changedFiles), len(patch.Hunks), revisionBefore, revisionAfter, snapshots)
+		journal, err = t.writePatchJournal(patchText, files, uniqueNonEmptyStrings(changedFiles), len(patch.Hunks), revisionBefore, revisionAfter, snapshots, riskSummary)
 		if err != nil {
 			warnings = append(warnings, "patch journal could not be written: "+err.Error())
 		}
@@ -176,6 +177,7 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		"dry_run":            dryRun,
 		"hunk_count":         len(patch.Hunks),
 		"changed_files":      uniqueNonEmptyStrings(changedFiles),
+		"risk_summary":       riskSummary,
 		"workspace_revision": revisionAfter,
 		"next_suggestions":   applyPatchNextSuggestions(dryRun),
 		"provenance": map[string]any{
@@ -258,8 +260,22 @@ type applyPatchJournalManifest struct {
 	PatchPath               string                      `json:"patch_path"`
 	Snapshots               []applyPatchJournalSnapshot `json:"snapshots,omitempty"`
 	Files                   []applyPatchFileResult      `json:"files"`
+	RiskSummary             applyPatchRiskSummary       `json:"risk_summary"`
 	Provenance              map[string]string           `json:"provenance"`
 	RollbackHint            string                      `json:"rollback_hint,omitempty"`
+}
+
+type applyPatchRiskSummary struct {
+	FileCount      int            `json:"file_count"`
+	HunkCount      int            `json:"hunk_count"`
+	AddedLines     int            `json:"added_lines"`
+	DeletedLines   int            `json:"deleted_lines"`
+	Actions        map[string]int `json:"actions,omitempty"`
+	MultiFile      bool           `json:"multi_file,omitempty"`
+	ContainsDelete bool           `json:"contains_delete,omitempty"`
+	ContainsMove   bool           `json:"contains_move,omitempty"`
+	RiskLevel      string         `json:"risk_level"`
+	ReviewHint     string         `json:"review_hint"`
 }
 
 type applyPatchJournalSnapshot struct {
@@ -290,6 +306,60 @@ func uniqueNonEmptyStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func summarizeApplyPatchRisk(files []applyPatchFileResult, hunkCount int) applyPatchRiskSummary {
+	summary := applyPatchRiskSummary{
+		FileCount: len(files),
+		HunkCount: hunkCount,
+		Actions:   map[string]int{},
+		RiskLevel: "low",
+	}
+	for _, file := range files {
+		action := strings.TrimSpace(file.Action)
+		if action == "" {
+			action = "unknown"
+		}
+		summary.Actions[action]++
+		switch action {
+		case "add":
+			summary.AddedLines += file.Diff.Lines
+		case "delete":
+			summary.ContainsDelete = true
+		case "move":
+			summary.ContainsMove = true
+		}
+		added, deleted := diffLineChangeCounts(file.Diff)
+		summary.AddedLines += added
+		summary.DeletedLines += deleted
+	}
+	summary.MultiFile = summary.FileCount > 1
+	totalChanged := summary.AddedLines + summary.DeletedLines
+	switch {
+	case summary.ContainsDelete || summary.ContainsMove || summary.FileCount > 5 || totalChanged > 300:
+		summary.RiskLevel = "high"
+		summary.ReviewHint = "Inspect the full diff and rollback journal before synthesis; run targeted validation after applying the patch."
+	case summary.MultiFile || totalChanged > 50:
+		summary.RiskLevel = "medium"
+		summary.ReviewHint = "Review changed files as a set and run targeted validation before finishing."
+	default:
+		summary.ReviewHint = "Review the compact diff and run the smallest relevant validation before finishing."
+	}
+	return summary
+}
+
+func diffLineChangeCounts(diff DiffResult) (added, deleted int) {
+	for _, hunk := range diff.Hunks {
+		for _, line := range hunk.Lines {
+			switch line.Op {
+			case "insert":
+				added++
+			case "delete":
+				deleted++
+			}
+		}
+	}
+	return added, deleted
 }
 
 type applyPatchBaselineTarget struct {
@@ -817,7 +887,7 @@ func (t *ApplyPatchTool) notifyPatchPlans(plans []applyPatchHunkPlan) {
 	}
 }
 
-func (t *ApplyPatchTool) writePatchJournal(patchText string, files []applyPatchFileResult, changedFiles []string, hunkCount int, revisionBefore, revisionAfter string, snapshots []patchPathSnapshot) (*applyPatchJournalManifest, error) {
+func (t *ApplyPatchTool) writePatchJournal(patchText string, files []applyPatchFileResult, changedFiles []string, hunkCount int, revisionBefore, revisionAfter string, snapshots []patchPathSnapshot, riskSummary applyPatchRiskSummary) (*applyPatchJournalManifest, error) {
 	root := strings.TrimSpace(t.env.SessionDir)
 	if root == "" {
 		root = t.env.StateDir
@@ -856,6 +926,7 @@ func (t *ApplyPatchTool) writePatchJournal(patchText string, files []applyPatchF
 		PatchPath:               patchPath,
 		Snapshots:               journalSnapshots,
 		Files:                   append([]applyPatchFileResult(nil), files...),
+		RiskSummary:             riskSummary,
 		Provenance: map[string]string{
 			"tool":   "apply_patch",
 			"source": "model_tool_call",
