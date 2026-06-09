@@ -45,7 +45,10 @@ func (c *sessionRecordingClient) StreamChat(_ context.Context, req providers.Cha
 }
 
 func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
-	inject := EnvContextInjector(t.TempDir(), nil, "", func() []wuucontext.Block {
+	root := t.TempDir()
+	writeSessionTestFile(t, filepath.Join(root, "go.mod"), "module example.com/runtime\n")
+	writeSessionTestFile(t, filepath.Join(root, "main.go"), "package main\n")
+	inject := EnvContextInjector(root, nil, "", func() []wuucontext.Block {
 		return []wuucontext.Block{{
 			Kind:    wuucontext.BlockTaskState,
 			Title:   "Current visible task plan",
@@ -59,7 +62,7 @@ func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
 		t.Fatalf("expected one context message, got %+v", msgs)
 	}
 	content := msgs[0].Content
-	for _, want := range []string{"<system-reminder>", "[ENVIRONMENT]", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
+	for _, want := range []string{"<system-reminder>", "[ENVIRONMENT]", "[REPO_MAP]", "source: runtime.repo_map", "main.go", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("injected context missing %q:\n%s", want, content)
 		}

@@ -699,6 +699,9 @@ func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, curr
 	return func() []providers.ChatMessage {
 		env := wuucontext.Snapshot(rootDir)
 		blocks := []wuucontext.Block{wuucontext.EnvironmentBlock(env)}
+		if repoMap, ok := wuucontext.RepoMapBlock(rootDir, wuucontext.RepoMapOptions{}); ok {
+			blocks = append(blocks, repoMap)
+		}
 		for _, provider := range blockProviders {
 			if provider == nil {
 				continue

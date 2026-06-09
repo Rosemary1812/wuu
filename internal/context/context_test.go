@@ -86,6 +86,53 @@ func TestCompileBlocksRendersTypedContext(t *testing.T) {
 	}
 }
 
+func TestRepoMapBlockSummarizesWorkspace(t *testing.T) {
+	root := t.TempDir()
+	mustWriteContextTestFile(t, filepath.Join(root, "AGENTS.md"), "rules\n")
+	mustWriteContextTestFile(t, filepath.Join(root, "go.mod"), "module example.com/repo\n")
+	mustWriteContextTestFile(t, filepath.Join(root, "cmd/app/main.go"), "package main\n")
+	mustWriteContextTestFile(t, filepath.Join(root, "cmd/app/main_test.go"), "package main\n")
+	mustWriteContextTestFile(t, filepath.Join(root, "web/app.tsx"), "export const App = () => null\n")
+	mustWriteContextTestFile(t, filepath.Join(root, "node_modules/pkg/index.js"), "ignored\n")
+
+	block, ok := RepoMapBlock(root, RepoMapOptions{MaxListedFiles: 10})
+	if !ok {
+		t.Fatal("expected repo map block")
+	}
+	if block.Kind != BlockRepoMap || block.Source != "runtime.repo_map" {
+		t.Fatalf("unexpected repo map block metadata: %+v", block)
+	}
+	for _, want := range []string{
+		"files_scanned: 5",
+		"languages:",
+		"- go: 2",
+		"- typescript: 1",
+		"test_files:",
+		"- cmd/app/main_test.go",
+		"representative_files:",
+		"- AGENTS.md",
+		"- go.mod",
+		"- cmd/app/main.go",
+	} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("repo map missing %q:\n%s", want, block.Content)
+		}
+	}
+	if strings.Contains(block.Content, "node_modules") {
+		t.Fatalf("repo map should skip node_modules:\n%s", block.Content)
+	}
+}
+
+func mustWriteContextTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
 func TestFormatSystemReminderUsesTypedEnvironmentBlock(t *testing.T) {
 	got := FormatSystemReminder(EnvInfo{
 		CWD:       "/repo",
