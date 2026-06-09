@@ -15,13 +15,14 @@ type stubTool struct {
 	name     string
 	defCalls int
 	def      providers.ToolDefinition
+	result   string
 }
 
-func (s *stubTool) Name() string                                 { return s.name }
-func (s *stubTool) Definition() providers.ToolDefinition         { s.defCalls++; return s.def }
-func (s *stubTool) Execute(context.Context, string) (string, error) { return "", nil }
-func (s *stubTool) IsReadOnly() bool                             { return true }
-func (s *stubTool) IsConcurrencySafe() bool                      { return true }
+func (s *stubTool) Name() string                                    { return s.name }
+func (s *stubTool) Definition() providers.ToolDefinition            { s.defCalls++; return s.def }
+func (s *stubTool) Execute(context.Context, string) (string, error) { return s.result, nil }
+func (s *stubTool) IsReadOnly() bool                                { return true }
+func (s *stubTool) IsConcurrencySafe() bool                         { return true }
 
 func TestRegistry_DefinitionsCachedAfterFirstCall(t *testing.T) {
 	a := &stubTool{name: "a", def: providers.ToolDefinition{Name: "a", Description: "x"}}

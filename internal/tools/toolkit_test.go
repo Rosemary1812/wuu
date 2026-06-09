@@ -1775,6 +1775,40 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 	}
 }
 
+func TestToolkit_MCPToolResultsAreRedacted(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name:   "mcp_docs_search",
+			def:    providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search docs through MCP"},
+			result: "API_KEY=mcp-secret-value-1234567890",
+		},
+	)
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"docs search"}`,
+	}); err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
+	if err != nil {
+		t.Fatalf("mcp_docs_search: %v", err)
+	}
+	if strings.Contains(resp, "mcp-secret-value") || !strings.Contains(resp, "[REDACTED]") {
+		t.Fatalf("MCP result should be redacted: %s", resp)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) == 0 || records[len(records)-1].Kind != ToolKindMCP {
+		t.Fatalf("expected MCP telemetry record, got %+v", records)
+	}
+}
+
 func TestToolkit_ToolTelemetry_RecordsSuccess(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

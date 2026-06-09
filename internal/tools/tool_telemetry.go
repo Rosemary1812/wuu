@@ -72,6 +72,9 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	}
 
 	result, err := tool.Execute(ctx, call.Arguments)
+	if info.Kind == ToolKindMCP {
+		result = redactToolOutput(result)
+	}
 	returned := result
 	resultRef := ""
 	resultBudgeted := false
