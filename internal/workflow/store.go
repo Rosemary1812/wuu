@@ -151,7 +151,11 @@ const (
 	EventMemoryCandidateReviewed EventType = "memory_candidate_reviewed"
 	EventFileCheckpointCreated   EventType = "file_checkpoint_created"
 	EventFileCheckpointRestored  EventType = "file_checkpoint_restored"
-	EventTeamPlanRecorded        EventType = "team_plan_recorded"
+	EventWorkflowTeamRecorded    EventType = "workflow_team_recorded"
+
+	// EventTeamPlanRecorded is kept as a compatibility alias for callers that
+	// still use the old internal name.
+	EventTeamPlanRecorded EventType = EventWorkflowTeamRecorded
 )
 
 type Event struct {
@@ -553,7 +557,7 @@ func (s *Store) SaveTeamPlan(plan TeamPlan) (TeamPlan, error) {
 	if err := writeJSONFile(path, plan); err != nil {
 		return TeamPlan{}, err
 	}
-	if err := s.appendEventLocked(Event{Type: EventTeamPlanRecorded, RunID: plan.RunID, Message: fmt.Sprintf("%d members", len(plan.Members))}); err != nil {
+	if err := s.appendEventLocked(Event{Type: EventWorkflowTeamRecorded, RunID: plan.RunID, Message: fmt.Sprintf("%d members", len(plan.Members))}); err != nil {
 		return TeamPlan{}, err
 	}
 	return plan, nil

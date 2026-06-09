@@ -289,8 +289,8 @@ func TestStoreSavesAndLoadsTeamPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListEvents: %v", err)
 	}
-	if events[len(events)-1].Type != EventTeamPlanRecorded {
-		t.Fatalf("expected team plan event, got %+v", events)
+	if events[len(events)-1].Type != EventWorkflowTeamRecorded {
+		t.Fatalf("expected workflow team event, got %+v", events)
 	}
 }
 
