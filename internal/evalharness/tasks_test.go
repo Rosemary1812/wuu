@@ -220,6 +220,49 @@ func CartDiscountTotal(subtotalCents int, discountCents int) int {
 	}
 }
 
+func TestRepoMapNavigationVerification(t *testing.T) {
+	task, ok := ByID("repo_map_navigation")
+	if !ok {
+		t.Fatal("missing repo_map_navigation task")
+	}
+	if !evalTaskRequiresTool(task, "repo_map") || !evalTaskRequiresTool(task, "read_file") || !evalTaskRequiresTool(task, "run_test") {
+		t.Fatalf("repo map navigation should require repo_map/read_file/run_test, got %+v", task.RequiredTools)
+	}
+	if len(task.RequiredToolCalls) != 1 || task.RequiredToolCalls[0].ToolName != "repo_map" {
+		t.Fatalf("repo map navigation should require a repo_map call, got %+v", task.RequiredToolCalls)
+	}
+
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask failed module: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("buggy repo map fixture should fail verification")
+	}
+
+	fixed := `package service
+
+func DisplayName(first, last string) string {
+	return first + " " + last
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "service", "user.go"), []byte(fixed), 0o644); err != nil {
+		t.Fatalf("write fixed file: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask fixed module: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("fixed repo map fixture should pass verification: %s", passed.Reason)
+	}
+}
+
 func TestLongProcessOutputVerification(t *testing.T) {
 	task, ok := ByID("long_process_output")
 	if !ok {

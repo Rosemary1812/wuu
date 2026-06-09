@@ -328,6 +328,19 @@ func Catalog() []Task {
 			Verify: verifyGoTests,
 		},
 		{
+			ID:          "repo_map_navigation",
+			Name:        "Use repo map before editing",
+			Description: "Go package where the agent must use repo_map to orient around source and test files before editing.",
+			Prompt: "Use repo_map first to inspect representative files and test mappings before reading any source file. " +
+				"Then read the mapped implementation and test, fix the implementation bug without changing tests, and use run_test to verify go test ./... passes.",
+			RequiredTools: []string{"repo_map", "read_file", "run_test"},
+			RequiredToolCalls: []ToolCallRequirement{
+				{ToolName: "repo_map"},
+			},
+			Setup:  setupRepoMapNavigation,
+			Verify: verifyGoTests,
+		},
+		{
 			ID:            "long_process_output",
 			Name:          "Read a long-running process log",
 			Description:   "Script prints a readiness marker after a delay and keeps running.",
@@ -630,6 +643,36 @@ func TestCartDiscountTotalAppliesDiscount(t *testing.T) {
 		"auth/session.go": `package auth
 
 func ExpireSession() {}
+`,
+	}
+	return writeFiles(root, files)
+}
+
+func setupRepoMapNavigation(root string) error {
+	files := map[string]string{
+		"go.mod": `module repomapeval
+
+go 1.22
+`,
+		"service/user.go": `package service
+
+func DisplayName(first, last string) string {
+	return first
+}
+`,
+		"service/user_test.go": `package service
+
+import "testing"
+
+func TestDisplayNameUsesFirstAndLastName(t *testing.T) {
+	if got := DisplayName("Ada", "Lovelace"); got != "Ada Lovelace" {
+		t.Fatalf("DisplayName() = %q, want %q", got, "Ada Lovelace")
+	}
+}
+`,
+		"docs/notes.md": `# Notes
+
+Unrelated documentation.
 `,
 	}
 	return writeFiles(root, files)
