@@ -3436,14 +3436,18 @@ func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
 		t.Fatalf("grep: %v", err)
 	}
 	var grepParsed struct {
-		Matches     []grepMatch `json:"matches"`
-		Suggestions []string    `json:"next_suggestions"`
+		Matches           []grepMatch `json:"matches"`
+		WorkspaceRevision string      `json:"workspace_revision"`
+		Suggestions       []string    `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(grepResp), &grepParsed); err != nil {
 		t.Fatalf("parse grep response: %v", err)
 	}
 	if len(grepParsed.Matches) != 1 {
 		t.Fatalf("unexpected grep matches: %+v", grepParsed.Matches)
+	}
+	if !strings.HasPrefix(grepParsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("grep response missing filesystem workspace revision: %+v", grepParsed)
 	}
 	if len(grepParsed.Suggestions) == 0 || !strings.Contains(strings.Join(grepParsed.Suggestions, " "), "read_file") {
 		t.Fatalf("grep response missing read_file suggestion: %+v", grepParsed.Suggestions)
@@ -3457,14 +3461,18 @@ func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
 		t.Fatalf("glob: %v", err)
 	}
 	var globParsed struct {
-		Files       []string `json:"files"`
-		Suggestions []string `json:"next_suggestions"`
+		Files             []string `json:"files"`
+		WorkspaceRevision string   `json:"workspace_revision"`
+		Suggestions       []string `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(globResp), &globParsed); err != nil {
 		t.Fatalf("parse glob response: %v", err)
 	}
 	if len(globParsed.Files) != 0 {
 		t.Fatalf("unexpected glob matches: %+v", globParsed.Files)
+	}
+	if !strings.HasPrefix(globParsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("glob response missing filesystem workspace revision: %+v", globParsed)
 	}
 	if len(globParsed.Suggestions) == 0 || !strings.Contains(strings.Join(globParsed.Suggestions, " "), "broader glob") {
 		t.Fatalf("empty glob response missing broaden suggestion: %+v", globParsed.Suggestions)

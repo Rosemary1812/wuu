@@ -41,6 +41,7 @@ func (t *GrepTool) Definition() providers.ToolDefinition {
 			"- Supports full regex syntax (e.g. \"log.*Error\", \"func\\\\s+\\\\w+\")\n" +
 			"- Filter files with the include glob parameter (e.g. \"*.go\", \"*.ts\")\n" +
 			"- Returns matching lines with file paths and line numbers (max 250 matches)\n" +
+			"- Results include workspace_revision so search evidence can be tied to a workspace state\n" +
 			"- Falls back to a pure Go implementation if ripgrep is not installed",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -83,7 +84,7 @@ func (t *GrepTool) Definition() providers.ToolDefinition {
 	}
 }
 
-func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Pattern    string `json:"pattern"`
 		Path       string `json:"path"`
@@ -140,11 +141,12 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 			return "", err
 		}
 		result := map[string]any{
-			"pattern":          args.Pattern,
-			"total":            len(files),
-			"truncated":        len(files) >= limit,
-			"files":            files,
-			"next_suggestions": searchNextSuggestions("grep", "files_with_matches", len(files), len(files) >= limit),
+			"pattern":            args.Pattern,
+			"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+			"total":              len(files),
+			"truncated":          len(files) >= limit,
+			"files":              files,
+			"next_suggestions":   searchNextSuggestions("grep", "files_with_matches", len(files), len(files) >= limit),
 		}
 		return mustJSON(result)
 
@@ -154,11 +156,12 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 			return "", err
 		}
 		result := map[string]any{
-			"pattern":          args.Pattern,
-			"total":            total,
-			"truncated":        len(counts) >= limit,
-			"counts":           counts,
-			"next_suggestions": searchNextSuggestions("grep", "count", total, len(counts) >= limit),
+			"pattern":            args.Pattern,
+			"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+			"total":              total,
+			"truncated":          len(counts) >= limit,
+			"counts":             counts,
+			"next_suggestions":   searchNextSuggestions("grep", "count", total, len(counts) >= limit),
 		}
 		return mustJSON(result)
 
@@ -170,7 +173,7 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 				return "", err
 			}
 		}
-		return grepContentResultJSON(args.Pattern, matches, len(matches) >= limit)
+		return grepContentResultJSON(args.Pattern, matches, len(matches) >= limit, workspaceRevision(ctx, t.env.RootDir))
 	}
 }
 
@@ -193,6 +196,7 @@ func (t *GlobTool) Definition() providers.ToolDefinition {
 			"Usage:\n" +
 			"- Supports glob patterns like \"**/*.go\" or \"src/**/*.ts\"\n" +
 			"- Returns matching file paths (max 500 matches)\n" +
+			"- Results include workspace_revision so file discovery can be tied to a workspace state\n" +
 			"- Use this tool when you need to find files by name patterns\n" +
 			"- For content search (finding text inside files), use grep instead",
 		InputSchema: map[string]any{
@@ -212,7 +216,7 @@ func (t *GlobTool) Definition() providers.ToolDefinition {
 	}
 }
 
-func (t *GlobTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *GlobTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -243,11 +247,12 @@ func (t *GlobTool) Execute(_ context.Context, argsJSON string) (string, error) {
 	}
 
 	result := map[string]any{
-		"pattern":          args.Pattern,
-		"total":            len(matches),
-		"truncated":        len(matches) >= limit,
-		"files":            matches,
-		"next_suggestions": searchNextSuggestions("glob", "", len(matches), len(matches) >= limit),
+		"pattern":            args.Pattern,
+		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"total":              len(matches),
+		"truncated":          len(matches) >= limit,
+		"files":              matches,
+		"next_suggestions":   searchNextSuggestions("glob", "", len(matches), len(matches) >= limit),
 	}
 	return mustJSON(result)
 }
@@ -282,7 +287,7 @@ func searchNextSuggestions(toolName, outputMode string, total int, truncated boo
 	}
 }
 
-func grepContentResultJSON(pattern string, matches []grepMatch, hitLimit bool) (string, error) {
+func grepContentResultJSON(pattern string, matches []grepMatch, hitLimit bool, revision string) (string, error) {
 	total := len(matches)
 	budgetedMatches := make([]grepMatch, len(matches))
 	contentTruncated := false
@@ -299,6 +304,7 @@ func grepContentResultJSON(pattern string, matches []grepMatch, hitLimit bool) (
 		truncated := hitLimit || contentTruncated || omitted > 0
 		result := map[string]any{
 			"pattern":              pattern,
+			"workspace_revision":   revision,
 			"total":                total,
 			"truncated":            truncated,
 			"matches":              budgetedMatches,
