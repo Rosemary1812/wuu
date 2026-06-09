@@ -2112,6 +2112,70 @@ func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
 	}
 }
 
+func TestToolkit_StartProcessRejectsSecretBearingCommands(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"env | grep TOKEN","owner_kind":"main_agent"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "environment variables") {
+		t.Fatalf("expected environment dump rejection, got %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"cat .env","owner_kind":"main_agent"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "sensitive paths") {
+		t.Fatalf("expected sensitive path rejection, got %v", err)
+	}
+}
+
+func TestToolkit_ProcessOutputRedactsSecrets(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	kit.SetProcessManager(manager)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"printf 'API_KEY=process-secret-value-1234567890\n'; sleep 0.1","owner_kind":"main_agent","lifecycle":"session"}`,
+	})
+	if err != nil {
+		t.Fatalf("start_process: %v", err)
+	}
+	if strings.Contains(resp, "process-secret-value") || !strings.Contains(resp, "[REDACTED]") {
+		t.Fatalf("start_process response should redact command metadata: %s", resp)
+	}
+	var started proc.Process
+	if err := json.Unmarshal([]byte(resp), &started); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	defer manager.Stop(started.ID)
+
+	outResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_process_output",
+		Arguments: `{"process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":2000}`,
+	})
+	if err != nil {
+		t.Fatalf("read_process_output: %v", err)
+	}
+	if strings.Contains(outResp, "process-secret-value") || !strings.Contains(outResp, "[REDACTED]") {
+		t.Fatalf("read_process_output should redact process output and metadata: %s", outResp)
+	}
+}
+
 func TestToolkit_SpawnAgentDefinitionIncludesForkTurnsAndAgentProfile(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

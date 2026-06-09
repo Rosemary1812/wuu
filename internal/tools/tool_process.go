@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	proc "github.com/blueberrycongee/wuu/internal/process"
@@ -23,7 +24,7 @@ func (t *StartProcessTool) IsConcurrencySafe() bool { return false }
 
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "start_process", Description: "Start a managed background OS process in the workspace.",
+		Name: "start_process", Description: "Start a managed background OS process in the workspace. Commands that dump environment variables or touch sensitive credential paths are rejected.",
 		InputSchema: objectSchema(
 			map[string]any{
 				"command":    stringSchema(""),
@@ -51,12 +52,21 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
+	if args.Command == "" {
+		return "", errors.New("start_process requires command")
+	}
+	if shellCommandDumpsEnvironment(args.Command) {
+		return "", errors.New("start_process refuses to print process environment variables because they may contain secrets")
+	}
+	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+		return "", errors.New("start_process refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
+	}
 	m, err := t.env.ProcessManager()
 	if err != nil {
 		return "", err
 	}
 	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY})
-	out, _ := json.Marshal(p)
+	out, _ := json.Marshal(redactProcessPtr(p))
 	if startErr != nil {
 		return string(out), startErr
 	}
@@ -91,7 +101,11 @@ func (t *ListProcessesTool) Execute(_ context.Context, _ string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	return mustJSON(ps)
+	redacted := make([]proc.Process, 0, len(ps))
+	for _, p := range ps {
+		redacted = append(redacted, redactProcess(p))
+	}
+	return mustJSON(redacted)
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +147,7 @@ func (t *StopProcessTool) Execute(_ context.Context, argsJSON string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return mustJSON(p)
+	return mustJSON(redactProcessPtr(p))
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +204,7 @@ func (t *ReadProcessOutputTool) Execute(ctx context.Context, argsJSON string) (s
 	}
 	return mustJSON(map[string]any{
 		"process_id":   args.ProcessID,
-		"output":       snapshot.Output,
+		"output":       redactToolOutput(snapshot.Output),
 		"truncated":    snapshot.Truncated,
 		"start_offset": snapshot.StartOffset,
 		"end_offset":   snapshot.EndOffset,
@@ -199,7 +213,7 @@ func (t *ReadProcessOutputTool) Execute(ctx context.Context, argsJSON string) (s
 		"duration_ms":  snapshot.Duration.Milliseconds(),
 		"status":       snapshot.Process.Status,
 		"exit_code":    snapshot.Process.ExitCode,
-		"process":      snapshot.Process,
+		"process":      redactProcess(snapshot.Process),
 	})
 }
 
@@ -246,5 +260,19 @@ func (t *WriteStdinTool) Execute(_ context.Context, argsJSON string) (string, er
 	if err != nil {
 		return "", err
 	}
-	return mustJSON(map[string]any{"process_id": args.ProcessID, "bytes_written": len(args.Input), "process": p})
+	return mustJSON(map[string]any{"process_id": args.ProcessID, "bytes_written": len(args.Input), "process": redactProcessPtr(p)})
+}
+
+func redactProcessPtr(p *proc.Process) *proc.Process {
+	if p == nil {
+		return nil
+	}
+	redacted := redactProcess(*p)
+	return &redacted
+}
+
+func redactProcess(p proc.Process) proc.Process {
+	p.Command = redactToolOutput(p.Command)
+	p.LastError = redactToolOutput(p.LastError)
+	return p
 }
