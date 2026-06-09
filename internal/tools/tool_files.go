@@ -427,16 +427,16 @@ func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte
 	currentSHA := sha256Hex(oldContent)
 	if expectedOldSHA != "" {
 		if normalizeFileSHA(expectedOldSHA) != currentSHA {
-			return errors.New("expected_old_sha does not match current file. Use read_file again before overwriting")
+			return fileBaselineError("expected_old_sha_mismatch", "expected_old_sha does not match current file. Use read_file again before overwriting", "write_file", currentSHA, expectedOldSHA)
 		}
 		return nil
 	}
 	readEntry, ok := t.env.GetReadEntry(resolved)
 	if !ok {
-		return errors.New("existing file has not been read yet. Use read_file first or pass expected_old_sha from read_file before overwriting")
+		return fileBaselineError("missing_file_baseline", "existing file has not been read yet. Use read_file first or pass expected_old_sha from read_file before overwriting", "write_file", currentSHA, "")
 	}
 	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
-		return errors.New("file changed since last read. Use read_file again before overwriting")
+		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before overwriting", "write_file", currentSHA, formatFileSHA(readEntry.ContentSHA256))
 	}
 	if readEntry.ContentSHA256 == "" {
 		info, err := os.Stat(resolved)
@@ -444,7 +444,7 @@ func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte
 			return fmt.Errorf("stat file: %w", err)
 		}
 		if !readEntryMatchesInfo(readEntry, info) {
-			return errors.New("file changed since last read. Use read_file again before overwriting")
+			return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before overwriting", "write_file", currentSHA, "")
 		}
 	}
 	return nil
@@ -701,24 +701,45 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 func (t *EditFileTool) validateEditBaseline(resolved string, info os.FileInfo, currentSHA, expectedOldSHA string) error {
 	if expectedOldSHA != "" {
 		if normalizeFileSHA(expectedOldSHA) != currentSHA {
-			return errors.New("expected_old_sha does not match current file. Use read_file again before editing")
+			return fileBaselineError("expected_old_sha_mismatch", "expected_old_sha does not match current file. Use read_file again before editing", "edit_file", currentSHA, expectedOldSHA)
 		}
 		return nil
 	}
 	readEntry, ok := t.env.GetReadEntry(resolved)
 	if !ok {
-		return errors.New("file has not been read yet. Use read_file first or pass expected_old_sha from read_file before editing")
+		return fileBaselineError("missing_file_baseline", "file has not been read yet. Use read_file first or pass expected_old_sha from read_file before editing", "edit_file", currentSHA, "")
 	}
 	if readEntry.Size != 0 && readEntry.Size != info.Size() {
-		return errors.New("file changed since last read. Use read_file again before editing")
+		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file", currentSHA, formatFileSHA(readEntry.ContentSHA256))
 	}
 	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
-		return errors.New("file changed since last read. Use read_file again before editing")
+		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file", currentSHA, formatFileSHA(readEntry.ContentSHA256))
 	}
 	if readEntry.ContentSHA256 == "" && !readEntryMatchesInfo(readEntry, info) {
-		return errors.New("file changed since last read. Use read_file again before editing")
+		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file", currentSHA, "")
 	}
 	return nil
+}
+
+func fileBaselineError(kind, message, toolName, currentSHA, expectedOldSHA string) error {
+	current := displayFileSHA(currentSHA)
+	expected := displayFileSHA(expectedOldSHA)
+	return fmt.Errorf("%s: error_kind=%s current_file_sha=%s expected_old_sha=%s safe_retry=%q model_next_action=%q",
+		message,
+		kind,
+		current,
+		expected,
+		fmt.Sprintf("Run read_file on the target file and retry %s with the returned file_sha as expected_old_sha.", toolName),
+		"Do not retry with stale file content; refresh evidence first.",
+	)
+}
+
+func displayFileSHA(value string) string {
+	normalized := normalizeFileSHA(value)
+	if normalized == "" {
+		return ""
+	}
+	return formatFileSHA(normalized)
 }
 
 func readEntryMatchesInfo(entry ReadFileEntry, info os.FileInfo) bool {

@@ -132,6 +132,9 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "read_file") || !strings.Contains(err.Error(), "expected_old_sha") {
 		t.Fatalf("expected existing-file guard, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "error_kind=missing_file_baseline") || !strings.Contains(err.Error(), "safe_retry=") {
+		t.Fatalf("expected structured baseline guidance, got: %v", err)
+	}
 
 	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
@@ -156,6 +159,9 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
 		t.Fatalf("expected expected_old_sha mismatch, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "error_kind=expected_old_sha_mismatch") || !strings.Contains(err.Error(), "current_file_sha=sha256:") {
+		t.Fatalf("expected structured expected_old_sha guidance, got: %v", err)
 	}
 
 	writeResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -198,6 +204,9 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "changed since last read") {
 		t.Fatalf("expected stale read rejection, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "error_kind=stale_file_baseline") || !strings.Contains(err.Error(), "model_next_action=") {
+		t.Fatalf("expected structured stale baseline guidance, got: %v", err)
 	}
 }
 
@@ -396,6 +405,9 @@ func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
 	if !strings.Contains(err.Error(), "changed since last read") {
 		t.Fatalf("expected stale-read guidance, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "error_kind=stale_file_baseline") || !strings.Contains(err.Error(), "safe_retry=") {
+		t.Fatalf("expected structured stale-read guidance, got: %v", err)
+	}
 
 	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
@@ -438,6 +450,9 @@ func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
 		t.Fatalf("expected edit_file to require read or expected_old_sha, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "error_kind=missing_file_baseline") || !strings.Contains(err.Error(), "model_next_action=") {
+		t.Fatalf("expected structured edit baseline guidance, got: %v", err)
+	}
 
 	oldSHA := formatFileSHA(sha256Hex([]byte("alpha\n")))
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -472,6 +487,9 @@ func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
 		t.Fatalf("expected expected_old_sha mismatch, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "error_kind=expected_old_sha_mismatch") || !strings.Contains(err.Error(), "current_file_sha=sha256:") {
+		t.Fatalf("expected structured expected_old_sha guidance, got: %v", err)
 	}
 }
 
