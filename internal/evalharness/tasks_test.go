@@ -443,6 +443,9 @@ func TestAgentLedWorkflowTeamVerification(t *testing.T) {
 	if !task.IsolateWuuHome {
 		t.Fatal("agent-led workflow team eval should isolate WUU_HOME")
 	}
+	if !evalTaskRequiresTool(task, "start_workflow") || evalTaskRequiresTool(task, "create_workflow") {
+		t.Fatalf("agent-led workflow team eval should require start_workflow, got %+v", task.RequiredTools)
+	}
 	root := t.TempDir()
 	if err := SetupTask(task, root); err != nil {
 		t.Fatalf("SetupTask: %v", err)
@@ -480,4 +483,13 @@ func TestAgentLedWorkflowTeamVerification(t *testing.T) {
 	if len(passed.Evidence) != 2 {
 		t.Fatalf("team markers should include both file checks: %+v", passed.Evidence)
 	}
+}
+
+func evalTaskRequiresTool(task Task, name string) bool {
+	for _, tool := range task.RequiredTools {
+		if tool == name {
+			return true
+		}
+	}
+	return false
 }
