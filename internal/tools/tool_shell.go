@@ -93,6 +93,9 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
 		return "", fmt.Errorf("run_shell refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
 	}
+	if shellCommandInvokesDestructiveCommand(args.Command) {
+		return "", errors.New("run_shell refuses to execute destructive shell commands; use apply_patch, checkpoint, git, or another restricted tool so changes remain auditable")
+	}
 
 	timeout := args.TimeoutSeconds
 	if timeout <= 0 {
@@ -296,6 +299,9 @@ func classifyShellCommand(command string) ToolClassification {
 	if shellCommandInvokesGit(command) {
 		return highRiskShellClassification("git command must use restricted git tool", true)
 	}
+	if shellCommandInvokesDestructiveCommand(command) {
+		return highRiskShellClassification("destructive shell command", true)
+	}
 	if hasShellMetacharacters {
 		if shellCommandLooksLikeDirectoryScopedVerification(command) {
 			return ToolClassification{
@@ -306,9 +312,6 @@ func classifyShellCommand(command string) ToolClassification {
 			}
 		}
 		return highRiskShellClassification("shell command uses shell metacharacters", false)
-	}
-	if shellFieldsLookDestructive(fields) {
-		return highRiskShellClassification("destructive shell command", true)
 	}
 	switch fields[0] {
 	case "pwd", "ls", "cat", "head", "tail", "wc", "file", "stat", "du",
@@ -336,24 +339,39 @@ func classifyShellCommand(command string) ToolClassification {
 
 func shellCommandInvokesGit(command string) bool {
 	for _, segment := range splitShellCommandSegments(command) {
-		fields := strings.Fields(segment)
-		for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
-			fields = fields[1:]
-		}
-		if len(fields) == 0 {
-			continue
-		}
-		switch fields[0] {
-		case "command", "exec":
-			fields = fields[1:]
-		case "env":
-			fields = stripEnvCommandPrefix(fields[1:])
-		}
+		fields := normalizeShellCommandFields(strings.Fields(segment))
 		if len(fields) > 0 && fields[0] == "git" {
 			return true
 		}
 	}
 	return false
+}
+
+func shellCommandInvokesDestructiveCommand(command string) bool {
+	for _, segment := range splitShellCommandSegments(command) {
+		fields := normalizeShellCommandFields(strings.Fields(segment))
+		if shellFieldsLookDestructive(fields) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeShellCommandFields(fields []string) []string {
+	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
+		fields = fields[1:]
+	}
+	if len(fields) == 0 {
+		return fields
+	}
+	switch fields[0] {
+	case "command", "exec":
+		return fields[1:]
+	case "env":
+		return stripEnvCommandPrefix(fields[1:])
+	default:
+		return fields
+	}
 }
 
 func splitShellCommandSegments(command string) []string {

@@ -85,6 +85,9 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
 		return "", errors.New("start_process refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
 	}
+	if shellCommandInvokesDestructiveCommand(args.Command) {
+		return "", errors.New("start_process refuses to execute destructive shell commands; use apply_patch, checkpoint, git, or another restricted tool so changes remain auditable")
+	}
 	m, err := t.env.ProcessManager()
 	if err != nil {
 		return "", err

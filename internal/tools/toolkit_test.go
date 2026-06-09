@@ -2107,6 +2107,17 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
 		Name:      "run_shell",
+		Arguments: `{"command":"rm -rf tmp && echo done"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || !meta.Destructive || meta.Risk != string(ToolRiskHigh) || meta.Reason != "destructive shell command" {
+		t.Fatalf("destructive shell metadata = %+v, want destructive high-risk serial", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
 		Arguments: `{"command":"go test ./..."}`,
 	})
 	if !ok {
@@ -2232,6 +2243,17 @@ func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
 	}
 	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "restricted git tool") {
 		t.Fatalf("git start_process metadata = %+v, want high-risk restricted-git guidance", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"command rm -rf tmp","owner_kind":"main_agent"}`,
+	})
+	if !ok {
+		t.Fatal("start_process metadata not found")
+	}
+	if meta.ReadOnly || !meta.Destructive || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "destructive shell command") {
+		t.Fatalf("destructive start_process metadata = %+v, want destructive high-risk guidance", meta)
 	}
 }
 
@@ -3438,6 +3460,26 @@ func TestToolkit_StartProcessRejectsGitCommandBypass(t *testing.T) {
 	}
 }
 
+func TestToolkit_StartProcessRejectsDestructiveCommands(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "tmp", "keep.txt"), "keep\n")
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"command rm -rf tmp","owner_kind":"main_agent"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "destructive shell commands") {
+		t.Fatalf("expected destructive command rejection, got %v", err)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "tmp", "keep.txt")); got != "keep\n" {
+		t.Fatalf("destructive start_process should not mutate workspace: %q", got)
+	}
+}
+
 func TestToolkit_ProcessOutputRedactsSecrets(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -3908,6 +3950,28 @@ func TestToolkit_RunShellRejectsEnvironmentDump(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "environment variables") || !strings.Contains(err.Error(), "secrets") {
 			t.Fatalf("expected environment dump guidance for %q, got: %v", command, err)
+		}
+	}
+}
+
+func TestToolkit_RunShellRejectsDestructiveCommands(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "tmp", "keep.txt"), "keep\n")
+
+	for _, command := range []string{"rm -rf tmp", "printf ok && command rm -rf tmp", "env FOO=bar rm -rf tmp"} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "run_shell",
+			Arguments: fmt.Sprintf(`{"command":%q}`, command),
+		})
+		if err == nil || !strings.Contains(err.Error(), "destructive shell commands") {
+			t.Fatalf("expected destructive command rejection for %q, got %v", command, err)
+		}
+		if got := mustReadFile(t, filepath.Join(root, "tmp", "keep.txt")); got != "keep\n" {
+			t.Fatalf("destructive run_shell should not mutate workspace after %q: %q", command, got)
 		}
 	}
 }
