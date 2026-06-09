@@ -1649,6 +1649,28 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
 		Name:      "run_shell",
+		Arguments: `{"command":"cd pkg && go test ./..."}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskMedium) || meta.Reason != "local verification command" {
+		t.Fatalf("directory-scoped go test metadata = %+v, want medium-risk verification", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"cd .. && go test ./..."}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) {
+		t.Fatalf("parent-directory shell metadata = %+v, want high-risk", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
 		Arguments: `{"command":"cat .env"}`,
 	})
 	if !ok {
@@ -1754,6 +1776,39 @@ func TestOK(t *testing.T) {}
 	}
 	if len(got.Suggestions) == 0 || !strings.Contains(strings.Join(got.Suggestions, " "), "final response") {
 		t.Fatalf("passing run_test response missing finish suggestion: %+v", got.Suggestions)
+	}
+}
+
+func TestToolkit_RunTestToolExecutesDirectoryScopedVerification(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "pkg", "go.mod"), "module example.com/pkg\n\ngo 1.22\n")
+	mustWriteFile(t, filepath.Join(root, "pkg", "pkg_test.go"), `package pkg
+
+import "testing"
+
+func TestOK(t *testing.T) {}
+`)
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"cd pkg && go test ./...","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_test directory-scoped verification: %v", err)
+	}
+	var got struct {
+		Passed         bool               `json:"passed"`
+		Classification ToolClassification `json:"classification"`
+	}
+	if err := json.Unmarshal([]byte(resp), &got); err != nil {
+		t.Fatalf("parse run_test response: %v\n%s", err, resp)
+	}
+	if !got.Passed || got.Classification.Risk != ToolRiskMedium || got.Classification.Reason != "local verification command" {
+		t.Fatalf("unexpected directory-scoped run_test response: %+v", got)
 	}
 }
 

@@ -288,6 +288,14 @@ func classifyShellCommand(command string) ToolClassification {
 		return highRiskShellClassification("shell command may read secrets", false)
 	}
 	if hasShellMetacharacters {
+		if shellCommandLooksLikeDirectoryScopedVerification(command) {
+			return ToolClassification{
+				ReadOnly:        false,
+				ConcurrencySafe: false,
+				Risk:            ToolRiskMedium,
+				Reason:          "local verification command",
+			}
+		}
 		return highRiskShellClassification("shell command uses shell metacharacters", false)
 	}
 	if shellFieldsLookDestructive(fields) {
@@ -315,6 +323,32 @@ func classifyShellCommand(command string) ToolClassification {
 		return highRiskShellClassification("package, network, or external mutation command", true)
 	}
 	return highRiskShellClassification("shell command is not proven read-only or verification-only", false)
+}
+
+func shellCommandLooksLikeDirectoryScopedVerification(command string) bool {
+	parts := strings.Split(command, "&&")
+	if len(parts) != 2 {
+		return false
+	}
+	leftFields := strings.Fields(strings.TrimSpace(parts[0]))
+	if len(leftFields) != 2 || leftFields[0] != "cd" || !safeRelativeShellDir(leftFields[1]) {
+		return false
+	}
+	right := strings.TrimSpace(parts[1])
+	if right == "" || strings.ContainsAny(right, "\n;&|><`$()") {
+		return false
+	}
+	rightFields := strings.Fields(right)
+	return shellFieldsLookLikeVerification(rightFields)
+}
+
+func safeRelativeShellDir(path string) bool {
+	path = shellPathToken(path)
+	if path == "" || strings.HasPrefix(path, "-") || strings.HasPrefix(path, "~") || filepath.IsAbs(path) {
+		return false
+	}
+	cleaned := filepath.Clean(path)
+	return cleaned == "." || (cleaned != ".." && !strings.HasPrefix(cleaned, "../"))
 }
 
 func highRiskShellClassification(reason string, destructive bool) ToolClassification {
