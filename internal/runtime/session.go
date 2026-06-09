@@ -702,6 +702,9 @@ func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, curr
 		if repoMap, ok := wuucontext.RepoMapBlock(rootDir, wuucontext.RepoMapOptions{}); ok {
 			blocks = append(blocks, repoMap)
 		}
+		if recentDiff, ok := wuucontext.RecentDiffBlock(rootDir, wuucontext.RecentDiffOptions{}); ok {
+			blocks = append(blocks, recentDiff)
+		}
 		for _, provider := range blockProviders {
 			if provider == nil {
 				continue
