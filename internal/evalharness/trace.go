@@ -64,6 +64,7 @@ type TraceReplaySummary struct {
 	ToolInventory     []ToolInventoryObservation `json:"tool_inventory,omitempty"`
 	ToolNames         []string                   `json:"tool_names,omitempty"`
 	ToolSummary       *ToolReplaySummary         `json:"tool_summary,omitempty"`
+	WorkflowRuns      []WorkflowRunObservation   `json:"workflow_runs,omitempty"`
 	WorkflowRunIDs    []string                   `json:"workflow_run_ids,omitempty"`
 	HarnessTaskIDs    []string                   `json:"harness_task_ids,omitempty"`
 	HarnessReportIDs  []string                   `json:"harness_report_ids,omitempty"`
@@ -327,6 +328,7 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 		if err := json.Unmarshal(data, &runs); err != nil {
 			return err
 		}
+		summary.WorkflowRuns = append(summary.WorkflowRuns, runs...)
 		for _, run := range runs {
 			if run.ID != "" {
 				summary.WorkflowRunIDs = append(summary.WorkflowRunIDs, run.ID)

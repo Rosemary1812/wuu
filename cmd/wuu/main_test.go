@@ -570,6 +570,10 @@ func TestEvalWorkflowObservationsIncludeTeamArbitration(t *testing.T) {
 	if got[0].Driver != workflow.RunDriverAgentManaged || got[0].Entrypoint != workflow.RunEntrypointNaturalLanguageAgent {
 		t.Fatalf("workflow observation missing driver fields: %+v", got[0])
 	}
+	wantRunDir := filepath.Join(store.Dir(), "workflows", "team-run")
+	if got[0].RunDir != wantRunDir || got[0].EventLogPath != filepath.Join(wantRunDir, "events.jsonl") {
+		t.Fatalf("workflow observation missing artifact paths: %+v", got[0])
+	}
 	arbitration := got[0].TeamArbitration
 	if arbitration.Status != "attention_required" {
 		t.Fatalf("unexpected arbitration status: %+v", arbitration)

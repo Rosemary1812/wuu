@@ -1103,8 +1103,11 @@ func evalWorkflowObservations(store *workflow.Store) ([]evalharness.WorkflowRunO
 	out := make([]evalharness.WorkflowRunObservation, 0, len(runs))
 	warnings := []string(nil)
 	for _, run := range runs {
+		runDir := filepath.Join(store.Dir(), "workflows", run.ID)
 		item := evalharness.WorkflowRunObservation{
 			ID:              run.ID,
+			RunDir:          runDir,
+			EventLogPath:    filepath.Join(runDir, "events.jsonl"),
 			DefinitionName:  run.DefinitionName,
 			Driver:          run.Driver,
 			Entrypoint:      run.Entrypoint,

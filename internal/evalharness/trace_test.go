@@ -68,7 +68,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				Success:        true,
 				RawOutputBytes: 42,
 			}},
-			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", Status: "completed"}},
+			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", RunDir: "/tmp/state/workflows/run-1", EventLogPath: "/tmp/state/workflows/run-1/events.jsonl", Status: "completed"}},
 			HarnessTasks:   []HarnessTaskObservation{{ID: "worker-1", Status: "completed"}},
 			HarnessReports: []HarnessReportObservation{{ID: "report-1", Outcome: "completed"}},
 		},
@@ -242,7 +242,7 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				RevisionBefore:  "rev-before",
 				Success:         false,
 			}},
-			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", Status: "completed"}},
+			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", RunDir: "/tmp/state/workflows/run-1", EventLogPath: "/tmp/state/workflows/run-1/events.jsonl", Status: "completed"}},
 			HarnessTasks:   []HarnessTaskObservation{{ID: "worker-1", Status: "completed"}},
 			HarnessReports: []HarnessReportObservation{{ID: "report-1", Outcome: "completed"}},
 		},
@@ -330,5 +330,10 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	}
 	if len(summary.WorkflowRunIDs) != 1 || summary.WorkflowRunIDs[0] != "run-1" {
 		t.Fatalf("replay missing workflow runs: %+v", summary.WorkflowRunIDs)
+	}
+	if len(summary.WorkflowRuns) != 1 ||
+		summary.WorkflowRuns[0].RunDir != "/tmp/state/workflows/run-1" ||
+		summary.WorkflowRuns[0].EventLogPath != "/tmp/state/workflows/run-1/events.jsonl" {
+		t.Fatalf("replay missing workflow artifact paths: %+v", summary.WorkflowRuns)
 	}
 }

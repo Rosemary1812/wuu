@@ -190,6 +190,8 @@ type PatchRiskObservation struct {
 
 type WorkflowRunObservation struct {
 	ID              string                        `json:"id"`
+	RunDir          string                        `json:"run_dir,omitempty"`
+	EventLogPath    string                        `json:"event_log_path,omitempty"`
 	DefinitionName  string                        `json:"definition_name,omitempty"`
 	Driver          string                        `json:"driver,omitempty"`
 	Entrypoint      string                        `json:"entrypoint,omitempty"`
