@@ -41,8 +41,10 @@ type fileEntry struct {
 }
 
 type gitInvocation struct {
-	Subcommand string
-	Args       []string
+	Subcommand          string
+	Args                []string
+	ConfirmUserApproved bool
+	ConfirmRemoteWrite  bool
 }
 
 // ── subcommand whitelists ───────────────────────────────────────────
@@ -440,6 +442,9 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	if err := requireGitWriteConfirmation(invocation); err != nil {
+		return "", err
+	}
 
 	// Structured output for git status.
 	if invocation.Subcommand == "status" {
@@ -466,8 +471,10 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 
 func parseGitInvocation(argsJSON string) (gitInvocation, error) {
 	var args struct {
-		Subcommand string   `json:"subcommand"`
-		Args       []string `json:"args"`
+		Subcommand          string   `json:"subcommand"`
+		Args                []string `json:"args"`
+		ConfirmUserApproved bool     `json:"confirm_user_approved"`
+		ConfirmRemoteWrite  bool     `json:"confirm_remote_write"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return gitInvocation{}, err
@@ -510,7 +517,29 @@ func parseGitInvocation(argsJSON string) (gitInvocation, error) {
 		return gitInvocation{}, err
 	}
 
-	return gitInvocation{Subcommand: subcmd, Args: remainingArgs}, nil
+	return gitInvocation{
+		Subcommand:          subcmd,
+		Args:                remainingArgs,
+		ConfirmUserApproved: args.ConfirmUserApproved,
+		ConfirmRemoteWrite:  args.ConfirmRemoteWrite,
+	}, nil
+}
+
+func requireGitWriteConfirmation(invocation gitInvocation) error {
+	switch invocation.Subcommand {
+	case "commit":
+		if invocation.ConfirmUserApproved {
+			return nil
+		}
+		return errors.New("git commit requires confirm_user_approved=true after explicit user approval: error_kind=approval_required model_next_action=\"ask the user before creating a commit or report the staged diff without committing\"")
+	case "push":
+		if invocation.ConfirmUserApproved && invocation.ConfirmRemoteWrite {
+			return nil
+		}
+		return errors.New("git push requires confirm_user_approved=true and confirm_remote_write=true after explicit user approval: error_kind=approval_required model_next_action=\"ask the user before pushing to a remote or stop after reporting the local commit\"")
+	default:
+		return nil
+	}
 }
 
 // runGit executes a git command and returns the standard JSON envelope.

@@ -75,6 +75,8 @@ func (t *GitTool) Definition() providers.ToolDefinition {
 			"Supported write commands: commit (with explicit -m message and no staged sensitive paths), push (plain or -u origin <branch>).\n\n" +
 			"git status returns structured {staged, unstaged, untracked} output.\n\n" +
 			"Content output for sensitive credential paths is rejected or redacted.\n\n" +
+			"commit requires confirm_user_approved=true after explicit user approval. " +
+			"push requires confirm_user_approved=true and confirm_remote_write=true after explicit user approval.\n\n" +
 			"NOT supported (delegate to a worker): rebase, merge, cherry-pick, clean, reset --hard, " +
 			"stash pop/apply/drop/clear, force push, branch create/delete, tag create/delete.",
 		InputSchema: map[string]any{
@@ -88,6 +90,14 @@ func (t *GitTool) Definition() providers.ToolDefinition {
 					"type":        "array",
 					"items":       map[string]any{"type": "string"},
 					"description": "Arguments to pass to the git subcommand. commit only supports explicit -m/--message forms on staged non-sensitive changes; push only supports plain push or -u/--set-upstream origin <current-branch>.",
+				},
+				"confirm_user_approved": map[string]any{
+					"type":        "boolean",
+					"description": "Set true only after the user explicitly approves creating a commit or pushing. Required for commit and push.",
+				},
+				"confirm_remote_write": map[string]any{
+					"type":        "boolean",
+					"description": "Set true only after the user explicitly approves writing to the remote. Required for push.",
 				},
 			},
 			"required": []string{"subcommand"},
