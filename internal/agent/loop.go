@@ -590,12 +590,61 @@ func isLegitimateEmptyCompletion(stopReason string) bool {
 // when their tool execution fails. Centralized here so both runners
 // produce identical error shapes.
 func errorJSON(err error) string {
-	payload := map[string]any{"error": err.Error()}
+	message := "tool execution failed"
+	if err != nil {
+		message = err.Error()
+	}
+	payload := map[string]any{
+		"ok":               false,
+		"error":            message,
+		"next_suggestions": toolErrorNextSuggestions(message),
+	}
+	if kind := extractToolErrorKind(message); kind != "" {
+		payload["error_kind"] = kind
+	}
 	b, marshalErr := json.Marshal(payload)
 	if marshalErr != nil {
 		return `{"error":"tool execution failed"}`
 	}
 	return string(b)
+}
+
+func extractToolErrorKind(message string) string {
+	const marker = "error_kind="
+	idx := strings.Index(message, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimLeft(message[idx+len(marker):], ` "'`)
+	if rest == "" {
+		return ""
+	}
+	end := 0
+	for end < len(rest) {
+		ch := rest[end]
+		if ch == '"' || ch == '\'' || ch == ',' || ch == ';' || ch == ')' || ch == ']' || ch == '}' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+			break
+		}
+		end++
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+func toolErrorNextSuggestions(message string) []string {
+	kind := extractToolErrorKind(message)
+	switch kind {
+	case "approval_required":
+		return []string{"ask the user for approval or choose a lower-risk alternative"}
+	case "policy_denied":
+		return []string{"choose a lower-risk tool or explain that policy blocks the requested action"}
+	}
+	if strings.Contains(message, "safe_retry=") {
+		return []string{"follow safe_retry after refreshing the relevant file, command, or workspace evidence"}
+	}
+	if strings.Contains(message, "model_next_action=") {
+		return []string{"follow model_next_action from the error payload"}
+	}
+	return []string{"inspect the error, correct the inputs or choose a safer tool, then retry only if the next step is clear"}
 }
 
 // historyContextKey is the unexported key under which RunToolLoop

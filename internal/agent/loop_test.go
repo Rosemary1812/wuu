@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -510,6 +511,33 @@ func TestRunToolLoop_ZeroMaxStepsIsUnlimited(t *testing.T) {
 	}
 	if res.Content != "all done" {
 		t.Fatalf("got %q", res.Content)
+	}
+}
+
+func TestErrorJSONIncludesActionableEnvelope(t *testing.T) {
+	raw := errorJSON(errors.New(`tool "run_shell" blocked by policy: error_kind=approval_required policy_action=require_approval risk=high model_next_action="ask user"`))
+	var parsed struct {
+		OK              bool     `json:"ok"`
+		Error           string   `json:"error"`
+		ErrorKind       string   `json:"error_kind"`
+		NextSuggestions []string `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("parse errorJSON: %v\n%s", err, raw)
+	}
+	if parsed.OK || parsed.Error == "" || parsed.ErrorKind != "approval_required" {
+		t.Fatalf("unexpected error envelope: %+v", parsed)
+	}
+	if !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "approval") {
+		t.Fatalf("approval error should guide the model: %+v", parsed.NextSuggestions)
+	}
+
+	raw = errorJSON(errors.New(`edit failed: error_kind=stale_file_baseline safe_retry="read_file then retry"`))
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("parse safe_retry errorJSON: %v\n%s", err, raw)
+	}
+	if parsed.ErrorKind != "stale_file_baseline" || !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "safe_retry") {
+		t.Fatalf("safe_retry error should preserve kind and guidance: %+v", parsed)
 	}
 }
 
