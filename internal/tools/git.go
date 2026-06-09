@@ -455,6 +455,10 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 			return "", err
 		}
 		gitArgs = append([]string{"--no-optional-locks", "push"}, normalized...)
+	} else if invocation.Subcommand == "commit" {
+		if err := rejectSensitiveStagedCommitPaths(env, ctx); err != nil {
+			return "", err
+		}
 	}
 
 	return runGit(env, ctx, invocation.Subcommand, gitArgs)
@@ -905,6 +909,29 @@ func validateCommitArgs(args []string) error {
 	}
 	if !messageSeen {
 		return errors.New("git commit requires an explicit message via -m or --message")
+	}
+	return nil
+}
+
+func rejectSensitiveStagedCommitPaths(env *Env, ctx context.Context) error {
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(runCtx, "git", "--no-optional-locks", "diff", "--cached", "--name-only", "-z")
+	cmd.Dir = env.RootDir
+	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("inspect staged paths before commit: %w", err)
+	}
+	for _, raw := range strings.Split(string(out), "\x00") {
+		path := strings.TrimSpace(raw)
+		if path == "" {
+			continue
+		}
+		if reason, ok := sensitivePathReason(path); ok {
+			return fmt.Errorf("git commit refuses staged sensitive path %q (%s). Ask the user for explicit secret handling before committing", path, reason)
+		}
 	}
 	return nil
 }

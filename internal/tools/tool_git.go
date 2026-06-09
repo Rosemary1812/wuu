@@ -71,9 +71,10 @@ func (t *GitTool) Definition() providers.ToolDefinition {
 			"Supported read-only commands: log, show, diff, status, blame, branch (list only), " +
 			"tag (list only), reflog, stash list/show, ls-files, ls-remote, remote -v, " +
 			"remote show, config --get/--get-all/--list, rev-parse, rev-list, describe, " +
-			"cat-file, for-each-ref, grep, worktree list, merge-base, shortlog.\n\n" +
-			"Supported write commands: commit (with explicit -m message), push (plain or -u origin <branch>).\n\n" +
+			"cat-file metadata modes, for-each-ref, grep, worktree list, merge-base, shortlog.\n\n" +
+			"Supported write commands: commit (with explicit -m message and no staged sensitive paths), push (plain or -u origin <branch>).\n\n" +
 			"git status returns structured {staged, unstaged, untracked} output.\n\n" +
+			"Content output for sensitive credential paths is rejected or redacted.\n\n" +
 			"NOT supported (delegate to a worker): rebase, merge, cherry-pick, clean, reset --hard, " +
 			"stash pop/apply/drop/clear, force push, branch create/delete, tag create/delete.",
 		InputSchema: map[string]any{
@@ -86,7 +87,7 @@ func (t *GitTool) Definition() providers.ToolDefinition {
 				"args": map[string]any{
 					"type":        "array",
 					"items":       map[string]any{"type": "string"},
-					"description": "Arguments to pass to the git subcommand. commit only supports explicit -m/--message forms on staged changes; push only supports plain push or -u/--set-upstream origin <current-branch>.",
+					"description": "Arguments to pass to the git subcommand. commit only supports explicit -m/--message forms on staged non-sensitive changes; push only supports plain push or -u/--set-upstream origin <current-branch>.",
 				},
 			},
 			"required": []string{"subcommand"},

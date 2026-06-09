@@ -183,6 +183,23 @@ func TestToolkit_Git_CommitWithoutStagedChangesFailsCleanly(t *testing.T) {
 	}
 }
 
+func TestToolkit_Git_CommitRejectsSensitiveStagedPaths(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'API_KEY=staged-secret-value\n' > .env && git add .env")
+
+	msg := gitErr(t, kit, "commit", "-m", "Add env")
+	if !strings.Contains(msg, "staged sensitive path") || !strings.Contains(msg, "explicit secret handling") {
+		t.Fatalf("expected sensitive staged path guidance, got: %q", msg)
+	}
+	if strings.Contains(msg, "staged-secret-value") {
+		t.Fatalf("commit sensitive path error leaked file content: %q", msg)
+	}
+	log := runBash(t, root, "git log --format=%s")
+	if strings.Contains(log, "Add env") {
+		t.Fatalf("sensitive staged path was committed")
+	}
+}
+
 func TestToolkit_Git_CommitRejectedFlags(t *testing.T) {
 	kit, _ := setupGitRepo(t)
 	for _, args := range [][]string{
