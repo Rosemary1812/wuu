@@ -671,7 +671,11 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	text := string(content)
 	count := strings.Count(text, args.OldText)
 	if count == 0 {
-		return "", errors.New("old_text not found in file")
+		return "", editTextMatchError{
+			Kind:       "old_text_not_found",
+			Expected:   args.OldText,
+			Candidates: closestEditTextCandidates(text, args.OldText, 3),
+		}
 	}
 
 	var newContent string
@@ -679,7 +683,12 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		newContent = strings.ReplaceAll(text, args.OldText, args.NewText)
 	} else {
 		if count > 1 {
-			return "", fmt.Errorf("old_text matches %d times, must be unique (use replace_all=true to replace all)", count)
+			return "", editTextMatchError{
+				Kind:       "ambiguous_old_text",
+				Expected:   args.OldText,
+				MatchCount: count,
+				Candidates: exactEditTextCandidates(text, args.OldText, 5),
+			}
 		}
 		newContent = strings.Replace(text, args.OldText, args.NewText, 1)
 	}
@@ -724,6 +733,122 @@ func (t *EditFileTool) validateEditBaseline(resolved string, info os.FileInfo, c
 		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file", currentSHA, "")
 	}
 	return nil
+}
+
+type editTextMatchError struct {
+	Kind       string
+	Expected   string
+	MatchCount int
+	Candidates []patchChunkCandidate
+}
+
+func (e editTextMatchError) Error() string {
+	var b strings.Builder
+	switch e.Kind {
+	case "ambiguous_old_text":
+		fmt.Fprintf(&b, "ambiguous_old_text: old_text matched %d locations; add more surrounding context or set replace_all=true only if every occurrence should change", e.MatchCount)
+	default:
+		b.WriteString("old_text_not_found: failed to find old_text in file")
+	}
+	expected := splitEditCandidateLines(e.Expected)
+	if len(expected) > 0 {
+		b.WriteString("\nexpected:\n")
+		b.WriteString(formatPatchErrorLines(expected, 0, 8))
+	}
+	if len(e.Candidates) > 0 {
+		b.WriteString("\ncandidates:\n")
+		for _, candidate := range e.Candidates {
+			fmt.Fprintf(&b, "- lines %d-%d", candidate.StartLine, candidate.EndLine)
+			if candidate.Score > 0 {
+				fmt.Fprintf(&b, " score=%d", candidate.Score)
+			}
+			b.WriteString(":\n")
+			b.WriteString(formatPatchErrorLines(candidate.Snippet, candidate.StartLine, 6))
+		}
+	}
+	b.WriteString("\nsafe_retry: read_file the target range and retry edit_file with exact current old_text and enough surrounding context")
+	return b.String()
+}
+
+func closestEditTextCandidates(content, oldText string, limit int) []patchChunkCandidate {
+	lines := splitEditCandidateLines(content)
+	needle := splitEditCandidateLines(oldText)
+	return closestPatchChunkCandidates(lines, needle, limit)
+}
+
+func exactEditTextCandidates(content, oldText string, limit int) []patchChunkCandidate {
+	if limit <= 0 || oldText == "" {
+		return nil
+	}
+	lines := splitEditCandidateLines(content)
+	startOffsets := lineStartOffsets(content)
+	var candidates []patchChunkCandidate
+	for offset := 0; ; {
+		idx := strings.Index(content[offset:], oldText)
+		if idx < 0 {
+			break
+		}
+		start := offset + idx
+		end := start + len(oldText)
+		startLine := lineNumberForOffset(startOffsets, start)
+		endLine := lineNumberForOffset(startOffsets, max(end-1, start))
+		if startLine < 1 {
+			startLine = 1
+		}
+		if endLine < startLine {
+			endLine = startLine
+		}
+		if startLine > len(lines) {
+			startLine = len(lines)
+		}
+		if endLine > len(lines) {
+			endLine = len(lines)
+		}
+		snippet := []string{}
+		if startLine > 0 && endLine >= startLine && startLine <= len(lines) {
+			snippet = append(snippet, lines[startLine-1:endLine]...)
+		}
+		candidates = append(candidates, patchChunkCandidate{
+			StartLine: startLine,
+			EndLine:   endLine,
+			Snippet:   snippet,
+		})
+		offset = end
+		if len(candidates) >= limit {
+			break
+		}
+	}
+	return candidates
+}
+
+func splitEditCandidateLines(text string) []string {
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	text = strings.TrimSuffix(text, "\n")
+	if text == "" {
+		return nil
+	}
+	return strings.Split(text, "\n")
+}
+
+func lineStartOffsets(text string) []int {
+	offsets := []int{0}
+	for i, r := range text {
+		if r == '\n' && i+1 < len(text) {
+			offsets = append(offsets, i+1)
+		}
+	}
+	return offsets
+}
+
+func lineNumberForOffset(lineStarts []int, offset int) int {
+	line := 1
+	for i, start := range lineStarts {
+		if start > offset {
+			break
+		}
+		line = i + 1
+	}
+	return line
 }
 
 func fileBaselineError(kind, message, toolName, currentSHA, expectedOldSHA string) error {

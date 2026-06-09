@@ -515,6 +515,49 @@ func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
 	}
 }
 
+func TestToolkit_EditFileReportsRecoverableTextMatchErrors(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	content := "alpha\nbravo\ncharlie\nbravo\n"
+	mustWriteFile(t, filepath.Join(root, "a.txt"), content)
+	oldSHA := formatFileSHA(sha256Hex([]byte(content)))
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":"a.txt","old_text":"bravx","new_text":"BRAVX","expected_old_sha":"` + oldSHA + `"}`,
+	})
+	if err == nil {
+		t.Fatal("expected old_text not found error")
+	}
+	if !strings.Contains(err.Error(), "old_text_not_found") ||
+		!strings.Contains(err.Error(), "candidates") ||
+		!strings.Contains(err.Error(), "2| bravo") ||
+		!strings.Contains(err.Error(), "safe_retry") {
+		t.Fatalf("expected recoverable old_text guidance, got: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":"a.txt","old_text":"bravo","new_text":"BRAVO","expected_old_sha":"` + oldSHA + `"}`,
+	})
+	if err == nil {
+		t.Fatal("expected ambiguous old_text error")
+	}
+	if !strings.Contains(err.Error(), "ambiguous_old_text") ||
+		!strings.Contains(err.Error(), "matched 2 locations") ||
+		!strings.Contains(err.Error(), "lines 2-2") ||
+		!strings.Contains(err.Error(), "lines 4-4") ||
+		!strings.Contains(err.Error(), "replace_all=true") {
+		t.Fatalf("expected ambiguous old_text guidance, got: %v", err)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != content {
+		t.Fatalf("failed edit should not mutate file: %q", got)
+	}
+}
+
 func TestToolkit_EditFileRejectsSensitivePaths(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
