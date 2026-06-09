@@ -87,13 +87,29 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 			PolicyAction:    tools.ToolPolicyAllow,
 			Success:         true,
 		}, {
-			Name:         "run_shell",
-			ResultAction: "restore",
-			Kind:         tools.ToolKindShell,
-			Risk:         tools.ToolRiskHigh,
-			PolicyAction: tools.ToolPolicyDeny,
-			ErrorKind:    "policy_denied",
-			Success:      false,
+			Name:            "run_shell",
+			ResultAction:    "restore",
+			CallID:          "call-shell",
+			Kind:            tools.ToolKindShell,
+			Risk:            tools.ToolRiskHigh,
+			PolicyAction:    tools.ToolPolicyDeny,
+			PolicyReason:    "risk policy",
+			ErrorKind:       "policy_denied",
+			ArgumentsSHA256: strings.Repeat("c", 64),
+			RevisionBefore:  "rev-before",
+			Success:         false,
+		}, {
+			Name:            "start_process",
+			CallID:          "call-process",
+			Kind:            tools.ToolKindProcess,
+			Risk:            tools.ToolRiskHigh,
+			PolicyAction:    tools.ToolPolicyRequireApproval,
+			PolicyReason:    "risk policy",
+			ErrorKind:       "approval_required",
+			ArgumentsSHA256: strings.Repeat("d", 64),
+			ApprovalRef:     "/tmp/state/sessions/thread-1/approvals/call-process.json",
+			RevisionBefore:  "rev-before",
+			Success:         false,
 		}},
 		[]RequestContextRecord{{
 			StepIndex:         0,
@@ -128,18 +144,40 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		!containsString(summary.ContextBlockKinds, "TOOL_POLICY") {
 		t.Fatalf("context requests missing: %+v", summary)
 	}
-	if len(summary.ToolNames) != 3 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "semantic_search" || summary.ToolNames[2] != "run_shell" {
+	if len(summary.ToolNames) != 4 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "semantic_search" || summary.ToolNames[2] != "run_shell" || summary.ToolNames[3] != "start_process" {
 		t.Fatalf("tool records missing: %+v", summary.ToolNames)
 	}
-	if summary.ToolSummary == nil || summary.ToolSummary.Total != 3 || summary.ToolSummary.Succeeded != 2 || summary.ToolSummary.Failed != 1 {
+	if summary.ToolSummary == nil || summary.ToolSummary.Total != 4 || summary.ToolSummary.Succeeded != 2 || summary.ToolSummary.Failed != 2 {
 		t.Fatalf("tool summary missing: %+v", summary.ToolSummary)
 	}
 	if summary.ToolSummary.ByKind[string(tools.ToolKindShell)] != 1 ||
-		summary.ToolSummary.ByRisk[string(tools.ToolRiskHigh)] != 1 ||
+		summary.ToolSummary.ByKind[string(tools.ToolKindProcess)] != 1 ||
+		summary.ToolSummary.ByRisk[string(tools.ToolRiskHigh)] != 2 ||
 		summary.ToolSummary.ByPolicyAction[string(tools.ToolPolicyDeny)] != 1 ||
+		summary.ToolSummary.ByPolicyAction[string(tools.ToolPolicyRequireApproval)] != 1 ||
 		summary.ToolSummary.ByResultAction["run_shell:restore"] != 1 ||
-		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 {
+		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 ||
+		summary.ToolSummary.ByErrorKind["approval_required"] != 1 {
 		t.Fatalf("tool summary dimensions missing: %+v", summary.ToolSummary)
+	}
+	if len(summary.ToolSummary.PolicyBlocks) != 2 {
+		t.Fatalf("tool summary missing policy blocks: %+v", summary.ToolSummary.PolicyBlocks)
+	}
+	if block := summary.ToolSummary.PolicyBlocks[0]; block.ToolName != "run_shell" ||
+		block.CallID != "call-shell" ||
+		block.PolicyAction != string(tools.ToolPolicyDeny) ||
+		block.PolicyReason != "risk policy" ||
+		block.ErrorKind != "policy_denied" ||
+		block.ArgumentsSHA256 != strings.Repeat("c", 64) ||
+		block.RevisionBefore != "rev-before" ||
+		!strings.Contains(block.ModelNextAction, "lower-risk tool") {
+		t.Fatalf("deny policy block missing replay detail: %+v", block)
+	}
+	if block := summary.ToolSummary.PolicyBlocks[1]; block.ToolName != "start_process" ||
+		block.PolicyAction != string(tools.ToolPolicyRequireApproval) ||
+		block.ApprovalRef != "/tmp/state/sessions/thread-1/approvals/call-process.json" ||
+		!strings.Contains(block.ModelNextAction, "approval") {
+		t.Fatalf("approval policy block missing replay detail: %+v", block)
 	}
 	if len(summary.ToolSummary.RepeatedArguments) != 1 ||
 		summary.ToolSummary.RepeatedArguments[0].ToolName != "semantic_search" ||

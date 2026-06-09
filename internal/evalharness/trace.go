@@ -81,9 +81,23 @@ type ToolReplaySummary struct {
 	ByPolicyAction    map[string]int                `json:"by_policy_action,omitempty"`
 	ByResultAction    map[string]int                `json:"by_result_action,omitempty"`
 	ByErrorKind       map[string]int                `json:"by_error_kind,omitempty"`
+	PolicyBlocks      []ToolPolicyBlockSummary      `json:"policy_blocks,omitempty"`
 	RepeatedArguments []ToolRepeatedArgumentSummary `json:"repeated_arguments,omitempty"`
 	PatchRisk         *PatchRiskReplaySummary       `json:"patch_risk,omitempty"`
 	argumentCounts    map[string]ToolRepeatedArgumentSummary
+}
+
+type ToolPolicyBlockSummary struct {
+	ToolName        string `json:"tool_name"`
+	CallID          string `json:"call_id,omitempty"`
+	PolicyAction    string `json:"policy_action"`
+	PolicyReason    string `json:"policy_reason,omitempty"`
+	Risk            string `json:"risk,omitempty"`
+	ErrorKind       string `json:"error_kind,omitempty"`
+	ArgumentsSHA256 string `json:"arguments_sha256,omitempty"`
+	ApprovalRef     string `json:"approval_ref,omitempty"`
+	RevisionBefore  string `json:"revision_before,omitempty"`
+	ModelNextAction string `json:"model_next_action,omitempty"`
 }
 
 type ToolRepeatedArgumentSummary struct {
@@ -371,6 +385,7 @@ func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
 	if errorKind := strings.TrimSpace(record.ErrorKind); errorKind != "" {
 		summary.ToolSummary.ByErrorKind[errorKind]++
 	}
+	summary.addToolPolicyBlock(record)
 	summary.addRepeatedToolArguments(record.Name, record.ArgumentsSHA256)
 	if record.PatchRiskSummary != nil {
 		summary.addPatchRiskObservation(*record.PatchRiskSummary)
@@ -397,6 +412,42 @@ func toolResultActionKey(toolName, action string) string {
 		return ""
 	}
 	return toolName + ":" + action
+}
+
+func (summary *TraceReplaySummary) addToolPolicyBlock(record ToolObservation) {
+	action := strings.TrimSpace(record.PolicyAction)
+	errorKind := strings.TrimSpace(record.ErrorKind)
+	if action != "deny" && action != "require_approval" && errorKind != "policy_denied" && errorKind != "approval_required" {
+		return
+	}
+	toolName := strings.TrimSpace(record.Name)
+	if toolName == "" {
+		return
+	}
+	summary.ensureToolSummary()
+	summary.ToolSummary.PolicyBlocks = append(summary.ToolSummary.PolicyBlocks, ToolPolicyBlockSummary{
+		ToolName:        toolName,
+		CallID:          strings.TrimSpace(record.CallID),
+		PolicyAction:    action,
+		PolicyReason:    strings.TrimSpace(record.PolicyReason),
+		Risk:            strings.TrimSpace(record.Risk),
+		ErrorKind:       errorKind,
+		ArgumentsSHA256: strings.TrimSpace(record.ArgumentsSHA256),
+		ApprovalRef:     strings.TrimSpace(record.ApprovalRef),
+		RevisionBefore:  strings.TrimSpace(record.RevisionBefore),
+		ModelNextAction: modelNextActionForPolicyBlock(action, errorKind),
+	})
+}
+
+func modelNextActionForPolicyBlock(action, errorKind string) string {
+	switch {
+	case action == "require_approval" || errorKind == "approval_required":
+		return "ask the user for approval or choose a lower-risk alternative"
+	case action == "deny" || errorKind == "policy_denied":
+		return "choose a lower-risk tool or explain that policy blocks the requested action"
+	default:
+		return ""
+	}
 }
 
 func (summary *TraceReplaySummary) addRepeatedToolArguments(toolName, argumentsSHA256 string) {
