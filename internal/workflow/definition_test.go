@@ -1,9 +1,11 @@
 package workflow
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -257,6 +259,55 @@ Audit body
 	}
 	if feature.Description != "project version" || feature.Source != "project" {
 		t.Fatalf("project workflow did not override user workflow: %+v", feature)
+	}
+}
+
+func TestDiscoverDirsPrefersNativeAndProjectDefinitions(t *testing.T) {
+	root := t.TempDir()
+	userLegacy := filepath.Join(root, "home", ".claude", "workflows")
+	userNative := filepath.Join(root, "state", "workflows")
+	projectLegacy := filepath.Join(root, "repo", ".claude", "workflows")
+	projectNative := filepath.Join(root, "repo", ".wuu", "workflows")
+
+	writeWorkflowDefinition(t, userLegacy, "shared", "user legacy")
+	writeWorkflowDefinition(t, userNative, "shared", "user native")
+	writeWorkflowDefinition(t, projectLegacy, "shared", "project legacy")
+	writeWorkflowDefinition(t, projectNative, "shared", "project native")
+	writeWorkflowDefinition(t, userLegacy, "legacy-only", "legacy only")
+
+	workflows := DiscoverDirs(
+		[]string{projectLegacy, projectNative},
+		[]string{userLegacy, userNative},
+	)
+	if len(workflows) != 2 {
+		t.Fatalf("DiscoverDirs returned %d workflows: %+v", len(workflows), workflows)
+	}
+	shared, ok := Find(workflows, "shared")
+	if !ok {
+		t.Fatal("shared workflow not found")
+	}
+	if shared.Description != "project native" || shared.Source != "project" || !strings.Contains(shared.Path, filepath.Join(".wuu", "workflows")) {
+		t.Fatalf("native project workflow should have highest precedence: %+v", shared)
+	}
+	legacyOnly, ok := Find(workflows, "legacy-only")
+	if !ok || legacyOnly.Description != "legacy only" || legacyOnly.Source != "user" {
+		t.Fatalf("legacy-only user workflow should remain discoverable: %+v", legacyOnly)
+	}
+}
+
+func writeWorkflowDefinition(t *testing.T, root, name, description string) {
+	t.Helper()
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "WORKFLOW.md"), []byte(fmt.Sprintf(`---
+name: %s
+description: %s
+---
+Body
+`, name, description)), 0644); err != nil {
+		t.Fatalf("WriteFile %s: %v", name, err)
 	}
 }
 

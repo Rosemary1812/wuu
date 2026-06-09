@@ -13,6 +13,8 @@ type ProcessOptions struct {
 func ProcessBody(body string, opts ProcessOptions) string {
 	replacer := strings.NewReplacer(
 		"${ARGUMENTS}", opts.Arguments,
+		"${WUU_WORKFLOW_DIR}", opts.WorkflowDir,
+		"${WUU_SESSION_ID}", opts.SessionID,
 		"${CLAUDE_WORKFLOW_DIR}", opts.WorkflowDir,
 		"${CLAUDE_SESSION_ID}", opts.SessionID,
 	)

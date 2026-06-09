@@ -242,7 +242,7 @@ func TestNewSessionDiscoversWorkflowDefinitions(t *testing.T) {
 
 	writeSessionTestFile(t, filepath.Join(home, ".claude", "workflows", "feature-delivery", "WORKFLOW.md"), `---
 name: feature-delivery
-description: User feature workflow.
+description: User legacy feature workflow.
 ---
 
 ## Phases
@@ -251,21 +251,39 @@ description: User feature workflow.
 `)
 	writeSessionTestFile(t, filepath.Join(root, ".claude", "workflows", "feature-delivery", "WORKFLOW.md"), `---
 name: feature-delivery
-description: Project feature workflow.
+description: Project legacy feature workflow.
+---
+
+## Phases
+
+1. Project legacy phase
+`)
+	writeSessionTestFile(t, filepath.Join(root, ".wuu", "workflows", "feature-delivery", "WORKFLOW.md"), `---
+name: feature-delivery
+description: Project native feature workflow.
 ---
 
 ## Phases
 
 1. Project phase
 `)
-	writeSessionTestFile(t, filepath.Join(home, ".claude", "workflows", "weekly-qa", "WORKFLOW.md"), `---
+	writeSessionTestFile(t, filepath.Join(home, "state", "workflows", "weekly-qa", "WORKFLOW.md"), `---
 name: weekly-qa
-description: Weekly QA sweep.
+description: Native user weekly QA sweep.
 ---
 
 ## Phases
 
 1. Inspect
+`)
+	writeSessionTestFile(t, filepath.Join(home, ".claude", "workflows", "legacy-audit", "WORKFLOW.md"), `---
+name: legacy-audit
+description: Legacy user audit workflow.
+---
+
+## Phases
+
+1. Audit
 `)
 
 	rt, err := NewSession(Options{
@@ -287,20 +305,26 @@ description: Weekly QA sweep.
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if len(rt.Workflows) != 2 {
+	if len(rt.Workflows) != 3 {
 		t.Fatalf("Workflows = %+v", rt.Workflows)
 	}
 	feature, ok := workflow.Find(rt.Workflows, "feature-delivery")
 	if !ok {
 		t.Fatal("feature-delivery workflow not found")
 	}
-	if feature.Source != "project" || feature.Description != "Project feature workflow." {
-		t.Fatalf("project workflow should override user workflow: %+v", feature)
+	if feature.Source != "project" || feature.Description != "Project native feature workflow." || !strings.Contains(feature.Path, filepath.Join(".wuu", "workflows")) {
+		t.Fatalf("native project workflow should override legacy/user workflow: %+v", feature)
 	}
-	if !strings.Contains(rt.BaseSystemPrompt, "Project feature workflow.") || !strings.Contains(rt.BaseSystemPrompt, "`start_workflow`") {
+	if _, ok := workflow.Find(rt.Workflows, "weekly-qa"); !ok {
+		t.Fatalf("native user workflow not discovered: %+v", rt.Workflows)
+	}
+	if _, ok := workflow.Find(rt.Workflows, "legacy-audit"); !ok {
+		t.Fatalf("legacy user workflow not discovered: %+v", rt.Workflows)
+	}
+	if !strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") || !strings.Contains(rt.BaseSystemPrompt, "`start_workflow`") {
 		t.Fatalf("workflow catalog not injected into system prompt:\n%s", rt.BaseSystemPrompt)
 	}
-	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 2 {
+	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 3 {
 		t.Fatalf("toolkit workflows not wired: %+v", rt.Toolkit)
 	}
 	defs := map[string]bool{}

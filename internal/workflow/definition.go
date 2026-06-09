@@ -14,6 +14,9 @@ import (
 const (
 	DefinitionKindMarkdown = "markdown"
 	DefinitionKindScript   = "script"
+
+	ProjectWorkflowDir = ".wuu/workflows"
+	LegacyWorkflowDir  = ".claude/workflows"
 )
 
 // Definition is a reusable workflow asset discovered from project or user
@@ -46,18 +49,26 @@ type ProfileRef struct {
 	Required bool   `json:"required,omitempty"`
 }
 
-// Discover scans user and project workflow directories. Project workflows
-// override user workflows with the same name.
+// Discover scans one user and one project workflow directory. Project
+// workflows override user workflows with the same name.
 func Discover(projectDir, userDir string) []Definition {
-	userWorkflows := scanDir(userDir, "user")
-	projectWorkflows := scanDir(projectDir, "project")
+	return DiscoverDirs([]string{projectDir}, []string{userDir})
+}
 
-	byName := make(map[string]Definition, len(userWorkflows)+len(projectWorkflows))
-	for _, wf := range userWorkflows {
-		byName[wf.Name] = wf
+// DiscoverDirs scans workflow directories from lowest to highest precedence:
+// user dirs in order, then project dirs in order. Callers should pass legacy
+// dirs before native dirs when both should be supported.
+func DiscoverDirs(projectDirs, userDirs []string) []Definition {
+	byName := make(map[string]Definition)
+	for _, dir := range userDirs {
+		for _, wf := range scanDir(dir, "user") {
+			byName[wf.Name] = wf
+		}
 	}
-	for _, wf := range projectWorkflows {
-		byName[wf.Name] = wf
+	for _, dir := range projectDirs {
+		for _, wf := range scanDir(dir, "project") {
+			byName[wf.Name] = wf
+		}
 	}
 
 	result := make([]Definition, 0, len(byName))
@@ -68,6 +79,34 @@ func Discover(projectDir, userDir string) []Definition {
 		return result[i].Name < result[j].Name
 	})
 	return result
+}
+
+func ProjectWorkflowPath(rootDir string) string {
+	if strings.TrimSpace(rootDir) == "" {
+		return ""
+	}
+	return filepath.Join(rootDir, ProjectWorkflowDir)
+}
+
+func LegacyProjectWorkflowPath(rootDir string) string {
+	if strings.TrimSpace(rootDir) == "" {
+		return ""
+	}
+	return filepath.Join(rootDir, LegacyWorkflowDir)
+}
+
+func UserWorkflowPath(wuuHome string) string {
+	if strings.TrimSpace(wuuHome) == "" {
+		return ""
+	}
+	return filepath.Join(wuuHome, "workflows")
+}
+
+func LegacyUserWorkflowPath(homeDir string) string {
+	if strings.TrimSpace(homeDir) == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, LegacyWorkflowDir)
 }
 
 // Find returns a workflow by name. A leading slash is tolerated.

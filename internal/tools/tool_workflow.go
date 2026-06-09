@@ -87,7 +87,8 @@ func (t *LoadWorkflowTool) Definition() providers.ToolDefinition {
 		Name: "load_workflow",
 		Description: "Load the full body of a reusable workflow definition. Workflow definitions are portable " +
 			"orchestration assets, similar to skills, but they are used to create durable workflow run state. Markdown " +
-			"workflow bodies may contain ${ARGUMENTS}, ${CLAUDE_WORKFLOW_DIR}, and ${CLAUDE_SESSION_ID} substitutions; " +
+			"workflow bodies may contain ${ARGUMENTS}, ${WUU_WORKFLOW_DIR}, and ${WUU_SESSION_ID} substitutions. " +
+			"Legacy ${CLAUDE_WORKFLOW_DIR} and ${CLAUDE_SESSION_ID} aliases are also supported; " +
 			"script workflows are returned as raw JavaScript and receive arguments through the args global when run.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -170,7 +171,7 @@ func (t *SaveWorkflowTool) Definition() providers.ToolDefinition {
 			"properties": map[string]any{
 				"name": map[string]any{
 					"type":        "string",
-					"description": "Stable workflow name. A project WORKFLOW.md is written under .claude/workflows/<name>/ by default.",
+					"description": "Stable workflow name. A project WORKFLOW.md or WORKFLOW.js is written under .wuu/workflows/<name>/ by default.",
 				},
 				"description": map[string]any{
 					"type":        "string",
@@ -2533,13 +2534,13 @@ func workflowDefinitionPath(rootDir, scope, name, kind string) (string, string, 
 	}
 	switch strings.TrimSpace(scope) {
 	case "", "project":
-		return filepath.Join(rootDir, ".claude", "workflows", dirName, filename), "project", nil
+		return filepath.Join(workflow.ProjectWorkflowPath(rootDir), dirName, filename), "project", nil
 	case "user":
-		home, err := os.UserHomeDir()
+		wuuHome, err := statepath.Home("")
 		if err != nil {
 			return "", "", err
 		}
-		return filepath.Join(home, ".claude", "workflows", dirName, filename), "user", nil
+		return filepath.Join(workflow.UserWorkflowPath(wuuHome), dirName, filename), "user", nil
 	default:
 		return "", "", fmt.Errorf("invalid workflow scope %q", scope)
 	}

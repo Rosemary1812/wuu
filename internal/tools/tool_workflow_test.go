@@ -329,6 +329,9 @@ func TestSaveWorkflowWritesProjectDefinitionAndRegistersIt(t *testing.T) {
 	if saved.Name != "feature-delivery" || saved.Path == "" {
 		t.Fatalf("unexpected save response: %+v", saved)
 	}
+	if !strings.Contains(saved.Path, filepath.Join(".wuu", "workflows", "feature_delivery", "WORKFLOW.md")) {
+		t.Fatalf("saved project workflow should use native .wuu path: %+v", saved)
+	}
 	if _, err := os.Stat(saved.Path); err != nil {
 		t.Fatalf("expected workflow file: %v", err)
 	}
@@ -445,6 +448,9 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 	}
 	if saved.Kind != workflow.DefinitionKindScript || filepath.Base(saved.Path) != "WORKFLOW.js" {
 		t.Fatalf("unexpected saved script workflow: %+v", saved)
+	}
+	if !strings.Contains(saved.Path, filepath.Join(".wuu", "workflows", "dynamic_review", "WORKFLOW.js")) {
+		t.Fatalf("saved script workflow should use native .wuu path: %+v", saved)
 	}
 
 	loadResp, err := kit.Execute(context.Background(), providers.ToolCall{

@@ -781,12 +781,18 @@ func discoverSkills(rootDir, homeDir string) []skills.Skill {
 }
 
 func discoverWorkflows(rootDir, homeDir string) []workflow.Definition {
-	projectWorkflowsDir := filepath.Join(rootDir, ".claude", "workflows")
-	userWorkflowsDir := ""
-	if homeDir != "" {
-		userWorkflowsDir = filepath.Join(homeDir, ".claude", "workflows")
+	projectDirs := []string{
+		workflow.LegacyProjectWorkflowPath(rootDir),
+		workflow.ProjectWorkflowPath(rootDir),
 	}
-	return workflow.Discover(projectWorkflowsDir, userWorkflowsDir)
+	userDirs := []string(nil)
+	if homeDir != "" {
+		userDirs = append(userDirs, workflow.LegacyUserWorkflowPath(homeDir))
+	}
+	if wuuHome, err := statepath.Home(homeDir); err == nil {
+		userDirs = append(userDirs, workflow.UserWorkflowPath(wuuHome))
+	}
+	return workflow.DiscoverDirs(projectDirs, userDirs)
 }
 
 func connectMCPServers(cfg config.Config, toolkit *tools.Toolkit) {
