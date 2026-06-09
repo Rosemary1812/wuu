@@ -28,7 +28,7 @@ func (t *ScheduleCronTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "schedule_cron",
 		Description: "Create a scheduled task that runs a prompt or saved workflow at cron intervals. " +
-			"Use workflow_name for scheduled, repeatable, multi-agent work; script-driven workflows are started with run_workflow, while agent-managed workflows are started with create_workflow. " +
+			"Use workflow_name for scheduled, repeatable, multi-agent work; scheduled workflow tasks start through start_workflow so the agent remains the unified natural-language entry point. " +
 			"The task can be recurring (runs repeatedly until deleted or expired) or one-shot (runs once).",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -171,10 +171,10 @@ func scheduledWorkflowPrompt(name, kind, arguments, extraPrompt string) string {
 	}
 	switch kind {
 	case workflow.DefinitionKindScript:
-		sb.WriteString("\n\nUse load_workflow to inspect the saved script definition, then call run_workflow with definition_name and workflow arguments. Use the script driver for this run.")
-		sb.WriteString(" Let run_workflow choose the run ID unless the user explicitly provided one. The script writes the same Workflow Run, Workflow Team, Agent Run, and final-report state while it owns phases, worker spawns, awaits, and synthesis.")
+		sb.WriteString("\n\nUse load_workflow to inspect the saved script definition, then call start_workflow with definition_name, workflow arguments, and driver=auto. Use the unified workflow entry point; do not call the lower-level script driver directly unless a later recovery step explicitly requires it.")
+		sb.WriteString(" Let start_workflow choose the run ID unless the user explicitly provided one. The script driver writes the same Workflow Run, Workflow Team, Agent Run, and final-report state while it owns phases, worker spawns, awaits, and synthesis.")
 	default:
-		sb.WriteString("\n\nUse the workflow tools to load the workflow definition and create a Workflow Run. Let create_workflow choose the run ID unless the user explicitly provided one.")
+		sb.WriteString("\n\nUse load_workflow to inspect the saved workflow definition, then call start_workflow with definition_name, workflow arguments, and driver=auto. Let start_workflow choose the run ID unless the user explicitly provided one.")
 		sb.WriteString(" After creating the run, call list_agent_profiles, decide which roles reuse an existing Agent Profile, create a new recurring profile, or stay ephemeral, then record the Workflow Team with workflow_control action=record_workflow_team before spawning agents.")
 		sb.WriteString(" Write each team member prompt from the shared Base Agent Brief Contract; add the Workflow Context Extension only because this is workflow work.")
 	}
