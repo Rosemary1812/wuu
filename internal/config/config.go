@@ -503,6 +503,9 @@ func Default() Config {
 		},
 		Agent: AgentConfig{
 			Name: DefaultAgentName,
+			ToolPolicy: ToolPolicyConfig{
+				Profile: "safe",
+			},
 			// 0 = unlimited. Aligned with Claude Code, which has no
 			// default step cap; the model decides when to stop. Users
 			// who want a runaway safety net can set this explicitly.
@@ -641,28 +644,28 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, false)
 }
 
 // UpdateProviderSelectionAndEffort changes the default provider, selected
 // provider's model, and global reasoning effort in the config file at configPath.
 func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, nil, false)
 }
 
 // UpdateProviderRuntime changes the default provider and editable connection
 // fields for that provider. A nil apiKey keeps the existing key configuration.
-func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, false)
+func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, toolPolicyProfile, false)
 }
 
 // CreateProviderRuntime creates a new OpenAI-compatible provider, selects it,
 // and persists its editable runtime fields.
-func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, true)
+func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, toolPolicyProfile, true)
 }
 
-func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant *string, createProvider bool) error {
+func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile *string, createProvider bool) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -735,6 +738,24 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 			delete(agent, "variant")
 		} else {
 			agent["variant"] = strings.TrimSpace(*variant)
+		}
+	}
+	if toolPolicyProfile != nil {
+		profile := strings.TrimSpace(*toolPolicyProfile)
+		if err := validateToolPolicyProfile(profile); err != nil {
+			return err
+		}
+		agent, _ := raw["agent"].(map[string]any)
+		if agent == nil {
+			agent = make(map[string]any)
+			raw["agent"] = agent
+		}
+		if profile == "" {
+			delete(agent, "tool_policy")
+		} else {
+			agent["tool_policy"] = map[string]any{
+				"profile": profile,
+			}
 		}
 	}
 

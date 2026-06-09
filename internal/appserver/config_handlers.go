@@ -208,9 +208,9 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	if creatingProvider {
-		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig)
+		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.ToolPolicyProfile)
 	} else {
-		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig)
+		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.ToolPolicyProfile)
 	}
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -224,6 +224,12 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	}
 	if s.rt.Toolkit != nil {
 		s.rt.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
+	}
+	if params.ToolPolicyProfile != nil {
+		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: strings.TrimSpace(*params.ToolPolicyProfile)}
+		if s.rt.Toolkit != nil {
+			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+		}
 	}
 	systemPrompt := s.rt.RefreshSystemPrompt(resolvedName, apiModel)
 	if s.rt.StreamRunner != nil {
@@ -244,11 +250,12 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
-		Provider:  resolvedName,
-		Model:     model,
-		Effort:    effort,
-		Variant:   selection.Variant,
-		Providers: s.providerSummaries(),
+		Provider:   resolvedName,
+		Model:      model,
+		Effort:     effort,
+		Variant:    selection.Variant,
+		ToolPolicy: s.currentToolPolicySummary(),
+		Providers:  s.providerSummaries(),
 	}, nil)
 }
 
@@ -367,6 +374,9 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 				}
 				if th.execRuntime.Toolkit != nil {
 					th.execRuntime.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
+					if s.rt != nil {
+						th.execRuntime.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+					}
 				}
 			}
 		}

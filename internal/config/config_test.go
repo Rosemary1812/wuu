@@ -1058,7 +1058,7 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil, nil); err != nil {
+	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
@@ -1082,6 +1082,52 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 	}
 }
 
+func TestUpdateProviderRuntimePersistsToolPolicyProfilePreset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "agent": {
+    "tool_policy": {
+      "profile": "balanced",
+      "default_action": "allow",
+      "tools": {
+        "run_shell": "allow"
+      },
+      "risks": {
+        "high": "deny"
+      }
+    }
+  },
+  "default_provider": "old",
+  "providers": {
+    "old": {
+      "type": "openai-compatible",
+      "base_url": "https://old.example.com",
+      "model": "old-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := "safe"
+	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, &profile); err != nil {
+		t.Fatalf("UpdateProviderRuntime: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.Agent.ToolPolicy.Profile != "safe" {
+		t.Fatalf("tool policy profile not persisted: %+v", cfg.Agent.ToolPolicy)
+	}
+	if cfg.Agent.ToolPolicy.DefaultAction != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 || len(cfg.Agent.ToolPolicy.Risks) != 0 {
+		t.Fatalf("preset update should clear fine-grained overrides: %+v", cfg.Agent.ToolPolicy)
+	}
+}
+
 func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".wuu.json")
@@ -1102,7 +1148,7 @@ func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := CreateProviderRuntime(path, "custom-1", "custom-model", &baseURL, &apiKey, nil, nil); err != nil {
+	if err := CreateProviderRuntime(path, "custom-1", "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
 		t.Fatalf("CreateProviderRuntime: %v", err)
 	}
 

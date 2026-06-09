@@ -439,6 +439,68 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdatePersistsToolPolicyProfile(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new runtime toolkit: %v", err)
+	}
+	rt.Toolkit = kit
+	rt.ToolPolicy = config.ToolPolicyConfig{
+		Profile: "balanced",
+		Tools: map[string]string{
+			"run_shell": "allow",
+		},
+	}
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "agent": {
+    "tool_policy": {
+      "profile": "balanced",
+      "tools": {
+        "run_shell": "allow"
+      }
+    }
+  },
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/model/update","params":{"model":"fake-model","tool_policy_profile":"safe"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.ToolPolicy.Profile != "safe" || len(result.ToolPolicy.Tools) != 0 {
+		t.Fatalf("unexpected tool policy result: %+v", result.ToolPolicy)
+	}
+	if rt.ToolPolicy.Profile != "safe" || len(rt.ToolPolicy.Tools) != 0 {
+		t.Fatalf("runtime tool policy not updated: %+v", rt.ToolPolicy)
+	}
+	block, ok := rt.Toolkit.ToolPolicyContextBlock()
+	if !ok || !strings.Contains(block.Content, "profile: safe") {
+		t.Fatalf("toolkit policy context not updated: ok=%v block=%+v", ok, block)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"profile": "safe"`) || strings.Contains(string(data), `"run_shell"`) {
+		t.Fatalf("tool policy profile was not persisted cleanly: %s", data)
+	}
+}
+
 func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)
