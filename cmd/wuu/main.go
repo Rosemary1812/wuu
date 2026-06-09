@@ -644,6 +644,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		records := rt.Toolkit.ToolTelemetry()
 		result.ToolCalls = len(records)
 		result.ToolNames = uniqueToolNames(records)
+		result.ToolSequence = toolNameSequence(records)
 		result.MissingErrors = missingRequiredToolErrors(cfg.Task.RequiredErrors, records)
 	}
 	result.MissingTools = missingRequiredTools(cfg.Task.RequiredTools, result.ToolNames)
@@ -1068,6 +1069,19 @@ func uniqueToolNames(records []tools.ToolExecutionRecord) []string {
 	return names
 }
 
+func toolNameSequence(records []tools.ToolExecutionRecord) []string {
+	if len(records) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.Name != "" {
+			names = append(names, record.Name)
+		}
+	}
+	return names
+}
+
 func missingRequiredTools(required []string, used []string) []string {
 	if len(required) == 0 {
 		return nil
@@ -1282,6 +1296,9 @@ func printEvalReport(report evalReport) {
 			status, result.TaskID, result.Turns, result.ToolCalls, result.InputTokens, result.OutputTokens, result.DurationMS)
 		if len(result.ToolNames) > 0 {
 			fmt.Printf("  tool_names: %s\n", strings.Join(result.ToolNames, ","))
+		}
+		if len(result.ToolSequence) > 0 {
+			fmt.Printf("  tool_sequence: %s\n", strings.Join(result.ToolSequence, ","))
 		}
 		if len(result.MissingTools) > 0 {
 			fmt.Printf("  missing_tools: %s\n", strings.Join(result.MissingTools, ","))

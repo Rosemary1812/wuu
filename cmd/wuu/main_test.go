@@ -216,6 +216,20 @@ func TestMissingRequiredTools(t *testing.T) {
 	}
 }
 
+func TestToolNameSequencePreservesRepeatedCalls(t *testing.T) {
+	got := toolNameSequence([]tools.ToolExecutionRecord{
+		{Name: "read_file"},
+		{Name: "checkpoint"},
+		{Name: "apply_patch"},
+		{Name: "checkpoint"},
+		{Name: "apply_patch"},
+	})
+	want := []string{"read_file", "checkpoint", "apply_patch", "checkpoint", "apply_patch"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tool sequence mismatch:\n got: %+v\nwant: %+v", got, want)
+	}
+}
+
 func TestMissingRequiredToolErrors(t *testing.T) {
 	required := []evalharness.ToolErrorRequirement{
 		{ToolName: "edit_file", ErrorContains: "changed since last read"},
