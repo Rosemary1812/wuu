@@ -1264,6 +1264,29 @@ func TestWorkflowControlDefinitionPrefersWorkflowTeamName(t *testing.T) {
 	}
 }
 
+func TestWorkflowToolDescriptionsPreferUnifiedStart(t *testing.T) {
+	env := &Env{}
+	startDesc := NewStartWorkflowTool(env).Definition().Description
+	if !strings.Contains(startDesc, "unified natural-language agent entry point") ||
+		!strings.Contains(startDesc, "driver=auto") {
+		t.Fatalf("start_workflow description should present the unified entry point: %q", startDesc)
+	}
+	runDesc := NewRunWorkflowTool(env).Definition().Description
+	if !strings.Contains(runDesc, "prefer start_workflow driver=auto") ||
+		!strings.Contains(runDesc, "lower-level script driver override") {
+		t.Fatalf("run_workflow description should point back to start_workflow: %q", runDesc)
+	}
+	createDesc := NewCreateWorkflowTool(env).Definition().Description
+	if !strings.Contains(createDesc, "Prefer start_workflow driver=auto") ||
+		!strings.Contains(createDesc, "lower-level agent-managed driver override") {
+		t.Fatalf("create_workflow description should point back to start_workflow: %q", createDesc)
+	}
+	statusDesc := NewWorkflowStatusTool(env).Definition().Description
+	if !strings.Contains(statusDesc, "after start_workflow") || strings.Contains(statusDesc, "after create_workflow") {
+		t.Fatalf("workflow_status description should reference start_workflow: %q", statusDesc)
+	}
+}
+
 func TestWorkflowControlInfersAwaitResultPhaseFromWorkflowTeam(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()

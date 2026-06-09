@@ -468,12 +468,12 @@ func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "run_workflow",
 		Description: "Run a workflow through the script driver. The natural-language agent remains the entry point; " +
-			"use this when a saved WORKFLOW.js definition or ad hoc script should own repeatable phase/spawn/await/synthesis control. " +
+			"prefer start_workflow driver=auto for new workflow work and use this only when a lower-level script driver override is explicitly required. " +
+			"Use this when a saved WORKFLOW.js definition or ad hoc script should own repeatable phase/spawn/await/synthesis control. " +
 			"The script creates the same durable Workflow Run, Workflow Team, Agent Run, and final-report state as agent-managed workflows. " +
 			"Inside the script, use phase(), spawn(), spawnBatch([...]), awaitAgents(), and synthesize(). Workers do shell/file work; " +
 			"the script only coordinates and persists state. " +
-			"Default caps are 1000 total worker spawns and 16 agents per spawnBatch/spawnAgents batch unless a lower definition or caller cap is set. " +
-			"Use create_workflow when the agent should manage the run directly.",
+			"Default caps are 1000 total worker spawns and 16 agents per spawnBatch/spawnAgents batch unless a lower definition or caller cap is set.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -691,6 +691,7 @@ func (t *CreateWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "create_workflow",
 		Description: "Create an agent-managed Workflow Run from a reusable workflow definition or an ad hoc plan. " +
+			"Prefer start_workflow driver=auto for new workflow work and use this only when a lower-level agent-managed driver override is explicitly required. " +
 			"This records the workflow state, phase plan, event log, and plan artifact. It does not automatically " +
 			"spawn agents; after creating a running workflow, list_agent_profiles, record the Workflow Team with " +
 			"workflow_control action=record_workflow_team, then use spawn_agent with agent_profile for reuse_profile/create_profile " +
@@ -2174,7 +2175,7 @@ func (t *WorkflowStatusTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "workflow_status",
 		Description: "Inspect durable Workflow Run state. Pass run_id to inspect one run, or omit run_id to list recent runs. " +
-			"Use this after create_workflow, after awaiting workflow agents, before resuming a paused run, and before final synthesis.",
+			"Use this after start_workflow, after awaiting workflow agents, before resuming a paused run, and before final synthesis.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
