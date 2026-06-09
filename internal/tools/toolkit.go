@@ -145,6 +145,7 @@ func (t *Toolkit) rebuildRegistry() {
 		// Search
 		NewGrepTool(e),
 		NewGlobTool(e),
+		NewASTSearchTool(e),
 		// Shell
 		NewShellTool(e),
 		NewRunTestTool(e),

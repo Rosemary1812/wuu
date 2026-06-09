@@ -2073,6 +2073,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 	}{
 		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "checkpoint", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
+		{name: "ast_search", kind: ToolKindSearch, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "run_test", kind: ToolKindTest, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
@@ -4507,6 +4508,127 @@ func TestToolkit_SearchResultsIncludeNextSuggestions(t *testing.T) {
 	}
 	if len(globParsed.Suggestions) == 0 || !strings.Contains(strings.Join(globParsed.Suggestions, " "), "broader glob") {
 		t.Fatalf("empty glob response missing broaden suggestion: %+v", globParsed.Suggestions)
+	}
+}
+
+func TestToolkit_ASTSearchFindsDefinitionsImportsAndCalls(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	files := map[string]string{
+		"main.go": strings.Join([]string{
+			"package demo",
+			"",
+			`import "fmt"`,
+			"",
+			"func Target() string {",
+			`	return fmt.Sprintf("%s", "target")`,
+			"}",
+			"",
+			"func caller() string {",
+			"	return Target()",
+			"}",
+			"",
+		}, "\n"),
+		"web/app.ts": strings.Join([]string{
+			`import { createRoot } from "react-dom/client";`,
+			"",
+			"export function renderApp() {",
+			"  return createRoot(document.body);",
+			"}",
+			"",
+		}, "\n"),
+	}
+	for path, content := range files {
+		fullPath := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	defResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "ast_search",
+		Arguments: `{"query":"Target","kind":"function","include":"*.go"}`,
+	})
+	if err != nil {
+		t.Fatalf("ast_search definition: %v", err)
+	}
+	var defParsed struct {
+		Query   string `json:"query"`
+		Kind    string `json:"kind"`
+		Matches []struct {
+			File               string         `json:"file"`
+			Line               int            `json:"line"`
+			EndLine            int            `json:"end_line"`
+			Kind               string         `json:"kind"`
+			Name               string         `json:"name"`
+			ReadFileRange      map[string]int `json:"read_file_range"`
+			ReadFileSuggestion string         `json:"read_file_suggestion"`
+		} `json:"matches"`
+		Suggestions []string `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(defResp), &defParsed); err != nil {
+		t.Fatalf("parse definition response: %v", err)
+	}
+	if defParsed.Query != "Target" || defParsed.Kind != "function" || len(defParsed.Matches) != 1 {
+		t.Fatalf("unexpected definition response: %+v", defParsed)
+	}
+	def := defParsed.Matches[0]
+	if def.File != "main.go" || def.Line != 5 || def.EndLine != 7 || def.Kind != "function" || def.Name != "Target" {
+		t.Fatalf("unexpected definition match: %+v", def)
+	}
+	if def.ReadFileRange["start_line"] != 5 || def.ReadFileRange["end_line"] != 7 || !strings.Contains(def.ReadFileSuggestion, "read_file") {
+		t.Fatalf("definition match missing read_file range: %+v", def)
+	}
+	if len(defParsed.Suggestions) == 0 || !strings.Contains(strings.Join(defParsed.Suggestions, " "), "read_file") {
+		t.Fatalf("definition response missing read_file suggestion: %+v", defParsed.Suggestions)
+	}
+
+	importResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "ast_search",
+		Arguments: `{"query":"react-dom","kind":"import","include":"**/*.ts"}`,
+	})
+	if err != nil {
+		t.Fatalf("ast_search import: %v", err)
+	}
+	var importParsed struct {
+		Matches []struct {
+			File string `json:"file"`
+			Line int    `json:"line"`
+			Kind string `json:"kind"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(importResp), &importParsed); err != nil {
+		t.Fatalf("parse import response: %v", err)
+	}
+	if len(importParsed.Matches) != 1 || importParsed.Matches[0].File != "web/app.ts" || importParsed.Matches[0].Line != 1 || importParsed.Matches[0].Kind != "import" {
+		t.Fatalf("unexpected import matches: %+v", importParsed.Matches)
+	}
+
+	callResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "ast_search",
+		Arguments: `{"query":"Target","kind":"call","include":"*.go"}`,
+	})
+	if err != nil {
+		t.Fatalf("ast_search call: %v", err)
+	}
+	var callParsed struct {
+		Matches []struct {
+			File string `json:"file"`
+			Line int    `json:"line"`
+			Kind string `json:"kind"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(callResp), &callParsed); err != nil {
+		t.Fatalf("parse call response: %v", err)
+	}
+	if len(callParsed.Matches) != 1 || callParsed.Matches[0].File != "main.go" || callParsed.Matches[0].Line != 10 || callParsed.Matches[0].Kind != "call" {
+		t.Fatalf("unexpected call matches: %+v", callParsed.Matches)
 	}
 }
 
