@@ -245,6 +245,7 @@ func webSearchExecute(ctx context.Context, argsJSON string) (string, error) {
 	results, err := duckDuckGoSearch(ctx, args.Query, maxResults)
 	if err != nil {
 		return mustJSON(map[string]any{
+			"action":   "web_search",
 			"query":    args.Query,
 			"evidence": evidence,
 			"error":    fmt.Sprintf("search failed: %s", err),
@@ -252,6 +253,7 @@ func webSearchExecute(ctx context.Context, argsJSON string) (string, error) {
 	}
 
 	return mustJSON(map[string]any{
+		"action":   "web_search",
 		"query":    args.Query,
 		"evidence": evidence,
 		"results":  results,
@@ -413,6 +415,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	parsed, parseErr := url.Parse(source)
 	if parseErr != nil {
 		return mustJSON(map[string]any{
+			"action":   "web_fetch",
 			"url":      args.URL,
 			"evidence": evidence,
 			"error":    fmt.Sprintf("invalid URL: %s", parseErr),
@@ -420,6 +423,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	}
 	if err := validateFetchURL(parsed); err != nil {
 		return mustJSON(map[string]any{
+			"action":   "web_fetch",
 			"url":      args.URL,
 			"evidence": evidence,
 			"error":    err.Error(),
@@ -435,6 +439,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", parsed.String(), nil)
 	if err != nil {
 		return mustJSON(map[string]any{
+			"action":   "web_fetch",
 			"url":      args.URL,
 			"evidence": evidence,
 			"error":    fmt.Sprintf("invalid URL: %s", err),
@@ -448,6 +453,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		return mustJSON(map[string]any{
+			"action":   "web_fetch",
 			"url":      args.URL,
 			"evidence": evidence,
 			"error":    fmt.Sprintf("fetch failed: %s", err),
@@ -457,6 +463,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return mustJSON(map[string]any{
+			"action":      "web_fetch",
 			"url":         args.URL,
 			"evidence":    evidence,
 			"status_code": resp.StatusCode,
@@ -467,6 +474,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, webFetchMaxBytes+1))
 	if err != nil {
 		return mustJSON(map[string]any{
+			"action":   "web_fetch",
 			"url":      args.URL,
 			"evidence": evidence,
 			"error":    fmt.Sprintf("read body: %s", err),
@@ -489,6 +497,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	}
 
 	return mustJSON(map[string]any{
+		"action":       "web_fetch",
 		"url":          args.URL,
 		"evidence":     evidence,
 		"content_type": contentType,

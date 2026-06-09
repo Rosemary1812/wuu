@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,8 +14,8 @@ type LoadSkillTool struct{ env *Env }
 func NewLoadSkillTool(env *Env) *LoadSkillTool { return &LoadSkillTool{env: env} }
 
 func (t *LoadSkillTool) Name() string            { return "load_skill" }
-func (t *LoadSkillTool) IsReadOnly() bool         { return true }
-func (t *LoadSkillTool) IsConcurrencySafe() bool  { return true }
+func (t *LoadSkillTool) IsReadOnly() bool        { return true }
+func (t *LoadSkillTool) IsConcurrencySafe() bool { return true }
 
 func (t *LoadSkillTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
@@ -63,6 +62,7 @@ func (t *LoadSkillTool) Execute(ctx context.Context, argsJSON string) (string, e
 	body := t.env.ProcessSkillBody(ctx, skill, args.Arguments)
 
 	result := map[string]any{
+		"action":      "load_skill",
 		"name":        skill.Name,
 		"description": skill.Description,
 		"source":      skill.Source,
@@ -74,9 +74,5 @@ func (t *LoadSkillTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if len(skill.AllowedTools) > 0 {
 		result["allowed_tools"] = skill.AllowedTools
 	}
-	out, err := json.Marshal(result)
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
+	return mustJSON(result)
 }

@@ -146,12 +146,16 @@ func TestWebFetchBlockedIncludesEvidence(t *testing.T) {
 	}
 
 	var got struct {
+		Action   string      `json:"action"`
 		URL      string      `json:"url"`
 		Evidence webEvidence `json:"evidence"`
 		Error    string      `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("unmarshal result: %v\n%s", err, out)
+	}
+	if got.Action != "web_fetch" {
+		t.Fatalf("action = %q, want web_fetch", got.Action)
 	}
 	if got.Error == "" {
 		t.Fatalf("expected error in result: %s", out)
@@ -189,6 +193,10 @@ func TestToolkitWebEvidenceContextBlockTracksMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(resp, "blocked") {
 		t.Fatalf("fixture should be blocked: %s", resp)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || records[0].ResultAction != "web_fetch" {
+		t.Fatalf("web_fetch telemetry missing result action: %+v", records)
 	}
 
 	block, ok := kit.WebEvidenceContextBlock()
