@@ -10,7 +10,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -571,6 +573,66 @@ func TestPersistEvalTraceWritesSessionArtifact(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"type":"model_profile"`) || !strings.Contains(string(data), `"type":"final"`) {
 		t.Fatalf("trace missing expected events:\n%s", string(data))
+	}
+}
+
+func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "target.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	kit, err := tools.New(root)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	sessionDir := filepath.Join(t.TempDir(), "session-artifacts")
+	kit.SetSessionDir(sessionDir)
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "old-call",
+		Name:      "read_file",
+		Arguments: `{"path":"target.txt"}`,
+	}); err != nil {
+		t.Fatalf("old read: %v", err)
+	}
+	toolRecordStart := len(kit.ToolTelemetry())
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "new-call",
+		Name:      "read_file",
+		Arguments: `{"path":"target.txt"}`,
+	}); err != nil {
+		t.Fatalf("new read: %v", err)
+	}
+
+	startedAt := time.Now().UTC().Add(-time.Second)
+	completedAt := time.Now().UTC()
+	tracePath, err := persistCLIRunTrace(
+		&runtime.Session{ProviderName: "openai", Toolkit: kit},
+		&agent.StreamRunner{Model: "gpt-test", APIModel: "gpt-test-api"},
+		"cli-session-1",
+		startedAt,
+		completedAt,
+		agent.LoopResult{Content: "done", InputTokens: 11, OutputTokens: 7},
+		nil,
+		toolRecordStart,
+	)
+	if err != nil {
+		t.Fatalf("persistCLIRunTrace: %v", err)
+	}
+	if tracePath != sessiontrace.Path(sessionDir) {
+		t.Fatalf("trace path = %q, want %q", tracePath, sessiontrace.Path(sessionDir))
+	}
+	summary, err := sessiontrace.ReplayTrace(tracePath)
+	if err != nil {
+		t.Fatalf("replay session trace: %v", err)
+	}
+	if summary.Mode != "session_trace_replay" || summary.LatestTurn == nil || summary.LatestTurn.ThreadID != "cli-session-1" {
+		t.Fatalf("unexpected replay summary: %+v", summary)
+	}
+	if summary.LatestTurn.InputTokens != 11 || summary.LatestTurn.OutputTokens != 7 || summary.Final == nil || summary.Final.FinalAnswerPreview != "done" {
+		t.Fatalf("trace did not preserve final metadata: %+v", summary)
+	}
+	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "read_file" {
+		t.Fatalf("trace should include only this run's tool record: %+v", summary.ToolNames)
 	}
 }
 

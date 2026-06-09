@@ -279,7 +279,8 @@ func runTask(args []string) error {
 		return err
 	}
 	defer rt.Cleanup()
-	rt.SetSessionID("cli-" + sessionid.NewID())
+	cliSessionID := "cli-" + sessionid.NewID()
+	rt.SetSessionID(cliSessionID)
 
 	runner := rt.StreamRunner
 	if runner == nil {
@@ -307,14 +308,92 @@ func runTask(args []string) error {
 		defer cancel()
 	}
 
-	answer, err := runner.Run(ctx, prompt)
+	toolRecordStart := 0
+	if rt.Toolkit != nil {
+		toolRecordStart = len(rt.Toolkit.ToolTelemetry())
+	}
+	startedAt := time.Now().UTC()
+	history := cliRunInitialHistory(runner, prompt)
+	res, err := runner.RunWithCallback(ctx, history, runner.OnEvent)
+	completedAt := time.Now().UTC()
+	tracePath, traceErr := persistCLIRunTrace(rt, runner, cliSessionID, startedAt, completedAt, res, err, toolRecordStart)
+	if traceErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: write session trace: %v\n", traceErr)
+	}
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("provider: %s\nmodel: %s\nconfig: %s\n\n", rt.ProviderName, rt.Model, configPath)
-	fmt.Println(answer)
+	fmt.Printf("provider: %s\nmodel: %s\nconfig: %s\n", rt.ProviderName, rt.Model, configPath)
+	if tracePath != "" {
+		fmt.Printf("trace_path: %s\n", tracePath)
+	}
+	fmt.Println()
+	fmt.Println(res.Content)
 	return nil
+}
+
+func cliRunInitialHistory(runner *agent.StreamRunner, prompt string) []providers.ChatMessage {
+	var history []providers.ChatMessage
+	if runner != nil && strings.TrimSpace(runner.SystemPrompt) != "" {
+		history = append(history, providers.ChatMessage{Role: "system", Content: runner.SystemPrompt})
+	}
+	return append(history, providers.ChatMessage{Role: "user", Content: prompt})
+}
+
+func persistCLIRunTrace(rt *runtime.Session, runner *agent.StreamRunner, sessionID string, startedAt, completedAt time.Time, res agent.LoopResult, runErr error, toolRecordStart int) (string, error) {
+	if rt == nil || rt.Toolkit == nil {
+		return "", nil
+	}
+	tracePath := sessiontrace.Path(rt.Toolkit.SessionDir())
+	if strings.TrimSpace(tracePath) == "" {
+		return "", nil
+	}
+	status := "completed"
+	errorText := ""
+	if runErr != nil {
+		status = "failed"
+		errorText = runErr.Error()
+	}
+	durationMS := completedAt.Sub(startedAt).Milliseconds()
+	model := ""
+	apiModel := ""
+	if runner != nil {
+		model = runner.Model
+		apiModel = runner.APIModel
+	}
+	turn := sessiontrace.TurnRecord{
+		ThreadID:         sessionID,
+		TurnID:           sessionID + "-turn-1",
+		Status:           status,
+		ProviderName:     rt.ProviderName,
+		Model:            model,
+		APIModel:         apiModel,
+		StartedAt:        &startedAt,
+		CompletedAt:      &completedAt,
+		DurationMS:       &durationMS,
+		InputTokens:      res.InputTokens,
+		OutputTokens:     res.OutputTokens,
+		HistoryRewritten: res.HistoryRewritten,
+		Error:            errorText,
+	}
+	final := sessiontrace.FinalRecord{
+		Status:             status,
+		InputTokens:        res.InputTokens,
+		OutputTokens:       res.OutputTokens,
+		FinalAnswerPreview: res.Content,
+		Error:              errorText,
+	}
+	records := rt.Toolkit.ToolTelemetry()
+	if toolRecordStart > 0 && toolRecordStart < len(records) {
+		records = records[toolRecordStart:]
+	} else if toolRecordStart >= len(records) {
+		records = nil
+	}
+	if err := sessiontrace.AppendTurn(tracePath, turn, final, rt.Toolkit.ToolInfos(), records); err != nil {
+		return "", err
+	}
+	return tracePath, nil
 }
 
 type evalReport struct {
