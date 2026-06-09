@@ -830,6 +830,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		result.Error = runErr.Error()
 	}
 	result.Observability = collectEvalObservability(rt, evalSessionID, taskRoot, cfg.KeepWorkdir, runResult.Content, contextRequests)
+	result.Validation = evalharness.BuildValidationSummary(result)
 	result.DurationMS = time.Since(started).Milliseconds()
 	persistEvalTrace(&result)
 	return result
@@ -1638,6 +1639,10 @@ func printEvalReport(report evalReport) {
 		}
 		if len(result.MissingErrors) > 0 {
 			fmt.Printf("  missing_errors: %s\n", strings.Join(result.MissingErrors, ","))
+		}
+		if result.Validation != nil {
+			fmt.Printf("  validation: status=%s tools=%d evidence=%d missing=%d failures=%d\n",
+				result.Validation.Status, len(result.Validation.ToolCalls), len(result.Validation.Evidence), len(result.Validation.Missing), len(result.Validation.Failures))
 		}
 		if result.Error != "" {
 			fmt.Printf("  error: %s\n", result.Error)

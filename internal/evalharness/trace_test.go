@@ -411,3 +411,45 @@ func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 		t.Fatalf("validation ledger missing next actions: %+v", summary.Validation)
 	}
 }
+
+func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
+	summary := BuildValidationSummary(Result{
+		TaskID:             "task-1",
+		TaskName:           "Task One",
+		Success:            false,
+		ForbiddenToolsUsed: []string{"run_workflow"},
+		VerificationEvidence: []VerificationEvidence{{
+			Check:    "marker",
+			Passed:   false,
+			Path:     "marker.txt",
+			Observed: "missing",
+		}},
+		Observability: &Observability{
+			ToolRecords: []ToolObservation{{
+				Name:         "run_test",
+				CallID:       "call-test",
+				ResultAction: "run",
+				Success:      false,
+				ErrorKind:    "test_failed",
+				ResultRef:    "/tmp/wuu/test.log",
+			}},
+		},
+	})
+	if summary == nil {
+		t.Fatal("missing validation summary")
+	}
+	if summary.Status != "incomplete" {
+		t.Fatalf("validation status = %q, want incomplete: %+v", summary.Status, summary)
+	}
+	if len(summary.Missing) != 1 || summary.Missing[0] != "forbidden_tool:run_workflow" {
+		t.Fatalf("validation missing requirements not summarized: %+v", summary.Missing)
+	}
+	if len(summary.Failures) != 2 ||
+		summary.Failures[0] != "run_test:test_failed:call_id=call-test" ||
+		summary.Failures[1] != "marker" {
+		t.Fatalf("validation failures not summarized: %+v", summary.Failures)
+	}
+	if len(summary.ToolCalls) != 1 || summary.ToolCalls[0].ResultRef != "/tmp/wuu/test.log" {
+		t.Fatalf("validation tool call not summarized: %+v", summary.ToolCalls)
+	}
+}

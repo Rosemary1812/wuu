@@ -251,6 +251,37 @@ func WriteTrace(path string, result Result) error {
 	return nil
 }
 
+func BuildValidationSummary(result Result) *ValidationReplaySummary {
+	summary := TraceReplaySummary{
+		Task: &TraceTask{
+			ID:                   result.TaskID,
+			Name:                 result.TaskName,
+			Success:              result.Success,
+			MissingTools:         append([]string(nil), result.MissingTools...),
+			ForbiddenToolsUsed:   append([]string(nil), result.ForbiddenToolsUsed...),
+			MissingToolCalls:     append([]string(nil), result.MissingToolCalls...),
+			MissingToolSeq:       append([]string(nil), result.MissingToolSeq...),
+			MissingErrors:        append([]string(nil), result.MissingErrors...),
+			VerificationReason:   result.VerificationReason,
+			VerificationEvidence: append([]VerificationEvidence(nil), result.VerificationEvidence...),
+			Error:                result.Error,
+		},
+		Final: &TraceReplayFinal{
+			Success:              result.Success,
+			VerificationReason:   result.VerificationReason,
+			VerificationEvidence: append([]VerificationEvidence(nil), result.VerificationEvidence...),
+			Error:                result.Error,
+		},
+	}
+	if result.Observability != nil {
+		for _, record := range result.Observability.ToolRecords {
+			summary.addValidationToolObservation(record)
+		}
+	}
+	summary.finalizeValidationSummary()
+	return summary.Validation
+}
+
 func ReplayTrace(path string) (TraceReplaySummary, error) {
 	file, err := os.Open(path)
 	if err != nil {

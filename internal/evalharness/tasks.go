@@ -60,26 +60,27 @@ type VerificationEvidence struct {
 }
 
 type Result struct {
-	TaskID               string                 `json:"task_id"`
-	TaskName             string                 `json:"task_name"`
-	Success              bool                   `json:"success"`
-	DurationMS           int64                  `json:"duration_ms"`
-	Turns                int                    `json:"turns"`
-	ToolCalls            int                    `json:"tool_calls"`
-	ToolNames            []string               `json:"tool_names,omitempty"`
-	ToolSequence         []string               `json:"tool_sequence,omitempty"`
-	MissingTools         []string               `json:"missing_tools,omitempty"`
-	ForbiddenToolsUsed   []string               `json:"forbidden_tools,omitempty"`
-	MissingToolCalls     []string               `json:"missing_tool_calls,omitempty"`
-	MissingToolSeq       []string               `json:"missing_tool_sequence,omitempty"`
-	MissingErrors        []string               `json:"missing_errors,omitempty"`
-	InputTokens          int                    `json:"input_tokens"`
-	OutputTokens         int                    `json:"output_tokens"`
-	VerificationReason   string                 `json:"verification_reason,omitempty"`
-	VerificationEvidence []VerificationEvidence `json:"verification_evidence,omitempty"`
-	Error                string                 `json:"error,omitempty"`
-	Workdir              string                 `json:"workdir,omitempty"`
-	Observability        *Observability         `json:"observability,omitempty"`
+	TaskID               string                   `json:"task_id"`
+	TaskName             string                   `json:"task_name"`
+	Success              bool                     `json:"success"`
+	DurationMS           int64                    `json:"duration_ms"`
+	Turns                int                      `json:"turns"`
+	ToolCalls            int                      `json:"tool_calls"`
+	ToolNames            []string                 `json:"tool_names,omitempty"`
+	ToolSequence         []string                 `json:"tool_sequence,omitempty"`
+	MissingTools         []string                 `json:"missing_tools,omitempty"`
+	ForbiddenToolsUsed   []string                 `json:"forbidden_tools,omitempty"`
+	MissingToolCalls     []string                 `json:"missing_tool_calls,omitempty"`
+	MissingToolSeq       []string                 `json:"missing_tool_sequence,omitempty"`
+	MissingErrors        []string                 `json:"missing_errors,omitempty"`
+	InputTokens          int                      `json:"input_tokens"`
+	OutputTokens         int                      `json:"output_tokens"`
+	VerificationReason   string                   `json:"verification_reason,omitempty"`
+	VerificationEvidence []VerificationEvidence   `json:"verification_evidence,omitempty"`
+	Validation           *ValidationReplaySummary `json:"validation,omitempty"`
+	Error                string                   `json:"error,omitempty"`
+	Workdir              string                   `json:"workdir,omitempty"`
+	Observability        *Observability           `json:"observability,omitempty"`
 }
 
 type Observability struct {
