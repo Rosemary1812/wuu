@@ -337,6 +337,41 @@ func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 			t.Fatalf("content included line outside requested range %q: %q", unwanted, parsed.Content)
 		}
 	}
+
+	rangeResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"big.txt","range":{"start_line":42,"end_line":44}}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file with range: %v", err)
+	}
+	var rangeParsed struct {
+		Content string `json:"content"`
+		Range   struct {
+			StartLine int `json:"start_line"`
+			EndLine   int `json:"end_line"`
+		} `json:"range"`
+		NumLines int `json:"num_lines"`
+	}
+	if err := json.Unmarshal([]byte(rangeResp), &rangeParsed); err != nil {
+		t.Fatalf("parse range response: %v", err)
+	}
+	if rangeParsed.NumLines != 3 || rangeParsed.Range.StartLine != 42 || rangeParsed.Range.EndLine != 44 {
+		t.Fatalf("unexpected range response metadata: %+v", rangeParsed)
+	}
+	for _, want := range []string{"    42\tline-0042", "    43\tline-0043", "    44\tline-0044"} {
+		if !strings.Contains(rangeParsed.Content, want) {
+			t.Fatalf("range response missing %q:\n%s", want, rangeParsed.Content)
+		}
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"big.txt","offset":42,"range":{"start_line":42,"end_line":44}}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "either range or offset/limit") {
+		t.Fatalf("expected mixed range and offset rejection, got %v", err)
+	}
 }
 
 func TestToolkit_ReadFileRejectsDirectory(t *testing.T) {

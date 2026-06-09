@@ -34,7 +34,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"Usage:\n" +
 			"- The path parameter is relative to the workspace root\n" +
 			"- Returns content with cat -n style line number prefixes (number + tab)\n" +
-			"- Use offset (1-based line) and limit to read specific portions of large files\n" +
+			"- Use range.start_line/range.end_line, or offset (1-based line) plus limit, to read specific portions of large files\n" +
 			"- Results include file_sha, workspace_revision, range, omitted_ranges, and next_suggestions for follow-up reads\n" +
 			"- Files >256KB are rejected unless limit is provided\n" +
 			"- Repeated reads of the same file/range return a stub if the file is unchanged\n" +
@@ -55,6 +55,21 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 					"type":        "integer",
 					"description": "Max lines to return. Omit to read the whole file when it fits size limits.",
 				},
+				"range": map[string]any{
+					"type":        "object",
+					"description": "Inclusive line range to read. Use instead of offset/limit when you already know start_line and end_line.",
+					"properties": map[string]any{
+						"start_line": map[string]any{
+							"type":        "integer",
+							"description": "1-based first line to read.",
+						},
+						"end_line": map[string]any{
+							"type":        "integer",
+							"description": "1-based inclusive last line to read.",
+						},
+					},
+					"required": []string{"start_line", "end_line"},
+				},
 			},
 			"required": []string{"path"},
 		},
@@ -62,16 +77,35 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 }
 
 func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	type lineRangeArgs struct {
+		StartLine int `json:"start_line"`
+		EndLine   int `json:"end_line"`
+	}
 	var args struct {
-		Path   string `json:"path"`
-		Offset int    `json:"offset"`
-		Limit  *int   `json:"limit"`
+		Path   string         `json:"path"`
+		Offset int            `json:"offset"`
+		Limit  *int           `json:"limit"`
+		Range  *lineRangeArgs `json:"range"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(args.Path) == "" {
 		return "", errors.New("read_file requires path")
+	}
+	if args.Range != nil {
+		if args.Offset > 0 || args.Limit != nil {
+			return "", errors.New("read_file accepts either range or offset/limit, not both")
+		}
+		if args.Range.StartLine <= 0 {
+			return "", errors.New("read_file range.start_line must be positive")
+		}
+		if args.Range.EndLine < args.Range.StartLine {
+			return "", errors.New("read_file range.end_line must be greater than or equal to range.start_line")
+		}
+		args.Offset = args.Range.StartLine
+		rangeLimit := args.Range.EndLine - args.Range.StartLine + 1
+		args.Limit = &rangeLimit
 	}
 	if args.Offset <= 0 {
 		args.Offset = 1
