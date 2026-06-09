@@ -355,6 +355,9 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		if record.ResultRef != "" {
 			fmt.Fprintf(&b, " result_ref=%s", compactContextLine(redactToolOutput(contextArtifactRef(t.env, record.ResultRef))))
 		}
+		if record.ApprovalRef != "" {
+			fmt.Fprintf(&b, " approval_ref=%s", compactContextLine(redactToolOutput(contextArtifactRef(t.env, record.ApprovalRef))))
+		}
 		if len(record.ArtifactRefs) > 0 {
 			fmt.Fprintf(&b, " artifact_refs=%s", strings.Join(redactedContextArtifactRefs(t.env, record.ArtifactRefs, 4), ","))
 		}

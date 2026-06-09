@@ -42,6 +42,9 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 	if len(record.ArtifactRefs) > 0 {
 		envelope.Data["artifact_refs"] = append([]string(nil), record.ArtifactRefs...)
 	}
+	if record.ApprovalRef != "" {
+		envelope.Data["approval_ref"] = record.ApprovalRef
+	}
 	envelope.NextSuggestions = toolResultNextSuggestions(record)
 	return envelope
 }

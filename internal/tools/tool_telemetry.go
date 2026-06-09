@@ -49,6 +49,26 @@ type ToolExecutionRecord struct {
 	ResultBudgeted       bool             `json:"result_budgeted"`
 	ResultRef            string           `json:"result_ref,omitempty"`
 	ArtifactRefs         []string         `json:"artifact_refs,omitempty"`
+	ApprovalRef          string           `json:"approval_ref,omitempty"`
+}
+
+type toolApprovalRequest struct {
+	ID                   string           `json:"id"`
+	ToolName             string           `json:"tool_name"`
+	CallID               string           `json:"call_id,omitempty"`
+	Kind                 ToolKind         `json:"kind"`
+	Risk                 ToolRisk         `json:"risk"`
+	PolicyAction         ToolPolicyAction `json:"policy_action"`
+	PolicyReason         string           `json:"policy_reason,omitempty"`
+	ClassificationReason string           `json:"classification_reason,omitempty"`
+	ReadOnly             bool             `json:"read_only"`
+	Destructive          bool             `json:"destructive"`
+	CreatedAt            time.Time        `json:"created_at"`
+	Revision             string           `json:"revision,omitempty"`
+	ArgumentsSHA256      string           `json:"arguments_sha256,omitempty"`
+	ArgumentsPreview     string           `json:"arguments_preview,omitempty"`
+	ModelNextAction      string           `json:"model_next_action"`
+	ApprovalOptions      []string         `json:"approval_options"`
 }
 
 type toolTelemetry struct {
@@ -82,7 +102,8 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
 
 	if err := decision.blockingError(call.Name); err != nil {
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
+		approvalRef := t.persistApprovalRequest(call, info, decision, startedAt, revisionBefore)
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, err)
 		return "", err
 	}
 
@@ -98,7 +119,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	}
 
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
-	t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, err)
+	t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, "", err)
 
 	return returned, err
 }
@@ -114,8 +135,13 @@ func (t *Toolkit) recordToolExecution(
 	returned string,
 	resultRef string,
 	resultBudgeted bool,
+	approvalRef string,
 	err error,
 ) {
+	artifactRefs := extractToolArtifactRefs(result, resultRef)
+	if approvalRef != "" {
+		artifactRefs = appendUniqueString(artifactRefs, approvalRef)
+	}
 	record := ToolExecutionRecord{
 		Name:                 call.Name,
 		CallID:               call.ID,
@@ -136,12 +162,100 @@ func (t *Toolkit) recordToolExecution(
 		ReturnedOutputBytes:  len(returned),
 		ResultBudgeted:       resultBudgeted,
 		ResultRef:            resultRef,
-		ArtifactRefs:         extractToolArtifactRefs(result, resultRef),
+		ArtifactRefs:         artifactRefs,
+		ApprovalRef:          approvalRef,
 	}
 	if err != nil {
 		record.Error = err.Error()
 	}
 	t.env.toolTelemetry.record(record)
+}
+
+func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo, decision ToolPolicyDecision, createdAt time.Time, revision string) string {
+	if t == nil || t.env == nil || strings.TrimSpace(t.env.SessionDir) == "" || decision.Action != ToolPolicyRequireApproval {
+		return ""
+	}
+	id := approvalRequestID(call, createdAt)
+	argsPreview := redactToolOutput(strings.TrimSpace(call.Arguments))
+	if len(argsPreview) > 1200 {
+		argsPreview = argsPreview[:1200] + "\n...[truncated]"
+	}
+	argsSum := sha256.Sum256([]byte(call.Arguments))
+	request := toolApprovalRequest{
+		ID:                   id,
+		ToolName:             call.Name,
+		CallID:               call.ID,
+		Kind:                 info.Kind,
+		Risk:                 info.Risk,
+		PolicyAction:         decision.Action,
+		PolicyReason:         decision.Reason,
+		ClassificationReason: info.Reason,
+		ReadOnly:             info.ReadOnly,
+		Destructive:          info.Destructive,
+		CreatedAt:            createdAt.UTC(),
+		Revision:             revision,
+		ArgumentsSHA256:      hex.EncodeToString(argsSum[:]),
+		ArgumentsPreview:     argsPreview,
+		ModelNextAction:      "ask the user for approval or choose a lower-risk alternative",
+		ApprovalOptions:      []string{"ask_user", "choose_lower_risk_alternative", "stop"},
+	}
+	data, err := json.MarshalIndent(request, "", "  ")
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(t.env.SessionDir, "approvals")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
+	}
+	path := filepath.Join(dir, id+".json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return ""
+	}
+	return path
+}
+
+func approvalRequestID(call providers.ToolCall, createdAt time.Time) string {
+	base := strings.TrimSpace(call.ID)
+	if base == "" {
+		base = fmt.Sprintf("%s-%d", strings.TrimSpace(call.Name), createdAt.UnixNano())
+	}
+	base = safeArtifactToken(base)
+	if base == "" {
+		base = fmt.Sprintf("approval-%d", createdAt.UnixNano())
+	}
+	return base
+}
+
+func safeArtifactToken(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return strings.Trim(b.String(), "-.")
+}
+
+func appendUniqueString(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func extractToolArtifactRefs(result, resultRef string) []string {

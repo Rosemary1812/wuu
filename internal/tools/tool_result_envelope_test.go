@@ -26,6 +26,7 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 		ReturnedOutputBytes:  256,
 		ResultBudgeted:       true,
 		ResultRef:            "/tmp/wuu/tool-results/call_1.txt",
+		ApprovalRef:          "/tmp/wuu/approvals/call_1.json",
 	}
 
 	envelope := record.ResultEnvelope()
@@ -54,6 +55,9 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"classification_reason":"destructive shell command"`) {
 		t.Fatalf("envelope should include classification reason: %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"approval_ref":"/tmp/wuu/approvals/call_1.json"`) {
+		t.Fatalf("envelope should include approval ref: %s", string(raw))
 	}
 }
 

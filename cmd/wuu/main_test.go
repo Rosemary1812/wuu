@@ -356,6 +356,7 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 		ResultBudgeted:       true,
 		ResultRef:            "/tmp/wuu/tool-results/call_1.txt",
 		ArtifactRefs:         []string{"/tmp/wuu/tool-results/call_1.txt", "/tmp/wuu/tool-results/run-test-logs/call_1.log"},
+		ApprovalRef:          "/tmp/wuu/approvals/call_1.json",
 	}}
 
 	got := evalToolObservations(records)
@@ -383,6 +384,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	if !reflect.DeepEqual(got[0].ArtifactRefs, records[0].ArtifactRefs) {
 		t.Fatalf("artifact refs not preserved: %+v", got[0])
 	}
+	if got[0].ApprovalRef != records[0].ApprovalRef {
+		t.Fatalf("approval ref not preserved: %+v", got[0])
+	}
 	if got[0].ResultEnvelope == nil || got[0].ResultEnvelope.DataRef != records[0].ResultRef {
 		t.Fatalf("result envelope missing ref: %+v", got[0].ResultEnvelope)
 	}
@@ -392,6 +396,9 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	artifactRefs, ok := got[0].ResultEnvelope.Data["artifact_refs"].([]string)
 	if !ok || !reflect.DeepEqual(artifactRefs, records[0].ArtifactRefs) {
 		t.Fatalf("result envelope missing artifact refs: %+v", got[0].ResultEnvelope)
+	}
+	if got[0].ResultEnvelope.Data["approval_ref"] != records[0].ApprovalRef {
+		t.Fatalf("result envelope missing approval ref: %+v", got[0].ResultEnvelope)
 	}
 	rawEnvelope, err := json.Marshal(got[0].ResultEnvelope)
 	if err != nil {

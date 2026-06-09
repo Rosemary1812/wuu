@@ -3549,6 +3549,8 @@ func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	sessionDir := filepath.Join(t.TempDir(), "session")
+	kit.SetSessionDir(sessionDir)
 	kit.SetToolPolicy(ToolPolicy{
 		RiskActions: map[ToolRisk]ToolPolicyAction{
 			ToolRiskHigh: ToolPolicyRequireApproval,
@@ -3558,7 +3560,7 @@ func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		ID:        "call-shell",
 		Name:      "run_shell",
-		Arguments: `{"command":"printf hi > out.txt"}`,
+		Arguments: `{"command":"printf API_KEY=secret-value-1234567890 > out.txt"}`,
 	})
 	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_required") ||
 		!strings.Contains(err.Error(), "approval_options") ||
@@ -3569,9 +3571,37 @@ func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("expected 1 telemetry record, got %d", len(records))
 	}
-	envelope := records[0].ResultEnvelope()
+	record := records[0]
+	if record.ApprovalRef == "" {
+		t.Fatalf("approval-required record missing approval ref: %+v", record)
+	}
+	if !strings.HasPrefix(record.ApprovalRef, filepath.Join(sessionDir, "approvals")) {
+		t.Fatalf("approval ref outside session dir: %q", record.ApprovalRef)
+	}
+	if !containsString(record.ArtifactRefs, record.ApprovalRef) {
+		t.Fatalf("approval ref should be included as an artifact ref: %+v", record.ArtifactRefs)
+	}
+	rawApproval := mustReadFile(t, record.ApprovalRef)
+	if strings.Contains(rawApproval, "secret-value") || !strings.Contains(rawApproval, "[REDACTED]") {
+		t.Fatalf("approval artifact should redact sensitive arguments:\n%s", rawApproval)
+	}
+	var request map[string]any
+	if err := json.Unmarshal([]byte(rawApproval), &request); err != nil {
+		t.Fatalf("decode approval artifact: %v", err)
+	}
+	if request["tool_name"] != "run_shell" || request["policy_action"] != string(ToolPolicyRequireApproval) || request["model_next_action"] == "" {
+		t.Fatalf("approval artifact missing policy details: %+v", request)
+	}
+	envelope := record.ResultEnvelope()
 	if !strings.Contains(strings.Join(envelope.NextSuggestions, " "), "approval") {
 		t.Fatalf("approval policy envelope missing recovery guidance: %+v", envelope)
+	}
+	if envelope.Data["approval_ref"] != record.ApprovalRef {
+		t.Fatalf("approval policy envelope missing approval ref: %+v", envelope)
+	}
+	block, ok := kit.ToolResultSummaryContextBlock()
+	if !ok || !strings.Contains(block.Content, "approval_ref=$SESSION_DIR/approvals/call-shell.json") {
+		t.Fatalf("tool result context missing approval ref:\n%s", block.Content)
 	}
 }
 

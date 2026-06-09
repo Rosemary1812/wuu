@@ -1018,6 +1018,7 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			ResultBudgeted:       record.ResultBudgeted,
 			ResultRef:            record.ResultRef,
 			ArtifactRefs:         append([]string(nil), record.ArtifactRefs...),
+			ApprovalRef:          record.ApprovalRef,
 			ResultEnvelope:       &envelope,
 		})
 	}
