@@ -1697,6 +1697,19 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 				risk.Total, formatCountMap(risk.ByLevel), risk.FileCount, risk.HunkCount, risk.AddedLines, risk.DeletedLines)
 		}
 	}
+	if summary.Validation != nil {
+		fmt.Printf("  validation: status=%s tools=%d evidence=%d missing=%d failures=%d\n",
+			summary.Validation.Status, len(summary.Validation.ToolCalls), len(summary.Validation.Evidence), len(summary.Validation.Missing), len(summary.Validation.Failures))
+		if evidence := formatEvalValidationEvidence(summary.Validation.Evidence); evidence != "" {
+			fmt.Printf("  validation_evidence: %s\n", evidence)
+		}
+		if missing := formatDelimitedValues(summary.Validation.Missing, ","); missing != "" {
+			fmt.Printf("  validation_missing: %s\n", missing)
+		}
+		if failures := formatDelimitedValues(summary.Validation.Failures, ","); failures != "" {
+			fmt.Printf("  validation_failures: %s\n", failures)
+		}
+	}
 	if runs := formatEvalWorkflowRuns(summary.WorkflowRuns, summary.WorkflowRunIDs); runs != "" {
 		fmt.Printf("  workflow_runs: %s\n", runs)
 	}
@@ -1932,6 +1945,29 @@ func formatEvalWorkflowChangedFileOverlaps(overlaps []evalharness.WorkflowChange
 		}
 	}
 	return strings.Join(parts, "|")
+}
+
+func formatEvalValidationEvidence(values []evalharness.VerificationEvidence) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		label := strings.TrimSpace(value.Check)
+		if label == "" {
+			label = "verification"
+		}
+		status := "failed"
+		if value.Passed {
+			status = "passed"
+		}
+		piece := label + ":" + status
+		if command := strings.TrimSpace(value.Command); command != "" {
+			piece += ":command=" + firstLine(command)
+		}
+		if path := strings.TrimSpace(value.Path); path != "" {
+			piece += ":path=" + path
+		}
+		parts = append(parts, piece)
+	}
+	return strings.Join(parts, ",")
 }
 
 func formatDelimitedValues(values []string, separator string) string {

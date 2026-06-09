@@ -341,3 +341,73 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 		t.Fatalf("replay missing workflow artifact paths: %+v", summary.WorkflowRuns)
 	}
 }
+
+func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace", "eval-trace.jsonl")
+	err := WriteTrace(path, Result{
+		TaskID:   "task-1",
+		TaskName: "Task One",
+		Success:  true,
+		VerificationEvidence: []VerificationEvidence{{
+			Check:    "go tests",
+			Passed:   true,
+			Command:  "go test ./...",
+			Expected: "exit_code=0",
+			Observed: "ok",
+		}},
+		Observability: &Observability{
+			ToolRecords: []ToolObservation{{
+				Name:           "run_test",
+				CallID:         "call-test",
+				ResultAction:   "run",
+				Success:        true,
+				DurationMS:     1234,
+				RevisionBefore: "rev-before",
+				RevisionAfter:  "rev-after",
+				ResultRef:      "/tmp/wuu/tool-results/test.log",
+				ArtifactRefs:   []string{"/tmp/wuu/tool-results/test.log"},
+			}, {
+				Name:         "git",
+				CallID:       "call-diff",
+				ResultAction: "diff",
+				Success:      true,
+			}, {
+				Name:         "run_shell",
+				CallID:       "call-shell",
+				Success:      false,
+				ErrorKind:    "policy_denied",
+				PolicyAction: "deny",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("WriteTrace: %v", err)
+	}
+
+	summary, err := ReplayTrace(path)
+	if err != nil {
+		t.Fatalf("ReplayTrace: %v", err)
+	}
+	if summary.Validation == nil {
+		t.Fatal("replay missing validation ledger")
+	}
+	if summary.Validation.Status != "passed" || len(summary.Validation.Evidence) != 1 || len(summary.Validation.ToolCalls) != 2 {
+		t.Fatalf("unexpected validation ledger: %+v", summary.Validation)
+	}
+	if summary.Validation.Evidence[0].Command != "go test ./..." {
+		t.Fatalf("validation evidence command not preserved: %+v", summary.Validation.Evidence)
+	}
+	if summary.Validation.ToolCalls[0].ToolName != "run_test" ||
+		summary.Validation.ToolCalls[0].ResultRef != "/tmp/wuu/tool-results/test.log" ||
+		summary.Validation.ToolCalls[0].RevisionAfter != "rev-after" {
+		t.Fatalf("validation tool call missing metadata: %+v", summary.Validation.ToolCalls)
+	}
+	for _, call := range summary.Validation.ToolCalls {
+		if call.ToolName == "run_shell" {
+			t.Fatalf("generic run_shell should not be treated as validation without structured validation metadata: %+v", summary.Validation.ToolCalls)
+		}
+	}
+	if len(summary.Validation.NextActions) == 0 {
+		t.Fatalf("validation ledger missing next actions: %+v", summary.Validation)
+	}
+}

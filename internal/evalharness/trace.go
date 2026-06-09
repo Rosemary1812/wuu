@@ -69,6 +69,7 @@ type TraceReplaySummary struct {
 	WorkflowRunIDs    []string                   `json:"workflow_run_ids,omitempty"`
 	HarnessTaskIDs    []string                   `json:"harness_task_ids,omitempty"`
 	HarnessReportIDs  []string                   `json:"harness_report_ids,omitempty"`
+	Validation        *ValidationReplaySummary   `json:"validation,omitempty"`
 	Final             *TraceReplayFinal          `json:"final,omitempty"`
 	Complete          bool                       `json:"complete"`
 	Warnings          []string                   `json:"warnings,omitempty"`
@@ -118,6 +119,29 @@ type PatchRiskReplaySummary struct {
 	HunkCount      int            `json:"hunk_count"`
 	AddedLines     int            `json:"added_lines"`
 	DeletedLines   int            `json:"deleted_lines"`
+}
+
+type ValidationReplaySummary struct {
+	Status      string                      `json:"status"`
+	ToolCalls   []ValidationToolCallSummary `json:"tool_calls,omitempty"`
+	Evidence    []VerificationEvidence      `json:"evidence,omitempty"`
+	Missing     []string                    `json:"missing,omitempty"`
+	Failures    []string                    `json:"failures,omitempty"`
+	NextActions []string                    `json:"next_actions,omitempty"`
+}
+
+type ValidationToolCallSummary struct {
+	ToolName       string   `json:"tool_name"`
+	CallID         string   `json:"call_id,omitempty"`
+	ResultAction   string   `json:"result_action,omitempty"`
+	Success        bool     `json:"success"`
+	ErrorKind      string   `json:"error_kind,omitempty"`
+	PolicyAction   string   `json:"policy_action,omitempty"`
+	DurationMS     int64    `json:"duration_ms,omitempty"`
+	RevisionBefore string   `json:"revision_before,omitempty"`
+	RevisionAfter  string   `json:"revision_after,omitempty"`
+	ResultRef      string   `json:"result_ref,omitempty"`
+	ArtifactRefs   []string `json:"artifact_refs,omitempty"`
 }
 
 type TraceReplayFinal struct {
@@ -270,6 +294,7 @@ func ReplayTrace(path string) (TraceReplaySummary, error) {
 		summary.Final = &TraceReplayFinal{Success: summary.Task.Success, VerificationReason: summary.Task.VerificationReason, Error: summary.Task.Error}
 	}
 	summary.finalizeToolSummary()
+	summary.finalizeValidationSummary()
 	summary.Complete = summary.EventTypes["task"] > 0 && summary.EventTypes["final"] > 0
 	return summary, nil
 }
@@ -394,6 +419,7 @@ func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
 	if record.PatchRiskSummary != nil {
 		summary.addPatchRiskObservation(*record.PatchRiskSummary)
 	}
+	summary.addValidationToolObservation(record)
 }
 
 func (summary *TraceReplaySummary) ensureToolSummary() {
@@ -493,6 +519,154 @@ func (summary *TraceReplaySummary) finalizeToolSummary() {
 		return left.ArgumentsSHA256 < right.ArgumentsSHA256
 	})
 	summary.ToolSummary.argumentCounts = nil
+}
+
+func (summary *TraceReplaySummary) addValidationToolObservation(record ToolObservation) {
+	if !isValidationTool(record.Name, record.ResultAction) {
+		return
+	}
+	summary.ensureValidationSummary()
+	summary.Validation.ToolCalls = append(summary.Validation.ToolCalls, ValidationToolCallSummary{
+		ToolName:       record.Name,
+		CallID:         record.CallID,
+		ResultAction:   record.ResultAction,
+		Success:        record.Success,
+		ErrorKind:      record.ErrorKind,
+		PolicyAction:   record.PolicyAction,
+		DurationMS:     record.DurationMS,
+		RevisionBefore: record.RevisionBefore,
+		RevisionAfter:  record.RevisionAfter,
+		ResultRef:      record.ResultRef,
+		ArtifactRefs:   append([]string(nil), record.ArtifactRefs...),
+	})
+	if !record.Success {
+		label := strings.TrimSpace(record.Name)
+		if record.ErrorKind != "" {
+			label += ":" + record.ErrorKind
+		}
+		if record.CallID != "" {
+			label += ":call_id=" + record.CallID
+		}
+		summary.Validation.Failures = appendUniqueTraceString(summary.Validation.Failures, label)
+	}
+}
+
+func isValidationTool(name, action string) bool {
+	switch strings.TrimSpace(name) {
+	case "run_test", "workflow_status":
+		return true
+	case "git":
+		switch strings.TrimSpace(action) {
+		case "status", "diff", "grep":
+			return true
+		}
+	default:
+		return false
+	}
+	return false
+}
+
+func (summary *TraceReplaySummary) ensureValidationSummary() {
+	if summary.Validation != nil {
+		return
+	}
+	summary.Validation = &ValidationReplaySummary{Status: "unverified"}
+}
+
+func (summary *TraceReplaySummary) finalizeValidationSummary() {
+	var evidence []VerificationEvidence
+	if summary.Final != nil {
+		evidence = append(evidence, summary.Final.VerificationEvidence...)
+	}
+	if len(evidence) == 0 && summary.Task != nil {
+		evidence = append(evidence, summary.Task.VerificationEvidence...)
+	}
+	var missing []string
+	if summary.Task != nil {
+		missing = appendPrefixedTraceStrings(missing, "missing_tool", summary.Task.MissingTools)
+		missing = appendPrefixedTraceStrings(missing, "forbidden_tool", summary.Task.ForbiddenToolsUsed)
+		missing = appendPrefixedTraceStrings(missing, "missing_tool_call", summary.Task.MissingToolCalls)
+		missing = appendPrefixedTraceStrings(missing, "missing_tool_sequence", summary.Task.MissingToolSeq)
+		missing = appendPrefixedTraceStrings(missing, "missing_error", summary.Task.MissingErrors)
+	}
+	var failures []string
+	for _, item := range evidence {
+		if item.Passed {
+			continue
+		}
+		label := strings.TrimSpace(item.Check)
+		if label == "" {
+			label = "verification_evidence"
+		}
+		failures = appendUniqueTraceString(failures, label)
+	}
+	if len(evidence) == 0 && len(missing) == 0 && len(failures) == 0 && summary.Validation == nil {
+		return
+	}
+	summary.ensureValidationSummary()
+	summary.Validation.Evidence = append(summary.Validation.Evidence, evidence...)
+	summary.Validation.Missing = append(summary.Validation.Missing, missing...)
+	summary.Validation.Failures = appendUniqueTraceStrings(summary.Validation.Failures, failures)
+	switch {
+	case len(summary.Validation.Missing) > 0:
+		summary.Validation.Status = "incomplete"
+	case summary.Final != nil && !summary.Final.Success:
+		summary.Validation.Status = "failed"
+	case len(summary.Validation.Failures) > 0:
+		summary.Validation.Status = "failed"
+	case len(summary.Validation.Evidence) == 0 && len(summary.Validation.ToolCalls) == 0:
+		summary.Validation.Status = "unverified"
+	default:
+		summary.Validation.Status = "passed"
+	}
+	summary.Validation.NextActions = validationNextActions(summary.Validation)
+}
+
+func appendPrefixedTraceStrings(dst []string, prefix string, values []string) []string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		dst = appendUniqueTraceString(dst, prefix+":"+value)
+	}
+	return dst
+}
+
+func appendUniqueTraceStrings(dst []string, values []string) []string {
+	for _, value := range values {
+		dst = appendUniqueTraceString(dst, value)
+	}
+	return dst
+}
+
+func appendUniqueTraceString(dst []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return dst
+	}
+	for _, existing := range dst {
+		if existing == value {
+			return dst
+		}
+	}
+	return append(dst, value)
+}
+
+func validationNextActions(validation *ValidationReplaySummary) []string {
+	if validation == nil {
+		return nil
+	}
+	switch validation.Status {
+	case "passed":
+		return []string{"use the verification evidence and validation tool calls as the completion ledger"}
+	case "failed":
+		return []string{"inspect failed validation tool calls, latest verification evidence, and related artifacts before retrying"}
+	case "incomplete":
+		return []string{"satisfy missing tool, sequence, policy, or verification requirements before claiming success"}
+	default:
+		return []string{"run or record relevant validation before claiming success"}
+	}
 }
 
 func (summary *TraceReplaySummary) addPatchRiskObservation(risk PatchRiskObservation) {
