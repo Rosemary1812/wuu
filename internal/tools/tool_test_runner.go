@@ -3,11 +3,14 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
+
+const maxRepeatedRunTestFailures = 2
 
 type RunTestTool struct{ env *Env }
 
@@ -81,6 +84,7 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 	if strings.TrimSpace(args.Command) == "" {
 		return "", errors.New("run_test requires command")
 	}
+	command := strings.TrimSpace(args.Command)
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("run_test refuses to print process environment variables because they may contain secrets")
 	}
@@ -103,7 +107,14 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		scope = "targeted"
 	}
 
-	shellResult, err := executeShellCommand(ctx, t.env, args.Command, timeout)
+	revision := workspaceRevision(ctx, t.env.RootDir)
+	commandHash := sha256Hex([]byte(command))
+	previousFailures := t.env.ConsecutiveTestFailures(commandHash, revision)
+	if revision != "" && previousFailures >= maxRepeatedRunTestFailures {
+		return "", fmt.Errorf("run_test refuses to rerun the same command after %d failed attempts at unchanged workspace revision. Change code, narrow the command, or inspect failure_summary before rerunning", previousFailures)
+	}
+
+	shellResult, err := executeShellCommand(ctx, t.env, command, timeout)
 	if err != nil {
 		return "", err
 	}
@@ -111,22 +122,29 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 	if shellResult.ExitCode != 0 {
 		failureSummary.Failed = true
 	}
+	failed := shellResult.ExitCode != 0 || shellResult.TimedOut || failureSummary.Failed
+	t.env.RecordTestRun(commandHash, revision, failed)
 	return mustJSON(map[string]any{
-		"command":          shellResult.Command,
-		"scope":            scope,
-		"purpose":          redactToolOutput(args.Purpose),
-		"classification":   classification,
-		"passed":           shellResult.ExitCode == 0 && !shellResult.TimedOut,
-		"exit_code":        shellResult.ExitCode,
-		"duration_ms":      shellResult.DurationMS,
-		"timed_out":        shellResult.TimedOut,
-		"truncated":        shellResult.Truncated,
-		"output":           shellResult.Output,
-		"stdout_tail":      shellResult.StdoutTail,
-		"stderr_tail":      shellResult.StderrTail,
-		"stdout_bytes":     shellResult.StdoutBytes,
-		"stderr_bytes":     shellResult.StderrBytes,
-		"failure_summary":  failureSummary,
+		"command":            shellResult.Command,
+		"scope":              scope,
+		"purpose":            redactToolOutput(args.Purpose),
+		"classification":     classification,
+		"passed":             shellResult.ExitCode == 0 && !shellResult.TimedOut,
+		"exit_code":          shellResult.ExitCode,
+		"duration_ms":        shellResult.DurationMS,
+		"timed_out":          shellResult.TimedOut,
+		"truncated":          shellResult.Truncated,
+		"output":             shellResult.Output,
+		"stdout_tail":        shellResult.StdoutTail,
+		"stderr_tail":        shellResult.StderrTail,
+		"stdout_bytes":       shellResult.StdoutBytes,
+		"stderr_bytes":       shellResult.StderrBytes,
+		"failure_summary":    failureSummary,
+		"workspace_revision": revision,
+		"repeat_guard": map[string]any{
+			"previous_failed_runs":                    previousFailures,
+			"max_failed_runs_without_revision_change": maxRepeatedRunTestFailures,
+		},
 		"next_suggestions": runTestNextSuggestions(shellResult, failureSummary),
 	})
 }

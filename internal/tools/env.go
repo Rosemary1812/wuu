@@ -55,6 +55,50 @@ func (r *readFileState) getEntry(absPath string) (ReadFileEntry, bool) {
 	return entry, ok
 }
 
+type testRunEntry struct {
+	CommandHash string
+	Revision    string
+	Failed      bool
+}
+
+type testRunState struct {
+	mu      sync.RWMutex
+	records []testRunEntry
+}
+
+func (s *testRunState) record(commandHash, revision string, failed bool) {
+	if commandHash == "" || revision == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, testRunEntry{
+		CommandHash: commandHash,
+		Revision:    revision,
+		Failed:      failed,
+	})
+}
+
+func (s *testRunState) consecutiveFailures(commandHash, revision string) int {
+	if commandHash == "" || revision == "" {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	count := 0
+	for i := len(s.records) - 1; i >= 0; i-- {
+		record := s.records[i]
+		if record.CommandHash != commandHash || record.Revision != revision {
+			continue
+		}
+		if !record.Failed {
+			break
+		}
+		count++
+	}
+	return count
+}
+
 // Env holds shared runtime state that individual tools receive at
 // construction time. It replaces the old approach of making every
 // handler a method on *Toolkit.
@@ -101,6 +145,7 @@ type Env struct {
 	UserMemoryCharLimit int
 
 	readState *readFileState
+	testState testRunState
 	planState planState
 
 	toolTelemetry toolTelemetry
@@ -128,6 +173,14 @@ func (e *Env) GetReadEntry(absPath string) (ReadFileEntry, bool) {
 		return ReadFileEntry{}, false
 	}
 	return e.readState.getEntry(absPath)
+}
+
+func (e *Env) RecordTestRun(commandHash, revision string, failed bool) {
+	e.testState.record(commandHash, revision, failed)
+}
+
+func (e *Env) ConsecutiveTestFailures(commandHash, revision string) int {
+	return e.testState.consecutiveFailures(commandHash, revision)
 }
 
 // ResolvePath resolves a user-supplied relative or absolute path to

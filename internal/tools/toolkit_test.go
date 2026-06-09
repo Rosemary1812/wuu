@@ -1728,6 +1728,83 @@ func TestBroken(t *testing.T) {
 	}
 }
 
+func TestToolkit_RunTestToolBlocksRepeatedFailuresAtSameRevision(t *testing.T) {
+	root := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/repeat-test\n\ngo 1.22\n")
+	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package repeattest
+
+import "testing"
+
+func TestBroken(t *testing.T) {
+	t.Fatalf("expected 1 got 2")
+}
+`)
+	runGit("add", "go.mod", "pkg_test.go")
+	runGit("commit", "-m", "initial")
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	call := providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"go test ./...","scope":"targeted"}`,
+	}
+	for i := 0; i < maxRepeatedRunTestFailures; i++ {
+		resp, err := kit.Execute(context.Background(), call)
+		if err != nil {
+			t.Fatalf("run_test attempt %d should execute: %v", i+1, err)
+		}
+		var got struct {
+			Passed       bool               `json:"passed"`
+			RepeatGuard  map[string]any     `json:"repeat_guard"`
+			Revision     string             `json:"workspace_revision"`
+			FailureState testFailureSummary `json:"failure_summary"`
+		}
+		if err := json.Unmarshal([]byte(resp), &got); err != nil {
+			t.Fatalf("parse run_test response: %v\n%s", err, resp)
+		}
+		if got.Passed || got.Revision == "" || !got.FailureState.Failed {
+			t.Fatalf("unexpected failed run_test response: %+v", got)
+		}
+	}
+	_, err = kit.Execute(context.Background(), call)
+	if err == nil || !strings.Contains(err.Error(), "unchanged workspace revision") {
+		t.Fatalf("expected repeated failure guard, got: %v", err)
+	}
+
+	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package repeattest
+
+import "testing"
+
+func TestBroken(t *testing.T) {}
+`)
+	resp, err := kit.Execute(context.Background(), call)
+	if err != nil {
+		t.Fatalf("run_test after workspace change should execute: %v", err)
+	}
+	var got struct {
+		Passed bool `json:"passed"`
+	}
+	if err := json.Unmarshal([]byte(resp), &got); err != nil {
+		t.Fatalf("parse run_test response: %v\n%s", err, resp)
+	}
+	if !got.Passed {
+		t.Fatalf("expected passing run_test after workspace change: %s", resp)
+	}
+}
+
 func TestToolkit_RunTestToolRejectsNonVerificationCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
