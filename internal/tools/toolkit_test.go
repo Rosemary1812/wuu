@@ -1989,6 +1989,17 @@ func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
 	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "environment secrets") {
 		t.Fatalf("environment dump start_process metadata = %+v, want high-risk environment classification", meta)
 	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"git status","owner_kind":"main_agent"}`,
+	})
+	if !ok {
+		t.Fatal("start_process metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "restricted git tool") {
+		t.Fatalf("git start_process metadata = %+v, want high-risk restricted-git guidance", meta)
+	}
 }
 
 func TestToolkit_RunTestToolExecutesVerificationCommand(t *testing.T) {
@@ -3169,6 +3180,28 @@ func TestToolkit_StartProcessRejectsSecretBearingCommands(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "sensitive paths") {
 		t.Fatalf("expected sensitive path rejection, got %v", err)
+	}
+}
+
+func TestToolkit_StartProcessRejectsGitCommandBypass(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	for _, command := range []string{
+		"git status",
+		"cd pkg && git status",
+		"env FOO=bar git status",
+	} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "start_process",
+			Arguments: fmt.Sprintf(`{"command":%q,"owner_kind":"main_agent"}`, command),
+		})
+		if err == nil || !strings.Contains(err.Error(), "restricted git tool") {
+			t.Fatalf("expected restricted git guidance for %q, got %v", command, err)
+		}
 	}
 }
 

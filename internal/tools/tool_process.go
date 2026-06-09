@@ -76,6 +76,9 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if args.Command == "" {
 		return "", errors.New("start_process requires command")
 	}
+	if shellCommandInvokesGit(args.Command) {
+		return "", errors.New("start_process refuses to execute git commands; use the restricted git tool instead")
+	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("start_process refuses to print process environment variables because they may contain secrets")
 	}
