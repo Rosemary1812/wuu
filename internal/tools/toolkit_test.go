@@ -2794,6 +2794,73 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 	}
 }
 
+func TestToolkit_ActiveFilesContextBlockTracksReadFiles(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "dir", "a.txt"), "line one\nAPI_KEY=secret-value-1234567890\nline three\nline four\n")
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if block, ok := kit.ActiveFilesContextBlock(); ok {
+		t.Fatalf("active files block should be absent before read_file: %+v", block)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"dir/a.txt","offset":2,"limit":2}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if !strings.Contains(resp, "secret-value") {
+		t.Fatalf("fixture should prove read_file body contained secret-like text: %s", resp)
+	}
+
+	block, ok := kit.ActiveFilesContextBlock()
+	if !ok {
+		t.Fatal("expected active files context block")
+	}
+	if block.Kind != wuucontext.BlockActiveFiles || block.Source != "read_file" {
+		t.Fatalf("unexpected active files metadata: %+v", block)
+	}
+	for _, want := range []string{
+		"read_files:",
+		"path=dir/a.txt",
+		"status=current",
+		"file_sha=sha256:",
+		"read_range=2-3",
+		"file bodies are omitted",
+	} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("active files context missing %q:\n%s", want, block.Content)
+		}
+	}
+	if strings.Contains(block.Content, "secret-value") || strings.Contains(block.Content, "API_KEY") {
+		t.Fatalf("active files context should omit file bodies:\n%s", block.Content)
+	}
+
+	blocks := kit.ContextBlocks()
+	found := false
+	for _, candidate := range blocks {
+		if candidate.Kind == wuucontext.BlockActiveFiles {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ContextBlocks missing ACTIVE_FILES block: %+v", blocks)
+	}
+
+	mustWriteFile(t, filepath.Join(root, "dir", "a.txt"), "changed content with different size\n")
+	block, ok = kit.ActiveFilesContextBlock()
+	if !ok {
+		t.Fatal("expected stale active files context block")
+	}
+	if !strings.Contains(block.Content, "status=possibly_stale") {
+		t.Fatalf("active files context should mark changed file stale:\n%s", block.Content)
+	}
+}
+
 func TestToolkit_ToolPolicy_DeniesByRisk(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

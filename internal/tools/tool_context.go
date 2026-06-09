@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
@@ -13,6 +15,9 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 		return nil
 	}
 	blocks := t.PlanContextBlocks()
+	if block, ok := t.ActiveFilesContextBlock(); ok {
+		blocks = append(blocks, block)
+	}
 	if block, ok := t.TestFailureContextBlock(); ok {
 		blocks = append(blocks, block)
 	}
@@ -20,6 +25,57 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 		blocks = append(blocks, block)
 	}
 	return blocks
+}
+
+func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {
+	if t == nil || t.env == nil {
+		return wuucontext.Block{}, false
+	}
+	entries := t.env.ReadEntries()
+	if len(entries) == 0 {
+		return wuucontext.Block{}, false
+	}
+	paths := make([]string, 0, len(entries))
+	for path := range entries {
+		paths = append(paths, path)
+	}
+	sort.Slice(paths, func(i, j int) bool {
+		return t.env.NormalizeDisplayPath(paths[i]) < t.env.NormalizeDisplayPath(paths[j])
+	})
+	const maxFiles = 12
+	listed := paths
+	if len(listed) > maxFiles {
+		listed = listed[:maxFiles]
+	}
+
+	var b strings.Builder
+	b.WriteString("read_files:\n")
+	for _, absPath := range listed {
+		entry := entries[absPath]
+		status := "current"
+		if info, err := os.Stat(absPath); err != nil || info.IsDir() || !readEntryMatchesInfo(entry, info) {
+			status = "possibly_stale"
+		}
+		fmt.Fprintf(&b, "- path=%s status=%s file_sha=%s size_bytes=%d read_range=%s\n",
+			compactContextLine(redactToolOutput(t.env.NormalizeDisplayPath(absPath))),
+			status,
+			formatFileSHA(entry.ContentSHA256),
+			entry.Size,
+			activeFileReadRange(entry),
+		)
+	}
+	if omitted := len(paths) - len(listed); omitted > 0 {
+		fmt.Fprintf(&b, "omitted_files: %d\n", omitted)
+	}
+	b.WriteString("note: file bodies are omitted; use the previous read_file result as evidence only while status=current, otherwise read_file again.\n")
+
+	return wuucontext.Block{
+		Kind:        wuucontext.BlockActiveFiles,
+		Title:       "Files read in this session",
+		Source:      "read_file",
+		TokenBudget: 700,
+		Content:     strings.TrimRight(b.String(), "\n"),
+	}, true
 }
 
 func (t *Toolkit) TestFailureContextBlock() (wuucontext.Block, bool) {
@@ -71,6 +127,17 @@ func (t *Toolkit) TestFailureContextBlock() (wuucontext.Block, bool) {
 		TokenBudget: 900,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
+}
+
+func activeFileReadRange(entry ReadFileEntry) string {
+	start := entry.Offset
+	if start <= 0 {
+		start = 1
+	}
+	if entry.Limit > 0 {
+		return fmt.Sprintf("%d-%d", start, start+entry.Limit-1)
+	}
+	return fmt.Sprintf("%d-EOF", start)
 }
 
 func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {

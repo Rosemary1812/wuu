@@ -56,6 +56,16 @@ func (r *readFileState) getEntry(absPath string) (ReadFileEntry, bool) {
 	return entry, ok
 }
 
+func (r *readFileState) snapshot() map[string]ReadFileEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]ReadFileEntry, len(r.state))
+	for path, entry := range r.state {
+		out[path] = entry
+	}
+	return out
+}
+
 type testRunEntry struct {
 	CommandHash    string
 	Revision       string
@@ -205,6 +215,13 @@ func (e *Env) GetReadEntry(absPath string) (ReadFileEntry, bool) {
 		return ReadFileEntry{}, false
 	}
 	return e.readState.getEntry(absPath)
+}
+
+func (e *Env) ReadEntries() map[string]ReadFileEntry {
+	if e.readState == nil {
+		return nil
+	}
+	return e.readState.snapshot()
 }
 
 func (e *Env) RecordTestRun(commandHash, revision string, failed bool) {
