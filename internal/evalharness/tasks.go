@@ -315,6 +315,19 @@ func Catalog() []Task {
 			Verify: verifyGoTests,
 		},
 		{
+			ID:          "semantic_search_navigation",
+			Name:        "Navigate to behavior with semantic search",
+			Description: "Go package where the agent must use semantic_search to find the behavior area before editing.",
+			Prompt: "Use semantic_search first with query='checkout discount total' to find the candidate file before reading any source file. " +
+				"Then read the matched source, fix the implementation bug without changing tests, and use run_test to verify go test ./... passes.",
+			RequiredTools: []string{"semantic_search", "read_file", "run_test"},
+			RequiredToolCalls: []ToolCallRequirement{
+				{ToolName: "semantic_search", ArgumentEquals: map[string]string{"query": "checkout discount total"}},
+			},
+			Setup:  setupSemanticSearchNavigation,
+			Verify: verifyGoTests,
+		},
+		{
 			ID:            "long_process_output",
 			Name:          "Read a long-running process log",
 			Description:   "Script prints a readiness marker after a delay and keeps running.",
@@ -586,6 +599,37 @@ func TestIsValidSKU(t *testing.T) {
 		t.Fatal("IsValidSKU() should accept a non-empty normalized SKU")
 	}
 }
+`,
+	}
+	return writeFiles(root, files)
+}
+
+func setupSemanticSearchNavigation(root string) error {
+	files := map[string]string{
+		"go.mod": `module checkouteval
+
+go 1.22
+`,
+		"checkout/discount.go": `package checkout
+
+// CartDiscountTotal computes the final checkout total after promo discounts.
+func CartDiscountTotal(subtotalCents int, discountCents int) int {
+	return subtotalCents
+}
+`,
+		"checkout/discount_test.go": `package checkout
+
+import "testing"
+
+func TestCartDiscountTotalAppliesDiscount(t *testing.T) {
+	if got := CartDiscountTotal(1000, 250); got != 750 {
+		t.Fatalf("CartDiscountTotal() = %d, want 750", got)
+	}
+}
+`,
+		"auth/session.go": `package auth
+
+func ExpireSession() {}
 `,
 	}
 	return writeFiles(root, files)

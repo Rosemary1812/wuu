@@ -176,6 +176,50 @@ func IsValidSKU(input string) bool {
 	}
 }
 
+func TestSemanticSearchNavigationVerification(t *testing.T) {
+	task, ok := ByID("semantic_search_navigation")
+	if !ok {
+		t.Fatal("missing semantic_search_navigation task")
+	}
+	if !evalTaskRequiresTool(task, "semantic_search") || !evalTaskRequiresTool(task, "read_file") || !evalTaskRequiresTool(task, "run_test") {
+		t.Fatalf("semantic search navigation should require semantic_search/read_file/run_test, got %+v", task.RequiredTools)
+	}
+	if len(task.RequiredToolCalls) != 1 || task.RequiredToolCalls[0].ToolName != "semantic_search" {
+		t.Fatalf("semantic search navigation should require a semantic_search call, got %+v", task.RequiredToolCalls)
+	}
+
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask failed module: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("buggy semantic search fixture should fail verification")
+	}
+
+	fixed := `package checkout
+
+// CartDiscountTotal computes the final checkout total after promo discounts.
+func CartDiscountTotal(subtotalCents int, discountCents int) int {
+	return subtotalCents - discountCents
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "checkout", "discount.go"), []byte(fixed), 0o644); err != nil {
+		t.Fatalf("write fixed file: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask fixed module: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("fixed semantic search fixture should pass verification: %s", passed.Reason)
+	}
+}
+
 func TestLongProcessOutputVerification(t *testing.T) {
 	task, ok := ByID("long_process_output")
 	if !ok {
