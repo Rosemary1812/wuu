@@ -123,15 +123,41 @@ func TestSummariesMatchProviderCompatForBedrockMantle(t *testing.T) {
 }
 
 func TestSummariesMatchProviderCompatForExcludedReasoningModels(t *testing.T) {
+	reasoning := true
 	for _, tc := range []struct {
 		name     string
 		provider config.ProviderConfig
 	}{
 		{
+			name: "deepseek",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				NPM:   "@ai-sdk/openai-compatible",
+				Model: "deepseek-chat",
+				Models: map[string]config.ProviderModelConfig{
+					"deepseek-chat": {Reasoning: &reasoning},
+				},
+			},
+		},
+		{
+			name: "minimax",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				NPM:   "@ai-sdk/openai-compatible",
+				Model: "minimax-model",
+				Models: map[string]config.ProviderModelConfig{
+					"minimax-model": {Reasoning: &reasoning},
+				},
+			},
+		},
+		{
 			name: "glm anthropic",
 			provider: config.ProviderConfig{
 				Type:  "anthropic",
 				Model: "glm-5.1",
+				Models: map[string]config.ProviderModelConfig{
+					"glm-5.1": {Reasoning: &reasoning},
+				},
 			},
 		},
 		{
@@ -153,34 +179,132 @@ func TestSummariesMatchProviderCompatForExcludedReasoningModels(t *testing.T) {
 
 func TestSummariesMatchProviderCompatForMiniMaxM3(t *testing.T) {
 	reasoning := true
+	for _, tc := range []struct {
+		name             string
+		npm              string
+		wantBaseThinking bool
+	}{
+		{name: "anthropic", npm: "@ai-sdk/anthropic", wantBaseThinking: true},
+		{name: "openai compatible", npm: "@ai-sdk/openai-compatible"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := config.ProviderConfig{
+				Type:  "anthropic",
+				NPM:   tc.npm,
+				Model: "minimax-m3",
+				Models: map[string]config.ProviderModelConfig{
+					"minimax-m3": {
+						Reasoning: &reasoning,
+					},
+				},
+			}
+
+			variants := Summaries(provider, provider.Model)
+			if got := variantIDs(variants); strings.Join(got, ",") != "none,thinking" {
+				t.Fatalf("variants = %v", got)
+			}
+			options, ok := Options(provider, provider.Model, "thinking")
+			if !ok {
+				t.Fatal("expected thinking variant")
+			}
+			thinking, ok := options["thinking"].(map[string]any)
+			if !ok || thinking["type"] != "adaptive" {
+				t.Fatalf("thinking options = %#v", options)
+			}
+
+			selection := Resolve(provider, provider.Model, "", "")
+			thinking, ok = selection.ProviderOptions["thinking"].(map[string]any)
+			if tc.wantBaseThinking {
+				if !ok || thinking["type"] != "adaptive" {
+					t.Fatalf("base thinking options = %#v", selection.ProviderOptions)
+				}
+			} else if ok {
+				t.Fatalf("openai-compatible should use native default thinking: %#v", selection.ProviderOptions)
+			}
+		})
+	}
+}
+
+func TestResolveMatchesProviderCompatForZAIAndZhipuThinking(t *testing.T) {
+	for _, providerID := range []string{"zai-coding-plan", "zai", "zhipuai-coding-plan", "zhipuai"} {
+		t.Run(providerID, func(t *testing.T) {
+			provider := config.ProviderConfig{
+				Type:  "openai-compatible",
+				NPM:   "@ai-sdk/openai-compatible",
+				Model: "glm-4.6",
+			}
+
+			selection := ResolveForProvider(providerID, provider, provider.Model, "", "")
+			thinking, ok := selection.ProviderOptions["thinking"].(map[string]any)
+			if !ok {
+				t.Fatalf("thinking = %#v; options=%#v", selection.ProviderOptions["thinking"], selection.ProviderOptions)
+			}
+			if thinking["type"] != "enabled" || thinking["clear_thinking"] != false {
+				t.Fatalf("thinking = %#v", thinking)
+			}
+		})
+	}
+}
+
+func TestResolveMatchesProviderCompatForAlibabaReasoning(t *testing.T) {
+	reasoning := true
 	provider := config.ProviderConfig{
-		Type:  "anthropic",
-		NPM:   "@ai-sdk/anthropic",
-		Model: "minimax-m3",
+		Type:  "openai-compatible",
+		NPM:   "@ai-sdk/openai-compatible",
+		Model: "qwen-plus",
 		Models: map[string]config.ProviderModelConfig{
-			"minimax-m3": {
-				Reasoning: &reasoning,
-			},
+			"qwen-plus": {Reasoning: &reasoning},
 		},
 	}
 
-	variants := Summaries(provider, provider.Model)
-	if got := variantIDs(variants); strings.Join(got, ",") != "none,thinking" {
-		t.Fatalf("variants = %v", got)
-	}
-	options, ok := Options(provider, provider.Model, "thinking")
-	if !ok {
-		t.Fatal("expected thinking variant")
-	}
-	thinking, ok := options["thinking"].(map[string]any)
-	if !ok || thinking["type"] != "adaptive" {
-		t.Fatalf("thinking options = %#v", options)
+	selection := ResolveForProvider("alibaba-cn", provider, provider.Model, "", "")
+	if got := selection.ProviderOptions["enable_thinking"]; got != true {
+		t.Fatalf("enable_thinking = %#v; options=%#v", got, selection.ProviderOptions)
 	}
 
-	selection := Resolve(provider, provider.Model, "", "")
-	thinking, ok = selection.ProviderOptions["thinking"].(map[string]any)
-	if !ok || thinking["type"] != "adaptive" {
-		t.Fatalf("base thinking options = %#v", selection.ProviderOptions)
+	provider.Model = "kimi-k2-thinking"
+	provider.Models = map[string]config.ProviderModelConfig{
+		"kimi-k2-thinking": {Reasoning: &reasoning},
+	}
+	selection = ResolveForProvider("alibaba-cn", provider, provider.Model, "", "")
+	if _, ok := selection.ProviderOptions["enable_thinking"]; ok {
+		t.Fatalf("kimi-k2-thinking should use provider default thinking: %#v", selection.ProviderOptions)
+	}
+}
+
+func TestSummariesMatchProviderCompatForMistralReasoningWhitelist(t *testing.T) {
+	reasoning := true
+	tests := []struct {
+		model string
+		want  string
+	}{
+		{model: "mistral-small-latest", want: "high"},
+		{model: "mistral-medium-3.5", want: "high"},
+		{model: "mistral-large-latest", want: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.model, func(t *testing.T) {
+			provider := config.ProviderConfig{
+				Type:  "openai-compatible",
+				NPM:   "@ai-sdk/mistral",
+				Model: tc.model,
+				Models: map[string]config.ProviderModelConfig{
+					tc.model: {Reasoning: &reasoning},
+				},
+			}
+
+			variants := SummariesForProvider("mistral", provider, provider.Model)
+			if got := strings.Join(variantIDs(variants), ","); got != tc.want {
+				t.Fatalf("variants = %q, want %q: %+v", got, tc.want, variants)
+			}
+			if tc.want != "" {
+				options, ok := OptionsForProvider("mistral", provider, provider.Model, tc.want)
+				if !ok || options["reasoningEffort"] != tc.want {
+					t.Fatalf("options = %#v, ok=%v", options, ok)
+				}
+			}
+		})
 	}
 }
 
@@ -337,6 +461,164 @@ func TestSummariesMatchProviderCompatForAnthropicOpus47Aliases(t *testing.T) {
 	thinking, ok := options["thinking"].(map[string]any)
 	if !ok || thinking["type"] != "adaptive" || thinking["display"] != "summarized" {
 		t.Fatalf("thinking options = %#v", options)
+	}
+}
+
+func TestSummariesMatchProviderCompatForAnthropicAdaptiveFamilies(t *testing.T) {
+	tests := []struct {
+		name         string
+		apiID        string
+		wantVariants string
+		wantOptions  map[string]any
+	}{
+		{
+			name:         "opus 4.5 hyphen",
+			apiID:        "claude-opus-4-5-20251101",
+			wantVariants: "low,medium,high",
+			wantOptions:  map[string]any{"effort": "high"},
+		},
+		{
+			name:         "opus 4.5 dot",
+			apiID:        "claude-opus-4.5-20251101",
+			wantVariants: "low,medium,high",
+			wantOptions:  map[string]any{"effort": "high"},
+		},
+		{
+			name:         "sonnet 4.6 hyphen",
+			apiID:        "claude-sonnet-4-6",
+			wantVariants: "low,medium,high,max",
+			wantOptions: map[string]any{
+				"thinking": map[string]any{"type": "adaptive"},
+				"effort":   "high",
+			},
+		},
+		{
+			name:         "sonnet 4.6 dot",
+			apiID:        "claude-sonnet-4.6",
+			wantVariants: "low,medium,high,max",
+			wantOptions: map[string]any{
+				"thinking": map[string]any{"type": "adaptive"},
+				"effort":   "high",
+			},
+		},
+		{
+			name:         "opus 4.7 hyphen",
+			apiID:        "claude-opus-4-7",
+			wantVariants: "low,medium,high,xhigh,max",
+			wantOptions: map[string]any{
+				"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
+				"effort":   "high",
+			},
+		},
+		{
+			name:         "opus 4.7 dot",
+			apiID:        "claude-opus-4.7",
+			wantVariants: "low,medium,high,xhigh,max",
+			wantOptions: map[string]any{
+				"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
+				"effort":   "high",
+			},
+		},
+		{
+			name:         "opus 4.8 hyphen",
+			apiID:        "claude-opus-4-8",
+			wantVariants: "low,medium,high,xhigh,max",
+			wantOptions: map[string]any{
+				"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
+				"effort":   "high",
+			},
+		},
+		{
+			name:         "opus 4.8 dot",
+			apiID:        "claude-opus-4.8",
+			wantVariants: "low,medium,high,xhigh,max",
+			wantOptions: map[string]any{
+				"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
+				"effort":   "high",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := config.ProviderConfig{
+				Type:  "anthropic",
+				NPM:   "@ai-sdk/anthropic",
+				Model: tc.apiID,
+			}
+
+			variants := SummariesForProvider("anthropic", provider, provider.Model)
+			if got := strings.Join(variantIDs(variants), ","); got != tc.wantVariants {
+				t.Fatalf("variants = %q, want %q: %+v", got, tc.wantVariants, variants)
+			}
+			options, ok := OptionsForProvider("anthropic", provider, provider.Model, "high")
+			if !ok || !optionEqual(options, tc.wantOptions) {
+				t.Fatalf("options = %#v, ok=%v", options, ok)
+			}
+		})
+	}
+}
+
+func TestSummariesMatchProviderCompatForGatewayAnthropicAdaptive(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:  "openai-compatible",
+		NPM:   "@ai-sdk/gateway",
+		Model: "anthropic/claude-opus-4-8",
+	}
+
+	variants := SummariesForProvider("gateway", provider, provider.Model)
+	if got := strings.Join(variantIDs(variants), ","); got != "low,medium,high,xhigh,max" {
+		t.Fatalf("variants = %q: %+v", got, variants)
+	}
+	options, ok := OptionsForProvider("gateway", provider, provider.Model, "high")
+	want := map[string]any{
+		"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
+		"effort":   "high",
+	}
+	if !ok || !optionEqual(options, want) {
+		t.Fatalf("options = %#v, ok=%v", options, ok)
+	}
+}
+
+func TestSummariesMatchProviderCompatForGitHubCopilotAnthropicOpus47(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:  "anthropic",
+		NPM:   "@ai-sdk/anthropic",
+		Model: "claude-opus-4.7",
+	}
+
+	variants := SummariesForProvider("github-copilot", provider, provider.Model)
+	if got := strings.Join(variantIDs(variants), ","); got != "medium" {
+		t.Fatalf("variants = %q: %+v", got, variants)
+	}
+	options, ok := OptionsForProvider("github-copilot", provider, provider.Model, "medium")
+	want := map[string]any{
+		"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
+		"effort":   "medium",
+	}
+	if !ok || !optionEqual(options, want) {
+		t.Fatalf("options = %#v, ok=%v", options, ok)
+	}
+}
+
+func TestSummariesMatchProviderCompatForVertexAnthropicOpus48(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:  "anthropic",
+		NPM:   "@ai-sdk/google-vertex/anthropic",
+		Model: "claude-opus-4-8@default",
+	}
+
+	variants := SummariesForProvider("google-vertex-anthropic", provider, provider.Model)
+	if got := strings.Join(variantIDs(variants), ","); got != "low,medium,high,xhigh,max" {
+		t.Fatalf("variants = %q: %+v", got, variants)
+	}
+	options, ok := OptionsForProvider("google-vertex-anthropic", provider, provider.Model, "high")
+	want := map[string]any{
+		"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
+		"effort":   "high",
+	}
+	if !ok || !optionEqual(options, want) {
+		t.Fatalf("options = %#v, ok=%v", options, ok)
 	}
 }
 

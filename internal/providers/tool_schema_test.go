@@ -55,6 +55,20 @@ func TestToolInputSchemaForModel_SanitizesGeminiSchema(t *testing.T) {
 }
 
 func TestToolInputSchemaForModel_SanitizesKimiSchema(t *testing.T) {
+	original := assertKimiSchemaSanitized(t, "moonshotai/kimi-k2")
+
+	originalRef := original["properties"].(map[string]any)["ref"].(map[string]any)
+	if originalRef["description"] != "must be dropped" {
+		t.Fatal("expected original schema to remain unchanged")
+	}
+}
+
+func TestToolInputSchemaForModel_SanitizesKimiSchemaOutsideMoonshotProvider(t *testing.T) {
+	assertKimiSchemaSanitized(t, "custom-provider/kimi-k2")
+}
+
+func assertKimiSchemaSanitized(t *testing.T, model string) map[string]any {
+	t.Helper()
 	original := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -72,7 +86,7 @@ func TestToolInputSchemaForModel_SanitizesKimiSchema(t *testing.T) {
 		},
 	}
 
-	got := ToolInputSchemaForModel("moonshotai/kimi-k2", original)
+	got := ToolInputSchemaForModel(model, original)
 	props := got["properties"].(map[string]any)
 	ref := props["ref"].(map[string]any)
 	if len(ref) != 1 || ref["$ref"] != "#/$defs/Target" {
@@ -83,9 +97,5 @@ func TestToolInputSchemaForModel_SanitizesKimiSchema(t *testing.T) {
 	if items["type"] != "string" {
 		t.Fatalf("expected tuple items collapsed to first schema, got %#v", tuple["items"])
 	}
-
-	originalRef := original["properties"].(map[string]any)["ref"].(map[string]any)
-	if originalRef["description"] != "must be dropped" {
-		t.Fatal("expected original schema to remain unchanged")
-	}
+	return original
 }
