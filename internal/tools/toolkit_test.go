@@ -3480,6 +3480,28 @@ func TestToolkit_StartProcessRejectsDestructiveCommands(t *testing.T) {
 	}
 }
 
+func TestToolkit_StartProcessRejectsPackageNetworkMutationCommands(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	for _, command := range []string{
+		"npm install left-pad",
+		"printf ok && curl https://example.com",
+		"env FOO=bar npx some-tool",
+	} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "start_process",
+			Arguments: fmt.Sprintf(`{"command":%q,"owner_kind":"main_agent"}`, command),
+		})
+		if err == nil || !strings.Contains(err.Error(), "package, network, or external mutation commands") {
+			t.Fatalf("expected package/network mutation rejection for %q, got %v", command, err)
+		}
+	}
+}
+
 func TestToolkit_ProcessOutputRedactsSecrets(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -3972,6 +3994,30 @@ func TestToolkit_RunShellRejectsDestructiveCommands(t *testing.T) {
 		}
 		if got := mustReadFile(t, filepath.Join(root, "tmp", "keep.txt")); got != "keep\n" {
 			t.Fatalf("destructive run_shell should not mutate workspace after %q: %q", command, got)
+		}
+	}
+}
+
+func TestToolkit_RunShellRejectsPackageNetworkMutationCommands(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	for _, command := range []string{
+		"npm install left-pad",
+		"uv sync",
+		"curl https://example.com",
+		"printf ok && wget https://example.com",
+		"env FOO=bar npx some-tool",
+	} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "run_shell",
+			Arguments: fmt.Sprintf(`{"command":%q}`, command),
+		})
+		if err == nil || !strings.Contains(err.Error(), "package, network, or external mutation commands") {
+			t.Fatalf("expected package/network mutation rejection for %q, got %v", command, err)
 		}
 	}
 }

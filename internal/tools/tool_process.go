@@ -88,6 +88,9 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if shellCommandInvokesDestructiveCommand(args.Command) {
 		return "", errors.New("start_process refuses to execute destructive shell commands; use apply_patch, checkpoint, git, or another restricted tool so changes remain auditable")
 	}
+	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
+		return "", errors.New("start_process refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
+	}
 	m, err := t.env.ProcessManager()
 	if err != nil {
 		return "", err

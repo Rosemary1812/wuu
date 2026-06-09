@@ -96,6 +96,9 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if shellCommandInvokesDestructiveCommand(args.Command) {
 		return "", errors.New("run_shell refuses to execute destructive shell commands; use apply_patch, checkpoint, git, or another restricted tool so changes remain auditable")
 	}
+	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
+		return "", errors.New("run_shell refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
+	}
 
 	timeout := args.TimeoutSeconds
 	if timeout <= 0 {
@@ -357,6 +360,16 @@ func shellCommandInvokesDestructiveCommand(command string) bool {
 	return false
 }
 
+func shellCommandInvokesPackageOrNetworkMutation(command string) bool {
+	for _, segment := range splitShellCommandSegments(command) {
+		fields := normalizeShellCommandFields(strings.Fields(segment))
+		if shellFieldsLookLikePackageOrNetworkMutation(fields) {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeShellCommandFields(fields []string) []string {
 	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
 		fields = fields[1:]
@@ -582,6 +595,8 @@ func shellFieldsLookLikePackageOrNetworkMutation(fields []string) bool {
 		if len(fields) > 1 {
 			return oneOf(fields[1], "install", "i", "add", "remove", "update", "upgrade", "publish", "exec", "dlx")
 		}
+	case "npx":
+		return true
 	case "pip", "pip3", "uv":
 		if len(fields) > 1 {
 			return oneOf(fields[1], "install", "add", "remove", "sync", "publish")
