@@ -575,6 +575,7 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
 
 	result := map[string]any{
+		"action":             gitResultAction(subcmd),
 		"subcommand":         subcmd,
 		"exit_code":          exitCode,
 		"output":             trimmed,
@@ -595,6 +596,32 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 		result["redacted"] = true
 	}
 	return mustJSON(result)
+}
+
+func gitResultAction(subcmd string) string {
+	parts := strings.Fields(strings.ToLower(strings.TrimSpace(subcmd)))
+	cleaned := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimLeft(part, "-")
+		var b strings.Builder
+		for _, r := range part {
+			switch {
+			case r >= 'a' && r <= 'z':
+				b.WriteRune(r)
+			case r >= '0' && r <= '9':
+				b.WriteRune(r)
+			default:
+				b.WriteByte('_')
+			}
+		}
+		if value := strings.Trim(b.String(), "_"); value != "" {
+			cleaned = append(cleaned, value)
+		}
+	}
+	if len(cleaned) == 0 {
+		return "git"
+	}
+	return strings.Join(cleaned, "_")
 }
 
 type gitCommitMetadata struct {
@@ -689,6 +716,7 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 	trimmed, truncated := truncate(rawOutput, maxShellOutputBytes)
 
 	result := map[string]any{
+		"action":             "status",
 		"subcommand":         "status",
 		"exit_code":          exitCode,
 		"staged":             staged,

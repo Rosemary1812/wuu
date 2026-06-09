@@ -101,6 +101,13 @@ func requireGitWorkspaceRevision(t *testing.T, p map[string]any) string {
 	return rev
 }
 
+func requireGitAction(t *testing.T, p map[string]any, want string) {
+	t.Helper()
+	if got, _ := p["action"].(string); got != want {
+		t.Fatalf("git action = %q, want %q in %+v", got, want, p)
+	}
+}
+
 func gitErr(t *testing.T, kit *Toolkit, subcmd string, args ...string) string {
 	t.Helper()
 	aj, _ := json.Marshal(map[string]any{"subcommand": subcmd, "args": args})
@@ -150,7 +157,22 @@ func TestToolkit_Git_ReadOnlySubcommands(t *testing.T) {
 		if suggestions, ok := p["next_suggestions"].([]any); !ok || len(suggestions) == 0 {
 			t.Errorf("git %s missing next_suggestions: %+v", sub, p)
 		}
+		requireGitAction(t, p, sub)
 		requireGitWorkspaceRevision(t, p)
+	}
+}
+
+func TestToolkit_GitTelemetryRecordsResultActions(t *testing.T) {
+	kit, _ := setupGitRepo(t)
+	gitCall(t, kit, "status")
+	gitCall(t, kit, "diff")
+	records := kit.ToolTelemetry()
+	got := make([]string, 0, len(records))
+	for _, record := range records {
+		got = append(got, record.Name+":"+record.ResultAction)
+	}
+	if strings.Join(got, ",") != "git:status,git:diff" {
+		t.Fatalf("git telemetry actions = %+v", got)
 	}
 }
 
@@ -159,6 +181,7 @@ func TestToolkit_GitStatusSuggestsDiffForDirtyTree(t *testing.T) {
 	runBash(t, root, "printf 'dirty\n' >> hello.txt")
 
 	p := gitCall(t, kit, "status")
+	requireGitAction(t, p, "status")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("git status: %+v", p)
 	}
@@ -185,14 +208,17 @@ func TestToolkit_Git_BlockedSubcommands(t *testing.T) {
 func TestToolkit_Git_MultiWordSubcommands(t *testing.T) {
 	kit, _ := setupGitRepo(t)
 	p := gitCall(t, kit, "stash list")
+	requireGitAction(t, p, "stash_list")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("stash list: %v", p)
 	}
 	p = gitCall(t, kit, "stash", "list")
+	requireGitAction(t, p, "stash_list")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("stash+list: %v", p)
 	}
 	p = gitCall(t, kit, "config", "--get", "user.name")
+	requireGitAction(t, p, "config_get")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("config --get: %v", p)
 	}
@@ -200,6 +226,7 @@ func TestToolkit_Git_MultiWordSubcommands(t *testing.T) {
 		t.Errorf("user.name: got %q", p["output"])
 	}
 	p = gitCall(t, kit, "worktree list")
+	requireGitAction(t, p, "worktree_list")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("worktree list: %v", p)
 	}
