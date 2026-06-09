@@ -2888,6 +2888,8 @@ func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	sessionDir := filepath.Join(t.TempDir(), "session")
+	kit.SetSessionDir(sessionDir)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "run_shell",
@@ -2904,6 +2906,36 @@ func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
 	}
 	if strings.Count(resp, "[REDACTED]") < 3 {
 		t.Fatalf("expected redaction markers, got: %s", resp)
+	}
+	var parsed struct {
+		FullLogRef   string `json:"full_log_ref"`
+		FullLogBytes int    `json:"full_log_bytes"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse run_shell response: %v\n%s", err, resp)
+	}
+	if parsed.FullLogRef == "" || parsed.FullLogBytes <= 0 {
+		t.Fatalf("run_shell response missing full log artifact: %+v", parsed)
+	}
+	if !strings.HasPrefix(parsed.FullLogRef, filepath.Join(sessionDir, "tool-results", "shell-logs")) {
+		t.Fatalf("full log ref outside session dir: %q", parsed.FullLogRef)
+	}
+	logData, err := os.ReadFile(parsed.FullLogRef)
+	if err != nil {
+		t.Fatalf("read full log artifact: %v", err)
+	}
+	logText := string(logData)
+	for _, leaked := range []string{"secret-value", "abcdefghijklmnop", "sk-testsecret"} {
+		if strings.Contains(logText, leaked) {
+			t.Fatalf("run_shell full log leaked %q:\n%s", leaked, logText)
+		}
+	}
+	if strings.Count(logText, "[REDACTED]") < 3 || !strings.Contains(logText, "exit_code: 0") {
+		t.Fatalf("full log artifact missing redacted evidence:\n%s", logText)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || !containsString(records[0].ArtifactRefs, parsed.FullLogRef) {
+		t.Fatalf("tool telemetry missing shell log artifact ref: records=%+v full_log_ref=%q", records, parsed.FullLogRef)
 	}
 }
 

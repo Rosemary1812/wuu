@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,7 +52,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"Instructions:\n" +
 			"- Commands must be non-interactive; never rely on editors, pagers, or terminal prompts\n" +
 			"- Default timeout is 300s, max 3600s\n" +
-			"- Results include exit_code, duration_ms, combined output, and stdout/stderr tails\n" +
+			"- Results include exit_code, duration_ms, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
 			"- For git operations, prefer the git tool over run_shell",
@@ -102,6 +103,13 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if err != nil {
 		return "", err
 	}
+	fullLogRef, fullLogBytes, fullLogErr := persistShellLog(t.env.SessionDir, result)
+	if fullLogRef != "" {
+		result.FullLogRef = fullLogRef
+		result.FullLogBytes = fullLogBytes
+	} else if fullLogErr != "" {
+		result.FullLogError = fullLogErr
+	}
 	return mustJSON(result)
 }
 
@@ -119,9 +127,52 @@ type shellExecutionResult struct {
 	StderrBytes         int                `json:"stderr_bytes"`
 	StdoutTailTruncated bool               `json:"stdout_tail_truncated"`
 	StderrTailTruncated bool               `json:"stderr_tail_truncated"`
+	FullLogRef          string             `json:"full_log_ref,omitempty"`
+	FullLogBytes        int                `json:"full_log_bytes,omitempty"`
+	FullLogError        string             `json:"full_log_error,omitempty"`
 	NextSuggestions     []string           `json:"next_suggestions,omitempty"`
 	redactedStdout      string
 	redactedStderr      string
+}
+
+func persistShellLog(sessionDir string, shellResult shellExecutionResult) (path string, bytes int, errSummary string) {
+	sessionDir = strings.TrimSpace(sessionDir)
+	if sessionDir == "" {
+		return "", 0, ""
+	}
+	dir := filepath.Join(sessionDir, "tool-results", "shell-logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", 0, redactToolOutput(err.Error())
+	}
+	commandHash := sha256Hex([]byte(shellResult.Command))
+	name := fmt.Sprintf("%s-%s.log", time.Now().UTC().Format("20060102T150405.000000000Z"), commandHashPrefix(commandHash))
+	path = filepath.Join(dir, name)
+	content := buildShellLog(shellResult)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return "", 0, redactToolOutput(err.Error())
+	}
+	return path, len(content), ""
+}
+
+func buildShellLog(shellResult shellExecutionResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "command: %s\n", shellResult.Command)
+	fmt.Fprintf(&b, "exit_code: %d\n", shellResult.ExitCode)
+	fmt.Fprintf(&b, "duration_ms: %d\n", shellResult.DurationMS)
+	fmt.Fprintf(&b, "timed_out: %t\n", shellResult.TimedOut)
+	fmt.Fprintf(&b, "stdout_bytes: %d\n", shellResult.StdoutBytes)
+	fmt.Fprintf(&b, "stderr_bytes: %d\n\n", shellResult.StderrBytes)
+	b.WriteString("--- stdout (redacted) ---\n")
+	b.WriteString(shellResult.redactedStdout)
+	if !strings.HasSuffix(shellResult.redactedStdout, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString("\n--- stderr (redacted) ---\n")
+	b.WriteString(shellResult.redactedStderr)
+	if !strings.HasSuffix(shellResult.redactedStderr, "\n") {
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 func executeShellCommand(ctx context.Context, env *Env, command string, timeoutSeconds int) (shellExecutionResult, error) {
