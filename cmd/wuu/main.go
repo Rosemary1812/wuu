@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
@@ -631,6 +632,22 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		}
 	}
 
+	var contextRequests []agent.RequestContextInfo
+	if rt.StreamRunner != nil {
+		previous := rt.StreamRunner.OnRequestContext
+		rt.StreamRunner.OnRequestContext = func(info agent.RequestContextInfo) {
+			if previous != nil {
+				previous(info)
+			}
+			contextRequests = append(contextRequests, agent.RequestContextInfo{
+				StepIndex:         info.StepIndex,
+				TransientMessages: info.TransientMessages,
+				ContentBytes:      info.ContentBytes,
+				BlockKinds:        append([]string(nil), info.BlockKinds...),
+			})
+		}
+	}
+
 	history := []providers.ChatMessage{}
 	if strings.TrimSpace(rt.StreamRunner.SystemPrompt) != "" {
 		history = append(history, providers.ChatMessage{Role: "system", Content: rt.StreamRunner.SystemPrompt})
@@ -663,7 +680,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	if runErr != nil {
 		result.Error = runErr.Error()
 	}
-	result.Observability = collectEvalObservability(rt, evalSessionID, taskRoot, cfg.KeepWorkdir, runResult.Content)
+	result.Observability = collectEvalObservability(rt, evalSessionID, taskRoot, cfg.KeepWorkdir, runResult.Content, contextRequests)
 	result.DurationMS = time.Since(started).Milliseconds()
 	persistEvalTrace(&result)
 	return result
@@ -692,11 +709,12 @@ var evalSecretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret)\s*[:=]\s*["']?[^"'\s,;]+`),
 }
 
-func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, keepWorkdir bool, finalAnswer string) *evalharness.Observability {
+func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, keepWorkdir bool, finalAnswer string, contextRequests []agent.RequestContextInfo) *evalharness.Observability {
 	obs := &evalharness.Observability{
 		SessionID:          strings.TrimSpace(sessionID),
 		FinalAnswerPreview: evalSafePreview(finalAnswer, evalAnswerPreviewLimit),
 		TaskWorkdirKept:    keepWorkdir,
+		ContextRequests:    evalContextRequestObservations(contextRequests),
 	}
 	if keepWorkdir {
 		obs.TaskWorkdir = taskRoot
@@ -822,6 +840,25 @@ func evalContextBlockObservations(rt *runtime.Session) []evalharness.ContextBloc
 			TokenBudget:    block.TokenBudget,
 			ContentBytes:   len([]byte(content)),
 			ContentPreview: evalSafePreview(content, evalContextBlockPreviewLimit),
+		})
+	}
+	return out
+}
+
+func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharness.ContextRequestObservation {
+	if len(infos) == 0 {
+		return nil
+	}
+	out := make([]evalharness.ContextRequestObservation, 0, len(infos))
+	for _, info := range infos {
+		if info.TransientMessages <= 0 && info.ContentBytes <= 0 && len(info.BlockKinds) == 0 {
+			continue
+		}
+		out = append(out, evalharness.ContextRequestObservation{
+			StepIndex:         info.StepIndex,
+			TransientMessages: info.TransientMessages,
+			ContentBytes:      info.ContentBytes,
+			BlockKinds:        append([]string(nil), info.BlockKinds...),
 		})
 	}
 	return out

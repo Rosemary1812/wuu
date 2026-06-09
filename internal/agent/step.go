@@ -84,6 +84,15 @@ type CompactInfo struct {
 	MessagesAfter  int
 }
 
+// RequestContextInfo summarizes transient request-only context injected into
+// a provider call. It intentionally excludes raw prompt text.
+type RequestContextInfo struct {
+	StepIndex         int
+	TransientMessages int
+	ContentBytes      int
+	BlockKinds        []string
+}
+
 // LoopConfig bundles every knob the shared loop needs. All callbacks
 // are optional. Tools is required if the model is allowed to call any.
 type LoopConfig struct {
@@ -131,6 +140,9 @@ type LoopConfig struct {
 	// history and are not persisted. Use this for dynamic runtime facts
 	// such as environment or child-agent status reminders.
 	BeforeRequest func() []providers.ChatMessage
+	// OnRequestContext receives a metadata-only summary of request-only
+	// context injected by BeforeRequest.
+	OnRequestContext func(info RequestContextInfo)
 	// OnUsage is invoked once per LLM round-trip with the per-call
 	// token counts when the provider reports them. The loop also
 	// accumulates totals into LoopResult.

@@ -78,6 +78,9 @@ type StreamRunner struct {
 	// request. Returned messages are sent for that request only and
 	// are not appended to saved conversation history.
 	BeforeRequest func() []providers.ChatMessage
+	// OnRequestContext receives metadata-only summaries of request-only
+	// context injected by BeforeRequest.
+	OnRequestContext func(info RequestContextInfo)
 
 	// AfterTurn, when set, is invoked after a successful turn has
 	// completed and usage state has been committed. It is best-effort:
@@ -192,6 +195,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		MaxInputTokens:   r.MaxInputTokens,
 		BeforeStep:       beforeStep,
 		BeforeRequest:    r.BeforeRequest,
+		OnRequestContext: r.OnRequestContext,
 		OnUsage:          r.OnUsage,
 		OnMessage: func(msg providers.ChatMessage) {
 			if effectiveOnEvent == nil || isEphemeralHistoryMessage(msg) {

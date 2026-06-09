@@ -81,22 +81,23 @@ type Result struct {
 }
 
 type Observability struct {
-	SessionID          string                     `json:"session_id,omitempty"`
-	StateDir           string                     `json:"state_dir,omitempty"`
-	SessionDir         string                     `json:"session_dir,omitempty"`
-	TracePath          string                     `json:"trace_path,omitempty"`
-	HarnessDir         string                     `json:"harness_dir,omitempty"`
-	WorkflowDir        string                     `json:"workflow_dir,omitempty"`
-	TaskWorkdir        string                     `json:"task_workdir,omitempty"`
-	TaskWorkdirKept    bool                       `json:"task_workdir_kept,omitempty"`
-	FinalAnswerPreview string                     `json:"final_answer_preview,omitempty"`
-	ModelProfile       *ModelProfileObservation   `json:"model_profile,omitempty"`
-	ContextBlocks      []ContextBlockObservation  `json:"context_blocks,omitempty"`
-	ToolRecords        []ToolObservation          `json:"tool_records,omitempty"`
-	WorkflowRuns       []WorkflowRunObservation   `json:"workflow_runs,omitempty"`
-	HarnessTasks       []HarnessTaskObservation   `json:"harness_tasks,omitempty"`
-	HarnessReports     []HarnessReportObservation `json:"harness_reports,omitempty"`
-	Warnings           []string                   `json:"warnings,omitempty"`
+	SessionID          string                      `json:"session_id,omitempty"`
+	StateDir           string                      `json:"state_dir,omitempty"`
+	SessionDir         string                      `json:"session_dir,omitempty"`
+	TracePath          string                      `json:"trace_path,omitempty"`
+	HarnessDir         string                      `json:"harness_dir,omitempty"`
+	WorkflowDir        string                      `json:"workflow_dir,omitempty"`
+	TaskWorkdir        string                      `json:"task_workdir,omitempty"`
+	TaskWorkdirKept    bool                        `json:"task_workdir_kept,omitempty"`
+	FinalAnswerPreview string                      `json:"final_answer_preview,omitempty"`
+	ModelProfile       *ModelProfileObservation    `json:"model_profile,omitempty"`
+	ContextBlocks      []ContextBlockObservation   `json:"context_blocks,omitempty"`
+	ContextRequests    []ContextRequestObservation `json:"context_requests,omitempty"`
+	ToolRecords        []ToolObservation           `json:"tool_records,omitempty"`
+	WorkflowRuns       []WorkflowRunObservation    `json:"workflow_runs,omitempty"`
+	HarnessTasks       []HarnessTaskObservation    `json:"harness_tasks,omitempty"`
+	HarnessReports     []HarnessReportObservation  `json:"harness_reports,omitempty"`
+	Warnings           []string                    `json:"warnings,omitempty"`
 }
 
 type ContextBlockObservation struct {
@@ -106,6 +107,13 @@ type ContextBlockObservation struct {
 	TokenBudget    int    `json:"token_budget,omitempty"`
 	ContentBytes   int    `json:"content_bytes,omitempty"`
 	ContentPreview string `json:"content_preview,omitempty"`
+}
+
+type ContextRequestObservation struct {
+	StepIndex         int      `json:"step_index"`
+	TransientMessages int      `json:"transient_messages,omitempty"`
+	ContentBytes      int      `json:"content_bytes,omitempty"`
+	BlockKinds        []string `json:"block_kinds,omitempty"`
 }
 
 type ModelProfileObservation struct {

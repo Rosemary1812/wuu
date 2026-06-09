@@ -49,6 +49,12 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				TokenBudget:  700,
 				ContentBytes: 120,
 			}},
+			ContextRequests: []ContextRequestObservation{{
+				StepIndex:         0,
+				TransientMessages: 1,
+				ContentBytes:      512,
+				BlockKinds:        []string{"ENVIRONMENT", "REPO_MAP"},
+			}},
 			ToolRecords: []ToolObservation{{
 				Name:           "run_shell",
 				Success:        true,
@@ -60,7 +66,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		},
 	}, time.Unix(100, 0).UTC())
 
-	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "tool_records", "workflow_runs", "harness_tasks", "harness_reports", "final"}
+	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_records", "workflow_runs", "harness_tasks", "harness_reports", "final"}
 	if len(events) != len(wantTypes) {
 		t.Fatalf("event count = %d, want %d: %+v", len(events), len(wantTypes), events)
 	}
@@ -85,6 +91,13 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if len(contextBlocks) != 1 || contextBlocks[0].Kind != "ACTIVE_FILES" || contextBlocks[0].ContentBytes == 0 {
 		t.Fatalf("context_blocks event missing block metadata: %+v", contextBlocks)
+	}
+	contextRequests, ok := events[4].Data.([]ContextRequestObservation)
+	if !ok {
+		t.Fatalf("context_requests event data has wrong type: %#v", events[4].Data)
+	}
+	if len(contextRequests) != 1 || contextRequests[0].StepIndex != 0 || len(contextRequests[0].BlockKinds) != 2 {
+		t.Fatalf("context_requests event missing request metadata: %+v", contextRequests)
 	}
 	task, ok := events[0].Data.(TraceTask)
 	if !ok {

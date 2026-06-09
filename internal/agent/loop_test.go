@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -765,10 +766,24 @@ func TestRunToolLoop_BeforeStepInjectsMessages(t *testing.T) {
 
 func TestRunToolLoop_BeforeRequestInjectsTransientMessages(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	reminder := wuucontext.FormatSystemReminderBlocks(wuucontext.Block{
+		Kind:    wuucontext.BlockEnvironment,
+		Title:   "Runtime environment",
+		Source:  "test",
+		Content: "# Environment\n- CWD: /tmp/project",
+	})
+	var contexts []RequestContextInfo
 	cfg := LoopConfig{
 		Model: "m",
 		BeforeRequest: func() []providers.ChatMessage {
-			return []providers.ChatMessage{{Role: "user", Content: "runtime status"}}
+			return []providers.ChatMessage{{
+				Role:    "user",
+				Name:    wuucontext.SystemReminderMessageName,
+				Content: reminder,
+			}}
+		},
+		OnRequestContext: func(info RequestContextInfo) {
+			contexts = append(contexts, info)
 		},
 	}
 	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
@@ -779,11 +794,20 @@ func TestRunToolLoop_BeforeRequestInjectsTransientMessages(t *testing.T) {
 		t.Fatalf("expected one step call, got %d", len(step.calls))
 	}
 	msgs := step.calls[0].Messages
-	if len(msgs) != 2 || msgs[1].Content != "runtime status" {
+	if len(msgs) != 2 || msgs[1].Content != reminder {
 		t.Fatalf("expected transient request message, got %+v", msgs)
 	}
 	if len(res.NewMessages) != 1 || res.NewMessages[0].Content != "ok" {
 		t.Fatalf("transient request context should not persist, got %+v", res.NewMessages)
+	}
+	if len(contexts) != 1 {
+		t.Fatalf("expected one request context summary, got %+v", contexts)
+	}
+	if contexts[0].StepIndex != 0 || contexts[0].TransientMessages != 1 || contexts[0].ContentBytes == 0 {
+		t.Fatalf("unexpected request context metadata: %+v", contexts[0])
+	}
+	if len(contexts[0].BlockKinds) != 1 || contexts[0].BlockKinds[0] != string(wuucontext.BlockEnvironment) {
+		t.Fatalf("unexpected request context block kinds: %+v", contexts[0])
 	}
 }
 

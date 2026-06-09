@@ -95,6 +95,9 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 	if len(obs.ContextBlocks) > 0 {
 		events = append(events, TraceEvent{Type: "context_blocks", TaskID: taskID, CreatedAt: createdAt, Data: obs.ContextBlocks})
 	}
+	if len(obs.ContextRequests) > 0 {
+		events = append(events, TraceEvent{Type: "context_requests", TaskID: taskID, CreatedAt: createdAt, Data: obs.ContextRequests})
+	}
 	if len(obs.ToolRecords) > 0 {
 		events = append(events, TraceEvent{Type: "tool_records", TaskID: taskID, CreatedAt: createdAt, Data: obs.ToolRecords})
 	}

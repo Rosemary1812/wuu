@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -185,6 +186,11 @@ func RunToolLoop(
 					}, nerr
 				} else {
 					requestMessages = normalized
+				}
+				if cfg.OnRequestContext != nil {
+					if info, ok := requestContextInfo(stepIdx, transient); ok {
+						cfg.OnRequestContext(info)
+					}
 				}
 			}
 		}
@@ -639,4 +645,49 @@ func enforceAggregateResultBudget(msgs []providers.ChatMessage) {
 			fmt.Sprintf("\n[trimmed: original %d chars, aggregate budget %d]", maxLen, maxAggregateResultChars)
 		total = total - maxLen + len(msgs[maxIdx].Content)
 	}
+}
+
+func requestContextInfo(stepIndex int, messages []providers.ChatMessage) (RequestContextInfo, bool) {
+	info := RequestContextInfo{StepIndex: stepIndex}
+	seenKinds := make(map[string]struct{})
+	for _, msg := range messages {
+		if !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+			continue
+		}
+		info.TransientMessages++
+		info.ContentBytes += len([]byte(msg.Content))
+		for _, kind := range systemReminderBlockKinds(msg.Content) {
+			if _, ok := seenKinds[kind]; ok {
+				continue
+			}
+			seenKinds[kind] = struct{}{}
+			info.BlockKinds = append(info.BlockKinds, kind)
+		}
+	}
+	return info, info.TransientMessages > 0
+}
+
+func systemReminderBlockKinds(content string) []string {
+	var kinds []string
+	seen := make(map[string]struct{})
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "[") {
+			continue
+		}
+		end := strings.Index(line, "]")
+		if end <= 1 {
+			continue
+		}
+		kind := strings.TrimSpace(line[1:end])
+		if kind == "" {
+			continue
+		}
+		if _, ok := seen[kind]; ok {
+			continue
+		}
+		seen[kind] = struct{}{}
+		kinds = append(kinds, kind)
+	}
+	return kinds
 }
