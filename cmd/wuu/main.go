@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -646,12 +647,13 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		result.MissingErrors = missingRequiredToolErrors(cfg.Task.RequiredErrors, records)
 	}
 	result.MissingTools = missingRequiredTools(cfg.Task.RequiredTools, result.ToolNames)
+	result.MissingToolCalls = missingRequiredToolCalls(cfg.Task.RequiredToolCalls, runResult.NewMessages)
 
 	verification, verifyErr := evalharness.VerifyTask(ctx, cfg.Task, taskRoot, runResult.Content)
 	if verifyErr != nil {
 		result.Error = verifyErr.Error()
 	} else {
-		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0 && len(result.MissingErrors) == 0
+		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0 && len(result.MissingToolCalls) == 0 && len(result.MissingErrors) == 0
 		result.VerificationReason = verification.Reason
 	}
 	if runErr != nil {
@@ -1082,6 +1084,79 @@ func missingRequiredTools(required []string, used []string) []string {
 	return missing
 }
 
+func missingRequiredToolCalls(required []evalharness.ToolCallRequirement, messages []providers.ChatMessage) []string {
+	if len(required) == 0 {
+		return nil
+	}
+	missing := make([]string, 0, len(required))
+	for _, req := range required {
+		found := false
+		for _, msg := range messages {
+			if msg.Role != "assistant" {
+				continue
+			}
+			for _, call := range msg.ToolCalls {
+				if call.Name != req.ToolName {
+					continue
+				}
+				if toolCallMatchesRequirement(req, call.Arguments) {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, formatToolCallRequirement(req))
+		}
+	}
+	return missing
+}
+
+func toolCallMatchesRequirement(req evalharness.ToolCallRequirement, argsJSON string) bool {
+	for _, needle := range req.ArgsContains {
+		if needle != "" && !strings.Contains(argsJSON, needle) {
+			return false
+		}
+	}
+	if len(req.ArgumentEquals) == 0 {
+		return true
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return false
+	}
+	for key, want := range req.ArgumentEquals {
+		got, ok := args[key]
+		if !ok || fmt.Sprint(got) != want {
+			return false
+		}
+	}
+	return true
+}
+
+func formatToolCallRequirement(req evalharness.ToolCallRequirement) string {
+	parts := []string{req.ToolName}
+	if len(req.ArgumentEquals) > 0 {
+		keys := make([]string, 0, len(req.ArgumentEquals))
+		for key := range req.ArgumentEquals {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			parts = append(parts, key+"="+req.ArgumentEquals[key])
+		}
+	}
+	for _, needle := range req.ArgsContains {
+		if needle != "" {
+			parts = append(parts, "contains="+needle)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 func missingRequiredToolErrors(required []evalharness.ToolErrorRequirement, records []tools.ToolExecutionRecord) []string {
 	if len(required) == 0 {
 		return nil
@@ -1171,6 +1246,9 @@ func printEvalReport(report evalReport) {
 		}
 		if len(result.MissingTools) > 0 {
 			fmt.Printf("  missing_tools: %s\n", strings.Join(result.MissingTools, ","))
+		}
+		if len(result.MissingToolCalls) > 0 {
+			fmt.Printf("  missing_tool_calls: %s\n", strings.Join(result.MissingToolCalls, ","))
 		}
 		if len(result.MissingErrors) > 0 {
 			fmt.Printf("  missing_errors: %s\n", strings.Join(result.MissingErrors, ","))

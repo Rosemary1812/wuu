@@ -23,6 +23,7 @@ type TraceTask struct {
 	ToolCalls          int      `json:"tool_calls"`
 	ToolNames          []string `json:"tool_names,omitempty"`
 	MissingTools       []string `json:"missing_tools,omitempty"`
+	MissingToolCalls   []string `json:"missing_tool_calls,omitempty"`
 	MissingErrors      []string `json:"missing_errors,omitempty"`
 	InputTokens        int      `json:"input_tokens"`
 	OutputTokens       int      `json:"output_tokens"`
@@ -58,6 +59,7 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 			ToolCalls:          result.ToolCalls,
 			ToolNames:          append([]string(nil), result.ToolNames...),
 			MissingTools:       append([]string(nil), result.MissingTools...),
+			MissingToolCalls:   append([]string(nil), result.MissingToolCalls...),
 			MissingErrors:      append([]string(nil), result.MissingErrors...),
 			InputTokens:        result.InputTokens,
 			OutputTokens:       result.OutputTokens,

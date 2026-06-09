@@ -12,6 +12,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
@@ -166,7 +167,8 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 		!strings.Contains(output, "stale_read_guard") ||
 		!strings.Contains(output, "mcp_readonly_concurrency") ||
 		!strings.Contains(output, "mcp_live_discovery") ||
-		!strings.Contains(output, "multi_agent_worker") {
+		!strings.Contains(output, "multi_agent_worker") ||
+		!strings.Contains(output, "checkpoint_rollback") {
 		t.Fatalf("expected built-in eval tasks, got %q", output)
 	}
 }
@@ -230,6 +232,32 @@ func TestMissingRequiredToolErrors(t *testing.T) {
 	})
 	if len(missing) != 1 || missing[0] != "edit_file:changed since last read" {
 		t.Fatalf("unexpected missing errors: %+v", missing)
+	}
+}
+
+func TestMissingRequiredToolCalls(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{Name: "checkpoint", Arguments: `{"action":"create","checkpoint_id":"before_bad_edit","paths":["target.txt","scratch.txt"]}`},
+				{Name: "write_file", Arguments: `{"path":"checkpoint_result.txt","content":"CHECKPOINT_ROLLBACK_DONE\n"}`},
+			},
+		},
+	}
+	required := []evalharness.ToolCallRequirement{
+		{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "create", "checkpoint_id": "before_bad_edit"}, ArgsContains: []string{"scratch.txt"}},
+		{ToolName: "write_file", ArgumentEquals: map[string]string{"path": "checkpoint_result.txt"}},
+	}
+	if got := missingRequiredToolCalls(required, messages); len(got) != 0 {
+		t.Fatalf("expected no missing tool calls, got %+v", got)
+	}
+
+	missing := missingRequiredToolCalls([]evalharness.ToolCallRequirement{
+		{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore", "checkpoint_id": "before_bad_edit"}},
+	}, messages)
+	if len(missing) != 1 || missing[0] != "checkpoint action=restore checkpoint_id=before_bad_edit" {
+		t.Fatalf("unexpected missing tool calls: %+v", missing)
 	}
 }
 

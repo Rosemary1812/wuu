@@ -17,21 +17,28 @@ import (
 
 // Task is one deterministic local evaluation scenario.
 type Task struct {
-	ID             string
-	Name           string
-	Description    string
-	Prompt         string
-	RequiredTools  []string
-	RequiredErrors []ToolErrorRequirement
-	IsolateWuuHome bool
-	Setup          func(root string) error
-	Configure      func(root string, cfg config.Config) config.Config
-	Verify         func(ctx context.Context, root, answer string) (Verification, error)
+	ID                string
+	Name              string
+	Description       string
+	Prompt            string
+	RequiredTools     []string
+	RequiredToolCalls []ToolCallRequirement
+	RequiredErrors    []ToolErrorRequirement
+	IsolateWuuHome    bool
+	Setup             func(root string) error
+	Configure         func(root string, cfg config.Config) config.Config
+	Verify            func(ctx context.Context, root, answer string) (Verification, error)
 }
 
 type ToolErrorRequirement struct {
 	ToolName      string `json:"tool_name"`
 	ErrorContains string `json:"error_contains"`
+}
+
+type ToolCallRequirement struct {
+	ToolName       string            `json:"tool_name"`
+	ArgumentEquals map[string]string `json:"argument_equals,omitempty"`
+	ArgsContains   []string          `json:"args_contains,omitempty"`
 }
 
 type Verification struct {
@@ -48,6 +55,7 @@ type Result struct {
 	ToolCalls          int            `json:"tool_calls"`
 	ToolNames          []string       `json:"tool_names,omitempty"`
 	MissingTools       []string       `json:"missing_tools,omitempty"`
+	MissingToolCalls   []string       `json:"missing_tool_calls,omitempty"`
 	MissingErrors      []string       `json:"missing_errors,omitempty"`
 	InputTokens        int            `json:"input_tokens"`
 	OutputTokens       int            `json:"output_tokens"`
@@ -301,6 +309,25 @@ func Catalog() []Task {
 			Verify:        verifySubAgentWorkerFile,
 		},
 		{
+			ID:          "checkpoint_rollback",
+			Name:        "Rollback with a workspace checkpoint",
+			Description: "Main agent must create a file checkpoint, make a bad edit, restore it, and leave a marker.",
+			Prompt: "Read target.txt first so you have its file_sha. Then call checkpoint with action=create, checkpoint_id='before_bad_edit', " +
+				"and paths ['target.txt','scratch.txt']. After the checkpoint exists, use write_file to overwrite target.txt with bad content and create " +
+				"scratch.txt with temporary content. Then call checkpoint with action=restore and checkpoint_id='before_bad_edit' to restore the checkpoint. " +
+				"After restore, write checkpoint_result.txt containing CHECKPOINT_ROLLBACK_DONE. The final state must keep target.txt at its original content and scratch.txt must be absent.",
+			RequiredTools: []string{"read_file", "checkpoint", "write_file"},
+			RequiredToolCalls: []ToolCallRequirement{
+				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "create", "checkpoint_id": "before_bad_edit"}, ArgsContains: []string{"scratch.txt"}},
+				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore", "checkpoint_id": "before_bad_edit"}},
+				{ToolName: "write_file", ArgumentEquals: map[string]string{"path": "target.txt"}},
+				{ToolName: "write_file", ArgumentEquals: map[string]string{"path": "scratch.txt"}},
+				{ToolName: "write_file", ArgumentEquals: map[string]string{"path": "checkpoint_result.txt"}},
+			},
+			Setup:  setupCheckpointRollback,
+			Verify: verifyCheckpointRollback,
+		},
+		{
 			ID:          "agent_led_workflow_team",
 			Name:        "Run an agent-led workflow team",
 			Description: "Main agent must record a Workflow Team, create a durable profile member, spawn workers, await them, and complete the run.",
@@ -443,6 +470,12 @@ func setupEmptyTask(root string) error {
 	return writeFiles(root, map[string]string{".keep": ""})
 }
 
+func setupCheckpointRollback(root string) error {
+	return writeFiles(root, map[string]string{
+		"target.txt": "status: original\nowner: eval\n",
+	})
+}
+
 func setupMCPReadOnlyConcurrency(root string) error {
 	return writeFiles(root, map[string]string{
 		"mcp_eval_server.go": mcpEvalServerSource,
@@ -569,6 +602,29 @@ func verifySubAgentWorkerFile(_ context.Context, root, _ string) (Verification, 
 		return Verification{Passed: false, Reason: "worker_result.txt does not contain SUBAGENT_EVAL_DONE"}, nil
 	}
 	return Verification{Passed: true, Reason: "observed sub-agent worker marker"}, nil
+}
+
+func verifyCheckpointRollback(_ context.Context, root, _ string) (Verification, error) {
+	target, err := os.ReadFile(filepath.Join(root, "target.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "target.txt was not readable"}, nil
+	}
+	if string(target) != "status: original\nowner: eval\n" {
+		return Verification{Passed: false, Reason: "target.txt was not restored to original content"}, nil
+	}
+	if _, err := os.Stat(filepath.Join(root, "scratch.txt")); err == nil {
+		return Verification{Passed: false, Reason: "scratch.txt still exists after restore"}, nil
+	} else if !os.IsNotExist(err) {
+		return Verification{Passed: false, Reason: "scratch.txt could not be checked"}, nil
+	}
+	data, err := os.ReadFile(filepath.Join(root, "checkpoint_result.txt"))
+	if err != nil {
+		return Verification{Passed: false, Reason: "checkpoint_result.txt was not written"}, nil
+	}
+	if !strings.Contains(string(data), "CHECKPOINT_ROLLBACK_DONE") {
+		return Verification{Passed: false, Reason: "checkpoint_result.txt does not contain CHECKPOINT_ROLLBACK_DONE"}, nil
+	}
+	return Verification{Passed: true, Reason: "observed checkpoint rollback marker and restored files"}, nil
 }
 
 func verifyDynamicWorkflowTeam(_ context.Context, root, _ string) (Verification, error) {

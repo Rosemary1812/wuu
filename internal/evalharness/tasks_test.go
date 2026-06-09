@@ -162,6 +162,50 @@ func TestStaleReadGuardVerification(t *testing.T) {
 	}
 }
 
+func TestCheckpointRollbackVerification(t *testing.T) {
+	task, ok := ByID("checkpoint_rollback")
+	if !ok {
+		t.Fatal("missing checkpoint_rollback task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing marker: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing checkpoint marker should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "checkpoint_result.txt"), []byte("CHECKPOINT_ROLLBACK_DONE\n"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scratch.txt"), []byte("temporary\n"), 0o644); err != nil {
+		t.Fatalf("write scratch: %v", err)
+	}
+	failed, err = VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask scratch still present: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("scratch.txt should fail verification after rollback")
+	}
+
+	if err := os.Remove(filepath.Join(root, "scratch.txt")); err != nil {
+		t.Fatalf("remove scratch: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask checkpoint rollback: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("checkpoint rollback should pass verification: %s", passed.Reason)
+	}
+}
+
 func TestMCPReadOnlyConcurrencyVerification(t *testing.T) {
 	task, ok := ByID("mcp_readonly_concurrency")
 	if !ok {

@@ -18,6 +18,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		Turns:              2,
 		ToolCalls:          1,
 		ToolNames:          []string{"run_shell"},
+		MissingToolCalls:   []string{"checkpoint action=restore"},
 		InputTokens:        10,
 		OutputTokens:       20,
 		VerificationReason: "passed",
@@ -61,6 +62,13 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if obs.SessionID != "eval-task-1" || obs.TracePath == "" || !obs.TaskWorkdirKept {
 		t.Fatalf("observability event missing artifact pointers: %+v", obs)
+	}
+	task, ok := events[0].Data.(TraceTask)
+	if !ok {
+		t.Fatalf("task event data has wrong type: %#v", events[0].Data)
+	}
+	if len(task.MissingToolCalls) != 1 || task.MissingToolCalls[0] != "checkpoint action=restore" {
+		t.Fatalf("task event missing tool call requirements: %+v", task)
 	}
 }
 
