@@ -2379,8 +2379,8 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "list_agent_profiles", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "create_agent_profile", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "start_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
-		{name: "create_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
-		{name: "run_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
+		{name: "create_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
+		{name: "run_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "save_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "workflow_control", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "workflow_status", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
@@ -3244,6 +3244,59 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`}); err != nil {
 		t.Fatalf("activated deferred tool should execute: %v", err)
+	}
+}
+
+func TestToolkit_ToolSearchActivatesWorkflowDriverOverride(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if definitionNames(kit.Definitions())["run_workflow"] {
+		t.Fatal("run_workflow should start deferred")
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_workflow",
+		Arguments: `{}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("expected deferred execution error, got %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"script workflow driver override"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var parsed struct {
+		ExposedTools []string `json:"exposed_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse tool_search response: %v", err)
+	}
+	if !containsString(parsed.ExposedTools, "run_workflow") {
+		t.Fatalf("tool_search did not expose run_workflow: %s", resp)
+	}
+	if !definitionNames(kit.Definitions())["run_workflow"] {
+		t.Fatal("run_workflow should be visible after tool_search")
+	}
+	info, ok := kit.ToolInfo("run_workflow")
+	if !ok {
+		t.Fatal("ToolInfo(run_workflow) not found")
+	}
+	if info.Exposure != ToolExposureDirect {
+		t.Fatalf("run_workflow exposure = %s, want %s", info.Exposure, ToolExposureDirect)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_workflow",
+		Arguments: `{}`,
+	})
+	if err == nil || strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("expected argument validation after activation, got %v", err)
 	}
 }
 

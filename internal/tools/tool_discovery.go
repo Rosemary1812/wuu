@@ -25,7 +25,7 @@ func (t *ToolSearchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "tool_search",
 		Description: "Search deferred tools and expose matching tools for the next model turn.\n\n" +
-			"Use this when you need a tool that is not currently visible, especially MCP tools or low-frequency scheduling tools.",
+			"Use this when you need a tool that is not currently visible, especially MCP tools, low-frequency scheduling tools, or lower-level workflow driver overrides.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

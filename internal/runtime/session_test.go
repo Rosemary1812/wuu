@@ -331,9 +331,21 @@ description: Legacy user audit workflow.
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "create_workflow", "workflow_control", "workflow_status"} {
+	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_control", "workflow_status"} {
 		if !defs[name] {
 			t.Fatalf("workflow tool %q missing from Definitions()", name)
+		}
+	}
+	for _, name := range []string{"create_workflow", "run_workflow"} {
+		if defs[name] {
+			t.Fatalf("lower-level workflow driver %q should be deferred from Definitions()", name)
+		}
+		info, ok := rt.Toolkit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("workflow driver %q missing from ToolInfo()", name)
+		}
+		if info.Exposure != tools.ToolExposureDeferred {
+			t.Fatalf("workflow driver %q exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
 		}
 	}
 }

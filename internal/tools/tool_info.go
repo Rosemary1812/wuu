@@ -142,7 +142,7 @@ func isDeferredByDefault(name string) bool {
 		return true
 	}
 	switch name {
-	case "schedule_cron", "cancel_cron", "list_cron":
+	case "schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow":
 		return true
 	default:
 		return false
