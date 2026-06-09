@@ -272,6 +272,53 @@ func TestCheckpointRollbackVerification(t *testing.T) {
 	}
 }
 
+func TestPatchJournalRollbackVerification(t *testing.T) {
+	task, ok := ByID("patch_journal_rollback")
+	if !ok {
+		t.Fatal("missing patch_journal_rollback task")
+	}
+	root := t.TempDir()
+	if err := SetupTask(task, root); err != nil {
+		t.Fatalf("SetupTask: %v", err)
+	}
+
+	failed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask missing marker: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("missing patch journal marker should fail verification")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "patch_journal_result.txt"), []byte("PATCH_JOURNAL_ROLLBACK_DONE\n"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scratch.txt"), []byte("temporary\n"), 0o644); err != nil {
+		t.Fatalf("write scratch: %v", err)
+	}
+	failed, err = VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask scratch still present: %v", err)
+	}
+	if failed.Passed {
+		t.Fatal("scratch.txt should fail verification after patch journal rollback")
+	}
+
+	if err := os.Remove(filepath.Join(root, "scratch.txt")); err != nil {
+		t.Fatalf("remove scratch: %v", err)
+	}
+	passed, err := VerifyTask(context.Background(), task, root, "")
+	if err != nil {
+		t.Fatalf("VerifyTask patch journal rollback: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("patch journal rollback should pass verification: %s", passed.Reason)
+	}
+	if len(passed.Evidence) != 3 {
+		t.Fatalf("patch journal rollback should include target/scratch/marker evidence: %+v", passed.Evidence)
+	}
+}
+
 func TestMCPReadOnlyConcurrencyVerification(t *testing.T) {
 	task, ok := ByID("mcp_readonly_concurrency")
 	if !ok {
