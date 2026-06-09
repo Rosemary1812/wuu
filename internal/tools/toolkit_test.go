@@ -1742,6 +1742,53 @@ func TestToolkit_ListFilesRejectsFile(t *testing.T) {
 	}
 }
 
+func TestToolkit_ListFilesRejectsAndFiltersProtectedPaths(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "visible.txt"), "hello\n")
+	mustWriteFile(t, filepath.Join(root, ".env"), "API_KEY=secret\n")
+	mustWriteFile(t, filepath.Join(root, ".git", "config"), "remote = origin\n")
+	mustWriteFile(t, filepath.Join(root, ".wuu", "sessions", "trace.jsonl"), "{}\n")
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "list_files",
+		Arguments: `{"path":".wuu"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "wuu runtime state") {
+		t.Fatalf("expected direct .wuu list rejection, got: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "list_files",
+		Arguments: `{}`,
+	})
+	if err != nil {
+		t.Fatalf("list_files root: %v", err)
+	}
+	var parsed struct {
+		OmittedProtected int `json:"omitted_protected"`
+		Entries          []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse list_files response: %v\n%s", err, resp)
+	}
+	if parsed.OmittedProtected != 3 {
+		t.Fatalf("expected three protected entries omitted, got %+v from %s", parsed, resp)
+	}
+	if len(parsed.Entries) != 1 || parsed.Entries[0].Name != "visible.txt" || parsed.Entries[0].Path != "visible.txt" {
+		t.Fatalf("list_files should only return visible entries: %+v", parsed.Entries)
+	}
+	if strings.Contains(resp, ".wuu") || strings.Contains(resp, ".git") || strings.Contains(resp, ".env") || strings.Contains(resp, "secret") {
+		t.Fatalf("list_files leaked protected entry names or content: %s", resp)
+	}
+}
+
 func TestToolkit_ListFilesReturnsEntryPathsAndSuggestions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

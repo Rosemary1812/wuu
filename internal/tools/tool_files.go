@@ -1020,6 +1020,9 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if err != nil {
 		return "", err
 	}
+	if err := rejectSensitiveToolPath(t.env, "list_files", "list", resolved); err != nil {
+		return "", err
+	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return "", fmt.Errorf("stat path: %w", err)
@@ -1036,14 +1039,21 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 	limit := defaultMaxEntries
 
 	resultEntries := make([]map[string]any, 0, min(limit, len(entries)))
-	for i, entry := range entries {
-		if i >= limit {
+	omittedProtected := 0
+	for _, entry := range entries {
+		entryPath := filepath.Join(resolved, entry.Name())
+		displayPath := t.env.NormalizeDisplayPath(entryPath)
+		if _, ok := sensitivePathReason(displayPath); ok {
+			omittedProtected++
+			continue
+		}
+		if len(resultEntries) >= limit {
 			break
 		}
 
 		item := map[string]any{
 			"name":   entry.Name(),
-			"path":   t.env.NormalizeDisplayPath(filepath.Join(resolved, entry.Name())),
+			"path":   displayPath,
 			"is_dir": entry.IsDir(),
 		}
 		if !entry.IsDir() {
@@ -1059,10 +1069,11 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 		"path":                t.env.NormalizeDisplayPath(resolved),
 		"workspace_revision":  workspaceRevision(ctx, t.env.RootDir),
 		"total":               len(entries),
-		"truncated":           len(entries) > limit,
-		"omitted_entry_count": max(len(entries)-limit, 0),
+		"truncated":           len(entries)-omittedProtected > limit,
+		"omitted_entry_count": max(len(entries)-omittedProtected-limit, 0),
+		"omitted_protected":   omittedProtected,
 		"entries":             resultEntries,
-		"next_suggestions":    listFilesNextSuggestions(len(entries), len(resultEntries), len(entries) > limit),
+		"next_suggestions":    listFilesNextSuggestions(len(entries), len(resultEntries), len(entries)-omittedProtected > limit),
 	}
 	return mustJSON(result)
 }
