@@ -980,6 +980,37 @@ func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt, pro
 	return buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userPrompt, providerName, model, memoryFiles, entries, true, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
 }
 
+func (s *Session) RefreshSystemPrompt(providerName, model string) string {
+	if s == nil {
+		return ""
+	}
+	var profileMemoryEntries []memstore.Entry
+	profileMemoryEnabled := false
+	if s.Toolkit != nil && s.Toolkit.Memory() != nil {
+		profileMemoryEnabled = true
+		profileMemoryEntries = recallProfileMemory(context.Background(), s.Toolkit.Memory())
+	}
+	baseSystemPrompt := buildBaseSystemPrompt(
+		s.RootDir,
+		config.DefaultSystemPrompt(),
+		s.UserSystemPrompt,
+		providerName,
+		model,
+		s.Memory,
+		profileMemoryEntries,
+		profileMemoryEnabled,
+		s.ProfileMemoryCharLimit,
+		s.ProfileUserMemoryCharLimit,
+		s.Skills,
+		s.Workflows,
+	)
+	s.BaseSystemPrompt = baseSystemPrompt
+	if s.StreamRunner != nil {
+		s.StreamRunner.SystemPrompt = baseSystemPrompt
+	}
+	return baseSystemPrompt
+}
+
 func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)

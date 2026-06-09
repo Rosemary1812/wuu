@@ -721,6 +721,28 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	}
 }
 
+func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
+	rt := &Session{
+		RootDir:          t.TempDir(),
+		UserSystemPrompt: "Prefer concise answers.",
+		StreamRunner:     &agent.StreamRunner{SystemPrompt: "old prompt"},
+	}
+
+	prompt := rt.RefreshSystemPrompt("openai", "gpt-5-codex")
+
+	for _, want := range []string{"# Harness Adapter", "Provider/model: openai/gpt-5-codex", "tool-contract-driven", "Prefer concise answers."} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("refreshed prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if rt.BaseSystemPrompt != prompt || rt.StreamRunner.SystemPrompt != prompt {
+		t.Fatalf("refresh should update session and runner prompts")
+	}
+	if strings.Contains(prompt, "old prompt") {
+		t.Fatalf("refreshed prompt should not keep stale runner prompt:\n%s", prompt)
+	}
+}
+
 func TestResolveInputWindow_CapsCodexSubscriptionGPT5(t *testing.T) {
 	got := ResolveInputWindow("gpt-5.5", config.ProviderConfig{
 		Type:  "openai-codex",

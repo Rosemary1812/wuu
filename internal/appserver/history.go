@@ -335,3 +335,22 @@ func ensureBaseSystemPrompt(history []providers.ChatMessage, prompt string) []pr
 	out = append(out, history...)
 	return out
 }
+
+func replaceBaseSystemPrompt(history []providers.ChatMessage, prompt string) []providers.ChatMessage {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return history
+	}
+	out := cloneHistory(history)
+	if len(out) == 0 {
+		return []providers.ChatMessage{{Role: "system", Content: prompt}}
+	}
+	if strings.EqualFold(out[0].Role, "system") {
+		if out[0].Content == prompt {
+			return history
+		}
+		out[0].Content = prompt
+		return out
+	}
+	return append([]providers.ChatMessage{{Role: "system", Content: prompt}}, out...)
+}

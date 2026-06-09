@@ -466,6 +466,14 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 	thread := newThreadState("thread-1", nil, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	thread.History = []providers.ChatMessage{
+		{Role: "system", Content: "old fake-model system prompt"},
+		{Role: "user", Content: "hello"},
+	}
+	thread.MemoryPath = filepath.Join(rt.RootDir, "thread-history.jsonl")
+	if err := rewriteChatHistory(thread.MemoryPath, thread.History); err != nil {
+		t.Fatalf("write thread history: %v", err)
+	}
 	thread.execRuntime = &runtime.ThreadRuntime{
 		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
 		Toolkit:      threadKit,
@@ -482,6 +490,11 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	if rt.StreamRunner.APIModel != "gpt-5.5" {
 		t.Fatalf("runtime APIModel not updated: %q", rt.StreamRunner.APIModel)
 	}
+	if !strings.Contains(rt.StreamRunner.SystemPrompt, "Provider/model: fake-provider/gpt-5.5") ||
+		!strings.Contains(rt.StreamRunner.SystemPrompt, "tool-contract-driven") ||
+		strings.Contains(rt.StreamRunner.SystemPrompt, "fake-model") {
+		t.Fatalf("runtime system prompt not rebuilt for model profile:\n%s", rt.StreamRunner.SystemPrompt)
+	}
 	if defs := toolDefinitionNames(rt.Toolkit.Definitions()); !defs["apply_patch"] || defs["edit_file"] || defs["write_file"] {
 		t.Fatalf("runtime toolkit should switch to patch edit mode: %+v", defs)
 	}
@@ -493,8 +506,21 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	if thread.execRuntime.StreamRunner.APIModel != "gpt-5.5" {
 		t.Fatalf("idle thread APIModel not updated: %q", thread.execRuntime.StreamRunner.APIModel)
 	}
+	if len(thread.History) < 2 ||
+		thread.History[0].Role != "system" ||
+		!strings.Contains(thread.History[0].Content, "Provider/model: fake-provider/gpt-5.5") ||
+		strings.Contains(thread.History[0].Content, "old fake-model system prompt") {
+		t.Fatalf("idle thread system prompt not replaced: %+v", thread.History)
+	}
 	if defs := toolDefinitionNames(thread.execRuntime.Toolkit.Definitions()); !defs["apply_patch"] || defs["edit_file"] || defs["write_file"] {
 		t.Fatalf("idle thread toolkit should switch to patch edit mode: %+v", defs)
+	}
+	persisted, err := loadChatMessages(thread.MemoryPath)
+	if err != nil {
+		t.Fatalf("load thread history: %v", err)
+	}
+	if len(persisted) != 1 || persisted[0].Role != "user" || persisted[0].Content != "hello" {
+		t.Fatalf("persisted thread history should keep only persistable messages: %+v", persisted)
 	}
 }
 

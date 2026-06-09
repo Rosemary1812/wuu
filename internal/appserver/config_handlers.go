@@ -225,6 +225,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if s.rt.Toolkit != nil {
 		s.rt.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
 	}
+	systemPrompt := s.rt.RefreshSystemPrompt(resolvedName, apiModel)
 	if s.rt.StreamRunner != nil {
 		if client != nil {
 			s.rt.StreamRunner.Client = client
@@ -240,7 +241,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			cfg.Agent.MaxContextTokens,
 		)
 	}
-	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel)
+	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
 		Provider:  resolvedName,
@@ -338,7 +339,7 @@ func skillSummaries(items []skills.Skill) []SkillSummary {
 	return out
 }
 
-func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, apiModel string) {
+func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, apiModel, systemPrompt string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, th := range s.threads {
@@ -346,6 +347,14 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 		if !th.running {
 			th.ModelProvider = providerName
 			th.Model = model
+			if strings.TrimSpace(systemPrompt) != "" {
+				th.History = replaceBaseSystemPrompt(th.History, systemPrompt)
+				if strings.TrimSpace(th.MemoryPath) != "" {
+					if err := rewriteChatHistory(th.MemoryPath, th.History); err != nil {
+						providers.DebugLogf("rewrite thread %q system prompt after model update: %v", th.ID, err)
+					}
+				}
+			}
 			if th.execRuntime != nil {
 				if th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
 					th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
