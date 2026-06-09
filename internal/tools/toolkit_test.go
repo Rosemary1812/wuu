@@ -1064,6 +1064,103 @@ func TestToolkit_ApplyPatchAppendsAtEndOfFile(t *testing.T) {
 	}
 }
 
+func TestToolkit_CheckpointCreateListRestore(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(filepath.Join(t.TempDir(), "state"))
+	changed := map[string]int{}
+	kit.SetOnFileChanged(func(absPath string) {
+		changed[kit.env.NormalizeDisplayPath(absPath)]++
+	})
+
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "before\n")
+	createArgs, err := json.Marshal(map[string]any{
+		"action":        "create",
+		"checkpoint_id": "before-edit",
+		"paths":         []string{"a.txt", "created_later.txt"},
+		"reason":        "before risky edit",
+	})
+	if err != nil {
+		t.Fatalf("marshal create args: %v", err)
+	}
+	createResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "checkpoint",
+		Arguments: string(createArgs),
+	})
+	if err != nil {
+		t.Fatalf("checkpoint create: %v", err)
+	}
+	var created struct {
+		Action            string                  `json:"action"`
+		ManifestPath      string                  `json:"manifest_path"`
+		WorkspaceRevision string                  `json:"workspace_revision"`
+		Checkpoint        workspaceFileCheckpoint `json:"checkpoint"`
+	}
+	if err := json.Unmarshal([]byte(createResp), &created); err != nil {
+		t.Fatalf("parse create response: %v\n%s", err, createResp)
+	}
+	if created.Action != "create" || created.Checkpoint.ID != "before-edit" || created.ManifestPath == "" {
+		t.Fatalf("unexpected create response: %+v", created)
+	}
+	if !strings.HasPrefix(created.WorkspaceRevision, "fs:worktree:") || created.Checkpoint.WorkspaceRevision != created.WorkspaceRevision {
+		t.Fatalf("checkpoint response missing workspace revision: %+v", created)
+	}
+	if _, err := os.Stat(created.ManifestPath); err != nil {
+		t.Fatalf("checkpoint manifest missing: %v", err)
+	}
+
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "after\n")
+	mustWriteFile(t, filepath.Join(root, "created_later.txt"), "new\n")
+	restoreResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "checkpoint",
+		Arguments: `{"action":"restore","checkpoint_id":"before-edit","reason":"rollback"}`,
+	})
+	if err != nil {
+		t.Fatalf("checkpoint restore: %v", err)
+	}
+	var restored struct {
+		Action            string                    `json:"action"`
+		WorkspaceRevision string                    `json:"workspace_revision"`
+		RestoredFiles     []checkpointRestoreResult `json:"restored_files"`
+	}
+	if err := json.Unmarshal([]byte(restoreResp), &restored); err != nil {
+		t.Fatalf("parse restore response: %v\n%s", err, restoreResp)
+	}
+	if restored.Action != "restore" || len(restored.RestoredFiles) != 2 || !strings.HasPrefix(restored.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("unexpected restore response: %+v", restored)
+	}
+	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "before\n" {
+		t.Fatalf("checkpoint restore did not restore a.txt: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "created_later.txt")); !os.IsNotExist(err) {
+		t.Fatalf("checkpoint restore should remove file absent at checkpoint, stat err=%v", err)
+	}
+	if changed["a.txt"] == 0 || changed["created_later.txt"] == 0 {
+		t.Fatalf("restore should notify changed paths, got %+v", changed)
+	}
+
+	listResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "checkpoint",
+		Arguments: `{"action":"list"}`,
+	})
+	if err != nil {
+		t.Fatalf("checkpoint list: %v", err)
+	}
+	var listed struct {
+		Count       int                       `json:"count"`
+		Checkpoints []workspaceFileCheckpoint `json:"checkpoints"`
+	}
+	if err := json.Unmarshal([]byte(listResp), &listed); err != nil {
+		t.Fatalf("parse list response: %v\n%s", err, listResp)
+	}
+	if listed.Count != 1 || listed.Checkpoints[0].ID != "before-edit" {
+		t.Fatalf("unexpected checkpoint list: %+v", listed)
+	}
+}
+
 func TestToolkit_ListFilesRejectsFile(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -1511,6 +1608,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		concurrencySafe bool
 	}{
 		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
+		{name: "checkpoint", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "run_test", kind: ToolKindTest, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
@@ -1656,6 +1754,47 @@ func TestToolkit_ToolMetadata_ClassifiesGitByInput(t *testing.T) {
 	}
 	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) {
 		t.Fatalf("invalid git branch metadata = %+v, want conservative high-risk serial", meta)
+	}
+}
+
+func TestToolkit_ToolMetadata_ClassifiesCheckpointByInput(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	meta, ok := kit.ToolMetadata(providers.ToolCall{
+		Name:      "checkpoint",
+		Arguments: `{"action":"list"}`,
+	})
+	if !ok {
+		t.Fatal("checkpoint metadata not found")
+	}
+	if !meta.ReadOnly || !meta.ConcurrencySafe || meta.Risk != string(ToolRiskLow) {
+		t.Fatalf("checkpoint list metadata = %+v, want read-only low-risk concurrent", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "checkpoint",
+		Arguments: `{"action":"create","paths":["a.txt"]}`,
+	})
+	if !ok {
+		t.Fatal("checkpoint metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskLow) {
+		t.Fatalf("checkpoint create metadata = %+v, want low-risk artifact write", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "checkpoint",
+		Arguments: `{"action":"restore","checkpoint_id":"before-edit"}`,
+	})
+	if !ok {
+		t.Fatal("checkpoint metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || !meta.Destructive || meta.Risk != string(ToolRiskHigh) {
+		t.Fatalf("checkpoint restore metadata = %+v, want destructive high-risk serial", meta)
 	}
 }
 

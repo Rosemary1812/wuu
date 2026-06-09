@@ -103,7 +103,7 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 
 func classifyToolKind(name string) ToolKind {
 	switch name {
-	case "read_file", "write_file", "list_files", "edit_file", "apply_patch":
+	case "read_file", "write_file", "list_files", "edit_file", "apply_patch", "checkpoint":
 		return ToolKindFile
 	case "grep", "glob":
 		return ToolKindSearch
