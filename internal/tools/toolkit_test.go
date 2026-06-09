@@ -63,6 +63,15 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	if !strings.Contains(writeResp, "written_bytes") {
 		t.Fatalf("unexpected write response: %s", writeResp)
 	}
+	var writeCreated struct {
+		WorkspaceRevision string `json:"workspace_revision"`
+	}
+	if err := json.Unmarshal([]byte(writeResp), &writeCreated); err != nil {
+		t.Fatalf("parse write response: %v", err)
+	}
+	if !strings.HasPrefix(writeCreated.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("write_file response missing filesystem workspace revision: %+v", writeCreated)
+	}
 
 	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
@@ -75,9 +84,10 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 		t.Fatalf("unexpected read response: %s", readResp)
 	}
 	var readParsed struct {
-		FileSHA string `json:"file_sha"`
-		Content string `json:"content"`
-		Range   struct {
+		FileSHA           string `json:"file_sha"`
+		WorkspaceRevision string `json:"workspace_revision"`
+		Content           string `json:"content"`
+		Range             struct {
 			StartLine int `json:"start_line"`
 			EndLine   int `json:"end_line"`
 		} `json:"range"`
@@ -89,6 +99,9 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	}
 	if !strings.HasPrefix(readParsed.FileSHA, "sha256:") {
 		t.Fatalf("read_file response missing file_sha: %+v", readParsed)
+	}
+	if !strings.HasPrefix(readParsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("read_file response missing filesystem workspace revision: %+v", readParsed)
 	}
 	if readParsed.Range.StartLine != 1 || readParsed.Range.EndLine != 1 || len(readParsed.OmittedRanges) != 0 {
 		t.Fatalf("unexpected read range metadata: %+v", readParsed)
@@ -105,14 +118,15 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 		t.Fatalf("second read_file: %v", err)
 	}
 	var unchangedParsed struct {
-		FileSHA     string   `json:"file_sha"`
-		Unchanged   bool     `json:"unchanged"`
-		Suggestions []string `json:"next_suggestions"`
+		FileSHA           string   `json:"file_sha"`
+		WorkspaceRevision string   `json:"workspace_revision"`
+		Unchanged         bool     `json:"unchanged"`
+		Suggestions       []string `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(unchangedResp), &unchangedParsed); err != nil {
 		t.Fatalf("parse unchanged read response: %v", err)
 	}
-	if !unchangedParsed.Unchanged || unchangedParsed.FileSHA != readParsed.FileSHA || len(unchangedParsed.Suggestions) == 0 {
+	if !unchangedParsed.Unchanged || unchangedParsed.FileSHA != readParsed.FileSHA || unchangedParsed.WorkspaceRevision == "" || len(unchangedParsed.Suggestions) == 0 {
 		t.Fatalf("unexpected unchanged read metadata: %+v", unchangedParsed)
 	}
 }
@@ -172,14 +186,18 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 		t.Fatalf("write_file with expected_old_sha: %v", err)
 	}
 	var writeParsed struct {
-		OldFileSHA string `json:"old_file_sha"`
-		NewFileSHA string `json:"new_file_sha"`
+		OldFileSHA        string `json:"old_file_sha"`
+		NewFileSHA        string `json:"new_file_sha"`
+		WorkspaceRevision string `json:"workspace_revision"`
 	}
 	if err := json.Unmarshal([]byte(writeResp), &writeParsed); err != nil {
 		t.Fatalf("parse write response: %v", err)
 	}
 	if writeParsed.OldFileSHA != readParsed.FileSHA || !strings.HasPrefix(writeParsed.NewFileSHA, "sha256:") {
 		t.Fatalf("unexpected write sha metadata: %+v", writeParsed)
+	}
+	if !strings.HasPrefix(writeParsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("write_file response missing filesystem workspace revision: %+v", writeParsed)
 	}
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
@@ -463,15 +481,19 @@ func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
 		t.Fatalf("edit_file with expected_old_sha: %v", err)
 	}
 	var parsed struct {
-		OldFileSHA  string   `json:"old_file_sha"`
-		NewFileSHA  string   `json:"new_file_sha"`
-		Suggestions []string `json:"next_suggestions"`
+		OldFileSHA        string   `json:"old_file_sha"`
+		NewFileSHA        string   `json:"new_file_sha"`
+		WorkspaceRevision string   `json:"workspace_revision"`
+		Suggestions       []string `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse edit response: %v", err)
 	}
 	if parsed.OldFileSHA != oldSHA || !strings.HasPrefix(parsed.NewFileSHA, "sha256:") {
 		t.Fatalf("unexpected edit sha metadata: %+v", parsed)
+	}
+	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("edit_file response missing filesystem workspace revision: %+v", parsed)
 	}
 	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "run_test") {
 		t.Fatalf("edit_file response missing validation suggestion: %+v", parsed.Suggestions)
@@ -1079,6 +1101,7 @@ func TestToolkit_ListFilesReturnsEntryPathsAndSuggestions(t *testing.T) {
 	}
 	var parsed struct {
 		Path              string `json:"path"`
+		WorkspaceRevision string `json:"workspace_revision"`
 		Total             int    `json:"total"`
 		OmittedEntryCount int    `json:"omitted_entry_count"`
 		Entries           []struct {
@@ -1094,6 +1117,9 @@ func TestToolkit_ListFilesReturnsEntryPathsAndSuggestions(t *testing.T) {
 	}
 	if parsed.Path != "dir" || parsed.Total != 2 || parsed.OmittedEntryCount != 0 {
 		t.Fatalf("unexpected list_files metadata: %+v", parsed)
+	}
+	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
+		t.Fatalf("list_files response missing filesystem workspace revision: %+v", parsed)
 	}
 	wantPaths := []string{"dir/a.txt", "dir/sub"}
 	gotPaths := make([]string, 0, len(parsed.Entries))

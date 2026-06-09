@@ -35,7 +35,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"- The path parameter is relative to the workspace root\n" +
 			"- Returns content with cat -n style line number prefixes (number + tab)\n" +
 			"- Use offset (1-based line) and limit to read specific portions of large files\n" +
-			"- Results include file_sha, range, omitted_ranges, and next_suggestions for follow-up reads\n" +
+			"- Results include file_sha, workspace_revision, range, omitted_ranges, and next_suggestions for follow-up reads\n" +
 			"- Files >256KB are rejected unless limit is provided\n" +
 			"- Repeated reads of the same file/range return a stub if the file is unchanged\n" +
 			"- This tool can only read files, not directories — use list_files for directories\n" +
@@ -61,7 +61,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	}
 }
 
-func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Path   string `json:"path"`
 		Offset int    `json:"offset"`
@@ -131,12 +131,13 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 			}
 			if unchanged {
 				result := map[string]any{
-					"path":             t.env.NormalizeDisplayPath(resolved),
-					"file_sha":         formatFileSHA(contentHash),
-					"range":            readFileRangeMetadata(args.Offset, len(readResult.Lines)),
-					"unchanged":        true,
-					"message":          "File unchanged since last read. Refer to the earlier read result.",
-					"next_suggestions": []string{"use the earlier read result as evidence, or request a different offset/limit if more context is needed"},
+					"path":               t.env.NormalizeDisplayPath(resolved),
+					"file_sha":           formatFileSHA(contentHash),
+					"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+					"range":              readFileRangeMetadata(args.Offset, len(readResult.Lines)),
+					"unchanged":          true,
+					"message":            "File unchanged since last read. Refer to the earlier read result.",
+					"next_suggestions":   []string{"use the earlier read result as evidence, or request a different offset/limit if more context is needed"},
 				}
 				return mustJSON(result)
 			}
@@ -161,16 +162,17 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 	})
 
 	result := map[string]any{
-		"path":             t.env.NormalizeDisplayPath(resolved),
-		"file_sha":         formatFileSHA(contentHash),
-		"content":          buf.String(),
-		"num_lines":        len(readResult.Lines),
-		"start_line":       args.Offset,
-		"total_lines":      readResult.TotalLines,
-		"range":            readFileRangeMetadata(args.Offset, len(readResult.Lines)),
-		"omitted_ranges":   readFileOmittedRanges(readResult.TotalLines, args.Offset, len(readResult.Lines)),
-		"truncated":        args.Offset <= readResult.TotalLines && args.Offset-1+len(readResult.Lines) < readResult.TotalLines,
-		"next_suggestions": readFileNextSuggestions(readResult.TotalLines, args.Offset, len(readResult.Lines)),
+		"path":               t.env.NormalizeDisplayPath(resolved),
+		"file_sha":           formatFileSHA(contentHash),
+		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"content":            buf.String(),
+		"num_lines":          len(readResult.Lines),
+		"start_line":         args.Offset,
+		"total_lines":        readResult.TotalLines,
+		"range":              readFileRangeMetadata(args.Offset, len(readResult.Lines)),
+		"omitted_ranges":     readFileOmittedRanges(readResult.TotalLines, args.Offset, len(readResult.Lines)),
+		"truncated":          args.Offset <= readResult.TotalLines && args.Offset-1+len(readResult.Lines) < readResult.TotalLines,
+		"next_suggestions":   readFileNextSuggestions(readResult.TotalLines, args.Offset, len(readResult.Lines)),
 	}
 	return mustJSON(result)
 }
@@ -332,7 +334,7 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 			"- Existing files require expected_old_sha from read_file or a fresh prior read_file result\n" +
 			"- Set create_only=true when the file must not already exist\n" +
 			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected\n" +
-			"- Returns a structured diff showing what changed",
+			"- Returns workspace_revision and a structured diff showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -358,7 +360,7 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 	}
 }
 
-func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Path           string `json:"path"`
 		Content        string `json:"content"`
@@ -405,9 +407,10 @@ func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (string, err
 	}
 
 	result := map[string]any{
-		"path":          t.env.NormalizeDisplayPath(resolved),
-		"written_bytes": len(args.Content),
-		"new_file_sha":  formatFileSHA(sha256Hex([]byte(args.Content))),
+		"path":               t.env.NormalizeDisplayPath(resolved),
+		"written_bytes":      len(args.Content),
+		"new_file_sha":       formatFileSHA(sha256Hex([]byte(args.Content))),
+		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 	}
 
 	if fileExists {
@@ -473,7 +476,7 @@ func (t *ListFilesTool) Definition() providers.ToolDefinition {
 		Name: "list_files",
 		Description: "Lists entries under a directory in the workspace.\n\n" +
 			"Usage:\n" +
-			"- Returns name, path, is_dir, and size for each entry\n" +
+			"- Returns workspace_revision plus name, path, is_dir, and size for each entry\n" +
 			"- Defaults to workspace root when path is omitted\n" +
 			"- Truncated at 1000 entries for large directories",
 		InputSchema: map[string]any{
@@ -488,7 +491,7 @@ func (t *ListFilesTool) Definition() providers.ToolDefinition {
 	}
 }
 
-func (t *ListFilesTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Path string `json:"path"`
 	}
@@ -540,6 +543,7 @@ func (t *ListFilesTool) Execute(_ context.Context, argsJSON string) (string, err
 
 	result := map[string]any{
 		"path":                t.env.NormalizeDisplayPath(resolved),
+		"workspace_revision":  workspaceRevision(ctx, t.env.RootDir),
 		"total":               len(entries),
 		"truncated":           len(entries) > limit,
 		"omitted_entry_count": max(len(entries)-limit, 0),
@@ -588,7 +592,7 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 			"- Use empty new_text to delete a section\n" +
 			"- Prefer this over write_file for modifications — it only sends the diff\n" +
 			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected\n" +
-			"- Returns a structured diff showing what changed",
+			"- Returns workspace_revision and a structured diff showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -618,7 +622,7 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 	}
 }
 
-func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Path           string `json:"path"`
 		OldText        string `json:"old_text"`
@@ -689,11 +693,12 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 
 	diff := computeDiff(text, newContent, 3)
 	result := map[string]any{
-		"path":             t.env.NormalizeDisplayPath(resolved),
-		"old_file_sha":     formatFileSHA(oldSHA),
-		"new_file_sha":     formatFileSHA(sha256Hex([]byte(newContent))),
-		"diff":             diff,
-		"next_suggestions": []string{"run targeted validation with run_test or inspect the resulting diff before finishing"},
+		"path":               t.env.NormalizeDisplayPath(resolved),
+		"old_file_sha":       formatFileSHA(oldSHA),
+		"new_file_sha":       formatFileSHA(sha256Hex([]byte(newContent))),
+		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"diff":               diff,
+		"next_suggestions":   []string{"run targeted validation with run_test or inspect the resulting diff before finishing"},
 	}
 	return mustJSON(result)
 }
