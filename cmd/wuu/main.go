@@ -1595,6 +1595,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	if len(summary.ToolNames) > 0 {
 		fmt.Printf("  tool_records: %s\n", strings.Join(summary.ToolNames, ","))
 	}
+	if summary.ToolSummary != nil {
+		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
+	}
 	if len(summary.WorkflowRunIDs) > 0 {
 		fmt.Printf("  workflow_runs: %s\n", strings.Join(summary.WorkflowRunIDs, ","))
 	}
@@ -1644,6 +1647,9 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 	}
 	if len(summary.ToolNames) > 0 {
 		fmt.Printf("  tool_records: %s\n", strings.Join(summary.ToolNames, ","))
+	}
+	if summary.ToolSummary != nil {
+		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
 	}
 	if summary.Final != nil {
 		if summary.Final.Error != "" {

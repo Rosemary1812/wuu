@@ -59,9 +59,19 @@ type ReplaySummary struct {
 	LatestTurn    *TurnRecord      `json:"latest_turn,omitempty"`
 	ToolInventory []tools.ToolInfo `json:"tool_inventory,omitempty"`
 	ToolNames     []string         `json:"tool_names,omitempty"`
+	ToolSummary   *ToolSummary     `json:"tool_summary,omitempty"`
 	Final         *FinalRecord     `json:"final,omitempty"`
 	Complete      bool             `json:"complete"`
 	Warnings      []string         `json:"warnings,omitempty"`
+}
+
+type ToolSummary struct {
+	Total          int            `json:"total"`
+	Succeeded      int            `json:"succeeded"`
+	Failed         int            `json:"failed"`
+	ByKind         map[string]int `json:"by_kind,omitempty"`
+	ByRisk         map[string]int `json:"by_risk,omitempty"`
+	ByPolicyAction map[string]int `json:"by_policy_action,omitempty"`
 }
 
 func Path(sessionDir string) string {
@@ -142,6 +152,7 @@ func replayEvent(summary *ReplaySummary, eventType string, data json.RawMessage)
 			if strings.TrimSpace(record.Name) != "" {
 				summary.ToolNames = append(summary.ToolNames, record.Name)
 			}
+			summary.addToolRecord(record)
 		}
 	case "final":
 		var final FinalRecord
@@ -151,6 +162,31 @@ func replayEvent(summary *ReplaySummary, eventType string, data json.RawMessage)
 		summary.Final = &final
 	}
 	return nil
+}
+
+func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
+	if summary.ToolSummary == nil {
+		summary.ToolSummary = &ToolSummary{
+			ByKind:         map[string]int{},
+			ByRisk:         map[string]int{},
+			ByPolicyAction: map[string]int{},
+		}
+	}
+	summary.ToolSummary.Total++
+	if record.Success {
+		summary.ToolSummary.Succeeded++
+	} else {
+		summary.ToolSummary.Failed++
+	}
+	if kind := strings.TrimSpace(string(record.Kind)); kind != "" {
+		summary.ToolSummary.ByKind[kind]++
+	}
+	if risk := strings.TrimSpace(string(record.Risk)); risk != "" {
+		summary.ToolSummary.ByRisk[risk]++
+	}
+	if action := strings.TrimSpace(string(record.PolicyAction)); action != "" {
+		summary.ToolSummary.ByPolicyAction[action]++
+	}
 }
 
 func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord) error {

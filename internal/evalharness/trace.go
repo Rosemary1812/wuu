@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -60,12 +61,22 @@ type TraceReplaySummary struct {
 	ContextBlockKinds []string                   `json:"context_block_kinds,omitempty"`
 	ToolInventory     []ToolInventoryObservation `json:"tool_inventory,omitempty"`
 	ToolNames         []string                   `json:"tool_names,omitempty"`
+	ToolSummary       *ToolReplaySummary         `json:"tool_summary,omitempty"`
 	WorkflowRunIDs    []string                   `json:"workflow_run_ids,omitempty"`
 	HarnessTaskIDs    []string                   `json:"harness_task_ids,omitempty"`
 	HarnessReportIDs  []string                   `json:"harness_report_ids,omitempty"`
 	Final             *TraceReplayFinal          `json:"final,omitempty"`
 	Complete          bool                       `json:"complete"`
 	Warnings          []string                   `json:"warnings,omitempty"`
+}
+
+type ToolReplaySummary struct {
+	Total          int            `json:"total"`
+	Succeeded      int            `json:"succeeded"`
+	Failed         int            `json:"failed"`
+	ByKind         map[string]int `json:"by_kind,omitempty"`
+	ByRisk         map[string]int `json:"by_risk,omitempty"`
+	ByPolicyAction map[string]int `json:"by_policy_action,omitempty"`
 }
 
 type TraceReplayFinal struct {
@@ -262,6 +273,7 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 			if record.Name != "" {
 				summary.ToolNames = append(summary.ToolNames, record.Name)
 			}
+			summary.addToolObservation(record)
 		}
 	case "tool_inventory":
 		var inventory []ToolInventoryObservation
@@ -307,4 +319,29 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 		summary.Final = &final
 	}
 	return nil
+}
+
+func (summary *TraceReplaySummary) addToolObservation(record ToolObservation) {
+	if summary.ToolSummary == nil {
+		summary.ToolSummary = &ToolReplaySummary{
+			ByKind:         map[string]int{},
+			ByRisk:         map[string]int{},
+			ByPolicyAction: map[string]int{},
+		}
+	}
+	summary.ToolSummary.Total++
+	if record.Success {
+		summary.ToolSummary.Succeeded++
+	} else {
+		summary.ToolSummary.Failed++
+	}
+	if kind := strings.TrimSpace(record.Kind); kind != "" {
+		summary.ToolSummary.ByKind[kind]++
+	}
+	if risk := strings.TrimSpace(record.Risk); risk != "" {
+		summary.ToolSummary.ByRisk[risk]++
+	}
+	if action := strings.TrimSpace(record.PolicyAction); action != "" {
+		summary.ToolSummary.ByPolicyAction[action]++
+	}
 }

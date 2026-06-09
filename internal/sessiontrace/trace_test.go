@@ -59,7 +59,19 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		TurnRecord{ThreadID: "thread-1", TurnID: "turn-1", Status: "completed", Model: "gpt-test"},
 		FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
 		[]tools.ToolInfo{{Name: "semantic_search", Kind: tools.ToolKindSearch, Risk: tools.ToolRiskLow, ReadOnly: true}},
-		[]tools.ToolExecutionRecord{{Name: "semantic_search", Kind: tools.ToolKindSearch, Success: true}},
+		[]tools.ToolExecutionRecord{{
+			Name:         "semantic_search",
+			Kind:         tools.ToolKindSearch,
+			Risk:         tools.ToolRiskLow,
+			PolicyAction: tools.ToolPolicyAllow,
+			Success:      true,
+		}, {
+			Name:         "run_shell",
+			Kind:         tools.ToolKindShell,
+			Risk:         tools.ToolRiskHigh,
+			PolicyAction: tools.ToolPolicyDeny,
+			Success:      false,
+		}},
 	); err != nil {
 		t.Fatalf("AppendTurn: %v", err)
 	}
@@ -77,8 +89,16 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "semantic_search" {
 		t.Fatalf("tool inventory missing: %+v", summary.ToolInventory)
 	}
-	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "semantic_search" {
+	if len(summary.ToolNames) != 2 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "run_shell" {
 		t.Fatalf("tool records missing: %+v", summary.ToolNames)
+	}
+	if summary.ToolSummary == nil || summary.ToolSummary.Total != 2 || summary.ToolSummary.Succeeded != 1 || summary.ToolSummary.Failed != 1 {
+		t.Fatalf("tool summary missing: %+v", summary.ToolSummary)
+	}
+	if summary.ToolSummary.ByKind[string(tools.ToolKindShell)] != 1 ||
+		summary.ToolSummary.ByRisk[string(tools.ToolRiskHigh)] != 1 ||
+		summary.ToolSummary.ByPolicyAction[string(tools.ToolPolicyDeny)] != 1 {
+		t.Fatalf("tool summary dimensions missing: %+v", summary.ToolSummary)
 	}
 	if summary.Final == nil || summary.Final.Status != "completed" || summary.Final.FinalAnswerPreview != "done" {
 		t.Fatalf("final summary missing: %+v", summary.Final)

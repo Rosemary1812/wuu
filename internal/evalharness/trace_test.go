@@ -185,8 +185,17 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				ReadOnly: true,
 			}},
 			ToolRecords: []ToolObservation{{
-				Name:    "read_file",
-				Success: true,
+				Name:         "read_file",
+				Kind:         "file",
+				Risk:         "low",
+				PolicyAction: "allow",
+				Success:      true,
+			}, {
+				Name:         "run_shell",
+				Kind:         "shell",
+				Risk:         "high",
+				PolicyAction: "deny",
+				Success:      false,
 			}},
 			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", Status: "completed"}},
 			HarnessTasks:   []HarnessTaskObservation{{ID: "worker-1", Status: "completed"}},
@@ -216,8 +225,14 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "read_file" || summary.ToolInventory[0].Exposure != "direct" {
 		t.Fatalf("replay missing tool inventory: %+v", summary.ToolInventory)
 	}
-	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "read_file" {
+	if len(summary.ToolNames) != 2 || summary.ToolNames[0] != "read_file" || summary.ToolNames[1] != "run_shell" {
 		t.Fatalf("replay missing tool records: %+v", summary.ToolNames)
+	}
+	if summary.ToolSummary == nil || summary.ToolSummary.Total != 2 || summary.ToolSummary.Succeeded != 1 || summary.ToolSummary.Failed != 1 {
+		t.Fatalf("replay missing tool summary: %+v", summary.ToolSummary)
+	}
+	if summary.ToolSummary.ByKind["file"] != 1 || summary.ToolSummary.ByRisk["high"] != 1 || summary.ToolSummary.ByPolicyAction["deny"] != 1 {
+		t.Fatalf("replay tool summary missing dimensions: %+v", summary.ToolSummary)
 	}
 	if len(summary.WorkflowRunIDs) != 1 || summary.WorkflowRunIDs[0] != "run-1" {
 		t.Fatalf("replay missing workflow runs: %+v", summary.WorkflowRunIDs)
