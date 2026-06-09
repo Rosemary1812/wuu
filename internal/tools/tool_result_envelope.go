@@ -39,6 +39,9 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 	if record.ResultBudgeted && record.ResultRef == "" {
 		envelope.Warnings = append(envelope.Warnings, "tool output was truncated because no result artifact was available")
 	}
+	if len(record.ArtifactRefs) > 0 {
+		envelope.Data["artifact_refs"] = append([]string(nil), record.ArtifactRefs...)
+	}
 	envelope.NextSuggestions = toolResultNextSuggestions(record)
 	return envelope
 }

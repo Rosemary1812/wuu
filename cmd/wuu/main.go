@@ -806,6 +806,7 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			ReturnedOutputBytes:  record.ReturnedOutputBytes,
 			ResultBudgeted:       record.ResultBudgeted,
 			ResultRef:            record.ResultRef,
+			ArtifactRefs:         append([]string(nil), record.ArtifactRefs...),
 			ResultEnvelope:       &envelope,
 		})
 	}

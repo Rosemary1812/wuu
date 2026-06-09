@@ -37,6 +37,15 @@ func mustReadFile(t *testing.T, path string) string {
 	return string(content)
 }
 
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestToolkit_WriteAndReadFile(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -1744,6 +1753,15 @@ func TestBroken(t *testing.T) {
 	}
 	if !strings.Contains(logText, "TestBroken") || !strings.Contains(logText, "exit_code: 1") {
 		t.Fatalf("full log artifact missing failure evidence:\n%s", logText)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || !containsString(records[0].ArtifactRefs, got.FullLogRef) {
+		t.Fatalf("tool telemetry missing full log artifact ref: records=%+v full_log_ref=%q", records, got.FullLogRef)
+	}
+	envelope := records[0].ResultEnvelope()
+	artifactRefs, ok := envelope.Data["artifact_refs"].([]string)
+	if !ok || !containsString(artifactRefs, got.FullLogRef) {
+		t.Fatalf("result envelope missing full log artifact ref: %+v", envelope)
 	}
 	if strings.Contains(resp, "secret-value") || !strings.Contains(resp, "[REDACTED]") {
 		t.Fatalf("run_test response should redact secret-like output: %s", resp)

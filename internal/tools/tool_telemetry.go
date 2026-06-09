@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +48,7 @@ type ToolExecutionRecord struct {
 	ReturnedOutputBytes  int              `json:"returned_output_bytes"`
 	ResultBudgeted       bool             `json:"result_budgeted"`
 	ResultRef            string           `json:"result_ref,omitempty"`
+	ArtifactRefs         []string         `json:"artifact_refs,omitempty"`
 }
 
 type toolTelemetry struct {
@@ -133,11 +136,80 @@ func (t *Toolkit) recordToolExecution(
 		ReturnedOutputBytes:  len(returned),
 		ResultBudgeted:       resultBudgeted,
 		ResultRef:            resultRef,
+		ArtifactRefs:         extractToolArtifactRefs(result, resultRef),
 	}
 	if err != nil {
 		record.Error = err.Error()
 	}
 	t.env.toolTelemetry.record(record)
+}
+
+func extractToolArtifactRefs(result, resultRef string) []string {
+	seen := map[string]bool{}
+	out := []string(nil)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	add(resultRef)
+
+	var payload any
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		return out
+	}
+	collectToolArtifactRefs(payload, add)
+	return out
+}
+
+func collectToolArtifactRefs(value any, add func(string)) {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, item := range v {
+			if toolArtifactRefKey(key) {
+				collectArtifactValue(item, add)
+				continue
+			}
+			collectToolArtifactRefs(item, add)
+		}
+	case []any:
+		for _, item := range v {
+			collectToolArtifactRefs(item, add)
+		}
+	}
+}
+
+func collectArtifactValue(value any, add func(string)) {
+	switch v := value.(type) {
+	case string:
+		add(v)
+	case []any:
+		for _, item := range v {
+			collectArtifactValue(item, add)
+		}
+	case map[string]any:
+		if path, ok := v["path"].(string); ok {
+			add(path)
+		}
+		if path, ok := v["report_path"].(string); ok {
+			add(path)
+		}
+	}
+}
+
+func toolArtifactRefKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "full_log_ref", "result_ref", "artifact_ref", "artifact_refs",
+		"artifact_path", "artifact_paths", "artifacts",
+		"report_path", "final_report_path", "script_path",
+		"trace_path", "patch_path", "manifest_path", "archive_path":
+		return true
+	default:
+		return false
+	}
 }
 
 func workspaceRevision(ctx context.Context, rootDir string) string {
