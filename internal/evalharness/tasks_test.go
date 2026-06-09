@@ -67,6 +67,9 @@ func Add(a, b int) int {
 	if !passed.Passed {
 		t.Fatalf("fixed fixture should pass verification: %s", passed.Reason)
 	}
+	if len(passed.Evidence) == 0 || passed.Evidence[0].Command != "go test ./..." || !passed.Evidence[0].Passed {
+		t.Fatalf("fixed fixture should include passing command evidence: %+v", passed.Evidence)
+	}
 }
 
 func TestLongProcessOutputVerification(t *testing.T) {
@@ -203,6 +206,14 @@ func TestCheckpointRollbackVerification(t *testing.T) {
 	}
 	if !passed.Passed {
 		t.Fatalf("checkpoint rollback should pass verification: %s", passed.Reason)
+	}
+	if len(passed.Evidence) != 3 {
+		t.Fatalf("checkpoint rollback should include target/scratch/marker evidence: %+v", passed.Evidence)
+	}
+	for _, evidence := range passed.Evidence {
+		if !evidence.Passed || evidence.Check == "" {
+			t.Fatalf("checkpoint rollback evidence should be passed and named: %+v", passed.Evidence)
+		}
 	}
 }
 
@@ -410,5 +421,8 @@ func TestAgentLedWorkflowTeamVerification(t *testing.T) {
 	}
 	if !passed.Passed {
 		t.Fatalf("team markers should pass verification: %s", passed.Reason)
+	}
+	if len(passed.Evidence) != 2 {
+		t.Fatalf("team markers should include both file checks: %+v", passed.Evidence)
 	}
 }

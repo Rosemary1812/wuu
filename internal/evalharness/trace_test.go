@@ -24,6 +24,13 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		InputTokens:        10,
 		OutputTokens:       20,
 		VerificationReason: "passed",
+		VerificationEvidence: []VerificationEvidence{{
+			Check:    "go tests",
+			Passed:   true,
+			Command:  "go test ./...",
+			Expected: "exit_code=0",
+			Observed: "ok",
+		}},
 		Observability: &Observability{
 			SessionID:          "eval-task-1",
 			StateDir:           "/tmp/state",
@@ -77,6 +84,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if len(task.ToolSequence) != 3 || task.ToolSequence[0] != "read_file" || task.ToolSequence[2] != "run_shell" {
 		t.Fatalf("task event missing tool sequence: %+v", task)
+	}
+	if len(task.VerificationEvidence) != 1 || task.VerificationEvidence[0].Command != "go test ./..." {
+		t.Fatalf("task event missing verification evidence: %+v", task)
 	}
 }
 

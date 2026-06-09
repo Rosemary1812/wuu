@@ -657,6 +657,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	} else {
 		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0 && len(result.MissingToolCalls) == 0 && len(result.MissingToolSeq) == 0 && len(result.MissingErrors) == 0
 		result.VerificationReason = verification.Reason
+		result.VerificationEvidence = verification.Evidence
 	}
 	if runErr != nil {
 		result.Error = runErr.Error()

@@ -43,29 +43,41 @@ type ToolCallRequirement struct {
 }
 
 type Verification struct {
-	Passed bool   `json:"passed"`
-	Reason string `json:"reason,omitempty"`
+	Passed   bool                   `json:"passed"`
+	Reason   string                 `json:"reason,omitempty"`
+	Evidence []VerificationEvidence `json:"evidence,omitempty"`
+}
+
+type VerificationEvidence struct {
+	Check    string `json:"check"`
+	Passed   bool   `json:"passed"`
+	Summary  string `json:"summary,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Command  string `json:"command,omitempty"`
+	Expected string `json:"expected,omitempty"`
+	Observed string `json:"observed,omitempty"`
 }
 
 type Result struct {
-	TaskID             string         `json:"task_id"`
-	TaskName           string         `json:"task_name"`
-	Success            bool           `json:"success"`
-	DurationMS         int64          `json:"duration_ms"`
-	Turns              int            `json:"turns"`
-	ToolCalls          int            `json:"tool_calls"`
-	ToolNames          []string       `json:"tool_names,omitempty"`
-	ToolSequence       []string       `json:"tool_sequence,omitempty"`
-	MissingTools       []string       `json:"missing_tools,omitempty"`
-	MissingToolCalls   []string       `json:"missing_tool_calls,omitempty"`
-	MissingToolSeq     []string       `json:"missing_tool_sequence,omitempty"`
-	MissingErrors      []string       `json:"missing_errors,omitempty"`
-	InputTokens        int            `json:"input_tokens"`
-	OutputTokens       int            `json:"output_tokens"`
-	VerificationReason string         `json:"verification_reason,omitempty"`
-	Error              string         `json:"error,omitempty"`
-	Workdir            string         `json:"workdir,omitempty"`
-	Observability      *Observability `json:"observability,omitempty"`
+	TaskID               string                 `json:"task_id"`
+	TaskName             string                 `json:"task_name"`
+	Success              bool                   `json:"success"`
+	DurationMS           int64                  `json:"duration_ms"`
+	Turns                int                    `json:"turns"`
+	ToolCalls            int                    `json:"tool_calls"`
+	ToolNames            []string               `json:"tool_names,omitempty"`
+	ToolSequence         []string               `json:"tool_sequence,omitempty"`
+	MissingTools         []string               `json:"missing_tools,omitempty"`
+	MissingToolCalls     []string               `json:"missing_tool_calls,omitempty"`
+	MissingToolSeq       []string               `json:"missing_tool_sequence,omitempty"`
+	MissingErrors        []string               `json:"missing_errors,omitempty"`
+	InputTokens          int                    `json:"input_tokens"`
+	OutputTokens         int                    `json:"output_tokens"`
+	VerificationReason   string                 `json:"verification_reason,omitempty"`
+	VerificationEvidence []VerificationEvidence `json:"verification_evidence,omitempty"`
+	Error                string                 `json:"error,omitempty"`
+	Workdir              string                 `json:"workdir,omitempty"`
+	Observability        *Observability         `json:"observability,omitempty"`
 }
 
 type Observability struct {
@@ -509,6 +521,28 @@ func configureMCPReadOnlyConcurrency(root string, cfg config.Config) config.Conf
 	return cfg
 }
 
+const verificationObservedLimit = 1000
+
+func passVerification(reason string, evidence ...VerificationEvidence) Verification {
+	return Verification{Passed: true, Reason: reason, Evidence: evidence}
+}
+
+func failVerification(reason string, evidence ...VerificationEvidence) Verification {
+	return Verification{Passed: false, Reason: reason, Evidence: evidence}
+}
+
+func verificationEvidence(check string, passed bool, summary string) VerificationEvidence {
+	return VerificationEvidence{Check: check, Passed: passed, Summary: summary}
+}
+
+func verificationObserved(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= verificationObservedLimit {
+		return value
+	}
+	return value[:verificationObservedLimit] + "...[truncated]"
+}
+
 func verifyGoTests(ctx context.Context, root, _ string) (Verification, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -519,121 +553,224 @@ func verifyGoTests(ctx context.Context, root, _ string) (Verification, error) {
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	err := cmd.Run()
+	evidence := VerificationEvidence{
+		Check:    "go tests",
+		Passed:   err == nil && cmdCtx.Err() == nil,
+		Command:  "go test ./...",
+		Expected: "exit_code=0",
+		Observed: verificationObserved(output.String()),
+	}
 	if cmdCtx.Err() != nil {
-		return Verification{Passed: false, Reason: "go test timed out"}, nil
+		evidence.Passed = false
+		evidence.Summary = "go test timed out"
+		return failVerification("go test timed out", evidence), nil
 	}
 	if err != nil {
-		return Verification{Passed: false, Reason: strings.TrimSpace(output.String())}, nil
+		evidence.Summary = "go test failed"
+		return failVerification(strings.TrimSpace(output.String()), evidence), nil
 	}
-	return Verification{Passed: true, Reason: strings.TrimSpace(output.String())}, nil
+	evidence.Summary = "go test passed"
+	return passVerification(strings.TrimSpace(output.String()), evidence), nil
 }
 
 func verifyObservedReadyFile(_ context.Context, root, _ string) (Verification, error) {
 	data, err := os.ReadFile(filepath.Join(root, "observed.txt"))
+	evidence := VerificationEvidence{Check: "observed readiness marker", Path: "observed.txt", Expected: "contains READY_FOR_EVAL"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "observed.txt was not written"}, nil
+		evidence.Passed = false
+		evidence.Summary = "observed.txt was not written"
+		return failVerification("observed.txt was not written", evidence), nil
 	}
+	evidence.Observed = verificationObserved(string(data))
 	if !strings.Contains(string(data), "READY_FOR_EVAL") {
-		return Verification{Passed: false, Reason: "observed.txt does not contain READY_FOR_EVAL"}, nil
+		evidence.Passed = false
+		evidence.Summary = "missing readiness marker"
+		return failVerification("observed.txt does not contain READY_FOR_EVAL", evidence), nil
 	}
-	return Verification{Passed: true, Reason: "observed readiness marker"}, nil
+	evidence.Passed = true
+	evidence.Summary = "observed readiness marker"
+	return passVerification("observed readiness marker", evidence), nil
 }
 
 func verifyDeferredToolFoundFile(_ context.Context, root, _ string) (Verification, error) {
 	data, err := os.ReadFile(filepath.Join(root, "tool_search_result.txt"))
+	evidence := VerificationEvidence{Check: "deferred tool marker", Path: "tool_search_result.txt", Expected: "contains DEFERRED_TOOL_FOUND"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "tool_search_result.txt was not written"}, nil
+		evidence.Passed = false
+		evidence.Summary = "tool_search_result.txt was not written"
+		return failVerification("tool_search_result.txt was not written", evidence), nil
 	}
+	evidence.Observed = verificationObserved(string(data))
 	if !strings.Contains(string(data), "DEFERRED_TOOL_FOUND") {
-		return Verification{Passed: false, Reason: "tool_search_result.txt does not contain DEFERRED_TOOL_FOUND"}, nil
+		evidence.Passed = false
+		evidence.Summary = "missing deferred tool marker"
+		return failVerification("tool_search_result.txt does not contain DEFERRED_TOOL_FOUND", evidence), nil
 	}
-	return Verification{Passed: true, Reason: "observed deferred tool marker"}, nil
+	evidence.Passed = true
+	evidence.Summary = "observed deferred tool marker"
+	return passVerification("observed deferred tool marker", evidence), nil
 }
 
 func verifyStaleReadGuard(_ context.Context, root, _ string) (Verification, error) {
 	target, err := os.ReadFile(filepath.Join(root, "target.txt"))
+	targetEvidence := VerificationEvidence{Check: "target final version", Path: "target.txt", Expected: "contains version: final"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "target.txt was not readable"}, nil
+		targetEvidence.Passed = false
+		targetEvidence.Summary = "target.txt was not readable"
+		return failVerification("target.txt was not readable", targetEvidence), nil
 	}
+	targetEvidence.Observed = verificationObserved(string(target))
 	if !strings.Contains(string(target), "version: final") {
-		return Verification{Passed: false, Reason: "target.txt does not contain final version"}, nil
+		targetEvidence.Passed = false
+		targetEvidence.Summary = "target.txt did not reach final version"
+		return failVerification("target.txt does not contain final version", targetEvidence), nil
 	}
+	targetEvidence.Passed = true
+	targetEvidence.Summary = "target.txt contains final version"
 	data, err := os.ReadFile(filepath.Join(root, "stale_read_result.txt"))
+	markerEvidence := VerificationEvidence{Check: "stale-read marker", Path: "stale_read_result.txt", Expected: "contains STALE_READ_GUARD_DONE"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "stale_read_result.txt was not written"}, nil
+		markerEvidence.Passed = false
+		markerEvidence.Summary = "stale_read_result.txt was not written"
+		return failVerification("stale_read_result.txt was not written", targetEvidence, markerEvidence), nil
 	}
+	markerEvidence.Observed = verificationObserved(string(data))
 	if !strings.Contains(string(data), "STALE_READ_GUARD_DONE") {
-		return Verification{Passed: false, Reason: "stale_read_result.txt does not contain STALE_READ_GUARD_DONE"}, nil
+		markerEvidence.Passed = false
+		markerEvidence.Summary = "missing stale-read marker"
+		return failVerification("stale_read_result.txt does not contain STALE_READ_GUARD_DONE", targetEvidence, markerEvidence), nil
 	}
-	return Verification{Passed: true, Reason: "observed stale-read recovery marker"}, nil
+	markerEvidence.Passed = true
+	markerEvidence.Summary = "observed stale-read marker"
+	return passVerification("observed stale-read recovery marker", targetEvidence, markerEvidence), nil
 }
 
 func verifyMCPReadOnlyConcurrency(_ context.Context, root, _ string) (Verification, error) {
 	data, err := os.ReadFile(filepath.Join(root, "mcp_readonly_result.txt"))
+	markerEvidence := VerificationEvidence{Check: "MCP concurrency marker", Path: "mcp_readonly_result.txt", Expected: "contains MCP_READONLY_CONCURRENT"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "mcp_readonly_result.txt was not written"}, nil
+		markerEvidence.Passed = false
+		markerEvidence.Summary = "mcp_readonly_result.txt was not written"
+		return failVerification("mcp_readonly_result.txt was not written", markerEvidence), nil
 	}
+	markerEvidence.Observed = verificationObserved(string(data))
 	if !strings.Contains(string(data), "MCP_READONLY_CONCURRENT") {
-		return Verification{Passed: false, Reason: "mcp_readonly_result.txt does not contain MCP_READONLY_CONCURRENT"}, nil
+		markerEvidence.Passed = false
+		markerEvidence.Summary = "missing MCP concurrency marker"
+		return failVerification("mcp_readonly_result.txt does not contain MCP_READONLY_CONCURRENT", markerEvidence), nil
 	}
+	markerEvidence.Passed = true
+	markerEvidence.Summary = "observed MCP concurrency marker"
 
 	maxData, err := os.ReadFile(filepath.Join(root, "mcp_max_concurrency.txt"))
+	concurrencyEvidence := VerificationEvidence{Check: "MCP read-only overlap", Path: "mcp_max_concurrency.txt", Expected: "2"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "MCP server did not record concurrency"}, nil
+		concurrencyEvidence.Passed = false
+		concurrencyEvidence.Summary = "MCP server did not record concurrency"
+		return failVerification("MCP server did not record concurrency", markerEvidence, concurrencyEvidence), nil
 	}
+	concurrencyEvidence.Observed = verificationObserved(string(maxData))
 	if strings.TrimSpace(string(maxData)) != "2" {
-		return Verification{Passed: false, Reason: "MCP read-only tools did not overlap; max concurrency was " + strings.TrimSpace(string(maxData))}, nil
+		concurrencyEvidence.Passed = false
+		concurrencyEvidence.Summary = "MCP read-only tools did not overlap"
+		return failVerification("MCP read-only tools did not overlap; max concurrency was "+strings.TrimSpace(string(maxData)), markerEvidence, concurrencyEvidence), nil
 	}
-	return Verification{Passed: true, Reason: "observed overlapping read-only MCP tool calls"}, nil
+	concurrencyEvidence.Passed = true
+	concurrencyEvidence.Summary = "observed overlapping read-only MCP tool calls"
+	return passVerification("observed overlapping read-only MCP tool calls", markerEvidence, concurrencyEvidence), nil
 }
 
 func verifyMCPLiveDiscovery(_ context.Context, root, _ string) (Verification, error) {
 	data, err := os.ReadFile(filepath.Join(root, "mcp_live_result.txt"))
+	evidence := VerificationEvidence{Check: "live MCP discovery result", Path: "mcp_live_result.txt", Expected: "contains MCP_LIVE_DISCOVERY_DONE and slow_a_OK"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "mcp_live_result.txt was not written"}, nil
+		evidence.Passed = false
+		evidence.Summary = "mcp_live_result.txt was not written"
+		return failVerification("mcp_live_result.txt was not written", evidence), nil
 	}
 	text := string(data)
+	evidence.Observed = verificationObserved(text)
 	if !strings.Contains(text, "MCP_LIVE_DISCOVERY_DONE") {
-		return Verification{Passed: false, Reason: "mcp_live_result.txt does not contain MCP_LIVE_DISCOVERY_DONE"}, nil
+		evidence.Passed = false
+		evidence.Summary = "missing MCP live discovery marker"
+		return failVerification("mcp_live_result.txt does not contain MCP_LIVE_DISCOVERY_DONE", evidence), nil
 	}
 	if !strings.Contains(text, "slow_a_OK") {
-		return Verification{Passed: false, Reason: "mcp_live_result.txt does not contain the MCP tool result"}, nil
+		evidence.Passed = false
+		evidence.Summary = "missing MCP tool result"
+		return failVerification("mcp_live_result.txt does not contain the MCP tool result", evidence), nil
 	}
-	return Verification{Passed: true, Reason: "observed live MCP discovery marker"}, nil
+	evidence.Passed = true
+	evidence.Summary = "observed live MCP discovery marker and tool result"
+	return passVerification("observed live MCP discovery marker", evidence), nil
 }
 
 func verifySubAgentWorkerFile(_ context.Context, root, _ string) (Verification, error) {
 	data, err := os.ReadFile(filepath.Join(root, "worker_result.txt"))
+	evidence := VerificationEvidence{Check: "sub-agent worker marker", Path: "worker_result.txt", Expected: "contains SUBAGENT_EVAL_DONE"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "worker_result.txt was not written"}, nil
+		evidence.Passed = false
+		evidence.Summary = "worker_result.txt was not written"
+		return failVerification("worker_result.txt was not written", evidence), nil
 	}
+	evidence.Observed = verificationObserved(string(data))
 	if !strings.Contains(string(data), "SUBAGENT_EVAL_DONE") {
-		return Verification{Passed: false, Reason: "worker_result.txt does not contain SUBAGENT_EVAL_DONE"}, nil
+		evidence.Passed = false
+		evidence.Summary = "missing sub-agent marker"
+		return failVerification("worker_result.txt does not contain SUBAGENT_EVAL_DONE", evidence), nil
 	}
-	return Verification{Passed: true, Reason: "observed sub-agent worker marker"}, nil
+	evidence.Passed = true
+	evidence.Summary = "observed sub-agent worker marker"
+	return passVerification("observed sub-agent worker marker", evidence), nil
 }
 
 func verifyCheckpointRollback(_ context.Context, root, _ string) (Verification, error) {
 	target, err := os.ReadFile(filepath.Join(root, "target.txt"))
+	targetEvidence := VerificationEvidence{Check: "checkpoint restored target", Path: "target.txt", Expected: "status: original\nowner: eval"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "target.txt was not readable"}, nil
+		targetEvidence.Passed = false
+		targetEvidence.Summary = "target.txt was not readable"
+		return failVerification("target.txt was not readable", targetEvidence), nil
 	}
+	targetEvidence.Observed = verificationObserved(string(target))
 	if string(target) != "status: original\nowner: eval\n" {
-		return Verification{Passed: false, Reason: "target.txt was not restored to original content"}, nil
+		targetEvidence.Passed = false
+		targetEvidence.Summary = "target.txt was not restored"
+		return failVerification("target.txt was not restored to original content", targetEvidence), nil
 	}
+	targetEvidence.Passed = true
+	targetEvidence.Summary = "target.txt restored to original content"
+	scratchEvidence := VerificationEvidence{Check: "checkpoint removed scratch", Path: "scratch.txt", Expected: "file absent"}
 	if _, err := os.Stat(filepath.Join(root, "scratch.txt")); err == nil {
-		return Verification{Passed: false, Reason: "scratch.txt still exists after restore"}, nil
+		scratchEvidence.Passed = false
+		scratchEvidence.Observed = "file exists"
+		scratchEvidence.Summary = "scratch.txt still exists after restore"
+		return failVerification("scratch.txt still exists after restore", targetEvidence, scratchEvidence), nil
 	} else if !os.IsNotExist(err) {
-		return Verification{Passed: false, Reason: "scratch.txt could not be checked"}, nil
+		scratchEvidence.Passed = false
+		scratchEvidence.Observed = err.Error()
+		scratchEvidence.Summary = "scratch.txt could not be checked"
+		return failVerification("scratch.txt could not be checked", targetEvidence, scratchEvidence), nil
 	}
+	scratchEvidence.Passed = true
+	scratchEvidence.Observed = "file absent"
+	scratchEvidence.Summary = "scratch.txt absent after restore"
 	data, err := os.ReadFile(filepath.Join(root, "checkpoint_result.txt"))
+	markerEvidence := VerificationEvidence{Check: "checkpoint rollback marker", Path: "checkpoint_result.txt", Expected: "contains CHECKPOINT_ROLLBACK_DONE"}
 	if err != nil {
-		return Verification{Passed: false, Reason: "checkpoint_result.txt was not written"}, nil
+		markerEvidence.Passed = false
+		markerEvidence.Summary = "checkpoint_result.txt was not written"
+		return failVerification("checkpoint_result.txt was not written", targetEvidence, scratchEvidence, markerEvidence), nil
 	}
+	markerEvidence.Observed = verificationObserved(string(data))
 	if !strings.Contains(string(data), "CHECKPOINT_ROLLBACK_DONE") {
-		return Verification{Passed: false, Reason: "checkpoint_result.txt does not contain CHECKPOINT_ROLLBACK_DONE"}, nil
+		markerEvidence.Passed = false
+		markerEvidence.Summary = "missing checkpoint rollback marker"
+		return failVerification("checkpoint_result.txt does not contain CHECKPOINT_ROLLBACK_DONE", targetEvidence, scratchEvidence, markerEvidence), nil
 	}
-	return Verification{Passed: true, Reason: "observed checkpoint rollback marker and restored files"}, nil
+	markerEvidence.Passed = true
+	markerEvidence.Summary = "observed checkpoint rollback marker"
+	return passVerification("observed checkpoint rollback marker and restored files", targetEvidence, scratchEvidence, markerEvidence), nil
 }
 
 func verifyDynamicWorkflowTeam(_ context.Context, root, _ string) (Verification, error) {
@@ -641,16 +778,28 @@ func verifyDynamicWorkflowTeam(_ context.Context, root, _ string) (Verification,
 		"team_alpha.txt": "TEAM_ALPHA_DONE",
 		"team_beta.txt":  "TEAM_BETA_DONE",
 	}
+	evidence := make([]VerificationEvidence, 0, len(required))
 	for name, marker := range required {
 		data, err := os.ReadFile(filepath.Join(root, name))
+		item := VerificationEvidence{Check: "workflow team marker", Path: name, Expected: "contains " + marker}
 		if err != nil {
-			return Verification{Passed: false, Reason: name + " was not written"}, nil
+			item.Passed = false
+			item.Summary = name + " was not written"
+			evidence = append(evidence, item)
+			return failVerification(name+" was not written", evidence...), nil
 		}
+		item.Observed = verificationObserved(string(data))
 		if !strings.Contains(string(data), marker) {
-			return Verification{Passed: false, Reason: name + " does not contain " + marker}, nil
+			item.Passed = false
+			item.Summary = name + " missing marker"
+			evidence = append(evidence, item)
+			return failVerification(name+" does not contain "+marker, evidence...), nil
 		}
+		item.Passed = true
+		item.Summary = name + " contains marker"
+		evidence = append(evidence, item)
 	}
-	return Verification{Passed: true, Reason: "observed agent-led workflow team markers"}, nil
+	return passVerification("observed agent-led workflow team markers", evidence...), nil
 }
 
 func writeFiles(root string, files map[string]string) error {
