@@ -54,17 +54,36 @@ type RepoMapOptions struct {
 	MaxListedFiles int
 }
 
+type RepoMapSummary struct {
+	FilesScanned        int                    `json:"files_scanned"`
+	Truncated           bool                   `json:"truncated,omitempty"`
+	Languages           []RepoMapLanguageCount `json:"languages,omitempty"`
+	TestFiles           []string               `json:"test_files,omitempty"`
+	TestMappings        []RepoMapTestMapping   `json:"test_mappings,omitempty"`
+	RepresentativeFiles []string               `json:"representative_files,omitempty"`
+	OmittedFiles        int                    `json:"omitted_files,omitempty"`
+}
+
+type RepoMapLanguageCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type RepoMapTestMapping struct {
+	Source string `json:"source"`
+	Test   string `json:"test"`
+}
+
 type repoMapFile struct {
 	Path     string
 	Ext      string
 	Priority int
 }
 
-// RepoMapBlock returns a compact repository map for per-turn typed context.
-func RepoMapBlock(root string, opts RepoMapOptions) (Block, bool) {
+func BuildRepoMap(root string, opts RepoMapOptions) (RepoMapSummary, bool, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
-		return Block{}, false
+		return RepoMapSummary{}, false, nil
 	}
 	if opts.MaxFiles <= 0 {
 		opts.MaxFiles = defaultRepoMapMaxFiles
@@ -75,47 +94,65 @@ func RepoMapBlock(root string, opts RepoMapOptions) (Block, bool) {
 
 	files, truncated, err := collectRepoMapFiles(root, opts.MaxFiles)
 	if err != nil || len(files) == 0 {
-		return Block{}, false
+		return RepoMapSummary{}, false, err
 	}
 	sortRepoMapFiles(files)
-	languageCounts := repoMapLanguageCounts(files)
-	testFiles := repoMapTestFiles(files, 20)
-	testMappings := repoMapTestMappings(files, 20)
-
 	listed := files
 	if len(listed) > opts.MaxListedFiles {
 		listed = listed[:opts.MaxListedFiles]
 	}
+	representativeFiles := make([]string, 0, len(listed))
+	for _, file := range listed {
+		representativeFiles = append(representativeFiles, file.Path)
+	}
+	summary := RepoMapSummary{
+		FilesScanned:        len(files),
+		Truncated:           truncated,
+		Languages:           repoMapLanguageCounts(files),
+		TestFiles:           repoMapTestFiles(files, 20),
+		TestMappings:        repoMapTestMappings(files, 20),
+		RepresentativeFiles: representativeFiles,
+		OmittedFiles:        len(files) - len(listed),
+	}
+	return summary, true, nil
+}
+
+// RepoMapBlock returns a compact repository map for per-turn typed context.
+func RepoMapBlock(root string, opts RepoMapOptions) (Block, bool) {
+	summary, ok, err := BuildRepoMap(root, opts)
+	if err != nil || !ok {
+		return Block{}, false
+	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "files_scanned: %d\n", len(files))
-	if truncated {
+	fmt.Fprintf(&b, "files_scanned: %d\n", summary.FilesScanned)
+	if summary.Truncated {
 		b.WriteString("truncated: true\n")
 	}
-	if len(languageCounts) > 0 {
+	if len(summary.Languages) > 0 {
 		b.WriteString("languages:\n")
-		for _, item := range languageCounts {
+		for _, item := range summary.Languages {
 			fmt.Fprintf(&b, "- %s: %d\n", item.Name, item.Count)
 		}
 	}
-	if len(testFiles) > 0 {
+	if len(summary.TestFiles) > 0 {
 		b.WriteString("test_files:\n")
-		for _, path := range testFiles {
+		for _, path := range summary.TestFiles {
 			fmt.Fprintf(&b, "- %s\n", path)
 		}
 	}
-	if len(testMappings) > 0 {
+	if len(summary.TestMappings) > 0 {
 		b.WriteString("test_mappings:\n")
-		for _, mapping := range testMappings {
+		for _, mapping := range summary.TestMappings {
 			fmt.Fprintf(&b, "- %s -> %s\n", mapping.Source, mapping.Test)
 		}
 	}
 	b.WriteString("representative_files:\n")
-	for _, file := range listed {
-		fmt.Fprintf(&b, "- %s\n", file.Path)
+	for _, path := range summary.RepresentativeFiles {
+		fmt.Fprintf(&b, "- %s\n", path)
 	}
-	if omitted := len(files) - len(listed); omitted > 0 {
-		fmt.Fprintf(&b, "omitted_files: %d\n", omitted)
+	if summary.OmittedFiles > 0 {
+		fmt.Fprintf(&b, "omitted_files: %d\n", summary.OmittedFiles)
 	}
 
 	return Block{
@@ -196,26 +233,16 @@ func repoMapPriority(path string) int {
 	return 3
 }
 
-type repoMapLanguageCount struct {
-	Name  string
-	Count int
-}
-
-type repoMapTestMapping struct {
-	Source string
-	Test   string
-}
-
-func repoMapLanguageCounts(files []repoMapFile) []repoMapLanguageCount {
+func repoMapLanguageCounts(files []repoMapFile) []RepoMapLanguageCount {
 	counts := map[string]int{}
 	for _, file := range files {
 		if name := repoMapLanguage(file.Ext, filepath.Base(file.Path)); name != "" {
 			counts[name]++
 		}
 	}
-	out := make([]repoMapLanguageCount, 0, len(counts))
+	out := make([]RepoMapLanguageCount, 0, len(counts))
 	for name, count := range counts {
-		out = append(out, repoMapLanguageCount{Name: name, Count: count})
+		out = append(out, RepoMapLanguageCount{Name: name, Count: count})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Count != out[j].Count {
@@ -273,7 +300,7 @@ func repoMapTestFiles(files []repoMapFile, limit int) []string {
 	return out
 }
 
-func repoMapTestMappings(files []repoMapFile, limit int) []repoMapTestMapping {
+func repoMapTestMappings(files []repoMapFile, limit int) []RepoMapTestMapping {
 	if limit <= 0 {
 		return nil
 	}
@@ -281,13 +308,13 @@ func repoMapTestMappings(files []repoMapFile, limit int) []repoMapTestMapping {
 	for _, file := range files {
 		fileSet[file.Path] = struct{}{}
 	}
-	var out []repoMapTestMapping
+	var out []RepoMapTestMapping
 	for _, file := range files {
 		if !isRepoMapTestPath(file.Path) {
 			continue
 		}
 		if source := repoMapSourceForTest(file.Path, fileSet); source != "" {
-			out = append(out, repoMapTestMapping{Source: source, Test: file.Path})
+			out = append(out, RepoMapTestMapping{Source: source, Test: file.Path})
 			if len(out) >= limit {
 				break
 			}

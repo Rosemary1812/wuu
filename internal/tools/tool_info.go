@@ -105,7 +105,7 @@ func classifyToolKind(name string) ToolKind {
 	switch name {
 	case "read_file", "write_file", "list_files", "edit_file", "apply_patch", "checkpoint":
 		return ToolKindFile
-	case "grep", "glob", "ast_search", "semantic_search":
+	case "repo_map", "grep", "glob", "ast_search", "semantic_search":
 		return ToolKindSearch
 	case "tool_search":
 		return ToolKindDiscovery

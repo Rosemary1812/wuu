@@ -96,6 +96,23 @@ func TestRepoMapBlockSummarizesWorkspace(t *testing.T) {
 	mustWriteContextTestFile(t, filepath.Join(root, "web/app.test.tsx"), "test('app', () => {})\n")
 	mustWriteContextTestFile(t, filepath.Join(root, "node_modules/pkg/index.js"), "ignored\n")
 
+	summary, ok, err := BuildRepoMap(root, RepoMapOptions{MaxListedFiles: 10})
+	if err != nil {
+		t.Fatalf("BuildRepoMap: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected repo map summary")
+	}
+	if summary.FilesScanned != 6 || summary.OmittedFiles != 0 {
+		t.Fatalf("unexpected repo map summary counts: %+v", summary)
+	}
+	if len(summary.TestMappings) != 2 || summary.TestMappings[0].Source != "cmd/app/main.go" || summary.TestMappings[0].Test != "cmd/app/main_test.go" {
+		t.Fatalf("unexpected repo map test mappings: %+v", summary.TestMappings)
+	}
+	if len(summary.RepresentativeFiles) == 0 || summary.RepresentativeFiles[0] != "AGENTS.md" {
+		t.Fatalf("unexpected representative files: %+v", summary.RepresentativeFiles)
+	}
+
 	block, ok := RepoMapBlock(root, RepoMapOptions{MaxListedFiles: 10})
 	if !ok {
 		t.Fatal("expected repo map block")

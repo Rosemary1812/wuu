@@ -143,6 +143,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewApplyPatchTool(e),
 		NewCheckpointTool(e),
 		// Search
+		NewRepoMapTool(e),
 		NewGrepTool(e),
 		NewGlobTool(e),
 		NewASTSearchTool(e),
