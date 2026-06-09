@@ -11,6 +11,7 @@ const (
 	openCodeNPMOpenAI           = "@ai-sdk/openai"
 	openCodeNPMOpenAICompatible = "@ai-sdk/openai-compatible"
 	openCodeNPMOpenRouter       = "@openrouter/ai-sdk-provider"
+	openCodeNPMLLMGateway       = "@llmgateway/ai-sdk-provider"
 	openCodeNPMAnthropic        = "@ai-sdk/anthropic"
 	openCodeNPMVertexAnthropic  = "@ai-sdk/google-vertex/anthropic"
 	openCodeNPMGithubCopilot    = "@ai-sdk/github-copilot"
@@ -20,6 +21,7 @@ const (
 	openCodeNPMGoogle           = "@ai-sdk/google"
 	openCodeNPMGoogleVertex     = "@ai-sdk/google-vertex"
 	openCodeNPMAmazonBedrock    = "@ai-sdk/amazon-bedrock"
+	openCodeNPMBedrockMantle    = "@ai-sdk/amazon-bedrock/mantle"
 	openCodeNPMCerebras         = "@ai-sdk/cerebras"
 	openCodeNPMTogetherAI       = "@ai-sdk/togetherai"
 	openCodeNPMXAI              = "@ai-sdk/xai"
@@ -39,6 +41,8 @@ var (
 	openCodeGPT5VersionRE      = regexp.MustCompile(`(?:^|/)gpt-5[.-](\d+)(?:[.-]|$)`)
 	openCodeGPT5ProRE          = regexp.MustCompile(`(?:^|/)gpt-5[.-]?pro(?:[.-]|$)`)
 	openCodeGPT5VersionedProRE = regexp.MustCompile(`(?:^|/)gpt-5[.-]\d+[.-]pro(?:[.-]|$)`)
+	openCodeAnthropicOpusRE    = regexp.MustCompile(`(?i)opus-(\d+)[.-](\d+)(?:[.@-]|$)|claude-(\d+)[.-](\d+)-opus(?:[.@-]|$)`)
+	openCodeSAPReasoningRE     = regexp.MustCompile(`\bo[1-9]`)
 )
 
 type openCodeModelDescriptor struct {
@@ -63,13 +67,13 @@ func BaseOptionsForProvider(providerName string, provider config.ProviderConfig,
 	if desc.APINPM == openCodeNPMVertexAnthropic || (desc.APINPM == openCodeNPMAnthropic && !strings.Contains(desc.APIID, "claude")) {
 		result["toolStreaming"] = false
 	}
-	if desc.ProviderID == "openai" || desc.APINPM == openCodeNPMOpenAI || desc.APINPM == openCodeNPMGithubCopilot {
+	if desc.ProviderID == "openai" || desc.APINPM == openCodeNPMOpenAI || desc.APINPM == openCodeNPMGithubCopilot || desc.APINPM == openCodeNPMBedrockMantle {
 		result["store"] = false
 	}
 	if desc.APINPM == openCodeNPMAzure {
 		result["store"] = false
 	}
-	if desc.APINPM == openCodeNPMOpenRouter {
+	if desc.APINPM == openCodeNPMOpenRouter || desc.APINPM == openCodeNPMLLMGateway {
 		result["usage"] = map[string]any{"include": true}
 		if strings.Contains(desc.APIID, "gemini-3") {
 			result["reasoning"] = map[string]any{"effort": "high"}
@@ -93,6 +97,9 @@ func BaseOptionsForProvider(providerName string, provider config.ProviderConfig,
 			result["thinkingConfig"] = thinking
 		}
 	}
+	if strings.Contains(desc.APIID, "minimax-m3") && desc.APINPM == openCodeNPMAnthropic {
+		result["thinking"] = map[string]any{"type": "adaptive"}
+	}
 	if (desc.APINPM == openCodeNPMAnthropic || desc.APINPM == openCodeNPMVertexAnthropic) &&
 		(strings.Contains(desc.APIID, "k2p") || strings.Contains(desc.APIID, "kimi-k2.") || strings.Contains(desc.APIID, "kimi-k2p")) {
 		result["thinking"] = map[string]any{
@@ -110,8 +117,10 @@ func BaseOptionsForProvider(providerName string, provider config.ProviderConfig,
 	if strings.Contains(desc.APIID, "gpt-5") && !strings.Contains(desc.APIID, "gpt-5-chat") {
 		if !strings.Contains(desc.APIID, "gpt-5-pro") {
 			result["reasoningEffort"] = "medium"
-			result["reasoningSummary"] = "auto"
-			if desc.APINPM == openCodeNPMOpenAI {
+			if desc.APINPM == openCodeNPMOpenAI || desc.APINPM == openCodeNPMAzure || desc.APINPM == openCodeNPMGithubCopilot || desc.APINPM == openCodeNPMBedrockMantle {
+				result["reasoningSummary"] = "auto"
+			}
+			if desc.APINPM == openCodeNPMOpenAI || desc.APINPM == openCodeNPMBedrockMantle {
 				result["include"] = []any{"reasoning.encrypted_content"}
 			}
 		}
@@ -140,6 +149,13 @@ func inferredOptionsForProvider(providerName string, provider config.ProviderCon
 	id := desc.ModelID
 	apiID := desc.APIID
 	adaptiveEfforts := openCodeAnthropicAdaptiveEfforts(apiID)
+	if strings.Contains(desc.APIID, "minimax-m3") &&
+		(desc.APINPM == openCodeNPMAnthropic || desc.APINPM == openCodeNPMOpenAICompatible) {
+		return map[string]map[string]any{
+			"none":     {"thinking": map[string]any{"type": "disabled"}},
+			"thinking": {"thinking": map[string]any{"type": "adaptive"}},
+		}
+	}
 	if openCodeExcludedReasoningModel(id) {
 		return nil
 	}
@@ -157,11 +173,8 @@ func inferredOptionsForProvider(providerName string, provider config.ProviderCon
 
 	switch desc.APINPM {
 	case openCodeNPMOpenRouter:
-		if !strings.Contains(id, "gpt") && !strings.Contains(id, "gemini-3") && !strings.Contains(id, "claude") {
-			return nil
-		}
-		efforts := openCodeEfforts()
-		if strings.Contains(id, "gpt") {
+		efforts := openCodeWidelySupportedEfforts()
+		if strings.HasPrefix(apiID, "openai/") || strings.Contains(id, "gpt") {
 			efforts = openCodeCompatibleReasoningEfforts(id)
 		}
 		return openCodeVariantsFromEfforts(efforts, func(effort string) map[string]any {
@@ -209,7 +222,7 @@ func inferredOptionsForProvider(providerName string, provider config.ProviderCon
 			efforts = append([]string{"minimal"}, efforts...)
 		}
 		return openCodeVariantsFromEfforts(efforts, openCodeOpenAIProviderVariantOptions)
-	case openCodeNPMOpenAI:
+	case openCodeNPMOpenAI, openCodeNPMBedrockMantle:
 		return openCodeVariantsFromEfforts(openCodeReasoningEfforts(apiID, desc.ReleaseDate), openCodeOpenAIProviderVariantOptions)
 	case openCodeNPMAnthropic, openCodeNPMVertexAnthropic:
 		return openCodeAnthropicVariants(desc, adaptiveEfforts, true)
@@ -485,14 +498,59 @@ func openCodeGPT5ChatReasoningEfforts(apiID string) ([]string, bool) {
 }
 
 func openCodeAnthropicAdaptiveEfforts(apiID string) []string {
-	if strings.Contains(apiID, "opus-4-7") || strings.Contains(apiID, "opus-4.7") {
+	if openCodeAnthropicOpus47OrLater(apiID) {
 		return []string{"low", "medium", "high", "xhigh", "max"}
 	}
 	if strings.Contains(apiID, "opus-4-6") || strings.Contains(apiID, "opus-4.6") ||
-		strings.Contains(apiID, "sonnet-4-6") || strings.Contains(apiID, "sonnet-4.6") {
+		strings.Contains(apiID, "4-6-opus") || strings.Contains(apiID, "4.6-opus") ||
+		strings.Contains(apiID, "sonnet-4-6") || strings.Contains(apiID, "sonnet-4.6") ||
+		strings.Contains(apiID, "4-6-sonnet") || strings.Contains(apiID, "4.6-sonnet") {
 		return []string{"low", "medium", "high", "max"}
 	}
 	return nil
+}
+
+func openCodeAnthropicOpus47OrLater(apiID string) bool {
+	match := openCodeAnthropicOpusRE.FindStringSubmatch(apiID)
+	if len(match) == 0 {
+		return false
+	}
+	major, minor := 0, 0
+	if match[1] != "" {
+		major = parseSmallVersion(match[1])
+		minor = parseSmallVersion(match[2])
+	} else {
+		major = parseSmallVersion(match[3])
+		minor = parseSmallVersion(match[4])
+	}
+	return major > 4 || (major == 4 && minor >= 7)
+}
+
+func parseSmallVersion(value string) int {
+	switch value {
+	case "0":
+		return 0
+	case "1":
+		return 1
+	case "2":
+		return 2
+	case "3":
+		return 3
+	case "4":
+		return 4
+	case "5":
+		return 5
+	case "6":
+		return 6
+	case "7":
+		return 7
+	case "8":
+		return 8
+	case "9":
+		return 9
+	default:
+		return 10
+	}
 }
 
 func nilIfEmpty(options map[string]any) map[string]any {
@@ -576,7 +634,7 @@ func openCodeAnthropicVariants(desc openCodeModelDescriptor, adaptiveEfforts []s
 		}
 		return openCodeVariantsFromEfforts(efforts, func(effort string) map[string]any {
 			thinking := map[string]any{"type": "adaptive"}
-			if strings.Contains(desc.APIID, "opus-4-7") || strings.Contains(desc.APIID, "opus-4.7") {
+			if openCodeAnthropicOpus47OrLater(desc.APIID) {
 				thinking["display"] = "summarized"
 			}
 			return map[string]any{
@@ -617,7 +675,7 @@ func openCodeBedrockVariants(apiID string, adaptiveEfforts []string) map[string]
 				"type":               "adaptive",
 				"maxReasoningEffort": effort,
 			}
-			if strings.Contains(apiID, "opus-4-7") || strings.Contains(apiID, "opus-4.7") {
+			if openCodeAnthropicOpus47OrLater(apiID) {
 				reasoning["display"] = "summarized"
 			}
 			return map[string]any{"reasoningConfig": reasoning}
@@ -638,7 +696,7 @@ func openCodeGatewayGoogleVariants(id string) map[string]map[string]any {
 	if strings.Contains(id, "2.5") {
 		return map[string]map[string]any{
 			"high": {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 16000}},
-			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 24576}},
+			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": openCodeGoogleThinkingBudgetMax(id)}},
 		}
 	}
 	return openCodeVariantsFromEfforts([]string{"low", "high"}, func(effort string) map[string]any {
@@ -661,28 +719,50 @@ func openCodeGoogleVariants(id string) map[string]map[string]any {
 func openCodeSAPVariants(desc openCodeModelDescriptor, adaptiveEfforts []string) map[string]map[string]any {
 	if strings.Contains(desc.APIID, "anthropic") {
 		if len(adaptiveEfforts) > 0 {
-			return openCodeVariantsFromEfforts(adaptiveEfforts, func(effort string) map[string]any {
-				return map[string]any{
-					"thinking": map[string]any{"type": "adaptive"},
-					"effort":   effort,
+			return openCodeWrapInSAPModelParams(openCodeVariantsFromEfforts(adaptiveEfforts, func(effort string) map[string]any {
+				thinking := map[string]any{"type": "adaptive"}
+				if openCodeAnthropicOpus47OrLater(desc.APIID) {
+					thinking["display"] = "summarized"
 				}
-			})
+				return map[string]any{
+					"thinking":      thinking,
+					"output_config": map[string]any{"effort": effort},
+				}
+			}))
 		}
-		return map[string]map[string]any{
-			"high": {"thinking": map[string]any{"type": "enabled", "budgetTokens": 16000}},
-			"max":  {"thinking": map[string]any{"type": "enabled", "budgetTokens": 31999}},
-		}
+		return openCodeWrapInSAPModelParams(map[string]map[string]any{
+			"high": {"thinking": map[string]any{"type": "enabled", "budget_tokens": 16000}},
+			"max":  {"thinking": map[string]any{"type": "enabled", "budget_tokens": 31999}},
+		})
 	}
-	if strings.Contains(desc.APIID, "gemini") && strings.Contains(desc.ModelID, "2.5") {
-		return map[string]map[string]any{
+	if strings.Contains(desc.APIID, "gemini") && strings.Contains(desc.APIID, "2.5") {
+		return openCodeWrapInSAPModelParams(map[string]map[string]any{
 			"high": {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 16000}},
-			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 24576}},
-		}
+			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": openCodeGoogleThinkingBudgetMax(desc.APIID)}},
+		})
 	}
-	if strings.Contains(desc.APIID, "gpt") || regexp.MustCompile(`\bo[1-9]`).MatchString(desc.APIID) {
-		return openCodeReasoningEffortVariants(openCodeWidelySupportedEfforts())
+	if strings.Contains(desc.APIID, "gpt") || openCodeSAPReasoningRE.MatchString(desc.APIID) {
+		return openCodeWrapInSAPModelParams(openCodeVariantsFromEfforts(
+			openCodeReasoningEfforts(desc.APIID, desc.ReleaseDate),
+			func(effort string) map[string]any {
+				return map[string]any{"reasoning_effort": effort}
+			},
+		))
 	}
-	return nil
+	return openCodeWrapInSAPModelParams(openCodeVariantsFromEfforts(openCodeWidelySupportedEfforts(), func(effort string) map[string]any {
+		return map[string]any{"reasoning_effort": effort}
+	}))
+}
+
+func openCodeWrapInSAPModelParams(variants map[string]map[string]any) map[string]map[string]any {
+	if len(variants) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(variants))
+	for key, value := range variants {
+		out[key] = map[string]any{"modelParams": value}
+	}
+	return out
 }
 
 func minInt(left, right int) int {
