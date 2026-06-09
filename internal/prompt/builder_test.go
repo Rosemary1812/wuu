@@ -142,6 +142,8 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"durable run state",
 		"`run_workflow`",
 		"script driver",
+		"`driver`",
+		"`agent_managed`",
 		"`spawn(...)`",
 		"`spawnBatch([...])`",
 		"`create_workflow`",
