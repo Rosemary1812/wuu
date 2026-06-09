@@ -93,6 +93,7 @@ func TestRepoMapBlockSummarizesWorkspace(t *testing.T) {
 	mustWriteContextTestFile(t, filepath.Join(root, "cmd/app/main.go"), "package main\n")
 	mustWriteContextTestFile(t, filepath.Join(root, "cmd/app/main_test.go"), "package main\n")
 	mustWriteContextTestFile(t, filepath.Join(root, "web/app.tsx"), "export const App = () => null\n")
+	mustWriteContextTestFile(t, filepath.Join(root, "web/app.test.tsx"), "test('app', () => {})\n")
 	mustWriteContextTestFile(t, filepath.Join(root, "node_modules/pkg/index.js"), "ignored\n")
 
 	block, ok := RepoMapBlock(root, RepoMapOptions{MaxListedFiles: 10})
@@ -103,12 +104,16 @@ func TestRepoMapBlockSummarizesWorkspace(t *testing.T) {
 		t.Fatalf("unexpected repo map block metadata: %+v", block)
 	}
 	for _, want := range []string{
-		"files_scanned: 5",
+		"files_scanned: 6",
 		"languages:",
 		"- go: 2",
-		"- typescript: 1",
+		"- typescript: 2",
 		"test_files:",
 		"- cmd/app/main_test.go",
+		"- web/app.test.tsx",
+		"test_mappings:",
+		"- cmd/app/main.go -> cmd/app/main_test.go",
+		"- web/app.tsx -> web/app.test.tsx",
 		"representative_files:",
 		"- AGENTS.md",
 		"- go.mod",

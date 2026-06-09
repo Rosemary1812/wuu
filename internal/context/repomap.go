@@ -80,6 +80,7 @@ func RepoMapBlock(root string, opts RepoMapOptions) (Block, bool) {
 	sortRepoMapFiles(files)
 	languageCounts := repoMapLanguageCounts(files)
 	testFiles := repoMapTestFiles(files, 20)
+	testMappings := repoMapTestMappings(files, 20)
 
 	listed := files
 	if len(listed) > opts.MaxListedFiles {
@@ -101,6 +102,12 @@ func RepoMapBlock(root string, opts RepoMapOptions) (Block, bool) {
 		b.WriteString("test_files:\n")
 		for _, path := range testFiles {
 			fmt.Fprintf(&b, "- %s\n", path)
+		}
+	}
+	if len(testMappings) > 0 {
+		b.WriteString("test_mappings:\n")
+		for _, mapping := range testMappings {
+			fmt.Fprintf(&b, "- %s -> %s\n", mapping.Source, mapping.Test)
 		}
 	}
 	b.WriteString("representative_files:\n")
@@ -194,6 +201,11 @@ type repoMapLanguageCount struct {
 	Count int
 }
 
+type repoMapTestMapping struct {
+	Source string
+	Test   string
+}
+
 func repoMapLanguageCounts(files []repoMapFile) []repoMapLanguageCount {
 	counts := map[string]int{}
 	for _, file := range files {
@@ -259,6 +271,74 @@ func repoMapTestFiles(files []repoMapFile, limit int) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func repoMapTestMappings(files []repoMapFile, limit int) []repoMapTestMapping {
+	if limit <= 0 {
+		return nil
+	}
+	fileSet := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		fileSet[file.Path] = struct{}{}
+	}
+	var out []repoMapTestMapping
+	for _, file := range files {
+		if !isRepoMapTestPath(file.Path) {
+			continue
+		}
+		if source := repoMapSourceForTest(file.Path, fileSet); source != "" {
+			out = append(out, repoMapTestMapping{Source: source, Test: file.Path})
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Source != out[j].Source {
+			return out[i].Source < out[j].Source
+		}
+		return out[i].Test < out[j].Test
+	})
+	return out
+}
+
+func repoMapSourceForTest(testPath string, fileSet map[string]struct{}) string {
+	dir := filepath.Dir(testPath)
+	if dir == "." {
+		dir = ""
+	}
+	base := filepath.Base(testPath)
+	lowerBase := strings.ToLower(base)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+
+	candidates := []string(nil)
+	switch {
+	case strings.HasSuffix(lowerBase, "_test.go"):
+		candidates = append(candidates, strings.TrimSuffix(base, "_test.go")+".go")
+	case strings.HasSuffix(lowerBase, ".test.tsx"):
+		candidates = append(candidates, strings.TrimSuffix(base, ".test.tsx")+".tsx")
+	case strings.HasSuffix(lowerBase, ".test.ts"):
+		candidates = append(candidates, strings.TrimSuffix(base, ".test.ts")+".ts")
+	case strings.HasSuffix(lowerBase, ".spec.tsx"):
+		candidates = append(candidates, strings.TrimSuffix(base, ".spec.tsx")+".tsx")
+	case strings.HasSuffix(lowerBase, ".spec.ts"):
+		candidates = append(candidates, strings.TrimSuffix(base, ".spec.ts")+".ts")
+	case strings.HasPrefix(lowerBase, "test_") && ext == ".py":
+		candidates = append(candidates, strings.TrimPrefix(base, "test_"))
+	case strings.HasSuffix(lowerBase, "_test.py"):
+		candidates = append(candidates, strings.TrimSuffix(stem, "_test")+".py")
+	}
+	for _, candidate := range candidates {
+		source := candidate
+		if dir != "" {
+			source = filepath.ToSlash(filepath.Join(dir, candidate))
+		}
+		if _, ok := fileSet[source]; ok {
+			return source
+		}
+	}
+	return ""
 }
 
 func isRepoMapTestPath(path string) bool {
