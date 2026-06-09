@@ -6,7 +6,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 )
 
-type openCodeModelDescriptor struct {
+type compatModelDescriptor struct {
 	ProviderID  string
 	ModelID     string
 	APIID       string
@@ -17,7 +17,7 @@ type openCodeModelDescriptor struct {
 	BaseURL     string
 }
 
-func openCodeDescriptor(providerName string, provider config.ProviderConfig, model string) openCodeModelDescriptor {
+func compatDescriptor(providerName string, provider config.ProviderConfig, model string) compatModelDescriptor {
 	modelID := strings.TrimSpace(model)
 	modelCfg := provider.Models[modelID]
 	apiID := strings.TrimSpace(modelCfg.ID)
@@ -32,14 +32,14 @@ func openCodeDescriptor(providerName string, provider config.ProviderConfig, mod
 		apiNPM = strings.TrimSpace(provider.NPM)
 	}
 	if apiNPM == "" {
-		apiNPM = openCodeInferNPM(providerName, provider)
+		apiNPM = compatInferNPM(providerName, provider)
 	}
 	outputLimit := 0
 	if modelCfg.Limit != nil {
 		outputLimit = modelCfg.Limit.Output
 	}
-	desc := openCodeModelDescriptor{
-		ProviderID:  openCodeProviderID(providerName, provider),
+	desc := compatModelDescriptor{
+		ProviderID:  compatProviderID(providerName, provider),
 		ModelID:     strings.ToLower(modelID),
 		APIID:       strings.ToLower(apiID),
 		APINPM:      apiNPM,
@@ -47,11 +47,11 @@ func openCodeDescriptor(providerName string, provider config.ProviderConfig, mod
 		OutputLimit: outputLimit,
 		BaseURL:     strings.ToLower(strings.TrimSpace(provider.BaseURL)),
 	}
-	desc.Reasoning = openCodeReasoningEnabled(desc, modelCfg.Reasoning)
+	desc.Reasoning = compatReasoningEnabled(desc, modelCfg.Reasoning)
 	return desc
 }
 
-func openCodeProviderID(providerName string, provider config.ProviderConfig) string {
+func compatProviderID(providerName string, provider config.ProviderConfig) string {
 	if value := strings.ToLower(strings.TrimSpace(providerName)); value != "" {
 		return value
 	}
@@ -71,19 +71,19 @@ func openCodeProviderID(providerName string, provider config.ProviderConfig) str
 	}
 }
 
-func openCodeInferNPM(providerName string, provider config.ProviderConfig) string {
+func compatInferNPM(providerName string, provider config.ProviderConfig) string {
 	providerType := normalizedProviderType(provider.Type)
 	baseURL := strings.ToLower(strings.TrimSpace(provider.BaseURL))
 	if strings.Contains(baseURL, "openrouter.ai") || strings.ToLower(strings.TrimSpace(providerName)) == "openrouter" {
-		return openCodeNPMOpenRouter
+		return compatNPMOpenRouter
 	}
 	if isCodexProviderType(provider.Type) || providerType == "openai" {
-		return openCodeNPMOpenAI
+		return compatNPMOpenAI
 	}
 	if providerType == "anthropic" || providerType == "claude" || providerType == "anthropic-official" {
-		return openCodeNPMAnthropic
+		return compatNPMAnthropic
 	}
-	return openCodeNPMOpenAICompatible
+	return compatNPMOpenAICompatible
 }
 
 func normalizedProviderType(value string) string {
@@ -91,11 +91,11 @@ func normalizedProviderType(value string) string {
 	return strings.ReplaceAll(value, "_", "-")
 }
 
-func openCodeReasoningEnabled(desc openCodeModelDescriptor, configured *bool) bool {
+func compatReasoningEnabled(desc compatModelDescriptor, configured *bool) bool {
 	if configured != nil {
 		return *configured
 	}
-	if openCodeExcludedReasoningModel(desc.ModelID) {
+	if compatExcludedReasoningModel(desc.ModelID) {
 		return false
 	}
 	if strings.Contains(desc.BaseURL, "xiaomimimo.com") {
@@ -115,15 +115,15 @@ func openCodeReasoningEnabled(desc openCodeModelDescriptor, configured *bool) bo
 	if strings.Contains(apiID, "deepseek-v4") || strings.Contains(id, "deepseek-v4") {
 		return true
 	}
-	if openCodeGPT5FamilyRE.MatchString(apiID) || openCodeGPT5FamilyRE.MatchString(id) ||
+	if compatGPT5FamilyRE.MatchString(apiID) || compatGPT5FamilyRE.MatchString(id) ||
 		strings.Contains(apiID, "o1") || strings.Contains(apiID, "o3") || strings.Contains(apiID, "o4") ||
 		strings.Contains(id, "o1") || strings.Contains(id, "o3") || strings.Contains(id, "o4") {
 		return true
 	}
-	if desc.APINPM == openCodeNPMAmazonBedrock && (strings.Contains(apiID, "nova") || strings.Contains(id, "nova")) {
+	if desc.APINPM == compatNPMAmazonBedrock && (strings.Contains(apiID, "nova") || strings.Contains(id, "nova")) {
 		return true
 	}
-	if desc.APINPM == openCodeNPMMistral && strings.Contains(apiID, "mistral") {
+	if desc.APINPM == compatNPMMistral && strings.Contains(apiID, "mistral") {
 		return true
 	}
 	return false

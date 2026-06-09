@@ -61,7 +61,7 @@ func TestSummariesInferOpenRouterNonOpenAIReasoningEfforts(t *testing.T) {
 	}
 }
 
-func TestSummariesMatchOpenCodeForGenericOpenAICompatible(t *testing.T) {
+func TestSummariesMatchProviderCompatForGenericOpenAICompatible(t *testing.T) {
 	provider := config.ProviderConfig{
 		Type:  "openai-compatible",
 		Model: "gpt-5.5",
@@ -73,7 +73,7 @@ func TestSummariesMatchOpenCodeForGenericOpenAICompatible(t *testing.T) {
 	}
 }
 
-func TestSummariesMatchOpenCodeForOpenAIProvider(t *testing.T) {
+func TestSummariesMatchProviderCompatForOpenAIProvider(t *testing.T) {
 	provider := config.ProviderConfig{
 		Type:  "openai",
 		Model: "gpt-5.5",
@@ -95,7 +95,7 @@ func TestSummariesMatchOpenCodeForOpenAIProvider(t *testing.T) {
 	}
 }
 
-func TestSummariesMatchOpenCodeForBedrockMantle(t *testing.T) {
+func TestSummariesMatchProviderCompatForBedrockMantle(t *testing.T) {
 	reasoning := true
 	provider := config.ProviderConfig{
 		Type:  "openai-compatible",
@@ -121,7 +121,7 @@ func TestSummariesMatchOpenCodeForBedrockMantle(t *testing.T) {
 	}
 }
 
-func TestSummariesMatchOpenCodeForExcludedReasoningModels(t *testing.T) {
+func TestSummariesMatchProviderCompatForExcludedReasoningModels(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		provider config.ProviderConfig
@@ -150,7 +150,7 @@ func TestSummariesMatchOpenCodeForExcludedReasoningModels(t *testing.T) {
 	}
 }
 
-func TestSummariesMatchOpenCodeForMiniMaxM3(t *testing.T) {
+func TestSummariesMatchProviderCompatForMiniMaxM3(t *testing.T) {
 	reasoning := true
 	provider := config.ProviderConfig{
 		Type:  "anthropic",
@@ -183,7 +183,7 @@ func TestSummariesMatchOpenCodeForMiniMaxM3(t *testing.T) {
 	}
 }
 
-func TestSummariesMatchOpenCodeForAnthropicOpus47Aliases(t *testing.T) {
+func TestSummariesMatchProviderCompatForAnthropicOpus47Aliases(t *testing.T) {
 	provider := config.ProviderConfig{
 		Type:  "anthropic",
 		Model: "claude-4.7-opus",
@@ -203,7 +203,7 @@ func TestSummariesMatchOpenCodeForAnthropicOpus47Aliases(t *testing.T) {
 	}
 }
 
-func TestSummariesUseOpenCodeModelMetadata(t *testing.T) {
+func TestSummariesUseProviderCompatModelMetadata(t *testing.T) {
 	reasoning := true
 	provider := config.ProviderConfig{
 		Type:  "openai-compatible",
@@ -271,7 +271,7 @@ func TestResolveUsesVariantOptionsInsteadOfLegacyEffort(t *testing.T) {
 	}
 }
 
-func TestResolveMergesOpenCodeBaseOptions(t *testing.T) {
+func TestResolveMergesProviderCompatBaseOptions(t *testing.T) {
 	provider := config.ProviderConfig{
 		Type:  "openai",
 		Model: "gpt-5.5",
@@ -295,7 +295,7 @@ func TestResolveMergesOpenCodeBaseOptions(t *testing.T) {
 	}
 }
 
-func TestResolveKeepsOpenCodeDefaultOptionsWithoutVariant(t *testing.T) {
+func TestResolveKeepsProviderCompatDefaultOptionsWithoutVariant(t *testing.T) {
 	provider := config.ProviderConfig{
 		Type:  "openai-compatible",
 		Model: "gpt-5.5",

@@ -9,7 +9,7 @@ func nilIfEmpty(options map[string]any) map[string]any {
 	return options
 }
 
-func openCodeGoogleThinkingLevelEfforts(apiID string) []string {
+func compatGoogleThinkingLevelEfforts(apiID string) []string {
 	id := strings.ToLower(apiID)
 	if !strings.Contains(id, "gemini-3") {
 		return []string{"low", "high"}
@@ -26,7 +26,7 @@ func openCodeGoogleThinkingLevelEfforts(apiID string) []string {
 	return []string{"low", "medium", "high"}
 }
 
-func openCodeGoogleThinkingBudgetMax(apiID string) int {
+func compatGoogleThinkingBudgetMax(apiID string) int {
 	id := strings.ToLower(apiID)
 	if strings.Contains(id, "2.5") && strings.Contains(id, "pro") && !strings.Contains(id, "flash") {
 		return 32768
@@ -34,7 +34,7 @@ func openCodeGoogleThinkingBudgetMax(apiID string) int {
 	return 24576
 }
 
-func openCodeVariantsFromEfforts(efforts []string, build func(string) map[string]any) map[string]map[string]any {
+func compatVariantsFromEfforts(efforts []string, build func(string) map[string]any) map[string]map[string]any {
 	if len(efforts) == 0 {
 		return nil
 	}
@@ -52,13 +52,13 @@ func openCodeVariantsFromEfforts(efforts []string, build func(string) map[string
 	return out
 }
 
-func openCodeReasoningEffortVariants(efforts []string) map[string]map[string]any {
-	return openCodeVariantsFromEfforts(efforts, func(effort string) map[string]any {
+func compatReasoningEffortVariants(efforts []string) map[string]map[string]any {
+	return compatVariantsFromEfforts(efforts, func(effort string) map[string]any {
 		return map[string]any{"reasoningEffort": effort}
 	})
 }
 
-func openCodeOpenAIProviderVariantOptions(effort string) map[string]any {
+func compatOpenAIProviderVariantOptions(effort string) map[string]any {
 	return map[string]any{
 		"reasoningEffort":  effort,
 		"reasoningSummary": "auto",
@@ -66,7 +66,7 @@ func openCodeOpenAIProviderVariantOptions(effort string) map[string]any {
 	}
 }
 
-func openCodeAnthropicVariants(desc openCodeModelDescriptor, adaptiveEfforts []string, githubCopilotFilter bool) map[string]map[string]any {
+func compatAnthropicVariants(desc compatModelDescriptor, adaptiveEfforts []string, githubCopilotFilter bool) map[string]map[string]any {
 	if len(adaptiveEfforts) > 0 {
 		efforts := append([]string{}, adaptiveEfforts...)
 		if githubCopilotFilter && desc.ProviderID == "github-copilot" {
@@ -81,9 +81,9 @@ func openCodeAnthropicVariants(desc openCodeModelDescriptor, adaptiveEfforts []s
 			}
 			efforts = filtered
 		}
-		return openCodeVariantsFromEfforts(efforts, func(effort string) map[string]any {
+		return compatVariantsFromEfforts(efforts, func(effort string) map[string]any {
 			thinking := map[string]any{"type": "adaptive"}
-			if openCodeAnthropicOpus47OrLater(desc.APIID) {
+			if compatAnthropicOpus47OrLater(desc.APIID) {
 				thinking["display"] = "summarized"
 			}
 			return map[string]any{
@@ -93,38 +93,38 @@ func openCodeAnthropicVariants(desc openCodeModelDescriptor, adaptiveEfforts []s
 		})
 	}
 	if strings.Contains(desc.APIID, "opus-4-5") || strings.Contains(desc.APIID, "opus-4.5") {
-		return openCodeVariantsFromEfforts(openCodeWidelySupportedEfforts(), func(effort string) map[string]any {
+		return compatVariantsFromEfforts(compatWidelySupportedEfforts(), func(effort string) map[string]any {
 			return map[string]any{"effort": effort}
 		})
 	}
 	return map[string]map[string]any{
-		"high": {"thinking": map[string]any{"type": "enabled", "budgetTokens": openCodeAnthropicHighBudget(desc.OutputLimit)}},
-		"max":  {"thinking": map[string]any{"type": "enabled", "budgetTokens": openCodeAnthropicMaxBudget(desc.OutputLimit)}},
+		"high": {"thinking": map[string]any{"type": "enabled", "budgetTokens": compatAnthropicHighBudget(desc.OutputLimit)}},
+		"max":  {"thinking": map[string]any{"type": "enabled", "budgetTokens": compatAnthropicMaxBudget(desc.OutputLimit)}},
 	}
 }
 
-func openCodeAnthropicHighBudget(outputLimit int) int {
+func compatAnthropicHighBudget(outputLimit int) int {
 	if outputLimit <= 0 {
 		return 16000
 	}
 	return minInt(16000, outputLimit/2-1)
 }
 
-func openCodeAnthropicMaxBudget(outputLimit int) int {
+func compatAnthropicMaxBudget(outputLimit int) int {
 	if outputLimit <= 0 {
 		return 31999
 	}
 	return minInt(31999, outputLimit-1)
 }
 
-func openCodeBedrockVariants(apiID string, adaptiveEfforts []string) map[string]map[string]any {
+func compatBedrockVariants(apiID string, adaptiveEfforts []string) map[string]map[string]any {
 	if len(adaptiveEfforts) > 0 {
-		return openCodeVariantsFromEfforts(adaptiveEfforts, func(effort string) map[string]any {
+		return compatVariantsFromEfforts(adaptiveEfforts, func(effort string) map[string]any {
 			reasoning := map[string]any{
 				"type":               "adaptive",
 				"maxReasoningEffort": effort,
 			}
-			if openCodeAnthropicOpus47OrLater(apiID) {
+			if compatAnthropicOpus47OrLater(apiID) {
 				reasoning["display"] = "summarized"
 			}
 			return map[string]any{"reasoningConfig": reasoning}
@@ -136,41 +136,41 @@ func openCodeBedrockVariants(apiID string, adaptiveEfforts []string) map[string]
 			"max":  {"reasoningConfig": map[string]any{"type": "enabled", "budgetTokens": 31999}},
 		}
 	}
-	return openCodeVariantsFromEfforts(openCodeWidelySupportedEfforts(), func(effort string) map[string]any {
+	return compatVariantsFromEfforts(compatWidelySupportedEfforts(), func(effort string) map[string]any {
 		return map[string]any{"reasoningConfig": map[string]any{"type": "enabled", "maxReasoningEffort": effort}}
 	})
 }
 
-func openCodeGatewayGoogleVariants(id string) map[string]map[string]any {
+func compatGatewayGoogleVariants(id string) map[string]map[string]any {
 	if strings.Contains(id, "2.5") {
 		return map[string]map[string]any{
 			"high": {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 16000}},
-			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": openCodeGoogleThinkingBudgetMax(id)}},
+			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": compatGoogleThinkingBudgetMax(id)}},
 		}
 	}
-	return openCodeVariantsFromEfforts([]string{"low", "high"}, func(effort string) map[string]any {
+	return compatVariantsFromEfforts([]string{"low", "high"}, func(effort string) map[string]any {
 		return map[string]any{"includeThoughts": true, "thinkingLevel": effort}
 	})
 }
 
-func openCodeGoogleVariants(id string) map[string]map[string]any {
+func compatGoogleVariants(id string) map[string]map[string]any {
 	if strings.Contains(id, "2.5") {
 		return map[string]map[string]any{
 			"high": {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 16000}},
-			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": openCodeGoogleThinkingBudgetMax(id)}},
+			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": compatGoogleThinkingBudgetMax(id)}},
 		}
 	}
-	return openCodeVariantsFromEfforts(openCodeGoogleThinkingLevelEfforts(id), func(effort string) map[string]any {
+	return compatVariantsFromEfforts(compatGoogleThinkingLevelEfforts(id), func(effort string) map[string]any {
 		return map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingLevel": effort}}
 	})
 }
 
-func openCodeSAPVariants(desc openCodeModelDescriptor, adaptiveEfforts []string) map[string]map[string]any {
+func compatSAPVariants(desc compatModelDescriptor, adaptiveEfforts []string) map[string]map[string]any {
 	if strings.Contains(desc.APIID, "anthropic") {
 		if len(adaptiveEfforts) > 0 {
-			return openCodeWrapInSAPModelParams(openCodeVariantsFromEfforts(adaptiveEfforts, func(effort string) map[string]any {
+			return compatWrapInSAPModelParams(compatVariantsFromEfforts(adaptiveEfforts, func(effort string) map[string]any {
 				thinking := map[string]any{"type": "adaptive"}
-				if openCodeAnthropicOpus47OrLater(desc.APIID) {
+				if compatAnthropicOpus47OrLater(desc.APIID) {
 					thinking["display"] = "summarized"
 				}
 				return map[string]any{
@@ -179,31 +179,31 @@ func openCodeSAPVariants(desc openCodeModelDescriptor, adaptiveEfforts []string)
 				}
 			}))
 		}
-		return openCodeWrapInSAPModelParams(map[string]map[string]any{
+		return compatWrapInSAPModelParams(map[string]map[string]any{
 			"high": {"thinking": map[string]any{"type": "enabled", "budget_tokens": 16000}},
 			"max":  {"thinking": map[string]any{"type": "enabled", "budget_tokens": 31999}},
 		})
 	}
 	if strings.Contains(desc.APIID, "gemini") && strings.Contains(desc.APIID, "2.5") {
-		return openCodeWrapInSAPModelParams(map[string]map[string]any{
+		return compatWrapInSAPModelParams(map[string]map[string]any{
 			"high": {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 16000}},
-			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": openCodeGoogleThinkingBudgetMax(desc.APIID)}},
+			"max":  {"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": compatGoogleThinkingBudgetMax(desc.APIID)}},
 		})
 	}
-	if strings.Contains(desc.APIID, "gpt") || openCodeSAPReasoningRE.MatchString(desc.APIID) {
-		return openCodeWrapInSAPModelParams(openCodeVariantsFromEfforts(
-			openCodeReasoningEfforts(desc.APIID, desc.ReleaseDate),
+	if strings.Contains(desc.APIID, "gpt") || compatSAPReasoningRE.MatchString(desc.APIID) {
+		return compatWrapInSAPModelParams(compatVariantsFromEfforts(
+			compatReasoningEfforts(desc.APIID, desc.ReleaseDate),
 			func(effort string) map[string]any {
 				return map[string]any{"reasoning_effort": effort}
 			},
 		))
 	}
-	return openCodeWrapInSAPModelParams(openCodeVariantsFromEfforts(openCodeWidelySupportedEfforts(), func(effort string) map[string]any {
+	return compatWrapInSAPModelParams(compatVariantsFromEfforts(compatWidelySupportedEfforts(), func(effort string) map[string]any {
 		return map[string]any{"reasoning_effort": effort}
 	}))
 }
 
-func openCodeWrapInSAPModelParams(variants map[string]map[string]any) map[string]map[string]any {
+func compatWrapInSAPModelParams(variants map[string]map[string]any) map[string]map[string]any {
 	if len(variants) == 0 {
 		return nil
 	}
