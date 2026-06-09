@@ -504,7 +504,7 @@ func Default() Config {
 		Agent: AgentConfig{
 			Name: DefaultAgentName,
 			ToolPolicy: ToolPolicyConfig{
-				Profile: "safe",
+				Profile: "auto",
 			},
 			// 0 = unlimited. Aligned with Claude Code, which has no
 			// default step cap; the model decides when to stop. Users

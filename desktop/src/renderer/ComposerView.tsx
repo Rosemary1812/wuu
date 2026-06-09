@@ -109,46 +109,28 @@ type ToolPolicyProfileOption = {
   label: string;
   chipLabel: string;
   short: string;
-  description: string;
   tone?: "danger";
 };
 
 const TOOL_POLICY_PROFILE_OPTIONS: ToolPolicyProfileOption[] = [
   {
     profile: "safe",
-    label: "默认",
-    chipLabel: "默认权限",
-    short: "写入前确认",
-    description: "中高风险动作先确认，适合日常开发"
-  },
-  {
-    profile: "balanced",
-    label: "平衡",
-    chipLabel: "平衡权限",
-    short: "高风险确认",
-    description: "低中风险自动执行，高风险动作先确认"
+    label: "手动",
+    chipLabel: "手动",
+    short: "写入前确认"
   },
   {
     profile: "auto",
     label: "自动",
-    chipLabel: "自动权限",
-    short: "智能判定",
-    description: "非低风险动作交给自动判定，必要时拦截或要求确认"
+    chipLabel: "自动",
+    short: "低风险自动，关键处暂停"
   },
   {
     profile: "autonomous",
-    label: "危险",
-    chipLabel: "危险权限",
-    short: "尽量自主",
-    description: "尽量自主执行，适合临时高信任场景",
+    label: "完全访问",
+    chipLabel: "完全访问",
+    short: "尽量不中断",
     tone: "danger"
-  },
-  {
-    profile: "enterprise_restricted",
-    label: "严格",
-    chipLabel: "严格权限",
-    short: "高风险拒绝",
-    description: "高风险动作直接拒绝，适合受控环境"
   }
 ];
 
@@ -163,16 +145,19 @@ function clamp(value: number, min: number, max: number): number {
 
 export function toolPolicyProfileFromSummary(policy?: ToolPolicySummary): ToolPolicyProfile {
   const profile = policy?.profile?.trim();
-  if (
-    profile === "safe" ||
-    profile === "balanced" ||
-    profile === "auto" ||
-    profile === "autonomous" ||
-    profile === "enterprise_restricted"
-  ) {
-    return profile;
+  switch (profile) {
+    case "safe":
+      return "safe";
+    case "balanced":
+    case "auto":
+      return "auto";
+    case "autonomous":
+      return "autonomous";
+    case "enterprise_restricted":
+      return "safe";
+    default:
+      return "autonomous";
   }
-  return "autonomous";
 }
 
 export function toolPolicyHasPresetOverrides(policy?: ToolPolicySummary): boolean {
@@ -185,7 +170,8 @@ export function toolPolicyHasPresetOverrides(policy?: ToolPolicySummary): boolea
 }
 
 function toolPolicyProfileOption(profile: ToolPolicyProfile): ToolPolicyProfileOption {
-  return TOOL_POLICY_PROFILE_OPTIONS.find((option) => option.profile === profile) ?? TOOL_POLICY_PROFILE_OPTIONS[3];
+  const visibleProfile = profile === "balanced" ? "auto" : profile === "enterprise_restricted" ? "safe" : profile;
+  return TOOL_POLICY_PROFILE_OPTIONS.find((option) => option.profile === visibleProfile) ?? TOOL_POLICY_PROFILE_OPTIONS[1];
 }
 
 function textareaSelectionAtStart(textarea: HTMLTextAreaElement): boolean {

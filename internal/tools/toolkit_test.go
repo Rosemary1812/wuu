@@ -2495,13 +2495,24 @@ func TestToolkit_ToolMetadata_ClassifiesGitByInput(t *testing.T) {
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
 		Name:      "git",
+		Arguments: `{"subcommand":"commit","args":["-m","update files"]}`,
+	})
+	if !ok {
+		t.Fatal("git metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Destructive || meta.Risk != string(ToolRiskMedium) || meta.Reason != "git commit writes local repository history" {
+		t.Fatalf("git commit metadata = %+v, want non-destructive medium-risk local write", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "git",
 		Arguments: `{"subcommand":"push"}`,
 	})
 	if !ok {
 		t.Fatal("git metadata not found")
 	}
-	if meta.ReadOnly || meta.ConcurrencySafe || !meta.Destructive || meta.Risk != string(ToolRiskHigh) {
-		t.Fatalf("git push metadata = %+v, want destructive high-risk serial", meta)
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Destructive || meta.Risk != string(ToolRiskMedium) || meta.Reason != "git push writes remote branch state" {
+		t.Fatalf("git push metadata = %+v, want non-destructive medium-risk remote write", meta)
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{

@@ -34,16 +34,16 @@ func (t *GitTool) Classify(argsJSON string) ToolClassification {
 			ReadOnly:        false,
 			ConcurrencySafe: false,
 			Destructive:     false,
-			Risk:            ToolRiskHigh,
-			Reason:          "git commit writes local repository state",
+			Risk:            ToolRiskMedium,
+			Reason:          "git commit writes local repository history",
 		}
 	case "push":
 		return ToolClassification{
 			ReadOnly:        false,
 			ConcurrencySafe: false,
-			Destructive:     true,
-			Risk:            ToolRiskHigh,
-			Reason:          "git push writes remote repository state",
+			Destructive:     false,
+			Risk:            ToolRiskMedium,
+			Reason:          "git push writes remote branch state",
 		}
 	case "ls-remote":
 		return ToolClassification{

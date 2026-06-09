@@ -207,6 +207,13 @@ func TestTemplateJSONDoesNotSerializeBuiltInSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigUsesAutoToolPolicy(t *testing.T) {
+	cfg := Default()
+	if cfg.Agent.ToolPolicy.Profile != "auto" {
+		t.Fatalf("default tool policy profile = %q, want auto", cfg.Agent.ToolPolicy.Profile)
+	}
+}
+
 func TestAgentConfig_UserSystemPromptAppendsLegacyAndPreferredFields(t *testing.T) {
 	cfg := AgentConfig{
 		SystemPrompt:       "legacy instructions",

@@ -118,8 +118,9 @@ describe("Composer permission menu", () => {
   it("maps tool policy summaries to preset chip states", () => {
     expect(toolPolicyProfileFromSummary()).toBe("autonomous");
     expect(toolPolicyProfileFromSummary({ profile: "safe" })).toBe("safe");
-    expect(toolPolicyProfileFromSummary({ profile: "balanced" })).toBe("balanced");
+    expect(toolPolicyProfileFromSummary({ profile: "balanced" })).toBe("auto");
     expect(toolPolicyProfileFromSummary({ profile: "auto" })).toBe("auto");
+    expect(toolPolicyProfileFromSummary({ profile: "enterprise_restricted" })).toBe("safe");
     expect(toolPolicyHasPresetOverrides({ profile: "safe" })).toBe(false);
     expect(
       toolPolicyHasPresetOverrides({
@@ -129,65 +130,74 @@ describe("Composer permission menu", () => {
     ).toBe(true);
   });
 
-  it("lets the user choose the automatic permission mode from the composer menu", () => {
+  it("shows only the three everyday permission modes in the composer menu", () => {
     const onSelectToolPolicyProfile = vi.fn();
     renderComposer({
       accessMenuOpen: true,
-      toolPolicy: { profile: "safe" },
+      toolPolicy: { profile: "auto" },
       onSelectToolPolicyProfile,
     });
 
     const chip = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"权限模式：默认权限\"]",
+      "button[aria-label=\"权限模式：自动\"]",
     );
     expect(chip).not.toBeNull();
     expect(chip?.disabled).toBe(false);
-
-    const automaticOption = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>(
-        "button[role=\"menuitemradio\"]",
-      ),
-    ).find((button) => button.textContent?.includes("自动"));
-    expect(automaticOption).not.toBeUndefined();
-
-    act(() => {
-      automaticOption?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-    });
-
-    expect(onSelectToolPolicyProfile).toHaveBeenCalledWith("auto");
-  });
-
-  it("keeps the balanced permission mode separate from automatic mode", () => {
-    const onSelectToolPolicyProfile = vi.fn();
-    renderComposer({
-      accessMenuOpen: true,
-      toolPolicy: { profile: "safe" },
-      onSelectToolPolicyProfile,
-    });
 
     const labels = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
         "button[role=\"menuitemradio\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(labels).toEqual(["默认", "平衡", "自动", "危险", "严格"]);
+    expect(labels).toEqual(["手动", "自动", "完全访问"]);
+    expect(document.body.textContent).not.toContain("平衡");
+    expect(document.body.textContent).not.toContain("严格");
 
-    const balancedOption = Array.from(
+    const checkedLabels = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "button[role=\"menuitemradio\"][aria-checked=\"true\"] strong",
+      ),
+    ).map((label) => label.textContent?.trim());
+    expect(checkedLabels).toEqual(["自动"]);
+  });
+
+  it("lets the user switch between manual, automatic, and full access", () => {
+    const onSelectToolPolicyProfile = vi.fn();
+    renderComposer({
+      accessMenuOpen: true,
+      toolPolicy: { profile: "auto" },
+      onSelectToolPolicyProfile,
+    });
+
+    const manualOption = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
         "button[role=\"menuitemradio\"]",
       ),
-    ).find((button) => button.textContent?.includes("平衡"));
-    expect(balancedOption).not.toBeUndefined();
+    ).find((button) => button.textContent?.includes("手动"));
+    expect(manualOption).not.toBeUndefined();
 
     act(() => {
-      balancedOption?.dispatchEvent(
+      manualOption?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
     });
 
-    expect(onSelectToolPolicyProfile).toHaveBeenCalledWith("balanced");
+    expect(onSelectToolPolicyProfile).toHaveBeenCalledWith("safe");
+
+    const fullAccessOption = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "button[role=\"menuitemradio\"]",
+      ),
+    ).find((button) => button.textContent?.includes("完全访问"));
+    expect(fullAccessOption).not.toBeUndefined();
+
+    act(() => {
+      fullAccessOption?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(onSelectToolPolicyProfile).toHaveBeenCalledWith("autonomous");
   });
 
   it("shows a custom state when advanced overrides are present", () => {

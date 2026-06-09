@@ -47,15 +47,15 @@ async function run() {
   await waitFor(win, () => Boolean(document.querySelector(".permission-chip")), 5000);
 
   const initial = await waitFor(win, permissionState, 3000);
-  assert.equal(initial.chipText, "默认权限", "Initial safe profile should render as the default permission mode.");
+  assert.equal(initial.chipText, "自动", "Initial auto profile should render as the default permission mode.");
   assert.equal(initial.chipDisabled, false, "Permission mode chip should be clickable when no turn is running.");
   await capture(win, "permission-mode-initial.png");
 
   await openPermissionMenu(win);
   const openState = await waitFor(win, permissionStateWithOpenMenu, 3000);
-  assert.equal(openState.optionLabels.length, 5, "Permission menu should expose five preset modes.");
-  assert.deepEqual(openState.optionLabels, ["默认", "平衡", "自动", "危险", "严格"]);
-  assert.equal(openState.checkedLabels.join(","), "默认", "Safe mode should be marked as the current mode.");
+  assert.equal(openState.optionLabels.length, 3, "Permission menu should expose three everyday modes.");
+  assert.deepEqual(openState.optionLabels, ["手动", "自动", "完全访问"]);
+  assert.equal(openState.checkedLabels.join(","), "自动", "Auto mode should be marked as the current mode.");
   assert.ok(openState.menuRect.width >= 280, `Permission menu should be wide enough. Width=${openState.menuRect.width}`);
   assert.ok(
     openState.optionRects.every((rect, index, rects) => index === 0 || rect.top > rects[index - 1].top),
@@ -63,18 +63,16 @@ async function run() {
   );
   await capture(win, "permission-mode-menu-open.png");
 
-  await chooseMode(win, "平衡", "balanced", "平衡权限");
-  await chooseMode(win, "自动", "auto", "自动权限");
-  await chooseMode(win, "危险", "autonomous", "危险权限");
-  await chooseMode(win, "严格", "enterprise_restricted", "严格权限");
-  await chooseMode(win, "默认", "safe", "默认权限");
+  await chooseMode(win, "手动", "safe", "手动");
+  await chooseMode(win, "完全访问", "autonomous", "完全访问");
+  await chooseMode(win, "自动", "auto", "自动");
 
   const finalState = await waitFor(win, permissionState, 3000);
-  assert.equal(finalState.chipText, "默认权限", "Returning to default mode should update the chip label.");
+  assert.equal(finalState.chipText, "自动", "Returning to auto mode should update the chip label.");
   assert.deepEqual(
     finalState.updateProfiles,
-    ["balanced", "auto", "autonomous", "enterprise_restricted", "safe"],
-    "Each clicked preset should be sent through the runtime settings update API."
+    ["safe", "autonomous", "auto"],
+    "Each visible preset should be sent through the runtime settings update API."
   );
   assert.equal(finalState.menuOpen, false, "Permission menu should close after selection.");
   await capture(win, "permission-mode-final.png");

@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const cwd = process.env.WUU_PERMISSION_E2E_CWD || process.cwd();
 const runtimeContext = { kind: "no_project", cwd };
-let currentToolPolicy = { profile: "safe" };
+let currentToolPolicy = { profile: "auto" };
 const updateCalls = [];
 
 function provider(provider = "e2e", model = "mock-permission") {
