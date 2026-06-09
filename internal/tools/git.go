@@ -407,6 +407,13 @@ var blockedGlobalArgPrefixes = []string{
 // shell-like patterns where the git CLI would interpret them specially.
 var shellMetacharacters = ";&|$`><()"
 
+var gitSecretValuePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\bauthorization\s*[:=]\s*bearer\s+[A-Za-z0-9._~+/=-]+`),
+	regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+`),
+	regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret)\s*([:=])\s*["']?[^"'\s,;]+`),
+	regexp.MustCompile(`(?i)(https?|ssh|git)://[^/\s:@]+:[^@\s/]+@`),
+}
+
 var blockedCommitFlags = map[string]bool{
 	"--amend":               true,
 	"--no-verify":           true,
@@ -495,6 +502,9 @@ func parseGitInvocation(argsJSON string) (gitInvocation, error) {
 	} else {
 		return gitInvocation{}, fmt.Errorf("git subcommand %q is not allowed in restricted mode", args.Subcommand)
 	}
+	if err := validateSensitiveGitContentArgs(subcmd, remainingArgs); err != nil {
+		return gitInvocation{}, err
+	}
 
 	return gitInvocation{Subcommand: subcmd, Args: remainingArgs}, nil
 }
@@ -528,7 +538,7 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 		}
 	}
 
-	output := stdout.String() + stderr.String()
+	output, redacted := sanitizeGitOutput(subcmd, stdout.String()+stderr.String())
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
 
 	result := map[string]any{
@@ -546,6 +556,9 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 	}
 	if truncated {
 		result["truncated"] = true
+	}
+	if redacted {
+		result["redacted"] = true
 	}
 	return mustJSON(result)
 }
@@ -638,7 +651,7 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 
 	staged, unstaged, untracked := parseGitPorcelain(stdout.String())
 
-	rawOutput := stdout.String() + stderr.String()
+	rawOutput, redacted := sanitizeGitOutput("status", stdout.String()+stderr.String())
 	trimmed, truncated := truncate(rawOutput, maxShellOutputBytes)
 
 	result := map[string]any{
@@ -653,6 +666,9 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 	}
 	if truncated {
 		result["truncated"] = true
+	}
+	if redacted {
+		result["redacted"] = true
 	}
 	return mustJSON(result)
 }
@@ -778,10 +794,36 @@ func validateGitArgs(subcmd string, args []string) error {
 		return validateCommitArgs(args)
 	case "push":
 		return validatePushArgs(args)
+	case "cat-file":
+		return validateCatFileArgs(args)
 	default:
 		if hasDangerousGlobalConfigArgs(args) {
 			return errors.New("git global config overrides are not allowed")
 		}
+	}
+	return nil
+}
+
+func validateCatFileArgs(args []string) error {
+	if len(args) == 0 {
+		return errors.New("git cat-file requires a metadata mode")
+	}
+	modeSeen := false
+	for _, arg := range args {
+		switch arg {
+		case "-t", "-s", "-e":
+			if modeSeen {
+				return errors.New("git cat-file accepts exactly one metadata mode")
+			}
+			modeSeen = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return fmt.Errorf("git cat-file flag %q is not allowed; only -t, -s, and -e metadata modes are allowed", arg)
+			}
+		}
+	}
+	if !modeSeen {
+		return errors.New("git cat-file only allows -t, -s, and -e metadata modes")
 	}
 	return nil
 }
@@ -865,6 +907,192 @@ func validateCommitArgs(args []string) error {
 		return errors.New("git commit requires an explicit message via -m or --message")
 	}
 	return nil
+}
+
+func validateSensitiveGitContentArgs(subcmd string, args []string) error {
+	if !gitSubcommandCanEmitFileContent(subcmd) {
+		return nil
+	}
+	for _, arg := range args {
+		for _, candidate := range sensitiveGitPathCandidates(arg) {
+			if reason, ok := sensitivePathReason(candidate); ok {
+				return fmt.Errorf("git %s refuses to inspect sensitive path %q (%s). Use metadata-safe git commands or ask the user for explicit secret handling", subcmd, candidate, reason)
+			}
+		}
+	}
+	return nil
+}
+
+func gitSubcommandCanEmitFileContent(subcmd string) bool {
+	switch subcmd {
+	case "diff", "show", "blame", "grep", "cat-file", "stash show", "log":
+		return true
+	default:
+		return false
+	}
+}
+
+func sensitiveGitPathCandidates(arg string) []string {
+	token := strings.Trim(strings.TrimSpace(arg), `"'`)
+	if token == "" || token == "--" {
+		return nil
+	}
+	if strings.HasPrefix(token, "--") && !strings.Contains(token, "=") {
+		return nil
+	}
+	var candidates []string
+	if idx := strings.LastIndex(token, ":"); idx >= 0 && idx+1 < len(token) {
+		candidates = append(candidates, token[idx+1:])
+	}
+	if strings.HasPrefix(token, ":(top)") {
+		candidates = append(candidates, strings.TrimPrefix(token, ":(top)"))
+	} else if strings.HasPrefix(token, ":(") {
+		if idx := strings.Index(token, ")"); idx >= 0 && idx+1 < len(token) {
+			candidates = append(candidates, token[idx+1:])
+		}
+	}
+	if !strings.HasPrefix(token, "-") {
+		candidates = append(candidates, token)
+	}
+	return candidates
+}
+
+func sanitizeGitOutput(subcmd, output string) (string, bool) {
+	redacted := false
+	if gitSubcommandMayReturnDiff(subcmd) {
+		var changed bool
+		output, changed = redactSensitiveDiffBlocks(output)
+		redacted = redacted || changed
+	}
+	if subcmd == "grep" {
+		var changed bool
+		output, changed = redactSensitiveGitGrepLines(output)
+		redacted = redacted || changed
+	}
+	for _, pattern := range gitSecretValuePatterns {
+		next := pattern.ReplaceAllStringFunc(output, func(match string) string {
+			redacted = true
+			lower := strings.ToLower(match)
+			switch {
+			case strings.HasPrefix(lower, "bearer "):
+				return "Bearer [REDACTED]"
+			case strings.Contains(match, "://") && strings.Contains(match, "@"):
+				if idx := strings.Index(match, "://"); idx >= 0 {
+					return match[:idx+3] + "[REDACTED]@"
+				}
+			}
+			return redactKeyValueMatch(match)
+		})
+		output = next
+	}
+	return output, redacted
+}
+
+func redactKeyValueMatch(match string) string {
+	for _, sep := range []string{":", "="} {
+		if idx := strings.Index(match, sep); idx >= 0 {
+			return strings.TrimSpace(match[:idx]) + sep + "[REDACTED]"
+		}
+	}
+	return "[REDACTED]"
+}
+
+func gitSubcommandMayReturnDiff(subcmd string) bool {
+	switch subcmd {
+	case "diff", "show", "log", "stash show":
+		return true
+	default:
+		return false
+	}
+}
+
+func redactSensitiveDiffBlocks(output string) (string, bool) {
+	if !strings.Contains(output, "diff --git ") {
+		return output, false
+	}
+	lines := strings.SplitAfter(output, "\n")
+	var b strings.Builder
+	redacted := false
+	for i := 0; i < len(lines); {
+		if !strings.HasPrefix(lines[i], "diff --git ") {
+			b.WriteString(lines[i])
+			i++
+			continue
+		}
+		start := i
+		i++
+		for i < len(lines) && !strings.HasPrefix(lines[i], "diff --git ") {
+			i++
+		}
+		block := strings.Join(lines[start:i], "")
+		if path, reason, ok := sensitiveDiffBlockPath(block); ok {
+			b.WriteString("diff --git [REDACTED sensitive path]\n")
+			b.WriteString(fmt.Sprintf("[REDACTED git diff for sensitive path %q (%s)]\n", path, reason))
+			redacted = true
+			continue
+		}
+		b.WriteString(block)
+	}
+	return b.String(), redacted
+}
+
+func sensitiveDiffBlockPath(block string) (string, string, bool) {
+	for _, line := range strings.Split(block, "\n") {
+		for _, candidate := range gitDiffPathCandidates(line) {
+			if reason, ok := sensitivePathReason(candidate); ok {
+				return candidate, reason, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+func gitDiffPathCandidates(line string) []string {
+	line = strings.TrimSpace(line)
+	switch {
+	case strings.HasPrefix(line, "diff --git "):
+		fields := strings.Fields(line)
+		if len(fields) >= 4 {
+			return []string{cleanGitDiffPathToken(fields[2]), cleanGitDiffPathToken(fields[3])}
+		}
+	case strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ "):
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			return []string{cleanGitDiffPathToken(fields[1])}
+		}
+	case strings.HasPrefix(line, "rename from "):
+		return []string{cleanGitDiffPathToken(strings.TrimPrefix(line, "rename from "))}
+	case strings.HasPrefix(line, "rename to "):
+		return []string{cleanGitDiffPathToken(strings.TrimPrefix(line, "rename to "))}
+	}
+	return nil
+}
+
+func cleanGitDiffPathToken(token string) string {
+	token = strings.Trim(strings.TrimSpace(token), `"'`)
+	if token == "/dev/null" {
+		return ""
+	}
+	token = strings.TrimPrefix(token, "a/")
+	token = strings.TrimPrefix(token, "b/")
+	return token
+}
+
+func redactSensitiveGitGrepLines(output string) (string, bool) {
+	lines := strings.SplitAfter(output, "\n")
+	redacted := false
+	for i, line := range lines {
+		body := strings.TrimRight(line, "\r\n")
+		newline := strings.TrimPrefix(line, body)
+		if idx := strings.Index(body, ":"); idx > 0 {
+			path := body[:idx]
+			if reason, ok := sensitivePathReason(path); ok {
+				lines[i] = fmt.Sprintf("%s:[REDACTED git grep output for sensitive path (%s)]%s", path, reason, newline)
+				redacted = true
+			}
+		}
+	}
+	return strings.Join(lines, ""), redacted
 }
 
 func validatePushArgs(args []string) error {

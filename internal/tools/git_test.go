@@ -235,6 +235,76 @@ func TestToolkit_Git_BlockedArgs(t *testing.T) {
 	}
 }
 
+func TestToolkit_Git_RedactsSensitiveDiffContent(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'API_KEY=old-secret-value\n' > .env && git add .env && git commit -qm env")
+	runBash(t, root, "printf 'API_KEY=new-secret-value\n' > .env")
+
+	p := gitCall(t, kit, "diff")
+	output := p["output"].(string)
+	if strings.Contains(output, "old-secret-value") || strings.Contains(output, "new-secret-value") {
+		t.Fatalf("git diff leaked sensitive file content: %q", output)
+	}
+	if !strings.Contains(output, "REDACTED git diff") || p["redacted"] != true {
+		t.Fatalf("git diff should report redacted sensitive content: %+v", p)
+	}
+}
+
+func TestToolkit_Git_RejectsSensitiveObjectPath(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'API_KEY=old-secret-value\n' > .env && git add .env && git commit -qm env")
+
+	msg := gitErr(t, kit, "show", "HEAD:.env")
+	if !strings.Contains(msg, "sensitive path") || strings.Contains(msg, "old-secret-value") {
+		t.Fatalf("git show sensitive object path guidance/leak mismatch: %q", msg)
+	}
+	msg = gitErr(t, kit, "cat-file", "-p", "HEAD:.env")
+	if !strings.Contains(msg, "cat-file") || !strings.Contains(msg, "metadata modes") {
+		t.Fatalf("git cat-file content mode should be blocked, got: %q", msg)
+	}
+}
+
+func TestToolkit_Git_RedactsSensitiveGrepLines(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'API_KEY=old-secret-value\n' > .env && git add .env && git commit -qm env")
+
+	p := gitCall(t, kit, "grep", "API_KEY")
+	output := p["output"].(string)
+	if strings.Contains(output, "old-secret-value") {
+		t.Fatalf("git grep leaked sensitive file content: %q", output)
+	}
+	if !strings.Contains(output, "REDACTED git grep") || p["redacted"] != true {
+		t.Fatalf("git grep should report redacted sensitive content: %+v", p)
+	}
+}
+
+func TestToolkit_Git_RedactsCredentialsInOutput(t *testing.T) {
+	kit, root, _ := setupGitRemoteRepo(t)
+	runBash(t, root, "git remote set-url origin https://user:ghp_secret_token@example.com/repo.git")
+	runBash(t, root, "git config http.extraHeader 'Authorization: Bearer real-bearer-token'")
+
+	p := gitCall(t, kit, "remote", "-v")
+	output := p["output"].(string)
+	if strings.Contains(output, "ghp_secret_token") {
+		t.Fatalf("git remote leaked credential: %q", output)
+	}
+	if !strings.Contains(output, "[REDACTED]") || p["redacted"] != true {
+		t.Fatalf("git remote should redact credential-bearing URL: %+v", p)
+	}
+
+	p = gitCall(t, kit, "config", "--get", "remote.origin.url")
+	output = p["output"].(string)
+	if strings.Contains(output, "ghp_secret_token") || !strings.Contains(output, "[REDACTED]") {
+		t.Fatalf("git config did not redact credential-bearing URL: %+v", p)
+	}
+
+	p = gitCall(t, kit, "config", "--get", "http.extraHeader")
+	output = p["output"].(string)
+	if strings.Contains(output, "real-bearer-token") || !strings.Contains(output, "[REDACTED]") {
+		t.Fatalf("git config did not redact bearer header: %+v", p)
+	}
+}
+
 func TestToolkit_Git_NonInteractiveEnv(t *testing.T) {
 	kit, _ := setupGitRepo(t)
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
