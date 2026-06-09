@@ -302,6 +302,19 @@ func Catalog() []Task {
 			Verify:        verifyGoTests,
 		},
 		{
+			ID:          "ast_search_navigation",
+			Name:        "Navigate to a symbol with AST search",
+			Description: "Go package where the agent must use ast_search to locate a failing symbol before editing.",
+			Prompt: "Use ast_search first with query='NormalizeSKU' and kind='function' to locate the failing function before reading any source file. " +
+				"Then read the matched source, fix the implementation bug without changing tests, and use run_test to verify go test ./... passes.",
+			RequiredTools: []string{"ast_search", "read_file", "run_test"},
+			RequiredToolCalls: []ToolCallRequirement{
+				{ToolName: "ast_search", ArgumentEquals: map[string]string{"query": "NormalizeSKU", "kind": "function"}},
+			},
+			Setup:  setupASTSearchNavigation,
+			Verify: verifyGoTests,
+		},
+		{
 			ID:            "long_process_output",
 			Name:          "Read a long-running process log",
 			Description:   "Script prints a readiness marker after a delay and keeps running.",
@@ -533,6 +546,44 @@ func TestSubtotal(t *testing.T) {
 func TestTotalWithTax(t *testing.T) {
 	if got := TotalWithTax([]int{1000, 1000}, 875); got != 2175 {
 		t.Fatalf("TotalWithTax() = %d, want 2175", got)
+	}
+}
+`,
+	}
+	return writeFiles(root, files)
+}
+
+func setupASTSearchNavigation(root string) error {
+	files := map[string]string{
+		"go.mod": `module inventoryeval
+
+go 1.22
+`,
+		"inventory/normalize.go": `package inventory
+
+import "strings"
+
+func NormalizeSKU(input string) string {
+	return strings.TrimSpace(input)
+}
+
+func IsValidSKU(input string) bool {
+	return NormalizeSKU(input) != ""
+}
+`,
+		"inventory/normalize_test.go": `package inventory
+
+import "testing"
+
+func TestNormalizeSKU(t *testing.T) {
+	if got := NormalizeSKU(" ab-12 "); got != "AB-12" {
+		t.Fatalf("NormalizeSKU() = %q, want %q", got, "AB-12")
+	}
+}
+
+func TestIsValidSKU(t *testing.T) {
+	if !IsValidSKU(" ab-12 ") {
+		t.Fatal("IsValidSKU() should accept a non-empty normalized SKU")
 	}
 }
 `,
