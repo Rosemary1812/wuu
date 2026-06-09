@@ -272,6 +272,48 @@ func TestResolveMatchesProviderCompatForAlibabaReasoning(t *testing.T) {
 	}
 }
 
+func TestResolveMatchesProviderCompatForGoogleThinkingConfigGating(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		npm       string
+		reasoning bool
+		want      map[string]any
+	}{
+		{name: "google without reasoning", npm: "@ai-sdk/google"},
+		{
+			name:      "google with reasoning",
+			npm:       "@ai-sdk/google",
+			reasoning: true,
+			want:      map[string]any{"includeThoughts": true},
+		},
+		{name: "vertex without reasoning", npm: "@ai-sdk/google-vertex"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reasoning := tc.reasoning
+			provider := config.ProviderConfig{
+				Type:  "openai-compatible",
+				NPM:   tc.npm,
+				Model: "gemini-2.0-flash",
+				Models: map[string]config.ProviderModelConfig{
+					"gemini-2.0-flash": {Reasoning: &reasoning},
+				},
+			}
+
+			selection := Resolve(provider, provider.Model, "", "")
+			thinking, ok := selection.ProviderOptions["thinkingConfig"].(map[string]any)
+			if tc.want == nil {
+				if ok {
+					t.Fatalf("thinkingConfig should be unset: %#v", selection.ProviderOptions)
+				}
+				return
+			}
+			if !ok || !optionEqual(thinking, tc.want) {
+				t.Fatalf("thinkingConfig = %#v, want %#v", thinking, tc.want)
+			}
+		})
+	}
+}
+
 func TestSummariesMatchProviderCompatForMistralReasoningWhitelist(t *testing.T) {
 	reasoning := true
 	tests := []struct {
@@ -622,6 +664,70 @@ func TestSummariesMatchProviderCompatForVertexAnthropicOpus48(t *testing.T) {
 	}
 }
 
+func TestSummariesMatchProviderCompatForBedrockAnthropicAdaptive(t *testing.T) {
+	tests := []struct {
+		model        string
+		wantVariant  string
+		wantVariants string
+		wantOptions  map[string]any
+	}{
+		{
+			model:        "anthropic.claude-sonnet-4-6",
+			wantVariant:  "max",
+			wantVariants: "low,medium,high,max",
+			wantOptions: map[string]any{
+				"reasoningConfig": map[string]any{
+					"type":               "adaptive",
+					"maxReasoningEffort": "max",
+				},
+			},
+		},
+		{
+			model:        "anthropic.claude-opus-4-7",
+			wantVariant:  "xhigh",
+			wantVariants: "low,medium,high,xhigh,max",
+			wantOptions: map[string]any{
+				"reasoningConfig": map[string]any{
+					"type":               "adaptive",
+					"maxReasoningEffort": "xhigh",
+					"display":            "summarized",
+				},
+			},
+		},
+		{
+			model:        "anthropic.claude-opus-4.8",
+			wantVariant:  "high",
+			wantVariants: "low,medium,high,xhigh,max",
+			wantOptions: map[string]any{
+				"reasoningConfig": map[string]any{
+					"type":               "adaptive",
+					"maxReasoningEffort": "high",
+					"display":            "summarized",
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.model, func(t *testing.T) {
+			provider := config.ProviderConfig{
+				Type:  "openai-compatible",
+				NPM:   "@ai-sdk/amazon-bedrock",
+				Model: tc.model,
+			}
+
+			variants := SummariesForProvider("bedrock", provider, provider.Model)
+			if got := strings.Join(variantIDs(variants), ","); got != tc.wantVariants {
+				t.Fatalf("variants = %q, want %q: %+v", got, tc.wantVariants, variants)
+			}
+			options, ok := OptionsForProvider("bedrock", provider, provider.Model, tc.wantVariant)
+			if !ok || !optionEqual(options, tc.wantOptions) {
+				t.Fatalf("options = %#v, ok=%v", options, ok)
+			}
+		})
+	}
+}
+
 func TestSummariesUseProviderCompatModelMetadata(t *testing.T) {
 	reasoning := true
 	provider := config.ProviderConfig{
@@ -729,6 +835,114 @@ func TestResolveKeepsProviderCompatDefaultOptionsWithoutVariant(t *testing.T) {
 	}
 	if _, ok := selection.ProviderOptions["reasoningSummary"]; ok {
 		t.Fatalf("generic OpenAI-compatible should not set reasoningSummary: %#v", selection.ProviderOptions)
+	}
+}
+
+func TestResolveMatchesProviderCompatForGPT5BaseOptionEdges(t *testing.T) {
+	tests := []struct {
+		name       string
+		provider   config.ProviderConfig
+		want       map[string]any
+		wantAbsent []string
+	}{
+		{
+			name: "openai gpt-5.2 text verbosity",
+			provider: config.ProviderConfig{
+				Type:  "openai",
+				NPM:   "@ai-sdk/openai",
+				Model: "gpt-5.2",
+			},
+			want: map[string]any{
+				"store":            false,
+				"reasoningEffort":  "medium",
+				"reasoningSummary": "auto",
+				"include":          []any{"reasoning.encrypted_content"},
+				"textVerbosity":    "low",
+			},
+			wantAbsent: []string{"temperature", "topP", "topK", "enable_thinking", "chat_template_args"},
+		},
+		{
+			name: "openai-compatible gpt-5.4 omits responses-only options",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				NPM:   "@ai-sdk/openai-compatible",
+				Model: "gpt-5.4",
+			},
+			want: map[string]any{
+				"reasoningEffort": "medium",
+				"textVerbosity":   "low",
+			},
+			wantAbsent: []string{"reasoningSummary", "include"},
+		},
+		{
+			name: "gpt-5 chat omits reasoning defaults",
+			provider: config.ProviderConfig{
+				Type:  "openai",
+				NPM:   "@ai-sdk/openai",
+				Model: "gpt-5-chat",
+			},
+			want:       map[string]any{"store": false},
+			wantAbsent: []string{"reasoningEffort", "textVerbosity"},
+		},
+		{
+			name: "gpt-5.2 chat omits text verbosity",
+			provider: config.ProviderConfig{
+				Type:  "openai",
+				NPM:   "@ai-sdk/openai",
+				Model: "gpt-5.2-chat-latest",
+			},
+			want: map[string]any{
+				"store":            false,
+				"reasoningEffort":  "medium",
+				"reasoningSummary": "auto",
+				"include":          []any{"reasoning.encrypted_content"},
+			},
+			wantAbsent: []string{"textVerbosity"},
+		},
+		{
+			name: "gpt-5 codex omits text verbosity",
+			provider: config.ProviderConfig{
+				Type:  "openai",
+				NPM:   "@ai-sdk/openai",
+				Model: "gpt-5.2-codex",
+			},
+			want: map[string]any{
+				"store":            false,
+				"reasoningEffort":  "medium",
+				"reasoningSummary": "auto",
+				"include":          []any{"reasoning.encrypted_content"},
+			},
+			wantAbsent: []string{"textVerbosity"},
+		},
+		{
+			name: "azure gpt-5.5 omits reasoning effort",
+			provider: config.ProviderConfig{
+				Type:  "openai-compatible",
+				NPM:   "@ai-sdk/azure",
+				Model: "gpt-5.5",
+			},
+			want: map[string]any{
+				"store":            false,
+				"reasoningSummary": "auto",
+			},
+			wantAbsent: []string{"reasoningEffort"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			selection := Resolve(tc.provider, tc.provider.Model, "", "")
+			for key, want := range tc.want {
+				if got := selection.ProviderOptions[key]; !optionEqual(got, want) {
+					t.Fatalf("%s = %#v, want %#v; options=%#v", key, got, want, selection.ProviderOptions)
+				}
+			}
+			for _, key := range tc.wantAbsent {
+				if _, ok := selection.ProviderOptions[key]; ok {
+					t.Fatalf("%s should be unset: %#v", key, selection.ProviderOptions)
+				}
+			}
+		})
 	}
 }
 
