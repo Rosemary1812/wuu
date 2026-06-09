@@ -17,17 +17,18 @@ import (
 
 // Task is one deterministic local evaluation scenario.
 type Task struct {
-	ID                string
-	Name              string
-	Description       string
-	Prompt            string
-	RequiredTools     []string
-	RequiredToolCalls []ToolCallRequirement
-	RequiredErrors    []ToolErrorRequirement
-	IsolateWuuHome    bool
-	Setup             func(root string) error
-	Configure         func(root string, cfg config.Config) config.Config
-	Verify            func(ctx context.Context, root, answer string) (Verification, error)
+	ID                   string
+	Name                 string
+	Description          string
+	Prompt               string
+	RequiredTools        []string
+	RequiredToolCalls    []ToolCallRequirement
+	RequiredToolSequence []ToolCallRequirement
+	RequiredErrors       []ToolErrorRequirement
+	IsolateWuuHome       bool
+	Setup                func(root string) error
+	Configure            func(root string, cfg config.Config) config.Config
+	Verify               func(ctx context.Context, root, answer string) (Verification, error)
 }
 
 type ToolErrorRequirement struct {
@@ -56,6 +57,7 @@ type Result struct {
 	ToolNames          []string       `json:"tool_names,omitempty"`
 	MissingTools       []string       `json:"missing_tools,omitempty"`
 	MissingToolCalls   []string       `json:"missing_tool_calls,omitempty"`
+	MissingToolSeq     []string       `json:"missing_tool_sequence,omitempty"`
 	MissingErrors      []string       `json:"missing_errors,omitempty"`
 	InputTokens        int            `json:"input_tokens"`
 	OutputTokens       int            `json:"output_tokens"`
@@ -322,6 +324,12 @@ func Catalog() []Task {
 				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore", "checkpoint_id": "before_bad_edit"}},
 				{ToolName: "apply_patch", ArgsContains: []string{"target.txt"}},
 				{ToolName: "apply_patch", ArgsContains: []string{"scratch.txt"}},
+				{ToolName: "apply_patch", ArgsContains: []string{"checkpoint_result.txt"}},
+			},
+			RequiredToolSequence: []ToolCallRequirement{
+				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "create", "checkpoint_id": "before_bad_edit"}, ArgsContains: []string{"scratch.txt"}},
+				{ToolName: "apply_patch", ArgsContains: []string{"target.txt", "scratch.txt"}},
+				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore", "checkpoint_id": "before_bad_edit"}},
 				{ToolName: "apply_patch", ArgsContains: []string{"checkpoint_result.txt"}},
 			},
 			Setup:  setupCheckpointRollback,

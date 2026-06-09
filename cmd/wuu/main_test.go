@@ -261,6 +261,46 @@ func TestMissingRequiredToolCalls(t *testing.T) {
 	}
 }
 
+func TestMissingRequiredToolSequence(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{Name: "checkpoint", Arguments: `{"action":"create","checkpoint_id":"before_bad_edit","paths":["target.txt","scratch.txt"]}`},
+				{Name: "apply_patch", Arguments: "*** Update File: target.txt\n*** Add File: scratch.txt\n"},
+			},
+		},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{Name: "checkpoint", Arguments: `{"action":"restore","checkpoint_id":"before_bad_edit"}`},
+				{Name: "apply_patch", Arguments: "*** Add File: checkpoint_result.txt\n"},
+			},
+		},
+	}
+	required := []evalharness.ToolCallRequirement{
+		{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "create", "checkpoint_id": "before_bad_edit"}},
+		{ToolName: "apply_patch", ArgsContains: []string{"target.txt", "scratch.txt"}},
+		{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore", "checkpoint_id": "before_bad_edit"}},
+		{ToolName: "apply_patch", ArgsContains: []string{"checkpoint_result.txt"}},
+	}
+	if got := missingRequiredToolSequence(required, messages); len(got) != 0 {
+		t.Fatalf("expected no missing tool sequence, got %+v", got)
+	}
+
+	outOfOrder := []providers.ChatMessage{{
+		Role: "assistant",
+		ToolCalls: []providers.ToolCall{
+			{Name: "checkpoint", Arguments: `{"action":"restore","checkpoint_id":"before_bad_edit"}`},
+			{Name: "checkpoint", Arguments: `{"action":"create","checkpoint_id":"before_bad_edit"}`},
+		},
+	}}
+	missing := missingRequiredToolSequence(required[:2], outOfOrder)
+	if len(missing) != 1 || missing[0] != "apply_patch contains=target.txt contains=scratch.txt" {
+		t.Fatalf("unexpected missing sequence: %+v", missing)
+	}
+}
+
 func TestEvalSafePreviewRedactsSecretsAndTruncates(t *testing.T) {
 	got := evalSafePreview("access_token=secret-value-1234567890 keep", 200)
 	if strings.Contains(got, "secret-value") {

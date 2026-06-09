@@ -648,12 +648,13 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	}
 	result.MissingTools = missingRequiredTools(cfg.Task.RequiredTools, result.ToolNames)
 	result.MissingToolCalls = missingRequiredToolCalls(cfg.Task.RequiredToolCalls, runResult.NewMessages)
+	result.MissingToolSeq = missingRequiredToolSequence(cfg.Task.RequiredToolSequence, runResult.NewMessages)
 
 	verification, verifyErr := evalharness.VerifyTask(ctx, cfg.Task, taskRoot, runResult.Content)
 	if verifyErr != nil {
 		result.Error = verifyErr.Error()
 	} else {
-		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0 && len(result.MissingToolCalls) == 0 && len(result.MissingErrors) == 0
+		result.Success = runErr == nil && verification.Passed && len(result.MissingTools) == 0 && len(result.MissingToolCalls) == 0 && len(result.MissingToolSeq) == 0 && len(result.MissingErrors) == 0
 		result.VerificationReason = verification.Reason
 	}
 	if runErr != nil {
@@ -1115,6 +1116,44 @@ func missingRequiredToolCalls(required []evalharness.ToolCallRequirement, messag
 	return missing
 }
 
+func missingRequiredToolSequence(required []evalharness.ToolCallRequirement, messages []providers.ChatMessage) []string {
+	if len(required) == 0 {
+		return nil
+	}
+	calls := assistantToolCalls(messages)
+	next := 0
+	for i, req := range required {
+		found := false
+		for next < len(calls) {
+			call := calls[next]
+			next++
+			if call.Name == req.ToolName && toolCallMatchesRequirement(req, call.Arguments) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing := make([]string, 0, len(required)-i)
+			for _, remaining := range required[i:] {
+				missing = append(missing, formatToolCallRequirement(remaining))
+			}
+			return missing
+		}
+	}
+	return nil
+}
+
+func assistantToolCalls(messages []providers.ChatMessage) []providers.ToolCall {
+	var calls []providers.ToolCall
+	for _, msg := range messages {
+		if msg.Role != "assistant" {
+			continue
+		}
+		calls = append(calls, msg.ToolCalls...)
+	}
+	return calls
+}
+
 func toolCallMatchesRequirement(req evalharness.ToolCallRequirement, argsJSON string) bool {
 	for _, needle := range req.ArgsContains {
 		if needle != "" && !strings.Contains(argsJSON, needle) {
@@ -1249,6 +1288,9 @@ func printEvalReport(report evalReport) {
 		}
 		if len(result.MissingToolCalls) > 0 {
 			fmt.Printf("  missing_tool_calls: %s\n", strings.Join(result.MissingToolCalls, ","))
+		}
+		if len(result.MissingToolSeq) > 0 {
+			fmt.Printf("  missing_tool_sequence: %s\n", strings.Join(result.MissingToolSeq, ","))
 		}
 		if len(result.MissingErrors) > 0 {
 			fmt.Printf("  missing_errors: %s\n", strings.Join(result.MissingErrors, ","))

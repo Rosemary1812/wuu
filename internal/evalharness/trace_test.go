@@ -19,6 +19,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		ToolCalls:          1,
 		ToolNames:          []string{"run_shell"},
 		MissingToolCalls:   []string{"checkpoint action=restore"},
+		MissingToolSeq:     []string{"apply_patch contains=checkpoint_result.txt"},
 		InputTokens:        10,
 		OutputTokens:       20,
 		VerificationReason: "passed",
@@ -69,6 +70,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if len(task.MissingToolCalls) != 1 || task.MissingToolCalls[0] != "checkpoint action=restore" {
 		t.Fatalf("task event missing tool call requirements: %+v", task)
+	}
+	if len(task.MissingToolSeq) != 1 || task.MissingToolSeq[0] != "apply_patch contains=checkpoint_result.txt" {
+		t.Fatalf("task event missing tool sequence requirements: %+v", task)
 	}
 }
 
