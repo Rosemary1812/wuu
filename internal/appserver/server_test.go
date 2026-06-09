@@ -919,6 +919,17 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if eventParams.Event.Type != providers.EventContentDelta || eventParams.Event.Content != "done" {
 		t.Fatalf("unexpected turn event: %+v", eventParams)
 	}
+	contextEvent := turnEventByType(t, msgs, providers.EventRequestContext)
+	contextParams := remarshal[TurnEventNotification](t, contextEvent["params"])
+	if contextParams.Event.RequestContext == nil {
+		t.Fatalf("request context missing from turn event: %+v", contextParams.Event)
+	}
+	if contextParams.Event.RequestContext.TransientMessages != 1 || contextParams.Event.RequestContext.ContentBytes == 0 {
+		t.Fatalf("unexpected request context metadata: %+v", contextParams.Event.RequestContext)
+	}
+	if len(contextParams.Event.RequestContext.BlockKinds) == 0 || contextParams.Event.RequestContext.BlockKinds[0] != "ENVIRONMENT" {
+		t.Fatalf("unexpected request context block kinds: %+v", contextParams.Event.RequestContext)
+	}
 	delta := notificationByMethod(t, msgs, NotificationAgentMessageDelta)
 	deltaParams := remarshal[AgentMessageDeltaNotification](t, delta["params"])
 	if deltaParams.ThreadID != threadID || deltaParams.Delta != "done" {

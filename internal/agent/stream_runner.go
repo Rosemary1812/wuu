@@ -195,8 +195,19 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		MaxInputTokens:   r.MaxInputTokens,
 		BeforeStep:       beforeStep,
 		BeforeRequest:    r.BeforeRequest,
-		OnRequestContext: r.OnRequestContext,
-		OnUsage:          r.OnUsage,
+		OnRequestContext: func(info RequestContextInfo) {
+			if r.OnRequestContext != nil {
+				r.OnRequestContext(info)
+			}
+			if effectiveOnEvent == nil {
+				return
+			}
+			effectiveOnEvent(providers.StreamEvent{
+				Type:           providers.EventRequestContext,
+				RequestContext: requestContextSummary(info),
+			})
+		},
+		OnUsage: r.OnUsage,
 		OnMessage: func(msg providers.ChatMessage) {
 			if effectiveOnEvent == nil || isEphemeralHistoryMessage(msg) {
 				return
@@ -351,6 +362,15 @@ func filterEphemeralHistory(msgs []providers.ChatMessage) []providers.ChatMessag
 		}
 	}
 	return msgs[:n]
+}
+
+func requestContextSummary(info RequestContextInfo) *providers.RequestContextSummary {
+	return &providers.RequestContextSummary{
+		StepIndex:         info.StepIndex,
+		TransientMessages: info.TransientMessages,
+		ContentBytes:      info.ContentBytes,
+		BlockKinds:        append([]string(nil), info.BlockKinds...),
+	}
 }
 
 // streamStep adapts providers.StreamClient (with reconnect) to the

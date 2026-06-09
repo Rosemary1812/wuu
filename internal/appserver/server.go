@@ -270,6 +270,9 @@ func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
 	if ev.PlanUpdate != nil {
 		out.PlanUpdate = ev.PlanUpdate
 	}
+	if ev.RequestContext != nil {
+		out.RequestContext = ev.RequestContext
+	}
 	if ev.Usage != nil {
 		out.Usage = ev.Usage
 	}

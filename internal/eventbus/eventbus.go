@@ -38,10 +38,11 @@ const (
 	Message         EventType = "message"
 
 	// Lifecycle / system
-	Lifecycle EventType = "lifecycle"
-	Compact   EventType = "compact"
-	Error     EventType = "error"
-	Done      EventType = "done"
+	Lifecycle      EventType = "lifecycle"
+	Compact        EventType = "compact"
+	RequestContext EventType = "request_context"
+	Error          EventType = "error"
+	Done           EventType = "done"
 
 	// Worker / process / MCP status
 	WorkerStatusChange  EventType = "worker_status_change"
@@ -65,6 +66,8 @@ type Event struct {
 
 	// Lifecycle carries stream connection metadata.
 	Lifecycle *providers.StreamLifecycle
+	// RequestContext carries metadata-only context compilation details.
+	RequestContext *providers.RequestContextSummary
 
 	// Usage carries token consumption for a completed turn.
 	Usage      *providers.TokenUsage
@@ -156,6 +159,8 @@ func AdaptStreamEvent(se providers.StreamEvent) Event {
 		return Event{Type: Lifecycle, Lifecycle: se.Lifecycle}
 	case providers.EventCompact:
 		return Event{Type: Compact, Content: se.Content}
+	case providers.EventRequestContext:
+		return Event{Type: RequestContext, RequestContext: se.RequestContext}
 	case providers.EventDone:
 		return Event{Type: Done, Usage: se.Usage, StopReason: se.StopReason, Truncated: se.Truncated}
 	case providers.EventError:
@@ -193,6 +198,8 @@ func ToStreamEvent(ev Event) providers.StreamEvent {
 		return providers.StreamEvent{Type: providers.EventLifecycle, Lifecycle: ev.Lifecycle}
 	case Compact:
 		return providers.StreamEvent{Type: providers.EventCompact, Content: ev.Content}
+	case RequestContext:
+		return providers.StreamEvent{Type: providers.EventRequestContext, RequestContext: ev.RequestContext}
 	case Done:
 		return providers.StreamEvent{Type: providers.EventDone, Usage: ev.Usage, StopReason: ev.StopReason, Truncated: ev.Truncated}
 	case Error:

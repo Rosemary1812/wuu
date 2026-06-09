@@ -609,14 +609,15 @@ type ToolCallOutputNotification struct {
 }
 
 type StreamEventPayload struct {
-	Type       providers.StreamEventType `json:"type"`
-	Content    string                    `json:"content,omitempty"`
-	Message    *providers.ChatMessage    `json:"message,omitempty"`
-	ToolCall   *providers.ToolCall       `json:"tool_call,omitempty"`
-	ToolResult string                    `json:"tool_result,omitempty"`
-	PlanUpdate *providers.PlanUpdate     `json:"plan_update,omitempty"`
-	Usage      *providers.TokenUsage     `json:"usage,omitempty"`
-	StopReason string                    `json:"stop_reason,omitempty"`
-	Truncated  bool                      `json:"truncated,omitempty"`
-	Error      string                    `json:"error,omitempty"`
+	Type           providers.StreamEventType        `json:"type"`
+	Content        string                           `json:"content,omitempty"`
+	Message        *providers.ChatMessage           `json:"message,omitempty"`
+	ToolCall       *providers.ToolCall              `json:"tool_call,omitempty"`
+	ToolResult     string                           `json:"tool_result,omitempty"`
+	PlanUpdate     *providers.PlanUpdate            `json:"plan_update,omitempty"`
+	RequestContext *providers.RequestContextSummary `json:"request_context,omitempty"`
+	Usage          *providers.TokenUsage            `json:"usage,omitempty"`
+	StopReason     string                           `json:"stop_reason,omitempty"`
+	Truncated      bool                             `json:"truncated,omitempty"`
+	Error          string                           `json:"error,omitempty"`
 }

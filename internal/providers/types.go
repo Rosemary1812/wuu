@@ -162,6 +162,7 @@ const (
 	EventToolUseDelta    StreamEventType = "tool_use_delta"
 	EventToolUseEnd      StreamEventType = "tool_use_end"
 	EventPlanUpdate      StreamEventType = "plan_update"
+	EventRequestContext  StreamEventType = "request_context"
 	EventMessage         StreamEventType = "message"
 	EventLifecycle       StreamEventType = "lifecycle"
 	EventReconnect       StreamEventType = "reconnect"
@@ -232,6 +233,15 @@ type PlanUpdate struct {
 	Plan        []PlanStep `json:"plan"`
 }
 
+// RequestContextSummary carries metadata-only context compilation details for
+// one provider request. It intentionally excludes raw prompt text.
+type RequestContextSummary struct {
+	StepIndex         int      `json:"step_index"`
+	TransientMessages int      `json:"transient_messages,omitempty"`
+	ContentBytes      int      `json:"content_bytes,omitempty"`
+	BlockKinds        []string `json:"block_kinds,omitempty"`
+}
+
 // TotalContextTokens returns the number of tokens this call actually
 // consumed against the model's context window. Equals InputTokens +
 // CacheReadTokens + OutputTokens. CacheCreationTokens are NOT
@@ -253,6 +263,7 @@ type StreamEvent struct {
 	ToolCall       *ToolCall
 	ToolResult     string
 	PlanUpdate     *PlanUpdate
+	RequestContext *RequestContextSummary
 	Lifecycle      *StreamLifecycle
 	Error          error
 	Usage          *TokenUsage
