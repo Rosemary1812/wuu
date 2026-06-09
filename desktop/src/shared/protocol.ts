@@ -387,6 +387,15 @@ export type Turn = {
   duration_ms?: number;
 };
 
+export type TurnCompletedNotification = {
+  thread_id: string;
+  turn: Turn;
+  content: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  trace_path?: string;
+};
+
 export type ThreadItem = {
   id: string;
   source_id?: string;

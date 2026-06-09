@@ -23,6 +23,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 type fakeClient struct {
@@ -877,6 +878,11 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		},
 	}
 	rt := newTestRuntime(t, client)
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	rt.Toolkit = kit
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
@@ -912,6 +918,12 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 	if params.InputTokens != 10 || params.OutputTokens != 3 {
 		t.Fatalf("unexpected usage: %+v", params)
+	}
+	if params.TracePath == "" {
+		t.Fatalf("completed turn should include trace path: %+v", params)
+	}
+	if _, err := os.Stat(params.TracePath); err != nil {
+		t.Fatalf("turn trace path should exist: %v", err)
 	}
 
 	event := turnEventByType(t, msgs, providers.EventContentDelta)

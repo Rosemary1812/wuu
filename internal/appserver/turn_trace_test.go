@@ -47,7 +47,7 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 	duration := int64(1000)
 	srv := &Server{rt: &runtime.Session{ProviderName: "openai"}}
 	runner := &agent.StreamRunner{Model: "gpt-test", APIModel: "gpt-test-api"}
-	err = srv.persistTurnTrace(&runtime.ThreadRuntime{Toolkit: kit}, runner, "thread-1", Turn{
+	tracePath, err := srv.persistTurnTrace(&runtime.ThreadRuntime{Toolkit: kit}, runner, "thread-1", Turn{
 		ID:          "turn-1",
 		Status:      TurnStatusCompleted,
 		StartedAt:   &startedAt,
@@ -60,6 +60,9 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 	}, nil, toolRecordStart)
 	if err != nil {
 		t.Fatalf("persistTurnTrace: %v", err)
+	}
+	if tracePath != sessiontrace.Path(sessionDir) {
+		t.Fatalf("trace path = %q, want %q", tracePath, sessiontrace.Path(sessionDir))
 	}
 
 	data, err := os.ReadFile(sessiontrace.Path(sessionDir))

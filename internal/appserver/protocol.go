@@ -402,6 +402,7 @@ type TurnCompletedNotification struct {
 	Content      string `json:"content"`
 	InputTokens  int    `json:"input_tokens"`
 	OutputTokens int    `json:"output_tokens"`
+	TracePath    string `json:"trace_path,omitempty"`
 }
 
 type Agent struct {

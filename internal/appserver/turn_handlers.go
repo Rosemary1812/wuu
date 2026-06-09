@@ -509,7 +509,10 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
-	_ = s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart)
+	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart)
+	if traceErr != nil {
+		tracePath = ""
+	}
 
 	if len(unconsumedSteers) > 0 {
 		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))
@@ -531,19 +534,20 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		Content:      res.Content,
 		InputTokens:  res.InputTokens,
 		OutputTokens: res.OutputTokens,
+		TracePath:    tracePath,
 	})
 	go s.generateThreadTitle(th.ID, titleHistory)
 	s.kickAgentCompletionDrain(th.ID)
 	s.kickQueuedTurnDrain(th.ID)
 }
 
-func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int) error {
+func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int) (string, error) {
 	if threadRuntime == nil || threadRuntime.Toolkit == nil {
-		return nil
+		return "", nil
 	}
 	tracePath := sessiontrace.Path(threadRuntime.Toolkit.SessionDir())
 	if strings.TrimSpace(tracePath) == "" {
-		return nil
+		return "", nil
 	}
 	providerName := ""
 	if s != nil && s.rt != nil {
@@ -587,7 +591,10 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 	} else if toolRecordStart >= len(records) {
 		records = nil
 	}
-	return sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records)
+	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records); err != nil {
+		return "", err
+	}
+	return tracePath, nil
 }
 
 func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatMessage) {
