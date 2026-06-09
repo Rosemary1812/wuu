@@ -313,16 +313,16 @@ func Catalog() []Task {
 			Name:        "Rollback with a workspace checkpoint",
 			Description: "Main agent must create a file checkpoint, make a bad edit, restore it, and leave a marker.",
 			Prompt: "Read target.txt first so you have its file_sha. Then call checkpoint with action=create, checkpoint_id='before_bad_edit', " +
-				"and paths ['target.txt','scratch.txt']. After the checkpoint exists, use write_file to overwrite target.txt with bad content and create " +
+				"and paths ['target.txt','scratch.txt']. After the checkpoint exists, use apply_patch to overwrite target.txt with bad content and create " +
 				"scratch.txt with temporary content. Then call checkpoint with action=restore and checkpoint_id='before_bad_edit' to restore the checkpoint. " +
-				"After restore, write checkpoint_result.txt containing CHECKPOINT_ROLLBACK_DONE. The final state must keep target.txt at its original content and scratch.txt must be absent.",
-			RequiredTools: []string{"read_file", "checkpoint", "write_file"},
+				"After restore, use apply_patch to write checkpoint_result.txt containing CHECKPOINT_ROLLBACK_DONE. The final state must keep target.txt at its original content and scratch.txt must be absent.",
+			RequiredTools: []string{"read_file", "checkpoint", "apply_patch"},
 			RequiredToolCalls: []ToolCallRequirement{
 				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "create", "checkpoint_id": "before_bad_edit"}, ArgsContains: []string{"scratch.txt"}},
 				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore", "checkpoint_id": "before_bad_edit"}},
-				{ToolName: "write_file", ArgumentEquals: map[string]string{"path": "target.txt"}},
-				{ToolName: "write_file", ArgumentEquals: map[string]string{"path": "scratch.txt"}},
-				{ToolName: "write_file", ArgumentEquals: map[string]string{"path": "checkpoint_result.txt"}},
+				{ToolName: "apply_patch", ArgsContains: []string{"target.txt"}},
+				{ToolName: "apply_patch", ArgsContains: []string{"scratch.txt"}},
+				{ToolName: "apply_patch", ArgsContains: []string{"checkpoint_result.txt"}},
 			},
 			Setup:  setupCheckpointRollback,
 			Verify: verifyCheckpointRollback,
