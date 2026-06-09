@@ -1669,8 +1669,8 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 				risk.Total, formatCountMap(risk.ByLevel), risk.FileCount, risk.HunkCount, risk.AddedLines, risk.DeletedLines)
 		}
 	}
-	if len(summary.WorkflowRunIDs) > 0 {
-		fmt.Printf("  workflow_runs: %s\n", strings.Join(summary.WorkflowRunIDs, ","))
+	if runs := formatEvalWorkflowRuns(summary.WorkflowRuns, summary.WorkflowRunIDs); runs != "" {
+		fmt.Printf("  workflow_runs: %s\n", runs)
 	}
 	if summary.Observability != nil {
 		if summary.Observability.SessionID != "" {
@@ -1767,6 +1767,34 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 	for _, warning := range summary.Warnings {
 		fmt.Printf("  warning: %s\n", warning)
 	}
+}
+
+func formatEvalWorkflowRuns(runs []evalharness.WorkflowRunObservation, fallbackIDs []string) string {
+	parts := make([]string, 0, len(runs))
+	for _, run := range runs {
+		id := strings.TrimSpace(run.ID)
+		if id == "" {
+			continue
+		}
+		labelParts := []string{id}
+		if driver := strings.TrimSpace(run.Driver); driver != "" {
+			labelParts = append(labelParts, "driver="+driver)
+		}
+		if status := strings.TrimSpace(run.Status); status != "" {
+			labelParts = append(labelParts, "status="+status)
+		}
+		if eventLog := strings.TrimSpace(run.EventLogPath); eventLog != "" {
+			labelParts = append(labelParts, "event_log="+eventLog)
+		}
+		if runDir := strings.TrimSpace(run.RunDir); runDir != "" {
+			labelParts = append(labelParts, "run_dir="+runDir)
+		}
+		parts = append(parts, strings.Join(labelParts, ":"))
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, ",")
+	}
+	return strings.Join(fallbackIDs, ",")
 }
 
 func formatEvalPolicyBlocks(values []evalharness.ToolPolicyBlockSummary) string {

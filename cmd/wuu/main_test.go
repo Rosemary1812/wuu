@@ -799,6 +799,13 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 				ArgumentsSHA256: strings.Repeat("e", 64),
 				Success:         false,
 			}},
+			WorkflowRuns: []evalharness.WorkflowRunObservation{{
+				ID:           "run-1",
+				RunDir:       "/tmp/wuu/workflows/run-1",
+				EventLogPath: "/tmp/wuu/workflows/run-1/events.jsonl",
+				Driver:       "agent_managed",
+				Status:       "completed",
+			}},
 		},
 	}); err != nil {
 		t.Fatalf("write trace: %v", err)
@@ -812,6 +819,9 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 
 	if !strings.Contains(output, "policy_blocks: start_process:require_approval:approval_required:call_id=call-process:approval_ref="+approvalRef) {
 		t.Fatalf("replay text output missing policy blocks:\n%s", output)
+	}
+	if !strings.Contains(output, "workflow_runs: run-1:driver=agent_managed:status=completed:event_log=/tmp/wuu/workflows/run-1/events.jsonl:run_dir=/tmp/wuu/workflows/run-1") {
+		t.Fatalf("replay text output missing workflow artifact paths:\n%s", output)
 	}
 	if strings.Contains(output, strings.Repeat("e", 64)) {
 		t.Fatalf("replay text output should not print argument fingerprints by default:\n%s", output)
