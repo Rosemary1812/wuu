@@ -16,6 +16,10 @@ func sensitivePathReason(path string) (string, bool) {
 	for _, part := range parts {
 		part = strings.Trim(part, `"'`)
 		switch {
+		case part == ".git" || part == ".hg" || part == ".svn":
+			return "version-control metadata", true
+		case part == ".wuu" || part == ".wuu-state" || part == ".wuu-home":
+			return "wuu runtime state", true
 		case part == ".env" || strings.HasPrefix(part, ".env.") || strings.Contains(part, ".env"):
 			return ".env file", true
 		case part == ".netrc":

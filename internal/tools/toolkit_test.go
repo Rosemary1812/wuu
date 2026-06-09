@@ -571,6 +571,67 @@ func TestToolkit_ReadFileRejectsSensitivePaths(t *testing.T) {
 	}
 }
 
+func TestToolkit_FileToolsRejectProtectedMetadataPaths(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	gitConfigContent := "remote = origin\n"
+	mustWriteFile(t, filepath.Join(root, ".git", "config"), gitConfigContent)
+	mustWriteFile(t, filepath.Join(root, ".wuu", "sessions", "trace.jsonl"), "{}\n")
+	gitConfigSHA := formatFileSHA(sha256Hex([]byte(gitConfigContent)))
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":".git/config"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "version-control metadata") {
+		t.Fatalf("expected read_file to reject VCS metadata, got: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":".wuu/sessions/new.json","content":"{}\n"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "wuu runtime state") {
+		t.Fatalf("expected write_file to reject wuu runtime state, got: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".wuu", "sessions", "new.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("write_file should not create protected runtime state file, stat err=%v", statErr)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "edit_file",
+		Arguments: `{"path":".git/config","old_text":"remote = origin","new_text":"remote = changed","expected_old_sha":"` + gitConfigSHA + `"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "version-control metadata") {
+		t.Fatalf("expected edit_file to reject VCS metadata, got: %v", err)
+	}
+	if got := mustReadFile(t, filepath.Join(root, ".git", "config")); got != gitConfigContent {
+		t.Fatalf("edit_file should not mutate protected VCS metadata: %q", got)
+	}
+
+	kit.SetEditToolMode(EditToolModePatch)
+	patchArgs, err := json.Marshal(map[string]any{
+		"patchText": "*** Begin Patch\n*** Add File: .wuu/sessions/new-from-patch.json\n+{}\n*** End Patch",
+	})
+	if err != nil {
+		t.Fatalf("marshal patch args: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "apply_patch",
+		Arguments: string(patchArgs),
+	})
+	if err == nil || !strings.Contains(err.Error(), "wuu runtime state") {
+		t.Fatalf("expected apply_patch to reject wuu runtime state, got: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".wuu", "sessions", "new-from-patch.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("apply_patch should not create protected runtime state file, stat err=%v", statErr)
+	}
+}
+
 func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
