@@ -40,6 +40,7 @@ func (t *RunTestTool) Definition() providers.ToolDefinition {
 			"- Use for targeted, affected, or full test/build/typecheck/lint verification\n" +
 			"- The command must be a single local verification command such as go test, pytest, npm test, npm run lint, cargo test, or make test\n" +
 			"- Do not use for package installation, network calls, deploys, git mutations, or arbitrary shell exploration\n" +
+			"- Commands that dump environment variables or touch sensitive credential paths are rejected\n" +
 			"- Results include exit code, duration, compact output, and failure_summary with likely failing tests or error snippets",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -79,6 +80,12 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 	}
 	if strings.TrimSpace(args.Command) == "" {
 		return "", errors.New("run_test requires command")
+	}
+	if shellCommandDumpsEnvironment(args.Command) {
+		return "", errors.New("run_test refuses to print process environment variables because they may contain secrets")
+	}
+	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+		return "", errors.New("run_test refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
 	}
 	classification := classifyTestCommand(args.Command)
 	if classification.Risk != ToolRiskMedium || classification.Reason != "local verification command" {

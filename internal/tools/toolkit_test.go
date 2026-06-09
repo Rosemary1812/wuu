@@ -1574,6 +1574,38 @@ func TestToolkit_RunTestToolRejectsNonVerificationCommands(t *testing.T) {
 	}
 }
 
+func TestToolkit_RunTestToolRejectsSensitivePaths(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"go test ./.env"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "sensitive paths") {
+		t.Fatalf("expected sensitive path rejection, got %v", err)
+	}
+}
+
+func TestToolkit_RunTestToolRejectsEnvironmentDumps(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"env | grep TOKEN"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "environment variables") {
+		t.Fatalf("expected environment dump rejection, got %v", err)
+	}
+}
+
 func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
