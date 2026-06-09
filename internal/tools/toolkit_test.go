@@ -3648,6 +3648,8 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 		"name=run_test kind=test status=ok risk=medium",
 		"args_sha256=" + strings.Repeat("b", 64),
 		"result_action=run",
+		"evidence_status=current",
+		"evidence_status=possibly_stale",
 		"raw_output_bytes=4096 returned_output_bytes=512",
 		"result_budgeted=true",
 		"patch_risk=level=medium,files=2,hunks=2,+7/-2,multi_file=true",

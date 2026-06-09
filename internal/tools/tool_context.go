@@ -326,6 +326,7 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 
 	var b strings.Builder
 	b.WriteString("recent_tool_calls:\n")
+	currentRevision := workspaceRevision(context.Background(), t.env.RootDir)
 	for i, record := range records[start:] {
 		status := "ok"
 		if !record.Success {
@@ -353,6 +354,9 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		}
 		if record.RevisionAfter != "" {
 			fmt.Fprintf(&b, " revision_after=%s", record.RevisionAfter)
+		}
+		if evidenceStatus := toolEvidenceStatus(record, currentRevision); evidenceStatus != "" {
+			fmt.Fprintf(&b, " evidence_status=%s", evidenceStatus)
 		}
 		fmt.Fprintf(&b, " raw_output_bytes=%d returned_output_bytes=%d", record.RawOutputBytes, record.ReturnedOutputBytes)
 		if record.ResultBudgeted {
@@ -394,6 +398,18 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		TokenBudget: 800,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
+}
+
+func toolEvidenceStatus(record ToolExecutionRecord, currentRevision string) string {
+	currentRevision = strings.TrimSpace(currentRevision)
+	revisionAfter := strings.TrimSpace(record.RevisionAfter)
+	if currentRevision == "" || revisionAfter == "" {
+		return ""
+	}
+	if revisionAfter == currentRevision {
+		return "current"
+	}
+	return "possibly_stale"
 }
 
 type repeatedToolArgument struct {
