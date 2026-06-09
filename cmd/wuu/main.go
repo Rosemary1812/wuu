@@ -826,6 +826,8 @@ func evalWorkflowObservations(store *workflow.Store) ([]evalharness.WorkflowRunO
 		item := evalharness.WorkflowRunObservation{
 			ID:              run.ID,
 			DefinitionName:  run.DefinitionName,
+			Driver:          run.Driver,
+			Entrypoint:      run.Entrypoint,
 			Status:          string(run.Status),
 			Error:           evalSafePreview(run.Error, evalTextPreviewLimit),
 			ScriptPath:      run.ScriptPath,

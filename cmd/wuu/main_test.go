@@ -325,7 +325,12 @@ func TestEvalModelProfileObservation(t *testing.T) {
 
 func TestEvalWorkflowObservationsIncludeTeamArbitration(t *testing.T) {
 	store := workflow.NewStore(t.TempDir())
-	if _, err := store.CreateRun(workflow.Run{ID: "team-run", Status: workflow.RunStateRunning}); err != nil {
+	if _, err := store.CreateRun(workflow.Run{
+		ID:         "team-run",
+		Driver:     workflow.RunDriverAgentManaged,
+		Entrypoint: workflow.RunEntrypointNaturalLanguageAgent,
+		Status:     workflow.RunStateRunning,
+	}); err != nil {
 		t.Fatalf("CreateRun: %v", err)
 	}
 	for _, agent := range []workflow.AgentRun{
@@ -354,6 +359,9 @@ func TestEvalWorkflowObservationsIncludeTeamArbitration(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected one workflow observation, got %+v", got)
+	}
+	if got[0].Driver != workflow.RunDriverAgentManaged || got[0].Entrypoint != workflow.RunEntrypointNaturalLanguageAgent {
+		t.Fatalf("workflow observation missing driver fields: %+v", got[0])
 	}
 	arbitration := got[0].TeamArbitration
 	if arbitration.Status != "attention_required" {

@@ -119,6 +119,8 @@ type ToolObservation struct {
 type WorkflowRunObservation struct {
 	ID              string                        `json:"id"`
 	DefinitionName  string                        `json:"definition_name,omitempty"`
+	Driver          string                        `json:"driver,omitempty"`
+	Entrypoint      string                        `json:"entrypoint,omitempty"`
 	Status          string                        `json:"status"`
 	Error           string                        `json:"error,omitempty"`
 	ScriptPath      string                        `json:"script_path,omitempty"`
