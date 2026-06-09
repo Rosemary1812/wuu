@@ -2710,6 +2710,89 @@ func TestToolkit_ToolTelemetry_RecordsToolError(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "API_KEY=secret-value-1234567890\n")
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-read",
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if !strings.Contains(resp, "secret-value") {
+		t.Fatalf("fixture should prove read_file body contained secret-like text: %s", resp)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-missing",
+		Name:      "read_file",
+		Arguments: `{"path":"missing.txt"}`,
+	})
+	if err == nil {
+		t.Fatal("expected missing read_file error")
+	}
+	kit.env.toolTelemetry.record(ToolExecutionRecord{
+		Name:                "run_test",
+		Kind:                ToolKindTest,
+		Exposure:            ToolExposureDirect,
+		Risk:                ToolRiskMedium,
+		PolicyAction:        ToolPolicyAllow,
+		DurationMS:          123,
+		RevisionBefore:      "fs:worktree:before",
+		RevisionAfter:       "fs:worktree:after",
+		Success:             true,
+		RawOutputBytes:      4096,
+		ReturnedOutputBytes: 512,
+		ResultBudgeted:      true,
+		ResultRef:           "/tmp/result-API_KEY=secret-value-1234567890.json",
+		ArtifactRefs:        []string{"/tmp/artifact-API_KEY=secret-value-1234567890.log"},
+	})
+
+	block, ok := kit.ToolResultSummaryContextBlock()
+	if !ok {
+		t.Fatal("expected tool result summary context block")
+	}
+	if block.Kind != wuucontext.BlockToolResultSummary || block.Source != "tool_telemetry" {
+		t.Fatalf("unexpected context block metadata: %+v", block)
+	}
+	for _, want := range []string{
+		"recent_tool_calls:",
+		"name=read_file kind=file status=ok",
+		"name=read_file kind=file status=error",
+		"name=run_test kind=test status=ok risk=medium",
+		"raw_output_bytes=4096 returned_output_bytes=512",
+		"result_budgeted=true",
+		"result_ref=/tmp/result-API_KEY=[REDACTED]",
+		"artifact_refs=/tmp/artifact-API_KEY=[REDACTED]",
+		"tool arguments and output bodies are intentionally omitted",
+	} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("tool summary missing %q:\n%s", want, block.Content)
+		}
+	}
+	if strings.Contains(block.Content, "secret-value") {
+		t.Fatalf("tool result summary should not expose tool output or unredacted refs:\n%s", block.Content)
+	}
+
+	blocks := kit.ContextBlocks()
+	found := false
+	for _, candidate := range blocks {
+		if candidate.Kind == wuucontext.BlockToolResultSummary {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ContextBlocks missing TOOL_RESULT_SUMMARY block: %+v", blocks)
+	}
+}
+
 func TestToolkit_ToolPolicy_DeniesByRisk(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

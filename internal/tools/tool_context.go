@@ -16,6 +16,9 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 	if block, ok := t.TestFailureContextBlock(); ok {
 		blocks = append(blocks, block)
 	}
+	if block, ok := t.ToolResultSummaryContextBlock(); ok {
+		blocks = append(blocks, block)
+	}
 	return blocks
 }
 
@@ -66,6 +69,70 @@ func (t *Toolkit) TestFailureContextBlock() (wuucontext.Block, bool) {
 		Title:       "Latest test failure",
 		Source:      "run_test",
 		TokenBudget: 900,
+		Content:     strings.TrimRight(b.String(), "\n"),
+	}, true
+}
+
+func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
+	if t == nil || t.env == nil {
+		return wuucontext.Block{}, false
+	}
+	records := t.ToolTelemetry()
+	if len(records) == 0 {
+		return wuucontext.Block{}, false
+	}
+	const maxRecords = 8
+	start := 0
+	if len(records) > maxRecords {
+		start = len(records) - maxRecords
+	}
+
+	var b strings.Builder
+	b.WriteString("recent_tool_calls:\n")
+	for i, record := range records[start:] {
+		status := "ok"
+		if !record.Success {
+			status = "error"
+		}
+		fmt.Fprintf(&b, "- #%d name=%s kind=%s status=%s risk=%s duration_ms=%d",
+			start+i+1,
+			strings.TrimSpace(record.Name),
+			record.Kind,
+			status,
+			record.Risk,
+			record.DurationMS,
+		)
+		if record.PolicyAction != "" {
+			fmt.Fprintf(&b, " policy=%s", record.PolicyAction)
+		}
+		if record.RevisionBefore != "" {
+			fmt.Fprintf(&b, " revision_before=%s", record.RevisionBefore)
+		}
+		if record.RevisionAfter != "" {
+			fmt.Fprintf(&b, " revision_after=%s", record.RevisionAfter)
+		}
+		fmt.Fprintf(&b, " raw_output_bytes=%d returned_output_bytes=%d", record.RawOutputBytes, record.ReturnedOutputBytes)
+		if record.ResultBudgeted {
+			b.WriteString(" result_budgeted=true")
+		}
+		if record.ResultRef != "" {
+			fmt.Fprintf(&b, " result_ref=%s", compactContextLine(redactToolOutput(record.ResultRef)))
+		}
+		if len(record.ArtifactRefs) > 0 {
+			fmt.Fprintf(&b, " artifact_refs=%s", strings.Join(redactedCompactStrings(record.ArtifactRefs, 4), ","))
+		}
+		if strings.TrimSpace(record.Error) != "" {
+			fmt.Fprintf(&b, " error=%s", compactContextLine(redactToolOutput(record.Error)))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("note: tool arguments and output bodies are intentionally omitted; use artifact/result refs when needed.\n")
+
+	return wuucontext.Block{
+		Kind:        wuucontext.BlockToolResultSummary,
+		Title:       "Recent tool result summary",
+		Source:      "tool_telemetry",
+		TokenBudget: 800,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
 }
@@ -123,4 +190,13 @@ func compactContextLine(value string) string {
 		return value[:240] + "...[truncated]"
 	}
 	return value
+}
+
+func redactedCompactStrings(values []string, limit int) []string {
+	values = limitStrings(values, limit)
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, compactContextLine(redactToolOutput(value)))
+	}
+	return out
 }
