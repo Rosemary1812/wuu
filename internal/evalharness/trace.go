@@ -1,7 +1,9 @@
 package evalharness
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -45,6 +47,33 @@ type TraceObservability struct {
 	TaskWorkdir     string   `json:"task_workdir,omitempty"`
 	TaskWorkdirKept bool     `json:"task_workdir_kept,omitempty"`
 	Warnings        []string `json:"warnings,omitempty"`
+}
+
+type TraceReplaySummary struct {
+	Path              string                   `json:"path,omitempty"`
+	Mode              string                   `json:"mode"`
+	EventCount        int                      `json:"event_count"`
+	EventTypes        map[string]int           `json:"event_types,omitempty"`
+	Task              *TraceTask               `json:"task,omitempty"`
+	Observability     *TraceObservability      `json:"observability,omitempty"`
+	ModelProfile      *ModelProfileObservation `json:"model_profile,omitempty"`
+	ContextBlockKinds []string                 `json:"context_block_kinds,omitempty"`
+	ToolNames         []string                 `json:"tool_names,omitempty"`
+	WorkflowRunIDs    []string                 `json:"workflow_run_ids,omitempty"`
+	HarnessTaskIDs    []string                 `json:"harness_task_ids,omitempty"`
+	HarnessReportIDs  []string                 `json:"harness_report_ids,omitempty"`
+	Final             *TraceReplayFinal        `json:"final,omitempty"`
+	Complete          bool                     `json:"complete"`
+	Warnings          []string                 `json:"warnings,omitempty"`
+}
+
+type TraceReplayFinal struct {
+	Success              bool                   `json:"success"`
+	VerificationReason   string                 `json:"verification_reason,omitempty"`
+	VerificationEvidence []VerificationEvidence `json:"verification_evidence,omitempty"`
+	Error                string                 `json:"error,omitempty"`
+	FinalAnswerPreview   string                 `json:"final_answer_preview,omitempty"`
+	Warnings             []string               `json:"warnings,omitempty"`
 }
 
 func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
@@ -137,6 +166,135 @@ func WriteTrace(path string, result Result) error {
 		if err := encoder.Encode(event); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func ReplayTrace(path string) (TraceReplaySummary, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return TraceReplaySummary{}, err
+	}
+	defer file.Close()
+
+	summary := TraceReplaySummary{
+		Path:       path,
+		Mode:       "deterministic_trace_replay",
+		EventTypes: make(map[string]int),
+	}
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	line := 0
+	for scanner.Scan() {
+		line++
+		var event struct {
+			Type      string          `json:"type"`
+			TaskID    string          `json:"task_id,omitempty"`
+			CreatedAt time.Time       `json:"created_at"`
+			Data      json.RawMessage `json:"data,omitempty"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return TraceReplaySummary{}, fmt.Errorf("decode trace line %d: %w", line, err)
+		}
+		summary.EventCount++
+		summary.EventTypes[event.Type]++
+		if err := replayTraceEvent(&summary, event.Type, event.Data); err != nil {
+			return TraceReplaySummary{}, fmt.Errorf("replay trace line %d type %q: %w", line, event.Type, err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return TraceReplaySummary{}, err
+	}
+	if summary.Task == nil {
+		return TraceReplaySummary{}, fmt.Errorf("trace %s has no task event", path)
+	}
+	if summary.Final == nil {
+		summary.Warnings = append(summary.Warnings, "trace has no final event; using task success as replay outcome")
+		summary.Final = &TraceReplayFinal{Success: summary.Task.Success, VerificationReason: summary.Task.VerificationReason, Error: summary.Task.Error}
+	}
+	summary.Complete = summary.EventTypes["task"] > 0 && summary.EventTypes["final"] > 0
+	return summary, nil
+}
+
+func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.RawMessage) error {
+	if len(data) == 0 {
+		return nil
+	}
+	switch eventType {
+	case "task":
+		var task TraceTask
+		if err := json.Unmarshal(data, &task); err != nil {
+			return err
+		}
+		summary.Task = &task
+	case "observability":
+		var obs TraceObservability
+		if err := json.Unmarshal(data, &obs); err != nil {
+			return err
+		}
+		summary.Observability = &obs
+	case "model_profile":
+		var profile ModelProfileObservation
+		if err := json.Unmarshal(data, &profile); err != nil {
+			return err
+		}
+		summary.ModelProfile = &profile
+	case "context_blocks":
+		var blocks []ContextBlockObservation
+		if err := json.Unmarshal(data, &blocks); err != nil {
+			return err
+		}
+		for _, block := range blocks {
+			if block.Kind != "" {
+				summary.ContextBlockKinds = append(summary.ContextBlockKinds, block.Kind)
+			}
+		}
+	case "tool_records":
+		var records []ToolObservation
+		if err := json.Unmarshal(data, &records); err != nil {
+			return err
+		}
+		for _, record := range records {
+			if record.Name != "" {
+				summary.ToolNames = append(summary.ToolNames, record.Name)
+			}
+		}
+	case "workflow_runs":
+		var runs []WorkflowRunObservation
+		if err := json.Unmarshal(data, &runs); err != nil {
+			return err
+		}
+		for _, run := range runs {
+			if run.ID != "" {
+				summary.WorkflowRunIDs = append(summary.WorkflowRunIDs, run.ID)
+			}
+		}
+	case "harness_tasks":
+		var tasks []HarnessTaskObservation
+		if err := json.Unmarshal(data, &tasks); err != nil {
+			return err
+		}
+		for _, task := range tasks {
+			if task.ID != "" {
+				summary.HarnessTaskIDs = append(summary.HarnessTaskIDs, task.ID)
+			}
+		}
+	case "harness_reports":
+		var reports []HarnessReportObservation
+		if err := json.Unmarshal(data, &reports); err != nil {
+			return err
+		}
+		for _, report := range reports {
+			if report.ID != "" {
+				summary.HarnessReportIDs = append(summary.HarnessReportIDs, report.ID)
+			}
+		}
+	case "final":
+		var final TraceReplayFinal
+		if err := json.Unmarshal(data, &final); err != nil {
+			return err
+		}
+		summary.Final = &final
 	}
 	return nil
 }

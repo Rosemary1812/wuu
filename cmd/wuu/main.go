@@ -346,6 +346,7 @@ func runEval(args []string) error {
 	jsonOutput := fs.Bool("json", false, "output eval report as JSON")
 	outputPath := fs.String("output", "", "write eval report JSON to this path")
 	keepWorkdirs := fs.Bool("keep-workdirs", false, "keep temporary task workdirs")
+	replayTrace := fs.String("replay-trace", "", "replay an eval trace JSONL file without calling a model or executing tools")
 	liveCodexOAuth := fs.Bool("live-codex-oauth", false, "run live Codex OAuth E2E eval using local Codex CLI or wuu OAuth credentials")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -356,6 +357,9 @@ func runEval(args []string) error {
 			fmt.Printf("%s\t%s\t%s\n", task.ID, task.Name, task.Description)
 		}
 		return nil
+	}
+	if strings.TrimSpace(*replayTrace) != "" {
+		return runEvalTraceReplay(strings.TrimSpace(*replayTrace), *jsonOutput, *outputPath)
 	}
 
 	homeDir := os.Getenv("HOME")
@@ -435,6 +439,31 @@ func runEval(args []string) error {
 	}
 	if report.Summary.Failed > 0 {
 		return fmt.Errorf("eval failed: %d/%d passed", report.Summary.Passed, report.Summary.Total)
+	}
+	return nil
+}
+
+func runEvalTraceReplay(tracePath string, jsonOutput bool, outputPath string) error {
+	summary, err := evalharness.ReplayTrace(tracePath)
+	if err != nil {
+		return err
+	}
+	if outputPath != "" {
+		if err := writeEvalReplaySummary(outputPath, summary); err != nil {
+			return err
+		}
+	}
+	if jsonOutput {
+		data, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+	printEvalTraceReplay(summary)
+	if summary.Final != nil && !summary.Final.Success {
+		return fmt.Errorf("eval trace replay failed: task %s did not pass", summary.Task.ID)
 	}
 	return nil
 }
@@ -1364,6 +1393,18 @@ func writeEvalReport(path string, report evalReport) error {
 	return os.WriteFile(resolved, append(data, '\n'), 0o644)
 }
 
+func writeEvalReplaySummary(path string, summary evalharness.TraceReplaySummary) error {
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return err
+	}
+	resolved, err := resolveRuntimePath("", path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(resolved, append(data, '\n'), 0o644)
+}
+
 func printEvalReport(report evalReport) {
 	fmt.Printf("eval: %d/%d passed in %dms\n", report.Summary.Passed, report.Summary.Total, report.DurationMS)
 	for _, result := range report.Results {
@@ -1399,6 +1440,51 @@ func printEvalReport(report evalReport) {
 		if result.Workdir != "" {
 			fmt.Printf("  workdir: %s\n", result.Workdir)
 		}
+	}
+}
+
+func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
+	status := "FAIL"
+	if summary.Final != nil && summary.Final.Success {
+		status = "PASS"
+	}
+	taskID := ""
+	taskName := ""
+	if summary.Task != nil {
+		taskID = summary.Task.ID
+		taskName = summary.Task.Name
+	}
+	fmt.Printf("eval trace replay: %s %s events=%d complete=%t mode=%s\n", status, taskID, summary.EventCount, summary.Complete, summary.Mode)
+	if taskName != "" {
+		fmt.Printf("  task_name: %s\n", taskName)
+	}
+	if summary.ModelProfile != nil {
+		fmt.Printf("  model_profile: %s/%s family=%s write_mode=%s\n", summary.ModelProfile.ProviderName, summary.ModelProfile.Model, summary.ModelProfile.Family, summary.ModelProfile.DefaultWriteMode)
+	}
+	if len(summary.ToolNames) > 0 {
+		fmt.Printf("  tool_records: %s\n", strings.Join(summary.ToolNames, ","))
+	}
+	if len(summary.WorkflowRunIDs) > 0 {
+		fmt.Printf("  workflow_runs: %s\n", strings.Join(summary.WorkflowRunIDs, ","))
+	}
+	if summary.Observability != nil {
+		if summary.Observability.SessionID != "" {
+			fmt.Printf("  session_id: %s\n", summary.Observability.SessionID)
+		}
+		if summary.Observability.TracePath != "" {
+			fmt.Printf("  trace_path: %s\n", summary.Observability.TracePath)
+		}
+	}
+	if summary.Final != nil {
+		if summary.Final.VerificationReason != "" {
+			fmt.Printf("  verify: %s\n", firstLine(summary.Final.VerificationReason))
+		}
+		if summary.Final.Error != "" {
+			fmt.Printf("  error: %s\n", firstLine(summary.Final.Error))
+		}
+	}
+	for _, warning := range summary.Warnings {
+		fmt.Printf("  warning: %s\n", warning)
 	}
 }
 
@@ -1605,6 +1691,7 @@ Eval flags:
   --max-steps       max tool loop steps per task
   --timeout         timeout per task (default 10m)
   --keep-workdirs   keep temporary task workdirs
+  --replay-trace    replay an eval trace JSONL without calling a model or tools
   --live-codex-oauth
                    run live MCP E2E with local Codex OAuth
 

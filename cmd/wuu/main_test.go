@@ -544,6 +544,55 @@ func TestPersistEvalTraceWritesSessionArtifact(t *testing.T) {
 	}
 }
 
+func TestRunEvalReplayTraceJSON(t *testing.T) {
+	tracePath := filepath.Join(t.TempDir(), "eval-trace.jsonl")
+	if err := evalharness.WriteTrace(tracePath, evalharness.Result{
+		TaskID:             "task-1",
+		TaskName:           "Task One",
+		Success:            true,
+		VerificationReason: "passed",
+		Observability: &evalharness.Observability{
+			SessionID:          "eval-task-1",
+			SessionDir:         filepath.Dir(tracePath),
+			TracePath:          tracePath,
+			FinalAnswerPreview: "done",
+			ModelProfile:       &evalharness.ModelProfileObservation{ProviderName: "openai", Model: "gpt-5-codex", Family: "codex"},
+			ToolRecords: []evalharness.ToolObservation{{
+				Name:    "read_file",
+				Success: true,
+			}},
+		},
+	}); err != nil {
+		t.Fatalf("write trace: %v", err)
+	}
+	outputPath := filepath.Join(t.TempDir(), "replay.json")
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"eval", "--replay-trace", tracePath, "--json", "--output", outputPath}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+
+	var stdoutSummary evalharness.TraceReplaySummary
+	if err := json.Unmarshal([]byte(output), &stdoutSummary); err != nil {
+		t.Fatalf("expected replay JSON output, got %q: %v", output, err)
+	}
+	if stdoutSummary.Task == nil || stdoutSummary.Task.ID != "task-1" || stdoutSummary.Final == nil || !stdoutSummary.Final.Success {
+		t.Fatalf("unexpected stdout replay summary: %+v", stdoutSummary)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read replay output: %v", err)
+	}
+	var fileSummary evalharness.TraceReplaySummary
+	if err := json.Unmarshal(data, &fileSummary); err != nil {
+		t.Fatalf("parse replay output file: %v", err)
+	}
+	if fileSummary.Mode != "deterministic_trace_replay" || len(fileSummary.ToolNames) != 1 || fileSummary.ToolNames[0] != "read_file" {
+		t.Fatalf("unexpected replay output file: %+v", fileSummary)
+	}
+}
+
 func TestSetTemporaryEnvRestoresPreviousValue(t *testing.T) {
 	t.Setenv("WUU_HOME", "/tmp/original-wuu-home")
 	restore := setTemporaryEnv("WUU_HOME", "/tmp/eval-wuu-home")

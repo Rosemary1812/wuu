@@ -152,3 +152,57 @@ func TestWriteTraceWritesJSONL(t *testing.T) {
 		t.Fatalf("unexpected trace event types: %+v", types)
 	}
 }
+
+func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace", "eval-trace.jsonl")
+	err := WriteTrace(path, Result{
+		TaskID:             "task-1",
+		TaskName:           "Task One",
+		Success:            true,
+		VerificationReason: "passed",
+		Observability: &Observability{
+			SessionID:          "eval-task-1",
+			SessionDir:         filepath.Dir(path),
+			TracePath:          path,
+			FinalAnswerPreview: "done",
+			ModelProfile:       &ModelProfileObservation{ProviderName: "openai", Model: "gpt-5-codex", Family: "codex", DefaultWriteMode: "patch"},
+			ContextBlocks: []ContextBlockObservation{{
+				Kind:   "TASK",
+				Source: "system_reminder",
+			}},
+			ToolRecords: []ToolObservation{{
+				Name:    "read_file",
+				Success: true,
+			}},
+			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", Status: "completed"}},
+			HarnessTasks:   []HarnessTaskObservation{{ID: "worker-1", Status: "completed"}},
+			HarnessReports: []HarnessReportObservation{{ID: "report-1", Outcome: "completed"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("WriteTrace: %v", err)
+	}
+
+	summary, err := ReplayTrace(path)
+	if err != nil {
+		t.Fatalf("ReplayTrace: %v", err)
+	}
+	if !summary.Complete || summary.Mode != "deterministic_trace_replay" || summary.EventCount != 9 {
+		t.Fatalf("unexpected replay summary envelope: %+v", summary)
+	}
+	if summary.Task == nil || summary.Task.ID != "task-1" || summary.Final == nil || !summary.Final.Success {
+		t.Fatalf("replay did not preserve task/final outcome: %+v", summary)
+	}
+	if summary.ModelProfile == nil || summary.ModelProfile.Family != "codex" || summary.ModelProfile.DefaultWriteMode != "patch" {
+		t.Fatalf("replay missing model profile: %+v", summary.ModelProfile)
+	}
+	if len(summary.ContextBlockKinds) != 1 || summary.ContextBlockKinds[0] != "TASK" {
+		t.Fatalf("replay missing context block kinds: %+v", summary.ContextBlockKinds)
+	}
+	if len(summary.ToolNames) != 1 || summary.ToolNames[0] != "read_file" {
+		t.Fatalf("replay missing tool records: %+v", summary.ToolNames)
+	}
+	if len(summary.WorkflowRunIDs) != 1 || summary.WorkflowRunIDs[0] != "run-1" {
+		t.Fatalf("replay missing workflow runs: %+v", summary.WorkflowRunIDs)
+	}
+}
