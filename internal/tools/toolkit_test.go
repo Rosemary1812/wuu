@@ -1466,6 +1466,47 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	meta, ok := kit.ToolMetadata(providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"npm run dev","owner_kind":"main_agent"}`,
+	})
+	if !ok {
+		t.Fatal("start_process metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "process command") {
+		t.Fatalf("start_process metadata = %+v, want high-risk managed process", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"cat .env","owner_kind":"main_agent"}`,
+	})
+	if !ok {
+		t.Fatal("start_process metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "read secrets") {
+		t.Fatalf("secret-reading start_process metadata = %+v, want high-risk secret classification", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"env | grep TOKEN","owner_kind":"main_agent"}`,
+	})
+	if !ok {
+		t.Fatal("start_process metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "environment secrets") {
+		t.Fatalf("environment dump start_process metadata = %+v, want high-risk environment classification", meta)
+	}
+}
+
 func TestToolkit_RunTestToolExecutesVerificationCommand(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/run-test\n\ngo 1.22\n")

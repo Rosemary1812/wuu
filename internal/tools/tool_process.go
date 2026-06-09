@@ -22,6 +22,27 @@ func (t *StartProcessTool) Name() string            { return "start_process" }
 func (t *StartProcessTool) IsReadOnly() bool        { return false }
 func (t *StartProcessTool) IsConcurrencySafe() bool { return false }
 
+func (t *StartProcessTool) Classify(argsJSON string) ToolClassification {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return highRiskShellClassification("invalid process invocation", false)
+	}
+	shellClass := classifyShellCommand(args.Command)
+	reason := "managed background process"
+	if shellClass.Reason != "" {
+		reason = "process command: " + shellClass.Reason
+	}
+	return ToolClassification{
+		ReadOnly:        false,
+		ConcurrencySafe: false,
+		Destructive:     shellClass.Destructive,
+		Risk:            ToolRiskHigh,
+		Reason:          reason,
+	}
+}
+
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "start_process", Description: "Start a managed background OS process in the workspace. Commands that dump environment variables or touch sensitive credential paths are rejected.",
