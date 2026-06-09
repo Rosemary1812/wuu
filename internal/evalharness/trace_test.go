@@ -175,8 +175,11 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 			FinalAnswerPreview: "done",
 			ModelProfile:       &ModelProfileObservation{ProviderName: "openai", Model: "gpt-5-codex", Family: "codex", DefaultWriteMode: "patch"},
 			ContextBlocks: []ContextBlockObservation{{
-				Kind:   "TASK",
-				Source: "system_reminder",
+				Kind:           "TASK",
+				Title:          "Task",
+				Source:         "system_reminder",
+				TokenBudget:    600,
+				ContentPreview: "Fix the task.",
 			}},
 			ToolInventory: []ToolInventoryObservation{{
 				Name:     "read_file",
@@ -245,6 +248,13 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	}
 	if len(summary.ContextBlockKinds) != 1 || summary.ContextBlockKinds[0] != "TASK" {
 		t.Fatalf("replay missing context block kinds: %+v", summary.ContextBlockKinds)
+	}
+	if len(summary.ContextBlocks) != 1 ||
+		summary.ContextBlocks[0].Kind != "TASK" ||
+		summary.ContextBlocks[0].Source != "system_reminder" ||
+		summary.ContextBlocks[0].TokenBudget != 600 ||
+		summary.ContextBlocks[0].ContentPreview != "Fix the task." {
+		t.Fatalf("replay missing context block observations: %+v", summary.ContextBlocks)
 	}
 	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "read_file" || summary.ToolInventory[0].Exposure != "direct" {
 		t.Fatalf("replay missing tool inventory: %+v", summary.ToolInventory)

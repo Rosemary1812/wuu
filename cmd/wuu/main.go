@@ -1642,6 +1642,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	if len(summary.ToolInventory) > 0 {
 		fmt.Printf("  tool_inventory: %d tools\n", len(summary.ToolInventory))
 	}
+	if len(summary.ContextBlockKinds) > 0 {
+		fmt.Printf("  context_blocks: %s\n", strings.Join(summary.ContextBlockKinds, ","))
+	}
 	if len(summary.ToolNames) > 0 {
 		fmt.Printf("  tool_records: %s\n", strings.Join(summary.ToolNames, ","))
 	}

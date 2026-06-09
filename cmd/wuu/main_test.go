@@ -707,6 +707,12 @@ func TestRunEvalReplayTraceJSON(t *testing.T) {
 			TracePath:          tracePath,
 			FinalAnswerPreview: "done",
 			ModelProfile:       &evalharness.ModelProfileObservation{ProviderName: "openai", Model: "gpt-5-codex", Family: "codex"},
+			ContextBlocks: []evalharness.ContextBlockObservation{{
+				Kind:           "TOOL_RESULT_SUMMARY",
+				Source:         "tool_telemetry",
+				TokenBudget:    800,
+				ContentPreview: "recent_tool_calls:",
+			}},
 			ToolRecords: []evalharness.ToolObservation{{
 				Name:            "read_file",
 				ArgumentsSHA256: strings.Repeat("c", 64),
@@ -745,6 +751,11 @@ func TestRunEvalReplayTraceJSON(t *testing.T) {
 	}
 	if fileSummary.Mode != "deterministic_trace_replay" || len(fileSummary.ToolNames) != 2 || fileSummary.ToolNames[0] != "read_file" || fileSummary.ToolNames[1] != "read_file" {
 		t.Fatalf("unexpected replay output file: %+v", fileSummary)
+	}
+	if len(fileSummary.ContextBlocks) != 1 ||
+		fileSummary.ContextBlocks[0].Kind != "TOOL_RESULT_SUMMARY" ||
+		fileSummary.ContextBlocks[0].ContentPreview != "recent_tool_calls:" {
+		t.Fatalf("replay output should include context block observations: %+v", fileSummary.ContextBlocks)
 	}
 	if fileSummary.ToolSummary == nil ||
 		len(fileSummary.ToolSummary.RepeatedArguments) != 1 ||

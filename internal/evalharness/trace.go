@@ -59,6 +59,7 @@ type TraceReplaySummary struct {
 	Task              *TraceTask                 `json:"task,omitempty"`
 	Observability     *TraceObservability        `json:"observability,omitempty"`
 	ModelProfile      *ModelProfileObservation   `json:"model_profile,omitempty"`
+	ContextBlocks     []ContextBlockObservation  `json:"context_blocks,omitempty"`
 	ContextBlockKinds []string                   `json:"context_block_kinds,omitempty"`
 	ToolInventory     []ToolInventoryObservation `json:"tool_inventory,omitempty"`
 	ToolNames         []string                   `json:"tool_names,omitempty"`
@@ -283,6 +284,7 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 		if err := json.Unmarshal(data, &blocks); err != nil {
 			return err
 		}
+		summary.ContextBlocks = append(summary.ContextBlocks, blocks...)
 		for _, block := range blocks {
 			if block.Kind != "" {
 				summary.ContextBlockKinds = append(summary.ContextBlockKinds, block.Kind)
