@@ -13,6 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
@@ -434,6 +435,10 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner
 	}
+	toolRecordStart := 0
+	if threadRuntime != nil && threadRuntime.Toolkit != nil {
+		toolRecordStart = len(threadRuntime.Toolkit.ToolTelemetry())
+	}
 	baseBeforeStep := runner.BeforeStep
 	runner.BeforeStep = func() []providers.ChatMessage {
 		var messages []providers.ChatMessage
@@ -504,6 +509,8 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
+	_ = s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart)
+
 	if len(unconsumedSteers) > 0 {
 		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))
 	}
@@ -528,6 +535,59 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	go s.generateThreadTitle(th.ID, titleHistory)
 	s.kickAgentCompletionDrain(th.ID)
 	s.kickQueuedTurnDrain(th.ID)
+}
+
+func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int) error {
+	if threadRuntime == nil || threadRuntime.Toolkit == nil {
+		return nil
+	}
+	tracePath := sessiontrace.Path(threadRuntime.Toolkit.SessionDir())
+	if strings.TrimSpace(tracePath) == "" {
+		return nil
+	}
+	providerName := ""
+	if s != nil && s.rt != nil {
+		providerName = s.rt.ProviderName
+	}
+	model := ""
+	apiModel := ""
+	if runner != nil {
+		model = runner.Model
+		apiModel = runner.APIModel
+	}
+	errorText := ""
+	if runErr != nil {
+		errorText = runErr.Error()
+	}
+	turnRecord := sessiontrace.TurnRecord{
+		ThreadID:         threadID,
+		TurnID:           turn.ID,
+		Status:           string(turn.Status),
+		ProviderName:     providerName,
+		Model:            model,
+		APIModel:         apiModel,
+		StartedAt:        turn.StartedAt,
+		CompletedAt:      turn.CompletedAt,
+		DurationMS:       turn.DurationMS,
+		InputTokens:      res.InputTokens,
+		OutputTokens:     res.OutputTokens,
+		HistoryRewritten: res.HistoryRewritten,
+		Error:            errorText,
+	}
+	finalRecord := sessiontrace.FinalRecord{
+		Status:             string(turn.Status),
+		InputTokens:        res.InputTokens,
+		OutputTokens:       res.OutputTokens,
+		FinalAnswerPreview: res.Content,
+		Error:              errorText,
+	}
+	records := threadRuntime.Toolkit.ToolTelemetry()
+	if toolRecordStart > 0 && toolRecordStart < len(records) {
+		records = records[toolRecordStart:]
+	} else if toolRecordStart >= len(records) {
+		records = nil
+	}
+	return sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records)
 }
 
 func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatMessage) {

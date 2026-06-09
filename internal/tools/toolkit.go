@@ -284,6 +284,14 @@ func (t *Toolkit) SetSessionDir(dir string) {
 	t.env.SessionDir = dir
 }
 
+// SessionDir returns the session artifact directory currently bound to this toolkit.
+func (t *Toolkit) SessionDir() string {
+	if t == nil || t.env == nil {
+		return ""
+	}
+	return t.env.SessionDir
+}
+
 // SetAgentIdentity sets the current agent identity for relative agent-path
 // resolution inside orchestration tools.
 func (t *Toolkit) SetAgentIdentity(id, path string) {
