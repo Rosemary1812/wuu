@@ -4131,6 +4131,111 @@ func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
 	}
 }
 
+func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	kit.SetProcessManager(manager)
+
+	startResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"sleep 5","owner_kind":"main_agent","lifecycle":"session"}`,
+	})
+	if err != nil {
+		t.Fatalf("start_process: %v", err)
+	}
+	var started proc.Process
+	if err := json.Unmarshal([]byte(startResp), &started); err != nil {
+		t.Fatalf("parse start_process response: %v", err)
+	}
+	defer manager.Stop(started.ID)
+	if started.Action != "start_process" || started.ID == "" {
+		t.Fatalf("unexpected start_process response: %+v", started)
+	}
+
+	listResp, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_processes", Arguments: `{}`})
+	if err != nil {
+		t.Fatalf("list_processes: %v", err)
+	}
+	var listed struct {
+		Action    string         `json:"action"`
+		Processes []proc.Process `json:"processes"`
+	}
+	if err := json.Unmarshal([]byte(listResp), &listed); err != nil {
+		t.Fatalf("parse list_processes response: %v", err)
+	}
+	if listed.Action != "list_processes" || len(listed.Processes) != 1 {
+		t.Fatalf("unexpected list_processes response: %+v", listed)
+	}
+
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_process_output",
+		Arguments: `{"process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":1}`,
+	})
+	if err != nil {
+		t.Fatalf("read_process_output: %v", err)
+	}
+	var readParsed map[string]any
+	if err := json.Unmarshal([]byte(readResp), &readParsed); err != nil {
+		t.Fatalf("parse read_process_output response: %v", err)
+	}
+	if readParsed["action"] != "read_process_output" {
+		t.Fatalf("read_process_output action mismatch: %+v", readParsed)
+	}
+
+	stopResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "stop_process",
+		Arguments: `{"process_id":"` + started.ID + `"}`,
+	})
+	if err != nil {
+		t.Fatalf("stop_process: %v", err)
+	}
+	var stopped proc.Process
+	if err := json.Unmarshal([]byte(stopResp), &stopped); err != nil {
+		t.Fatalf("parse stop_process response: %v", err)
+	}
+	if stopped.Action != "stop_process" {
+		t.Fatalf("stop_process action mismatch: %+v", stopped)
+	}
+
+	portResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "report_listening_ports",
+		Arguments: `{"ports":[3000,8080]}`,
+	})
+	if err != nil {
+		t.Fatalf("report_listening_ports: %v", err)
+	}
+	var portParsed map[string]any
+	if err := json.Unmarshal([]byte(portResp), &portParsed); err != nil {
+		t.Fatalf("parse report_listening_ports response: %v", err)
+	}
+	if portParsed["action"] != "report_listening_ports" {
+		t.Fatalf("report_listening_ports action mismatch: %+v", portParsed)
+	}
+
+	records := kit.ToolTelemetry()
+	gotActions := make([]string, 0, len(records))
+	for _, record := range records {
+		gotActions = append(gotActions, record.Name+":"+record.ResultAction)
+	}
+	wantActions := []string{
+		"start_process:start_process",
+		"list_processes:list_processes",
+		"read_process_output:read_process_output",
+		"stop_process:stop_process",
+		"report_listening_ports:report_listening_ports",
+	}
+	if !reflect.DeepEqual(gotActions, wantActions) {
+		t.Fatalf("process telemetry actions = %+v, want %+v", gotActions, wantActions)
+	}
+}
+
 func TestToolkit_StartProcessRejectsSecretBearingCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

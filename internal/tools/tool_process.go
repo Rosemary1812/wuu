@@ -96,7 +96,11 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 		return "", err
 	}
 	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY})
-	out, _ := json.Marshal(redactProcessPtr(p))
+	redacted := redactProcessPtr(p)
+	if redacted != nil {
+		redacted.Action = "start_process"
+	}
+	out, _ := json.Marshal(redacted)
 	if startErr != nil {
 		return string(out), startErr
 	}
@@ -135,7 +139,10 @@ func (t *ListProcessesTool) Execute(_ context.Context, _ string) (string, error)
 	for _, p := range ps {
 		redacted = append(redacted, redactProcess(p))
 	}
-	return mustJSON(redacted)
+	return mustJSON(map[string]any{
+		"action":    "list_processes",
+		"processes": redacted,
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +184,11 @@ func (t *StopProcessTool) Execute(_ context.Context, argsJSON string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return mustJSON(redactProcessPtr(p))
+	redacted := redactProcessPtr(p)
+	if redacted != nil {
+		redacted.Action = "stop_process"
+	}
+	return mustJSON(redacted)
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +244,7 @@ func (t *ReadProcessOutputTool) Execute(ctx context.Context, argsJSON string) (s
 		return "", err
 	}
 	return mustJSON(map[string]any{
+		"action":       "read_process_output",
 		"process_id":   args.ProcessID,
 		"output":       redactToolOutput(snapshot.Output),
 		"truncated":    snapshot.Truncated,
@@ -290,7 +302,12 @@ func (t *WriteStdinTool) Execute(_ context.Context, argsJSON string) (string, er
 	if err != nil {
 		return "", err
 	}
-	return mustJSON(map[string]any{"process_id": args.ProcessID, "bytes_written": len(args.Input), "process": redactProcessPtr(p)})
+	return mustJSON(map[string]any{
+		"action":        "write_stdin",
+		"process_id":    args.ProcessID,
+		"bytes_written": len(args.Input),
+		"process":       redactProcessPtr(p),
+	})
 }
 
 func redactProcessPtr(p *proc.Process) *proc.Process {

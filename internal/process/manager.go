@@ -47,6 +47,7 @@ const (
 )
 
 type Process struct {
+	Action    string    `json:"action,omitempty"`
 	ID        string    `json:"id"`
 	OwnerKind OwnerKind `json:"owner_kind"`
 	OwnerID   string    `json:"owner_id"`

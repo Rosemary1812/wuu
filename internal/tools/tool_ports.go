@@ -90,6 +90,7 @@ func (t *ReportListeningPortsTool) Execute(_ context.Context, argsJSON string) (
 	}
 
 	return mustJSON(map[string]any{
+		"action":        "report_listening_ports",
 		"status":        "noted",
 		"ports":         ports,
 		"preview_count": len(ports),
