@@ -14,8 +14,11 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
+	"github.com/blueberrycongee/wuu/internal/hooks"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
+	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
@@ -339,7 +342,7 @@ description: Legacy user audit workflow.
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if len(rt.Workflows) != 3 {
+	if len(rt.Workflows) != 4 {
 		t.Fatalf("Workflows = %+v", rt.Workflows)
 	}
 	feature, ok := workflow.Find(rt.Workflows, "feature-delivery")
@@ -355,10 +358,14 @@ description: Legacy user audit workflow.
 	if _, ok := workflow.Find(rt.Workflows, "legacy-audit"); !ok {
 		t.Fatalf("legacy user workflow not discovered: %+v", rt.Workflows)
 	}
+	compose, ok := workflow.Find(rt.Workflows, "compose")
+	if !ok || compose.Source != "bundled" || !strings.Contains(compose.Content, "session_memory") {
+		t.Fatalf("bundled compose workflow not discovered: %+v", compose)
+	}
 	if !strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") || !strings.Contains(rt.BaseSystemPrompt, "`start_workflow`") {
 		t.Fatalf("workflow catalog not injected into system prompt:\n%s", rt.BaseSystemPrompt)
 	}
-	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 3 {
+	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 4 {
 		t.Fatalf("toolkit workflows not wired: %+v", rt.Toolkit)
 	}
 	defs := map[string]bool{}
@@ -381,6 +388,131 @@ description: Legacy user audit workflow.
 		if info.Exposure != tools.ToolExposureDeferred {
 			t.Fatalf("workflow driver %q exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
 		}
+	}
+}
+
+func TestNewSessionDiscoversPluginSkillsAndWorkflows(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	pluginRoot := filepath.Join(root, ".wuu", "plugins", "compose-kit")
+	writeSessionTestFile(t, filepath.Join(pluginRoot, "plugin.json"), `{
+  "id": "compose-kit",
+  "description": "Compose plugin assets",
+  "skills": ["skills"],
+  "workflows": ["workflows"]
+}`)
+	writeSessionTestFile(t, filepath.Join(pluginRoot, "skills", "brainstorm.md"), `---
+name: brainstorm
+description: Explore product options.
+---
+Brainstorm options.
+`)
+	writeSessionTestFile(t, filepath.Join(pluginRoot, "workflows", "release", "WORKFLOW.md"), `---
+name: release-compose
+description: Compose release workflow.
+---
+Release body.
+`)
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if len(rt.Plugins) != 1 || rt.Plugins[0].ID != "compose-kit" {
+		t.Fatalf("plugins not discovered: %+v", rt.Plugins)
+	}
+	skill, ok := skills.Find(rt.Skills, "brainstorm")
+	if !ok || skill.Source != "plugin:compose-kit" {
+		t.Fatalf("plugin skill not discovered with source: %+v", skill)
+	}
+	wf, ok := workflow.Find(rt.Workflows, "release-compose")
+	if !ok || wf.Source != "plugin:compose-kit" {
+		t.Fatalf("plugin workflow not discovered with source: %+v", wf)
+	}
+}
+
+func TestNewSessionWiresPluginHooks(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	pluginRoot := filepath.Join(root, ".wuu", "plugins", "hook-kit")
+	writeSessionTestFile(t, filepath.Join(pluginRoot, "plugin.json"), `{
+  "id": "hook-kit",
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "read_file", "command": "printf '{\"additional_context\":\"plugin hook ran\"}'"}
+    ]
+  }
+}`)
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	out, err := rt.HookDispatcher.Dispatch(context.Background(), hooks.PreToolUse, &hooks.Input{ToolName: "read_file"})
+	if err != nil {
+		t.Fatalf("Dispatch plugin hook: %v", err)
+	}
+	if out.Context != "plugin hook ran" {
+		t.Fatalf("plugin hook context = %q", out.Context)
+	}
+}
+
+func TestMCPServersFromConfigAndPluginsPrefixesPluginServers(t *testing.T) {
+	plugins := []pluginpkg.Plugin{{
+		Manifest: pluginpkg.Manifest{
+			ID: "docs",
+			MCPServers: map[string]config.MCPServerConfig{
+				"search": {Command: "plugin-docs"},
+			},
+		},
+	}}
+	cfg := config.Config{
+		MCPServers: map[string]config.MCPServerConfig{
+			"search": {Command: "user-docs"},
+		},
+	}
+	servers := mcpServersFromConfigAndPlugins(cfg, plugins)
+	if servers["search"].Command != "user-docs" {
+		t.Fatalf("user MCP server changed: %+v", servers)
+	}
+	if servers["plugin.docs.search"].Command != "plugin-docs" {
+		t.Fatalf("plugin MCP server missing or unprefixed: %+v", servers)
 	}
 }
 

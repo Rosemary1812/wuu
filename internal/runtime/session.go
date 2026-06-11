@@ -22,6 +22,7 @@ import (
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
+	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
@@ -63,6 +64,7 @@ type Session struct {
 	HookDispatcher              *hooks.Dispatcher
 	Skills                      []skills.Skill
 	Workflows                   []workflow.Definition
+	Plugins                     []pluginpkg.Plugin
 	Memory                      []memory.File
 	ProfileMemoryNudgeInterval  int
 	ProfileMemoryCharLimit      int
@@ -129,9 +131,10 @@ func NewSession(opts Options) (*Session, error) {
 	providers.InitDebugLog(statepath.LogDir(wuuHome))
 	setupCatwalk(cfg)
 
-	hookDispatcher := buildHookDispatcher(cfg)
-	discoveredSkills := discoverSkills(rootDir, opts.HomeDir)
-	discoveredWorkflows := discoverWorkflows(rootDir, opts.HomeDir)
+	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
+	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins)
+	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, discoveredPlugins)
+	discoveredWorkflows := discoverWorkflows(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 
 	processMgr, err := process.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
 	if err != nil {
@@ -172,7 +175,7 @@ func NewSession(opts Options) (*Session, error) {
 		})
 		toolkit = kit
 		toolExecutor = hooks.NewHookedExecutor(kit, hookDispatcher, "", rootDir)
-		connectMCPServers(cfg, toolkit)
+		connectMCPServers(cfg, discoveredPlugins, toolkit)
 	}
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
@@ -301,6 +304,7 @@ func NewSession(opts Options) (*Session, error) {
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
 		Workflows:                   discoveredWorkflows,
+		Plugins:                     discoveredPlugins,
 		Memory:                      memoryFiles,
 		ProfileMemoryNudgeInterval:  profileMemoryNudgeInterval,
 		ProfileMemoryCharLimit:      profileMemoryCharLimit,
@@ -786,7 +790,7 @@ func setupCatwalk(cfg config.Config) {
 	}
 }
 
-func buildHookDispatcher(cfg config.Config) *hooks.Dispatcher {
+func buildHookDispatcher(cfg config.Config, plugins []pluginpkg.Plugin) *hooks.Dispatcher {
 	hookEntries := make(map[hooks.Event][]hooks.HookConfig)
 	for evName, entries := range cfg.Hooks {
 		ev := hooks.Event(evName)
@@ -801,43 +805,87 @@ func buildHookDispatcher(cfg config.Config) *hooks.Dispatcher {
 			})
 		}
 	}
+	for _, item := range plugins {
+		for evName, entries := range item.Hooks {
+			ev := hooks.Event(evName)
+			for _, e := range entries {
+				hookEntries[ev] = append(hookEntries[ev], hooks.HookConfig{
+					Matcher: e.Matcher,
+					Type:    e.Type,
+					Command: e.Command,
+					Prompt:  e.Prompt,
+					Model:   e.Model,
+					Timeout: e.Timeout,
+				})
+			}
+		}
+	}
 	hookRegistry := hooks.NewRegistry(hookEntries)
 	return hooks.NewDispatcher(hookRegistry)
 }
 
-func discoverSkills(rootDir, homeDir string) []skills.Skill {
-	projectSkillsDir := filepath.Join(rootDir, ".claude", "skills")
-	userSkillsDir := ""
-	if homeDir != "" {
-		userSkillsDir = filepath.Join(homeDir, ".claude", "skills")
-	}
-	return skills.MergeWithBundled(skills.Discover(projectSkillsDir, userSkillsDir))
+func discoverPlugins(rootDir, wuuHome string) []pluginpkg.Plugin {
+	return pluginpkg.Discover(rootDir, wuuHome)
 }
 
-func discoverWorkflows(rootDir, homeDir string) []workflow.Definition {
-	projectDirs := []string{
-		workflow.LegacyProjectWorkflowPath(rootDir),
-		workflow.ProjectWorkflowPath(rootDir),
+func discoverSkills(rootDir, homeDir string, plugins []pluginpkg.Plugin) []skills.Skill {
+	var projectDirs []skills.SourceDir
+	var userDirs []skills.SourceDir
+	for _, item := range plugins {
+		source := item.SourceLabel()
+		for _, dir := range item.SkillDirs() {
+			switch item.Source {
+			case "project":
+				projectDirs = append(projectDirs, skills.SourceDir{Path: dir, Source: source})
+			default:
+				userDirs = append(userDirs, skills.SourceDir{Path: dir, Source: source})
+			}
+		}
 	}
-	userDirs := []string(nil)
 	if homeDir != "" {
-		userDirs = append(userDirs, workflow.LegacyUserWorkflowPath(homeDir))
+		userDirs = append(userDirs, skills.SourceDir{Path: filepath.Join(homeDir, ".claude", "skills"), Source: "user"})
 	}
-	if wuuHome, err := statepath.Home(homeDir); err == nil {
-		userDirs = append(userDirs, workflow.UserWorkflowPath(wuuHome))
-	}
-	return workflow.DiscoverDirs(projectDirs, userDirs)
+	projectDirs = append(projectDirs, skills.SourceDir{Path: filepath.Join(rootDir, ".claude", "skills"), Source: "project"})
+	return skills.MergeWithBundled(skills.DiscoverSourceDirs(projectDirs, userDirs))
 }
 
-func connectMCPServers(cfg config.Config, toolkit *tools.Toolkit) {
-	if toolkit == nil || len(cfg.MCPServers) == 0 {
+func discoverWorkflows(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin) []workflow.Definition {
+	var projectDirs []workflow.SourceDir
+	var userDirs []workflow.SourceDir
+	for _, item := range plugins {
+		source := item.SourceLabel()
+		for _, dir := range item.WorkflowDirs() {
+			switch item.Source {
+			case "project":
+				projectDirs = append(projectDirs, workflow.SourceDir{Path: dir, Source: source})
+			default:
+				userDirs = append(userDirs, workflow.SourceDir{Path: dir, Source: source})
+			}
+		}
+	}
+	if homeDir != "" {
+		userDirs = append(userDirs, workflow.SourceDir{Path: workflow.LegacyUserWorkflowPath(homeDir), Source: "user"})
+	}
+	if strings.TrimSpace(wuuHome) != "" {
+		userDirs = append(userDirs, workflow.SourceDir{Path: workflow.UserWorkflowPath(wuuHome), Source: "user"})
+	}
+	projectDirs = append(projectDirs,
+		workflow.SourceDir{Path: workflow.LegacyProjectWorkflowPath(rootDir), Source: "project"},
+		workflow.SourceDir{Path: workflow.ProjectWorkflowPath(rootDir), Source: "project"},
+	)
+	return workflow.MergeWithBundled(workflow.DiscoverSourceDirs(projectDirs, userDirs))
+}
+
+func connectMCPServers(cfg config.Config, plugins []pluginpkg.Plugin, toolkit *tools.Toolkit) {
+	servers := mcpServersFromConfigAndPlugins(cfg, plugins)
+	if toolkit == nil || len(servers) == 0 {
 		return
 	}
 	mcpMgr := mcp.NewManager()
 	toolkit.SetMCPManager(mcpMgr)
 	go func() {
 		ctx := context.Background()
-		for name, mcpCfg := range cfg.MCPServers {
+		for name, mcpCfg := range servers {
 			serverCfg := mcp.ServerConfig{
 				Name:          name,
 				Command:       mcpCfg.Command,
@@ -853,6 +901,27 @@ func connectMCPServers(cfg config.Config, toolkit *tools.Toolkit) {
 			}
 		}
 	}()
+}
+
+func mcpServersFromConfigAndPlugins(cfg config.Config, plugins []pluginpkg.Plugin) map[string]config.MCPServerConfig {
+	out := make(map[string]config.MCPServerConfig)
+	for _, item := range plugins {
+		for name, server := range item.MCPServers {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			out["plugin."+item.ID+"."+name] = server
+		}
+	}
+	for name, server := range cfg.MCPServers {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		out[name] = server
+	}
+	return out
 }
 
 func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolOverride {

@@ -14,30 +14,30 @@ import (
 // frontmatter schema for cross-compatibility — wuu reads them so a CC-style
 // SKILL.md can be dropped in unchanged.
 type Skill struct {
-	Name        string // canonical name without leading slash, e.g. "commit"
-	Description string // one-line description, auto-derived from first markdown paragraph if absent
-	WhenToUse   string // detailed usage scenarios for the model
-	Content     string // full markdown body after frontmatter (no variable substitution applied)
-	Source      string // "project" or "user"
-	Path        string // filesystem path to the SKILL.md file
-	Dir         string // directory containing the skill (parent of SKILL.md, or file's parent for flat)
+	Name         string // canonical name without leading slash, e.g. "commit"
+	Description  string // one-line description, auto-derived from first markdown paragraph if absent
+	WhenToUse    string // detailed usage scenarios for the model
+	Content      string // full markdown body after frontmatter (no variable substitution applied)
+	Source       string // "project" or "user"
+	Path         string // filesystem path to the SKILL.md file
+	Dir          string // directory containing the skill (parent of SKILL.md, or file's parent for flat)
 	ArgumentHint string // gray help text shown after skill name in /<name> ...
 
 	// CC-compatible fields.
-	Model              string     // "sonnet", "haiku", "opus", "inherit"
-	Context            string     // "inline" (default) or "fork"
-	Agent              string     // sub-agent type when Context=fork
-	AllowedTools       []string   // tools the skill is allowed to call
-	UserInvocable      bool       // can the user type /<name> to invoke
-	DisableModelInvoke bool       // hide from model auto-invocation
-	Paths              []string   // glob patterns for conditional activation
-	Effort             string     // thinking effort hint
-	Version            string     // skill version string
-	Shell              string     // "bash" or "powershell"
+	Model              string   // "sonnet", "haiku", "opus", "inherit"
+	Context            string   // "inline" (default) or "fork"
+	Agent              string   // sub-agent type when Context=fork
+	AllowedTools       []string // tools the skill is allowed to call
+	UserInvocable      bool     // can the user type /<name> to invoke
+	DisableModelInvoke bool     // hide from model auto-invocation
+	Paths              []string // glob patterns for conditional activation
+	Effort             string   // thinking effort hint
+	Version            string   // skill version string
+	Shell              string   // "bash" or "powershell"
 	// Hooks declares lifecycle hooks this skill registers when loaded.
 	// Parsed from YAML frontmatter. Keys are event names, values are
 	// lists of hook configs. Aligned with Claude Code's skill frontmatter hooks.
-	Hooks              map[string][]SkillHookConfig `json:"-"`
+	Hooks map[string][]SkillHookConfig `json:"-"`
 }
 
 // SkillHookConfig is a hook entry declared in skill frontmatter.
@@ -50,6 +50,11 @@ type SkillHookConfig struct {
 	Timeout int    `json:"timeout,omitempty"`
 }
 
+type SourceDir struct {
+	Path   string
+	Source string
+}
+
 // Discover scans the given directories for skills and returns a deduplicated
 // list. Project skills override user skills with the same name.
 //
@@ -57,8 +62,20 @@ type SkillHookConfig struct {
 //  1. Directory format: <dir>/<skill-name>/SKILL.md (preferred, CC-compatible)
 //  2. Flat file format: <dir>/<skill-name>.md (legacy, simpler)
 func Discover(projectDir, userDir string) []Skill {
-	userSkills := scanDir(userDir, "user")
-	projectSkills := scanDir(projectDir, "project")
+	return DiscoverDirs([]string{projectDir}, []string{userDir})
+}
+
+// DiscoverDirs scans skill directories from lowest to highest precedence:
+// user dirs in order, then project dirs in order. Later dirs override earlier
+// dirs with the same skill name.
+func DiscoverDirs(projectDirs, userDirs []string) []Skill {
+	return DiscoverSourceDirs(sourceDirs(projectDirs, "project"), sourceDirs(userDirs, "user"))
+}
+
+// DiscoverSourceDirs is DiscoverDirs with per-directory source labels.
+func DiscoverSourceDirs(projectDirs, userDirs []SourceDir) []Skill {
+	userSkills := scanSkillSourceDirs(userDirs)
+	projectSkills := scanSkillSourceDirs(projectDirs)
 
 	// Project overrides user (project is more specific).
 	byName := make(map[string]Skill, len(projectSkills)+len(userSkills))
@@ -77,6 +94,28 @@ func Discover(projectDir, userDir string) []Skill {
 		return result[i].Name < result[j].Name
 	})
 	return result
+}
+
+func sourceDirs(paths []string, source string) []SourceDir {
+	out := make([]SourceDir, 0, len(paths))
+	for _, path := range paths {
+		out = append(out, SourceDir{Path: path, Source: source})
+	}
+	return out
+}
+
+func scanSkillSourceDirs(dirs []SourceDir) []Skill {
+	var out []Skill
+	for _, dir := range dirs {
+		source := strings.TrimSpace(dir.Source)
+		if source == "" {
+			source = "unknown"
+		}
+		for _, skill := range scanDir(dir.Path, source) {
+			out = append(out, skill)
+		}
+	}
+	return out
 }
 
 // Find returns the skill with the given name (slash-prefix tolerated), or

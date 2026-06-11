@@ -295,6 +295,25 @@ func TestDiscoverDirsPrefersNativeAndProjectDefinitions(t *testing.T) {
 	}
 }
 
+func TestDiscoverSourceDirsPreservesSourceLabels(t *testing.T) {
+	pluginDir := filepath.Join(t.TempDir(), "plugin-workflows")
+	projectDir := filepath.Join(t.TempDir(), "project-workflows")
+	writeWorkflowDefinition(t, pluginDir, "compose", "Plugin compose")
+	writeWorkflowDefinition(t, projectDir, "local", "Local workflow")
+
+	workflows := DiscoverSourceDirs(
+		[]SourceDir{{Path: projectDir, Source: "project"}},
+		[]SourceDir{{Path: pluginDir, Source: "plugin:compose"}},
+	)
+	compose, ok := Find(workflows, "compose")
+	if !ok {
+		t.Fatal("compose workflow not found")
+	}
+	if compose.Source != "plugin:compose" {
+		t.Fatalf("compose.Source = %q", compose.Source)
+	}
+}
+
 func writeWorkflowDefinition(t *testing.T, root, name, description string) {
 	t.Helper()
 	dir := filepath.Join(root, name)

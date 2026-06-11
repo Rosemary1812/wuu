@@ -49,6 +49,11 @@ type ProfileRef struct {
 	Required bool   `json:"required,omitempty"`
 }
 
+type SourceDir struct {
+	Path   string
+	Source string
+}
+
 // Discover scans one user and one project workflow directory. Project
 // workflows override user workflows with the same name.
 func Discover(projectDir, userDir string) []Definition {
@@ -59,14 +64,19 @@ func Discover(projectDir, userDir string) []Definition {
 // user dirs in order, then project dirs in order. Callers should pass legacy
 // dirs before native dirs when both should be supported.
 func DiscoverDirs(projectDirs, userDirs []string) []Definition {
+	return DiscoverSourceDirs(sourceDirs(projectDirs, "project"), sourceDirs(userDirs, "user"))
+}
+
+// DiscoverSourceDirs is DiscoverDirs with per-directory source labels.
+func DiscoverSourceDirs(projectDirs, userDirs []SourceDir) []Definition {
 	byName := make(map[string]Definition)
 	for _, dir := range userDirs {
-		for _, wf := range scanDir(dir, "user") {
+		for _, wf := range scanDir(dir.Path, sourceLabel(dir.Source)) {
 			byName[wf.Name] = wf
 		}
 	}
 	for _, dir := range projectDirs {
-		for _, wf := range scanDir(dir, "project") {
+		for _, wf := range scanDir(dir.Path, sourceLabel(dir.Source)) {
 			byName[wf.Name] = wf
 		}
 	}
@@ -79,6 +89,22 @@ func DiscoverDirs(projectDirs, userDirs []string) []Definition {
 		return result[i].Name < result[j].Name
 	})
 	return result
+}
+
+func sourceDirs(paths []string, source string) []SourceDir {
+	out := make([]SourceDir, 0, len(paths))
+	for _, path := range paths {
+		out = append(out, SourceDir{Path: path, Source: source})
+	}
+	return out
+}
+
+func sourceLabel(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "unknown"
+	}
+	return source
 }
 
 func ProjectWorkflowPath(rootDir string) string {

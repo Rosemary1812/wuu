@@ -120,3 +120,37 @@ func TestDiscover_EmptyDirs(t *testing.T) {
 		t.Fatalf("expected 0 skills for empty dirs, got %d", len(skills))
 	}
 }
+
+func TestDiscoverSourceDirsPreservesSourceLabels(t *testing.T) {
+	userPluginDir := t.TempDir()
+	projectDir := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(userPluginDir, "compose.md"),
+		[]byte("---\nname: compose\ndescription: Plugin compose\n---\nPlugin body."),
+		0644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(projectDir, "local.md"),
+		[]byte("---\nname: local\ndescription: Local skill\n---\nLocal body."),
+		0644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	got := DiscoverSourceDirs(
+		[]SourceDir{{Path: projectDir, Source: "project"}},
+		[]SourceDir{{Path: userPluginDir, Source: "plugin:compose"}},
+	)
+	if len(got) != 2 {
+		t.Fatalf("skills = %+v", got)
+	}
+	compose, ok := Find(got, "compose")
+	if !ok {
+		t.Fatal("compose skill not found")
+	}
+	if compose.Source != "plugin:compose" {
+		t.Fatalf("compose.Source = %q", compose.Source)
+	}
+}
