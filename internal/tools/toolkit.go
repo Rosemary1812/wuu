@@ -160,6 +160,8 @@ func (t *Toolkit) rebuildRegistry() {
 		NewWebFetchTool(e),
 		// Skills
 		NewLoadSkillTool(e),
+		// Durable session/workspace memory
+		NewSessionMemoryTool(e),
 		// Workflows
 		NewListWorkflowsTool(e),
 		NewLoadWorkflowTool(e),

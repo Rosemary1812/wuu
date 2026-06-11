@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/sessionmemory"
 )
 
 func (t *Toolkit) ContextBlocks() []wuucontext.Block {
@@ -19,6 +20,7 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 	if block, ok := t.ToolPolicyContextBlock(); ok {
 		blocks = append(blocks, block)
 	}
+	blocks = append(blocks, t.SessionMemoryContextBlocks()...)
 	blocks = append(blocks, t.PlanContextBlocks()...)
 	if block, ok := t.ActiveFilesContextBlock(); ok {
 		blocks = append(blocks, block)
@@ -33,6 +35,17 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 		blocks = append(blocks, block)
 	}
 	return blocks
+}
+
+func (t *Toolkit) SessionMemoryContextBlocks() []wuucontext.Block {
+	if t == nil || t.env == nil {
+		return nil
+	}
+	stateDir, err := t.env.WorkspaceStateDir()
+	if err != nil {
+		return nil
+	}
+	return sessionmemory.ContextBlocks(stateDir, t.env.SessionDir)
 }
 
 func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {

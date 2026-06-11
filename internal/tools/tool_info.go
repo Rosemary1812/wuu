@@ -15,6 +15,7 @@ const (
 	ToolKindTest      ToolKind = "test"
 	ToolKindGit       ToolKind = "git"
 	ToolKindWeb       ToolKind = "web"
+	ToolKindMemory    ToolKind = "memory"
 	ToolKindSkill     ToolKind = "skill"
 	ToolKindWorkflow  ToolKind = "workflow"
 	ToolKindPlan      ToolKind = "plan"
@@ -117,6 +118,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindGit
 	case "web_search", "web_fetch":
 		return ToolKindWeb
+	case "read_memory", "write_memory", "session_memory":
+		return ToolKindMemory
 	case "load_skill":
 		return ToolKindSkill
 	case "list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status":

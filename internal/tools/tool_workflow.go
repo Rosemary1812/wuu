@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	prompttext "github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -1122,7 +1124,7 @@ type workflowAwaitResult struct {
 	DurationMS    int64    `json:"duration_ms"`
 }
 
-func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args workflowControlArgs
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -1473,7 +1475,11 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 		if err != nil {
 			return "", err
 		}
-		return mustJSON(map[string]any{"action": action, "memory_candidate": candidate})
+		result := map[string]any{"action": action, "memory_candidate": candidate}
+		if status == workflow.MemoryCandidateAccepted {
+			result["memory_write"] = persistAcceptedWorkflowMemoryCandidate(ctx, t.env, candidate)
+		}
+		return mustJSON(result)
 
 	case "create_file_checkpoint":
 		checkpoint, err := createWorkflowFileCheckpoint(t.env, store, args)
@@ -1492,6 +1498,77 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 	default:
 		return "", fmt.Errorf("unsupported workflow_control action %q", action)
 	}
+}
+
+func persistAcceptedWorkflowMemoryCandidate(ctx context.Context, env *Env, candidate workflow.MemoryCandidate) map[string]any {
+	if env == nil || env.Memory == nil {
+		return map[string]any{
+			"persisted": false,
+			"reason":    "profile_memory_not_configured",
+		}
+	}
+	target, err := normalizeMemoryTarget(candidate.Target)
+	if err != nil {
+		return map[string]any{
+			"persisted": false,
+			"reason":    err.Error(),
+		}
+	}
+	args := writeMemoryArgs{
+		Action:  memoryActionAdd,
+		Target:  target,
+		Content: candidate.Content,
+		Tags:    workflowMemoryCandidateTags(candidate),
+		Source:  string(memstore.SourceTool),
+	}
+	payload, err := json.Marshal(args)
+	if err != nil {
+		return map[string]any{
+			"persisted": false,
+			"reason":    "encode_memory_write_failed",
+			"error":     err.Error(),
+		}
+	}
+	result, err := NewWriteMemoryTool(env).Execute(ctx, string(payload))
+	if err != nil {
+		return map[string]any{
+			"persisted": false,
+			"target":    target,
+			"reason":    "write_memory_failed",
+			"error":     err.Error(),
+		}
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(result), &decoded); err != nil {
+		return map[string]any{
+			"persisted": true,
+			"target":    target,
+			"raw":       result,
+		}
+	}
+	return map[string]any{
+		"persisted": true,
+		"target":    target,
+		"result":    decoded,
+	}
+}
+
+func workflowMemoryCandidateTags(candidate workflow.MemoryCandidate) []string {
+	tags := memoryUserTags(candidate.Tags)
+	tags = append(tags, "workflow")
+	if runID := strings.TrimSpace(candidate.RunID); runID != "" {
+		tags = append(tags, "workflow_run:"+runID)
+	}
+	if candidateID := strings.TrimSpace(candidate.ID); candidateID != "" {
+		tags = append(tags, "workflow_candidate:"+candidateID)
+	}
+	if source := strings.TrimSpace(candidate.Source); source != "" {
+		tags = append(tags, "source:"+source)
+	}
+	if profile := strings.TrimSpace(candidate.AgentProfile); profile != "" {
+		tags = append(tags, "agent_profile:"+profile)
+	}
+	return tags
 }
 
 func workflowAgentRunFromControlArgs(args workflowControlArgs) (workflow.AgentRun, error) {

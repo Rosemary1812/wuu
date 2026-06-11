@@ -228,6 +228,11 @@ func classifyToolRisk(_ string, kind ToolKind, readOnly bool) ToolRisk {
 		return ToolRiskHigh
 	case ToolKindWeb:
 		return ToolRiskMedium
+	case ToolKindMemory:
+		if readOnly {
+			return ToolRiskLow
+		}
+		return ToolRiskMedium
 	case ToolKindWorkflow:
 		if readOnly {
 			return ToolRiskLow

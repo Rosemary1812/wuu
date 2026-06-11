@@ -13,6 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
@@ -314,6 +315,75 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	statusRecords := kit.ToolTelemetry()
 	if len(statusRecords) == 0 || statusRecords[len(statusRecords)-1].ResultAction != "workflow_status" {
 		t.Fatalf("workflow_status telemetry missing result action: %+v", statusRecords)
+	}
+}
+
+func TestWorkflowAcceptedMemoryCandidatePersistsToProfileMemory(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	provider, err := memstore.NewFileProvider(filepath.Join(t.TempDir(), "profile-memory"))
+	if err != nil {
+		t.Fatalf("NewFileProvider: %v", err)
+	}
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+	kit.SetMemory(provider)
+
+	store := workflow.NewStore(stateDir)
+	if _, err := store.CreateRun(workflow.Run{ID: "workflow-memory-run"}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_memory_candidate",
+			"run_id":"workflow-memory-run",
+			"candidate_id":"candidate-1",
+			"content":"Release workflow requires visual QA before tagging.",
+			"target":"memory",
+			"tags":["release","qa"],
+			"source":"agent_report",
+			"agent_profile":"qa_reviewer"
+		}`,
+	}); err != nil {
+		t.Fatalf("record memory candidate: %v", err)
+	}
+	reviewResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"review_memory_candidate","run_id":"workflow-memory-run","candidate_id":"candidate-1","status":"accepted","message":"durable workflow fact"}`,
+	})
+	if err != nil {
+		t.Fatalf("review memory candidate: %v", err)
+	}
+	var review struct {
+		MemoryWrite struct {
+			Persisted bool           `json:"persisted"`
+			Target    string         `json:"target"`
+			Result    map[string]any `json:"result"`
+		} `json:"memory_write"`
+	}
+	if err := json.Unmarshal([]byte(reviewResp), &review); err != nil {
+		t.Fatalf("parse review response: %v", err)
+	}
+	if !review.MemoryWrite.Persisted || review.MemoryWrite.Target != "memory" {
+		t.Fatalf("memory write not persisted: %s", reviewResp)
+	}
+
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_memory",
+		Arguments: `{"target":"memory","query":"visual QA","limit":5}`,
+	})
+	if err != nil {
+		t.Fatalf("read_memory: %v", err)
+	}
+	if !strings.Contains(readResp, "Release workflow requires visual QA before tagging.") ||
+		!strings.Contains(readResp, "workflow_run:workflow-memory-run") ||
+		!strings.Contains(readResp, "source:agent_report") {
+		t.Fatalf("accepted workflow memory not visible in profile memory: %s", readResp)
 	}
 }
 
