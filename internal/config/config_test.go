@@ -150,6 +150,34 @@ func TestMemoryConfig_ProfileMemoryCharLimits(t *testing.T) {
 	}
 }
 
+func TestMemoryConfig_DreamIntervalDays(t *testing.T) {
+	var cfg MemoryConfig
+	if got := cfg.DreamIntervalDaysValue(); got != DefaultDreamIntervalDays {
+		t.Fatalf("default dream interval = %d, want %d", got, DefaultDreamIntervalDays)
+	}
+
+	disabled := 0
+	cfg.DreamIntervalDays = &disabled
+	if got := cfg.DreamIntervalDaysValue(); got != 0 {
+		t.Fatalf("disabled dream interval = %d, want 0", got)
+	}
+
+	custom := 14
+	cfg.DreamIntervalDays = &custom
+	if got := cfg.DreamIntervalDaysValue(); got != 14 {
+		t.Fatalf("custom dream interval = %d, want 14", got)
+	}
+}
+
+func TestValidateRejectsNegativeDreamInterval(t *testing.T) {
+	cfg := Default()
+	negative := -1
+	cfg.Memory.DreamIntervalDays = &negative
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "dream_interval_days") {
+		t.Fatalf("expected negative dream interval error, got %v", err)
+	}
+}
+
 func TestLoadFrom_AgentName(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")

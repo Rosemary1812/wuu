@@ -1,6 +1,7 @@
 package sessionmemory
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,6 +40,10 @@ type FileStatus struct {
 	Bytes  int64  `json:"bytes"`
 }
 
+type DreamState struct {
+	LastRunAt time.Time `json:"last_run_at,omitempty"`
+}
+
 func PathsFor(workspaceStateDir, sessionArtifactDir string) Paths {
 	paths := Paths{}
 	if dir := strings.TrimSpace(workspaceStateDir); dir != "" {
@@ -52,6 +57,44 @@ func PathsFor(workspaceStateDir, sessionArtifactDir string) Paths {
 		paths.TasksDir = filepath.Join(sessionMemoryDir, "tasks")
 	}
 	return paths
+}
+
+func DreamStatePath(workspaceStateDir string) string {
+	if strings.TrimSpace(workspaceStateDir) == "" {
+		return ""
+	}
+	return filepath.Join(workspaceStateDir, "memory", "dream_state.json")
+}
+
+func LoadDreamState(workspaceStateDir string) (DreamState, error) {
+	path := DreamStatePath(workspaceStateDir)
+	if strings.TrimSpace(path) == "" {
+		return DreamState{}, fmt.Errorf("workspace state directory is required")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DreamState{}, nil
+		}
+		return DreamState{}, fmt.Errorf("read dream state: %w", err)
+	}
+	var state DreamState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return DreamState{}, fmt.Errorf("parse dream state: %w", err)
+	}
+	return state, nil
+}
+
+func SaveDreamState(workspaceStateDir string, state DreamState) error {
+	path := DreamStatePath(workspaceStateDir)
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("workspace state directory is required")
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode dream state: %w", err)
+	}
+	return writeAtomic(path, append(data, '\n'))
 }
 
 func Status(workspaceStateDir, sessionArtifactDir string) ([]FileStatus, error) {

@@ -67,6 +67,7 @@ type Session struct {
 	ProfileMemoryNudgeInterval  int
 	ProfileMemoryCharLimit      int
 	ProfileUserMemoryCharLimit  int
+	DreamIntervalDays           int
 	AgentControl                *agentcontrol.AgentControl
 	ProcessManager              *process.Manager
 	Toolkit                     *tools.Toolkit
@@ -255,10 +256,20 @@ func NewSession(opts Options) (*Session, error) {
 		cfg.Agent.MaxContextTokens,
 	)
 	profileMemoryNudgeInterval := cfg.Memory.ProfileMemoryNudgeInterval()
-	var afterTurn func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
-	if memoryReviewer := newProfileMemoryReviewScheduler(profileMemoryProvider, profileMemoryNudgeInterval, profileMemoryCharLimit, profileUserMemoryCharLimit); memoryReviewer != nil {
-		afterTurn = memoryReviewer.AfterTurn
+	dreamIntervalDays := cfg.Memory.DreamIntervalDaysValue()
+	if cfg.Memory.Disable {
+		dreamIntervalDays = 0
 	}
+	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
+	if memoryReviewer := newProfileMemoryReviewScheduler(profileMemoryProvider, profileMemoryNudgeInterval, profileMemoryCharLimit, profileUserMemoryCharLimit); memoryReviewer != nil {
+		afterTurnHooks = append(afterTurnHooks, memoryReviewer.AfterTurn)
+	}
+	if toolkit != nil {
+		if dreamScheduler := newSessionDreamScheduler(workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays); dreamScheduler != nil {
+			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
+		}
+	}
+	afterTurn := chainAfterTurn(afterTurnHooks...)
 
 	streamRunner := &agent.StreamRunner{
 		Client:                client,
@@ -294,6 +305,7 @@ func NewSession(opts Options) (*Session, error) {
 		ProfileMemoryNudgeInterval:  profileMemoryNudgeInterval,
 		ProfileMemoryCharLimit:      profileMemoryCharLimit,
 		ProfileUserMemoryCharLimit:  profileUserMemoryCharLimit,
+		DreamIntervalDays:           dreamIntervalDays,
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
@@ -495,12 +507,17 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
 	runner.BeforeRequest = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
+	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
 		memoryLimit, userLimit := kit.MemoryLimits()
 		if memoryReviewer := newProfileMemoryReviewScheduler(kit.Memory(), s.ProfileMemoryNudgeInterval, memoryLimit, userLimit); memoryReviewer != nil {
-			runner.AfterTurn = memoryReviewer.AfterTurn
+			afterTurnHooks = append(afterTurnHooks, memoryReviewer.AfterTurn)
+		}
+		if dreamScheduler := newSessionDreamScheduler(stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
+			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
+	runner.AfterTurn = chainAfterTurn(afterTurnHooks...)
 
 	return &ThreadRuntime{
 		StreamRunner: runner,
@@ -537,6 +554,23 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		StreamReconnectBudget:   base.StreamReconnectBudget,
 		StreamRetryInitialDelay: base.StreamRetryInitialDelay,
 		StreamRetryMaxDelay:     base.StreamRetryMaxDelay,
+	}
+}
+
+func chainAfterTurn(hooks ...func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)) func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult) {
+	filtered := make([]func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult), 0, len(hooks))
+	for _, hook := range hooks {
+		if hook != nil {
+			filtered = append(filtered, hook)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return func(ctx context.Context, runner *agent.StreamRunner, history []providers.ChatMessage, result agent.LoopResult) {
+		for _, hook := range filtered {
+			hook(ctx, runner, history, result)
+		}
 	}
 }
 

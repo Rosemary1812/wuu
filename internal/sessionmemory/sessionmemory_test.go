@@ -115,3 +115,29 @@ func TestRejectsUnknownTargetAndEmptyContent(t *testing.T) {
 		t.Fatalf("empty append should not create notes file: %v", err)
 	}
 }
+
+func TestDreamStateRoundTrip(t *testing.T) {
+	workspaceState := t.TempDir()
+	initial, err := LoadDreamState(workspaceState)
+	if err != nil {
+		t.Fatalf("LoadDreamState initial: %v", err)
+	}
+	if !initial.LastRunAt.IsZero() {
+		t.Fatalf("initial dream state = %+v", initial)
+	}
+
+	want := DreamState{LastRunAt: time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)}
+	if err := SaveDreamState(workspaceState, want); err != nil {
+		t.Fatalf("SaveDreamState: %v", err)
+	}
+	got, err := LoadDreamState(workspaceState)
+	if err != nil {
+		t.Fatalf("LoadDreamState: %v", err)
+	}
+	if !got.LastRunAt.Equal(want.LastRunAt) {
+		t.Fatalf("dream state = %+v, want %+v", got, want)
+	}
+	if _, err := os.Stat(DreamStatePath(workspaceState)); err != nil {
+		t.Fatalf("dream state path not written: %v", err)
+	}
+}

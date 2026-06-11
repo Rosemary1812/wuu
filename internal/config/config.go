@@ -19,6 +19,7 @@ const (
 
 	DefaultMemoryCharLimit     = 2200
 	DefaultUserMemoryCharLimit = 1375
+	DefaultDreamIntervalDays   = 7
 )
 
 // ErrConfigNotFound is returned by LoadFrom when none of the candidate
@@ -92,6 +93,10 @@ type MemoryConfig struct {
 	// UserCharLimit caps target="user" persistent entries by character
 	// count. Zero uses DefaultUserMemoryCharLimit.
 	UserCharLimit int `json:"user_char_limit,omitempty"`
+	// DreamIntervalDays controls how often the background dream pass
+	// consolidates recent session history into workspace memory. nil means
+	// the default interval; 0 disables the dream pass.
+	DreamIntervalDays *int `json:"dream_interval_days,omitempty"`
 }
 
 // ProfileMemoryNudgeInterval returns the configured background review
@@ -116,6 +121,13 @@ func (m MemoryConfig) ProfileUserCharLimit() int {
 		return DefaultUserMemoryCharLimit
 	}
 	return m.UserCharLimit
+}
+
+func (m MemoryConfig) DreamIntervalDaysValue() int {
+	if m.DreamIntervalDays == nil {
+		return DefaultDreamIntervalDays
+	}
+	return *m.DreamIntervalDays
 }
 
 // ProviderConfig configures one model gateway.
@@ -388,6 +400,9 @@ func (c Config) Validate() error {
 	}
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
 		return errors.New("agent.temperature must be in [0,2]")
+	}
+	if c.Memory.DreamIntervalDays != nil && *c.Memory.DreamIntervalDays < 0 {
+		return errors.New("memory.dream_interval_days cannot be negative")
 	}
 	if err := validateToolPolicyConfig(c.Agent.ToolPolicy); err != nil {
 		return err

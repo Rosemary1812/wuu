@@ -234,6 +234,40 @@ func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
 	}
 }
 
+func TestNewSessionMemoryDisableDisablesDreamScheduler(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+			Memory: config.MemoryConfig{Disable: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.DreamIntervalDays != 0 {
+		t.Fatalf("DreamIntervalDays = %d, want disabled", rt.DreamIntervalDays)
+	}
+	if rt.StreamRunner.AfterTurn != nil {
+		t.Fatal("memory.disable should disable automatic dream AfterTurn hook")
+	}
+}
+
 func TestNewSessionDiscoversWorkflowDefinitions(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -386,7 +420,7 @@ func TestNewThreadRuntimeOrdinarySpawnIsMemoryless(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}()
 	if _, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type: agentcontrol.DefaultSubagentType,
+		Type:        agentcontrol.DefaultSubagentType,
 		TaskName:    "inspect_repo",
 		Prompt:      "inspect the repo",
 		Synchronous: true,
@@ -462,7 +496,7 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}()
 	res, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type: agentcontrol.DefaultSubagentType,
+		Type:         agentcontrol.DefaultSubagentType,
 		TaskName:     "qa_check",
 		AgentProfile: agentProfile,
 		Prompt:       "run the QA workflow",
