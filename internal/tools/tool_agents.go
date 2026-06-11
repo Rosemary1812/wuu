@@ -33,86 +33,73 @@ func (t *SpawnAgentTool) IsConcurrencySafe() bool { return true }
 func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "spawn_agent",
-		Description: "Spawn a named child agent to work on a focused task. Available agent_type values: " +
-			"worker for general implementation/testing/exploration, research for read-only codebase investigation, " +
-			"and verification for read-only adversarial review. If your current task is " +
-			"/root/task1 and you spawn task_name='task_3', the child has canonical task name " +
-			"/root/task1/task_3 and can be addressed as task_3 from the current agent or by its " +
-			"canonical path from elsewhere. The child has its own context, the same tool " +
-			"tool set, and can message you and other running agents. Its final answer is delivered " +
-			"to you when it finishes. " +
+		Description: "Launch a new agent to handle a complex, multi-step task autonomously. " +
+			"Available subagent_type values are general-purpose for broad code research, search, and implementation, " +
+			"and verification for independent post-change verification with a PASS/FAIL/PARTIAL verdict. " +
+			"Specify subagent_type to launch a fresh specialized agent. Omit subagent_type to fork yourself: " +
+			"the child inherits your full conversation context and runs in the background. For a fresh " +
+			"general-purpose agent, set subagent_type='general-purpose'. The child has its own context " +
+			"and its final answer is delivered to you when it finishes. " +
 			"Use a child only when delegation materially improves the task: independent investigation, " +
 			"parallel implementation slices, risky verification, or work that benefits from a separate context. " +
 			"Ordinary child agents are memoryless. Set agent_profile only when the user asks to wake or use a named " +
-			"Agent Profile with durable memory, or when a workflow/profile policy requires one; the profile name is the agent's long-lived identity, while " +
-			"task_name is only this child task's path segment. Do not set agent_profile for routine one-off delegation. " +
+			"Agent Profile with durable memory, or when a workflow/profile policy requires one; the profile name is the agent's long-lived identity. " +
+			"Do not set agent_profile for routine one-off delegation. " +
 			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
 			"Write a concrete brief using the shared Base Agent Brief Contract. " +
 			prompttext.AgentBriefContractSummary() + " " +
 			prompttext.ProfileBriefExtensionSummary() + " " +
 			prompttext.EphemeralBriefExtensionSummary() + " " +
 			"Do not make the child infer missing acceptance criteria from a vague ask. " +
-			"By default the spawn runs INPLACE in the user's repo, so any files the worker " +
-			"creates or edits land directly in the working tree. Set isolation='worktree' ONLY " +
+			"By default the agent runs in the user's current repo, so any files it creates or edits " +
+			"land directly in the working tree. Set isolation='worktree' ONLY " +
 			"for destructive or broad experiments, overlapping or uncertain concurrent writes, " +
 			"generated outputs/formatters that may touch many files, or when the user explicitly " +
 			"asked for a sandbox. Do NOT use a worktree just because the task involves writing " +
-			"files; small additive or clearly disjoint edits can run inplace when shared visibility helps. " +
-			"By default the child receives a fork of your full conversation history. Set " +
-			"fork_turns='none' only when the task message is fully self-contained and older context " +
-			"would not help; set a positive integer string when only recent discussion is useful " +
-			"and older context may distract. Preserve fork_turns='all' when the child needs the " +
-			"user intent, prior analysis, or repo findings already in this conversation. " +
-			"Give every task a stable task_name so you can address it later by task name, " +
-			"agent path, or agent_id. task_name is the child path segment and must use " +
-			"only lowercase letters, digits, and underscores, for example inspect_auth_flow. " +
-			"By default the spawn is asynchronous: this returns immediately with an agent_id " +
-			"and agent_path, and the worker's result is delivered later as a structured mailbox " +
-			"message. After spawning async workers, continue meaningful non-overlapping local " +
-			"work when available; otherwise end your turn and let the mailbox notification resume " +
-			"you. Do not loop checking status or call wait_agent / await_agents by reflex. Use " +
-			"await_agents only when synthesis or integration depends on child output. Set synchronous=true " +
-			"only when the next critical step is blocked on the worker's result. Spawn multiple " +
-			"independent workers in parallel by calling spawn_agent multiple times in the same response.",
+			"files; small additive or clearly disjoint edits can share the current repo when shared visibility helps. " +
+			"Always include a short description (3-5 words) summarizing what the agent will do. " +
+			"Each fresh subagent_type invocation starts without conversation context, so prompt must be complete. " +
+			"Forks inherit your current context; do not use a fork when a fresh independent second opinion is needed. " +
+			"Use run_in_background=true when you have genuinely independent work to do in parallel. Otherwise keep the " +
+			"agent in the foreground so its result can inform your next step. Verification agents always run in the background. " +
+			"After spawning background agents, continue meaningful non-overlapping local work when available; otherwise end your turn " +
+			"and let the mailbox notification resume you. Do not sleep, poll, or loop checking status. Use await_agents only when " +
+			"synthesis or integration depends on child output. Spawn multiple independent agents in parallel by calling spawn_agent " +
+			"multiple times in the same response.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"task_name": map[string]any{
+				"description": map[string]any{
 					"type":        "string",
-					"description": "Stable child task name used for path-based addressing. Must use only lowercase letters, digits, and underscores. Example: \"inspect_auth_flow\".",
+					"description": "Short 3-5 word summary of what the agent will do.",
 				},
-				"agent_type": map[string]any{
+				"prompt": map[string]any{
 					"type":        "string",
-					"enum":        []string{"worker", "research", "verification"},
-					"description": "Child agent type. Use 'worker' for general implementation/testing/exploration, 'research' for read-only investigation, or 'verification' for read-only adversarial review. Omit to use 'worker'.",
+					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() + " Fresh subagents start without conversation context; forks inherit your current context but still need a specific directive.",
+				},
+				"subagent_type": map[string]any{
+					"type":        "string",
+					"description": "Optional specialized agent type. Use 'general-purpose' for fresh broad research/search/implementation or 'verification' for an independent verifier. Omit to fork yourself with full conversation context.",
+				},
+				"name": map[string]any{
+					"type":        "string",
+					"description": "Optional addressable task name. Must use only lowercase letters, digits, and underscores. If omitted, wuu derives a unique name from description.",
 				},
 				"agent_profile": map[string]any{
 					"type":        "string",
-					"description": "Optional durable Agent Profile name to wake for this task. Use only when the user explicitly wants a named memory-bearing agent or a workflow/profile policy requires one; omit for ordinary memoryless child tasks. This is the long-lived agent identity, not the task path segment.",
-				},
-				"message": map[string]any{
-					"type":        "string",
-					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() + " With the default fork_turns='all', the worker also inherits your current conversation history; with fork_turns='none', this message must be fully self-contained.",
+					"description": "Optional durable Agent Profile name to wake for this task. Use only when the user explicitly wants a named memory-bearing agent or a workflow/profile policy requires one; omit for ordinary memoryless child tasks. This is the long-lived agent identity.",
 				},
 				"isolation": map[string]any{
 					"type":        "string",
-					"enum":        []string{"inplace", "worktree"},
-					"description": "Optional. 'inplace' (default) shares the user's repo so writes land in the working tree. 'worktree' creates a fresh git worktree for sandboxed edits. Use worktree only for destructive or broad experiments, overlapping or uncertain concurrent writes, generated outputs/formatters that may touch many files, or explicit sandbox requests.",
+					"enum":        []string{"worktree"},
+					"description": "Optional. 'worktree' creates a fresh git worktree for sandboxed edits. Omit to run in the current repo.",
 				},
-				"base_repo": map[string]any{
-					"type":        "string",
-					"description": "Optional: path to another worker's worktree to chain off. Only valid with isolation=worktree.",
-				},
-				"synchronous": map[string]any{
+				"run_in_background": map[string]any{
 					"type":        "boolean",
-					"description": "If true, block until the worker completes and return its result inline. If false (default), return immediately and receive the result later via a structured mailbox message.",
-				},
-				"fork_turns": map[string]any{
-					"type":        "string",
-					"description": "Context inheritance mode: 'all' (default), 'none', or a positive integer string for the last N user turns. Use 'all' when inherited user intent or prior analysis matters; use 'none' only for a fully self-contained brief; use a number when only recent context is useful.",
+					"description": "Set to true to run this agent in the background. You will be notified when it completes. Omit or false to keep a fresh specialized agent in the foreground; forks and verification agents run in the background.",
 				},
 			},
-			"required": []string{"task_name", "message"},
+			"required": []string{"description", "prompt"},
 		},
 	}
 }
@@ -122,59 +109,60 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return "", errors.New("spawn_agent: agent control not configured (this build does not support sub-agents)")
 	}
 	var args struct {
-		TaskName     string `json:"task_name"`
-		AgentType    string `json:"agent_type"`
-		AgentProfile string `json:"agent_profile"`
-		Message      string `json:"message"`
-		Isolation    string `json:"isolation"`
-		BaseRepo     string `json:"base_repo"`
-		Synchronous  bool   `json:"synchronous"`
-		ForkTurns    string `json:"fork_turns"`
-		ForkContext  *bool  `json:"fork_context"`
+		Description     string `json:"description"`
+		Prompt          string `json:"prompt"`
+		SubagentType    string `json:"subagent_type"`
+		Name            string `json:"name"`
+		AgentProfile    string `json:"agent_profile"`
+		Isolation       string `json:"isolation"`
+		RunInBackground bool   `json:"run_in_background"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(args.TaskName) == "" {
-		return "", errors.New("spawn_agent: task_name is required")
+	description := strings.TrimSpace(args.Description)
+	if description == "" {
+		return "", errors.New("spawn_agent: description is required")
 	}
-	if err := agentthread.ValidateAgentName(strings.TrimSpace(args.TaskName)); err != nil {
-		return "", fmt.Errorf("spawn_agent: invalid task_name: %w", err)
+	prompt := strings.TrimSpace(args.Prompt)
+	if prompt == "" {
+		return "", errors.New("spawn_agent: prompt is required")
 	}
-	if strings.TrimSpace(args.Message) == "" {
-		return "", errors.New("spawn_agent: message is required")
+	taskName := strings.TrimSpace(args.Name)
+	if taskName == "" {
+		taskName = deriveAgentTaskName(description)
+	}
+	if err := agentthread.ValidateAgentName(taskName); err != nil {
+		return "", fmt.Errorf("spawn_agent: invalid name: %w", err)
+	}
+	isolation := strings.TrimSpace(args.Isolation)
+	if isolation != "" && !strings.EqualFold(isolation, string(agentcontrol.IsolationWorktree)) {
+		return "", errors.New("spawn_agent: isolation must be omitted or 'worktree'")
 	}
 	agentProfile := strings.TrimSpace(args.AgentProfile)
 	if strings.EqualFold(agentProfile, config.DefaultAgentName) {
 		return "", errors.New("spawn_agent: agent_profile \"default\" is reserved for ordinary memoryless sessions; omit agent_profile or choose a named profile")
 	}
-	forkMode, lastNTurns, err := parseSpawnForkTurns(args.ForkTurns, args.ForkContext)
-	if err != nil {
-		return "", err
-	}
-	if forkMode != spawnForkNone {
+	subagentType := strings.TrimSpace(args.SubagentType)
+	if subagentType == "" {
 		parentHistory := agent.HistoryFromContext(ctx)
 		if len(parentHistory) == 0 {
-			return "", errors.New("spawn_agent: fork_turns requires parent history; use fork_turns='none' for a clean spawn")
+			return "", errors.New("spawn_agent: fork requires parent history; set subagent_type='general-purpose' for a fresh agent")
 		}
 		cleaned := stripDanglingToolUses(parentHistory)
 		if len(cleaned) == 0 {
 			return "", errors.New("spawn_agent: history is empty after stripping the in-flight tool_use (nothing to inherit)")
 		}
-		if forkMode == spawnForkLastN {
-			cleaned = truncateHistoryToLastUserTurns(cleaned, lastNTurns)
-		}
 		result, err := t.env.AgentControl.Fork(ctx, agentcontrol.ForkRequest{
-			TaskName:     strings.TrimSpace(args.TaskName),
+			TaskName:     taskName,
 			AgentProfile: agentProfile,
-			Description:  strings.TrimSpace(args.TaskName),
-			ForkMode:     forkModeLabel(forkMode, lastNTurns),
+			Description:  description,
+			ForkMode:     "all",
 			ParentID:     strings.TrimSpace(t.env.AgentID),
 			ParentPath:   currentAgentPath(t.env),
-			Prompt:       wrapForkPrompt(args.Message),
-			Isolation:    args.Isolation,
-			BaseRepo:     args.BaseRepo,
-			Synchronous:  args.Synchronous,
+			Prompt:       wrapForkPrompt(prompt),
+			Isolation:    isolation,
+			Synchronous:  false,
 		}, cleaned)
 		if err != nil {
 			return "", err
@@ -185,17 +173,20 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		}
 		return string(out), nil
 	}
+	wt, err := agentcontrol.LookupWorkerType(subagentType)
+	if err != nil {
+		return "", err
+	}
 	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
-		Type:         args.AgentType,
-		TaskName:     strings.TrimSpace(args.TaskName),
+		Type:         subagentType,
+		TaskName:     taskName,
 		AgentProfile: agentProfile,
-		Description:  strings.TrimSpace(args.TaskName),
-		Prompt:       args.Message,
+		Description:  description,
+		Prompt:       prompt,
 		ParentID:     strings.TrimSpace(t.env.AgentID),
 		ParentPath:   currentAgentPath(t.env),
-		Isolation:    args.Isolation,
-		BaseRepo:     args.BaseRepo,
-		Synchronous:  args.Synchronous,
+		Isolation:    isolation,
+		Synchronous:  !args.RunInBackground && !wt.Background,
 	})
 	if err != nil {
 		return "", err
@@ -205,6 +196,32 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return "", err
 	}
 	return string(out), nil
+}
+
+func deriveAgentTaskName(description string) string {
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range strings.ToLower(description) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastUnderscore = false
+		default:
+			if !lastUnderscore && b.Len() > 0 {
+				b.WriteByte('_')
+				lastUnderscore = true
+			}
+		}
+		if b.Len() >= 32 {
+			break
+		}
+	}
+	base := strings.Trim(b.String(), "_")
+	if base == "" || base == "root" {
+		base = "agent"
+	}
+	suffix := strconv.FormatInt(time.Now().UnixNano()%2176782336, 36)
+	return base + "_" + suffix
 }
 
 // stripDanglingToolUses returns history with any trailing assistant
@@ -218,76 +235,6 @@ func stripDanglingToolUses(history []providers.ChatMessage) []providers.ChatMess
 		return history[:len(history)-1]
 	}
 	return history
-}
-
-type spawnForkMode int
-
-const (
-	spawnForkNone spawnForkMode = iota
-	spawnForkAll
-	spawnForkLastN
-)
-
-func parseSpawnForkTurns(raw string, forkContext *bool) (spawnForkMode, int, error) {
-	if forkContext != nil {
-		return spawnForkNone, 0, errors.New("spawn_agent: fork_context is not supported; use fork_turns")
-	}
-	forkTurns := strings.TrimSpace(raw)
-	if forkTurns == "" {
-		forkTurns = "all"
-	}
-	switch {
-	case strings.EqualFold(forkTurns, "none"):
-		return spawnForkNone, 0, nil
-	case strings.EqualFold(forkTurns, "all"):
-		return spawnForkAll, 0, nil
-	default:
-		n, err := strconv.Atoi(forkTurns)
-		if err != nil || n <= 0 {
-			return spawnForkNone, 0, errors.New("spawn_agent: fork_turns must be 'none', 'all', or a positive integer string")
-		}
-		return spawnForkLastN, n, nil
-	}
-}
-
-func forkModeLabel(mode spawnForkMode, lastNTurns int) string {
-	switch mode {
-	case spawnForkAll:
-		return "all"
-	case spawnForkLastN:
-		return strconv.Itoa(lastNTurns)
-	default:
-		return ""
-	}
-}
-
-func truncateHistoryToLastUserTurns(history []providers.ChatMessage, turns int) []providers.ChatMessage {
-	if turns <= 0 || len(history) == 0 {
-		return history
-	}
-	seen := 0
-	start := -1
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Role != "user" {
-			continue
-		}
-		seen++
-		if seen == turns {
-			start = i
-			break
-		}
-	}
-	if start <= 0 {
-		return history
-	}
-	prefix := make([]providers.ChatMessage, 0, len(history)-start+start)
-	for _, msg := range history[:start] {
-		if msg.Role != "system" {
-			break
-		}
-		prefix = append(prefix, msg)
-	}
-	return append(prefix, history[start:]...)
 }
 
 // wrapForkPrompt builds the role-override message for history-inheriting workers.

@@ -342,15 +342,19 @@ export function readableToolActivityCommand(
       return `编辑 ${formatPathTarget(path, "文件")}`;
     case "write_file":
       return `写入 ${formatPathTarget(path, "文件")}`;
-    case "spawn_agent":
-    case "followup_task": {
+    case "spawn_agent": {
       const task =
-        stringValue(args, "task_name") ?? stringValue(args, "message");
+        stringValue(args, "name") ??
+        stringValue(args, "description") ??
+        stringValue(args, "prompt");
       return task ? `启动子任务 ${truncateText(task, 70)}` : "启动子任务";
     }
+    case "followup_task": {
+      const task = stringValue(args, "target") ?? stringValue(args, "message");
+      return task ? `追加子任务 ${truncateText(task, 70)}` : "追加子任务";
+    }
     case "send_message": {
-      const task =
-        stringValue(args, "task_name") ?? stringValue(args, "message");
+      const task = stringValue(args, "target") ?? stringValue(args, "message");
       return task ? `发送给子任务 ${truncateText(task, 70)}` : "发送给子任务";
     }
     case "wait_agent":
@@ -638,7 +642,12 @@ function compactAgentLabels(items: ThreadItem[]): string[] {
   return uniqueStrings(
     items.map((item) => {
       const args = parseJSONRecord(item.arguments);
-      return stringValue(args, "task_name") ?? readableToolName(item.name);
+      return (
+        stringValue(args, "name") ??
+        stringValue(args, "description") ??
+        stringValue(args, "task_name") ??
+        readableToolName(item.name)
+      );
     }),
   );
 }

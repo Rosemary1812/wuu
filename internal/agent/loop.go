@@ -354,8 +354,8 @@ func RunToolLoop(
 		// aligned with Claude Code's partitionToolCalls architecture.
 		//
 		// The tool's execution context carries the current `messages`
-		// slice (via withHistory) so tools like spawn_agent can inherit
-		// the parent agent's current history when fork_turns is enabled.
+		// slice (via withHistory) so tools like spawn_agent can fork
+		// from the parent agent's current history.
 		toolCtx := withHistory(ctx, messages)
 		toolRuntime := result.ToolRuntime
 		if toolRuntime == nil {

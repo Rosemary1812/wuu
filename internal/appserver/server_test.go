@@ -2055,7 +2055,7 @@ func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 			ParentID:  "root-thread",
 			Path:      "/root/inspect",
 			TaskName:  "inspect",
-			Role:      "worker",
+			Role:      agentcontrol.DefaultSubagentType,
 			Status:    agentthread.StatusRunning,
 			CreatedAt: now.Add(time.Second),
 			UpdatedAt: now.Add(time.Second),
@@ -2072,7 +2072,7 @@ func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 			ParentID:  "worker-1",
 			Path:      "/root/inspect/deeper",
 			TaskName:  "deeper",
-			Role:      "worker",
+			Role:      agentcontrol.DefaultSubagentType,
 			Status:    agentthread.StatusPending,
 			CreatedAt: now.Add(2 * time.Second),
 			UpdatedAt: now.Add(2 * time.Second),
@@ -2127,7 +2127,7 @@ func TestServerThreadResumeLoadsChildAgentSession(t *testing.T) {
 		ParentID:        "root-thread",
 		Path:            "/root/inspect",
 		TaskName:        "inspect",
-		Role:            "worker",
+		Role:            agentcontrol.DefaultSubagentType,
 		LastTaskMessage: "inspect the UI",
 		CWD:             rt.RootDir,
 		Model:           "worker-model",
@@ -2152,7 +2152,7 @@ func TestServerThreadResumeLoadsChildAgentSession(t *testing.T) {
 	}
 	rec := persistedAgentHistory{
 		ID:          "worker-1",
-		Type:        "worker",
+		Type:        agentcontrol.DefaultSubagentType,
 		TaskName:    "inspect",
 		AgentPath:   "/root/inspect",
 		ParentID:    "root-thread",
@@ -2245,7 +2245,7 @@ func TestServerChildAgentSessionIsLiveWhileRunning(t *testing.T) {
 	srv.subscribeThreadRuntime(rootID, rootThread.execRuntime)
 
 	spawned, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type:        "worker",
+		Type:        agentcontrol.DefaultSubagentType,
 		TaskName:    "live_child",
 		Description: "live child",
 		Prompt:      "do it live",
@@ -2750,7 +2750,7 @@ func TestTurnsFromHistoryRestoresCollabAgentToolItems(t *testing.T) {
 			ToolCalls: []providers.ToolCall{{
 				ID:        "call_1",
 				Name:      "spawn_agent",
-				Arguments: `{"task_name":"inspect","message":"inspect"}`,
+				Arguments: `{"name":"inspect","description":"Inspect","prompt":"inspect","subagent_type":"general-purpose","run_in_background":true}`,
 			}},
 		},
 		{
@@ -2793,7 +2793,7 @@ func TestServerForwardsAgentNotifications(t *testing.T) {
 	threadID := "sess-agents"
 	srv.subscribeThreadRuntime(threadID, &runtime.ThreadRuntime{AgentControl: coord})
 	res, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type:        "worker",
+		Type:        agentcontrol.DefaultSubagentType,
 		TaskName:    "check_bridge",
 		Description: "check bridge",
 		Prompt:      "do it",
@@ -2849,7 +2849,7 @@ func TestServerAutoResumesRootAgentOnAgentCompletion(t *testing.T) {
 	srv.subscribeThreadRuntime(threadID, threadRuntime)
 
 	res, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type:        "worker",
+		Type:        agentcontrol.DefaultSubagentType,
 		TaskName:    "check_bridge",
 		Description: "check bridge",
 		Prompt:      "do it",
@@ -2932,7 +2932,7 @@ func TestServerQueuesAgentCompletionWhileRootTurnIsRunning(t *testing.T) {
 	<-mainClient.started
 
 	if _, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type:        "worker",
+		Type:        agentcontrol.DefaultSubagentType,
 		TaskName:    "check_bridge",
 		Description: "check bridge",
 		Prompt:      "do it",

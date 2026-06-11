@@ -624,22 +624,23 @@ func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 	if !strings.Contains(prompt, "spawn_agent") {
 		t.Fatalf("default system prompt must mention spawn_agent: %q", prompt)
 	}
-	if !strings.Contains(prompt, "fork_turns") {
-		t.Fatalf("default system prompt must mention fork_turns: %q", prompt)
-	}
 	if strings.Contains(prompt, "fork_agent") {
 		t.Fatalf("default system prompt must not mention removed fork_agent tool: %q", prompt)
+	}
+	if strings.Contains(prompt, "fork_turns") || strings.Contains(prompt, "isolation='inplace'") {
+		t.Fatalf("default system prompt must not mention old sub-agent fields: %q", prompt)
 	}
 	for _, want := range []string{
 		"delegation materially improves",
 		"Keep work local",
-		"Context:",
+		"Agent shape:",
 		"Workspace:",
 		"Waiting:",
-		"fork_turns='all'",
-		"fork_turns='none'",
-		"isolation='inplace'",
+		"subagent_type='general-purpose'",
+		"subagent_type='verification'",
+		"run_in_background=true",
 		"isolation='worktree'",
+		"description and prompt",
 		"acceptance criteria",
 	} {
 		if !strings.Contains(prompt, want) {

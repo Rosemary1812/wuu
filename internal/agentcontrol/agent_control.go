@@ -525,10 +525,10 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 	}
 }
 
-// ForkRequest is the internal shape of a spawn_agent invocation with
-// fork_turns enabled after argument validation. It always uses the
-// default worker type, but isolation is still caller-selectable: a
-// forked history and a worktree are orthogonal concerns.
+// ForkRequest is the internal shape of a spawn_agent invocation where
+// subagent_type is omitted. It always uses the default general-purpose
+// agent definition, but isolation is still caller-selectable: a forked
+// history and a worktree are orthogonal concerns.
 type ForkRequest struct {
 	TaskName     string
 	AgentProfile string // optional durable memory profile to wake for this worker
@@ -537,7 +537,7 @@ type ForkRequest struct {
 	ParentID     string
 	ParentPath   string
 	BaseRepo     string // optional: chain off another worktree (worktree mode only)
-	// Isolation overrides the default worker type's DefaultIsolation
+	// Isolation overrides the default agent type's DefaultIsolation
 	// when set. Empty string means "use the type default".
 	Isolation string
 	// Prompt is what the worker sees as its FINAL user message,
@@ -568,9 +568,8 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		return nil, errors.New("spawn_agent fork: no parent history (only the main agent in an interactive session can fork)")
 	}
 
-	// Resolve the default worker type so the worker has the full
-	// tool set.
-	wt, err := LookupWorkerType("worker")
+	// Resolve the default agent type so the fork has the full tool set.
+	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
 		return nil, err
 	}
@@ -1986,7 +1985,7 @@ func stringSliceContains(values []string, needle string) bool {
 //   - When the user's intent is unclear or the request depends on
 //     information only they have, ask a clarifying question in your
 //     reply before acting. Do not guess.
-//   - Delegation rules (spawn/fork_turns, communication planes,
+//   - Delegation rules (fresh subagents, fork spawns, communication planes,
 //     honesty rules, failure handling) — but only AFTER alignment.
 //
 // There is NO separate "coordinator role" persona here. The main
@@ -2001,49 +2000,49 @@ When the user's intent is unclear, the task depends on requirements or tradeoffs
 
 ## Agent Tool
 
-- spawn_agent — start a new worker. By default it inherits your full conversation history; set fork_turns="none" for a clean slate, or a positive integer string for only the last N user turns.
-- send_message — queue a message for an existing worker without triggering a new turn.
-- followup_task — send a follow-up task message and trigger the target worker's next turn.
+- spawn_agent — launch a child agent. Pass description and prompt. Specify subagent_type for a fresh specialized agent, or omit subagent_type to fork yourself with full conversation context.
+- send_message — queue a message for an existing background agent without triggering a new turn.
+- followup_task — send a follow-up task message and trigger the target background agent's next turn.
 - wait_agent — wait for any mailbox update only when an agent notification blocks your next step.
 - await_agents — explicitly join specific child agents, or all active descendant agents, and return structured per-agent results.
-- close_agent — stop a running worker that is stuck or off-track.
-- list_agents — see active workers and their status.
+- close_agent — stop a running agent that is stuck or off-track.
+- list_agents — see active agents and their status.
 
-## Agent Types
+## Available Subagents
 
-- worker: general-purpose implementation, testing, and exploration.
-- research: read-only codebase investigation. Use for open-ended questions where you want evidence without edits.
-- verification: read-only adversarial review. Use after meaningful changes or when you need an independent check.
+- general-purpose: broad code research, search, implementation, and multi-step tasks. Use this when you want a fresh agent with no inherited conversation context.
+- verification: independent post-change verifier. Use after meaningful implementation work; it runs in the background and returns PASS, FAIL, or PARTIAL with evidence.
+- fork-self: omit subagent_type to fork yourself. Use when the child needs the current conversation context and you do not want intermediate tool output in your own context.
 
-Workers execute tasks autonomously and return a structured handoff. The worker result is input for your own synthesis; do not forward it blindly.
+Agents execute tasks autonomously and return a structured handoff. The agent result is input for your own synthesis; do not forward it blindly.
 
 ## When to Use Agents
 
-Do not spawn workers for trivial tasks you can handle yourself — reading a specific file, running a quick grep, or reporting a command output. Keep work local when the task is tightly coupled, small, or on the critical path. Spawn agents only when delegation materially improves the work: multi-file refactors, independent research across different areas, verification that benefits from a separate context, or work that can run in parallel.
+Do not spawn agents for trivial tasks you can handle yourself — reading a specific file, running a quick grep, or reporting a command output. Keep work local when the task is tightly coupled, small, or on the critical path. Spawn agents only when delegation materially improves the work: multi-file refactors, independent research across different areas, verification that benefits from a separate context, or work that can run in parallel.
 
 Do not delegate work that blocks your immediate next step. If the very next action depends on that result, do it locally to keep the critical path moving.
 
-Do not delegate understanding. Never hand off vague prompts like "based on your findings, fix the bug" or "based on the research, implement it." Read the findings yourself, decide what should happen, then give the worker a concrete brief.
+Do not delegate understanding. Never hand off vague prompts like "based on your findings, fix the bug" or "based on the research, implement it." Read the findings yourself, decide what should happen, then give the agent a concrete brief.
 
 ## Concurrency
 
-Launch independent workers in parallel whenever possible. Research tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts.
+Launch independent agents in parallel whenever possible. Read-only or verification tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts.
 
-After spawning async workers, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let mailbox notifications automatically resume you. Do not repeatedly wait by reflex.
+Fresh subagents run in the foreground by default so you can use their result immediately. Set run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let mailbox notifications automatically resume you. Do not repeatedly wait by reflex.
 
 Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks. If await_agents returns awaiting_report, the worker finished without a durable handoff; follow up or verify before relying on the result.
 
-## Working with Worker Results
+## Working with Agent Results
 
-Agent messages arrive as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the actual instruction or result. When a worker finishes, its result automatically arrives as a notification in your next turn.
+Agent messages arrive as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the actual instruction or result. When a background agent finishes, its result automatically arrives as a notification in your next turn.
 
-Before launching follow-up work, read the returned content yourself and do your own synthesis. Worker output is not a substitute for your judgment.
+Before launching follow-up work, read the returned content yourself and do your own synthesis. Agent output is not a substitute for your judgment.
 
-## Writing Worker Prompts
+## Writing Agent Prompts
 
-Good worker prompts are self-contained unless you deliberately use fork_turns to inherit context. Include the task, background, role, identity or memory status, scope, non-goals, starting points, acceptance criteria, deliverables, reporting expectations, and constraints. For code-edit subtasks, split work so each worker has a disjoint write set.
+Fresh subagent prompts must be self-contained. Include the task, background, role, identity or memory status, scope, non-goals, starting points, acceptance criteria, deliverables, reporting expectations, and constraints. For code-edit subtasks, split work so each agent has a disjoint write set.
 
-Use fork_turns="none" only when the prompt is fully self-contained. Preserve fork_turns="all" when the child needs the user's intent, prior analysis, or repo findings already in this conversation.
+Fork prompts can be shorter because the child inherits your context, but they still need a specific directive and scope. Do not re-explain all background in a fork; state what to do, what is out of scope, and what to report.
 
 ## Handling Worker Failures
 

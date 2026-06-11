@@ -89,9 +89,9 @@ type SpawnOptions struct {
 
 	// InitialHistory, when non-nil, seeds the worker's conversation
 	// with this exact message slice instead of starting from
-	// [system, user_prompt]. Used by spawn_agent when fork_turns is
-	// enabled so the worker inherits the parent's history verbatim,
-	// which is what makes prompt-cache hit work across the fork boundary.
+	// [system, user_prompt]. Used by spawn_agent fork spawns so the
+	// worker inherits the parent's history verbatim, which is what
+	// makes prompt-cache hit work across the fork boundary.
 	//
 	// When InitialHistory is set:
 	//   - SystemPrompt on this struct is IGNORED. The system message

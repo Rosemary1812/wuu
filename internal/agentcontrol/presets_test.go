@@ -33,38 +33,16 @@ func TestVerificationPreset_VerdictFormat(t *testing.T) {
 	}
 }
 
-func TestResearchPreset_IsReadOnly(t *testing.T) {
-	if !strings.Contains(ResearchPreset, "Do NOT modify") {
-		t.Error("ResearchPreset must forbid modifications")
-	}
-	if !strings.Contains(ResearchPreset, "mutate state") {
-		t.Error("ResearchPreset must forbid state-mutating commands")
-	}
-}
-
-func TestResearchPreset_RequiresFileLineCitations(t *testing.T) {
-	if !strings.Contains(ResearchPreset, "file:line") {
-		t.Error("ResearchPreset must require file:line citations")
-	}
-}
-
-func TestResearchPreset_OutputShape(t *testing.T) {
-	for _, want := range []string{"## Answer", "## Evidence", "## Notes"} {
-		if !strings.Contains(ResearchPreset, want) {
-			t.Errorf("ResearchPreset missing required section %q", want)
-		}
-	}
-}
-
 func TestSystemPromptPreamble_ContainsAgentToolRules(t *testing.T) {
 	preamble := SystemPromptPreamble()
 	for _, want := range []string{
 		"optional Agent tool",
 		"main agent owns the user conversation",
-		"worker",
-		"research",
+		"subagent_type",
+		"general-purpose",
 		"verification",
-		"fork_turns",
+		"fork-self",
+		"run_in_background",
 		"send_message",
 		"followup_task",
 		"await_agents",
@@ -76,6 +54,11 @@ func TestSystemPromptPreamble_ContainsAgentToolRules(t *testing.T) {
 	}
 	if strings.Contains(preamble, "You are an orchestration agent") {
 		t.Fatalf("SystemPromptPreamble should not make orchestration the main identity:\n%s", preamble)
+	}
+	for _, old := range []string{"## Agent Types", "fork_turns", "worker: general-purpose", "research: read-only"} {
+		if strings.Contains(preamble, old) {
+			t.Fatalf("SystemPromptPreamble should not retain old agent taxonomy %q:\n%s", old, preamble)
+		}
 	}
 }
 
@@ -100,7 +83,7 @@ func TestSystemPromptPreamble_ContainsWorkerResultHandling(t *testing.T) {
 		"self-contained",
 	} {
 		if !strings.Contains(preamble, want) {
-			t.Errorf("SystemPromptPreamble missing worker result handling %q", want)
+			t.Errorf("SystemPromptPreamble missing agent result handling %q", want)
 		}
 	}
 }
@@ -133,9 +116,9 @@ func TestSystemPromptPreamble_ContainsDelegationDiscipline(t *testing.T) {
 }
 
 func TestComposeWorkerSystemPrompt_ContainsWorkerOverride(t *testing.T) {
-	wt, err := LookupWorkerType("worker")
+	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
-		t.Fatalf("LookupWorkerType(worker): %v", err)
+		t.Fatalf("LookupWorkerType(general-purpose): %v", err)
 	}
 	got := composeWorkerSystemPrompt("You are wuu, a pragmatic CLI coding assistant.", wt, "/tmp/repo", IsolationInplace)
 	if !strings.Contains(got, "Worker override:") {
@@ -147,9 +130,9 @@ func TestComposeWorkerSystemPrompt_ContainsWorkerOverride(t *testing.T) {
 }
 
 func TestComposeWorkerSystemPrompt_TeachesNonInteractiveGit(t *testing.T) {
-	wt, err := LookupWorkerType("worker")
+	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
-		t.Fatalf("LookupWorkerType(worker): %v", err)
+		t.Fatalf("LookupWorkerType(general-purpose): %v", err)
 	}
 	got := composeWorkerSystemPrompt("", wt, "/tmp/repo", IsolationInplace)
 	for _, want := range []string{

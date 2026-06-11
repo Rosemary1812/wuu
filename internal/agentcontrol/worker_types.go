@@ -21,18 +21,35 @@ type WorkerType struct {
 	Description      string
 	SystemPrompt     string
 	AllowedTools     []string
+	DisallowedTools  []string
 	OneShot          bool
+	Background       bool
 	DefaultIsolation IsolationMode
 }
 
+const DefaultSubagentType = "general-purpose"
+
 var builtinWorkerTypes = map[string]WorkerType{
-	"worker": {
-		Name:             "worker",
-		Description:      "General-purpose sub-agent with the full tool set. Use for implementation, testing, and exploration tasks.",
+	DefaultSubagentType: {
+		Name:             DefaultSubagentType,
+		Description:      "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
 		AllowedTools:     nil,
 		OneShot:          false,
 		DefaultIsolation: IsolationInplace,
-		SystemPrompt: `You are a worker sub-agent. You operate within a working directory provided by the lead agent. You have the same tool set and the same coding discipline as the lead. You are expected to solve tasks independently and report your result concisely.
+		SystemPrompt: `You are a general-purpose sub-agent. Given the caller's prompt, use the available tools to complete the task. Complete the task fully; do not gold-plate, but do not leave it half-done.
+
+Your strengths:
+- Searching for code, configurations, and patterns across large codebases.
+- Analyzing multiple files to understand system architecture.
+- Investigating complex questions that require exploring many files.
+- Performing multi-step implementation and verification tasks.
+
+Guidelines:
+- For file searches, search broadly when you do not know where something lives. Use read_file when you know the specific file path.
+- For analysis, start broad and narrow down. Use multiple search strategies if the first one does not yield results.
+- Be thorough: check multiple locations, consider different naming conventions, and look for related files.
+- Never create files unless they are necessary for the task. Prefer editing existing files to creating new files.
+- Never proactively create documentation files. Only create documentation when explicitly requested.
 
 CRITICAL RULES:
 - Make ONLY the changes described in your task prompt. Do not refactor surrounding code.
@@ -40,7 +57,6 @@ CRITICAL RULES:
 - Be honest: if you encounter a problem you can't fix, report it clearly instead of papering over it.
 - Treat shell commands as non-interactive. Never rely on editors, pagers, password prompts, or confirmation dialogs.
 - For git, prefer explicit non-interactive forms: use ` + "`git commit -m`" + ` (or a heredoc-fed message), and never use ` + "`git commit -e`" + `, ` + "`git rebase -i`" + `, ` + "`git add -i`" + `, or similar editor-driven flows.
-- If your task prompt starts with a "VERIFICATION mode" or "READ-ONLY RESEARCH mode" preamble, treat that preamble as authoritative and follow its rules — it overrides the generic guidance above.
 
 OUTPUT FORMAT:
 Before your final message, call agent_report with a structured handoff packet. Include the outcome, a concise summary, changed_files when relevant, concrete work_done, blockers when any, risks when any, verification performed or skipped, next_steps when useful, and evidence entries that point to files, commands, or artifacts. Your final message should match the structure below and may summarize the same report.
@@ -61,18 +77,12 @@ RESPONSE STYLE:
 	},
 	"verification": {
 		Name:             "verification",
-		Description:      "Read-only adversarial reviewer. Use to verify changes, find bugs, and validate correctness.",
+		Description:      "Verification specialist. Use after non-trivial implementation work to run checks, try to break the change, and return a PASS/FAIL/PARTIAL verdict with evidence.",
 		SystemPrompt:     VerificationPreset,
 		AllowedTools:     nil,
+		DisallowedTools:  []string{"spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "write_file", "edit_file", "apply_patch"},
 		OneShot:          true,
-		DefaultIsolation: IsolationInplace,
-	},
-	"research": {
-		Name:             "research",
-		Description:      "Read-only researcher. Use to investigate codebases, trace execution paths, and answer questions about existing code.",
-		SystemPrompt:     ResearchPreset,
-		AllowedTools:     nil,
-		OneShot:          true,
+		Background:       true,
 		DefaultIsolation: IsolationInplace,
 	},
 }
@@ -80,7 +90,7 @@ RESPONSE STYLE:
 // LookupWorkerType resolves a worker type name to its definition.
 func LookupWorkerType(name string) (WorkerType, error) {
 	if name == "" {
-		name = "worker"
+		name = DefaultSubagentType
 	}
 	wt, ok := builtinWorkerTypes[name]
 	if !ok {
@@ -94,20 +104,34 @@ func LookupWorkerType(name string) (WorkerType, error) {
 	return wt, nil
 }
 
-// alwaysBlockedTools is the set of tools that workers can never use.
-var alwaysBlockedTools = map[string]struct{}{}
+// alwaysBlockedTools is the set of tools that async sub-agents can never use.
+var alwaysBlockedTools = map[string]struct{}{
+	"spawn_agent":   {},
+	"send_message":  {},
+	"followup_task": {},
+	"wait_agent":    {},
+	"await_agents":  {},
+	"close_agent":   {},
+	"list_agents":   {},
+}
 
 // FilterToolsForWorker returns the subset of fullList that this worker
-// type is allowed to call. Workers keep orchestration tools so sub-agents
-// can spawn/message their own children like Codex V2.
+// type is allowed to call.
 func FilterToolsForWorker(wt WorkerType, fullList []string) []string {
 	out := make([]string, 0, len(fullList))
 	allowSet := map[string]struct{}{}
 	for _, t := range wt.AllowedTools {
 		allowSet[t] = struct{}{}
 	}
+	denySet := map[string]struct{}{}
+	for _, t := range wt.DisallowedTools {
+		denySet[t] = struct{}{}
+	}
 	for _, name := range fullList {
 		if _, blocked := alwaysBlockedTools[name]; blocked {
+			continue
+		}
+		if _, denied := denySet[name]; denied {
 			continue
 		}
 		if len(wt.AllowedTools) == 0 {

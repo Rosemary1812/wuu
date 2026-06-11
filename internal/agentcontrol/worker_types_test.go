@@ -2,41 +2,33 @@ package agentcontrol
 
 import "testing"
 
-func TestLookupWorkerType_OnlyWorker(t *testing.T) {
-	// Only one built-in type ships now. Specialized roles
-	// (verification, research) are injected via prompt presets at
-	// spawn time, not via separate worker types.
-	wt, err := LookupWorkerType("worker")
+func TestLookupWorkerType_GeneralPurpose(t *testing.T) {
+	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
-		t.Fatalf("LookupWorkerType(worker) failed: %v", err)
+		t.Fatalf("LookupWorkerType(general-purpose) failed: %v", err)
 	}
-	if wt.Name != "worker" {
-		t.Errorf("got name %q, want worker", wt.Name)
+	if wt.Name != DefaultSubagentType {
+		t.Errorf("got name %q, want %s", wt.Name, DefaultSubagentType)
 	}
 	if wt.SystemPrompt == "" {
-		t.Error("worker has empty SystemPrompt")
+		t.Error("general-purpose agent has empty SystemPrompt")
 	}
 }
 
-func TestLookupWorkerType_DefaultsToWorker(t *testing.T) {
+func TestLookupWorkerType_DefaultsToGeneralPurpose(t *testing.T) {
 	wt, err := LookupWorkerType("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wt.Name != "worker" {
-		t.Fatalf("expected default = worker, got %q", wt.Name)
+	if wt.Name != DefaultSubagentType {
+		t.Fatalf("expected default = %s, got %q", DefaultSubagentType, wt.Name)
 	}
 }
 
 func TestLookupWorkerType_RemovedTypesRejected(t *testing.T) {
-	// The old explorer/planner/verifier types no longer exist —
-	// their job is now done by prompt presets pasted into the
-	// generic worker prompt. Trying to look them up must error so
-	// any caller still asking for them gets a clear failure
-	// instead of silently falling back to default behavior.
-	for _, name := range []string{"explorer", "planner", "verifier"} {
+	for _, name := range []string{"worker", "research", "explorer", "planner", "verifier"} {
 		if _, err := LookupWorkerType(name); err == nil {
-			t.Errorf("LookupWorkerType(%q) should error after type collapse", name)
+			t.Errorf("LookupWorkerType(%q) should error after aligning to subagent_type definitions", name)
 		}
 	}
 }
@@ -48,43 +40,66 @@ func TestLookupWorkerType_Unknown(t *testing.T) {
 	}
 }
 
-func TestFilterToolsForWorker_Worker(t *testing.T) {
-	wt, _ := LookupWorkerType("worker")
+func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
+	wt, _ := LookupWorkerType(DefaultSubagentType)
 	full := []string{
 		"read_file", "write_file", "edit_file", "run_shell", "run_test",
 		"grep", "glob", "spawn_agent", "send_message", "followup_task",
-		"wait_agent", "close_agent", "list_agents",
+		"wait_agent", "await_agents", "close_agent", "list_agents", "agent_report",
 	}
 	filtered := FilterToolsForWorker(wt, full)
 	allowed := map[string]bool{}
 	for _, n := range filtered {
 		allowed[n] = true
 	}
-	// Worker has nil AllowedTools → all non-orchestration tools allowed.
-	for _, expected := range []string{"read_file", "write_file", "edit_file", "run_shell", "run_test", "grep", "glob"} {
+	for _, expected := range []string{"read_file", "write_file", "edit_file", "run_shell", "run_test", "grep", "glob", "agent_report"} {
 		if !allowed[expected] {
-			t.Errorf("worker missing %s", expected)
+			t.Errorf("general-purpose agent missing %s", expected)
+		}
+	}
+	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents"} {
+		if allowed[blocked] {
+			t.Errorf("general-purpose agent should not receive recursive control tool %s", blocked)
+		}
+	}
+}
+
+func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
+	wt, _ := LookupWorkerType("verification")
+	if !wt.Background {
+		t.Fatal("verification agent should run in the background")
+	}
+	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "run_shell", "run_test", "agent_report"}
+	filtered := FilterToolsForWorker(wt, full)
+	allowed := map[string]bool{}
+	for _, n := range filtered {
+		allowed[n] = true
+	}
+	for _, blocked := range []string{"write_file", "edit_file", "apply_patch"} {
+		if allowed[blocked] {
+			t.Errorf("verification agent should not receive write tool %s", blocked)
+		}
+	}
+	for _, expected := range []string{"read_file", "run_shell", "run_test", "agent_report"} {
+		if !allowed[expected] {
+			t.Errorf("verification agent missing %s", expected)
 		}
 	}
 }
 
 func TestWorkerType_DefaultIsolation(t *testing.T) {
-	// The single shipped type defaults to inplace — workers share
-	// the parent repo unless the caller explicitly opts into a
-	// worktree. See the IsolationInplace doc comment for the
-	// rationale.
-	wt, err := LookupWorkerType("worker")
+	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if wt.DefaultIsolation != IsolationInplace {
-		t.Errorf("worker: want default isolation %q, got %q",
+		t.Errorf("general-purpose: want default isolation %q, got %q",
 			IsolationInplace, wt.DefaultIsolation)
 	}
 }
 
 func TestNormalizeIsolation(t *testing.T) {
-	worker, _ := LookupWorkerType("worker")
+	agent, _ := LookupWorkerType(DefaultSubagentType)
 
 	cases := []struct {
 		name    string
@@ -93,12 +108,12 @@ func TestNormalizeIsolation(t *testing.T) {
 		want    IsolationMode
 		wantErr bool
 	}{
-		{"empty falls back to type default", "", worker, IsolationInplace, false},
-		{"explicit inplace", "inplace", worker, IsolationInplace, false},
-		{"explicit worktree", "worktree", worker, IsolationWorktree, false},
-		{"case insensitive", "InPlace", worker, IsolationInplace, false},
+		{"empty falls back to type default", "", agent, IsolationInplace, false},
+		{"explicit inplace", "inplace", agent, IsolationInplace, false},
+		{"explicit worktree", "worktree", agent, IsolationWorktree, false},
+		{"case insensitive", "InPlace", agent, IsolationInplace, false},
 		{"empty type with empty default falls back to inplace", "", WorkerType{}, IsolationInplace, false},
-		{"unknown rejected", "yolo", worker, "", true},
+		{"unknown rejected", "yolo", agent, "", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

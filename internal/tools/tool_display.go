@@ -129,7 +129,7 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 	case "update_plan":
 		return toolDisplay("plan", "更新计划")
 	case "spawn_agent":
-		return toolDisplay("agent", "启动子任务 "+displayTarget(displayString(args, "task_name"), ""))
+		return toolDisplay("agent", "启动子任务 "+displayTarget(displayString(args, "name", "description"), ""))
 	case "send_message":
 		return toolDisplay("agent", "发送给子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
 	case "followup_task":

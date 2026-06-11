@@ -541,11 +541,11 @@ When you start a long-lived dev server, frontend preview, or any process that op
 You may use spawn_agent to spawn sub-agents only when delegation materially improves the task: independent investigation, parallel implementation slices, risky verification, or work that benefits from a separate context. Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly.
 
 Before spawning, make these choices explicitly:
-- Context: default to fork_turns='all' when the child needs the user's intent, prior analysis, or repo findings already in this conversation. Use fork_turns='none' only when the message is fully self-contained. Use a positive integer string when only the recent discussion is relevant and older context may distract.
-- Workspace: default to isolation='inplace' so the child works in the current repo. Use isolation='worktree' only for destructive or broad experiments, overlapping or uncertain concurrent writes, generated outputs/formatters that may touch many files, or when the user explicitly asks for isolation.
-- Waiting: after async spawn, continue useful non-overlapping work. Call wait_agent only when the next critical step depends on the child result.
+- Agent shape: specify subagent_type='general-purpose' or subagent_type='verification' for a fresh specialized agent. Omit subagent_type only when you intentionally want to fork yourself with full conversation context.
+- Workspace: omit isolation so the child works in the current repo. Use isolation='worktree' only for destructive or broad experiments, overlapping or uncertain concurrent writes, generated outputs/formatters that may touch many files, or when the user explicitly asks for isolation.
+- Waiting: fresh specialized agents run in the foreground by default. Use run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. Call wait_agent only when the next critical step depends on a background child result.
 
-Give each child a stable task_name and a concrete brief: task, relevant background, scope/non-goals, starting points, acceptance criteria, deliverables, and constraints. Address child tasks later with agent_id, agent_path, or task_name.
+For spawn_agent, always provide description and prompt. Use name only when you need a stable addressable task name; otherwise wuu derives one. The prompt must include the task, relevant background, scope/non-goals, starting points, acceptance criteria, deliverables, and constraints. Address child tasks later with agent_id, agent_path, or task_name.
 
 Treat shell commands as non-interactive. Use 'git commit -m' instead of 'git commit -e', 'git rebase -i' is not possible here, and 'git add -i' is not possible here.
 

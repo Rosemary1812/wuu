@@ -1248,7 +1248,7 @@ func (t *WorkflowControlTool) Execute(_ context.Context, argsJSON string) (strin
 			"action":        "record_workflow_team",
 			"workflow_team": plan,
 			"next_steps": []string{
-				"Write each spawn_agent.message from the Base Agent Brief Contract, adding only the small context extension that applies.",
+				"Write each spawn_agent.prompt from the Base Agent Brief Contract, adding only the small context extension that applies.",
 				"Add the Workflow Context Extension for workflow team members.",
 				"Spawn reuse_profile and create_profile members with spawn_agent.agent_profile set to the recorded profile.",
 				"Spawn ephemeral members without agent_profile.",

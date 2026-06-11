@@ -386,7 +386,7 @@ func TestNewThreadRuntimeOrdinarySpawnIsMemoryless(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}()
 	if _, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type:        "worker",
+		Type: agentcontrol.DefaultSubagentType,
 		TaskName:    "inspect_repo",
 		Prompt:      "inspect the repo",
 		Synchronous: true,
@@ -462,7 +462,7 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}()
 	res, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type:         "worker",
+		Type: agentcontrol.DefaultSubagentType,
 		TaskName:     "qa_check",
 		AgentProfile: agentProfile,
 		Prompt:       "run the QA workflow",
@@ -799,14 +799,14 @@ func TestResolveInputWindow_CapsCodexSubscriptionGPT5(t *testing.T) {
 	}
 }
 
-func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
+func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 	kit, err := tools.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New toolkit: %v", err)
 	}
-	wt, err := agentcontrol.LookupWorkerType("worker")
+	wt, err := agentcontrol.LookupWorkerType(agentcontrol.DefaultSubagentType)
 	if err != nil {
-		t.Fatalf("worker type: %v", err)
+		t.Fatalf("agent type: %v", err)
 	}
 
 	applyWorkerToolFilter(kit, wt)
@@ -815,9 +815,14 @@ func TestApplyWorkerToolFilter_HidesOrchestrationTools(t *testing.T) {
 	for _, def := range kit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, allowed := range []string{"read_file", "write_file", "run_shell", "run_test", "update_plan", "spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents"} {
+	for _, allowed := range []string{"read_file", "write_file", "run_shell", "run_test", "update_plan", "agent_report"} {
 		if !defs[allowed] {
-			t.Fatalf("worker toolkit should keep %s", allowed)
+			t.Fatalf("subagent toolkit should keep %s", allowed)
+		}
+	}
+	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents"} {
+		if defs[blocked] {
+			t.Fatalf("subagent toolkit should hide recursive control tool %s", blocked)
 		}
 	}
 }

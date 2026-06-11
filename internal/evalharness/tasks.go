@@ -434,8 +434,8 @@ func Catalog() []Task {
 		{
 			ID:            "multi_agent_worker",
 			Name:          "Delegate work to a sub-agent",
-			Description:   "Main agent must spawn an async worker and wait for it to produce a marker file.",
-			Prompt:        "Spawn an async worker named eval_worker with fork_turns='none'. Ask it to write worker_result.txt containing SUBAGENT_EVAL_DONE, then call wait_agent until the worker completes. Do not write worker_result.txt yourself.",
+			Description:   "Main agent must spawn a background sub-agent and wait for it to produce a marker file.",
+			Prompt:        "Spawn a background general-purpose sub-agent with name='eval_worker', description='Write worker marker', subagent_type='general-purpose', and run_in_background=true. Ask it to write worker_result.txt containing SUBAGENT_EVAL_DONE, then call wait_agent until the agent completes. Do not write worker_result.txt yourself.",
 			RequiredTools: []string{"spawn_agent", "wait_agent"},
 			Setup:         setupEmptyTask,
 			Verify:        verifySubAgentWorkerFile,
@@ -496,7 +496,7 @@ func Catalog() []Task {
 				"First call list_agent_profiles. Then call start_workflow for the run, not create_workflow directly. Next, record a Workflow Team with workflow_control action=record_workflow_team containing exactly two members in the team field: " +
 				"one create_profile member with role='Marker writer', agent_profile='eval_team_marker_writer', task_name='alpha_writer', phase_id='team_work'; " +
 				"and one ephemeral member with role='Independent verifier', task_name='beta_writer', phase_id='team_work'. " +
-				"Spawn both workers with fork_turns='none' and self-contained briefs from the Base Agent Brief Contract plus the Workflow Context Extension. " +
+				"Spawn both workers as fresh general-purpose sub-agents with subagent_type='general-purpose' and self-contained prompts from the Base Agent Brief Contract plus the Workflow Context Extension. " +
 				"The create_profile worker must use agent_profile='eval_team_marker_writer' and write team_alpha.txt containing TEAM_ALPHA_DONE. " +
 				"The ephemeral worker must omit agent_profile and write team_beta.txt containing TEAM_BETA_DONE. " +
 				"Require both workers to call agent_report. Await both with await_agents, bind the results back to the workflow using workflow_control action=record_await_results, then write a final workflow report with complete_run=true. Do not write team_alpha.txt or team_beta.txt yourself.",

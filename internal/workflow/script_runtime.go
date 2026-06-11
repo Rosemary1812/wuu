@@ -46,15 +46,14 @@ type ScriptRuntime struct {
 }
 
 type ScriptSpawnSpec struct {
-	TaskName     string `json:"taskName"`
-	Message      string `json:"message"`
-	Prompt       string `json:"prompt"`
-	AgentProfile string `json:"agentProfile"`
-	Isolation    string `json:"isolation"`
-	BaseRepo     string `json:"baseRepo"`
-	Synchronous  bool   `json:"synchronous"`
-	TimeoutMS    int64  `json:"timeoutMs"`
-	ForkTurns    string `json:"forkTurns"`
+	TaskName        string `json:"name"`
+	Description     string `json:"description"`
+	Prompt          string `json:"prompt"`
+	SubagentType    string `json:"subagentType"`
+	AgentProfile    string `json:"agentProfile"`
+	Isolation       string `json:"isolation"`
+	RunInBackground bool   `json:"runInBackground"`
+	TimeoutMS       int64  `json:"timeoutMs"`
 }
 
 type ScriptSpawnResult struct {
@@ -304,7 +303,7 @@ func (r *ScriptRuntime) parseSpawnPrimitiveSpec(vm *goja.Runtime, call goja.Func
 			return ScriptSpawnSpec{}, err
 		}
 		if spec.TaskName == "" {
-			spec.TaskName = r.nextSpawnTaskName(firstNonEmpty(spec.AgentProfile, spec.Prompt, spec.Message))
+			spec.TaskName = r.nextSpawnTaskName(firstNonEmpty(spec.AgentProfile, spec.Prompt, spec.Description))
 		}
 		return spec, nil
 	}
@@ -322,7 +321,7 @@ func (r *ScriptRuntime) parseSpawnPrimitiveSpec(vm *goja.Runtime, call goja.Func
 			return ScriptSpawnSpec{}, err
 		}
 	}
-	if spec.Prompt != "" || spec.Message != "" {
+	if spec.Prompt != "" {
 		if spec.TaskName == "" {
 			spec.TaskName = r.nextSpawnTaskName(firstText)
 		}
@@ -344,16 +343,27 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 	if r.opts.AgentControl == nil {
 		return ScriptSpawnResult{}, errors.New("agent control not configured")
 	}
-	if strings.TrimSpace(spec.ForkTurns) != "" && strings.TrimSpace(spec.ForkTurns) != "none" {
-		return ScriptSpawnResult{}, errors.New("workflow scripts only support clean worker spawns; forkTurns must be empty or \"none\"")
-	}
 	prompt := strings.TrimSpace(spec.Prompt)
 	if prompt == "" {
-		prompt = strings.TrimSpace(spec.Message)
+		return ScriptSpawnResult{}, errors.New("spawnAgent requires prompt")
 	}
-	if prompt == "" {
-		return ScriptSpawnResult{}, errors.New("spawnAgent requires message or prompt")
+	taskName := strings.TrimSpace(spec.TaskName)
+	if taskName == "" {
+		taskName = r.nextSpawnTaskName(firstNonEmpty(spec.Description, prompt, spec.AgentProfile))
 	}
+	description := strings.TrimSpace(spec.Description)
+	if description == "" {
+		description = taskName
+	}
+	subagentType := strings.TrimSpace(spec.SubagentType)
+	if subagentType == "" {
+		subagentType = agentcontrol.DefaultSubagentType
+	}
+	wt, err := agentcontrol.LookupWorkerType(subagentType)
+	if err != nil {
+		return ScriptSpawnResult{}, err
+	}
+	foreground := !spec.RunInBackground && !wt.Background
 	if err := r.ensureAgentCapacity(1); err != nil {
 		return ScriptSpawnResult{}, err
 	}
@@ -362,14 +372,14 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 		timeout = time.Duration(spec.TimeoutMS) * time.Millisecond
 	}
 	result, err := r.opts.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
-		Type:         "worker",
-		TaskName:     strings.TrimSpace(spec.TaskName),
+		Type:         subagentType,
+		TaskName:     taskName,
 		AgentProfile: strings.TrimSpace(spec.AgentProfile),
+		Description:  description,
 		Prompt:       prompt,
 		ParentID:     strings.TrimSpace(r.opts.CurrentAgentID),
 		ParentPath:   r.currentAgentPath(),
-		BaseRepo:     strings.TrimSpace(spec.BaseRepo),
-		Synchronous:  spec.Synchronous,
+		Synchronous:  foreground,
 		Timeout:      timeout,
 		Isolation:    strings.TrimSpace(spec.Isolation),
 	})
@@ -395,7 +405,7 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 		return out, err
 	}
 	r.rememberSpawnedAgent(out.AgentID)
-	if spec.Synchronous && strings.TrimSpace(out.AgentID) != "" {
+	if foreground && strings.TrimSpace(out.AgentID) != "" {
 		refreshed, err := r.awaitAgentTargets(ctx, []string{out.AgentID})
 		if err != nil {
 			return out, err
@@ -845,9 +855,6 @@ func addSpawnRoleToPrompt(spec ScriptSpawnSpec, role string) ScriptSpawnSpec {
 	if strings.TrimSpace(spec.Prompt) != "" && !strings.HasPrefix(strings.TrimSpace(spec.Prompt), "Role: ") {
 		spec.Prompt = prefix + strings.TrimSpace(spec.Prompt)
 	}
-	if strings.TrimSpace(spec.Message) != "" && !strings.HasPrefix(strings.TrimSpace(spec.Message), "Role: ") {
-		spec.Message = prefix + strings.TrimSpace(spec.Message)
-	}
 	return spec
 }
 
@@ -913,15 +920,13 @@ func parseScriptSpawnSpec(vm *goja.Runtime, value goja.Value) (ScriptSpawnSpec, 
 		return ScriptSpawnSpec{}, fmt.Errorf("parse spawnAgent spec: %w", err)
 	}
 	if object := value.ToObject(vm); object != nil {
-		spec.TaskName = firstScriptString(object, spec.TaskName, "taskName", "task_name", "TaskName")
-		spec.TaskName = firstScriptString(object, spec.TaskName, "label", "Label", "name", "Name")
-		spec.Message = firstScriptString(object, spec.Message, "message", "Message")
+		spec.TaskName = firstScriptString(object, spec.TaskName, "name", "Name")
+		spec.Description = firstScriptString(object, spec.Description, "description", "Description")
 		spec.Prompt = firstScriptString(object, spec.Prompt, "prompt", "Prompt")
+		spec.SubagentType = firstScriptString(object, spec.SubagentType, "subagentType", "subagent_type", "SubagentType")
 		spec.AgentProfile = firstScriptString(object, spec.AgentProfile, "agentProfile", "agent_profile", "AgentProfile")
 		spec.Isolation = firstScriptString(object, spec.Isolation, "isolation", "Isolation")
-		spec.BaseRepo = firstScriptString(object, spec.BaseRepo, "baseRepo", "base_repo", "BaseRepo")
-		spec.ForkTurns = firstScriptString(object, spec.ForkTurns, "forkTurns", "fork_turns", "ForkTurns")
-		spec.Synchronous = firstScriptBool(object, spec.Synchronous, "synchronous", "Synchronous")
+		spec.RunInBackground = firstScriptBool(object, spec.RunInBackground, "runInBackground", "run_in_background", "RunInBackground")
 		spec.TimeoutMS = firstScriptInt64(object, spec.TimeoutMS, "timeoutMs", "timeout_ms", "TimeoutMS")
 	}
 	return spec, nil

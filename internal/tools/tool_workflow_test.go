@@ -646,7 +646,7 @@ func TestRunScriptWorkflowSpawnsAndAwaitsAgent(t *testing.T) {
 
 	script := `
 phase("Workers", () => {
-  const spawned = spawnAgent({taskName: "qa", message: "Run QA.", synchronous: true});
+  const spawned = spawnAgent({name: "qa", description: "Run QA", prompt: "Run QA.", subagentType: "general-purpose"});
   if (spawned.status !== "completed" || spawned.result !== "agent done") {
     throw new Error("spawnAgent did not return the completed worker result");
   }
@@ -740,7 +740,7 @@ func TestRunScriptWorkflowSupportsSpawnPrimitive(t *testing.T) {
 
 	script := `
 phase("Spawn primitive", () => {
-  const spawned = spawn("qa_reviewer", {prompt: "Run QA.", synchronous: true});
+  const spawned = spawn("qa_reviewer", {prompt: "Run QA.", subagentType: "general-purpose"});
   if (spawned.taskName !== "qa_reviewer_1") {
     throw new Error("spawn did not derive a stable task name: " + spawned.taskName);
   }
@@ -828,14 +828,14 @@ func TestRunScriptWorkflowSupportsSpawnBatchAlias(t *testing.T) {
 	script := `
 phase("Batch", () => {
   const spawned = spawnBatch([
-    {taskName: "qa_1", message: "Run QA 1.", synchronous: true},
-    {taskName: "qa_2", message: "Run QA 2.", synchronous: true}
+    {name: "qa_1", description: "Run QA 1", prompt: "Run QA 1.", subagentType: "general-purpose"},
+    {name: "qa_2", description: "Run QA 2", prompt: "Run QA 2.", subagentType: "general-purpose"}
   ]);
   if (!spawned || spawned.length !== 2) {
     throw new Error("spawnBatch should return two spawn results");
   }
   if (spawned[0].status !== "completed" || spawned[1].status !== "completed") {
-    throw new Error("spawnBatch did not return completed synchronous results");
+    throw new Error("spawnBatch did not return completed foreground results");
   }
   synthesize("# Final\n\n" + spawned.map((item) => item.result).join("\n"));
 });

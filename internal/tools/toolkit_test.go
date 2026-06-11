@@ -1919,7 +1919,7 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 
 	spawnedJSON, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "spawn_agent",
-		Arguments: `{"task_name":"inspect_team","message":"Finish the worker task.","synchronous":true,"fork_turns":"none"}`,
+		Arguments: `{"name":"inspect_team","description":"Inspect team","prompt":"Finish the agent task.","subagent_type":"general-purpose"}`,
 	})
 	if err != nil {
 		t.Fatalf("spawn_agent: %v", err)
@@ -4604,7 +4604,7 @@ func TestToolkit_ProcessOutputRedactsSecrets(t *testing.T) {
 	}
 }
 
-func TestToolkit_SpawnAgentDefinitionIncludesForkTurnsAndAgentProfile(t *testing.T) {
+func TestToolkit_SpawnAgentDefinitionUsesCCAgentSchema(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -4615,16 +4615,19 @@ func TestToolkit_SpawnAgentDefinitionIncludesForkTurnsAndAgentProfile(t *testing
 			continue
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
-		if _, ok := props["fork_turns"]; !ok {
-			t.Fatalf("spawn_agent schema must expose fork_turns: %#v", d.InputSchema)
+		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation"} {
+			if _, ok := props[field]; !ok {
+				t.Fatalf("spawn_agent schema must expose %s: %#v", field, d.InputSchema)
+			}
 		}
-		if _, ok := props["agent_profile"]; !ok {
-			t.Fatalf("spawn_agent schema must expose agent_profile: %#v", d.InputSchema)
+		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo"} {
+			if _, ok := props[old]; ok {
+				t.Fatalf("spawn_agent schema should not expose old field %s: %#v", old, d.InputSchema)
+			}
 		}
-		agentType, _ := props["agent_type"].(map[string]any)
-		enum, _ := agentType["enum"].([]string)
-		if !reflect.DeepEqual(enum, []string{"worker", "research", "verification"}) {
-			t.Fatalf("spawn_agent agent_type enum = %#v, want worker/research/verification", agentType["enum"])
+		required, _ := d.InputSchema["required"].([]string)
+		if !reflect.DeepEqual(required, []string{"description", "prompt"}) {
+			t.Fatalf("spawn_agent required = %#v, want description/prompt", d.InputSchema["required"])
 		}
 		return
 	}
@@ -4644,7 +4647,7 @@ func TestToolkit_SpawnAgentDescriptionDoesNotForceStopAfterSpawn(t *testing.T) {
 		if strings.Contains(d.Description, "END YOUR TURN") {
 			t.Fatalf("spawn_agent description must not force stopping after async spawn: %q", d.Description)
 		}
-		for _, want := range []string{"non-overlapping", "Do not loop checking status", "synchronous=true"} {
+		for _, want := range []string{"non-overlapping", "Do not sleep, poll", "run_in_background=true"} {
 			if !strings.Contains(d.Description, want) {
 				t.Fatalf("spawn_agent description missing %q: %q", want, d.Description)
 			}
@@ -4672,11 +4675,9 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"destructive or broad experiments",
 			"overlapping or uncertain concurrent writes",
 			"generated outputs/formatters",
-			"fork_turns='none'",
-			"Preserve fork_turns='all'",
-			"user intent",
-			"prior analysis",
-			"research",
+			"subagent_type",
+			"fork yourself",
+			"general-purpose",
 			"verification",
 			"Ordinary child agents are memoryless",
 			"agent_profile",
@@ -4687,11 +4688,10 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
-			"agent_type":    {"worker", "research", "verification"},
-			"message":       {"Concrete task brief", "Base Agent Brief Contract", "acceptance criteria", "fully self-contained"},
+			"subagent_type": {"general-purpose", "verification", "fork yourself"},
+			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "Fresh subagents"},
 			"agent_profile": {"durable Agent Profile", "memory-bearing agent", "workflow/profile policy", "ordinary memoryless child tasks"},
-			"isolation":     {"destructive or broad experiments", "overlapping or uncertain concurrent writes", "explicit sandbox requests"},
-			"fork_turns":    {"inherited user intent", "fully self-contained", "recent context"},
+			"isolation":     {"worktree", "current repo"},
 		} {
 			prop, _ := props[field].(map[string]any)
 			desc, _ := prop["description"].(string)
@@ -4740,7 +4740,7 @@ func TestToolkit_SpawnAgent_FailsWithoutAgentControl(t *testing.T) {
 	// Don't call SetAgentControl — simulates a worker toolkit.
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "spawn_agent",
-		Arguments: `{"task_name":"test","message":"do thing"}`,
+		Arguments: `{"description":"Do thing","prompt":"Do thing.","subagent_type":"general-purpose"}`,
 	})
 	if err == nil {
 		t.Fatal("expected error when agent control is not configured")
@@ -4808,43 +4808,13 @@ func TestStripDanglingToolUses(t *testing.T) {
 	}
 }
 
-func TestParseSpawnForkTurns(t *testing.T) {
-	mode, n, err := parseSpawnForkTurns("", nil)
-	if err != nil || mode != spawnForkAll || n != 0 {
-		t.Fatalf("default fork turns = mode %d n %d err %v", mode, n, err)
+func TestDeriveAgentTaskName(t *testing.T) {
+	got := deriveAgentTaskName("Audit payment API!")
+	if !strings.HasPrefix(got, "audit_payment_api_") {
+		t.Fatalf("derived name = %q, want audit_payment_api_*", got)
 	}
-	mode, _, err = parseSpawnForkTurns("none", nil)
-	if err != nil || mode != spawnForkNone {
-		t.Fatalf("none fork turns = mode %d err %v", mode, err)
-	}
-	mode, n, err = parseSpawnForkTurns("3", nil)
-	if err != nil || mode != spawnForkLastN || n != 3 {
-		t.Fatalf("last-n fork turns = mode %d n %d err %v", mode, n, err)
-	}
-	if _, _, err := parseSpawnForkTurns("0", nil); err == nil {
-		t.Fatal("expected zero fork_turns to fail")
-	}
-	legacy := true
-	if _, _, err := parseSpawnForkTurns("", &legacy); err == nil {
-		t.Fatal("expected fork_context to fail")
-	}
-}
-
-func TestTruncateHistoryToLastUserTurnsPreservesSystemPrefix(t *testing.T) {
-	history := []providers.ChatMessage{
-		{Role: "system", Content: "sys"},
-		{Role: "user", Content: "u1"},
-		{Role: "assistant", Content: "a1"},
-		{Role: "user", Content: "u2"},
-		{Role: "assistant", Content: "a2"},
-		{Role: "user", Content: "u3"},
-	}
-	got := truncateHistoryToLastUserTurns(history, 2)
-	if len(got) != 4 {
-		t.Fatalf("expected system + last two user turns, got %d: %+v", len(got), got)
-	}
-	if got[0].Role != "system" || got[1].Content != "u2" || got[3].Content != "u3" {
-		t.Fatalf("unexpected truncated history: %+v", got)
+	if err := agentthread.ValidateAgentName(got); err != nil {
+		t.Fatalf("derived name should be a valid agent path segment: %v", err)
 	}
 }
 
