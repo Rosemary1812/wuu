@@ -127,7 +127,7 @@ func ResolveProfiles(opts ProfileResolutionOptions) ([]ProfileResolution, error)
 			resolution.Reason = "required Agent Profile is missing"
 		} else {
 			resolution.Action = "spawn_ephemeral"
-			resolution.Reason = "optional Agent Profile is missing; use a memoryless worker unless the user approves a durable profile"
+			resolution.Reason = "optional Agent Profile is missing; use a temporary worker without profile memory unless the user approves a saved profile"
 		}
 		out = append(out, resolution)
 	}

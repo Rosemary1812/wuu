@@ -15,13 +15,13 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
-// threadTitleSystemPrompt is copied from
+// threadTitleSystemPrompt is adapted from
 // thirdparty/opencode/packages/opencode/src/agent/prompt/title.txt so our
 // generated titles match opencode's quality and behavior (single-line,
 // language-preserving, no refusals, ≤100 characters).
 //
-// Keep this in sync with opencode when bumping the upstream prompt.
-const threadTitleSystemPrompt = `You are a title generator. You output ONLY a thread title. Nothing else.
+// Keep the behavior aligned with opencode when bumping the upstream prompt.
+const threadTitleSystemPrompt = `You are a title generator. You output only a thread title. Nothing else.
 
 <task>
 Generate a brief title that would help the user find this conversation later.
@@ -35,20 +35,19 @@ Your output must be:
 </task>
 
 <rules>
-- you MUST use the same language as the user message you are summarizing
+- Use the same language as the user message you are summarizing
 - Title must be grammatically correct and read naturally - no word salad
-- Never include tool names in the title (e.g. "read tool", "bash tool", "edit tool")
+- Do not include tool names in the title (e.g. "read tool", "bash tool", "edit tool")
 - Focus on the main topic or question the user needs to retrieve
 - Vary your phrasing - avoid repetitive patterns like always starting with "Analyzing"
 - When a file is mentioned, focus on WHAT the user wants to do WITH the file, not just that they shared it
 - Keep exact: technical terms, numbers, filenames, HTTP codes
 - Remove: the, this, my, a, an
-- Never assume tech stack
-- Never use tools
-- NEVER respond to questions, just generate a title for the conversation
-- The title should NEVER include "summarizing" or "generating" when generating a title
-- DO NOT SAY YOU CANNOT GENERATE A TITLE OR COMPLAIN ABOUT THE INPUT
-- Always output something meaningful, even if the input is minimal.
+- Do not assume tech stack
+- Do not use tools
+- Do not answer questions; generate only a title for the conversation
+- Do not include "summarizing" or "generating" in the title
+- Output a meaningful title even if the input is minimal; do not complain about the input
 - If the user message is short or conversational (e.g. "hello", "lol", "what's up", "hey"):
   → create a title that reflects the user's tone or intent (such as Greeting, Quick check-in, Light chat, Intro message, etc.)
 </rules>
@@ -135,22 +134,22 @@ type TitleGenerationResult struct {
 	// SendTemperature reports whether Temperature was included in the
 	// request. False means we deliberately omitted the field (e.g. for
 	// claude), so the title struct reports Temperature=0.
-	SendTemperature   bool
-	FirstUserPrompt   string
-	RequestMessages   int
-	ContentDeltas     []string
-	AggregatedText    string
-	CleanedTitle      string
-	Persisted         bool
-	PersistedTitle    string
-	PreviewAfter      string
-	Notified          bool
-	SkipReason        string
-	StreamErr         error
-	PersistErr        error
-	NotificationErr   error
-	StartedAt         time.Time
-	CompletedAt       time.Time
+	SendTemperature bool
+	FirstUserPrompt string
+	RequestMessages int
+	ContentDeltas   []string
+	AggregatedText  string
+	CleanedTitle    string
+	Persisted       bool
+	PersistedTitle  string
+	PreviewAfter    string
+	Notified        bool
+	SkipReason      string
+	StreamErr       error
+	PersistErr      error
+	NotificationErr error
+	StartedAt       time.Time
+	CompletedAt     time.Time
 }
 
 // generateThreadTitle asks the title model for a short, sidebar-friendly title

@@ -147,15 +147,19 @@ func (f *flakyOverflowClient) Chat(_ context.Context, _ providers.ChatRequest) (
 
 func TestCompactInstructionPrompt_EnforcesNoToolsAndFormat(t *testing.T) {
 	for _, want := range []string{
-		"ONLY context available when the conversation resumes",
-		"Do NOT call any tools",
-		"Do NOT use read_file, grep, glob, run_shell",
+		"used to resume after older messages are removed",
+		"without asking the user to repeat context",
+		"Do not call any tools",
+		"Do not use read_file, grep, glob, run_shell",
 		"markdown summary only",
 		"Do not include an analysis block",
 	} {
 		if !strings.Contains(compactInstructionPrompt, want) {
 			t.Errorf("compactInstructionPrompt missing %q", want)
 		}
+	}
+	if strings.Contains(compactInstructionPrompt, "ONLY context available when the conversation resumes") {
+		t.Fatal("compactInstructionPrompt should avoid overly dramatic context wording")
 	}
 	if strings.Contains(compactInstructionPrompt, "<analysis>") {
 		t.Fatal("compact prompt should not ask for an analysis block")

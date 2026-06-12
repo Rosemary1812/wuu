@@ -160,8 +160,8 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		if profileMemoryEnabled {
 			// Attach the durable profile memory store for named agents. Ordinary
-			// default sessions stay memoryless so they can act as transient
-			// orchestration workspaces.
+			// default sessions avoid saved profile memory so they can act as
+			// transient orchestration workspaces.
 			if memProvider, memErr := newProfileMemoryProvider(wuuHome, profileName); memErr == nil {
 				kit.SetMemory(memProvider)
 				profileMemoryProvider = memProvider

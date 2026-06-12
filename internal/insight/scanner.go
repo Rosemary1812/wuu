@@ -392,7 +392,7 @@ func isSubstantiveSession(meta SessionMeta) bool {
 	// Meta-session detection: if the first user message looks like a JSON
 	// object or contains facet extraction markers, skip it.
 	first := strings.TrimSpace(meta.FirstUserMsg)
-	if strings.HasPrefix(first, "{") || strings.HasPrefix(first, "RESPOND WITH ONLY") {
+	if strings.HasPrefix(first, "{") || strings.HasPrefix(strings.ToLower(first), "respond with only") {
 		return false
 	}
 	return true

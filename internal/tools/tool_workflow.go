@@ -89,7 +89,7 @@ func (t *LoadWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "load_workflow",
 		Description: "Load the full body of a reusable workflow definition. Workflow definitions are portable " +
-			"orchestration assets, similar to skills, but they are used to create durable workflow run state. Markdown " +
+			"instructions for creating durable workflow run state. Markdown " +
 			"workflow bodies may contain ${ARGUMENTS}, ${WUU_WORKFLOW_DIR}, and ${WUU_SESSION_ID} substitutions. " +
 			"Legacy ${CLAUDE_WORKFLOW_DIR} and ${CLAUDE_SESSION_ID} aliases are also supported; " +
 			"script workflows are returned as raw JavaScript and receive arguments through the args global when run.",
@@ -355,10 +355,9 @@ func (t *StartWorkflowTool) IsConcurrencySafe() bool { return false }
 func (t *StartWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "start_workflow",
-		Description: "Start a workflow through the unified natural-language agent entry point. " +
-			"Prefer this over choosing run_workflow/create_workflow yourself: driver=auto dispatches saved kind=script definitions or ad hoc scripts to the script driver, and markdown/ad hoc plans to the agent-managed driver. " +
-			"The returned driver field tells you whether phase/spawn/await/synthesis control is script-owned or agent-managed. " +
-			"Use run_workflow or create_workflow directly only when a lower-level driver is explicitly required.",
+		Description: "Start a workflow run. Prefer this over choosing run_workflow/create_workflow yourself: driver=auto sends saved script definitions or ad hoc scripts to the script path, and markdown definitions or ad hoc plans to the agent-managed path. " +
+			"The returned driver field tells you whether the script or the agent controls phases, worker spawns, awaits, and synthesis. " +
+			"Use run_workflow or create_workflow directly only when the task explicitly requires that path.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -473,8 +472,8 @@ func (t *RunWorkflowTool) IsConcurrencySafe() bool { return false }
 func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "run_workflow",
-		Description: "Run a workflow through the script driver. The natural-language agent remains the entry point; " +
-			"prefer start_workflow driver=auto for new workflow work and use this only when a lower-level script driver override is explicitly required. " +
+		Description: "Run a workflow through the script path. " +
+			"Prefer start_workflow driver=auto for new workflow work and use this only when the task explicitly requires a saved WORKFLOW.js definition or ad hoc script to control the run. " +
 			"Use this when a saved WORKFLOW.js definition or ad hoc script should own repeatable phase/spawn/await/synthesis control. " +
 			"The script creates the same durable Workflow Run, Workflow Team, Agent Run, and final-report state as agent-managed workflows. " +
 			"Inside the script, use phase(), spawn(), spawnBatch([...]), awaitAgents(), and synthesize(). Workers do shell/file work; " +
@@ -698,12 +697,12 @@ func (t *CreateWorkflowTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "create_workflow",
 		Description: "Create an agent-managed Workflow Run from a reusable workflow definition or an ad hoc plan. " +
-			"Prefer start_workflow driver=auto for new workflow work and use this only when a lower-level agent-managed driver override is explicitly required. " +
+			"Prefer start_workflow driver=auto for new workflow work and use this only when the task explicitly requires an agent-managed run. " +
 			"This records the workflow state, phase plan, event log, and plan artifact. It does not automatically " +
 			"spawn agents; after creating a running workflow, list_agent_profiles, record the Workflow Team with " +
 			"workflow_control action=record_workflow_team, then use spawn_agent with agent_profile for reuse_profile/create_profile " +
 			"members and without agent_profile for ephemeral workers. Require agent_report before completion, then inspect progress " +
-			"with workflow_status. This is the direct agent-managed driver under the same natural-language workflow entry point.",
+			"with workflow_status.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1021,7 +1020,7 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"enum":        []string{"memory", "user"},
 					"description": "Memory target for record_memory_candidate. Defaults to memory.",
 				},
-				"team": workflowTeamInputSchema("Workflow Team members chosen by the agent before spawning workflow workers. Use mode reuse_profile for existing durable profiles, create_profile for new recurring durable identities, and ephemeral for one-off memoryless workers."),
+				"team": workflowTeamInputSchema("Workflow Team members chosen by the agent before spawning workflow workers. Use mode reuse_profile for existing profiles with saved memory, create_profile for new recurring profiles, and ephemeral for one-off workers without profile memory."),
 				"tags": map[string]any{
 					"type":        "array",
 					"description": "Tags for record_memory_candidate.",
@@ -1251,7 +1250,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 			"workflow_team": plan,
 			"next_steps": []string{
 				"Write each spawn_agent.prompt from the Base Agent Brief Contract, adding only the small context extension that applies.",
-				"Add the Workflow Context Extension for workflow team members.",
+				"Include workflow run, phase, team member, and result-binding context for workflow team members.",
 				"Spawn reuse_profile and create_profile members with spawn_agent.agent_profile set to the recorded profile.",
 				"Spawn ephemeral members without agent_profile.",
 				"After spawning, bind each result back with workflow_control action=record_agent_run or record_await_results.",
@@ -2641,13 +2640,13 @@ func workflowDefinitionNextSteps(def workflow.Definition) []string {
 	if workflowDefinitionKind(def) == workflow.DefinitionKindScript {
 		return []string{
 			"Use start_workflow with definition_name and driver=auto to start this script-driven workflow.",
-			"Use run_workflow directly only when you must force the lower-level script driver.",
+			"Use run_workflow directly only when the task explicitly requires the script path.",
 			"Let the script driver own phase/spawn/await/synthesis control; inspect workflow_status for durable run state.",
 		}
 	}
 	return []string{
 		"Use start_workflow with definition_name and driver=auto to start an agent-managed Workflow Run.",
-		"Use create_workflow directly only when you must force the lower-level agent-managed driver.",
+		"Use create_workflow directly only when the task explicitly requires the agent-managed path.",
 		"After create_workflow, list Agent Profiles, record the Workflow Team, spawn agents, await results, and bind them back with workflow_control.",
 	}
 }
@@ -2838,7 +2837,7 @@ func workflowNextSteps(status workflow.RunState) []string {
 	default:
 		return []string{
 			"Call list_agent_profiles, choose reuse_profile/create_profile/ephemeral members for this run, then record the Workflow Team with workflow_control action=record_workflow_team.",
-			"Write each team member prompt from the Base Agent Brief Contract and add the Workflow Context Extension.",
+			"Write each team member prompt from the Base Agent Brief Contract and include workflow run, phase, team member, and result-binding context.",
 			"Spawn reuse_profile/create_profile members with spawn_agent.agent_profile set to the recorded profile; spawn ephemeral members without agent_profile.",
 			"Require each workflow agent to call agent_report before treating its work as complete.",
 			"Create file checkpoints before risky direct edits that may need rollback.",

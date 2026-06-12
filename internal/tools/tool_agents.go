@@ -42,8 +42,8 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"and its final answer is delivered to you when it finishes. " +
 			"Use a child only when delegation materially improves the task: independent investigation, " +
 			"parallel implementation slices, risky verification, or work that benefits from a separate context. " +
-			"Ordinary child agents are memoryless. Set agent_profile only when the user asks to wake or use a named " +
-			"Agent Profile with durable memory, or when a workflow/profile policy requires one; the profile name is the agent's long-lived identity. " +
+			"Ordinary child agents are temporary and do not use saved profile memory. Set agent_profile only when the user asks to use a named " +
+			"Agent Profile with saved memory, or when a workflow/profile policy requires one; the profile name selects the saved memory to reuse. " +
 			"Do not set agent_profile for routine one-off delegation. " +
 			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
 			"Write a concrete brief using the shared Base Agent Brief Contract. " +
@@ -52,10 +52,10 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			prompttext.EphemeralBriefExtensionSummary() + " " +
 			"Do not make the child infer missing acceptance criteria from a vague ask. " +
 			"By default the agent runs in the user's current repo, so any files it creates or edits " +
-			"land directly in the working tree. Set isolation='worktree' ONLY " +
+			"land directly in the working tree. Set isolation='worktree' only " +
 			"for destructive or broad experiments, overlapping or uncertain concurrent writes, " +
 			"generated outputs/formatters that may touch many files, or when the user explicitly " +
-			"asked for a sandbox. Do NOT use a worktree just because the task involves writing " +
+			"asked for a sandbox. Do not use a worktree just because the task involves writing " +
 			"files; small additive or clearly disjoint edits can share the current repo when shared visibility helps. " +
 			"Always include a short description (3-5 words) summarizing what the agent will do. " +
 			"Each fresh subagent_type invocation starts without conversation context, so prompt must be complete. " +
@@ -87,7 +87,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"agent_profile": map[string]any{
 					"type":        "string",
-					"description": "Optional durable Agent Profile name to wake for this task. Use only when the user explicitly wants a named memory-bearing agent or a workflow/profile policy requires one; omit for ordinary memoryless child tasks. This is the long-lived agent identity.",
+					"description": "Optional Agent Profile name with saved memory. Use only when the user explicitly wants that profile or a workflow/profile policy requires one; omit for ordinary temporary child tasks.",
 				},
 				"isolation": map[string]any{
 					"type":        "string",
@@ -141,7 +141,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 	agentProfile := strings.TrimSpace(args.AgentProfile)
 	if strings.EqualFold(agentProfile, config.DefaultAgentName) {
-		return "", errors.New("spawn_agent: agent_profile \"default\" is reserved for ordinary memoryless sessions; omit agent_profile or choose a named profile")
+		return "", errors.New("spawn_agent: agent_profile \"default\" is reserved for ordinary temporary sessions; omit agent_profile or choose a named profile")
 	}
 	subagentType := strings.TrimSpace(args.SubagentType)
 	if subagentType == "" {

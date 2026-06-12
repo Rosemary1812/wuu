@@ -125,8 +125,12 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	if !strings.Contains(fileTasks[0].Prompt, "start_workflow") || !strings.Contains(fileTasks[0].Prompt, "driver=auto") {
 		t.Fatalf("agent-managed workflow task prompt should use start_workflow: %q", fileTasks[0].Prompt)
 	}
-	if !strings.Contains(fileTasks[0].Prompt, "Base Agent Brief Contract") || !strings.Contains(fileTasks[0].Prompt, "Workflow Context Extension") {
+	if !strings.Contains(fileTasks[0].Prompt, "Base Agent Brief Contract") ||
+		!strings.Contains(fileTasks[0].Prompt, "workflow run, phase, team member, and result-binding context") {
 		t.Fatalf("workflow task prompt missing shared brief contract: %q", fileTasks[0].Prompt)
+	}
+	if strings.Contains(fileTasks[0].Prompt, "Workflow Context Extension") || strings.Contains(fileTasks[0].Prompt, "unified workflow entry point") {
+		t.Fatalf("workflow task prompt should avoid awkward workflow wording: %q", fileTasks[0].Prompt)
 	}
 }
 
@@ -167,7 +171,7 @@ func TestScheduleCronTool_SavesScriptWorkflowTaskUsesStartWorkflow(t *testing.T)
 			t.Fatalf("script workflow prompt missing %q: %q", want, fileTasks[0].Prompt)
 		}
 	}
-	if strings.Contains(fileTasks[0].Prompt, "record the Workflow Team") || strings.Contains(fileTasks[0].Prompt, "call create_workflow") || strings.Contains(fileTasks[0].Prompt, "call run_workflow") {
+	if strings.Contains(fileTasks[0].Prompt, "record the Workflow Team") || strings.Contains(fileTasks[0].Prompt, "call create_workflow") {
 		t.Fatalf("script workflow prompt should not use agent-managed workflow path: %q", fileTasks[0].Prompt)
 	}
 }

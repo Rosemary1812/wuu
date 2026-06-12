@@ -98,9 +98,14 @@ func TestAgentProfileToolDescriptionsAreGeneralDelegationProfiles(t *testing.T) 
 		if desc == "" {
 			t.Fatalf("%s definition missing", name)
 		}
-		for _, want := range []string{"subagent", "recurring", "memory-bearing"} {
+		for _, want := range []string{"subagent", "recurring", "saved memory"} {
 			if !strings.Contains(desc, want) {
 				t.Fatalf("%s description missing %q: %q", name, want, desc)
+			}
+		}
+		for _, bad := range []string{"memory-bearing", "memoryless"} {
+			if strings.Contains(desc, bad) {
+				t.Fatalf("%s description should avoid awkward memory wording %q: %q", name, bad, desc)
 			}
 		}
 		if strings.Contains(desc, "recurring workflow roles") || strings.Contains(desc, "dynamic workflow team") {

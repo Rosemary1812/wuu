@@ -753,9 +753,9 @@ func toolCallLabel(id string) string {
 // near or over the context limit.
 const compactInstructionPrompt = `You are summarizing a coding-agent conversation to preserve context for continuing the work later.
 
-CRITICAL: This summary will be the ONLY context available when the conversation resumes. Assume every previous message is about to be deleted. Be thorough — losing a detail here means the next agent will have to ask the user (or guess) to recover it.
+This summary is used to resume after older messages are removed. Include enough detail that the next agent can continue without asking the user to repeat context or guessing missing state.
 
-CRITICAL: Respond with text only. Do NOT call any tools. Do NOT use read_file, grep, glob, run_shell, or any other tool. Tool calls will fail this task.
+Respond with text only. Do not call any tools. Do not use read_file, grep, glob, run_shell, or any other tool. Tool calls will fail this task.
 
 Respond with a markdown summary only. Do not include an analysis block, hidden reasoning, XML tags, preamble, or outro. Keep the summary terse but complete enough to continue the task.
 

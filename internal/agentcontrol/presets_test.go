@@ -11,11 +11,11 @@ import (
 // the prompts encode (see presets.go for the rationale on each).
 
 func TestVerificationPreset_HasFrameInversion(t *testing.T) {
-	if !strings.Contains(VerificationPreset, "NOT to confirm") {
+	if !strings.Contains(VerificationPreset, "not just confirm") {
 		t.Error("VerificationPreset is missing the frame-inversion line")
 	}
-	if !strings.Contains(VerificationPreset, "TRY TO BREAK IT") {
-		t.Error("VerificationPreset is missing the TRY TO BREAK IT directive")
+	if !strings.Contains(VerificationPreset, "try to break it") {
+		t.Error("VerificationPreset is missing the break-it directive")
 	}
 }
 

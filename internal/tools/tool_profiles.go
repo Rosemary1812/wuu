@@ -23,8 +23,8 @@ func (t *ListAgentProfilesTool) IsConcurrencySafe() bool { return true }
 func (t *ListAgentProfilesTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "list_agent_profiles",
-		Description: "List durable named Agent Profiles that can be reused by subagents, workflow teams, or other recurring delegated roles. " +
-			"Use this before deciding whether a role should reuse an existing memory-bearing profile, create a new profile, or use an ephemeral memoryless worker.",
+		Description: "List named Agent Profiles with saved memory that can be reused by subagents, workflow teams, or other recurring delegated roles. " +
+			"Use this before deciding whether a role should reuse an existing profile, create a new profile, or use a temporary worker without profile memory.",
 		InputSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -57,8 +57,8 @@ func (t *CreateAgentProfileTool) IsConcurrencySafe() bool { return true }
 func (t *CreateAgentProfileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "create_agent_profile",
-		Description: "Create or update a durable named Agent Profile identity for recurring subagent or workflow roles. " +
-			"Use only when the role is likely to recur or the user, workflow, or agent policy asks for a named memory-bearing agent; use ephemeral spawn_agent without agent_profile for one-off workers.",
+		Description: "Create or update a named Agent Profile with saved memory for recurring subagent or workflow roles. " +
+			"Use only when the role is likely to recur or the user, workflow, or agent policy asks for saved profile memory; use spawn_agent without agent_profile for one-off workers.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -118,8 +118,8 @@ func (t *CreateAgentProfileTool) Execute(ctx context.Context, argsJSON string) (
 		"profile": profile,
 		"created": created,
 		"next_steps": []string{
-			"Use spawn_agent with agent_profile set to this profile name when this durable identity should perform work.",
-			"Use a memoryless worker without agent_profile for one-off tasks that should not reuse or write profile memory.",
+			"Use spawn_agent with agent_profile set to this profile name when this recurring role should perform work.",
+			"Use a temporary worker without agent_profile for one-off tasks that should not reuse or write profile memory.",
 		},
 	})
 }

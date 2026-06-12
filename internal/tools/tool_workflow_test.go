@@ -1379,22 +1379,29 @@ func TestWorkflowControlDefinitionPrefersWorkflowTeamName(t *testing.T) {
 	}
 }
 
-func TestWorkflowToolDescriptionsPreferUnifiedStart(t *testing.T) {
+func TestWorkflowToolDescriptionsPreferStartWorkflow(t *testing.T) {
 	env := &Env{}
 	startDesc := NewStartWorkflowTool(env).Definition().Description
-	if !strings.Contains(startDesc, "unified natural-language agent entry point") ||
-		!strings.Contains(startDesc, "driver=auto") {
-		t.Fatalf("start_workflow description should present the unified entry point: %q", startDesc)
+	if !strings.Contains(startDesc, "Start a workflow run") ||
+		!strings.Contains(startDesc, "driver=auto") ||
+		!strings.Contains(startDesc, "script path") ||
+		!strings.Contains(startDesc, "agent-managed path") {
+		t.Fatalf("start_workflow description should present the default workflow path: %q", startDesc)
 	}
 	runDesc := NewRunWorkflowTool(env).Definition().Description
-	if !strings.Contains(runDesc, "prefer start_workflow driver=auto") ||
-		!strings.Contains(runDesc, "lower-level script driver override") {
+	if !strings.Contains(runDesc, "Prefer start_workflow driver=auto") ||
+		!strings.Contains(runDesc, "explicitly requires a saved WORKFLOW.js definition or ad hoc script") {
 		t.Fatalf("run_workflow description should point back to start_workflow: %q", runDesc)
 	}
 	createDesc := NewCreateWorkflowTool(env).Definition().Description
 	if !strings.Contains(createDesc, "Prefer start_workflow driver=auto") ||
-		!strings.Contains(createDesc, "lower-level agent-managed driver override") {
+		!strings.Contains(createDesc, "explicitly requires an agent-managed run") {
 		t.Fatalf("create_workflow description should point back to start_workflow: %q", createDesc)
+	}
+	for _, bad := range []string{"unified natural-language agent entry point", "lower-level script driver override", "lower-level agent-managed driver override", "natural-language workflow entry point"} {
+		if strings.Contains(startDesc, bad) || strings.Contains(runDesc, bad) || strings.Contains(createDesc, bad) {
+			t.Fatalf("workflow descriptions should avoid awkward wording %q\nstart=%q\nrun=%q\ncreate=%q", bad, startDesc, runDesc, createDesc)
+		}
 	}
 	statusDesc := NewWorkflowStatusTool(env).Definition().Description
 	if !strings.Contains(statusDesc, "after start_workflow") || strings.Contains(statusDesc, "after create_workflow") {

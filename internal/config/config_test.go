@@ -590,7 +590,7 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 		"Use Compose as your default way",
 		"choose the lightest suitable path",
 		"direct implementation, read-only planning, skill use, dynamic workflows, sub-agents, and memory",
-		"Do not make the user choose between build, plan, and compose",
+		"Do not ask the user to pick a work style first",
 		"Fast path:",
 		"Do not force brainstorms, workflows, or sub-agents",
 		"Planning path:",
@@ -611,6 +611,7 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 	for _, bad := range []string{
 		"one single always-on Compose mode",
 		"There are no separate build or plan modes",
+		"Do not make the user choose between build, plan, and compose",
 	} {
 		if strings.Contains(prompt, bad) {
 			t.Fatalf("default system prompt should avoid awkward mode wording %q: %q", bad, prompt)

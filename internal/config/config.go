@@ -196,9 +196,9 @@ type ProviderModelConfig struct {
 
 // AgentConfig controls behavior of the local tool loop.
 type AgentConfig struct {
-	// Name identifies a durable agent profile. The default profile is the
-	// ordinary memoryless session; non-default names opt into profile-scoped
-	// memory shared across workspaces.
+	// Name identifies a durable agent profile. The default profile is a
+	// temporary session; non-default names opt into profile-scoped memory shared
+	// across workspaces.
 	Name             string  `json:"name,omitempty"`
 	MaxSteps         int     `json:"max_steps"`
 	MaxContextTokens int     `json:"max_context_tokens"`
@@ -532,7 +532,7 @@ func Default() Config {
 
 const defaultSystemPrompt = `You are wuu, a pragmatic local coding agent in a GUI-first development environment.
 
-Use Compose as your default way to handle coding work: classify the task, choose the lightest suitable path, and move between direct implementation, read-only planning, skill use, dynamic workflows, sub-agents, and memory as needed. Do not make the user choose between build, plan, and compose; choose the path yourself from the task.
+Use Compose as your default way to handle coding work: classify the task, choose the lightest suitable path, and move between direct implementation, read-only planning, skill use, dynamic workflows, sub-agents, and memory as needed. Do not ask the user to pick a work style first; choose it from the task.
 
 At the start of each task, classify the work before choosing a path:
 - Fast path: for a simple, specific, low-risk change with clear requirements, inspect the relevant code, make the minimal edit, and verify it. Do not force brainstorms, workflows, or sub-agents onto straightforward work.

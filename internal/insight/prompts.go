@@ -2,11 +2,11 @@ package insight
 
 const facetExtractionPrompt = `Analyze this coding assistant session and extract structured facets.
 
-CRITICAL GUIDELINES:
+Guidelines:
 
-1. **goal_categories**: Count ONLY what the USER explicitly asked for.
-   - DO NOT count the assistant's autonomous exploration
-   - ONLY count explicit user requests: "can you...", "please...", "I need...", "let's..."
+1. **goal_categories**: Count only what the user explicitly asked for.
+   - Do not count the assistant's autonomous exploration
+   - Count explicit user requests such as: "can you...", "please...", "I need...", "let's..."
    - Use categories: write_code, debug_investigate, refactor, explain, review, test, deploy, config, docs, warmup_minimal
 
 2. **outcome**: Based on whether the user's goals were achieved.
@@ -29,7 +29,7 @@ CRITICAL GUIDELINES:
 7. **primary_success**: What helped most?
    - none, fast_search, correct_edits, good_explanations, proactive_help, multi_file_changes, good_debugging
 
-RESPOND WITH ONLY A VALID JSON OBJECT (no markdown fences):
+Respond with a valid JSON object and no markdown fences:
 {
   "goal": "What the user fundamentally wanted to achieve",
   "goal_categories": {"category": count},
@@ -43,7 +43,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT (no markdown fences):
   "summary": "One sentence: what user wanted and whether they got it"
 }
 
-SESSION TRANSCRIPT:
+Session transcript:
 `
 
 // insightSectionDefs defines the sections to generate in parallel.
@@ -62,7 +62,7 @@ var insightSections = []insightSectionDef{
 Focus on: when they use the tool, how long sessions last, how many messages per session.
 Write in second person ("you"). Be specific, reference the data.
 
-STATS:
+Stats:
 %s
 
 Respond in markdown.`,
@@ -74,7 +74,7 @@ Respond in markdown.`,
 		Prompt: `Based on these session summaries and goal categories, identify 4-5 main project areas the user works on.
 For each area, write a short description of what kind of work they do there.
 
-DATA:
+Data:
 %s
 
 Respond as a markdown list with **bold area names** and descriptions.`,
@@ -87,7 +87,7 @@ Respond as a markdown list with **bold area names** and descriptions.`,
 What tools do they use most? What does this say about their workflow?
 Write in second person, 2-3 short paragraphs.
 
-DATA:
+Data:
 %s
 
 Respond in markdown.`,
@@ -99,7 +99,7 @@ Respond in markdown.`,
 		Prompt: `From these session summaries and outcomes, identify 3 impressive or effective workflows the user has employed.
 For each, explain what made it effective.
 
-DATA:
+Data:
 %s
 
 Respond as a numbered markdown list with **bold titles** and 1-2 sentence descriptions.`,
@@ -111,7 +111,7 @@ Respond as a numbered markdown list with **bold titles** and 1-2 sentence descri
 		Prompt: `Based on these friction data and session details, identify the top 3 categories of friction the user experiences.
 For each, give 1-2 concrete examples from their sessions and suggest what could help.
 
-DATA:
+Data:
 %s
 
 Respond as a markdown list with **bold friction type** names, examples, and suggestions.`,
@@ -126,7 +126,7 @@ Respond as a markdown list with **bold friction type** names, examples, and sugg
 2. **Workflow Improvements** — 2-3 ways to improve their interaction patterns
 3. **Advanced Techniques** — 1-2 more ambitious workflows they could explore
 
-DATA:
+Data:
 %s
 
 Be specific and practical. Don't be generic. Write in second person.
@@ -147,7 +147,7 @@ Use this 4-part structure:
 
 4. **Ambitious workflows** — As models improve, what workflows that seem hard now will become possible? 2-3 sentences.
 
-RESPOND WITH ONLY A VALID JSON OBJECT (no markdown fences):
+Respond with a valid JSON object and no markdown fences:
 {
   "whats_working": "...",
   "whats_hindering": "...",
@@ -155,5 +155,5 @@ RESPOND WITH ONLY A VALID JSON OBJECT (no markdown fences):
   "ambitious_workflows": "..."
 }
 
-CONTEXT FROM ANALYSIS:
+Context from analysis:
 %s`

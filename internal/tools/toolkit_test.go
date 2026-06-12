@@ -4680,7 +4680,8 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"fork yourself",
 			"general-purpose",
 			"verification",
-			"Ordinary child agents are memoryless",
+			"Ordinary child agents are temporary",
+			"saved profile memory",
 			"agent_profile",
 		} {
 			if !strings.Contains(d.Description, want) {
@@ -4691,7 +4692,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		for field, wants := range map[string][]string{
 			"subagent_type": {"general-purpose", "verification", "fork yourself"},
 			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "Fresh subagents"},
-			"agent_profile": {"durable Agent Profile", "memory-bearing agent", "workflow/profile policy", "ordinary memoryless child tasks"},
+			"agent_profile": {"Agent Profile name with saved memory", "workflow/profile policy", "ordinary temporary child tasks"},
 			"isolation":     {"worktree", "current repo"},
 		} {
 			prop, _ := props[field].(map[string]any)
@@ -4701,6 +4702,9 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 					t.Fatalf("spawn_agent %s description missing %q: %q", field, want, desc)
 				}
 			}
+		}
+		if strings.Contains(d.Description, "memoryless") || strings.Contains(d.Description, "memory-bearing") || strings.Contains(d.Description, "long-lived identity") {
+			t.Fatalf("spawn_agent description should avoid awkward memory wording: %q", d.Description)
 		}
 		return
 	}

@@ -22,7 +22,7 @@ func HarnessAdapterText(providerName, model string) string {
 	return "# Harness Adapter\n\n" +
 		fmt.Sprintf("Provider/model: %s/%s. Treat wuu as the same product regardless of provider, model family, or BYOK backend.\n\n", providerName, model) +
 		strings.Join([]string{
-			"- Treat the natural-language agent loop as the unified entry point; workflows, subagents, and profiles are runtime capabilities behind that agent, not separate provider-branded product modes.",
+			"- Keep the same task behavior across providers; workflows, subagents, and profiles are task-handling options inside wuu.",
 			"- Do not choose direct work, subagents, or workflows based on provider/model family or brand.",
 			"- Choose execution shape from the user's task: direct local loop for simple work, subagents for independent parallel work, and workflows only when durable state, scheduling, repeatability, multiple phases/workers, or a matching saved workflow matters.",
 			"- Follow the tools exposed in this session as the source of truth for editing and execution. If apply_patch is available, use it for manual edits; otherwise use edit_file/write_file as described by their tool schemas.",

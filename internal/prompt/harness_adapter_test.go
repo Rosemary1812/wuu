@@ -18,7 +18,8 @@ func TestHarnessAdapterTextUsesProviderAgnosticGuidance(t *testing.T) {
 		for _, want := range []string{
 			"# Harness Adapter",
 			"same product regardless of provider, model family, or BYOK backend",
-			"natural-language agent loop as the unified entry point",
+			"Keep the same task behavior across providers",
+			"task-handling options inside wuu",
 			"Do not choose direct work, subagents, or workflows based on provider/model family or brand.",
 			"Choose execution shape from the user's task",
 			"Treat provider/model differences as compatibility details only",
@@ -36,6 +37,8 @@ func TestHarnessAdapterTextUsesProviderAgnosticGuidance(t *testing.T) {
 			"portable harness path",
 			"conservative local-model harness path",
 			"Follow the model-family guidance",
+			"natural-language agent loop as the unified entry point",
+			"provider-branded product modes",
 		} {
 			if strings.Contains(text, forbidden) {
 				t.Fatalf("%s adapter should not include family-specific guidance %q:\n%s", name, forbidden, text)

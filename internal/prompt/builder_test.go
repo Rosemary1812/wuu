@@ -138,11 +138,11 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 
 	for _, want := range []string{
 		"feature-delivery",
-		"agent-led",
-		"durable run state",
+		"multi-step run",
+		"durable state",
 		"`start_workflow`",
 		"driver=auto",
-		"lower-level driver override",
+		"script or agent-managed path",
 		"script driver",
 		"`driver`",
 		"`agent_managed`",
@@ -153,7 +153,7 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"record_workflow_team",
 		"Workflow Team",
 		"Base Agent Brief Contract",
-		"Workflow Context Extension",
+		"Workflow context",
 		"`save_workflow`",
 		"`schedule_cron`",
 		"pause_run",
@@ -165,6 +165,17 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 	} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("workflow prompt missing %q:\n%s", want, result)
+		}
+	}
+	for _, bad := range []string{
+		"lower-level driver override",
+		"user-facing entry point",
+		"internal drivers",
+		"unified workflow entry point",
+		"Workflow Context Extension",
+	} {
+		if strings.Contains(result, bad) {
+			t.Fatalf("workflow prompt should avoid awkward wording %q:\n%s", bad, result)
 		}
 	}
 	if strings.Contains(result, "hidden") {

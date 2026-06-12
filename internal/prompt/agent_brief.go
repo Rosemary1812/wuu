@@ -7,15 +7,15 @@ func AgentBriefContractSummary() string {
 }
 
 func WorkflowBriefExtensionSummary() string {
-	return "For workflow work, add the Workflow Context Extension: workflow_run_id, phase_id, team_member_id, team mode, agent_profile when present, and how the result binds back to workflow state."
+	return "For workflow work, include workflow_run_id, phase_id, team_member_id, team mode, agent_profile when present, and how the result binds back to workflow state."
 }
 
 func ProfileBriefExtensionSummary() string {
-	return "If agent_profile is set, add the Profile Extension: treat it as the long-lived identity, use profile memory when relevant, and surface reusable lessons as memory candidates instead of saving temporary progress."
+	return "If agent_profile is set, state the profile name, use saved profile memory when relevant, and surface reusable lessons as memory candidates instead of saving temporary progress."
 }
 
 func EphemeralBriefExtensionSummary() string {
-	return "If agent_profile is omitted, add the Ephemeral Extension: state that the worker is temporary, has no long-lived identity, and should rely only on shared/project context."
+	return "If agent_profile is omitted, state that the worker is temporary and should rely only on shared/project context."
 }
 
 func AgentBriefContractText() string {
@@ -37,7 +37,7 @@ func AgentBriefContractText() string {
 
 func WorkflowBriefExtensionText() string {
 	return strings.Join([]string{
-		"Workflow Context Extension:",
+		"Workflow context:",
 		"- Workflow Run: durable run id.",
 		"- Phase: phase id/name this work belongs to.",
 		"- Team Member: recorded team member id and role.",

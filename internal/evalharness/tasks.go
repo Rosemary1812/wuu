@@ -491,12 +491,12 @@ func Catalog() []Task {
 		{
 			ID:          "agent_led_workflow_team",
 			Name:        "Run an agent-led workflow team",
-			Description: "Main agent must record a Workflow Team, create a durable profile member, spawn workers, await them, and complete the run.",
+			Description: "Main agent must record a Workflow Team, create a saved-profile member, spawn workers, await them, and complete the run.",
 			Prompt: "Start an agent-managed workflow run with start_workflow using driver='agent_managed', run_id='eval_agent_led_team', and one phase id='team_work'. " +
 				"First call list_agent_profiles. Then call start_workflow for the run, not create_workflow directly. Next, record a Workflow Team with workflow_control action=record_workflow_team containing exactly two members in the team field: " +
 				"one create_profile member with role='Marker writer', agent_profile='eval_team_marker_writer', task_name='alpha_writer', phase_id='team_work'; " +
 				"and one ephemeral member with role='Independent verifier', task_name='beta_writer', phase_id='team_work'. " +
-				"Spawn both workers as fresh general-purpose sub-agents with subagent_type='general-purpose' and self-contained prompts from the Base Agent Brief Contract plus the Workflow Context Extension. " +
+				"Spawn both workers as fresh general-purpose sub-agents with subagent_type='general-purpose' and self-contained prompts from the Base Agent Brief Contract plus workflow run, phase, team member, and result-binding context. " +
 				"The create_profile worker must use agent_profile='eval_team_marker_writer' and write team_alpha.txt containing TEAM_ALPHA_DONE. " +
 				"The ephemeral worker must omit agent_profile and write team_beta.txt containing TEAM_BETA_DONE. " +
 				"Require both workers to call agent_report. Await both with await_agents, bind the results back to the workflow using workflow_control action=record_await_results, then write a final workflow report with complete_run=true. Do not write team_alpha.txt or team_beta.txt yourself.",
