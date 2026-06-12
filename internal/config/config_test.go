@@ -584,6 +584,32 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 	}
 }
 
+func TestDefaultSystemPrompt_SingleComposeMode(t *testing.T) {
+	prompt := DefaultSystemPrompt()
+	for _, want := range []string{
+		"one single always-on Compose mode",
+		"adaptive orchestration mode",
+		"direct implementation, read-only planning, skill use, dynamic workflows, sub-agents, and memory",
+		"There are no separate build or plan modes",
+		"Fast path:",
+		"Do not force brainstorms, workflows, or sub-agents",
+		"Planning path:",
+		"ask the user only for choices that are irreversible",
+		"Skill path:",
+		"load_skill",
+		"Workflow path:",
+		"load_workflow and start_workflow",
+		"Delegation path:",
+		"spawn_agent",
+		"Memory path:",
+		"session_memory",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("default system prompt must define single Compose mode guidance %q: %q", want, prompt)
+		}
+	}
+}
+
 func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	if !strings.Contains(prompt, "in parallel") {
