@@ -15,6 +15,7 @@ import {
   MessageSquarePlus,
   Plus,
   Search,
+  Square,
   Terminal,
   X
 } from "lucide-react";
@@ -23,6 +24,7 @@ import type {
   DesktopProject,
   GitStatusResult,
   InitializeResult,
+  ManagedProcess,
   PlanUpdate,
   RuntimeContext,
   Thread
@@ -48,6 +50,7 @@ export type BackgroundProcessItem = {
   status: string;
   startedAt?: string;
   updatedAt?: string;
+  lastError?: string;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -137,36 +140,49 @@ export function buildEnvironmentSourceItems({
   return items;
 }
 
-export function buildBackgroundProcessItems(thread?: Thread): BackgroundProcessItem[] {
+export function buildBackgroundProcessItems(
+  thread?: Thread,
+  managedProcesses: ManagedProcess[] = []
+): BackgroundProcessItem[] {
   const byID = new Map<string, BackgroundProcessItem>();
-  if (!thread) {
-    return [];
-  }
-  for (const turn of thread.turns) {
-    for (const item of turn.items) {
-      if (item.type !== "tool_call" && item.type !== "collab_agent_tool_call") {
-        continue;
-      }
-      if (item.name === "start_process" && item.status === "in_progress") {
-        const args = parseJsonRecord(item.arguments);
-        const command = stringValue(args, "command");
-        if (command) {
-          byID.set(item.id, {
-            id: item.id,
-            command,
-            cwd: stringValue(args, "cwd"),
-            lifecycle: stringValue(args, "lifecycle") || "session",
-            status: "starting"
-          });
+  if (thread) {
+    for (const turn of thread.turns) {
+      for (const item of turn.items) {
+        if (item.type !== "tool_call" && item.type !== "collab_agent_tool_call") {
+          continue;
         }
-      }
-      for (const process of processItemsFromToolResult(item.name, item.result)) {
-        byID.delete(item.id);
-        byID.set(process.id, process);
+        if (item.name === "start_process" && item.status === "in_progress") {
+          const args = parseJsonRecord(item.arguments);
+          const command = stringValue(args, "command");
+          if (command) {
+            byID.set(item.id, {
+              id: item.id,
+              command,
+              cwd: stringValue(args, "cwd"),
+              lifecycle: stringValue(args, "lifecycle") || "session",
+              status: "starting"
+            });
+          }
+        }
+        for (const process of processItemsFromToolResult(item.name, item.result)) {
+          byID.delete(item.id);
+          byID.set(process.id, process);
+        }
       }
     }
   }
+  for (const process of managedProcesses) {
+    byID.set(process.id, processItemFromManagedProcess(process));
+  }
   return [...byID.values()].sort(compareBackgroundProcesses);
+}
+
+export function backgroundProcessIsLive(process: BackgroundProcessItem): boolean {
+  return process.status === "starting" || process.status === "running" || process.status === "stopping";
+}
+
+export function backgroundProcessNeedsAttention(process: BackgroundProcessItem): boolean {
+  return process.status === "failed";
 }
 
 export function EnvironmentPanel({
@@ -179,6 +195,7 @@ export function EnvironmentPanel({
   planUpdate,
   sourceItems,
   backgroundProcesses,
+  stoppingProcessIDs,
   activeMenu,
   running,
   pullRequestDisabledReason,
@@ -190,7 +207,8 @@ export function EnvironmentPanel({
   onCreateBranch,
   onOpenReview,
   onOpenCommit,
-  onOpenPullRequest
+  onOpenPullRequest,
+  onStopBackgroundProcess
 }: {
   panelRef: RefObject<HTMLDivElement | null>;
   motionState: EnvironmentPanelMotionState;
@@ -201,6 +219,7 @@ export function EnvironmentPanel({
   planUpdate?: PlanUpdate;
   sourceItems: EnvironmentSourceItem[];
   backgroundProcesses: BackgroundProcessItem[];
+  stoppingProcessIDs: Set<string>;
   activeMenu: EnvironmentPanelMenu;
   running: boolean;
   pullRequestDisabledReason: string;
@@ -213,6 +232,7 @@ export function EnvironmentPanel({
   onOpenReview: () => void;
   onOpenCommit: () => void;
   onOpenPullRequest: () => void;
+  onStopBackgroundProcess: (process: BackgroundProcessItem) => void;
 }): JSX.Element {
   const diff = gitStatus?.diff ?? { files: 0, additions: 0, deletions: 0 };
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
@@ -313,7 +333,11 @@ export function EnvironmentPanel({
         </button>
 
         {backgroundProcesses.length > 0 ? (
-          <EnvironmentBackgroundProcesses processes={backgroundProcesses.slice(0, 5)} />
+          <EnvironmentBackgroundProcesses
+            processes={backgroundProcesses.slice(0, 5)}
+            stoppingProcessIDs={stoppingProcessIDs}
+            onStopProcess={onStopBackgroundProcess}
+          />
         ) : null}
       </div>
 
@@ -351,8 +375,16 @@ export function EnvironmentPanel({
   );
 }
 
-function EnvironmentBackgroundProcesses({ processes }: { processes: BackgroundProcessItem[] }): JSX.Element {
-  const runningCount = processes.filter((process) => processStatusTone(process.status) === "running").length;
+function EnvironmentBackgroundProcesses({
+  processes,
+  stoppingProcessIDs,
+  onStopProcess
+}: {
+  processes: BackgroundProcessItem[];
+  stoppingProcessIDs: Set<string>;
+  onStopProcess: (process: BackgroundProcessItem) => void;
+}): JSX.Element {
+  const activeCount = processes.filter(backgroundProcessIsLive).length;
   return (
     <section className="environment-process-section" aria-label="后台任务">
       <div className="environment-process-heading">
@@ -360,7 +392,7 @@ function EnvironmentBackgroundProcesses({ processes }: { processes: BackgroundPr
           <Activity size={15} />
           后台任务
         </span>
-        <span>{runningCount > 0 ? `${runningCount} 个运行中` : `${processes.length} 个最近任务`}</span>
+        <span>{activeCount > 0 ? `${activeCount} 个活跃` : `${processes.length} 个最近任务`}</span>
       </div>
       <div className="environment-process-list">
         {processes.map((process) => (
@@ -373,6 +405,18 @@ function EnvironmentBackgroundProcesses({ processes }: { processes: BackgroundPr
             <span className={`environment-process-status ${processStatusTone(process.status)}`}>
               {processStatusLabel(process.status)}
             </span>
+            {processCanStop(process) ? (
+              <button
+                className="environment-process-stop"
+                type="button"
+                aria-label={`停止 ${process.command}`}
+                disabled={stoppingProcessIDs.has(process.id)}
+                title="停止后台任务"
+                onClick={() => onStopProcess(process)}
+              >
+                <Square size={11} />
+              </button>
+            ) : null}
           </div>
         ))}
       </div>
@@ -415,9 +459,27 @@ function processItemFromRecord(record: JsonRecord): BackgroundProcessItem[] {
       lifecycle: stringValue(record, "lifecycle"),
       status: stringValue(record, "status") || "running",
       startedAt: stringValue(record, "started_at"),
-      updatedAt: stringValue(record, "updated_at")
+      updatedAt: stringValue(record, "updated_at"),
+      lastError: stringValue(record, "last_error")
     }
   ];
+}
+
+function processItemFromManagedProcess(process: ManagedProcess): BackgroundProcessItem {
+  return {
+    id: process.id,
+    command: process.command || process.id,
+    cwd: process.cwd,
+    lifecycle: process.lifecycle,
+    status: process.status || "running",
+    startedAt: process.started_at,
+    updatedAt: process.updated_at,
+    lastError: process.last_error
+  };
+}
+
+function processCanStop(process: BackgroundProcessItem): boolean {
+  return process.id.startsWith("proc-") && (process.status === "starting" || process.status === "running");
 }
 
 function compareBackgroundProcesses(a: BackgroundProcessItem, b: BackgroundProcessItem): number {
@@ -481,6 +543,9 @@ function processStatusLabel(status: string): string {
 }
 
 function processDetail(process: BackgroundProcessItem): string {
+  if (process.status === "failed" && process.lastError) {
+    return process.lastError;
+  }
   const lifecycle =
     process.lifecycle === "managed" ? "需手动清理" : process.lifecycle === "session" ? "随会话清理" : "";
   const parts = [process.cwd, lifecycle].filter(Boolean);

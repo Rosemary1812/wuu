@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Thread } from "../shared/protocol";
+import type { ManagedProcess, Thread } from "../shared/protocol";
 import { buildBackgroundProcessItems } from "./EnvironmentPanel";
 
 function threadWithItems(items: unknown[]): Thread {
@@ -20,6 +20,25 @@ function threadWithItems(items: unknown[]): Thread {
         status: "completed"
       }
     ]
+  };
+}
+
+function managedProcess(overrides: Partial<ManagedProcess>): ManagedProcess {
+  return {
+    id: "proc-1",
+    owner_kind: "main_agent",
+    owner_id: "test",
+    lifecycle: "session",
+    status: "running",
+    pid: 123,
+    pgid: 123,
+    log_path: "/repo/.wuu/log",
+    command: "npm run dev",
+    cwd: "/repo",
+    started_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:01.000Z",
+    exit_code: -1,
+    ...overrides
   };
 }
 
@@ -138,6 +157,43 @@ describe("buildBackgroundProcessItems", () => {
       command: "npm run dev",
       lifecycle: "managed",
       status: "running"
+    });
+  });
+
+  it("uses managed process snapshots as the latest status", () => {
+    const started = {
+      id: "proc-1",
+      command: "npm run dev",
+      cwd: "/repo",
+      lifecycle: "session",
+      status: "running",
+      started_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:01.000Z"
+    };
+
+    const processes = buildBackgroundProcessItems(
+      threadWithItems([
+        {
+          id: "tool-1",
+          type: "tool_call",
+          status: "completed",
+          name: "start_process",
+          result: JSON.stringify(started)
+        }
+      ]),
+      [
+        managedProcess({
+          status: "stopped",
+          updated_at: "2026-01-01T00:00:03.000Z"
+        })
+      ]
+    );
+
+    expect(processes).toHaveLength(1);
+    expect(processes[0]).toMatchObject({
+      id: "proc-1",
+      status: "stopped",
+      updatedAt: "2026-01-01T00:00:03.000Z"
     });
   });
 });

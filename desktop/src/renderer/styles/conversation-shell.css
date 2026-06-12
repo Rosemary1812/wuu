@@ -351,6 +351,50 @@
   white-space: nowrap;
 }
 
+.background-process-capsule {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 210px;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: #eef3ef;
+  color: #326245;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  padding: 0 10px;
+  -webkit-app-region: no-drag;
+}
+
+.background-process-capsule:hover,
+.background-process-capsule.active {
+  background: #e2ece4;
+  color: #1f5535;
+}
+
+.background-process-capsule.failed {
+  background: #fff0ef;
+  color: #b42318;
+}
+
+.background-process-capsule.failed:hover,
+.background-process-capsule.failed.active {
+  background: #ffe3e1;
+  color: #971b12;
+}
+
+.background-process-capsule svg {
+  flex: 0 0 auto;
+}
+
+.background-process-capsule span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .run-debug-anchor {
   position: relative;
   display: inline-flex;

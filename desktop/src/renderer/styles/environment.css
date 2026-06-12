@@ -282,7 +282,7 @@
 .environment-process-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto 24px;
   align-items: center;
   column-gap: 7px;
   border-radius: 8px;
@@ -345,6 +345,24 @@
 
 .environment-process-status.stopped {
   background: #eeeeeb;
+}
+
+.environment-process-stop {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 6px;
+  color: #7f8589;
+}
+
+.environment-process-stop:hover:not(:disabled) {
+  background: #e6e6e2;
+  color: #22262a;
+}
+
+.environment-process-stop:disabled {
+  opacity: 0.45;
 }
 
 .environment-footer-row {

@@ -121,6 +121,34 @@ export type SkillListResult = {
   skills: SkillSummary[];
 };
 
+export type ManagedProcess = {
+  action?: string;
+  id: string;
+  owner_kind: string;
+  owner_id: string;
+  lifecycle: string;
+  status: string;
+  pid: number;
+  pgid: number;
+  tty?: boolean;
+  log_path: string;
+  command: string;
+  cwd: string;
+  started_at: string;
+  updated_at: string;
+  stopped_at?: string;
+  exit_code?: number;
+  last_error?: string;
+};
+
+export type ManagedProcessListResult = {
+  processes: ManagedProcess[];
+};
+
+export type ManagedProcessStopResult = {
+  process: ManagedProcess;
+};
+
 export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
@@ -498,6 +526,8 @@ export type WuuDesktopApi = {
     variant?: string,
     toolPolicyProfile?: string
   ) => Promise<ConfigModelUpdateResult>;
+  listManagedProcesses: () => Promise<ManagedProcessListResult>;
+  stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;
   listSkills: () => Promise<SkillListResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;

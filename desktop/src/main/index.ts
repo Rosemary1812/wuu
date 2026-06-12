@@ -18,6 +18,8 @@ import type {
   InputFile,
   InputImage,
   InitializeResult,
+  ManagedProcessListResult,
+  ManagedProcessStopResult,
   ServerEvent,
   TerminalSessionStartParams,
   Thread,
@@ -321,6 +323,14 @@ app.whenReady().then(() => {
       }),
   );
   ipcMain.handle("wuu:skill-list", () => appServerClientPool.request("skill/list"));
+  ipcMain.handle("wuu:process-list", () =>
+    appServerClientPool.request<ManagedProcessListResult>("process/list"),
+  );
+  ipcMain.handle("wuu:process-stop", (_event, processID: string) =>
+    appServerClientPool.request<ManagedProcessStopResult>("process/stop", {
+      process_id: processID,
+    }),
+  );
   ipcMain.handle("wuu:thread-start", () =>
     appServerClientPool.request<{ thread: Thread }>("thread/start"),
   );

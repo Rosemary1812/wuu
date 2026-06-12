@@ -79,6 +79,7 @@ import type {
   GitPullRequestResult,
   GitStatusResult,
   InitializeResult,
+  ManagedProcess,
   PlanUpdate,
   ProjectListResult,
   RuntimeConnectionUpdate,
@@ -133,8 +134,11 @@ import {
 } from "./ConversationSearchDisplay";
 import {
   EnvironmentPanel,
+  backgroundProcessIsLive,
+  backgroundProcessNeedsAttention,
   buildBackgroundProcessItems,
   buildEnvironmentSourceItems,
+  type BackgroundProcessItem,
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
@@ -607,6 +611,12 @@ export function App(): JSX.Element {
     useState<EnvironmentPanelMenu>(null);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog>(null);
+  const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>(
+    [],
+  );
+  const [stoppingProcessIDs, setStoppingProcessIDs] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [runDebugOpen, setRunDebugOpen] = useState(false);
   const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
   const [runDebugCopied, setRunDebugCopied] = useState(false);
@@ -661,6 +671,9 @@ export function App(): JSX.Element {
   const gitRefreshTimerRef = useRef<number | undefined>(undefined);
   const gitRefreshInFlightRef = useRef(false);
   const gitRefreshQueuedRef = useRef(false);
+  const managedProcessRefreshTimerRef = useRef<number | undefined>(undefined);
+  const managedProcessRefreshInFlightRef = useRef(false);
+  const managedProcessRefreshQueuedRef = useRef(false);
   // Tracks the last URL we asked the in-app browser to navigate to via
   // a "listening ports" auto-open, so repeated thread/updated events
   // for the same URL don't re-jump the browser.
@@ -710,10 +723,31 @@ export function App(): JSX.Element {
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   const activePlanUpdate = latestPlanUpdateForThread(activeThread);
+  const activeContextKey = state.activeContext
+    ? runtimeContextKey(state.activeContext)
+    : "";
   const backgroundProcesses = useMemo(
-    () => buildBackgroundProcessItems(activeThread),
-    [activeThread],
+    () => buildBackgroundProcessItems(activeThread, managedProcesses),
+    [activeThread, managedProcesses],
   );
+  const liveBackgroundProcesses = backgroundProcesses.filter(backgroundProcessIsLive);
+  const failedBackgroundProcesses = backgroundProcesses.filter(backgroundProcessNeedsAttention);
+  const backgroundProcessCapsuleVisible =
+    liveBackgroundProcesses.length > 0 || failedBackgroundProcesses.length > 0;
+  const backgroundProcessCapsuleLabel =
+    failedBackgroundProcesses.length > 0
+      ? `后台 ${failedBackgroundProcesses.length} 失败`
+      : liveBackgroundProcesses.length === 1
+        ? liveBackgroundProcesses[0].command
+        : `后台 ${liveBackgroundProcesses.length}`;
+  const backgroundProcessCapsuleTone =
+    failedBackgroundProcesses.length > 0 ? "failed" : "running";
+  const backgroundProcessCapsuleTitle =
+    failedBackgroundProcesses.length > 0
+      ? "后台任务失败"
+      : liveBackgroundProcesses.some((process) => process.lifecycle === "managed")
+        ? "后台任务运行中，包含需手动清理任务"
+        : "后台任务运行中";
   const splitConversation = Boolean(
     state.thread && state.secondaryThread && !workspaceMode,
   );
@@ -910,6 +944,9 @@ export function App(): JSX.Element {
       if (serverEventShouldRefreshGit(event)) {
         scheduleGitStatusRefresh(600);
       }
+      if (serverEventMayAffectProcesses(event)) {
+        scheduleManagedProcessRefresh(500);
+      }
       syncPendingComposerMessagesFromServerEvent(event);
       setState((current) => reduceServerEvent(current, event));
     });
@@ -949,8 +986,31 @@ export function App(): JSX.Element {
         window.clearTimeout(gitRefreshTimerRef.current);
         gitRefreshTimerRef.current = undefined;
       }
+      if (managedProcessRefreshTimerRef.current !== undefined) {
+        window.clearTimeout(managedProcessRefreshTimerRef.current);
+        managedProcessRefreshTimerRef.current = undefined;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!state.initialized || !state.activeContext) {
+      setManagedProcesses([]);
+      return;
+    }
+    setManagedProcesses([]);
+    scheduleManagedProcessRefresh(0);
+  }, [state.initialized, activeContextKey]);
+
+  useEffect(() => {
+    if (liveBackgroundProcesses.length === 0) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      void refreshManagedProcesses();
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [liveBackgroundProcesses.length, activeContextKey]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent): void {
@@ -3166,6 +3226,75 @@ export function App(): JSX.Element {
     }, delayMs);
   }
 
+  async function refreshManagedProcesses(): Promise<void> {
+    const context = appStateRef.current.activeContext;
+    if (!context || !appStateRef.current.initialized) {
+      return;
+    }
+    if (managedProcessRefreshInFlightRef.current) {
+      managedProcessRefreshQueuedRef.current = true;
+      return;
+    }
+    managedProcessRefreshInFlightRef.current = true;
+    try {
+      const result = await window.wuu.listManagedProcesses();
+      if (!sameRuntimeContext(appStateRef.current.activeContext, context)) {
+        return;
+      }
+      setManagedProcesses(result.processes ?? []);
+    } catch {
+      if (sameRuntimeContext(appStateRef.current.activeContext, context)) {
+        setManagedProcesses([]);
+      }
+    } finally {
+      managedProcessRefreshInFlightRef.current = false;
+      if (managedProcessRefreshQueuedRef.current) {
+        managedProcessRefreshQueuedRef.current = false;
+        scheduleManagedProcessRefresh(200);
+      }
+    }
+  }
+
+  function scheduleManagedProcessRefresh(delayMs: number): void {
+    if (!appStateRef.current.activeContext || !appStateRef.current.initialized) {
+      return;
+    }
+    if (managedProcessRefreshTimerRef.current !== undefined) {
+      window.clearTimeout(managedProcessRefreshTimerRef.current);
+    }
+    managedProcessRefreshTimerRef.current = window.setTimeout(() => {
+      managedProcessRefreshTimerRef.current = undefined;
+      void refreshManagedProcesses();
+    }, delayMs);
+  }
+
+  async function stopBackgroundProcess(process: BackgroundProcessItem): Promise<void> {
+    if (!process.id.startsWith("proc-") || stoppingProcessIDs.has(process.id)) {
+      return;
+    }
+    setStoppingProcessIDs((current) => {
+      const next = new Set(current);
+      next.add(process.id);
+      return next;
+    });
+    try {
+      const result = await window.wuu.stopManagedProcess(process.id);
+      setManagedProcesses((current) => upsertManagedProcess(current, result.process));
+      scheduleManagedProcessRefresh(300);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "stop process failed",
+      }));
+    } finally {
+      setStoppingProcessIDs((current) => {
+        const next = new Set(current);
+        next.delete(process.id);
+        return next;
+      });
+    }
+  }
+
   async function createAndCheckoutBranch(branch: string): Promise<void> {
     if (!branch || anyThreadIsRunning) {
       return;
@@ -3234,6 +3363,18 @@ export function App(): JSX.Element {
       setBranchMenuOpen(false);
       setCodexRuntimeMenu(null);
     }
+  }
+
+  function openBackgroundProcessPanel(): void {
+    setEnvironmentPanelOpen(true);
+    setEnvironmentPanelDismissed(false);
+    setEnvironmentPanelMenu(null);
+    setRunDebugOpen(false);
+    setRuntimeMenuOpen(false);
+    setAccessMenuOpen(false);
+    setModeMenuOpen(false);
+    setBranchMenuOpen(false);
+    setCodexRuntimeMenu(null);
   }
 
   function appendRunDebugEvent(entry: Omit<RunDebugEvent, "id" | "at">): void {
@@ -5008,6 +5149,7 @@ export function App(): JSX.Element {
           planUpdate={activePlanUpdate}
           sourceItems={environmentSourceItems}
           backgroundProcesses={backgroundProcesses}
+          stoppingProcessIDs={stoppingProcessIDs}
           activeMenu={environmentPanelMenu}
           running={anyThreadIsRunning}
           pullRequestDisabledReason={pullRequestDisabledReason}
@@ -5032,6 +5174,7 @@ export function App(): JSX.Element {
           }}
           onOpenCommit={() => setEnvironmentDialog("commit")}
           onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
+          onStopBackgroundProcess={(process) => void stopBackgroundProcess(process)}
         />
         {queryHistoryDocked ? (
           <div className="query-history-environment-slot">
@@ -5488,6 +5631,24 @@ export function App(): JSX.Element {
                   />
                 ) : null}
               </div>
+            ) : null}
+            {backgroundProcessCapsuleVisible ? (
+              <button
+                className={`background-process-capsule ${backgroundProcessCapsuleTone}${
+                  environmentPanelVisible ? " active" : ""
+                }`}
+                type="button"
+                aria-label={backgroundProcessCapsuleTitle}
+                title={backgroundProcessCapsuleTitle}
+                onClick={openBackgroundProcessPanel}
+              >
+                {backgroundProcessCapsuleTone === "failed" ? (
+                  <AlertCircle size={14} />
+                ) : (
+                  <Terminal size={14} />
+                )}
+                <span>{backgroundProcessCapsuleLabel}</span>
+              </button>
             ) : null}
             <button
               ref={environmentToggleRef}
@@ -6073,6 +6234,26 @@ function serverEventShouldRefreshGit(event: ServerEvent): boolean {
     event.message.method === "turn/completed" ||
     event.message.method === "turn/error"
   );
+}
+
+function serverEventMayAffectProcesses(event: ServerEvent): boolean {
+  if (event.kind !== "notification") {
+    return false;
+  }
+  return (
+    event.message.method === "item/completed" ||
+    event.message.method === "turn/completed" ||
+    event.message.method === "turn/error"
+  );
+}
+
+function upsertManagedProcess(
+  processes: ManagedProcess[],
+  process: ManagedProcess,
+): ManagedProcess[] {
+  const next = processes.filter((item) => item.id !== process.id);
+  next.push(process);
+  return next;
 }
 
 function notificationTargetsActiveThread(
