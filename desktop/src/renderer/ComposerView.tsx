@@ -1024,7 +1024,7 @@ export function Composer({
                   placement="above"
                   align="left"
                   offset={6}
-                  width={300}
+                  width={328}
                 >
                   <AccessMenu
                     policy={initialized?.tool_policy}
@@ -1550,15 +1550,31 @@ function AccessMenu({
           disabled={disabled}
           onClick={() => onSelect(option.profile)}
         >
-          <span>
+          <span className="permission-mode-icon" aria-hidden="true">
+            <PermissionModeIcon profile={option.profile} />
+          </span>
+          <span className="permission-mode-copy">
             <strong>{option.label}</strong>
             <small>{option.short}</small>
           </span>
-          {activeProfile === option.profile ? <Check size={16} /> : null}
+          <span className="permission-mode-check" aria-hidden="true">
+            {activeProfile === option.profile ? <Check size={16} /> : null}
+          </span>
         </button>
       ))}
     </div>
   );
+}
+
+function PermissionModeIcon({ profile }: { profile: ToolPolicyProfile }): JSX.Element {
+  switch (profile) {
+    case "safe":
+      return <Wrench size={15} />;
+    case "autonomous":
+      return <Zap size={15} />;
+    default:
+      return <ShieldCheck size={15} />;
+  }
 }
 
 function ModeMenu({
