@@ -126,7 +126,11 @@ import {
   createConversationFixture,
   type ConversationFixtureKind,
 } from "./ConversationFixtures";
-import { conversationSearchVisibleSnippet } from "./ConversationSearchDisplay";
+import {
+  conversationSearchResultSections,
+  conversationSearchStatusText,
+  conversationSearchVisibleSnippet,
+} from "./ConversationSearchDisplay";
 import {
   EnvironmentPanel,
   buildEnvironmentSourceItems,
@@ -276,12 +280,6 @@ type ConversationSearchState = {
   error: string;
   results: ThreadSearchResultItem[];
   selectedIndex: number;
-};
-
-type ConversationSearchResultSection = {
-  title: string;
-  results: ThreadSearchResultItem[];
-  startIndex: number;
 };
 
 type ComposerDraftState = {
@@ -5043,11 +5041,11 @@ export function App(): JSX.Element {
     conversationSearchResults,
     conversationSearch.query,
   );
-  const conversationSearchStatusText = conversationSearch.loading
-    ? "正在搜索"
-    : conversationSearch.query.trim()
-      ? `${conversationSearchResults.length} 个结果`
-      : "最近会话";
+  const conversationSearchStatus = conversationSearchStatusText({
+    loading: conversationSearch.loading,
+    query: conversationSearch.query,
+    resultCount: conversationSearchResults.length,
+  });
 
   return (
     <div className={shellClassName} style={shellStyle}>
@@ -5299,7 +5297,7 @@ export function App(): JSX.Element {
               }`}
             >
               <span className="conversation-search-status-text">
-                {conversationSearchStatusText}
+                {conversationSearchStatus}
               </span>
               <button
                 type="button"
@@ -6561,31 +6559,6 @@ function formatHourMinute(date: Date): string {
     minute: "2-digit",
     hour12: false,
   });
-}
-
-function conversationSearchResultSections(
-  results: ThreadSearchResultItem[],
-  query: string,
-): ConversationSearchResultSection[] {
-  if (query.trim()) {
-    return results.length > 0
-      ? [{ title: "搜索结果", results, startIndex: 0 }]
-      : [];
-  }
-  const pinned = results.filter((result) => result.thread.pinned);
-  const recent = results.filter((result) => !result.thread.pinned);
-  const sections: ConversationSearchResultSection[] = [];
-  if (pinned.length > 0) {
-    sections.push({ title: "置顶对话", results: pinned, startIndex: 0 });
-  }
-  if (recent.length > 0) {
-    sections.push({
-      title: "最近对话",
-      results: recent,
-      startIndex: pinned.length,
-    });
-  }
-  return sections;
 }
 
 function conversationSearchContextLabel(
