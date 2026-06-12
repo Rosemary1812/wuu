@@ -408,11 +408,11 @@
   display: inline-block;
   width: 1px;
   height: 1.05em;
-  margin-left: 1px;
+  margin-left: 3px;
   vertical-align: text-bottom;
   background: var(--stream-cursor-color);
   position: relative;
-  top: 2px;
+  top: -1px;
   pointer-events: none;
 }
 
