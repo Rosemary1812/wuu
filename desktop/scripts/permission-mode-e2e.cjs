@@ -56,10 +56,17 @@ async function run() {
   assert.equal(openState.optionLabels.length, 3, "Permission menu should expose three everyday modes.");
   assert.deepEqual(openState.optionLabels, ["手动", "自动", "完全访问"]);
   assert.equal(openState.checkedLabels.join(","), "自动", "Auto mode should be marked as the current mode.");
-  assert.ok(openState.menuRect.width >= 280, `Permission menu should be wide enough. Width=${openState.menuRect.width}`);
   assert.ok(
-    openState.optionRects.every((rect, index, rects) => index === 0 || rect.top > rects[index - 1].top),
-    "Permission mode options should be vertically ordered without overlap."
+    openState.menuRect.width >= 240 && openState.menuRect.width <= 280,
+    `Permission menu should stay compact. Width=${openState.menuRect.width}`
+  );
+  assert.ok(
+    openState.optionRects.every((rect, index, rects) => index === 0 || Math.abs(rect.top - rects[0].top) <= 2),
+    "Permission mode options should fit on one row."
+  );
+  assert.ok(
+    openState.optionRects.every((rect, index, rects) => index === 0 || rect.left >= rects[index - 1].left + rects[index - 1].width),
+    "Permission mode options should be horizontally ordered without overlap."
   );
   await capture(win, "permission-mode-menu-open.png");
 
