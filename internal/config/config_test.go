@@ -634,6 +634,18 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 		t.Fatalf("default system prompt must forbid interactive git: %q", prompt)
 	}
 	for _, want := range []string{
+		"Use start_process for dev servers",
+		"do not append shell '&'",
+		"initial_end_offset",
+		"session-scoped dev servers",
+		"lifecycle=\"managed\"",
+		"report_listening_ports",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("default system prompt must include long-lived process guidance %q: %q", want, prompt)
+		}
+	}
+	for _, want := range []string{
 		"verification ledger",
 		"final diff",
 		"validation commands",

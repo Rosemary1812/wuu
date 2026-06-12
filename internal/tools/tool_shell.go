@@ -267,7 +267,7 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 
 func shellNextSuggestions(exitCode int, timedOut bool, classification ToolClassification) []string {
 	if timedOut {
-		return []string{"narrow the command scope or increase timeout only if the long-running command is necessary"}
+		return []string{"if this was a dev server, watch mode, or other long-lived command, rerun it with start_process instead of extending run_shell; otherwise narrow the command scope or increase timeout only when necessary"}
 	}
 	if exitCode != 0 {
 		return []string{"inspect the redacted stdout/stderr tails, then retry with corrected inputs or use run_test for verification commands"}

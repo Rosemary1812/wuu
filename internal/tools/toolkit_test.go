@@ -4277,6 +4277,16 @@ func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T)
 	t.Fatal("run_shell must be present in tool definitions")
 }
 
+func TestShellNextSuggestions_TimedOutLongRunningCommandUsesStartProcess(t *testing.T) {
+	suggestions := strings.Join(shellNextSuggestions(0, true, ToolClassification{}), " ")
+	if !strings.Contains(suggestions, "start_process") {
+		t.Fatalf("timed-out shell guidance should mention start_process: %q", suggestions)
+	}
+	if !strings.Contains(suggestions, "dev server") || !strings.Contains(suggestions, "long-lived") {
+		t.Fatalf("timed-out shell guidance should identify long-lived commands: %q", suggestions)
+	}
+}
+
 func TestToolkit_ReadProcessOutputWaitsFromOffset(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
