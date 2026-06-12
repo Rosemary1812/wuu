@@ -126,6 +126,7 @@ import {
   createConversationFixture,
   type ConversationFixtureKind,
 } from "./ConversationFixtures";
+import { conversationSearchVisibleSnippet } from "./ConversationSearchDisplay";
 import {
   EnvironmentPanel,
   buildEnvironmentSourceItems,
@@ -5337,7 +5338,11 @@ export function App(): JSX.Element {
                       thread,
                       state.projects,
                     );
-                    const snippet = result.snippet?.trim();
+                    const snippet = conversationSearchVisibleSnippet({
+                      query: conversationSearch.query,
+                      snippet: result.snippet,
+                      title,
+                    });
                     return (
                       <button
                         key={thread.id}
