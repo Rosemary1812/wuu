@@ -240,6 +240,113 @@
   color: #c42020;
 }
 
+.environment-process-section {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid #ececea;
+  margin-top: 6px;
+  padding: 9px 8px 0;
+}
+
+.environment-process-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #8a8f94;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.environment-process-heading span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.environment-process-heading svg {
+  flex: 0 0 auto;
+  color: #6f757a;
+}
+
+.environment-process-list {
+  display: grid;
+  gap: 4px;
+}
+
+.environment-process-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 7px;
+  border-radius: 8px;
+  background: #f6f6f4;
+  padding: 6px 7px;
+}
+
+.environment-process-row > svg {
+  color: #6f757a;
+}
+
+.environment-process-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.environment-process-row strong,
+.environment-process-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.environment-process-row strong {
+  color: #202427;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.environment-process-row div span {
+  color: #8a8f94;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
+.environment-process-status {
+  border-radius: 999px;
+  color: #6f757a;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  padding: 2px 6px;
+}
+
+.environment-process-status.running {
+  background: #e8f4ec;
+  color: #1f7a42;
+}
+
+.environment-process-status.stopping {
+  background: #fff4df;
+  color: #9a6400;
+}
+
+.environment-process-status.failed {
+  background: #fff0ef;
+  color: #b42318;
+}
+
+.environment-process-status.stopped {
+  background: #eeeeeb;
+}
+
 .environment-footer-row {
   grid-template-columns: minmax(0, 1fr) 18px;
   height: 30px;

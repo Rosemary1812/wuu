@@ -1,4 +1,5 @@
 import {
+  Activity,
   Check,
   ChevronRight,
   CornerDownRight,
@@ -14,10 +15,18 @@ import {
   MessageSquarePlus,
   Plus,
   Search,
+  Terminal,
   X
 } from "lucide-react";
 import { type FormEvent as ReactFormEvent, type RefObject, useState } from "react";
-import type { DesktopProject, GitStatusResult, InitializeResult, PlanUpdate, RuntimeContext } from "../shared/protocol";
+import type {
+  DesktopProject,
+  GitStatusResult,
+  InitializeResult,
+  PlanUpdate,
+  RuntimeContext,
+  Thread
+} from "../shared/protocol";
 import type { ComposerFile, ComposerImage, QueuedComposerMessage } from "./ComposerMessages";
 import { shortCodexModelLabel } from "./RuntimeHelpers";
 
@@ -30,6 +39,18 @@ export type EnvironmentSourceItem = {
   title: string;
   detail: string;
 };
+
+export type BackgroundProcessItem = {
+  id: string;
+  command: string;
+  cwd?: string;
+  lifecycle?: string;
+  status: string;
+  startedAt?: string;
+  updatedAt?: string;
+};
+
+type JsonRecord = Record<string, unknown>;
 
 export function buildEnvironmentSourceItems({
   activeContext,
@@ -116,6 +137,38 @@ export function buildEnvironmentSourceItems({
   return items;
 }
 
+export function buildBackgroundProcessItems(thread?: Thread): BackgroundProcessItem[] {
+  const byID = new Map<string, BackgroundProcessItem>();
+  if (!thread) {
+    return [];
+  }
+  for (const turn of thread.turns) {
+    for (const item of turn.items) {
+      if (item.type !== "tool_call" && item.type !== "collab_agent_tool_call") {
+        continue;
+      }
+      if (item.name === "start_process" && item.status === "in_progress") {
+        const args = parseJsonRecord(item.arguments);
+        const command = stringValue(args, "command");
+        if (command) {
+          byID.set(item.id, {
+            id: item.id,
+            command,
+            cwd: stringValue(args, "cwd"),
+            lifecycle: stringValue(args, "lifecycle") || "session",
+            status: "starting"
+          });
+        }
+      }
+      for (const process of processItemsFromToolResult(item.name, item.result)) {
+        byID.delete(item.id);
+        byID.set(process.id, process);
+      }
+    }
+  }
+  return [...byID.values()].sort(compareBackgroundProcesses);
+}
+
 export function EnvironmentPanel({
   panelRef,
   motionState,
@@ -125,6 +178,7 @@ export function EnvironmentPanel({
   activeProject,
   planUpdate,
   sourceItems,
+  backgroundProcesses,
   activeMenu,
   running,
   pullRequestDisabledReason,
@@ -146,6 +200,7 @@ export function EnvironmentPanel({
   activeProject?: DesktopProject;
   planUpdate?: PlanUpdate;
   sourceItems: EnvironmentSourceItem[];
+  backgroundProcesses: BackgroundProcessItem[];
   activeMenu: EnvironmentPanelMenu;
   running: boolean;
   pullRequestDisabledReason: string;
@@ -256,6 +311,10 @@ export function EnvironmentPanel({
           <strong>{gitStatus?.pr_url ? "查看拉取请求" : "创建拉取请求"}</strong>
           <span>{gitStatus?.pr_url ? "已有 PR" : prDisabled ? pullRequestDisabledReason : "推送并创建 PR"}</span>
         </button>
+
+        {backgroundProcesses.length > 0 ? (
+          <EnvironmentBackgroundProcesses processes={backgroundProcesses.slice(0, 5)} />
+        ) : null}
       </div>
 
       <button
@@ -290,6 +349,162 @@ export function EnvironmentPanel({
       {activeMenu === "sources" ? <EnvironmentSourcesMenu items={sourceItems} /> : null}
     </aside>
   );
+}
+
+function EnvironmentBackgroundProcesses({ processes }: { processes: BackgroundProcessItem[] }): JSX.Element {
+  const runningCount = processes.filter((process) => processStatusTone(process.status) === "running").length;
+  return (
+    <section className="environment-process-section" aria-label="后台任务">
+      <div className="environment-process-heading">
+        <span>
+          <Activity size={15} />
+          后台任务
+        </span>
+        <span>{runningCount > 0 ? `${runningCount} 个运行中` : `${processes.length} 个最近任务`}</span>
+      </div>
+      <div className="environment-process-list">
+        {processes.map((process) => (
+          <div className="environment-process-row" key={process.id}>
+            <Terminal size={16} />
+            <div>
+              <strong title={process.command}>{process.command}</strong>
+              <span>{processDetail(process)}</span>
+            </div>
+            <span className={`environment-process-status ${processStatusTone(process.status)}`}>
+              {processStatusLabel(process.status)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function processItemsFromToolResult(name: string | undefined, result: string | undefined): BackgroundProcessItem[] {
+  const record = parseJsonRecord(result);
+  if (!record) {
+    return [];
+  }
+  if (name === "list_processes") {
+    const processes = Array.isArray(record.processes) ? record.processes : [];
+    return processes.flatMap((item) => {
+      const process = asRecord(item);
+      return process ? processItemFromRecord(process) : [];
+    });
+  }
+  if (name === "read_process_output" || name === "write_stdin") {
+    const process = asRecord(record.process);
+    return process ? processItemFromRecord(process) : [];
+  }
+  if (name === "start_process" || name === "stop_process") {
+    return processItemFromRecord(record);
+  }
+  return [];
+}
+
+function processItemFromRecord(record: JsonRecord): BackgroundProcessItem[] {
+  const id = stringValue(record, "id");
+  if (!id) {
+    return [];
+  }
+  return [
+    {
+      id,
+      command: stringValue(record, "command") || id,
+      cwd: stringValue(record, "cwd"),
+      lifecycle: stringValue(record, "lifecycle"),
+      status: stringValue(record, "status") || "running",
+      startedAt: stringValue(record, "started_at"),
+      updatedAt: stringValue(record, "updated_at")
+    }
+  ];
+}
+
+function compareBackgroundProcesses(a: BackgroundProcessItem, b: BackgroundProcessItem): number {
+  const status = processStatusRank(a.status) - processStatusRank(b.status);
+  if (status !== 0) {
+    return status;
+  }
+  return processTimestamp(b) - processTimestamp(a);
+}
+
+function processTimestamp(process: BackgroundProcessItem): number {
+  const value = Date.parse(process.updatedAt || process.startedAt || "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+function processStatusRank(status: string): number {
+  switch (processStatusTone(status)) {
+    case "running":
+      return 0;
+    case "stopping":
+      return 1;
+    case "failed":
+      return 2;
+    case "stopped":
+      return 3;
+    default:
+      return 4;
+  }
+}
+
+function processStatusTone(status: string): "running" | "stopping" | "failed" | "stopped" {
+  switch (status) {
+    case "starting":
+    case "running":
+      return "running";
+    case "stopping":
+      return "stopping";
+    case "failed":
+      return "failed";
+    case "stopped":
+    default:
+      return "stopped";
+  }
+}
+
+function processStatusLabel(status: string): string {
+  switch (status) {
+    case "starting":
+      return "启动中";
+    case "running":
+      return "运行中";
+    case "stopping":
+      return "停止中";
+    case "failed":
+      return "失败";
+    case "stopped":
+      return "已停止";
+    default:
+      return status || "未知";
+  }
+}
+
+function processDetail(process: BackgroundProcessItem): string {
+  const lifecycle =
+    process.lifecycle === "managed" ? "需手动清理" : process.lifecycle === "session" ? "随会话清理" : "";
+  const parts = [process.cwd, lifecycle].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : process.id;
+}
+
+function parseJsonRecord(value: string | undefined): JsonRecord | undefined {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function asRecord(value: unknown): JsonRecord | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonRecord) : undefined;
+}
+
+function stringValue(record: JsonRecord | undefined, key: string): string {
+  const value = record?.[key];
+  return typeof value === "string" ? value : "";
 }
 
 function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX.Element {

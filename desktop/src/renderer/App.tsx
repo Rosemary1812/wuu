@@ -133,6 +133,7 @@ import {
 } from "./ConversationSearchDisplay";
 import {
   EnvironmentPanel,
+  buildBackgroundProcessItems,
   buildEnvironmentSourceItems,
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
@@ -709,6 +710,10 @@ export function App(): JSX.Element {
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   const activePlanUpdate = latestPlanUpdateForThread(activeThread);
+  const backgroundProcesses = useMemo(
+    () => buildBackgroundProcessItems(activeThread),
+    [activeThread],
+  );
   const splitConversation = Boolean(
     state.thread && state.secondaryThread && !workspaceMode,
   );
@@ -5002,6 +5007,7 @@ export function App(): JSX.Element {
           activeProject={activeProject}
           planUpdate={activePlanUpdate}
           sourceItems={environmentSourceItems}
+          backgroundProcesses={backgroundProcesses}
           activeMenu={environmentPanelMenu}
           running={anyThreadIsRunning}
           pullRequestDisabledReason={pullRequestDisabledReason}
