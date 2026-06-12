@@ -1,0 +1,57 @@
+package appserver
+
+import (
+	"errors"
+	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/process"
+	"github.com/blueberrycongee/wuu/internal/tools"
+)
+
+func (s *Server) handleProcessList(req Request) error {
+	if len(req.Params) > 0 {
+		var params struct{}
+		if err := decodeParams(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	if s.rt == nil || s.rt.ProcessManager == nil {
+		return s.writeResponse(req.ID, nil, errors.New("process manager is not available"))
+	}
+	processes, err := s.rt.ProcessManager.List()
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	for i := range processes {
+		processes[i] = redactManagedProcess(processes[i])
+	}
+	return s.writeResponse(req.ID, ProcessListResult{Processes: processes}, nil)
+}
+
+func (s *Server) handleProcessStop(req Request) error {
+	var params ProcessStopParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	processID := strings.TrimSpace(params.ProcessID)
+	if processID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("process_id is required"))
+	}
+	if s.rt == nil || s.rt.ProcessManager == nil {
+		return s.writeResponse(req.ID, nil, errors.New("process manager is not available"))
+	}
+	stopped, err := s.rt.ProcessManager.Stop(processID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if stopped == nil {
+		return s.writeResponse(req.ID, nil, errors.New("process not found"))
+	}
+	return s.writeResponse(req.ID, ProcessStopResult{Process: redactManagedProcess(*stopped)}, nil)
+}
+
+func redactManagedProcess(p process.Process) process.Process {
+	p.Command = tools.RedactToolOutput(p.Command)
+	p.LastError = tools.RedactToolOutput(p.LastError)
+	return p
+}

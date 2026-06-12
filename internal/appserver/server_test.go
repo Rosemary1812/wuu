@@ -18,6 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -1026,6 +1027,44 @@ func TestServerSkillList(t *testing.T) {
 	}
 	if len(got.AllowedTools) != 1 || got.AllowedTools[0] != "read_file" || len(got.Paths) != 1 || got.Paths[0] != "**/*.pptx" {
 		t.Fatalf("skill metadata missing: %+v", got)
+	}
+}
+
+func TestServerProcessListAndStop(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	manager, err := process.NewManager(rt.RootDir, filepath.Join(rt.RootDir, "runtime"))
+	if err != nil {
+		t.Fatalf("process.NewManager: %v", err)
+	}
+	rt.ProcessManager = manager
+	started, err := manager.Start(context.Background(), process.StartOptions{
+		Command:   "sleep 30",
+		OwnerKind: process.OwnerMainAgent,
+		OwnerID:   "test",
+		Lifecycle: process.LifecycleManaged,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _, _ = manager.Stop(started.ID) }()
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"process/list"}`)); err != nil {
+		t.Fatalf("process/list: %v", err)
+	}
+	listed := remarshal[ProcessListResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if len(listed.Processes) != 1 || listed.Processes[0].ID != started.ID || listed.Processes[0].Status != process.StatusRunning {
+		t.Fatalf("unexpected process list: %+v", listed)
+	}
+
+	stopPayload := fmt.Sprintf(`{"id":"2","method":"process/stop","params":{"process_id":%q}}`, started.ID)
+	if err := srv.handleLine(context.Background(), []byte(stopPayload)); err != nil {
+		t.Fatalf("process/stop: %v", err)
+	}
+	stopped := remarshal[ProcessStopResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	if stopped.Process.ID != started.ID || stopped.Process.Status != process.StatusStopped {
+		t.Fatalf("unexpected stopped process: %+v", stopped)
 	}
 }
 

@@ -167,6 +167,10 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleTurnUnsteer(req)
 	case MethodTurnInterrupt:
 		return s.handleTurnInterrupt(req)
+	case MethodProcessList:
+		return s.handleProcessList(req)
+	case MethodProcessStop:
+		return s.handleProcessStop(req)
 	case MethodShutdown:
 		if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 			return err

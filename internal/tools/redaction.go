@@ -25,6 +25,11 @@ func redactToolOutput(value string) string {
 	return out
 }
 
+// RedactToolOutput masks common credential patterns in user-visible tool text.
+func RedactToolOutput(value string) string {
+	return redactToolOutput(value)
+}
+
 func redactToolOutputMatch(match string) string {
 	if loc := toolOutputKeyValueSep.FindStringIndex(match); loc != nil {
 		sep := match[loc[0]:loc[1]]

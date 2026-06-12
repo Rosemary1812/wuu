@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -30,6 +31,8 @@ const (
 	MethodTurnSteer             = "turn/steer"
 	MethodTurnUnsteer           = "turn/unsteer"
 	MethodTurnInterrupt         = "turn/interrupt"
+	MethodProcessList           = "process/list"
+	MethodProcessStop           = "process/stop"
 	MethodShutdown              = "shutdown"
 
 	NotificationThreadStarted = "thread/started"
@@ -183,6 +186,18 @@ type SkillSummary struct {
 
 type SkillListResult struct {
 	Skills []SkillSummary `json:"skills"`
+}
+
+type ProcessListResult struct {
+	Processes []process.Process `json:"processes"`
+}
+
+type ProcessStopParams struct {
+	ProcessID string `json:"process_id"`
+}
+
+type ProcessStopResult struct {
+	Process process.Process `json:"process"`
 }
 
 type CodexModelSummary struct {
