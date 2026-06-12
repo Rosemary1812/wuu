@@ -584,13 +584,13 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 	}
 }
 
-func TestDefaultSystemPrompt_SingleComposeMode(t *testing.T) {
+func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		"one single always-on Compose mode",
-		"adaptive orchestration mode",
+		"Use Compose as your default way",
+		"choose the lightest suitable path",
 		"direct implementation, read-only planning, skill use, dynamic workflows, sub-agents, and memory",
-		"There are no separate build or plan modes",
+		"Do not make the user choose between build, plan, and compose",
 		"Fast path:",
 		"Do not force brainstorms, workflows, or sub-agents",
 		"Planning path:",
@@ -605,7 +605,15 @@ func TestDefaultSystemPrompt_SingleComposeMode(t *testing.T) {
 		"session_memory",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must define single Compose mode guidance %q: %q", want, prompt)
+			t.Fatalf("default system prompt must define Compose decision guidance %q: %q", want, prompt)
+		}
+	}
+	for _, bad := range []string{
+		"one single always-on Compose mode",
+		"There are no separate build or plan modes",
+	} {
+		if strings.Contains(prompt, bad) {
+			t.Fatalf("default system prompt should avoid awkward mode wording %q: %q", bad, prompt)
 		}
 	}
 }
