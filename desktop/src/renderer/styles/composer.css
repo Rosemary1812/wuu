@@ -756,16 +756,15 @@
   top: auto;
   bottom: calc(100% + 6px);
   left: 0;
-  width: 264px;
+  width: 176px;
 }
 
 .access-menu {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
+  gap: 2px;
   background: #fff;
   backdrop-filter: none;
   padding: 5px;
-  width: 264px;
+  width: 176px;
 }
 
 .mode-menu {
@@ -802,14 +801,14 @@
 }
 
 .composer-context-menu .permission-mode-option {
-  height: 32px;
-  min-height: 32px;
-  justify-content: center;
+  height: 30px;
+  min-height: 30px;
+  justify-content: flex-start;
   gap: 0;
   border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 0 8px;
-  text-align: center;
+  border-radius: 7px;
+  padding: 0 10px;
+  text-align: left;
 }
 
 .composer-context-menu button span {

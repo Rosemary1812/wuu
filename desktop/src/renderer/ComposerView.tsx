@@ -1024,7 +1024,7 @@ export function Composer({
                   placement="above"
                   align="left"
                   offset={6}
-                  width={264}
+                  width={176}
                 >
                   <AccessMenu
                     policy={initialized?.tool_policy}
