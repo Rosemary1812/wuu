@@ -4,17 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
+
+const maxStartProcessInitialWait = 60 * time.Second
 
 // ---------------------------------------------------------------------------
 // start_process
 // ---------------------------------------------------------------------------
 
 type StartProcessTool struct{ env *Env }
+
+type startProcessResponse struct {
+	proc.Process
+	InitialOutput      string   `json:"initial_output,omitempty"`
+	InitialTruncated   bool     `json:"initial_truncated,omitempty"`
+	InitialStartOffset int64    `json:"initial_start_offset,omitempty"`
+	InitialEndOffset   int64    `json:"initial_end_offset,omitempty"`
+	InitialTotalBytes  int64    `json:"initial_total_bytes,omitempty"`
+	InitialTimedOut    bool     `json:"initial_timed_out,omitempty"`
+	InitialDurationMS  int64    `json:"initial_duration_ms,omitempty"`
+	NextSuggestions    []string `json:"next_suggestions,omitempty"`
+}
 
 func NewStartProcessTool(env *Env) *StartProcessTool { return &StartProcessTool{env: env} }
 
@@ -45,18 +61,19 @@ func (t *StartProcessTool) Classify(argsJSON string) ToolClassification {
 
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "start_process", Description: "Start a managed background OS process in the workspace. Commands that dump environment variables or touch sensitive credential paths are rejected.",
+		Name: "start_process", Description: "Start a managed background OS process in the workspace. Use this instead of run_shell or shell '&' for dev servers, watch modes, and other long-lived commands. Commands that dump environment variables or touch sensitive credential paths are rejected.",
 		InputSchema: objectSchema(
 			map[string]any{
-				"command":    stringSchema(""),
-				"cwd":        stringSchema(""),
+				"command":    stringSchema("Command to run. Do not append '&'; this tool already keeps the process in the background."),
+				"cwd":        stringSchema("Working directory. Defaults to the workspace root."),
 				"owner_kind": stringEnumSchema("main_agent", "subagent"),
-				"owner_id":   stringSchema(""),
+				"owner_id":   stringSchema("Optional owner id. Defaults to the current agent/session id."),
 				"lifecycle":  stringEnumSchema("session", "managed"),
 				"tty":        booleanSchema("Run the command inside a pseudo-terminal. Use for commands that require terminal semantics."),
+				"wait_ms":    integerSchema("Optional initial wait for output after starting, in milliseconds. Use 10000-30000 for dev servers while waiting for a ready line or localhost URL. Maximum 60000."),
+				"max_bytes":  integerSchema("Maximum initial output bytes to return when wait_ms is set. Default 32768."),
 			},
 			"command",
-			"owner_kind",
 		),
 	}
 }
@@ -69,6 +86,8 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 		OwnerID   string `json:"owner_id"`
 		Lifecycle string `json:"lifecycle"`
 		TTY       bool   `json:"tty"`
+		WaitMS    int    `json:"wait_ms"`
+		MaxBytes  int    `json:"max_bytes"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -91,20 +110,82 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
 		return "", errors.New("start_process refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
 	}
+	args.OwnerKind = defaultProcessOwnerKind(t.env, args.OwnerKind)
+	if strings.TrimSpace(args.OwnerID) == "" {
+		args.OwnerID = defaultProcessOwnerID(t.env)
+	}
 	m, err := t.env.ProcessManager()
 	if err != nil {
 		return "", err
 	}
 	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY})
-	redacted := redactProcessPtr(p)
-	if redacted != nil {
-		redacted.Action = "start_process"
+	response := startProcessResponse{}
+	if p != nil {
+		response.Process = redactProcess(*p)
+		response.Action = "start_process"
+		response.NextSuggestions = startProcessNextSuggestions(args.WaitMS)
+		if startErr == nil && args.WaitMS > 0 {
+			wait := time.Duration(args.WaitMS) * time.Millisecond
+			if wait > maxStartProcessInitialWait {
+				wait = maxStartProcessInitialWait
+			}
+			offset := int64(0)
+			snapshot, readErr := m.ReadOutputSnapshot(ctx, p.ID, proc.OutputReadOptions{
+				MaxBytes:    args.MaxBytes,
+				OffsetBytes: &offset,
+				Wait:        wait,
+			})
+			if readErr != nil {
+				response.LastError = redactToolOutput(readErr.Error())
+			} else {
+				response.Process = redactProcess(snapshot.Process)
+				response.Action = "start_process"
+				response.InitialOutput = redactToolOutput(snapshot.Output)
+				response.InitialTruncated = snapshot.Truncated
+				response.InitialStartOffset = snapshot.StartOffset
+				response.InitialEndOffset = snapshot.EndOffset
+				response.InitialTotalBytes = snapshot.TotalBytes
+				response.InitialTimedOut = snapshot.TimedOut
+				response.InitialDurationMS = snapshot.Duration.Milliseconds()
+			}
+		}
 	}
-	out, _ := json.Marshal(redacted)
+	out, _ := json.Marshal(response)
 	if startErr != nil {
 		return string(out), startErr
 	}
 	return string(out), nil
+}
+
+func defaultProcessOwnerKind(env *Env, ownerKind string) string {
+	ownerKind = strings.TrimSpace(ownerKind)
+	if ownerKind != "" {
+		return ownerKind
+	}
+	if currentAgentPath(env) != agentthread.RootPath {
+		return string(proc.OwnerSubagent)
+	}
+	return string(proc.OwnerMainAgent)
+}
+
+func defaultProcessOwnerID(env *Env) string {
+	if env == nil {
+		return "main"
+	}
+	if id := strings.TrimSpace(env.AgentID); id != "" {
+		return id
+	}
+	if id := strings.TrimSpace(env.SessionID); id != "" {
+		return id
+	}
+	return "main"
+}
+
+func startProcessNextSuggestions(waitMS int) []string {
+	if waitMS <= 0 {
+		return []string{"use read_process_output with offset_bytes=0 and wait_ms to wait for readiness; call report_listening_ports after a dev server prints its localhost port"}
+	}
+	return []string{"pass initial_end_offset as offset_bytes to read_process_output for incremental logs; call report_listening_ports after a dev server prints its localhost port"}
 }
 
 // ---------------------------------------------------------------------------

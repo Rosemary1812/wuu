@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -4322,6 +4323,77 @@ func TestToolkit_ReadProcessOutputWaitsFromOffset(t *testing.T) {
 	if parsed["status"].(string) == "" {
 		t.Fatalf("missing status: %+v", parsed)
 	}
+}
+
+func TestToolkit_StartProcessDefaultsOwnerAndReturnsInitialOutput(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-start-process")
+	kit.SetAgentIdentity("agent-start-process", agentthread.RootPath)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "start_process",
+		Arguments: `{"command":"sleep 0.2; printf 'READY_FROM_START\n'; sleep 1","wait_ms":2000,"max_bytes":4096}`,
+	})
+	if err != nil {
+		t.Fatalf("start_process: %v", err)
+	}
+	var parsed struct {
+		proc.Process
+		InitialOutput    string   `json:"initial_output"`
+		InitialEndOffset int64    `json:"initial_end_offset"`
+		InitialTimedOut  bool     `json:"initial_timed_out"`
+		NextSuggestions  []string `json:"next_suggestions"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	defer manager.Stop(parsed.ID)
+	if parsed.OwnerKind != proc.OwnerMainAgent || parsed.OwnerID != "agent-start-process" {
+		t.Fatalf("owner defaults not applied: %+v", parsed.Process)
+	}
+	if parsed.InitialTimedOut {
+		t.Fatalf("initial output should arrive before timeout: %+v", parsed)
+	}
+	if !strings.Contains(parsed.InitialOutput, "READY_FROM_START") {
+		t.Fatalf("missing initial output: %s", resp)
+	}
+	if parsed.InitialEndOffset <= 0 {
+		t.Fatalf("missing initial end offset: %+v", parsed)
+	}
+	if len(parsed.NextSuggestions) == 0 || !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "read_process_output") {
+		t.Fatalf("missing follow-up guidance: %+v", parsed.NextSuggestions)
+	}
+}
+
+func TestToolkit_StartProcessDefinitionKeepsOwnerKindOptional(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, def := range kit.Definitions() {
+		if def.Name != "start_process" {
+			continue
+		}
+		required, _ := def.InputSchema["required"].([]string)
+		if slices.Contains(required, "owner_kind") {
+			t.Fatalf("start_process owner_kind should be optional: %+v", required)
+		}
+		if !strings.Contains(def.Description, "run_shell") || !strings.Contains(def.Description, "&") {
+			t.Fatalf("start_process description should steer long-lived commands: %q", def.Description)
+		}
+		return
+	}
+	t.Fatal("start_process must be present in tool definitions")
 }
 
 func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
