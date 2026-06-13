@@ -2012,6 +2012,13 @@ When the user's intent is unclear, the task depends on requirements or tradeoffs
 
 - general-purpose: broad code research, search, implementation, and multi-step tasks. Use this when you want a fresh agent with no inherited conversation context.
 - verification: independent post-change verifier. Use after meaningful implementation work; it runs in the background and returns PASS, FAIL, or PARTIAL with evidence.
+- planner: lead/planning role for phase plans, verification gates, and escalation points.
+- researcher: read-only codebase research and constraint discovery.
+- worker: scoped implementation role; defaults to worktree isolation for edits.
+- reviewer: independent diff review for bugs, regressions, and missing verification.
+- qa: product-facing verifier for tests, smoke checks, and UI/browser evidence.
+- debugger: failure triage and root-cause analysis from logs and failing commands.
+- integrator: final synthesis across worker, reviewer, and verifier evidence.
 - fork-self: omit subagent_type to fork yourself. Use when the child needs the current conversation context and you do not want intermediate tool output in your own context.
 
 Agents execute tasks autonomously and return a structured handoff. The agent result is input for your own synthesis; do not forward it blindly.
@@ -2080,6 +2087,25 @@ func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, is
 	var b strings.Builder
 	b.WriteString(wt.SystemPrompt)
 	b.WriteString("\n\n")
+	if wt.Role != "" || wt.ContextScope != "" || wt.OutputSchema != "" || len(wt.SuccessCriteria) > 0 {
+		b.WriteString("## Role Contract\n")
+		if wt.Role != "" {
+			fmt.Fprintf(&b, "Role: %s\n", wt.Role)
+		}
+		if wt.ContextScope != "" {
+			fmt.Fprintf(&b, "Context scope: %s\n", wt.ContextScope)
+		}
+		if wt.OutputSchema != "" {
+			fmt.Fprintf(&b, "Output schema: %s\n", wt.OutputSchema)
+		}
+		if len(wt.SuccessCriteria) > 0 {
+			b.WriteString("Success criteria:\n")
+			for _, item := range wt.SuccessCriteria {
+				fmt.Fprintf(&b, "- %s\n", item)
+			}
+		}
+		b.WriteString("\n")
+	}
 	switch isolation {
 	case IsolationWorktree:
 		fmt.Fprintf(&b, "Your working directory is %s — a git worktree isolated from other workers. ", workerRoot)
