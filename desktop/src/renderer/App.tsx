@@ -7516,6 +7516,55 @@ function TurnNotice({
   );
 }
 
+function ContextCompactionNotice({ text }: { text?: string }): JSX.Element {
+  const detail = contextCompactionDetail(text);
+  return (
+    <aside className="turn-notice context-compaction-notice" role="status">
+      <span className="turn-notice-icon" aria-hidden="true">
+        <Archive size={14} />
+      </span>
+      <span className="turn-notice-copy">
+        <strong>上下文已压缩</strong>
+        <span>{detail}</span>
+      </span>
+    </aside>
+  );
+}
+
+function contextCompactionDetail(text?: string): string {
+  const normalized = normalizeContextCompactionText(text);
+  if (!normalized) {
+    return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
+  }
+  if (/^Compacted history$/i.test(normalized)) {
+    return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
+  }
+  const compactNotice = parseContextCompactionNotice(normalized);
+  if (compactNotice) {
+    return compactNotice;
+  }
+  return normalized.replace(/^上下文已压缩[:：]\s*/, "");
+}
+
+function normalizeContextCompactionText(text?: string): string {
+  return (text ?? "").trim().replace(/^[✦*•]\s*/, "");
+}
+
+function parseContextCompactionNotice(text: string): string | undefined {
+  const match = text.match(
+    /^(Recovered from context overflow\s+[—-]\s+compacted|Compacted)\s+history:\s*(\d+)\s*(?:→|->)\s*(\d+)\s+messages(?:\s+\(was\s+~?([^)]+)\))?$/i,
+  );
+  if (!match) {
+    return undefined;
+  }
+  const [, action, before, after, tokens] = match;
+  const tokenDetail = tokens ? `，原约 ${tokens.trim()}` : "";
+  if (/^Recovered/i.test(action)) {
+    return `已从上下文超限中恢复：${before} 条消息整理为 ${after} 条${tokenDetail}。`;
+  }
+  return `已压缩较早上下文：${before} 条消息整理为 ${after} 条${tokenDetail}。`;
+}
+
 function turnNoticeIcon(display: UserFacingErrorDisplay): typeof AlertCircle {
   if (display.category === "cancelled") {
     return Square;
@@ -7629,11 +7678,11 @@ function AssistantTurnShell({
         ))}
       </div>
       {display.isBuggy && display.bugMessage ? (
-        <aside className="assistant-turn-bug-banner" role="alert">
-          <span className="assistant-turn-bug-icon" aria-hidden>
-            <Info size={15} />
+        <aside className="turn-notice warning assistant-turn-bug-banner" role="alert">
+          <span className="turn-notice-icon" aria-hidden="true">
+            <Info size={14} />
           </span>
-          <span className="assistant-turn-bug-copy">
+          <span className="turn-notice-copy">
             <strong>回复异常</strong>
             <span>{display.bugMessage}</span>
           </span>
@@ -8132,7 +8181,7 @@ function ThreadItemView({
     case "collab_agent_tool_call":
       return <ToolActivityRow items={[item]} />;
     case "context_compaction":
-      return <div className="system-line">{item.text}</div>;
+      return <ContextCompactionNotice text={item.text} />;
     case "error":
       return (
         <TurnNotice display={userFacingErrorForMessage(item.error, "turn")} onAction={onNoticeAction} />

@@ -13,7 +13,7 @@
  * the turn has exactly one final_answer and the turn shape is normal.
  *
  * Buggy turn shape: a completed turn that has the wrong number of
- * final_answers gets an orange border + warning banner. Pure-tool
+ * final_answers gets a compact warning notice. Pure-tool
  * turns (no text at all) are allowed to complete without a final
  * answer, so they're not a bug. Multi-final_answer turns are always
  * a bug — there's no single primary reply.

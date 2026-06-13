@@ -19,7 +19,7 @@ export type AssistantTurnDisplay = {
   finalAnswerItems: AssistantTurnAnswerItem[];
   /**
    * True when the completed turn has a malformed reply shape and the
-   * shell should draw the warning border + banner.
+   * shell should show a compact warning notice.
    */
   isBuggy: boolean;
   bugMessage?: string;

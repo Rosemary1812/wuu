@@ -72,51 +72,18 @@
 }
 
 /* Bug visual: a completed turn with the wrong reply shape (no
-   final_answer with text, or multiple final_answers). The border
-   uses the same warning tone as turn-notice.warning, the banner
-   carries an explicit "reply shape wrong" message. We never fake a
-   normal state when the data doesn't support it. */
+   final_answer with text, or multiple final_answers). The reply keeps
+   its normal layout; the anomaly is called out with the same compact
+   status-line system used for errors and other turn notices. */
 .assistant-turn-shell.bug-turn {
-  padding: 16px;
-  border: 1px solid var(--turn-warning-border);
-  border-radius: 8px;
-  background: var(--turn-warning-bg);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .assistant-turn-bug-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
   margin-top: var(--conversation-process-gap);
-  color: var(--turn-warning-text);
-  font-size: var(--font-ui);
-  line-height: 1.45;
-}
-
-.assistant-turn-bug-icon {
-  display: grid;
-  width: 18px;
-  height: 20px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: currentColor;
-}
-
-.assistant-turn-bug-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.assistant-turn-bug-copy strong {
-  color: var(--turn-warning-text-strong);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-}
-
-.assistant-turn-bug-copy span {
-  color: inherit;
-  font-size: var(--font-ui);
 }
 
 .message {
@@ -3108,11 +3075,11 @@ pre {
  * states from competing with the conversation itself.
  *
  * Three sibling elements share the same base:
- *   - .turn-notice   → status/terminal/error tone banners
+ *   - .turn-notice   → warning/error/context status lines
  *   - .turn-error    → legacy hard-error (kept for back-compat with
  *                       anything that still emits raw .turn-error)
- *   - .system-line   → in-flow editorial line (context compaction,
- *                       system notes). No fill, no border — it sits in
+ *   - .system-line   → in-flow editorial line for minor system notes.
+ *                       No fill, no border — it sits in
  *                       the prose as if it were written by the author.
  */
 
@@ -3179,7 +3146,7 @@ pre {
   column-gap: 10px;
   align-items: start;
   color: #6e7478;
-  max-width: 580px;
+  max-width: min(720px, 100%);
 }
 
 .turn-notice-icon {
@@ -3226,6 +3193,15 @@ pre {
 
 .turn-notice.error {
   color: #b42318;
+}
+
+.turn-notice.context-compaction-notice {
+  color: #7b8186;
+  border-left-color: #c8cbc6;
+}
+
+.turn-notice.context-compaction-notice .turn-notice-copy strong {
+  color: #3b4045;
 }
 
 /*
