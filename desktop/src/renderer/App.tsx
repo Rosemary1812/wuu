@@ -217,6 +217,7 @@ import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
 import { SkillsCatalog } from "./SkillsCatalog";
 import { StreamingMarkdown } from "./StreamingMarkdown";
+import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import {
   streamTextKey,
   streamTextStore,
@@ -374,7 +375,6 @@ const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
 const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
 const WORKSPACE_RIGHT_PANEL_STEP = 32;
 const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
-const WORKSPACE_BROWSER_HOME_URL = "wuu://new-tab";
 const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
@@ -626,14 +626,6 @@ export function App(): JSX.Element {
   const managedProcessRefreshTimerRef = useRef<number | undefined>(undefined);
   const managedProcessRefreshInFlightRef = useRef(false);
   const managedProcessRefreshQueuedRef = useRef(false);
-  // The right panel has one browser renderer, but each thread owns its own
-  // browser URL and preview auto-open marker.
-  const activeBrowserThreadIDRef = useRef<string | undefined>(undefined);
-  const browserURLByThreadRef = useRef(new Map<string, string>());
-  const lastAutoNavigatedBrowserURLByThreadRef = useRef(new Map<string, string>());
-  const [pendingBrowserURL, setPendingBrowserURL] = useState<
-    string | undefined
-  >(undefined);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
@@ -670,6 +662,16 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const {
+    pendingBrowserURL,
+    consumePendingBrowserURL,
+    openBrowserURL,
+    rememberBrowserURLForActiveThread,
+  } = useThreadBrowserPreview({
+    activeThread,
+    activeThreadID,
+    onOpenBrowser: () => openWorkspaceTool("browser"),
+  });
   const activePlanUpdate = latestPlanUpdateForThread(activeThread);
   const activeContextKey = state.activeContext
     ? runtimeContextKey(state.activeContext)
@@ -737,70 +739,6 @@ export function App(): JSX.Element {
       cancelQueryHistoryClose();
     };
   }, []);
-
-  function primaryBrowserURLForThread(thread: Thread | undefined): string | undefined {
-    const browserStateURL = thread?.browser_state?.primary_preview_url?.trim();
-    if (browserStateURL) {
-      return browserStateURL;
-    }
-    const ports = thread?.listening_ports;
-    return ports && ports.length > 0 ? `http://localhost:${ports[0]}` : undefined;
-  }
-
-  function restoreBrowserURLForThread(thread: Thread | undefined): string {
-    if (!thread) {
-      return WORKSPACE_BROWSER_HOME_URL;
-    }
-    return (
-      browserURLByThreadRef.current.get(thread.id) ||
-      thread.browser_state?.current_url?.trim() ||
-      primaryBrowserURLForThread(thread) ||
-      WORKSPACE_BROWSER_HOME_URL
-    );
-  }
-
-  function rememberBrowserURLForActiveThread(url: string): void {
-    if (!activeThreadID) {
-      return;
-    }
-    if (!url || url === WORKSPACE_BROWSER_HOME_URL) {
-      browserURLByThreadRef.current.delete(activeThreadID);
-      return;
-    }
-    browserURLByThreadRef.current.set(activeThreadID, url);
-  }
-
-  // Switching sessions restores that session's browser URL without forcing the
-  // right panel open. A new preview URL reported by the already-active session
-  // still auto-opens the browser once.
-  useEffect(() => {
-    if (!activeThreadID) {
-      activeBrowserThreadIDRef.current = undefined;
-      setPendingBrowserURL(WORKSPACE_BROWSER_HOME_URL);
-      return;
-    }
-    const previewURL = primaryBrowserURLForThread(activeThread);
-    const switchedThread = activeBrowserThreadIDRef.current !== activeThreadID;
-    if (switchedThread) {
-      activeBrowserThreadIDRef.current = activeThreadID;
-      if (previewURL) {
-        lastAutoNavigatedBrowserURLByThreadRef.current.set(activeThreadID, previewURL);
-      }
-      setPendingBrowserURL(restoreBrowserURLForThread(activeThread));
-      return;
-    }
-    if (!previewURL || lastAutoNavigatedBrowserURLByThreadRef.current.get(activeThreadID) === previewURL) {
-      return;
-    }
-    lastAutoNavigatedBrowserURLByThreadRef.current.set(activeThreadID, previewURL);
-    openWorkspaceTool("browser");
-    setPendingBrowserURL(previewURL);
-  }, [
-    activeThreadID,
-    activeThread?.browser_state?.current_url,
-    activeThread?.browser_state?.primary_preview_url,
-    activeThread?.listening_ports,
-  ]);
 
   useEffect(() => {
     return () => {
@@ -3234,8 +3172,7 @@ export function App(): JSX.Element {
     if (!target) {
       return;
     }
-    openWorkspaceTool("browser");
-    setPendingBrowserURL(target);
+    openBrowserURL(target);
     setEnvironmentPanelOpen(false);
     setEnvironmentPanelDismissed(true);
     setEnvironmentPanelMenu(null);
@@ -5766,7 +5703,7 @@ export function App(): JSX.Element {
         onOpenFile={openWorkspaceFile}
         onClose={() => setRightPanelOpenWithMotion(false)}
         pendingBrowserURL={pendingBrowserURL}
-        onBrowserURLConsumed={() => setPendingBrowserURL(undefined)}
+        onBrowserURLConsumed={consumePendingBrowserURL}
         onBrowserURLChange={rememberBrowserURLForActiveThread}
       />
       {environmentDialog === "commit" ? (
