@@ -4,19 +4,19 @@
  * The assistant turn renders into two distinct regions:
  *   - front content ("过程"区): reasoning, tool calls, context compaction,
  *     and commentary. Carries the work the model did.
- *   - body ("正文"区): the user-facing reply. Carries the final_answer
- *     items in chronological order.
+ *   - body ("正文"区): the user-facing reply. Carries the latest
+ *     final_answer when the turn has more than one.
  *
  * Commentary renders in the front using the same visual style as
  * final_answer — the two are distinguished by structural position, not
  * by decoration. A thin divider is drawn between the two regions when
  * the turn has exactly one final_answer and the turn shape is normal.
  *
- * Buggy turn shape: a completed turn that has the wrong number of
- * final_answers gets a compact warning notice. Pure-tool
- * turns (no text at all) are allowed to complete without a final
- * answer, so they're not a bug. Multi-final_answer turns are always
- * a bug — there's no single primary reply.
+ * Empty reply: a completed turn that produced commentary but no
+ * final_answer gets a compact "没有生成回复" notice. Pure-tool turns
+ * (no text at all) are allowed to complete without a final answer.
+ * Multi-final_answer turns show the latest final reply instead of
+ * exposing an internal structure issue to the user.
  *
  * Fold header: the front is always default-collapsed. The header
  * alone (status row + optional commentary preview row) is enough
@@ -28,7 +28,7 @@
  *
  * These tests exercise `buildAssistantTurnDisplay`, the pure
  * function that decides which items go to front vs body, whether the
- * turn is buggy, what the front's default collapse state should be,
+ * turn needs an empty-reply notice, what the front's default collapse state should be,
  * and what the commentary preview text is. The render layer
  * (`AssistantTurnShell`) maps that display object directly to the
  * DOM, so verifying the function output verifies the layout.
@@ -157,7 +157,7 @@ function bodyItemIDs(display: ReturnType<typeof buildAssistantTurnDisplay>): str
 }
 
 describe("assistant turn front / body layout", () => {
-  it("normal: commentary + tool_call + commentary + final_answer → front collapsed, body shown, divider drawn, not buggy", () => {
+  it("normal: commentary + tool_call + commentary + final_answer → front collapsed, body shown, divider drawn", () => {
     const commentaryA = makeCommentary("Let me look that up.");
     const tool = makeToolCall("read_file");
     const commentaryB = makeCommentary("Got it. The file says...");
@@ -175,16 +175,15 @@ describe("assistant turn front / body layout", () => {
     expect(timelineItemIDs(display)).toEqual([tool.id]);
     // Body carries the single final_answer.
     expect(bodyItemIDs(display)).toEqual([final.id]);
-    // Normal case: divider is drawn between front and body, no bug
-    // visual, and the front defaults to collapsed so the user sees
+    // Normal case: divider is drawn between front and body, no empty
+    // reply notice, and the front defaults to collapsed so the user sees
     // the answer first.
     expect(display?.showDivider).toBe(true);
-    expect(display?.isBuggy).toBe(false);
-    expect(display?.bugMessage).toBeUndefined();
+    expect(display?.missingReplyMessage).toBeUndefined();
     expect(display?.frontDefaultCollapsed).toBe(true);
   });
 
-  it("missing final: commentary + tool_call + commentary, no final_answer → front collapsed, orange border + 'no final reply' banner", () => {
+  it("missing final: commentary + tool_call + commentary, no final_answer → front collapsed, empty-reply notice", () => {
     const commentaryA = makeCommentary("Let me check.");
     const tool = makeToolCall("ls");
     const commentaryB = makeCommentary("Found something.");
@@ -199,17 +198,17 @@ describe("assistant turn front / body layout", () => {
     expect(frontItemIDs(display)).toEqual([commentaryA.id, commentaryB.id]);
     expect(timelineItemIDs(display)).toEqual([tool.id]);
     // The turn started talking (commentary present) but never produced
-    // a final answer → bug, no divider. Front stays default-collapsed;
-    // the orange border + banner is the "look at me" signal.
-    expect(display?.isBuggy).toBe(true);
-    expect(display?.bugMessage).toBe("这次请求没有产生最终回复");
+    // a final answer → show a user-facing empty reply outcome.
+    expect(display?.missingReplyMessage).toBe(
+      "这轮只保留了过程记录，没有生成最终回答。",
+    );
     expect(display?.showDivider).toBe(false);
     expect(display?.frontDefaultCollapsed).toBe(true);
     // Completed turn → no live commentary preview.
     expect(display?.latestCommentaryPreview).toBeUndefined();
   });
 
-  it("multi final: commentary + final_answer_1 + commentary + final_answer_2 → front collapsed, both final_answers in body, orange border + 'multiple final replies' banner", () => {
+  it("multi final: commentary + final_answer_1 + commentary + final_answer_2 → body shows latest final reply", () => {
     const commentaryA = makeCommentary("First thought.");
     const finalOne = makeFinalAnswer("First answer.");
     const commentaryB = makeCommentary("Second thought.");
@@ -223,13 +222,12 @@ describe("assistant turn front / body layout", () => {
     expect(display).toBeDefined();
     // Front carries the two commentary items in arrival order.
     expect(frontItemIDs(display)).toEqual([commentaryA.id, commentaryB.id]);
-    // Body carries BOTH final_answers, in chronological order — there
-    // is no single primary to anchor a divider under, so the shell
-    // skips the divider and surfaces a bug banner instead.
-    expect(bodyItemIDs(display)).toEqual([finalOne.id, finalTwo.id]);
-    expect(display?.isBuggy).toBe(true);
-    expect(display?.bugMessage).toBe("这次请求产生了多个最终回复");
-    expect(display?.showDivider).toBe(false);
+    // Body carries the latest final_answer. Earlier duplicate finals
+    // are treated as an internal stream shape issue, not a user-facing
+    // warning state.
+    expect(bodyItemIDs(display)).toEqual([finalTwo.id]);
+    expect(display?.missingReplyMessage).toBeUndefined();
+    expect(display?.showDivider).toBe(true);
     expect(display?.frontDefaultCollapsed).toBe(true);
     // Completed turn → no live commentary preview.
     expect(display?.latestCommentaryPreview).toBeUndefined();
@@ -258,7 +256,7 @@ describe("assistant turn front / body layout", () => {
     expect(inProgressDisplay?.frontEntries).toHaveLength(1);
     expect(inProgressDisplay?.frontEntries[0]?.count).toBe(2);
     expect(timelineItemIDs(inProgressDisplay)).toEqual([toolA.id]);
-    expect(inProgressDisplay?.isBuggy).toBe(false);
+    expect(inProgressDisplay?.missingReplyMessage).toBeUndefined();
     expect(inProgressDisplay?.showDivider).toBe(false);
     expect(inProgressDisplay?.frontDefaultCollapsed).toBe(true);
     expect(inProgressDisplay?.latestCommentaryPreview).toBeUndefined();
@@ -282,7 +280,7 @@ describe("assistant turn front / body layout", () => {
     expect(completedDisplay?.frontEntries).toHaveLength(1);
     expect(completedDisplay?.frontEntries[0]?.count).toBe(2);
     expect(timelineItemIDs(completedDisplay)).toEqual([toolA.id]);
-    expect(completedDisplay?.isBuggy).toBe(false);
+    expect(completedDisplay?.missingReplyMessage).toBeUndefined();
     expect(completedDisplay?.showDivider).toBe(false);
     expect(completedDisplay?.frontDefaultCollapsed).toBe(true);
     expect(completedDisplay?.latestCommentaryPreview).toBeUndefined();

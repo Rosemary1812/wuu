@@ -71,18 +71,18 @@
   border: 0;
 }
 
-/* Bug visual: a completed turn with the wrong reply shape (no
-   final_answer with text, or multiple final_answers). The reply keeps
-   its normal layout; the anomaly is called out with the same compact
-   status-line system used for errors and other turn notices. */
-.assistant-turn-shell.bug-turn {
+/* Empty reply visual: a completed turn kept process records but did
+   not produce a final answer. The reply keeps its normal layout; the
+   outcome is called out with the same compact status-line system used
+   for errors and other turn notices. */
+.assistant-turn-shell.missing-reply-turn {
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.assistant-turn-bug-banner {
+.assistant-turn-missing-reply {
   margin-top: var(--conversation-process-gap);
 }
 

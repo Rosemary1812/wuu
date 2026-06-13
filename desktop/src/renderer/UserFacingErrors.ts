@@ -75,19 +75,16 @@ export function userFacingErrorForMessage(
         tone: "neutral",
         title: "已停止",
         detail: "这次请求已停止，可以继续发送消息。",
-        recommendedActions: [
-          { kind: "retry", label: "重新发送", variant: "primary" },
-        ],
+        recommendedActions: [],
       };
     case "network":
       return {
         category,
         tone: "error",
         title: "连接暂时不可用",
-        detail: "没有完成这次请求。可以重试，或换一个 provider 继续。",
+        detail: "没有完成这次请求。可以稍后再发，或检查当前 provider 状态。",
         recommendedActions: [
-          { kind: "retry", label: "重试", variant: "primary" },
-          { kind: "switchModel", label: "切换备用 provider", variant: "secondary" },
+          { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
         ],
       };
     case "auth":
@@ -97,8 +94,7 @@ export function userFacingErrorForMessage(
         title: "需要重新登录或检查权限",
         detail: "当前凭据或权限不足，处理没有完成。",
         recommendedActions: [
-          { kind: "reauth", label: "重新连接", variant: "primary" },
-          { kind: "openSettings", label: "查看设置", variant: "secondary", payload: { focus: "providers" } },
+          { kind: "openSettings", label: "查看设置", variant: "primary", payload: { focus: "providers" } },
         ],
       };
     case "provider":
@@ -107,10 +103,9 @@ export function userFacingErrorForMessage(
         tone: "error",
         title: "模型没有完成请求",
         detail:
-          "可能是上下文超出窗口或被限流。可以压缩上下文，或换一个模型。",
+          "可能是上下文超出窗口、模型限流或上游中断。",
         recommendedActions: [
-          { kind: "compactContext", label: "压缩上下文", variant: "primary" },
-          { kind: "switchModel", label: "切换模型", variant: "secondary" },
+          { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
         ],
       };
     case "tool":
@@ -120,7 +115,6 @@ export function userFacingErrorForMessage(
         title: "工具调用失败",
         detail: "某个工具没有完成。原始错误已留在调试信息中。",
         recommendedActions: [
-          { kind: "retry", label: "重试这个工具", variant: "primary" },
           { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
         ],
       };
@@ -131,7 +125,7 @@ export function userFacingErrorForMessage(
         title: "本地操作失败",
         detail: "无法完成本地文件、命令或权限相关操作。",
         recommendedActions: [
-          { kind: "openSettings", label: "查看权限设置", variant: "secondary", payload: { focus: "workspace" } },
+          { kind: "openSettings", label: "查看权限设置", variant: "primary", payload: { focus: "workspace" } },
         ],
       };
     case "internal":
@@ -140,11 +134,9 @@ export function userFacingErrorForMessage(
         category: "internal",
         tone: "error",
         title: "wuu 遇到内部错误",
-        detail: "可以重试一次；如果反复出现，把调试信息反馈给我们。",
+        detail: "没有完成这次请求。调试信息可用于排查。",
         recommendedActions: [
-          { kind: "retry", label: "重试", variant: "primary" },
           { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
-          { kind: "submitFeedback", label: "提交反馈", variant: "secondary" },
         ],
       };
   }

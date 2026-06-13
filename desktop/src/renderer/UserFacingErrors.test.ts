@@ -13,51 +13,43 @@ describe("userFacingErrorForMessage", () => {
   });
 
   describe("recommendedActions", () => {
-    it("network error offers retry + provider switch", () => {
+    it("network error offers only currently wired debug action", () => {
       const display = userFacingErrorForMessage(
         "connection reset by peer",
         "turn",
       );
       const kinds = display.recommendedActions.map((a) => a.kind);
-      expect(kinds).toContain("retry");
-      expect(kinds).toContain("switchModel");
-      // Primary action must come first — UI relies on this order.
-      expect(display.recommendedActions[0]?.kind).toBe("retry");
-      expect(display.recommendedActions[0]?.variant).toBe("primary");
+      expect(kinds).toEqual(["copyDebug"]);
     });
 
-    it("auth error offers reauth + openSettings with focus payload", () => {
+    it("auth error offers settings because reconnect is not wired yet", () => {
       const display = userFacingErrorForMessage("401 unauthorized", "turn");
       const settingsAction = display.recommendedActions.find(
         (a) => a.kind === "openSettings",
       );
       expect(settingsAction).toBeDefined();
-      expect(settingsAction?.variant).toBe("secondary");
+      expect(settingsAction?.variant).toBe("primary");
       expect(settingsAction?.payload).toEqual({ focus: "providers" });
     });
 
-    it("provider context overflow offers compactContext + switchModel", () => {
+    it("provider context overflow offers only currently wired debug action", () => {
       const display = userFacingErrorForMessage(
         "context_length_exceeded: too many tokens",
         "turn",
       );
       const kinds = display.recommendedActions.map((a) => a.kind);
-      expect(kinds).toContain("compactContext");
-      expect(kinds).toContain("switchModel");
+      expect(kinds).toEqual(["copyDebug"]);
     });
 
-    it("internal error offers retry + copyDebug + submitFeedback", () => {
+    it("internal error offers only currently wired debug action", () => {
       const display = userFacingErrorForMessage("panic: nil pointer", "turn");
       const kinds = display.recommendedActions.map((a) => a.kind);
-      expect(kinds).toContain("retry");
-      expect(kinds).toContain("copyDebug");
-      expect(kinds).toContain("submitFeedback");
+      expect(kinds).toEqual(["copyDebug"]);
     });
 
-    it("cancelled error offers a single retry action", () => {
+    it("cancelled error has no action until retry is wired", () => {
       const display = userFacingErrorForMessage("context canceled", "turn");
-      expect(display.recommendedActions).toHaveLength(1);
-      expect(display.recommendedActions[0]?.kind).toBe("retry");
+      expect(display.recommendedActions).toHaveLength(0);
     });
 
     it("every action has a non-empty label", () => {

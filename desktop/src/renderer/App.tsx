@@ -5093,9 +5093,9 @@ export function App(): JSX.Element {
    * where we decide what each one DOES. New action kinds go here; the
    * data layer does not need to know.
    *
-   * Most actions are still TODO because they need their own UI hooks
-   * (model picker, OAuth flow, feedback dialog). openSettings and
-   * copyDebug are wired because the existing surfaces are sufficient.
+   * Only actions with an existing, real UI path should be emitted by
+   * UserFacingErrors.ts. Future actions still route through this table
+   * when their corresponding UI surfaces land.
    */
   function handleNoticeAction(action: UserFacingErrorAction): void {
     switch (action.kind) {
@@ -5124,11 +5124,6 @@ export function App(): JSX.Element {
         });
         return;
       }
-      // TODO(wuu): wire these up as the corresponding UI surfaces
-      // (model picker, OAuth re-auth dialog, context-compact action,
-      // feedback submission flow) land. The data layer is already
-      // emitting the right actions; the dispatch table is the only
-      // thing left.
       case "retry":
       case "switchModel":
       case "compactContext":
@@ -7653,7 +7648,7 @@ function AssistantTurnShell({
     "assistant-turn-shell",
     hasFront ? " has-front" : "",
     hasBody ? " has-body" : "",
-    display.isBuggy ? " bug-turn" : "",
+    display.missingReplyMessage ? " missing-reply-turn" : "",
   ]
     .filter(Boolean)
     .join("");
@@ -7677,14 +7672,14 @@ function AssistantTurnShell({
           <Fragment key={answer.item.id}>{answer.element}</Fragment>
         ))}
       </div>
-      {display.isBuggy && display.bugMessage ? (
-        <aside className="turn-notice warning assistant-turn-bug-banner" role="alert">
+      {display.missingReplyMessage ? (
+        <aside className="turn-notice warning assistant-turn-missing-reply" role="status">
           <span className="turn-notice-icon" aria-hidden="true">
             <Info size={14} />
           </span>
           <span className="turn-notice-copy">
-            <strong>回复异常</strong>
-            <span>{display.bugMessage}</span>
+            <strong>没有生成回复</strong>
+            <span>{display.missingReplyMessage}</span>
           </span>
         </aside>
       ) : null}

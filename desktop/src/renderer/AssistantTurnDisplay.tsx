@@ -12,17 +12,15 @@ export type AssistantTurnDisplay = {
    */
   frontEntries: TurnProcessEntry[];
   /**
-   * Body: the user-facing reply. One entry per final_answer item in
-   * the turn, in chronological order. Empty when the turn produced no
-   * final answer.
+   * Body: the user-facing reply. If a malformed turn contains multiple
+   * final answers, the UI shows the latest one as the reply.
    */
   finalAnswerItems: AssistantTurnAnswerItem[];
   /**
-   * True when the completed turn has a malformed reply shape and the
-   * shell should show a compact warning notice.
+   * Present when a completed turn produced process text but no final
+   * answer. This is a user-facing outcome, not an internal bug label.
    */
-  isBuggy: boolean;
-  bugMessage?: string;
+  missingReplyMessage?: string;
   /**
    * True only when there is exactly one final_answer and the turn is
    * completed. The shell draws a thin horizontal divider between the
@@ -163,28 +161,25 @@ export function buildAssistantTurnDisplay(
     return undefined;
   }
 
-  const finalCount = finalAnswerItems.length;
+  const userFacingFinalAnswerItems =
+    finalAnswerItems.length > 1
+      ? [finalAnswerItems[finalAnswerItems.length - 1]!]
+      : finalAnswerItems;
+  const finalCount = userFacingFinalAnswerItems.length;
   const isInProgress = turn.status === "in_progress";
   const isCompleted = turn.status === "completed";
 
-  let isBuggy = false;
-  let bugMessage: string | undefined;
-  if (isCompleted) {
-    if (finalCount === 0) {
-      const hasCommentary = turn.items.some(
-        (item) => item.type === "agent_message" && item.phase === "commentary",
-      );
-      if (hasCommentary) {
-        isBuggy = true;
-        bugMessage = "这次请求没有产生最终回复";
-      }
-    } else if (finalCount > 1) {
-      isBuggy = true;
-      bugMessage = "这次请求产生了多个最终回复";
+  let missingReplyMessage: string | undefined;
+  if (isCompleted && finalAnswerItems.length === 0) {
+    const hasCommentary = turn.items.some(
+      (item) => item.type === "agent_message" && item.phase === "commentary",
+    );
+    if (hasCommentary) {
+      missingReplyMessage = "这轮只保留了过程记录，没有生成最终回答。";
     }
   }
 
-  const showDivider = isCompleted && finalCount === 1 && !isBuggy;
+  const showDivider = isCompleted && finalCount === 1 && !missingReplyMessage;
   const frontDefaultCollapsed = true;
 
   let latestCommentaryPreview: string | undefined;
@@ -215,9 +210,8 @@ export function buildAssistantTurnDisplay(
 
   return {
     frontEntries,
-    finalAnswerItems,
-    isBuggy,
-    bugMessage,
+    finalAnswerItems: userFacingFinalAnswerItems,
+    missingReplyMessage,
     showDivider,
     frontDefaultCollapsed,
     latestCommentaryPreview,
