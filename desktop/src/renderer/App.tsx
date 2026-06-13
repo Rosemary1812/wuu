@@ -2,32 +2,22 @@
 
 import {
   AlertCircle,
-  Archive,
   Bug,
   ChevronRight,
-  CornerDownRight,
-  Clock,
-  FileText,
   Film,
   Folder,
   FolderX,
-  FolderOpen,
-  FolderPlus,
   GitBranch,
   Grid3X3,
   Image as ImageIcon,
   Info,
   Laptop,
   ListChecks,
-  List as ListIcon,
-  MessageSquarePlus,
   MoreHorizontal,
   Pencil,
   Pin,
   Plus,
-  Search,
   Send,
-  Settings,
   Terminal,
   Trash2,
   Wrench,
@@ -99,6 +89,7 @@ import {
 import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
 import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationSearch } from "./ConversationSearchState";
+import { AppSidebar } from "./AppSidebar";
 import {
   EnvironmentPanel,
   backgroundProcessIsLive,
@@ -214,7 +205,6 @@ import {
   upsertTurnItemInOrder,
 } from "./TurnOrdering";
 import { sortChildAgents } from "./ThreadAgents";
-import { PinnedThreadList, ProjectList } from "./ThreadSidebar";
 import {
   rawErrorMessage,
   statusMessageForError,
@@ -4732,181 +4722,48 @@ export function App(): JSX.Element {
     ) : null;
   return (
     <div className={shellClassName} style={shellStyle}>
-      <aside className="sidebar">
-        <div className="sidebar-content">
-          <div className="traffic-spacer" />
-          <nav className="primary-nav" aria-label="主导航">
-            <button
-              className="nav-item"
-              onClick={() => void startNewThread()}
-              disabled={!state.activeContext}
-            >
-              <MessageSquarePlus size={18} />
-              <span>新对话</span>
-            </button>
-            <button
-              className="nav-item"
-              onClick={openSkillsTab}
-              disabled={!state.activeContext}
-            >
-              <Wrench size={18} />
-              <span>Skills</span>
-            </button>
-            <button
-              className="nav-item conversation-search-trigger"
-              type="button"
-              aria-haspopup="dialog"
-              aria-expanded={conversationSearch.open}
-              onClick={toggleConversationSearch}
-              disabled={!state.activeContext}
-            >
-              <Search size={18} />
-              <span>搜索会话</span>
-            </button>
-            {debugControlsVisible && ENABLE_CONVERSATION_FIXTURES ? (
-              <div className="dev-fixture-nav" aria-label="开发调试会话">
-                <div className="dev-fixture-label">开发样例</div>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={() => seedConversationFixture("long")}
-                  disabled={!state.activeContext || !state.initialized}
-                >
-                  <FileText size={17} />
-                  <span>长对话</span>
-                </button>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={() => seedConversationFixture("rich")}
-                  disabled={!state.activeContext || !state.initialized}
-                >
-                  <ListIcon size={17} />
-                  <span>富内容</span>
-                </button>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={() => seedConversationFixture("running")}
-                  disabled={!state.activeContext || !state.initialized}
-                >
-                  <Clock size={17} />
-                  <span>运行中</span>
-                </button>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={() => seedConversationFixture("compact")}
-                  disabled={!state.activeContext || !state.initialized}
-                >
-                  <Archive size={17} />
-                  <span>上下文压缩</span>
-                </button>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={seedAgentTreeDemo}
-                  disabled={!state.activeContext || !state.initialized}
-                >
-                  <CornerDownRight size={17} />
-                  <span>子任务</span>
-                </button>
-              </div>
-            ) : null}
-          </nav>
-
-          {sidebarPinnedThreads.length > 0 ? (
-            <section className="pinned-thread-section" aria-label="置顶">
-              <div className="section-label pinned-thread-label">置顶</div>
-              <PinnedThreadList
-                threads={sidebarPinnedThreads}
-                activeID={activeThreadID}
-                pendingThreadID={visiblePendingThreadID}
-                archiveConfirmThreadID={archiveConfirmThreadID}
-                onSelect={(id) => void selectThread(id)}
-                onSelectChildAgent={(agent) => void selectChildAgent(agent)}
-                onTogglePinned={(thread) => void toggleThreadPinned(thread)}
-                onArchive={(thread) => void archiveThread(thread)}
-                onClearArchiveConfirm={(id) =>
-                  setArchiveConfirmThreadID((current) =>
-                    current === id ? undefined : current,
-                  )
-                }
-              />
-            </section>
-          ) : null}
-
-          <section className="project-list" aria-label="项目">
-            <div className="project-section-header" ref={projectMenuRef}>
-              <div className="section-label">项目</div>
-              <button
-                className="project-add-button"
-                aria-label="添加项目"
-                aria-haspopup="menu"
-                aria-expanded={projectMenuOpen}
-                onClick={() => setProjectMenuOpen((open) => !open)}
-              >
-                <FolderPlus size={20} />
-              </button>
-              {projectMenuOpen ? (
-                <div className="project-add-menu" role="menu">
-                  <button
-                    role="menuitem"
-                    onClick={() => void createBlankProject()}
-                  >
-                    <FolderPlus size={22} />
-                    <span>新建空白项目</span>
-                  </button>
-                  <button
-                    role="menuitem"
-                    onClick={() => void chooseProjectFolder()}
-                  >
-                    <FolderOpen size={22} />
-                    <span>使用现有文件夹</span>
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            {state.projects.length === 0 ? (
-              <div className="project-empty-note">还没有项目</div>
-            ) : null}
-            <ProjectList
-              projects={state.projects}
-              activeID={state.activeProjectId}
-              pendingProjectID={visiblePendingProjectID}
-              collapsedProjectIDs={collapsedProjectIDs}
-              collapsingProjectIDs={collapsingProjectIDs}
-              threads={state.threads}
-              activeThreadID={activeThreadID}
-              pendingThreadID={visiblePendingThreadID}
-              archiveConfirmThreadID={archiveConfirmThreadID}
-              onSelectProject={(id) => void openProject(id)}
-              onToggleProjectCollapsed={toggleProjectCollapsed}
-              onStartNewThread={(id) => void startNewThreadForProject(id)}
-              onSelectThread={(id) => void selectThread(id)}
-              onSelectChildAgent={(agent) => void selectChildAgent(agent)}
-              onToggleThreadPinned={(thread) => void toggleThreadPinned(thread)}
-              onArchiveThread={(thread) => void archiveThread(thread)}
-              onClearArchiveConfirm={(id) =>
-                setArchiveConfirmThreadID((current) =>
-                  current === id ? undefined : current,
-                )
-              }
-            />
-          </section>
-          <div className="sidebar-settings">
-            <button
-              className="settings-button"
-              type="button"
-              disabled={!state.initialized}
-              onClick={() => {
-                setProjectMenuOpen(false);
-                setRuntimeMenuOpen(false);
-                setCodexRuntimeMenu(null);
-                setSettingsOpen(true);
-              }}
-            >
-              <Settings size={18} />
-              <span>设置</span>
-            </button>
-          </div>
-        </div>
-      </aside>
+      <AppSidebar
+        state={state}
+        pinnedThreads={sidebarPinnedThreads}
+        activeThreadID={activeThreadID}
+        pendingThreadID={visiblePendingThreadID}
+        pendingProjectID={visiblePendingProjectID}
+        archiveConfirmThreadID={archiveConfirmThreadID}
+        collapsedProjectIDs={collapsedProjectIDs}
+        collapsingProjectIDs={collapsingProjectIDs}
+        projectMenuOpen={projectMenuOpen}
+        projectMenuRef={projectMenuRef}
+        searchOpen={conversationSearch.open}
+        debugFixturesVisible={
+          debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
+        }
+        onStartNewThread={() => void startNewThread()}
+        onOpenSkillsTab={openSkillsTab}
+        onToggleConversationSearch={toggleConversationSearch}
+        onSeedConversationFixture={seedConversationFixture}
+        onSeedAgentTreeDemo={seedAgentTreeDemo}
+        onSelectThread={(id) => void selectThread(id)}
+        onSelectChildAgent={(agent) => void selectChildAgent(agent)}
+        onTogglePinned={(thread) => void toggleThreadPinned(thread)}
+        onArchiveThread={(thread) => void archiveThread(thread)}
+        onClearArchiveConfirm={(id) =>
+          setArchiveConfirmThreadID((current) =>
+            current === id ? undefined : current,
+          )
+        }
+        onToggleProjectMenu={() => setProjectMenuOpen((open) => !open)}
+        onCreateProject={() => void createBlankProject()}
+        onOpenProjectFolder={() => void chooseProjectFolder()}
+        onOpenProject={(id) => void openProject(id)}
+        onToggleProjectCollapsed={toggleProjectCollapsed}
+        onStartNewThreadForProject={(id) => void startNewThreadForProject(id)}
+        onOpenSettings={() => {
+          setProjectMenuOpen(false);
+          setRuntimeMenuOpen(false);
+          setCodexRuntimeMenu(null);
+          setSettingsOpen(true);
+        }}
+      />
 
       {sidebarCollapsed ? null : (
         <div

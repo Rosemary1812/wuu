@@ -1,0 +1,242 @@
+import {
+  Archive,
+  Clock,
+  CornerDownRight,
+  FileText,
+  FolderOpen,
+  FolderPlus,
+  List as ListIcon,
+  MessageSquarePlus,
+  Search,
+  Settings,
+  Wrench,
+} from "lucide-react";
+import type { RefObject } from "react";
+import type { Agent, Thread } from "../shared/protocol";
+import type { AppState } from "./AppState";
+import type { ConversationFixtureKind } from "./ConversationFixtures";
+import { PinnedThreadList, ProjectList } from "./ThreadSidebar";
+
+export function AppSidebar({
+  state,
+  pinnedThreads,
+  activeThreadID,
+  pendingThreadID,
+  pendingProjectID,
+  archiveConfirmThreadID,
+  collapsedProjectIDs,
+  collapsingProjectIDs,
+  projectMenuOpen,
+  projectMenuRef,
+  searchOpen,
+  debugFixturesVisible,
+  onStartNewThread,
+  onOpenSkillsTab,
+  onToggleConversationSearch,
+  onSeedConversationFixture,
+  onSeedAgentTreeDemo,
+  onSelectThread,
+  onSelectChildAgent,
+  onTogglePinned,
+  onArchiveThread,
+  onClearArchiveConfirm,
+  onToggleProjectMenu,
+  onCreateProject,
+  onOpenProjectFolder,
+  onOpenProject,
+  onToggleProjectCollapsed,
+  onStartNewThreadForProject,
+  onOpenSettings,
+}: {
+  state: AppState;
+  pinnedThreads: Thread[];
+  activeThreadID?: string;
+  pendingThreadID?: string;
+  pendingProjectID?: string;
+  archiveConfirmThreadID?: string;
+  collapsedProjectIDs: Set<string>;
+  collapsingProjectIDs: Set<string>;
+  projectMenuOpen: boolean;
+  projectMenuRef: RefObject<HTMLDivElement | null>;
+  searchOpen: boolean;
+  debugFixturesVisible: boolean;
+  onStartNewThread: () => void;
+  onOpenSkillsTab: () => void;
+  onToggleConversationSearch: () => void;
+  onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
+  onSeedAgentTreeDemo: () => void;
+  onSelectThread: (id: string) => void;
+  onSelectChildAgent: (agent: Agent) => void;
+  onTogglePinned: (thread: Thread) => void;
+  onArchiveThread: (thread: Thread) => void;
+  onClearArchiveConfirm: (threadID: string) => void;
+  onToggleProjectMenu: () => void;
+  onCreateProject: () => void;
+  onOpenProjectFolder: () => void;
+  onOpenProject: (id: string) => void;
+  onToggleProjectCollapsed: (id: string) => void;
+  onStartNewThreadForProject: (id: string) => void;
+  onOpenSettings: () => void;
+}): JSX.Element {
+  const hasRuntimeContext = Boolean(state.activeContext);
+  const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-content">
+        <div className="traffic-spacer" />
+        <nav className="primary-nav" aria-label="主导航">
+          <button
+            className="nav-item"
+            onClick={onStartNewThread}
+            disabled={!hasRuntimeContext}
+          >
+            <MessageSquarePlus size={18} />
+            <span>新对话</span>
+          </button>
+          <button
+            className="nav-item"
+            onClick={onOpenSkillsTab}
+            disabled={!hasRuntimeContext}
+          >
+            <Wrench size={18} />
+            <span>Skills</span>
+          </button>
+          <button
+            className="nav-item conversation-search-trigger"
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={searchOpen}
+            onClick={onToggleConversationSearch}
+            disabled={!hasRuntimeContext}
+          >
+            <Search size={18} />
+            <span>搜索会话</span>
+          </button>
+          {debugFixturesVisible ? (
+            <div className="dev-fixture-nav" aria-label="开发调试会话">
+              <div className="dev-fixture-label">开发样例</div>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => onSeedConversationFixture("long")}
+                disabled={!fixturesEnabled}
+              >
+                <FileText size={17} />
+                <span>长对话</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => onSeedConversationFixture("rich")}
+                disabled={!fixturesEnabled}
+              >
+                <ListIcon size={17} />
+                <span>富内容</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => onSeedConversationFixture("running")}
+                disabled={!fixturesEnabled}
+              >
+                <Clock size={17} />
+                <span>运行中</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => onSeedConversationFixture("compact")}
+                disabled={!fixturesEnabled}
+              >
+                <Archive size={17} />
+                <span>上下文压缩</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={onSeedAgentTreeDemo}
+                disabled={!fixturesEnabled}
+              >
+                <CornerDownRight size={17} />
+                <span>子任务</span>
+              </button>
+            </div>
+          ) : null}
+        </nav>
+
+        {pinnedThreads.length > 0 ? (
+          <section className="pinned-thread-section" aria-label="置顶">
+            <div className="section-label pinned-thread-label">置顶</div>
+            <PinnedThreadList
+              threads={pinnedThreads}
+              activeID={activeThreadID}
+              pendingThreadID={pendingThreadID}
+              archiveConfirmThreadID={archiveConfirmThreadID}
+              onSelect={onSelectThread}
+              onSelectChildAgent={onSelectChildAgent}
+              onTogglePinned={onTogglePinned}
+              onArchive={onArchiveThread}
+              onClearArchiveConfirm={onClearArchiveConfirm}
+            />
+          </section>
+        ) : null}
+
+        <section className="project-list" aria-label="项目">
+          <div className="project-section-header" ref={projectMenuRef}>
+            <div className="section-label">项目</div>
+            <button
+              className="project-add-button"
+              aria-label="添加项目"
+              aria-haspopup="menu"
+              aria-expanded={projectMenuOpen}
+              onClick={onToggleProjectMenu}
+            >
+              <FolderPlus size={20} />
+            </button>
+            {projectMenuOpen ? (
+              <div className="project-add-menu" role="menu">
+                <button role="menuitem" onClick={onCreateProject}>
+                  <FolderPlus size={22} />
+                  <span>新建空白项目</span>
+                </button>
+                <button role="menuitem" onClick={onOpenProjectFolder}>
+                  <FolderOpen size={22} />
+                  <span>使用现有文件夹</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {state.projects.length === 0 ? (
+            <div className="project-empty-note">还没有项目</div>
+          ) : null}
+          <ProjectList
+            projects={state.projects}
+            activeID={state.activeProjectId}
+            pendingProjectID={pendingProjectID}
+            collapsedProjectIDs={collapsedProjectIDs}
+            collapsingProjectIDs={collapsingProjectIDs}
+            threads={state.threads}
+            activeThreadID={activeThreadID}
+            pendingThreadID={pendingThreadID}
+            archiveConfirmThreadID={archiveConfirmThreadID}
+            onSelectProject={onOpenProject}
+            onToggleProjectCollapsed={onToggleProjectCollapsed}
+            onStartNewThread={onStartNewThreadForProject}
+            onSelectThread={onSelectThread}
+            onSelectChildAgent={onSelectChildAgent}
+            onToggleThreadPinned={onTogglePinned}
+            onArchiveThread={onArchiveThread}
+            onClearArchiveConfirm={onClearArchiveConfirm}
+          />
+        </section>
+        <div className="sidebar-settings">
+          <button
+            className="settings-button"
+            type="button"
+            disabled={!state.initialized}
+            onClick={onOpenSettings}
+          >
+            <Settings size={18} />
+            <span>设置</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
