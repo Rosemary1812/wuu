@@ -53,25 +53,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  closestCenter,
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragCancelEvent,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
-import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
-import {
-  arrayMove,
-  horizontalListSortingStrategy,
-  SortableContext,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { arrayMove } from "@dnd-kit/sortable";
 import type {
   Agent,
   AppServerNotification,
@@ -188,10 +170,8 @@ import {
   serverEventTargetsActiveContext,
   sessionTabForLoadedRuntime,
   sessionTabDraftForThread,
-  sessionTabLabel,
   setThreadForPane,
   sortThreads,
-  threadForTab,
   threadForPane,
   threadItemFromRecord,
   threadFromRecord,
@@ -234,6 +214,7 @@ import {
 } from "./RuntimeHelpers";
 import { SettingsView } from "./SettingsView";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
+import { SessionTabStrip } from "./SessionTabs";
 import { SkillsCatalog } from "./SkillsCatalog";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import {
@@ -606,12 +587,6 @@ export function App(): JSX.Element {
   const [debugControlsEnabled, setDebugControlsEnabled] = useState(
     initialDebugControlsEnabled,
   );
-  const [draggingSessionTabID, setDraggingSessionTabID] = useState<
-    string | undefined
-  >(undefined);
-  const [draggingSessionTabWidth, setDraggingSessionTabWidth] = useState<
-    number | undefined
-  >(undefined);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({
     primary: null,
@@ -687,9 +662,6 @@ export function App(): JSX.Element {
     effectiveSidebarWidth,
   );
   const debugControlsVisible = ENABLE_DEBUG_CONTROLS && debugControlsEnabled;
-  const sessionTabSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
   const currentSessionTab = activeSessionTab(state);
   const activeWorkspaceFile =
     currentSessionTab?.kind === "file" &&
@@ -2594,88 +2566,16 @@ export function App(): JSX.Element {
   }
 
   function renderSessionTabs(): JSX.Element {
-    const draggingTab = draggingSessionTabID
-      ? state.sessionTabs.find((tab) => tab.id === draggingSessionTabID)
-      : undefined;
     return (
-      <div className="session-tab-strip" aria-label="已打开的工作对象">
-        <DndContext
-          sensors={sessionTabSensors}
-          collisionDetection={closestCenter}
-          modifiers={[restrictToHorizontalAxis]}
-          onDragStart={startSessionTabDrag}
-          onDragEnd={endSessionTabDrag}
-          onDragCancel={cancelSessionTabDrag}
-        >
-          <SortableContext
-            items={state.sessionTabs.map((tab) => tab.id)}
-            strategy={horizontalListSortingStrategy}
-          >
-            <div className="session-tab-scroll">
-              {state.sessionTabs.map((tab) => {
-                const active = tab.id === state.activeSessionTabID;
-                const tabThread =
-                  tab.kind === "thread"
-                    ? threadForTab(state, tab.threadID)
-                    : undefined;
-                const running = isThreadRunning(tabThread);
-                const pendingSwitch =
-                  pendingViewSwitch?.visible &&
-                  pendingViewSwitch.kind === "thread" &&
-                  tab.kind === "thread"
-                    ? pendingViewSwitch.targetID === tab.threadID
-                    : false;
-                const label = sessionTabLabel(tab, state);
-                const closeLabel =
-                  tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
-                return (
-                  <SortableSessionTab
-                    key={tab.id}
-                    id={tab.id}
-                    active={active}
-                    running={running}
-                    pendingSwitch={pendingSwitch}
-                    label={label}
-                    closeLabel={closeLabel}
-                    reorderable={state.sessionTabs.length > 1}
-                    onSelect={() => void selectSessionTab(tab.id)}
-                    onClose={() => void closeSessionTab(tab.id)}
-                  />
-                );
-              })}
-            </div>
-          </SortableContext>
-          <DragOverlay
-            dropAnimation={{
-              duration: 150,
-              easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-            }}
-          >
-            {draggingTab ? (
-              <SessionTabDragPreview
-                active={draggingTab.id === state.activeSessionTabID}
-                label={sessionTabLabel(draggingTab, state)}
-                running={
-                  draggingTab.kind === "thread"
-                    ? isThreadRunning(threadForTab(state, draggingTab.threadID))
-                    : false
-                }
-                width={draggingSessionTabWidth}
-              />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-        <button
-          className="icon-button workspace-panel-add session-tab-new"
-          type="button"
-          aria-label="新建对话"
-          title="新建对话"
-          disabled={!state.activeContext}
-          onClick={() => void startNewThread()}
-        >
-          <Plus size={19} />
-        </button>
-      </div>
+      <SessionTabStrip
+        state={state}
+        pendingSwitchThreadID={visiblePendingThreadID}
+        canStartNewThread={Boolean(state.activeContext)}
+        onSelect={(tabID) => void selectSessionTab(tabID)}
+        onClose={(tabID) => void closeSessionTab(tabID)}
+        onNewThread={() => void startNewThread()}
+        onReorder={reorderSessionTabs}
+      />
     );
   }
 
@@ -2695,42 +2595,22 @@ export function App(): JSX.Element {
     );
   }
 
-  function startSessionTabDrag(event: DragStartEvent): void {
-    const tabID = String(event.active.id);
-    setDraggingSessionTabID(tabID);
-    setDraggingSessionTabWidth(event.active.rect.current.initial?.width);
-  }
-
-  function endSessionTabDrag(event: DragEndEvent): void {
-    const activeID = String(event.active.id);
-    const overID = event.over ? String(event.over.id) : undefined;
-    if (overID && activeID !== overID) {
-      setState((current) => {
-        const sourceIndex = current.sessionTabs.findIndex(
-          (tab) => tab.id === activeID,
-        );
-        const targetIndex = current.sessionTabs.findIndex(
-          (tab) => tab.id === overID,
-        );
-        if (sourceIndex < 0 || targetIndex < 0) {
-          return current;
-        }
-        return {
-          ...current,
-          sessionTabs: arrayMove(current.sessionTabs, sourceIndex, targetIndex),
-        };
-      });
-    }
-    finishSessionTabDrag();
-  }
-
-  function cancelSessionTabDrag(_event: DragCancelEvent): void {
-    finishSessionTabDrag();
-  }
-
-  function finishSessionTabDrag(): void {
-    setDraggingSessionTabID(undefined);
-    setDraggingSessionTabWidth(undefined);
+  function reorderSessionTabs(activeID: string, overID: string): void {
+    setState((current) => {
+      const sourceIndex = current.sessionTabs.findIndex(
+        (tab) => tab.id === activeID,
+      );
+      const targetIndex = current.sessionTabs.findIndex(
+        (tab) => tab.id === overID,
+      );
+      if (sourceIndex < 0 || targetIndex < 0) {
+        return current;
+      }
+      return {
+        ...current,
+        sessionTabs: arrayMove(current.sessionTabs, sourceIndex, targetIndex),
+      };
+    });
   }
 
   function clearViewSwitchDelay(): void {
@@ -6231,128 +6111,6 @@ function LiveSince({ atMs }: { atMs: number }): JSX.Element {
   return <span ref={nodeRef}>{formatDuration(Date.now() - atMs)} 前</span>;
 }
 
-
-type SortableSessionTabProps = {
-  id: string;
-  active: boolean;
-  running: boolean;
-  pendingSwitch: boolean;
-  label: string;
-  closeLabel: string;
-  reorderable: boolean;
-  onSelect: () => void;
-  onClose: () => void;
-};
-
-function SortableSessionTab({
-  id,
-  active,
-  running,
-  pendingSwitch,
-  label,
-  closeLabel,
-  reorderable,
-  onSelect,
-  onClose,
-}: SortableSessionTabProps): JSX.Element {
-  const {
-    attributes,
-    listeners,
-    setActivatorNodeRef,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id,
-    disabled: !reorderable,
-  });
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      className={`session-tab${active ? " active" : ""}${running ? " running" : ""}${
-        pendingSwitch ? " pending-switch" : ""
-      }${reorderable ? " can-reorder" : ""}${isDragging ? " dragging" : ""}`}
-      style={style}
-      aria-grabbed={isDragging || undefined}
-    >
-      <button
-        ref={setActivatorNodeRef}
-        className="session-tab-main"
-        type="button"
-        aria-current={active ? "page" : undefined}
-        aria-busy={pendingSwitch}
-        title={label}
-        onClick={onSelect}
-        {...attributes}
-        {...listeners}
-      >
-        <span className="session-tab-status" aria-hidden="true" />
-        <span className="session-tab-title">{label}</span>
-      </button>
-      <button
-        className="session-tab-close"
-        type="button"
-        draggable={false}
-        aria-label={closeLabel}
-        title={closeLabel}
-        onClick={(event) => {
-          event.stopPropagation();
-          onClose();
-        }}
-      >
-        <X size={13} />
-      </button>
-    </div>
-  );
-}
-
-function SessionTabDragPreview({
-  active,
-  running,
-  label,
-  width,
-}: {
-  active: boolean;
-  running: boolean;
-  label: string;
-  width?: number;
-}): JSX.Element {
-  return (
-    <div
-      className={`session-tab session-tab-drag-overlay${active ? " active" : ""}${running ? " running" : ""}`}
-      style={width ? { width } : undefined}
-    >
-      <div className="session-tab-main">
-        <span className="session-tab-status" aria-hidden="true" />
-        <span className="session-tab-title">{label}</span>
-      </div>
-      <div className="session-tab-close" aria-hidden="true">
-        <X size={13} />
-      </div>
-    </div>
-  );
-}
-
-
-function mergeAgentSummary(current: Agent | undefined, incoming: Agent): Agent {
-  if (!current) {
-    return incoming;
-  }
-  return {
-    ...current,
-    ...incoming,
-    nested_count: incoming.nested_count ?? current.nested_count,
-    nested_running_count:
-      incoming.nested_running_count ?? current.nested_running_count,
-    started_at: incoming.started_at ?? current.started_at,
-    completed_at: incoming.completed_at ?? current.completed_at,
-  };
-}
 
 function turnNoticeDisplay(
   turn: Turn,
