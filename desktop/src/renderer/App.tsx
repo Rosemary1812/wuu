@@ -70,7 +70,6 @@ import type {
   ServerEvent,
   Thread,
   ThreadItem,
-  ThreadSearchResultItem,
   Turn,
 } from "../shared/protocol";
 import {
@@ -115,6 +114,7 @@ import {
   conversationSearchStatusText,
   conversationSearchVisibleSnippet,
 } from "./ConversationSearchDisplay";
+import { useConversationSearch } from "./ConversationSearchState";
 import {
   EnvironmentPanel,
   backgroundProcessIsLive,
@@ -273,7 +273,6 @@ const SIDEBAR_MOTION_MS = 280;
 const RIGHT_PANEL_MOTION_MS = 280;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
-const CONVERSATION_SEARCH_EXIT_MS = 180;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
 const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
 const CONVERSATION_GRID_COLUMNS = 12;
@@ -324,18 +323,6 @@ type RunDebugEventTone = "info" | "running" | "success" | "warning" | "error";
 
 type RunDebugPhaseTone = "idle" | "running" | "success" | "warning" | "error";
 
-type ConversationSearchState = {
-  open: boolean;
-  closing: boolean;
-  query: string;
-  loading: boolean;
-  error: string;
-  results: ThreadSearchResultItem[];
-  selectedIndex: number;
-};
-
-
-
 type RunDebugEvent = {
   id: number;
   at: number;
@@ -378,7 +365,6 @@ const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
 const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
-const CONVERSATION_SEARCH_RESULT_LIMIT = 40;
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
     env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
@@ -395,10 +381,6 @@ const ENABLE_RUN_DEBUG_PANEL = Boolean(
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
-
-function prefersReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 type SidebarResizeSession = {
   startX: number;
@@ -527,16 +509,6 @@ export function App(): JSX.Element {
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
-  const [conversationSearch, setConversationSearch] =
-    useState<ConversationSearchState>({
-      open: false,
-      closing: false,
-      query: "",
-      loading: false,
-      error: "",
-      results: [],
-      selectedIndex: 0,
-    });
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -633,12 +605,6 @@ export function App(): JSX.Element {
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const runDebugRef = useRef<HTMLDivElement>(null);
-  const conversationSearchRef = useRef<HTMLDivElement>(null);
-  const conversationSearchInputRef = useRef<HTMLInputElement>(null);
-  const conversationSearchRequestRef = useRef(0);
-  const conversationSearchCloseTimerRef = useRef<number | undefined>(
-    undefined,
-  );
   const appStateRef = useRef<AppState>(initialState);
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
@@ -662,6 +628,33 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const {
+    conversationSearch,
+    conversationSearchResults,
+    conversationSearchRef,
+    conversationSearchInputRef,
+    toggleConversationSearch,
+    closeConversationSearch,
+    refreshConversationSearchThreads,
+    selectConversationSearchResult,
+    handleConversationSearchKeyDown,
+    setConversationSearchQuery,
+    clearConversationSearchQuery,
+    setConversationSearchSelectedIndex,
+  } = useConversationSearch({
+    activeContext: state.activeContext,
+    getAppState: () => appStateRef.current,
+    setAppState: setState,
+    onOpen: () => {
+      setProjectMenuOpen(false);
+      setRuntimeMenuOpen(false);
+      setAccessMenuOpen(false);
+      setModeMenuOpen(false);
+      setBranchMenuOpen(false);
+      setCodexRuntimeMenu(null);
+    },
+    onSelectThread: (threadID) => void selectThread(threadID),
+  });
   const {
     pendingBrowserURL,
     consumePendingBrowserURL,
@@ -754,9 +747,6 @@ export function App(): JSX.Element {
       }
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
-      }
-      if (conversationSearchCloseTimerRef.current !== undefined) {
-        window.clearTimeout(conversationSearchCloseTimerRef.current);
       }
       clearViewSwitchDelay();
     };
@@ -1006,21 +996,6 @@ export function App(): JSX.Element {
     runtimeMenuOpen,
   ]);
 
-  useEffect(() => {
-    if (!conversationSearch.open || conversationSearch.closing) {
-      return undefined;
-    }
-    const delay = conversationSearch.query.trim() ? 140 : 0;
-    const timer = window.setTimeout(() => {
-      void refreshConversationSearchThreads(conversationSearch.query);
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [
-    conversationSearch.closing,
-    conversationSearch.open,
-    conversationSearch.query,
-  ]);
-
   useLayoutEffect(() => {
     conversationAutoFollowRef.current = true;
     scrollConversationToBottom({ force: true });
@@ -1245,7 +1220,6 @@ export function App(): JSX.Element {
   const showingWorkspaceMode =
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const sidebarPinnedThreads = pinnedThreads(state.threads);
-  const conversationSearchResults = conversationSearch.results;
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
       ? pendingViewSwitch.targetID
@@ -1711,178 +1685,6 @@ export function App(): JSX.Element {
       running: false,
       status: "ready",
     }));
-  }
-
-  function toggleConversationSearch(): void {
-    if (conversationSearch.open) {
-      closeConversationSearch();
-      return;
-    }
-    openConversationSearch();
-  }
-
-  function openConversationSearch(): void {
-    if (!state.activeContext) {
-      return;
-    }
-    if (conversationSearchCloseTimerRef.current !== undefined) {
-      window.clearTimeout(conversationSearchCloseTimerRef.current);
-      conversationSearchCloseTimerRef.current = undefined;
-    }
-    setProjectMenuOpen(false);
-    setRuntimeMenuOpen(false);
-    setAccessMenuOpen(false);
-    setModeMenuOpen(false);
-    setBranchMenuOpen(false);
-    setCodexRuntimeMenu(null);
-    setConversationSearch((current) => ({
-      ...current,
-      open: true,
-      closing: false,
-      loading: true,
-      error: "",
-      selectedIndex: 0,
-    }));
-    window.requestAnimationFrame(() => conversationSearchInputRef.current?.focus());
-  }
-
-  function closeConversationSearch(): void {
-    if (!conversationSearch.open && !conversationSearch.closing) {
-      return;
-    }
-    conversationSearchRequestRef.current += 1;
-    if (conversationSearchCloseTimerRef.current !== undefined) {
-      window.clearTimeout(conversationSearchCloseTimerRef.current);
-      conversationSearchCloseTimerRef.current = undefined;
-    }
-    const closeImmediately = prefersReducedMotion();
-    setConversationSearch((current) => ({
-      ...current,
-      open: false,
-      closing: !closeImmediately,
-      loading: false,
-      error: "",
-    }));
-    if (closeImmediately) {
-      return;
-    }
-    conversationSearchCloseTimerRef.current = window.setTimeout(() => {
-      conversationSearchCloseTimerRef.current = undefined;
-      setConversationSearch((current) =>
-        current.open ? current : { ...current, closing: false },
-      );
-    }, CONVERSATION_SEARCH_EXIT_MS);
-  }
-
-  async function refreshConversationSearchThreads(
-    query = conversationSearch.query,
-  ): Promise<void> {
-    const sourceContext = appStateRef.current.activeContext;
-    if (!sourceContext) {
-      return;
-    }
-    const requestID = conversationSearchRequestRef.current + 1;
-    conversationSearchRequestRef.current = requestID;
-    setConversationSearch((current) => ({
-      ...current,
-      loading: true,
-      error: "",
-    }));
-    try {
-      const search = await window.wuu.searchThreads(
-        query,
-        CONVERSATION_SEARCH_RESULT_LIMIT,
-      );
-      if (
-        requestID !== conversationSearchRequestRef.current ||
-        !sameRuntimeContext(sourceContext, appStateRef.current.activeContext)
-      ) {
-        return;
-      }
-      const threads = search.results.map((result) => result.thread);
-      setState((current) => ({
-        ...current,
-        threads: mergeListedThreads(current.threads, threads),
-      }));
-      setConversationSearch((current) => ({
-        ...current,
-        results: search.results,
-        loading: false,
-        error: "",
-        selectedIndex: Math.max(
-          0,
-          Math.min(current.selectedIndex, search.results.length - 1),
-        ),
-      }));
-    } catch (error) {
-      if (
-        requestID !== conversationSearchRequestRef.current ||
-        !sameRuntimeContext(sourceContext, appStateRef.current.activeContext)
-      ) {
-        return;
-      }
-      setConversationSearch((current) => ({
-        ...current,
-        loading: false,
-        error: error instanceof Error ? error.message : "搜索会话失败",
-      }));
-    }
-  }
-
-  function selectConversationSearchResult(result: ThreadSearchResultItem): void {
-    closeConversationSearch();
-    void selectThread(result.thread.id);
-  }
-
-  function handleConversationSearchKeyDown(
-    event: ReactKeyboardEvent<HTMLInputElement>,
-  ): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeConversationSearch();
-      return;
-    }
-    if (event.key === "ArrowDown" && conversationSearchResults.length > 0) {
-      event.preventDefault();
-      setConversationSearch((current) => ({
-        ...current,
-        selectedIndex: (current.selectedIndex + 1) % conversationSearchResults.length,
-      }));
-      return;
-    }
-    if (event.key === "ArrowUp" && conversationSearchResults.length > 0) {
-      event.preventDefault();
-      setConversationSearch((current) => ({
-        ...current,
-        selectedIndex:
-          (current.selectedIndex - 1 + conversationSearchResults.length) %
-          conversationSearchResults.length,
-      }));
-      return;
-    }
-    if (event.metaKey && /^[1-9]$/.test(event.key)) {
-      const index = Number(event.key) - 1;
-      const result = conversationSearchResults[index];
-      if (result) {
-        event.preventDefault();
-        selectConversationSearchResult(result);
-      }
-      return;
-    }
-    const selectedResult =
-      conversationSearchResults[
-        Math.max(
-          0,
-          Math.min(
-            conversationSearch.selectedIndex,
-            conversationSearchResults.length - 1,
-          ),
-        )
-      ];
-    if (event.key === "Enter" && selectedResult) {
-      event.preventDefault();
-      selectConversationSearchResult(selectedResult);
-    }
   }
 
   function useSkillFromCatalog(name: string): void {
@@ -5294,11 +5096,7 @@ export function App(): JSX.Element {
                 value={conversationSearch.query}
                 placeholder="搜索对话内容或提问"
                 onChange={(event) =>
-                  setConversationSearch((current) => ({
-                    ...current,
-                    query: event.target.value,
-                    selectedIndex: 0,
-                  }))
+                  setConversationSearchQuery(event.target.value)
                 }
                 onKeyDown={handleConversationSearchKeyDown}
               />
@@ -5307,13 +5105,7 @@ export function App(): JSX.Element {
                   className="conversation-search-clear"
                   type="button"
                   aria-label="清空搜索"
-                  onClick={() =>
-                    setConversationSearch((current) => ({
-                      ...current,
-                      query: "",
-                      selectedIndex: 0,
-                    }))
-                  }
+                  onClick={clearConversationSearchQuery}
                 >
                   <X size={15} />
                 </button>
@@ -5377,10 +5169,7 @@ export function App(): JSX.Element {
                         aria-current={active ? "page" : undefined}
                         aria-selected={selected}
                         onMouseEnter={() =>
-                          setConversationSearch((current) => ({
-                            ...current,
-                            selectedIndex: resultIndex,
-                          }))
+                          setConversationSearchSelectedIndex(resultIndex)
                         }
                         onClick={() => selectConversationSearchResult(result)}
                       >
