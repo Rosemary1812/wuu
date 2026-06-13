@@ -143,8 +143,13 @@ func (t *SessionMemoryTool) Execute(ctx context.Context, args string) (string, e
 		if err != nil {
 			return "", fmt.Errorf("session_memory: %w", err)
 		}
+		dream, err := sessionmemory.LoadDreamState(stateDir)
+		if err != nil {
+			return "", fmt.Errorf("session_memory: %w", err)
+		}
 		return mustJSON(map[string]any{
 			"action": sessionMemoryActionStatus,
+			"dream":  dream,
 			"files":  status,
 		})
 	case sessionMemoryActionRead:
