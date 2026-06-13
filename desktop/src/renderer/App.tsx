@@ -91,7 +91,6 @@ import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationSearch } from "./ConversationSearchState";
 import { AppSidebar } from "./AppSidebar";
 import {
-  EnvironmentPanel,
   backgroundProcessIsLive,
   backgroundProcessNeedsAttention,
   buildBackgroundProcessItems,
@@ -100,6 +99,7 @@ import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
+import { EnvironmentSideStack } from "./EnvironmentSideStack";
 import {
   activeProjectID,
   activeSessionTab,
@@ -4666,60 +4666,6 @@ export function App(): JSX.Element {
     );
   }
 
-  const environmentPanelNode =
-    (environmentPanelVisible || environmentPanelMounted) &&
-    state.initialized ? (
-      <div className="environment-side-stack">
-        <EnvironmentPanel
-          panelRef={environmentPanelRef}
-          motionState={
-            environmentPanelClosing ? "closing" : environmentPanelMotionState
-          }
-          initialized={state.initialized}
-          gitStatus={state.gitStatus}
-          activeContext={state.activeContext}
-          activeProject={activeProject}
-          planUpdate={activePlanUpdate}
-          sourceItems={environmentSourceItems}
-          backgroundProcesses={backgroundProcesses}
-          stoppingProcessIDs={stoppingProcessIDs}
-          activeMenu={environmentPanelMenu}
-          running={anyThreadIsRunning}
-          pullRequestDisabledReason={pullRequestDisabledReason}
-          onSetActiveMenu={setEnvironmentPanelMenu}
-          onClose={() => {
-            setEnvironmentPanelOpen(false);
-            setEnvironmentPanelDismissed(true);
-            setEnvironmentPanelMenu(null);
-          }}
-          onOpenProject={() => void chooseProjectFolder()}
-          onSelectNoProject={() => void useNoProject(false)}
-          onSelectBranch={(branch) => void checkoutBranch(branch)}
-          onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
-          onOpenReview={() => {
-            setWorkspacePanelView("review");
-            setWorkspaceRightPanelView("review");
-            setWorkspaceMode(undefined);
-            setRightPanelOpenWithMotion(true);
-            setEnvironmentPanelOpen(false);
-            setEnvironmentPanelDismissed(true);
-            setEnvironmentPanelMenu(null);
-          }}
-          onOpenCommit={() => setEnvironmentDialog("commit")}
-          onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
-          onStopBackgroundProcess={(process) => void stopBackgroundProcess(process)}
-          onOpenBackgroundPreview={openBackgroundProcessPreview}
-        />
-        {queryHistoryDocked ? (
-          <div className="query-history-environment-slot">
-            <QueryHistoryPopover
-              entries={pastQueries}
-              onSelect={handleQueryHistorySelect}
-            />
-          </div>
-        ) : null}
-      </div>
-    ) : null;
   return (
     <div className={shellClassName} style={shellStyle}>
       <AppSidebar
@@ -4949,7 +4895,48 @@ export function App(): JSX.Element {
           />
         ) : null}
 
-        {environmentPanelNode}
+        <EnvironmentSideStack
+          visible={environmentPanelVisible}
+          mounted={environmentPanelMounted}
+          state={state}
+          panelRef={environmentPanelRef}
+          closing={environmentPanelClosing}
+          motionState={environmentPanelMotionState}
+          activeProject={activeProject}
+          planUpdate={activePlanUpdate}
+          sourceItems={environmentSourceItems}
+          backgroundProcesses={backgroundProcesses}
+          stoppingProcessIDs={stoppingProcessIDs}
+          activeMenu={environmentPanelMenu}
+          running={anyThreadIsRunning}
+          pullRequestDisabledReason={pullRequestDisabledReason}
+          queryHistoryDocked={queryHistoryDocked}
+          queryHistory={pastQueries}
+          onSetActiveMenu={setEnvironmentPanelMenu}
+          onClose={() => {
+            setEnvironmentPanelOpen(false);
+            setEnvironmentPanelDismissed(true);
+            setEnvironmentPanelMenu(null);
+          }}
+          onOpenProject={() => void chooseProjectFolder()}
+          onSelectNoProject={() => void useNoProject(false)}
+          onSelectBranch={(branch) => void checkoutBranch(branch)}
+          onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
+          onOpenReview={() => {
+            setWorkspacePanelView("review");
+            setWorkspaceRightPanelView("review");
+            setWorkspaceMode(undefined);
+            setRightPanelOpenWithMotion(true);
+            setEnvironmentPanelOpen(false);
+            setEnvironmentPanelDismissed(true);
+            setEnvironmentPanelMenu(null);
+          }}
+          onOpenCommit={() => setEnvironmentDialog("commit")}
+          onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
+          onStopBackgroundProcess={(process) => void stopBackgroundProcess(process)}
+          onOpenBackgroundPreview={openBackgroundProcessPreview}
+          onSelectQueryHistory={handleQueryHistorySelect}
+        />
 
         {pendingViewSwitch?.visible ? <ViewSwitchLoading /> : null}
 
