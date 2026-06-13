@@ -22,6 +22,7 @@ const (
 )
 
 type sessionDreamScheduler struct {
+	rootDir            string
 	workspaceStateDir  string
 	sessionArtifactDir func() string
 	interval           time.Duration
@@ -30,11 +31,13 @@ type sessionDreamScheduler struct {
 	running bool
 }
 
-func newSessionDreamScheduler(workspaceStateDir string, sessionArtifactDir func() string, intervalDays int) *sessionDreamScheduler {
-	if strings.TrimSpace(workspaceStateDir) == "" || sessionArtifactDir == nil || intervalDays <= 0 {
+func newSessionDreamScheduler(rootDir, workspaceStateDir string, sessionArtifactDir func() string, intervalDays int) *sessionDreamScheduler {
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" || strings.TrimSpace(workspaceStateDir) == "" || sessionArtifactDir == nil || intervalDays <= 0 {
 		return nil
 	}
 	return &sessionDreamScheduler{
+		rootDir:            rootDir,
 		workspaceStateDir:  workspaceStateDir,
 		sessionArtifactDir: sessionArtifactDir,
 		interval:           time.Duration(intervalDays) * 24 * time.Hour,
@@ -75,6 +78,7 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		temperature:        runner.Temperature,
 		effort:             runner.Effort,
 		providerOptions:    provideroptions.Clone(runner.ProviderOptions),
+		rootDir:            s.rootDir,
 		workspaceStateDir:  s.workspaceStateDir,
 		sessionArtifactDir: sessionArtifactDir,
 		history:            cloneChatMessages(history),
@@ -137,6 +141,7 @@ type sessionDreamJob struct {
 	temperature        float64
 	effort             string
 	providerOptions    map[string]any
+	rootDir            string
 	workspaceStateDir  string
 	sessionArtifactDir string
 	history            []providers.ChatMessage
@@ -158,7 +163,7 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 	if err := sessionmemory.RecordDreamStarted(job.workspaceStateDir, started); err != nil {
 		return err
 	}
-	executor := newSessionMemoryOnlyExecutor(job.workspaceStateDir, job.sessionArtifactDir)
+	executor := newSessionDreamExecutor(job.rootDir, job.workspaceStateDir, job.sessionArtifactDir)
 	_, err := agent.RunToolLoop(ctx, messages, agent.LoopConfig{
 		Tools:           executor,
 		Model:           job.model,
@@ -174,39 +179,63 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 	return sessionmemory.RecordDreamCompleted(job.workspaceStateDir, started)
 }
 
-type sessionMemoryOnlyExecutor struct {
-	tool *tools.SessionMemoryTool
-	defs []providers.ToolDefinition
+type sessionDreamExecutor struct {
+	registry *tools.Registry
+	defs     []providers.ToolDefinition
 }
 
-func newSessionMemoryOnlyExecutor(workspaceStateDir, sessionArtifactDir string) *sessionMemoryOnlyExecutor {
+func newSessionDreamExecutor(rootDir, workspaceStateDir, sessionArtifactDir string) *sessionDreamExecutor {
 	env := &tools.Env{
+		RootDir:    rootDir,
 		StateDir:   workspaceStateDir,
 		SessionDir: sessionArtifactDir,
 	}
-	tool := tools.NewSessionMemoryTool(env)
-	return &sessionMemoryOnlyExecutor{
-		tool: tool,
-		defs: []providers.ToolDefinition{tool.Definition()},
-	}
+	registry := tools.NewRegistry(
+		tools.NewReadFileTool(env),
+		tools.NewWriteFileTool(env),
+		tools.NewListFilesTool(env),
+		tools.NewEditFileTool(env),
+		tools.NewGrepTool(env),
+		tools.NewGlobTool(env),
+		tools.NewShellTool(env),
+		tools.NewSessionMemoryTool(env),
+	)
+	return &sessionDreamExecutor{registry: registry, defs: registry.Definitions()}
 }
 
-func (e *sessionMemoryOnlyExecutor) Definitions() []providers.ToolDefinition {
+func (e *sessionDreamExecutor) Definitions() []providers.ToolDefinition {
+	if e == nil || e.defs == nil {
+		return nil
+	}
 	return e.defs
 }
 
-func (e *sessionMemoryOnlyExecutor) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
-	if e == nil || e.tool == nil || call.Name != e.tool.Name() {
+func (e *sessionDreamExecutor) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
+	if e == nil || e.registry == nil {
 		return "", fmt.Errorf("background dream: tool %q is not available", call.Name)
 	}
-	return e.tool.Execute(ctx, call.Arguments)
+	tool := e.registry.Lookup(call.Name)
+	if tool == nil {
+		return "", fmt.Errorf("background dream: tool %q is not available", call.Name)
+	}
+	return tool.Execute(ctx, call.Arguments)
 }
 
-func (e *sessionMemoryOnlyExecutor) ToolMetadata(call providers.ToolCall) (agent.ToolMetadata, bool) {
-	if e == nil || e.tool == nil || call.Name != e.tool.Name() {
+func (e *sessionDreamExecutor) ToolMetadata(call providers.ToolCall) (agent.ToolMetadata, bool) {
+	if e == nil || e.registry == nil {
 		return agent.ToolMetadata{}, false
 	}
-	info := e.tool.Classify(call.Arguments)
+	tool := e.registry.Lookup(call.Name)
+	if tool == nil {
+		return agent.ToolMetadata{}, false
+	}
+	info := tools.ToolClassification{
+		ReadOnly:        tool.IsReadOnly(),
+		ConcurrencySafe: tool.IsConcurrencySafe(),
+	}
+	if classifier, ok := tool.(tools.InputClassifyingTool); ok {
+		info = classifier.Classify(call.Arguments)
+	}
 	return agent.ToolMetadata{
 		ReadOnly:        info.ReadOnly,
 		ConcurrencySafe: info.ConcurrencySafe,
@@ -232,12 +261,18 @@ func buildSessionDreamMessages(systemPrompt string, history []providers.ChatMess
 
 const sessionDreamPrompt = `Review the recent conversation and consolidate durable workspace/session memory.
 
-Use only session_memory:
+Available tools are read_file, list_files, glob, grep, run_shell, write_file, edit_file, and session_memory.
+
+Use read_file, list_files, glob, grep, or run_shell only to inspect the workspace and verify what should be remembered. Use run_shell only for non-interactive read-only inspection commands; do not use git commands, package managers, network commands, or long-running processes.
+
+Use session_memory for durable writes:
 1. Read existing project_memory, checkpoint, or notes when needed before editing them.
 2. Write project_memory only for stable workspace facts, architecture decisions, durable conventions, tool quirks, or recurring workflow lessons that should survive future sessions.
 3. Write checkpoint for compact recoverable state of the active task: active intent, next concrete action, current work, decisions, and open questions.
 4. Write notes for useful session scratch details that are not durable enough for project_memory.
 
-Do not store raw transcripts, secrets, temporary task progress, completed-work logs, PR numbers, commit SHAs, raw command output, or facts likely to go stale within a week. Do not modify source files.
+Use write_file or edit_file only if session_memory is insufficient for a memory artifact. Do not modify source files.
+
+Do not store raw transcripts, secrets, temporary task progress, completed-work logs, PR numbers, commit SHAs, raw command output, or facts likely to go stale within a week.
 
 Prefer session_memory action="append" for new durable facts or notes. Use action="replace" only when consolidating an existing checkpoint or project memory into cleaner markdown. If nothing should change, reply exactly: Nothing to dream.`

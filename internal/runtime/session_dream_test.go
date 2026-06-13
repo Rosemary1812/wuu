@@ -14,9 +14,10 @@ import (
 )
 
 func TestSessionDreamScheduler_ShouldStartRespectsInterval(t *testing.T) {
+	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	scheduler := newSessionDreamScheduler(workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
 	history := makeProfileMemoryReviewHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
@@ -42,9 +43,10 @@ func TestSessionDreamScheduler_ShouldStartRespectsInterval(t *testing.T) {
 }
 
 func TestSessionDreamScheduler_ShouldStartBacksOffRecentFailure(t *testing.T) {
+	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	scheduler := newSessionDreamScheduler(workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
 	history := makeProfileMemoryReviewHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
@@ -70,7 +72,8 @@ func TestSessionDreamScheduler_ShouldStartBacksOffRecentFailure(t *testing.T) {
 	scheduler.finish()
 }
 
-func TestSessionDream_RunWritesProjectMemoryWithSessionMemoryOnlyTool(t *testing.T) {
+func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
+	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 	client := &profileMemoryReviewFakeClient{
@@ -89,12 +92,13 @@ func TestSessionDream_RunWritesProjectMemoryWithSessionMemoryOnlyTool(t *testing
 			{Content: "Saved."},
 		},
 	}
-	scheduler := newSessionDreamScheduler(workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	err := scheduler.run(context.Background(), sessionDreamJob{
 		client:             client,
 		model:              "test-model",
 		systemPrompt:       "You are wuu.",
+		rootDir:            root,
 		workspaceStateDir:  workspaceState,
 		sessionArtifactDir: sessionArtifact,
 		now:                now,
@@ -131,27 +135,35 @@ func TestSessionDream_RunWritesProjectMemoryWithSessionMemoryOnlyTool(t *testing
 	for _, def := range client.requests[0].Tools {
 		toolNames[def.Name] = true
 	}
-	if len(toolNames) != 1 || !toolNames["session_memory"] {
-		t.Fatalf("dream tools = %+v, want only session_memory", toolNames)
+	wantTools := []string{"read_file", "write_file", "list_files", "edit_file", "grep", "glob", "run_shell", "session_memory"}
+	if len(toolNames) != len(wantTools) {
+		t.Fatalf("dream tools = %+v, want %v", toolNames, wantTools)
+	}
+	for _, name := range wantTools {
+		if !toolNames[name] {
+			t.Fatalf("dream tools = %+v, missing %s", toolNames, name)
+		}
 	}
 	last := client.requests[0].Messages[len(client.requests[0].Messages)-1]
-	if last.Role != "user" || !strings.Contains(last.Content, "Nothing to dream") {
+	if last.Role != "user" || !strings.Contains(last.Content, "read_file") || !strings.Contains(last.Content, "Nothing to dream") {
 		t.Fatalf("missing dream prompt in request: %+v", last)
 	}
 }
 
 func TestSessionDream_RunRecordsFailureState(t *testing.T) {
+	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 	client := &profileMemoryReviewFakeClient{
 		errors: []error{errors.New("provider unavailable")},
 	}
-	scheduler := newSessionDreamScheduler(workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
 	started := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
 	err := scheduler.run(context.Background(), sessionDreamJob{
 		client:             client,
 		model:              "test-model",
+		rootDir:            root,
 		workspaceStateDir:  workspaceState,
 		sessionArtifactDir: sessionArtifact,
 		now:                started,

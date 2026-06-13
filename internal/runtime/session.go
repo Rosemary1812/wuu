@@ -268,7 +268,7 @@ func NewSession(opts Options) (*Session, error) {
 		afterTurnHooks = append(afterTurnHooks, memoryReviewer.AfterTurn)
 	}
 	if toolkit != nil {
-		if dreamScheduler := newSessionDreamScheduler(workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
@@ -517,7 +517,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		if memoryReviewer := newProfileMemoryReviewScheduler(kit.Memory(), s.ProfileMemoryNudgeInterval, memoryLimit, userLimit); memoryReviewer != nil {
 			afterTurnHooks = append(afterTurnHooks, memoryReviewer.AfterTurn)
 		}
-		if dreamScheduler := newSessionDreamScheduler(stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamScheduler(s.RootDir, stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
