@@ -2610,6 +2610,109 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	}
 }
 
+func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260523-000010-payloads", rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
+
+	msg := providers.ChatMessage{
+		Role:             "assistant",
+		ClientID:         "client-msg-1",
+		Content:          "done",
+		Steered:          true,
+		ReasoningContent: "inspect before answering",
+		ReasoningBlocks: []providers.ReasoningBlock{{
+			Type:      "thinking",
+			Thinking:  "step one",
+			Signature: "sig-1",
+			Data:      "opaque",
+		}},
+		Images: []providers.InputImage{{
+			MediaType: "image/png",
+			Data:      "image-data",
+		}},
+		Files: []providers.InputFile{{
+			MediaType: "application/pdf",
+			Data:      "file-data",
+			Filename:  "brief.pdf",
+		}},
+		ToolCalls: []providers.ToolCall{{
+			ID:        "call_1",
+			Name:      "read_file",
+			Arguments: `{"path":"README.md"}`,
+			Display:   &providers.ToolCallDisplay{Kind: "read", Text: "README.md"},
+		}},
+	}
+	if err := appendChatMessage(sessionPath, msg); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	history, err := loadChatMessages(sessionPath)
+	if err != nil {
+		t.Fatalf("load history: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected one message, got %+v", history)
+	}
+	got := history[0]
+	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
+		t.Fatalf("message scalar fields did not round-trip: %+v", got)
+	}
+	if len(got.ReasoningBlocks) != 1 || got.ReasoningBlocks[0].Signature != "sig-1" || got.ReasoningBlocks[0].Data != "opaque" {
+		t.Fatalf("reasoning blocks did not round-trip: %+v", got.ReasoningBlocks)
+	}
+	if len(got.Images) != 1 || got.Images[0].MediaType != "image/png" || got.Images[0].Data != "image-data" {
+		t.Fatalf("images did not round-trip: %+v", got.Images)
+	}
+	if len(got.Files) != 1 || got.Files[0].MediaType != "application/pdf" || got.Files[0].Data != "file-data" || got.Files[0].Filename != "brief.pdf" {
+		t.Fatalf("files did not round-trip: %+v", got.Files)
+	}
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].Display == nil || got.ToolCalls[0].Display.Text != "README.md" {
+		t.Fatalf("tool calls did not round-trip: %+v", got.ToolCalls)
+	}
+}
+
+func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260523-000011-rewrite", rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
+
+	if err := appendChatMessage(sessionPath, providers.ChatMessage{Role: "user", Content: "old user"}); err != nil {
+		t.Fatalf("append old user: %v", err)
+	}
+	if err := appendChatMessage(sessionPath, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
+		t.Fatalf("append old assistant: %v", err)
+	}
+	if err := appendTokenUsage(sessionPath, 11, 7); err != nil {
+		t.Fatalf("append token usage: %v", err)
+	}
+
+	if err := rewriteChatHistory(sessionPath, []providers.ChatMessage{{Role: "user", Content: "new user"}}); err != nil {
+		t.Fatalf("rewrite history: %v", err)
+	}
+
+	visible, err := loadChatMessages(sessionPath)
+	if err != nil {
+		t.Fatalf("load visible history: %v", err)
+	}
+	if len(visible) != 1 || visible[0].Role != "user" || visible[0].Content != "new user" {
+		t.Fatalf("rewrite should replace old visible messages, got %+v", visible)
+	}
+	all, err := session.LoadHistoryRecords(rt.SessionDir, sess.ID, true)
+	if err != nil {
+		t.Fatalf("load raw history: %v", err)
+	}
+	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 11 || all[1].OutputTokens != 7 {
+		t.Fatalf("rewrite should preserve token usage metadata, got %+v", all)
+	}
+}
+
 func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{

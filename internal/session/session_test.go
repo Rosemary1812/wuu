@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -302,6 +303,46 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	}
 }
 
+func TestHistoryRecordOperationsRequireExistingSession(t *testing.T) {
+	dir := t.TempDir()
+	rec := HistoryRecord{Role: "user", Content: "hello"}
+
+	if err := AppendHistoryRecord(dir, "missing-thread", rec); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("AppendHistoryRecord() error = %v, want ErrSessionNotFound", err)
+	}
+	if err := RewriteHistoryRecords(dir, "missing-thread", []HistoryRecord{rec}); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("RewriteHistoryRecords() error = %v, want ErrSessionNotFound", err)
+	}
+	if _, err := LoadHistoryRecords(dir, "missing-thread", false); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("LoadHistoryRecords() error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+func TestRewriteHistoryRecordsReplacesExistingMessages(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{Role: "user", Content: "old user"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{Role: "assistant", Content: "old assistant"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteHistoryRecords(dir, "thread-1", []HistoryRecord{{Role: "assistant", Content: "new assistant"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	history, err := LoadHistoryRecords(dir, "thread-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Role != "assistant" || history[0].Content != "new assistant" {
+		t.Fatalf("rewrite should replace old history, got %+v", history)
+	}
+}
+
 func TestLegacyHistoryImportsIntoSQLite(t *testing.T) {
 	dir := t.TempDir()
 	start := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
@@ -329,6 +370,64 @@ func TestLegacyHistoryImportsIntoSQLite(t *testing.T) {
 	}
 	if len(history) != 2 || history[0].Content != "hello" || history[1].Content != "done" {
 		t.Fatalf("legacy history not imported: %+v", history)
+	}
+}
+
+func TestLegacyHistoryImportSkipsCorruptLines(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
+	writeLegacyIndex(t, dir, []Session{{
+		ID:        "legacy-thread",
+		CreatedAt: start,
+		UpdatedAt: start,
+		CWD:       "/tmp/project",
+	}})
+	first := mustMarshalJSONLine(t, HistoryRecord{Role: "user", Content: "hello", At: start})
+	second := mustMarshalJSONLine(t, HistoryRecord{Role: "assistant", Content: "done", At: start.Add(time.Minute)})
+	raw := append(append(append([]byte{}, first...), []byte("\n{not-json}\n")...), second...)
+	raw = append(raw, '\n')
+	if err := os.WriteFile(FilePath(dir, "legacy-thread"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	history, err := LoadHistoryRecords(dir, "legacy-thread", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 || history[0].Content != "hello" || history[1].Content != "done" {
+		t.Fatalf("legacy import should skip corrupt lines and keep valid records, got %+v", history)
+	}
+}
+
+func TestLegacyHistoryImportRunsOnce(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
+	writeLegacyIndex(t, dir, []Session{{
+		ID:        "legacy-thread",
+		CreatedAt: start,
+		UpdatedAt: start,
+		CWD:       "/tmp/project",
+	}})
+	writeLegacyHistory(t, FilePath(dir, "legacy-thread"), []HistoryRecord{
+		{Role: "user", Content: "original", At: start},
+	})
+	history, err := LoadHistoryRecords(dir, "legacy-thread", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Content != "original" {
+		t.Fatalf("unexpected initial import: %+v", history)
+	}
+
+	writeLegacyHistory(t, FilePath(dir, "legacy-thread"), []HistoryRecord{
+		{Role: "user", Content: "changed after import", At: start.Add(time.Minute)},
+	})
+	history, err = LoadHistoryRecords(dir, "legacy-thread", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Content != "original" {
+		t.Fatalf("legacy import should be idempotent after marker is written, got %+v", history)
 	}
 }
 
@@ -424,6 +523,15 @@ func writeLegacyIndex(t *testing.T, dir string, sessions []Session) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func mustMarshalJSONLine(t *testing.T, v any) []byte {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func writeLegacyHistory(t *testing.T, path string, records []HistoryRecord) {
