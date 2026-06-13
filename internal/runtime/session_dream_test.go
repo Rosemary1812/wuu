@@ -41,6 +41,35 @@ func TestSessionDreamScheduler_ShouldStartRespectsInterval(t *testing.T) {
 	scheduler.finish()
 }
 
+func TestSessionDreamScheduler_ShouldStartBacksOffRecentFailure(t *testing.T) {
+	workspaceState := t.TempDir()
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
+	scheduler := newSessionDreamScheduler(workspaceState, func() string { return sessionArtifact }, 7)
+	history := makeProfileMemoryReviewHistory(1)
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+
+	if err := sessionmemory.SaveDreamState(workspaceState, sessionmemory.DreamState{
+		LastStatus:     sessionmemory.DreamStatusFailed,
+		LastFinishedAt: now.Add(-30 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveDreamState recent failure: %v", err)
+	}
+	if scheduler.shouldStart(history, agent.LoopResult{Content: "done"}, now) {
+		t.Fatal("recent failed dream should back off")
+	}
+
+	if err := sessionmemory.SaveDreamState(workspaceState, sessionmemory.DreamState{
+		LastStatus:     sessionmemory.DreamStatusFailed,
+		LastFinishedAt: now.Add(-2 * time.Hour),
+	}); err != nil {
+		t.Fatalf("SaveDreamState old failure: %v", err)
+	}
+	if !scheduler.shouldStart(history, agent.LoopResult{Content: "done"}, now) {
+		t.Fatal("old failed dream should be eligible again")
+	}
+	scheduler.finish()
+}
+
 func TestSessionDream_RunWritesProjectMemoryWithSessionMemoryOnlyTool(t *testing.T) {
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")

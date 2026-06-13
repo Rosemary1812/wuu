@@ -17,6 +17,7 @@ import (
 const (
 	sessionDreamTimeout        = 3 * time.Minute
 	sessionDreamLockStaleAfter = 2 * sessionDreamTimeout
+	sessionDreamFailureBackoff = time.Hour
 	sessionDreamMaxSteps       = 6
 )
 
@@ -97,6 +98,12 @@ func (s *sessionDreamScheduler) shouldStart(history []providers.ChatMessage, res
 	}
 	state, err := sessionmemory.LoadDreamState(s.workspaceStateDir)
 	if err != nil {
+		s.finish()
+		return false
+	}
+	if state.LastStatus == sessionmemory.DreamStatusFailed &&
+		!state.LastFinishedAt.IsZero() &&
+		now.Sub(state.LastFinishedAt) < sessionDreamFailureBackoff {
 		s.finish()
 		return false
 	}
