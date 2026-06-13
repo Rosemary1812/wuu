@@ -103,6 +103,7 @@ export type SkillSummary = {
   name: string;
   description?: string;
   when_to_use?: string;
+  trigger_condition?: string;
   source: string;
   path?: string;
   argument_hint?: string;
@@ -110,6 +111,10 @@ export type SkillSummary = {
   context?: string;
   agent?: string;
   allowed_tools?: string[];
+  required_context?: string[];
+  examples?: string[];
+  verification_checklist?: string[];
+  progressive_disclosure?: string;
   user_invocable: boolean;
   disable_model_invoke: boolean;
   paths?: string[];

@@ -166,21 +166,26 @@ type ConfigCodexModelsResult struct {
 }
 
 type SkillSummary struct {
-	Name               string   `json:"name"`
-	Description        string   `json:"description,omitempty"`
-	WhenToUse          string   `json:"when_to_use,omitempty"`
-	Source             string   `json:"source"`
-	Path               string   `json:"path,omitempty"`
-	ArgumentHint       string   `json:"argument_hint,omitempty"`
-	Model              string   `json:"model,omitempty"`
-	Context            string   `json:"context,omitempty"`
-	Agent              string   `json:"agent,omitempty"`
-	AllowedTools       []string `json:"allowed_tools,omitempty"`
-	UserInvocable      bool     `json:"user_invocable"`
-	DisableModelInvoke bool     `json:"disable_model_invoke"`
-	Paths              []string `json:"paths,omitempty"`
-	Effort             string   `json:"effort,omitempty"`
-	Version            string   `json:"version,omitempty"`
+	Name                  string   `json:"name"`
+	Description           string   `json:"description,omitempty"`
+	WhenToUse             string   `json:"when_to_use,omitempty"`
+	TriggerCondition      string   `json:"trigger_condition,omitempty"`
+	Source                string   `json:"source"`
+	Path                  string   `json:"path,omitempty"`
+	ArgumentHint          string   `json:"argument_hint,omitempty"`
+	Model                 string   `json:"model,omitempty"`
+	Context               string   `json:"context,omitempty"`
+	Agent                 string   `json:"agent,omitempty"`
+	AllowedTools          []string `json:"allowed_tools,omitempty"`
+	RequiredContext       []string `json:"required_context,omitempty"`
+	Examples              []string `json:"examples,omitempty"`
+	VerificationChecklist []string `json:"verification_checklist,omitempty"`
+	ProgressiveDisclosure string   `json:"progressive_disclosure,omitempty"`
+	UserInvocable         bool     `json:"user_invocable"`
+	DisableModelInvoke    bool     `json:"disable_model_invoke"`
+	Paths                 []string `json:"paths,omitempty"`
+	Effort                string   `json:"effort,omitempty"`
+	Version               string   `json:"version,omitempty"`
 }
 
 type SkillListResult struct {

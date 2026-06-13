@@ -133,7 +133,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
 	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins)
-	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, discoveredPlugins)
+	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 	discoveredWorkflows := discoverWorkflows(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 
 	processMgr, err := process.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
@@ -828,7 +828,7 @@ func discoverPlugins(rootDir, wuuHome string) []pluginpkg.Plugin {
 	return pluginpkg.Discover(rootDir, wuuHome)
 }
 
-func discoverSkills(rootDir, homeDir string, plugins []pluginpkg.Plugin) []skills.Skill {
+func discoverSkills(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin) []skills.Skill {
 	var projectDirs []skills.SourceDir
 	var userDirs []skills.SourceDir
 	for _, item := range plugins {
@@ -845,6 +845,10 @@ func discoverSkills(rootDir, homeDir string, plugins []pluginpkg.Plugin) []skill
 	if homeDir != "" {
 		userDirs = append(userDirs, skills.SourceDir{Path: filepath.Join(homeDir, ".claude", "skills"), Source: "user"})
 	}
+	if strings.TrimSpace(wuuHome) != "" {
+		userDirs = append(userDirs, skills.SourceDir{Path: filepath.Join(wuuHome, "skills"), Source: "user"})
+	}
+	projectDirs = append(projectDirs, skills.SourceDir{Path: filepath.Join(rootDir, ".wuu", "skills"), Source: "project"})
 	projectDirs = append(projectDirs, skills.SourceDir{Path: filepath.Join(rootDir, ".claude", "skills"), Source: "project"})
 	return skills.MergeWithBundled(skills.DiscoverSourceDirs(projectDirs, userDirs))
 }
