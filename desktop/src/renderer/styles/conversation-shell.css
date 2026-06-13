@@ -7,27 +7,27 @@
   --environment-panel-motion-easing: cubic-bezier(0.2, 0, 0, 1);
   --environment-flow-motion-duration: 280ms;
   --environment-flow-motion-delay: 22ms;
-  --conversation-readable-width: 860px;
+  --conversation-readable-width: var(--wuu-grid-max-width);
   --conversation-flow-width: var(--conversation-readable-width);
-  --conversation-flow-padding-inline: clamp(28px, 4vw, 64px);
+  --conversation-flow-padding-inline: var(--wuu-grid-margin);
   --conversation-content-width: calc(
     var(--conversation-flow-width) - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline)
   );
   --conversation-message-max-width: 720px;
-  --conversation-message-max-inline: 86%;
+  --conversation-message-max-inline: 83%;
   --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;
-  --conversation-dialog-width: 920px;
+  --conversation-dialog-width: var(--conversation-content-width);
   --conversation-message-font-size: 16px;
-  --conversation-prose-line-height: 1.85;
-  --conversation-prose-block-gap: 30px;
+  --conversation-prose-line-height: 1.75;
+  --conversation-prose-block-gap: 24px;
   --conversation-meta-line-height: 1.4;
   --conversation-control-line-height: 1.5;
-  --conversation-shell-gap: 14px;
+  --conversation-shell-gap: 16px;
   --conversation-process-gap: 8px;
-  --conversation-process-answer-gap: 10px;
-  --conversation-answer-action-gap: 10px;
-  --conversation-activity-gap: 10px;
+  --conversation-process-answer-gap: 16px;
+  --conversation-answer-action-gap: 8px;
+  --conversation-activity-gap: 8px;
   --conversation-scrollbar-gutter: 12px;
   --dock-composer-height: 0px;
   grid-column: 2;
@@ -37,14 +37,14 @@
   min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 54px minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr);
   overflow: hidden;
   background: #fff;
   margin-right: 0;
 }
 
 .conversation-pane.session-tabs-visible {
-  grid-template-rows: 46px minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
 }
 
 .titlebar {
@@ -165,14 +165,14 @@
 
 .session-tab:hover,
 .session-tab:focus-within {
-  border-color: rgba(95, 126, 104, 0.18);
+  border-color: rgba(17, 19, 21, 0.14);
   background: #f1f2ee;
   color: #24282c;
 }
 
 .session-tab.active {
-  border-color: rgba(95, 126, 104, 0.24);
-  background: #e8eee8;
+  border-color: rgba(17, 19, 21, 0.18);
+  background: #ececea;
   color: #202427;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.72),
@@ -180,7 +180,7 @@
 }
 
 .session-tab.pending-switch {
-  color: #2f5141;
+  color: #202427;
 }
 
 .session-tab-main {
@@ -202,7 +202,7 @@
 .session-tab-close:focus-visible,
 .session-tab-new:focus-visible {
   outline: 0;
-  box-shadow: inset 0 0 0 2px rgba(95, 126, 104, 0.24);
+  box-shadow: inset 0 0 0 2px rgba(17, 19, 21, 0.18);
 }
 
 .session-tab-status {
@@ -210,13 +210,13 @@
   height: 7px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: rgba(95, 126, 104, 0.28);
+  background: rgba(17, 19, 21, 0.22);
 }
 
 .session-tab.running .session-tab-status,
 .session-tab.pending-switch .session-tab-status {
   background: var(--sidebar-accent);
-  box-shadow: 0 0 0 3px rgba(95, 126, 104, 0.14);
+  box-shadow: 0 0 0 3px rgba(17, 19, 21, 0.12);
   animation: session-loading-pulse 900ms ease-in-out infinite;
 }
 
@@ -342,7 +342,8 @@
 }
 
 .launch-preview-button.active,
-.turn-progress-preview-button[aria-pressed="true"] {
+.turn-progress-preview-button[aria-pressed="true"],
+.conversation-grid-button[aria-pressed="true"] {
   background: #dedfdb;
   color: #202427;
 }

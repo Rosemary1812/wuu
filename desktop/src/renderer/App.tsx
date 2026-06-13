@@ -17,6 +17,7 @@ import {
   FolderOpen,
   FolderPlus,
   GitBranch,
+  Grid3X3,
   Image as ImageIcon,
   Info,
   Laptop,
@@ -229,6 +230,7 @@ const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const CONVERSATION_SEARCH_EXIT_MS = 180;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
 const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
+const CONVERSATION_GRID_COLUMNS = 12;
 // Cap on the number of bars rendered in the always-visible rail. The
 // rail is a thin at-a-glance index; if there are more queries than fit,
 // we collapse the tail into a single bar.
@@ -618,6 +620,7 @@ export function App(): JSX.Element {
     () => new Set(),
   );
   const [runDebugOpen, setRunDebugOpen] = useState(false);
+  const [conversationGridVisible, setConversationGridVisible] = useState(false);
   const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<
@@ -1112,9 +1115,42 @@ export function App(): JSX.Element {
     if (debugControlsVisible) {
       return;
     }
+    setConversationGridVisible(false);
     setLaunchPreviewPinned(false);
     setRunDebugOpen(false);
     setTurnProgressPreviewOpen(false);
+  }, [debugControlsVisible]);
+
+  useEffect(() => {
+    if (!debugControlsVisible) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (
+        event.key.toLowerCase() !== "g" ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setConversationGridVisible((visible) => !visible);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [debugControlsVisible]);
 
   useEffect(() => {
@@ -5550,7 +5586,9 @@ export function App(): JSX.Element {
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
           environmentPanelReserved ? " environment-panel-reserved" : ""
-        }${sessionTabsVisible ? " session-tabs-visible" : ""}`}
+        }${sessionTabsVisible ? " session-tabs-visible" : ""}${
+          conversationGridVisible ? " conversation-grid-visible" : ""
+        }`}
         ref={conversationPaneRef}
       >
         <header className="titlebar">
@@ -5598,6 +5636,19 @@ export function App(): JSX.Element {
               >
                 <ListChecks size={15} />
                 <span>计划面板</span>
+              </button>
+            ) : null}
+            {debugControlsVisible ? (
+              <button
+                className={`launch-preview-button conversation-grid-button${conversationGridVisible ? " active" : ""}`}
+                type="button"
+                aria-label={conversationGridVisible ? "隐藏对话网格" : "显示对话网格"}
+                aria-pressed={conversationGridVisible}
+                title="按 G 切换对话网格"
+                onClick={() => setConversationGridVisible((visible) => !visible)}
+              >
+                <Grid3X3 size={15} />
+                <span>网格</span>
               </button>
             ) : null}
             {debugControlsVisible && ENABLE_RUN_DEBUG_PANEL ? (
@@ -5734,6 +5785,7 @@ export function App(): JSX.Element {
               </EmptyConversationHome>
             ) : (
               <div className="conversation-width">
+                {conversationGridVisible ? <ConversationGridGuides /> : null}
                 {turns.map((turn) => (
                   <Fragment key={turn.id}>
                     <TurnView
@@ -5826,7 +5878,7 @@ export function App(): JSX.Element {
           onCreate={createEnvironmentPullRequest}
         />
       ) : null}
-      <DesignTokensPanel />
+      {debugControlsVisible ? <DesignTokensPanel /> : null}
       {queryHistoryOpen &&
       !queryHistoryDocked &&
       !activeThreadReadOnly &&
@@ -5853,6 +5905,21 @@ export function App(): JSX.Element {
           </div>
         </FloatingMenuPortal>
       ) : null}
+    </div>
+  );
+}
+
+function ConversationGridGuides(): JSX.Element {
+  return (
+    <div className="conversation-grid-guides" aria-hidden="true">
+      <div className="conversation-grid-cols">
+        {Array.from({ length: CONVERSATION_GRID_COLUMNS }, (_, index) => (
+          <div className="conversation-grid-col" key={index}>
+            <span>{index + 1}</span>
+          </div>
+        ))}
+      </div>
+      <div className="conversation-grid-rows" />
     </div>
   );
 }

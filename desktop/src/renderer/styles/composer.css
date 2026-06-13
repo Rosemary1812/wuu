@@ -2,7 +2,7 @@
   width: 100%;
   min-width: 0;
   overflow: visible;
-  padding: 14px 0 22px;
+  padding: 16px 0 24px;
   background: #fff;
 }
 
@@ -46,26 +46,23 @@
 
 .composer-stack {
   display: flex;
-  width: min(
-    var(--conversation-content-width),
-    calc(100% - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline))
-  );
+  width: min(var(--conversation-content-width), calc(100% - 48px));
   min-width: 0;
   flex-direction: column;
   margin: 0 auto;
 }
 
 .hero-composer-wrap .composer-stack {
-  width: min(var(--conversation-content-width), 100%);
+  width: 100%;
 }
 
 .composer-shell {
   position: relative;
   width: 100%;
   margin: 0;
-  border-radius: 18px;
+  border-radius: 10px;
   background: #fff;
-  box-shadow: 0 8px 26px rgba(20, 24, 28, 0.08);
+  box-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
   overflow: visible;
 }
 
@@ -81,22 +78,22 @@
 
 .hero-composer-wrap .composer-shell {
   width: 100%;
-  border-radius: 22px;
+  border-radius: 10px;
   background: #fff;
-  box-shadow: 0 18px 48px rgba(20, 24, 28, 0.08);
+  box-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
 }
 
 .composer {
   width: 100%;
-  min-height: 132px;
-  border-radius: 18px 18px 0 0;
+  min-height: 128px;
+  border-radius: 10px 10px 0 0;
   background: #fff;
   overflow: visible;
 }
 
 .hero-composer-wrap .composer {
   min-height: 136px;
-  border-radius: 22px 22px 0 0;
+  border-radius: 10px 10px 0 0;
 }
 
 .composer-attachments {
@@ -282,19 +279,20 @@
 
 .composer textarea {
   width: 100%;
-  min-height: 76px;
+  min-height: 80px;
   resize: none;
   border: 0;
   outline: 0;
   background: transparent;
-  padding: 15px 18px 6px;
+  padding: 16px 16px 8px;
   color: #1f2328;
   font-size: var(--font-body);
+  line-height: 24px;
 }
 
 .hero-composer-wrap .composer textarea {
-  min-height: 82px;
-  padding: 20px 24px 6px;
+  min-height: 88px;
+  padding: 24px 24px 8px;
 }
 
 .composer textarea::placeholder {
@@ -309,11 +307,11 @@
 .composer-bar {
   display: flex;
   min-width: 0;
-  height: 50px;
+  height: 48px;
   align-items: center;
   gap: 10px;
   overflow: hidden;
-  padding: 0 10px 10px;
+  padding: 0 8px 8px;
 }
 
 .composer-tool-button {
