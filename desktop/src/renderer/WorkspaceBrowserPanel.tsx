@@ -66,6 +66,9 @@ function resolveNavigationInput(input: string): string {
   if (value.length === 0) {
     return HOME_PAGE_URL;
   }
+  if (value === HOME_PAGE_URL) {
+    return HOME_PAGE_URL;
+  }
   if (looksLikeUrl(value)) {
     return /^https?:\/\//i.test(value) || /^file:\/\//i.test(value)
       ? value
@@ -93,16 +96,19 @@ function safeWebview<T>(fn: () => T): T | undefined {
 export function WorkspaceBrowserPanel({
   activeContext,
   pendingBrowserURL,
-  onBrowserURLConsumed
+  onBrowserURLConsumed,
+  onCurrentURLChange
 }: {
   activeContext?: RuntimeContext;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
+  onCurrentURLChange?: (url: string) => void;
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<WebviewElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const isWebviewReadyRef = useRef(false);
+  const onCurrentURLChangeRef = useRef(onCurrentURLChange);
 
   const [currentURL, setCurrentURL] = useState<string>(HOME_PAGE_URL);
   const [pageTitle, setPageTitle] = useState<string>(HOME_PAGE_TITLE);
@@ -113,6 +119,17 @@ export function WorkspaceBrowserPanel({
   const [canGoForward, setCanGoForward] = useState(false);
   const [hostHint, setHostHint] = useState<string | undefined>(undefined);
   const [isWebviewReady, setIsWebviewReady] = useState(false);
+
+  useEffect(() => {
+    onCurrentURLChangeRef.current = onCurrentURLChange;
+  }, [onCurrentURLChange]);
+
+  const updateCurrentURL = useCallback((url: string) => {
+    setCurrentURL(url);
+    setDraftURL(url === HOME_PAGE_URL ? "" : url);
+    setHostHint(extractHostname(url));
+    onCurrentURLChangeRef.current?.(url);
+  }, []);
 
   // Mount the <webview> element once. The element is a custom Electron tag and
   // is not part of the standard JSX intrinsic set, so we create it imperatively
@@ -166,9 +183,7 @@ export function WorkspaceBrowserPanel({
         return;
       }
       isWebviewReadyRef.current = true;
-      setCurrentURL(url);
-      setDraftURL(url === HOME_PAGE_URL ? "" : url);
-      setHostHint(extractHostname(url));
+      updateCurrentURL(url);
       const title = safeWebview(() => webview.getTitle());
       if (typeof title === "string" && title.length > 0) {
         setPageTitle(title);
@@ -190,15 +205,11 @@ export function WorkspaceBrowserPanel({
     };
 
     const handleDidNavigate = (event: { url: string }): void => {
-      setCurrentURL(event.url);
-      setDraftURL(event.url === HOME_PAGE_URL ? "" : event.url);
-      setHostHint(extractHostname(event.url));
+      updateCurrentURL(event.url);
     };
 
     const handleDidNavigateInPage = (event: { url: string }): void => {
-      setCurrentURL(event.url);
-      setDraftURL(event.url === HOME_PAGE_URL ? "" : event.url);
-      setHostHint(extractHostname(event.url));
+      updateCurrentURL(event.url);
     };
 
     const handlePageTitleUpdated = (event: { title: string }): void => {
@@ -242,7 +253,7 @@ export function WorkspaceBrowserPanel({
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       webview.removeEventListener("did-fail-load", handleDidFailLoad);
     };
-  }, []);
+  }, [updateCurrentURL]);
 
   const navigate = useCallback((rawInput: string) => {
     const target = resolveNavigationInput(rawInput);
@@ -255,6 +266,7 @@ export function WorkspaceBrowserPanel({
       setDraftURL("");
       setPageTitle(HOME_PAGE_TITLE);
       setHostHint(undefined);
+      onCurrentURLChangeRef.current?.(HOME_PAGE_URL);
       setStatus("idle");
       setErrorMessage(undefined);
       setCanGoBack(false);

@@ -10,6 +10,7 @@ import {
   FolderX,
   Github,
   GitBranch,
+  Globe,
   Image as ImageIcon,
   Laptop,
   MessageSquarePlus,
@@ -44,10 +45,13 @@ export type EnvironmentSourceItem = {
 
 export type BackgroundProcessItem = {
   id: string;
+  ownerID?: string;
   command: string;
   cwd?: string;
   lifecycle?: string;
   status: string;
+  previewURLs?: string[];
+  primaryPreviewURL?: string;
   startedAt?: string;
   updatedAt?: string;
   lastError?: string;
@@ -208,7 +212,8 @@ export function EnvironmentPanel({
   onOpenReview,
   onOpenCommit,
   onOpenPullRequest,
-  onStopBackgroundProcess
+  onStopBackgroundProcess,
+  onOpenBackgroundPreview
 }: {
   panelRef: RefObject<HTMLDivElement | null>;
   motionState: EnvironmentPanelMotionState;
@@ -233,6 +238,7 @@ export function EnvironmentPanel({
   onOpenCommit: () => void;
   onOpenPullRequest: () => void;
   onStopBackgroundProcess: (process: BackgroundProcessItem) => void;
+  onOpenBackgroundPreview: (process: BackgroundProcessItem) => void;
 }): JSX.Element {
   const diff = gitStatus?.diff ?? { files: 0, additions: 0, deletions: 0 };
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
@@ -337,6 +343,7 @@ export function EnvironmentPanel({
             processes={backgroundProcesses.slice(0, 5)}
             stoppingProcessIDs={stoppingProcessIDs}
             onStopProcess={onStopBackgroundProcess}
+            onOpenPreview={onOpenBackgroundPreview}
           />
         ) : null}
       </div>
@@ -378,11 +385,13 @@ export function EnvironmentPanel({
 function EnvironmentBackgroundProcesses({
   processes,
   stoppingProcessIDs,
-  onStopProcess
+  onStopProcess,
+  onOpenPreview
 }: {
   processes: BackgroundProcessItem[];
   stoppingProcessIDs: Set<string>;
   onStopProcess: (process: BackgroundProcessItem) => void;
+  onOpenPreview: (process: BackgroundProcessItem) => void;
 }): JSX.Element {
   const activeCount = processes.filter(backgroundProcessIsLive).length;
   return (
@@ -405,9 +414,20 @@ function EnvironmentBackgroundProcesses({
             <span className={`environment-process-status ${processStatusTone(process.status)}`}>
               {processStatusLabel(process.status)}
             </span>
+            {process.primaryPreviewURL ? (
+              <button
+                className="environment-process-action"
+                type="button"
+                aria-label={`打开预览 ${process.primaryPreviewURL}`}
+                title={process.primaryPreviewURL}
+                onClick={() => onOpenPreview(process)}
+              >
+                <Globe size={13} />
+              </button>
+            ) : null}
             {processCanStop(process) ? (
               <button
-                className="environment-process-stop"
+                className="environment-process-action"
                 type="button"
                 aria-label={`停止 ${process.command}`}
                 disabled={stoppingProcessIDs.has(process.id)}
@@ -454,10 +474,13 @@ function processItemFromRecord(record: JsonRecord): BackgroundProcessItem[] {
   return [
     {
       id,
+      ownerID: stringValue(record, "owner_id"),
       command: stringValue(record, "command") || id,
       cwd: stringValue(record, "cwd"),
       lifecycle: stringValue(record, "lifecycle"),
       status: stringValue(record, "status") || "running",
+      previewURLs: stringArrayValue(record, "preview_urls"),
+      primaryPreviewURL: stringValue(record, "primary_preview_url"),
       startedAt: stringValue(record, "started_at"),
       updatedAt: stringValue(record, "updated_at"),
       lastError: stringValue(record, "last_error")
@@ -468,10 +491,13 @@ function processItemFromRecord(record: JsonRecord): BackgroundProcessItem[] {
 function processItemFromManagedProcess(process: ManagedProcess): BackgroundProcessItem {
   return {
     id: process.id,
+    ownerID: process.owner_id,
     command: process.command || process.id,
     cwd: process.cwd,
     lifecycle: process.lifecycle,
     status: process.status || "running",
+    previewURLs: process.preview_urls,
+    primaryPreviewURL: process.primary_preview_url,
     startedAt: process.started_at,
     updatedAt: process.updated_at,
     lastError: process.last_error
@@ -570,6 +596,15 @@ function asRecord(value: unknown): JsonRecord | undefined {
 function stringValue(record: JsonRecord | undefined, key: string): string {
   const value = record?.[key];
   return typeof value === "string" ? value : "";
+}
+
+function stringArrayValue(record: JsonRecord | undefined, key: string): string[] | undefined {
+  const value = record?.[key];
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items = value.filter((item): item is string => typeof item === "string" && item.length > 0);
+  return items.length > 0 ? items : undefined;
 }
 
 function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX.Element {

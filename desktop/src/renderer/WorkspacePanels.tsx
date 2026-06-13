@@ -81,7 +81,8 @@ export function WorkspaceRightPanel({
   onOpenFile,
   onClose,
   pendingBrowserURL,
-  onBrowserURLConsumed
+  onBrowserURLConsumed,
+  onBrowserURLChange
 }: {
   open: boolean;
   present: boolean;
@@ -98,6 +99,7 @@ export function WorkspaceRightPanel({
   onClose: () => void;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
+  onBrowserURLChange?: (url: string) => void;
 }): JSX.Element {
   const detailView = view === "tools" ? undefined : view;
   const [draggingTab, setDraggingTab] = useState<WorkspacePanelView | undefined>(undefined);
@@ -219,6 +221,7 @@ export function WorkspaceRightPanel({
                 activeContext={activeContext}
                 pendingBrowserURL={pendingBrowserURL}
                 onBrowserURLConsumed={onBrowserURLConsumed}
+                onCurrentURLChange={onBrowserURLChange}
               />
             ) : null}
           </div>

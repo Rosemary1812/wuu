@@ -75,6 +75,7 @@ afterEach(() => {
 function render(props: {
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
+  onCurrentURLChange?: (url: string) => void;
 }) {
   act(() => {
     root = createRoot(container);
@@ -83,6 +84,7 @@ function render(props: {
         activeContext={{ kind: "no_project", cwd: "/repo" }}
         pendingBrowserURL={props.pendingBrowserURL}
         onBrowserURLConsumed={props.onBrowserURLConsumed}
+        onCurrentURLChange={props.onCurrentURLChange}
       />
     );
   });
@@ -94,6 +96,7 @@ function render(props: {
 function rerender(props: {
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
+  onCurrentURLChange?: (url: string) => void;
 }) {
   act(() => {
     root!.render(
@@ -101,6 +104,7 @@ function rerender(props: {
         activeContext={{ kind: "no_project", cwd: "/repo" }}
         pendingBrowserURL={props.pendingBrowserURL}
         onBrowserURLConsumed={props.onBrowserURLConsumed}
+        onCurrentURLChange={props.onCurrentURLChange}
       />
     );
   });
@@ -118,6 +122,15 @@ describe("WorkspaceBrowserPanel pendingBrowserURL", () => {
     const { input } = render({});
     rerender({ pendingBrowserURL: "http://localhost:5173" });
     expect(input?.value).toBe("http://localhost:5173");
+  });
+
+  it("reports webview navigation URLs to the parent", () => {
+    const changed = vi.fn();
+    render({ onCurrentURLChange: changed });
+    act(() => {
+      fakeWebview.dispatchEvent(Object.assign(new Event("did-navigate"), { url: "http://localhost:5173" }));
+    });
+    expect(changed).toHaveBeenCalledWith("http://localhost:5173");
   });
 
   it("does not navigate again when the same URL is re-asserted", () => {

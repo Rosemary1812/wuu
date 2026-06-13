@@ -420,6 +420,7 @@ const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
 const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
 const WORKSPACE_RIGHT_PANEL_STEP = 32;
 const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
+const WORKSPACE_BROWSER_HOME_URL = "wuu://new-tab";
 const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
@@ -677,12 +678,11 @@ export function App(): JSX.Element {
   const managedProcessRefreshTimerRef = useRef<number | undefined>(undefined);
   const managedProcessRefreshInFlightRef = useRef(false);
   const managedProcessRefreshQueuedRef = useRef(false);
-  // Tracks the last URL we asked the in-app browser to navigate to via
-  // a "listening ports" auto-open, so repeated thread/updated events
-  // for the same URL don't re-jump the browser.
-  const lastAutoNavigatedListeningURLRef = useRef<string | undefined>(
-    undefined,
-  );
+  // The right panel has one browser renderer, but each thread owns its own
+  // browser URL and preview auto-open marker.
+  const activeBrowserThreadIDRef = useRef<string | undefined>(undefined);
+  const browserURLByThreadRef = useRef(new Map<string, string>());
+  const lastAutoNavigatedBrowserURLByThreadRef = useRef(new Map<string, string>());
   const [pendingBrowserURL, setPendingBrowserURL] = useState<
     string | undefined
   >(undefined);
@@ -793,24 +793,69 @@ export function App(): JSX.Element {
     };
   }, []);
 
-  // When the active thread reports a listening port, auto-open the
-  // workspace browser at the first URL. We compare against the last URL
-  // we sent so repeated thread/updated events for the same dev server
-  // (e.g. HMR re-reports) do not re-jump the browser and disturb the
-  // user if they are already looking at the page.
+  function primaryBrowserURLForThread(thread: Thread | undefined): string | undefined {
+    const browserStateURL = thread?.browser_state?.primary_preview_url?.trim();
+    if (browserStateURL) {
+      return browserStateURL;
+    }
+    const ports = thread?.listening_ports;
+    return ports && ports.length > 0 ? `http://localhost:${ports[0]}` : undefined;
+  }
+
+  function restoreBrowserURLForThread(thread: Thread | undefined): string {
+    if (!thread) {
+      return WORKSPACE_BROWSER_HOME_URL;
+    }
+    return (
+      browserURLByThreadRef.current.get(thread.id) ||
+      thread.browser_state?.current_url?.trim() ||
+      primaryBrowserURLForThread(thread) ||
+      WORKSPACE_BROWSER_HOME_URL
+    );
+  }
+
+  function rememberBrowserURLForActiveThread(url: string): void {
+    if (!activeThreadID) {
+      return;
+    }
+    if (!url || url === WORKSPACE_BROWSER_HOME_URL) {
+      browserURLByThreadRef.current.delete(activeThreadID);
+      return;
+    }
+    browserURLByThreadRef.current.set(activeThreadID, url);
+  }
+
+  // Switching sessions restores that session's browser URL without forcing the
+  // right panel open. A new preview URL reported by the already-active session
+  // still auto-opens the browser once.
   useEffect(() => {
-    const ports = activeThread?.listening_ports;
-    if (!ports || ports.length === 0) {
+    if (!activeThreadID) {
+      activeBrowserThreadIDRef.current = undefined;
+      setPendingBrowserURL(WORKSPACE_BROWSER_HOME_URL);
       return;
     }
-    const target = `http://localhost:${ports[0]}`;
-    if (lastAutoNavigatedListeningURLRef.current === target) {
+    const previewURL = primaryBrowserURLForThread(activeThread);
+    const switchedThread = activeBrowserThreadIDRef.current !== activeThreadID;
+    if (switchedThread) {
+      activeBrowserThreadIDRef.current = activeThreadID;
+      if (previewURL) {
+        lastAutoNavigatedBrowserURLByThreadRef.current.set(activeThreadID, previewURL);
+      }
+      setPendingBrowserURL(restoreBrowserURLForThread(activeThread));
       return;
     }
-    lastAutoNavigatedListeningURLRef.current = target;
+    if (!previewURL || lastAutoNavigatedBrowserURLByThreadRef.current.get(activeThreadID) === previewURL) {
+      return;
+    }
+    lastAutoNavigatedBrowserURLByThreadRef.current.set(activeThreadID, previewURL);
     openWorkspaceTool("browser");
-    setPendingBrowserURL(target);
-  }, [activeThreadID, activeThread?.listening_ports]);
+    setPendingBrowserURL(previewURL);
+  }, [
+    activeThreadID,
+    activeThread?.browser_state?.current_url,
+    activeThread?.browser_state?.primary_preview_url,
+    activeThread?.listening_ports,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -3331,6 +3376,18 @@ export function App(): JSX.Element {
     }
   }
 
+  function openBackgroundProcessPreview(process: BackgroundProcessItem): void {
+    const target = process.primaryPreviewURL || process.previewURLs?.[0];
+    if (!target) {
+      return;
+    }
+    openWorkspaceTool("browser");
+    setPendingBrowserURL(target);
+    setEnvironmentPanelOpen(false);
+    setEnvironmentPanelDismissed(true);
+    setEnvironmentPanelMenu(null);
+  }
+
   async function createAndCheckoutBranch(branch: string): Promise<void> {
     if (!branch || anyThreadIsRunning) {
       return;
@@ -5206,6 +5263,7 @@ export function App(): JSX.Element {
           onOpenCommit={() => setEnvironmentDialog("commit")}
           onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
           onStopBackgroundProcess={(process) => void stopBackgroundProcess(process)}
+          onOpenBackgroundPreview={openBackgroundProcessPreview}
         />
         {queryHistoryDocked ? (
           <div className="query-history-environment-slot">
@@ -5856,6 +5914,7 @@ export function App(): JSX.Element {
         onClose={() => setRightPanelOpenWithMotion(false)}
         pendingBrowserURL={pendingBrowserURL}
         onBrowserURLConsumed={() => setPendingBrowserURL(undefined)}
+        onBrowserURLChange={rememberBrowserURLForActiveThread}
       />
       {environmentDialog === "commit" ? (
         <CommitChangesDialog

@@ -282,7 +282,7 @@
 .environment-process-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: 18px minmax(0, 1fr) auto 24px;
+  grid-template-columns: 18px minmax(0, 1fr) auto 24px 24px;
   align-items: center;
   column-gap: 7px;
   border-radius: 8px;
@@ -347,7 +347,7 @@
   background: #eeeeeb;
 }
 
-.environment-process-stop {
+.environment-process-action {
   display: grid;
   width: 22px;
   height: 22px;
@@ -356,12 +356,12 @@
   color: #7f8589;
 }
 
-.environment-process-stop:hover:not(:disabled) {
+.environment-process-action:hover:not(:disabled) {
   background: #e6e6e2;
   color: #22262a;
 }
 
-.environment-process-stop:disabled {
+.environment-process-action:disabled {
   opacity: 0.45;
 }
 

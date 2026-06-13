@@ -132,6 +132,8 @@ export type ManagedProcess = {
   tty?: boolean;
   command: string;
   cwd: string;
+  preview_urls?: string[];
+  primary_preview_url?: string;
   started_at: string;
   updated_at: string;
   stopped_at?: string;
@@ -401,6 +403,13 @@ export type Thread = {
   // in-app browser auto-open behaviour; the full list is rendered as
   // clickable chips in the workspace sidebar.
   listening_ports?: number[];
+  browser_state?: ThreadBrowserState;
+};
+
+export type ThreadBrowserState = {
+  current_url?: string;
+  primary_preview_url?: string;
+  linked_process_id?: string;
 };
 
 export type ThreadSearchResultItem = {

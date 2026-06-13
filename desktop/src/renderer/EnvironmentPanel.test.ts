@@ -194,4 +194,38 @@ describe("buildBackgroundProcessItems", () => {
       updatedAt: "2026-01-01T00:00:03.000Z"
     });
   });
+
+  it("carries preview urls from process metadata", () => {
+    const started = {
+      id: "proc-1",
+      owner_id: "thread-1",
+      command: "npm run dev",
+      cwd: "/repo",
+      lifecycle: "session",
+      status: "running",
+      preview_urls: ["http://localhost:5173/"],
+      primary_preview_url: "http://localhost:5173/",
+      started_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:01.000Z"
+    };
+
+    const processes = buildBackgroundProcessItems(
+      threadWithItems([
+        {
+          id: "tool-1",
+          type: "tool_call",
+          status: "completed",
+          name: "start_process",
+          result: JSON.stringify(started)
+        }
+      ])
+    );
+
+    expect(processes[0]).toMatchObject({
+      id: "proc-1",
+      ownerID: "thread-1",
+      primaryPreviewURL: "http://localhost:5173/",
+      previewURLs: ["http://localhost:5173/"]
+    });
+  });
 });
