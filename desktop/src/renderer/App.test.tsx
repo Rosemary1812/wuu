@@ -4,18 +4,18 @@
  * The assistant turn renders into two distinct regions:
  *   - front content ("过程"区): reasoning, tool calls, context compaction,
  *     and commentary. Carries the work the model did.
- *   - body ("正文"区): the user-facing reply. Carries the latest
- *     final_answer when the turn has more than one.
+ *   - body ("正文"区): the user-facing reply. Carries final_answer
+ *     text segments in arrival order.
  *
  * Commentary renders in the front using the same visual style as
  * final_answer — the two are distinguished by structural position, not
  * by decoration. A thin divider is drawn between the two regions when
- * the turn has exactly one final_answer and the turn shape is normal.
+ * the completed turn has final_answer body text.
  *
  * Empty reply: a completed turn that produced commentary but no
  * final_answer gets a compact "没有生成回复" notice. Pure-tool turns
  * (no text at all) are allowed to complete without a final answer.
- * Multi-final_answer turns show the latest final reply instead of
+ * Multi-final_answer turns keep all body text in order instead of
  * exposing an internal structure issue to the user.
  *
  * Fold header: the front is always default-collapsed. The header
@@ -208,7 +208,7 @@ describe("assistant turn front / body layout", () => {
     expect(display?.latestCommentaryPreview).toBeUndefined();
   });
 
-  it("multi final: commentary + final_answer_1 + commentary + final_answer_2 → body shows latest final reply", () => {
+  it("multi final: commentary + final_answer_1 + commentary + final_answer_2 → body keeps final text in order", () => {
     const commentaryA = makeCommentary("First thought.");
     const finalOne = makeFinalAnswer("First answer.");
     const commentaryB = makeCommentary("Second thought.");
@@ -222,10 +222,9 @@ describe("assistant turn front / body layout", () => {
     expect(display).toBeDefined();
     // Front carries the two commentary items in arrival order.
     expect(frontItemIDs(display)).toEqual([commentaryA.id, commentaryB.id]);
-    // Body carries the latest final_answer. Earlier duplicate finals
-    // are treated as an internal stream shape issue, not a user-facing
-    // warning state.
-    expect(bodyItemIDs(display)).toEqual([finalTwo.id]);
+    // Body keeps both final_answer text segments. Multiple finals are
+    // treated as a stream shape detail, not a user-facing warning state.
+    expect(bodyItemIDs(display)).toEqual([finalOne.id, finalTwo.id]);
     expect(display?.missingReplyMessage).toBeUndefined();
     expect(display?.showDivider).toBe(true);
     expect(display?.frontDefaultCollapsed).toBe(true);

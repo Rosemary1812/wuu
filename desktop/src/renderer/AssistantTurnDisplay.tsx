@@ -12,8 +12,9 @@ export type AssistantTurnDisplay = {
    */
   frontEntries: TurnProcessEntry[];
   /**
-   * Body: the user-facing reply. If a malformed turn contains multiple
-   * final answers, the UI shows the latest one as the reply.
+   * Body: the user-facing reply. Multiple final-answer text segments are
+   * rendered in arrival order as one reply surface instead of becoming a
+   * user-facing warning state.
    */
   finalAnswerItems: AssistantTurnAnswerItem[];
   /**
@@ -22,9 +23,8 @@ export type AssistantTurnDisplay = {
    */
   missingReplyMessage?: string;
   /**
-   * True only when there is exactly one final_answer and the turn is
-   * completed. The shell draws a thin horizontal divider between the
-   * front and the body in that case.
+   * True when a completed turn has final-answer body text. The shell draws
+   * a thin horizontal divider between the front and the body in that case.
    */
   showDivider: boolean;
   /**
@@ -161,11 +161,7 @@ export function buildAssistantTurnDisplay(
     return undefined;
   }
 
-  const userFacingFinalAnswerItems =
-    finalAnswerItems.length > 1
-      ? [finalAnswerItems[finalAnswerItems.length - 1]!]
-      : finalAnswerItems;
-  const finalCount = userFacingFinalAnswerItems.length;
+  const finalCount = finalAnswerItems.length;
   const isInProgress = turn.status === "in_progress";
   const isCompleted = turn.status === "completed";
 
@@ -179,7 +175,7 @@ export function buildAssistantTurnDisplay(
     }
   }
 
-  const showDivider = isCompleted && finalCount === 1 && !missingReplyMessage;
+  const showDivider = isCompleted && finalCount > 0 && !missingReplyMessage;
   const frontDefaultCollapsed = true;
 
   let latestCommentaryPreview: string | undefined;
@@ -210,7 +206,7 @@ export function buildAssistantTurnDisplay(
 
   return {
     frontEntries,
-    finalAnswerItems: userFacingFinalAnswerItems,
+    finalAnswerItems,
     missingReplyMessage,
     showDivider,
     frontDefaultCollapsed,
