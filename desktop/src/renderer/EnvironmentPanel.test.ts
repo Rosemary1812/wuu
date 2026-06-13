@@ -31,8 +31,6 @@ function managedProcess(overrides: Partial<ManagedProcess>): ManagedProcess {
     lifecycle: "session",
     status: "running",
     pid: 123,
-    pgid: 123,
-    log_path: "/repo/.wuu/log",
     command: "npm run dev",
     cwd: "/repo",
     started_at: "2026-01-01T00:00:00.000Z",

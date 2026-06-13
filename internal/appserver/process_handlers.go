@@ -22,10 +22,11 @@ func (s *Server) handleProcessList(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	for i := range processes {
-		processes[i] = redactManagedProcess(processes[i])
+	summaries := make([]ManagedProcessSummary, 0, len(processes))
+	for _, p := range processes {
+		summaries = append(summaries, managedProcessSummary(p))
 	}
-	return s.writeResponse(req.ID, ProcessListResult{Processes: processes}, nil)
+	return s.writeResponse(req.ID, ProcessListResult{Processes: summaries}, nil)
 }
 
 func (s *Server) handleProcessStop(req Request) error {
@@ -47,11 +48,24 @@ func (s *Server) handleProcessStop(req Request) error {
 	if stopped == nil {
 		return s.writeResponse(req.ID, nil, errors.New("process not found"))
 	}
-	return s.writeResponse(req.ID, ProcessStopResult{Process: redactManagedProcess(*stopped)}, nil)
+	return s.writeResponse(req.ID, ProcessStopResult{Process: managedProcessSummary(*stopped)}, nil)
 }
 
-func redactManagedProcess(p process.Process) process.Process {
-	p.Command = tools.RedactToolOutput(p.Command)
-	p.LastError = tools.RedactToolOutput(p.LastError)
-	return p
+func managedProcessSummary(p process.Process) ManagedProcessSummary {
+	return ManagedProcessSummary{
+		ID:        p.ID,
+		OwnerKind: string(p.OwnerKind),
+		OwnerID:   p.OwnerID,
+		Lifecycle: string(p.Lifecycle),
+		Status:    string(p.Status),
+		PID:       p.PID,
+		TTY:       p.TTY,
+		Command:   tools.RedactToolOutput(p.Command),
+		CWD:       p.CWD,
+		StartedAt: p.StartedAt,
+		UpdatedAt: p.UpdatedAt,
+		StoppedAt: p.StoppedAt,
+		ExitCode:  p.ExitCode,
+		LastError: tools.RedactToolOutput(p.LastError),
+	}
 }

@@ -129,9 +129,7 @@ export type ManagedProcess = {
   lifecycle: string;
   status: string;
   pid: number;
-  pgid: number;
   tty?: boolean;
-  log_path: string;
   command: string;
   cwd: string;
   started_at: string;

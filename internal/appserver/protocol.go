@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
-	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -188,8 +187,25 @@ type SkillListResult struct {
 	Skills []SkillSummary `json:"skills"`
 }
 
+type ManagedProcessSummary struct {
+	ID        string    `json:"id"`
+	OwnerKind string    `json:"owner_kind"`
+	OwnerID   string    `json:"owner_id"`
+	Lifecycle string    `json:"lifecycle"`
+	Status    string    `json:"status"`
+	PID       int       `json:"pid"`
+	TTY       bool      `json:"tty,omitempty"`
+	Command   string    `json:"command"`
+	CWD       string    `json:"cwd"`
+	StartedAt time.Time `json:"started_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	StoppedAt time.Time `json:"stopped_at,omitempty"`
+	ExitCode  int       `json:"exit_code,omitempty"`
+	LastError string    `json:"last_error,omitempty"`
+}
+
 type ProcessListResult struct {
-	Processes []process.Process `json:"processes"`
+	Processes []ManagedProcessSummary `json:"processes"`
 }
 
 type ProcessStopParams struct {
@@ -197,7 +213,7 @@ type ProcessStopParams struct {
 }
 
 type ProcessStopResult struct {
-	Process process.Process `json:"process"`
+	Process ManagedProcessSummary `json:"process"`
 }
 
 type CodexModelSummary struct {

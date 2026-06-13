@@ -1032,11 +1032,7 @@ func TestServerSkillList(t *testing.T) {
 
 func TestServerProcessListAndStop(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
-	manager, err := process.NewManager(rt.RootDir, filepath.Join(rt.RootDir, "runtime"))
-	if err != nil {
-		t.Fatalf("process.NewManager: %v", err)
-	}
-	rt.ProcessManager = manager
+	manager := attachTestProcessManager(t, rt)
 	started, err := manager.Start(context.Background(), process.StartOptions{
 		Command:   "sleep 30",
 		OwnerKind: process.OwnerMainAgent,
@@ -1054,8 +1050,16 @@ func TestServerProcessListAndStop(t *testing.T) {
 		t.Fatalf("process/list: %v", err)
 	}
 	listed := remarshal[ProcessListResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
-	if len(listed.Processes) != 1 || listed.Processes[0].ID != started.ID || listed.Processes[0].Status != process.StatusRunning {
+	if len(listed.Processes) != 1 || listed.Processes[0].ID != started.ID || listed.Processes[0].Status != string(process.StatusRunning) {
 		t.Fatalf("unexpected process list: %+v", listed)
+	}
+	rawListed := responseByID(t, parseOutput(t, out.String()), "1")
+	rawJSON, err := json.Marshal(rawListed["result"])
+	if err != nil {
+		t.Fatalf("marshal process/list result: %v", err)
+	}
+	if strings.Contains(string(rawJSON), "log_path") || strings.Contains(string(rawJSON), "pgid") {
+		t.Fatalf("process/list leaked internal process fields: %s", string(rawJSON))
 	}
 
 	stopPayload := fmt.Sprintf(`{"id":"2","method":"process/stop","params":{"process_id":%q}}`, started.ID)
@@ -1063,8 +1067,100 @@ func TestServerProcessListAndStop(t *testing.T) {
 		t.Fatalf("process/stop: %v", err)
 	}
 	stopped := remarshal[ProcessStopResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
-	if stopped.Process.ID != started.ID || stopped.Process.Status != process.StatusStopped {
+	if stopped.Process.ID != started.ID || stopped.Process.Status != string(process.StatusStopped) {
 		t.Fatalf("unexpected stopped process: %+v", stopped)
+	}
+}
+
+func TestServerProcessEndpointsValidateErrors(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	requests := []string{
+		`{"id":"1","method":"process/list"}`,
+		`{"id":"2","method":"process/stop","params":{"process_id":"proc-missing"}}`,
+	}
+	for _, raw := range requests {
+		if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+			t.Fatalf("handleLine %s: %v", raw, err)
+		}
+	}
+	msgs := parseOutput(t, out.String())
+	if got := responseByID(t, msgs, "1")["error"]; got == nil || !strings.Contains(fmt.Sprint(got), "process manager is not available") {
+		t.Fatalf("process/list missing-manager error mismatch: %+v", got)
+	}
+	if got := responseByID(t, msgs, "2")["error"]; got == nil || !strings.Contains(fmt.Sprint(got), "process manager is not available") {
+		t.Fatalf("process/stop missing-manager error mismatch: %+v", got)
+	}
+}
+
+func TestServerProcessStopValidatesProcessID(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	attachTestProcessManager(t, rt)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"process/stop","params":{"process_id":"   "}}`)); err != nil {
+		t.Fatalf("process/stop blank id: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"2","method":"process/stop","params":{"process_id":"proc-does-not-exist"}}`)); err != nil {
+		t.Fatalf("process/stop missing id: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	if got := responseByID(t, msgs, "1")["error"]; got == nil || !strings.Contains(fmt.Sprint(got), "process_id is required") {
+		t.Fatalf("blank process_id error mismatch: %+v", got)
+	}
+	if got := responseByID(t, msgs, "2")["error"]; got == nil || !strings.Contains(fmt.Sprint(got), "proc-does-not-exist") {
+		t.Fatalf("missing process error mismatch: %+v", got)
+	}
+}
+
+func TestServerProcessListRejectsUnknownParams(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	attachTestProcessManager(t, rt)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"process/list","params":{"extra":true}}`)); err != nil {
+		t.Fatalf("process/list unknown params: %v", err)
+	}
+	got := responseByID(t, parseOutput(t, out.String()), "1")["error"]
+	if got == nil || !strings.Contains(fmt.Sprint(got), "unknown field") {
+		t.Fatalf("unknown params error mismatch: %+v", got)
+	}
+}
+
+func TestServerProcessListRedactsSensitiveCommandAndError(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	manager := attachTestProcessManager(t, rt)
+	started, err := manager.Start(context.Background(), process.StartOptions{
+		Command:   "sleep 30 # api_key=super-secret-token",
+		OwnerKind: process.OwnerMainAgent,
+		OwnerID:   "test",
+		Lifecycle: process.LifecycleManaged,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _, _ = manager.Stop(started.ID) }()
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"process/list"}`)); err != nil {
+		t.Fatalf("process/list: %v", err)
+	}
+	listed := remarshal[ProcessListResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if len(listed.Processes) != 1 {
+		t.Fatalf("expected one process, got %+v", listed)
+	}
+	if strings.Contains(listed.Processes[0].Command, "super-secret-token") || !strings.Contains(listed.Processes[0].Command, "[REDACTED]") {
+		t.Fatalf("process command was not redacted: %+v", listed.Processes[0])
+	}
+	summary := managedProcessSummary(process.Process{
+		ID:        "proc-error",
+		Command:   "echo ok",
+		LastError: "password=super-secret-token",
+	})
+	if strings.Contains(summary.LastError, "super-secret-token") || !strings.Contains(summary.LastError, "[REDACTED]") {
+		t.Fatalf("process error was not redacted: %+v", summary)
 	}
 }
 
@@ -3015,6 +3111,16 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 			SystemPrompt: "system prompt",
 		},
 	}
+}
+
+func attachTestProcessManager(t *testing.T, rt *runtime.Session) *process.Manager {
+	t.Helper()
+	manager, err := process.NewManager(rt.RootDir, filepath.Join(rt.RootDir, "runtime"))
+	if err != nil {
+		t.Fatalf("process.NewManager: %v", err)
+	}
+	rt.ProcessManager = manager
+	return manager
 }
 
 func toolDefinitionNames(defs []providers.ToolDefinition) map[string]bool {
