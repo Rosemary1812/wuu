@@ -188,20 +188,22 @@ type SkillListResult struct {
 }
 
 type ManagedProcessSummary struct {
-	ID        string    `json:"id"`
-	OwnerKind string    `json:"owner_kind"`
-	OwnerID   string    `json:"owner_id"`
-	Lifecycle string    `json:"lifecycle"`
-	Status    string    `json:"status"`
-	PID       int       `json:"pid"`
-	TTY       bool      `json:"tty,omitempty"`
-	Command   string    `json:"command"`
-	CWD       string    `json:"cwd"`
-	StartedAt time.Time `json:"started_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	StoppedAt time.Time `json:"stopped_at,omitempty"`
-	ExitCode  int       `json:"exit_code,omitempty"`
-	LastError string    `json:"last_error,omitempty"`
+	ID                string    `json:"id"`
+	OwnerKind         string    `json:"owner_kind"`
+	OwnerID           string    `json:"owner_id"`
+	Lifecycle         string    `json:"lifecycle"`
+	Status            string    `json:"status"`
+	PID               int       `json:"pid"`
+	TTY               bool      `json:"tty,omitempty"`
+	Command           string    `json:"command"`
+	CWD               string    `json:"cwd"`
+	PreviewURLs       []string  `json:"preview_urls,omitempty"`
+	PrimaryPreviewURL string    `json:"primary_preview_url,omitempty"`
+	StartedAt         time.Time `json:"started_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	StoppedAt         time.Time `json:"stopped_at,omitempty"`
+	ExitCode          int       `json:"exit_code,omitempty"`
+	LastError         string    `json:"last_error,omitempty"`
 }
 
 type ProcessListResult struct {
@@ -523,7 +525,14 @@ type Thread struct {
 	// report_listening_ports). The desktop uses the first entry to
 	// auto-open the in-app browser when this thread becomes active,
 	// and renders the full list as clickable chips in the sidebar.
-	ListeningPorts []int `json:"listening_ports,omitempty"`
+	ListeningPorts []int               `json:"listening_ports,omitempty"`
+	BrowserState   *ThreadBrowserState `json:"browser_state,omitempty"`
+}
+
+type ThreadBrowserState struct {
+	CurrentURL        string `json:"current_url,omitempty"`
+	PrimaryPreviewURL string `json:"primary_preview_url,omitempty"`
+	LinkedProcessID   string `json:"linked_process_id,omitempty"`
 }
 
 type Turn struct {

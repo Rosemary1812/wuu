@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
+	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -59,6 +59,16 @@ func (t *ReportListeningPortsTool) Definition() providers.ToolDefinition {
 					"maxItems":    16,
 					"description": "TCP port numbers that the dev server is listening on, in the order the user should see them. Duplicates are de-duplicated.",
 				},
+				"process_id": map[string]any{
+					"type":        "string",
+					"description": "Optional managed process id returned by start_process. When provided, the desktop binds these ports to that background process.",
+				},
+				"primary_port": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"maximum":     65535,
+					"description": "Optional primary port to open first. Defaults to the first valid port in ports.",
+				},
 			},
 			"required": []string{"ports"},
 		},
@@ -66,7 +76,9 @@ func (t *ReportListeningPortsTool) Definition() providers.ToolDefinition {
 }
 
 type reportListeningPortsArgs struct {
-	Ports []int `json:"ports"`
+	Ports       []int  `json:"ports"`
+	ProcessID   string `json:"process_id"`
+	PrimaryPort int    `json:"primary_port"`
 }
 
 func (t *ReportListeningPortsTool) Execute(_ context.Context, argsJSON string) (string, error) {
@@ -85,22 +97,51 @@ func (t *ReportListeningPortsTool) Execute(_ context.Context, argsJSON string) (
 	}
 
 	ports := normalizeListeningPorts(args.Ports)
+	previewURLs := proc.PreviewURLsFromPorts(ports)
+	primaryURL := ""
+	if args.PrimaryPort >= 1 && args.PrimaryPort <= 65535 {
+		urls := proc.PreviewURLsFromPorts([]int{args.PrimaryPort})
+		if len(urls) > 0 {
+			primaryURL = urls[0]
+		}
+	}
+	var updatedProcess *proc.Process
+	processID := strings.TrimSpace(args.ProcessID)
+	if processID != "" {
+		manager, err := t.env.ProcessManager()
+		if err != nil {
+			return "", err
+		}
+		updated, err := manager.UpdatePreview(processID, previewURLs, primaryURL)
+		if err != nil {
+			return "", err
+		}
+		updatedProcess = updated
+	}
 	if t.env.OnPortsReported != nil {
 		t.env.OnPortsReported(ports)
 	}
 
-	return mustJSON(map[string]any{
+	out := map[string]any{
 		"action":        "report_listening_ports",
 		"status":        "noted",
 		"ports":         ports,
+		"preview_urls":  previewURLs,
 		"preview_count": len(ports),
 		"hint":          "the desktop will open the in-app browser at the first reported URL",
-	})
+	}
+	if processID != "" {
+		out["process_id"] = processID
+	}
+	if updatedProcess != nil {
+		out["process"] = redactProcess(*updatedProcess)
+	}
+	return mustJSON(out)
 }
 
-// normalizeListeningPorts drops out-of-range entries, removes duplicates, and
-// returns a deterministic, ascending list so the desktop can compare it
-// across reports with a single equality check.
+// normalizeListeningPorts drops out-of-range entries and removes duplicates
+// while preserving the agent-provided order. The first valid port drives the
+// default browser preview.
 func normalizeListeningPorts(in []int) []int {
 	if len(in) == 0 {
 		return []int{}
@@ -117,6 +158,5 @@ func normalizeListeningPorts(in []int) []int {
 		seen[p] = struct{}{}
 		out = append(out, p)
 	}
-	sort.Ints(out)
 	return out
 }

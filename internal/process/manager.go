@@ -29,6 +29,7 @@ type EventType string
 
 const (
 	EventStarted   EventType = "started"
+	EventUpdated   EventType = "updated"
 	EventFailed    EventType = "failed"
 	EventStopped   EventType = "stopped"
 	EventCleanedUp EventType = "cleaned_up"
@@ -47,23 +48,25 @@ const (
 )
 
 type Process struct {
-	Action    string    `json:"action,omitempty"`
-	ID        string    `json:"id"`
-	OwnerKind OwnerKind `json:"owner_kind"`
-	OwnerID   string    `json:"owner_id"`
-	Lifecycle Lifecycle `json:"lifecycle"`
-	Status    Status    `json:"status"`
-	PID       int       `json:"pid"`
-	PGID      int       `json:"pgid"`
-	TTY       bool      `json:"tty,omitempty"`
-	LogPath   string    `json:"log_path"`
-	Command   string    `json:"command"`
-	CWD       string    `json:"cwd"`
-	StartedAt time.Time `json:"started_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	StoppedAt time.Time `json:"stopped_at,omitempty"`
-	ExitCode  int       `json:"exit_code,omitempty"`
-	LastError string    `json:"last_error,omitempty"`
+	Action            string    `json:"action,omitempty"`
+	ID                string    `json:"id"`
+	OwnerKind         OwnerKind `json:"owner_kind"`
+	OwnerID           string    `json:"owner_id"`
+	Lifecycle         Lifecycle `json:"lifecycle"`
+	Status            Status    `json:"status"`
+	PID               int       `json:"pid"`
+	PGID              int       `json:"pgid"`
+	TTY               bool      `json:"tty,omitempty"`
+	LogPath           string    `json:"log_path"`
+	Command           string    `json:"command"`
+	CWD               string    `json:"cwd"`
+	PreviewURLs       []string  `json:"preview_urls,omitempty"`
+	PrimaryPreviewURL string    `json:"primary_preview_url,omitempty"`
+	StartedAt         time.Time `json:"started_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	StoppedAt         time.Time `json:"stopped_at,omitempty"`
+	ExitCode          int       `json:"exit_code,omitempty"`
+	LastError         string    `json:"last_error,omitempty"`
 }
 
 type StartOptions struct {
@@ -336,6 +339,31 @@ func (m *Manager) List() ([]Process, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.Before(out[j].StartedAt) })
 	return out, nil
+}
+
+func (m *Manager) UpdatePreview(id string, urls []string, primaryURL string) (*Process, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, err := m.load(id)
+	if err != nil {
+		return nil, err
+	}
+	normalized := NormalizePreviewURLs(urls)
+	primary := NormalizePreviewURL(primaryURL)
+	if primary != "" && !stringSliceContains(normalized, primary) {
+		normalized = append([]string{primary}, normalized...)
+	}
+	if primary == "" && len(normalized) > 0 {
+		primary = normalized[0]
+	}
+	p.PreviewURLs = normalized
+	p.PrimaryPreviewURL = primary
+	p.UpdatedAt = time.Now()
+	if err := m.save(p); err != nil {
+		return nil, err
+	}
+	m.publish(Event{Type: EventUpdated, Process: *p})
+	return p, nil
 }
 
 func (m *Manager) ReadOutput(id string, maxBytes int) (string, bool, error) {

@@ -43,6 +43,7 @@ type threadState struct {
 	// empty) list, and carried over across turns so the in-app browser
 	// preview survives between tool calls.
 	ListeningPorts []int
+	BrowserState   ThreadBrowserState
 
 	execRuntime *runtime.ThreadRuntime
 
