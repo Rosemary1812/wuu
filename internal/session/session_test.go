@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -485,6 +486,168 @@ func TestConcurrentCreateAndUpdate(t *testing.T) {
 			t.Errorf("duplicate session ID in index: %s", s.ID)
 		}
 		seen[s.ID] = true
+	}
+}
+
+func TestConcurrentHistoryAppendAndLoad(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+
+	const appends = 64
+	const readers = 4
+	start := make(chan struct{})
+	done := make(chan struct{})
+	errs := make(chan error, appends+readers)
+
+	var readerWG sync.WaitGroup
+	readerWG.Add(readers)
+	for i := 0; i < readers; i++ {
+		go func() {
+			defer readerWG.Done()
+			<-start
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if _, err := LoadHistoryRecords(dir, "thread-1", false); err != nil {
+					errs <- err
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}()
+	}
+
+	var writerWG sync.WaitGroup
+	writerWG.Add(appends)
+	for i := 0; i < appends; i++ {
+		i := i
+		go func() {
+			defer writerWG.Done()
+			<-start
+			if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{
+				Role:    "user",
+				Content: "message-" + strconv.Itoa(i),
+			}); err != nil {
+				errs <- err
+			}
+		}()
+	}
+
+	close(start)
+	writerWG.Wait()
+	close(done)
+	readerWG.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	history, err := LoadHistoryRecords(dir, "thread-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != appends {
+		t.Fatalf("expected %d appended records, got %d: %+v", appends, len(history), history)
+	}
+	seen := make(map[string]bool, appends)
+	for _, rec := range history {
+		if rec.Role != "user" {
+			t.Fatalf("unexpected record role after concurrent append: %+v", rec)
+		}
+		if seen[rec.Content] {
+			t.Fatalf("duplicate history content after concurrent append: %q", rec.Content)
+		}
+		seen[rec.Content] = true
+	}
+	for i := 0; i < appends; i++ {
+		content := "message-" + strconv.Itoa(i)
+		if !seen[content] {
+			t.Fatalf("missing history content after concurrent append: %q", content)
+		}
+	}
+}
+
+func TestConcurrentHistoryRewriteAndAppend(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{Role: "user", Content: "seed"}); err != nil {
+		t.Fatal(err)
+	}
+
+	const appends = 32
+	start := make(chan struct{})
+	errs := make(chan error, appends+1)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		if err := RewriteHistoryRecords(dir, "thread-1", []HistoryRecord{{
+			Role:    "assistant",
+			Content: "rewritten",
+		}}); err != nil {
+			errs <- err
+		}
+	}()
+
+	wg.Add(appends)
+	for i := 0; i < appends; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			<-start
+			if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{
+				Role:    "user",
+				Content: "append-" + strconv.Itoa(i),
+			}); err != nil {
+				errs <- err
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	history, err := LoadHistoryRecords(dir, "thread-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) < 1 || len(history) > appends+1 {
+		t.Fatalf("unexpected history length after concurrent rewrite/append: %d %+v", len(history), history)
+	}
+	var rewritten int
+	seen := make(map[string]bool, len(history))
+	for _, rec := range history {
+		if rec.Content == "seed" {
+			t.Fatalf("seed record should not survive rewrite: %+v", history)
+		}
+		if rec.Content == "rewritten" {
+			rewritten++
+			continue
+		}
+		if seen[rec.Content] {
+			t.Fatalf("duplicate appended content after concurrent rewrite/append: %q", rec.Content)
+		}
+		seen[rec.Content] = true
+	}
+	if rewritten != 1 {
+		t.Fatalf("expected one rewritten record, got %d in %+v", rewritten, history)
 	}
 }
 
