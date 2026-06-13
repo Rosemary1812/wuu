@@ -97,11 +97,7 @@ import {
   createConversationFixture,
   type ConversationFixtureKind,
 } from "./ConversationFixtures";
-import {
-  conversationSearchResultSections,
-  conversationSearchStatusText,
-  conversationSearchVisibleSnippet,
-} from "./ConversationSearchDisplay";
+import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
 import { useConversationSearch } from "./ConversationSearchState";
 import {
   EnvironmentPanel,
@@ -123,8 +119,6 @@ import {
   cloneSessionTabDraft,
   cloneComposerDraft,
   composerSubmissionDetail,
-  conversationSearchContextLabel,
-  conversationSearchThreadMeta,
   createDraftSessionTab,
   createFileSessionTab,
   createSkillsSessionTab,
@@ -4787,16 +4781,6 @@ export function App(): JSX.Element {
         ) : null}
       </div>
     ) : null;
-  const conversationSearchSections = conversationSearchResultSections(
-    conversationSearchResults,
-    conversationSearch.query,
-  );
-  const conversationSearchStatus = conversationSearchStatusText({
-    loading: conversationSearch.loading,
-    query: conversationSearch.query,
-    resultCount: conversationSearchResults.length,
-  });
-
   return (
     <div className={shellClassName} style={shellStyle}>
       <aside className="sidebar">
@@ -4991,149 +4975,23 @@ export function App(): JSX.Element {
         />
       )}
 
-      {conversationSearch.open || conversationSearch.closing ? (
-        <div
-          className={`conversation-search-overlay${
-            conversationSearch.closing ? " closing" : ""
-          }`}
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeConversationSearch();
-            }
-          }}
-        >
-          <div
-            className="conversation-search-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="搜索会话"
-            ref={conversationSearchRef}
-          >
-            <div className="conversation-search-input-wrap">
-              <Search size={18} aria-hidden="true" />
-              <input
-                ref={conversationSearchInputRef}
-                value={conversationSearch.query}
-                placeholder="搜索对话内容或提问"
-                onChange={(event) =>
-                  setConversationSearchQuery(event.target.value)
-                }
-                onKeyDown={handleConversationSearchKeyDown}
-              />
-              {conversationSearch.query ? (
-                <button
-                  className="conversation-search-clear"
-                  type="button"
-                  aria-label="清空搜索"
-                  onClick={clearConversationSearchQuery}
-                >
-                  <X size={15} />
-                </button>
-              ) : null}
-            </div>
-            <div
-              className={`conversation-search-status${
-                conversationSearch.loading ? " loading" : ""
-              }`}
-            >
-              <span className="conversation-search-status-text">
-                {conversationSearchStatus}
-              </span>
-              <button
-                type="button"
-                onClick={() => void refreshConversationSearchThreads()}
-              >
-                刷新
-              </button>
-            </div>
-            {conversationSearch.error ? (
-              <div className="conversation-search-error">
-                {conversationSearch.error}
-              </div>
-            ) : null}
-            <div className="conversation-search-results">
-              {conversationSearchSections.map((section) => (
-                <section
-                  className="conversation-search-section"
-                  key={section.title}
-                >
-                  <div className="conversation-search-section-title">
-                    {section.title}
-                  </div>
-                  {section.results.map((result, sectionIndex) => {
-                    const resultIndex = section.startIndex + sectionIndex;
-                    const thread = result.thread;
-                    const title = threadDisplayTitle(
-                      thread,
-                      state.threads,
-                      "未命名对话",
-                    );
-                    const active = thread.id === activeThreadID;
-                    const pending = visiblePendingThreadID === thread.id;
-                    const selected =
-                      conversationSearch.selectedIndex === resultIndex;
-                    const contextLabel = conversationSearchContextLabel(
-                      thread,
-                      state.projects,
-                    );
-                    const snippet = conversationSearchVisibleSnippet({
-                      query: conversationSearch.query,
-                      snippet: result.snippet,
-                      title,
-                    });
-                    return (
-                      <button
-                        key={thread.id}
-                        className={`conversation-search-result${active ? " active" : ""}${pending ? " pending" : ""}${selected ? " selected" : ""}`}
-                        type="button"
-                        aria-current={active ? "page" : undefined}
-                        aria-selected={selected}
-                        onMouseEnter={() =>
-                          setConversationSearchSelectedIndex(resultIndex)
-                        }
-                        onClick={() => selectConversationSearchResult(result)}
-                      >
-                        <span className="conversation-search-result-main">
-                          <span className="conversation-search-result-title">
-                            {title}
-                          </span>
-                          {snippet ? (
-                            <span className="conversation-search-result-snippet">
-                              {snippet}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="conversation-search-result-side">
-                          <span className="conversation-search-result-context">
-                            {contextLabel}
-                          </span>
-                          <span className="conversation-search-result-meta">
-                            {conversationSearchThreadMeta(thread)}
-                          </span>
-                          {resultIndex < 9 ? (
-                            <span className="conversation-search-result-shortcut">
-                              ⌘{resultIndex + 1}
-                            </span>
-                          ) : null}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </section>
-              ))}
-              {conversationSearchResults.length === 0 ? (
-                <div className="conversation-search-empty">
-                  {conversationSearch.loading
-                    ? "正在搜索会话"
-                    : conversationSearch.query.trim()
-                      ? "没有匹配的会话"
-                      : "暂无会话"}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ConversationSearchOverlay
+        state={conversationSearch}
+        results={conversationSearchResults}
+        threads={state.threads}
+        projects={state.projects}
+        activeThreadID={activeThreadID}
+        pendingThreadID={visiblePendingThreadID}
+        dialogRef={conversationSearchRef}
+        inputRef={conversationSearchInputRef}
+        onClose={closeConversationSearch}
+        onRefresh={() => void refreshConversationSearchThreads()}
+        onQueryChange={setConversationSearchQuery}
+        onClearQuery={clearConversationSearchQuery}
+        onKeyDown={handleConversationSearchKeyDown}
+        onSelectIndex={setConversationSearchSelectedIndex}
+        onSelectResult={selectConversationSearchResult}
+      />
 
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
