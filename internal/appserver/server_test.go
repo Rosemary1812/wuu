@@ -2561,18 +2561,15 @@ func TestServerTurnItemsIncludeReasoningAndAgentMessage(t *testing.T) {
 
 func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
-	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
-		t.Fatalf("mkdir session dir: %v", err)
-	}
 	sessionID := "20260523-000000-test"
-	sessionPath := filepath.Join(rt.SessionDir, sessionID+".jsonl")
-	history := strings.Join([]string{
-		`{"role":"system","content":"system prompt"}`,
-		`{"role":"user","content":"hello"}`,
-		`{"role":"assistant","content":"done"}`,
-		"",
-	}, "\n")
-	if err := os.WriteFile(sessionPath, []byte(history), 0o644); err != nil {
+	sess, err := session.CreateWithMetadata(rt.SessionDir, sessionID, rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, sess.ID), []providers.ChatMessage{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "done"},
+	}); err != nil {
 		t.Fatalf("write session: %v", err)
 	}
 
@@ -2777,20 +2774,25 @@ func TestServerThreadResumeReturnsLoadedRunningThread(t *testing.T) {
 
 func TestServerThreadResumeNormalizesToolResultOrder(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
-	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
-		t.Fatalf("mkdir session dir: %v", err)
-	}
 	sessionID := "20260523-000001-tools"
-	sessionPath := filepath.Join(rt.SessionDir, sessionID+".jsonl")
-	history := strings.Join([]string{
-		`{"role":"system","content":"system prompt"}`,
-		`{"role":"user","content":"inspect"}`,
-		`{"role":"assistant","tool_calls":[{"id":"call_1","name":"read_file","arguments":"{}"}]}`,
-		`{"role":"user","content":"mid-turn context"}`,
-		`{"role":"tool","name":"read_file","tool_call_id":"call_1","content":"ok"}`,
-		"",
-	}, "\n")
-	if err := os.WriteFile(sessionPath, []byte(history), 0o644); err != nil {
+	sess, err := session.CreateWithMetadata(rt.SessionDir, sessionID, rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
+	if err := rewriteChatHistory(sessionPath, []providers.ChatMessage{
+		{Role: "user", Content: "inspect"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_1",
+				Name:      "read_file",
+				Arguments: "{}",
+			}},
+		},
+		{Role: "user", Content: "mid-turn context"},
+		{Role: "tool", Name: "read_file", ToolCallID: "call_1", Content: "ok"},
+	}); err != nil {
 		t.Fatalf("write session: %v", err)
 	}
 

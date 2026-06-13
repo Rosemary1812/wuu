@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -188,20 +189,21 @@ func TestListOrdersPinnedGroupsByActivity(t *testing.T) {
 func TestListBackfillsActivityFromSessionFileModTime(t *testing.T) {
 	dir := t.TempDir()
 	base := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
-	older, err := CreateWithMetadata(dir, "older", "/tmp/project")
-	if err != nil {
+	cwd := "/tmp/project"
+	writeLegacyIndex(t, dir, []Session{
+		{ID: "older", CreatedAt: base.Add(-time.Hour), CWD: cwd},
+		{ID: "newer", CreatedAt: base.Add(-time.Hour), CWD: cwd},
+	})
+	if err := os.WriteFile(FilePath(dir, "older"), []byte{}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	newer, err := CreateWithMetadata(dir, "newer", "/tmp/project")
-	if err != nil {
+	if err := os.WriteFile(FilePath(dir, "newer"), []byte{}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	setSessionUpdatedAt(t, dir, older.ID, time.Time{})
-	setSessionUpdatedAt(t, dir, newer.ID, time.Time{})
-	if err := os.Chtimes(FilePath(dir, older.ID), base, base); err != nil {
+	if err := os.Chtimes(FilePath(dir, "older"), base, base); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chtimes(FilePath(dir, newer.ID), base.Add(time.Hour), base.Add(time.Hour)); err != nil {
+	if err := os.Chtimes(FilePath(dir, "newer"), base.Add(time.Hour), base.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -209,7 +211,7 @@ func TestListBackfillsActivityFromSessionFileModTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sessions) != 2 || sessions[0].ID != newer.ID || sessions[1].ID != older.ID {
+	if len(sessions) != 2 || sessions[0].ID != "newer" || sessions[1].ID != "older" {
 		t.Fatalf("expected sessions by file activity fallback, got %+v", sessions)
 	}
 	if sessions[0].UpdatedAt.IsZero() || sessions[1].UpdatedAt.IsZero() {
@@ -260,9 +262,78 @@ func TestPinAndArchiveMetadata(t *testing.T) {
 	}
 }
 
-// TestConcurrentCreateAndUpdate exercises the race fixed by withIndexLock:
-// before the fix, UpdateIndex's read-modify-rewrite could clobber a Create
-// that happened between the read and the rewrite.
+func TestHistoryRecordsPersistInSQLite(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{
+		Role:      "assistant",
+		Content:   "done",
+		ToolCalls: json.RawMessage(`[{"id":"call_1","name":"read_file","arguments":"{}"}]`),
+		At:        time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{
+		Role:         "meta",
+		Content:      "token_usage",
+		InputTokens:  12,
+		OutputTokens: 4,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	visible, err := LoadHistoryRecords(dir, "thread-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(visible) != 1 || visible[0].Role != "assistant" || string(visible[0].ToolCalls) == "" {
+		t.Fatalf("unexpected visible history: %+v", visible)
+	}
+
+	all, err := LoadHistoryRecords(dir, "thread-1", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 12 || all[1].OutputTokens != 4 {
+		t.Fatalf("unexpected full history: %+v", all)
+	}
+}
+
+func TestLegacyHistoryImportsIntoSQLite(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
+	writeLegacyIndex(t, dir, []Session{{
+		ID:        "legacy-thread",
+		CreatedAt: start,
+		UpdatedAt: start,
+		CWD:       "/tmp/project",
+	}})
+	writeLegacyHistory(t, FilePath(dir, "legacy-thread"), []HistoryRecord{
+		{Role: "user", Content: "hello", At: start},
+		{Role: "assistant", Content: "done", At: start.Add(time.Minute)},
+	})
+
+	sessions, err := List(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != "legacy-thread" {
+		t.Fatalf("legacy index not imported: %+v", sessions)
+	}
+	history, err := LoadHistoryRecords(dir, "legacy-thread", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 || history[0].Content != "hello" || history[1].Content != "done" {
+		t.Fatalf("legacy history not imported: %+v", history)
+	}
+}
+
+// TestConcurrentCreateAndUpdate exercises concurrent short writes against the
+// SQLite store. Creates and metadata updates must not lose sessions.
 func TestConcurrentCreateAndUpdate(t *testing.T) {
 	dir := t.TempDir()
 
@@ -318,13 +389,13 @@ func TestConcurrentCreateAndUpdate(t *testing.T) {
 	}
 }
 
-func TestLockFileIsCreated(t *testing.T) {
+func TestSQLiteDatabaseIsCreated(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".index.lock")); err != nil {
-		t.Fatalf("expected lock file to exist: %v", err)
+	if _, err := os.Stat(DBPath(dir)); err != nil {
+		t.Fatalf("expected sqlite database to exist: %v", err)
 	}
 }
 
@@ -334,5 +405,38 @@ func setSessionUpdatedAt(t *testing.T, dir, id string, at time.Time) {
 		s.UpdatedAt = at
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func writeLegacyIndex(t *testing.T, dir string, sessions []Session) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(IndexPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	for _, sess := range sessions {
+		if err := enc.Encode(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func writeLegacyHistory(t *testing.T, path string, records []HistoryRecord) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	for _, rec := range records {
+		if err := enc.Encode(rec); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

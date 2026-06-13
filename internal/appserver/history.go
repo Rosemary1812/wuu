@@ -3,6 +3,7 @@ package appserver
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/jsonl"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	sessionstore "github.com/blueberrycongee/wuu/internal/session"
 )
 
 type persistedToolCall struct {
@@ -71,26 +73,16 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil
 	}
-	file, err := os.Open(path)
+	records, err := loadPersistedMessages(path, false)
 	if err != nil {
-		return nil, fmt.Errorf("open session history: %w", err)
+		return nil, err
 	}
-	defer file.Close()
 
 	var messages []providers.ChatMessage
-	line := 0
-	err = jsonl.ForEachLine(file, func(raw []byte) error {
-		line++
-		if len(raw) == 0 {
-			return nil
-		}
-		var rec persistedMessage
-		if err := json.Unmarshal(raw, &rec); err != nil {
-			return fmt.Errorf("parse session line %d: %w", line, err)
-		}
+	for _, rec := range records {
 		role := strings.ToLower(strings.TrimSpace(rec.Role))
 		if role == "" || role == "meta" {
-			return nil
+			continue
 		}
 		msg := providers.ChatMessage{
 			Role:             role,
@@ -130,10 +122,6 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 			})
 		}
 		messages = append(messages, msg)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("scan session history: %w", err)
 	}
 	return messages, nil
 }
@@ -157,6 +145,12 @@ func appendChatMessage(path string, msg providers.ChatMessage) error {
 	if strings.TrimSpace(path) == "" || !shouldPersistMessage(msg) {
 		return nil
 	}
+	rec := persistedMessageFromChatMessage(msg)
+	if sessDir, id, ok, err := managedHistoryTarget(path); err != nil {
+		return err
+	} else if ok {
+		return sessionstore.AppendHistoryRecord(sessDir, id, historyRecordFromPersistedMessage(rec))
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create session directory: %w", err)
 	}
@@ -165,7 +159,7 @@ func appendChatMessage(path string, msg providers.ChatMessage) error {
 		return fmt.Errorf("open session history for append: %w", err)
 	}
 	defer file.Close()
-	if err := json.NewEncoder(file).Encode(persistedMessageFromChatMessage(msg)); err != nil {
+	if err := json.NewEncoder(file).Encode(rec); err != nil {
 		return fmt.Errorf("write session message: %w", err)
 	}
 	return nil
@@ -176,8 +170,23 @@ func rewriteChatHistory(path string, msgs []providers.ChatMessage) error {
 		return nil
 	}
 	metas, err := loadMetaMessages(path)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("load session metadata: %w", err)
+	}
+	if sessDir, id, ok, err := managedHistoryTarget(path); err != nil {
+		return err
+	} else if ok {
+		records := make([]sessionstore.HistoryRecord, 0, len(msgs)+len(metas))
+		for _, msg := range msgs {
+			if !shouldPersistMessage(msg) {
+				continue
+			}
+			records = append(records, historyRecordFromPersistedMessage(persistedMessageFromChatMessage(msg)))
+		}
+		for _, rec := range metas {
+			records = append(records, historyRecordFromPersistedMessage(rec))
+		}
+		return sessionstore.RewriteHistoryRecords(sessDir, id, records)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create session directory: %w", err)
@@ -208,6 +217,18 @@ func appendTokenUsage(path string, inputTokens, outputTokens int) error {
 	if strings.TrimSpace(path) == "" || (inputTokens == 0 && outputTokens == 0) {
 		return nil
 	}
+	rec := persistedMessage{
+		Role:         "meta",
+		Content:      "token_usage",
+		At:           time.Now().UTC(),
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+	}
+	if sessDir, id, ok, err := managedHistoryTarget(path); err != nil {
+		return err
+	} else if ok {
+		return sessionstore.AppendHistoryRecord(sessDir, id, historyRecordFromPersistedMessage(rec))
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create session directory: %w", err)
 	}
@@ -216,13 +237,6 @@ func appendTokenUsage(path string, inputTokens, outputTokens int) error {
 		return fmt.Errorf("open session history for append: %w", err)
 	}
 	defer file.Close()
-	rec := persistedMessage{
-		Role:         "meta",
-		Content:      "token_usage",
-		At:           time.Now().UTC(),
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-	}
 	if err := json.NewEncoder(file).Encode(rec); err != nil {
 		return fmt.Errorf("write token usage: %w", err)
 	}
@@ -277,6 +291,17 @@ func loadMetaMessages(path string) ([]persistedMessage, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil
 	}
+	if records, err := loadPersistedMessages(path, true); err != nil {
+		return nil, err
+	} else if records != nil {
+		metas := make([]persistedMessage, 0)
+		for _, rec := range records {
+			if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
+				metas = append(metas, rec)
+			}
+		}
+		return metas, nil
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -298,6 +323,142 @@ func loadMetaMessages(path string) ([]persistedMessage, error) {
 		return nil
 	})
 	return metas, err
+}
+
+func loadPersistedMessages(path string, includeMeta bool) ([]persistedMessage, error) {
+	if sessDir, id, ok, err := managedHistoryTarget(path); err != nil {
+		return nil, err
+	} else if ok {
+		records, err := sessionstore.LoadHistoryRecords(sessDir, id, includeMeta)
+		if err != nil {
+			return nil, fmt.Errorf("load session history: %w", err)
+		}
+		out := make([]persistedMessage, 0, len(records))
+		for _, rec := range records {
+			msg, err := persistedMessageFromHistoryRecord(rec)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, msg)
+		}
+		return out, nil
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open session history: %w", err)
+	}
+	defer file.Close()
+
+	var messages []persistedMessage
+	line := 0
+	err = jsonl.ForEachLine(file, func(raw []byte) error {
+		line++
+		if len(raw) == 0 {
+			return nil
+		}
+		var rec persistedMessage
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			return fmt.Errorf("parse session line %d: %w", line, err)
+		}
+		if !includeMeta && strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
+			return nil
+		}
+		messages = append(messages, rec)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scan session history: %w", err)
+	}
+	return messages, nil
+}
+
+func managedHistoryTarget(path string) (string, string, bool, error) {
+	sessDir, id, ok := sessionstore.ParseHistoryPath(path)
+	if !ok {
+		return "", "", false, nil
+	}
+	if _, err := os.Stat(sessionstore.DBPath(sessDir)); err != nil {
+		if !os.IsNotExist(err) {
+			return "", "", false, err
+		}
+		if _, indexErr := os.Stat(sessionstore.IndexPath(sessDir)); indexErr != nil {
+			if os.IsNotExist(indexErr) {
+				return "", "", false, nil
+			}
+			return "", "", false, indexErr
+		}
+	}
+	_, exists, err := sessionstore.Find(sessDir, id)
+	if err != nil {
+		return "", "", false, err
+	}
+	return sessDir, id, exists, nil
+}
+
+func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.HistoryRecord {
+	return sessionstore.HistoryRecord{
+		Role:             rec.Role,
+		Content:          rec.Content,
+		ClientID:         rec.ClientID,
+		Steered:          rec.Steered,
+		ReasoningContent: rec.ReasoningContent,
+		ReasoningBlocks:  mustJSON(rec.ReasoningBlocks),
+		Images:           mustJSON(rec.Images),
+		Files:            mustJSON(rec.Files),
+		ToolCalls:        mustJSON(rec.ToolCalls),
+		ToolCallID:       rec.ToolCallID,
+		Name:             rec.Name,
+		At:               rec.At,
+		InputTokens:      rec.InputTokens,
+		OutputTokens:     rec.OutputTokens,
+	}
+}
+
+func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persistedMessage, error) {
+	out := persistedMessage{
+		Role:             rec.Role,
+		Content:          rec.Content,
+		ClientID:         rec.ClientID,
+		Steered:          rec.Steered,
+		ReasoningContent: rec.ReasoningContent,
+		ToolCallID:       rec.ToolCallID,
+		Name:             rec.Name,
+		At:               rec.At,
+		InputTokens:      rec.InputTokens,
+		OutputTokens:     rec.OutputTokens,
+	}
+	if err := unmarshalRaw(rec.ReasoningBlocks, &out.ReasoningBlocks); err != nil {
+		return persistedMessage{}, err
+	}
+	if err := unmarshalRaw(rec.Images, &out.Images); err != nil {
+		return persistedMessage{}, err
+	}
+	if err := unmarshalRaw(rec.Files, &out.Files); err != nil {
+		return persistedMessage{}, err
+	}
+	if err := unmarshalRaw(rec.ToolCalls, &out.ToolCalls); err != nil {
+		return persistedMessage{}, err
+	}
+	return out, nil
+}
+
+func mustJSON(v any) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil || string(data) == "null" || string(data) == "[]" {
+		return nil
+	}
+	return data
+}
+
+func unmarshalRaw(raw json.RawMessage, out any) error {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("decode session history payload: %w", err)
+	}
+	return nil
 }
 
 func shouldPersistMessage(msg providers.ChatMessage) bool {

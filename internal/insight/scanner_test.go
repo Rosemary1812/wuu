@@ -183,6 +183,24 @@ func TestUsageDataPathsStayUnderUserState(t *testing.T) {
 func writeInsightSessionRecords(t *testing.T, path string, records []memoryRecord) {
 	t.Helper()
 
+	if sessDir, id, ok := sessionstore.ParseHistoryPath(path); ok {
+		if _, exists, err := sessionstore.Find(sessDir, id); err != nil {
+			t.Fatalf("find session: %v", err)
+		} else if !exists {
+			if _, err := sessionstore.CreateWithMetadata(sessDir, id, ""); err != nil {
+				t.Fatalf("create session: %v", err)
+			}
+		}
+		history := make([]sessionstore.HistoryRecord, 0, len(records))
+		for _, rec := range records {
+			history = append(history, historyRecordFromMemoryRecord(t, rec))
+		}
+		if err := sessionstore.RewriteHistoryRecords(sessDir, id, history); err != nil {
+			t.Fatalf("rewrite session records: %v", err)
+		}
+		return
+	}
+
 	file, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("create session file: %v", err)
@@ -194,5 +212,23 @@ func writeInsightSessionRecords(t *testing.T, path string, records []memoryRecor
 		if err := enc.Encode(rec); err != nil {
 			t.Fatalf("encode session record: %v", err)
 		}
+	}
+}
+
+func historyRecordFromMemoryRecord(t *testing.T, rec memoryRecord) sessionstore.HistoryRecord {
+	t.Helper()
+	toolCalls, err := json.Marshal(rec.ToolCalls)
+	if err != nil {
+		t.Fatalf("marshal tool calls: %v", err)
+	}
+	return sessionstore.HistoryRecord{
+		Role:         rec.Role,
+		Content:      rec.Content,
+		ToolCalls:    toolCalls,
+		ToolCallID:   rec.ToolCallID,
+		Name:         rec.Name,
+		At:           rec.At,
+		InputTokens:  rec.InputTokens,
+		OutputTokens: rec.OutputTokens,
 	}
 }

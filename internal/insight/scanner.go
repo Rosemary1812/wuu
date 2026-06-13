@@ -1,15 +1,13 @@
 package insight
 
 import (
-	"bytes"
 	"encoding/json"
-	"os"
+	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/jsonl"
 	sessionstore "github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
@@ -32,15 +30,18 @@ type toolCallRec struct {
 	Arguments string `json:"arguments"`
 }
 
-// ScanSessions reads all .jsonl session files in sessDir and returns metadata
+// ScanSessions reads all SQLite-backed sessions in sessDir and returns metadata
 // sorted by creation time descending (most recent first).
 // maxSessions limits how many sessions to return (0 = all).
 func ScanSessions(sessDir string, maxSessions int) ([]SessionMeta, error) {
-	return scanSessions(sessDir, maxSessions, nil)
+	sessions, err := sessionstore.List(sessDir, 0)
+	if err != nil {
+		return nil, err
+	}
+	return scanSessions(sessDir, sessions, maxSessions)
 }
 
-// ScanSessionsForCWD reads session files scoped to a workspace cwd using the
-// session index metadata.
+// ScanSessionsForCWD reads sessions scoped to a workspace cwd.
 func ScanSessionsForCWD(sessDir, cwd string, maxSessions int) ([]SessionMeta, error) {
 	if strings.TrimSpace(cwd) == "" {
 		return ScanSessions(sessDir, maxSessions)
@@ -49,38 +50,22 @@ func ScanSessionsForCWD(sessDir, cwd string, maxSessions int) ([]SessionMeta, er
 	if err != nil {
 		return nil, err
 	}
-	allowed := make(map[string]bool, len(sessions))
-	for _, s := range sessions {
-		allowed[s.ID] = true
-	}
-	return scanSessions(sessDir, maxSessions, allowed)
+	return scanSessions(sessDir, sessions, maxSessions)
 }
 
-func scanSessions(sessDir string, maxSessions int, allowedIDs map[string]bool) ([]SessionMeta, error) {
-	entries, err := os.ReadDir(sessDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var metas []SessionMeta
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
-			continue
-		}
-		if entry.Name() == "index.jsonl" {
-			continue
-		}
-		id := strings.TrimSuffix(entry.Name(), ".jsonl")
-		if allowedIDs != nil && !allowedIDs[id] {
-			continue
-		}
-		path := filepath.Join(sessDir, entry.Name())
-		meta, err := scanOneSession(path, id)
+func scanSessions(sessDir string, sessions []sessionstore.Session, maxSessions int) ([]SessionMeta, error) {
+	metas := make([]SessionMeta, 0, len(sessions))
+	for _, sess := range sessions {
+		records, err := sessionstore.LoadHistoryRecords(sessDir, sess.ID, true)
 		if err != nil {
-			continue // skip corrupt files
+			continue // skip corrupt or partially migrated sessions
+		}
+		meta := scanSessionRecords(records, sess.ID)
+		if meta.CreatedAt.IsZero() {
+			meta.CreatedAt = sess.CreatedAt
+		}
+		if meta.Duration == 0 && !sess.CreatedAt.IsZero() && !sess.UpdatedAt.IsZero() && sess.UpdatedAt.After(sess.CreatedAt) {
+			meta.Duration = sess.UpdatedAt.Sub(sess.CreatedAt)
 		}
 		if !isSubstantiveSession(meta) {
 			continue
@@ -135,14 +120,16 @@ func baseSessionID(id string) string {
 	return id
 }
 
-// scanOneSession reads a single .jsonl session file and extracts metadata.
+// scanOneSession reads a single legacy JSONL session file and extracts metadata.
 func scanOneSession(path string, id string) (SessionMeta, error) {
-	file, err := os.Open(path)
+	records, err := sessionstore.ReadLegacyHistoryRecords(path)
 	if err != nil {
 		return SessionMeta{}, err
 	}
-	defer file.Close()
+	return scanSessionRecords(records, id), nil
+}
 
+func scanSessionRecords(records []sessionstore.HistoryRecord, id string) SessionMeta {
 	meta := SessionMeta{
 		ID:         id,
 		ToolCounts: make(map[string]int),
@@ -153,15 +140,8 @@ func scanOneSession(path string, id string) (SessionMeta, error) {
 	var firstTime, lastTime time.Time
 	var firstUserMsg string
 
-	err = jsonl.ForEachLine(file, func(raw []byte) error {
-		payload := bytes.TrimSpace(raw)
-		if len(payload) == 0 {
-			return nil
-		}
-		var rec memoryRecord
-		if err := json.Unmarshal(payload, &rec); err != nil {
-			return nil
-		}
+	for _, historyRec := range records {
+		rec := memoryRecordFromHistoryRecord(historyRec)
 
 		// Track time range.
 		if !rec.At.IsZero() {
@@ -214,10 +194,6 @@ func scanOneSession(path string, id string) (SessionMeta, error) {
 			meta.InputTokens += rec.InputTokens
 			meta.OutputTokens += rec.OutputTokens
 		}
-		return nil
-	})
-	if err != nil {
-		return meta, err
 	}
 
 	meta.CreatedAt = firstTime
@@ -227,31 +203,29 @@ func scanOneSession(path string, id string) (SessionMeta, error) {
 	meta.FirstUserMsg = firstUserMsg
 	meta.FilesModified = len(filesModified)
 
-	return meta, nil
+	return meta
 }
 
 // FormatTranscript builds a condensed text transcript of a session for LLM analysis.
 func FormatTranscript(sessDir, sessionID string) (string, error) {
-	path := filepath.Join(sessDir, sessionID+".jsonl")
-	file, err := os.Open(path)
+	records, err := sessionstore.LoadHistoryRecords(sessDir, sessionID, true)
 	if err != nil {
-		return "", err
+		if !errors.Is(err, sessionstore.ErrSessionNotFound) {
+			return "", err
+		}
+		legacyPath := filepath.Join(sessDir, sessionID+".jsonl")
+		legacyRecords, legacyErr := sessionstore.ReadLegacyHistoryRecords(legacyPath)
+		if legacyErr != nil {
+			return "", legacyErr
+		}
+		records = legacyRecords
 	}
-	defer file.Close()
 
 	var b strings.Builder
 	b.WriteString("Session: " + sessionID + "\n\n")
 
-	err = jsonl.ForEachLine(file, func(raw []byte) error {
-		payload := bytes.TrimSpace(raw)
-		if len(payload) == 0 {
-			return nil
-		}
-		var rec memoryRecord
-		if err := json.Unmarshal(payload, &rec); err != nil {
-			return nil
-		}
-
+	for _, historyRec := range records {
+		rec := memoryRecordFromHistoryRecord(historyRec)
 		role := strings.ToLower(strings.TrimSpace(rec.Role))
 		content := strings.TrimSpace(rec.Content)
 
@@ -270,15 +244,27 @@ func FormatTranscript(sessDir, sessionID string) (string, error) {
 		// Cap total transcript size.
 		if b.Len() > 15000 {
 			b.WriteString("\n... (truncated)\n")
-			return jsonl.ErrStop
+			break
 		}
-		return nil
-	})
-	if err != nil {
-		return "", err
 	}
 
 	return b.String(), nil
+}
+
+func memoryRecordFromHistoryRecord(rec sessionstore.HistoryRecord) memoryRecord {
+	out := memoryRecord{
+		Role:         rec.Role,
+		Content:      rec.Content,
+		At:           rec.At,
+		ToolCallID:   rec.ToolCallID,
+		Name:         rec.Name,
+		InputTokens:  rec.InputTokens,
+		OutputTokens: rec.OutputTokens,
+	}
+	if len(rec.ToolCalls) > 0 {
+		_ = json.Unmarshal(rec.ToolCalls, &out.ToolCalls)
+	}
+	return out
 }
 
 // Aggregate combines multiple SessionMeta and Facets into AggregatedData.
