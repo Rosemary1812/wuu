@@ -78,7 +78,6 @@ import {
 } from "./ComposerMessages";
 import {
   Composer,
-  SplitPaneComposer,
   FloatingMenuPortal,
   isInsideFloatingMenu,
   type CodexModelLoadState,
@@ -98,6 +97,7 @@ import {
   type ConversationFixtureKind,
 } from "./ConversationFixtures";
 import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
+import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationSearch } from "./ConversationSearchState";
 import {
   EnvironmentPanel,
@@ -2130,92 +2130,41 @@ export function App(): JSX.Element {
     );
   }
 
-  function renderThreadConversation(
+  function renderConversationSplitPane(
     thread: Thread,
     pane: ConversationPaneID,
   ): JSX.Element {
-    const paneTurns = thread.turns ?? [];
-    const paneLatestAgentMessageID = latestAgentMessageItemID(paneTurns);
-    const active = state.activePane === pane;
-    const closeLabel = pane === "secondary" ? "关闭右侧对话" : "关闭左侧对话";
-    const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
-    const paneRunning = isThreadRunning(thread);
-    const paneReadOnly = Boolean(thread.read_only);
-    const paneStatus = paneReadOnly
-      ? paneRunning
-        ? "子任务运行中"
-        : "子任务会话只读"
-      : paneRunning
-        ? "运行中"
-        : active && state.status !== "ready"
-          ? state.status
-          : "";
     return (
-      <section
-        className={`conversation-split-pane${active ? " active" : ""}`}
-        aria-label={pane === "secondary" ? "分叉对话" : "源对话"}
-        onPointerDown={() => activateConversationPane(pane)}
-      >
-        <div className="conversation-split-header">
-          <div className="conversation-split-title">
-            <span>{pane === "secondary" ? "分叉" : "源会话"}</span>
-            <strong>
-              {threadDisplayTitle(thread, state.threads, "新对话")}
-            </strong>
-          </div>
-          <button
-            className="icon-button conversation-split-close"
-            type="button"
-            aria-label={closeLabel}
-            title={closeLabel}
-            onClick={() => closeConversationPane(pane)}
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <div
-          ref={(node) => {
-            splitPaneRefs.current[pane] = node;
-          }}
-          className="conversation-split-body"
-          onScroll={(event) => handleConversationScroll(event.currentTarget)}
-        >
-          <div className="conversation-width conversation-split-width">
-            {paneTurns.map((turn) => (
-              <Fragment key={turn.id}>
-                <TurnView
-                  turn={turn}
-                  cwd={thread.cwd ?? state.activeContext?.cwd}
-                  latestAgentMessageID={paneLatestAgentMessageID}
-                  onStreamFrame={scheduleStreamScroll}
-                  onForkMessage={(turnID, itemID) =>
-                    void forkThreadFromMessage(thread, turnID, itemID)
-                  }
-                  onNoticeAction={handleNoticeAction}
-                />
-              </Fragment>
-            ))}
-          </div>
-        </div>
-        <SplitPaneComposer
-          prompt={draft.prompt}
-          setPrompt={(value) => setSplitComposerPrompt(pane, value)}
-          files={draft.files}
-          images={draft.images}
-          running={(!paneReadOnly && paneRunning) || viewSwitchPending}
-          readOnly={paneReadOnly}
-          status={paneStatus}
-          onPasteAttachmentFiles={(files) =>
-            void attachSplitComposerAttachmentFiles(pane, files)
-          }
-          onRemoveFile={(id) => removeSplitComposerFile(pane, id)}
-          onRemoveImage={(id) => removeSplitComposerImage(pane, id)}
-          onSend={() => void sendPromptForPane(pane)}
-          onInterrupt={() => void interruptPane(pane)}
-          queryHistorySessionID={thread.id}
-          queryHistory={queryTextsForThread(thread)}
-        />
-      </section>
+      <ConversationSplitPane
+        pane={pane}
+        thread={thread}
+        threads={state.threads}
+        active={state.activePane === pane}
+        activeContextCwd={state.activeContext?.cwd}
+        appStatus={state.status}
+        draft={splitComposerDrafts[pane] ?? emptyComposerDraft()}
+        viewSwitchPending={viewSwitchPending}
+        queryHistory={queryTextsForThread(thread)}
+        onActivate={() => activateConversationPane(pane)}
+        onClose={() => closeConversationPane(pane)}
+        onBodyRef={(node) => {
+          splitPaneRefs.current[pane] = node;
+        }}
+        onScroll={handleConversationScroll}
+        onSetPrompt={(value) => setSplitComposerPrompt(pane, value)}
+        onPasteAttachmentFiles={(files) =>
+          void attachSplitComposerAttachmentFiles(pane, files)
+        }
+        onRemoveFile={(id) => removeSplitComposerFile(pane, id)}
+        onRemoveImage={(id) => removeSplitComposerImage(pane, id)}
+        onSend={() => void sendPromptForPane(pane)}
+        onInterrupt={() => void interruptPane(pane)}
+        onForkMessage={(turnID, itemID) =>
+          void forkThreadFromMessage(thread, turnID, itemID)
+        }
+        onStreamFrame={scheduleStreamScroll}
+        onNoticeAction={handleNoticeAction}
+      />
     );
   }
 
@@ -5185,11 +5134,14 @@ export function App(): JSX.Element {
                   />
                 ) : null}
                 {splitConversation && state.thread && state.secondaryThread ? (
-              <div className="conversation-split">
-                {renderThreadConversation(state.thread, "primary")}
-                {renderThreadConversation(state.secondaryThread, "secondary")}
-              </div>
-            ) : emptyConversation ? (
+                  <div className="conversation-split">
+                    {renderConversationSplitPane(state.thread, "primary")}
+                    {renderConversationSplitPane(
+                      state.secondaryThread,
+                      "secondary",
+                    )}
+                  </div>
+                ) : emptyConversation ? (
               <EmptyConversationHome title={emptyThreadTitle}>
                 {renderComposer("hero")}
               </EmptyConversationHome>
