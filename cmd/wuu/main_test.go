@@ -95,6 +95,95 @@ func TestRunInitWritesDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestRunLoopDemoWritesDurableState(t *testing.T) {
+	workdir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workdir, "marker.txt"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"loop", "demo",
+			"--workdir", workdir,
+			"--id", "loop-test",
+			"--goal", "prove durable loop",
+			"--verify-command", "test -f marker.txt",
+		}); err != nil {
+			t.Fatalf("run loop demo: %v", err)
+		}
+	})
+	if !strings.Contains(output, "status: completed") {
+		t.Fatalf("expected completed summary, got %q", output)
+	}
+	for _, rel := range []string{
+		".loop/state.json",
+		".loop/progress.md",
+		".loop/decisions.md",
+		".loop/failures.md",
+		".loop/events.jsonl",
+		".loop/artifacts/research.md",
+		".loop/artifacts/plan.md",
+		".loop/artifacts/todo.md",
+		".loop/artifacts/verification.md",
+		".loop/artifacts/review.md",
+		".loop/artifacts/integration.md",
+		".loop/artifacts/final.md",
+	} {
+		if _, err := os.Stat(filepath.Join(workdir, rel)); err != nil {
+			t.Fatalf("expected %s: %v", rel, err)
+		}
+	}
+
+	status := captureStdout(t, func() {
+		if err := run([]string{"loop", "status", "--workdir", workdir, "--json"}); err != nil {
+			t.Fatalf("run loop status: %v", err)
+		}
+	})
+	var state struct {
+		ID          string `json:"id"`
+		Status      string `json:"status"`
+		Final       string `json:"final_artifact"`
+		TestResults []struct {
+			Passed bool `json:"passed"`
+		} `json:"test_results"`
+	}
+	if err := json.Unmarshal([]byte(status), &state); err != nil {
+		t.Fatalf("parse loop status JSON: %v\n%s", err, status)
+	}
+	if state.ID != "loop-test" || state.Status != "completed" || state.Final == "" {
+		t.Fatalf("unexpected loop state: %+v", state)
+	}
+	if len(state.TestResults) != 1 || !state.TestResults[0].Passed {
+		t.Fatalf("expected one passing test result, got %+v", state.TestResults)
+	}
+}
+
+func TestRunLoopDemoRecordsVerificationFailure(t *testing.T) {
+	workdir := t.TempDir()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"loop", "demo",
+			"--workdir", workdir,
+			"--id", "loop-fail",
+			"--goal", "capture failure",
+			"--verify-command", "test -f missing.txt",
+		}); err != nil {
+			t.Fatalf("run loop demo: %v", err)
+		}
+	})
+	if !strings.Contains(output, "status: needs_human") {
+		t.Fatalf("expected needs_human summary, got %q", output)
+	}
+	failures, err := os.ReadFile(filepath.Join(workdir, ".loop", "failures.md"))
+	if err != nil {
+		t.Fatalf("read failures: %v", err)
+	}
+	if !strings.Contains(string(failures), "verification_command_failed") {
+		t.Fatalf("expected verification failure, got %s", failures)
+	}
+}
+
 func TestLoadOrCreateAppServerConfigCreatesStarterConfig(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
