@@ -221,7 +221,7 @@ func TestCleanupIfClean(t *testing.T) {
 	initRepo(t, dir)
 	m, _ := NewManager(dir, filepath.Join(dir, ".wuu", "worktrees"))
 
-	// Clean worktree → removed.
+	// Clean worktree: removed.
 	wt1, err := m.Create("sess", "clean", "")
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +237,7 @@ func TestCleanupIfClean(t *testing.T) {
 		t.Fatalf("clean worktree should be gone, got: %v", err)
 	}
 
-	// Dirty worktree → kept.
+	// Dirty worktree: kept.
 	wt2, err := m.Create("sess", "dirty", "")
 	if err != nil {
 		t.Fatal(err)
@@ -256,6 +256,120 @@ func TestCleanupIfClean(t *testing.T) {
 	if _, err := os.Stat(wt2.Path); err != nil {
 		t.Fatalf("dirty worktree should still exist: %v", err)
 	}
+}
+
+func TestCreateLeaseWritesManifestAndReview(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	m, err := NewManager(dir, filepath.Join(dir, ".wuu", "worktrees"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lease, err := m.CreateLease(LeaseOptions{
+		SessionID:   "sess",
+		TaskID:      "task-1",
+		AgentID:     "agent-1",
+		Branch:      "wuu/task-1",
+		ManifestDir: filepath.Join(dir, ".wuu", "leases"),
+	})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer m.Cleanup(&Worktree{Path: lease.Path})
+
+	if lease.TaskID != "task-1" || lease.AgentID != "agent-1" || lease.BaseHEAD == "" || lease.Branch != "wuu/task-1" {
+		t.Fatalf("lease identity not recorded: %+v", lease)
+	}
+	if _, err := os.Stat(lease.ManifestPath); err != nil {
+		t.Fatalf("manifest should exist: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lease.Path, "new.txt"), []byte("untracked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	review, err := m.Review(lease, dir)
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if !review.Status.Dirty || len(review.Status.ChangedFiles) != 2 {
+		t.Fatalf("review should see changed tracked and untracked files: %+v", review.Status)
+	}
+	if review.Diff == "" || !review.MergePreview.CanApply {
+		t.Fatalf("expected tracked diff with clean merge preview: %+v", review)
+	}
+
+	if err := m.WriteManifest(lease); err != nil {
+		t.Fatalf("WriteManifest: %v", err)
+	}
+	data, err := os.ReadFile(lease.ManifestPath)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if string(data) == "" || !containsBytes(data, []byte(`"dirty": true`)) {
+		t.Fatalf("manifest should record dirty state:\n%s", string(data))
+	}
+}
+
+func TestRollbackLeaseResetsIsolatedWorktree(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	m, err := NewManager(dir, filepath.Join(dir, ".wuu", "worktrees"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := m.CreateLease(LeaseOptions{SessionID: "sess", TaskID: "rollback"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer m.Cleanup(&Worktree{Path: lease.Path})
+
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("bad"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lease.Path, "scratch.txt"), []byte("bad"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, err := m.Status(lease)
+	if err != nil {
+		t.Fatalf("Status dirty: %v", err)
+	}
+	if !status.Dirty {
+		t.Fatal("expected dirty lease")
+	}
+
+	if err := m.RollbackLease(lease); err != nil {
+		t.Fatalf("RollbackLease: %v", err)
+	}
+	status, err = m.Status(lease)
+	if err != nil {
+		t.Fatalf("Status clean: %v", err)
+	}
+	if status.Dirty {
+		t.Fatalf("expected clean lease after rollback: %+v", status)
+	}
+	if _, err := os.Stat(filepath.Join(lease.Path, "scratch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("scratch should be removed, got %v", err)
+	}
+}
+
+func containsBytes(haystack, needle []byte) bool {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		match := true
+		for j := range needle {
+			if haystack[i+j] != needle[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 func TestIsGitRepo(t *testing.T) {

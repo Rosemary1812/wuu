@@ -13,12 +13,16 @@
 package worktree
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 // Worktree represents one isolated git worktree for a subagent.
@@ -27,6 +31,49 @@ type Worktree struct {
 	SessionID string // owning session
 	WorkerID  string // worker that owns it
 	HEAD      string // the commit it was created from (full sha)
+}
+
+// Lease records the durable identity and review state for a task worktree.
+type Lease struct {
+	Path         string    `json:"path"`
+	SessionID    string    `json:"session_id"`
+	TaskID       string    `json:"task_id"`
+	AgentID      string    `json:"agent_id,omitempty"`
+	Branch       string    `json:"branch,omitempty"`
+	BaseRepo     string    `json:"base_repo,omitempty"`
+	BaseHEAD     string    `json:"base_head"`
+	Dirty        bool      `json:"dirty,omitempty"`
+	ChangedFiles []string  `json:"changed_files,omitempty"`
+	ManifestPath string    `json:"manifest_path,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type LeaseOptions struct {
+	SessionID   string
+	TaskID      string
+	AgentID     string
+	Branch      string
+	BaseRepo    string
+	ManifestDir string
+}
+
+type Status struct {
+	Dirty        bool     `json:"dirty"`
+	ChangedFiles []string `json:"changed_files,omitempty"`
+	Porcelain    []string `json:"porcelain,omitempty"`
+}
+
+type MergePreview struct {
+	CanApply      bool     `json:"can_apply"`
+	ConflictFiles []string `json:"conflict_files,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+type Review struct {
+	Status       Status       `json:"status"`
+	Diff         string       `json:"diff,omitempty"`
+	MergePreview MergePreview `json:"merge_preview"`
 }
 
 // Manager creates and tracks worktrees rooted at a parent repository.
@@ -55,7 +102,7 @@ func NewManager(parentRepo, rootDir string) (*Manager, error) {
 // Create allocates a new worktree for the given session/worker.
 // If baseRepo is empty, the parent repo's current HEAD is used as the
 // source. If baseRepo points to another existing worktree, the new
-// worktree is based on that worktree's HEAD instead — useful for
+// worktree is based on that worktree's HEAD instead - useful for
 // chaining workers.
 func (m *Manager) Create(sessionID, workerID, baseRepo string) (*Worktree, error) {
 	if sessionID == "" || workerID == "" {
@@ -105,6 +152,60 @@ func (m *Manager) Create(sessionID, workerID, baseRepo string) (*Worktree, error
 	}, nil
 }
 
+// CreateLease creates a task-bound worktree and writes a manifest describing
+// the session/task/agent binding. It keeps Create unchanged for legacy callers.
+func (m *Manager) CreateLease(opts LeaseOptions) (*Lease, error) {
+	sessionID := strings.TrimSpace(opts.SessionID)
+	taskID := strings.TrimSpace(opts.TaskID)
+	if sessionID == "" || taskID == "" {
+		return nil, errors.New("sessionID and taskID required")
+	}
+	workerID := strings.TrimSpace(opts.AgentID)
+	if workerID == "" {
+		workerID = taskID
+	}
+	wt, err := m.Create(sessionID, workerID, opts.BaseRepo)
+	if err != nil {
+		return nil, err
+	}
+	branch := strings.TrimSpace(opts.Branch)
+	if branch != "" {
+		if err := checkoutBranch(wt.Path, branch); err != nil {
+			_ = m.Cleanup(wt)
+			return nil, err
+		}
+	}
+	now := time.Now().UTC()
+	lease := &Lease{
+		Path:      wt.Path,
+		SessionID: sessionID,
+		TaskID:    taskID,
+		AgentID:   strings.TrimSpace(opts.AgentID),
+		Branch:    branch,
+		BaseRepo:  firstNonEmpty(opts.BaseRepo, m.parentRepo),
+		BaseHEAD:  wt.HEAD,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	status, err := m.Status(lease)
+	if err != nil {
+		_ = m.Cleanup(wt)
+		return nil, err
+	}
+	lease.Dirty = status.Dirty
+	lease.ChangedFiles = status.ChangedFiles
+	manifestDir := strings.TrimSpace(opts.ManifestDir)
+	if manifestDir == "" {
+		manifestDir = filepath.Join(m.rootDir, "manifests", sessionID)
+	}
+	lease.ManifestPath = filepath.Join(manifestDir, taskID+".json")
+	if err := m.WriteManifest(lease); err != nil {
+		_ = m.Cleanup(wt)
+		return nil, err
+	}
+	return lease, nil
+}
+
 // Cleanup removes a worktree from disk and unregisters it from git.
 // Safe to call on a worktree that's already been removed.
 func (m *Manager) Cleanup(wt *Worktree) error {
@@ -112,7 +213,7 @@ func (m *Manager) Cleanup(wt *Worktree) error {
 		return nil
 	}
 	if _, err := os.Stat(wt.Path); errors.Is(err, os.ErrNotExist) {
-		// Already gone — still tell git to forget it.
+		// Already gone - still tell git to forget it.
 		_ = m.pruneFromGit(wt.Path)
 		return nil
 	}
@@ -149,6 +250,142 @@ func (m *Manager) HasChanges(wt *Worktree) (bool, error) {
 		return false, fmt.Errorf("git status: %w", err)
 	}
 	return strings.TrimSpace(string(out)) != "", nil
+}
+
+// Status snapshots dirty state and changed files for a lease or worktree.
+func (m *Manager) Status(target any) (Status, error) {
+	path := worktreePath(target)
+	if path == "" {
+		return Status{}, errors.New("worktree path is required")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return Status{}, fmt.Errorf("stat worktree: %w", err)
+	}
+	cmd := exec.Command("git", "status", "--porcelain=v1")
+	cmd.Dir = path
+	out, err := cmd.Output()
+	if err != nil {
+		return Status{}, fmt.Errorf("git status: %w", err)
+	}
+	lines := splitLines(strings.TrimRight(string(out), "\n"))
+	changed := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if file := porcelainFile(line); file != "" {
+			changed = append(changed, file)
+		}
+	}
+	sort.Strings(changed)
+	return Status{
+		Dirty:        len(lines) > 0,
+		ChangedFiles: changed,
+		Porcelain:    lines,
+	}, nil
+}
+
+func (m *Manager) Diff(target any) (string, error) {
+	path := worktreePath(target)
+	if path == "" {
+		return "", errors.New("worktree path is required")
+	}
+	cmd := exec.Command("git", "diff", "--binary", "HEAD", "--")
+	cmd.Dir = path
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git diff: %w\n%s", err, out)
+	}
+	return string(out), nil
+}
+
+func (m *Manager) Review(target any, targetRepo string) (Review, error) {
+	status, err := m.Status(target)
+	if err != nil {
+		return Review{}, err
+	}
+	diff, err := m.Diff(target)
+	if err != nil {
+		return Review{}, err
+	}
+	preview := MergePreview{CanApply: true}
+	if strings.TrimSpace(targetRepo) != "" {
+		preview = m.MergePreview(target, targetRepo)
+	}
+	return Review{Status: status, Diff: diff, MergePreview: preview}, nil
+}
+
+// MergePreview checks whether the worktree's tracked diff can be applied to
+// targetRepo without mutating targetRepo.
+func (m *Manager) MergePreview(target any, targetRepo string) MergePreview {
+	diff, err := m.Diff(target)
+	if err != nil {
+		return MergePreview{CanApply: false, Error: err.Error()}
+	}
+	if strings.TrimSpace(diff) == "" {
+		return MergePreview{CanApply: true}
+	}
+	cmd := exec.Command("git", "apply", "--check", "--whitespace=nowarn", "-")
+	cmd.Dir = targetRepo
+	cmd.Stdin = strings.NewReader(diff)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return MergePreview{
+			CanApply:      false,
+			ConflictFiles: conflictFilesFromGitApply(out),
+			Error:         strings.TrimSpace(string(out)),
+		}
+	}
+	return MergePreview{CanApply: true}
+}
+
+// RollbackLease resets tracked and untracked changes inside the isolated
+// worktree. It does not touch the parent repository.
+func (m *Manager) RollbackLease(target any) error {
+	path := worktreePath(target)
+	if path == "" {
+		return errors.New("worktree path is required")
+	}
+	for _, args := range [][]string{
+		{"reset", "--hard", "HEAD"},
+		{"clean", "-fd"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = path
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git %s: %w\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	if lease, ok := target.(*Lease); ok && lease != nil {
+		status, err := m.Status(lease)
+		if err == nil {
+			lease.Dirty = status.Dirty
+			lease.ChangedFiles = status.ChangedFiles
+			lease.UpdatedAt = time.Now().UTC()
+			_ = m.WriteManifest(lease)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) WriteManifest(lease *Lease) error {
+	if lease == nil {
+		return nil
+	}
+	if strings.TrimSpace(lease.ManifestPath) == "" {
+		return errors.New("manifest path is required")
+	}
+	status, err := m.Status(lease)
+	if err == nil {
+		lease.Dirty = status.Dirty
+		lease.ChangedFiles = status.ChangedFiles
+	}
+	lease.UpdatedAt = time.Now().UTC()
+	if err := os.MkdirAll(filepath.Dir(lease.ManifestPath), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(lease, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(lease.ManifestPath, append(data, '\n'), 0o644)
 }
 
 // CleanupIfClean removes the worktree only when it has no uncommitted
@@ -269,4 +506,97 @@ func resolveHead(dir string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func checkoutBranch(dir, branch string) error {
+	cmd := exec.Command("git", "switch", "-c", branch)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git switch -c %s: %w\n%s", branch, err, out)
+	}
+	return nil
+}
+
+func worktreePath(target any) string {
+	switch v := target.(type) {
+	case *Lease:
+		if v == nil {
+			return ""
+		}
+		return v.Path
+	case Lease:
+		return v.Path
+	case *Worktree:
+		if v == nil {
+			return ""
+		}
+		return v.Path
+	case Worktree:
+		return v.Path
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
+
+func porcelainFile(line string) string {
+	if len(line) < 4 {
+		return ""
+	}
+	file := strings.TrimSpace(line[3:])
+	if idx := strings.LastIndex(file, " -> "); idx >= 0 {
+		file = strings.TrimSpace(file[idx+4:])
+	}
+	return file
+}
+
+func splitLines(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	raw := strings.Split(value, "\n")
+	out := make([]string, 0, len(raw))
+	for _, line := range raw {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func conflictFilesFromGitApply(out []byte) []string {
+	scanner := bytes.Split(out, []byte{'\n'})
+	seen := map[string]bool{}
+	var files []string
+	for _, lineBytes := range scanner {
+		line := strings.TrimSpace(string(lineBytes))
+		if !strings.HasPrefix(line, "error:") {
+			continue
+		}
+		if idx := strings.Index(line, ":"); idx >= 0 {
+			rest := strings.TrimSpace(line[idx+1:])
+			fields := strings.Fields(rest)
+			if len(fields) > 0 {
+				file := strings.Trim(fields[0], ":")
+				if file != "" && !seen[file] {
+					seen[file] = true
+					files = append(files, file)
+				}
+			}
+		}
+	}
+	sort.Strings(files)
+	return files
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
