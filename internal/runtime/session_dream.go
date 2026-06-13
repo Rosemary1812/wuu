@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	sessionDreamTimeout  = 3 * time.Minute
-	sessionDreamMaxSteps = 6
+	sessionDreamTimeout        = 3 * time.Minute
+	sessionDreamLockStaleAfter = 2 * sessionDreamTimeout
+	sessionDreamMaxSteps       = 6
 )
 
 type sessionDreamScheduler struct {
@@ -61,6 +62,11 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		s.finish()
 		return
 	}
+	lock, acquired, err := sessionmemory.TryAcquireDreamLock(s.workspaceStateDir, sessionDreamLockStaleAfter, time.Now().UTC())
+	if err != nil || !acquired {
+		s.finish()
+		return
+	}
 	job := sessionDreamJob{
 		client:             client,
 		model:              model,
@@ -75,6 +81,7 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 	}
 	go func() {
 		defer s.finish()
+		defer lock.Release()
 		dreamCtx, cancel := context.WithTimeout(context.Background(), sessionDreamTimeout)
 		defer cancel()
 		_ = s.run(dreamCtx, job)
@@ -137,6 +144,13 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 	if len(messages) == 0 {
 		return nil
 	}
+	started := job.now
+	if started.IsZero() {
+		started = time.Now().UTC()
+	}
+	if err := sessionmemory.RecordDreamStarted(job.workspaceStateDir, started); err != nil {
+		return err
+	}
 	executor := newSessionMemoryOnlyExecutor(job.workspaceStateDir, job.sessionArtifactDir)
 	_, err := agent.RunToolLoop(ctx, messages, agent.LoopConfig{
 		Tools:           executor,
@@ -147,13 +161,10 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 		ProviderOptions: provideroptions.Clone(job.providerOptions),
 	}, profileMemoryReviewStep{client: job.client})
 	if err != nil {
+		_ = sessionmemory.RecordDreamFailed(job.workspaceStateDir, time.Now().UTC(), err)
 		return err
 	}
-	now := job.now
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-	return sessionmemory.SaveDreamState(job.workspaceStateDir, sessionmemory.DreamState{LastRunAt: now})
+	return sessionmemory.RecordDreamCompleted(job.workspaceStateDir, started)
 }
 
 type sessionMemoryOnlyExecutor struct {

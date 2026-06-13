@@ -12,12 +12,16 @@ import (
 
 type profileMemoryReviewFakeClient struct {
 	responses []providers.ChatResponse
+	errors    []error
 	requests  []providers.ChatRequest
 }
 
 func (c *profileMemoryReviewFakeClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	c.requests = append(c.requests, req)
 	idx := len(c.requests) - 1
+	if idx < len(c.errors) && c.errors[idx] != nil {
+		return providers.ChatResponse{}, c.errors[idx]
+	}
 	if idx < len(c.responses) {
 		return c.responses[idx], nil
 	}

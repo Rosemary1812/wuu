@@ -1,6 +1,7 @@
 package sessionmemory
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,5 +140,114 @@ func TestDreamStateRoundTrip(t *testing.T) {
 	}
 	if _, err := os.Stat(DreamStatePath(workspaceState)); err != nil {
 		t.Fatalf("dream state path not written: %v", err)
+	}
+}
+
+func TestDreamStateRecordsRunStatus(t *testing.T) {
+	workspaceState := t.TempDir()
+	started := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	failed := started.Add(30 * time.Second)
+	completed := started.Add(time.Minute)
+
+	if err := RecordDreamStarted(workspaceState, started); err != nil {
+		t.Fatalf("RecordDreamStarted: %v", err)
+	}
+	running, err := LoadDreamState(workspaceState)
+	if err != nil {
+		t.Fatalf("LoadDreamState running: %v", err)
+	}
+	if running.LastStatus != DreamStatusRunning || !running.LastStartedAt.Equal(started) || running.LastError != "" {
+		t.Fatalf("running state = %+v", running)
+	}
+
+	if err := RecordDreamFailed(workspaceState, failed, errors.New("provider timeout")); err != nil {
+		t.Fatalf("RecordDreamFailed: %v", err)
+	}
+	failure, err := LoadDreamState(workspaceState)
+	if err != nil {
+		t.Fatalf("LoadDreamState failure: %v", err)
+	}
+	if failure.LastStatus != DreamStatusFailed || !failure.LastFinishedAt.Equal(failed) || !strings.Contains(failure.LastError, "provider timeout") {
+		t.Fatalf("failed state = %+v", failure)
+	}
+	if !failure.LastRunAt.IsZero() {
+		t.Fatalf("failed dream should not update LastRunAt: %+v", failure)
+	}
+
+	if err := RecordDreamCompleted(workspaceState, completed); err != nil {
+		t.Fatalf("RecordDreamCompleted: %v", err)
+	}
+	done, err := LoadDreamState(workspaceState)
+	if err != nil {
+		t.Fatalf("LoadDreamState completed: %v", err)
+	}
+	if done.LastStatus != DreamStatusCompleted || !done.LastRunAt.Equal(completed) || !done.LastFinishedAt.Equal(completed) || done.LastError != "" {
+		t.Fatalf("completed state = %+v", done)
+	}
+}
+
+func TestDreamLockExcludesConcurrentRunsAndReleases(t *testing.T) {
+	workspaceState := t.TempDir()
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+
+	first, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now)
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock first: %v", err)
+	}
+	if !acquired || first == nil {
+		t.Fatal("expected first dream lock to be acquired")
+	}
+	second, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now)
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock second: %v", err)
+	}
+	if acquired || second != nil {
+		t.Fatalf("second lock acquired=%t lock=%+v, want blocked", acquired, second)
+	}
+	if err := first.Release(); err != nil {
+		t.Fatalf("Release first: %v", err)
+	}
+	third, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now)
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock third: %v", err)
+	}
+	if !acquired || third == nil {
+		t.Fatal("expected lock after release to be acquired")
+	}
+	if err := third.Release(); err != nil {
+		t.Fatalf("Release third: %v", err)
+	}
+}
+
+func TestDreamLockReclaimsStaleLock(t *testing.T) {
+	workspaceState := t.TempDir()
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	first, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now.Add(-2*time.Hour))
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock first: %v", err)
+	}
+	if !acquired || first == nil {
+		t.Fatal("expected first dream lock to be acquired")
+	}
+	old := now.Add(-2 * time.Hour)
+	if err := os.Chtimes(DreamLockPath(workspaceState), old, old); err != nil {
+		t.Fatalf("Chtimes lock: %v", err)
+	}
+
+	second, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now)
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock stale: %v", err)
+	}
+	if !acquired || second == nil {
+		t.Fatal("expected stale dream lock to be reclaimed")
+	}
+	if err := first.Release(); err != nil {
+		t.Fatalf("stale holder release should be token-safe: %v", err)
+	}
+	if _, err := os.Stat(DreamLockPath(workspaceState)); err != nil {
+		t.Fatalf("new lock should remain after stale holder release: %v", err)
+	}
+	if err := second.Release(); err != nil {
+		t.Fatalf("Release second: %v", err)
 	}
 }

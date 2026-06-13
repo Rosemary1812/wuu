@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -91,6 +92,9 @@ func TestSessionDream_RunWritesProjectMemoryWithSessionMemoryOnlyTool(t *testing
 	if !state.LastRunAt.Equal(now) {
 		t.Fatalf("dream state LastRunAt = %v, want %v", state.LastRunAt, now)
 	}
+	if state.LastStatus != sessionmemory.DreamStatusCompleted || !state.LastFinishedAt.Equal(now) || state.LastError != "" {
+		t.Fatalf("dream completion state = %+v", state)
+	}
 	if len(client.requests) != 2 {
 		t.Fatalf("chat calls = %d, want 2", len(client.requests))
 	}
@@ -104,5 +108,44 @@ func TestSessionDream_RunWritesProjectMemoryWithSessionMemoryOnlyTool(t *testing
 	last := client.requests[0].Messages[len(client.requests[0].Messages)-1]
 	if last.Role != "user" || !strings.Contains(last.Content, "Nothing to dream") {
 		t.Fatalf("missing dream prompt in request: %+v", last)
+	}
+}
+
+func TestSessionDream_RunRecordsFailureState(t *testing.T) {
+	workspaceState := t.TempDir()
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
+	client := &profileMemoryReviewFakeClient{
+		errors: []error{errors.New("provider unavailable")},
+	}
+	scheduler := newSessionDreamScheduler(workspaceState, func() string { return sessionArtifact }, 7)
+	started := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+
+	err := scheduler.run(context.Background(), sessionDreamJob{
+		client:             client,
+		model:              "test-model",
+		workspaceStateDir:  workspaceState,
+		sessionArtifactDir: sessionArtifact,
+		now:                started,
+		history: []providers.ChatMessage{
+			{Role: "user", Content: "Remember release needs visual QA."},
+			{Role: "assistant", Content: "Noted."},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "provider unavailable") {
+		t.Fatalf("run error = %v, want provider unavailable", err)
+	}
+
+	state, loadErr := sessionmemory.LoadDreamState(workspaceState)
+	if loadErr != nil {
+		t.Fatalf("LoadDreamState: %v", loadErr)
+	}
+	if state.LastStatus != sessionmemory.DreamStatusFailed || !strings.Contains(state.LastError, "provider unavailable") {
+		t.Fatalf("dream failure state = %+v", state)
+	}
+	if !state.LastRunAt.IsZero() {
+		t.Fatalf("failed dream should not update LastRunAt: %+v", state)
+	}
+	if !state.LastStartedAt.Equal(started) {
+		t.Fatalf("LastStartedAt = %v, want %v", state.LastStartedAt, started)
 	}
 }

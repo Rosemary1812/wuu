@@ -1,6 +1,8 @@
 package sessionmemory
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,6 +25,13 @@ const (
 	projectMemoryTokenBudget = 10000
 	checkpointTokenBudget    = 11000
 	notesTokenBudget         = 4000
+	dreamErrorMaxBytes       = 4096
+)
+
+const (
+	DreamStatusRunning   = "running"
+	DreamStatusCompleted = "completed"
+	DreamStatusFailed    = "failed"
 )
 
 // Paths groups the durable memory files for one workspace and session.
@@ -41,7 +50,22 @@ type FileStatus struct {
 }
 
 type DreamState struct {
-	LastRunAt time.Time `json:"last_run_at,omitempty"`
+	LastRunAt      time.Time `json:"last_run_at,omitempty"`
+	LastStartedAt  time.Time `json:"last_started_at,omitempty"`
+	LastFinishedAt time.Time `json:"last_finished_at,omitempty"`
+	LastStatus     string    `json:"last_status,omitempty"`
+	LastError      string    `json:"last_error,omitempty"`
+}
+
+type dreamLockFile struct {
+	PID        int       `json:"pid"`
+	AcquiredAt time.Time `json:"acquired_at"`
+	Token      string    `json:"token"`
+}
+
+type DreamLock struct {
+	path  string
+	token string
 }
 
 func PathsFor(workspaceStateDir, sessionArtifactDir string) Paths {
@@ -64,6 +88,13 @@ func DreamStatePath(workspaceStateDir string) string {
 		return ""
 	}
 	return filepath.Join(workspaceStateDir, "memory", "dream_state.json")
+}
+
+func DreamLockPath(workspaceStateDir string) string {
+	if strings.TrimSpace(workspaceStateDir) == "" {
+		return ""
+	}
+	return filepath.Join(workspaceStateDir, "memory", "dream.lock")
 }
 
 func LoadDreamState(workspaceStateDir string) (DreamState, error) {
@@ -95,6 +126,116 @@ func SaveDreamState(workspaceStateDir string, state DreamState) error {
 		return fmt.Errorf("encode dream state: %w", err)
 	}
 	return writeAtomic(path, append(data, '\n'))
+}
+
+func RecordDreamStarted(workspaceStateDir string, started time.Time) error {
+	if started.IsZero() {
+		started = time.Now().UTC()
+	}
+	state, err := LoadDreamState(workspaceStateDir)
+	if err != nil {
+		return err
+	}
+	state.LastStartedAt = started.UTC()
+	state.LastFinishedAt = time.Time{}
+	state.LastStatus = DreamStatusRunning
+	state.LastError = ""
+	return SaveDreamState(workspaceStateDir, state)
+}
+
+func RecordDreamCompleted(workspaceStateDir string, completed time.Time) error {
+	if completed.IsZero() {
+		completed = time.Now().UTC()
+	}
+	state, err := LoadDreamState(workspaceStateDir)
+	if err != nil {
+		return err
+	}
+	completed = completed.UTC()
+	state.LastRunAt = completed
+	state.LastFinishedAt = completed
+	state.LastStatus = DreamStatusCompleted
+	state.LastError = ""
+	return SaveDreamState(workspaceStateDir, state)
+}
+
+func RecordDreamFailed(workspaceStateDir string, failed time.Time, runErr error) error {
+	if failed.IsZero() {
+		failed = time.Now().UTC()
+	}
+	state, err := LoadDreamState(workspaceStateDir)
+	if err != nil {
+		return err
+	}
+	state.LastFinishedAt = failed.UTC()
+	state.LastStatus = DreamStatusFailed
+	if runErr != nil {
+		state.LastError = trimDreamError(runErr.Error())
+	} else {
+		state.LastError = ""
+	}
+	return SaveDreamState(workspaceStateDir, state)
+}
+
+func TryAcquireDreamLock(workspaceStateDir string, staleAfter time.Duration, now time.Time) (*DreamLock, bool, error) {
+	path := DreamLockPath(workspaceStateDir)
+	if strings.TrimSpace(path) == "" {
+		return nil, false, fmt.Errorf("workspace state directory is required")
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if err := os.MkdirAll(filepath.Dir(path), defaultDirMode); err != nil {
+		return nil, false, fmt.Errorf("create memory dir: %w", err)
+	}
+	lock, acquired, err := createDreamLock(path, now.UTC())
+	if err == nil {
+		return lock, acquired, err
+	}
+	if !os.IsExist(err) {
+		return nil, false, err
+	}
+	if staleAfter <= 0 {
+		return nil, false, nil
+	}
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return createDreamLock(path, now.UTC())
+		}
+		return nil, false, fmt.Errorf("stat dream lock: %w", statErr)
+	}
+	if now.Sub(info.ModTime()) < staleAfter {
+		return nil, false, nil
+	}
+	if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+		return nil, false, fmt.Errorf("remove stale dream lock: %w", removeErr)
+	}
+	return createDreamLock(path, now.UTC())
+}
+
+func (l *DreamLock) Release() error {
+	if l == nil || strings.TrimSpace(l.path) == "" {
+		return nil
+	}
+	data, err := os.ReadFile(l.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read dream lock before release: %w", err)
+	}
+	var holder dreamLockFile
+	if err := json.Unmarshal(data, &holder); err != nil {
+		return fmt.Errorf("parse dream lock before release: %w", err)
+	}
+	if holder.Token != l.token {
+		return nil
+	}
+	if err := os.Remove(l.path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("release dream lock: %w", err)
+	}
+	return nil
 }
 
 func Status(workspaceStateDir, sessionArtifactDir string) ([]FileStatus, error) {
@@ -247,6 +388,57 @@ func fileBlock(target, path string, kind wuucontext.BlockKind, title, source str
 		TokenBudget: tokenBudget,
 		Content:     content,
 	}, true
+}
+
+func createDreamLock(path string, now time.Time) (*DreamLock, bool, error) {
+	token, err := randomLockToken()
+	if err != nil {
+		return nil, false, err
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, defaultFileMode)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil, false, err
+		}
+		return nil, false, fmt.Errorf("create dream lock: %w", err)
+	}
+	holder := dreamLockFile{
+		PID:        os.Getpid(),
+		AcquiredAt: now.UTC(),
+		Token:      token,
+	}
+	data, err := json.MarshalIndent(holder, "", "  ")
+	if err != nil {
+		file.Close()
+		_ = os.Remove(path)
+		return nil, false, fmt.Errorf("encode dream lock: %w", err)
+	}
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		file.Close()
+		_ = os.Remove(path)
+		return nil, false, fmt.Errorf("write dream lock: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return nil, false, fmt.Errorf("close dream lock: %w", err)
+	}
+	return &DreamLock{path: path, token: token}, true, nil
+}
+
+func randomLockToken() (string, error) {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", fmt.Errorf("create dream lock token: %w", err)
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+func trimDreamError(message string) string {
+	message = strings.TrimSpace(message)
+	if len(message) <= dreamErrorMaxBytes {
+		return message
+	}
+	return stringutil.HeadTail(message, dreamErrorMaxBytes/2, dreamErrorMaxBytes/2, "\n\n[trimmed dream error]\n\n")
 }
 
 func writeAtomic(path string, data []byte) error {
