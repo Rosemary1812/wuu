@@ -69,6 +69,15 @@ import {
   type ComposerImage,
   type QueuedComposerMessage
 } from "./ComposerMessages";
+import type {
+  CodexModelLoadState,
+  CodexRuntimeMenu,
+  ComposerVariant,
+  FloatingMenuAlign,
+  FloatingMenuOwner,
+  FloatingMenuPlacement,
+  ToolPolicyProfile
+} from "./ComposerTypes";
 import {
   codexEffortOptions,
   displayCodexModelName,
@@ -81,28 +90,15 @@ import {
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 
-export type CodexModelLoadState = {
-  provider?: string;
-  loading: boolean;
-  error: string;
-  models: CodexModelSummary[];
-};
-
-export type CodexRuntimeMenu = "main" | "model" | null;
-export type ComposerVariant = "dock" | "hero";
-export type FloatingMenuOwner =
-  | "composer-runtime"
-  | "composer-access"
-  | "codex-runtime"
-  | "composer-query-history";
-export type FloatingMenuPlacement = "above" | "below" | "middle";
-export type FloatingMenuAlign = "left" | "right";
-export type ToolPolicyProfile =
-  | "safe"
-  | "balanced"
-  | "auto"
-  | "autonomous"
-  | "enterprise_restricted";
+export type {
+  CodexModelLoadState,
+  CodexRuntimeMenu,
+  ComposerVariant,
+  FloatingMenuOwner,
+  FloatingMenuPlacement,
+  FloatingMenuAlign,
+  ToolPolicyProfile
+} from "./ComposerTypes";
 
 type ToolPolicyProfileOption = {
   profile: ToolPolicyProfile;
