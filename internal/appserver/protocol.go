@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -16,6 +17,7 @@ const (
 	MethodConfigModelUpdate     = "config/model/update"
 	MethodConfigCodexModels     = "config/codex/models"
 	MethodSkillList             = "skill/list"
+	MethodLoopSnapshot          = "loop/snapshot"
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
@@ -190,6 +192,14 @@ type SkillSummary struct {
 
 type SkillListResult struct {
 	Skills []SkillSummary `json:"skills"`
+}
+
+type LoopSnapshotParams struct {
+	ThreadID string `json:"thread_id,omitempty"`
+}
+
+type LoopSnapshotResult struct {
+	Snapshot loop.SystemSnapshot `json:"snapshot"`
 }
 
 type ManagedProcessSummary struct {

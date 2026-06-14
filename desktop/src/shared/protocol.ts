@@ -126,6 +126,140 @@ export type SkillListResult = {
   skills: SkillSummary[];
 };
 
+export type LoopAttentionItem = {
+  source: string;
+  id?: string;
+  status?: string;
+  message?: string;
+  path?: string;
+};
+
+export type LoopWorkflowPhaseSnapshot = {
+  id: string;
+  name?: string;
+  status: string;
+  error?: string;
+  agent_run_ids?: string[];
+};
+
+export type LoopWorkflowAgentSnapshot = {
+  id: string;
+  phase_id?: string;
+  agent_id?: string;
+  agent_path?: string;
+  task_name?: string;
+  agent_profile?: string;
+  status: string;
+  report_path?: string;
+  report_missing?: boolean;
+  changed_files?: string[];
+  artifacts?: string[];
+  worktree_path?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  duration_ms?: number;
+  error?: string;
+};
+
+export type LoopWorkflowTeamMemberSnapshot = {
+  id?: string;
+  role?: string;
+  mode?: string;
+  agent_profile?: string;
+  task_name?: string;
+  phase_id?: string;
+  created_profile?: boolean;
+};
+
+export type LoopWorkflowTeamSnapshot = {
+  members?: LoopWorkflowTeamMemberSnapshot[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type LoopChangedFileOverlapSnapshot = {
+  file: string;
+  agent_run_ids: string[];
+};
+
+export type LoopWorkflowArbitration = {
+  status?: string;
+  open_agent_runs?: string[];
+  missing_reports?: string[];
+  failed_agent_runs?: string[];
+  changed_file_overlaps?: LoopChangedFileOverlapSnapshot[];
+  next_actions?: string[];
+};
+
+export type LoopWorkflowSnapshot = {
+  id: string;
+  run_dir?: string;
+  event_log_path?: string;
+  definition_name?: string;
+  driver?: string;
+  entrypoint?: string;
+  status: string;
+  error?: string;
+  script_path?: string;
+  final_report_path?: string;
+  loop_id?: string;
+  loop_dir?: string;
+  phases?: LoopWorkflowPhaseSnapshot[];
+  agent_runs?: LoopWorkflowAgentSnapshot[];
+  team?: LoopWorkflowTeamSnapshot;
+  arbitration?: LoopWorkflowArbitration;
+  event_count?: number;
+};
+
+export type LoopHarnessTaskSnapshot = {
+  id: string;
+  parent_id?: string;
+  path?: string;
+  name?: string;
+  role?: string;
+  loop_id?: string;
+  loop_dir?: string;
+  status: string;
+  report_path?: string;
+  artifact_paths?: string[];
+  input_tokens?: number;
+  output_tokens?: number;
+  error?: string;
+};
+
+export type LoopHarnessReportSnapshot = {
+  id: string;
+  task_id: string;
+  run_id?: string;
+  agent_id?: string;
+  agent_path?: string;
+  outcome: string;
+  summary?: string;
+  changed_files?: string[];
+  verification?: string[];
+  artifacts?: string[];
+  report_path?: string;
+};
+
+export type LoopHarnessSnapshot = {
+  tasks?: LoopHarnessTaskSnapshot[];
+  reports?: LoopHarnessReportSnapshot[];
+};
+
+export type LoopSystemSnapshot = {
+  generated_at: string;
+  workflow_dir?: string;
+  harness_dir?: string;
+  workflows?: LoopWorkflowSnapshot[];
+  harness?: LoopHarnessSnapshot;
+  attention?: LoopAttentionItem[];
+  warnings?: string[];
+};
+
+export type LoopSnapshotResult = {
+  snapshot: LoopSystemSnapshot;
+};
+
 export type ManagedProcess = {
   action?: string;
   id: string;
@@ -541,6 +675,7 @@ export type WuuDesktopApi = {
   listManagedProcesses: () => Promise<ManagedProcessListResult>;
   stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;
   listSkills: () => Promise<SkillListResult>;
+  getLoopSnapshot: (threadId?: string) => Promise<LoopSnapshotResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

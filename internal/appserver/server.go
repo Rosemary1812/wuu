@@ -140,6 +140,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigCodexModels(ctx, req)
 	case MethodSkillList:
 		return s.handleSkillList(req)
+	case MethodLoopSnapshot:
+		return s.handleLoopSnapshot(req)
 	case MethodThreadStart:
 		return s.handleThreadStart(req)
 	case MethodThreadResume:

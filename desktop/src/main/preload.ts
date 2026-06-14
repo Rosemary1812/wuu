@@ -59,6 +59,8 @@ const api: WuuDesktopApi = {
       toolPolicyProfile,
     ),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
+  getLoopSnapshot: (threadId?: string) =>
+    ipcRenderer.invoke("wuu:loop-snapshot", threadId),
   listManagedProcesses: () => ipcRenderer.invoke("wuu:process-list"),
   stopManagedProcess: (processId: string) =>
     ipcRenderer.invoke("wuu:process-stop", processId),

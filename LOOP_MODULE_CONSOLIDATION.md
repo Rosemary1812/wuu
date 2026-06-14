@@ -206,6 +206,27 @@ Expose loop snapshot/status through app-server and desktop. Workflow/harness UI
 panels should read through loop-level status first and then drill down to source
 stores.
 
+Implemented pieces:
+
+- Local `main` desktop split commits are merged into this loop branch. New loop
+  control-plane wiring uses the extracted main/preload/shared protocol
+  boundary instead of adding more state to `desktop/src/renderer/App.tsx`.
+- App-server exposes `loop/snapshot` with optional `thread_id`.
+- `loop/snapshot` reads the workspace `workflow.Store` and, when `thread_id`
+  is provided, the thread-scoped `harness.Store` under
+  `stateDir/sessions/<thread-id>/harness`.
+- If a thread is live, app-server prefers the live `AgentControl` harness
+  store; if it is not live, it falls back to the durable harness files. This
+  keeps long-running workflow state recoverable after UI or process restart.
+- Desktop main process proxies `wuu:loop-snapshot` to app-server.
+- Desktop preload exposes `window.wuu.getLoopSnapshot(threadId?)`.
+- `desktop/src/shared/protocol.ts` defines the loop snapshot wire types so
+  renderer panels can consume loop-level status first.
+
+Remaining work: add a visible desktop loop panel that renders active loops,
+agent team state, attention items, worktree links, and verification artifacts
+from `getLoopSnapshot` before drilling down into workflow/harness internals.
+
 ### P2: Store Reduction
 
 After all read paths use loop projections and write paths sync to loop, reduce

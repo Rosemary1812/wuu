@@ -18,6 +18,7 @@ import type {
   InputFile,
   InputImage,
   InitializeResult,
+  LoopSnapshotResult,
   ManagedProcessListResult,
   ManagedProcessStopResult,
   ServerEvent,
@@ -323,6 +324,11 @@ app.whenReady().then(() => {
       }),
   );
   ipcMain.handle("wuu:skill-list", () => appServerClientPool.request("skill/list"));
+  ipcMain.handle("wuu:loop-snapshot", (_event, threadId?: string) =>
+    appServerClientPool.request<LoopSnapshotResult>("loop/snapshot", {
+      thread_id: threadId ?? "",
+    }),
+  );
   ipcMain.handle("wuu:process-list", () =>
     appServerClientPool.request<ManagedProcessListResult>("process/list"),
   );
