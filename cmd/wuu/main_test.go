@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
@@ -654,10 +655,11 @@ func TestEvalWorkflowObservationsIncludeTeamArbitration(t *testing.T) {
 		}
 	}
 
-	got, warnings := evalWorkflowObservations(store)
-	if len(warnings) > 0 {
-		t.Fatalf("unexpected warnings: %+v", warnings)
+	snapshot := looprunner.SnapshotSystem(looprunner.SnapshotOptions{WorkflowStore: store})
+	if len(snapshot.Warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", snapshot.Warnings)
 	}
+	got := evalWorkflowObservations(snapshot.Workflows)
 	if len(got) != 1 {
 		t.Fatalf("expected one workflow observation, got %+v", got)
 	}
