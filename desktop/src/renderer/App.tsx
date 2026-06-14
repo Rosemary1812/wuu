@@ -25,8 +25,6 @@ import {
 } from "lucide-react";
 import {
   type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
   Fragment,
   useCallback,
@@ -88,6 +86,7 @@ import {
 } from "./ConversationFixtures";
 import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
 import { ConversationSplitPane } from "./ConversationSplitPane";
+import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { AppSidebar } from "./AppSidebar";
 import {
@@ -160,8 +159,18 @@ import {
   type ConversationPaneID,
   type SessionTab,
 } from "./AppState";
+import {
+  RIGHT_PANEL_MOTION_MS,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_MOTION_MS,
+  WORKSPACE_RIGHT_PANEL_MAX_WIDTH,
+  WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
+  useAppLayoutState,
+} from "./AppLayoutState";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
 import { DesignTokensPanel } from "./DesignTokensPanel";
+import { useAppDebugState } from "./AppDebugState";
 import {
   EmptyConversationHome,
   RuntimeLoading,
@@ -178,13 +187,7 @@ import { SkillsCatalog } from "./SkillsCatalog";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import {
   RunDebugPanel,
-  buildRunDebugSnapshot,
-  debugStreamFieldLength,
-  latestDebugItem,
-  parseTurnTimestampMs,
-  runDebugEventFromServerEvent,
   runDebugPhaseForState,
-  type RunDebugEvent,
 } from "./RunDebugPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { threadDisplayTitle } from "./ThreadTitles";
@@ -222,13 +225,11 @@ import {
   WorkspaceToolIcon,
   workspaceModeTitle,
   type WorkspacePanelView,
-  type WorkspaceRightPanelView,
 } from "./WorkspacePanels";
+import { useWorkspaceToolState } from "./WorkspaceToolState";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
-const SIDEBAR_MOTION_MS = 280;
-const RIGHT_PANEL_MOTION_MS = 280;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
@@ -252,23 +253,7 @@ type TurnProgressContent = {
   detail?: string;
 };
 
-
-const SIDEBAR_DEFAULT_WIDTH = 326;
-const SIDEBAR_MIN_WIDTH = 240;
-const SIDEBAR_MAX_WIDTH = 520;
-const SIDEBAR_STEP = 24;
-const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
-const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
 const PROJECT_COLLAPSED_IDS_KEY = "wuu.desktop.collapsedProjectIDs";
-const WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH = 360;
-const WORKSPACE_RIGHT_PANEL_MIN_WIDTH = 300;
-const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
-const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
-const WORKSPACE_RIGHT_PANEL_STEP = 32;
-const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
-const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
-const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
-const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
     env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
@@ -285,29 +270,6 @@ const ENABLE_RUN_DEBUG_PANEL = Boolean(
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
-
-type SidebarResizeSession = {
-  startX: number;
-  startWidth: number;
-  allowCollapse: boolean;
-};
-
-type RightPanelResizeSession = {
-  startX: number;
-  startWidth: number;
-};
-
-function initialSidebarWidth(): number {
-  const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  if (!Number.isFinite(stored)) {
-    return SIDEBAR_DEFAULT_WIDTH;
-  }
-  return clamp(stored, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
-}
-
-function initialSidebarCollapsed(): boolean {
-  return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
-}
 
 function initialCollapsedProjectIDs(): Set<string> {
   try {
@@ -326,49 +288,6 @@ function initialCollapsedProjectIDs(): Set<string> {
   }
 }
 
-function initialWorkspaceRightPanelWidth(): number {
-  const stored = Number(
-    window.localStorage.getItem(WORKSPACE_RIGHT_PANEL_WIDTH_KEY),
-  );
-  if (!Number.isFinite(stored)) {
-    return WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH;
-  }
-  return clamp(
-    stored,
-    WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
-    WORKSPACE_RIGHT_PANEL_MAX_WIDTH,
-  );
-}
-
-function initialDebugControlsEnabled(): boolean {
-  if (!ENABLE_DEBUG_CONTROLS) {
-    return false;
-  }
-  if (RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true") {
-    return true;
-  }
-  return window.localStorage.getItem(DEBUG_CONTROLS_KEY) === "true";
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-function clampWorkspaceRightPanelWidth(
-  width: number,
-  sidebarWidth: number,
-): number {
-  const maxForWindow =
-    typeof window === "undefined"
-      ? WORKSPACE_RIGHT_PANEL_MAX_WIDTH
-      : window.innerWidth - sidebarWidth - WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH;
-  const maxWidth = Math.max(
-    WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
-    Math.min(WORKSPACE_RIGHT_PANEL_MAX_WIDTH, maxForWindow),
-  );
-  return clamp(width, WORKSPACE_RIGHT_PANEL_MIN_WIDTH, maxWidth);
-}
-
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
@@ -383,20 +302,32 @@ export function App(): JSX.Element {
   const [guideMessages, setGuideMessages] = useState<QueuedComposerMessage[]>(
     [],
   );
-  const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    initialSidebarCollapsed,
-  );
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
+  const {
+    sidebarWidth,
+    sidebarCollapsed,
+    resizingSidebar,
+    sidebarAnimating,
+    clampedWorkspaceRightPanelWidth,
+    resizingRightPanel,
+    rightPanelOpen,
+    rightPanelAnimating,
+    effectiveSidebarWidth,
+    setRightPanelOpenWithMotion,
+    startSidebarResize,
+    startSettingsSidebarResize,
+    startRightPanelResize,
+    handleRightPanelSeparatorKey,
+    resetWorkspaceRightPanelWidth,
+    toggleSidebar,
+    handleSidebarSeparatorKey,
+    handleSettingsSidebarSeparatorKey,
+    resetSettingsSidebarWidth,
+  } = useAppLayoutState({ onCloseProjectMenu: closeProjectMenu });
   const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(
     initialCollapsedProjectIDs,
   );
-  const [resizingSidebar, setResizingSidebar] = useState(false);
-  const [sidebarAnimating, setSidebarAnimating] = useState(false);
-  const [workspaceRightPanelWidth, setWorkspaceRightPanelWidth] = useState(
-    initialWorkspaceRightPanelWidth,
-  );
-  const [resizingRightPanel, setResizingRightPanel] = useState(false);
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [collapsingProjectIDs, setCollapsingProjectIDs] = useState<Set<string>>(
     () => new Set(),
   );
@@ -415,18 +346,25 @@ export function App(): JSX.Element {
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightPanelAnimating, setRightPanelAnimating] = useState(false);
-  const [workspaceToolTabs, setWorkspaceToolTabs] = useState<
-    WorkspacePanelView[]
-  >([]);
-  const [workspacePanelView, setWorkspacePanelView] =
-    useState<WorkspacePanelView>("files");
-  const [workspaceRightPanelView, setWorkspaceRightPanelView] =
-    useState<WorkspaceRightPanelView>("tools");
-  const [workspaceMode, setWorkspaceMode] = useState<
-    WorkspacePanelView | undefined
-  >(undefined);
+  const {
+    workspaceToolTabs,
+    workspacePanelView,
+    setWorkspacePanelView,
+    workspaceRightPanelView,
+    setWorkspaceRightPanelView,
+    workspaceMode,
+    setWorkspaceMode,
+    ensureWorkspaceToolTab,
+    activateWorkspaceTool,
+    openWorkspaceTool,
+    showWorkspaceToolPicker,
+    closeWorkspaceToolTab,
+    reorderWorkspaceToolTabs,
+    toggleRightPanel,
+  } = useWorkspaceToolState({
+    rightPanelOpen,
+    setRightPanelOpenWithMotion,
+  });
   const [environmentPanelOpen, setEnvironmentPanelOpen] = useState(false);
   const [environmentPanelDismissed, setEnvironmentPanelDismissed] =
     useState(false);
@@ -450,51 +388,44 @@ export function App(): JSX.Element {
   const [stoppingProcessIDs, setStoppingProcessIDs] = useState<Set<string>>(
     () => new Set(),
   );
-  const [runDebugOpen, setRunDebugOpen] = useState(false);
-  const [conversationGridVisible, setConversationGridVisible] = useState(false);
-  const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
-  const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<
     string | undefined
   >(undefined);
   const [pendingViewSwitch, setPendingViewSwitch] = useState<
     PendingViewSwitch | undefined
   >(undefined);
-  const [debugControlsEnabled, setDebugControlsEnabled] = useState(
-    initialDebugControlsEnabled,
-  );
-  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
-  const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({
-    primary: null,
-    secondary: null,
-  });
-  const conversationPaneRef = useRef<HTMLElement | null>(null);
-  const queryHistoryRailRef = useRef<HTMLDivElement | null>(null);
-  const [dockComposerNode, setDockComposerNode] = useState<HTMLElement | null>(
-    null,
-  );
-  const dockComposerRef = useCallback((node: HTMLElement | null) => {
-    setDockComposerNode(node);
+  const hideDebugControls = useCallback(() => {
+    setLaunchPreviewPinned(false);
+    setTurnProgressPreviewOpen(false);
   }, []);
-  const dockComposerHeightRef = useRef(0);
-  const conversationAutoFollowRef = useRef(true);
-  const streamScrollFrameRef = useRef<number | undefined>(undefined);
+  const {
+    debugControlsEnabled,
+    setDebugControlsEnabled,
+    debugControlsVisible,
+    runDebugOpen,
+    setRunDebugOpen,
+    conversationGridVisible,
+    setConversationGridVisible,
+    runDebugEvents,
+    runDebugCopied,
+    runDebugRef,
+    appendRunDebugEvent,
+    resetRunDebugEvents,
+    recordRunDebugEvent,
+    copyRunDebugInfo,
+  } = useAppDebugState({
+    enabled: ENABLE_DEBUG_CONTROLS,
+    forced: RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true",
+    onHideDebugControls: hideDebugControls,
+  });
+  const queryHistoryRailRef = useRef<HTMLDivElement | null>(null);
   const projectCollapseTimersRef = useRef(new Map<string, number>());
-  const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
-  const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
-  const conversationScrollbarHideTimerRef = useRef<number | undefined>(
-    undefined,
-  );
   const [queryHistoryOpen, setQueryHistoryOpen] = useState(false);
   const queryHistoryCloseTimerRef = useRef<number | undefined>(undefined);
   const windowResizingRef = useRef(false);
   const environmentPanelHasRoomRef = useRef(environmentPanelHasRoom);
   const pendingEnvironmentPanelHasRoomRef = useRef<boolean | undefined>(
     undefined,
-  );
-  const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
-  const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(
-    null,
   );
   const gitRefreshTimerRef = useRef<number | undefined>(undefined);
   const gitRefreshInFlightRef = useRef(false);
@@ -508,22 +439,13 @@ export function App(): JSX.Element {
   const codexRuntimeRef = useRef<HTMLDivElement>(null);
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
-  const runDebugRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
   const viewSwitchRequestRef = useRef(0);
   const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
-  const runDebugEventIDRef = useRef(0);
-  const runDebugDeltaSeenRef = useRef(new Set<string>());
   const draftSessionTabCounterRef = useRef(0);
-  const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
-  const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
-    workspaceRightPanelWidth,
-    effectiveSidebarWidth,
-  );
-  const debugControlsVisible = ENABLE_DEBUG_CONTROLS && debugControlsEnabled;
   const currentSessionTab = activeSessionTab(state);
   const activeWorkspaceFile =
     currentSessionTab?.kind === "file" &&
@@ -643,15 +565,6 @@ export function App(): JSX.Element {
         window.clearTimeout(timer);
       }
       projectCollapseTimersRef.current.clear();
-      if (sidebarMotionTimerRef.current !== undefined) {
-        window.clearTimeout(sidebarMotionTimerRef.current);
-      }
-      if (rightPanelMotionTimerRef.current !== undefined) {
-        window.clearTimeout(rightPanelMotionTimerRef.current);
-      }
-      if (conversationScrollbarHideTimerRef.current !== undefined) {
-        window.clearTimeout(conversationScrollbarHideTimerRef.current);
-      }
       clearViewSwitchDelay();
     };
   }, []);
@@ -803,10 +716,6 @@ export function App(): JSX.Element {
     return () => {
       mounted = false;
       off();
-      if (streamScrollFrameRef.current !== undefined) {
-        window.cancelAnimationFrame(streamScrollFrameRef.current);
-        streamScrollFrameRef.current = undefined;
-      }
       if (gitRefreshTimerRef.current !== undefined) {
         window.clearTimeout(gitRefreshTimerRef.current);
         gitRefreshTimerRef.current = undefined;
@@ -900,87 +809,12 @@ export function App(): JSX.Element {
     runtimeMenuOpen,
   ]);
 
-  useLayoutEffect(() => {
-    conversationAutoFollowRef.current = true;
-    scrollConversationToBottom({ force: true });
-  }, [activeThreadID]);
-
-  useEffect(() => {
-    scheduleStreamScroll();
-  }, [state.thread?.turns, state.secondaryThread?.turns]);
-
-  useEffect(() => {
-    if (ENABLE_DEBUG_CONTROLS) {
-      window.localStorage.setItem(
-        DEBUG_CONTROLS_KEY,
-        String(debugControlsEnabled),
-      );
-    }
-  }, [debugControlsEnabled]);
-
-  useEffect(() => {
-    if (debugControlsVisible) {
-      return;
-    }
-    setConversationGridVisible(false);
-    setLaunchPreviewPinned(false);
-    setRunDebugOpen(false);
-    setTurnProgressPreviewOpen(false);
-  }, [debugControlsVisible]);
-
-  useEffect(() => {
-    if (!debugControlsVisible) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (
-        event.key.toLowerCase() !== "g" ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey
-      ) {
-        return;
-      }
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT")
-      ) {
-        return;
-      }
-      event.preventDefault();
-      setConversationGridVisible((visible) => !visible);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [debugControlsVisible]);
-
-  useEffect(() => {
-    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
-    window.localStorage.setItem(
-      SIDEBAR_COLLAPSED_KEY,
-      String(sidebarCollapsed),
-    );
-  }, [sidebarWidth, sidebarCollapsed]);
-
   useEffect(() => {
     window.localStorage.setItem(
       PROJECT_COLLAPSED_IDS_KEY,
       JSON.stringify([...collapsedProjectIDs]),
     );
   }, [collapsedProjectIDs]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      WORKSPACE_RIGHT_PANEL_WIDTH_KEY,
-      String(workspaceRightPanelWidth),
-    );
-  }, [workspaceRightPanelWidth]);
 
   useEffect(() => {
     scheduleGitStatusRefresh(0);
@@ -998,83 +832,6 @@ export function App(): JSX.Element {
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, []);
-
-  useEffect(() => {
-    if (!resizingSidebar) {
-      return;
-    }
-
-    function handlePointerMove(event: PointerEvent): void {
-      const session = resizeSessionRef.current;
-      if (!session) {
-        return;
-      }
-      const nextWidth = session.startWidth + event.clientX - session.startX;
-      if (session.allowCollapse) {
-        applySidebarWidth(nextWidth);
-        return;
-      }
-      applySettingsSidebarWidth(nextWidth);
-    }
-
-    function handlePointerUp(): void {
-      resizeSessionRef.current = null;
-      setResizingSidebar(false);
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [resizingSidebar]);
-
-  useEffect(() => {
-    if (!resizingRightPanel) {
-      return;
-    }
-
-    function handlePointerMove(event: PointerEvent): void {
-      const session = rightPanelResizeSessionRef.current;
-      if (!session) {
-        return;
-      }
-      setWorkspaceRightPanelWidth(
-        clampWorkspaceRightPanelWidth(
-          session.startWidth - (event.clientX - session.startX),
-          effectiveSidebarWidth,
-        ),
-      );
-    }
-
-    function handlePointerUp(): void {
-      rightPanelResizeSessionRef.current = null;
-      setResizingRightPanel(false);
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [effectiveSidebarWidth, resizingRightPanel]);
-
-  useEffect(() => {
-    function handleResize(): void {
-      setWorkspaceRightPanelWidth((current) =>
-        clampWorkspaceRightPanelWidth(current, effectiveSidebarWidth),
-      );
-    }
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [effectiveSidebarWidth]);
 
   const activeProject = useMemo(
     () =>
@@ -1123,6 +880,26 @@ export function App(): JSX.Element {
   }, [turns]);
   const showingWorkspaceMode =
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
+  const {
+    conversationScrollRef,
+    splitPaneRefs,
+    conversationPaneRef,
+    dockComposerRef,
+    scheduleStreamScroll,
+    handleConversationScroll,
+    scrollConversationToBottom,
+    enableConversationAutoFollow,
+  } = useConversationScrollState({
+    activeThreadID,
+    activePane: state.activePane,
+    splitConversation,
+    primaryTurns: state.thread?.turns,
+    secondaryTurns: state.secondaryThread?.turns,
+    emptyConversation,
+    previewingLaunch,
+    showingWorkspaceMode: Boolean(showingWorkspaceMode),
+    initialized: Boolean(state.initialized),
+  });
   const sidebarPinnedThreads = pinnedThreads(state.threads);
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
@@ -1240,245 +1017,6 @@ export function App(): JSX.Element {
     }
   }, [queryHistoryDocked]);
 
-  useLayoutEffect(() => {
-    const node = dockComposerNode;
-    const pane = conversationPaneRef.current;
-    const applyHeight = (nextHeight: number): void => {
-      const nextValue = `${nextHeight}px`;
-      if (
-        dockComposerHeightRef.current === nextHeight &&
-        pane?.style.getPropertyValue("--dock-composer-height") === nextValue
-      ) {
-        return;
-      }
-      dockComposerHeightRef.current = nextHeight;
-      pane?.style.setProperty("--dock-composer-height", nextValue);
-      if (nextHeight > 0 && conversationAutoFollowRef.current) {
-        scrollConversationToBottom();
-      }
-    };
-
-    if (!node) {
-      applyHeight(0);
-      return;
-    }
-
-    const updateHeight = (): void => {
-      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
-      applyHeight(nextHeight);
-    };
-
-    updateHeight();
-    const resizeObserver = new ResizeObserver(updateHeight);
-    resizeObserver.observe(node);
-    return () => resizeObserver.disconnect();
-  }, [
-    dockComposerNode,
-    emptyConversation,
-    previewingLaunch,
-    showingWorkspaceMode,
-    state.initialized,
-  ]);
-
-  function applySidebarWidth(nextWidth: number): void {
-    if (nextWidth <= SIDEBAR_MIN_WIDTH) {
-      if (!sidebarCollapsed && !resizingSidebar) {
-        startSidebarMotion();
-      }
-      setProjectMenuOpen(false);
-      setSidebarCollapsed(true);
-      return;
-    }
-    if (sidebarCollapsed && !resizingSidebar) {
-      startSidebarMotion();
-    }
-    setSidebarCollapsed(false);
-    setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
-  }
-
-  function applySettingsSidebarWidth(nextWidth: number): void {
-    setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
-  }
-
-  function startSidebarMotion(): void {
-    if (sidebarMotionTimerRef.current !== undefined) {
-      window.clearTimeout(sidebarMotionTimerRef.current);
-    }
-    setSidebarAnimating(true);
-    sidebarMotionTimerRef.current = window.setTimeout(() => {
-      sidebarMotionTimerRef.current = undefined;
-      setSidebarAnimating(false);
-    }, SIDEBAR_MOTION_MS);
-  }
-
-  function startRightPanelMotion(): void {
-    if (rightPanelMotionTimerRef.current !== undefined) {
-      window.clearTimeout(rightPanelMotionTimerRef.current);
-    }
-    setRightPanelAnimating(true);
-    rightPanelMotionTimerRef.current = window.setTimeout(() => {
-      rightPanelMotionTimerRef.current = undefined;
-      setRightPanelAnimating(false);
-    }, RIGHT_PANEL_MOTION_MS);
-  }
-
-  function setRightPanelOpenWithMotion(open: boolean): void {
-    if (rightPanelOpen !== open) {
-      startRightPanelMotion();
-    }
-    setRightPanelOpen(open);
-  }
-
-  function applyWorkspaceRightPanelWidth(nextWidth: number): void {
-    setWorkspaceRightPanelWidth(
-      clampWorkspaceRightPanelWidth(nextWidth, effectiveSidebarWidth),
-    );
-  }
-
-  function scheduleStreamScroll(): void {
-    if (!conversationAutoFollowRef.current) {
-      return;
-    }
-    if (streamScrollFrameRef.current !== undefined) {
-      return;
-    }
-    streamScrollFrameRef.current = window.requestAnimationFrame(() => {
-      streamScrollFrameRef.current = undefined;
-      scrollConversationToBottom();
-    });
-  }
-
-  function handleConversationScroll(scrolledNode?: HTMLElement): void {
-    const node = scrolledNode ?? conversationViewport();
-    if (!node) {
-      return;
-    }
-    showConversationScrollbar(node);
-    conversationAutoFollowRef.current = isConversationNearBottom(node);
-  }
-
-  function scrollConversationToBottom(options: { force?: boolean } = {}): void {
-    const node = conversationViewport();
-    if (!node || (!options.force && !conversationAutoFollowRef.current)) {
-      return;
-    }
-    node.scrollTop = node.scrollHeight;
-    showConversationScrollbar(node);
-    conversationAutoFollowRef.current = true;
-  }
-
-  function showConversationScrollbar(node: HTMLElement): void {
-    if (
-      node.classList.contains("empty-scroll-region") ||
-      node.classList.contains("workspace-scroll-region") ||
-      node.scrollHeight <= node.clientHeight
-    ) {
-      return;
-    }
-    node.classList.add("scrollbar-visible");
-    if (conversationScrollbarHideTimerRef.current !== undefined) {
-      window.clearTimeout(conversationScrollbarHideTimerRef.current);
-    }
-    conversationScrollbarHideTimerRef.current = window.setTimeout(() => {
-      conversationScrollbarHideTimerRef.current = undefined;
-      node.classList.remove("scrollbar-visible");
-    }, CONVERSATION_SCROLLBAR_HIDE_DELAY_MS);
-  }
-
-  function conversationViewport(): HTMLElement | undefined {
-    if (splitConversation) {
-      return splitPaneRefs.current[state.activePane] ?? undefined;
-    }
-    return conversationScrollRef.current ?? undefined;
-  }
-
-  function isConversationNearBottom(node: HTMLElement): boolean {
-    const distanceFromBottom = Math.max(
-      0,
-      node.scrollHeight - node.scrollTop - node.clientHeight,
-    );
-    return distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
-  }
-
-  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    resizeSessionRef.current = {
-      startX: event.clientX,
-      startWidth: sidebarCollapsed ? 0 : sidebarWidth,
-      allowCollapse: true,
-    };
-    setProjectMenuOpen(false);
-    setResizingSidebar(true);
-  }
-
-  function startSettingsSidebarResize(
-    event: ReactPointerEvent<HTMLDivElement>,
-  ): void {
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    resizeSessionRef.current = {
-      startX: event.clientX,
-      startWidth: sidebarWidth,
-      allowCollapse: false,
-    };
-    setProjectMenuOpen(false);
-    setResizingSidebar(true);
-  }
-
-  function startRightPanelResize(
-    event: ReactPointerEvent<HTMLDivElement>,
-  ): void {
-    if (event.button !== 0 || !rightPanelOpen) {
-      return;
-    }
-    event.preventDefault();
-    rightPanelResizeSessionRef.current = {
-      startX: event.clientX,
-      startWidth: clampedWorkspaceRightPanelWidth,
-    };
-    setResizingRightPanel(true);
-  }
-
-  function handleRightPanelSeparatorKey(
-    event: ReactKeyboardEvent<HTMLDivElement>,
-  ): void {
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      applyWorkspaceRightPanelWidth(
-        workspaceRightPanelWidth + WORKSPACE_RIGHT_PANEL_STEP,
-      );
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      applyWorkspaceRightPanelWidth(
-        workspaceRightPanelWidth - WORKSPACE_RIGHT_PANEL_STEP,
-      );
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      applyWorkspaceRightPanelWidth(WORKSPACE_RIGHT_PANEL_MAX_WIDTH);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      applyWorkspaceRightPanelWidth(WORKSPACE_RIGHT_PANEL_MIN_WIDTH);
-    }
-  }
-
-  function resetWorkspaceRightPanelWidth(): void {
-    applyWorkspaceRightPanelWidth(WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH);
-  }
-
-  function toggleSidebar(): void {
-    setProjectMenuOpen(false);
-    startSidebarMotion();
-    setSidebarCollapsed((collapsed) => !collapsed);
-    setSidebarWidth((width) =>
-      width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width,
-    );
-  }
-
   function clearProjectCollapseTimer(projectID: string): void {
     const timer = projectCollapseTimersRef.current.get(projectID);
     if (timer === undefined) {
@@ -1532,23 +1070,6 @@ export function App(): JSX.Element {
       });
     }, PROJECT_THREAD_COLLAPSE_MS);
     projectCollapseTimersRef.current.set(projectID, timer);
-  }
-
-  function ensureWorkspaceToolTab(view: WorkspacePanelView): void {
-    setWorkspaceToolTabs((current) =>
-      current.includes(view) ? current : [...current, view],
-    );
-  }
-
-  function activateWorkspaceTool(view: WorkspacePanelView): void {
-    setWorkspacePanelView(view);
-    setWorkspaceRightPanelView(view);
-  }
-
-  function openWorkspaceTool(view: WorkspacePanelView): void {
-    ensureWorkspaceToolTab(view);
-    activateWorkspaceTool(view);
-    setRightPanelOpenWithMotion(true);
   }
 
   function openWorkspaceFile(path: string): void {
@@ -1622,59 +1143,6 @@ export function App(): JSX.Element {
       running: false,
       status: "ready",
     }));
-  }
-
-  function showWorkspaceToolPicker(): void {
-    setWorkspaceRightPanelView("tools");
-    setRightPanelOpenWithMotion(true);
-  }
-
-  function closeWorkspaceToolTab(view: WorkspacePanelView): void {
-    const nextTabs = workspaceToolTabs.filter((item) => item !== view);
-    setWorkspaceToolTabs(nextTabs);
-
-    if (workspaceRightPanelView !== view) {
-      return;
-    }
-
-    const closedIndex = workspaceToolTabs.indexOf(view);
-    const fallback =
-      nextTabs[
-        Math.min(Math.max(closedIndex, 0), Math.max(nextTabs.length - 1, 0))
-      ];
-    if (fallback) {
-      activateWorkspaceTool(fallback);
-      return;
-    }
-    setWorkspaceRightPanelView("tools");
-  }
-
-  function reorderWorkspaceToolTabs(
-    activeView: WorkspacePanelView,
-    overView: WorkspacePanelView,
-  ): void {
-    if (activeView === overView) {
-      return;
-    }
-    setWorkspaceToolTabs((current) => {
-      const sourceIndex = current.indexOf(activeView);
-      const targetIndex = current.indexOf(overView);
-      if (sourceIndex < 0 || targetIndex < 0) {
-        return current;
-      }
-      return arrayMove(current, sourceIndex, targetIndex);
-    });
-  }
-
-  function toggleRightPanel(): void {
-    if (rightPanelOpen) {
-      setRightPanelOpenWithMotion(false);
-      return;
-    }
-    if (workspaceRightPanelView === "tools" && workspaceToolTabs.length > 0) {
-      activateWorkspaceTool(workspaceToolTabs[workspaceToolTabs.length - 1]);
-    }
-    setRightPanelOpenWithMotion(true);
   }
 
   async function buildComposerAttachments(files: File[]): Promise<{
@@ -1960,62 +1428,6 @@ export function App(): JSX.Element {
         status: error instanceof Error ? error.message : "引导失败",
       }));
     }
-  }
-
-  function handleSidebarSeparatorKey(
-    event: ReactKeyboardEvent<HTMLDivElement>,
-  ): void {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      toggleSidebar();
-      return;
-    }
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      if (sidebarCollapsed) {
-        return;
-      }
-      applySidebarWidth(sidebarWidth - SIDEBAR_STEP);
-      return;
-    }
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      if (sidebarCollapsed) {
-        startSidebarMotion();
-        setSidebarCollapsed(false);
-        setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
-        return;
-      }
-      applySidebarWidth(sidebarWidth + SIDEBAR_STEP);
-    }
-  }
-
-  function handleSettingsSidebarSeparatorKey(
-    event: ReactKeyboardEvent<HTMLDivElement>,
-  ): void {
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      applySettingsSidebarWidth(sidebarWidth - SIDEBAR_STEP);
-      return;
-    }
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      applySettingsSidebarWidth(sidebarWidth + SIDEBAR_STEP);
-      return;
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      applySettingsSidebarWidth(SIDEBAR_MIN_WIDTH);
-      return;
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      applySettingsSidebarWidth(SIDEBAR_MAX_WIDTH);
-    }
-  }
-
-  function resetSettingsSidebarWidth(): void {
-    applySettingsSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
   }
 
   function renderComposer(variant: ComposerVariant): JSX.Element {
@@ -2915,58 +2327,6 @@ export function App(): JSX.Element {
     setCodexRuntimeMenu(null);
   }
 
-  function appendRunDebugEvent(entry: Omit<RunDebugEvent, "id" | "at">): void {
-    const next: RunDebugEvent = {
-      ...entry,
-      id: ++runDebugEventIDRef.current,
-      at: Date.now(),
-    };
-    setRunDebugEvents((current) => [...current, next].slice(-80));
-  }
-
-  function resetRunDebugEvents(entry: Omit<RunDebugEvent, "id" | "at">): void {
-    runDebugDeltaSeenRef.current.clear();
-    const next: RunDebugEvent = {
-      ...entry,
-      id: ++runDebugEventIDRef.current,
-      at: Date.now(),
-    };
-    setRunDebugEvents([next]);
-  }
-
-  function recordRunDebugEvent(event: ServerEvent): void {
-    const entry = runDebugEventFromServerEvent(
-      event,
-      runDebugDeltaSeenRef.current,
-    );
-    if (entry) {
-      appendRunDebugEvent(entry);
-    }
-  }
-
-  async function copyRunDebugInfo(): Promise<void> {
-    const snapshot = buildRunDebugSnapshot({
-      state,
-      events: runDebugEvents,
-      queuedMessages,
-      guideMessages,
-      composerImages,
-      composerFiles,
-    });
-    try {
-      await navigator.clipboard.writeText(snapshot);
-      setRunDebugCopied(true);
-      window.setTimeout(() => setRunDebugCopied(false), 1200);
-    } catch (error) {
-      appendRunDebugEvent({
-        source: "client",
-        method: "debug/copy",
-        detail: error instanceof Error ? error.message : "复制失败",
-        tone: "error",
-      });
-    }
-  }
-
   function currentPrimaryComposerDraft(): ComposerDraftState {
     return {
       prompt,
@@ -3819,7 +3179,7 @@ export function App(): JSX.Element {
         await window.wuu.forkThread(sourceThread.id, turnID, itemID),
         "thread/fork did not return a thread",
       );
-      conversationAutoFollowRef.current = true;
+      enableConversationAutoFollow();
       const currentState = appStateRef.current;
       const sourcePane =
         currentState.secondaryThread?.id === sourceThread.id
@@ -4122,7 +3482,7 @@ export function App(): JSX.Element {
       return false;
     }
     const activeContext = currentState.activeContext;
-    conversationAutoFollowRef.current = true;
+    enableConversationAutoFollow();
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
@@ -4302,7 +3662,7 @@ export function App(): JSX.Element {
     ) {
       return false;
     }
-    conversationAutoFollowRef.current = true;
+    enableConversationAutoFollow();
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
@@ -4839,7 +4199,15 @@ export function App(): JSX.Element {
                     composerImages={composerImages}
                     composerFiles={composerFiles}
                     copied={runDebugCopied}
-                    onCopy={() => void copyRunDebugInfo()}
+                    onCopy={() =>
+                      void copyRunDebugInfo({
+                        state,
+                        queuedMessages,
+                        guideMessages,
+                        composerImages,
+                        composerFiles,
+                      })
+                    }
                     onClose={() => setRunDebugOpen(false)}
                   />
                 ) : null}
