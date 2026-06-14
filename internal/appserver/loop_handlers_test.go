@@ -248,6 +248,64 @@ func TestLoopWorktreeRollbackRequiresApprovalAndDiscardsChanges(t *testing.T) {
 	}
 }
 
+func TestLoopWorktreeMergeRequiresApprovalAndAppliesDiff(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	initLoopHandlerGitRepo(t, rt.RootDir)
+	manager, err := worktree.NewManager(rt.RootDir, statepath.WorktreeRoot(rt.StateDir))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{
+		SessionID: "thread-1",
+		TaskID:    "merge",
+	})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("merged\n"), 0o644); err != nil {
+		t.Fatalf("write tracked change: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"merge-denied","method":"loop/worktree/merge","params":{"worktree_path":` + quoteLoopHandlerJSON(lease.Path) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/worktree/merge denied: %v", err)
+	}
+	denied := responseByID(t, parseOutput(t, out.String()), "merge-denied")
+	if denied["error"] == nil || !strings.Contains(string(remarshalLoopHandlerRaw(t, denied["error"])), "confirm_apply_worktree_diff") {
+		t.Fatalf("expected merge approval error, got %+v", denied)
+	}
+	data, err := os.ReadFile(filepath.Join(rt.RootDir, "README.md"))
+	if err != nil {
+		t.Fatalf("read README after denied merge: %v", err)
+	}
+	if string(data) != "hello\n" {
+		t.Fatalf("denied merge should keep target file, got %q", string(data))
+	}
+
+	out = &lockedBuffer{}
+	srv = New(rt, out)
+	raw = `{"id":"merge","method":"loop/worktree/merge","params":{"worktree_path":` + quoteLoopHandlerJSON(lease.Path) + `,"confirm_user_approved":true,"confirm_apply_worktree_diff":true,"confirm_target_repo_mutation":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/worktree/merge: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "merge")
+	result := remarshal[LoopWorktreeMergeResult](t, msg["result"])
+	if !result.Merge.Applied || !result.Merge.Preview.CanApply || len(result.Merge.ChangedFiles) != 1 {
+		t.Fatalf("unexpected merge result: %+v", result.Merge)
+	}
+	data, err = os.ReadFile(filepath.Join(rt.RootDir, "README.md"))
+	if err != nil {
+		t.Fatalf("read README after merge: %v", err)
+	}
+	if string(data) != "merged\n" {
+		t.Fatalf("merge should update target file, got %q", string(data))
+	}
+}
+
 func initLoopHandlerGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	run := func(args ...string) {

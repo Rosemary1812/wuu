@@ -21,6 +21,7 @@ const (
 	MethodLoopWorktreeReview    = "loop/worktree/review"
 	MethodLoopWorktreeCleanup   = "loop/worktree/cleanup"
 	MethodLoopWorktreeRollback  = "loop/worktree/rollback"
+	MethodLoopWorktreeMerge     = "loop/worktree/merge"
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
@@ -232,6 +233,17 @@ type LoopWorktreeRollbackParams struct {
 
 type LoopWorktreeRollbackResult struct {
 	Rollback loop.WorktreeRollbackResult `json:"rollback"`
+}
+
+type LoopWorktreeMergeParams struct {
+	WorktreePath              string `json:"worktree_path"`
+	ConfirmUserApproved       bool   `json:"confirm_user_approved,omitempty"`
+	ConfirmApplyWorktreeDiff  bool   `json:"confirm_apply_worktree_diff,omitempty"`
+	ConfirmTargetRepoMutation bool   `json:"confirm_target_repo_mutation,omitempty"`
+}
+
+type LoopWorktreeMergeResult struct {
+	Merge loop.WorktreeMergeResult `json:"merge"`
 }
 
 type ManagedProcessSummary struct {

@@ -263,10 +263,19 @@ Implemented pieces:
   plane.
 - App-server exposes `loop/worktree/rollback`, and desktop main/preload proxy
   it as `rollbackLoopWorktree(...)` without auto-confirming.
+- `internal/worktree.ApplyToTarget` is the sole implementation for applying a
+  managed worktree diff into the target repository. It rejects untracked
+  worktree files because they are not represented in the tracked git diff.
+- `loop.MergeWorktree` exposes the gated merge surface. It requires
+  `confirm_user_approved`, `confirm_apply_worktree_diff`, and
+  `confirm_target_repo_mutation`, verifies the merge preview, delegates apply
+  to `internal/worktree`, and returns the applied file list.
+- App-server exposes `loop/worktree/merge`, and desktop main/preload proxy it
+  as `mergeLoopWorktree(...)` without auto-confirming.
 
 Remaining work: add mutation surfaces behind explicit approval gates, such as
-retry, merge, and human approval queues. Those should still call loop/worktree
-APIs instead of writing directly to workflow or harness stores.
+retry and human approval queues. Those should still call loop/worktree APIs
+instead of writing directly to workflow or harness stores.
 
 ### P2: Store Reduction
 

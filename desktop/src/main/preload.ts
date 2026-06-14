@@ -85,6 +85,19 @@ const api: WuuDesktopApi = {
       confirmUserApproved,
       confirmDiscardWorktreeChanges,
     ),
+  mergeLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmApplyWorktreeDiff: boolean,
+    confirmTargetRepoMutation: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "wuu:loop-worktree-merge",
+      worktreePath,
+      confirmUserApproved,
+      confirmApplyWorktreeDiff,
+      confirmTargetRepoMutation,
+    ),
   listManagedProcesses: () => ipcRenderer.invoke("wuu:process-list"),
   stopManagedProcess: (processId: string) =>
     ipcRenderer.invoke("wuu:process-stop", processId),

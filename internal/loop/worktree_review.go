@@ -56,6 +56,24 @@ type WorktreeRollbackResult struct {
 	StatusAfter  worktree.Status `json:"status_after"`
 }
 
+type WorktreeMergeOptions struct {
+	ParentRepo                string
+	WorktreeRoot              string
+	WorktreePath              string
+	TargetRepo                string
+	ConfirmUserApproved       bool
+	ConfirmApplyWorktreeDiff  bool
+	ConfirmTargetRepoMutation bool
+}
+
+type WorktreeMergeResult struct {
+	WorktreePath string                `json:"worktree_path"`
+	TargetRepo   string                `json:"target_repo"`
+	Applied      bool                  `json:"applied"`
+	ChangedFiles []string              `json:"changed_files,omitempty"`
+	Preview      worktree.MergePreview `json:"preview"`
+}
+
 func ReviewWorktree(opts WorktreeReviewOptions) (WorktreeReview, error) {
 	parentRepo := strings.TrimSpace(opts.ParentRepo)
 	if parentRepo == "" {
@@ -197,5 +215,47 @@ func RollbackWorktree(opts WorktreeRollbackOptions) (WorktreeRollbackResult, err
 		RolledBack:   true,
 		StatusBefore: before,
 		StatusAfter:  after,
+	}, nil
+}
+
+func MergeWorktree(opts WorktreeMergeOptions) (WorktreeMergeResult, error) {
+	if !opts.ConfirmUserApproved || !opts.ConfirmApplyWorktreeDiff || !opts.ConfirmTargetRepoMutation {
+		return WorktreeMergeResult{}, errors.New("loop worktree merge requires confirm_user_approved=true, confirm_apply_worktree_diff=true, and confirm_target_repo_mutation=true")
+	}
+	parentRepo := strings.TrimSpace(opts.ParentRepo)
+	if parentRepo == "" {
+		return WorktreeMergeResult{}, errors.New("parent repo is required")
+	}
+	worktreeRoot := strings.TrimSpace(opts.WorktreeRoot)
+	if worktreeRoot == "" {
+		return WorktreeMergeResult{}, errors.New("worktree root is required")
+	}
+	worktreePath, err := validatedWorktreePath(worktreeRoot, opts.WorktreePath)
+	if err != nil {
+		return WorktreeMergeResult{}, err
+	}
+	targetRepo := strings.TrimSpace(opts.TargetRepo)
+	if targetRepo == "" {
+		targetRepo = parentRepo
+	}
+	manager, err := worktree.NewManager(parentRepo, worktreeRoot)
+	if err != nil {
+		return WorktreeMergeResult{}, err
+	}
+	target := &worktree.Worktree{Path: worktreePath}
+	preview := manager.MergePreview(target, targetRepo)
+	if !preview.CanApply {
+		return WorktreeMergeResult{WorktreePath: worktreePath, TargetRepo: targetRepo, Preview: preview}, errors.New("worktree diff cannot apply cleanly")
+	}
+	applied, err := manager.ApplyToTarget(target, targetRepo)
+	if err != nil {
+		return WorktreeMergeResult{WorktreePath: worktreePath, TargetRepo: targetRepo, Preview: preview}, err
+	}
+	return WorktreeMergeResult{
+		WorktreePath: worktreePath,
+		TargetRepo:   targetRepo,
+		Applied:      applied.Applied,
+		ChangedFiles: applied.ChangedFiles,
+		Preview:      preview,
 	}, nil
 }

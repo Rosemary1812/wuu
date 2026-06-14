@@ -20,6 +20,7 @@ import type {
   InitializeResult,
   LoopSnapshotResult,
   LoopWorktreeCleanupResult,
+  LoopWorktreeMergeResult,
   LoopWorktreeRollbackResult,
   LoopWorktreeReviewResult,
   ManagedProcessListResult,
@@ -363,6 +364,22 @@ app.whenReady().then(() => {
         worktree_path: worktreePath,
         confirm_user_approved: confirmUserApproved,
         confirm_discard_worktree_changes: confirmDiscardWorktreeChanges,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:loop-worktree-merge",
+    (
+      _event,
+      worktreePath: string,
+      confirmUserApproved: boolean,
+      confirmApplyWorktreeDiff: boolean,
+      confirmTargetRepoMutation: boolean,
+    ) =>
+      appServerClientPool.request<LoopWorktreeMergeResult>("loop/worktree/merge", {
+        worktree_path: worktreePath,
+        confirm_user_approved: confirmUserApproved,
+        confirm_apply_worktree_diff: confirmApplyWorktreeDiff,
+        confirm_target_repo_mutation: confirmTargetRepoMutation,
       }),
   );
   ipcMain.handle("wuu:process-list", () =>

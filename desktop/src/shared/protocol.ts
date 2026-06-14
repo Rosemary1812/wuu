@@ -307,6 +307,18 @@ export type LoopWorktreeRollbackResult = {
   rollback: LoopWorktreeRollback;
 };
 
+export type LoopWorktreeMerge = {
+  worktree_path: string;
+  target_repo: string;
+  applied: boolean;
+  changed_files?: string[];
+  preview: LoopWorktreeMergePreview;
+};
+
+export type LoopWorktreeMergeResult = {
+  merge: LoopWorktreeMerge;
+};
+
 export type ManagedProcess = {
   action?: string;
   id: string;
@@ -734,6 +746,12 @@ export type WuuDesktopApi = {
     confirmUserApproved: boolean,
     confirmDiscardWorktreeChanges: boolean
   ) => Promise<LoopWorktreeRollbackResult>;
+  mergeLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmApplyWorktreeDiff: boolean,
+    confirmTargetRepoMutation: boolean
+  ) => Promise<LoopWorktreeMergeResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

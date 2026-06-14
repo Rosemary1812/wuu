@@ -76,6 +76,11 @@ type Review struct {
 	MergePreview MergePreview `json:"merge_preview"`
 }
 
+type ApplyResult struct {
+	Applied      bool     `json:"applied"`
+	ChangedFiles []string `json:"changed_files,omitempty"`
+}
+
 // Manager creates and tracks worktrees rooted at a parent repository.
 type Manager struct {
 	parentRepo string // absolute path to the source git repo (parent cwd)
@@ -336,6 +341,40 @@ func (m *Manager) MergePreview(target any, targetRepo string) MergePreview {
 	return MergePreview{CanApply: true}
 }
 
+// ApplyToTarget applies the worktree's tracked diff to targetRepo. It does not
+// commit. Untracked worktree files are rejected because git diff HEAD does not
+// represent them.
+func (m *Manager) ApplyToTarget(target any, targetRepo string) (ApplyResult, error) {
+	status, err := m.Status(target)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if untracked := untrackedFiles(status.Porcelain); len(untracked) > 0 {
+		return ApplyResult{}, fmt.Errorf("worktree has untracked files that are not represented in the merge diff: %s", strings.Join(untracked, ", "))
+	}
+	diff, err := m.Diff(target)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if strings.TrimSpace(diff) == "" {
+		return ApplyResult{Applied: false}, nil
+	}
+	preview := m.MergePreview(target, targetRepo)
+	if !preview.CanApply {
+		if strings.TrimSpace(preview.Error) != "" {
+			return ApplyResult{}, fmt.Errorf("worktree diff cannot apply cleanly: %s", preview.Error)
+		}
+		return ApplyResult{}, errors.New("worktree diff cannot apply cleanly")
+	}
+	cmd := exec.Command("git", "apply", "--whitespace=nowarn", "-")
+	cmd.Dir = targetRepo
+	cmd.Stdin = strings.NewReader(diff)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return ApplyResult{}, fmt.Errorf("git apply: %w\n%s", err, out)
+	}
+	return ApplyResult{Applied: true, ChangedFiles: status.ChangedFiles}, nil
+}
+
 // RollbackLease resets tracked and untracked changes inside the isolated
 // worktree. It does not touch the parent repository.
 func (m *Manager) RollbackLease(target any) error {
@@ -550,6 +589,19 @@ func porcelainFile(line string) string {
 		file = strings.TrimSpace(file[idx+4:])
 	}
 	return file
+}
+
+func untrackedFiles(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "?? ") {
+			if file := porcelainFile(line); file != "" {
+				out = append(out, file)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func splitLines(value string) []string {

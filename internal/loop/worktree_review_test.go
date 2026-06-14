@@ -227,6 +227,116 @@ func TestRollbackWorktreeDiscardsManagedWorktreeChanges(t *testing.T) {
 	}
 }
 
+func TestMergeWorktreeRequiresApproval(t *testing.T) {
+	root := t.TempDir()
+	initReviewGitRepo(t, root)
+	worktreeRoot := filepath.Join(root, ".wuu", "worktrees")
+	manager, err := worktree.NewManager(root, worktreeRoot)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{SessionID: "session-1", TaskID: "merge-denied"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("merged\n"), 0o644); err != nil {
+		t.Fatalf("write worktree file: %v", err)
+	}
+
+	_, err = MergeWorktree(WorktreeMergeOptions{
+		ParentRepo:   root,
+		WorktreeRoot: worktreeRoot,
+		WorktreePath: lease.Path,
+		TargetRepo:   root,
+	})
+	if err == nil || !strings.Contains(err.Error(), "confirm_apply_worktree_diff") {
+		t.Fatalf("expected merge approval error, got %v", err)
+	}
+	data, readErr := os.ReadFile(filepath.Join(root, "README.md"))
+	if readErr != nil {
+		t.Fatalf("read target after denied merge: %v", readErr)
+	}
+	if string(data) != "hello\n" {
+		t.Fatalf("denied merge should not change target, got %q", string(data))
+	}
+}
+
+func TestMergeWorktreeAppliesTrackedDiffToTarget(t *testing.T) {
+	root := t.TempDir()
+	initReviewGitRepo(t, root)
+	worktreeRoot := filepath.Join(root, ".wuu", "worktrees")
+	manager, err := worktree.NewManager(root, worktreeRoot)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{SessionID: "session-1", TaskID: "merge"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("merged\n"), 0o644); err != nil {
+		t.Fatalf("write worktree file: %v", err)
+	}
+
+	result, err := MergeWorktree(WorktreeMergeOptions{
+		ParentRepo:                root,
+		WorktreeRoot:              worktreeRoot,
+		WorktreePath:              lease.Path,
+		TargetRepo:                root,
+		ConfirmUserApproved:       true,
+		ConfirmApplyWorktreeDiff:  true,
+		ConfirmTargetRepoMutation: true,
+	})
+	if err != nil {
+		t.Fatalf("MergeWorktree: %v", err)
+	}
+	if !result.Applied || !result.Preview.CanApply || len(result.ChangedFiles) != 1 || result.ChangedFiles[0] != "README.md" {
+		t.Fatalf("unexpected merge result: %+v", result)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatalf("read target after merge: %v", err)
+	}
+	if string(data) != "merged\n" {
+		t.Fatalf("target file was not merged, got %q", string(data))
+	}
+}
+
+func TestMergeWorktreeRejectsUntrackedFiles(t *testing.T) {
+	root := t.TempDir()
+	initReviewGitRepo(t, root)
+	worktreeRoot := filepath.Join(root, ".wuu", "worktrees")
+	manager, err := worktree.NewManager(root, worktreeRoot)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{SessionID: "session-1", TaskID: "merge-untracked"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "scratch.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatalf("write untracked file: %v", err)
+	}
+
+	_, err = MergeWorktree(WorktreeMergeOptions{
+		ParentRepo:                root,
+		WorktreeRoot:              worktreeRoot,
+		WorktreePath:              lease.Path,
+		TargetRepo:                root,
+		ConfirmUserApproved:       true,
+		ConfirmApplyWorktreeDiff:  true,
+		ConfirmTargetRepoMutation: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "untracked files") {
+		t.Fatalf("expected untracked merge rejection, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "scratch.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("untracked file should not be merged, stat err=%v", statErr)
+	}
+}
+
 func initReviewGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	run := func(args ...string) {

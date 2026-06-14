@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -311,6 +312,63 @@ func TestCreateLeaseWritesManifestAndReview(t *testing.T) {
 	}
 	if string(data) == "" || !containsBytes(data, []byte(`"dirty": true`)) {
 		t.Fatalf("manifest should record dirty state:\n%s", string(data))
+	}
+}
+
+func TestApplyToTargetAppliesTrackedDiff(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	m, err := NewManager(dir, filepath.Join(dir, ".wuu", "worktrees"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := m.CreateLease(LeaseOptions{SessionID: "sess", TaskID: "apply"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer m.Cleanup(&Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("applied\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := m.ApplyToTarget(lease, dir)
+	if err != nil {
+		t.Fatalf("ApplyToTarget: %v", err)
+	}
+	if !result.Applied || len(result.ChangedFiles) != 1 || result.ChangedFiles[0] != "README.md" {
+		t.Fatalf("unexpected apply result: %+v", result)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatalf("read target file: %v", err)
+	}
+	if string(data) != "applied\n" {
+		t.Fatalf("target file not updated: %q", string(data))
+	}
+}
+
+func TestApplyToTargetRejectsUntrackedWorktreeFiles(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	m, err := NewManager(dir, filepath.Join(dir, ".wuu", "worktrees"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := m.CreateLease(LeaseOptions{SessionID: "sess", TaskID: "apply-untracked"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer m.Cleanup(&Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "new.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = m.ApplyToTarget(lease, dir)
+	if err == nil || !strings.Contains(err.Error(), "untracked files") {
+		t.Fatalf("expected untracked rejection, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "new.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("untracked file should not be applied, stat err=%v", statErr)
 	}
 }
 
