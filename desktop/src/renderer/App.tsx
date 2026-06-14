@@ -225,8 +225,8 @@ import {
   WorkspaceToolIcon,
   workspaceModeTitle,
   type WorkspacePanelView,
-  type WorkspaceRightPanelView,
 } from "./WorkspacePanels";
+import { useWorkspaceToolState } from "./WorkspaceToolState";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
@@ -346,16 +346,25 @@ export function App(): JSX.Element {
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
-  const [workspaceToolTabs, setWorkspaceToolTabs] = useState<
-    WorkspacePanelView[]
-  >([]);
-  const [workspacePanelView, setWorkspacePanelView] =
-    useState<WorkspacePanelView>("files");
-  const [workspaceRightPanelView, setWorkspaceRightPanelView] =
-    useState<WorkspaceRightPanelView>("tools");
-  const [workspaceMode, setWorkspaceMode] = useState<
-    WorkspacePanelView | undefined
-  >(undefined);
+  const {
+    workspaceToolTabs,
+    workspacePanelView,
+    setWorkspacePanelView,
+    workspaceRightPanelView,
+    setWorkspaceRightPanelView,
+    workspaceMode,
+    setWorkspaceMode,
+    ensureWorkspaceToolTab,
+    activateWorkspaceTool,
+    openWorkspaceTool,
+    showWorkspaceToolPicker,
+    closeWorkspaceToolTab,
+    reorderWorkspaceToolTabs,
+    toggleRightPanel,
+  } = useWorkspaceToolState({
+    rightPanelOpen,
+    setRightPanelOpenWithMotion,
+  });
   const [environmentPanelOpen, setEnvironmentPanelOpen] = useState(false);
   const [environmentPanelDismissed, setEnvironmentPanelDismissed] =
     useState(false);
@@ -1063,23 +1072,6 @@ export function App(): JSX.Element {
     projectCollapseTimersRef.current.set(projectID, timer);
   }
 
-  function ensureWorkspaceToolTab(view: WorkspacePanelView): void {
-    setWorkspaceToolTabs((current) =>
-      current.includes(view) ? current : [...current, view],
-    );
-  }
-
-  function activateWorkspaceTool(view: WorkspacePanelView): void {
-    setWorkspacePanelView(view);
-    setWorkspaceRightPanelView(view);
-  }
-
-  function openWorkspaceTool(view: WorkspacePanelView): void {
-    ensureWorkspaceToolTab(view);
-    activateWorkspaceTool(view);
-    setRightPanelOpenWithMotion(true);
-  }
-
   function openWorkspaceFile(path: string): void {
     const context = appStateRef.current.activeContext;
     if (!context) {
@@ -1151,59 +1143,6 @@ export function App(): JSX.Element {
       running: false,
       status: "ready",
     }));
-  }
-
-  function showWorkspaceToolPicker(): void {
-    setWorkspaceRightPanelView("tools");
-    setRightPanelOpenWithMotion(true);
-  }
-
-  function closeWorkspaceToolTab(view: WorkspacePanelView): void {
-    const nextTabs = workspaceToolTabs.filter((item) => item !== view);
-    setWorkspaceToolTabs(nextTabs);
-
-    if (workspaceRightPanelView !== view) {
-      return;
-    }
-
-    const closedIndex = workspaceToolTabs.indexOf(view);
-    const fallback =
-      nextTabs[
-        Math.min(Math.max(closedIndex, 0), Math.max(nextTabs.length - 1, 0))
-      ];
-    if (fallback) {
-      activateWorkspaceTool(fallback);
-      return;
-    }
-    setWorkspaceRightPanelView("tools");
-  }
-
-  function reorderWorkspaceToolTabs(
-    activeView: WorkspacePanelView,
-    overView: WorkspacePanelView,
-  ): void {
-    if (activeView === overView) {
-      return;
-    }
-    setWorkspaceToolTabs((current) => {
-      const sourceIndex = current.indexOf(activeView);
-      const targetIndex = current.indexOf(overView);
-      if (sourceIndex < 0 || targetIndex < 0) {
-        return current;
-      }
-      return arrayMove(current, sourceIndex, targetIndex);
-    });
-  }
-
-  function toggleRightPanel(): void {
-    if (rightPanelOpen) {
-      setRightPanelOpenWithMotion(false);
-      return;
-    }
-    if (workspaceRightPanelView === "tools" && workspaceToolTabs.length > 0) {
-      activateWorkspaceTool(workspaceToolTabs[workspaceToolTabs.length - 1]);
-    }
-    setRightPanelOpenWithMotion(true);
   }
 
   async function buildComposerAttachments(files: File[]): Promise<{
