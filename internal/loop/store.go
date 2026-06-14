@@ -226,6 +226,19 @@ func (s *Store) AddFailure(failure Failure) (State, error) {
 	if failure.Message == "" {
 		failure.Message = "unknown failure"
 	}
+	failure.Kind = strings.TrimSpace(failure.Kind)
+	failure.Source = strings.TrimSpace(failure.Source)
+	failure.SourceID = strings.TrimSpace(failure.SourceID)
+	failure.Artifact = strings.TrimSpace(failure.Artifact)
+	if failure.Source != "" && failure.SourceID != "" {
+		for _, existing := range state.Failures {
+			if existing.Source == failure.Source &&
+				existing.SourceID == failure.SourceID &&
+				existing.Kind == failure.Kind {
+				return state, nil
+			}
+		}
+	}
 	state.Failures = append(state.Failures, failure)
 	state.CurrentStep = failure.Step
 	state.CurrentBlocker = failure.Message
@@ -247,8 +260,10 @@ func (s *Store) AddFailure(failure Failure) (State, error) {
 		Message:  failure.Message,
 		Artifact: failure.Artifact,
 		Data: map[string]string{
-			"kind":    failure.Kind,
-			"command": failure.Command,
+			"kind":      failure.Kind,
+			"source":    failure.Source,
+			"source_id": failure.SourceID,
+			"command":   failure.Command,
 		},
 	})
 }
@@ -386,6 +401,12 @@ func renderDecisions(b *strings.Builder, entries []Decision) {
 func renderFailures(b *strings.Builder, entries []Failure) {
 	for _, entry := range entries {
 		fmt.Fprintf(b, "- %s `%s` %s: %s", entry.CreatedAt.Format(time.RFC3339), entry.Step, entry.Kind, entry.Message)
+		if entry.Source != "" {
+			fmt.Fprintf(b, " source=%s", entry.Source)
+		}
+		if entry.SourceID != "" {
+			fmt.Fprintf(b, " source_id=%s", entry.SourceID)
+		}
 		if entry.Command != "" {
 			fmt.Fprintf(b, " command=%q", entry.Command)
 		}

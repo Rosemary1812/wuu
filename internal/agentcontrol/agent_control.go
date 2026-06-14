@@ -57,6 +57,7 @@ type AgentControl struct {
 	threadStore   *agentthread.Store
 	harnessDir    string
 	harnessStore  *harness.Store
+	failureSink   FailureSink
 	rootThreadID  string
 	rootThreadDir string
 	workerFact    WorkerToolkitFactory
@@ -84,6 +85,7 @@ type Config struct {
 	HistoryDir      string // session artifact workers directory
 	ThreadDir       string // session artifact threads directory
 	HarnessDir      string // session artifact harness directory
+	FailureSink     FailureSink
 	SessionID       string
 	WorkerSysPrompt string
 	WorkerFactory   WorkerToolkitFactory
@@ -137,6 +139,7 @@ func New(cfg Config) (*AgentControl, error) {
 		threadStore:  agentthread.NewStore(cfg.ThreadDir),
 		harnessDir:   harnessDir,
 		harnessStore: harness.NewStore(harnessDir),
+		failureSink:  cfg.FailureSink,
 		workerFact:   cfg.WorkerFactory,
 		workerPrompt: cfg.WorkerPrompt,
 		defaultSys:   cfg.WorkerSysPrompt,
@@ -1474,6 +1477,15 @@ func (c *AgentControl) recordHarnessTaskFailure(taskID string, err error) {
 		RunID:     runID,
 		AgentID:   taskID,
 		Status:    string(harness.TaskStatusFailed),
+		Message:   errText,
+		CreatedAt: now,
+	})
+	_ = c.recordAgentFailure(AgentFailure{
+		Source:    "harness_task",
+		TaskID:    taskID,
+		RunID:     runID,
+		AgentID:   taskID,
+		Outcome:   string(harness.TaskStatusFailed),
 		Message:   errText,
 		CreatedAt: now,
 	})

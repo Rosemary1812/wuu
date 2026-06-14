@@ -109,6 +109,8 @@ type TestResult struct {
 type Failure struct {
 	Step      Step      `json:"step,omitempty"`
 	Kind      string    `json:"kind,omitempty"`
+	Source    string    `json:"source,omitempty"`
+	SourceID  string    `json:"source_id,omitempty"`
 	Message   string    `json:"message"`
 	Command   string    `json:"command,omitempty"`
 	Artifact  string    `json:"artifact,omitempty"`

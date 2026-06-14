@@ -104,6 +104,24 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 		return AgentReportResult{}, err
 	}
 	c.updateHarnessStatusFromReport(id, outcome, report.SubmittedAt, report.Blockers)
+	if agentReportNeedsFailureSync(outcome, report.Blockers) {
+		if err := c.recordAgentFailure(AgentFailure{
+			Source:       "harness_report",
+			TaskID:       id,
+			RunID:        report.RunID,
+			AgentID:      id,
+			AgentPath:    path,
+			Outcome:      outcome,
+			Message:      strings.Join(trimStringSlice(report.Blockers), "; "),
+			ReportPath:   report.ReportPath,
+			Blockers:     report.Blockers,
+			ChangedFiles: report.ChangedFiles,
+			Verification: report.Verification,
+			CreatedAt:    report.SubmittedAt,
+		}); err != nil {
+			return AgentReportResult{}, err
+		}
+	}
 	if report.ReportPath != "" && !stringSliceContains(artifacts, report.ReportPath) {
 		artifacts = append(artifacts, report.ReportPath)
 	}

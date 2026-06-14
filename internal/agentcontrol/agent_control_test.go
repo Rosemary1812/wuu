@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -82,6 +83,24 @@ func (fakeToolkit) Execute(_ context.Context, _ providers.ToolCall) (string, err
 	return "", nil
 }
 
+type captureFailureSink struct {
+	mu       sync.Mutex
+	failures []AgentFailure
+}
+
+func (s *captureFailureSink) RecordAgentFailure(failure AgentFailure) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failures = append(s.failures, failure)
+	return nil
+}
+
+func (s *captureFailureSink) list() []AgentFailure {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]AgentFailure(nil), s.failures...)
+}
+
 func initRepo(t *testing.T, dir string) {
 	t.Helper()
 	run := func(args ...string) {
@@ -140,7 +159,7 @@ func TestSpawn_SyncHappyPath(t *testing.T) {
 	}
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "sync_happy",
 		Description: "test",
 		Prompt:      "do something",
@@ -185,7 +204,7 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 	}
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "scan_auth_flow",
 		Description: "scan auth flow",
 		Prompt:      "find auth problems",
@@ -309,7 +328,7 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 	}
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "record_harness",
 		Description: "record harness",
 		Prompt:      "record durable task",
@@ -396,7 +415,7 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	}
 	t.Cleanup(c.Close)
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "structured_report",
 		Prompt:      "inspect code",
 		Synchronous: true,
@@ -454,6 +473,98 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
 
+func TestRecordAgentReportSyncsFailureSinkForBlockers(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	sink := &captureFailureSink{}
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "reportable result"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-agent-report-failure",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-failure", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-failure", "harness"),
+		FailureSink:   sink,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "structured_report_failure",
+		Prompt:      "inspect code",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+		Outcome:      "stuck",
+		Summary:      "Could not finish because tests fail.",
+		Blockers:     []string{"go test ./internal/agentcontrol fails"},
+		Verification: []string{"go test ./internal/agentcontrol"},
+	})
+	if err != nil {
+		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	failures := sink.list()
+	if len(failures) != 1 {
+		t.Fatalf("expected one synced failure, got %+v", failures)
+	}
+	got := failures[0]
+	if got.Source != "harness_report" || got.TaskID != res.AgentID || got.ReportPath != report.ReportPath {
+		t.Fatalf("unexpected synced failure: %+v", got)
+	}
+	if got.Message != "go test ./internal/agentcontrol fails" || got.Outcome != "stuck" {
+		t.Fatalf("failure did not preserve blocker/outcome: %+v", got)
+	}
+	tasks, err := c.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].Status != harness.TaskStatusFailed {
+		t.Fatalf("agent_report should mark failed harness task: %+v", tasks)
+	}
+	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
+func TestRecordHarnessTaskFailureSyncsFailureSink(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	sink := &captureFailureSink{}
+
+	c, err := New(Config{
+		Client:        &fakeClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-harness-failure",
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-harness-failure", "harness"),
+		FailureSink:   sink,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	c.recordHarnessTaskFailure("agent-failed", errors.New("spawn failed"))
+
+	failures := sink.list()
+	if len(failures) != 1 {
+		t.Fatalf("expected one synced failure, got %+v", failures)
+	}
+	got := failures[0]
+	if got.Source != "harness_task" || got.TaskID != "agent-failed" || got.Message != "spawn failed" {
+		t.Fatalf("unexpected synced failure: %+v", got)
+	}
+}
+
 func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
@@ -473,7 +584,7 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	}
 	t.Cleanup(c.Close)
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "await_report",
 		Prompt:      "finish without report",
 		Synchronous: true,
@@ -591,7 +702,7 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 	}
 	t.Cleanup(c.Close)
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:     DefaultSubagentType,
 		TaskName: "await_timeout",
 		Prompt:   "keep running",
 	})
@@ -635,7 +746,7 @@ func TestActiveTaskReminderListsIncompleteChildren(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:     DefaultSubagentType,
 		TaskName: "active_child",
 		Prompt:   "stay active",
 	})
@@ -679,7 +790,7 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "patch_artifact",
 		Prompt:      "change readme",
 		Isolation:   "worktree",
@@ -776,7 +887,7 @@ func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:     DefaultSubagentType,
 		TaskName: "parent",
 		Prompt:   "p",
 	})
@@ -784,7 +895,7 @@ func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 		t.Fatalf("parent spawn: %v", err)
 	}
 	child, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:       DefaultSubagentType,
 		TaskName:   "child",
 		Prompt:     "p",
 		ParentID:   parent.AgentID,
@@ -824,7 +935,7 @@ func TestNestedResultRoutesToParentAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:     DefaultSubagentType,
 		TaskName: "parent",
 		Prompt:   "p",
 	})
@@ -836,7 +947,7 @@ func TestNestedResultRoutesToParentAgent(t *testing.T) {
 		ParentID:    parent.AgentID,
 		AgentPath:   parent.AgentPath + "/child",
 		TaskName:    "child",
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		Status:      subagent.StatusCompleted,
 		Description: "child task",
 		Result:      "child done",
@@ -865,7 +976,7 @@ func TestStopClosesAgentSubtree(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:     DefaultSubagentType,
 		TaskName: "parent",
 		Prompt:   "parent task",
 	})
@@ -873,7 +984,7 @@ func TestStopClosesAgentSubtree(t *testing.T) {
 		t.Fatalf("parent spawn: %v", err)
 	}
 	child, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:       DefaultSubagentType,
 		TaskName:   "child",
 		Prompt:     "child task",
 		ParentID:   parent.AgentID,
@@ -918,7 +1029,7 @@ func TestWaitForMailboxUpdateFromRootWakesOnChildFinalStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	child, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:     DefaultSubagentType,
 		TaskName: "child",
 		Prompt:   "child task",
 	})
@@ -969,7 +1080,7 @@ func TestWaitForMailboxUpdateFromAgentReturnsAlreadyQueuedMail(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:     DefaultSubagentType,
 		TaskName: "parent",
 		Prompt:   "parent task",
 	})
@@ -1012,7 +1123,7 @@ func TestSpawn_InplaceSkipsWorktree(t *testing.T) {
 	// on the isolation field, but this one specifically pins the
 	// no-disk-side-effect property by reading the worktree dir.
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "inplace",
 		Description: "look",
 		Prompt:      "p",
@@ -1048,7 +1159,7 @@ func TestSpawn_IsolationOverride(t *testing.T) {
 	// Worker defaults to inplace; explicit isolation="worktree"
 	// must override that and put the worker in a fresh worktree.
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "force_isolated",
 		Description: "force-isolated",
 		Prompt:      "p",
@@ -1066,7 +1177,7 @@ func TestSpawn_IsolationOverride(t *testing.T) {
 	// default) but must still resolve cleanly without touching the
 	// worktree directory.
 	res2, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "explicit_inplace",
 		Description: "explicit-inplace",
 		Prompt:      "p",
@@ -1120,7 +1231,7 @@ func TestSpawn_PreservesCleanWorktreeForFollowup(t *testing.T) {
 	})
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "preserve_clean",
 		Description: "noop",
 		Prompt:      "p",
@@ -1163,7 +1274,7 @@ func TestSpawn_KeepDirtyWorktree(t *testing.T) {
 	})
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "keep_dirty",
 		Description: "modifies",
 		Prompt:      "p",
@@ -1456,7 +1567,7 @@ func TestSendMessage_ResolvesThreadPathAndTaskName(t *testing.T) {
 	}
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "review_config",
 		Description: "slow",
 		Prompt:      "p",
@@ -1696,7 +1807,7 @@ func TestAgentMailboxChatMessage(t *testing.T) {
 	})
 
 	res, _ := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "find_bug",
 		Description: "find the bug",
 		Prompt:      "look for it",
@@ -1747,7 +1858,7 @@ func TestAgentCompletionChatMessageTriggersRootTurn(t *testing.T) {
 	})
 
 	res, _ := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "find_bug",
 		Description: "find the bug",
 		Prompt:      "look for it",
@@ -1832,7 +1943,7 @@ func TestAgentControlRecordsRootCompletionMessageEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		TaskName:    "record_event",
 		Prompt:      "record",
 		Synchronous: true,
@@ -1864,7 +1975,7 @@ func TestAgentControlRecordsRootCompletionMessageEvent(t *testing.T) {
 func subagentSnapshotWithError(err error) subagent.SubAgentSnapshot {
 	return subagent.SubAgentSnapshot{
 		ID:          "worker-test",
-		Type: DefaultSubagentType,
+		Type:        DefaultSubagentType,
 		Description: "test",
 		Status:      subagent.StatusFailed,
 		Error:       err,

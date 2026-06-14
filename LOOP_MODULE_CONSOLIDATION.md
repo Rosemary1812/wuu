@@ -134,8 +134,22 @@ harness stores as separate systems.
 When workflow or harness records a terminal failure, add a loop-level failure
 entry for the active loop when one is known.
 
-The first implementation can be opt-in via explicit loop id/path in tool or
-agent metadata. Do not guess.
+The first implementation is opt-in. Callers must pass an explicit loop store or
+failure sink. The system does not discover or guess an active loop from the
+workspace.
+
+Implemented pieces:
+
+- `loop.SyncSnapshotFailures` converts workflow/harness snapshot attention
+  items into loop failures.
+- `loop.Failure` carries `source` and `source_id` so external failures are
+  idempotent across repeated syncs.
+- `agentcontrol.FailureSink` lets the control plane receive spawned-agent
+  failure facts without importing `internal/loop`.
+- `loop.NewAgentControlFailureSink` adapts those facts into `.loop/failures.md`
+  when an explicit loop store is configured.
+- `AgentControl` calls the sink for failed harness tasks and for `agent_report`
+  submissions with blockers, `stuck`, or `error` outcomes.
 
 ### P0.3: Workflow Start Bridge
 
@@ -173,3 +187,14 @@ The first implementation step is intentionally narrow:
 
 This moves consumers toward one loop-level read model without breaking current
 workflow or subagent behavior.
+
+## Second Code Step
+
+The second step adds failure feedback without collapsing module ownership:
+
+1. Loop remains the owner of the durable failure ledger.
+2. Workflow/harness facts are converted through explicit sync functions or
+   sink interfaces.
+3. AgentControl emits failure facts but does not depend on loop internals.
+4. Repeated sync of the same external failure is deduplicated by source and
+   source id.
