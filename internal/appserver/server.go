@@ -144,6 +144,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleLoopSnapshot(req)
 	case MethodLoopWorktreeReview:
 		return s.handleLoopWorktreeReview(req)
+	case MethodLoopWorktreeCleanup:
+		return s.handleLoopWorktreeCleanup(req)
 	case MethodThreadStart:
 		return s.handleThreadStart(req)
 	case MethodThreadResume:

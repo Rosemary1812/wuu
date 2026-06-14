@@ -63,6 +63,17 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:loop-snapshot", threadId),
   getLoopWorktreeReview: (worktreePath: string) =>
     ipcRenderer.invoke("wuu:loop-worktree-review", worktreePath),
+  cleanupLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmRemoveCleanWorktree: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "wuu:loop-worktree-cleanup",
+      worktreePath,
+      confirmUserApproved,
+      confirmRemoveCleanWorktree,
+    ),
   listManagedProcesses: () => ipcRenderer.invoke("wuu:process-list"),
   stopManagedProcess: (processId: string) =>
     ipcRenderer.invoke("wuu:process-stop", processId),

@@ -65,6 +65,89 @@ func TestReviewWorktreeRejectsPathOutsideManagedRoot(t *testing.T) {
 	}
 }
 
+func TestCleanupWorktreeIfCleanRequiresApproval(t *testing.T) {
+	root := t.TempDir()
+	initReviewGitRepo(t, root)
+	worktreeRoot := filepath.Join(root, ".wuu", "worktrees")
+	manager, err := worktree.NewManager(root, worktreeRoot)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{SessionID: "session-1", TaskID: "task-1"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+
+	_, err = CleanupWorktreeIfClean(WorktreeCleanupOptions{
+		ParentRepo:   root,
+		WorktreeRoot: worktreeRoot,
+		WorktreePath: lease.Path,
+	})
+	if err == nil || !strings.Contains(err.Error(), "confirm_user_approved") {
+		t.Fatalf("expected approval error, got %v", err)
+	}
+	if _, statErr := os.Stat(lease.Path); statErr != nil {
+		t.Fatalf("unapproved cleanup should not remove worktree: %v", statErr)
+	}
+}
+
+func TestCleanupWorktreeIfCleanRemovesOnlyCleanWorktrees(t *testing.T) {
+	root := t.TempDir()
+	initReviewGitRepo(t, root)
+	worktreeRoot := filepath.Join(root, ".wuu", "worktrees")
+	manager, err := worktree.NewManager(root, worktreeRoot)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	cleanLease, err := manager.CreateLease(worktree.LeaseOptions{SessionID: "session-1", TaskID: "clean"})
+	if err != nil {
+		t.Fatalf("CreateLease clean: %v", err)
+	}
+	cleanResult, err := CleanupWorktreeIfClean(WorktreeCleanupOptions{
+		ParentRepo:                 root,
+		WorktreeRoot:               worktreeRoot,
+		WorktreePath:               cleanLease.Path,
+		ConfirmUserApproved:        true,
+		ConfirmRemoveCleanWorktree: true,
+	})
+	if err != nil {
+		t.Fatalf("CleanupWorktreeIfClean clean: %v", err)
+	}
+	if !cleanResult.Removed || cleanResult.Kept || cleanResult.StatusBefore.Dirty {
+		t.Fatalf("unexpected clean cleanup result: %+v", cleanResult)
+	}
+	if _, statErr := os.Stat(cleanLease.Path); !os.IsNotExist(statErr) {
+		t.Fatalf("clean worktree should be removed, stat err=%v", statErr)
+	}
+
+	dirtyLease, err := manager.CreateLease(worktree.LeaseOptions{SessionID: "session-1", TaskID: "dirty"})
+	if err != nil {
+		t.Fatalf("CreateLease dirty: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: dirtyLease.Path})
+	if err := os.WriteFile(filepath.Join(dirtyLease.Path, "README.md"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatalf("write dirty worktree: %v", err)
+	}
+	dirtyResult, err := CleanupWorktreeIfClean(WorktreeCleanupOptions{
+		ParentRepo:                 root,
+		WorktreeRoot:               worktreeRoot,
+		WorktreePath:               dirtyLease.Path,
+		ConfirmUserApproved:        true,
+		ConfirmRemoveCleanWorktree: true,
+	})
+	if err != nil {
+		t.Fatalf("CleanupWorktreeIfClean dirty: %v", err)
+	}
+	if dirtyResult.Removed || !dirtyResult.Kept || !dirtyResult.StatusBefore.Dirty {
+		t.Fatalf("unexpected dirty cleanup result: %+v", dirtyResult)
+	}
+	if _, statErr := os.Stat(dirtyLease.Path); statErr != nil {
+		t.Fatalf("dirty worktree should be kept: %v", statErr)
+	}
+}
+
 func initReviewGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	run := func(args ...string) {

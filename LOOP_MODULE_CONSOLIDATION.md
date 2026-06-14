@@ -248,9 +248,17 @@ Implemented pieces:
 - App-server exposes `loop/worktree/review`, and desktop main/preload proxy it
   as `getLoopWorktreeReview(worktreePath)`. Desktop does not run git diff or
   merge-preview logic itself.
+- `loop.CleanupWorktreeIfClean` exposes the first mutation surface with an
+  explicit approval gate. It validates the path is inside the managed worktree
+  root, requires both `confirm_user_approved` and
+  `confirm_remove_clean_worktree`, delegates cleanup to `internal/worktree`,
+  and preserves dirty worktrees for review.
+- App-server exposes `loop/worktree/cleanup`, and desktop main/preload proxy it
+  as `cleanupLoopWorktree(...)` without auto-confirming on the renderer's
+  behalf.
 
 Remaining work: add mutation surfaces behind explicit approval gates, such as
-retry, cleanup, merge, and human approval queues. Those should still call
+retry, rollback, merge, and human approval queues. Those should still call
 loop/worktree APIs instead of writing directly to workflow or harness stores.
 
 ### P2: Store Reduction

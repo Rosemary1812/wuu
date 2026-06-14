@@ -143,6 +143,53 @@ func TestLoopWorktreeReviewRejectsUnmanagedPath(t *testing.T) {
 	}
 }
 
+func TestLoopWorktreeCleanupRequiresApprovalAndRemovesCleanWorktree(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	initLoopHandlerGitRepo(t, rt.RootDir)
+	manager, err := worktree.NewManager(rt.RootDir, statepath.WorktreeRoot(rt.StateDir))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{
+		SessionID: "thread-1",
+		TaskID:    "cleanup",
+	})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"cleanup-denied","method":"loop/worktree/cleanup","params":{"worktree_path":` + quoteLoopHandlerJSON(lease.Path) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/worktree/cleanup denied: %v", err)
+	}
+	denied := responseByID(t, parseOutput(t, out.String()), "cleanup-denied")
+	if denied["error"] == nil || !strings.Contains(string(remarshalLoopHandlerRaw(t, denied["error"])), "confirm_user_approved") {
+		t.Fatalf("expected approval error, got %+v", denied)
+	}
+	if _, statErr := os.Stat(lease.Path); statErr != nil {
+		t.Fatalf("unapproved cleanup should not remove worktree: %v", statErr)
+	}
+
+	out = &lockedBuffer{}
+	srv = New(rt, out)
+	raw = `{"id":"cleanup","method":"loop/worktree/cleanup","params":{"worktree_path":` + quoteLoopHandlerJSON(lease.Path) + `,"confirm_user_approved":true,"confirm_remove_clean_worktree":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/worktree/cleanup: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "cleanup")
+	result := remarshal[LoopWorktreeCleanupResult](t, msg["result"])
+	if !result.Cleanup.Removed || result.Cleanup.Kept || result.Cleanup.StatusBefore.Dirty {
+		t.Fatalf("unexpected cleanup result: %+v", result.Cleanup)
+	}
+	if _, statErr := os.Stat(lease.Path); !os.IsNotExist(statErr) {
+		t.Fatalf("clean worktree should be removed, stat err=%v", statErr)
+	}
+}
+
 func initLoopHandlerGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	run := func(args ...string) {

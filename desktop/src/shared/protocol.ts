@@ -285,6 +285,17 @@ export type LoopWorktreeReviewResult = {
   review: LoopWorktreeReview;
 };
 
+export type LoopWorktreeCleanup = {
+  worktree_path: string;
+  removed: boolean;
+  kept: boolean;
+  status_before: LoopWorktreeStatus;
+};
+
+export type LoopWorktreeCleanupResult = {
+  cleanup: LoopWorktreeCleanup;
+};
+
 export type ManagedProcess = {
   action?: string;
   id: string;
@@ -702,6 +713,11 @@ export type WuuDesktopApi = {
   listSkills: () => Promise<SkillListResult>;
   getLoopSnapshot: (threadId?: string) => Promise<LoopSnapshotResult>;
   getLoopWorktreeReview: (worktreePath: string) => Promise<LoopWorktreeReviewResult>;
+  cleanupLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmRemoveCleanWorktree: boolean
+  ) => Promise<LoopWorktreeCleanupResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

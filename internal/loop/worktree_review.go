@@ -26,6 +26,21 @@ type WorktreeReview struct {
 	MergePreview  worktree.MergePreview `json:"merge_preview"`
 }
 
+type WorktreeCleanupOptions struct {
+	ParentRepo                 string
+	WorktreeRoot               string
+	WorktreePath               string
+	ConfirmUserApproved        bool
+	ConfirmRemoveCleanWorktree bool
+}
+
+type WorktreeCleanupResult struct {
+	WorktreePath string          `json:"worktree_path"`
+	Removed      bool            `json:"removed"`
+	Kept         bool            `json:"kept"`
+	StatusBefore worktree.Status `json:"status_before"`
+}
+
 func ReviewWorktree(opts WorktreeReviewOptions) (WorktreeReview, error) {
 	parentRepo := strings.TrimSpace(opts.ParentRepo)
 	if parentRepo == "" {
@@ -91,4 +106,41 @@ func truncateReviewDiff(diff string, maxBytes int) (string, bool) {
 		return diff, false
 	}
 	return diff[:maxBytes] + "\n[diff truncated]\n", true
+}
+
+func CleanupWorktreeIfClean(opts WorktreeCleanupOptions) (WorktreeCleanupResult, error) {
+	if !opts.ConfirmUserApproved || !opts.ConfirmRemoveCleanWorktree {
+		return WorktreeCleanupResult{}, errors.New("loop worktree cleanup requires confirm_user_approved=true and confirm_remove_clean_worktree=true")
+	}
+	parentRepo := strings.TrimSpace(opts.ParentRepo)
+	if parentRepo == "" {
+		return WorktreeCleanupResult{}, errors.New("parent repo is required")
+	}
+	worktreeRoot := strings.TrimSpace(opts.WorktreeRoot)
+	if worktreeRoot == "" {
+		return WorktreeCleanupResult{}, errors.New("worktree root is required")
+	}
+	worktreePath, err := validatedWorktreePath(worktreeRoot, opts.WorktreePath)
+	if err != nil {
+		return WorktreeCleanupResult{}, err
+	}
+	manager, err := worktree.NewManager(parentRepo, worktreeRoot)
+	if err != nil {
+		return WorktreeCleanupResult{}, err
+	}
+	target := &worktree.Worktree{Path: worktreePath}
+	status, err := manager.Status(target)
+	if err != nil {
+		return WorktreeCleanupResult{}, err
+	}
+	kept, err := manager.CleanupIfClean(target)
+	if err != nil {
+		return WorktreeCleanupResult{}, err
+	}
+	return WorktreeCleanupResult{
+		WorktreePath: worktreePath,
+		Removed:      !kept,
+		Kept:         kept,
+		StatusBefore: status,
+	}, nil
 }

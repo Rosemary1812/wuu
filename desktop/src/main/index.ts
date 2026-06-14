@@ -19,6 +19,7 @@ import type {
   InputImage,
   InitializeResult,
   LoopSnapshotResult,
+  LoopWorktreeCleanupResult,
   LoopWorktreeReviewResult,
   ManagedProcessListResult,
   ManagedProcessStopResult,
@@ -334,6 +335,20 @@ app.whenReady().then(() => {
     appServerClientPool.request<LoopWorktreeReviewResult>("loop/worktree/review", {
       worktree_path: worktreePath,
     }),
+  );
+  ipcMain.handle(
+    "wuu:loop-worktree-cleanup",
+    (
+      _event,
+      worktreePath: string,
+      confirmUserApproved: boolean,
+      confirmRemoveCleanWorktree: boolean,
+    ) =>
+      appServerClientPool.request<LoopWorktreeCleanupResult>("loop/worktree/cleanup", {
+        worktree_path: worktreePath,
+        confirm_user_approved: confirmUserApproved,
+        confirm_remove_clean_worktree: confirmRemoveCleanWorktree,
+      }),
   );
   ipcMain.handle("wuu:process-list", () =>
     appServerClientPool.request<ManagedProcessListResult>("process/list"),

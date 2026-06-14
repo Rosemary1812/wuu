@@ -60,6 +60,30 @@ func (s *Server) handleLoopWorktreeReview(req Request) error {
 	return s.writeResponse(req.ID, LoopWorktreeReviewResult{Review: review}, nil)
 }
 
+func (s *Server) handleLoopWorktreeCleanup(req Request) error {
+	var params LoopWorktreeCleanupParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop worktree cleanup params: %w", err))
+		}
+	}
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	cleanup, err := looprunner.CleanupWorktreeIfClean(looprunner.WorktreeCleanupOptions{
+		ParentRepo:                 s.rt.RootDir,
+		WorktreeRoot:               statepath.WorktreeRoot(stateDir),
+		WorktreePath:               params.WorktreePath,
+		ConfirmUserApproved:        params.ConfirmUserApproved,
+		ConfirmRemoveCleanWorktree: params.ConfirmRemoveCleanWorktree,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, LoopWorktreeCleanupResult{Cleanup: cleanup}, nil)
+}
+
 func (s *Server) loopWorkflowStore() (*workflow.Store, error) {
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
