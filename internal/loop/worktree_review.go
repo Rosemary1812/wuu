@@ -41,6 +41,21 @@ type WorktreeCleanupResult struct {
 	StatusBefore worktree.Status `json:"status_before"`
 }
 
+type WorktreeRollbackOptions struct {
+	ParentRepo                    string
+	WorktreeRoot                  string
+	WorktreePath                  string
+	ConfirmUserApproved           bool
+	ConfirmDiscardWorktreeChanges bool
+}
+
+type WorktreeRollbackResult struct {
+	WorktreePath string          `json:"worktree_path"`
+	RolledBack   bool            `json:"rolled_back"`
+	StatusBefore worktree.Status `json:"status_before"`
+	StatusAfter  worktree.Status `json:"status_after"`
+}
+
 func ReviewWorktree(opts WorktreeReviewOptions) (WorktreeReview, error) {
 	parentRepo := strings.TrimSpace(opts.ParentRepo)
 	if parentRepo == "" {
@@ -142,5 +157,45 @@ func CleanupWorktreeIfClean(opts WorktreeCleanupOptions) (WorktreeCleanupResult,
 		Removed:      !kept,
 		Kept:         kept,
 		StatusBefore: status,
+	}, nil
+}
+
+func RollbackWorktree(opts WorktreeRollbackOptions) (WorktreeRollbackResult, error) {
+	if !opts.ConfirmUserApproved || !opts.ConfirmDiscardWorktreeChanges {
+		return WorktreeRollbackResult{}, errors.New("loop worktree rollback requires confirm_user_approved=true and confirm_discard_worktree_changes=true")
+	}
+	parentRepo := strings.TrimSpace(opts.ParentRepo)
+	if parentRepo == "" {
+		return WorktreeRollbackResult{}, errors.New("parent repo is required")
+	}
+	worktreeRoot := strings.TrimSpace(opts.WorktreeRoot)
+	if worktreeRoot == "" {
+		return WorktreeRollbackResult{}, errors.New("worktree root is required")
+	}
+	worktreePath, err := validatedWorktreePath(worktreeRoot, opts.WorktreePath)
+	if err != nil {
+		return WorktreeRollbackResult{}, err
+	}
+	manager, err := worktree.NewManager(parentRepo, worktreeRoot)
+	if err != nil {
+		return WorktreeRollbackResult{}, err
+	}
+	target := &worktree.Worktree{Path: worktreePath}
+	before, err := manager.Status(target)
+	if err != nil {
+		return WorktreeRollbackResult{}, err
+	}
+	if err := manager.RollbackLease(target); err != nil {
+		return WorktreeRollbackResult{}, err
+	}
+	after, err := manager.Status(target)
+	if err != nil {
+		return WorktreeRollbackResult{}, err
+	}
+	return WorktreeRollbackResult{
+		WorktreePath: worktreePath,
+		RolledBack:   true,
+		StatusBefore: before,
+		StatusAfter:  after,
 	}, nil
 }

@@ -190,6 +190,64 @@ func TestLoopWorktreeCleanupRequiresApprovalAndRemovesCleanWorktree(t *testing.T
 	}
 }
 
+func TestLoopWorktreeRollbackRequiresApprovalAndDiscardsChanges(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	initLoopHandlerGitRepo(t, rt.RootDir)
+	manager, err := worktree.NewManager(rt.RootDir, statepath.WorktreeRoot(rt.StateDir))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{
+		SessionID: "thread-1",
+		TaskID:    "rollback",
+	})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatalf("write tracked change: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"rollback-denied","method":"loop/worktree/rollback","params":{"worktree_path":` + quoteLoopHandlerJSON(lease.Path) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/worktree/rollback denied: %v", err)
+	}
+	denied := responseByID(t, parseOutput(t, out.String()), "rollback-denied")
+	if denied["error"] == nil || !strings.Contains(string(remarshalLoopHandlerRaw(t, denied["error"])), "confirm_discard_worktree_changes") {
+		t.Fatalf("expected rollback approval error, got %+v", denied)
+	}
+	data, err := os.ReadFile(filepath.Join(lease.Path, "README.md"))
+	if err != nil {
+		t.Fatalf("read README after denied rollback: %v", err)
+	}
+	if string(data) != "changed\n" {
+		t.Fatalf("denied rollback should keep worktree edit, got %q", string(data))
+	}
+
+	out = &lockedBuffer{}
+	srv = New(rt, out)
+	raw = `{"id":"rollback","method":"loop/worktree/rollback","params":{"worktree_path":` + quoteLoopHandlerJSON(lease.Path) + `,"confirm_user_approved":true,"confirm_discard_worktree_changes":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/worktree/rollback: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "rollback")
+	result := remarshal[LoopWorktreeRollbackResult](t, msg["result"])
+	if !result.Rollback.RolledBack || !result.Rollback.StatusBefore.Dirty || result.Rollback.StatusAfter.Dirty {
+		t.Fatalf("unexpected rollback result: %+v", result.Rollback)
+	}
+	data, err = os.ReadFile(filepath.Join(lease.Path, "README.md"))
+	if err != nil {
+		t.Fatalf("read README after rollback: %v", err)
+	}
+	if string(data) != "hello\n" {
+		t.Fatalf("rollback should restore tracked file, got %q", string(data))
+	}
+}
+
 func initLoopHandlerGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	run := func(args ...string) {

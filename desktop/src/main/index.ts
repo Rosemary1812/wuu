@@ -20,6 +20,7 @@ import type {
   InitializeResult,
   LoopSnapshotResult,
   LoopWorktreeCleanupResult,
+  LoopWorktreeRollbackResult,
   LoopWorktreeReviewResult,
   ManagedProcessListResult,
   ManagedProcessStopResult,
@@ -348,6 +349,20 @@ app.whenReady().then(() => {
         worktree_path: worktreePath,
         confirm_user_approved: confirmUserApproved,
         confirm_remove_clean_worktree: confirmRemoveCleanWorktree,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:loop-worktree-rollback",
+    (
+      _event,
+      worktreePath: string,
+      confirmUserApproved: boolean,
+      confirmDiscardWorktreeChanges: boolean,
+    ) =>
+      appServerClientPool.request<LoopWorktreeRollbackResult>("loop/worktree/rollback", {
+        worktree_path: worktreePath,
+        confirm_user_approved: confirmUserApproved,
+        confirm_discard_worktree_changes: confirmDiscardWorktreeChanges,
       }),
   );
   ipcMain.handle("wuu:process-list", () =>

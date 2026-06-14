@@ -74,6 +74,17 @@ const api: WuuDesktopApi = {
       confirmUserApproved,
       confirmRemoveCleanWorktree,
     ),
+  rollbackLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmDiscardWorktreeChanges: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "wuu:loop-worktree-rollback",
+      worktreePath,
+      confirmUserApproved,
+      confirmDiscardWorktreeChanges,
+    ),
   listManagedProcesses: () => ipcRenderer.invoke("wuu:process-list"),
   stopManagedProcess: (processId: string) =>
     ipcRenderer.invoke("wuu:process-stop", processId),

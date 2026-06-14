@@ -84,6 +84,30 @@ func (s *Server) handleLoopWorktreeCleanup(req Request) error {
 	return s.writeResponse(req.ID, LoopWorktreeCleanupResult{Cleanup: cleanup}, nil)
 }
 
+func (s *Server) handleLoopWorktreeRollback(req Request) error {
+	var params LoopWorktreeRollbackParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop worktree rollback params: %w", err))
+		}
+	}
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	rollback, err := looprunner.RollbackWorktree(looprunner.WorktreeRollbackOptions{
+		ParentRepo:                    s.rt.RootDir,
+		WorktreeRoot:                  statepath.WorktreeRoot(stateDir),
+		WorktreePath:                  params.WorktreePath,
+		ConfirmUserApproved:           params.ConfirmUserApproved,
+		ConfirmDiscardWorktreeChanges: params.ConfirmDiscardWorktreeChanges,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, LoopWorktreeRollbackResult{Rollback: rollback}, nil)
+}
+
 func (s *Server) loopWorkflowStore() (*workflow.Store, error) {
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {

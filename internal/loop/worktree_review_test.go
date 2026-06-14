@@ -148,6 +148,85 @@ func TestCleanupWorktreeIfCleanRemovesOnlyCleanWorktrees(t *testing.T) {
 	}
 }
 
+func TestRollbackWorktreeRequiresApproval(t *testing.T) {
+	root := t.TempDir()
+	initReviewGitRepo(t, root)
+	worktreeRoot := filepath.Join(root, ".wuu", "worktrees")
+	manager, err := worktree.NewManager(root, worktreeRoot)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{SessionID: "session-1", TaskID: "rollback-denied"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatalf("write worktree file: %v", err)
+	}
+
+	_, err = RollbackWorktree(WorktreeRollbackOptions{
+		ParentRepo:   root,
+		WorktreeRoot: worktreeRoot,
+		WorktreePath: lease.Path,
+	})
+	if err == nil || !strings.Contains(err.Error(), "confirm_discard_worktree_changes") {
+		t.Fatalf("expected rollback approval error, got %v", err)
+	}
+	data, readErr := os.ReadFile(filepath.Join(lease.Path, "README.md"))
+	if readErr != nil {
+		t.Fatalf("read README after denied rollback: %v", readErr)
+	}
+	if string(data) != "changed\n" {
+		t.Fatalf("denied rollback should not change file, got %q", string(data))
+	}
+}
+
+func TestRollbackWorktreeDiscardsManagedWorktreeChanges(t *testing.T) {
+	root := t.TempDir()
+	initReviewGitRepo(t, root)
+	worktreeRoot := filepath.Join(root, ".wuu", "worktrees")
+	manager, err := worktree.NewManager(root, worktreeRoot)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{SessionID: "session-1", TaskID: "rollback"})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatalf("write tracked change: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(lease.Path, "scratch.txt"), []byte("temporary\n"), 0o644); err != nil {
+		t.Fatalf("write untracked change: %v", err)
+	}
+
+	result, err := RollbackWorktree(WorktreeRollbackOptions{
+		ParentRepo:                    root,
+		WorktreeRoot:                  worktreeRoot,
+		WorktreePath:                  lease.Path,
+		ConfirmUserApproved:           true,
+		ConfirmDiscardWorktreeChanges: true,
+	})
+	if err != nil {
+		t.Fatalf("RollbackWorktree: %v", err)
+	}
+	if !result.RolledBack || !result.StatusBefore.Dirty || result.StatusAfter.Dirty {
+		t.Fatalf("unexpected rollback result: %+v", result)
+	}
+	data, err := os.ReadFile(filepath.Join(lease.Path, "README.md"))
+	if err != nil {
+		t.Fatalf("read README after rollback: %v", err)
+	}
+	if string(data) != "hello\n" {
+		t.Fatalf("tracked file was not restored, got %q", string(data))
+	}
+	if _, err := os.Stat(filepath.Join(lease.Path, "scratch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("untracked file should be removed, stat err=%v", err)
+	}
+}
+
 func initReviewGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	run := func(args ...string) {

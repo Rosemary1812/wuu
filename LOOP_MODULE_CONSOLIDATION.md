@@ -256,10 +256,17 @@ Implemented pieces:
 - App-server exposes `loop/worktree/cleanup`, and desktop main/preload proxy it
   as `cleanupLoopWorktree(...)` without auto-confirming on the renderer's
   behalf.
+- `loop.RollbackWorktree` exposes a second gated mutation. It validates the
+  managed worktree root, requires both `confirm_user_approved` and
+  `confirm_discard_worktree_changes`, delegates reset/clean to
+  `internal/worktree`, and returns before/after dirty state for the control
+  plane.
+- App-server exposes `loop/worktree/rollback`, and desktop main/preload proxy
+  it as `rollbackLoopWorktree(...)` without auto-confirming.
 
 Remaining work: add mutation surfaces behind explicit approval gates, such as
-retry, rollback, merge, and human approval queues. Those should still call
-loop/worktree APIs instead of writing directly to workflow or harness stores.
+retry, merge, and human approval queues. Those should still call loop/worktree
+APIs instead of writing directly to workflow or harness stores.
 
 ### P2: Store Reduction
 

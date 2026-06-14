@@ -296,6 +296,17 @@ export type LoopWorktreeCleanupResult = {
   cleanup: LoopWorktreeCleanup;
 };
 
+export type LoopWorktreeRollback = {
+  worktree_path: string;
+  rolled_back: boolean;
+  status_before: LoopWorktreeStatus;
+  status_after: LoopWorktreeStatus;
+};
+
+export type LoopWorktreeRollbackResult = {
+  rollback: LoopWorktreeRollback;
+};
+
 export type ManagedProcess = {
   action?: string;
   id: string;
@@ -718,6 +729,11 @@ export type WuuDesktopApi = {
     confirmUserApproved: boolean,
     confirmRemoveCleanWorktree: boolean
   ) => Promise<LoopWorktreeCleanupResult>;
+  rollbackLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmDiscardWorktreeChanges: boolean
+  ) => Promise<LoopWorktreeRollbackResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;
