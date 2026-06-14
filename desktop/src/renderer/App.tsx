@@ -86,6 +86,7 @@ import {
 } from "./ConversationFixtures";
 import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
 import { ConversationSplitPane } from "./ConversationSplitPane";
+import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { AppSidebar } from "./AppSidebar";
 import {
@@ -259,8 +260,6 @@ type TurnProgressContent = {
 
 const PROJECT_COLLAPSED_IDS_KEY = "wuu.desktop.collapsedProjectIDs";
 const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
-const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
-const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
     env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
@@ -409,26 +408,8 @@ export function App(): JSX.Element {
   const [debugControlsEnabled, setDebugControlsEnabled] = useState(
     initialDebugControlsEnabled,
   );
-  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
-  const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({
-    primary: null,
-    secondary: null,
-  });
-  const conversationPaneRef = useRef<HTMLElement | null>(null);
   const queryHistoryRailRef = useRef<HTMLDivElement | null>(null);
-  const [dockComposerNode, setDockComposerNode] = useState<HTMLElement | null>(
-    null,
-  );
-  const dockComposerRef = useCallback((node: HTMLElement | null) => {
-    setDockComposerNode(node);
-  }, []);
-  const dockComposerHeightRef = useRef(0);
-  const conversationAutoFollowRef = useRef(true);
-  const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const projectCollapseTimersRef = useRef(new Map<string, number>());
-  const conversationScrollbarHideTimerRef = useRef<number | undefined>(
-    undefined,
-  );
   const [queryHistoryOpen, setQueryHistoryOpen] = useState(false);
   const queryHistoryCloseTimerRef = useRef<number | undefined>(undefined);
   const windowResizingRef = useRef(false);
@@ -578,9 +559,6 @@ export function App(): JSX.Element {
         window.clearTimeout(timer);
       }
       projectCollapseTimersRef.current.clear();
-      if (conversationScrollbarHideTimerRef.current !== undefined) {
-        window.clearTimeout(conversationScrollbarHideTimerRef.current);
-      }
       clearViewSwitchDelay();
     };
   }, []);
@@ -732,10 +710,6 @@ export function App(): JSX.Element {
     return () => {
       mounted = false;
       off();
-      if (streamScrollFrameRef.current !== undefined) {
-        window.cancelAnimationFrame(streamScrollFrameRef.current);
-        streamScrollFrameRef.current = undefined;
-      }
       if (gitRefreshTimerRef.current !== undefined) {
         window.clearTimeout(gitRefreshTimerRef.current);
         gitRefreshTimerRef.current = undefined;
@@ -828,15 +802,6 @@ export function App(): JSX.Element {
     runDebugOpen,
     runtimeMenuOpen,
   ]);
-
-  useLayoutEffect(() => {
-    conversationAutoFollowRef.current = true;
-    scrollConversationToBottom({ force: true });
-  }, [activeThreadID]);
-
-  useEffect(() => {
-    scheduleStreamScroll();
-  }, [state.thread?.turns, state.secondaryThread?.turns]);
 
   useEffect(() => {
     if (ENABLE_DEBUG_CONTROLS) {
@@ -960,6 +925,26 @@ export function App(): JSX.Element {
   }, [turns]);
   const showingWorkspaceMode =
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
+  const {
+    conversationScrollRef,
+    splitPaneRefs,
+    conversationPaneRef,
+    dockComposerRef,
+    scheduleStreamScroll,
+    handleConversationScroll,
+    scrollConversationToBottom,
+    enableConversationAutoFollow,
+  } = useConversationScrollState({
+    activeThreadID,
+    activePane: state.activePane,
+    splitConversation,
+    primaryTurns: state.thread?.turns,
+    secondaryTurns: state.secondaryThread?.turns,
+    emptyConversation,
+    previewingLaunch,
+    showingWorkspaceMode: Boolean(showingWorkspaceMode),
+    initialized: Boolean(state.initialized),
+  });
   const sidebarPinnedThreads = pinnedThreads(state.threads);
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
@@ -1076,111 +1061,6 @@ export function App(): JSX.Element {
       setQueryHistoryOpen(false);
     }
   }, [queryHistoryDocked]);
-
-  useLayoutEffect(() => {
-    const node = dockComposerNode;
-    const pane = conversationPaneRef.current;
-    const applyHeight = (nextHeight: number): void => {
-      const nextValue = `${nextHeight}px`;
-      if (
-        dockComposerHeightRef.current === nextHeight &&
-        pane?.style.getPropertyValue("--dock-composer-height") === nextValue
-      ) {
-        return;
-      }
-      dockComposerHeightRef.current = nextHeight;
-      pane?.style.setProperty("--dock-composer-height", nextValue);
-      if (nextHeight > 0 && conversationAutoFollowRef.current) {
-        scrollConversationToBottom();
-      }
-    };
-
-    if (!node) {
-      applyHeight(0);
-      return;
-    }
-
-    const updateHeight = (): void => {
-      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
-      applyHeight(nextHeight);
-    };
-
-    updateHeight();
-    const resizeObserver = new ResizeObserver(updateHeight);
-    resizeObserver.observe(node);
-    return () => resizeObserver.disconnect();
-  }, [
-    dockComposerNode,
-    emptyConversation,
-    previewingLaunch,
-    showingWorkspaceMode,
-    state.initialized,
-  ]);
-
-  function scheduleStreamScroll(): void {
-    if (!conversationAutoFollowRef.current) {
-      return;
-    }
-    if (streamScrollFrameRef.current !== undefined) {
-      return;
-    }
-    streamScrollFrameRef.current = window.requestAnimationFrame(() => {
-      streamScrollFrameRef.current = undefined;
-      scrollConversationToBottom();
-    });
-  }
-
-  function handleConversationScroll(scrolledNode?: HTMLElement): void {
-    const node = scrolledNode ?? conversationViewport();
-    if (!node) {
-      return;
-    }
-    showConversationScrollbar(node);
-    conversationAutoFollowRef.current = isConversationNearBottom(node);
-  }
-
-  function scrollConversationToBottom(options: { force?: boolean } = {}): void {
-    const node = conversationViewport();
-    if (!node || (!options.force && !conversationAutoFollowRef.current)) {
-      return;
-    }
-    node.scrollTop = node.scrollHeight;
-    showConversationScrollbar(node);
-    conversationAutoFollowRef.current = true;
-  }
-
-  function showConversationScrollbar(node: HTMLElement): void {
-    if (
-      node.classList.contains("empty-scroll-region") ||
-      node.classList.contains("workspace-scroll-region") ||
-      node.scrollHeight <= node.clientHeight
-    ) {
-      return;
-    }
-    node.classList.add("scrollbar-visible");
-    if (conversationScrollbarHideTimerRef.current !== undefined) {
-      window.clearTimeout(conversationScrollbarHideTimerRef.current);
-    }
-    conversationScrollbarHideTimerRef.current = window.setTimeout(() => {
-      conversationScrollbarHideTimerRef.current = undefined;
-      node.classList.remove("scrollbar-visible");
-    }, CONVERSATION_SCROLLBAR_HIDE_DELAY_MS);
-  }
-
-  function conversationViewport(): HTMLElement | undefined {
-    if (splitConversation) {
-      return splitPaneRefs.current[state.activePane] ?? undefined;
-    }
-    return conversationScrollRef.current ?? undefined;
-  }
-
-  function isConversationNearBottom(node: HTMLElement): boolean {
-    const distanceFromBottom = Math.max(
-      0,
-      node.scrollHeight - node.scrollTop - node.clientHeight,
-    );
-    return distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
-  }
 
   function clearProjectCollapseTimer(projectID: string): void {
     const timer = projectCollapseTimersRef.current.get(projectID);
@@ -3466,7 +3346,7 @@ export function App(): JSX.Element {
         await window.wuu.forkThread(sourceThread.id, turnID, itemID),
         "thread/fork did not return a thread",
       );
-      conversationAutoFollowRef.current = true;
+      enableConversationAutoFollow();
       const currentState = appStateRef.current;
       const sourcePane =
         currentState.secondaryThread?.id === sourceThread.id
@@ -3769,7 +3649,7 @@ export function App(): JSX.Element {
       return false;
     }
     const activeContext = currentState.activeContext;
-    conversationAutoFollowRef.current = true;
+    enableConversationAutoFollow();
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
@@ -3949,7 +3829,7 @@ export function App(): JSX.Element {
     ) {
       return false;
     }
-    conversationAutoFollowRef.current = true;
+    enableConversationAutoFollow();
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
