@@ -30,6 +30,7 @@ func (s *Server) handleLoopSnapshot(req Request) error {
 	}
 
 	snapshot := looprunner.SnapshotSystem(looprunner.SnapshotOptions{
+		LoopRoot:      filepath.Join(filepath.Clean(workflowStore.Dir()), "loops"),
 		WorkflowStore: workflowStore,
 		HarnessStore:  harnessStore,
 	})
@@ -134,6 +135,33 @@ func (s *Server) handleLoopWorktreeMerge(req Request) error {
 	return s.writeResponse(req.ID, LoopWorktreeMergeResult{Merge: merge}, nil)
 }
 
+func (s *Server) handleLoopApprovalResolve(req Request) error {
+	var params LoopApprovalResolveParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop approval resolve params: %w", err))
+		}
+	}
+	if !params.ConfirmUserApproved {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("loop approval resolve requires confirm_user_approved=true"))
+	}
+	store, err := s.loopStoreForID(params.LoopID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	_, approval, err := store.ResolveApproval(looprunner.ApprovalResolution{
+		ID:         params.ApprovalID,
+		Approved:   params.Approved,
+		Rejected:   params.Rejected,
+		ResolvedBy: params.ResolvedBy,
+		Resolution: params.Resolution,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, LoopApprovalResolveResult{Approval: approval}, nil)
+}
+
 func (s *Server) loopWorkflowStore() (*workflow.Store, error) {
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
@@ -158,4 +186,19 @@ func (s *Server) loopHarnessStore(threadID string) (*harness.Store, error) {
 		return nil, err
 	}
 	return harness.NewStore(filepath.Join(statepath.SessionArtifactDir(stateDir, threadID), "harness")), nil
+}
+
+func (s *Server) loopStoreForID(loopID string) (*looprunner.Store, error) {
+	loopID = strings.TrimSpace(loopID)
+	if loopID == "" {
+		return nil, fmt.Errorf("loop_id is required")
+	}
+	if loopID == "." || loopID == ".." || filepath.Base(loopID) != loopID || strings.ContainsAny(loopID, `/\`) {
+		return nil, fmt.Errorf("loop_id must be a loop id, not a path")
+	}
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return nil, err
+	}
+	return looprunner.NewStore(filepath.Join(stateDir, "loops", loopID)), nil
 }

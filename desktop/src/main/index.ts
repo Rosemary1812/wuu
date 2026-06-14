@@ -18,6 +18,7 @@ import type {
   InputFile,
   InputImage,
   InitializeResult,
+  LoopApprovalResolveResult,
   LoopSnapshotResult,
   LoopWorktreeCleanupResult,
   LoopWorktreeMergeResult,
@@ -380,6 +381,28 @@ app.whenReady().then(() => {
         confirm_user_approved: confirmUserApproved,
         confirm_apply_worktree_diff: confirmApplyWorktreeDiff,
         confirm_target_repo_mutation: confirmTargetRepoMutation,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:loop-approval-resolve",
+    (
+      _event,
+      loopId: string,
+      approvalId: string,
+      approved: boolean,
+      rejected: boolean,
+      resolvedBy: string,
+      resolution: string,
+      confirmUserApproved: boolean,
+    ) =>
+      appServerClientPool.request<LoopApprovalResolveResult>("loop/approval/resolve", {
+        loop_id: loopId,
+        approval_id: approvalId,
+        approved,
+        rejected,
+        resolved_by: resolvedBy,
+        resolution,
+        confirm_user_approved: confirmUserApproved,
       }),
   );
   ipcMain.handle("wuu:process-list", () =>

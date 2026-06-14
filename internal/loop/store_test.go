@@ -179,6 +179,101 @@ func TestStoreRecordsExternalArtifactRefs(t *testing.T) {
 	}
 }
 
+func TestStoreRequestsAndResolvesApproval(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".loop")
+	store := NewStore(dir)
+	now := fixedClock()
+	store.SetClock(now)
+	if _, err := store.Init(Spec{ID: "loop-approval", Goal: "gate risky action"}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	state, approval, err := store.RequestApproval(ApprovalRequest{
+		ID:              "approval-1",
+		Step:            StepIntegration,
+		Source:          "worktree",
+		SourceID:        "merge-1",
+		Title:           "Apply worker diff",
+		Reason:          "worker touched production code",
+		RequestedAction: "merge worktree",
+		Risk:            "mutates target repo",
+		Artifact:        "/tmp/review.md",
+		RequestedBy:     "reviewer",
+	})
+	if err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+	if state.Status != StatusNeedsHuman || !state.NeedsHuman || state.CurrentStep != StepApproval {
+		t.Fatalf("approval should move loop to human gate: %+v", state)
+	}
+	if approval.Status != ApprovalStatusPending {
+		t.Fatalf("approval should be pending: %+v", approval)
+	}
+	assertFileContains(t, filepath.Join(dir, "approvals.md"), "Apply worker diff")
+
+	state, resolved, err := store.ResolveApproval(ApprovalResolution{
+		ID:         "approval-1",
+		Approved:   true,
+		ResolvedBy: "lead",
+		Resolution: "reviewed diff",
+	})
+	if err != nil {
+		t.Fatalf("ResolveApproval: %v", err)
+	}
+	if resolved.Status != ApprovalStatusApproved || resolved.ResolvedBy != "lead" {
+		t.Fatalf("unexpected resolved approval: %+v", resolved)
+	}
+	if state.NeedsHuman || state.Status != StatusRunning || state.CurrentBlocker != "" {
+		t.Fatalf("resolved last approval should release human gate: %+v", state)
+	}
+	assertFileContains(t, filepath.Join(dir, "approvals.md"), "reviewed diff")
+
+	events, err := store.Events()
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if events[len(events)-2].Type != "approval_requested" || events[len(events)-1].Type != "approval_resolved" {
+		t.Fatalf("approval events not recorded: %+v", events)
+	}
+}
+
+func TestStoreRejectedApprovalBlocksLoop(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".loop")
+	store := NewStore(dir)
+	now := fixedClock()
+	store.SetClock(now)
+	if _, err := store.Init(Spec{ID: "loop-rejected-approval", Goal: "gate risky action"}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if _, _, err := store.RequestApproval(ApprovalRequest{
+		ID:              "approval-1",
+		Title:           "Run destructive command",
+		RequestedAction: "git reset",
+		Source:          "tool_policy",
+		SourceID:        "call-1",
+	}); err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+
+	state, resolved, err := store.ResolveApproval(ApprovalResolution{
+		ID:         "approval-1",
+		Rejected:   true,
+		ResolvedBy: "lead",
+		Resolution: "too risky",
+	})
+	if err != nil {
+		t.Fatalf("ResolveApproval: %v", err)
+	}
+	if resolved.Status != ApprovalStatusRejected {
+		t.Fatalf("approval should be rejected: %+v", resolved)
+	}
+	if state.Status != StatusBlocked || state.NeedsHuman || len(state.Failures) != 1 {
+		t.Fatalf("rejected approval should block loop with failure feedback: %+v", state)
+	}
+	assertFileContains(t, filepath.Join(dir, "failures.md"), "approval rejected")
+	assertFileContains(t, filepath.Join(dir, "approvals.md"), "too risky")
+}
+
 func TestBuiltinRolesIncludeMakerCheckerSeparation(t *testing.T) {
 	worker, ok := FindRole("worker")
 	if !ok {

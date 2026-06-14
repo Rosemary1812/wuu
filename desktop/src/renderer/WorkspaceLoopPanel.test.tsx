@@ -58,6 +58,35 @@ describe("WorkspaceLoopPanel", () => {
     const getLoopSnapshot = installWuu({
       snapshot: {
         generated_at: "2026-06-14T07:00:00Z",
+        loops: [
+          {
+            id: "loop-1",
+            goal: "release",
+            status: "needs_human",
+            current_step: "approval",
+            needs_human: true,
+            pending_approvals: [
+              {
+                id: "approval-1",
+                loop_id: "loop-1",
+                title: "Approve merge",
+                requested_action: "merge worktree",
+                status: "pending",
+                created_at: "2026-06-14T07:00:00Z",
+              },
+            ],
+          },
+        ],
+        approvals: [
+          {
+            id: "approval-1",
+            loop_id: "loop-1",
+            title: "Approve merge",
+            requested_action: "merge worktree",
+            status: "pending",
+            created_at: "2026-06-14T07:00:00Z",
+          },
+        ],
         workflows: [
           {
             id: "workflow-1",
@@ -105,6 +134,7 @@ describe("WorkspaceLoopPanel", () => {
     expect(getLoopSnapshot).toHaveBeenCalledWith("thread-1");
     expect(container.textContent).toContain("release-check");
     expect(container.textContent).toContain("QA pass");
+    expect(container.textContent).toContain("Approve merge");
     expect(container.textContent).toContain("review failed");
     expect(container.textContent).toContain("tests still fail");
   });

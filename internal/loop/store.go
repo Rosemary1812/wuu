@@ -268,6 +268,151 @@ func (s *Store) AddFailure(failure Failure) (State, error) {
 	})
 }
 
+func (s *Store) RequestApproval(request ApprovalRequest) (State, ApprovalRequest, error) {
+	state, err := s.LoadState()
+	if err != nil {
+		return State{}, ApprovalRequest{}, err
+	}
+	now := s.now()
+	request.ID = strings.TrimSpace(request.ID)
+	if request.ID == "" {
+		request.ID = "approval-" + randomID()
+	}
+	request.Title = strings.TrimSpace(request.Title)
+	if request.Title == "" {
+		return State{}, ApprovalRequest{}, errors.New("approval title is required")
+	}
+	request.Reason = strings.TrimSpace(request.Reason)
+	request.RequestedAction = strings.TrimSpace(request.RequestedAction)
+	request.Risk = strings.TrimSpace(request.Risk)
+	request.Source = strings.TrimSpace(request.Source)
+	request.SourceID = strings.TrimSpace(request.SourceID)
+	request.Artifact = strings.TrimSpace(request.Artifact)
+	request.RequestedBy = strings.TrimSpace(request.RequestedBy)
+	if request.CreatedAt.IsZero() {
+		request.CreatedAt = now
+	}
+	if request.Status == "" {
+		request.Status = ApprovalStatusPending
+	}
+	if request.Status != ApprovalStatusPending {
+		return State{}, ApprovalRequest{}, fmt.Errorf("new approval request must be pending, got %q", request.Status)
+	}
+	for _, existing := range state.Approvals {
+		if existing.ID == request.ID {
+			return State{}, ApprovalRequest{}, fmt.Errorf("approval request %q already exists", request.ID)
+		}
+		if request.Source != "" && request.SourceID != "" &&
+			existing.Source == request.Source &&
+			existing.SourceID == request.SourceID &&
+			existing.Status == ApprovalStatusPending {
+			return state, existing, nil
+		}
+	}
+	state.Approvals = append(state.Approvals, request)
+	state.CurrentStep = StepApproval
+	state.Status = StatusNeedsHuman
+	state.NeedsHuman = true
+	state.CurrentBlocker = request.Title
+	state.NextSteps = appendUniqueStrings(state.NextSteps, []string{"review pending approvals in loop state before continuing"})
+	if err := s.SaveState(state); err != nil {
+		return State{}, ApprovalRequest{}, err
+	}
+	return state, request, s.AppendEvent(Event{
+		Type:     "approval_requested",
+		LoopID:   state.ID,
+		Step:     StepApproval,
+		Message:  request.Title,
+		Artifact: request.Artifact,
+		Data: map[string]string{
+			"approval_id": request.ID,
+			"source":      request.Source,
+			"source_id":   request.SourceID,
+			"action":      request.RequestedAction,
+		},
+	})
+}
+
+func (s *Store) ResolveApproval(resolution ApprovalResolution) (State, ApprovalRequest, error) {
+	state, err := s.LoadState()
+	if err != nil {
+		return State{}, ApprovalRequest{}, err
+	}
+	id := strings.TrimSpace(resolution.ID)
+	if id == "" {
+		return State{}, ApprovalRequest{}, errors.New("approval id is required")
+	}
+	if resolution.Approved == resolution.Rejected {
+		return State{}, ApprovalRequest{}, errors.New("approval resolution must set exactly one of approved or rejected")
+	}
+	now := s.now()
+	var resolved ApprovalRequest
+	found := false
+	for i := range state.Approvals {
+		if state.Approvals[i].ID != id {
+			continue
+		}
+		found = true
+		if state.Approvals[i].Status != ApprovalStatusPending {
+			return State{}, ApprovalRequest{}, fmt.Errorf("approval request %q is already %s", id, state.Approvals[i].Status)
+		}
+		if resolution.Approved {
+			state.Approvals[i].Status = ApprovalStatusApproved
+		} else {
+			state.Approvals[i].Status = ApprovalStatusRejected
+		}
+		state.Approvals[i].ResolvedBy = strings.TrimSpace(resolution.ResolvedBy)
+		state.Approvals[i].Resolution = strings.TrimSpace(resolution.Resolution)
+		state.Approvals[i].ResolvedAt = now
+		resolved = state.Approvals[i]
+		break
+	}
+	if !found {
+		return State{}, ApprovalRequest{}, fmt.Errorf("approval request %q not found", id)
+	}
+	if resolution.Rejected {
+		state.NeedsHuman = false
+		state.Status = StatusBlocked
+		state.CurrentStep = StepApproval
+		state.CurrentBlocker = "approval rejected: " + resolved.Title
+		state.Failures = append(state.Failures, Failure{
+			Step:      StepApproval,
+			Kind:      "approval_rejected",
+			Source:    firstNonEmpty(resolved.Source, "approval"),
+			SourceID:  firstNonEmpty(resolved.SourceID, resolved.ID),
+			Message:   state.CurrentBlocker,
+			Artifact:  resolved.Artifact,
+			CreatedAt: now,
+		})
+		state.NextSteps = appendUniqueStrings(state.NextSteps, []string{"choose a lower-risk alternative or ask for a new approval"})
+	} else if !hasPendingApprovals(state.Approvals) {
+		state.NeedsHuman = false
+		if state.Status == StatusNeedsHuman && state.CurrentStep == StepApproval {
+			state.Status = StatusRunning
+			state.CurrentStep = StepExecution
+		}
+		if state.CurrentBlocker == resolved.Title {
+			state.CurrentBlocker = ""
+		}
+	}
+	if err := s.SaveState(state); err != nil {
+		return State{}, ApprovalRequest{}, err
+	}
+	return state, resolved, s.AppendEvent(Event{
+		Type:     "approval_resolved",
+		LoopID:   state.ID,
+		Step:     StepApproval,
+		Message:  string(resolved.Status),
+		Artifact: resolved.Artifact,
+		Data: map[string]string{
+			"approval_id": resolved.ID,
+			"source":      resolved.Source,
+			"source_id":   resolved.SourceID,
+			"resolved_by": resolved.ResolvedBy,
+		},
+	})
+}
+
 func (s *Store) AddArtifact(name, kind, content string) (State, string, error) {
 	state, err := s.LoadState()
 	if err != nil {
@@ -367,8 +512,13 @@ func (s *Store) rewriteLedgersLocked(state State) error {
 	}); err != nil {
 		return err
 	}
-	return writeMarkdown(filepath.Join(s.dir, "failures.md"), "# Failures\n\n", func(b *strings.Builder) {
+	if err := writeMarkdown(filepath.Join(s.dir, "failures.md"), "# Failures\n\n", func(b *strings.Builder) {
 		renderFailures(b, state.Failures)
+	}); err != nil {
+		return err
+	}
+	return writeMarkdown(filepath.Join(s.dir, "approvals.md"), "# Approvals\n\n", func(b *strings.Builder) {
+		renderApprovals(b, state.Approvals)
 	})
 }
 
@@ -422,6 +572,49 @@ func renderFailures(b *strings.Builder, entries []Failure) {
 		}
 		b.WriteByte('\n')
 	}
+}
+
+func renderApprovals(b *strings.Builder, entries []ApprovalRequest) {
+	for _, entry := range entries {
+		fmt.Fprintf(b, "- %s `%s` %s: %s", entry.CreatedAt.Format(time.RFC3339), entry.Status, entry.ID, entry.Title)
+		if entry.Source != "" {
+			fmt.Fprintf(b, " source=%s", entry.Source)
+		}
+		if entry.SourceID != "" {
+			fmt.Fprintf(b, " source_id=%s", entry.SourceID)
+		}
+		if entry.RequestedAction != "" {
+			fmt.Fprintf(b, " action=%q", entry.RequestedAction)
+		}
+		if entry.Risk != "" {
+			fmt.Fprintf(b, " risk=%q", entry.Risk)
+		}
+		if entry.Artifact != "" {
+			fmt.Fprintf(b, " artifact=%s", entry.Artifact)
+		}
+		if entry.Resolution != "" {
+			fmt.Fprintf(b, " resolution=%q", entry.Resolution)
+		}
+		b.WriteByte('\n')
+	}
+}
+
+func hasPendingApprovals(entries []ApprovalRequest) bool {
+	for _, entry := range entries {
+		if entry.Status == ApprovalStatusPending {
+			return true
+		}
+	}
+	return false
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func readJSON(path string, out any) error {

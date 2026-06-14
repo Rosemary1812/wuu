@@ -98,6 +98,25 @@ const api: WuuDesktopApi = {
       confirmApplyWorktreeDiff,
       confirmTargetRepoMutation,
     ),
+  resolveLoopApproval: (
+    loopId: string,
+    approvalId: string,
+    approved: boolean,
+    rejected: boolean,
+    resolvedBy: string,
+    resolution: string,
+    confirmUserApproved: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "wuu:loop-approval-resolve",
+      loopId,
+      approvalId,
+      approved,
+      rejected,
+      resolvedBy,
+      resolution,
+      confirmUserApproved,
+    ),
   listManagedProcesses: () => ipcRenderer.invoke("wuu:process-list"),
   stopManagedProcess: (processId: string) =>
     ipcRenderer.invoke("wuu:process-stop", processId),

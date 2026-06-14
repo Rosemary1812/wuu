@@ -13,6 +13,7 @@ import {
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
   LoopAttentionItem,
+  LoopApprovalSnapshot,
   LoopHarnessReportSnapshot,
   LoopHarnessTaskSnapshot,
   LoopSystemSnapshot,
@@ -153,6 +154,17 @@ function LoopSnapshotView({
           <LoopEmpty text="没有需要处理的失败或冲突" />
         )}
       </LoopSection>
+      <LoopSection title="Approvals" count={snapshot.approvals?.length ?? 0}>
+        {snapshot.approvals?.length ? (
+          <div className="workspace-loop-list">
+            {snapshot.approvals.map((approval) => (
+              <ApprovalRow key={`${approval.loop_id ?? ""}-${approval.id}`} approval={approval} />
+            ))}
+          </div>
+        ) : (
+          <LoopEmpty text="没有待处理审批" />
+        )}
+      </LoopSection>
       <LoopSection title="Workflow" count={snapshot.workflows?.length ?? 0}>
         {snapshot.workflows?.length ? (
           <div className="workspace-loop-list">
@@ -251,6 +263,22 @@ function AttentionRow({ item }: { item: LoopAttentionItem }): JSX.Element {
           {item.status ? ` / ${item.status}` : ""}
         </span>
       </div>
+    </div>
+  );
+}
+
+function ApprovalRow({ approval }: { approval: LoopApprovalSnapshot }): JSX.Element {
+  return (
+    <div className="workspace-loop-row attention">
+      <AlertTriangle size={15} />
+      <div>
+        <strong>{firstText(approval.title, approval.id)}</strong>
+        <span>
+          {firstText(approval.loop_id, approval.source, "loop")}
+          {approval.requested_action ? ` / ${approval.requested_action}` : ""}
+        </span>
+      </div>
+      <StatusPill status={approval.status} />
     </div>
   );
 }

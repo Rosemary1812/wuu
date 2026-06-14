@@ -246,12 +246,52 @@ export type LoopHarnessSnapshot = {
   reports?: LoopHarnessReportSnapshot[];
 };
 
+export type LoopApprovalSnapshot = {
+  id: string;
+  loop_id?: string;
+  loop_dir?: string;
+  step?: string;
+  source?: string;
+  source_id?: string;
+  title: string;
+  reason?: string;
+  requested_action?: string;
+  risk?: string;
+  artifact?: string;
+  status: string;
+  requested_by?: string;
+  resolved_by?: string;
+  resolution?: string;
+  created_at: string;
+  resolved_at?: string;
+};
+
+export type LoopStateSnapshot = {
+  id: string;
+  loop_dir?: string;
+  goal: string;
+  task?: string;
+  status: string;
+  current_step?: string;
+  assigned_agent?: string;
+  needs_human?: boolean;
+  current_blocker?: string;
+  final_artifact?: string;
+  modified_files?: string[];
+  retry_count?: number;
+  pending_approvals?: LoopApprovalSnapshot[];
+  updated_at?: string;
+};
+
 export type LoopSystemSnapshot = {
   generated_at: string;
+  loop_root?: string;
   workflow_dir?: string;
   harness_dir?: string;
+  loops?: LoopStateSnapshot[];
   workflows?: LoopWorkflowSnapshot[];
   harness?: LoopHarnessSnapshot;
+  approvals?: LoopApprovalSnapshot[];
   attention?: LoopAttentionItem[];
   warnings?: string[];
 };
@@ -317,6 +357,26 @@ export type LoopWorktreeMerge = {
 
 export type LoopWorktreeMergeResult = {
   merge: LoopWorktreeMerge;
+};
+
+export type LoopApprovalResolveResult = {
+  approval: {
+    id: string;
+    step?: string;
+    source?: string;
+    source_id?: string;
+    title: string;
+    reason?: string;
+    requested_action?: string;
+    risk?: string;
+    artifact?: string;
+    status: string;
+    requested_by?: string;
+    resolved_by?: string;
+    resolution?: string;
+    created_at: string;
+    resolved_at?: string;
+  };
 };
 
 export type ManagedProcess = {
@@ -752,6 +812,15 @@ export type WuuDesktopApi = {
     confirmApplyWorktreeDiff: boolean,
     confirmTargetRepoMutation: boolean
   ) => Promise<LoopWorktreeMergeResult>;
+  resolveLoopApproval: (
+    loopId: string,
+    approvalId: string,
+    approved: boolean,
+    rejected: boolean,
+    resolvedBy: string,
+    resolution: string,
+    confirmUserApproved: boolean
+  ) => Promise<LoopApprovalResolveResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

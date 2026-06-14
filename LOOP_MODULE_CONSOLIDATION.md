@@ -272,10 +272,20 @@ Implemented pieces:
   to `internal/worktree`, and returns the applied file list.
 - App-server exposes `loop/worktree/merge`, and desktop main/preload proxy it
   as `mergeLoopWorktree(...)` without auto-confirming.
+- `internal/loop` owns a durable human approval queue through
+  `RequestApproval` / `ResolveApproval`. Pending approvals live in
+  `state.json`, render to `approvals.md`, emit `approval_requested` /
+  `approval_resolved` events, and move the loop into `needs_human` until the
+  last pending approval is resolved.
+- `loop.SnapshotSystem` projects workspace loop states and pending approvals
+  into the control-plane snapshot. App-server exposes
+  `loop/approval/resolve` behind `confirm_user_approved`, and desktop proxies
+  it as `resolveLoopApproval(...)`; the Loop panel renders pending approvals
+  read-only from the snapshot.
 
 Remaining work: add mutation surfaces behind explicit approval gates, such as
-retry and human approval queues. Those should still call loop/worktree APIs
-instead of writing directly to workflow or harness stores.
+retry queues. Those should still call loop/worktree APIs instead of writing
+directly to workflow or harness stores.
 
 ### P2: Store Reduction
 

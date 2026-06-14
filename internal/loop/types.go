@@ -81,6 +81,41 @@ type RetryPolicy struct {
 	MaxRetries int `json:"max_retries,omitempty"`
 }
 
+type ApprovalStatus string
+
+const (
+	ApprovalStatusPending   ApprovalStatus = "pending"
+	ApprovalStatusApproved  ApprovalStatus = "approved"
+	ApprovalStatusRejected  ApprovalStatus = "rejected"
+	ApprovalStatusCancelled ApprovalStatus = "cancelled"
+)
+
+type ApprovalRequest struct {
+	ID              string         `json:"id"`
+	Step            Step           `json:"step,omitempty"`
+	Source          string         `json:"source,omitempty"`
+	SourceID        string         `json:"source_id,omitempty"`
+	Title           string         `json:"title"`
+	Reason          string         `json:"reason,omitempty"`
+	RequestedAction string         `json:"requested_action,omitempty"`
+	Risk            string         `json:"risk,omitempty"`
+	Artifact        string         `json:"artifact,omitempty"`
+	Status          ApprovalStatus `json:"status"`
+	RequestedBy     string         `json:"requested_by,omitempty"`
+	ResolvedBy      string         `json:"resolved_by,omitempty"`
+	Resolution      string         `json:"resolution,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
+	ResolvedAt      time.Time      `json:"resolved_at,omitempty"`
+}
+
+type ApprovalResolution struct {
+	ID         string
+	Approved   bool
+	Rejected   bool
+	ResolvedBy string
+	Resolution string
+}
+
 type EscalationPolicy struct {
 	EscalateOnFailure      bool     `json:"escalate_on_failure,omitempty"`
 	EscalateOnRetryExhaust bool     `json:"escalate_on_retry_exhaust,omitempty"`
@@ -153,6 +188,7 @@ type State struct {
 	Progress           []ProgressEntry    `json:"progress,omitempty"`
 	Failures           []Failure          `json:"failures,omitempty"`
 	Decisions          []Decision         `json:"decisions,omitempty"`
+	Approvals          []ApprovalRequest  `json:"approvals,omitempty"`
 	CompletedSteps     []Step             `json:"completed_steps,omitempty"`
 	CurrentBlocker     string             `json:"current_blocker,omitempty"`
 	ModifiedFiles      []string           `json:"modified_files,omitempty"`

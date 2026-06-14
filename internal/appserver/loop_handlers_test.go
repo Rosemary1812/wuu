@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/harness"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 	"github.com/blueberrycongee/wuu/internal/worktree"
@@ -53,6 +54,17 @@ func TestLoopSnapshotReturnsWorkflowAndThreadHarnessState(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UpsertTask: %v", err)
 	}
+	loopStore := looprunner.NewStore(filepath.Join(rt.StateDir, "loops", "wf-1"))
+	if _, err := loopStore.Init(looprunner.Spec{ID: "wf-1", Goal: "delivery loop"}); err != nil {
+		t.Fatalf("Init loop: %v", err)
+	}
+	if _, _, err := loopStore.RequestApproval(looprunner.ApprovalRequest{
+		ID:              "approval-1",
+		Title:           "Approve integration",
+		RequestedAction: "merge worker diff",
+	}); err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
@@ -77,6 +89,9 @@ func TestLoopSnapshotReturnsWorkflowAndThreadHarnessState(t *testing.T) {
 	}
 	if len(result.Snapshot.Attention) == 0 {
 		t.Fatalf("expected failed harness task in attention: %+v", result.Snapshot)
+	}
+	if len(result.Snapshot.Approvals) != 1 || result.Snapshot.Approvals[0].ID != "approval-1" {
+		t.Fatalf("approval snapshot = %+v", result.Snapshot.Approvals)
 	}
 }
 
@@ -303,6 +318,70 @@ func TestLoopWorktreeMergeRequiresApprovalAndAppliesDiff(t *testing.T) {
 	}
 	if string(data) != "merged\n" {
 		t.Fatalf("merge should update target file, got %q", string(data))
+	}
+}
+
+func TestLoopApprovalResolveRequiresConfirmationAndUpdatesLoopState(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	store := looprunner.NewStore(filepath.Join(rt.StateDir, "loops", "loop-approval"))
+	if _, err := store.Init(looprunner.Spec{ID: "loop-approval", Goal: "resolve approval"}); err != nil {
+		t.Fatalf("Init loop: %v", err)
+	}
+	if _, _, err := store.RequestApproval(looprunner.ApprovalRequest{
+		ID:              "approval-1",
+		Title:           "Apply worktree diff",
+		RequestedAction: "merge",
+	}); err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"approval-denied","method":"loop/approval/resolve","params":{"loop_id":"loop-approval","approval_id":"approval-1","approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/approval/resolve denied: %v", err)
+	}
+	denied := responseByID(t, parseOutput(t, out.String()), "approval-denied")
+	if denied["error"] == nil || !strings.Contains(string(remarshalLoopHandlerRaw(t, denied["error"])), "confirm_user_approved") {
+		t.Fatalf("expected approval confirmation error, got %+v", denied)
+	}
+	state, err := store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState after denied resolve: %v", err)
+	}
+	if len(state.Approvals) != 1 || state.Approvals[0].Status != looprunner.ApprovalStatusPending {
+		t.Fatalf("denied resolve should keep approval pending: %+v", state.Approvals)
+	}
+
+	out = &lockedBuffer{}
+	srv = New(rt, out)
+	raw = `{"id":"approval-path","method":"loop/approval/resolve","params":{"loop_id":"..","approval_id":"approval-1","approved":true,"confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/approval/resolve path guard: %v", err)
+	}
+	pathGuard := responseByID(t, parseOutput(t, out.String()), "approval-path")
+	if pathGuard["error"] == nil || !strings.Contains(string(remarshalLoopHandlerRaw(t, pathGuard["error"])), "not a path") {
+		t.Fatalf("expected loop id path guard error, got %+v", pathGuard)
+	}
+
+	out = &lockedBuffer{}
+	srv = New(rt, out)
+	raw = `{"id":"approval","method":"loop/approval/resolve","params":{"loop_id":"loop-approval","approval_id":"approval-1","approved":true,"resolved_by":"lead","resolution":"diff reviewed","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/approval/resolve: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "approval")
+	result := remarshal[LoopApprovalResolveResult](t, msg["result"])
+	if result.Approval.Status != looprunner.ApprovalStatusApproved || result.Approval.ResolvedBy != "lead" {
+		t.Fatalf("unexpected approval result: %+v", result.Approval)
+	}
+	state, err = store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState after resolve: %v", err)
+	}
+	if state.NeedsHuman || state.Approvals[0].Status != looprunner.ApprovalStatusApproved {
+		t.Fatalf("resolve should update loop state: %+v", state)
 	}
 }
 

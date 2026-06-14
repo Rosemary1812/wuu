@@ -1,7 +1,9 @@
 package loop
 
 import (
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,13 +16,53 @@ import (
 // their current JSON schemas, while control-plane and eval callers can use one
 // loop-owned view.
 type SystemSnapshot struct {
-	GeneratedAt time.Time          `json:"generated_at"`
-	WorkflowDir string             `json:"workflow_dir,omitempty"`
-	HarnessDir  string             `json:"harness_dir,omitempty"`
-	Workflows   []WorkflowSnapshot `json:"workflows,omitempty"`
-	Harness     HarnessSnapshot    `json:"harness,omitempty"`
-	Attention   []AttentionItem    `json:"attention,omitempty"`
-	Warnings    []string           `json:"warnings,omitempty"`
+	GeneratedAt time.Time           `json:"generated_at"`
+	LoopRoot    string              `json:"loop_root,omitempty"`
+	WorkflowDir string              `json:"workflow_dir,omitempty"`
+	HarnessDir  string              `json:"harness_dir,omitempty"`
+	Loops       []LoopStateSnapshot `json:"loops,omitempty"`
+	Workflows   []WorkflowSnapshot  `json:"workflows,omitempty"`
+	Harness     HarnessSnapshot     `json:"harness,omitempty"`
+	Approvals   []ApprovalSnapshot  `json:"approvals,omitempty"`
+	Attention   []AttentionItem     `json:"attention,omitempty"`
+	Warnings    []string            `json:"warnings,omitempty"`
+}
+
+type LoopStateSnapshot struct {
+	ID               string             `json:"id"`
+	LoopDir          string             `json:"loop_dir,omitempty"`
+	Goal             string             `json:"goal"`
+	Task             string             `json:"task,omitempty"`
+	Status           string             `json:"status"`
+	CurrentStep      string             `json:"current_step,omitempty"`
+	AssignedAgent    string             `json:"assigned_agent,omitempty"`
+	NeedsHuman       bool               `json:"needs_human,omitempty"`
+	CurrentBlocker   string             `json:"current_blocker,omitempty"`
+	FinalArtifact    string             `json:"final_artifact,omitempty"`
+	ModifiedFiles    []string           `json:"modified_files,omitempty"`
+	RetryCount       int                `json:"retry_count,omitempty"`
+	PendingApprovals []ApprovalSnapshot `json:"pending_approvals,omitempty"`
+	UpdatedAt        time.Time          `json:"updated_at,omitempty"`
+}
+
+type ApprovalSnapshot struct {
+	ID              string    `json:"id"`
+	LoopID          string    `json:"loop_id,omitempty"`
+	LoopDir         string    `json:"loop_dir,omitempty"`
+	Step            string    `json:"step,omitempty"`
+	Source          string    `json:"source,omitempty"`
+	SourceID        string    `json:"source_id,omitempty"`
+	Title           string    `json:"title"`
+	Reason          string    `json:"reason,omitempty"`
+	RequestedAction string    `json:"requested_action,omitempty"`
+	Risk            string    `json:"risk,omitempty"`
+	Artifact        string    `json:"artifact,omitempty"`
+	Status          string    `json:"status"`
+	RequestedBy     string    `json:"requested_by,omitempty"`
+	ResolvedBy      string    `json:"resolved_by,omitempty"`
+	Resolution      string    `json:"resolution,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	ResolvedAt      time.Time `json:"resolved_at,omitempty"`
 }
 
 type WorkflowSnapshot struct {
@@ -144,6 +186,7 @@ type AttentionItem struct {
 }
 
 type SnapshotOptions struct {
+	LoopRoot      string
 	WorkflowStore *workflow.Store
 	HarnessStore  *harness.Store
 	Now           func() time.Time
@@ -155,6 +198,14 @@ func SnapshotSystem(opts SnapshotOptions) SystemSnapshot {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	snap := SystemSnapshot{GeneratedAt: now()}
+	if strings.TrimSpace(opts.LoopRoot) != "" {
+		snap.LoopRoot = strings.TrimSpace(opts.LoopRoot)
+		loops, approvals, attention, warnings := SnapshotLoops(opts.LoopRoot)
+		snap.Loops = loops
+		snap.Approvals = approvals
+		snap.Attention = append(snap.Attention, attention...)
+		snap.Warnings = append(snap.Warnings, warnings...)
+	}
 	if opts.WorkflowStore != nil {
 		snap.WorkflowDir = filepath.Join(opts.WorkflowStore.Dir(), "workflows")
 		workflowSnapshots, attention, warnings := SnapshotWorkflows(opts.WorkflowStore)
@@ -170,6 +221,60 @@ func SnapshotSystem(opts SnapshotOptions) SystemSnapshot {
 		snap.Warnings = append(snap.Warnings, warnings...)
 	}
 	return snap
+}
+
+func SnapshotLoops(loopRoot string) ([]LoopStateSnapshot, []ApprovalSnapshot, []AttentionItem, []string) {
+	loopRoot = strings.TrimSpace(loopRoot)
+	if loopRoot == "" {
+		return nil, nil, nil, nil
+	}
+	entries, err := os.ReadDir(loopRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, nil, []string{"list loop states: " + err.Error()}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
+	loops := make([]LoopStateSnapshot, 0, len(entries))
+	var approvals []ApprovalSnapshot
+	var attention []AttentionItem
+	var warnings []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		loopDir := filepath.Join(loopRoot, entry.Name())
+		state, err := NewStore(loopDir).LoadState()
+		if err != nil {
+			warnings = append(warnings, "load loop state "+entry.Name()+": "+err.Error())
+			continue
+		}
+		item := loopStateSnapshot(loopDir, state)
+		loops = append(loops, item)
+		approvals = append(approvals, item.PendingApprovals...)
+		if state.Status == StatusBlocked || state.Status == StatusFailed || state.Status == StatusNeedsHuman || state.NeedsHuman {
+			attention = append(attention, AttentionItem{
+				Source:  "loop",
+				ID:      state.ID,
+				Status:  string(state.Status),
+				Message: firstSnapshotText(state.CurrentBlocker, state.Goal),
+				Path:    filepath.Join(loopDir, "state.json"),
+			})
+		}
+		for _, approval := range item.PendingApprovals {
+			attention = append(attention, AttentionItem{
+				Source:  "loop_approval",
+				ID:      approval.ID,
+				Status:  approval.Status,
+				Message: firstSnapshotText(approval.Title, approval.Reason),
+				Path:    approval.Artifact,
+			})
+		}
+	}
+	return loops, approvals, attention, warnings
 }
 
 func SnapshotWorkflows(store *workflow.Store) ([]WorkflowSnapshot, []AttentionItem, []string) {
@@ -278,6 +383,58 @@ func SnapshotHarness(store *harness.Store) (HarnessSnapshot, []AttentionItem, []
 		}
 	}
 	return snap, attention, warnings
+}
+
+func loopStateSnapshot(loopDir string, state State) LoopStateSnapshot {
+	return LoopStateSnapshot{
+		ID:               state.ID,
+		LoopDir:          loopDir,
+		Goal:             state.Goal,
+		Task:             state.Task,
+		Status:           string(state.Status),
+		CurrentStep:      string(state.CurrentStep),
+		AssignedAgent:    state.AssignedAgent,
+		NeedsHuman:       state.NeedsHuman,
+		CurrentBlocker:   state.CurrentBlocker,
+		FinalArtifact:    state.FinalArtifact,
+		ModifiedFiles:    append([]string(nil), state.ModifiedFiles...),
+		RetryCount:       state.RetryCount,
+		PendingApprovals: pendingApprovalSnapshots(loopDir, state),
+		UpdatedAt:        state.UpdatedAt,
+	}
+}
+
+func pendingApprovalSnapshots(loopDir string, state State) []ApprovalSnapshot {
+	var out []ApprovalSnapshot
+	for _, approval := range state.Approvals {
+		if approval.Status != ApprovalStatusPending {
+			continue
+		}
+		out = append(out, approvalSnapshot(loopDir, state.ID, approval))
+	}
+	return out
+}
+
+func approvalSnapshot(loopDir, loopID string, approval ApprovalRequest) ApprovalSnapshot {
+	return ApprovalSnapshot{
+		ID:              approval.ID,
+		LoopID:          loopID,
+		LoopDir:         loopDir,
+		Step:            string(approval.Step),
+		Source:          approval.Source,
+		SourceID:        approval.SourceID,
+		Title:           approval.Title,
+		Reason:          approval.Reason,
+		RequestedAction: approval.RequestedAction,
+		Risk:            approval.Risk,
+		Artifact:        approval.Artifact,
+		Status:          string(approval.Status),
+		RequestedBy:     approval.RequestedBy,
+		ResolvedBy:      approval.ResolvedBy,
+		Resolution:      approval.Resolution,
+		CreatedAt:       approval.CreatedAt,
+		ResolvedAt:      approval.ResolvedAt,
+	}
 }
 
 func workflowPhaseSnapshots(phases []workflow.Phase) []WorkflowPhaseSnapshot {

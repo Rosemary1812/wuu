@@ -22,6 +22,7 @@ const (
 	MethodLoopWorktreeCleanup   = "loop/worktree/cleanup"
 	MethodLoopWorktreeRollback  = "loop/worktree/rollback"
 	MethodLoopWorktreeMerge     = "loop/worktree/merge"
+	MethodLoopApprovalResolve   = "loop/approval/resolve"
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
@@ -244,6 +245,20 @@ type LoopWorktreeMergeParams struct {
 
 type LoopWorktreeMergeResult struct {
 	Merge loop.WorktreeMergeResult `json:"merge"`
+}
+
+type LoopApprovalResolveParams struct {
+	LoopID              string `json:"loop_id"`
+	ApprovalID          string `json:"approval_id"`
+	Approved            bool   `json:"approved,omitempty"`
+	Rejected            bool   `json:"rejected,omitempty"`
+	ResolvedBy          string `json:"resolved_by,omitempty"`
+	Resolution          string `json:"resolution,omitempty"`
+	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
+}
+
+type LoopApprovalResolveResult struct {
+	Approval loop.ApprovalRequest `json:"approval"`
 }
 
 type ManagedProcessSummary struct {
