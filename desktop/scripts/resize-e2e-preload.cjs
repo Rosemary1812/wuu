@@ -190,6 +190,10 @@ contextBridge.exposeInMainWorld("wuu", {
     workspace_root: cwd,
     providers: [{ name: "e2e", type: "mock", model: "mock-resize" }]
   }),
+  getBuildInfo: async () => ({
+    core: undefined,
+    desktop: { version: "resize-e2e", date: "1970-01-01T00:00:00Z" }
+  }),
   updateRuntimeSettings: async (provider, model) => ({
     provider,
     model,

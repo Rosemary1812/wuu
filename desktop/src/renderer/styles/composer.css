@@ -46,7 +46,13 @@
 
 .composer-stack {
   display: flex;
-  width: min(var(--conversation-content-width), calc(100% - 48px));
+  width: min(
+    var(--conversation-content-width),
+    calc(
+      100% - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline) -
+        var(--conversation-scrollbar-gutter)
+    )
+  );
   min-width: 0;
   flex-direction: column;
   margin: 0 auto;

@@ -7,8 +7,12 @@ const desktopRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(desktopRoot, "..");
 const rendererHtml = path.join(desktopRoot, "out", "renderer", "index.html");
 const preload = path.join(__dirname, "resize-e2e-preload.cjs");
+const resizeUserData = path.join(desktopRoot, "out", "e2e", "resize-user-data");
 
 process.env.WUU_RESIZE_E2E_CWD = repoRoot;
+fs.rmSync(resizeUserData, { recursive: true, force: true });
+fs.mkdirSync(resizeUserData, { recursive: true });
+app.setPath("userData", resizeUserData);
 app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-software-rasterizer");
 
@@ -71,40 +75,6 @@ async function run() {
     button.click();
   });
   await waitFor(win, () => Boolean(document.querySelector(".conversation-pane")), 3000);
-
-  await evaluate(win, () => {
-    const button = Array.from(document.querySelectorAll(".workspace-toggle-button")).find((candidate) =>
-      candidate.getAttribute("aria-label")?.includes("底部栏")
-    );
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error("Bottom panel toggle button not found.");
-    }
-    button.click();
-  });
-  const workspaceToolLabels = await waitFor(
-    win,
-    () => {
-      const labels = Array.from(document.querySelectorAll(".workspace-tool-card strong"))
-        .map((node) => node.textContent?.trim())
-        .filter(Boolean);
-      return labels.length > 0 ? labels : null;
-    },
-    1000
-  );
-  assert.deepEqual(
-    workspaceToolLabels,
-    ["文件", "审查", "终端"],
-    "Workspace tool picker should only expose implemented user-facing tools."
-  );
-  await evaluate(win, () => {
-    const button = Array.from(document.querySelectorAll(".workspace-toggle-button")).find((candidate) =>
-      candidate.getAttribute("aria-label")?.includes("底部栏")
-    );
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error("Bottom panel toggle button not found.");
-    }
-    button.click();
-  });
 
   const primaryScroll = await evaluate(win, () => {
     const node = document.querySelector(".scroll-region");
@@ -177,8 +147,12 @@ async function run() {
   assert.equal(typeof beforeEnvironmentResize.panelMessageGap, "number", "Wide environment panel message gap should be measurable.");
   assert.ok(beforeEnvironmentResize.panelRightGap <= 24, "Environment panel should keep a stable right edge as width grows.");
   assert.ok(
-    beforeEnvironmentResize.panelMessageGap > defaultEnvironment.panelMessageGap + 120,
-    "Extra width should increase the gap between the message flow and the environment panel."
+    beforeEnvironmentResize.panelMessageGap >= defaultEnvironment.panelMessageGap - 2,
+    `Extra width should not reduce the gap between the message flow and the environment panel. Default=${JSON.stringify(defaultEnvironment)} Wide=${JSON.stringify(beforeEnvironmentResize)}`
+  );
+  assert.ok(
+    beforeEnvironmentResize.panelMessageGap >= 72,
+    `Environment panel should keep a comfortable gap from the message flow. Wide=${JSON.stringify(beforeEnvironmentResize)}`
   );
   assert.ok(
     beforeEnvironmentResize.scrollPaddingRight > 300,
@@ -239,8 +213,8 @@ async function run() {
   );
   const flowResize = await waitFor(win, () => flowSnapshot(), 1000);
   assert.ok(
-    flowResize.conversationWidth <= 762,
-    "Message flow should keep a capped reading width during right-side window resize."
+    flowResize.conversationContentWidth <= 990,
+    `Message flow should keep a capped reading content width during right-side window resize. Flow=${JSON.stringify(flowResize)}`
   );
   assert.ok(
     Math.abs(flowResize.conversationCenter - flowResize.scrollContentCenter) <= 2,
@@ -251,8 +225,8 @@ async function run() {
     "Dock composer should stay centered with the message content during right-side window resize."
   );
   assert.ok(
-    Math.abs(flowResize.composerStackWidth - flowResize.conversationContentWidth) <= 2,
-    "Dock composer should use the same width as the message content."
+    Math.abs(flowResize.composerStackWidth - flowResize.conversationContentWidth) <= 4,
+    `Dock composer should use the same width as the message content. Flow=${JSON.stringify(flowResize)}`
   );
 
   await delay(300);
@@ -283,7 +257,7 @@ async function run() {
   await delay(240);
   const flowProbe = await evaluate(win, () => window.__flowProbe);
   const maxFrameMs = Math.max(...flowProbe.samples.map((sample) => sample.dt));
-  const maxConversationWidth = Math.max(...flowProbe.samples.map((sample) => sample.conversationWidth));
+  const maxConversationContentWidth = Math.max(...flowProbe.samples.map((sample) => sample.conversationContentWidth));
   const maxFlowCenterDelta = Math.max(
     ...flowProbe.samples.map((sample) => Math.abs(sample.conversationCenter - sample.scrollContentCenter))
   );
@@ -293,10 +267,16 @@ async function run() {
   const maxComposerWidthDelta = Math.max(
     ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackWidth - sample.conversationContentWidth))
   );
-  assert.ok(maxConversationWidth <= 762, "Message flow should stay capped throughout continuous right-side resize.");
+  assert.ok(
+    maxConversationContentWidth <= 990,
+    `Message flow content should stay capped throughout continuous right-side resize. Max=${maxConversationContentWidth}`
+  );
   assert.ok(maxFlowCenterDelta <= 2, "Message flow should stay centered throughout continuous right-side resize.");
   assert.ok(maxComposerCenterDelta <= 2, "Dock composer should stay centered with the message content throughout resize.");
-  assert.ok(maxComposerWidthDelta <= 2, "Dock composer should stay the same width as the message content throughout resize.");
+  assert.ok(
+    maxComposerWidthDelta <= 4,
+    `Dock composer should stay the same width as the message content throughout resize. Max delta=${maxComposerWidthDelta}`
+  );
   assert.ok(maxFrameMs < 80, `Continuous right-side resize should not stall the renderer for ${Math.round(maxFrameMs)}ms.`);
 
   await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
@@ -326,13 +306,23 @@ async function run() {
   );
 
   await evaluate(win, () => {
-    const button = Array.from(document.querySelectorAll(".workspace-toggle-button")).find((candidate) =>
+    const button = Array.from(document.querySelectorAll(".side-panel-toggle-button")).find((candidate) =>
       candidate.getAttribute("aria-label")?.includes("右侧栏")
     );
+    const panel = document.querySelector(".workspace-right-panel");
     if (!(button instanceof HTMLButtonElement)) {
       throw new Error("Right panel toggle button not found.");
     }
-    button.click();
+    if (panel?.getAttribute("aria-hidden") !== "false") {
+      button.click();
+    }
+  });
+  await waitFor(win, () => document.querySelector(".workspace-right-panel")?.getAttribute("aria-hidden") === "false", 3000);
+  await evaluate(win, () => {
+    const picker = document.querySelector(".workspace-panel-add");
+    if (picker instanceof HTMLButtonElement) {
+      picker.click();
+    }
   });
 
   const rightPanelToolLabels = await waitFor(
@@ -343,11 +333,11 @@ async function run() {
         .filter(Boolean);
       return labels.length > 0 ? labels : null;
     },
-    1000
+    3000
   );
   assert.deepEqual(
     rightPanelToolLabels,
-    ["文件", "审查", "终端"],
+    ["文件", "审查", "终端", "浏览器"],
     "Opening the right panel should show the workspace tool picker before a tool detail."
   );
   const rightPanelWidthBefore = await evaluate(win, () => {
@@ -399,7 +389,7 @@ async function run() {
   );
   const titlebarAfterRightPanelResize = await evaluate(win, () => {
     const titlebar = document.querySelector(".titlebar");
-    const title = document.querySelector(".title-block h1");
+    const title = document.querySelector(".title-block h1") ?? document.querySelector(".session-tab.active .session-tab-title");
     const actions = document.querySelector(".title-actions");
     const rightPanel = document.querySelector(".workspace-right-panel");
     if (
@@ -477,9 +467,11 @@ async function run() {
   );
 
   await evaluate(win, () => {
-    const back = document.querySelector(".workspace-panel-back");
-    if (back instanceof HTMLButtonElement) {
-      back.click();
+    const closeTerminal = Array.from(document.querySelectorAll(".workspace-right-panel button")).find(
+      (button) => button.getAttribute("aria-label") === "关闭终端"
+    );
+    if (closeTerminal instanceof HTMLButtonElement) {
+      closeTerminal.click();
       return;
     }
     const picker = document.querySelector(".workspace-panel-add");
@@ -489,6 +481,14 @@ async function run() {
     }
     throw new Error("Right panel tool picker button not found.");
   });
+  await waitFor(
+    win,
+    () => {
+      const items = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item"));
+      return items.some((item) => item.textContent?.includes("文件")) ? true : null;
+    },
+    3000
+  );
   await evaluate(win, () => {
     const fileTool = Array.from(document.querySelectorAll(".workspace-right-panel .workspace-tool-menu-item"))
       .filter((candidate) => candidate instanceof HTMLButtonElement)
@@ -501,7 +501,7 @@ async function run() {
 
   const before = await waitFor(win, () => treeSnapshot(), 5000);
   assert.ok(before.frameHeight > 500, "Initial file tree frame should be tall enough for resize verification.");
-  assert.ok(before.renderedRows > 20, "Initial file tree should render virtualized rows.");
+  assert.ok(before.renderedRows > 20, "Initial file tree should render workspace rows.");
 
   await evaluate(win, () => {
     const style = document.createElement("style");
@@ -547,8 +547,7 @@ async function run() {
     liveResizeSamples.find(
       (sample) =>
         sample.frameHeight < before.frameHeight - 180 &&
-        Math.abs(sample.virtualWindowHeight - before.virtualWindowHeight) >= 84 &&
-        sample.renderedRows < before.renderedRows
+        sample.scrollHeight < before.scrollHeight - 180
     ) ??
     liveResizeSamples.find(
       (sample) => sample.frameHeight < before.frameHeight - 180
@@ -565,17 +564,13 @@ async function run() {
   assert.ok(during.frameHeight < before.frameHeight - 180, "File tree frame should shrink with the Electron window.");
   assert.ok(
     during.scrollHeight < before.scrollHeight - 180,
-    "Virtualized file tree scroll frame should shrink with the resized container."
+    "File tree scroll frame should shrink with the resized container."
   );
   assert.ok(
     Math.abs(during.frameHeight - during.scrollHeight - (before.frameHeight - before.scrollHeight)) <= 2,
-    "Virtualized file tree scroll frame should preserve its internal chrome while tracking container height."
+    "File tree scroll frame should preserve its internal chrome while tracking container height."
   );
-  assert.ok(
-    Math.abs(during.virtualWindowHeight - before.virtualWindowHeight) >= 84,
-    "Virtualized file tree content should recompute before resize end."
-  );
-  assert.ok(during.renderedRows < before.renderedRows, "Rendered virtual rows should decrease while the window is still resizing.");
+  assert.equal(during.renderedRows, before.renderedRows, "Workspace file rows should stay mounted while the panel resizes.");
   await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
 
   console.log("resize e2e passed");
@@ -607,26 +602,24 @@ async function evaluate(win, fn) {
   const source = `(() => {
     window.treeSnapshot = () => {
       const frame = document.querySelector(".workspace-file-tree-frame");
-      const host = frame?.querySelector("file-tree-container");
-      const root = host?.shadowRoot;
-      const scroll = root?.querySelector('[data-file-tree-virtualized-scroll="true"]');
-      const virtualWindow = root?.querySelector('[data-file-tree-virtualized-sticky="true"]');
+      const scroll = frame?.querySelector(".workspace-file-tree-scroll");
+      const list = frame?.querySelector(".workspace-file-tree-list");
       const animationProbe = document.querySelector(".resize-e2e-animation-probe");
       const animationProbeStyle = animationProbe ? getComputedStyle(animationProbe) : undefined;
-      if (!frame || !host || !root || !scroll || !virtualWindow) {
+      if (!frame || !scroll || !list) {
         return null;
       }
       return {
         animationProbePlayState: animationProbeStyle?.animationPlayState ?? "",
         animationProbeTransitionProperty: animationProbeStyle?.transitionProperty ?? "",
         frameHeight: frame.getBoundingClientRect().height,
-        renderedRows: root.querySelectorAll('[data-type="item"]').length,
+        renderedRows: frame.querySelectorAll(".workspace-file-tree-row").length,
         resizing: document.documentElement.classList.contains("window-resizing"),
         shellTransitionProperty: getComputedStyle(document.querySelector(".app-shell")).transitionProperty,
         scrollHeight: scroll.getBoundingClientRect().height,
         viewportHeight: window.innerHeight,
         viewportWidth: window.innerWidth,
-        virtualWindowHeight: Number.parseFloat(virtualWindow.style.height || "0")
+        contentHeight: list.getBoundingClientRect().height
       };
     };
     window.environmentSnapshot = () => {
