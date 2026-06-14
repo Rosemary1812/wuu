@@ -372,6 +372,7 @@ func (s *Session) runScheduledPrompt(task cron.Task) {
 	if prompt == "" || s.StreamRunner == nil {
 		return
 	}
+	loopStore := s.startScheduledLoop(task, prompt)
 	runner := s.StreamRunner
 	if threadRT, err := s.NewThreadRuntime(scheduledCronSessionID("cron-task", task.ID)); err == nil && threadRT.StreamRunner != nil {
 		runner = threadRT.StreamRunner
@@ -380,7 +381,95 @@ func (s *Session) runScheduledPrompt(task cron.Task) {
 	}
 	if _, err := runner.Run(context.Background(), prompt); err != nil {
 		providers.DebugLogf("cron prompt task %q failed: %v", task.ID, err)
+		if loopStore != nil {
+			_, _ = loopStore.AddFailure(looprunner.Failure{
+				Step:     looprunner.StepExecution,
+				Kind:     "scheduled_task_failed",
+				Source:   "cron",
+				SourceID: task.ID,
+				Message:  err.Error(),
+			})
+		}
+		return
 	}
+	if loopStore != nil {
+		_, _ = loopStore.MarkStepCompleted(looprunner.StepExecution)
+		_, _ = loopStore.AddProgress(looprunner.StepSummary, "Scheduled task execution completed.")
+		_, _ = loopStore.SetStatus(looprunner.StatusCompleted, looprunner.StepSummary, "scheduled task execution completed")
+	}
+}
+
+func (s *Session) startScheduledLoop(task cron.Task, prompt string) *looprunner.Store {
+	stateDir := strings.TrimSpace(s.StateDir)
+	if stateDir == "" {
+		return nil
+	}
+	loopID := scheduledCronSessionID("cron-loop", task.ID)
+	store := looprunner.NewStore(filepath.Join(stateDir, "loops", loopID))
+	kind := strings.TrimSpace(task.Metadata["kind"])
+	if kind == "" {
+		kind = "prompt"
+	}
+	goal := "Scheduled prompt task"
+	if task.Metadata["workflow_name"] != "" {
+		goal = "Scheduled workflow " + task.Metadata["workflow_name"]
+	}
+	triggerPayload := map[string]string{
+		"task_id":   strings.TrimSpace(task.ID),
+		"cron":      strings.TrimSpace(task.Cron),
+		"kind":      kind,
+		"recurring": fmt.Sprintf("%t", task.Recurring),
+	}
+	for _, key := range []string{"workflow_name", "workflow_arguments", "workflow_kind"} {
+		if value := strings.TrimSpace(task.Metadata[key]); value != "" {
+			triggerPayload[key] = value
+		}
+	}
+	runner := looprunner.Runner{Store: store}
+	if _, err := runner.Init(context.Background(), looprunner.Spec{
+		ID:            loopID,
+		Goal:          goal,
+		Task:          strings.TrimSpace(prompt),
+		AssignedAgent: "cron-scheduler",
+		Trigger: looprunner.Trigger{
+			Type:    "scheduled",
+			Source:  "cron",
+			Payload: triggerPayload,
+		},
+	}); err != nil {
+		providers.DebugLogf("cron prompt task %q failed to initialize loop: %v", task.ID, err)
+		return nil
+	}
+	if _, err := store.SetStatus(looprunner.StatusRunning, looprunner.StepExecution, "scheduled task fired"); err != nil {
+		providers.DebugLogf("cron prompt task %q failed to mark loop running: %v", task.ID, err)
+		return store
+	}
+	if _, _, err := store.AddArtifact("trigger.md", "trigger", renderScheduledLoopTrigger(task, prompt)); err != nil {
+		providers.DebugLogf("cron prompt task %q failed to write loop trigger artifact: %v", task.ID, err)
+	}
+	return store
+}
+
+func renderScheduledLoopTrigger(task cron.Task, prompt string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Scheduled Trigger\n\n")
+	fmt.Fprintf(&b, "- Task: %s\n", strings.TrimSpace(task.ID))
+	fmt.Fprintf(&b, "- Cron: %s\n", strings.TrimSpace(task.Cron))
+	fmt.Fprintf(&b, "- Recurring: %t\n", task.Recurring)
+	if kind := strings.TrimSpace(task.Metadata["kind"]); kind != "" {
+		fmt.Fprintf(&b, "- Kind: %s\n", kind)
+	}
+	if name := strings.TrimSpace(task.Metadata["workflow_name"]); name != "" {
+		fmt.Fprintf(&b, "- Workflow: %s\n", name)
+	}
+	if workflowKind := strings.TrimSpace(task.Metadata["workflow_kind"]); workflowKind != "" {
+		fmt.Fprintf(&b, "- Workflow kind: %s\n", workflowKind)
+	}
+	if arguments := strings.TrimSpace(task.Metadata["workflow_arguments"]); arguments != "" {
+		fmt.Fprintf(&b, "\n## Workflow Arguments\n\n%s\n", arguments)
+	}
+	fmt.Fprintf(&b, "\n## Prompt\n\n%s\n", strings.TrimSpace(prompt))
+	return b.String()
 }
 
 func scheduledCronSessionID(prefix, taskID string) string {

@@ -197,8 +197,8 @@ Implemented pieces:
 - Harness task loop bindings are projected through `loop.SystemSnapshot` and
   eval observability.
 
-Remaining work: expose the unified loop snapshot in app-server/desktop status
-views so the UI reads the loop-level view first.
+Remaining work: promote workflow plan/script/final report files into loop
+artifact evidence refs instead of only linking the run to a loop.
 
 ### P1: Control Plane
 
@@ -226,6 +226,10 @@ Implemented pieces:
   `getLoopSnapshot(threadId?)` and renders workflow runs, attention items,
   thread-scoped harness tasks, reports, warnings, team counts, agent counts,
   and event counts from the loop projection.
+- Scheduled cron triggers initialize a durable loop record under
+  `stateDir/loops/cron-loop-*` when they fire. The cron package still owns only
+  schedule storage; runtime records trigger execution, metadata, prompt
+  artifact, success, and failure through `internal/loop`.
 
 Remaining work: add mutation surfaces behind explicit approval gates, such as
 retry, cleanup, merge preview, and human approval queues. Those should still
