@@ -170,6 +170,7 @@ import {
 } from "./AppLayoutState";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
 import { DesignTokensPanel } from "./DesignTokensPanel";
+import { useAppDebugState } from "./AppDebugState";
 import {
   EmptyConversationHome,
   RuntimeLoading,
@@ -186,13 +187,7 @@ import { SkillsCatalog } from "./SkillsCatalog";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import {
   RunDebugPanel,
-  buildRunDebugSnapshot,
-  debugStreamFieldLength,
-  latestDebugItem,
-  parseTurnTimestampMs,
-  runDebugEventFromServerEvent,
   runDebugPhaseForState,
-  type RunDebugEvent,
 } from "./RunDebugPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { threadDisplayTitle } from "./ThreadTitles";
@@ -259,7 +254,6 @@ type TurnProgressContent = {
 };
 
 const PROJECT_COLLAPSED_IDS_KEY = "wuu.desktop.collapsedProjectIDs";
-const DEBUG_CONTROLS_KEY = "wuu.desktop.debugControlsEnabled";
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
     env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
@@ -292,16 +286,6 @@ function initialCollapsedProjectIDs(): Set<string> {
   } catch {
     return new Set();
   }
-}
-
-function initialDebugControlsEnabled(): boolean {
-  if (!ENABLE_DEBUG_CONTROLS) {
-    return false;
-  }
-  if (RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true") {
-    return true;
-  }
-  return window.localStorage.getItem(DEBUG_CONTROLS_KEY) === "true";
 }
 
 export function App(): JSX.Element {
@@ -395,19 +379,36 @@ export function App(): JSX.Element {
   const [stoppingProcessIDs, setStoppingProcessIDs] = useState<Set<string>>(
     () => new Set(),
   );
-  const [runDebugOpen, setRunDebugOpen] = useState(false);
-  const [conversationGridVisible, setConversationGridVisible] = useState(false);
-  const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
-  const [runDebugCopied, setRunDebugCopied] = useState(false);
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<
     string | undefined
   >(undefined);
   const [pendingViewSwitch, setPendingViewSwitch] = useState<
     PendingViewSwitch | undefined
   >(undefined);
-  const [debugControlsEnabled, setDebugControlsEnabled] = useState(
-    initialDebugControlsEnabled,
-  );
+  const hideDebugControls = useCallback(() => {
+    setLaunchPreviewPinned(false);
+    setTurnProgressPreviewOpen(false);
+  }, []);
+  const {
+    debugControlsEnabled,
+    setDebugControlsEnabled,
+    debugControlsVisible,
+    runDebugOpen,
+    setRunDebugOpen,
+    conversationGridVisible,
+    setConversationGridVisible,
+    runDebugEvents,
+    runDebugCopied,
+    runDebugRef,
+    appendRunDebugEvent,
+    resetRunDebugEvents,
+    recordRunDebugEvent,
+    copyRunDebugInfo,
+  } = useAppDebugState({
+    enabled: ENABLE_DEBUG_CONTROLS,
+    forced: RENDERER_ENV?.VITE_ENABLE_RUN_DEBUG_PANEL === "true",
+    onHideDebugControls: hideDebugControls,
+  });
   const queryHistoryRailRef = useRef<HTMLDivElement | null>(null);
   const projectCollapseTimersRef = useRef(new Map<string, number>());
   const [queryHistoryOpen, setQueryHistoryOpen] = useState(false);
@@ -429,17 +430,13 @@ export function App(): JSX.Element {
   const codexRuntimeRef = useRef<HTMLDivElement>(null);
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
-  const runDebugRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
   const viewSwitchRequestRef = useRef(0);
   const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
-  const runDebugEventIDRef = useRef(0);
-  const runDebugDeltaSeenRef = useRef(new Set<string>());
   const draftSessionTabCounterRef = useRef(0);
-  const debugControlsVisible = ENABLE_DEBUG_CONTROLS && debugControlsEnabled;
   const currentSessionTab = activeSessionTab(state);
   const activeWorkspaceFile =
     currentSessionTab?.kind === "file" &&
@@ -802,57 +799,6 @@ export function App(): JSX.Element {
     runDebugOpen,
     runtimeMenuOpen,
   ]);
-
-  useEffect(() => {
-    if (ENABLE_DEBUG_CONTROLS) {
-      window.localStorage.setItem(
-        DEBUG_CONTROLS_KEY,
-        String(debugControlsEnabled),
-      );
-    }
-  }, [debugControlsEnabled]);
-
-  useEffect(() => {
-    if (debugControlsVisible) {
-      return;
-    }
-    setConversationGridVisible(false);
-    setLaunchPreviewPinned(false);
-    setRunDebugOpen(false);
-    setTurnProgressPreviewOpen(false);
-  }, [debugControlsVisible]);
-
-  useEffect(() => {
-    if (!debugControlsVisible) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (
-        event.key.toLowerCase() !== "g" ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey
-      ) {
-        return;
-      }
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT")
-      ) {
-        return;
-      }
-      event.preventDefault();
-      setConversationGridVisible((visible) => !visible);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [debugControlsVisible]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -2440,58 +2386,6 @@ export function App(): JSX.Element {
     setModeMenuOpen(false);
     setBranchMenuOpen(false);
     setCodexRuntimeMenu(null);
-  }
-
-  function appendRunDebugEvent(entry: Omit<RunDebugEvent, "id" | "at">): void {
-    const next: RunDebugEvent = {
-      ...entry,
-      id: ++runDebugEventIDRef.current,
-      at: Date.now(),
-    };
-    setRunDebugEvents((current) => [...current, next].slice(-80));
-  }
-
-  function resetRunDebugEvents(entry: Omit<RunDebugEvent, "id" | "at">): void {
-    runDebugDeltaSeenRef.current.clear();
-    const next: RunDebugEvent = {
-      ...entry,
-      id: ++runDebugEventIDRef.current,
-      at: Date.now(),
-    };
-    setRunDebugEvents([next]);
-  }
-
-  function recordRunDebugEvent(event: ServerEvent): void {
-    const entry = runDebugEventFromServerEvent(
-      event,
-      runDebugDeltaSeenRef.current,
-    );
-    if (entry) {
-      appendRunDebugEvent(entry);
-    }
-  }
-
-  async function copyRunDebugInfo(): Promise<void> {
-    const snapshot = buildRunDebugSnapshot({
-      state,
-      events: runDebugEvents,
-      queuedMessages,
-      guideMessages,
-      composerImages,
-      composerFiles,
-    });
-    try {
-      await navigator.clipboard.writeText(snapshot);
-      setRunDebugCopied(true);
-      window.setTimeout(() => setRunDebugCopied(false), 1200);
-    } catch (error) {
-      appendRunDebugEvent({
-        source: "client",
-        method: "debug/copy",
-        detail: error instanceof Error ? error.message : "复制失败",
-        tone: "error",
-      });
-    }
   }
 
   function currentPrimaryComposerDraft(): ComposerDraftState {
@@ -4366,7 +4260,15 @@ export function App(): JSX.Element {
                     composerImages={composerImages}
                     composerFiles={composerFiles}
                     copied={runDebugCopied}
-                    onCopy={() => void copyRunDebugInfo()}
+                    onCopy={() =>
+                      void copyRunDebugInfo({
+                        state,
+                        queuedMessages,
+                        guideMessages,
+                        composerImages,
+                        composerFiles,
+                      })
+                    }
                     onClose={() => setRunDebugOpen(false)}
                   />
                 ) : null}
