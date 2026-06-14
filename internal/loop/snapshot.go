@@ -34,6 +34,8 @@ type WorkflowSnapshot struct {
 	Error           string                  `json:"error,omitempty"`
 	ScriptPath      string                  `json:"script_path,omitempty"`
 	FinalReportPath string                  `json:"final_report_path,omitempty"`
+	LoopID          string                  `json:"loop_id,omitempty"`
+	LoopDir         string                  `json:"loop_dir,omitempty"`
 	Phases          []WorkflowPhaseSnapshot `json:"phases,omitempty"`
 	AgentRuns       []WorkflowAgentSnapshot `json:"agent_runs,omitempty"`
 	Team            *WorkflowTeamSnapshot   `json:"team,omitempty"`
@@ -192,6 +194,8 @@ func SnapshotWorkflows(store *workflow.Store) ([]WorkflowSnapshot, []AttentionIt
 			Error:           strings.TrimSpace(run.Error),
 			ScriptPath:      run.ScriptPath,
 			FinalReportPath: run.FinalReportPath,
+			LoopID:          run.LoopID,
+			LoopDir:         run.LoopDir,
 			Phases:          workflowPhaseSnapshots(run.Phases),
 		}
 		if run.Status == workflow.RunStateFailed || run.Status == workflow.RunStatePaused {

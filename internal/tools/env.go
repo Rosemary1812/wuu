@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
@@ -416,4 +417,15 @@ func (e *Env) WorkflowStore() (*workflow.Store, error) {
 		return nil, err
 	}
 	return workflow.NewStore(stateDir), nil
+}
+
+// WorkflowLoopStore returns the loop store bound to one Workflow Run. Workflow
+// loops live under workspace state so multiple runs do not overwrite the
+// workspace-root .loop used by the CLI demo path.
+func (e *Env) WorkflowLoopStore(runID string) (*looprunner.Store, error) {
+	stateDir, err := e.WorkspaceStateDir()
+	if err != nil {
+		return nil, err
+	}
+	return looprunner.NewStore(filepath.Join(stateDir, "loops", strings.TrimSpace(runID))), nil
 }

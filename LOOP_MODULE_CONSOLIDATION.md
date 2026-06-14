@@ -157,6 +157,21 @@ Implemented pieces:
 and loop id should be linked in metadata. Workflow artifacts become loop
 artifacts or evidence refs.
 
+Implemented pieces:
+
+- `workflow.Run` stores `loop_id` and `loop_dir` as compatibility metadata.
+- Workflow-created loop state lives at `stateDir/loops/<workflow-run-id>` so
+  parallel workflow runs do not overwrite the CLI demo's workspace `.loop`.
+- `start_workflow` reaches this bridge through both concrete creation paths:
+  `create_workflow` and `run_workflow`.
+- Script workflow completion and failure sync back to the bound loop status for
+  foreground runs and best-effort background runs.
+- Loop bindings are projected through `loop.SystemSnapshot` and eval
+  observability.
+
+Remaining work: promote workflow plan/script/final report files into loop
+artifact evidence refs instead of only linking the run to a loop.
+
 ### P0.4: Harness Report Bridge
 
 Agent reports submitted through `agent_report` should update loop progress,

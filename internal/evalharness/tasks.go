@@ -203,6 +203,8 @@ type WorkflowRunObservation struct {
 	Error           string                        `json:"error,omitempty"`
 	ScriptPath      string                        `json:"script_path,omitempty"`
 	FinalReportPath string                        `json:"final_report_path,omitempty"`
+	LoopID          string                        `json:"loop_id,omitempty"`
+	LoopDir         string                        `json:"loop_dir,omitempty"`
 	WorkflowTeam    *WorkflowTeamObservation      `json:"workflow_team,omitempty"`
 	TeamArbitration WorkflowTeamArbitration       `json:"team_arbitration,omitempty"`
 	Phases          []WorkflowPhaseObservation    `json:"phases,omitempty"`

@@ -727,6 +727,8 @@ func evalWorkflowObservations(runs []looprunner.WorkflowSnapshot) []evalharness.
 			Error:           evalSafePreview(run.Error, evalTextPreviewLimit),
 			ScriptPath:      run.ScriptPath,
 			FinalReportPath: run.FinalReportPath,
+			LoopID:          run.LoopID,
+			LoopDir:         run.LoopDir,
 			Phases:          evalWorkflowPhaseObservations(run.Phases),
 			AgentRuns:       evalWorkflowAgentRunObservations(run.AgentRuns),
 			TeamArbitration: evalWorkflowTeamArbitration(run.Arbitration),

@@ -28,6 +28,8 @@ type Run struct {
 	PlanPath        string    `json:"plan_path,omitempty"`
 	ScriptPath      string    `json:"script_path,omitempty"`
 	FinalReportPath string    `json:"final_report_path,omitempty"`
+	LoopID          string    `json:"loop_id,omitempty"`
+	LoopDir         string    `json:"loop_dir,omitempty"`
 	PauseReason     string    `json:"pause_reason,omitempty"`
 	ResumeHint      string    `json:"resume_hint,omitempty"`
 	RollbackHint    string    `json:"rollback_hint,omitempty"`

@@ -13,6 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/workflow"
@@ -117,6 +118,8 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		Entrypoint string            `json:"entrypoint"`
 		RunID      string            `json:"run_id"`
 		Status     workflow.RunState `json:"status"`
+		LoopID     string            `json:"loop_id"`
+		LoopDir    string            `json:"loop_dir"`
 		Phases     []workflow.Phase  `json:"phases"`
 	}
 	if err := json.Unmarshal([]byte(startResp), &started); err != nil {
@@ -127,6 +130,23 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if len(started.Phases) != 3 || started.Phases[0].Status != workflow.PhaseStateRunnable {
 		t.Fatalf("unexpected start phases: %+v", started.Phases)
+	}
+	if started.LoopID != started.RunID || started.LoopDir != filepath.Join(stateDir, "loops", started.RunID) {
+		t.Fatalf("workflow run missing loop binding: %+v", started)
+	}
+	storedRun, err := workflow.NewStore(stateDir).LoadRun(started.RunID)
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if storedRun.LoopID != started.LoopID || storedRun.LoopDir != started.LoopDir {
+		t.Fatalf("stored workflow run missing loop binding: %+v", storedRun)
+	}
+	loopState, err := looprunner.NewStore(started.LoopDir).LoadState()
+	if err != nil {
+		t.Fatalf("Load loop state: %v", err)
+	}
+	if loopState.ID != started.RunID || loopState.Status != looprunner.StatusRunning {
+		t.Fatalf("unexpected workflow loop state: %+v", loopState)
 	}
 
 	createResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -605,6 +625,8 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 		Driver     string            `json:"driver"`
 		RunID      string            `json:"run_id"`
 		Status     workflow.RunState `json:"status"`
+		LoopID     string            `json:"loop_id"`
+		LoopDir    string            `json:"loop_dir"`
 		ScriptPath string            `json:"script_path"`
 		Background bool              `json:"background"`
 	}
@@ -616,6 +638,16 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 	}
 	if _, err := os.Stat(started.ScriptPath); err != nil {
 		t.Fatalf("script start artifact not written: %v", err)
+	}
+	if started.LoopID != started.RunID || started.LoopDir != filepath.Join(stateDir, "loops", started.RunID) {
+		t.Fatalf("script workflow run missing loop binding: %+v", started)
+	}
+	scriptLoopState, err := looprunner.NewStore(started.LoopDir).LoadState()
+	if err != nil {
+		t.Fatalf("Load script loop state: %v", err)
+	}
+	if scriptLoopState.ID != started.RunID || scriptLoopState.Status != looprunner.StatusCompleted {
+		t.Fatalf("unexpected script workflow loop state: %+v", scriptLoopState)
 	}
 
 	runResp, err := kit.Execute(context.Background(), providers.ToolCall{
