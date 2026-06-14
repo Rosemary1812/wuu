@@ -99,6 +99,7 @@ type Observability struct {
 	ContextRequests    []ContextRequestObservation `json:"context_requests,omitempty"`
 	ToolInventory      []ToolInventoryObservation  `json:"tool_inventory,omitempty"`
 	ToolRecords        []ToolObservation           `json:"tool_records,omitempty"`
+	LoopAttention      []LoopAttentionObservation  `json:"loop_attention,omitempty"`
 	WorkflowRuns       []WorkflowRunObservation    `json:"workflow_runs,omitempty"`
 	HarnessTasks       []HarnessTaskObservation    `json:"harness_tasks,omitempty"`
 	HarnessReports     []HarnessReportObservation  `json:"harness_reports,omitempty"`
@@ -190,6 +191,14 @@ type PatchRiskObservation struct {
 	ContainsMove   bool           `json:"contains_move,omitempty"`
 	RiskLevel      string         `json:"risk_level"`
 	ReviewHint     string         `json:"review_hint,omitempty"`
+}
+
+type LoopAttentionObservation struct {
+	Source  string `json:"source"`
+	ID      string `json:"id,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
+	Path    string `json:"path,omitempty"`
 }
 
 type WorkflowRunObservation struct {

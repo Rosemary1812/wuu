@@ -454,7 +454,7 @@ func applyEvalWorkflowIssues(result *evalharness.Result) {
 	if result == nil || result.Observability == nil {
 		return
 	}
-	result.WorkflowIssues = evalharness.WorkflowValidationIssues(result.Observability.WorkflowRuns)
+	result.WorkflowIssues = evalharness.LoopValidationIssues(result.Observability.LoopAttention, result.Observability.WorkflowRuns)
 	if len(result.WorkflowIssues) > 0 {
 		result.Success = false
 	}
@@ -522,6 +522,7 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 	}
 	snapshot := looprunner.SnapshotSystem(snapshotOpts)
 	obs.HarnessDir = snapshot.HarnessDir
+	obs.LoopAttention = evalLoopAttentionObservations(snapshot.Attention)
 	obs.WorkflowRuns = evalWorkflowObservations(snapshot.Workflows)
 	obs.HarnessTasks = evalHarnessTaskObservations(snapshot.Harness.Tasks)
 	obs.HarnessReports = evalHarnessReportObservations(snapshot.Harness.Reports)
@@ -708,6 +709,20 @@ func evalToolInventoryObservations(infos []tools.ToolInfo) []evalharness.ToolInv
 			ConcurrencySafe: info.ConcurrencySafe,
 			Destructive:     info.Destructive,
 			Reason:          evalSafePreview(info.Reason, evalTextPreviewLimit),
+		})
+	}
+	return out
+}
+
+func evalLoopAttentionObservations(items []looprunner.AttentionItem) []evalharness.LoopAttentionObservation {
+	out := make([]evalharness.LoopAttentionObservation, 0, len(items))
+	for _, item := range items {
+		out = append(out, evalharness.LoopAttentionObservation{
+			Source:  item.Source,
+			ID:      item.ID,
+			Status:  item.Status,
+			Message: evalSafePreview(item.Message, evalTextPreviewLimit),
+			Path:    item.Path,
 		})
 	}
 	return out
@@ -1292,6 +1307,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	if summary.Task != nil && len(summary.Task.WorkflowIssues) > 0 {
 		fmt.Printf("  workflow_issues: %s\n", strings.Join(summary.Task.WorkflowIssues, ","))
 	}
+	if attention := formatEvalLoopAttention(summary.LoopAttention); attention != "" {
+		fmt.Printf("  loop_attention: %s\n", attention)
+	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
 		if len(summary.ToolSummary.ByResultAction) > 0 {
@@ -1454,6 +1472,31 @@ func formatEvalWorkflowRuns(runs []evalharness.WorkflowRunObservation, fallbackI
 		return strings.Join(parts, ",")
 	}
 	return strings.Join(fallbackIDs, ",")
+}
+
+func formatEvalLoopAttention(items []evalharness.LoopAttentionObservation) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		source := strings.TrimSpace(item.Source)
+		if source == "" {
+			source = "loop"
+		}
+		labelParts := []string{source}
+		if id := strings.TrimSpace(item.ID); id != "" {
+			labelParts = append(labelParts, "id="+id)
+		}
+		if status := strings.TrimSpace(item.Status); status != "" {
+			labelParts = append(labelParts, "status="+status)
+		}
+		if path := strings.TrimSpace(item.Path); path != "" {
+			labelParts = append(labelParts, "path="+path)
+		}
+		if message := strings.TrimSpace(item.Message); message != "" {
+			labelParts = append(labelParts, "message="+firstLine(message))
+		}
+		parts = append(parts, strings.Join(labelParts, ":"))
+	}
+	return strings.Join(parts, ",")
 }
 
 func formatEvalWorkflowAgents(runs []evalharness.WorkflowRunObservation) string {

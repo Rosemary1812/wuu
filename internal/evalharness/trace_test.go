@@ -70,13 +70,19 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				Success:        true,
 				RawOutputBytes: 42,
 			}},
+			LoopAttention: []LoopAttentionObservation{{
+				Source:  "workflow_agent",
+				ID:      "worker-1",
+				Status:  "missing_report",
+				Message: "workflow run run-1 is missing agent report",
+			}},
 			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", RunDir: "/tmp/state/workflows/run-1", EventLogPath: "/tmp/state/workflows/run-1/events.jsonl", Status: "completed"}},
 			HarnessTasks:   []HarnessTaskObservation{{ID: "worker-1", Status: "completed"}},
 			HarnessReports: []HarnessReportObservation{{ID: "report-1", Outcome: "completed"}},
 		},
 	}, time.Unix(100, 0).UTC())
 
-	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_inventory", "tool_records", "workflow_runs", "harness_tasks", "harness_reports", "final"}
+	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_inventory", "tool_records", "loop_attention", "workflow_runs", "harness_tasks", "harness_reports", "final"}
 	if len(events) != len(wantTypes) {
 		t.Fatalf("event count = %d, want %d: %+v", len(events), len(wantTypes), events)
 	}
@@ -130,6 +136,13 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if len(task.VerificationEvidence) != 1 || task.VerificationEvidence[0].Command != "go test ./..." {
 		t.Fatalf("task event missing verification evidence: %+v", task)
+	}
+	attention, ok := events[7].Data.([]LoopAttentionObservation)
+	if !ok {
+		t.Fatalf("loop_attention event data has wrong type: %#v", events[7].Data)
+	}
+	if len(attention) != 1 || attention[0].Source != "workflow_agent" || attention[0].Status != "missing_report" {
+		t.Fatalf("loop_attention event missing attention item: %+v", attention)
 	}
 }
 
@@ -250,6 +263,13 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				RevisionBefore:  "rev-before",
 				Success:         false,
 			}},
+			LoopAttention: []LoopAttentionObservation{{
+				Source:  "workflow_conflict",
+				ID:      "run-1",
+				Status:  "changed_file_overlap",
+				Message: "worker-b, worker-a",
+				Path:    "shared.go",
+			}},
 			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", RunDir: "/tmp/state/workflows/run-1", EventLogPath: "/tmp/state/workflows/run-1/events.jsonl", Status: "completed"}},
 			HarnessTasks:   []HarnessTaskObservation{{ID: "worker-1", Status: "completed"}},
 			HarnessReports: []HarnessReportObservation{{ID: "report-1", Outcome: "completed"}},
@@ -263,7 +283,7 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReplayTrace: %v", err)
 	}
-	if !summary.Complete || summary.Mode != "deterministic_trace_replay" || summary.EventCount != 10 {
+	if !summary.Complete || summary.Mode != "deterministic_trace_replay" || summary.EventCount != 11 {
 		t.Fatalf("unexpected replay summary envelope: %+v", summary)
 	}
 	if summary.Task == nil || summary.Task.ID != "task-1" || summary.Final == nil || !summary.Final.Success {
@@ -338,6 +358,11 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	}
 	if len(summary.WorkflowRunIDs) != 1 || summary.WorkflowRunIDs[0] != "run-1" {
 		t.Fatalf("replay missing workflow runs: %+v", summary.WorkflowRunIDs)
+	}
+	if len(summary.LoopAttention) != 1 ||
+		summary.LoopAttention[0].Source != "workflow_conflict" ||
+		summary.LoopAttention[0].Path != "shared.go" {
+		t.Fatalf("replay missing loop attention: %+v", summary.LoopAttention)
 	}
 	if len(summary.WorkflowRuns) != 1 ||
 		summary.WorkflowRuns[0].RunDir != "/tmp/state/workflows/run-1" ||
@@ -458,6 +483,49 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 	}
 	if len(summary.ToolCalls) != 1 || summary.ToolCalls[0].ResultRef != "/tmp/wuu/test.log" {
 		t.Fatalf("validation tool call not summarized: %+v", summary.ToolCalls)
+	}
+}
+
+func TestLoopValidationIssuesSummarizesAttention(t *testing.T) {
+	issues := LoopValidationIssues([]LoopAttentionObservation{{
+		Source:  "workflow_agent",
+		ID:      "agent-missing",
+		Status:  "missing_report",
+		Message: "workflow run run-1 is missing agent report",
+	}, {
+		Source:  "workflow_agent",
+		ID:      "agent-failed",
+		Status:  "failed",
+		Message: "workflow run run-1 has failed agent",
+	}, {
+		Source:  "workflow_conflict",
+		ID:      "run-1",
+		Status:  "changed_file_overlap",
+		Message: "agent-b, agent-a",
+		Path:    "shared.go",
+	}, {
+		Source: "harness",
+		ID:     "task-1",
+		Status: "failed",
+	}}, []WorkflowRunObservation{{
+		ID:     "run-2",
+		Status: "running",
+		TeamArbitration: WorkflowTeamArbitration{
+			Status:         "attention_required",
+			MissingReports: []string{"agent-c"},
+		},
+	}})
+	want := []string{
+		"harness:task-1:status=failed",
+		"run-1:failed=agent-failed",
+		"run-1:missing_reports=agent-missing",
+		"run-1:overlap=shared.go=agent-a+agent-b",
+		"run-2:arbitration=attention_required",
+		"run-2:missing_reports=agent-c",
+		"run-2:status=running",
+	}
+	if strings.Join(issues, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("loop issues = %+v, want %+v", issues, want)
 	}
 }
 

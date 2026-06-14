@@ -129,6 +129,15 @@ one product-neutral view:
 Use this API in eval first. Eval should stop manually walking workflow and
 harness stores as separate systems.
 
+Implemented pieces:
+
+- Eval observability calls `loop.SnapshotSystem` and converts the projection to
+  compatibility workflow/harness observations.
+- Eval trace writes and replays `loop_attention` as its own event type.
+- Eval validation now derives workflow issues from loop attention and projected
+  workflow compatibility fields through one loop-level validator, so old traces
+  keep their diagnostics without making eval a separate state owner.
+
 ### P0.2: Failure Sync
 
 When workflow or harness records a terminal failure, add a loop-level failure

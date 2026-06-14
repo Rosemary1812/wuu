@@ -659,6 +659,10 @@ func TestEvalWorkflowObservationsIncludeTeamArbitration(t *testing.T) {
 	if len(snapshot.Warnings) > 0 {
 		t.Fatalf("unexpected warnings: %+v", snapshot.Warnings)
 	}
+	attention := evalLoopAttentionObservations(snapshot.Attention)
+	if len(attention) == 0 {
+		t.Fatalf("loop attention should capture workflow arbitration issues: %+v", snapshot.Attention)
+	}
 	got := evalWorkflowObservations(snapshot.Workflows)
 	if len(got) != 1 {
 		t.Fatalf("expected one workflow observation, got %+v", got)
@@ -907,6 +911,12 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 				ArgumentsSHA256: strings.Repeat("e", 64),
 				Success:         false,
 			}},
+			LoopAttention: []evalharness.LoopAttentionObservation{{
+				Source:  "workflow_agent",
+				ID:      "beta-writer",
+				Status:  "missing_report",
+				Message: "workflow run run-1 is missing agent report",
+			}},
 			WorkflowRuns: []evalharness.WorkflowRunObservation{{
 				ID:           "run-1",
 				RunDir:       "/tmp/wuu/workflows/run-1",
@@ -954,6 +964,9 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	}
 	if !strings.Contains(output, "workflow_runs: run-1:driver=agent_managed:status=completed:event_log=/tmp/wuu/workflows/run-1/events.jsonl:run_dir=/tmp/wuu/workflows/run-1") {
 		t.Fatalf("replay text output missing workflow artifact paths:\n%s", output)
+	}
+	if !strings.Contains(output, "loop_attention: workflow_agent:id=beta-writer:status=missing_report:message=workflow run run-1 is missing agent report") {
+		t.Fatalf("replay text output missing loop attention:\n%s", output)
 	}
 	if !strings.Contains(output, "workflow_agents: run-1/alpha-writer:task=write alpha marker:profile=marker-writer:status=completed:report=/tmp/wuu/workflows/run-1/agents/alpha/report.md:worktree=/tmp/wuu/worktrees/alpha:changed=team_alpha.txt") {
 		t.Fatalf("replay text output missing workflow agent report paths:\n%s", output)
@@ -1012,6 +1025,39 @@ func TestApplyEvalWorkflowIssuesFailsResult(t *testing.T) {
 		result.WorkflowIssues[0] != "run-1:arbitration=attention_required" ||
 		result.WorkflowIssues[1] != "run-1:missing_reports=worker-1" {
 		t.Fatalf("workflow issues not summarized: %+v", result.WorkflowIssues)
+	}
+}
+
+func TestApplyEvalWorkflowIssuesPrefersLoopAttention(t *testing.T) {
+	result := evalharness.Result{
+		TaskID:  "task-1",
+		Success: true,
+		Observability: &evalharness.Observability{
+			LoopAttention: []evalharness.LoopAttentionObservation{{
+				Source:  "workflow_agent",
+				ID:      "worker-1",
+				Status:  "missing_report",
+				Message: "workflow run run-1 is missing agent report",
+			}, {
+				Source: "harness",
+				ID:     "task-1",
+				Status: "failed",
+			}},
+			WorkflowRuns: []evalharness.WorkflowRunObservation{{
+				ID:     "run-1",
+				Status: "completed",
+			}},
+		},
+	}
+
+	applyEvalWorkflowIssues(&result)
+
+	if result.Success {
+		t.Fatalf("loop attention issues should fail eval result: %+v", result)
+	}
+	want := []string{"harness:task-1:status=failed", "run-1:missing_reports=worker-1"}
+	if strings.Join(result.WorkflowIssues, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("loop attention issues not summarized: %+v", result.WorkflowIssues)
 	}
 }
 
