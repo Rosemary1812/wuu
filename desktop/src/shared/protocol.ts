@@ -260,6 +260,31 @@ export type LoopSnapshotResult = {
   snapshot: LoopSystemSnapshot;
 };
 
+export type LoopWorktreeStatus = {
+  dirty: boolean;
+  changed_files?: string[];
+  porcelain?: string[];
+};
+
+export type LoopWorktreeMergePreview = {
+  can_apply: boolean;
+  conflict_files?: string[];
+  error?: string;
+};
+
+export type LoopWorktreeReview = {
+  worktree_path: string;
+  target_repo?: string;
+  status: LoopWorktreeStatus;
+  diff?: string;
+  diff_truncated?: boolean;
+  merge_preview: LoopWorktreeMergePreview;
+};
+
+export type LoopWorktreeReviewResult = {
+  review: LoopWorktreeReview;
+};
+
 export type ManagedProcess = {
   action?: string;
   id: string;
@@ -676,6 +701,7 @@ export type WuuDesktopApi = {
   stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;
   listSkills: () => Promise<SkillListResult>;
   getLoopSnapshot: (threadId?: string) => Promise<LoopSnapshotResult>;
+  getLoopWorktreeReview: (worktreePath: string) => Promise<LoopWorktreeReviewResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

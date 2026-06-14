@@ -2,13 +2,18 @@ package appserver
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/workflow"
+	"github.com/blueberrycongee/wuu/internal/worktree"
 )
 
 func TestLoopSnapshotReturnsWorkflowAndThreadHarnessState(t *testing.T) {
@@ -73,4 +78,100 @@ func TestLoopSnapshotReturnsWorkflowAndThreadHarnessState(t *testing.T) {
 	if len(result.Snapshot.Attention) == 0 {
 		t.Fatalf("expected failed harness task in attention: %+v", result.Snapshot)
 	}
+}
+
+func TestLoopWorktreeReviewUsesManagedWorktreeManager(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	initLoopHandlerGitRepo(t, rt.RootDir)
+	manager, err := worktree.NewManager(rt.RootDir, statepath.WorktreeRoot(rt.StateDir))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	lease, err := manager.CreateLease(worktree.LeaseOptions{
+		SessionID: "thread-1",
+		TaskID:    "task-1",
+		AgentID:   "agent-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateLease: %v", err)
+	}
+	defer manager.Cleanup(&worktree.Worktree{Path: lease.Path})
+	if err := os.WriteFile(filepath.Join(lease.Path, "README.md"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatalf("write worktree file: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"review","method":"loop/worktree/review","params":{"worktree_path":` + quoteLoopHandlerJSON(lease.Path) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/worktree/review: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "review")
+	result := remarshal[LoopWorktreeReviewResult](t, msg["result"])
+	if result.Review.WorktreePath != lease.Path || !result.Review.Status.Dirty {
+		t.Fatalf("unexpected worktree review: %+v", result.Review)
+	}
+	if !strings.Contains(result.Review.Diff, "+changed") {
+		t.Fatalf("review diff missing worktree edit:\n%s", result.Review.Diff)
+	}
+	if !result.Review.MergePreview.CanApply {
+		t.Fatalf("merge preview should be clean: %+v", result.Review.MergePreview)
+	}
+}
+
+func TestLoopWorktreeReviewRejectsUnmanagedPath(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	initLoopHandlerGitRepo(t, rt.RootDir)
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"review","method":"loop/worktree/review","params":{"worktree_path":` + quoteLoopHandlerJSON(rt.RootDir) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("loop/worktree/review: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "review")
+	if msg["error"] == nil {
+		t.Fatalf("expected unmanaged path error, got %+v", msg)
+	}
+	if !strings.Contains(string(remarshalLoopHandlerRaw(t, msg["error"])), "outside managed root") {
+		t.Fatalf("unexpected unmanaged path error: %+v", msg["error"])
+	}
+}
+
+func initLoopHandlerGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-q", "-m", "init")
+}
+
+func quoteLoopHandlerJSON(value string) string {
+	data, _ := json.Marshal(value)
+	return string(data)
+}
+
+func remarshalLoopHandlerRaw(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal value: %v", err)
+	}
+	return data
 }

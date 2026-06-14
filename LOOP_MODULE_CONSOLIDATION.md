@@ -242,11 +242,16 @@ Implemented pieces:
   `stateDir/loops/cron-loop-*` when they fire. The cron package still owns only
   schedule storage; runtime records trigger execution, metadata, prompt
   artifact, success, and failure through `internal/loop`.
+- `loop.ReviewWorktree` exposes a read-only worktree review surface that
+  validates the worktree path is inside the managed workspace worktree root,
+  then delegates status, diff, and merge preview to `internal/worktree`.
+- App-server exposes `loop/worktree/review`, and desktop main/preload proxy it
+  as `getLoopWorktreeReview(worktreePath)`. Desktop does not run git diff or
+  merge-preview logic itself.
 
 Remaining work: add mutation surfaces behind explicit approval gates, such as
-retry, cleanup, merge preview, and human approval queues. Those should still
-call loop/worktree APIs instead of writing directly to workflow or harness
-stores.
+retry, cleanup, merge, and human approval queues. Those should still call
+loop/worktree APIs instead of writing directly to workflow or harness stores.
 
 ### P2: Store Reduction
 

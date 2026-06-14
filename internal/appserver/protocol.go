@@ -18,6 +18,7 @@ const (
 	MethodConfigCodexModels     = "config/codex/models"
 	MethodSkillList             = "skill/list"
 	MethodLoopSnapshot          = "loop/snapshot"
+	MethodLoopWorktreeReview    = "loop/worktree/review"
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
@@ -200,6 +201,15 @@ type LoopSnapshotParams struct {
 
 type LoopSnapshotResult struct {
 	Snapshot loop.SystemSnapshot `json:"snapshot"`
+}
+
+type LoopWorktreeReviewParams struct {
+	WorktreePath string `json:"worktree_path"`
+	MaxDiffBytes int    `json:"max_diff_bytes,omitempty"`
+}
+
+type LoopWorktreeReviewResult struct {
+	Review loop.WorktreeReview `json:"review"`
 }
 
 type ManagedProcessSummary struct {

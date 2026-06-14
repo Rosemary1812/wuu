@@ -19,6 +19,7 @@ import type {
   InputImage,
   InitializeResult,
   LoopSnapshotResult,
+  LoopWorktreeReviewResult,
   ManagedProcessListResult,
   ManagedProcessStopResult,
   ServerEvent,
@@ -327,6 +328,11 @@ app.whenReady().then(() => {
   ipcMain.handle("wuu:loop-snapshot", (_event, threadId?: string) =>
     appServerClientPool.request<LoopSnapshotResult>("loop/snapshot", {
       thread_id: threadId ?? "",
+    }),
+  );
+  ipcMain.handle("wuu:loop-worktree-review", (_event, worktreePath: string) =>
+    appServerClientPool.request<LoopWorktreeReviewResult>("loop/worktree/review", {
+      worktree_path: worktreePath,
     }),
   );
   ipcMain.handle("wuu:process-list", () =>

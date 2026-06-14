@@ -36,6 +36,30 @@ func (s *Server) handleLoopSnapshot(req Request) error {
 	return s.writeResponse(req.ID, LoopSnapshotResult{Snapshot: snapshot}, nil)
 }
 
+func (s *Server) handleLoopWorktreeReview(req Request) error {
+	var params LoopWorktreeReviewParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop worktree review params: %w", err))
+		}
+	}
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	review, err := looprunner.ReviewWorktree(looprunner.WorktreeReviewOptions{
+		ParentRepo:   s.rt.RootDir,
+		WorktreeRoot: statepath.WorktreeRoot(stateDir),
+		WorktreePath: params.WorktreePath,
+		TargetRepo:   s.rt.RootDir,
+		MaxDiffBytes: params.MaxDiffBytes,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, LoopWorktreeReviewResult{Review: review}, nil)
+}
+
 func (s *Server) loopWorkflowStore() (*workflow.Store, error) {
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
