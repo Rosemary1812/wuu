@@ -57,3 +57,67 @@ func TestAgentControlFailureSinkWritesLoopFailure(t *testing.T) {
 		t.Fatalf("failure context missing source details:\n%s", failures)
 	}
 }
+
+func TestAgentControlFailureSinkWritesLoopReportProgress(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(filepath.Join(root, ".loop"))
+	store.SetClock(fixedClock())
+	if _, err := store.Init(Spec{
+		ID:   "loop-agent-report",
+		Goal: "capture agent report",
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	sink := NewAgentControlFailureSink(nil)
+	err := sink.RecordAgentReport(agentcontrol.AgentReport{
+		Source:       "harness_report",
+		TaskID:       "agent-2",
+		RunID:        "agent-2-run",
+		LoopID:       "loop-agent-report",
+		LoopDir:      store.Dir(),
+		Outcome:      "completed",
+		Summary:      "Implemented the worker change.",
+		ReportPath:   "harness/reports/agent-2.md",
+		ChangedFiles: []string{"internal/loop/report_sync.go"},
+		Verification: []string{"go test ./internal/loop"},
+		Artifacts:    []string{"harness/artifacts/agent-2.patch"},
+		NextSteps:    []string{"review worker diff"},
+		CreatedAt:    time.Date(2026, 6, 14, 1, 2, 3, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	if err := sink.RecordAgentReport(agentcontrol.AgentReport{
+		Source:       "harness_report",
+		TaskID:       "agent-2",
+		RunID:        "agent-2-run",
+		LoopDir:      store.Dir(),
+		Outcome:      "completed",
+		Summary:      "Implemented the worker change.",
+		ReportPath:   "harness/reports/agent-2.md",
+		ChangedFiles: []string{"internal/loop/report_sync.go"},
+		Verification: []string{"go test ./internal/loop"},
+		Artifacts:    []string{"harness/artifacts/agent-2.patch"},
+	}); err != nil {
+		t.Fatalf("RecordAgentReport duplicate: %v", err)
+	}
+	state, err := store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if len(state.Progress) != 1 || state.Progress[0].SourceID != "agent-2:agent-2-run:harness/reports/agent-2.md" {
+		t.Fatalf("unexpected progress: %+v", state.Progress)
+	}
+	if len(state.ModifiedFiles) != 1 || state.ModifiedFiles[0] != "internal/loop/report_sync.go" {
+		t.Fatalf("unexpected modified files: %+v", state.ModifiedFiles)
+	}
+	if len(state.Artifacts) != 2 {
+		t.Fatalf("expected report and evidence artifact refs, got %+v", state.Artifacts)
+	}
+	if len(state.TestResults) != 1 || !state.TestResults[0].Passed || !strings.Contains(state.TestResults[0].Output, "go test ./internal/loop") {
+		t.Fatalf("unexpected test results: %+v", state.TestResults)
+	}
+	if len(state.NextSteps) != 1 || state.NextSteps[0] != "review worker diff" {
+		t.Fatalf("unexpected next steps: %+v", state.NextSteps)
+	}
+}

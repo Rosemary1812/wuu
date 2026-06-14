@@ -773,6 +773,9 @@ phase("Workers", () => {
 	var ran struct {
 		Driver     string            `json:"driver"`
 		Entrypoint string            `json:"entrypoint"`
+		RunID      string            `json:"run_id"`
+		LoopID     string            `json:"loop_id"`
+		LoopDir    string            `json:"loop_dir"`
 		Status     workflow.RunState `json:"status"`
 	}
 	if err := json.Unmarshal([]byte(runResp), &ran); err != nil {
@@ -783,6 +786,9 @@ phase("Workers", () => {
 	}
 	if ran.Status != workflow.RunStateCompleted {
 		t.Fatalf("workflow should complete: %+v", ran)
+	}
+	if ran.LoopID != ran.RunID || ran.LoopDir != filepath.Join(stateDir, "loops", ran.RunID) {
+		t.Fatalf("script workflow missing loop binding: %+v", ran)
 	}
 
 	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -808,6 +814,13 @@ phase("Workers", () => {
 	}
 	if len(status.WorkflowTeam.Members) != 1 || status.WorkflowTeam.Members[0].TaskName != "qa" || status.WorkflowTeam.Members[0].Mode != workflow.TeamMemberEphemeral {
 		t.Fatalf("script driver should record workflow team member: %+v", status.WorkflowTeam)
+	}
+	tasks, err := control.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].LoopID != ran.LoopID || tasks[0].LoopDir != ran.LoopDir {
+		t.Fatalf("workflow-spawned harness task missing loop binding: %+v", tasks)
 	}
 }
 

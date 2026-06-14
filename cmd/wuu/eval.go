@@ -828,6 +828,8 @@ func evalHarnessTaskObservations(tasks []looprunner.HarnessTaskSnapshot) []evalh
 			Path:          task.Path,
 			Name:          task.Name,
 			Role:          task.Role,
+			LoopID:        task.LoopID,
+			LoopDir:       task.LoopDir,
 			Status:        task.Status,
 			ReportPath:    task.ReportPath,
 			ArtifactPaths: append([]string(nil), task.ArtifactPaths...),

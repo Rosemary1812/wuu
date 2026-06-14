@@ -92,6 +92,8 @@ type Artifact struct {
 	Name      string    `json:"name"`
 	Path      string    `json:"path"`
 	Kind      string    `json:"kind,omitempty"`
+	Source    string    `json:"source,omitempty"`
+	SourceID  string    `json:"source_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -126,6 +128,8 @@ type Decision struct {
 
 type ProgressEntry struct {
 	Step      Step      `json:"step,omitempty"`
+	Source    string    `json:"source,omitempty"`
+	SourceID  string    `json:"source_id,omitempty"`
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at"`
 }

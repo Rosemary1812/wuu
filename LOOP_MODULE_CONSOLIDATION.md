@@ -178,6 +178,28 @@ Agent reports submitted through `agent_report` should update loop progress,
 modified files, artifacts, verification strings, and failures when associated
 with a loop.
 
+Implemented pieces:
+
+- `harness.Task` stores `loop_id` and `loop_dir` so each spawned-agent task can
+  route handoff facts to the correct loop.
+- `workflow.ScriptRuntime` passes the workflow run's loop binding into
+  workflow-spawned `SpawnRequest`s.
+- `spawn_agent` accepts optional `loop_id` and `loop_dir` so agent-managed
+  workflows can pass the binding returned by `start_workflow`.
+- `agentcontrol.ReportSink` emits structured `agent_report` handoff facts
+  without importing `internal/loop`.
+- `loop.AgentControlFailureSink` also implements report sync. When a report has
+  `loop_dir`, it updates loop progress, modified files, external artifact refs,
+  verification results, next steps, and the existing failure path.
+- Runtime installs the loop sink for both report and failure sync. Reports
+  without `loop_dir` are ignored by this sink, so ordinary non-workflow agents
+  do not write to a guessed loop.
+- Harness task loop bindings are projected through `loop.SystemSnapshot` and
+  eval observability.
+
+Remaining work: expose the unified loop snapshot in app-server/desktop status
+views so the UI reads the loop-level view first.
+
 ### P1: Control Plane
 
 Expose loop snapshot/status through app-server and desktop. Workflow/harness UI

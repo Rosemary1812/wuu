@@ -17,6 +17,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/hooks"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
@@ -199,6 +200,7 @@ func NewSession(opts Options) (*Session, error) {
 			return nil, fmt.Errorf("build worker client: %w", werr)
 		}
 
+		loopSink := looprunner.NewAgentControlFailureSink(nil)
 		c, cerr := agentcontrol.New(agentcontrol.Config{
 			Client:          workerClient,
 			DefaultModel:    providerCfg.Model,
@@ -206,6 +208,8 @@ func NewSession(opts Options) (*Session, error) {
 			WorktreeRoot:    statepath.WorktreeRoot(workspaceStateDir),
 			SessionID:       "session-pending",
 			HistoryDir:      "",
+			FailureSink:     loopSink,
+			ReportSink:      loopSink,
 			WorkerSysPrompt: baseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, resolvedName, toolModeModel, memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
@@ -442,6 +446,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				}
 			}
 			var control *agentcontrol.AgentControl
+			loopSink := looprunner.NewAgentControlFailureSink(nil)
 			control, _ = agentcontrol.New(agentcontrol.Config{
 				Client:          workerClient,
 				DefaultModel:    s.Model,
@@ -451,6 +456,8 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				HistoryDir:      filepath.Join(artifactDir, "workers"),
 				ThreadDir:       filepath.Join(artifactDir, "threads"),
 				HarnessDir:      filepath.Join(artifactDir, "harness"),
+				FailureSink:     loopSink,
+				ReportSink:      loopSink,
 				WorkerSysPrompt: s.BaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 					model := s.Model

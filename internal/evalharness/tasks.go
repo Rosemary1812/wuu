@@ -275,6 +275,8 @@ type HarnessTaskObservation struct {
 	Path          string   `json:"path,omitempty"`
 	Name          string   `json:"name,omitempty"`
 	Role          string   `json:"role,omitempty"`
+	LoopID        string   `json:"loop_id,omitempty"`
+	LoopDir       string   `json:"loop_dir,omitempty"`
 	Status        string   `json:"status"`
 	ReportPath    string   `json:"report_path,omitempty"`
 	ArtifactPaths []string `json:"artifact_paths,omitempty"`

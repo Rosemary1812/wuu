@@ -384,7 +384,14 @@ func writeMarkdown(path, header string, render func(*strings.Builder)) error {
 
 func renderProgress(b *strings.Builder, entries []ProgressEntry) {
 	for _, entry := range entries {
-		fmt.Fprintf(b, "- %s `%s`: %s\n", entry.CreatedAt.Format(time.RFC3339), entry.Step, entry.Message)
+		fmt.Fprintf(b, "- %s `%s`: %s", entry.CreatedAt.Format(time.RFC3339), entry.Step, entry.Message)
+		if entry.Source != "" {
+			fmt.Fprintf(b, " source=%s", entry.Source)
+		}
+		if entry.SourceID != "" {
+			fmt.Fprintf(b, " source_id=%s", entry.SourceID)
+		}
+		b.WriteByte('\n')
 	}
 }
 

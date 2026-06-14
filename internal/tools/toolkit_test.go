@@ -1920,7 +1920,7 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 
 	spawnedJSON, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "spawn_agent",
-		Arguments: `{"name":"inspect_team","description":"Inspect team","prompt":"Finish the agent task.","subagent_type":"general-purpose"}`,
+		Arguments: `{"name":"inspect_team","description":"Inspect team","prompt":"Finish the agent task.","subagent_type":"general-purpose","loop_id":"workflow-run-1","loop_dir":"/tmp/workflow-run-1-loop"}`,
 	})
 	if err != nil {
 		t.Fatalf("spawn_agent: %v", err)
@@ -1935,6 +1935,13 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	}
 	if spawned.Action != "spawn_agent" || spawned.AgentID == "" || spawned.AgentPath == "" {
 		t.Fatalf("unexpected spawn_agent result: %s", spawnedJSON)
+	}
+	tasks, err := control.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].LoopID != "workflow-run-1" || tasks[0].LoopDir != "/tmp/workflow-run-1-loop" {
+		t.Fatalf("spawn_agent did not pass loop binding to harness task: %+v", tasks)
 	}
 
 	childKit, err := New(root)
@@ -4698,7 +4705,7 @@ func TestToolkit_SpawnAgentDefinitionUsesCCAgentSchema(t *testing.T) {
 			continue
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
-		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation"} {
+		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation", "loop_id", "loop_dir"} {
 			if _, ok := props[field]; !ok {
 				t.Fatalf("spawn_agent schema must expose %s: %#v", field, d.InputSchema)
 			}

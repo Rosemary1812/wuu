@@ -111,6 +111,8 @@ type HarnessTaskSnapshot struct {
 	Path          string   `json:"path,omitempty"`
 	Name          string   `json:"name,omitempty"`
 	Role          string   `json:"role,omitempty"`
+	LoopID        string   `json:"loop_id,omitempty"`
+	LoopDir       string   `json:"loop_dir,omitempty"`
 	Status        string   `json:"status"`
 	ReportPath    string   `json:"report_path,omitempty"`
 	ArtifactPaths []string `json:"artifact_paths,omitempty"`
@@ -378,6 +380,8 @@ func harnessTaskSnapshots(tasks []harness.Task) []HarnessTaskSnapshot {
 			Path:          task.Path,
 			Name:          task.Name,
 			Role:          task.Role,
+			LoopID:        task.LoopID,
+			LoopDir:       task.LoopDir,
 			Status:        string(task.Status),
 			ReportPath:    task.ReportPath,
 			ArtifactPaths: append([]string(nil), task.ArtifactPaths...),
