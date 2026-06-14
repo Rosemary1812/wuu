@@ -222,10 +222,15 @@ Implemented pieces:
 - Desktop preload exposes `window.wuu.getLoopSnapshot(threadId?)`.
 - `desktop/src/shared/protocol.ts` defines the loop snapshot wire types so
   renderer panels can consume loop-level status first.
+- Desktop workspace tools include a read-only `Loop` panel that calls
+  `getLoopSnapshot(threadId?)` and renders workflow runs, attention items,
+  thread-scoped harness tasks, reports, warnings, team counts, agent counts,
+  and event counts from the loop projection.
 
-Remaining work: add a visible desktop loop panel that renders active loops,
-agent team state, attention items, worktree links, and verification artifacts
-from `getLoopSnapshot` before drilling down into workflow/harness internals.
+Remaining work: add mutation surfaces behind explicit approval gates, such as
+retry, cleanup, merge preview, and human approval queues. Those should still
+call loop/worktree APIs instead of writing directly to workflow or harness
+stores.
 
 ### P2: Store Reduction
 

@@ -13,27 +13,30 @@ import {
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "lucide-react";
+import { Activity, FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
+import { WorkspaceLoopPanel } from "./WorkspaceLoopPanel";
 import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 
-export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
+export type WorkspacePanelView = "files" | "review" | "terminal" | "browser" | "loops";
 export type WorkspaceRightPanelView = "tools" | WorkspacePanelView;
 
 export function WorkspaceMainPanel({
   view,
   activeContext,
+  threadId,
   gitStatus,
   selectedFilePath,
   onOpenRightPanel
 }: {
   view: WorkspacePanelView;
   activeContext?: RuntimeContext;
+  threadId?: string;
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
   onOpenRightPanel: () => void;
@@ -52,6 +55,10 @@ export function WorkspaceMainPanel({
     return <WorkspaceDiffReview activeContext={activeContext} gitStatus={gitStatus} />;
   }
 
+  if (view === "loops") {
+    return <WorkspaceLoopPanel activeContext={activeContext} threadId={threadId} open />;
+  }
+
   return null;
 }
 
@@ -63,7 +70,8 @@ const WORKSPACE_TOOL_ITEMS: Array<{
   { id: "files", title: "文件", subtitle: "浏览项目文件" },
   { id: "review", title: "审查", subtitle: "查看代码更改" },
   { id: "terminal", title: "终端", subtitle: "运行 shell 命令" },
-  { id: "browser", title: "浏览器", subtitle: "在右侧栏里调试前端" }
+  { id: "browser", title: "浏览器", subtitle: "在右侧栏里调试前端" },
+  { id: "loops", title: "Loop", subtitle: "查看 workflow 和 agent 状态" }
 ];
 
 export function WorkspaceRightPanel({
@@ -72,6 +80,7 @@ export function WorkspaceRightPanel({
   view,
   openTabs,
   activeContext,
+  threadId,
   gitStatus,
   selectedFilePath,
   onSelectView,
@@ -89,6 +98,7 @@ export function WorkspaceRightPanel({
   view: WorkspaceRightPanelView;
   openTabs: WorkspacePanelView[];
   activeContext?: RuntimeContext;
+  threadId?: string;
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
   onSelectView: (view: WorkspacePanelView) => void;
@@ -223,6 +233,8 @@ export function WorkspaceRightPanel({
                 onBrowserURLConsumed={onBrowserURLConsumed}
                 onCurrentURLChange={onBrowserURLChange}
               />
+            ) : view === "loops" ? (
+              <WorkspaceLoopPanel activeContext={activeContext} threadId={threadId} open={open} />
             ) : null}
           </div>
         </>
@@ -412,6 +424,8 @@ export function WorkspaceToolIcon({ view, size }: { view: WorkspacePanelView; si
       return <Terminal size={size} />;
     case "browser":
       return <Globe size={size} />;
+    case "loops":
+      return <Activity size={size} />;
   }
 }
 
