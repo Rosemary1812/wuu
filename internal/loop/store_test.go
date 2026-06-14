@@ -132,6 +132,53 @@ func TestRunnerDemoCompletesWithPassingVerification(t *testing.T) {
 	assertFileContains(t, filepath.Join(root, ".loop", "artifacts", "verification.md"), "PASS")
 }
 
+func TestStoreRecordsExternalArtifactRefs(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(filepath.Join(root, ".loop"))
+	now := fixedClock()
+	store.SetClock(now)
+	if _, err := store.Init(Spec{ID: "loop-artifacts", Goal: "track external artifacts"}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	path := filepath.Join(root, "state", "workflows", "run-1", "plan.md")
+
+	if _, err := store.RecordExternalArtifact(ExternalArtifact{
+		Source:   "workflow",
+		SourceID: "run-1",
+		Kind:     "plan",
+		Path:     path,
+	}); err != nil {
+		t.Fatalf("RecordExternalArtifact: %v", err)
+	}
+	if _, err := store.RecordExternalArtifact(ExternalArtifact{
+		Source:   "workflow",
+		SourceID: "run-1",
+		Kind:     "plan",
+		Path:     path,
+	}); err != nil {
+		t.Fatalf("RecordExternalArtifact duplicate: %v", err)
+	}
+
+	state, err := store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if len(state.Artifacts) != 1 {
+		t.Fatalf("external artifact should be deduplicated, got %+v", state.Artifacts)
+	}
+	artifact := state.Artifacts[0]
+	if artifact.Source != "workflow" || artifact.SourceID != "run-1" || artifact.Kind != "plan" || artifact.Path != path {
+		t.Fatalf("unexpected external artifact: %+v", artifact)
+	}
+	events, err := store.Events()
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if events[len(events)-1].Type != "external_artifact_synced" || events[len(events)-1].Artifact != path {
+		t.Fatalf("external artifact event not recorded: %+v", events)
+	}
+}
+
 func TestBuiltinRolesIncludeMakerCheckerSeparation(t *testing.T) {
 	worker, ok := FindRole("worker")
 	if !ok {

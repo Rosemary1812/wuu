@@ -1,7 +1,6 @@
 package loop
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
@@ -67,18 +66,7 @@ func (s AgentControlFailureSink) RecordAgentReport(in agentcontrol.AgentReport) 
 }
 
 func (s AgentControlFailureSink) resolveStore(loopDir string) (*Store, bool, error) {
-	if s.Store != nil {
-		return s.Store, true, nil
-	}
-	loopDir = strings.TrimSpace(loopDir)
-	if loopDir == "" {
-		return nil, false, nil
-	}
-	store := NewStore(loopDir)
-	if _, err := store.LoadState(); err != nil {
-		return nil, false, fmt.Errorf("load loop state for agentcontrol sync: %w", err)
-	}
-	return store, true, nil
+	return resolveExternalLoopStore(s.Store, loopDir, "agentcontrol")
 }
 
 func agentFailureSourceID(in agentcontrol.AgentFailure) string {

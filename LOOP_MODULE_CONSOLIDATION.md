@@ -177,9 +177,15 @@ Implemented pieces:
   foreground runs and best-effort background runs.
 - Loop bindings are projected through `loop.SystemSnapshot` and eval
   observability.
-
-Remaining work: promote workflow plan/script/final report files into loop
-artifact evidence refs instead of only linking the run to a loop.
+- `workflow.Store` exposes an artifact sink and emits workflow artifact facts
+  from the shared `WritePlan`, `WriteScript`, and `WriteFinalReport` write
+  paths.
+- `loop.NewWorkflowArtifactSink` records those facts with
+  `Store.RecordExternalArtifact`, so workflow plan/script/final report files
+  appear in loop state as external artifact refs instead of living only in the
+  workflow run record.
+- `tools.Env.WorkflowStore` installs the loop artifact sink for workflow tool
+  execution paths.
 
 ### P0.4: Harness Report Bridge
 
@@ -205,9 +211,6 @@ Implemented pieces:
   do not write to a guessed loop.
 - Harness task loop bindings are projected through `loop.SystemSnapshot` and
   eval observability.
-
-Remaining work: promote workflow plan/script/final report files into loop
-artifact evidence refs instead of only linking the run to a loop.
 
 ### P1: Control Plane
 

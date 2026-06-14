@@ -167,6 +167,8 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 		RunID      string            `json:"run_id"`
 		Status     workflow.RunState `json:"status"`
 		PlanPath   string            `json:"plan_path"`
+		LoopID     string            `json:"loop_id"`
+		LoopDir    string            `json:"loop_dir"`
 		Phases     []workflow.Phase  `json:"phases"`
 	}
 	if err := json.Unmarshal([]byte(createResp), &created); err != nil {
@@ -186,6 +188,16 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if _, err := os.Stat(created.PlanPath); err != nil {
 		t.Fatalf("expected plan file: %v", err)
+	}
+	if created.LoopID != created.RunID || created.LoopDir != filepath.Join(stateDir, "loops", created.RunID) {
+		t.Fatalf("create_workflow missing loop binding: %+v", created)
+	}
+	createdLoopState, err := looprunner.NewStore(created.LoopDir).LoadState()
+	if err != nil {
+		t.Fatalf("Load create_workflow loop state: %v", err)
+	}
+	if !loopStateHasArtifact(createdLoopState, "workflow", created.RunID, "plan", created.PlanPath) {
+		t.Fatalf("loop state missing workflow plan artifact ref: %+v", createdLoopState.Artifacts)
 	}
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -285,6 +297,13 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	}
 	if final.Run.Status != workflow.RunStateCompleted || final.FinalReportPath == "" {
 		t.Fatalf("unexpected final response: %+v", final)
+	}
+	createdLoopState, err = looprunner.NewStore(created.LoopDir).LoadState()
+	if err != nil {
+		t.Fatalf("Load final workflow loop state: %v", err)
+	}
+	if !loopStateHasArtifact(createdLoopState, "workflow", created.RunID, "final_report", final.FinalReportPath) {
+		t.Fatalf("loop state missing workflow final report artifact ref: %+v", createdLoopState.Artifacts)
 	}
 
 	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -711,6 +730,16 @@ synthesize("# Final\n\nDynamic workflow complete for " + args.feature + ".");
 	}
 	if !strings.Contains(string(report), "Dynamic workflow complete for settings") {
 		t.Fatalf("final report mismatch:\n%s", string(report))
+	}
+	scriptRunLoopState, err := looprunner.NewStore(status.Run.LoopDir).LoadState()
+	if err != nil {
+		t.Fatalf("Load script run loop state: %v", err)
+	}
+	if !loopStateHasArtifact(scriptRunLoopState, "workflow", status.Run.ID, "script", status.Run.ScriptPath) {
+		t.Fatalf("loop state missing workflow script artifact ref: %+v", scriptRunLoopState.Artifacts)
+	}
+	if !loopStateHasArtifact(scriptRunLoopState, "workflow", status.Run.ID, "final_report", status.Run.FinalReportPath) {
+		t.Fatalf("loop state missing script final report artifact ref: %+v", scriptRunLoopState.Artifacts)
 	}
 	if !workflowEventsContain(status.Events, workflow.EventScriptWritten) {
 		t.Fatalf("expected script_written event, got %+v", status.Events)
@@ -1793,6 +1822,18 @@ func workflowStepsContain(steps []string, needle string) bool {
 	needle = strings.ToLower(needle)
 	for _, step := range steps {
 		if strings.Contains(strings.ToLower(step), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func loopStateHasArtifact(state looprunner.State, source, sourceID, kind, path string) bool {
+	for _, artifact := range state.Artifacts {
+		if artifact.Source == source &&
+			artifact.SourceID == sourceID &&
+			artifact.Kind == kind &&
+			artifact.Path == path {
 			return true
 		}
 	}

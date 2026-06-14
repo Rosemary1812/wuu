@@ -416,7 +416,9 @@ func (e *Env) WorkflowStore() (*workflow.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return workflow.NewStore(stateDir), nil
+	store := workflow.NewStore(stateDir)
+	store.SetArtifactSink(looprunner.NewWorkflowArtifactSink(nil))
+	return store, nil
 }
 
 // WorkflowLoopStore returns the loop store bound to one Workflow Run. Workflow

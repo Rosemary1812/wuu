@@ -21,6 +21,15 @@ type ExternalReport struct {
 	CreatedAt    time.Time
 }
 
+type ExternalArtifact struct {
+	Source    string
+	SourceID  string
+	Name      string
+	Kind      string
+	Path      string
+	CreatedAt time.Time
+}
+
 func (s *Store) RecordExternalReport(report ExternalReport) (State, error) {
 	state, err := s.LoadState()
 	if err != nil {
@@ -83,6 +92,61 @@ func (s *Store) RecordExternalReport(report ExternalReport) (State, error) {
 			"changed_files":  len(trimLoopStrings(report.ChangedFiles)),
 			"verification":   len(trimLoopStrings(report.Verification)),
 			"artifact_paths": len(trimLoopStrings(report.Artifacts)),
+		},
+	})
+}
+
+func (s *Store) RecordExternalArtifact(ref ExternalArtifact) (State, error) {
+	state, err := s.LoadState()
+	if err != nil {
+		return State{}, err
+	}
+	if ref.CreatedAt.IsZero() {
+		ref.CreatedAt = s.now()
+	}
+	source := strings.TrimSpace(ref.Source)
+	if source == "" {
+		source = "external_artifact"
+	}
+	sourceID := strings.TrimSpace(ref.SourceID)
+	path := strings.TrimSpace(ref.Path)
+	if path == "" {
+		return State{}, fmt.Errorf("external artifact path is required")
+	}
+	if sourceID == "" {
+		sourceID = path
+	}
+	kind := strings.TrimSpace(ref.Kind)
+	if kind == "" {
+		kind = "evidence"
+	}
+	if !artifactPathExists(state.Artifacts, path) {
+		name := strings.TrimSpace(ref.Name)
+		if name == "" {
+			name = externalArtifactName(source, sourceID, kind, path, 0)
+		}
+		state.Artifacts = append(state.Artifacts, Artifact{
+			Name:      name,
+			Path:      path,
+			Kind:      kind,
+			Source:    source,
+			SourceID:  sourceID,
+			CreatedAt: ref.CreatedAt,
+		})
+		if err := s.SaveState(state); err != nil {
+			return State{}, err
+		}
+	}
+	return state, s.AppendEvent(Event{
+		Type:     "external_artifact_synced",
+		LoopID:   state.ID,
+		Step:     state.CurrentStep,
+		Message:  kind,
+		Artifact: path,
+		Data: map[string]string{
+			"source":    source,
+			"source_id": sourceID,
+			"kind":      kind,
 		},
 	})
 }
