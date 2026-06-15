@@ -74,7 +74,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"prompt": map[string]any{
 					"type":        "string",
-					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() + " Fresh subagents start without conversation context; forks inherit your current context but still need a specific directive.",
+					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() + " For code edits, include owned files/modules and out-of-scope neighbors. Fresh subagents start without conversation context; forks inherit your current context but still need a specific directive.",
 				},
 				"subagent_type": map[string]any{
 					"type":        "string",

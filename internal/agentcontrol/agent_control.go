@@ -2181,7 +2181,7 @@ Do not delegate understanding. Never hand off vague prompts like "based on your 
 
 ## Concurrency
 
-Launch independent agents in parallel whenever possible. Read-only or verification tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts.
+Launch independent agents in parallel whenever possible. Read-only or verification tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts. When you split code-edit work, assign each agent clear files or modules and avoid overlapping ownership.
 
 Fresh subagents run in the foreground by default so you can use their result immediately. Set run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let background completion notifications automatically resume you. Do not call wait_agent after spawn_agent just to poll, and do not repeatedly wait by reflex.
 
@@ -2195,7 +2195,7 @@ Before launching follow-up work, read the returned content yourself and do your 
 
 ## Writing Agent Prompts
 
-Fresh subagent prompts must be self-contained. Include the task, background, role, identity or memory status, scope, non-goals, starting points, acceptance criteria, deliverables, reporting expectations, and constraints. For code-edit subtasks, split work so each agent has a disjoint write set.
+Fresh subagent prompts must be self-contained. Include the task, background, role, identity or memory status, scope, non-goals, starting points, acceptance criteria, deliverables, reporting expectations, and constraints. For code-edit subtasks, explicitly name owned files or modules and nearby files or modules that are out of scope; split work so each agent has a disjoint write set.
 
 Fork prompts can be shorter because the child inherits your context, but they still need a specific directive and scope. Do not re-explain all background in a fork; state what to do, what is out of scope, and what to report.
 

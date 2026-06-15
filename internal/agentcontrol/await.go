@@ -228,7 +228,6 @@ func awaitAgentsNextSteps(result AwaitAgentsResult) []string {
 	if len(steps) == 0 {
 		steps = append(steps, "Use agent reports, changed_files, artifacts, and results to synthesize the parent answer.")
 	}
-	steps = append(steps, "If these agents belong to a Workflow Run, bind this await_agents result with workflow_control action=record_await_results.")
 	return steps
 }
 

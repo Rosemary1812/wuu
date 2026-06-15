@@ -1,6 +1,9 @@
 package agentcontrol
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLookupWorkerType_GeneralPurpose(t *testing.T) {
 	wt, err := LookupWorkerType(DefaultSubagentType)
@@ -22,6 +25,21 @@ func TestLookupWorkerType_DefaultsToGeneralPurpose(t *testing.T) {
 	}
 	if wt.Name != DefaultSubagentType {
 		t.Fatalf("expected default = %s, got %q", DefaultSubagentType, wt.Name)
+	}
+}
+
+func TestGeneralPurposePromptUsesAgentReportNotParsedFinalFormat(t *testing.T) {
+	wt, err := LookupWorkerType(DefaultSubagentType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(wt.SystemPrompt, "call agent_report") {
+		t.Fatalf("general-purpose prompt should require agent_report:\n%s", wt.SystemPrompt)
+	}
+	for _, bad := range []string{"exact structure", "orchestrator parses", "VERDICT"} {
+		if strings.Contains(wt.SystemPrompt, bad) {
+			t.Fatalf("general-purpose prompt should not require parsed final format %q:\n%s", bad, wt.SystemPrompt)
+		}
 	}
 }
 

@@ -13,8 +13,10 @@ func TestAgentBriefContractTextIncludesCoreFields(t *testing.T) {
 		"Background",
 		"Role",
 		"Identity / memory",
-		"Scope",
+		"Scope / ownership",
+		"owned files or modules",
 		"Non-goals",
+		"out of scope",
 		"Acceptance criteria",
 		"Deliverables",
 		"Reporting",
@@ -23,6 +25,16 @@ func TestAgentBriefContractTextIncludesCoreFields(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("agent brief contract missing %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestAgentBriefContractSummaryStaysGeneral(t *testing.T) {
+	summary := AgentBriefContractSummary()
+	if !strings.Contains(summary, "scope, non-goals") {
+		t.Fatalf("agent brief summary should keep general scope wording:\n%s", summary)
+	}
+	if strings.Contains(summary, "ownership") {
+		t.Fatalf("agent brief summary should not mention code-edit ownership:\n%s", summary)
 	}
 }
 
