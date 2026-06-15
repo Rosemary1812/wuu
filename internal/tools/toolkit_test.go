@@ -4830,7 +4830,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 	t.Fatal("spawn_agent must be present in tool definitions")
 }
 
-func TestToolkit_WaitAgentUsesV2MailboxSchema(t *testing.T) {
+func TestToolkit_WaitAgentUsesNotificationSignalSchema(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -4845,10 +4845,10 @@ func TestToolkit_WaitAgentUsesV2MailboxSchema(t *testing.T) {
 			t.Fatalf("wait_agent schema must expose timeout_ms: %#v", d.InputSchema)
 		}
 		if _, ok := props["target"]; ok {
-			t.Fatalf("wait_agent v2 schema must not expose target: %#v", d.InputSchema)
+			t.Fatalf("wait_agent signal schema must not expose target: %#v", d.InputSchema)
 		}
 		if _, ok := d.InputSchema["required"]; ok {
-			t.Fatalf("wait_agent v2 schema must not require fields: %#v", d.InputSchema)
+			t.Fatalf("wait_agent signal schema must not require fields: %#v", d.InputSchema)
 		}
 		return
 	}

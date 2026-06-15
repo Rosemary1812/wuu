@@ -15,6 +15,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -1825,7 +1826,7 @@ func TestAgentCompletionChatMessageTriggersRootTurn(t *testing.T) {
 
 	snap := c.Manager().Get(res.AgentID).Snapshot()
 	msg := c.AgentCompletionChatMessage(snap, agentthread.RootPath)
-	if msg.Role != "user" || msg.Name != "" {
+	if msg.Role != "user" || msg.Name != wuucontext.AgentNotificationMessageName {
 		t.Fatalf("unexpected completion chat message envelope: %+v", msg)
 	}
 	var communication agentthread.InterAgentCommunication

@@ -1015,13 +1015,18 @@ func combineAgentCompletionMessages(msgs []providers.ChatMessage) providers.Chat
 		return msgs[0]
 	}
 	contents := make([]string, 0, len(msgs))
+	name := ""
 	for _, msg := range msgs {
+		if name == "" {
+			name = strings.TrimSpace(msg.Name)
+		}
 		if content := strings.TrimSpace(msg.Content); content != "" {
 			contents = append(contents, content)
 		}
 	}
 	return providers.ChatMessage{
 		Role:    "user",
+		Name:    name,
 		Content: strings.Join(contents, "\n\n"),
 	}
 }

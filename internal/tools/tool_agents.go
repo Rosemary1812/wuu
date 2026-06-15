@@ -63,7 +63,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Use run_in_background=true when you have genuinely independent work to do in parallel. Otherwise keep the " +
 			"agent in the foreground so its result can inform your next step. Verification agents always run in the background. " +
 			"After spawning background agents, continue meaningful non-overlapping local work when available; otherwise end your turn " +
-			"and let the mailbox notification resume you. Do not sleep, poll, or loop checking status. Use await_agents only when " +
+			"and let the background completion notification resume you. Do not sleep, poll, or loop checking status. Use await_agents only when " +
 			"synthesis or integration depends on child output. Spawn multiple independent agents in parallel by calling spawn_agent " +
 			"multiple times in the same response.",
 		InputSchema: map[string]any{
@@ -361,10 +361,10 @@ func (t *WaitAgentTool) IsConcurrencySafe() bool { return true }
 func (t *WaitAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "wait_agent",
-		Description: "Wait for a mailbox update from any live agent, including queued messages " +
-			"and final-status notifications. Does not return the content; returns either " +
-			"a completion summary or a timeout summary. Use sparingly; keep working locally " +
-			"when agent output is not blocking your next critical step.",
+		Description: "Wait for the next background agent notification, including queued messages " +
+			"and final-status notifications. Does not return notification content; returns either " +
+			"a completion signal or a timeout summary. Use await_agents when you need child output for synthesis. " +
+			"Use wait_agent sparingly; keep working locally when agent output is not blocking your next critical step.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

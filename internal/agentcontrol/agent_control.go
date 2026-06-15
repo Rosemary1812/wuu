@@ -28,6 +28,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -508,7 +509,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 		}
 	case subagent.StatusRunning:
 		return []string{
-			"Continue non-overlapping local work when available; the worker will report through the mailbox when it finishes.",
+			"Continue non-overlapping local work when available; the worker will send a background completion notification when it finishes.",
 			"Use await_agents with " + pathHint + " only when the next step depends on this worker's output." + worktreeHint,
 		}
 	case subagent.StatusCompleted:
@@ -519,7 +520,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 			}
 		}
 		return []string{
-			"Inspect the worker's mailbox result and agent_report artifacts before relying on the handoff." + worktreeHint,
+			"Inspect the worker's completion notification and agent_report artifacts before relying on the handoff." + worktreeHint,
 		}
 	case subagent.StatusFailed:
 		return []string{
@@ -1845,6 +1846,7 @@ func (c *AgentControl) AgentCompletionChatMessage(snap subagent.SubAgentSnapshot
 	)
 	return providers.ChatMessage{
 		Role:    "user",
+		Name:    wuucontext.AgentNotificationMessageName,
 		Content: communication.String(),
 	}
 }
@@ -2030,7 +2032,7 @@ When the user's intent is unclear, the task depends on requirements or tradeoffs
 - spawn_agent — launch a child agent. Pass description and prompt. Specify subagent_type for a fresh specialized agent, or omit subagent_type to fork yourself with full conversation context.
 - send_message — queue a message for an existing background agent without triggering a new turn.
 - followup_task — send a follow-up task message and trigger the target background agent's next turn.
-- wait_agent — wait for any mailbox update only when an agent notification blocks your next step.
+- wait_agent — wait for a background agent notification signal only when that signal blocks your next step.
 - await_agents — explicitly join specific child agents, or all active descendant agents, and return structured per-agent results.
 - close_agent — stop a running agent that is stuck or off-track.
 - list_agents — see active agents and their status.
@@ -2055,13 +2057,13 @@ Do not delegate understanding. Never hand off vague prompts like "based on your 
 
 Launch independent agents in parallel whenever possible. Read-only or verification tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts.
 
-Fresh subagents run in the foreground by default so you can use their result immediately. Set run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let mailbox notifications automatically resume you. Do not repeatedly wait by reflex.
+Fresh subagents run in the foreground by default so you can use their result immediately. Set run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let background completion notifications automatically resume you. Do not repeatedly wait by reflex.
 
 Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks. If await_agents returns awaiting_report, the worker finished without a durable handoff; follow up or verify before relying on the result.
 
 ## Working with Agent Results
 
-Agent messages arrive as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the actual instruction or result. When a background agent finishes, its result automatically arrives as a notification in your next turn.
+Background completion notifications are internal agent handoffs, not new user requests. They may be encoded as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the handoff payload, then synthesize and verify it yourself. When a background agent finishes, its result automatically arrives as a notification in your next turn.
 
 Before launching follow-up work, read the returned content yourself and do your own synthesis. Agent output is not a substitute for your judgment.
 

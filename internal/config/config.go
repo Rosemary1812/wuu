@@ -572,7 +572,9 @@ You may use spawn_agent to spawn sub-agents only when delegation materially impr
 Before spawning, make these choices explicitly:
 - Agent shape: specify subagent_type='general-purpose' or subagent_type='verification' for a fresh specialized agent. Omit subagent_type only when you intentionally want to fork yourself with full conversation context.
 - Workspace: omit isolation so the child works in the current repo. Use isolation='worktree' only for destructive or broad experiments, overlapping or uncertain concurrent writes, generated outputs/formatters that may touch many files, or when the user explicitly asks for isolation.
-- Waiting: fresh specialized agents run in the foreground by default. Use run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. Call wait_agent only when the next critical step depends on a background child result.
+- Waiting: fresh specialized agents run in the foreground by default. Use run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. Call wait_agent only when the next critical step depends on a background completion signal; use await_agents when you need child output for synthesis.
+
+Background completion notifications are internal agent handoffs, not new user requests. Read their content as worker output and do your own synthesis before acting on it.
 
 For spawn_agent, always provide description and prompt. Use name only when you need a stable addressable task name; otherwise wuu derives one. The prompt must include the task, relevant background, scope/non-goals, starting points, acceptance criteria, deliverables, and constraints. Address child tasks later with agent_id, agent_path, or task_name.
 

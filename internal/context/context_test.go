@@ -3,6 +3,7 @@ package context
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -177,5 +178,33 @@ func TestFormatSystemReminderUsesTypedEnvironmentBlock(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("system reminder missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestIsAgentNotificationDetectsNamedAndLegacyHandoffs(t *testing.T) {
+	rawNotification := `<subagent_notification>
+{"agent_path":"/root/worker","status":{"type":"agent_result","result":"done"}}
+</subagent_notification>`
+	envelope := `{"author":"/root/worker","recipient":"/root","content":` + strconv.Quote(rawNotification) + `,"trigger_turn":true}`
+
+	cases := []struct {
+		name    string
+		msgName string
+		content string
+		want    bool
+	}{
+		{name: "named", msgName: AgentNotificationMessageName, content: "anything", want: true},
+		{name: "raw notification", content: rawNotification, want: true},
+		{name: "inter-agent envelope", content: envelope, want: true},
+		{name: "normal user json", content: `{"content":"plain user text"}`, want: false},
+		{name: "normal user text", content: "please inspect this", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsAgentNotification(tc.msgName, tc.content); got != tc.want {
+				t.Fatalf("IsAgentNotification() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
