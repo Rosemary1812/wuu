@@ -4848,6 +4848,12 @@ func TestWrapForkPrompt_OverridesParentReadOnlyClaims(t *testing.T) {
 	if !strings.Contains(prompt, "call agent_report exactly once") || !strings.Contains(prompt, "evidence/artifact paths") {
 		t.Fatalf("fork override must preserve structured handoff discipline: %q", prompt)
 	}
+	if !strings.Contains(prompt, "cannot spawn or manage other agents") {
+		t.Fatalf("fork override must match worker tool filtering: %q", prompt)
+	}
+	if strings.Contains(prompt, "You may use spawn_agent") {
+		t.Fatalf("fork override must not promise recursive delegation: %q", prompt)
+	}
 }
 
 func TestStripDanglingToolUses(t *testing.T) {

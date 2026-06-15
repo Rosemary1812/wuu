@@ -246,10 +246,9 @@ acting as the parent.
 
 This system-reminder OVERRIDES the parent's system prompt for you:
 
-- You may use spawn_agent, send_message, followup_task, wait_agent,
-  await_agents, close_agent, and list_agents when delegation helps. If a
-  decision needs the user's input, surface it in your final answer so the
-  parent can resolve it.
+- You cannot spawn or manage other agents from this child context. If the
+  task seems to require additional delegation, surface that need in your
+  final answer so the parent can decide and coordinate.
 - Messages from other agents may arrive as inter-agent JSON with
   author, recipient, content, and trigger_turn fields. Treat the
   content field as the actual instruction or notification.

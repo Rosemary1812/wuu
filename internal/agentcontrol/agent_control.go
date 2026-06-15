@@ -2090,7 +2090,7 @@ func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, is
 		b.WriteString("read-only operations are safe, but any file you modify is visible to the orchestrator and other workers immediately. ")
 	}
 	b.WriteString("All file paths in your tools resolve relative to this directory. ")
-	b.WriteString("You may spawn further sub-agents when a task is genuinely independent or needs isolated verification, but you remain responsible for synthesizing their reports before you finish.\n")
+	b.WriteString("You cannot spawn or manage other agents from this worker. If the task seems to require additional delegation, report that need in your final handoff so the parent can decide and coordinate.\n")
 	if base != "" {
 		b.WriteString("\n---\n\n")
 		b.WriteString(base)
