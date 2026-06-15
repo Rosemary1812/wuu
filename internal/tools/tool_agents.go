@@ -361,10 +361,9 @@ func (t *WaitAgentTool) IsConcurrencySafe() bool { return true }
 func (t *WaitAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "wait_agent",
-		Description: "Wait for the next background agent notification, including queued messages " +
-			"and final-status notifications. Does not return notification content; returns either " +
-			"a completion signal or a timeout summary. Use await_agents when you need child output for synthesis. " +
-			"Use wait_agent sparingly; keep working locally when agent output is not blocking your next critical step.",
+		Description: "Wait briefly for a background agent notification only when the current turn is blocked on that signal. " +
+			"This is not a join or result tool: it does not return child output. Do not call wait_agent after spawn_agent just to poll. " +
+			"Use await_agents when you need child output for synthesis; otherwise continue local work or end the turn and let automatic completion notifications resume you.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -405,56 +404,42 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 }
 
 type waitAgentResult struct {
-	Action                       string   `json:"action"`
-	Message                      string   `json:"message"`
-	TimedOut                     bool     `json:"timed_out"`
-	SignalType                   string   `json:"signal_type"`
-	AgentID                      string   `json:"agent_id,omitempty"`
-	AgentPath                    string   `json:"agent_path,omitempty"`
-	TaskName                     string   `json:"task_name,omitempty"`
-	ParentID                     string   `json:"parent_id,omitempty"`
-	Status                       string   `json:"status,omitempty"`
-	Description                  string   `json:"description,omitempty"`
-	PendingMessageCount          int      `json:"pending_message_count,omitempty"`
-	AwaitTarget                  string   `json:"await_target,omitempty"`
-	DetailsAvailableVia          string   `json:"details_available_via,omitempty"`
-	RequiresAwaitAgentsForOutput bool     `json:"requires_await_agents_for_output,omitempty"`
-	NextSteps                    []string `json:"next_steps,omitempty"`
+	Action     string `json:"action"`
+	Message    string `json:"message"`
+	TimedOut   bool   `json:"timed_out"`
+	SignalType string `json:"signal_type"`
+	AgentID    string `json:"agent_id,omitempty"`
+	AgentPath  string `json:"agent_path,omitempty"`
+	TaskName   string `json:"task_name,omitempty"`
+	Status     string `json:"status,omitempty"`
 }
 
 func waitAgentResultFromSignal(signal agentcontrol.WaitAgentSignal) waitAgentResult {
 	result := waitAgentResult{
-		Action:              "wait_agent",
-		TimedOut:            !signal.Received,
-		SignalType:          signal.SignalType,
-		AgentID:             signal.AgentID,
-		AgentPath:           signal.AgentPath,
-		TaskName:            signal.TaskName,
-		ParentID:            signal.ParentID,
-		Status:              signal.Status,
-		Description:         signal.Description,
-		PendingMessageCount: signal.PendingMessageCount,
+		Action:     "wait_agent",
+		TimedOut:   !signal.Received,
+		SignalType: publicWaitAgentSignalType(signal.SignalType),
+		AgentID:    signal.AgentID,
+		AgentPath:  signal.AgentPath,
+		TaskName:   signal.TaskName,
+		Status:     signal.Status,
 	}
 	if result.SignalType == "" {
 		result.SignalType = agentcontrol.WaitAgentSignalTimeout
 	}
 	result.Message = waitAgentMessage(result)
-	result.NextSteps = waitAgentNextSteps(result)
-	if waitAgentSignalHasAwaitableDetails(result.SignalType) {
-		result.AwaitTarget = result.AgentPath
-		if result.AwaitTarget == "" {
-			result.AwaitTarget = result.AgentID
-		}
-		result.DetailsAvailableVia = "await_agents"
-		result.RequiresAwaitAgentsForOutput = true
-	}
 	return result
+}
+
+func publicWaitAgentSignalType(signalType string) string {
+	if signalType == agentcontrol.WaitAgentSignalQueuedMessage {
+		return "notification_received"
+	}
+	return signalType
 }
 
 func waitAgentMessage(result waitAgentResult) string {
 	switch result.SignalType {
-	case agentcontrol.WaitAgentSignalQueuedMessage:
-		return "Queued message available for this agent."
 	case agentcontrol.WaitAgentSignalCompleted:
 		return "Background agent completed."
 	case agentcontrol.WaitAgentSignalFailed:
@@ -465,44 +450,6 @@ func waitAgentMessage(result waitAgentResult) string {
 		return "Wait timed out; no background agent notification arrived before the timeout."
 	default:
 		return "Background agent notification received."
-	}
-}
-
-func waitAgentNextSteps(result waitAgentResult) []string {
-	switch result.SignalType {
-	case agentcontrol.WaitAgentSignalQueuedMessage:
-		return []string{
-			"Continue this agent's turn; the queued message will be injected before the next model step.",
-			"Only call followup_task or send_message if you need to send an additional instruction to another agent.",
-		}
-	case agentcontrol.WaitAgentSignalCompleted:
-		return []string{
-			"Call await_agents with await_target when you need this child output for synthesis or verification.",
-			"Continue local work if the child output is not blocking your next critical step.",
-		}
-	case agentcontrol.WaitAgentSignalFailed, agentcontrol.WaitAgentSignalCancelled:
-		return []string{
-			"Call await_agents with await_target to inspect the child status, error, and any artifacts before retrying or summarizing.",
-			"Decide whether to retry with a narrower brief, continue without that agent, or ask the user if the failure blocks the task.",
-		}
-	case agentcontrol.WaitAgentSignalTimeout:
-		return []string{
-			"Continue non-overlapping local work when possible.",
-			"Call wait_agent again only if a background notification still blocks your next step; use await_agents when you need child output.",
-		}
-	default:
-		return []string{
-			"Inspect the signal fields before deciding whether to continue locally or call await_agents for child output.",
-		}
-	}
-}
-
-func waitAgentSignalHasAwaitableDetails(signalType string) bool {
-	switch signalType {
-	case agentcontrol.WaitAgentSignalCompleted, agentcontrol.WaitAgentSignalFailed, agentcontrol.WaitAgentSignalCancelled:
-		return true
-	default:
-		return false
 	}
 }
 

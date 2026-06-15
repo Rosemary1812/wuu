@@ -4855,7 +4855,7 @@ func TestToolkit_WaitAgentUsesNotificationSignalSchema(t *testing.T) {
 	t.Fatal("wait_agent must be present in tool definitions")
 }
 
-func TestToolkit_WaitAgentReturnsSignalGuidance(t *testing.T) {
+func TestToolkit_WaitAgentReturnsNarrowTimeoutSignal(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -4886,10 +4886,9 @@ func TestToolkit_WaitAgentReturnsSignalGuidance(t *testing.T) {
 		t.Fatalf("wait_agent: %v", err)
 	}
 	var parsed struct {
-		Action     string   `json:"action"`
-		TimedOut   bool     `json:"timed_out"`
-		SignalType string   `json:"signal_type"`
-		NextSteps  []string `json:"next_steps"`
+		Action     string `json:"action"`
+		TimedOut   bool   `json:"timed_out"`
+		SignalType string `json:"signal_type"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("decode wait_agent result: %v\n%s", err, resp)
@@ -4897,12 +4896,18 @@ func TestToolkit_WaitAgentReturnsSignalGuidance(t *testing.T) {
 	if parsed.Action != "wait_agent" || !parsed.TimedOut || parsed.SignalType != agentcontrol.WaitAgentSignalTimeout {
 		t.Fatalf("unexpected wait_agent result: %+v", parsed)
 	}
-	if !strings.Contains(strings.Join(parsed.NextSteps, " "), "await_agents") {
-		t.Fatalf("wait_agent result should guide follow-up tool use: %+v", parsed.NextSteps)
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(resp), &raw); err != nil {
+		t.Fatalf("decode wait_agent result map: %v\n%s", err, resp)
+	}
+	for _, key := range []string{"next_steps", "await_target", "details_available_via", "requires_await_agents_for_output"} {
+		if _, ok := raw[key]; ok {
+			t.Fatalf("wait_agent result should stay narrow, found %s in %s", key, resp)
+		}
 	}
 }
 
-func TestWaitAgentResultFromCompletedSignalPointsToAwaitAgents(t *testing.T) {
+func TestWaitAgentResultFromCompletedSignalIsNarrow(t *testing.T) {
 	result := waitAgentResultFromSignal(agentcontrol.WaitAgentSignal{
 		Received:   true,
 		SignalType: agentcontrol.WaitAgentSignalCompleted,
@@ -4914,11 +4919,21 @@ func TestWaitAgentResultFromCompletedSignalPointsToAwaitAgents(t *testing.T) {
 	if result.TimedOut || result.SignalType != agentcontrol.WaitAgentSignalCompleted {
 		t.Fatalf("unexpected completed wait result: %+v", result)
 	}
-	if result.AwaitTarget != "/root/review" || result.DetailsAvailableVia != "await_agents" || !result.RequiresAwaitAgentsForOutput {
-		t.Fatalf("completed signal should point to await_agents: %+v", result)
+	if result.AgentPath != "/root/review" || result.AgentID != "agent-1" || result.Status != "completed" {
+		t.Fatalf("completed signal should keep only identity/status fields: %+v", result)
 	}
-	if !strings.Contains(strings.Join(result.NextSteps, " "), "await_agents") {
-		t.Fatalf("completed signal should guide await_agents: %+v", result.NextSteps)
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal completed wait result: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("decode completed wait result: %v\n%s", err, raw)
+	}
+	for _, key := range []string{"next_steps", "await_target", "details_available_via", "requires_await_agents_for_output"} {
+		if _, ok := decoded[key]; ok {
+			t.Fatalf("completed wait result should stay narrow, found %s in %s", key, raw)
+		}
 	}
 }
 
