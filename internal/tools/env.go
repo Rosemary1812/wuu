@@ -524,12 +524,12 @@ func (e *Env) WorkflowStore() (*workflow.Store, error) {
 }
 
 // WorkflowLoopStore returns the loop store bound to one Workflow Run. Workflow
-// loops live under workspace state so multiple runs do not overwrite the
-// workspace-root .loop used by the CLI demo path.
+// loops live under workspace state so multiple runs and CLI demos do not write
+// generated state into the project tree.
 func (e *Env) WorkflowLoopStore(runID string) (*looprunner.Store, error) {
 	stateDir, err := e.WorkspaceStateDir()
 	if err != nil {
 		return nil, err
 	}
-	return looprunner.NewStore(filepath.Join(stateDir, "loops", strings.TrimSpace(runID))), nil
+	return looprunner.NewStore(statepath.LoopDir(stateDir, strings.TrimSpace(runID))), nil
 }

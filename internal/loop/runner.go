@@ -159,7 +159,8 @@ Goal: %s
 
 Findings:
 - Loop state is durable outside model context.
-- Next phases must read .loop/state.json and .loop/failures.md before acting.
+- Next phases must read state.json, events.jsonl, and views/failures.md from
+  the Wuu-managed loop store before acting.
 `, state.Goal)
 }
 
@@ -170,7 +171,7 @@ Goal: %s
 
 Plan:
 1. Keep the core agent loop unchanged.
-2. Persist workflow state and artifacts in .loop.
+2. Persist workflow state and artifacts in the Wuu-managed loop store.
 3. Run verification before final summary.
 4. Require reviewer or human approval when policy asks for it.
 `, state.Goal)
@@ -218,12 +219,12 @@ func renderFinalArtifact(state State) string {
 Goal: %s
 
 Outcome:
-- Durable state: .loop/state.json
-- Progress: .loop/progress.md
-- Decisions: .loop/decisions.md
-- Failures: .loop/failures.md
-- Events: .loop/events.jsonl
-- Verification: .loop/artifacts/verification.md
+- Durable state: state.json
+- Events: events.jsonl
+- Progress view: views/progress.md
+- Decisions view: views/decisions.md
+- Failures view: views/failures.md
+- Verification: artifacts/verification.md
 `, state.Goal)
 }
 

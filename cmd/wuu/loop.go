@@ -11,7 +11,10 @@ import (
 	"strings"
 
 	looprunner "github.com/blueberrycongee/wuu/internal/loop"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
+
+const defaultLoopID = "demo"
 
 func runLoop(args []string) error {
 	if len(args) == 0 {
@@ -45,6 +48,10 @@ func runLoopDemo(args []string) error {
 	if err != nil {
 		return err
 	}
+	store, loopID, workspaceStateDir, err := resolveLoopStore(rootDir, *id)
+	if err != nil {
+		return err
+	}
 	commands := make([]looprunner.CommandCheck, 0, len(verifyCommands))
 	for i, command := range verifyCommands {
 		command = strings.TrimSpace(command)
@@ -61,7 +68,7 @@ func runLoopDemo(args []string) error {
 	}
 
 	spec := looprunner.Spec{
-		ID:            strings.TrimSpace(*id),
+		ID:            loopID,
 		Goal:          strings.TrimSpace(*goal),
 		Task:          strings.TrimSpace(*task),
 		AssignedAgent: "lead",
@@ -71,7 +78,7 @@ func runLoopDemo(args []string) error {
 		},
 		Permissions: looprunner.Permissions{
 			ReadOnly:                  true,
-			EditAllowedPaths:          []string{".loop/**"},
+			EditAllowedPaths:          []string{filepath.Join(workspaceStateDir, "loops", loopID, "**")},
 			ShellAllowedCommands:      append([]string(nil), verifyCommands...),
 			NetworkAllowed:            false,
 			BrowserAllowed:            false,
@@ -94,7 +101,7 @@ func runLoopDemo(args []string) error {
 		},
 	}
 	runner := looprunner.Runner{
-		Store:    looprunner.NewStore(looprunner.DefaultDir(rootDir)),
+		Store:    store,
 		Verifier: looprunner.CommandVerifier{WorkDir: rootDir},
 	}
 	state, err := runner.RunDemo(context.Background(), spec)
@@ -117,6 +124,7 @@ func runLoopStatus(args []string) error {
 	fs := flag.NewFlagSet("loop status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	workdir := fs.String("workdir", "", "workspace directory")
+	id := fs.String("id", "", "loop id")
 	jsonOutput := fs.Bool("json", false, "output loop state as JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -125,7 +133,10 @@ func runLoopStatus(args []string) error {
 	if err != nil {
 		return err
 	}
-	store := looprunner.NewStore(looprunner.DefaultDir(rootDir))
+	store, _, _, err := resolveLoopStore(rootDir, *id)
+	if err != nil {
+		return err
+	}
 	state, err := store.LoadState()
 	if err != nil {
 		return err
@@ -158,6 +169,35 @@ func printLoopStateSummary(state looprunner.State, loopDir string) {
 	if len(state.NextSteps) > 0 {
 		fmt.Printf("next_step: %s\n", state.NextSteps[0])
 	}
+}
+
+func resolveLoopStore(rootDir, requestedID string) (*looprunner.Store, string, string, error) {
+	loopID := strings.TrimSpace(requestedID)
+	if loopID == "" {
+		loopID = defaultLoopID
+	}
+	if err := validateLoopID(loopID); err != nil {
+		return nil, "", "", err
+	}
+	wuuHome, err := statepath.Home("")
+	if err != nil {
+		return nil, "", "", err
+	}
+	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, rootDir)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return looprunner.NewStore(statepath.LoopDir(workspaceStateDir, loopID)), loopID, workspaceStateDir, nil
+}
+
+func validateLoopID(loopID string) error {
+	if loopID == "" {
+		return errors.New("loop id is required")
+	}
+	if loopID == "." || loopID == ".." || filepath.Base(loopID) != loopID || strings.ContainsAny(loopID, `/\`) {
+		return fmt.Errorf("loop id must be an id, not a path: %q", loopID)
+	}
+	return nil
 }
 
 type stringListFlag []string

@@ -1,7 +1,6 @@
 package loop
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,8 +9,7 @@ import (
 )
 
 func TestAgentControlFailureSinkWritesLoopFailure(t *testing.T) {
-	root := t.TempDir()
-	store := NewStore(filepath.Join(root, ".loop"))
+	store := NewStore(loopTestDir(t, "loop-agentcontrol"))
 	store.SetClock(fixedClock())
 	if _, err := store.Init(Spec{
 		ID:   "loop-agentcontrol",
@@ -59,8 +57,7 @@ func TestAgentControlFailureSinkWritesLoopFailure(t *testing.T) {
 }
 
 func TestAgentControlFailureSinkWritesLoopReportProgress(t *testing.T) {
-	root := t.TempDir()
-	store := NewStore(filepath.Join(root, ".loop"))
+	store := NewStore(loopTestDir(t, "loop-agent-report"))
 	store.SetClock(fixedClock())
 	if _, err := store.Init(Spec{
 		ID:   "loop-agent-report",

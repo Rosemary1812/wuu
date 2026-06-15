@@ -10,7 +10,7 @@ import (
 )
 
 func TestStorePersistsStateLedgersAndEvents(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), ".loop")
+	dir := loopTestDir(t, "loop-test")
 	store := NewStore(dir)
 	now := fixedClock()
 	store.SetClock(now)
@@ -51,9 +51,9 @@ func TestStorePersistsStateLedgersAndEvents(t *testing.T) {
 	if loaded.Status != StatusNeedsHuman || !loaded.NeedsHuman || loaded.CurrentBlocker != "go test failed" {
 		t.Fatalf("failure should update blocker and escalation: %+v", loaded)
 	}
-	assertFileContains(t, filepath.Join(dir, "progress.md"), "read relevant code")
-	assertFileContains(t, filepath.Join(dir, "decisions.md"), "use LoopRunner")
-	assertFileContains(t, filepath.Join(dir, "failures.md"), "go test failed")
+	assertFileContains(t, filepath.Join(dir, "views", "progress.md"), "read relevant code")
+	assertFileContains(t, filepath.Join(dir, "views", "decisions.md"), "use LoopRunner")
+	assertFileContains(t, filepath.Join(dir, "views", "failures.md"), "go test failed")
 
 	events, err := store.Events()
 	if err != nil {
@@ -69,7 +69,8 @@ func TestStorePersistsStateLedgersAndEvents(t *testing.T) {
 
 func TestRunnerDemoRecordsVerificationFailure(t *testing.T) {
 	root := t.TempDir()
-	store := NewStore(filepath.Join(root, ".loop"))
+	dir := filepath.Join(root, "loops", "loop-fail")
+	store := NewStore(dir)
 	now := fixedClock()
 	store.SetClock(now)
 	runner := &Runner{
@@ -95,13 +96,14 @@ func TestRunnerDemoRecordsVerificationFailure(t *testing.T) {
 	if state.Status != StatusNeedsHuman || len(state.Failures) != 1 {
 		t.Fatalf("expected failed verifier state, got %+v", state)
 	}
-	assertFileContains(t, filepath.Join(root, ".loop", "artifacts", "verification.md"), "FAILING")
-	assertFileContains(t, filepath.Join(root, ".loop", "failures.md"), "exit code 7")
+	assertFileContains(t, filepath.Join(dir, "artifacts", "verification.md"), "FAILING")
+	assertFileContains(t, filepath.Join(dir, "views", "failures.md"), "exit code 7")
 }
 
 func TestRunnerDemoCompletesWithPassingVerification(t *testing.T) {
 	root := t.TempDir()
-	store := NewStore(filepath.Join(root, ".loop"))
+	dir := filepath.Join(root, "loops", "loop-pass")
+	store := NewStore(dir)
 	now := fixedClock()
 	runner := &Runner{
 		Store: store,
@@ -129,12 +131,12 @@ func TestRunnerDemoCompletesWithPassingVerification(t *testing.T) {
 		t.Fatal("final artifact should be recorded")
 	}
 	assertFileContains(t, state.FinalArtifact, "Durable state")
-	assertFileContains(t, filepath.Join(root, ".loop", "artifacts", "verification.md"), "PASS")
+	assertFileContains(t, filepath.Join(dir, "artifacts", "verification.md"), "PASS")
 }
 
 func TestStoreRecordsExternalArtifactRefs(t *testing.T) {
 	root := t.TempDir()
-	store := NewStore(filepath.Join(root, ".loop"))
+	store := NewStore(filepath.Join(root, "loops", "loop-artifacts"))
 	now := fixedClock()
 	store.SetClock(now)
 	if _, err := store.Init(Spec{ID: "loop-artifacts", Goal: "track external artifacts"}); err != nil {
@@ -180,7 +182,7 @@ func TestStoreRecordsExternalArtifactRefs(t *testing.T) {
 }
 
 func TestStoreRequestsAndResolvesApproval(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), ".loop")
+	dir := loopTestDir(t, "loop-approval")
 	store := NewStore(dir)
 	now := fixedClock()
 	store.SetClock(now)
@@ -209,7 +211,7 @@ func TestStoreRequestsAndResolvesApproval(t *testing.T) {
 	if approval.Status != ApprovalStatusPending {
 		t.Fatalf("approval should be pending: %+v", approval)
 	}
-	assertFileContains(t, filepath.Join(dir, "approvals.md"), "Apply worker diff")
+	assertFileContains(t, filepath.Join(dir, "views", "approvals.md"), "Apply worker diff")
 
 	state, resolved, err := store.ResolveApproval(ApprovalResolution{
 		ID:         "approval-1",
@@ -226,7 +228,7 @@ func TestStoreRequestsAndResolvesApproval(t *testing.T) {
 	if state.NeedsHuman || state.Status != StatusRunning || state.CurrentBlocker != "" {
 		t.Fatalf("resolved last approval should release human gate: %+v", state)
 	}
-	assertFileContains(t, filepath.Join(dir, "approvals.md"), "reviewed diff")
+	assertFileContains(t, filepath.Join(dir, "views", "approvals.md"), "reviewed diff")
 
 	events, err := store.Events()
 	if err != nil {
@@ -238,7 +240,7 @@ func TestStoreRequestsAndResolvesApproval(t *testing.T) {
 }
 
 func TestStoreRejectedApprovalBlocksLoop(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), ".loop")
+	dir := loopTestDir(t, "loop-rejected-approval")
 	store := NewStore(dir)
 	now := fixedClock()
 	store.SetClock(now)
@@ -270,8 +272,8 @@ func TestStoreRejectedApprovalBlocksLoop(t *testing.T) {
 	if state.Status != StatusBlocked || state.NeedsHuman || len(state.Failures) != 1 {
 		t.Fatalf("rejected approval should block loop with failure feedback: %+v", state)
 	}
-	assertFileContains(t, filepath.Join(dir, "failures.md"), "approval rejected")
-	assertFileContains(t, filepath.Join(dir, "approvals.md"), "too risky")
+	assertFileContains(t, filepath.Join(dir, "views", "failures.md"), "approval rejected")
+	assertFileContains(t, filepath.Join(dir, "views", "approvals.md"), "too risky")
 }
 
 func TestBuiltinRolesIncludeMakerCheckerSeparation(t *testing.T) {
@@ -298,6 +300,11 @@ func TestBuiltinRolesIncludeMakerCheckerSeparation(t *testing.T) {
 func fixedClock() func() time.Time {
 	ts := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
 	return func() time.Time { return ts }
+}
+
+func loopTestDir(t *testing.T, loopID string) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "loops", loopID)
 }
 
 func assertFileContains(t *testing.T, path, needle string) {

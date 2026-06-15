@@ -217,7 +217,7 @@ func TestStoreSyncsWorkflowArtifactsToSink(t *testing.T) {
 	sink := &captureArtifactSink{}
 	store := NewStore(t.TempDir())
 	store.SetArtifactSink(sink)
-	loopDir := filepath.Join(t.TempDir(), ".loop")
+	loopDir := filepath.Join(t.TempDir(), "loops", "loop-1")
 	if _, err := store.CreateRun(Run{
 		ID:      "run_1",
 		Status:  RunStateRunning,

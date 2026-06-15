@@ -1,14 +1,12 @@
 package loop
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestSyncSnapshotFailuresRecordsExternalAttentionOnce(t *testing.T) {
-	root := t.TempDir()
-	store := NewStore(filepath.Join(root, ".loop"))
+	store := NewStore(loopTestDir(t, "loop-sync"))
 	store.SetClock(fixedClock())
 	if _, err := store.Init(Spec{
 		ID:   "loop-sync",

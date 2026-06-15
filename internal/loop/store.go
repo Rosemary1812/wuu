@@ -22,14 +22,6 @@ type Store struct {
 	mu  sync.Mutex
 }
 
-func DefaultDir(root string) string {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		return ".loop"
-	}
-	return filepath.Join(root, ".loop")
-}
-
 func NewStore(dir string) *Store {
 	return &Store{
 		dir: strings.TrimSpace(dir),
@@ -248,7 +240,7 @@ func (s *Store) AddFailure(failure Failure) (State, error) {
 		state.Status = StatusNeedsHuman
 	}
 	if len(state.NextSteps) == 0 {
-		state.NextSteps = []string{"read .loop/failures.md and fix the recorded failure before retrying"}
+		state.NextSteps = []string{"read views/failures.md in the loop store and fix the recorded failure before retrying"}
 	}
 	if err := s.SaveState(state); err != nil {
 		return State{}, err
@@ -502,22 +494,23 @@ func (s *Store) FailureContext() (string, error) {
 }
 
 func (s *Store) rewriteLedgersLocked(state State) error {
-	if err := writeMarkdown(filepath.Join(s.dir, "progress.md"), "# Progress\n\n", func(b *strings.Builder) {
+	viewDir := filepath.Join(s.dir, "views")
+	if err := writeMarkdown(filepath.Join(viewDir, "progress.md"), "# Progress\n\n", func(b *strings.Builder) {
 		renderProgress(b, state.Progress)
 	}); err != nil {
 		return err
 	}
-	if err := writeMarkdown(filepath.Join(s.dir, "decisions.md"), "# Decisions\n\n", func(b *strings.Builder) {
+	if err := writeMarkdown(filepath.Join(viewDir, "decisions.md"), "# Decisions\n\n", func(b *strings.Builder) {
 		renderDecisions(b, state.Decisions)
 	}); err != nil {
 		return err
 	}
-	if err := writeMarkdown(filepath.Join(s.dir, "failures.md"), "# Failures\n\n", func(b *strings.Builder) {
+	if err := writeMarkdown(filepath.Join(viewDir, "failures.md"), "# Failures\n\n", func(b *strings.Builder) {
 		renderFailures(b, state.Failures)
 	}); err != nil {
 		return err
 	}
-	return writeMarkdown(filepath.Join(s.dir, "approvals.md"), "# Approvals\n\n", func(b *strings.Builder) {
+	return writeMarkdown(filepath.Join(viewDir, "approvals.md"), "# Approvals\n\n", func(b *strings.Builder) {
 		renderApprovals(b, state.Approvals)
 	})
 }
@@ -528,6 +521,9 @@ func writeMarkdown(path, header string, render func(*strings.Builder)) error {
 	render(&b)
 	if strings.TrimSpace(b.String()) == strings.TrimSpace(header) {
 		b.WriteString("_None recorded._\n")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }

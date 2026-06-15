@@ -2,7 +2,7 @@
 
 ## Problem
 
-The P0 loop work added durable `.loop` state, but Wuu already had durable
+The P0 loop work added durable loop state, but Wuu already had durable
 workflow and harness stores. Without an explicit consolidation boundary, the
 system can drift into three parallel task systems:
 
@@ -104,8 +104,8 @@ drive long-running work. They should not grow new long-running state models.
 | Run status | `loop.Status`, `workflow.RunState`, `harness.TaskStatus` | `loop.Status` is product state; workflow/harness statuses are projections. |
 | Phase status | `loop.Step`, `workflow.PhaseState` | `loop.Step` is product phase; workflow phases remain workflow-local. |
 | Agent status | `workflow.AgentRunState`, `harness.TaskStatus` | `agentcontrol` and `harness` own execution facts; loop consumes summary. |
-| Artifacts | `.loop/artifacts`, workflow plan/script/final-report, harness artifacts/reports | Loop owns final product artifacts; workflow/harness artifacts are evidence refs. |
-| Events | `.loop/events.jsonl`, workflow `events.jsonl`, harness `events.jsonl` | Loop event log is the product replay log; other logs are source evidence. |
+| Artifacts | loop `artifacts/`, workflow plan/script/final-report, harness artifacts/reports | Loop owns final product artifacts; workflow/harness artifacts are evidence refs. |
+| Events | loop `events.jsonl`, workflow `events.jsonl`, harness `events.jsonl` | Loop event log is the product replay log; other logs are source evidence. |
 | Failure feedback | `loop.failures`, workflow `Error`, harness `Error`/`Blockers` | Loop owns blocker/failure ledger; other stores feed it. |
 | Verification | `loop.TestResult`, eval verification, harness report verification strings | Loop owns reusable verification result; eval is benchmark-specific. |
 | Worktree | `loop.WorktreeLease`, `harness.WorkspaceLease`, `workflow.AgentRun.WorktreePath`, `worktree.Lease` | `internal/worktree` is the implementation; loop/harness/workflow store references only. |
@@ -155,8 +155,8 @@ Implemented pieces:
   idempotent across repeated syncs.
 - `agentcontrol.FailureSink` lets the control plane receive spawned-agent
   failure facts without importing `internal/loop`.
-- `loop.NewAgentControlFailureSink` adapts those facts into `.loop/failures.md`
-  when an explicit loop store is configured.
+- `loop.NewAgentControlFailureSink` adapts those facts into the loop failure
+  view when an explicit loop store is configured.
 - `AgentControl` calls the sink for failed harness tasks and for `agent_report`
   submissions with blockers, `stuck`, or `error` outcomes.
 
@@ -170,7 +170,7 @@ Implemented pieces:
 
 - `workflow.Run` stores `loop_id` and `loop_dir` as compatibility metadata.
 - Workflow-created loop state lives at `stateDir/loops/<workflow-run-id>` so
-  parallel workflow runs do not overwrite the CLI demo's workspace `.loop`.
+  parallel workflow runs and CLI demos share the same Wuu-managed storage model.
 - `start_workflow` reaches this bridge through both concrete creation paths:
   `create_workflow` and `run_workflow`.
 - Script workflow completion and failure sync back to the bound loop status for
@@ -274,7 +274,7 @@ Implemented pieces:
   as `mergeLoopWorktree(...)` without auto-confirming.
 - `internal/loop` owns a durable human approval queue through
   `RequestApproval` / `ResolveApproval`. Pending approvals live in
-  `state.json`, render to `approvals.md`, emit `approval_requested` /
+  `state.json`, render to `views/approvals.md`, emit `approval_requested` /
   `approval_resolved` events, and move the loop into `needs_human` until the
   last pending approval is resolved.
 - `loop.SnapshotSystem` projects workspace loop states and pending approvals

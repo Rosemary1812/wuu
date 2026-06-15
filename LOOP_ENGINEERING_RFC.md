@@ -36,8 +36,9 @@ Main gaps:
   harness state, worktree isolation, verifier policy, retry policy, escalation,
   and failure feedback are spread across tools and prompt instructions.
 - Durable task state is fragmented under `.wuu/...`; there is no stable
-  task-local `.loop/state.json`, `.loop/events.jsonl`, `.loop/progress.md`,
-  `.loop/decisions.md`, and `.loop/failures.md` contract.
+  Wuu-managed `loops/<loop_id>/state.json`,
+  `loops/<loop_id>/events.jsonl`, and `loops/<loop_id>/views/*.md`
+  contract.
 - Workflows are still mostly model-driven. Agent-managed runs create durable
   records, but the model manually chooses when to spawn, await, verify, review,
   retry, and complete.
@@ -150,20 +151,27 @@ State fields:
 Durable files:
 
 ```text
-.loop/
-  state.json
-  progress.md
-  decisions.md
-  failures.md
-  events.jsonl
-  artifacts/
-    research.md
-    plan.md
-    todo.md
-    verification.md
-    review.md
-    final.md
+<Wuu workspace state>/
+  loops/
+    <loop_id>/
+      state.json
+      events.jsonl
+      artifacts/
+        research.md
+        plan.md
+        todo.md
+        verification.md
+        review.md
+        final.md
+      views/
+        progress.md
+        decisions.md
+        failures.md
+        approvals.md
 ```
+
+`state.json` and `events.jsonl` are the source of truth. Files under `views/`
+are derived human-readable summaries.
 
 ### WorktreeManager
 
@@ -252,8 +260,8 @@ Capture:
 
 Write:
 
-- `.loop/failures.md`
-- `.loop/events.jsonl`
+- `views/failures.md`
+- `events.jsonl`
 - `state.json.current_blocker`
 - `state.json.next_steps`
 
@@ -266,15 +274,15 @@ manual trigger:
   goal: "Fix flaky Electron startup test"
 
 init:
-  write .loop/state.json and events.jsonl
+  write state.json and events.jsonl in the Wuu-managed loop store
 
 research:
   researcher reads app-server, desktop main, failing logs
-  artifact: .loop/artifacts/research.md
+  artifact: artifacts/research.md
 
 plan:
   planner writes scoped implementation plan
-  artifact: .loop/artifacts/plan.md and todo.md
+  artifact: artifacts/plan.md and todo.md
 
 execution:
   worker gets a worktree lease and edits only assigned files
@@ -353,8 +361,8 @@ summary:
 - Over-abstracting before the product path is proven. Mitigation: P0 runs as a
   concrete demo workflow and has tests.
 - Mixing runtime state with repo source. Mitigation: generated run state uses
-  `.loop/` only when explicitly invoked; normal sessions continue using
-  workspace state under `$WUU_HOME`.
+  workspace state under `$WUU_HOME` and does not write loop state into the
+  project tree.
 - Breaking existing subagent behavior. Mitigation: keep `general-purpose` and
   `verification` semantics unchanged; add new roles as opt-in values.
 - Treating verification as documentation. Mitigation: verifier pipeline records

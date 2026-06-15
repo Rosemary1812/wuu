@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
@@ -98,6 +99,8 @@ func TestRunInitWritesDefaultConfig(t *testing.T) {
 
 func TestRunLoopDemoWritesDurableState(t *testing.T) {
 	workdir := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
 	if err := os.WriteFile(filepath.Join(workdir, "marker.txt"), []byte("ok"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -116,27 +119,32 @@ func TestRunLoopDemoWritesDurableState(t *testing.T) {
 	if !strings.Contains(output, "status: completed") {
 		t.Fatalf("expected completed summary, got %q", output)
 	}
+	loopDir := cliLoopDir(t, wuuHome, workdir, "loop-test")
 	for _, rel := range []string{
-		".loop/state.json",
-		".loop/progress.md",
-		".loop/decisions.md",
-		".loop/failures.md",
-		".loop/events.jsonl",
-		".loop/artifacts/research.md",
-		".loop/artifacts/plan.md",
-		".loop/artifacts/todo.md",
-		".loop/artifacts/verification.md",
-		".loop/artifacts/review.md",
-		".loop/artifacts/integration.md",
-		".loop/artifacts/final.md",
+		"state.json",
+		"events.jsonl",
+		"views/progress.md",
+		"views/decisions.md",
+		"views/failures.md",
+		"views/approvals.md",
+		"artifacts/research.md",
+		"artifacts/plan.md",
+		"artifacts/todo.md",
+		"artifacts/verification.md",
+		"artifacts/review.md",
+		"artifacts/integration.md",
+		"artifacts/final.md",
 	} {
-		if _, err := os.Stat(filepath.Join(workdir, rel)); err != nil {
+		if _, err := os.Stat(filepath.Join(loopDir, rel)); err != nil {
 			t.Fatalf("expected %s: %v", rel, err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(workdir, ".loop")); !os.IsNotExist(err) {
+		t.Fatalf("project root .loop should not be created, stat err=%v", err)
+	}
 
 	status := captureStdout(t, func() {
-		if err := run([]string{"loop", "status", "--workdir", workdir, "--json"}); err != nil {
+		if err := run([]string{"loop", "status", "--workdir", workdir, "--id", "loop-test", "--json"}); err != nil {
 			t.Fatalf("run loop status: %v", err)
 		}
 	})
@@ -161,6 +169,8 @@ func TestRunLoopDemoWritesDurableState(t *testing.T) {
 
 func TestRunLoopDemoRecordsVerificationFailure(t *testing.T) {
 	workdir := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
 
 	output := captureStdout(t, func() {
 		if err := run([]string{
@@ -176,13 +186,26 @@ func TestRunLoopDemoRecordsVerificationFailure(t *testing.T) {
 	if !strings.Contains(output, "status: needs_human") {
 		t.Fatalf("expected needs_human summary, got %q", output)
 	}
-	failures, err := os.ReadFile(filepath.Join(workdir, ".loop", "failures.md"))
+	loopDir := cliLoopDir(t, wuuHome, workdir, "loop-fail")
+	failures, err := os.ReadFile(filepath.Join(loopDir, "views", "failures.md"))
 	if err != nil {
 		t.Fatalf("read failures: %v", err)
 	}
 	if !strings.Contains(string(failures), "verification_command_failed") {
 		t.Fatalf("expected verification failure, got %s", failures)
 	}
+	if _, err := os.Stat(filepath.Join(workdir, ".loop")); !os.IsNotExist(err) {
+		t.Fatalf("project root .loop should not be created, stat err=%v", err)
+	}
+}
+
+func cliLoopDir(t *testing.T, wuuHome, workdir, loopID string) string {
+	t.Helper()
+	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, workdir)
+	if err != nil {
+		t.Fatalf("WorkspaceDir: %v", err)
+	}
+	return statepath.LoopDir(workspaceStateDir, loopID)
 }
 
 func TestLoadOrCreateAppServerConfigCreatesStarterConfig(t *testing.T) {

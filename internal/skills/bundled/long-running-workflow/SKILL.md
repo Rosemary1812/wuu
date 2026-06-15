@@ -6,7 +6,7 @@ allowed-tools: [read_file, apply_patch, run_shell, run_test, spawn_agent]
 required-context: [goal, durable state, progress log, failure log, verification policy, worktree status]
 examples: [resume loop workflow, coordinate agent team, recover after failed verification]
 verification-checklist: [state updated, artifacts written, failures captured, reviewer or verifier separated from worker]
-progressive-disclosure: Always read .loop/state.json and recent failures before loading detailed artifacts.
+progressive-disclosure: Always read the loop state.json and recent failure view from Wuu-managed loop storage before loading detailed artifacts.
 ---
 
 # Long Running Workflow
