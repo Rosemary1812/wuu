@@ -28,6 +28,16 @@ func TestAgentBriefContractTextIncludesCoreFields(t *testing.T) {
 	}
 }
 
+func TestAgentBriefContractSummaryStaysGeneral(t *testing.T) {
+	summary := AgentBriefContractSummary()
+	if !strings.Contains(summary, "scope, non-goals") {
+		t.Fatalf("agent brief summary should keep general scope wording:\n%s", summary)
+	}
+	if strings.Contains(summary, "ownership") {
+		t.Fatalf("agent brief summary should not mention code-edit ownership:\n%s", summary)
+	}
+}
+
 func TestWorkflowBriefExtensionTextIncludesOnlyWorkflowContext(t *testing.T) {
 	text := WorkflowBriefExtensionText()
 	for _, want := range []string{

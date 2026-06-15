@@ -3,7 +3,7 @@ package prompt
 import "strings"
 
 func AgentBriefContractSummary() string {
-	return "Use the Base Agent Brief Contract: task, background, role, identity/memory, scope/ownership, non-goals, starting points, acceptance criteria, deliverables, reporting, and constraints."
+	return "Use the Base Agent Brief Contract: task, background, role, identity/memory, scope, non-goals, starting points, acceptance criteria, deliverables, reporting, and constraints."
 }
 
 func WorkflowBriefExtensionSummary() string {

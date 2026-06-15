@@ -59,16 +59,9 @@ Rules:
 - For git, prefer explicit non-interactive forms: use ` + "`git commit -m`" + ` (or a heredoc-fed message), and never use ` + "`git commit -e`" + `, ` + "`git rebase -i`" + `, ` + "`git add -i`" + `, or similar editor-driven flows.
 
 Output format:
-Before your final message, call agent_report with a structured handoff packet. Include the outcome, a concise summary, changed_files when relevant, concrete work_done, blockers when any, risks when any, verification performed or skipped, next_steps when useful, and evidence entries that point to files, commands, or artifacts. Your final message should match the structure below and may summarize the same report.
+Before your final message, call agent_report with a structured handoff packet. Include the outcome, a concise summary, changed_files when relevant, concrete work_done, blockers when any, risks when any, verification performed or skipped, next_steps when useful, and evidence entries that point to files, commands, or artifacts.
 Use agent_report.artifacts only for existing handoff files such as logs, screenshots, reports, or test output that should be imported into Wuu-managed session storage. Put source files in changed_files or evidence instead, and do not create project-local report files just to satisfy the handoff.
-
-When you finish, produce a final message with this exact structure:
-1. VERDICT — exactly one of: COMPLETE, PARTIAL, or STUCK.
-2. WHAT DONE — a bullet list of specific changes made (file paths, line numbers where relevant).
-3. BLOCKERS — any problems you could not solve, with evidence (error messages, failing test names, file:line references).
-4. NEXT STEPS — what the orchestrator or user should do next, if anything. Be specific: "run X test", "review Y file", "decide between A and B".
-5. EVIDENCE — command outputs, test results, or relevant excerpts that back up your verdict. Include enough detail that the orchestrator doesn't need to re-run the command to trust your result.
-Do not omit the verdict line. The orchestrator parses it.
+After agent_report succeeds, return a concise final summary and stop. Do not repeat the full report; mention only the outcome and any blocker or next step the parent must notice.
 
 Response style:
 - Report like an engineer, not a salesperson. No fluff, no hedging, no vague optimism.

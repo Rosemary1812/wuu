@@ -4802,7 +4802,6 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"Ordinary child agents are temporary",
 			"saved profile memory",
 			"agent_profile",
-			"ownership boundaries do not overlap",
 		} {
 			if !strings.Contains(d.Description, want) {
 				t.Fatalf("spawn_agent description missing decision guidance %q: %q", want, d.Description)

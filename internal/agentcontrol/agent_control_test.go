@@ -588,8 +588,8 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || awaited.Results[0].ReportPath != report.ReportPath || len(awaited.Results[0].ChangedFiles) != 1 {
 		t.Fatalf("expected completed result with report path, got %+v", awaited)
 	}
-	if !spawnStepsContain(awaited.NextSteps, "workflow_control") {
-		t.Fatalf("await_agents should guide workflow binding after successful join, got %+v", awaited.NextSteps)
+	if spawnStepsContain(awaited.NextSteps, "workflow_control") {
+		t.Fatalf("plain await_agents should not guide workflow binding, got %+v", awaited.NextSteps)
 	}
 	waitForHarnessEvent(t, c.HarnessStore(), harness.EventRunCompleted, res.AgentID)
 }
