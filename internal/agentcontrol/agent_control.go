@@ -241,18 +241,21 @@ type SpawnRequest struct {
 
 // SpawnResult is what the spawn_agent tool returns to the model.
 type SpawnResult struct {
-	Action       string   `json:"action"`
-	AgentID      string   `json:"agent_id"`
-	TaskName     string   `json:"task_name,omitempty"`
-	AgentProfile string   `json:"agent_profile,omitempty"`
-	AgentPath    string   `json:"agent_path,omitempty"`
-	Status       string   `json:"status"`
-	Isolation    string   `json:"isolation"`               // "inplace" or "worktree"
-	WorktreePath string   `json:"worktree_path,omitempty"` // empty for inplace spawns
-	Result       string   `json:"result,omitempty"`
-	Error        string   `json:"error,omitempty"`
-	DurationMS   int64    `json:"duration_ms,omitempty"`
-	NextSteps    []string `json:"next_steps,omitempty"`
+	Action          string   `json:"action"`
+	AgentID         string   `json:"agent_id"`
+	TaskName        string   `json:"task_name,omitempty"`
+	AgentProfile    string   `json:"agent_profile,omitempty"`
+	AgentPath       string   `json:"agent_path,omitempty"`
+	Status          string   `json:"status"`
+	Isolation       string   `json:"isolation"`               // "inplace" or "worktree"
+	WorktreePath    string   `json:"worktree_path,omitempty"` // empty for inplace spawns
+	Result          string   `json:"result,omitempty"`
+	ResultPath      string   `json:"result_path,omitempty"`
+	ResultBytes     int      `json:"result_bytes,omitempty"`
+	ResultTruncated bool     `json:"result_truncated,omitempty"`
+	Error           string   `json:"error,omitempty"`
+	DurationMS      int64    `json:"duration_ms,omitempty"`
+	NextSteps       []string `json:"next_steps,omitempty"`
 }
 
 type preparedSpawn struct {
@@ -472,7 +475,11 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		return nil, fmt.Errorf("wait: %w", err)
 	}
 	result.Status = string(snap.Status)
-	result.Result = snap.Result
+	ref := c.AgentResultReference(snap)
+	result.Result = ref.Preview
+	result.ResultPath = ref.Path
+	result.ResultBytes = ref.Bytes
+	result.ResultTruncated = ref.Truncated
 	if snap.Error != nil {
 		result.Error = snap.Error.Error()
 	}
@@ -751,7 +758,11 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		return nil, fmt.Errorf("wait: %w", err)
 	}
 	result.Status = string(snap.Status)
-	result.Result = snap.Result
+	ref := c.AgentResultReference(snap)
+	result.Result = ref.Preview
+	result.ResultPath = ref.Path
+	result.ResultBytes = ref.Bytes
+	result.ResultTruncated = ref.Truncated
 	if snap.Error != nil {
 		result.Error = snap.Error.Error()
 	}
@@ -1535,6 +1546,7 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 		})
 	}
 	if isFinalSubAgentStatus(n.Status) {
+		c.recordAgentResultArtifact(n.Snapshot)
 		c.recordWorktreeArtifacts(n.Snapshot)
 	}
 }
@@ -1818,7 +1830,7 @@ func newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPa
 
 func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
 	reportPath, artifacts := c.harnessReportForTask(snap.ID)
-	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, NewAgentMailboxMessageWithReport(snap, reportPath, artifacts))
+	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, c.agentMailboxMessageWithRefs(snap, reportPath, artifacts))
 }
 
 // AgentCompletionChatMessage returns the user-role handoff that should resume
@@ -1828,13 +1840,28 @@ func (c *AgentControl) AgentCompletionChatMessage(snap subagent.SubAgentSnapshot
 	communication := newAgentCompletionCommunicationWithMessageAndTrigger(
 		snap,
 		recipientPath,
-		NewAgentMailboxMessageWithReport(snap, reportPath, artifacts),
+		c.agentMailboxMessageWithRefs(snap, reportPath, artifacts),
 		true,
 	)
 	return providers.ChatMessage{
 		Role:    "user",
 		Content: communication.String(),
 	}
+}
+
+func (c *AgentControl) AgentMailboxMessage(snap subagent.SubAgentSnapshot) AgentMailboxMessage {
+	reportPath, artifacts := c.harnessReportForTask(snap.ID)
+	return c.agentMailboxMessageWithRefs(snap, reportPath, artifacts)
+}
+
+func (c *AgentControl) agentMailboxMessageWithRefs(snap subagent.SubAgentSnapshot, reportPath string, artifacts []string) AgentMailboxMessage {
+	ref := c.AgentResultReference(snap)
+	return NewAgentMailboxMessageWithReportAndResult(
+		snap,
+		c.sessionArtifactRef(reportPath),
+		c.sessionArtifactRefs(artifacts),
+		ref,
+	)
 }
 
 func newAgentCompletionCommunicationWithMessage(snap subagent.SubAgentSnapshot, recipientPath string, message AgentMailboxMessage) agentthread.InterAgentCommunication {

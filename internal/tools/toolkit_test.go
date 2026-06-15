@@ -136,6 +136,43 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	}
 }
 
+func TestToolkit_ReadFileAllowsSessionArtifactRefs(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	sessionDir := filepath.Join(t.TempDir(), "session-artifacts")
+	kit.SetSessionDir(sessionDir)
+	artifactPath := filepath.Join(sessionDir, "harness", "artifacts", "worker-1", "result.md")
+	mustWriteFile(t, artifactPath, "artifact result\nsecond line\n")
+
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"$SESSION_DIR/harness/artifacts/worker-1/result.md"}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file session artifact: %v", err)
+	}
+	var parsed struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(readResp), &parsed); err != nil {
+		t.Fatalf("parse read response: %v", err)
+	}
+	if parsed.Path != "$SESSION_DIR/harness/artifacts/worker-1/result.md" || !strings.Contains(parsed.Content, "artifact result") {
+		t.Fatalf("unexpected session artifact read: %+v", parsed)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: fmt.Sprintf(`{"path":%q,"content":"bad"}`, artifactPath),
+	}); err == nil || !strings.Contains(err.Error(), "escapes workspace") {
+		t.Fatalf("write_file should not write session artifacts, got err=%v", err)
+	}
+}
+
 func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

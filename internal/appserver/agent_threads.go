@@ -26,15 +26,19 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 		}
 		_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
 			ThreadID: threadID,
-			Agent:    agentFromSnapshot(n.Snapshot),
+			Agent:    agentFromSnapshot(control, n.Snapshot),
 		})
 		switch n.Status {
 		case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
 			s.completeLiveAgentThread(threadID, control, n.Snapshot, now)
 			if s.isRootAgentSnapshot(control, threadID, n.Snapshot) {
+				mailboxMessage := agentcontrol.NewAgentMailboxMessage(n.Snapshot)
+				if control != nil {
+					mailboxMessage = control.AgentMailboxMessage(n.Snapshot)
+				}
 				_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
 					ThreadID: threadID,
-					Message:  agentcontrol.NewAgentMailboxMessage(n.Snapshot),
+					Message:  mailboxMessage,
 				})
 				if control != nil {
 					s.enqueueAgentCompletionTurn(threadID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath))
@@ -188,7 +192,7 @@ func (s *Server) completeLiveAgentThread(rootThreadID string, control *agentcont
 	_ = s.writeNotification(NotificationTurnCompleted, TurnCompletedNotification{
 		ThreadID: th.ID,
 		Turn:     turn,
-		Content:  snap.Result,
+		Content:  agentResultPreview(control, snap),
 	})
 }
 
@@ -253,24 +257,42 @@ func firstNonZeroTime(values ...time.Time) time.Time {
 	return time.Time{}
 }
 
-func agentFromSnapshot(snap subagent.SubAgentSnapshot) Agent {
+func agentFromSnapshot(control *agentcontrol.AgentControl, snap subagent.SubAgentSnapshot) Agent {
+	ref := agentcontrol.AgentResultReference{}
+	if control != nil {
+		ref = control.AgentResultReference(snap)
+	} else {
+		preview, truncated := agentcontrol.AgentResultPreview(snap.Result)
+		ref = agentcontrol.AgentResultReference{Preview: preview, Bytes: len([]byte(snap.Result)), Truncated: truncated}
+	}
 	out := Agent{
-		ID:           snap.ID,
-		Type:         snap.Type,
-		TaskName:     snap.TaskName,
-		AgentProfile: snap.AgentProfile,
-		AgentPath:    snap.AgentPath,
-		ParentID:     snap.ParentID,
-		Description:  snap.Description,
-		Status:       string(snap.Status),
-		Result:       snap.Result,
-		InputTokens:  snap.InputTokens,
-		OutputTokens: snap.OutputTokens,
-		StartedAt:    snap.StartedAt,
-		CompletedAt:  snap.CompletedAt,
+		ID:              snap.ID,
+		Type:            snap.Type,
+		TaskName:        snap.TaskName,
+		AgentProfile:    snap.AgentProfile,
+		AgentPath:       snap.AgentPath,
+		ParentID:        snap.ParentID,
+		Description:     snap.Description,
+		Status:          string(snap.Status),
+		Result:          ref.Preview,
+		ResultPath:      ref.Path,
+		ResultBytes:     ref.Bytes,
+		ResultTruncated: ref.Truncated,
+		InputTokens:     snap.InputTokens,
+		OutputTokens:    snap.OutputTokens,
+		StartedAt:       snap.StartedAt,
+		CompletedAt:     snap.CompletedAt,
 	}
 	if snap.Error != nil {
 		out.Error = snap.Error.Error()
 	}
 	return out
+}
+
+func agentResultPreview(control *agentcontrol.AgentControl, snap subagent.SubAgentSnapshot) string {
+	if control == nil {
+		preview, _ := agentcontrol.AgentResultPreview(snap.Result)
+		return preview
+	}
+	return control.AgentResultReference(snap).Preview
 }

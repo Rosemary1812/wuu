@@ -325,6 +325,104 @@ func (e *Env) ResolvePath(input string) (string, error) {
 	return resolved, nil
 }
 
+// ResolveReadPath resolves paths for read-only tools. In addition to ordinary
+// workspace files, it allows files under the current session artifact directory
+// so compact tool and agent results can point at Wuu-managed artifacts.
+func (e *Env) ResolveReadPath(input string) (absPath, displayPath string, managed bool, err error) {
+	candidate := strings.TrimSpace(input)
+	if candidate == "" {
+		candidate = "."
+	}
+
+	if expanded, ok, err := e.expandSessionPathRef(candidate); ok || err != nil {
+		if err != nil {
+			return "", "", false, err
+		}
+		display := e.normalizeSessionDisplayPath(expanded)
+		return expanded, display, true, nil
+	}
+
+	if filepath.IsAbs(candidate) && strings.TrimSpace(e.SessionDir) != "" {
+		resolved, err := filepath.Abs(filepath.Clean(candidate))
+		if err != nil {
+			return "", "", false, fmt.Errorf("resolve path: %w", err)
+		}
+		if pathWithinRoot(e.SessionDir, resolved) {
+			display := e.normalizeSessionDisplayPath(resolved)
+			return resolved, display, true, nil
+		}
+	}
+
+	resolved, err := e.ResolvePath(candidate)
+	if err != nil {
+		return "", "", false, err
+	}
+	return resolved, e.NormalizeDisplayPath(resolved), false, nil
+}
+
+func (e *Env) expandSessionPathRef(input string) (string, bool, error) {
+	sessionDir := strings.TrimSpace(e.SessionDir)
+	if sessionDir == "" {
+		return "", false, nil
+	}
+	const prefix = "$SESSION_DIR"
+	if input != prefix && !strings.HasPrefix(input, prefix+"/") && !strings.HasPrefix(input, prefix+string(filepath.Separator)) {
+		return "", false, nil
+	}
+	suffix := strings.TrimPrefix(input, prefix)
+	suffix = strings.TrimPrefix(suffix, "/")
+	suffix = strings.TrimPrefix(suffix, string(filepath.Separator))
+	resolved, err := filepath.Abs(filepath.Join(sessionDir, filepath.FromSlash(suffix)))
+	if err != nil {
+		return "", true, fmt.Errorf("resolve path: %w", err)
+	}
+	if !pathWithinRoot(sessionDir, resolved) {
+		return "", true, fmt.Errorf("path %q escapes session artifact directory", input)
+	}
+	return resolved, true, nil
+}
+
+func (e *Env) normalizeSessionDisplayPath(absPath string) string {
+	sessionDir := strings.TrimSpace(e.SessionDir)
+	if sessionDir == "" {
+		return absPath
+	}
+	rel, err := filepath.Rel(sessionDir, absPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return absPath
+	}
+	if rel == "." {
+		return "$SESSION_DIR"
+	}
+	return "$SESSION_DIR/" + filepath.ToSlash(rel)
+}
+
+func pathWithinRoot(root, path string) bool {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return false
+	}
+	evalRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	if ev, err := filepath.EvalSymlinks(evalRoot); err == nil {
+		evalRoot = ev
+	}
+	evalPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	if ev, err := filepath.EvalSymlinks(evalPath); err == nil {
+		evalPath = ev
+	}
+	rel, err := filepath.Rel(evalRoot, evalPath)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
 // NormalizeDisplayPath returns a relative path for display.
 func (e *Env) NormalizeDisplayPath(absPath string) string {
 	return normalizeDisplayPath(e.RootDir, absPath)

@@ -460,6 +460,9 @@ type Agent struct {
 	Description        string    `json:"description,omitempty"`
 	Status             string    `json:"status"`
 	Result             string    `json:"result,omitempty"`
+	ResultPath         string    `json:"result_path,omitempty"`
+	ResultBytes        int       `json:"result_bytes,omitempty"`
+	ResultTruncated    bool      `json:"result_truncated,omitempty"`
 	Error              string    `json:"error,omitempty"`
 	InputTokens        int       `json:"input_tokens,omitempty"`
 	OutputTokens       int       `json:"output_tokens,omitempty"`
