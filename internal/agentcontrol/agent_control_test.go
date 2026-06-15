@@ -404,6 +404,13 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
+	reportedSource := filepath.Join(dir, "reports", "notes.md")
+	if err := os.MkdirAll(filepath.Dir(reportedSource), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportedSource, []byte("agent notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
 		Outcome:      "completed",
@@ -426,7 +433,13 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if report.TaskID != res.AgentID || report.ReportPath == "" || len(report.Artifacts) != 2 {
 		t.Fatalf("unexpected report result: %+v", report)
 	}
-	if _, err := os.Stat(report.ReportPath); err != nil {
+	if !strings.HasPrefix(report.ReportPath, "$SESSION_DIR/") {
+		t.Fatalf("agent_report should return a session artifact ref, got %+v", report)
+	}
+	if strings.Contains(strings.Join(report.Artifacts, ","), "reports/notes.md") {
+		t.Fatalf("agent_report should return imported artifact refs, got %+v", report.Artifacts)
+	}
+	if _, err := os.Stat(sessionRefPath(t, c, report.ReportPath)); err != nil {
 		t.Fatalf("report file missing: %v", err)
 	}
 	reports, err := c.HarnessStore().ListReports()
@@ -453,8 +466,61 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if !artifactKindPresent(artifacts, harness.ArtifactResult) {
 		t.Fatalf("expected agent result artifact, got %+v", artifacts)
 	}
+	var importedPath string
+	for _, artifact := range artifacts {
+		if artifact.Kind == harness.ArtifactEvidence && strings.Contains(artifact.Path, string(filepath.Separator)+"reported"+string(filepath.Separator)) {
+			importedPath = artifact.Path
+			break
+		}
+	}
+	if importedPath == "" {
+		t.Fatalf("expected imported artifact under harness reported dir, got %+v", artifacts)
+	}
+	if importedPath == reportedSource {
+		t.Fatalf("reported artifact should be copied into Wuu storage, got source path %q", importedPath)
+	}
+	if got := mustReadAgentControlFile(t, importedPath); got != "agent notes\n" {
+		t.Fatalf("imported artifact content mismatch: %q", got)
+	}
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
+func TestRecordAgentReportRejectsMissingArtifact(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-missing-artifact",
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-missing-artifact", "harness"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "missing_artifact",
+		Prompt:      "finish",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	_, err = c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+		Outcome:   "completed",
+		Summary:   "Tried to report a missing artifact.",
+		Artifacts: []string{"reports/missing.md"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "file does not exist") {
+		t.Fatalf("expected missing artifact error, got %v", err)
+	}
 }
 
 func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
@@ -518,7 +584,7 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AwaitFrom after report: %v", err)
 	}
-	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || awaited.Results[0].ReportPath != c.sessionArtifactRef(report.ReportPath) || len(awaited.Results[0].ChangedFiles) != 1 {
+	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || awaited.Results[0].ReportPath != report.ReportPath || len(awaited.Results[0].ChangedFiles) != 1 {
 		t.Fatalf("expected completed result with report path, got %+v", awaited)
 	}
 	if !spawnStepsContain(awaited.NextSteps, "workflow_control") {
@@ -1810,7 +1876,7 @@ func TestAgentCompletionPersistsLongResultAndReturnsPreview(t *testing.T) {
 	if res.Result == longResult || !strings.Contains(res.Result, "agent result preview truncated") {
 		t.Fatalf("spawn result should be a bounded preview, got %d chars", len(res.Result))
 	}
-	resultPath := strings.Replace(res.ResultPath, "$SESSION_DIR", filepath.Dir(harnessDir), 1)
+	resultPath := sessionRefPath(t, c, res.ResultPath)
 	raw, err := os.ReadFile(resultPath)
 	if err != nil {
 		t.Fatalf("read result artifact: %v", err)
@@ -1958,6 +2024,25 @@ func artifactKindPresent(artifacts []harness.Artifact, kind harness.ArtifactKind
 		}
 	}
 	return false
+}
+
+func sessionRefPath(t *testing.T, c *AgentControl, ref string) string {
+	t.Helper()
+	if !strings.HasPrefix(ref, "$SESSION_DIR") {
+		t.Fatalf("expected session ref, got %q", ref)
+	}
+	suffix := strings.TrimPrefix(ref, "$SESSION_DIR")
+	suffix = strings.TrimPrefix(suffix, "/")
+	return filepath.Join(c.sessionDir(), filepath.FromSlash(suffix))
+}
+
+func mustReadAgentControlFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	return string(data)
 }
 
 func spawnStepsContain(steps []string, needle string) bool {

@@ -402,19 +402,23 @@ func pathWithinRoot(root, path string) bool {
 	if root == "" {
 		return false
 	}
-	evalRoot, err := filepath.Abs(root)
+	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return false
 	}
+	evalRoot := absRoot
 	if ev, err := filepath.EvalSymlinks(evalRoot); err == nil {
 		evalRoot = ev
 	}
-	evalPath, err := filepath.Abs(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return false
 	}
+	evalPath := absPath
 	if ev, err := filepath.EvalSymlinks(evalPath); err == nil {
 		evalPath = ev
+	} else if rel, relErr := filepath.Rel(absRoot, absPath); relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		evalPath = filepath.Join(evalRoot, rel)
 	}
 	rel, err := filepath.Rel(evalRoot, evalPath)
 	if err != nil {

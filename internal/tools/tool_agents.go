@@ -265,6 +265,8 @@ This system-reminder OVERRIDES the parent's system prompt for you:
   summary, changed_files when relevant, concrete work_done, blockers when
   any, risks when any, verification performed or skipped, next_steps when
   useful, and evidence/artifact paths that let the parent verify the handoff.
+  Use artifacts only for existing handoff files that should be imported into
+  Wuu-managed session storage; put source files in changed_files or evidence.
 - When you finish, return a concise result summary and stop. Do not loop,
   do not ask follow-ups.
 
@@ -657,7 +659,7 @@ func (t *AgentReportTool) Definition() providers.ToolDefinition {
 				},
 				"artifacts": map[string]any{
 					"type":        "array",
-					"description": "Paths to durable artifacts such as patch files, reports, logs, or test output.",
+					"description": "Existing handoff artifact files to import into Wuu-managed session storage. Use this for reports, logs, screenshots, or test output that already exists. Relative paths resolve inside the task workspace; $SESSION_DIR/... refs are allowed. Source files belong in changed_files or evidence instead.",
 					"items":       map[string]any{"type": "string"},
 				},
 			},

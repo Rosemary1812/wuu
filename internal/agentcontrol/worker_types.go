@@ -60,6 +60,7 @@ Rules:
 
 Output format:
 Before your final message, call agent_report with a structured handoff packet. Include the outcome, a concise summary, changed_files when relevant, concrete work_done, blockers when any, risks when any, verification performed or skipped, next_steps when useful, and evidence entries that point to files, commands, or artifacts. Your final message should match the structure below and may summarize the same report.
+Use agent_report.artifacts only for existing handoff files such as logs, screenshots, reports, or test output that should be imported into Wuu-managed session storage. Put source files in changed_files or evidence instead, and do not create project-local report files just to satisfy the handoff.
 
 When you finish, produce a final message with this exact structure:
 1. VERDICT — exactly one of: COMPLETE, PARTIAL, or STUCK.
