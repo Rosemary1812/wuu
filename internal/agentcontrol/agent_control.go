@@ -953,33 +953,61 @@ func (c *AgentControl) WaitFrom(currentPath string, ctx context.Context, target 
 	return c.manager.Wait(ctx, id)
 }
 
-func (c *AgentControl) WaitForMailboxUpdateFrom(currentPath string, ctx context.Context) (bool, error) {
+const (
+	WaitAgentSignalTimeout       = "timeout"
+	WaitAgentSignalQueuedMessage = "queued_message"
+	WaitAgentSignalCompleted     = "agent_completed"
+	WaitAgentSignalFailed        = "agent_failed"
+	WaitAgentSignalCancelled     = "agent_cancelled"
+)
+
+type WaitAgentSignal struct {
+	Received            bool
+	SignalType          string
+	AgentID             string
+	AgentPath           string
+	TaskName            string
+	ParentID            string
+	Status              string
+	Description         string
+	PendingMessageCount int
+}
+
+func (c *AgentControl) WaitForAgentNotificationFrom(currentPath string, ctx context.Context) (WaitAgentSignal, error) {
 	if c == nil || c.manager == nil {
-		return false, errors.New("agent control not configured")
+		return WaitAgentSignal{}, errors.New("agent control not configured")
 	}
 	currentID := c.agentIDForPath(currentPath)
-	if currentID != "" && c.manager.PendingMessageCount(currentID) > 0 {
-		return true, nil
+	if signal, ok := c.queuedMessageSignal(currentID); ok {
+		return signal, nil
 	}
 	ch := make(chan subagent.Notification, 16)
 	c.manager.Subscribe(ch)
 	defer c.manager.Unsubscribe(ch)
-	if currentID != "" && c.manager.PendingMessageCount(currentID) > 0 {
-		return true, nil
+	if signal, ok := c.queuedMessageSignal(currentID); ok {
+		return signal, nil
 	}
 	for {
 		select {
 		case n := <-ch:
-			if c.isMailboxNotificationFor(currentID, n) {
-				return true, nil
+			if signal, ok := c.agentNotificationSignal(currentID, n); ok {
+				return signal, nil
 			}
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return false, nil
+				return WaitAgentSignal{SignalType: WaitAgentSignalTimeout}, nil
 			}
-			return false, ctx.Err()
+			return WaitAgentSignal{}, ctx.Err()
 		}
 	}
+}
+
+func (c *AgentControl) WaitForMailboxUpdateFrom(currentPath string, ctx context.Context) (bool, error) {
+	signal, err := c.WaitForAgentNotificationFrom(currentPath, ctx)
+	if err != nil {
+		return false, err
+	}
+	return signal.Received, nil
 }
 
 func (c *AgentControl) agentIDForPath(currentPath string) string {
@@ -994,20 +1022,77 @@ func (c *AgentControl) agentIDForPath(currentPath string) string {
 }
 
 func (c *AgentControl) isMailboxNotificationFor(currentID string, n subagent.Notification) bool {
+	_, ok := c.agentNotificationSignal(currentID, n)
+	return ok
+}
+
+func (c *AgentControl) queuedMessageSignal(currentID string) (WaitAgentSignal, bool) {
+	if currentID == "" {
+		return WaitAgentSignal{}, false
+	}
+	count := c.manager.PendingMessageCount(currentID)
+	if count <= 0 {
+		return WaitAgentSignal{}, false
+	}
+	signal := WaitAgentSignal{
+		Received:            true,
+		SignalType:          WaitAgentSignalQueuedMessage,
+		AgentID:             currentID,
+		PendingMessageCount: count,
+	}
+	if snap := c.snapshotByID(currentID); snap != nil {
+		signal = waitAgentSignalFromSnapshot(WaitAgentSignalQueuedMessage, *snap)
+		signal.PendingMessageCount = count
+	}
+	return signal, true
+}
+
+func (c *AgentControl) agentNotificationSignal(currentID string, n subagent.Notification) (WaitAgentSignal, bool) {
 	if currentID == "" {
 		if !isFinalSubAgentStatus(n.Status) {
-			return false
+			return WaitAgentSignal{}, false
 		}
 		parentID := strings.TrimSpace(n.Snapshot.ParentID)
-		return parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID
+		if parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID {
+			return waitAgentSignalFromSnapshot(waitAgentSignalTypeForStatus(n.Status), n.Snapshot), true
+		}
+		return WaitAgentSignal{}, false
 	}
-	if n.Snapshot.ID == currentID && c.manager.PendingMessageCount(currentID) > 0 {
-		return true
+	if n.Snapshot.ID == currentID {
+		if signal, ok := c.queuedMessageSignal(currentID); ok {
+			return signal, true
+		}
 	}
 	if strings.TrimSpace(n.Snapshot.ParentID) == currentID && isFinalSubAgentStatus(n.Status) {
-		return true
+		return waitAgentSignalFromSnapshot(waitAgentSignalTypeForStatus(n.Status), n.Snapshot), true
 	}
-	return false
+	return WaitAgentSignal{}, false
+}
+
+func waitAgentSignalTypeForStatus(status subagent.Status) string {
+	switch status {
+	case subagent.StatusCompleted:
+		return WaitAgentSignalCompleted
+	case subagent.StatusFailed:
+		return WaitAgentSignalFailed
+	case subagent.StatusCancelled:
+		return WaitAgentSignalCancelled
+	default:
+		return string(status)
+	}
+}
+
+func waitAgentSignalFromSnapshot(signalType string, snap subagent.SubAgentSnapshot) WaitAgentSignal {
+	return WaitAgentSignal{
+		Received:    true,
+		SignalType:  signalType,
+		AgentID:     snap.ID,
+		AgentPath:   snap.AgentPath,
+		TaskName:    snap.TaskName,
+		ParentID:    snap.ParentID,
+		Status:      string(snap.Status),
+		Description: snap.Description,
+	}
 }
 
 // Subscribe forwards to the underlying manager so the UI can receive

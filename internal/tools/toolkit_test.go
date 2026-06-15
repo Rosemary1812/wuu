@@ -4855,6 +4855,73 @@ func TestToolkit_WaitAgentUsesNotificationSignalSchema(t *testing.T) {
 	t.Fatal("wait_agent must be present in tool definitions")
 }
 
+func TestToolkit_WaitAgentReturnsSignalGuidance(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &workflowFakeClient{content: "unused"},
+		DefaultModel: "fake-model",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
+		SessionID:    "wait-signal-session",
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return workflowNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopWorkflowAgentControl(control)
+	kit.SetAgentControl(control)
+	kit.SetAgentIdentity("root", agentthread.RootPath)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "wait_agent",
+		Arguments: `{"timeout_ms":1}`,
+	})
+	if err != nil {
+		t.Fatalf("wait_agent: %v", err)
+	}
+	var parsed struct {
+		Action     string   `json:"action"`
+		TimedOut   bool     `json:"timed_out"`
+		SignalType string   `json:"signal_type"`
+		NextSteps  []string `json:"next_steps"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("decode wait_agent result: %v\n%s", err, resp)
+	}
+	if parsed.Action != "wait_agent" || !parsed.TimedOut || parsed.SignalType != agentcontrol.WaitAgentSignalTimeout {
+		t.Fatalf("unexpected wait_agent result: %+v", parsed)
+	}
+	if !strings.Contains(strings.Join(parsed.NextSteps, " "), "await_agents") {
+		t.Fatalf("wait_agent result should guide follow-up tool use: %+v", parsed.NextSteps)
+	}
+}
+
+func TestWaitAgentResultFromCompletedSignalPointsToAwaitAgents(t *testing.T) {
+	result := waitAgentResultFromSignal(agentcontrol.WaitAgentSignal{
+		Received:   true,
+		SignalType: agentcontrol.WaitAgentSignalCompleted,
+		AgentID:    "agent-1",
+		AgentPath:  "/root/review",
+		TaskName:   "review",
+		Status:     "completed",
+	})
+	if result.TimedOut || result.SignalType != agentcontrol.WaitAgentSignalCompleted {
+		t.Fatalf("unexpected completed wait result: %+v", result)
+	}
+	if result.AwaitTarget != "/root/review" || result.DetailsAvailableVia != "await_agents" || !result.RequiresAwaitAgentsForOutput {
+		t.Fatalf("completed signal should point to await_agents: %+v", result)
+	}
+	if !strings.Contains(strings.Join(result.NextSteps, " "), "await_agents") {
+		t.Fatalf("completed signal should guide await_agents: %+v", result.NextSteps)
+	}
+}
+
 func TestToolkit_SpawnAgent_FailsWithoutAgentControl(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

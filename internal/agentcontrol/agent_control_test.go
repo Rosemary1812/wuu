@@ -973,7 +973,7 @@ func TestStopClosesAgentSubtree(t *testing.T) {
 	}
 }
 
-func TestWaitForMailboxUpdateFromRootWakesOnChildFinalStatus(t *testing.T) {
+func TestWaitForAgentNotificationFromRootReportsChildFinalStatus(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 	c, err := New(Config{
@@ -997,15 +997,15 @@ func TestWaitForMailboxUpdateFromRootWakesOnChildFinalStatus(t *testing.T) {
 	}
 
 	type waitResult struct {
-		completed bool
-		err       error
+		signal WaitAgentSignal
+		err    error
 	}
 	done := make(chan waitResult, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		completed, err := c.WaitForMailboxUpdateFrom(agentthread.RootPath, ctx)
-		done <- waitResult{completed: completed, err: err}
+		signal, err := c.WaitForAgentNotificationFrom(agentthread.RootPath, ctx)
+		done <- waitResult{signal: signal, err: err}
 	}()
 	time.Sleep(20 * time.Millisecond)
 	if !c.Stop(child.AgentID) {
@@ -1016,15 +1016,18 @@ func TestWaitForMailboxUpdateFromRootWakesOnChildFinalStatus(t *testing.T) {
 		if got.err != nil {
 			t.Fatalf("wait mailbox: %v", got.err)
 		}
-		if !got.completed {
+		if !got.signal.Received {
 			t.Fatal("expected wait to complete")
+		}
+		if got.signal.SignalType != WaitAgentSignalCancelled || got.signal.AgentID != child.AgentID || got.signal.Status != string(subagent.StatusCancelled) {
+			t.Fatalf("unexpected wait signal: %+v", got.signal)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for mailbox update")
 	}
 }
 
-func TestWaitForMailboxUpdateFromAgentReturnsAlreadyQueuedMail(t *testing.T) {
+func TestWaitForAgentNotificationFromAgentReturnsQueuedMessageSignal(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 	c, err := New(Config{
@@ -1051,12 +1054,15 @@ func TestWaitForMailboxUpdateFromAgentReturnsAlreadyQueuedMail(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	completed, err := c.WaitForMailboxUpdateFrom(parent.AgentPath, ctx)
+	signal, err := c.WaitForAgentNotificationFrom(parent.AgentPath, ctx)
 	if err != nil {
 		t.Fatalf("wait mailbox: %v", err)
 	}
-	if !completed {
+	if !signal.Received {
 		t.Fatal("expected already queued mailbox update to complete immediately")
+	}
+	if signal.SignalType != WaitAgentSignalQueuedMessage || signal.AgentID != parent.AgentID || signal.PendingMessageCount != 1 {
+		t.Fatalf("unexpected queued message signal: %+v", signal)
 	}
 	c.StopAll()
 }
