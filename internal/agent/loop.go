@@ -429,7 +429,9 @@ func recentUserDirectives(messages []providers.ChatMessage, limit int) []string 
 	out := make([]string, 0, limit)
 	for i := len(messages) - 1; i >= 0 && len(out) < limit; i-- {
 		msg := messages[i]
-		if msg.Role != "user" || wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+		if msg.Role != "user" ||
+			wuucontext.IsSystemReminder(msg.Name, msg.Content) ||
+			wuucontext.IsAgentNotification(msg.Name, msg.Content) {
 			continue
 		}
 		content := compactDirectiveContent(msg.Content, taskContractMaxDirectiveRunes)

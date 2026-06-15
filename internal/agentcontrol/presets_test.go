@@ -127,6 +127,12 @@ func TestComposeWorkerSystemPrompt_ContainsWorkerOverride(t *testing.T) {
 	if !strings.Contains(got, "If a tool is in your tool list") {
 		t.Fatalf("worker system prompt must restore access to worker tools: %q", got)
 	}
+	if !strings.Contains(got, "cannot spawn or manage other agents") {
+		t.Fatalf("worker system prompt must match worker tool filtering: %q", got)
+	}
+	if strings.Contains(got, "You may spawn further sub-agents") {
+		t.Fatalf("worker system prompt must not promise recursive delegation: %q", got)
+	}
 }
 
 func TestComposeWorkerSystemPrompt_TeachesNonInteractiveGit(t *testing.T) {

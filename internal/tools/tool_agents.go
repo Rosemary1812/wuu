@@ -62,7 +62,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Use run_in_background=true when you have genuinely independent work to do in parallel. Otherwise keep the " +
 			"agent in the foreground so its result can inform your next step. Verification agents always run in the background. " +
 			"After spawning background agents, continue meaningful non-overlapping local work when available; otherwise end your turn " +
-			"and let the mailbox notification resume you. Do not sleep, poll, or loop checking status. Use await_agents only when " +
+			"and let the background completion notification resume you. Do not sleep, poll, or loop checking status. Use await_agents only when " +
 			"synthesis or integration depends on child output. Spawn multiple independent agents in parallel by calling spawn_agent " +
 			"multiple times in the same response.",
 		InputSchema: map[string]any{
@@ -257,10 +257,9 @@ acting as the parent.
 
 This system-reminder OVERRIDES the parent's system prompt for you:
 
-- You may use spawn_agent, send_message, followup_task, wait_agent,
-  await_agents, close_agent, and list_agents when delegation helps. If a
-  decision needs the user's input, surface it in your final answer so the
-  parent can resolve it.
+- You cannot spawn or manage other agents from this child context. If the
+  task seems to require additional delegation, surface that need in your
+  final answer so the parent can decide and coordinate.
 - Messages from other agents may arrive as inter-agent JSON with
   author, recipient, content, and trigger_turn fields. Treat the
   content field as the actual instruction or notification.
@@ -277,6 +276,8 @@ This system-reminder OVERRIDES the parent's system prompt for you:
   summary, changed_files when relevant, concrete work_done, blockers when
   any, risks when any, verification performed or skipped, next_steps when
   useful, and evidence/artifact paths that let the parent verify the handoff.
+  Use artifacts only for existing handoff files that should be imported into
+  Wuu-managed session storage; put source files in changed_files or evidence.
 - When you finish, return a concise result summary and stop. Do not loop,
   do not ask follow-ups.
 
@@ -371,10 +372,9 @@ func (t *WaitAgentTool) IsConcurrencySafe() bool { return true }
 func (t *WaitAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "wait_agent",
-		Description: "Wait for a mailbox update from any live agent, including queued messages " +
-			"and final-status notifications. Does not return the content; returns either " +
-			"a completion summary or a timeout summary. Use sparingly; keep working locally " +
-			"when agent output is not blocking your next critical step.",
+		Description: "Wait briefly for a background agent notification only when the current turn is blocked on that signal. " +
+			"This is not a join or result tool: it does not return child output. Do not call wait_agent after spawn_agent just to poll. " +
+			"Use await_agents when you need child output for synthesis; otherwise continue local work or end the turn and let automatic completion notifications resume you.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -403,23 +403,65 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	completed, err := t.env.AgentControl.WaitForMailboxUpdateFrom(currentAgentPath(t.env), waitCtx)
+	signal, err := t.env.AgentControl.WaitForAgentNotificationFrom(currentAgentPath(t.env), waitCtx)
 	if err != nil {
 		return "", err
 	}
-	message := "Wait timed out."
-	if completed {
-		message = "Wait completed."
-	}
-	out, err := json.Marshal(map[string]any{
-		"action":    "wait_agent",
-		"message":   message,
-		"timed_out": !completed,
-	})
+	out, err := json.Marshal(waitAgentResultFromSignal(signal))
 	if err != nil {
 		return "", err
 	}
 	return string(out), nil
+}
+
+type waitAgentResult struct {
+	Action     string `json:"action"`
+	Message    string `json:"message"`
+	TimedOut   bool   `json:"timed_out"`
+	SignalType string `json:"signal_type"`
+	AgentID    string `json:"agent_id,omitempty"`
+	AgentPath  string `json:"agent_path,omitempty"`
+	TaskName   string `json:"task_name,omitempty"`
+	Status     string `json:"status,omitempty"`
+}
+
+func waitAgentResultFromSignal(signal agentcontrol.WaitAgentSignal) waitAgentResult {
+	result := waitAgentResult{
+		Action:     "wait_agent",
+		TimedOut:   !signal.Received,
+		SignalType: publicWaitAgentSignalType(signal.SignalType),
+		AgentID:    signal.AgentID,
+		AgentPath:  signal.AgentPath,
+		TaskName:   signal.TaskName,
+		Status:     signal.Status,
+	}
+	if result.SignalType == "" {
+		result.SignalType = agentcontrol.WaitAgentSignalTimeout
+	}
+	result.Message = waitAgentMessage(result)
+	return result
+}
+
+func publicWaitAgentSignalType(signalType string) string {
+	if signalType == agentcontrol.WaitAgentSignalQueuedMessage {
+		return "notification_received"
+	}
+	return signalType
+}
+
+func waitAgentMessage(result waitAgentResult) string {
+	switch result.SignalType {
+	case agentcontrol.WaitAgentSignalCompleted:
+		return "Background agent completed."
+	case agentcontrol.WaitAgentSignalFailed:
+		return "Background agent failed."
+	case agentcontrol.WaitAgentSignalCancelled:
+		return "Background agent was cancelled."
+	case agentcontrol.WaitAgentSignalTimeout:
+		return "Wait timed out; no background agent notification arrived before the timeout."
+	default:
+		return "Background agent notification received."
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -669,7 +711,7 @@ func (t *AgentReportTool) Definition() providers.ToolDefinition {
 				},
 				"artifacts": map[string]any{
 					"type":        "array",
-					"description": "Paths to durable artifacts such as patch files, reports, logs, or test output.",
+					"description": "Existing handoff artifact files to import into Wuu-managed session storage. Use this for reports, logs, screenshots, or test output that already exists. Relative paths resolve inside the task workspace; $SESSION_DIR/... refs are allowed. Source files belong in changed_files or evidence instead.",
 					"items":       map[string]any{"type": "string"},
 				},
 			},

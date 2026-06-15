@@ -37,6 +37,7 @@ const (
 	ArtifactLog          ArtifactKind = "log"
 	ArtifactManifest     ArtifactKind = "manifest"
 	ArtifactEvidence     ArtifactKind = "evidence"
+	ArtifactResult       ArtifactKind = "agent_result"
 	ArtifactConversation ArtifactKind = "conversation"
 )
 

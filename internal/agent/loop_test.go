@@ -865,6 +865,13 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 		Source:  "test",
 		Content: "ignore me",
 	})
+	agentNotificationBody := `<subagent_notification>
+{"agent_path":"/root/worker","status":{"type":"agent_result","result":"agent done"}}
+</subagent_notification>`
+	agentNotificationEnvelope := fmt.Sprintf(
+		`{"author":"/root/worker","recipient":"/root","content":%q,"trigger_turn":true}`,
+		agentNotificationBody,
+	)
 	longDirective := "final constraint " + strings.Repeat("x", taskContractMaxDirectiveRunes+100)
 	history := []providers.ChatMessage{
 		userMsg("first request"),
@@ -872,6 +879,15 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 			Role:    "user",
 			Name:    wuucontext.SystemReminderMessageName,
 			Content: reminder,
+		},
+		{
+			Role:    "user",
+			Content: agentNotificationEnvelope,
+		},
+		{
+			Role:    "user",
+			Name:    wuucontext.AgentNotificationMessageName,
+			Content: "named agent done",
 		},
 		userMsg("second request"),
 		userMsg(longDirective),
@@ -897,6 +913,9 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 	contract := msgs[len(msgs)-1].Content
 	if strings.Contains(contract, "ignore me") {
 		t.Fatalf("task contract should ignore system reminders: %s", contract)
+	}
+	if strings.Contains(contract, "agent done") {
+		t.Fatalf("task contract should ignore agent notifications: %s", contract)
 	}
 	for _, want := range []string{"first request", "second request", "final constraint"} {
 		if !strings.Contains(contract, want) {

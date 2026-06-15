@@ -33,6 +33,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 		Description: "Reads a file from the workspace. Returns content with line numbers.\n\n" +
 			"Usage:\n" +
 			"- The path parameter is relative to the workspace root\n" +
+			"- $SESSION_DIR/... references returned by tools are allowed for Wuu-managed artifacts\n" +
 			"- Returns content with cat -n style line number prefixes (number + tab)\n" +
 			"- Use range.start_line/range.end_line, symbol.name, or offset (1-based line) plus limit, to read specific portions of large files\n" +
 			"- Use context_lines with range/limit/symbol when nearby surrounding context is needed before editing\n" +
@@ -46,7 +47,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Relative file path in workspace.",
+					"description": "Relative file path in workspace, or a $SESSION_DIR/... artifact reference returned by a tool.",
 				},
 				"offset": map[string]any{
 					"type":        "integer",
@@ -130,12 +131,11 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		contextLines = *args.ContextLines
 	}
 
-	resolved, err := t.env.ResolvePath(args.Path)
+	resolved, displayPath, managedArtifact, err := t.env.ResolveReadPath(args.Path)
 	if err != nil {
 		return "", err
 	}
-	displayPath := t.env.NormalizeDisplayPath(resolved)
-	if reason, ok := sensitivePathReason(displayPath); ok {
+	if reason, ok := sensitivePathReason(displayPath); ok && !managedArtifact {
 		return "", fmt.Errorf("read_file refuses to read sensitive path %q (%s). Use a safer metadata command or ask the user for explicit secret handling", displayPath, reason)
 	}
 
@@ -232,7 +232,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 			if unchanged {
 				result := map[string]any{
 					"action":             "read_unchanged",
-					"path":               t.env.NormalizeDisplayPath(resolved),
+					"path":               displayPath,
 					"file_sha":           formatFileSHA(contentHash),
 					"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 					"range":              readFileRangeMetadata(args.Offset, len(readResult.Lines)),
@@ -267,7 +267,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 
 	result := map[string]any{
 		"action":             "read",
-		"path":               t.env.NormalizeDisplayPath(resolved),
+		"path":               displayPath,
 		"file_sha":           formatFileSHA(contentHash),
 		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 		"content":            buf.String(),

@@ -11,8 +11,8 @@ const (
 )
 
 // AgentPath is the canonical address for an agent in a root thread tree.
-// It follows Codex V2 semantics: /root is the tree root, and each child
-// segment is a task name made of lowercase ASCII letters, digits, or "_".
+// /root is the tree root, and each child segment is a task name made of
+// lowercase ASCII letters, digits, or "_".
 type AgentPath string
 
 func RootAgentPath() AgentPath {

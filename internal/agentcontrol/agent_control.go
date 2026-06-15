@@ -28,6 +28,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -249,18 +250,21 @@ type SpawnRequest struct {
 
 // SpawnResult is what the spawn_agent tool returns to the model.
 type SpawnResult struct {
-	Action       string   `json:"action"`
-	AgentID      string   `json:"agent_id"`
-	TaskName     string   `json:"task_name,omitempty"`
-	AgentProfile string   `json:"agent_profile,omitempty"`
-	AgentPath    string   `json:"agent_path,omitempty"`
-	Status       string   `json:"status"`
-	Isolation    string   `json:"isolation"`               // "inplace" or "worktree"
-	WorktreePath string   `json:"worktree_path,omitempty"` // empty for inplace spawns
-	Result       string   `json:"result,omitempty"`
-	Error        string   `json:"error,omitempty"`
-	DurationMS   int64    `json:"duration_ms,omitempty"`
-	NextSteps    []string `json:"next_steps,omitempty"`
+	Action          string   `json:"action"`
+	AgentID         string   `json:"agent_id"`
+	TaskName        string   `json:"task_name,omitempty"`
+	AgentProfile    string   `json:"agent_profile,omitempty"`
+	AgentPath       string   `json:"agent_path,omitempty"`
+	Status          string   `json:"status"`
+	Isolation       string   `json:"isolation"`               // "inplace" or "worktree"
+	WorktreePath    string   `json:"worktree_path,omitempty"` // empty for inplace spawns
+	Result          string   `json:"result,omitempty"`
+	ResultPath      string   `json:"result_path,omitempty"`
+	ResultBytes     int      `json:"result_bytes,omitempty"`
+	ResultTruncated bool     `json:"result_truncated,omitempty"`
+	Error           string   `json:"error,omitempty"`
+	DurationMS      int64    `json:"duration_ms,omitempty"`
+	NextSteps       []string `json:"next_steps,omitempty"`
 }
 
 type preparedSpawn struct {
@@ -486,7 +490,11 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		return nil, fmt.Errorf("wait: %w", err)
 	}
 	result.Status = string(snap.Status)
-	result.Result = snap.Result
+	ref := c.AgentResultReference(snap)
+	result.Result = ref.Preview
+	result.ResultPath = ref.Path
+	result.ResultBytes = ref.Bytes
+	result.ResultTruncated = ref.Truncated
 	if snap.Error != nil {
 		result.Error = snap.Error.Error()
 	}
@@ -515,7 +523,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 		}
 	case subagent.StatusRunning:
 		return []string{
-			"Continue non-overlapping local work when available; the worker will report through the mailbox when it finishes.",
+			"Continue non-overlapping local work when available; the worker will send a background completion notification when it finishes.",
 			"Use await_agents with " + pathHint + " only when the next step depends on this worker's output." + worktreeHint,
 		}
 	case subagent.StatusCompleted:
@@ -526,7 +534,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 			}
 		}
 		return []string{
-			"Inspect the worker's mailbox result and agent_report artifacts before relying on the handoff." + worktreeHint,
+			"Inspect the worker's completion notification and agent_report artifacts before relying on the handoff." + worktreeHint,
 		}
 	case subagent.StatusFailed:
 		return []string{
@@ -765,7 +773,11 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		return nil, fmt.Errorf("wait: %w", err)
 	}
 	result.Status = string(snap.Status)
-	result.Result = snap.Result
+	ref := c.AgentResultReference(snap)
+	result.Result = ref.Preview
+	result.ResultPath = ref.Path
+	result.ResultBytes = ref.Bytes
+	result.ResultTruncated = ref.Truncated
 	if snap.Error != nil {
 		result.Error = snap.Error.Error()
 	}
@@ -955,33 +967,61 @@ func (c *AgentControl) WaitFrom(currentPath string, ctx context.Context, target 
 	return c.manager.Wait(ctx, id)
 }
 
-func (c *AgentControl) WaitForMailboxUpdateFrom(currentPath string, ctx context.Context) (bool, error) {
+const (
+	WaitAgentSignalTimeout       = "timeout"
+	WaitAgentSignalQueuedMessage = "queued_message"
+	WaitAgentSignalCompleted     = "agent_completed"
+	WaitAgentSignalFailed        = "agent_failed"
+	WaitAgentSignalCancelled     = "agent_cancelled"
+)
+
+type WaitAgentSignal struct {
+	Received            bool
+	SignalType          string
+	AgentID             string
+	AgentPath           string
+	TaskName            string
+	ParentID            string
+	Status              string
+	Description         string
+	PendingMessageCount int
+}
+
+func (c *AgentControl) WaitForAgentNotificationFrom(currentPath string, ctx context.Context) (WaitAgentSignal, error) {
 	if c == nil || c.manager == nil {
-		return false, errors.New("agent control not configured")
+		return WaitAgentSignal{}, errors.New("agent control not configured")
 	}
 	currentID := c.agentIDForPath(currentPath)
-	if currentID != "" && c.manager.PendingMessageCount(currentID) > 0 {
-		return true, nil
+	if signal, ok := c.queuedMessageSignal(currentID); ok {
+		return signal, nil
 	}
 	ch := make(chan subagent.Notification, 16)
 	c.manager.Subscribe(ch)
 	defer c.manager.Unsubscribe(ch)
-	if currentID != "" && c.manager.PendingMessageCount(currentID) > 0 {
-		return true, nil
+	if signal, ok := c.queuedMessageSignal(currentID); ok {
+		return signal, nil
 	}
 	for {
 		select {
 		case n := <-ch:
-			if c.isMailboxNotificationFor(currentID, n) {
-				return true, nil
+			if signal, ok := c.agentNotificationSignal(currentID, n); ok {
+				return signal, nil
 			}
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return false, nil
+				return WaitAgentSignal{SignalType: WaitAgentSignalTimeout}, nil
 			}
-			return false, ctx.Err()
+			return WaitAgentSignal{}, ctx.Err()
 		}
 	}
+}
+
+func (c *AgentControl) WaitForMailboxUpdateFrom(currentPath string, ctx context.Context) (bool, error) {
+	signal, err := c.WaitForAgentNotificationFrom(currentPath, ctx)
+	if err != nil {
+		return false, err
+	}
+	return signal.Received, nil
 }
 
 func (c *AgentControl) agentIDForPath(currentPath string) string {
@@ -996,20 +1036,77 @@ func (c *AgentControl) agentIDForPath(currentPath string) string {
 }
 
 func (c *AgentControl) isMailboxNotificationFor(currentID string, n subagent.Notification) bool {
+	_, ok := c.agentNotificationSignal(currentID, n)
+	return ok
+}
+
+func (c *AgentControl) queuedMessageSignal(currentID string) (WaitAgentSignal, bool) {
+	if currentID == "" {
+		return WaitAgentSignal{}, false
+	}
+	count := c.manager.PendingMessageCount(currentID)
+	if count <= 0 {
+		return WaitAgentSignal{}, false
+	}
+	signal := WaitAgentSignal{
+		Received:            true,
+		SignalType:          WaitAgentSignalQueuedMessage,
+		AgentID:             currentID,
+		PendingMessageCount: count,
+	}
+	if snap := c.snapshotByID(currentID); snap != nil {
+		signal = waitAgentSignalFromSnapshot(WaitAgentSignalQueuedMessage, *snap)
+		signal.PendingMessageCount = count
+	}
+	return signal, true
+}
+
+func (c *AgentControl) agentNotificationSignal(currentID string, n subagent.Notification) (WaitAgentSignal, bool) {
 	if currentID == "" {
 		if !isFinalSubAgentStatus(n.Status) {
-			return false
+			return WaitAgentSignal{}, false
 		}
 		parentID := strings.TrimSpace(n.Snapshot.ParentID)
-		return parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID
+		if parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID {
+			return waitAgentSignalFromSnapshot(waitAgentSignalTypeForStatus(n.Status), n.Snapshot), true
+		}
+		return WaitAgentSignal{}, false
 	}
-	if n.Snapshot.ID == currentID && c.manager.PendingMessageCount(currentID) > 0 {
-		return true
+	if n.Snapshot.ID == currentID {
+		if signal, ok := c.queuedMessageSignal(currentID); ok {
+			return signal, true
+		}
 	}
 	if strings.TrimSpace(n.Snapshot.ParentID) == currentID && isFinalSubAgentStatus(n.Status) {
-		return true
+		return waitAgentSignalFromSnapshot(waitAgentSignalTypeForStatus(n.Status), n.Snapshot), true
 	}
-	return false
+	return WaitAgentSignal{}, false
+}
+
+func waitAgentSignalTypeForStatus(status subagent.Status) string {
+	switch status {
+	case subagent.StatusCompleted:
+		return WaitAgentSignalCompleted
+	case subagent.StatusFailed:
+		return WaitAgentSignalFailed
+	case subagent.StatusCancelled:
+		return WaitAgentSignalCancelled
+	default:
+		return string(status)
+	}
+}
+
+func waitAgentSignalFromSnapshot(signalType string, snap subagent.SubAgentSnapshot) WaitAgentSignal {
+	return WaitAgentSignal{
+		Received:    true,
+		SignalType:  signalType,
+		AgentID:     snap.ID,
+		AgentPath:   snap.AgentPath,
+		TaskName:    snap.TaskName,
+		ParentID:    snap.ParentID,
+		Status:      string(snap.Status),
+		Description: snap.Description,
+	}
 }
 
 // Subscribe forwards to the underlying manager so the UI can receive
@@ -1569,6 +1666,7 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 		})
 	}
 	if isFinalSubAgentStatus(n.Status) {
+		c.recordAgentResultArtifact(n.Snapshot)
 		c.recordWorktreeArtifacts(n.Snapshot)
 	}
 }
@@ -1852,7 +1950,7 @@ func newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPa
 
 func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
 	reportPath, artifacts := c.harnessReportForTask(snap.ID)
-	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, NewAgentMailboxMessageWithReport(snap, reportPath, artifacts))
+	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, c.agentMailboxMessageWithRefs(snap, reportPath, artifacts))
 }
 
 // AgentCompletionChatMessage returns the user-role handoff that should resume
@@ -1862,13 +1960,29 @@ func (c *AgentControl) AgentCompletionChatMessage(snap subagent.SubAgentSnapshot
 	communication := newAgentCompletionCommunicationWithMessageAndTrigger(
 		snap,
 		recipientPath,
-		NewAgentMailboxMessageWithReport(snap, reportPath, artifacts),
+		c.agentMailboxMessageWithRefs(snap, reportPath, artifacts),
 		true,
 	)
 	return providers.ChatMessage{
 		Role:    "user",
+		Name:    wuucontext.AgentNotificationMessageName,
 		Content: communication.String(),
 	}
+}
+
+func (c *AgentControl) AgentMailboxMessage(snap subagent.SubAgentSnapshot) AgentMailboxMessage {
+	reportPath, artifacts := c.harnessReportForTask(snap.ID)
+	return c.agentMailboxMessageWithRefs(snap, reportPath, artifacts)
+}
+
+func (c *AgentControl) agentMailboxMessageWithRefs(snap subagent.SubAgentSnapshot, reportPath string, artifacts []string) AgentMailboxMessage {
+	ref := c.AgentResultReference(snap)
+	return NewAgentMailboxMessageWithReportAndResult(
+		snap,
+		c.sessionArtifactRef(reportPath),
+		c.sessionArtifactRefs(artifacts),
+		ref,
+	)
 }
 
 func newAgentCompletionCommunicationWithMessage(snap subagent.SubAgentSnapshot, recipientPath string, message AgentMailboxMessage) agentthread.InterAgentCommunication {
@@ -2037,7 +2151,7 @@ When the user's intent is unclear, the task depends on requirements or tradeoffs
 - spawn_agent — launch a child agent. Pass description and prompt. Specify subagent_type for a fresh specialized agent, or omit subagent_type to fork yourself with full conversation context.
 - send_message — queue a message for an existing background agent without triggering a new turn.
 - followup_task — send a follow-up task message and trigger the target background agent's next turn.
-- wait_agent — wait for any mailbox update only when an agent notification blocks your next step.
+- wait_agent — wait briefly for a background agent notification only when the current turn is blocked on that signal. It does not return child output.
 - await_agents — explicitly join specific child agents, or all active descendant agents, and return structured per-agent results.
 - close_agent — stop a running agent that is stuck or off-track.
 - list_agents — see active agents and their status.
@@ -2069,13 +2183,13 @@ Do not delegate understanding. Never hand off vague prompts like "based on your 
 
 Launch independent agents in parallel whenever possible. Read-only or verification tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts.
 
-Fresh subagents run in the foreground by default so you can use their result immediately. Set run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let mailbox notifications automatically resume you. Do not repeatedly wait by reflex.
+Fresh subagents run in the foreground by default so you can use their result immediately. Set run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let background completion notifications automatically resume you. Do not call wait_agent after spawn_agent just to poll, and do not repeatedly wait by reflex.
 
 Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks. If await_agents returns awaiting_report, the worker finished without a durable handoff; follow up or verify before relying on the result.
 
 ## Working with Agent Results
 
-Agent messages arrive as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the actual instruction or result. When a background agent finishes, its result automatically arrives as a notification in your next turn.
+Background completion notifications are internal agent handoffs, not new user requests. They may be encoded as structured inter-agent notifications with author, recipient, content, and trigger_turn fields. Treat content as the handoff payload, then synthesize and verify it yourself. When a background agent finishes, its result automatically arrives as a notification in your next turn.
 
 Before launching follow-up work, read the returned content yourself and do your own synthesis. Agent output is not a substitute for your judgment.
 
@@ -2150,7 +2264,7 @@ func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, is
 		b.WriteString("read-only operations are safe, but any file you modify is visible to the orchestrator and other workers immediately. ")
 	}
 	b.WriteString("All file paths in your tools resolve relative to this directory. ")
-	b.WriteString("You may spawn further sub-agents when a task is genuinely independent or needs isolated verification, but you remain responsible for synthesizing their reports before you finish.\n")
+	b.WriteString("You cannot spawn or manage other agents from this worker. If the task seems to require additional delegation, report that need in your final handoff so the parent can decide and coordinate.\n")
 	if base != "" {
 		b.WriteString("\n---\n\n")
 		b.WriteString(base)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -441,6 +442,13 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
+	reportedSource := filepath.Join(dir, "reports", "notes.md")
+	if err := os.MkdirAll(filepath.Dir(reportedSource), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportedSource, []byte("agent notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
 		Outcome:      "completed",
@@ -463,7 +471,13 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if report.TaskID != res.AgentID || report.ReportPath == "" || len(report.Artifacts) != 2 {
 		t.Fatalf("unexpected report result: %+v", report)
 	}
-	if _, err := os.Stat(report.ReportPath); err != nil {
+	if !strings.HasPrefix(report.ReportPath, "$SESSION_DIR/") {
+		t.Fatalf("agent_report should return a session artifact ref, got %+v", report)
+	}
+	if strings.Contains(strings.Join(report.Artifacts, ","), "reports/notes.md") {
+		t.Fatalf("agent_report should return imported artifact refs, got %+v", report.Artifacts)
+	}
+	if _, err := os.Stat(sessionRefPath(t, c, report.ReportPath)); err != nil {
 		t.Fatalf("report file missing: %v", err)
 	}
 	reports, err := c.HarnessStore().ListReports()
@@ -484,11 +498,67 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListArtifacts: %v", err)
 	}
-	if len(artifacts) != 2 {
-		t.Fatalf("expected report artifact and explicit artifact, got %+v", artifacts)
+	if len(artifacts) != 3 {
+		t.Fatalf("expected result, report, and explicit artifacts, got %+v", artifacts)
+	}
+	if !artifactKindPresent(artifacts, harness.ArtifactResult) {
+		t.Fatalf("expected agent result artifact, got %+v", artifacts)
+	}
+	var importedPath string
+	for _, artifact := range artifacts {
+		if artifact.Kind == harness.ArtifactEvidence && strings.Contains(artifact.Path, string(filepath.Separator)+"reported"+string(filepath.Separator)) {
+			importedPath = artifact.Path
+			break
+		}
+	}
+	if importedPath == "" {
+		t.Fatalf("expected imported artifact under harness reported dir, got %+v", artifacts)
+	}
+	if importedPath == reportedSource {
+		t.Fatalf("reported artifact should be copied into Wuu storage, got source path %q", importedPath)
+	}
+	if got := mustReadAgentControlFile(t, importedPath); got != "agent notes\n" {
+		t.Fatalf("imported artifact content mismatch: %q", got)
 	}
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
+func TestRecordAgentReportRejectsMissingArtifact(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-missing-artifact",
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-missing-artifact", "harness"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "missing_artifact",
+		Prompt:      "finish",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	_, err = c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+		Outcome:   "completed",
+		Summary:   "Tried to report a missing artifact.",
+		Artifacts: []string{"reports/missing.md"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "file does not exist") {
+		t.Fatalf("expected missing artifact error, got %v", err)
+	}
 }
 
 func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
@@ -529,6 +599,13 @@ func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
 	if len(tasks) != 1 || tasks[0].LoopID != "workflow-run-1" || tasks[0].LoopDir == "" {
 		t.Fatalf("harness task missing loop binding: %+v", tasks)
 	}
+	artifactPath := filepath.Join(tasks[0].Workspace.Root, "reports", "worker.patch")
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatalf("create report artifact dir: %v", err)
+	}
+	if err := os.WriteFile(artifactPath, []byte("patch\n"), 0o644); err != nil {
+		t.Fatalf("write report artifact: %v", err)
+	}
 
 	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
 		Outcome:      "completed",
@@ -546,11 +623,14 @@ func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
 		t.Fatalf("expected one synced report, got %+v", reports)
 	}
 	got := reports[0]
-	if got.LoopID != "workflow-run-1" || got.LoopDir == "" || got.ReportPath != report.ReportPath {
+	if got.LoopID != "workflow-run-1" || got.LoopDir == "" || got.ReportPath != sessionRefPath(t, c, report.ReportPath) {
 		t.Fatalf("synced report missing loop/report binding: %+v", got)
 	}
 	if len(got.ChangedFiles) != 1 || got.ChangedFiles[0] != "internal/agentcontrol/report.go" || len(got.Verification) != 1 || len(got.Artifacts) != 1 {
 		t.Fatalf("synced report missing handoff facts: %+v", got)
+	}
+	if got.Artifacts[0] == artifactPath {
+		t.Fatalf("synced report should use imported artifact path, got source path %q", got.Artifacts[0])
 	}
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
@@ -600,7 +680,7 @@ func TestRecordAgentReportSyncsFailureSinkForBlockers(t *testing.T) {
 		t.Fatalf("expected one synced failure, got %+v", failures)
 	}
 	got := failures[0]
-	if got.Source != "harness_report" || got.TaskID != res.AgentID || got.ReportPath != report.ReportPath {
+	if got.Source != "harness_report" || got.TaskID != res.AgentID || got.ReportPath != sessionRefPath(t, c, report.ReportPath) {
 		t.Fatalf("unexpected synced failure: %+v", got)
 	}
 	if got.Message != "go test ./internal/agentcontrol fails" || got.Outcome != "stuck" {
@@ -1097,7 +1177,7 @@ func TestStopClosesAgentSubtree(t *testing.T) {
 	}
 }
 
-func TestWaitForMailboxUpdateFromRootWakesOnChildFinalStatus(t *testing.T) {
+func TestWaitForAgentNotificationFromRootReportsChildFinalStatus(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 	c, err := New(Config{
@@ -1121,15 +1201,15 @@ func TestWaitForMailboxUpdateFromRootWakesOnChildFinalStatus(t *testing.T) {
 	}
 
 	type waitResult struct {
-		completed bool
-		err       error
+		signal WaitAgentSignal
+		err    error
 	}
 	done := make(chan waitResult, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		completed, err := c.WaitForMailboxUpdateFrom(agentthread.RootPath, ctx)
-		done <- waitResult{completed: completed, err: err}
+		signal, err := c.WaitForAgentNotificationFrom(agentthread.RootPath, ctx)
+		done <- waitResult{signal: signal, err: err}
 	}()
 	time.Sleep(20 * time.Millisecond)
 	if !c.Stop(child.AgentID) {
@@ -1140,15 +1220,18 @@ func TestWaitForMailboxUpdateFromRootWakesOnChildFinalStatus(t *testing.T) {
 		if got.err != nil {
 			t.Fatalf("wait mailbox: %v", got.err)
 		}
-		if !got.completed {
+		if !got.signal.Received {
 			t.Fatal("expected wait to complete")
+		}
+		if got.signal.SignalType != WaitAgentSignalCancelled || got.signal.AgentID != child.AgentID || got.signal.Status != string(subagent.StatusCancelled) {
+			t.Fatalf("unexpected wait signal: %+v", got.signal)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for mailbox update")
 	}
 }
 
-func TestWaitForMailboxUpdateFromAgentReturnsAlreadyQueuedMail(t *testing.T) {
+func TestWaitForAgentNotificationFromAgentReturnsQueuedMessageSignal(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 	c, err := New(Config{
@@ -1175,12 +1258,15 @@ func TestWaitForMailboxUpdateFromAgentReturnsAlreadyQueuedMail(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	completed, err := c.WaitForMailboxUpdateFrom(parent.AgentPath, ctx)
+	signal, err := c.WaitForAgentNotificationFrom(parent.AgentPath, ctx)
 	if err != nil {
 		t.Fatalf("wait mailbox: %v", err)
 	}
-	if !completed {
+	if !signal.Received {
 		t.Fatal("expected already queued mailbox update to complete immediately")
+	}
+	if signal.SignalType != WaitAgentSignalQueuedMessage || signal.AgentID != parent.AgentID || signal.PendingMessageCount != 1 {
+		t.Fatalf("unexpected queued message signal: %+v", signal)
 	}
 	c.StopAll()
 }
@@ -1950,7 +2036,7 @@ func TestAgentCompletionChatMessageTriggersRootTurn(t *testing.T) {
 
 	snap := c.Manager().Get(res.AgentID).Snapshot()
 	msg := c.AgentCompletionChatMessage(snap, agentthread.RootPath)
-	if msg.Role != "user" || msg.Name != "" {
+	if msg.Role != "user" || msg.Name != wuucontext.AgentNotificationMessageName {
 		t.Fatalf("unexpected completion chat message envelope: %+v", msg)
 	}
 	var communication agentthread.InterAgentCommunication
@@ -1962,6 +2048,74 @@ func TestAgentCompletionChatMessageTriggersRootTurn(t *testing.T) {
 	}
 	if !strings.Contains(communication.Content, "found bug at line 42") {
 		t.Fatalf("completion content missing result: %s", communication.Content)
+	}
+}
+
+func TestAgentCompletionPersistsLongResultAndReturnsPreview(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	harnessDir := filepath.Join(dir, ".wuu", "sessions", "sess-long-result", "harness")
+	longResult := "BEGIN\n" + strings.Repeat("middle payload\n", 500) + "END"
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: longResult}},
+		DefaultModel:  "fake",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, "wt"),
+		SessionID:     "sess-long-result",
+		HarnessDir:    harnessDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "long_result",
+		Description: "produce long result",
+		Prompt:      "return long result",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if !res.ResultTruncated || res.ResultPath == "" || res.ResultBytes != len([]byte(longResult)) {
+		t.Fatalf("spawn result should return a persisted preview, got %+v", res)
+	}
+	if res.Result == longResult || !strings.Contains(res.Result, "agent result preview truncated") {
+		t.Fatalf("spawn result should be a bounded preview, got %d chars", len(res.Result))
+	}
+	resultPath := sessionRefPath(t, c, res.ResultPath)
+	raw, err := os.ReadFile(resultPath)
+	if err != nil {
+		t.Fatalf("read result artifact: %v", err)
+	}
+	if string(raw) != longResult {
+		t.Fatalf("result artifact mismatch")
+	}
+
+	snap := c.Manager().Get(res.AgentID).Snapshot()
+	msg := c.AgentCompletionChatMessage(snap, agentthread.RootPath)
+	var communication agentthread.InterAgentCommunication
+	if err := json.Unmarshal([]byte(msg.Content), &communication); err != nil {
+		t.Fatalf("completion payload is not JSON: %v\n%s", err, msg.Content)
+	}
+	var fragment struct {
+		AgentPath string              `json:"agent_path"`
+		Status    AgentMailboxMessage `json:"status"`
+	}
+	content := strings.TrimPrefix(communication.Content, "<subagent_notification>\n")
+	content = strings.TrimSuffix(content, "\n</subagent_notification>")
+	if err := json.Unmarshal([]byte(content), &fragment); err != nil {
+		t.Fatalf("notification content is not JSON: %v\n%s", err, communication.Content)
+	}
+	if !fragment.Status.ResultTruncated || fragment.Status.ResultPath != res.ResultPath || fragment.Status.Result == longResult {
+		t.Fatalf("mailbox should return preview plus result_path, got %+v", fragment.Status)
+	}
+	if !strings.Contains(communication.Content, "result_path") || strings.Contains(communication.Content, longResult) {
+		t.Fatalf("completion should include result_path without raw long result")
 	}
 }
 
@@ -2072,6 +2226,34 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func artifactKindPresent(artifacts []harness.Artifact, kind harness.ArtifactKind) bool {
+	for _, artifact := range artifacts {
+		if artifact.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionRefPath(t *testing.T, c *AgentControl, ref string) string {
+	t.Helper()
+	if !strings.HasPrefix(ref, "$SESSION_DIR") {
+		t.Fatalf("expected session ref, got %q", ref)
+	}
+	suffix := strings.TrimPrefix(ref, "$SESSION_DIR")
+	suffix = strings.TrimPrefix(suffix, "/")
+	return filepath.Join(c.sessionDir(), filepath.FromSlash(suffix))
+}
+
+func mustReadAgentControlFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	return string(data)
 }
 
 func spawnStepsContain(steps []string, needle string) bool {

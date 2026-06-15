@@ -22,21 +22,24 @@ type AwaitAgentsResult struct {
 }
 
 type AwaitAgentResult struct {
-	AgentID       string   `json:"agent_id,omitempty"`
-	TaskName      string   `json:"task_name,omitempty"`
-	AgentProfile  string   `json:"agent_profile,omitempty"`
-	AgentPath     string   `json:"agent_path,omitempty"`
-	Status        string   `json:"status"`
-	Result        string   `json:"result,omitempty"`
-	Error         string   `json:"error,omitempty"`
-	ChangedFiles  []string `json:"changed_files,omitempty"`
-	ReportPath    string   `json:"report_path,omitempty"`
-	ReportMissing bool     `json:"report_missing,omitempty"`
-	Artifacts     []string `json:"artifacts,omitempty"`
-	WorktreePath  string   `json:"worktree_path,omitempty"`
-	InputTokens   int      `json:"input_tokens,omitempty"`
-	OutputTokens  int      `json:"output_tokens,omitempty"`
-	DurationMS    int64    `json:"duration_ms,omitempty"`
+	AgentID         string   `json:"agent_id,omitempty"`
+	TaskName        string   `json:"task_name,omitempty"`
+	AgentProfile    string   `json:"agent_profile,omitempty"`
+	AgentPath       string   `json:"agent_path,omitempty"`
+	Status          string   `json:"status"`
+	Result          string   `json:"result,omitempty"`
+	ResultPath      string   `json:"result_path,omitempty"`
+	ResultBytes     int      `json:"result_bytes,omitempty"`
+	ResultTruncated bool     `json:"result_truncated,omitempty"`
+	Error           string   `json:"error,omitempty"`
+	ChangedFiles    []string `json:"changed_files,omitempty"`
+	ReportPath      string   `json:"report_path,omitempty"`
+	ReportMissing   bool     `json:"report_missing,omitempty"`
+	Artifacts       []string `json:"artifacts,omitempty"`
+	WorktreePath    string   `json:"worktree_path,omitempty"`
+	InputTokens     int      `json:"input_tokens,omitempty"`
+	OutputTokens    int      `json:"output_tokens,omitempty"`
+	DurationMS      int64    `json:"duration_ms,omitempty"`
 }
 
 type awaitTarget struct {
@@ -257,13 +260,18 @@ func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult
 
 	if snap := c.snapshotByID(meta.ID); snap != nil {
 		out = awaitResultFromSnapshot(*snap)
+		ref := c.AgentResultReference(*snap)
+		out.Result = ref.Preview
+		out.ResultPath = ref.Path
+		out.ResultBytes = ref.Bytes
+		out.ResultTruncated = ref.Truncated
 	}
 	if task, ok := c.harnessTask(meta.ID); ok {
 		applyHarnessTaskToAwaitResult(&out, task)
 	}
 	reportPath, artifacts := c.harnessReportForTask(meta.ID)
-	out.ReportPath = reportPath
-	out.Artifacts = artifacts
+	out.ReportPath = c.sessionArtifactRef(reportPath)
+	out.Artifacts = c.sessionArtifactRefs(artifacts)
 	if report, ok := c.harnessReportDetailsForTask(meta.ID); ok {
 		out.ChangedFiles = trimStringSlice(report.ChangedFiles)
 	}

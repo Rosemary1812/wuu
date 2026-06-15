@@ -18,6 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -3113,7 +3114,8 @@ func TestServerAutoResumesRootAgentOnAgentCompletion(t *testing.T) {
 	}
 	var handoff providers.ChatMessage
 	for _, msg := range requests[0].Messages {
-		if msg.Role == "user" && strings.Contains(msg.Content, res.AgentID) && strings.Contains(msg.Content, "agent done") {
+		if msg.Role == "user" && msg.Name == wuucontext.AgentNotificationMessageName &&
+			strings.Contains(msg.Content, res.AgentID) && strings.Contains(msg.Content, "agent done") {
 			handoff = msg
 			break
 		}
@@ -3190,7 +3192,8 @@ func TestServerQueuesAgentCompletionWhileRootTurnIsRunning(t *testing.T) {
 	rootThread.mu.Unlock()
 	var foundHandoff bool
 	for _, msg := range history {
-		if msg.Role == "user" && strings.Contains(msg.Content, "agent done") && strings.Contains(msg.Content, `"trigger_turn":true`) {
+		if msg.Role == "user" && msg.Name == wuucontext.AgentNotificationMessageName &&
+			strings.Contains(msg.Content, "agent done") && strings.Contains(msg.Content, `"trigger_turn":true`) {
 			foundHandoff = true
 			break
 		}

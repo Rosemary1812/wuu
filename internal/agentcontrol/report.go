@@ -81,7 +81,10 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 			Note:    strings.TrimSpace(ref.Note),
 		})
 	}
-	artifacts := trimStringSlice(req.Artifacts)
+	artifacts, err := c.importReportedArtifacts(id, req.Artifacts)
+	if err != nil {
+		return AgentReportResult{}, err
+	}
 	report, err := c.harnessStore.SubmitReport(harness.Report{
 		ID:           id + "-agent-report",
 		TaskID:       id,
@@ -148,25 +151,14 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 	if report.ReportPath != "" && !stringSliceContains(artifacts, report.ReportPath) {
 		artifacts = append(artifacts, report.ReportPath)
 	}
-	for _, path := range trimStringSlice(req.Artifacts) {
-		_ = c.harnessStore.AddArtifact(harness.Artifact{
-			ID:        id + "-artifact-" + sanitizeArtifactID(path),
-			TaskID:    id,
-			RunID:     harnessRunID(id),
-			Kind:      harness.ArtifactEvidence,
-			Path:      path,
-			Summary:   "agent-reported artifact",
-			CreatedAt: time.Now().UTC(),
-		})
-	}
 	return AgentReportResult{
 		Action:     "agent_report",
 		TaskID:     id,
 		AgentID:    id,
 		AgentPath:  path,
 		Outcome:    outcome,
-		ReportPath: report.ReportPath,
-		Artifacts:  artifacts,
+		ReportPath: c.sessionArtifactRef(report.ReportPath),
+		Artifacts:  c.sessionArtifactRefs(artifacts),
 	}, nil
 }
 

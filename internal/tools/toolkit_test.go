@@ -136,6 +136,43 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	}
 }
 
+func TestToolkit_ReadFileAllowsSessionArtifactRefs(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	sessionDir := filepath.Join(t.TempDir(), "session-artifacts")
+	kit.SetSessionDir(sessionDir)
+	artifactPath := filepath.Join(sessionDir, "harness", "artifacts", "worker-1", "result.md")
+	mustWriteFile(t, artifactPath, "artifact result\nsecond line\n")
+
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"$SESSION_DIR/harness/artifacts/worker-1/result.md"}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file session artifact: %v", err)
+	}
+	var parsed struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(readResp), &parsed); err != nil {
+		t.Fatalf("parse read response: %v", err)
+	}
+	if parsed.Path != "$SESSION_DIR/harness/artifacts/worker-1/result.md" || !strings.Contains(parsed.Content, "artifact result") {
+		t.Fatalf("unexpected session artifact read: %+v", parsed)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: fmt.Sprintf(`{"path":%q,"content":"bad"}`, artifactPath),
+	}); err == nil || !strings.Contains(err.Error(), "escapes workspace") {
+		t.Fatalf("write_file should not write session artifacts, got err=%v", err)
+	}
+}
+
 func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -4800,7 +4837,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 	t.Fatal("spawn_agent must be present in tool definitions")
 }
 
-func TestToolkit_WaitAgentUsesV2MailboxSchema(t *testing.T) {
+func TestToolkit_WaitAgentUsesNotificationSignalSchema(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -4815,14 +4852,96 @@ func TestToolkit_WaitAgentUsesV2MailboxSchema(t *testing.T) {
 			t.Fatalf("wait_agent schema must expose timeout_ms: %#v", d.InputSchema)
 		}
 		if _, ok := props["target"]; ok {
-			t.Fatalf("wait_agent v2 schema must not expose target: %#v", d.InputSchema)
+			t.Fatalf("wait_agent signal schema must not expose target: %#v", d.InputSchema)
 		}
 		if _, ok := d.InputSchema["required"]; ok {
-			t.Fatalf("wait_agent v2 schema must not require fields: %#v", d.InputSchema)
+			t.Fatalf("wait_agent signal schema must not require fields: %#v", d.InputSchema)
 		}
 		return
 	}
 	t.Fatal("wait_agent must be present in tool definitions")
+}
+
+func TestToolkit_WaitAgentReturnsNarrowTimeoutSignal(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &workflowFakeClient{content: "unused"},
+		DefaultModel: "fake-model",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
+		SessionID:    "wait-signal-session",
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return workflowNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopWorkflowAgentControl(control)
+	kit.SetAgentControl(control)
+	kit.SetAgentIdentity("root", agentthread.RootPath)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "wait_agent",
+		Arguments: `{"timeout_ms":1}`,
+	})
+	if err != nil {
+		t.Fatalf("wait_agent: %v", err)
+	}
+	var parsed struct {
+		Action     string `json:"action"`
+		TimedOut   bool   `json:"timed_out"`
+		SignalType string `json:"signal_type"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("decode wait_agent result: %v\n%s", err, resp)
+	}
+	if parsed.Action != "wait_agent" || !parsed.TimedOut || parsed.SignalType != agentcontrol.WaitAgentSignalTimeout {
+		t.Fatalf("unexpected wait_agent result: %+v", parsed)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(resp), &raw); err != nil {
+		t.Fatalf("decode wait_agent result map: %v\n%s", err, resp)
+	}
+	for _, key := range []string{"next_steps", "await_target", "details_available_via", "requires_await_agents_for_output"} {
+		if _, ok := raw[key]; ok {
+			t.Fatalf("wait_agent result should stay narrow, found %s in %s", key, resp)
+		}
+	}
+}
+
+func TestWaitAgentResultFromCompletedSignalIsNarrow(t *testing.T) {
+	result := waitAgentResultFromSignal(agentcontrol.WaitAgentSignal{
+		Received:   true,
+		SignalType: agentcontrol.WaitAgentSignalCompleted,
+		AgentID:    "agent-1",
+		AgentPath:  "/root/review",
+		TaskName:   "review",
+		Status:     "completed",
+	})
+	if result.TimedOut || result.SignalType != agentcontrol.WaitAgentSignalCompleted {
+		t.Fatalf("unexpected completed wait result: %+v", result)
+	}
+	if result.AgentPath != "/root/review" || result.AgentID != "agent-1" || result.Status != "completed" {
+		t.Fatalf("completed signal should keep only identity/status fields: %+v", result)
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal completed wait result: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("decode completed wait result: %v\n%s", err, raw)
+	}
+	for _, key := range []string{"next_steps", "await_target", "details_available_via", "requires_await_agents_for_output"} {
+		if _, ok := decoded[key]; ok {
+			t.Fatalf("completed wait result should stay narrow, found %s in %s", key, raw)
+		}
+	}
 }
 
 func TestToolkit_SpawnAgent_FailsWithoutAgentControl(t *testing.T) {
@@ -4854,6 +4973,12 @@ func TestWrapForkPrompt_OverridesParentReadOnlyClaims(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "call agent_report exactly once") || !strings.Contains(prompt, "evidence/artifact paths") {
 		t.Fatalf("fork override must preserve structured handoff discipline: %q", prompt)
+	}
+	if !strings.Contains(prompt, "cannot spawn or manage other agents") {
+		t.Fatalf("fork override must match worker tool filtering: %q", prompt)
+	}
+	if strings.Contains(prompt, "You may use spawn_agent") {
+		t.Fatalf("fork override must not promise recursive delegation: %q", prompt)
 	}
 }
 

@@ -102,12 +102,12 @@ async function run() {
   }
 
   const processRect = await waitFor(win, processCheckpointRect, 3000);
-  assert.match(processRect.text, /第一段说明/, "Process checkpoint should be visible before final text starts.");
+  assert.match(processRect.text, /第一段说明/, "Process preview should be visible before final text starts.");
   const beforeProcessState = await waitFor(win, processGroupState, 3000);
   assert.equal(beforeProcessState.expanded, false, "Process details should stay collapsed before final text starts.");
   assert.equal(beforeProcessState.shellHasProcess, true, "Assistant shell should expose a stable process lane.");
   assert.equal(beforeProcessState.shellHasAnswer, false, "Answer lane should stay empty before final text starts.");
-  assert.equal(beforeProcessState.checkpointVisible, true, "Process checkpoint should be the active live text before final starts.");
+  assert.equal(beforeProcessState.checkpointVisible, true, "Process preview should be the active live text before final starts.");
   assert.ok(
     beforeProcessState.detailsHeight <= 1,
     `Collapsed tool details should not occupy timeline space. Height=${beforeProcessState.detailsHeight}`
@@ -136,25 +136,19 @@ async function run() {
   assert.match(finalRect.text, /第二段/, "Final text should stream after process work.");
   assert.equal(afterProcessState.shellHasProcess, true, "Process lane should remain stable after final text starts.");
   assert.equal(afterProcessState.shellHasAnswer, true, "Final text should appear in the stable answer lane.");
-  assert.equal(afterProcessState.checkpointVisible, false, "Process checkpoint should yield space to the answer lane.");
+  assert.equal(afterProcessState.checkpointVisible, true, "Process preview should remain available in the folded header.");
   assert.equal(afterProcessState.expanded, false, "Process details should not expand during text handoff.");
   assert.ok(
     afterProcessState.detailsHeight <= 1,
     `Process details should remain visually collapsed during handoff. Height=${afterProcessState.detailsHeight}`
   );
-  assert.equal(finalRect.fontSize, processRect.fontSize, "Handoff text should keep font size stable.");
-  assert.equal(finalRect.lineHeight, processRect.lineHeight, "Handoff text should keep line height stable.");
   assert.ok(
-    Math.abs(finalRect.left - processRect.left) <= 2,
-    `Final text should keep the same horizontal anchor. Before=${processRect.left}, after=${finalRect.left}`
+    Number.parseFloat(finalRect.fontSize) >= 15,
+    `Final text should render as readable answer body copy. Font size=${finalRect.fontSize}`
   );
   assert.ok(
-    Math.abs(finalRect.top - processRect.top) <= 10,
-    `Final text should enter the same text lane rhythm as process text. Before=${processRect.top}, after=${finalRect.top}`
-  );
-  assert.ok(
-    afterProcessState.headerToAnswerGap >= 4 && afterProcessState.headerToAnswerGap <= 12,
-    `Process header and answer lane should use a compact stable gap. Gap=${afterProcessState.headerToAnswerGap}`
+    afterProcessState.groupToAnswerGap >= 4 && afterProcessState.groupToAnswerGap <= 24,
+    `Process group and answer lane should use a compact stable gap. Gap=${afterProcessState.groupToAnswerGap}`
   );
   await capture(win, "process-handoff-after.png");
 
@@ -192,13 +186,11 @@ async function run() {
     3000
   );
   const completedFinalRect = await waitFor(win, finalAnswerRect, 3000);
-  const completedProcessHeaderRect = await waitFor(win, processHeaderRect, 3000);
   const completedProcessState = await waitFor(win, processGroupState, 3000);
-  const headerToBodyGap = completedFinalRect.top - (completedProcessHeaderRect.top + completedProcessHeaderRect.height);
   const bodyToActionsGap = completedActionSlot.top - (completedFinalRect.top + completedFinalRect.height);
   assert.equal(completedProcessState.shellHasProcess, true, "Completed process summary should remain in the stable shell.");
   assert.equal(completedProcessState.shellHasAnswer, true, "Completed answer should remain in the answer lane.");
-  assert.equal(completedProcessState.checkpointVisible, false, "Completed process summary should not keep live checkpoint text open.");
+  assert.equal(completedProcessState.checkpointVisible, false, "Completed process summary should not keep the live commentary preview.");
   assert.equal(completedProcessState.expanded, false, "Completed process details should remain collapsed by default.");
   assert.ok(
     completedProcessState.detailsHeight <= 1,
@@ -213,8 +205,8 @@ async function run() {
     `Completing the answer should not move text vertically when buttons appear. Before=${finalRect.top}, after=${completedFinalRect.top}`
   );
   assert.ok(
-    headerToBodyGap >= 2 && headerToBodyGap <= 10,
-    `Process header and answer should use a compact hierarchy gap. Gap=${headerToBodyGap}`
+    completedProcessState.groupToAnswerGap >= 4 && completedProcessState.groupToAnswerGap <= 48,
+    `Process group and answer should use a compact hierarchy gap. Gap=${completedProcessState.groupToAnswerGap}`
   );
   assert.ok(
     bodyToActionsGap >= 4 && bodyToActionsGap <= 12,
@@ -269,7 +261,7 @@ async function startActiveThread(win) {
 function processCheckpointRect() {
   const turns = Array.from(document.querySelectorAll(".turn"));
   const turn = turns.at(-1);
-  const checkpoint = turn?.querySelector(".turn-process-checkpoint-entering");
+  const checkpoint = turn?.querySelector(".turn-process-preview-text");
   if (!(checkpoint instanceof HTMLElement)) {
     return null;
   }
@@ -292,9 +284,10 @@ function processCheckpointRect() {
 function finalAnswerRect() {
   const turns = Array.from(document.querySelectorAll(".turn"));
   const turn = turns.at(-1);
-  const markdown = turn?.querySelector(".agent-text .streaming-markdown");
+  const finalLane = turn?.querySelector(".assistant-turn-final");
+  const markdown = finalLane?.querySelector(".agent-text .streaming-markdown");
   const finalText =
-    turn?.querySelector(".agent-text .streaming-plain-text") ??
+    finalLane?.querySelector(".agent-text .streaming-plain-text") ??
     markdown?.querySelector(".rich-paragraph, .rich-heading, .streaming-plain-text") ??
     markdown;
   if (!(finalText instanceof HTMLElement) || !finalText.textContent?.trim()) {
@@ -313,25 +306,6 @@ function finalAnswerRect() {
   };
 }
 
-function processHeaderRect() {
-  const turns = Array.from(document.querySelectorAll(".turn"));
-  const turn = turns.at(-1);
-  const header = turn?.querySelector(".turn-process-header");
-  if (!(header instanceof HTMLElement)) {
-    return null;
-  }
-  const rect = header.getBoundingClientRect();
-  if (rect.height <= 0) {
-    return null;
-  }
-  return {
-    top: rect.top,
-    left: rect.left,
-    width: rect.width,
-    height: rect.height
-  };
-}
-
 function processGroupState() {
   const turns = Array.from(document.querySelectorAll(".turn"));
   const turn = turns.at(-1);
@@ -340,19 +314,14 @@ function processGroupState() {
   if (!(group instanceof HTMLElement)) {
     return null;
   }
-  const processLane = shell?.querySelector(".assistant-turn-process-lane");
-  const answerLane = shell?.querySelector(".assistant-turn-answer-lane");
+  const processLane = shell?.querySelector(".assistant-turn-front");
+  const answerLane = shell?.querySelector(".assistant-turn-final");
   const answer = answerLane?.querySelector(".agent-block");
-  const header = group.querySelector(".turn-process-header");
-  const checkpoint = group.querySelector(".turn-process-checkpoint");
+  const checkpoint = group.querySelector(".turn-process-preview");
   const details = group.querySelector(".turn-process-details");
   if (!(processLane instanceof HTMLElement) || !(answerLane instanceof HTMLElement)) {
     return null;
   }
-  const headerRect =
-    header instanceof HTMLElement
-      ? header.getBoundingClientRect()
-      : { top: 0, bottom: 0, height: 0 };
   const answerRect =
     answer instanceof HTMLElement
       ? answer.getBoundingClientRect()
@@ -361,6 +330,7 @@ function processGroupState() {
     details instanceof HTMLElement
       ? details.getBoundingClientRect()
       : { top: 0, bottom: 0, height: 0 };
+  const groupRect = group.getBoundingClientRect();
   const visibleActivityRows = Array.from(group.querySelectorAll(".activity-row")).filter((row) => {
     if (!(row instanceof HTMLElement)) {
       return false;
@@ -376,14 +346,14 @@ function processGroupState() {
   }).length;
   return {
     expanded: group.classList.contains("expanded"),
-    shellHasProcess: shell instanceof HTMLElement && shell.classList.contains("has-process-lane"),
-    shellHasAnswer: shell instanceof HTMLElement && shell.classList.contains("has-answer-lane"),
+    shellHasProcess: shell instanceof HTMLElement && shell.classList.contains("has-front"),
+    shellHasAnswer: shell instanceof HTMLElement && shell.classList.contains("has-body"),
     checkpointVisible: checkpoint instanceof HTMLElement && checkpoint.getBoundingClientRect().height > 0,
     detailsHeight: detailsRect.height,
     visibleActivityRows,
-    headerToAnswerGap:
+    groupToAnswerGap:
       answer instanceof HTMLElement && answerRect.height > 0
-        ? answerRect.top - (headerRect.top + headerRect.height)
+        ? answerRect.top - groupRect.bottom
         : null
   };
 }

@@ -10,6 +10,7 @@
 package context
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,10 @@ import (
 // SystemReminderMessageName marks internal per-step environment context
 // injections so callers can keep them out of persisted chat history.
 const SystemReminderMessageName = "wuu_system_reminder"
+
+// AgentNotificationMessageName marks internal sub-agent completion handoffs.
+// They are model-visible user-role messages, but they are not user intent.
+const AgentNotificationMessageName = "wuu_agent_notification"
 
 // EnvInfo holds the dynamic environment snapshot for one turn.
 type EnvInfo struct {
@@ -236,6 +241,31 @@ func IsSystemReminder(name, content string) bool {
 	trimmed := strings.TrimSpace(content)
 	return strings.HasPrefix(trimmed, "<system-reminder>") &&
 		strings.HasSuffix(trimmed, "</system-reminder>")
+}
+
+// IsAgentNotification reports whether the given metadata/content belongs to an
+// internal sub-agent handoff rather than a durable user directive.
+func IsAgentNotification(name, content string) bool {
+	if strings.TrimSpace(name) == AgentNotificationMessageName {
+		return true
+	}
+	trimmed := strings.TrimSpace(content)
+	if isSubagentNotificationContent(trimmed) {
+		return true
+	}
+	var envelope struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &envelope); err != nil {
+		return false
+	}
+	return isSubagentNotificationContent(envelope.Content)
+}
+
+func isSubagentNotificationContent(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	return strings.HasPrefix(trimmed, "<subagent_notification>") &&
+		strings.HasSuffix(trimmed, "</subagent_notification>")
 }
 
 // ── git helpers ────────────────────────────────────────────────────
