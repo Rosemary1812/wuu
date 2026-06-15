@@ -3,7 +3,7 @@ package prompt
 import "strings"
 
 func AgentBriefContractSummary() string {
-	return "Use the Base Agent Brief Contract: task, background, role, identity/memory, scope, non-goals, starting points, acceptance criteria, deliverables, reporting, and constraints."
+	return "Use the Base Agent Brief Contract: task, background, role, identity/memory, scope/ownership, non-goals, starting points, acceptance criteria, deliverables, reporting, and constraints."
 }
 
 func WorkflowBriefExtensionSummary() string {
@@ -25,8 +25,8 @@ func AgentBriefContractText() string {
 		"- Background: relevant context the worker needs.",
 		"- Role: the perspective or responsibility to use.",
 		"- Identity / memory: whether this is a named profile or a temporary worker.",
-		"- Scope: what is included.",
-		"- Non-goals: what to avoid.",
+		"- Scope / ownership: what is included, including owned files or modules for code-edit tasks.",
+		"- Non-goals: what to avoid, including nearby files or modules that are out of scope when relevant.",
 		"- Starting points: files, commands, docs, or prior findings to inspect first.",
 		"- Acceptance criteria: how to know the task is done.",
 		"- Deliverables: expected output, artifacts, or changed files.",

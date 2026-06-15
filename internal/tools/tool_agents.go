@@ -51,6 +51,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			prompttext.ProfileBriefExtensionSummary() + " " +
 			prompttext.EphemeralBriefExtensionSummary() + " " +
 			"Do not make the child infer missing acceptance criteria from a vague ask. " +
+			"For code-edit work, state the files or modules the child owns and any nearby files or modules it must avoid; split parallel edit tasks so these ownership boundaries do not overlap. " +
 			"By default the agent runs in the user's current repo, so any files it creates or edits " +
 			"land directly in the working tree. Set isolation='worktree' only " +
 			"for destructive or broad experiments, overlapping or uncertain concurrent writes, " +
@@ -75,7 +76,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"prompt": map[string]any{
 					"type":        "string",
-					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() + " Fresh subagents start without conversation context; forks inherit your current context but still need a specific directive.",
+					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() + " For code edits, include owned files/modules and out-of-scope neighbors. Fresh subagents start without conversation context; forks inherit your current context but still need a specific directive.",
 				},
 				"subagent_type": map[string]any{
 					"type":        "string",

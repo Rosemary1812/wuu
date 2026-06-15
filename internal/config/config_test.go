@@ -717,6 +717,7 @@ func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 		"isolation='worktree'",
 		"description and prompt",
 		"acceptance criteria",
+		"ownership does not overlap",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include sub-agent decision guidance %q: %q", want, prompt)

@@ -4802,6 +4802,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"Ordinary child agents are temporary",
 			"saved profile memory",
 			"agent_profile",
+			"ownership boundaries do not overlap",
 		} {
 			if !strings.Contains(d.Description, want) {
 				t.Fatalf("spawn_agent description missing decision guidance %q: %q", want, d.Description)
@@ -4810,7 +4811,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
 			"subagent_type": {"general-purpose", "verification", "fork yourself"},
-			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "Fresh subagents"},
+			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "owned files/modules", "Fresh subagents"},
 			"agent_profile": {"Agent Profile name with saved memory", "workflow/profile policy", "ordinary temporary child tasks"},
 			"isolation":     {"worktree", "current repo"},
 		} {
