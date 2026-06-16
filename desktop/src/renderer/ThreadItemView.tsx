@@ -97,10 +97,11 @@ export function ThreadItemView({
         copyable;
       const actionsPersistent =
         actionsVisible && item.id === latestAgentMessageID;
-      const isCommentary = item.phase === "commentary";
+      const isProcessText =
+        item.phase === "pending" || item.phase === "commentary";
       const reserveActionSlot =
         copyable &&
-        !isCommentary &&
+        !isProcessText &&
         (streaming || actionsVisible || item.phase === "final_answer");
       return (
         <article
@@ -227,7 +228,11 @@ function AgentMessageContent({
       cwd={cwd}
       final={!streaming}
       live={liveStream}
-      textKind={item.phase === "commentary" ? "commentary" : "final_answer"}
+      textKind={
+        item.phase === "pending" || item.phase === "commentary"
+          ? "commentary"
+          : "final_answer"
+      }
       onFrame={onStreamFrame}
       onSettled={() => {
         setStreamSettled(true);

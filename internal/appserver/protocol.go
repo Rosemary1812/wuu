@@ -650,6 +650,7 @@ const (
 type ThreadItemPhase string
 
 const (
+	ThreadItemPhasePending     ThreadItemPhase = "pending"
 	ThreadItemPhaseCommentary  ThreadItemPhase = "commentary"
 	ThreadItemPhaseFinalAnswer ThreadItemPhase = "final_answer"
 )

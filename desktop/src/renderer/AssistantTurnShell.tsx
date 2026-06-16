@@ -1,5 +1,5 @@
 import { Brain, ChevronDown, Info, MessageCircle } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { Turn } from "../shared/protocol";
 import type {
   AssistantTurnDisplay,
@@ -85,6 +85,7 @@ function TurnProcessGroup({
   latestProcessPreview?: TurnProcessPreview;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
+  const previousDefaultCollapsed = useRef(defaultCollapsed);
   const detailsID = `${turn.id}-process-details`;
   const hasDetails = entries.length > 0;
   const hasPreview = Boolean(latestProcessPreview);
@@ -120,6 +121,13 @@ function TurnProcessGroup({
     elapsedMs,
     showTurnStatus,
   );
+
+  useEffect(() => {
+    if (!previousDefaultCollapsed.current && defaultCollapsed) {
+      setExpanded(false);
+    }
+    previousDefaultCollapsed.current = defaultCollapsed;
+  }, [defaultCollapsed]);
 
   const toggleContent = (
     <>

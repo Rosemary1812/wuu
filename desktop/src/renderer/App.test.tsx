@@ -3,7 +3,7 @@
  *
  * The assistant turn renders into two distinct regions:
  *   - front content ("过程"区): reasoning, tool calls, context compaction,
- *     and commentary. Carries the work the model did.
+ *     pending assistant text, and commentary. Carries the work the model did.
  *   - body ("正文"区): the user-facing reply. Carries final_answer
  *     text segments in arrival order.
  *
@@ -19,11 +19,10 @@
  * Multi-final_answer turns keep all body text in order instead of
  * exposing an internal structure issue to the user.
  *
- * Fold header: the front is always default-collapsed. The header
- * alone (status row + optional process preview row) is enough
- * to tell the user "something is / was happening here". The
- * process preview is a single-line snippet of the latest commentary
- * or tool call, shown only while the turn is
+ * Fold header: the front is expanded while there is no final answer
+ * yet, then default-collapses as soon as final_answer body appears.
+ * The process preview is a single-line snippet of the latest pending
+ * text, commentary, or tool call, shown only while the turn is
  * in_progress — once the turn completes, the front is no longer
  * "live" and the preview is dropped.
  *
@@ -88,6 +87,17 @@ function makeLiveUnclassifiedAgentMessage(text: string): ThreadItem {
     id: nextID("pending-agent"),
     type: "agent_message",
     status: "in_progress",
+    role: "assistant",
+    text,
+  };
+}
+
+function makePendingAgentMessage(text: string): ThreadItem {
+  return {
+    id: nextID("pending-agent"),
+    type: "agent_message",
+    status: "in_progress",
+    phase: "pending",
     role: "assistant",
     text,
   };
@@ -214,7 +224,7 @@ describe("assistant turn front / body layout", () => {
       "这轮只保留了过程记录，没有生成最终回答。",
     );
     expect(display?.showDivider).toBe(false);
-    expect(display?.frontDefaultCollapsed).toBe(true);
+    expect(display?.frontDefaultCollapsed).toBe(false);
     // Completed turn → no live process preview.
     expect(display?.latestProcessPreview?.text).toBeUndefined();
   });
@@ -247,10 +257,8 @@ describe("assistant turn front / body layout", () => {
     const toolA = makeToolCall("read_file");
     const toolB = makeToolCall("grep");
 
-    // in_progress: front is now default-collapsed in *all* states,
-    // including in_progress. The status row (e.g. "正在回复 9s") plus
-    // the chevron is enough to tell the user something is happening;
-    // the latest tool action also appears as the compact preview row.
+    // in_progress before any final answer: process stays expanded so
+    // the user can see what the model is doing.
     const inProgressTurn = makeTurn({
       status: "in_progress",
       items: [toolA, toolB],
@@ -267,14 +275,13 @@ describe("assistant turn front / body layout", () => {
     expect(timelineItemIDs(inProgressDisplay)).toEqual([toolA.id]);
     expect(inProgressDisplay?.missingReplyMessage).toBeUndefined();
     expect(inProgressDisplay?.showDivider).toBe(false);
-    expect(inProgressDisplay?.frontDefaultCollapsed).toBe(true);
+    expect(inProgressDisplay?.frontDefaultCollapsed).toBe(false);
     expect(inProgressDisplay?.latestProcessPreview?.text).toBe("搜索 内容");
     expect(inProgressDisplay?.latestProcessPreview?.kind).toBe("activity");
 
-    // completed: pure tool with no text is not a bug. The front
-    // content stays around so the user can expand to see the tool
-    // calls, but it defaults to collapsed so the turn doesn't take
-    // visual space below the next turn.
+    // completed with no final answer: pure tool with no text is not a
+    // bug. Since there is no body to replace the process, the process
+    // remains expanded by default.
     const completedTurn = makeTurn({
       status: "completed",
       items: [toolA, toolB],
@@ -292,7 +299,7 @@ describe("assistant turn front / body layout", () => {
     expect(timelineItemIDs(completedDisplay)).toEqual([toolA.id]);
     expect(completedDisplay?.missingReplyMessage).toBeUndefined();
     expect(completedDisplay?.showDivider).toBe(false);
-    expect(completedDisplay?.frontDefaultCollapsed).toBe(true);
+    expect(completedDisplay?.frontDefaultCollapsed).toBe(false);
     expect(completedDisplay?.latestProcessPreview?.text).toBeUndefined();
   });
 });
@@ -305,12 +312,12 @@ describe("assistant turn fold header preview", () => {
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
-    expect(display?.frontDefaultCollapsed).toBe(true);
+    expect(display?.frontDefaultCollapsed).toBe(false);
     expect(display?.latestProcessPreview?.text).toBe("Let me look that up.");
   });
 
-  it("in_progress + unclassified live agent text → preview only, not body or details", () => {
-    const pending = makeLiveUnclassifiedAgentMessage(
+  it("in_progress + pending live agent text → preview and expanded process entry, not body", () => {
+    const pending = makePendingAgentMessage(
       "I will inspect the current prompt path.",
     );
     const turn = makeTurn({ status: "in_progress", items: [pending] });
@@ -321,8 +328,25 @@ describe("assistant turn fold header preview", () => {
     expect(display?.latestProcessPreview?.text).toBe(
       "I will inspect the current prompt path.",
     );
-    expect(display?.frontEntries).toHaveLength(0);
+    expect(display?.latestProcessPreview?.kind).toBe("pending");
+    expect(display?.frontEntries).toHaveLength(1);
+    expect(display?.frontEntries[0]?.kind).toBe("pending");
     expect(display?.finalAnswerItems).toHaveLength(0);
+    expect(display?.frontDefaultCollapsed).toBe(false);
+  });
+
+  it("in_progress + legacy unclassified live agent text → treated as pending", () => {
+    const pending = makeLiveUnclassifiedAgentMessage(
+      "I will inspect the current prompt path.",
+    );
+    const turn = makeTurn({ status: "in_progress", items: [pending] });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    expect(display?.latestProcessPreview?.kind).toBe("pending");
+    expect(display?.frontEntries).toHaveLength(1);
+    expect(display?.frontEntries[0]?.kind).toBe("pending");
   });
 
   it("in_progress + multiple commentaries → preview = the LATEST commentary, in arrival order", () => {

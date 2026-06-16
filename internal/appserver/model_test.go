@@ -62,6 +62,33 @@ func TestThreadStateCompletesPreambleBeforeToolStart(t *testing.T) {
 	}
 }
 
+func TestThreadStateMarksUnresolvedTextAsPending(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+
+	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:    providers.EventContentDelta,
+		Content: "I will inspect the current prompt path.",
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 {
+		t.Fatalf("expected user and pending assistant items, got %+v", turn.Items)
+	}
+	pending := turn.Items[1]
+	if pending.Type != ThreadItemAgentMessage || pending.Status != ThreadItemStatusInProgress {
+		t.Fatalf("expected live assistant item, got %+v", pending)
+	}
+	if pending.Phase != ThreadItemPhasePending {
+		t.Fatalf("unresolved assistant text should be pending, got %+v", pending)
+	}
+	started, ok := out[0].params.(ItemStartedNotification)
+	if !ok || started.Item.Phase != ThreadItemPhasePending {
+		t.Fatalf("started notification should carry pending phase, got %#v", out[0].params)
+	}
+}
+
 func TestThreadStateCarriesToolCallDisplay(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)

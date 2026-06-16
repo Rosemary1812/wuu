@@ -6,10 +6,10 @@ import { readableToolActivityCommand } from "./ToolActivityHelpers";
 
 export type AssistantTurnDisplay = {
   /**
-   * Front content: the "process" lane. Carries reasoning, tool calls,
-   * context_compaction, and commentary in the order they appeared in
-   * the turn. The shell renders these entries as process records, not
-   * as answer prose.
+   * Front content: the process lane. Carries reasoning, tool calls,
+   * context_compaction, pending assistant text, and commentary in the
+   * order they appeared in the turn. The shell renders these entries as
+   * process records, not as answer prose.
    */
   frontEntries: TurnProcessEntry[];
   /**
@@ -36,8 +36,8 @@ export type AssistantTurnDisplay = {
   frontDefaultCollapsed: boolean;
   /**
    * Latest process record shown in the fold header while the turn is
-   * live. Usually commentary, but it can also be the latest tool action
-   * when no newer commentary has arrived yet.
+   * live. Usually pending/commentary text, but it can also be the latest
+   * tool action when no newer text has arrived yet.
    */
   latestProcessPreview?: TurnProcessPreview;
 };
@@ -61,7 +61,11 @@ export type TurnProcessEntry = {
   kind: TurnProcessEntryKind;
 };
 
-export type TurnProcessEntryKind = "commentary" | "activity" | "process";
+export type TurnProcessEntryKind =
+  | "pending"
+  | "commentary"
+  | "activity"
+  | "process";
 
 export type TurnProcessPreview = {
   text: string;
@@ -105,17 +109,14 @@ export function buildAssistantTurnDisplay(
         continue;
       }
       const isFinalAnswer = item.phase === "final_answer";
-      const isLiveUnclassifiedText =
-        !item.phase && isInProgress && item.status === "in_progress";
+      const isPendingText = isPendingAgentText(item, isInProgress);
       const shouldDelayCursor = turnHasReasoning && !firstTextItemRendered;
       firstTextItemRendered = true;
-      const rendered = isLiveUnclassifiedText
-        ? null
-        : renderThreadItem(
-            item,
-            streaming,
-            shouldDelayCursor ? true : undefined,
-          );
+      const rendered = renderThreadItem(
+        item,
+        streaming,
+        shouldDelayCursor ? true : undefined,
+      );
       if (isFinalAnswer) {
         if (!rendered) {
           continue;
@@ -125,7 +126,7 @@ export function buildAssistantTurnDisplay(
         appendFrontEntry({
           key: item.id,
           element: rendered,
-          kind: "commentary",
+          kind: isPendingText ? "pending" : "commentary",
         });
       }
       continue;
@@ -190,7 +191,7 @@ export function buildAssistantTurnDisplay(
   }
 
   const showDivider = isCompleted && finalCount > 0 && !missingReplyMessage;
-  const frontDefaultCollapsed = true;
+  const frontDefaultCollapsed = finalCount > 0;
 
   const latestProcessPreview = isInProgress
     ? latestInProgressProcessPreview(turn)
@@ -232,15 +233,25 @@ function processPreviewForItem(
 ): TurnProcessPreview | undefined {
   if (item.type === "agent_message") {
     if (
+      item.phase !== "pending" &&
       item.phase !== "commentary" &&
-      (item.phase || item.status !== "in_progress")
+      !isPendingAgentText(item, turn.status === "in_progress")
     ) {
       return undefined;
     }
     const text = compactProcessPreview(
       streamFieldValue(turn.id, item, "text"),
     );
-    return text ? { text, kind: "commentary" } : undefined;
+    return text
+      ? {
+          text,
+          kind:
+            item.phase === "pending" ||
+            isPendingAgentText(item, turn.status === "in_progress")
+              ? "pending"
+              : "commentary",
+        }
+      : undefined;
   }
 
   if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
@@ -249,6 +260,14 @@ function processPreviewForItem(
   }
 
   return undefined;
+}
+
+function isPendingAgentText(item: ThreadItem, turnInProgress: boolean): boolean {
+  return (
+    item.type === "agent_message" &&
+    (item.phase === "pending" ||
+      (!item.phase && turnInProgress && item.status === "in_progress"))
+  );
 }
 
 function compactProcessPreview(raw: string | undefined): string | undefined {

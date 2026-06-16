@@ -222,7 +222,7 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if ev.Content == "" {
 			return nil
 		}
-		phase := ThreadItemPhase("")
+		phase := ThreadItemPhasePending
 		if th.turnHasPriorProcessLocked(turnID) {
 			phase = ThreadItemPhaseFinalAnswer
 		}
@@ -245,7 +245,7 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if th.activeAgentItemID == "" && ev.Content == "" {
 			return nil
 		}
-		phase := ThreadItemPhase("")
+		phase := ThreadItemPhasePending
 		if th.turnHasPriorProcessLocked(turnID) {
 			phase = ThreadItemPhaseFinalAnswer
 		}
@@ -457,7 +457,7 @@ func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatM
 func (th *threadState) ensureActiveAgentItemLocked(turnID string, now time.Time, phase ThreadItemPhase) (ThreadItem, bool) {
 	if th.activeAgentItemID != "" {
 		if item, ok := th.itemLocked(turnID, th.activeAgentItemID); ok {
-			if item.Phase == "" && phase != "" {
+			if shouldUpdateAgentPhase(item.Phase, phase) {
 				item.Phase = phase
 				th.upsertItemLocked(turnID, item, now)
 			}
@@ -474,6 +474,13 @@ func (th *threadState) ensureActiveAgentItemLocked(turnID string, now time.Time,
 	th.activeAgentItemID = item.ID
 	th.upsertItemLocked(turnID, item, now)
 	return item, true
+}
+
+func shouldUpdateAgentPhase(current, next ThreadItemPhase) bool {
+	if next == "" || current == next {
+		return false
+	}
+	return current == "" || current == ThreadItemPhasePending
 }
 
 func (th *threadState) completeActiveAgentItemLocked(turnID string, now time.Time, phase ThreadItemPhase) []outboundNotification {
