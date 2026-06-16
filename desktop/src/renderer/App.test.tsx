@@ -8,10 +8,10 @@
  *     text segments in arrival order.
  *
  * Commentary renders in the front/process lane. While a turn is still
- * live, the latest commentary appears as a compact preview in the fold
- * header instead of being treated as body text. A thin divider is drawn
- * between the two regions when the completed turn has final_answer body
- * text.
+ * live, the latest process record appears as a compact preview in the
+ * fold header instead of being treated as body text. A thin divider is
+ * drawn between the two regions when the completed turn has final_answer
+ * body text.
  *
  * Empty reply: a completed turn that produced commentary but no
  * final_answer gets a compact "没有生成回复" notice. Pure-tool turns
@@ -20,17 +20,17 @@
  * exposing an internal structure issue to the user.
  *
  * Fold header: the front is always default-collapsed. The header
- * alone (status row + optional commentary preview row) is enough
+ * alone (status row + optional process preview row) is enough
  * to tell the user "something is / was happening here". The
- * commentary preview is a single-line snippet of the latest
- * commentary `agent_message` text, shown only while the turn is
+ * process preview is a single-line snippet of the latest commentary
+ * or tool call, shown only while the turn is
  * in_progress — once the turn completes, the front is no longer
  * "live" and the preview is dropped.
  *
  * These tests exercise `buildAssistantTurnDisplay`, the pure
  * function that decides which items go to front vs body, whether the
  * turn needs an empty-reply notice, what the front's default collapse state should be,
- * and what the commentary preview text is. The render layer
+ * and what the process preview text is. The render layer
  * (`AssistantTurnShell`) maps that display object directly to the
  * DOM, so verifying the function output verifies the layout.
  */
@@ -215,8 +215,8 @@ describe("assistant turn front / body layout", () => {
     );
     expect(display?.showDivider).toBe(false);
     expect(display?.frontDefaultCollapsed).toBe(true);
-    // Completed turn → no live commentary preview.
-    expect(display?.latestCommentaryPreview).toBeUndefined();
+    // Completed turn → no live process preview.
+    expect(display?.latestProcessPreview?.text).toBeUndefined();
   });
 
   it("multi final: commentary + final_answer_1 + commentary + final_answer_2 → body keeps final text in order", () => {
@@ -239,8 +239,8 @@ describe("assistant turn front / body layout", () => {
     expect(display?.missingReplyMessage).toBeUndefined();
     expect(display?.showDivider).toBe(true);
     expect(display?.frontDefaultCollapsed).toBe(true);
-    // Completed turn → no live commentary preview.
-    expect(display?.latestCommentaryPreview).toBeUndefined();
+    // Completed turn → no live process preview.
+    expect(display?.latestProcessPreview?.text).toBeUndefined();
   });
 
   it("pure tool: only tool_calls, no text — front default-collapsed in both states (pure tool is not a bug)", () => {
@@ -250,8 +250,7 @@ describe("assistant turn front / body layout", () => {
     // in_progress: front is now default-collapsed in *all* states,
     // including in_progress. The status row (e.g. "正在回复 9s") plus
     // the chevron is enough to tell the user something is happening;
-    // the user clicks to see the actual tool timeline. No commentary
-    // exists → no preview row in the fold header.
+    // the latest tool action also appears as the compact preview row.
     const inProgressTurn = makeTurn({
       status: "in_progress",
       items: [toolA, toolB],
@@ -269,7 +268,8 @@ describe("assistant turn front / body layout", () => {
     expect(inProgressDisplay?.missingReplyMessage).toBeUndefined();
     expect(inProgressDisplay?.showDivider).toBe(false);
     expect(inProgressDisplay?.frontDefaultCollapsed).toBe(true);
-    expect(inProgressDisplay?.latestCommentaryPreview).toBeUndefined();
+    expect(inProgressDisplay?.latestProcessPreview?.text).toBe("搜索 内容");
+    expect(inProgressDisplay?.latestProcessPreview?.kind).toBe("activity");
 
     // completed: pure tool with no text is not a bug. The front
     // content stays around so the user can expand to see the tool
@@ -293,7 +293,7 @@ describe("assistant turn front / body layout", () => {
     expect(completedDisplay?.missingReplyMessage).toBeUndefined();
     expect(completedDisplay?.showDivider).toBe(false);
     expect(completedDisplay?.frontDefaultCollapsed).toBe(true);
-    expect(completedDisplay?.latestCommentaryPreview).toBeUndefined();
+    expect(completedDisplay?.latestProcessPreview?.text).toBeUndefined();
   });
 });
 
@@ -306,7 +306,7 @@ describe("assistant turn fold header preview", () => {
 
     expect(display).toBeDefined();
     expect(display?.frontDefaultCollapsed).toBe(true);
-    expect(display?.latestCommentaryPreview).toBe("Let me look that up.");
+    expect(display?.latestProcessPreview?.text).toBe("Let me look that up.");
   });
 
   it("in_progress + unclassified live agent text → preview only, not body or details", () => {
@@ -318,7 +318,7 @@ describe("assistant turn fold header preview", () => {
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
-    expect(display?.latestCommentaryPreview).toBe(
+    expect(display?.latestProcessPreview?.text).toBe(
       "I will inspect the current prompt path.",
     );
     expect(display?.frontEntries).toHaveLength(0);
@@ -339,7 +339,7 @@ describe("assistant turn fold header preview", () => {
     // The last commentary in arrival order is the one the user
     // currently sees in the fold header — earlier ones are hidden
     // behind the fold.
-    expect(display?.latestCommentaryPreview).toBe("Second thought.");
+    expect(display?.latestProcessPreview?.text).toBe("Second thought.");
   });
 
   it("in_progress + commentary interleaved with tool calls → preview = the commentary that came AFTER the tool, not before", () => {
@@ -354,7 +354,22 @@ describe("assistant turn fold header preview", () => {
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
-    expect(display?.latestCommentaryPreview).toBe("Got it. The file says...");
+    expect(display?.latestProcessPreview?.text).toBe("Got it. The file says...");
+  });
+
+  it("in_progress + tool after commentary → preview = latest tool action", () => {
+    const commentary = makeCommentary("Let me look that up.");
+    const tool = makeToolCall("read_file");
+    const turn = makeTurn({
+      status: "in_progress",
+      items: [commentary, tool],
+    });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    expect(display?.latestProcessPreview?.text).toBe("读取 文件");
+    expect(display?.latestProcessPreview?.kind).toBe("activity");
   });
 
   it("in_progress + long commentary → preview is truncated to 120 chars + ellipsis so the fold stays on two lines", () => {
@@ -366,19 +381,17 @@ describe("assistant turn fold header preview", () => {
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
-    expect(display?.latestCommentaryPreview).toBe("a".repeat(120) + "…");
+    expect(display?.latestProcessPreview?.text).toBe("a".repeat(120) + "…");
   });
 
-  it("in_progress + reasoning only (no commentary) → preview is undefined, fold has no second row", () => {
+  it("in_progress + reasoning only (no commentary or tool action) → preview is undefined", () => {
     const reasoning = makeReasoning("thinking deeply about the problem");
     const turn = makeTurn({ status: "in_progress", items: [reasoning] });
 
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
-    // Reasoning is not commentary — the preview row has nothing to
-    // show, so the fold header renders only the status row.
-    expect(display?.latestCommentaryPreview).toBeUndefined();
+    expect(display?.latestProcessPreview?.text).toBeUndefined();
   });
 
   it("completed + commentary → preview is undefined; fold has status only, no live signal", () => {
@@ -395,6 +408,6 @@ describe("assistant turn fold header preview", () => {
     expect(display).toBeDefined();
     // The turn is done — the "live signal" no longer applies. The
     // fold header collapses to just the status line.
-    expect(display?.latestCommentaryPreview).toBeUndefined();
+    expect(display?.latestProcessPreview?.text).toBeUndefined();
   });
 });

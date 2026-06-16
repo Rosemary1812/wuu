@@ -97,8 +97,10 @@ export function ThreadItemView({
         copyable;
       const actionsPersistent =
         actionsVisible && item.id === latestAgentMessageID;
+      const isCommentary = item.phase === "commentary";
       const reserveActionSlot =
         copyable &&
+        !isCommentary &&
         (streaming || actionsVisible || item.phase === "final_answer");
       return (
         <article

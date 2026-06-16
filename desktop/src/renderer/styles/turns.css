@@ -45,10 +45,8 @@
 }
 
 .assistant-turn-final {
-  /* Commentary items in the front and final_answer items in the body
-     use the same visual style (regular body prose). The body
-     collapses to no gap so multiple final_answer items stack as a
-     continuous reply. */
+  /* The body is only the user-facing reply. Process commentary lives
+     in the front lane and uses the compact process-record style. */
   gap: 0;
 }
 
@@ -403,7 +401,7 @@
    left-to-right across the visible text while the commentary
    is streaming. Replaces the typewriter cursor for commentary,
    which the user found too "writing-document" for a chat
-   surface that already shows the latest commentary in the
+   surface that already shows the latest live process record in the
    fold header preview.
 
    The trick is `background-clip: text` + a horizontally
@@ -2248,7 +2246,7 @@
   display: grid;
   width: 100%;
   min-height: 18px;
-  /* Two rows (status + optional commentary preview), three columns
+  /* Two rows (status + optional process preview), three columns
      (avatar | text | chevron). Both avatar slots live in col 1 so
      the row-1 brain and row-2 speech-bubble line up vertically with
      no indent — that's the whole point of using grid here vs.
@@ -2257,12 +2255,7 @@
   grid-template-rows: auto auto;
   align-items: flex-start;
   column-gap: 8px;
-  /* Row gap between the status row and the commentary preview row
-     tracks --conversation-prose-block-gap so the two reads
-     (status ↔ live commentary) feel like one text block, not two
-     crammed lines. Tied to the prose gap on purpose: the fold
-     header and the body share the same vertical rhythm. */
-  row-gap: var(--conversation-prose-block-gap);
+  row-gap: var(--conversation-process-gap);
   border: 0;
   background: transparent;
   color: inherit;
@@ -2398,7 +2391,7 @@
   line-height: var(--conversation-meta-line-height);
 }
 
-/* Row 2 of the fold header: live commentary preview. Pinned to
+/* Row 2 of the fold header: live process preview. Pinned to
     col 2 row 2 in the toggle grid, so the preview text starts at
     the same x as the status text in row 1. The row-2 avatar slot
     (speech-bubble placeholder) is a sibling in col 1, not a child
@@ -2422,8 +2415,8 @@
   white-space: nowrap;
 }
 
-/* Live commentary sweep on the fold header preview.
-   The body commentary gets the sweep via .streaming-markdown
+/* Live process sweep on the fold header preview.
+   Body commentary gets the sweep via .streaming-markdown
    .streaming-commentary-live; this is the same animation
    applied to the fold header preview row so the user sees the
    sweep on the row they're actually looking at. Same
@@ -2524,11 +2517,111 @@
 }
 
 .turn-process-stack {
+  position: relative;
   display: grid;
   min-height: 0;
   overflow: hidden;
-  gap: var(--conversation-activity-gap);
-  padding: 2px 0 1px;
+  gap: 10px;
+  margin-left: 26px;
+  padding: 2px 0 2px 14px;
+}
+
+.turn-process-stack::before {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 1px;
+  border-radius: 999px;
+  background: #e4e6e1;
+  content: "";
+}
+
+.turn-process-entry {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  color: #73787c;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  line-height: 1.48;
+}
+
+.turn-process-entry::before {
+  position: absolute;
+  top: 0.72em;
+  left: -17px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #cfd3cc;
+  box-shadow: 0 0 0 3px #fff;
+  content: "";
+}
+
+.turn-process-entry-commentary {
+  color: #5e6569;
+}
+
+.turn-process-entry-commentary::before {
+  background: #bcc3bc;
+}
+
+.turn-process-entry-activity::before {
+  background: #d4d7d1;
+}
+
+.turn-process-entry .agent-block,
+.turn-process-entry .reasoning-block {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+.turn-process-entry .agent-text,
+.turn-process-entry .rich-content {
+  color: inherit;
+}
+
+.turn-process-entry .rich-content {
+  gap: 8px;
+  line-height: inherit;
+}
+
+.turn-process-entry .rich-content .rich-paragraph,
+.turn-process-entry .rich-content .rich-list,
+.turn-process-entry .rich-content .rich-blockquote {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  margin: 0;
+}
+
+.turn-process-entry .activity-group {
+  color: inherit;
+}
+
+.turn-process-entry .activity-row {
+  min-height: 20px;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.turn-process-entry .activity-row svg {
+  color: #a0a4a8;
+}
+
+.turn-process-entry .activity-toggle:hover,
+.turn-process-entry .activity-toggle:focus-visible {
+  color: #5f6569;
+  outline: 0;
+}
+
+.turn-process-entry .activity-toggle:hover svg,
+.turn-process-entry .activity-toggle:focus-visible svg {
+  color: #7b8084;
 }
 
 .turn-process-checkpoint-line {

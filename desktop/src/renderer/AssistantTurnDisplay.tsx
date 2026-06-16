@@ -2,13 +2,14 @@ import { type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { streamFieldValue } from "./ThreadItemText";
 import { ToolActivityTimeline } from "./ToolActivity";
+import { readableToolActivityCommand } from "./ToolActivityHelpers";
 
 export type AssistantTurnDisplay = {
   /**
    * Front content: the "process" lane. Carries reasoning, tool calls,
    * context_compaction, and commentary in the order they appeared in
-   * the turn. Commentary renders here as a normal text block because
-   * the two are structurally distinct (front vs body).
+   * the turn. The shell renders these entries as process records, not
+   * as answer prose.
    */
   frontEntries: TurnProcessEntry[];
   /**
@@ -34,10 +35,11 @@ export type AssistantTurnDisplay = {
    */
   frontDefaultCollapsed: boolean;
   /**
-   * Text of the latest commentary `agent_message` in the front content,
-   * truncated to a single short line for the fold header preview.
+   * Latest process record shown in the fold header while the turn is
+   * live. Usually commentary, but it can also be the latest tool action
+   * when no newer commentary has arrived yet.
    */
-  latestCommentaryPreview?: string;
+  latestProcessPreview?: TurnProcessPreview;
 };
 
 export type AssistantTurnAnswerItem = {
@@ -56,6 +58,14 @@ export type TurnProcessEntry = {
   key: string;
   element: JSX.Element;
   count?: number;
+  kind: TurnProcessEntryKind;
+};
+
+export type TurnProcessEntryKind = "commentary" | "activity" | "process";
+
+export type TurnProcessPreview = {
+  text: string;
+  kind: TurnProcessEntryKind;
 };
 
 export function buildAssistantTurnDisplay(
@@ -115,6 +125,7 @@ export function buildAssistantTurnDisplay(
         appendFrontEntry({
           key: item.id,
           element: rendered,
+          kind: "commentary",
         });
       }
       continue;
@@ -142,6 +153,7 @@ export function buildAssistantTurnDisplay(
           />
         ),
         count: group.length,
+        kind: "activity",
       });
       index = nextIndex - 1;
       continue;
@@ -155,6 +167,7 @@ export function buildAssistantTurnDisplay(
       appendFrontEntry({
         key: item.id,
         element: rendered,
+        kind: "process",
       });
     }
   }
@@ -179,32 +192,14 @@ export function buildAssistantTurnDisplay(
   const showDivider = isCompleted && finalCount > 0 && !missingReplyMessage;
   const frontDefaultCollapsed = true;
 
-  let latestCommentaryPreview: string | undefined;
-  if (isInProgress) {
-    let latestCommentaryItem: ThreadItem | undefined;
-    for (const item of turn.items) {
-      if (
-        item.type === "agent_message" &&
-        (item.phase === "commentary" ||
-          (!item.phase && item.status === "in_progress"))
-      ) {
-        latestCommentaryItem = item;
-      }
-    }
-    if (latestCommentaryItem) {
-      const raw = streamFieldValue(turn.id, latestCommentaryItem, "text").trim();
-      if (raw.length > 0) {
-        const previewMax = 120;
-        latestCommentaryPreview =
-          raw.length > previewMax ? `${raw.slice(0, previewMax)}…` : raw;
-      }
-    }
-  }
+  const latestProcessPreview = isInProgress
+    ? latestInProgressProcessPreview(turn)
+    : undefined;
 
   if (
     frontEntries.length === 0 &&
     finalAnswerItems.length === 0 &&
-    !latestCommentaryPreview
+    !latestProcessPreview
   ) {
     return undefined;
   }
@@ -215,8 +210,54 @@ export function buildAssistantTurnDisplay(
     missingReplyMessage,
     showDivider,
     frontDefaultCollapsed,
-    latestCommentaryPreview,
+    latestProcessPreview,
   };
+}
+
+function latestInProgressProcessPreview(
+  turn: Turn,
+): TurnProcessPreview | undefined {
+  for (let index = turn.items.length - 1; index >= 0; index--) {
+    const preview = processPreviewForItem(turn, turn.items[index]);
+    if (preview) {
+      return preview;
+    }
+  }
+  return undefined;
+}
+
+function processPreviewForItem(
+  turn: Turn,
+  item: ThreadItem,
+): TurnProcessPreview | undefined {
+  if (item.type === "agent_message") {
+    if (
+      item.phase !== "commentary" &&
+      (item.phase || item.status !== "in_progress")
+    ) {
+      return undefined;
+    }
+    const text = compactProcessPreview(
+      streamFieldValue(turn.id, item, "text"),
+    );
+    return text ? { text, kind: "commentary" } : undefined;
+  }
+
+  if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
+    const text = compactProcessPreview(readableToolActivityCommand(item));
+    return text ? { text, kind: "activity" } : undefined;
+  }
+
+  return undefined;
+}
+
+function compactProcessPreview(raw: string | undefined): string | undefined {
+  const text = raw?.replace(/\s+/g, " ").trim();
+  if (!text) {
+    return undefined;
+  }
+  const previewMax = 120;
+  return text.length > previewMax ? `${text.slice(0, previewMax)}…` : text;
 }
 
 function agentMessageWithTextFollows(turn: Turn, itemIndex: number): boolean {

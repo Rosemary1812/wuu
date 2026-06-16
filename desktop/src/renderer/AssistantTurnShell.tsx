@@ -4,6 +4,7 @@ import type { Turn } from "../shared/protocol";
 import type {
   AssistantTurnDisplay,
   TurnProcessEntry,
+  TurnProcessPreview,
 } from "./AssistantTurnDisplay";
 import { CollapsibleDetails } from "./CollapsibleMotion";
 import { messageFlowStatusLabel } from "./message-flow-display";
@@ -22,7 +23,7 @@ export function AssistantTurnShell({
   display: AssistantTurnDisplay;
 }): JSX.Element {
   const hasFront =
-    display.frontEntries.length > 0 || Boolean(display.latestCommentaryPreview);
+    display.frontEntries.length > 0 || Boolean(display.latestProcessPreview);
   const hasBody = display.finalAnswerItems.length > 0;
   const className = [
     "assistant-turn-shell",
@@ -42,7 +43,7 @@ export function AssistantTurnShell({
             entries={display.frontEntries}
             defaultCollapsed={display.frontDefaultCollapsed}
             showTurnStatus
-            latestCommentaryPreview={display.latestCommentaryPreview}
+            latestProcessPreview={display.latestProcessPreview}
           />
         </div>
       ) : null}
@@ -75,18 +76,18 @@ function TurnProcessGroup({
   entries,
   defaultCollapsed,
   showTurnStatus,
-  latestCommentaryPreview,
+  latestProcessPreview,
 }: {
   turn: Turn;
   entries: TurnProcessEntry[];
   defaultCollapsed: boolean;
   showTurnStatus: boolean;
-  latestCommentaryPreview?: string;
+  latestProcessPreview?: TurnProcessPreview;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
   const detailsID = `${turn.id}-process-details`;
   const hasDetails = entries.length > 0;
-  const hasPreview = Boolean(latestCommentaryPreview);
+  const hasPreview = Boolean(latestProcessPreview);
   const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${
     hasDetails ? "" : " no-details"
   }${hasPreview ? " has-preview" : ""}`;
@@ -128,8 +129,8 @@ function TurnProcessGroup({
         <Brain size={15} />
       </span>
       {/* Row 2 avatar slot: speech-bubble placeholder. Only rendered
-          when there's a live commentary preview, so a turn without
-          commentary shows only the status row + brain slot. Both
+          when there's a live process preview, so a turn without
+          live process text shows only the status row + brain slot. Both
           slots share col 1 of the grid below so the icons line up
           vertically with no indent between rows. */}
       {hasPreview ? (
@@ -150,12 +151,12 @@ function TurnProcessGroup({
       </span>
       {hasPreview ? (
         <span
-          className={`turn-process-preview${
+          className={`turn-process-preview turn-process-preview-${latestProcessPreview?.kind ?? "process"}${
             turn.status === "in_progress" ? " is-live" : ""
           }`}
         >
           <span className="turn-process-preview-text">
-            {latestCommentaryPreview}
+            {latestProcessPreview?.text}
           </span>
         </span>
       ) : null}
@@ -189,7 +190,14 @@ function TurnProcessGroup({
           expanded={expanded}
           innerClassName="turn-process-stack"
         >
-          {entries.map((entry) => entry.element)}
+          {entries.map((entry) => (
+            <div
+              className={`turn-process-entry turn-process-entry-${entry.kind}`}
+              key={entry.key}
+            >
+              {entry.element}
+            </div>
+          ))}
         </CollapsibleDetails>
       ) : null}
     </div>
