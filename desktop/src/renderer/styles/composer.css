@@ -64,6 +64,7 @@
 
 .composer-shell {
   position: relative;
+  z-index: 2;
   width: 100%;
   margin: 0;
   border-radius: 10px;
@@ -197,34 +198,43 @@
 
 .composer-queue-strip {
   position: relative;
-  z-index: 4;
-  display: grid;
-  gap: 6px;
-  padding: 0 24px;
-  margin-bottom: -8px;
-  transform: translateY(8px);
+  z-index: 1;
+  display: flex;
+  padding: 0 34px;
+  margin-bottom: -6px;
+  transform: translateY(4px);
+}
+
+.composer-queue-strip:has(.composer-queue-icon[aria-expanded="true"]) {
+  z-index: 6;
 }
 
 .composer-queue-items {
-  display: grid;
+  display: flex;
+  width: 100%;
   min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
 }
 
 .composer-queue-item {
   position: relative;
   display: grid;
-  min-height: 52px;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  width: fit-content;
+  max-width: min(640px, 100%);
+  min-width: min(360px, 100%);
+  min-height: 48px;
+  grid-template-columns: auto minmax(0, auto) auto auto auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   border: 1px solid #e3e3df;
-  border-radius: 18px 18px 10px 10px;
+  border-radius: 16px;
   background: #fff;
   color: #6e7276;
   font-size: var(--font-body);
-  padding: 0 12px 0 14px;
-  box-shadow: 0 10px 26px rgba(20, 24, 28, 0.06);
+  padding: 6px 8px 6px 12px;
+  box-shadow: 0 12px 28px rgba(20, 24, 28, 0.08);
 }
 
 .composer-queue-item.guide {
@@ -238,6 +248,7 @@
 
 .composer-queue-item strong {
   min-width: 0;
+  max-width: 340px;
   overflow: hidden;
   color: inherit;
   font-weight: var(--weight-semibold);
@@ -247,7 +258,7 @@
 
 .composer-queue-guide {
   display: inline-flex;
-  height: 32px;
+  height: 30px;
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
@@ -273,8 +284,8 @@
 
 .composer-queue-icon {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 8px;
@@ -293,14 +304,14 @@
 .composer-queue-menu-anchor {
   position: relative;
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   place-items: center;
 }
 
 .composer-queue-menu {
   position: absolute;
-  top: 38px;
+  top: 36px;
   right: 0;
   z-index: 30;
   display: grid;
