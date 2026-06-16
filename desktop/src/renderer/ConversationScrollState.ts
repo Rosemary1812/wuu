@@ -53,6 +53,11 @@ export function useConversationScrollState({
    * near the bottom.
    */
   disableConversationAutoFollow: () => void;
+  /**
+   * True when the user has scrolled up out of the bottom band. Drives
+   * the "Jump to latest" pill: hidden when false, shown when true.
+   */
+  userScrolledAway: boolean;
 } {
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({
@@ -66,6 +71,18 @@ export function useConversationScrollState({
   }, []);
   const dockComposerHeightRef = useRef(0);
   const conversationAutoFollowRef = useRef(true);
+  // Mirrors the ref for the UI: true when the user has scrolled up out of
+  // the bottom band. Drives the "Jump to latest" pill visibility.
+  const [userScrolledAway, setUserScrolledAway] = useState(false);
+  // Single source of truth for transitions into / out of auto-follow. Keeps
+  // the ref (read synchronously by scroll handlers) and the state (read by
+  // the UI) in lockstep.
+  const setAutoFollow = useCallback((next: boolean): void => {
+    if (conversationAutoFollowRef.current !== next) {
+      conversationAutoFollowRef.current = next;
+      setUserScrolledAway(!next);
+    }
+  }, []);
   const lastConversationScrollTopRef = useRef(0);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
@@ -127,12 +144,12 @@ export function useConversationScrollState({
   }, [scrollConversationToBottom]);
 
   const enableConversationAutoFollow = useCallback((): void => {
-    conversationAutoFollowRef.current = true;
-  }, []);
+    setAutoFollow(true);
+  }, [setAutoFollow]);
 
   const disableConversationAutoFollow = useCallback((): void => {
-    conversationAutoFollowRef.current = false;
-  }, []);
+    setAutoFollow(false);
+  }, [setAutoFollow]);
 
   function handleConversationScroll(scrolledNode?: HTMLElement): void {
     const node = scrolledNode ?? conversationViewport();
@@ -155,18 +172,18 @@ export function useConversationScrollState({
     lastConversationScrollTopRef.current = node.scrollTop;
 
     if (scrolledUp) {
-      conversationAutoFollowRef.current = false;
+      setAutoFollow(false);
       return;
     }
     if (distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX) {
-      conversationAutoFollowRef.current = true;
+      setAutoFollow(true);
     }
   }
 
   useLayoutEffect(() => {
-    conversationAutoFollowRef.current = true;
+    setAutoFollow(true);
     scrollConversationToBottom({ force: true });
-  }, [activeThreadID, scrollConversationToBottom]);
+  }, [activeThreadID, scrollConversationToBottom, setAutoFollow]);
 
   useEffect(() => {
     scheduleStreamScroll();
@@ -241,6 +258,7 @@ export function useConversationScrollState({
     handleConversationScroll,
     scrollConversationToBottom,
     enableConversationAutoFollow,
-    disableConversationAutoFollow
+    disableConversationAutoFollow,
+    userScrolledAway
   };
 }

@@ -551,6 +551,10 @@ export function App(): JSX.Element {
   function handleQueryHistorySelect(entry: QueryHistoryEntry): void {
     cancelQueryHistoryClose();
     setQueryHistoryOpen(false);
+    // Stop auto-follow before we jump — otherwise the next stream tick
+    // would drag the scroll position back to the bottom and undo the
+    // jump before the user even registers it happened.
+    disableConversationAutoFollow();
     scrollToUserMessage(entry.turnID, entry.itemID);
   }
 
@@ -890,6 +894,8 @@ export function App(): JSX.Element {
     handleConversationScroll,
     scrollConversationToBottom,
     enableConversationAutoFollow,
+    disableConversationAutoFollow,
+    userScrolledAway
   } = useConversationScrollState({
     activeThreadID,
     activePane: state.activePane,
@@ -4518,6 +4524,38 @@ export function App(): JSX.Element {
         !showingSkillsCatalog
           ? renderComposer("dock")
           : null}
+
+        {state.initialized &&
+        !previewingLaunch &&
+        !emptyConversation &&
+        !showingWorkspaceMode &&
+        !splitConversation &&
+        !showingSkillsCatalog &&
+        userScrolledAway ? (
+          <button
+            type="button"
+            className="jump-to-latest-pill"
+            aria-label="跳到最新"
+            onClick={() => scrollConversationToBottom({ force: true })}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M7 1V11M7 11L3 7M7 11L11 7"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>跳到最新</span>
+          </button>
+        ) : null}
       </main>
 
       {rightPanelOpen || rightPanelAnimating ? (
