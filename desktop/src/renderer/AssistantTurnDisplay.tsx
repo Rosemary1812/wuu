@@ -239,9 +239,15 @@ function processPreviewForItem(
     ) {
       return undefined;
     }
-    const text = compactProcessPreview(
-      streamFieldValue(turn.id, item, "text"),
-    );
+    // The fold-header preview is a committed snapshot, not a live
+    // mirror of the streaming store. The body's StreamingMarkdown is
+    // the single live surface; if the preview also advanced, the user
+    // would see two surfaces incrementing in lockstep, which reads as
+    // a duplicated or racing stream rather than one typing assistant.
+    // Read item.text (last settled value) so the preview either shows
+    // a previously committed topic or stays empty until the stream
+    // settles and item.text is populated.
+    const text = compactProcessPreview(item.text ?? "");
     return text
       ? {
           text,
