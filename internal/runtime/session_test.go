@@ -15,6 +15,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/hooks"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -88,6 +89,40 @@ func writeSessionTestFile(t *testing.T, path, content string) {
 	}
 }
 
+func waitForScheduledLoopState(t *testing.T, stateDir, taskID string) looprunner.State {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		entries, err := os.ReadDir(filepath.Join(stateDir, "loops"))
+		if err != nil {
+			lastErr = err
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "cron-loop-"+taskID+"-") {
+				continue
+			}
+			state, err := looprunner.NewStore(filepath.Join(stateDir, "loops", entry.Name())).LoadState()
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if state.Status == looprunner.StatusCompleted {
+				return state
+			}
+			lastErr = nil
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if lastErr != nil {
+		t.Fatalf("scheduled loop state not found: %v", lastErr)
+	}
+	t.Fatalf("scheduled loop state for task %q not completed", taskID)
+	return looprunner.State{}
+}
+
 func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(t.TempDir(), "state")
@@ -148,6 +183,20 @@ func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
 	}
 	if len(tasks) != 0 {
 		t.Fatalf("one-shot workflow task should be removed after firing, got %+v", tasks)
+	}
+
+	loopState := waitForScheduledLoopState(t, stateDir, "prompt-1")
+	if loopState.Status != looprunner.StatusCompleted {
+		t.Fatalf("scheduled loop status = %s, want completed: %+v", loopState.Status, loopState)
+	}
+	if loopState.Trigger.Type != "scheduled" || loopState.Trigger.Source != "cron" {
+		t.Fatalf("scheduled loop trigger not recorded: %+v", loopState.Trigger)
+	}
+	if loopState.Trigger.Payload["workflow_name"] != "weekly-qa" || loopState.Trigger.Payload["kind"] != "workflow" {
+		t.Fatalf("scheduled loop missing workflow metadata: %+v", loopState.Trigger.Payload)
+	}
+	if loopState.AssignedAgent != "cron-scheduler" {
+		t.Fatalf("scheduled loop assigned agent = %q", loopState.AssignedAgent)
 	}
 }
 

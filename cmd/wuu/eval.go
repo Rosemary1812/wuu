@@ -18,7 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
-	"github.com/blueberrycongee/wuu/internal/harness"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
@@ -454,7 +454,7 @@ func applyEvalWorkflowIssues(result *evalharness.Result) {
 	if result == nil || result.Observability == nil {
 		return
 	}
-	result.WorkflowIssues = evalharness.WorkflowValidationIssues(result.Observability.WorkflowRuns)
+	result.WorkflowIssues = evalharness.LoopValidationIssues(result.Observability.LoopAttention, result.Observability.WorkflowRuns)
 	if len(result.WorkflowIssues) > 0 {
 		result.Success = false
 	}
@@ -510,27 +510,23 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 		obs.ToolInventory = evalToolInventoryObservations(rt.Toolkit.ToolInfos())
 		obs.ToolRecords = evalToolObservations(rt.Toolkit.ToolTelemetry())
 	}
-	if rt.AgentControl != nil && rt.AgentControl.HarnessStore() != nil {
-		store := rt.AgentControl.HarnessStore()
-		obs.HarnessDir = store.Dir()
-		tasks, err := store.ListTasks()
-		if err != nil {
-			obs.Warnings = append(obs.Warnings, "list harness tasks: "+evalSafePreview(err.Error(), evalTextPreviewLimit))
-		} else {
-			obs.HarnessTasks = evalHarnessTaskObservations(tasks)
-		}
-		reports, err := store.ListReports()
-		if err != nil {
-			obs.Warnings = append(obs.Warnings, "list harness reports: "+evalSafePreview(err.Error(), evalTextPreviewLimit))
-		} else {
-			obs.HarnessReports = evalHarnessReportObservations(reports)
-		}
-	}
+	var workflowStore *workflow.Store
 	if obs.StateDir != "" {
-		runs, warnings := evalWorkflowObservations(workflow.NewStore(obs.StateDir))
-		obs.WorkflowRuns = runs
-		obs.Warnings = append(obs.Warnings, warnings...)
+		workflowStore = workflow.NewStore(obs.StateDir)
 	}
+	snapshotOpts := looprunner.SnapshotOptions{
+		WorkflowStore: workflowStore,
+	}
+	if rt.AgentControl != nil {
+		snapshotOpts.HarnessStore = rt.AgentControl.HarnessStore()
+	}
+	snapshot := looprunner.SnapshotSystem(snapshotOpts)
+	obs.HarnessDir = snapshot.HarnessDir
+	obs.LoopAttention = evalLoopAttentionObservations(snapshot.Attention)
+	obs.WorkflowRuns = evalWorkflowObservations(snapshot.Workflows)
+	obs.HarnessTasks = evalHarnessTaskObservations(snapshot.Harness.Tasks)
+	obs.HarnessReports = evalHarnessReportObservations(snapshot.Harness.Reports)
+	obs.Warnings = append(obs.Warnings, evalSafeStringSlice(snapshot.Warnings, evalTextPreviewLimit)...)
 	return obs
 }
 
@@ -718,56 +714,50 @@ func evalToolInventoryObservations(infos []tools.ToolInfo) []evalharness.ToolInv
 	return out
 }
 
-func evalWorkflowObservations(store *workflow.Store) ([]evalharness.WorkflowRunObservation, []string) {
-	if store == nil {
-		return nil, nil
+func evalLoopAttentionObservations(items []looprunner.AttentionItem) []evalharness.LoopAttentionObservation {
+	out := make([]evalharness.LoopAttentionObservation, 0, len(items))
+	for _, item := range items {
+		out = append(out, evalharness.LoopAttentionObservation{
+			Source:  item.Source,
+			ID:      item.ID,
+			Status:  item.Status,
+			Message: evalSafePreview(item.Message, evalTextPreviewLimit),
+			Path:    item.Path,
+		})
 	}
-	runs, err := store.ListRuns()
-	if err != nil {
-		return nil, []string{"list workflow runs: " + evalSafePreview(err.Error(), evalTextPreviewLimit)}
-	}
+	return out
+}
+
+func evalWorkflowObservations(runs []looprunner.WorkflowSnapshot) []evalharness.WorkflowRunObservation {
 	out := make([]evalharness.WorkflowRunObservation, 0, len(runs))
-	warnings := []string(nil)
 	for _, run := range runs {
-		runDir := filepath.Join(store.Dir(), "workflows", run.ID)
 		item := evalharness.WorkflowRunObservation{
 			ID:              run.ID,
-			RunDir:          runDir,
-			EventLogPath:    filepath.Join(runDir, "events.jsonl"),
+			RunDir:          run.RunDir,
+			EventLogPath:    run.EventLogPath,
 			DefinitionName:  run.DefinitionName,
 			Driver:          run.Driver,
 			Entrypoint:      run.Entrypoint,
-			Status:          string(run.Status),
+			Status:          run.Status,
 			Error:           evalSafePreview(run.Error, evalTextPreviewLimit),
 			ScriptPath:      run.ScriptPath,
 			FinalReportPath: run.FinalReportPath,
+			LoopID:          run.LoopID,
+			LoopDir:         run.LoopDir,
 			Phases:          evalWorkflowPhaseObservations(run.Phases),
+			AgentRuns:       evalWorkflowAgentRunObservations(run.AgentRuns),
+			TeamArbitration: evalWorkflowTeamArbitration(run.Arbitration),
+			EventCount:      run.EventCount,
 		}
-		team, err := store.LoadTeamPlan(run.ID)
-		if err != nil {
-			warnings = append(warnings, "load workflow team for "+run.ID+": "+evalSafePreview(err.Error(), evalTextPreviewLimit))
-		} else if len(team.Members) > 0 {
-			item.WorkflowTeam = evalWorkflowTeamObservation(team)
-		}
-		agents, err := store.ListAgentRuns(run.ID)
-		if err != nil {
-			warnings = append(warnings, "list workflow agent runs for "+run.ID+": "+evalSafePreview(err.Error(), evalTextPreviewLimit))
-		} else {
-			item.AgentRuns = evalWorkflowAgentRunObservations(agents)
-			item.TeamArbitration = evalWorkflowTeamArbitration(workflow.AnalyzeTeamArbitration(agents))
-		}
-		events, err := store.ListEvents(run.ID)
-		if err != nil {
-			warnings = append(warnings, "list workflow events for "+run.ID+": "+evalSafePreview(err.Error(), evalTextPreviewLimit))
-		} else {
-			item.EventCount = len(events)
+		if run.Team != nil && len(run.Team.Members) > 0 {
+			item.WorkflowTeam = evalWorkflowTeamObservation(*run.Team)
 		}
 		out = append(out, item)
 	}
-	return out, warnings
+	return out
 }
 
-func evalWorkflowTeamArbitration(in workflow.TeamArbitration) evalharness.WorkflowTeamArbitration {
+func evalWorkflowTeamArbitration(in looprunner.WorkflowArbitration) evalharness.WorkflowTeamArbitration {
 	overlaps := make([]evalharness.WorkflowChangedFileOverlapObservation, 0, len(in.ChangedFileOverlaps))
 	for _, overlap := range in.ChangedFileOverlaps {
 		overlaps = append(overlaps, evalharness.WorkflowChangedFileOverlapObservation{
@@ -785,7 +775,7 @@ func evalWorkflowTeamArbitration(in workflow.TeamArbitration) evalharness.Workfl
 	}
 }
 
-func evalWorkflowTeamObservation(team workflow.TeamPlan) *evalharness.WorkflowTeamObservation {
+func evalWorkflowTeamObservation(team looprunner.WorkflowTeamSnapshot) *evalharness.WorkflowTeamObservation {
 	out := &evalharness.WorkflowTeamObservation{
 		CreatedAt: team.CreatedAt,
 		UpdatedAt: team.UpdatedAt,
@@ -805,13 +795,13 @@ func evalWorkflowTeamObservation(team workflow.TeamPlan) *evalharness.WorkflowTe
 	return out
 }
 
-func evalWorkflowPhaseObservations(phases []workflow.Phase) []evalharness.WorkflowPhaseObservation {
+func evalWorkflowPhaseObservations(phases []looprunner.WorkflowPhaseSnapshot) []evalharness.WorkflowPhaseObservation {
 	out := make([]evalharness.WorkflowPhaseObservation, 0, len(phases))
 	for _, phase := range phases {
 		out = append(out, evalharness.WorkflowPhaseObservation{
 			ID:          phase.ID,
 			Name:        phase.Name,
-			Status:      string(phase.Status),
+			Status:      phase.Status,
 			Error:       evalSafePreview(phase.Error, evalTextPreviewLimit),
 			AgentRunIDs: append([]string(nil), phase.AgentRunIDs...),
 		})
@@ -819,7 +809,7 @@ func evalWorkflowPhaseObservations(phases []workflow.Phase) []evalharness.Workfl
 	return out
 }
 
-func evalWorkflowAgentRunObservations(agents []workflow.AgentRun) []evalharness.WorkflowAgentRunObservation {
+func evalWorkflowAgentRunObservations(agents []looprunner.WorkflowAgentSnapshot) []evalharness.WorkflowAgentRunObservation {
 	out := make([]evalharness.WorkflowAgentRunObservation, 0, len(agents))
 	for _, agent := range agents {
 		out = append(out, evalharness.WorkflowAgentRunObservation{
@@ -829,7 +819,7 @@ func evalWorkflowAgentRunObservations(agents []workflow.AgentRun) []evalharness.
 			AgentPath:     agent.AgentPath,
 			TaskName:      agent.TaskName,
 			AgentProfile:  agent.AgentProfile,
-			Status:        string(agent.Status),
+			Status:        agent.Status,
 			ReportPath:    agent.ReportPath,
 			ReportMissing: agent.ReportMissing,
 			ChangedFiles:  append([]string(nil), agent.ChangedFiles...),
@@ -844,7 +834,7 @@ func evalWorkflowAgentRunObservations(agents []workflow.AgentRun) []evalharness.
 	return out
 }
 
-func evalHarnessTaskObservations(tasks []harness.Task) []evalharness.HarnessTaskObservation {
+func evalHarnessTaskObservations(tasks []looprunner.HarnessTaskSnapshot) []evalharness.HarnessTaskObservation {
 	out := make([]evalharness.HarnessTaskObservation, 0, len(tasks))
 	for _, task := range tasks {
 		out = append(out, evalharness.HarnessTaskObservation{
@@ -853,7 +843,9 @@ func evalHarnessTaskObservations(tasks []harness.Task) []evalharness.HarnessTask
 			Path:          task.Path,
 			Name:          task.Name,
 			Role:          task.Role,
-			Status:        string(task.Status),
+			LoopID:        task.LoopID,
+			LoopDir:       task.LoopDir,
+			Status:        task.Status,
 			ReportPath:    task.ReportPath,
 			ArtifactPaths: append([]string(nil), task.ArtifactPaths...),
 			InputTokens:   task.InputTokens,
@@ -864,7 +856,7 @@ func evalHarnessTaskObservations(tasks []harness.Task) []evalharness.HarnessTask
 	return out
 }
 
-func evalHarnessReportObservations(reports []harness.Report) []evalharness.HarnessReportObservation {
+func evalHarnessReportObservations(reports []looprunner.HarnessReportSnapshot) []evalharness.HarnessReportObservation {
 	out := make([]evalharness.HarnessReportObservation, 0, len(reports))
 	for _, report := range reports {
 		out = append(out, evalharness.HarnessReportObservation{
@@ -1315,6 +1307,9 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	if summary.Task != nil && len(summary.Task.WorkflowIssues) > 0 {
 		fmt.Printf("  workflow_issues: %s\n", strings.Join(summary.Task.WorkflowIssues, ","))
 	}
+	if attention := formatEvalLoopAttention(summary.LoopAttention); attention != "" {
+		fmt.Printf("  loop_attention: %s\n", attention)
+	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
 		if len(summary.ToolSummary.ByResultAction) > 0 {
@@ -1477,6 +1472,31 @@ func formatEvalWorkflowRuns(runs []evalharness.WorkflowRunObservation, fallbackI
 		return strings.Join(parts, ",")
 	}
 	return strings.Join(fallbackIDs, ",")
+}
+
+func formatEvalLoopAttention(items []evalharness.LoopAttentionObservation) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		source := strings.TrimSpace(item.Source)
+		if source == "" {
+			source = "loop"
+		}
+		labelParts := []string{source}
+		if id := strings.TrimSpace(item.ID); id != "" {
+			labelParts = append(labelParts, "id="+id)
+		}
+		if status := strings.TrimSpace(item.Status); status != "" {
+			labelParts = append(labelParts, "status="+status)
+		}
+		if path := strings.TrimSpace(item.Path); path != "" {
+			labelParts = append(labelParts, "path="+path)
+		}
+		if message := strings.TrimSpace(item.Message); message != "" {
+			labelParts = append(labelParts, "message="+firstLine(message))
+		}
+		parts = append(parts, strings.Join(labelParts, ":"))
+	}
+	return strings.Join(parts, ",")
 }
 
 func formatEvalWorkflowAgents(runs []evalharness.WorkflowRunObservation) string {

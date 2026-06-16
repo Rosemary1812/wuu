@@ -22,6 +22,12 @@ type Skill struct {
 	Path         string // filesystem path to the SKILL.md file
 	Dir          string // directory containing the skill (parent of SKILL.md, or file's parent for flat)
 	ArgumentHint string // gray help text shown after skill name in /<name> ...
+	// Loop-engineering metadata. These are optional; older skills remain valid.
+	TriggerCondition      string
+	RequiredContext       []string
+	Examples              []string
+	VerificationChecklist []string
+	ProgressiveDisclosure string
 
 	// CC-compatible fields.
 	Model              string   // "sonnet", "haiku", "opus", "inherit"
@@ -247,6 +253,8 @@ func parseSkillFile(path, source string) (Skill, error) {
 			skill.Description = v
 		case "when-to-use", "when_to_use":
 			skill.WhenToUse = v
+		case "trigger", "trigger-condition", "trigger_condition":
+			skill.TriggerCondition = v
 		case "model":
 			skill.Model = v
 		case "context":
@@ -255,6 +263,14 @@ func parseSkillFile(path, source string) (Skill, error) {
 			skill.Agent = v
 		case "allowed-tools", "allowed_tools":
 			skill.AllowedTools = parseList(v)
+		case "required-context", "required_context":
+			skill.RequiredContext = parseList(v)
+		case "examples":
+			skill.Examples = parseList(v)
+		case "verification-checklist", "verification_checklist":
+			skill.VerificationChecklist = parseList(v)
+		case "progressive-disclosure", "progressive_disclosure":
+			skill.ProgressiveDisclosure = v
 		case "user-invocable", "user_invocable":
 			skill.UserInvocable = parseBool(v, true)
 		case "disable-model-invocation", "disable_model_invocation":
@@ -395,6 +411,8 @@ func parseSkillReader(r io.Reader, source string) (Skill, error) {
 			skill.Description = v
 		case "when-to-use", "when_to_use":
 			skill.WhenToUse = v
+		case "trigger", "trigger-condition", "trigger_condition":
+			skill.TriggerCondition = v
 		case "model":
 			skill.Model = v
 		case "context":
@@ -403,6 +421,14 @@ func parseSkillReader(r io.Reader, source string) (Skill, error) {
 			skill.Agent = v
 		case "allowed-tools", "allowed_tools":
 			skill.AllowedTools = parseList(v)
+		case "required-context", "required_context":
+			skill.RequiredContext = parseList(v)
+		case "examples":
+			skill.Examples = parseList(v)
+		case "verification-checklist", "verification_checklist":
+			skill.VerificationChecklist = parseList(v)
+		case "progressive-disclosure", "progressive_disclosure":
+			skill.ProgressiveDisclosure = v
 		case "user-invocable", "user_invocable":
 			skill.UserInvocable = parseBool(v, true)
 		case "disable-model-invocation", "disable_model_invocation":

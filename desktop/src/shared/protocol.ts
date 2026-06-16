@@ -103,6 +103,7 @@ export type SkillSummary = {
   name: string;
   description?: string;
   when_to_use?: string;
+  trigger_condition?: string;
   source: string;
   path?: string;
   argument_hint?: string;
@@ -110,6 +111,10 @@ export type SkillSummary = {
   context?: string;
   agent?: string;
   allowed_tools?: string[];
+  required_context?: string[];
+  examples?: string[];
+  verification_checklist?: string[];
+  progressive_disclosure?: string;
   user_invocable: boolean;
   disable_model_invoke: boolean;
   paths?: string[];
@@ -119,6 +124,259 @@ export type SkillSummary = {
 
 export type SkillListResult = {
   skills: SkillSummary[];
+};
+
+export type LoopAttentionItem = {
+  source: string;
+  id?: string;
+  status?: string;
+  message?: string;
+  path?: string;
+};
+
+export type LoopWorkflowPhaseSnapshot = {
+  id: string;
+  name?: string;
+  status: string;
+  error?: string;
+  agent_run_ids?: string[];
+};
+
+export type LoopWorkflowAgentSnapshot = {
+  id: string;
+  phase_id?: string;
+  agent_id?: string;
+  agent_path?: string;
+  task_name?: string;
+  agent_profile?: string;
+  status: string;
+  report_path?: string;
+  report_missing?: boolean;
+  changed_files?: string[];
+  artifacts?: string[];
+  worktree_path?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  duration_ms?: number;
+  error?: string;
+};
+
+export type LoopWorkflowTeamMemberSnapshot = {
+  id?: string;
+  role?: string;
+  mode?: string;
+  agent_profile?: string;
+  task_name?: string;
+  phase_id?: string;
+  created_profile?: boolean;
+};
+
+export type LoopWorkflowTeamSnapshot = {
+  members?: LoopWorkflowTeamMemberSnapshot[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type LoopChangedFileOverlapSnapshot = {
+  file: string;
+  agent_run_ids: string[];
+};
+
+export type LoopWorkflowArbitration = {
+  status?: string;
+  open_agent_runs?: string[];
+  missing_reports?: string[];
+  failed_agent_runs?: string[];
+  changed_file_overlaps?: LoopChangedFileOverlapSnapshot[];
+  next_actions?: string[];
+};
+
+export type LoopWorkflowSnapshot = {
+  id: string;
+  run_dir?: string;
+  event_log_path?: string;
+  definition_name?: string;
+  driver?: string;
+  entrypoint?: string;
+  status: string;
+  error?: string;
+  script_path?: string;
+  final_report_path?: string;
+  loop_id?: string;
+  loop_dir?: string;
+  phases?: LoopWorkflowPhaseSnapshot[];
+  agent_runs?: LoopWorkflowAgentSnapshot[];
+  team?: LoopWorkflowTeamSnapshot;
+  arbitration?: LoopWorkflowArbitration;
+  event_count?: number;
+};
+
+export type LoopHarnessTaskSnapshot = {
+  id: string;
+  parent_id?: string;
+  path?: string;
+  name?: string;
+  role?: string;
+  loop_id?: string;
+  loop_dir?: string;
+  status: string;
+  report_path?: string;
+  artifact_paths?: string[];
+  input_tokens?: number;
+  output_tokens?: number;
+  error?: string;
+};
+
+export type LoopHarnessReportSnapshot = {
+  id: string;
+  task_id: string;
+  run_id?: string;
+  agent_id?: string;
+  agent_path?: string;
+  outcome: string;
+  summary?: string;
+  changed_files?: string[];
+  verification?: string[];
+  artifacts?: string[];
+  report_path?: string;
+};
+
+export type LoopHarnessSnapshot = {
+  tasks?: LoopHarnessTaskSnapshot[];
+  reports?: LoopHarnessReportSnapshot[];
+};
+
+export type LoopApprovalSnapshot = {
+  id: string;
+  loop_id?: string;
+  loop_dir?: string;
+  step?: string;
+  source?: string;
+  source_id?: string;
+  title: string;
+  reason?: string;
+  requested_action?: string;
+  risk?: string;
+  artifact?: string;
+  status: string;
+  requested_by?: string;
+  resolved_by?: string;
+  resolution?: string;
+  created_at: string;
+  resolved_at?: string;
+};
+
+export type LoopStateSnapshot = {
+  id: string;
+  loop_dir?: string;
+  goal: string;
+  task?: string;
+  status: string;
+  current_step?: string;
+  assigned_agent?: string;
+  needs_human?: boolean;
+  current_blocker?: string;
+  final_artifact?: string;
+  modified_files?: string[];
+  retry_count?: number;
+  pending_approvals?: LoopApprovalSnapshot[];
+  updated_at?: string;
+};
+
+export type LoopSystemSnapshot = {
+  generated_at: string;
+  loop_root?: string;
+  workflow_dir?: string;
+  harness_dir?: string;
+  loops?: LoopStateSnapshot[];
+  workflows?: LoopWorkflowSnapshot[];
+  harness?: LoopHarnessSnapshot;
+  approvals?: LoopApprovalSnapshot[];
+  attention?: LoopAttentionItem[];
+  warnings?: string[];
+};
+
+export type LoopSnapshotResult = {
+  snapshot: LoopSystemSnapshot;
+};
+
+export type LoopWorktreeStatus = {
+  dirty: boolean;
+  changed_files?: string[];
+  porcelain?: string[];
+};
+
+export type LoopWorktreeMergePreview = {
+  can_apply: boolean;
+  conflict_files?: string[];
+  error?: string;
+};
+
+export type LoopWorktreeReview = {
+  worktree_path: string;
+  target_repo?: string;
+  status: LoopWorktreeStatus;
+  diff?: string;
+  diff_truncated?: boolean;
+  merge_preview: LoopWorktreeMergePreview;
+};
+
+export type LoopWorktreeReviewResult = {
+  review: LoopWorktreeReview;
+};
+
+export type LoopWorktreeCleanup = {
+  worktree_path: string;
+  removed: boolean;
+  kept: boolean;
+  status_before: LoopWorktreeStatus;
+};
+
+export type LoopWorktreeCleanupResult = {
+  cleanup: LoopWorktreeCleanup;
+};
+
+export type LoopWorktreeRollback = {
+  worktree_path: string;
+  rolled_back: boolean;
+  status_before: LoopWorktreeStatus;
+  status_after: LoopWorktreeStatus;
+};
+
+export type LoopWorktreeRollbackResult = {
+  rollback: LoopWorktreeRollback;
+};
+
+export type LoopWorktreeMerge = {
+  worktree_path: string;
+  target_repo: string;
+  applied: boolean;
+  changed_files?: string[];
+  preview: LoopWorktreeMergePreview;
+};
+
+export type LoopWorktreeMergeResult = {
+  merge: LoopWorktreeMerge;
+};
+
+export type LoopApprovalResolveResult = {
+  approval: {
+    id: string;
+    step?: string;
+    source?: string;
+    source_id?: string;
+    title: string;
+    reason?: string;
+    requested_action?: string;
+    risk?: string;
+    artifact?: string;
+    status: string;
+    requested_by?: string;
+    resolved_by?: string;
+    resolution?: string;
+    created_at: string;
+    resolved_at?: string;
+  };
 };
 
 export type ManagedProcess = {
@@ -536,6 +794,33 @@ export type WuuDesktopApi = {
   listManagedProcesses: () => Promise<ManagedProcessListResult>;
   stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;
   listSkills: () => Promise<SkillListResult>;
+  getLoopSnapshot: (threadId?: string) => Promise<LoopSnapshotResult>;
+  getLoopWorktreeReview: (worktreePath: string) => Promise<LoopWorktreeReviewResult>;
+  cleanupLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmRemoveCleanWorktree: boolean
+  ) => Promise<LoopWorktreeCleanupResult>;
+  rollbackLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmDiscardWorktreeChanges: boolean
+  ) => Promise<LoopWorktreeRollbackResult>;
+  mergeLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmApplyWorktreeDiff: boolean,
+    confirmTargetRepoMutation: boolean
+  ) => Promise<LoopWorktreeMergeResult>;
+  resolveLoopApproval: (
+    loopId: string,
+    approvalId: string,
+    approved: boolean,
+    rejected: boolean,
+    resolvedBy: string,
+    resolution: string,
+    confirmUserApproved: boolean
+  ) => Promise<LoopApprovalResolveResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;

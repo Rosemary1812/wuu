@@ -15,9 +15,11 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
@@ -93,6 +95,137 @@ func TestRunInitWritesDefaultConfig(t *testing.T) {
 	if cfg.DefaultProvider == "" || len(cfg.Providers) == 0 {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
+}
+
+func TestRunGoalDemoWritesDurableState(t *testing.T) {
+	workdir := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	if err := os.WriteFile(filepath.Join(workdir, "marker.txt"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"goal", "demo",
+			"--workdir", workdir,
+			"--id", "loop-test",
+			"--goal", "prove durable goal",
+			"--verify-command", "test -f marker.txt",
+		}); err != nil {
+			t.Fatalf("run goal demo: %v", err)
+		}
+	})
+	if !strings.Contains(output, "status: completed") {
+		t.Fatalf("expected completed summary, got %q", output)
+	}
+	loopDir := cliLoopDir(t, wuuHome, workdir, "loop-test")
+	for _, rel := range []string{
+		"state.json",
+		"events.jsonl",
+		"views/progress.md",
+		"views/decisions.md",
+		"views/failures.md",
+		"views/approvals.md",
+		"artifacts/research.md",
+		"artifacts/plan.md",
+		"artifacts/todo.md",
+		"artifacts/verification.md",
+		"artifacts/review.md",
+		"artifacts/integration.md",
+		"artifacts/final.md",
+	} {
+		if _, err := os.Stat(filepath.Join(loopDir, rel)); err != nil {
+			t.Fatalf("expected %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(workdir, ".loop")); !os.IsNotExist(err) {
+		t.Fatalf("project root .loop should not be created, stat err=%v", err)
+	}
+
+	status := captureStdout(t, func() {
+		if err := run([]string{"goal", "status", "--workdir", workdir, "--id", "loop-test", "--json"}); err != nil {
+			t.Fatalf("run goal status: %v", err)
+		}
+	})
+	var state struct {
+		ID          string `json:"id"`
+		Status      string `json:"status"`
+		Final       string `json:"final_artifact"`
+		TestResults []struct {
+			Passed bool `json:"passed"`
+		} `json:"test_results"`
+	}
+	if err := json.Unmarshal([]byte(status), &state); err != nil {
+		t.Fatalf("parse goal status JSON: %v\n%s", err, status)
+	}
+	if state.ID != "loop-test" || state.Status != "completed" || state.Final == "" {
+		t.Fatalf("unexpected goal state: %+v", state)
+	}
+	if len(state.TestResults) != 1 || !state.TestResults[0].Passed {
+		t.Fatalf("expected one passing test result, got %+v", state.TestResults)
+	}
+}
+
+func TestRunGoalDemoRecordsVerificationFailure(t *testing.T) {
+	workdir := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"goal", "demo",
+			"--workdir", workdir,
+			"--id", "loop-fail",
+			"--goal", "capture failure",
+			"--verify-command", "test -f missing.txt",
+		}); err != nil {
+			t.Fatalf("run goal demo: %v", err)
+		}
+	})
+	if !strings.Contains(output, "status: needs_human") {
+		t.Fatalf("expected needs_human summary, got %q", output)
+	}
+	loopDir := cliLoopDir(t, wuuHome, workdir, "loop-fail")
+	failures, err := os.ReadFile(filepath.Join(loopDir, "views", "failures.md"))
+	if err != nil {
+		t.Fatalf("read failures: %v", err)
+	}
+	if !strings.Contains(string(failures), "verification_command_failed") {
+		t.Fatalf("expected verification failure, got %s", failures)
+	}
+	if _, err := os.Stat(filepath.Join(workdir, ".loop")); !os.IsNotExist(err) {
+		t.Fatalf("project root .loop should not be created, stat err=%v", err)
+	}
+}
+
+func TestRunLoopCommandRemainsGoalAlias(t *testing.T) {
+	workdir := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"loop", "demo",
+			"--workdir", workdir,
+			"--id", "loop-alias",
+			"--goal", "prove old command alias",
+		}); err != nil {
+			t.Fatalf("run loop alias: %v", err)
+		}
+	})
+	if !strings.Contains(output, "goal_id: loop-alias") {
+		t.Fatalf("expected goal summary from loop alias, got %q", output)
+	}
+}
+
+func cliLoopDir(t *testing.T, wuuHome, workdir, loopID string) string {
+	t.Helper()
+	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, workdir)
+	if err != nil {
+		t.Fatalf("WorkspaceDir: %v", err)
+	}
+	return statepath.LoopDir(workspaceStateDir, loopID)
 }
 
 func TestLoadOrCreateAppServerConfigCreatesStarterConfig(t *testing.T) {
@@ -565,10 +698,15 @@ func TestEvalWorkflowObservationsIncludeTeamArbitration(t *testing.T) {
 		}
 	}
 
-	got, warnings := evalWorkflowObservations(store)
-	if len(warnings) > 0 {
-		t.Fatalf("unexpected warnings: %+v", warnings)
+	snapshot := looprunner.SnapshotSystem(looprunner.SnapshotOptions{WorkflowStore: store})
+	if len(snapshot.Warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", snapshot.Warnings)
 	}
+	attention := evalLoopAttentionObservations(snapshot.Attention)
+	if len(attention) == 0 {
+		t.Fatalf("loop attention should capture workflow arbitration issues: %+v", snapshot.Attention)
+	}
+	got := evalWorkflowObservations(snapshot.Workflows)
 	if len(got) != 1 {
 		t.Fatalf("expected one workflow observation, got %+v", got)
 	}
@@ -816,6 +954,12 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 				ArgumentsSHA256: strings.Repeat("e", 64),
 				Success:         false,
 			}},
+			LoopAttention: []evalharness.LoopAttentionObservation{{
+				Source:  "workflow_agent",
+				ID:      "beta-writer",
+				Status:  "missing_report",
+				Message: "workflow run run-1 is missing agent report",
+			}},
 			WorkflowRuns: []evalharness.WorkflowRunObservation{{
 				ID:           "run-1",
 				RunDir:       "/tmp/wuu/workflows/run-1",
@@ -863,6 +1007,9 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	}
 	if !strings.Contains(output, "workflow_runs: run-1:driver=agent_managed:status=completed:event_log=/tmp/wuu/workflows/run-1/events.jsonl:run_dir=/tmp/wuu/workflows/run-1") {
 		t.Fatalf("replay text output missing workflow artifact paths:\n%s", output)
+	}
+	if !strings.Contains(output, "loop_attention: workflow_agent:id=beta-writer:status=missing_report:message=workflow run run-1 is missing agent report") {
+		t.Fatalf("replay text output missing loop attention:\n%s", output)
 	}
 	if !strings.Contains(output, "workflow_agents: run-1/alpha-writer:task=write alpha marker:profile=marker-writer:status=completed:report=/tmp/wuu/workflows/run-1/agents/alpha/report.md:worktree=/tmp/wuu/worktrees/alpha:changed=team_alpha.txt") {
 		t.Fatalf("replay text output missing workflow agent report paths:\n%s", output)
@@ -921,6 +1068,39 @@ func TestApplyEvalWorkflowIssuesFailsResult(t *testing.T) {
 		result.WorkflowIssues[0] != "run-1:arbitration=attention_required" ||
 		result.WorkflowIssues[1] != "run-1:missing_reports=worker-1" {
 		t.Fatalf("workflow issues not summarized: %+v", result.WorkflowIssues)
+	}
+}
+
+func TestApplyEvalWorkflowIssuesPrefersLoopAttention(t *testing.T) {
+	result := evalharness.Result{
+		TaskID:  "task-1",
+		Success: true,
+		Observability: &evalharness.Observability{
+			LoopAttention: []evalharness.LoopAttentionObservation{{
+				Source:  "workflow_agent",
+				ID:      "worker-1",
+				Status:  "missing_report",
+				Message: "workflow run run-1 is missing agent report",
+			}, {
+				Source: "harness",
+				ID:     "task-1",
+				Status: "failed",
+			}},
+			WorkflowRuns: []evalharness.WorkflowRunObservation{{
+				ID:     "run-1",
+				Status: "completed",
+			}},
+		},
+	}
+
+	applyEvalWorkflowIssues(&result)
+
+	if result.Success {
+		t.Fatalf("loop attention issues should fail eval result: %+v", result)
+	}
+	want := []string{"harness:task-1:status=failed", "run-1:missing_reports=worker-1"}
+	if strings.Join(result.WorkflowIssues, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("loop attention issues not summarized: %+v", result.WorkflowIssues)
 	}
 }
 

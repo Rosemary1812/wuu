@@ -28,6 +28,8 @@ type Run struct {
 	PlanPath        string    `json:"plan_path,omitempty"`
 	ScriptPath      string    `json:"script_path,omitempty"`
 	FinalReportPath string    `json:"final_report_path,omitempty"`
+	LoopID          string    `json:"loop_id,omitempty"`
+	LoopDir         string    `json:"loop_dir,omitempty"`
 	PauseReason     string    `json:"pause_reason,omitempty"`
 	ResumeHint      string    `json:"resume_hint,omitempty"`
 	RollbackHint    string    `json:"rollback_hint,omitempty"`
@@ -169,13 +171,42 @@ type Event struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type WorkflowArtifactKind string
+
+const (
+	WorkflowArtifactPlan        WorkflowArtifactKind = "plan"
+	WorkflowArtifactScript      WorkflowArtifactKind = "script"
+	WorkflowArtifactFinalReport WorkflowArtifactKind = "final_report"
+)
+
+type WorkflowArtifact struct {
+	RunID     string
+	LoopID    string
+	LoopDir   string
+	Kind      WorkflowArtifactKind
+	Path      string
+	CreatedAt time.Time
+}
+
+type ArtifactSink interface {
+	RecordWorkflowArtifact(WorkflowArtifact) error
+}
+
 type Store struct {
-	dir string
-	mu  sync.Mutex
+	dir          string
+	mu           sync.Mutex
+	artifactSink ArtifactSink
 }
 
 func NewStore(dir string) *Store {
 	return &Store{dir: strings.TrimSpace(dir)}
+}
+
+func (s *Store) SetArtifactSink(sink ArtifactSink) {
+	if s == nil {
+		return
+	}
+	s.artifactSink = sink
 }
 
 func (s *Store) Dir() string {
@@ -700,7 +731,12 @@ func (s *Store) WritePlan(runID, content string) (string, error) {
 		if strings.TrimSpace(run.Entrypoint) == "" {
 			run.Entrypoint = RunEntrypointNaturalLanguageAgent
 		}
-		_ = s.SaveRun(run)
+		if err := s.SaveRun(run); err != nil {
+			return path, err
+		}
+		if err := s.recordWorkflowArtifact(run, WorkflowArtifactPlan, path); err != nil {
+			return path, err
+		}
 	}
 	return path, s.AppendEvent(Event{Type: EventPlanWritten, RunID: runID, Artifact: path})
 }
@@ -729,7 +765,12 @@ func (s *Store) WriteScript(runID, content string) (string, error) {
 		if strings.TrimSpace(run.Entrypoint) == "" {
 			run.Entrypoint = RunEntrypointNaturalLanguageAgent
 		}
-		_ = s.SaveRun(run)
+		if err := s.SaveRun(run); err != nil {
+			return path, err
+		}
+		if err := s.recordWorkflowArtifact(run, WorkflowArtifactScript, path); err != nil {
+			return path, err
+		}
 	}
 	return path, s.AppendEvent(Event{Type: EventScriptWritten, RunID: runID, Artifact: path})
 }
@@ -752,9 +793,28 @@ func (s *Store) WriteFinalReport(runID, content string) (string, error) {
 	run, err := s.LoadRun(runID)
 	if err == nil {
 		run.FinalReportPath = path
-		_ = s.SaveRun(run)
+		if err := s.SaveRun(run); err != nil {
+			return path, err
+		}
+		if err := s.recordWorkflowArtifact(run, WorkflowArtifactFinalReport, path); err != nil {
+			return path, err
+		}
 	}
 	return path, s.AppendEvent(Event{Type: EventFinalReportWritten, RunID: runID, Artifact: path})
+}
+
+func (s *Store) recordWorkflowArtifact(run Run, kind WorkflowArtifactKind, path string) error {
+	if s == nil || s.artifactSink == nil || strings.TrimSpace(run.LoopDir) == "" {
+		return nil
+	}
+	return s.artifactSink.RecordWorkflowArtifact(WorkflowArtifact{
+		RunID:     run.ID,
+		LoopID:    run.LoopID,
+		LoopDir:   run.LoopDir,
+		Kind:      kind,
+		Path:      path,
+		CreatedAt: time.Now().UTC(),
+	})
 }
 
 func (s *Store) AddMemoryCandidate(candidate MemoryCandidate) (MemoryCandidate, error) {

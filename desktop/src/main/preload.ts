@@ -59,6 +59,64 @@ const api: WuuDesktopApi = {
       toolPolicyProfile,
     ),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
+  getLoopSnapshot: (threadId?: string) =>
+    ipcRenderer.invoke("wuu:loop-snapshot", threadId),
+  getLoopWorktreeReview: (worktreePath: string) =>
+    ipcRenderer.invoke("wuu:loop-worktree-review", worktreePath),
+  cleanupLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmRemoveCleanWorktree: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "wuu:loop-worktree-cleanup",
+      worktreePath,
+      confirmUserApproved,
+      confirmRemoveCleanWorktree,
+    ),
+  rollbackLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmDiscardWorktreeChanges: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "wuu:loop-worktree-rollback",
+      worktreePath,
+      confirmUserApproved,
+      confirmDiscardWorktreeChanges,
+    ),
+  mergeLoopWorktree: (
+    worktreePath: string,
+    confirmUserApproved: boolean,
+    confirmApplyWorktreeDiff: boolean,
+    confirmTargetRepoMutation: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "wuu:loop-worktree-merge",
+      worktreePath,
+      confirmUserApproved,
+      confirmApplyWorktreeDiff,
+      confirmTargetRepoMutation,
+    ),
+  resolveLoopApproval: (
+    loopId: string,
+    approvalId: string,
+    approved: boolean,
+    rejected: boolean,
+    resolvedBy: string,
+    resolution: string,
+    confirmUserApproved: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "wuu:loop-approval-resolve",
+      loopId,
+      approvalId,
+      approved,
+      rejected,
+      resolvedBy,
+      resolution,
+      confirmUserApproved,
+    ),
   listManagedProcesses: () => ipcRenderer.invoke("wuu:process-list"),
   stopManagedProcess: (processId: string) =>
     ipcRenderer.invoke("wuu:process-stop", processId),

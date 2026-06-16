@@ -17,6 +17,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/hooks"
+	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
@@ -133,7 +134,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
 	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins)
-	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, discoveredPlugins)
+	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 	discoveredWorkflows := discoverWorkflows(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 
 	processMgr, err := process.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
@@ -199,6 +200,7 @@ func NewSession(opts Options) (*Session, error) {
 			return nil, fmt.Errorf("build worker client: %w", werr)
 		}
 
+		loopSink := looprunner.NewAgentControlFailureSink(nil)
 		c, cerr := agentcontrol.New(agentcontrol.Config{
 			Client:          workerClient,
 			DefaultModel:    providerCfg.Model,
@@ -206,6 +208,8 @@ func NewSession(opts Options) (*Session, error) {
 			WorktreeRoot:    statepath.WorktreeRoot(workspaceStateDir),
 			SessionID:       "session-pending",
 			HistoryDir:      "",
+			FailureSink:     loopSink,
+			ReportSink:      loopSink,
 			WorkerSysPrompt: baseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, resolvedName, toolModeModel, memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
@@ -368,6 +372,7 @@ func (s *Session) runScheduledPrompt(task cron.Task) {
 	if prompt == "" || s.StreamRunner == nil {
 		return
 	}
+	loopStore := s.startScheduledLoop(task, prompt)
 	runner := s.StreamRunner
 	if threadRT, err := s.NewThreadRuntime(scheduledCronSessionID("cron-task", task.ID)); err == nil && threadRT.StreamRunner != nil {
 		runner = threadRT.StreamRunner
@@ -376,7 +381,95 @@ func (s *Session) runScheduledPrompt(task cron.Task) {
 	}
 	if _, err := runner.Run(context.Background(), prompt); err != nil {
 		providers.DebugLogf("cron prompt task %q failed: %v", task.ID, err)
+		if loopStore != nil {
+			_, _ = loopStore.AddFailure(looprunner.Failure{
+				Step:     looprunner.StepExecution,
+				Kind:     "scheduled_task_failed",
+				Source:   "cron",
+				SourceID: task.ID,
+				Message:  err.Error(),
+			})
+		}
+		return
 	}
+	if loopStore != nil {
+		_, _ = loopStore.MarkStepCompleted(looprunner.StepExecution)
+		_, _ = loopStore.AddProgress(looprunner.StepSummary, "Scheduled task execution completed.")
+		_, _ = loopStore.SetStatus(looprunner.StatusCompleted, looprunner.StepSummary, "scheduled task execution completed")
+	}
+}
+
+func (s *Session) startScheduledLoop(task cron.Task, prompt string) *looprunner.Store {
+	stateDir := strings.TrimSpace(s.StateDir)
+	if stateDir == "" {
+		return nil
+	}
+	loopID := scheduledCronSessionID("cron-loop", task.ID)
+	store := looprunner.NewStore(filepath.Join(stateDir, "loops", loopID))
+	kind := strings.TrimSpace(task.Metadata["kind"])
+	if kind == "" {
+		kind = "prompt"
+	}
+	goal := "Scheduled prompt task"
+	if task.Metadata["workflow_name"] != "" {
+		goal = "Scheduled workflow " + task.Metadata["workflow_name"]
+	}
+	triggerPayload := map[string]string{
+		"task_id":   strings.TrimSpace(task.ID),
+		"cron":      strings.TrimSpace(task.Cron),
+		"kind":      kind,
+		"recurring": fmt.Sprintf("%t", task.Recurring),
+	}
+	for _, key := range []string{"workflow_name", "workflow_arguments", "workflow_kind"} {
+		if value := strings.TrimSpace(task.Metadata[key]); value != "" {
+			triggerPayload[key] = value
+		}
+	}
+	runner := looprunner.Runner{Store: store}
+	if _, err := runner.Init(context.Background(), looprunner.Spec{
+		ID:            loopID,
+		Goal:          goal,
+		Task:          strings.TrimSpace(prompt),
+		AssignedAgent: "cron-scheduler",
+		Trigger: looprunner.Trigger{
+			Type:    "scheduled",
+			Source:  "cron",
+			Payload: triggerPayload,
+		},
+	}); err != nil {
+		providers.DebugLogf("cron prompt task %q failed to initialize loop: %v", task.ID, err)
+		return nil
+	}
+	if _, err := store.SetStatus(looprunner.StatusRunning, looprunner.StepExecution, "scheduled task fired"); err != nil {
+		providers.DebugLogf("cron prompt task %q failed to mark loop running: %v", task.ID, err)
+		return store
+	}
+	if _, _, err := store.AddArtifact("trigger.md", "trigger", renderScheduledLoopTrigger(task, prompt)); err != nil {
+		providers.DebugLogf("cron prompt task %q failed to write loop trigger artifact: %v", task.ID, err)
+	}
+	return store
+}
+
+func renderScheduledLoopTrigger(task cron.Task, prompt string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Scheduled Trigger\n\n")
+	fmt.Fprintf(&b, "- Task: %s\n", strings.TrimSpace(task.ID))
+	fmt.Fprintf(&b, "- Cron: %s\n", strings.TrimSpace(task.Cron))
+	fmt.Fprintf(&b, "- Recurring: %t\n", task.Recurring)
+	if kind := strings.TrimSpace(task.Metadata["kind"]); kind != "" {
+		fmt.Fprintf(&b, "- Kind: %s\n", kind)
+	}
+	if name := strings.TrimSpace(task.Metadata["workflow_name"]); name != "" {
+		fmt.Fprintf(&b, "- Workflow: %s\n", name)
+	}
+	if workflowKind := strings.TrimSpace(task.Metadata["workflow_kind"]); workflowKind != "" {
+		fmt.Fprintf(&b, "- Workflow kind: %s\n", workflowKind)
+	}
+	if arguments := strings.TrimSpace(task.Metadata["workflow_arguments"]); arguments != "" {
+		fmt.Fprintf(&b, "\n## Workflow Arguments\n\n%s\n", arguments)
+	}
+	fmt.Fprintf(&b, "\n## Prompt\n\n%s\n", strings.TrimSpace(prompt))
+	return b.String()
 }
 
 func scheduledCronSessionID(prefix, taskID string) string {
@@ -442,6 +535,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				}
 			}
 			var control *agentcontrol.AgentControl
+			loopSink := looprunner.NewAgentControlFailureSink(nil)
 			control, _ = agentcontrol.New(agentcontrol.Config{
 				Client:          workerClient,
 				DefaultModel:    s.Model,
@@ -451,6 +545,8 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				HistoryDir:      filepath.Join(artifactDir, "workers"),
 				ThreadDir:       filepath.Join(artifactDir, "threads"),
 				HarnessDir:      filepath.Join(artifactDir, "harness"),
+				FailureSink:     loopSink,
+				ReportSink:      loopSink,
 				WorkerSysPrompt: s.BaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 					model := s.Model
@@ -828,7 +924,7 @@ func discoverPlugins(rootDir, wuuHome string) []pluginpkg.Plugin {
 	return pluginpkg.Discover(rootDir, wuuHome)
 }
 
-func discoverSkills(rootDir, homeDir string, plugins []pluginpkg.Plugin) []skills.Skill {
+func discoverSkills(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin) []skills.Skill {
 	var projectDirs []skills.SourceDir
 	var userDirs []skills.SourceDir
 	for _, item := range plugins {
@@ -845,6 +941,10 @@ func discoverSkills(rootDir, homeDir string, plugins []pluginpkg.Plugin) []skill
 	if homeDir != "" {
 		userDirs = append(userDirs, skills.SourceDir{Path: filepath.Join(homeDir, ".claude", "skills"), Source: "user"})
 	}
+	if strings.TrimSpace(wuuHome) != "" {
+		userDirs = append(userDirs, skills.SourceDir{Path: filepath.Join(wuuHome, "skills"), Source: "user"})
+	}
+	projectDirs = append(projectDirs, skills.SourceDir{Path: filepath.Join(rootDir, ".wuu", "skills"), Source: "project"})
 	projectDirs = append(projectDirs, skills.SourceDir{Path: filepath.Join(rootDir, ".claude", "skills"), Source: "project"})
 	return skills.MergeWithBundled(skills.DiscoverSourceDirs(projectDirs, userDirs))
 }

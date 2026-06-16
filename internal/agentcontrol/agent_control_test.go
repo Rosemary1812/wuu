@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -81,6 +82,42 @@ type fakeToolkit struct{}
 func (fakeToolkit) Definitions() []providers.ToolDefinition { return nil }
 func (fakeToolkit) Execute(_ context.Context, _ providers.ToolCall) (string, error) {
 	return "", nil
+}
+
+type captureFailureSink struct {
+	mu       sync.Mutex
+	failures []AgentFailure
+}
+
+func (s *captureFailureSink) RecordAgentFailure(failure AgentFailure) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failures = append(s.failures, failure)
+	return nil
+}
+
+func (s *captureFailureSink) list() []AgentFailure {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]AgentFailure(nil), s.failures...)
+}
+
+type captureReportSink struct {
+	mu      sync.Mutex
+	reports []AgentReport
+}
+
+func (s *captureReportSink) RecordAgentReport(report AgentReport) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reports = append(s.reports, report)
+	return nil
+}
+
+func (s *captureReportSink) list() []AgentReport {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]AgentReport(nil), s.reports...)
 }
 
 func initRepo(t *testing.T, dir string) {
@@ -521,6 +558,173 @@ func TestRecordAgentReportRejectsMissingArtifact(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "file does not exist") {
 		t.Fatalf("expected missing artifact error, got %v", err)
+	}
+}
+
+func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	reportSink := &captureReportSink{}
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "reportable result"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-agent-report-loop",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-loop", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-loop", "harness"),
+		ReportSink:    reportSink,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "structured_report_loop",
+		Prompt:      "inspect code",
+		LoopID:      "workflow-run-1",
+		LoopDir:     filepath.Join(dir, ".wuu", "state", "loops", "workflow-run-1"),
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	tasks, err := c.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].LoopID != "workflow-run-1" || tasks[0].LoopDir == "" {
+		t.Fatalf("harness task missing loop binding: %+v", tasks)
+	}
+	artifactPath := filepath.Join(tasks[0].Workspace.Root, "reports", "worker.patch")
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatalf("create report artifact dir: %v", err)
+	}
+	if err := os.WriteFile(artifactPath, []byte("patch\n"), 0o644); err != nil {
+		t.Fatalf("write report artifact: %v", err)
+	}
+
+	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+		Outcome:      "completed",
+		Summary:      "Implemented the requested worker change.",
+		ChangedFiles: []string{"internal/agentcontrol/report.go"},
+		Verification: []string{"go test ./internal/agentcontrol"},
+		Artifacts:    []string{"reports/worker.patch"},
+		NextSteps:    []string{"review diff"},
+	})
+	if err != nil {
+		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	reports := reportSink.list()
+	if len(reports) != 1 {
+		t.Fatalf("expected one synced report, got %+v", reports)
+	}
+	got := reports[0]
+	if got.LoopID != "workflow-run-1" || got.LoopDir == "" || got.ReportPath != sessionRefPath(t, c, report.ReportPath) {
+		t.Fatalf("synced report missing loop/report binding: %+v", got)
+	}
+	if len(got.ChangedFiles) != 1 || got.ChangedFiles[0] != "internal/agentcontrol/report.go" || len(got.Verification) != 1 || len(got.Artifacts) != 1 {
+		t.Fatalf("synced report missing handoff facts: %+v", got)
+	}
+	if got.Artifacts[0] == artifactPath {
+		t.Fatalf("synced report should use imported artifact path, got source path %q", got.Artifacts[0])
+	}
+	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
+func TestRecordAgentReportSyncsFailureSinkForBlockers(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	sink := &captureFailureSink{}
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "reportable result"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-agent-report-failure",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-failure", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-failure", "harness"),
+		FailureSink:   sink,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "structured_report_failure",
+		Prompt:      "inspect code",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+		Outcome:      "stuck",
+		Summary:      "Could not finish because tests fail.",
+		Blockers:     []string{"go test ./internal/agentcontrol fails"},
+		Verification: []string{"go test ./internal/agentcontrol"},
+	})
+	if err != nil {
+		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	failures := sink.list()
+	if len(failures) != 1 {
+		t.Fatalf("expected one synced failure, got %+v", failures)
+	}
+	got := failures[0]
+	if got.Source != "harness_report" || got.TaskID != res.AgentID || got.ReportPath != sessionRefPath(t, c, report.ReportPath) {
+		t.Fatalf("unexpected synced failure: %+v", got)
+	}
+	if got.Message != "go test ./internal/agentcontrol fails" || got.Outcome != "stuck" {
+		t.Fatalf("failure did not preserve blocker/outcome: %+v", got)
+	}
+	tasks, err := c.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].Status != harness.TaskStatusFailed {
+		t.Fatalf("agent_report should mark failed harness task: %+v", tasks)
+	}
+	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
+func TestRecordHarnessTaskFailureSyncsFailureSink(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	sink := &captureFailureSink{}
+
+	c, err := New(Config{
+		Client:        &fakeClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-harness-failure",
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-harness-failure", "harness"),
+		FailureSink:   sink,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	c.recordHarnessTaskFailure("agent-failed", errors.New("spawn failed"))
+
+	failures := sink.list()
+	if len(failures) != 1 {
+		t.Fatalf("expected one synced failure, got %+v", failures)
+	}
+	got := failures[0]
+	if got.Source != "harness_task" || got.TaskID != "agent-failed" || got.Message != "spawn failed" {
+		t.Fatalf("unexpected synced failure: %+v", got)
 	}
 }
 

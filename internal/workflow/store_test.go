@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+type captureArtifactSink struct {
+	records []WorkflowArtifact
+}
+
+func (s *captureArtifactSink) RecordWorkflowArtifact(artifact WorkflowArtifact) error {
+	s.records = append(s.records, artifact)
+	return nil
+}
+
 func TestStateTransitions(t *testing.T) {
 	if err := ValidateRunTransition(RunStateDraft, RunStateRunning); err != nil {
 		t.Fatalf("draft -> running should be valid: %v", err)
@@ -201,6 +210,61 @@ func TestStoreCreatesAndUpdatesWorkflowRun(t *testing.T) {
 	}
 	if scriptRun.Driver != RunDriverScript || scriptRun.Entrypoint != RunEntrypointNaturalLanguageAgent {
 		t.Fatalf("WriteScript should default durable driver fields: %+v", scriptRun)
+	}
+}
+
+func TestStoreSyncsWorkflowArtifactsToSink(t *testing.T) {
+	sink := &captureArtifactSink{}
+	store := NewStore(t.TempDir())
+	store.SetArtifactSink(sink)
+	loopDir := filepath.Join(t.TempDir(), "loops", "loop-1")
+	if _, err := store.CreateRun(Run{
+		ID:      "run_1",
+		Status:  RunStateRunning,
+		LoopID:  "loop-1",
+		LoopDir: loopDir,
+	}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	planPath, err := store.WritePlan("run_1", "plan body")
+	if err != nil {
+		t.Fatalf("WritePlan: %v", err)
+	}
+	scriptPath, err := store.WriteScript("run_1", "synthesize('done')")
+	if err != nil {
+		t.Fatalf("WriteScript: %v", err)
+	}
+	reportPath, err := store.WriteFinalReport("run_1", "final report")
+	if err != nil {
+		t.Fatalf("WriteFinalReport: %v", err)
+	}
+
+	want := []struct {
+		kind WorkflowArtifactKind
+		path string
+	}{
+		{WorkflowArtifactPlan, planPath},
+		{WorkflowArtifactScript, scriptPath},
+		{WorkflowArtifactFinalReport, reportPath},
+	}
+	if len(sink.records) != len(want) {
+		t.Fatalf("artifact sink records = %+v, want %d", sink.records, len(want))
+	}
+	for i, want := range want {
+		got := sink.records[i]
+		if got.RunID != "run_1" || got.LoopID != "loop-1" || got.LoopDir != loopDir || got.Kind != want.kind || got.Path != want.path {
+			t.Fatalf("artifact sink record %d = %+v, want kind=%s path=%s", i, got, want.kind, want.path)
+		}
+	}
+
+	if _, err := store.CreateRun(Run{ID: "run_without_loop", Status: RunStateRunning}); err != nil {
+		t.Fatalf("CreateRun without loop: %v", err)
+	}
+	if _, err := store.WritePlan("run_without_loop", "plan body"); err != nil {
+		t.Fatalf("WritePlan without loop: %v", err)
+	}
+	if len(sink.records) != len(want) {
+		t.Fatalf("run without loop binding should not sync artifacts: %+v", sink.records)
 	}
 }
 

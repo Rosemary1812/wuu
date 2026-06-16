@@ -99,6 +99,7 @@ type Observability struct {
 	ContextRequests    []ContextRequestObservation `json:"context_requests,omitempty"`
 	ToolInventory      []ToolInventoryObservation  `json:"tool_inventory,omitempty"`
 	ToolRecords        []ToolObservation           `json:"tool_records,omitempty"`
+	LoopAttention      []LoopAttentionObservation  `json:"loop_attention,omitempty"`
 	WorkflowRuns       []WorkflowRunObservation    `json:"workflow_runs,omitempty"`
 	HarnessTasks       []HarnessTaskObservation    `json:"harness_tasks,omitempty"`
 	HarnessReports     []HarnessReportObservation  `json:"harness_reports,omitempty"`
@@ -192,6 +193,14 @@ type PatchRiskObservation struct {
 	ReviewHint     string         `json:"review_hint,omitempty"`
 }
 
+type LoopAttentionObservation struct {
+	Source  string `json:"source"`
+	ID      string `json:"id,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
+	Path    string `json:"path,omitempty"`
+}
+
 type WorkflowRunObservation struct {
 	ID              string                        `json:"id"`
 	RunDir          string                        `json:"run_dir,omitempty"`
@@ -203,6 +212,8 @@ type WorkflowRunObservation struct {
 	Error           string                        `json:"error,omitempty"`
 	ScriptPath      string                        `json:"script_path,omitempty"`
 	FinalReportPath string                        `json:"final_report_path,omitempty"`
+	LoopID          string                        `json:"loop_id,omitempty"`
+	LoopDir         string                        `json:"loop_dir,omitempty"`
 	WorkflowTeam    *WorkflowTeamObservation      `json:"workflow_team,omitempty"`
 	TeamArbitration WorkflowTeamArbitration       `json:"team_arbitration,omitempty"`
 	Phases          []WorkflowPhaseObservation    `json:"phases,omitempty"`
@@ -273,6 +284,8 @@ type HarnessTaskObservation struct {
 	Path          string   `json:"path,omitempty"`
 	Name          string   `json:"name,omitempty"`
 	Role          string   `json:"role,omitempty"`
+	LoopID        string   `json:"loop_id,omitempty"`
+	LoopDir       string   `json:"loop_dir,omitempty"`
 	Status        string   `json:"status"`
 	ReportPath    string   `json:"report_path,omitempty"`
 	ArtifactPaths []string `json:"artifact_paths,omitempty"`

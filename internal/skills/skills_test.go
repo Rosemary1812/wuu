@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -30,6 +31,48 @@ func TestParseSkillFile(t *testing.T) {
 	}
 	if skill.Content != "This skill creates commits.\nWith multiple lines." {
 		t.Fatalf("unexpected content: %q", skill.Content)
+	}
+}
+
+func TestParseSkillFile_LoopMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "loop.md")
+
+	content := strings.Join([]string{
+		"---",
+		"name: loop",
+		"description: Run a durable loop",
+		"trigger-condition: long-running task",
+		"allowed-tools: [read_file, run_test]",
+		"required-context: [state, failures]",
+		"examples: [continue loop, recover failed task]",
+		"verification-checklist: [state persisted, verifier passed]",
+		"progressive-disclosure: load state first",
+		"---",
+		"Body.",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	skill, err := parseSkillFile(path, "project")
+	if err != nil {
+		t.Fatalf("parseSkillFile: %v", err)
+	}
+	if skill.TriggerCondition != "long-running task" {
+		t.Fatalf("TriggerCondition = %q", skill.TriggerCondition)
+	}
+	if got := strings.Join(skill.RequiredContext, ","); got != "state,failures" {
+		t.Fatalf("RequiredContext = %q", got)
+	}
+	if got := strings.Join(skill.Examples, ","); got != "continue loop,recover failed task" {
+		t.Fatalf("Examples = %q", got)
+	}
+	if got := strings.Join(skill.VerificationChecklist, ","); got != "state persisted,verifier passed" {
+		t.Fatalf("VerificationChecklist = %q", got)
+	}
+	if skill.ProgressiveDisclosure != "load state first" {
+		t.Fatalf("ProgressiveDisclosure = %q", skill.ProgressiveDisclosure)
 	}
 }
 
@@ -152,5 +195,52 @@ func TestDiscoverSourceDirsPreservesSourceLabels(t *testing.T) {
 	}
 	if compose.Source != "plugin:compose" {
 		t.Fatalf("compose.Source = %q", compose.Source)
+	}
+}
+
+func TestRegistryRouteUsesLoopMetadata(t *testing.T) {
+	registry := NewRegistry([]Skill{
+		{
+			Name:             "codebase-research",
+			Description:      "Read code and summarize constraints",
+			TriggerCondition: "Use when asked to inspect architecture or find relevant files",
+		},
+		{
+			Name:             "browser-task",
+			Description:      "Verify browser behavior",
+			TriggerCondition: "Use for browser smoke tests and DOM checks",
+			Paths:            []string{"desktop/**/*.tsx"},
+		},
+		{
+			Name:             "release-check",
+			Description:      "Prepare a release gate",
+			TriggerCondition: "Use before publishing builds",
+		},
+	})
+
+	routed := registry.Route("please inspect the architecture and find relevant files", []string{"internal/agent/run.go"})
+	if len(routed) == 0 || routed[0].Name != "codebase-research" {
+		t.Fatalf("unexpected route result: %+v", routed)
+	}
+
+	routed = registry.Route("run a browser smoke test and DOM check", []string{"desktop/src/renderer/App.tsx"})
+	if len(routed) == 0 || routed[0].Name != "browser-task" {
+		t.Fatalf("unexpected browser route result: %+v", routed)
+	}
+}
+
+func TestBundledSkillsIncludesLoopEngineeringSkills(t *testing.T) {
+	items := BundledSkills()
+	for _, name := range []string{"codebase-research", "long-running-workflow", "diff-review"} {
+		skill, ok := Find(items, name)
+		if !ok {
+			t.Fatalf("bundled skill %q not found in %+v", name, items)
+		}
+		if skill.Source != "bundled" {
+			t.Fatalf("%s Source = %q", name, skill.Source)
+		}
+		if len(skill.VerificationChecklist) == 0 {
+			t.Fatalf("%s missing verification checklist", name)
+		}
 	}
 }

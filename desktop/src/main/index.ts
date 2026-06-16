@@ -18,6 +18,12 @@ import type {
   InputFile,
   InputImage,
   InitializeResult,
+  LoopApprovalResolveResult,
+  LoopSnapshotResult,
+  LoopWorktreeCleanupResult,
+  LoopWorktreeMergeResult,
+  LoopWorktreeRollbackResult,
+  LoopWorktreeReviewResult,
   ManagedProcessListResult,
   ManagedProcessStopResult,
   ServerEvent,
@@ -323,6 +329,82 @@ app.whenReady().then(() => {
       }),
   );
   ipcMain.handle("wuu:skill-list", () => appServerClientPool.request("skill/list"));
+  ipcMain.handle("wuu:loop-snapshot", (_event, threadId?: string) =>
+    appServerClientPool.request<LoopSnapshotResult>("loop/snapshot", {
+      thread_id: threadId ?? "",
+    }),
+  );
+  ipcMain.handle("wuu:loop-worktree-review", (_event, worktreePath: string) =>
+    appServerClientPool.request<LoopWorktreeReviewResult>("loop/worktree/review", {
+      worktree_path: worktreePath,
+    }),
+  );
+  ipcMain.handle(
+    "wuu:loop-worktree-cleanup",
+    (
+      _event,
+      worktreePath: string,
+      confirmUserApproved: boolean,
+      confirmRemoveCleanWorktree: boolean,
+    ) =>
+      appServerClientPool.request<LoopWorktreeCleanupResult>("loop/worktree/cleanup", {
+        worktree_path: worktreePath,
+        confirm_user_approved: confirmUserApproved,
+        confirm_remove_clean_worktree: confirmRemoveCleanWorktree,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:loop-worktree-rollback",
+    (
+      _event,
+      worktreePath: string,
+      confirmUserApproved: boolean,
+      confirmDiscardWorktreeChanges: boolean,
+    ) =>
+      appServerClientPool.request<LoopWorktreeRollbackResult>("loop/worktree/rollback", {
+        worktree_path: worktreePath,
+        confirm_user_approved: confirmUserApproved,
+        confirm_discard_worktree_changes: confirmDiscardWorktreeChanges,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:loop-worktree-merge",
+    (
+      _event,
+      worktreePath: string,
+      confirmUserApproved: boolean,
+      confirmApplyWorktreeDiff: boolean,
+      confirmTargetRepoMutation: boolean,
+    ) =>
+      appServerClientPool.request<LoopWorktreeMergeResult>("loop/worktree/merge", {
+        worktree_path: worktreePath,
+        confirm_user_approved: confirmUserApproved,
+        confirm_apply_worktree_diff: confirmApplyWorktreeDiff,
+        confirm_target_repo_mutation: confirmTargetRepoMutation,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:loop-approval-resolve",
+    (
+      _event,
+      loopId: string,
+      approvalId: string,
+      approved: boolean,
+      rejected: boolean,
+      resolvedBy: string,
+      resolution: string,
+      confirmUserApproved: boolean,
+    ) =>
+      appServerClientPool.request<LoopApprovalResolveResult>("loop/approval/resolve", {
+        loop_id: loopId,
+        approval_id: approvalId,
+        approved,
+        rejected,
+        resolved_by: resolvedBy,
+        resolution,
+        confirm_user_approved: confirmUserApproved,
+      }),
+  );
   ipcMain.handle("wuu:process-list", () =>
     appServerClientPool.request<ManagedProcessListResult>("process/list"),
   );

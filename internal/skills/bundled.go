@@ -1,33 +1,58 @@
 package skills
 
-import "embed"
+import (
+	"embed"
+	"io/fs"
+	"path"
+	"sort"
+	"strings"
+)
 
-//go:embed bundled/*.md
+//go:embed bundled/*.md bundled/*/SKILL.md
 var bundledFS embed.FS
 
 // BundledSkills returns skills compiled into the binary. These are
 // parsed at call time from the embedded filesystem. Discovered skills
 // with the same name take precedence (project customization wins).
 func BundledSkills() []Skill {
-	entries, err := bundledFS.ReadDir("bundled")
-	if err != nil {
-		return nil
-	}
 	var out []Skill
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	_ = fs.WalkDir(bundledFS, "bundled", func(filePath string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
 		}
-		data, err := bundledFS.ReadFile("bundled/" + e.Name())
+		base := path.Base(filePath)
+		if !strings.EqualFold(base, "SKILL.md") && !strings.HasSuffix(strings.ToLower(base), ".md") {
+			return nil
+		}
+		data, err := bundledFS.ReadFile(filePath)
 		if err != nil {
-			continue
+			return nil
 		}
-		s := parseSkillContent(string(data), e.Name(), "bundled", "")
-		if s.Name != "" {
-			out = append(out, s)
+		dir := path.Dir(filePath)
+		s := parseSkillContent(string(data), base, "bundled", dir)
+		if s.Name == "" {
+			return nil
+		}
+		if strings.EqualFold(base, "SKILL.md") {
+			s.Name = canonicalName(firstNonEmpty(s.Name, path.Base(dir)))
+		}
+		s.Path = filePath
+		s.Dir = dir
+		out = append(out, s)
+		return nil
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
 		}
 	}
-	return out
+	return ""
 }
 
 // MergeWithBundled merges discovered skills with bundled ones.

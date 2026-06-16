@@ -44,9 +44,21 @@ func TestGeneralPurposePromptUsesAgentReportNotParsedFinalFormat(t *testing.T) {
 }
 
 func TestLookupWorkerType_RemovedTypesRejected(t *testing.T) {
-	for _, name := range []string{"worker", "research", "explorer", "planner", "verifier"} {
+	for _, name := range []string{"research", "explorer", "verifier"} {
 		if _, err := LookupWorkerType(name); err == nil {
 			t.Errorf("LookupWorkerType(%q) should error after aligning to subagent_type definitions", name)
+		}
+	}
+}
+
+func TestLookupWorkerType_LoopRoles(t *testing.T) {
+	for _, name := range []string{"planner", "researcher", "worker", "reviewer", "qa", "debugger", "integrator"} {
+		wt, err := LookupWorkerType(name)
+		if err != nil {
+			t.Fatalf("LookupWorkerType(%q): %v", name, err)
+		}
+		if wt.Role == "" || wt.ContextScope == "" || wt.OutputSchema == "" || len(wt.SuccessCriteria) == 0 {
+			t.Fatalf("%s missing role contract: %+v", name, wt)
 		}
 	}
 }
@@ -105,6 +117,31 @@ func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
 	}
 }
 
+func TestFilterToolsForWorker_CheckerRolesDisallowProjectWrites(t *testing.T) {
+	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "run_shell", "run_test", "grep", "glob", "agent_report"}
+	for _, name := range []string{"planner", "researcher", "reviewer", "qa", "debugger", "integrator"} {
+		t.Run(name, func(t *testing.T) {
+			wt, err := LookupWorkerType(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			filtered := FilterToolsForWorker(wt, full)
+			allowed := map[string]bool{}
+			for _, n := range filtered {
+				allowed[n] = true
+			}
+			for _, blocked := range []string{"write_file", "edit_file", "apply_patch"} {
+				if allowed[blocked] {
+					t.Errorf("%s should not receive write tool %s", name, blocked)
+				}
+			}
+			if !allowed["read_file"] || !allowed["agent_report"] {
+				t.Errorf("%s missing expected read/report tools: %v", name, filtered)
+			}
+		})
+	}
+}
+
 func TestWorkerType_DefaultIsolation(t *testing.T) {
 	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
@@ -113,6 +150,14 @@ func TestWorkerType_DefaultIsolation(t *testing.T) {
 	if wt.DefaultIsolation != IsolationInplace {
 		t.Errorf("general-purpose: want default isolation %q, got %q",
 			IsolationInplace, wt.DefaultIsolation)
+	}
+	worker, err := LookupWorkerType("worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worker.DefaultIsolation != IsolationWorktree {
+		t.Errorf("worker: want default isolation %q, got %q",
+			IsolationWorktree, worker.DefaultIsolation)
 	}
 }
 

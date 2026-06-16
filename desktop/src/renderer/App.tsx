@@ -4325,6 +4325,7 @@ export function App(): JSX.Element {
               <WorkspaceMainPanel
                 view={workspaceMode}
                 activeContext={state.activeContext}
+                threadId={state.thread?.id}
                 gitStatus={state.gitStatus}
                 selectedFilePath={activeWorkspaceFile}
                 onOpenRightPanel={() => {
@@ -4425,6 +4426,7 @@ export function App(): JSX.Element {
         view={workspaceRightPanelView}
         openTabs={workspaceToolTabs}
         activeContext={state.activeContext}
+        threadId={state.thread?.id}
         gitStatus={state.gitStatus}
         selectedFilePath={activeWorkspaceFile}
         onSelectView={openWorkspaceTool}

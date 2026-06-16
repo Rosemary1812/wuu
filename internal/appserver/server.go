@@ -140,6 +140,18 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigCodexModels(ctx, req)
 	case MethodSkillList:
 		return s.handleSkillList(req)
+	case MethodLoopSnapshot:
+		return s.handleLoopSnapshot(req)
+	case MethodLoopWorktreeReview:
+		return s.handleLoopWorktreeReview(req)
+	case MethodLoopWorktreeCleanup:
+		return s.handleLoopWorktreeCleanup(req)
+	case MethodLoopWorktreeRollback:
+		return s.handleLoopWorktreeRollback(req)
+	case MethodLoopWorktreeMerge:
+		return s.handleLoopWorktreeMerge(req)
+	case MethodLoopApprovalResolve:
+		return s.handleLoopApprovalResolve(req)
 	case MethodThreadStart:
 		return s.handleThreadStart(req)
 	case MethodThreadResume:

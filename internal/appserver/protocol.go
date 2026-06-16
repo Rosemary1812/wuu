@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -16,6 +17,12 @@ const (
 	MethodConfigModelUpdate     = "config/model/update"
 	MethodConfigCodexModels     = "config/codex/models"
 	MethodSkillList             = "skill/list"
+	MethodLoopSnapshot          = "loop/snapshot"
+	MethodLoopWorktreeReview    = "loop/worktree/review"
+	MethodLoopWorktreeCleanup   = "loop/worktree/cleanup"
+	MethodLoopWorktreeRollback  = "loop/worktree/rollback"
+	MethodLoopWorktreeMerge     = "loop/worktree/merge"
+	MethodLoopApprovalResolve   = "loop/approval/resolve"
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
@@ -166,25 +173,92 @@ type ConfigCodexModelsResult struct {
 }
 
 type SkillSummary struct {
-	Name               string   `json:"name"`
-	Description        string   `json:"description,omitempty"`
-	WhenToUse          string   `json:"when_to_use,omitempty"`
-	Source             string   `json:"source"`
-	Path               string   `json:"path,omitempty"`
-	ArgumentHint       string   `json:"argument_hint,omitempty"`
-	Model              string   `json:"model,omitempty"`
-	Context            string   `json:"context,omitempty"`
-	Agent              string   `json:"agent,omitempty"`
-	AllowedTools       []string `json:"allowed_tools,omitempty"`
-	UserInvocable      bool     `json:"user_invocable"`
-	DisableModelInvoke bool     `json:"disable_model_invoke"`
-	Paths              []string `json:"paths,omitempty"`
-	Effort             string   `json:"effort,omitempty"`
-	Version            string   `json:"version,omitempty"`
+	Name                  string   `json:"name"`
+	Description           string   `json:"description,omitempty"`
+	WhenToUse             string   `json:"when_to_use,omitempty"`
+	TriggerCondition      string   `json:"trigger_condition,omitempty"`
+	Source                string   `json:"source"`
+	Path                  string   `json:"path,omitempty"`
+	ArgumentHint          string   `json:"argument_hint,omitempty"`
+	Model                 string   `json:"model,omitempty"`
+	Context               string   `json:"context,omitempty"`
+	Agent                 string   `json:"agent,omitempty"`
+	AllowedTools          []string `json:"allowed_tools,omitempty"`
+	RequiredContext       []string `json:"required_context,omitempty"`
+	Examples              []string `json:"examples,omitempty"`
+	VerificationChecklist []string `json:"verification_checklist,omitempty"`
+	ProgressiveDisclosure string   `json:"progressive_disclosure,omitempty"`
+	UserInvocable         bool     `json:"user_invocable"`
+	DisableModelInvoke    bool     `json:"disable_model_invoke"`
+	Paths                 []string `json:"paths,omitempty"`
+	Effort                string   `json:"effort,omitempty"`
+	Version               string   `json:"version,omitempty"`
 }
 
 type SkillListResult struct {
 	Skills []SkillSummary `json:"skills"`
+}
+
+type LoopSnapshotParams struct {
+	ThreadID string `json:"thread_id,omitempty"`
+}
+
+type LoopSnapshotResult struct {
+	Snapshot loop.SystemSnapshot `json:"snapshot"`
+}
+
+type LoopWorktreeReviewParams struct {
+	WorktreePath string `json:"worktree_path"`
+	MaxDiffBytes int    `json:"max_diff_bytes,omitempty"`
+}
+
+type LoopWorktreeReviewResult struct {
+	Review loop.WorktreeReview `json:"review"`
+}
+
+type LoopWorktreeCleanupParams struct {
+	WorktreePath               string `json:"worktree_path"`
+	ConfirmUserApproved        bool   `json:"confirm_user_approved,omitempty"`
+	ConfirmRemoveCleanWorktree bool   `json:"confirm_remove_clean_worktree,omitempty"`
+}
+
+type LoopWorktreeCleanupResult struct {
+	Cleanup loop.WorktreeCleanupResult `json:"cleanup"`
+}
+
+type LoopWorktreeRollbackParams struct {
+	WorktreePath                  string `json:"worktree_path"`
+	ConfirmUserApproved           bool   `json:"confirm_user_approved,omitempty"`
+	ConfirmDiscardWorktreeChanges bool   `json:"confirm_discard_worktree_changes,omitempty"`
+}
+
+type LoopWorktreeRollbackResult struct {
+	Rollback loop.WorktreeRollbackResult `json:"rollback"`
+}
+
+type LoopWorktreeMergeParams struct {
+	WorktreePath              string `json:"worktree_path"`
+	ConfirmUserApproved       bool   `json:"confirm_user_approved,omitempty"`
+	ConfirmApplyWorktreeDiff  bool   `json:"confirm_apply_worktree_diff,omitempty"`
+	ConfirmTargetRepoMutation bool   `json:"confirm_target_repo_mutation,omitempty"`
+}
+
+type LoopWorktreeMergeResult struct {
+	Merge loop.WorktreeMergeResult `json:"merge"`
+}
+
+type LoopApprovalResolveParams struct {
+	LoopID              string `json:"loop_id"`
+	ApprovalID          string `json:"approval_id"`
+	Approved            bool   `json:"approved,omitempty"`
+	Rejected            bool   `json:"rejected,omitempty"`
+	ResolvedBy          string `json:"resolved_by,omitempty"`
+	Resolution          string `json:"resolution,omitempty"`
+	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
+}
+
+type LoopApprovalResolveResult struct {
+	Approval loop.ApprovalRequest `json:"approval"`
 }
 
 type ManagedProcessSummary struct {
