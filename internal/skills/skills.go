@@ -15,7 +15,7 @@ import (
 // SKILL.md can be dropped in unchanged.
 type Skill struct {
 	Name         string // canonical name without leading slash, e.g. "commit"
-	Description  string // one-line description, auto-derived from first markdown paragraph if absent
+	Description  string // one-line description from frontmatter; empty descriptions stay hidden from model catalogs
 	WhenToUse    string // detailed usage scenarios for the model
 	Content      string // full markdown body after frontmatter (no variable substitution applied)
 	Source       string // "project" or "user"
@@ -346,11 +346,6 @@ func parseSkillFile(path, source string) (Skill, error) {
 		body.WriteString(scanner.Text())
 	}
 	skill.Content = body.String()
-
-	// Auto-derive description from first non-empty markdown line if missing.
-	if skill.Description == "" {
-		skill.Description = firstMarkdownLine(skill.Content)
-	}
 
 	return skill, nil
 }

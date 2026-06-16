@@ -109,6 +109,36 @@ func TestParseSkillFile_NoFrontmatter(t *testing.T) {
 	}
 }
 
+func TestDiscoverDirectorySkillWithoutDescriptionIsHiddenFromCatalog(t *testing.T) {
+	projectDir := t.TempDir()
+	skillDir := filepath.Join(projectDir, "manual-skill")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	body := strings.Join([]string{
+		"---",
+		"name: manual-skill",
+		"---",
+		"# Manual Skill",
+		"",
+		"Instructions here.",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(body), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	got := Discover(projectDir, "")
+	if len(got) != 1 || got[0].Name != "manual-skill" {
+		t.Fatalf("expected manual-skill, got %+v", got)
+	}
+	if got[0].Description != "" {
+		t.Fatalf("disk skill description should not be inferred, got %q", got[0].Description)
+	}
+	if catalog := FormatAvailable(got, true); catalog != "No skills are currently available." {
+		t.Fatalf("undescribed skill should be hidden from model catalog, got:\n%s", catalog)
+	}
+}
+
 func TestDiscoverDirectorySkillsValidatePortableName(t *testing.T) {
 	projectDir := t.TempDir()
 	writeSkill := func(dirName, name string) {
