@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -35,6 +36,10 @@ type ToolApprovalResponse struct {
 
 func (s *Server) installToolApprovalReviewer(kit *tools.Toolkit) {
 	if s == nil || kit == nil {
+		return
+	}
+	if s.rt != nil && s.rt.Permissions.ApprovalsReviewer == config.ApprovalsReviewerAutoReview {
+		kit.SetToolApprovalReviewer(tools.DefaultAutoApprovalReviewer{})
 		return
 	}
 	kit.SetToolApprovalReviewer(tools.ToolApprovalReviewerFunc(func(ctx context.Context, request tools.ToolApprovalReviewRequest) (tools.ToolApprovalReview, error) {

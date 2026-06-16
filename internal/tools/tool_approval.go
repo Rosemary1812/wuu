@@ -54,6 +54,33 @@ func (f ToolApprovalReviewerFunc) ReviewToolApproval(ctx context.Context, reques
 	return f(ctx, request)
 }
 
+type DefaultAutoApprovalReviewer struct{}
+
+func (DefaultAutoApprovalReviewer) ReviewToolApproval(_ context.Context, request ToolApprovalReviewRequest) (ToolApprovalReview, error) {
+	if request.Destructive {
+		return ToolApprovalReview{
+			Decision: ToolApprovalDecisionDenied,
+			Reason:   "destructive tool calls require user approval",
+		}, nil
+	}
+	if request.ReadOnly || request.Risk == ToolRiskLow {
+		return ToolApprovalReview{
+			Decision: ToolApprovalDecisionApproved,
+			Reason:   "low-risk tool call",
+		}, nil
+	}
+	if request.Kind == ToolKindFile {
+		return ToolApprovalReview{
+			Decision: ToolApprovalDecisionApproved,
+			Reason:   "non-destructive workspace file change",
+		}, nil
+	}
+	return ToolApprovalReview{
+		Decision: ToolApprovalDecisionDenied,
+		Reason:   "high-risk tool call requires user approval",
+	}, nil
+}
+
 type ToolApprovalStore struct {
 	mu       sync.RWMutex
 	approved map[string]ToolApprovalReview

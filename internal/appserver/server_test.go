@@ -645,6 +645,77 @@ func TestServerToolApprovalRequestApprovesToolkitExecution(t *testing.T) {
 	}
 }
 
+func TestServerAutoReviewApprovesFileWithoutClientRequest(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new runtime toolkit: %v", err)
+	}
+	kit.SetToolPolicy(tools.ToolPolicy{
+		ToolActions: map[string]tools.ToolPolicyAction{
+			"write_file": tools.ToolPolicyRequireApproval,
+		},
+	})
+	rt.Toolkit = kit
+	rt.Permissions = config.ResolvedPermissions{
+		Mode:              config.PermissionModeApproveForMe,
+		PermissionProfile: config.PermissionProfileWorkspaceWrite,
+		ApprovalPolicy:    config.ApprovalPolicyOnRequest,
+		ApprovalsReviewer: config.ApprovalsReviewerAutoReview,
+	}
+	out := &lockedBuffer{}
+	New(rt, out)
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-write",
+		Name:      "write_file",
+		Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
+	}); err != nil {
+		t.Fatalf("auto-reviewed write_file: %v", err)
+	}
+	if strings.Contains(out.String(), MethodToolApprovalRequest) {
+		t.Fatalf("auto review should not emit client approval request: %s", out.String())
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || records[0].ApprovalDecision != tools.ToolApprovalDecisionApproved {
+		t.Fatalf("auto approval telemetry missing: %+v", records)
+	}
+}
+
+func TestServerAutoReviewDeniesHighRiskShellWithoutClientRequest(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new runtime toolkit: %v", err)
+	}
+	kit.SetToolPolicy(tools.ToolPolicy{
+		ToolActions: map[string]tools.ToolPolicyAction{
+			"run_shell": tools.ToolPolicyRequireApproval,
+		},
+	})
+	rt.Toolkit = kit
+	rt.Permissions = config.ResolvedPermissions{
+		Mode:              config.PermissionModeApproveForMe,
+		PermissionProfile: config.PermissionProfileWorkspaceWrite,
+		ApprovalPolicy:    config.ApprovalPolicyOnRequest,
+		ApprovalsReviewer: config.ApprovalsReviewerAutoReview,
+	}
+	out := &lockedBuffer{}
+	New(rt, out)
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-shell",
+		Name:      "run_shell",
+		Arguments: `{"command":"printf hi > out.txt"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_denied") {
+		t.Fatalf("expected auto-review shell denial, got %v", err)
+	}
+	if strings.Contains(out.String(), MethodToolApprovalRequest) {
+		t.Fatalf("auto review should not emit client approval request: %s", out.String())
+	}
+}
+
 func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)

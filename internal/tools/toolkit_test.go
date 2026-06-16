@@ -4460,6 +4460,33 @@ func TestToolkit_ToolApprovalReviewerCachesApprovedForSession(t *testing.T) {
 	}
 }
 
+func TestDefaultAutoApprovalReviewerApprovesFileAndDeniesHighRiskShell(t *testing.T) {
+	reviewer := DefaultAutoApprovalReviewer{}
+	fileReview, err := reviewer.ReviewToolApproval(context.Background(), ToolApprovalReviewRequest{
+		ToolName: "write_file",
+		Kind:     ToolKindFile,
+		Risk:     ToolRiskHigh,
+	})
+	if err != nil {
+		t.Fatalf("file review: %v", err)
+	}
+	if fileReview.Decision != ToolApprovalDecisionApproved {
+		t.Fatalf("non-destructive file write should be approved, got %+v", fileReview)
+	}
+
+	shellReview, err := reviewer.ReviewToolApproval(context.Background(), ToolApprovalReviewRequest{
+		ToolName: "run_shell",
+		Kind:     ToolKindShell,
+		Risk:     ToolRiskHigh,
+	})
+	if err != nil {
+		t.Fatalf("shell review: %v", err)
+	}
+	if shellReview.Decision != ToolApprovalDecisionDenied {
+		t.Fatalf("high-risk shell should be denied, got %+v", shellReview)
+	}
+}
+
 func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

@@ -253,6 +253,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: config.LegacyToolPolicyProfileForPermissionMode(permissions.Mode)}
 		if s.rt.Toolkit != nil {
 			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+			s.installToolApprovalReviewer(s.rt.Toolkit)
 		}
 	} else if params.ToolPolicyProfile != nil {
 		profile := strings.TrimSpace(*params.ToolPolicyProfile)
@@ -263,6 +264,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 		if s.rt.Toolkit != nil {
 			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+			s.installToolApprovalReviewer(s.rt.Toolkit)
 		}
 	}
 	systemPrompt := s.rt.RefreshSystemPrompt(resolvedName, apiModel)
@@ -416,6 +418,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 					th.execRuntime.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
 					if s.rt != nil {
 						th.execRuntime.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+						s.installToolApprovalReviewer(th.execRuntime.Toolkit)
 					}
 				}
 			}
