@@ -477,14 +477,16 @@ func (e *Env) SkillNames() []string {
 	return out
 }
 
-// ProcessSkillBody processes a skill body with variable substitution.
+// ProcessSkillBody processes a skill body with variable substitution. Inline
+// shell stays disabled here: loading a skill should expose its instructions and
+// resources, not execute code as a side effect.
 func (e *Env) ProcessSkillBody(ctx context.Context, skill skills.Skill, arguments string) string {
 	return skills.ProcessSkillBody(ctx, skill.Content, skills.ProcessOptions{
 		Arguments:        arguments,
 		SkillDir:         skill.Dir,
 		SessionID:        e.SessionID,
 		Shell:            skill.Shell,
-		AllowInlineShell: true,
+		AllowInlineShell: false,
 	})
 }
 

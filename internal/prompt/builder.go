@@ -148,29 +148,10 @@ func (b *Builder) AddSkills(sks []skills.Skill) {
 	var sb strings.Builder
 	sb.WriteString("# Session-specific guidance\n\n")
 	sb.WriteString("## Skills\n\n")
-	sb.WriteString("The following skills are available in this session. Each skill is a reusable, ")
-	sb.WriteString("project- or user-defined instruction set that encodes conventions, recipes, or workflows.\n\n")
-	sb.WriteString("**How to use skills:**\n")
-	sb.WriteString("1. Read the skill catalog below — match the user's intent against each skill's description and \"when to use\" guidance.\n")
-	sb.WriteString("2. When a skill applies, call the `load_skill` tool with the skill's name to retrieve the full body. ")
-	sb.WriteString("Pass any user-supplied arguments via the `arguments` parameter.\n")
-	sb.WriteString("3. Follow the loaded skill's instructions exactly. If the skill body contains tool restrictions or step orderings, respect them.\n")
-	sb.WriteString("4. Users can also invoke skills directly by typing `/<skill-name>` (e.g. `/commit`). When that happens, the skill body is injected as a user message — no need to call `load_skill` separately.\n\n")
-	sb.WriteString("**Skill catalog:**\n\n")
-	for _, s := range visible {
-		desc := s.Description
-		if desc == "" {
-			desc = "(no description)"
-		}
-		fmt.Fprintf(&sb, "- **%s**: %s", s.Name, desc)
-		if s.WhenToUse != "" {
-			fmt.Fprintf(&sb, "\n  _When to use:_ %s", s.WhenToUse)
-		}
-		if s.ArgumentHint != "" {
-			fmt.Fprintf(&sb, "\n  _Arguments:_ `%s`", s.ArgumentHint)
-		}
-		sb.WriteString("\n")
-	}
+	sb.WriteString("Skills provide specialized instructions and workflows for specific tasks.\n")
+	sb.WriteString("Use the `load_skill` tool to load a skill when a task matches its description.\n")
+	sb.WriteString("Users can also invoke skills directly by typing `/<skill-name>` (e.g. `/commit`). When that happens, the skill body is injected as a user message — no need to call `load_skill` separately.\n\n")
+	sb.WriteString(skills.FormatAvailable(visible, true))
 	b.AddSection("skills", strings.TrimRight(sb.String(), "\n"), false)
 }
 

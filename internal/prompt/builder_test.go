@@ -115,6 +115,16 @@ func TestBuilder_AddSkills(t *testing.T) {
 	if !strings.Contains(result, "commit") {
 		t.Error("expected visible skill in output")
 	}
+	for _, want := range []string{
+		"Skills provide specialized instructions",
+		"<available_skills>",
+		"<name>commit</name>",
+		"<description>Create a commit</description>",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("skills prompt missing %q:\n%s", want, result)
+		}
+	}
 	if strings.Contains(result, "hidden") {
 		t.Error("DisableModelInvoke skills should be excluded")
 	}

@@ -4,9 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
+	"io/fs"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/skills"
 )
 
 type LoadSkillTool struct{ env *Env }
@@ -20,12 +27,20 @@ func (t *LoadSkillTool) IsConcurrencySafe() bool { return true }
 func (t *LoadSkillTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "load_skill",
-		Description: "Load the full body of a named skill from the project's .claude/skills/ or " +
-			"the user's ~/.claude/skills/ directory. Skills are reusable instructions that you " +
-			"can invoke when their description matches the user's request. The returned body " +
-			"may contain ${ARGUMENTS} (replaced by the arguments parameter), ${CLAUDE_SKILL_DIR} " +
-			"(skill's directory path), and ${CLAUDE_SESSION_ID} (current session). Use the " +
-			"/skills command to see what's available.",
+		Description: strings.Join([]string{
+			"Load a specialized skill that provides domain-specific instructions and workflows.",
+			"",
+			"When you recognize that a task matches one of the available skills listed below, use this tool to load the full skill instructions.",
+			"",
+			"The skill will inject detailed instructions, workflows, and access to bundled resources (scripts, references, templates) into the conversation context.",
+			"",
+			"Tool output includes a `<skill_content name=\"...\">` block with the loaded content.",
+			"",
+			"The following skills provide specialized sets of instructions for particular tasks.",
+			"Invoke this tool to load a skill when a task matches one of the available skills listed below:",
+			"",
+			skills.FormatAvailable(t.env.Skills, false),
+		}, "\n"),
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -60,19 +75,80 @@ func (t *LoadSkillTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 
 	body := t.env.ProcessSkillBody(ctx, skill, args.Arguments)
+	output := skillContentBlock(skill, body)
 
 	result := map[string]any{
-		"action":      "load_skill",
-		"name":        skill.Name,
-		"description": skill.Description,
-		"source":      skill.Source,
-		"content":     body,
-	}
-	if skill.WhenToUse != "" {
-		result["when_to_use"] = skill.WhenToUse
-	}
-	if len(skill.AllowedTools) > 0 {
-		result["allowed_tools"] = skill.AllowedTools
+		"action": "load_skill",
+		"title":  fmt.Sprintf("Loaded skill: %s", skill.Name),
+		"output": output,
+		"metadata": map[string]any{
+			"name":   skill.Name,
+			"dir":    skill.Dir,
+			"source": skill.Source,
+		},
 	}
 	return mustJSON(result)
+}
+
+func skillContentBlock(skill skills.Skill, body string) string {
+	dir := strings.TrimSpace(skill.Dir)
+	files := sampleSkillFiles(dir, 10)
+	return strings.Join([]string{
+		fmt.Sprintf(`<skill_content name="%s">`, html.EscapeString(skill.Name)),
+		fmt.Sprintf("# Skill: %s", skill.Name),
+		"",
+		strings.TrimSpace(body),
+		"",
+		"Base directory for this skill: " + skillBaseReference(dir),
+		"Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
+		"Note: file list is sampled.",
+		"",
+		"<skill_files>",
+		files,
+		"</skill_files>",
+		"</skill_content>",
+	}, "\n")
+}
+
+func skillBaseReference(dir string) string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return "unknown"
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		if info, statErr := os.Stat(abs); statErr == nil && info.IsDir() {
+			return (&url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}).String()
+		}
+	}
+	return dir
+}
+
+func sampleSkillFiles(dir string, limit int) string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" || limit <= 0 {
+		return ""
+	}
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	var files []string
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(d.Name(), "SKILL.md") {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	sort.Strings(files)
+	if len(files) > limit {
+		files = files[:limit]
+	}
+	for i, file := range files {
+		files[i] = fmt.Sprintf("<file>%s</file>", html.EscapeString(file))
+	}
+	return strings.Join(files, "\n")
 }
