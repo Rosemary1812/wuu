@@ -938,15 +938,94 @@ func discoverSkills(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin
 			}
 		}
 	}
-	if homeDir != "" {
-		userDirs = append(userDirs, skills.SourceDir{Path: filepath.Join(homeDir, ".claude", "skills"), Source: "user"})
+	if home := skillUserHome(homeDir); home != "" {
+		userDirs = append(userDirs,
+			skills.SourceDir{Path: filepath.Join(home, ".claude", "skills"), Source: "user"},
+			skills.SourceDir{Path: filepath.Join(home, ".agents", "skills"), Source: "user"},
+			skills.SourceDir{Path: filepath.Join(home, ".config", "opencode", "skills"), Source: "user"},
+		)
 	}
 	if strings.TrimSpace(wuuHome) != "" {
 		userDirs = append(userDirs, skills.SourceDir{Path: filepath.Join(wuuHome, "skills"), Source: "user"})
 	}
-	projectDirs = append(projectDirs, skills.SourceDir{Path: filepath.Join(rootDir, ".wuu", "skills"), Source: "project"})
-	projectDirs = append(projectDirs, skills.SourceDir{Path: filepath.Join(rootDir, ".claude", "skills"), Source: "project"})
+	projectDirs = append(projectDirs, skillProjectDirs(rootDir)...)
 	return skills.MergeWithBundled(skills.DiscoverSourceDirs(projectDirs, userDirs))
+}
+
+func skillUserHome(homeDir string) string {
+	home := strings.TrimSpace(homeDir)
+	if home != "" {
+		return home
+	}
+	if resolved, err := os.UserHomeDir(); err == nil {
+		return resolved
+	}
+	return ""
+}
+
+func skillProjectDirs(rootDir string) []skills.SourceDir {
+	if strings.TrimSpace(rootDir) == "" {
+		return nil
+	}
+	absRoot, err := filepath.Abs(rootDir)
+	if err != nil {
+		return nil
+	}
+	projectRoot := findSkillProjectRoot(absRoot)
+	chain := skillDirChain(projectRoot, absRoot)
+	out := make([]skills.SourceDir, 0, len(chain)*5)
+	for _, dir := range chain {
+		// External ecosystem directories are lower precedence than native wuu
+		// skills at the same level. More specific child directories still override
+		// ancestors because the chain is ordered root -> current directory.
+		out = append(out,
+			skills.SourceDir{Path: filepath.Join(dir, ".claude", "skills"), Source: "project"},
+			skills.SourceDir{Path: filepath.Join(dir, ".agents", "skills"), Source: "project"},
+			skills.SourceDir{Path: filepath.Join(dir, ".opencode", "skill"), Source: "project"},
+			skills.SourceDir{Path: filepath.Join(dir, ".opencode", "skills"), Source: "project"},
+			skills.SourceDir{Path: filepath.Join(dir, ".wuu", "skills"), Source: "project"},
+		)
+	}
+	return out
+}
+
+func findSkillProjectRoot(start string) string {
+	cur := start
+	for {
+		for _, marker := range []string{".git", ".hg", ".jj", ".svn"} {
+			if _, err := os.Lstat(filepath.Join(cur, marker)); err == nil {
+				return cur
+			}
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return ""
+		}
+		cur = parent
+	}
+}
+
+func skillDirChain(root, leaf string) []string {
+	if root == "" {
+		return []string{leaf}
+	}
+	rel, err := filepath.Rel(root, leaf)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return []string{leaf}
+	}
+	chain := []string{root}
+	if rel == "." {
+		return chain
+	}
+	cur := root
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		chain = append(chain, cur)
+	}
+	return chain
 }
 
 func discoverWorkflows(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin) []workflow.Definition {

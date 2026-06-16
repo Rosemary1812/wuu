@@ -169,6 +169,9 @@ func scanDir(dir, source string) []Skill {
 				skill.Name = entry.Name()
 			}
 			skill.Name = canonicalName(skill.Name)
+			if !validDirectorySkillName(skill.Name, entry.Name()) {
+				continue
+			}
 			skill.Dir = path
 			skills = append(skills, skill)
 			continue
@@ -212,6 +215,43 @@ func canonicalName(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.TrimPrefix(name, "/")
 	return name
+}
+
+// validDirectorySkillName enforces opencode's portable skill-name shape for
+// directory-style skills. The frontmatter name must match the folder name so
+// moving a skill between ecosystems does not silently rename it.
+func validDirectorySkillName(name, dirName string) bool {
+	name = canonicalName(name)
+	dirName = canonicalName(dirName)
+	if !isPortableSkillName(name) || !isPortableSkillName(dirName) {
+		return false
+	}
+	return name == dirName
+}
+
+// isPortableSkillName mirrors opencode's documented skill name format:
+// lowercase alphanumeric words separated by single hyphens.
+func isPortableSkillName(name string) bool {
+	if len(name) == 0 || len(name) > 64 {
+		return false
+	}
+	prevHyphen := false
+	for i, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			prevHyphen = false
+		case r >= '0' && r <= '9':
+			prevHyphen = false
+		case r == '-':
+			if i == 0 || prevHyphen {
+				return false
+			}
+			prevHyphen = true
+		default:
+			return false
+		}
+	}
+	return !prevHyphen
 }
 
 func parseSkillFile(path, source string) (Skill, error) {

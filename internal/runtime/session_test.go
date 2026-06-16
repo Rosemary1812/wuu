@@ -498,6 +498,50 @@ Release body.
 	}
 }
 
+func TestDiscoverSkillsUsesOpencodeAndAgentsPaths(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	workspace := filepath.Join(root, "packages", "app")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+
+	writeSessionTestFile(t, filepath.Join(root, ".opencode", "skill", "root-skill", "SKILL.md"), `---
+name: root-skill
+description: Root opencode skill.
+---
+Root body.
+`)
+	writeSessionTestFile(t, filepath.Join(workspace, ".opencode", "skills", "app-skill", "SKILL.md"), `---
+name: app-skill
+description: App opencode skill.
+---
+App body.
+`)
+	writeSessionTestFile(t, filepath.Join(workspace, ".agents", "skills", "agent-skill", "SKILL.md"), `---
+name: agent-skill
+description: Agent skill.
+---
+Agent body.
+`)
+	writeSessionTestFile(t, filepath.Join(home, ".config", "opencode", "skills", "global-skill", "SKILL.md"), `---
+name: global-skill
+description: Global opencode skill.
+---
+Global body.
+`)
+
+	got := discoverSkills(workspace, home, filepath.Join(home, ".wuu"), nil)
+	for _, name := range []string{"root-skill", "app-skill", "agent-skill", "global-skill"} {
+		if _, ok := skills.Find(got, name); !ok {
+			t.Fatalf("skill %q not discovered in %+v", name, got)
+		}
+	}
+}
+
 func TestNewSessionWiresPluginHooks(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

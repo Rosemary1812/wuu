@@ -109,6 +109,37 @@ func TestParseSkillFile_NoFrontmatter(t *testing.T) {
 	}
 }
 
+func TestDiscoverDirectorySkillsValidatePortableName(t *testing.T) {
+	projectDir := t.TempDir()
+	writeSkill := func(dirName, name string) {
+		t.Helper()
+		dir := filepath.Join(projectDir, dirName)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("mkdir skill: %v", err)
+		}
+		body := strings.Join([]string{
+			"---",
+			"name: " + name,
+			"description: Test skill",
+			"---",
+			"Body.",
+		}, "\n")
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0644); err != nil {
+			t.Fatalf("write skill: %v", err)
+		}
+	}
+
+	writeSkill("good-skill", "good-skill")
+	writeSkill("wrong-dir", "other-name")
+	writeSkill("Bad_Name", "Bad_Name")
+	writeSkill("bad--hyphen", "bad--hyphen")
+
+	got := Discover(projectDir, "")
+	if len(got) != 1 || got[0].Name != "good-skill" {
+		t.Fatalf("expected only good-skill, got %+v", got)
+	}
+}
+
 func TestDiscover(t *testing.T) {
 	projectDir := t.TempDir()
 	userDir := t.TempDir()
