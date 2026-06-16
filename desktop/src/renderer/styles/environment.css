@@ -297,7 +297,39 @@
 .environment-process-row > div {
   display: grid;
   min-width: 0;
-  gap: 2px;
+}
+
+/* Query history popover — reuses .environment-row chrome but the item
+   only contains a single <strong> with no icon/chevron. Override the
+   4-column grid to a single flexible column so the text gets full width
+   instead of being crushed into the `auto` column. */
+.query-history-popover {
+  border: 1px solid rgba(31, 35, 40, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 8px;
+  box-shadow:
+    0 24px 60px rgba(20, 24, 28, 0.13),
+    0 2px 10px rgba(20, 24, 28, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.query-history-popover .query-history-list {
+  display: grid;
+  gap: 3px;
+}
+
+.query-history-item {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+.query-history-text {
+  color: #202427;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0;
 }
 
 .environment-process-row strong,
