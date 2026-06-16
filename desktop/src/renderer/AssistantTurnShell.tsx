@@ -21,7 +21,8 @@ export function AssistantTurnShell({
   turn: Turn;
   display: AssistantTurnDisplay;
 }): JSX.Element {
-  const hasFront = display.frontEntries.length > 0;
+  const hasFront =
+    display.frontEntries.length > 0 || Boolean(display.latestCommentaryPreview);
   const hasBody = display.finalAnswerItems.length > 0;
   const className = [
     "assistant-turn-shell",

@@ -7,10 +7,11 @@
  *   - body ("正文"区): the user-facing reply. Carries final_answer
  *     text segments in arrival order.
  *
- * Commentary renders in the front using the same visual style as
- * final_answer — the two are distinguished by structural position, not
- * by decoration. A thin divider is drawn between the two regions when
- * the completed turn has final_answer body text.
+ * Commentary renders in the front/process lane. While a turn is still
+ * live, the latest commentary appears as a compact preview in the fold
+ * header instead of being treated as body text. A thin divider is drawn
+ * between the two regions when the completed turn has final_answer body
+ * text.
  *
  * Empty reply: a completed turn that produced commentary but no
  * final_answer gets a compact "没有生成回复" notice. Pure-tool turns
@@ -77,6 +78,16 @@ function makeFinalAnswer(text: string): ThreadItem {
     type: "agent_message",
     status: "completed",
     phase: "final_answer",
+    role: "assistant",
+    text,
+  };
+}
+
+function makeLiveUnclassifiedAgentMessage(text: string): ThreadItem {
+  return {
+    id: nextID("pending-agent"),
+    type: "agent_message",
+    status: "in_progress",
     role: "assistant",
     text,
   };
@@ -296,6 +307,22 @@ describe("assistant turn fold header preview", () => {
     expect(display).toBeDefined();
     expect(display?.frontDefaultCollapsed).toBe(true);
     expect(display?.latestCommentaryPreview).toBe("Let me look that up.");
+  });
+
+  it("in_progress + unclassified live agent text → preview only, not body or details", () => {
+    const pending = makeLiveUnclassifiedAgentMessage(
+      "I will inspect the current prompt path.",
+    );
+    const turn = makeTurn({ status: "in_progress", items: [pending] });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    expect(display?.latestCommentaryPreview).toBe(
+      "I will inspect the current prompt path.",
+    );
+    expect(display?.frontEntries).toHaveLength(0);
+    expect(display?.finalAnswerItems).toHaveLength(0);
   });
 
   it("in_progress + multiple commentaries → preview = the LATEST commentary, in arrival order", () => {

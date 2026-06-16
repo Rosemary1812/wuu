@@ -71,6 +71,7 @@ export function buildAssistantTurnDisplay(
   const finalAnswerItems: AssistantTurnAnswerItem[] = [];
   let sawAssistantWork = false;
   const turnHasReasoning = turn.items.some((item) => item.type === "reasoning");
+  const isInProgress = turn.status === "in_progress";
   let firstTextItemRendered = false;
 
   function appendFrontEntry(entry: TurnProcessEntry | null): void {
@@ -94,19 +95,23 @@ export function buildAssistantTurnDisplay(
         continue;
       }
       const isFinalAnswer = item.phase === "final_answer";
+      const isLiveUnclassifiedText =
+        !item.phase && isInProgress && item.status === "in_progress";
       const shouldDelayCursor = turnHasReasoning && !firstTextItemRendered;
       firstTextItemRendered = true;
-      const rendered = renderThreadItem(
-        item,
-        streaming,
-        shouldDelayCursor ? true : undefined,
-      );
-      if (!rendered) {
-        continue;
-      }
+      const rendered = isLiveUnclassifiedText
+        ? null
+        : renderThreadItem(
+            item,
+            streaming,
+            shouldDelayCursor ? true : undefined,
+          );
       if (isFinalAnswer) {
+        if (!rendered) {
+          continue;
+        }
         finalAnswerItems.push({ item, streaming, element: rendered });
-      } else {
+      } else if (rendered) {
         appendFrontEntry({
           key: item.id,
           element: rendered,
@@ -157,12 +162,8 @@ export function buildAssistantTurnDisplay(
   if (!sawAssistantWork) {
     return undefined;
   }
-  if (frontEntries.length === 0 && finalAnswerItems.length === 0) {
-    return undefined;
-  }
 
   const finalCount = finalAnswerItems.length;
-  const isInProgress = turn.status === "in_progress";
   const isCompleted = turn.status === "completed";
 
   let missingReplyMessage: string | undefined;
@@ -181,15 +182,11 @@ export function buildAssistantTurnDisplay(
   let latestCommentaryPreview: string | undefined;
   if (isInProgress) {
     let latestCommentaryItem: ThreadItem | undefined;
-    for (const entry of frontEntries) {
-      if (entry.key.endsWith("-activity")) {
-        continue;
-      }
-      const item = turn.items.find((candidate) => candidate.id === entry.key);
+    for (const item of turn.items) {
       if (
-        item &&
         item.type === "agent_message" &&
-        item.phase === "commentary"
+        (item.phase === "commentary" ||
+          (!item.phase && item.status === "in_progress"))
       ) {
         latestCommentaryItem = item;
       }
@@ -202,6 +199,14 @@ export function buildAssistantTurnDisplay(
           raw.length > previewMax ? `${raw.slice(0, previewMax)}…` : raw;
       }
     }
+  }
+
+  if (
+    frontEntries.length === 0 &&
+    finalAnswerItems.length === 0 &&
+    !latestCommentaryPreview
+  ) {
+    return undefined;
   }
 
   return {
