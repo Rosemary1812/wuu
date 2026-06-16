@@ -259,6 +259,46 @@ func TestDiscoverSourceDirsPreservesSourceLabels(t *testing.T) {
 	}
 }
 
+func TestDiscoverSourceDirsRecursiveFindsNestedSkillDirectories(t *testing.T) {
+	root := t.TempDir()
+	writeSkill := func(pathParts []string, name string) {
+		t.Helper()
+		dir := filepath.Join(append([]string{root}, pathParts...)...)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("mkdir skill: %v", err)
+		}
+		body := strings.Join([]string{
+			"---",
+			"name: " + name,
+			"description: Nested skill",
+			"---",
+			"Body.",
+		}, "\n")
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0644); err != nil {
+			t.Fatalf("write skill: %v", err)
+		}
+	}
+	writeSkill([]string{"packs", "deep-skill"}, "deep-skill")
+	writeSkill([]string{"packs", "wrong-dir"}, "other-name")
+
+	nonRecursive := DiscoverSourceDirs(nil, []SourceDir{{Path: root, Source: "config"}})
+	if _, ok := Find(nonRecursive, "deep-skill"); ok {
+		t.Fatalf("non-recursive source unexpectedly found nested skill: %+v", nonRecursive)
+	}
+
+	recursive := DiscoverSourceDirs(nil, []SourceDir{{Path: root, Source: "config", Recursive: true}})
+	skill, ok := Find(recursive, "deep-skill")
+	if !ok {
+		t.Fatalf("recursive source did not find nested skill: %+v", recursive)
+	}
+	if skill.Source != "config" || !strings.HasSuffix(skill.Path, filepath.Join("packs", "deep-skill", "SKILL.md")) {
+		t.Fatalf("unexpected recursive skill metadata: %+v", skill)
+	}
+	if _, ok := Find(recursive, "other-name"); ok {
+		t.Fatalf("recursive source accepted mismatched directory skill: %+v", recursive)
+	}
+}
+
 func TestRegistryRouteUsesLoopMetadata(t *testing.T) {
 	registry := NewRegistry([]Skill{
 		{

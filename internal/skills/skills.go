@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -57,8 +58,9 @@ type SkillHookConfig struct {
 }
 
 type SourceDir struct {
-	Path   string
-	Source string
+	Path      string
+	Source    string
+	Recursive bool
 }
 
 // Discover scans the given directories for skills and returns a deduplicated
@@ -117,7 +119,11 @@ func scanSkillSourceDirs(dirs []SourceDir) []Skill {
 		if source == "" {
 			source = "unknown"
 		}
-		for _, skill := range scanDir(dir.Path, source) {
+		scanned := scanDir(dir.Path, source)
+		if dir.Recursive {
+			scanned = scanRecursiveDir(dir.Path, source)
+		}
+		for _, skill := range scanned {
 			out = append(out, skill)
 		}
 	}
@@ -189,6 +195,41 @@ func scanDir(dir, source string) []Skill {
 		skill.Dir = filepath.Dir(path)
 		skills = append(skills, skill)
 	}
+	return skills
+}
+
+func scanRecursiveDir(root, source string) []Skill {
+	if strings.TrimSpace(root) == "" {
+		return nil
+	}
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+
+	var skills []Skill
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.EqualFold(d.Name(), "SKILL.md") {
+			return nil
+		}
+		skill, parseErr := parseSkillFile(path, source)
+		if parseErr != nil {
+			return nil
+		}
+		dir := filepath.Dir(path)
+		dirName := filepath.Base(dir)
+		if skill.Name == "" || skill.Name == strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) {
+			skill.Name = dirName
+		}
+		skill.Name = canonicalName(skill.Name)
+		if !validDirectorySkillName(skill.Name, dirName) {
+			return nil
+		}
+		skill.Dir = dir
+		skills = append(skills, skill)
+		return nil
+	})
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Path < skills[j].Path })
 	return skills
 }
 
