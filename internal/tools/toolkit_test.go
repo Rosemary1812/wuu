@@ -2545,6 +2545,28 @@ func TestToolkit_ToolMetadata_ClassifiesGitByInput(t *testing.T) {
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
 		Name:      "git",
+		Arguments: `{"subcommand":"add","args":["hello.txt"]}`,
+	})
+	if !ok {
+		t.Fatal("git metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Destructive || meta.Risk != string(ToolRiskMedium) || meta.Reason != "git add writes the repository index" {
+		t.Fatalf("git add metadata = %+v, want non-destructive medium-risk index write", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "git",
+		Arguments: `{"subcommand":"restore --staged","args":["hello.txt"]}`,
+	})
+	if !ok {
+		t.Fatal("git metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Destructive || meta.Risk != string(ToolRiskMedium) || meta.Reason != "git restore --staged writes the repository index" {
+		t.Fatalf("git restore --staged metadata = %+v, want non-destructive medium-risk index write", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "git",
 		Arguments: `{"subcommand":"commit","args":["-m","update files"]}`,
 	})
 	if !ok {

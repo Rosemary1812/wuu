@@ -143,6 +143,9 @@ func TestComposeWorkerSystemPrompt_TeachesNonInteractiveGit(t *testing.T) {
 	got := composeWorkerSystemPrompt("", wt, "/tmp/repo", IsolationInplace)
 	for _, want := range []string{
 		"Treat shell commands as non-interactive",
+		"Use the git tool, not shell commands",
+		"git add using explicit paths",
+		"git restore --staged",
 		"`git commit -m`",
 		"`git commit -e`",
 		"`git rebase -i`",

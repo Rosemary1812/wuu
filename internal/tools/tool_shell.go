@@ -55,7 +55,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- For git operations, prefer the git tool over run_shell",
+			"- For git operations, use the git tool instead of run_shell; it supports status, diff, explicit-path staging, unstaging, commit, and push",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -90,7 +90,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 		return "", errors.New("run_shell requires command")
 	}
 	if shellCommandInvokesGit(args.Command) {
-		return "", errors.New("run_shell refuses to execute git commands; use the restricted git tool instead")
+		return "", errors.New("run_shell refuses to execute git commands; use the restricted git tool instead. For commit flows, call git status/diff, git add with explicit paths, git commit, then git push when approved: error_kind=unsupported_tool_path model_next_action=\"retry with the git tool instead of asking the user to run git manually\"")
 	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")

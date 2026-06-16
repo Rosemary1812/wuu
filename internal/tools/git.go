@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -53,26 +55,28 @@ type gitInvocation struct {
 // no per-flag validation (inherently read-only or handled by their own
 // switch-case in validateGitArgs).
 var allowedGitSubcommands = map[string]bool{
-	"log":           true,
-	"show":          true,
-	"diff":          true,
-	"blame":         true,
-	"reflog":        true,
-	"stash list":    true,
-	"stash show":    true,
-	"ls-files":      true,
-	"ls-remote":     true,
-	"rev-parse":     true,
-	"rev-list":      true,
-	"describe":      true,
-	"cat-file":      true,
-	"for-each-ref":  true,
-	"grep":          true,
-	"worktree list": true,
-	"merge-base":    true,
-	"shortlog":      true,
-	"commit":        true,
-	"push":          true,
+	"log":              true,
+	"show":             true,
+	"diff":             true,
+	"blame":            true,
+	"reflog":           true,
+	"stash list":       true,
+	"stash show":       true,
+	"ls-files":         true,
+	"ls-remote":        true,
+	"rev-parse":        true,
+	"rev-list":         true,
+	"describe":         true,
+	"cat-file":         true,
+	"for-each-ref":     true,
+	"grep":             true,
+	"worktree list":    true,
+	"merge-base":       true,
+	"shortlog":         true,
+	"add":              true,
+	"restore --staged": true,
+	"commit":           true,
+	"push":             true,
 }
 
 // policiedSubcommands require flag-level validation via subcommandPolicy.
@@ -454,7 +458,22 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	subcmdParts := strings.Fields(invocation.Subcommand)
 	gitArgs := append([]string{"--no-optional-locks"}, subcmdParts...)
 	gitArgs = append(gitArgs, invocation.Args...)
-	if invocation.Subcommand == "push" {
+	if invocation.Subcommand == "add" {
+		pathspecs, err := normalizeExplicitGitPathspecs(invocation.Subcommand, invocation.Args, false)
+		if err != nil {
+			return "", err
+		}
+		if err := rejectSensitiveStagePathspecs(env, ctx, pathspecs); err != nil {
+			return "", err
+		}
+		gitArgs = append([]string{"--no-optional-locks", "add", "--"}, pathspecs...)
+	} else if invocation.Subcommand == "restore --staged" {
+		pathspecs, err := normalizeExplicitGitPathspecs(invocation.Subcommand, invocation.Args, true)
+		if err != nil {
+			return "", err
+		}
+		gitArgs = append([]string{"--no-optional-locks", "restore", "--staged", "--"}, pathspecs...)
+	} else if invocation.Subcommand == "push" {
 		normalized, err := normalizePushArgs(env, ctx, invocation.Args)
 		if err != nil {
 			return "", err
@@ -527,6 +546,16 @@ func parseGitInvocation(argsJSON string) (gitInvocation, error) {
 
 func requireGitWriteConfirmation(invocation gitInvocation) error {
 	switch invocation.Subcommand {
+	case "add":
+		if invocation.ConfirmUserApproved {
+			return nil
+		}
+		return errors.New("git add requires confirm_user_approved=true after explicit user approval to stage specific paths: error_kind=approval_required model_next_action=\"ask the user before staging, or if the current request already explicitly asked to stage/commit these paths, retry with confirm_user_approved=true after reviewing git status/diff\"")
+	case "restore --staged":
+		if invocation.ConfirmUserApproved {
+			return nil
+		}
+		return errors.New("git restore --staged requires confirm_user_approved=true after explicit user approval to change the index: error_kind=approval_required model_next_action=\"ask the user before unstaging, or if the current request already explicitly asked to adjust staged changes, retry with confirm_user_approved=true after reviewing git status\"")
 	case "commit":
 		if invocation.ConfirmUserApproved {
 			return nil
@@ -587,6 +616,13 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 		if commit, err := latestCommitMetadata(env, ctx); err == nil {
 			result["commit_sha"] = commit.SHA
 			result["commit_subject"] = commit.Subject
+		}
+	}
+	if (subcmd == "add" || subcmd == "restore --staged") && exitCode == 0 && !timedOut {
+		if staged, unstaged, untracked, err := gitStatusSnapshot(env, ctx); err == nil {
+			result["staged"] = staged
+			result["unstaged"] = unstaged
+			result["untracked"] = untracked
 		}
 	}
 	if truncated {
@@ -746,6 +782,10 @@ func gitNextSuggestions(subcmd string, exitCode int, timedOut bool) []string {
 	switch subcmd {
 	case "diff", "show", "log", "blame", "grep":
 		return []string{"use this git output as evidence, or read_file relevant paths before editing"}
+	case "add":
+		return []string{"review staged changes with git diff --cached before committing"}
+	case "restore --staged":
+		return []string{"run git status to confirm the index now matches the intended staging set"}
 	case "commit":
 		return []string{"confirm git status is clean or contains only intentional remaining changes"}
 	case "push":
@@ -841,7 +881,7 @@ func validateGlobalGitArgs(subcmd string, args []string) error {
 			}
 		}
 		for _, ch := range shellMetacharacters {
-			if strings.ContainsRune(arg, ch) && !isCommitMessageArg(subcmd, args, i) {
+			if strings.ContainsRune(arg, ch) && !isCommitMessageArg(subcmd, args, i) && !isExplicitGitPathArg(subcmd, arg) {
 				return fmt.Errorf("git arg %q contains blocked metacharacter %q", arg, string(ch))
 			}
 		}
@@ -853,6 +893,12 @@ func validateGlobalGitArgs(subcmd string, args []string) error {
 // subcommands (commit, push, and everything else in allowedGitSubcommands).
 func validateGitArgs(subcmd string, args []string) error {
 	switch subcmd {
+	case "add":
+		_, err := normalizeExplicitGitPathspecs(subcmd, args, false)
+		return err
+	case "restore --staged":
+		_, err := normalizeExplicitGitPathspecs(subcmd, args, true)
+		return err
 	case "commit":
 		return validateCommitArgs(args)
 	case "push":
@@ -865,6 +911,47 @@ func validateGitArgs(subcmd string, args []string) error {
 		}
 	}
 	return nil
+}
+
+func normalizeExplicitGitPathspecs(subcmd string, args []string, allowSensitive bool) ([]string, error) {
+	var pathspecs []string
+	seenDashDash := false
+	for _, raw := range args {
+		if raw == "--" {
+			if seenDashDash {
+				return nil, fmt.Errorf("git %s accepts at most one -- path separator", subcmd)
+			}
+			seenDashDash = true
+			continue
+		}
+		arg := strings.TrimSpace(raw)
+		if arg == "" {
+			return nil, fmt.Errorf("git %s requires non-empty explicit path arguments", subcmd)
+		}
+		if strings.HasPrefix(arg, "-") {
+			return nil, fmt.Errorf("git %s only accepts explicit file or directory paths; flag %q is not allowed", subcmd, arg)
+		}
+		if filepath.IsAbs(arg) {
+			return nil, fmt.Errorf("git %s requires workspace-relative paths, got absolute path %q", subcmd, arg)
+		}
+		if strings.ContainsAny(arg, "*?[") || strings.HasPrefix(arg, ":") || strings.Contains(arg, ":(") {
+			return nil, fmt.Errorf("git %s only accepts literal paths from git status; wildcard or pathspec magic %q is not allowed", subcmd, arg)
+		}
+		cleaned := path.Clean(filepath.ToSlash(arg))
+		if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+			return nil, fmt.Errorf("git %s requires explicit workspace paths; root, current-directory, and parent traversal pathspecs are not allowed", subcmd)
+		}
+		if !allowSensitive {
+			if reason, ok := sensitivePathReason(cleaned); ok {
+				return nil, fmt.Errorf("git %s refuses sensitive path %q (%s). Ask the user for explicit secret handling before staging", subcmd, cleaned, reason)
+			}
+		}
+		pathspecs = append(pathspecs, arg)
+	}
+	if len(pathspecs) == 0 {
+		return nil, fmt.Errorf("git %s requires at least one explicit file or directory path from git status", subcmd)
+	}
+	return pathspecs, nil
 }
 
 func validateCatFileArgs(args []string) error {
@@ -897,6 +984,15 @@ func isCommitMessageArg(subcmd string, args []string, idx int) bool {
 	}
 	prev := args[idx-1]
 	return prev == "-m" || prev == "--message"
+}
+
+func isExplicitGitPathArg(subcmd, arg string) bool {
+	switch subcmd {
+	case "add", "restore --staged":
+		return arg != "--" && !strings.HasPrefix(strings.TrimSpace(arg), "-")
+	default:
+		return false
+	}
 }
 
 func hasDangerousGlobalConfigArgs(args []string) bool {
@@ -970,6 +1066,77 @@ func validateCommitArgs(args []string) error {
 		return errors.New("git commit requires an explicit message via -m or --message")
 	}
 	return nil
+}
+
+func rejectSensitiveStagePathspecs(env *Env, ctx context.Context, pathspecs []string) error {
+	paths, err := changedPathsForPathspecs(env, ctx, pathspecs)
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		if reason, ok := sensitivePathReason(path); ok {
+			return fmt.Errorf("git add refuses sensitive path %q (%s). Ask the user for explicit secret handling before staging", path, reason)
+		}
+	}
+	return nil
+}
+
+func changedPathsForPathspecs(env *Env, ctx context.Context, pathspecs []string) ([]string, error) {
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	args := append([]string{"--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}, pathspecs...)
+	cmd := exec.CommandContext(runCtx, "git", args...)
+	cmd.Dir = env.RootDir
+	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("inspect paths before git add: %w", err)
+	}
+	return parseGitPorcelainZPaths(string(out)), nil
+}
+
+func parseGitPorcelainZPaths(output string) []string {
+	if output == "" {
+		return nil
+	}
+	records := strings.Split(strings.TrimRight(output, "\x00"), "\x00")
+	paths := make([]string, 0, len(records))
+	for i := 0; i < len(records); i++ {
+		record := records[i]
+		if len(record) < 4 {
+			continue
+		}
+		x := record[0]
+		path := strings.TrimSpace(record[3:])
+		if path != "" {
+			paths = append(paths, path)
+		}
+		if x == 'R' || x == 'C' {
+			i++
+			if i < len(records) {
+				if extra := strings.TrimSpace(records[i]); extra != "" {
+					paths = append(paths, extra)
+				}
+			}
+		}
+	}
+	return paths
+}
+
+func gitStatusSnapshot(env *Env, ctx context.Context) (staged, unstaged []fileEntry, untracked []string, err error) {
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(runCtx, "git", "--no-optional-locks", "status", "--porcelain")
+	cmd.Dir = env.RootDir
+	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("read git status snapshot: %w", err)
+	}
+	staged, unstaged, untracked = parseGitPorcelain(string(out))
+	return staged, unstaged, untracked, nil
 }
 
 func rejectSensitiveStagedCommitPaths(env *Env, ctx context.Context) error {

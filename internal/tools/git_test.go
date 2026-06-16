@@ -252,6 +252,116 @@ func TestToolkit_Git_CommitAllowedOnStagedChanges(t *testing.T) {
 	}
 }
 
+func TestToolkit_Git_AddStagesExplicitPaths(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'dirty\n' >> hello.txt")
+	runBash(t, root, "printf 'new\n' > new.txt")
+
+	p := gitCallConfirmed(t, kit, "add", "hello.txt", "new.txt")
+	requireGitAction(t, p, "add")
+	if p["exit_code"].(float64) != 0 {
+		t.Fatalf("git add: %+v", p)
+	}
+	requireGitWorkspaceRevision(t, p)
+	staged, ok := p["staged"].([]any)
+	if !ok || len(staged) != 2 {
+		t.Fatalf("git add response should include staged snapshot, got: %+v", p)
+	}
+	if got := strings.Fields(runBash(t, root, "git diff --cached --name-only")); strings.Join(got, ",") != "hello.txt,new.txt" {
+		t.Fatalf("staged files = %+v, want hello.txt,new.txt", got)
+	}
+	suggestions, ok := p["next_suggestions"].([]any)
+	if !ok || !strings.Contains(fmt.Sprint(suggestions), "diff --cached") {
+		t.Fatalf("git add should suggest staged diff review: %+v", p)
+	}
+}
+
+func TestToolkit_Git_AddAcceptsLiteralPathCharacters(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'new\n' > 'hello (copy).txt'")
+
+	p := gitCallConfirmed(t, kit, "add", "hello (copy).txt")
+	if p["exit_code"].(float64) != 0 {
+		t.Fatalf("git add literal path: %+v", p)
+	}
+	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != "hello (copy).txt" {
+		t.Fatalf("staged file = %q, want literal path", got)
+	}
+}
+
+func TestToolkit_Git_AddRequiresUserApproval(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'dirty\n' >> hello.txt")
+
+	msg := gitErr(t, kit, "add", "hello.txt")
+	if !strings.Contains(msg, "error_kind=approval_required") ||
+		!strings.Contains(msg, "confirm_user_approved=true") ||
+		!strings.Contains(msg, "staging") {
+		t.Fatalf("expected add approval guidance, got: %s", msg)
+	}
+	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != "" {
+		t.Fatalf("git add should not run without approval, staged: %q", got)
+	}
+}
+
+func TestToolkit_Git_AddRejectsBroadOrMagicPathspecs(t *testing.T) {
+	kit, _ := setupGitRepo(t)
+	for _, args := range [][]string{
+		{"."},
+		{"./"},
+		{"../outside.txt"},
+		{"*.go"},
+		{":(glob)*.go"},
+		{"-A"},
+	} {
+		msg := gitErrConfirmed(t, kit, "add", args...)
+		if !strings.Contains(msg, "explicit") &&
+			!strings.Contains(msg, "literal") &&
+			!strings.Contains(msg, "workspace") &&
+			!strings.Contains(msg, "metacharacter") {
+			t.Fatalf("git add %v should reject broad/magic pathspec, got: %s", args, msg)
+		}
+	}
+}
+
+func TestToolkit_Git_AddRejectsSensitivePathsBeforeStaging(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "mkdir -p config && printf 'API_KEY=secret-value\n' > config/.env")
+
+	msg := gitErrConfirmed(t, kit, "add", "config")
+	if !strings.Contains(msg, "sensitive path") || !strings.Contains(msg, "explicit secret handling") {
+		t.Fatalf("expected sensitive path staging guidance, got: %q", msg)
+	}
+	if strings.Contains(msg, "secret-value") {
+		t.Fatalf("git add sensitive path error leaked file content: %q", msg)
+	}
+	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != "" {
+		t.Fatalf("sensitive file should not be staged, staged: %q", got)
+	}
+}
+
+func TestToolkit_Git_RestoreStagedUnstagesExplicitPaths(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'dirty\n' >> hello.txt && git add hello.txt")
+
+	p := gitCallConfirmed(t, kit, "restore --staged", "hello.txt")
+	requireGitAction(t, p, "restore_staged")
+	if p["exit_code"].(float64) != 0 {
+		t.Fatalf("git restore --staged: %+v", p)
+	}
+	staged, ok := p["staged"].([]any)
+	if !ok || len(staged) != 0 {
+		t.Fatalf("restore --staged response should have no staged files: %+v", p)
+	}
+	unstaged, ok := p["unstaged"].([]any)
+	if !ok || len(unstaged) != 1 {
+		t.Fatalf("restore --staged response should expose unstaged file: %+v", p)
+	}
+	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != "" {
+		t.Fatalf("file should be unstaged, staged: %q", got)
+	}
+}
+
 func TestToolkit_Git_CommitWithoutStagedChangesFailsCleanly(t *testing.T) {
 	kit, _ := setupGitRepo(t)
 	p := gitCallConfirmed(t, kit, "commit", "-m", "Nothing to commit")
