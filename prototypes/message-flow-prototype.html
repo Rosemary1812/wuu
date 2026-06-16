@@ -2,1540 +2,694 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Wuu Message Flow Prototype</title>
+    <title>wuu · 消息流原型 v3 (text-first)</title>
     <style>
       :root {
-        color-scheme: light dark;
-        --page: #f5f5f7;
-        --surface: rgba(255, 255, 255, 0.82);
-        --text: #1d1d1f;
-        --muted: #75757a;
-        --muted-2: #9a9aa0;
-        --faint: #c7c7cc;
-        --line: rgba(60, 60, 67, 0.14);
-        --soft: rgba(60, 60, 67, 0.06);
-        --soft-hover: rgba(60, 60, 67, 0.09);
-        --accent: #007aff;
-        --danger: #c53b3b;
-        --danger-soft: #a64b4b;
-        --code-bg: rgba(118, 118, 128, 0.09);
-        --code-line: rgba(60, 60, 67, 0.12);
-        --sweep-rest: #7f7f86;
-        --sweep-rise: #0066d6;
-        --sweep-peak: #050506;
-        --shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
-        --radius-control: 8px;
-        --timing: cubic-bezier(0.2, 0, 0, 1);
-        --sweep-duration: 3s;
-      }
+        --paper: #f7f7f5;
+        --pane: #ffffff;
+        --ink: #1a1a1a;
+        --ink-soft: #5b6066;
+        --ink-mute: #8a8a85;
+        --ink-faint: #b8b8b3;
+        --hairline: #e4e4df;
+        --hairline-soft: #ececea;
+        --code-bg: rgba(0, 0, 0, 0.05);
+        --code-bg-2: #ececea;
+        --user-bubble: #e8e8e4;
+        --user-bubble-hover: #dedede;
+        --accent: #e4002b;
+        --orange-dot: #ff7a1a;
+        --status-running: #b8b8b3;
+        --status-thinking: #b8b8b3;
 
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --page: #111113;
-          --surface: rgba(28, 28, 30, 0.82);
-          --text: #f5f5f7;
-          --muted: #a6a6ad;
-          --muted-2: #7d7d86;
-          --faint: #5d5d66;
-          --line: rgba(235, 235, 245, 0.14);
-          --soft: rgba(235, 235, 245, 0.07);
-          --soft-hover: rgba(235, 235, 245, 0.11);
-          --danger: #ff6b65;
-          --danger-soft: #ff8a82;
-          --code-bg: rgba(235, 235, 245, 0.08);
-          --code-line: rgba(235, 235, 245, 0.12);
-          --sweep-rest: #8c8c94;
-          --sweep-rise: #66c7ff;
-          --sweep-peak: #ffffff;
-          --shadow: 0 20px 70px rgba(0, 0, 0, 0.34);
-        }
+        --t-1: 11px;
+        --t-2: 12px;
+        --t-3: 13px;
+        --t-body: 14px;
+        --t-title: 15px;
+        --t-meta: 12px;
+
+        --leading: 1.6;
+        --leading-tight: 1.45;
       }
 
       * {
         box-sizing: border-box;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
 
-      html,
-      body {
-        min-height: 100%;
-      }
-
-      body {
+      html, body {
         margin: 0;
-        background:
-          radial-gradient(circle at 12% 0%, rgba(0, 122, 255, 0.08), transparent 28%),
-          radial-gradient(circle at 95% 8%, rgba(88, 86, 214, 0.08), transparent 24%),
-          var(--page);
-        color: var(--text);
-        font-family:
-          -apple-system,
-          BlinkMacSystemFont,
-          "SF Pro Text",
-          "Helvetica Neue",
-          Arial,
-          sans-serif;
-        letter-spacing: 0;
-      }
-
-      button,
-      textarea {
-        font: inherit;
-      }
-
-      .app {
-        min-height: 100vh;
-        padding: 28px;
-      }
-
-      .shell {
-        width: min(1180px, 100%);
-        margin: 0 auto;
-        display: grid;
-        grid-template-columns: 320px minmax(0, 1fr);
-        gap: 22px;
-        align-items: start;
-      }
-
-      .debug-panel,
-      .conversation-shell {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(18px);
-        -webkit-backdrop-filter: blur(18px);
-      }
-
-      .debug-panel {
-        position: sticky;
-        top: 28px;
-        border-radius: 18px;
-        padding: 16px;
-      }
-
-      .debug-title {
-        margin: 0 0 4px;
-        font-size: 15px;
-        font-weight: 650;
-      }
-
-      .debug-note {
-        margin: 0 0 14px;
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.55;
-      }
-
-      .debug-actions {
-        display: grid;
-        gap: 8px;
-      }
-
-      .debug-section {
-        margin: 16px 0 0;
-        padding: 14px 0 0;
-        border-top: 1px solid var(--line);
-      }
-
-      .debug-section-title {
-        margin: 0 0 10px;
-        color: var(--text);
-        font-size: 12px;
-        font-weight: 650;
-      }
-
-      .control-stack {
-        display: grid;
-        gap: 12px;
-      }
-
-      .control-row {
-        display: grid;
-        gap: 6px;
-      }
-
-      .control-row-header {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 12px;
-      }
-
-      .control-row label,
-      .toggle-row span {
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .control-row output {
-        color: var(--text);
-        font-size: 12px;
-        font-variant-numeric: tabular-nums;
-      }
-
-      .control-row input[type="range"] {
-        width: 100%;
-        accent-color: var(--accent);
-      }
-
-      .toggle-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-      }
-
-      .toggle-row input {
-        accent-color: var(--accent);
-      }
-
-      .debug-actions button,
-      .choice-button,
-      .copy-button {
-        border: 1px solid var(--line);
-        background: var(--soft);
-        color: var(--text);
-        border-radius: var(--radius-control);
-        cursor: pointer;
-        transition:
-          background 160ms var(--timing),
-          border-color 160ms var(--timing),
-          transform 160ms var(--timing);
-      }
-
-      .debug-actions button {
-        min-height: 34px;
-        padding: 7px 10px;
-        text-align: left;
-        font-size: 13px;
-      }
-
-      .debug-actions button:hover,
-      .choice-button:hover,
-      .copy-button:hover {
-        background: var(--soft-hover);
-        border-color: color-mix(in srgb, var(--line) 60%, var(--muted));
-      }
-
-      .debug-actions button:active,
-      .choice-button:active,
-      .copy-button:active {
-        transform: scale(0.99);
-      }
-
-      .constraint-list {
-        margin: 16px 0 0;
-        padding: 12px 0 0;
-        border-top: 1px solid var(--line);
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.55;
-      }
-
-      .constraint-list strong {
-        color: var(--text);
-        font-weight: 600;
-      }
-
-      .conversation-shell {
-        border-radius: 22px;
-        min-height: 780px;
-        overflow: hidden;
-      }
-
-      .conversation-header {
-        height: 52px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 20px;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .conversation-header strong {
-        font-size: 14px;
-        font-weight: 650;
-      }
-
-      .conversation-header span {
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .conversation {
-        width: min(760px, calc(100% - 48px));
-        margin: 0 auto;
-        padding: 38px 0 80px;
-      }
-
-      .turn {
-        display: grid;
-        gap: 18px;
-      }
-
-      .user-message-block {
-        display: flex;
-        justify-content: flex-end;
-      }
-
-      .user-message {
-        max-width: min(560px, 86%);
-        padding: 10px 13px;
-        border-radius: 15px;
-        background: var(--soft);
-        color: var(--text);
-        font-size: 14px;
-        line-height: 1.58;
-      }
-
-      .process {
-        margin: 2px 0 0;
-        color: var(--muted);
-      }
-
-      .process-toggle {
-        width: 100%;
-        border: 0;
-        background: transparent;
-        color: inherit;
         padding: 0;
+        background: #2b2d33;
+        font-family: -apple-system, "SF Pro Text", "Inter", "Helvetica Neue",
+          "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        color: var(--ink);
+        font-size: var(--t-body);
+        line-height: var(--leading);
+      }
+
+      /* ---------- window shell ---------- */
+      .window {
+        width: 1738px;
+        height: 1814px;
+        margin: 0 auto;
+        background: var(--paper);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border-radius: 12px;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
+      }
+
+      /* ---------- top chrome ---------- */
+      .chrome {
+        height: 52px;
+        background: var(--paper);
         display: flex;
         align-items: center;
-        gap: 6px;
-        min-height: 26px;
-        cursor: pointer;
-        text-align: left;
-      }
-
-      .process-toggle:focus-visible {
-        outline: 2px solid color-mix(in srgb, var(--accent), transparent 38%);
-        outline-offset: 3px;
-        border-radius: var(--radius-control);
-      }
-
-      .status-viewport {
-        display: inline-grid;
-        grid-template-areas: "stack";
-        align-items: center;
-        min-width: 0;
-        height: 1.4em;
-        overflow: hidden;
-        font-size: 13px;
-        font-weight: 540;
-      }
-
-      .state-label {
-        grid-area: stack;
-        display: inline-block;
+        padding: 0 16px;
+        gap: 14px;
         position: relative;
-        white-space: nowrap;
+        flex-shrink: 0;
       }
-
-      .state-label.running {
-        color: color-mix(in srgb, var(--muted), var(--text) 14%);
+      .traffic {
+        display: flex;
+        gap: 8px;
+        align-items: center;
       }
+      .traffic span {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: block;
+      }
+      .traffic span.r { background: #ff5f57; }
+      .traffic span.y { background: #febc2e; }
+      .traffic span.g { background: #28c840; }
+      .chrome-divider {
+        width: 1px;
+        height: 18px;
+        background: var(--hairline);
+        margin: 0 6px;
+      }
+      .chrome .icon-btn {
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        color: var(--ink-soft);
+        cursor: pointer;
+        position: relative;
+      }
+      .chrome .icon-btn:hover { background: rgba(0, 0, 0, 0.05); }
+      .chrome .icon-btn svg { width: 16px; height: 16px; }
+      .chrome .icon-btn .dot {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #3a8bff;
+      }
+      .chrome .title {
+        font-size: var(--t-3);
+        font-weight: 500;
+        color: var(--ink);
+        user-select: none;
+      }
+      .chrome .more {
+        color: var(--ink-mute);
+        font-size: 18px;
+        letter-spacing: 1px;
+        line-height: 1;
+        padding: 0 4px;
+      }
+      .chrome .right-cluster {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .chrome .right-cluster .icon-btn {}
+      .chrome .right-cluster .pip {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 10px;
+        height: 28px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.04);
+        color: var(--ink-soft);
+        font-size: var(--t-2);
+      }
+      .chrome .right-cluster .pip svg { width: 12px; height: 12px; }
 
-      .state-label.running::after {
-        content: attr(data-label);
+      /* ---------- session strip (under chrome) ---------- */
+      .strip {
+        height: 38px;
+        border-bottom: 1px solid var(--hairline);
+        background: var(--paper);
+        display: flex;
+        align-items: stretch;
+        padding: 0 12px;
+        gap: 2px;
+        flex-shrink: 0;
+      }
+      .strip .tab {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        font-size: var(--t-2);
+        color: var(--ink-mute);
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+      }
+      .strip .tab.active {
+        color: var(--ink);
+        border-bottom-color: var(--ink);
+        font-weight: 500;
+      }
+      .strip .tab .close {
+        width: 14px; height: 14px;
+        display: grid; place-items: center;
+        color: var(--ink-faint);
+        border-radius: 3px;
+      }
+      .strip .tab .close:hover { background: rgba(0,0,0,.06); color: var(--ink-soft); }
+      .strip .add {
+        width: 26px;
+        display: grid;
+        place-items: center;
+        color: var(--ink-mute);
+        cursor: pointer;
+      }
+      .strip .add:hover { color: var(--ink); }
+
+      /* ---------- conversation body ---------- */
+      .body {
+        flex: 1;
+        background: var(--paper);
+        overflow: hidden;
+        position: relative;
+      }
+      .scroll {
         position: absolute;
         inset: 0;
-        color: transparent;
-        background:
-          linear-gradient(
-            100deg,
-            transparent 0%,
-            transparent 18%,
-            var(--sweep-rest) 30%,
-            var(--sweep-rise) 42%,
-            var(--sweep-peak) 50%,
-            var(--sweep-rise) 58%,
-            var(--sweep-rest) 70%,
-            transparent 82%,
-            transparent 100%
-          );
-        background-size: 185% 100%;
-        -webkit-background-clip: text;
-        background-clip: text;
-        animation: textSweep var(--sweep-duration) ease-in-out infinite;
+        overflow-y: auto;
+        padding: 0;
+      }
+      .scroll::-webkit-scrollbar { width: 0; }
+
+      .thread {
+        max-width: 1480px;
+        margin: 0 auto;
+        padding: 32px 80px 240px;
       }
 
-      .state-label.failed {
-        color: var(--danger);
+      /* ---------- turn (one assistant response, or one user message) ---------- */
+      .turn {
+        padding: 24px 0;
       }
-
-      .state-label.waiting {
-        color: color-mix(in srgb, var(--text), var(--accent) 22%);
+      .turn + .turn {
+        border-top: 1px solid var(--hairline);
       }
-
-      .state-label.entering {
-        animation: stateTextIn 220ms var(--timing) both;
-      }
-
-      .state-label.leaving {
-        animation: stateTextOut 180ms var(--timing) both;
-      }
-
-      .process-meta {
-        color: var(--muted-2);
-        font-size: 13px;
-        white-space: nowrap;
-      }
-
-      .chevron {
-        margin-left: auto;
-        color: var(--muted-2);
-        font-size: 14px;
-        line-height: 1;
-        transform: rotate(0deg);
-        transition: transform 220ms var(--timing);
-      }
-
-      .process.expanded .chevron {
-        transform: rotate(90deg);
-      }
-
-      .process-details {
-        display: grid;
-        grid-template-rows: 0fr;
-        opacity: 0;
-        transition:
-          grid-template-rows 260ms var(--timing),
-          opacity 180ms var(--timing);
-      }
-
-      .process.expanded .process-details {
-        grid-template-rows: 1fr;
-        opacity: 1;
-      }
-
-      .process-details-inner {
-        overflow: hidden;
-      }
-
-      .process-list {
-        padding: 7px 0 2px 18px;
-        display: grid;
-        gap: 5px;
-      }
-
-      .process-item {
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1.55;
-        opacity: 0;
-        transform: translateY(3px);
-        animation: processItemIn 240ms var(--timing) forwards;
-      }
-
-      .process-item.thought {
-        max-width: 660px;
-        color: color-mix(in srgb, var(--muted), var(--text) 8%);
-      }
-
-      .process-item.action {
-        color: var(--muted-2);
-      }
-
-      .process-item.error {
-        color: var(--danger-soft);
-      }
-
-      .choice-inline {
-        margin-top: 4px;
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-
-      .choice-button {
-        min-height: 30px;
-        padding: 5px 10px;
-        font-size: 12px;
-        color: var(--text);
-      }
-
-      .final-text {
-        max-width: 720px;
-        min-height: 1px;
-        color: var(--text);
-        font-size: 14.5px;
-        line-height: 1.72;
-      }
-
-      .final-block {
-        opacity: 0;
-        transform: translateY(3px);
-        animation: finalBlockIn 240ms var(--timing) forwards;
-      }
-
-      .stream-stall-tail {
-        color: transparent;
-        background:
-          linear-gradient(
-            100deg,
-            var(--sweep-rest) 0%,
-            var(--sweep-rest) 24%,
-            var(--sweep-rise) 42%,
-            var(--sweep-peak) 50%,
-            var(--sweep-rise) 58%,
-            var(--sweep-rest) 76%,
-            var(--sweep-rest) 100%
-          );
-        background-size: 190% 100%;
-        -webkit-background-clip: text;
-        background-clip: text;
-        animation: stalledTokenTail 1.65s ease-in-out infinite;
-      }
-
-      .final-text p {
-        margin: 0 0 12px;
-      }
-
-      .final-text > :first-child {
-        margin-top: 0;
-      }
-
-      .final-text.is-streaming > * {
-        animation: none;
-      }
-
-      .final-text h2,
-      .final-text h3 {
-        margin: 20px 0 8px;
-        font-size: 15.5px;
-        line-height: 1.4;
-        font-weight: 650;
-        letter-spacing: 0;
-      }
-
-      .final-text ul,
-      .final-text ol {
-        margin: 0 0 13px;
-        padding-left: 20px;
-      }
-
-      .final-text li {
-        margin: 3px 0;
-      }
-
-      .final-text blockquote {
-        margin: 14px 0;
-        padding: 0 0 0 12px;
-        border-left: 2px solid var(--line);
-        color: var(--muted);
-      }
-
-      .code-card,
-      .table-wrap {
-        border: 1px solid var(--code-line);
-        background: var(--code-bg);
-        border-radius: 10px;
-        overflow: hidden;
-        margin: 14px 0;
-      }
-
-      .code-toolbar {
-        min-height: 32px;
-        padding: 0 10px;
-        border-bottom: 1px solid var(--code-line);
+      .turn-meta {
+        font-size: var(--t-meta);
+        color: var(--ink-mute);
+        margin-bottom: 14px;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        color: var(--muted);
-        font-size: 12px;
+        gap: 8px;
+      }
+      .turn-meta .dot {
+        width: 4px; height: 4px; border-radius: 50%;
+        background: var(--ink-faint);
       }
 
-      .copy-button {
-        min-height: 24px;
-        padding: 3px 8px;
-        opacity: 0;
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .code-card:hover .copy-button,
-      .code-card:focus-within .copy-button {
-        opacity: 1;
-      }
-
-      .final-text.is-streaming .copy-button,
-      .final-text.is-streaming .code-card:hover .copy-button,
-      .final-text.is-streaming .code-card:focus-within .copy-button {
-        opacity: 0;
-        pointer-events: none;
-        transition: none;
-      }
-
-      pre {
-        margin: 0;
-        padding: 13px 14px 15px;
-        overflow-x: auto;
-      }
-
-      code,
-      pre {
-        font-family:
-          "SF Mono",
-          ui-monospace,
-          Menlo,
-          Consolas,
-          monospace;
-        font-size: 12.5px;
-        line-height: 1.62;
-      }
-
-      .inline-code {
-        font-family:
-          "SF Mono",
-          ui-monospace,
-          Menlo,
-          Consolas,
-          monospace;
-        font-size: 0.92em;
-        color: color-mix(in srgb, var(--text), var(--accent) 16%);
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-      }
-
-      th,
-      td {
-        padding: 9px 10px;
-        border-bottom: 1px solid var(--code-line);
-        text-align: left;
-        vertical-align: top;
-      }
-
-      tr:last-child td {
-        border-bottom: 0;
-      }
-
-      th {
-        color: var(--muted);
-        font-weight: 600;
-      }
-
-      .empty-hint {
-        color: var(--muted);
-        font-size: 13px;
+      .assistant {
+        color: var(--ink);
+        font-size: var(--t-body);
         line-height: 1.7;
+        max-width: 1180px;
+      }
+      .assistant p {
+        margin: 0 0 14px;
+      }
+      .assistant p:last-child {
+        margin-bottom: 0;
+      }
+      .assistant strong { font-weight: 600; }
+
+      /* ---------- inline code pill ---------- */
+      .code {
+        font-family: "SF Mono", "JetBrains Mono", "Menlo", monospace;
+        font-size: 0.92em;
+        background: var(--code-bg);
+        padding: 1.5px 6px;
+        border-radius: 4.5px;
+        color: var(--ink);
+        white-space: nowrap;
+        letter-spacing: -0.005em;
       }
 
-      @keyframes textSweep {
-        0% {
-          background-position: 135% 0;
-          opacity: 0.32;
-        }
-        16% {
-          opacity: 0.54;
-        }
-        42% {
-          opacity: 1;
-        }
-        72% {
-          opacity: 1;
-        }
-        100% {
-          background-position: -135% 0;
-          opacity: 0.32;
-        }
+      /* ---------- status row (▶ 已运行 N 条命令 / 正在思考 / Read a file) ---------- */
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--t-2);
+        color: var(--ink-mute);
+        padding: 0;
+        margin: 4px 0;
       }
-
-      @keyframes stateTextIn {
-        from {
-          opacity: 0;
-          transform: translateY(5px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      .status .glyph {
+        width: 12px;
+        height: 12px;
+        display: inline-grid;
+        place-items: center;
+        color: var(--ink-mute);
+        flex-shrink: 0;
       }
-
-      @keyframes stateTextOut {
-        from {
-          opacity: 1;
-          transform: translateY(0);
-        }
-        to {
-          opacity: 0;
-          transform: translateY(-5px);
-        }
+      .status .glyph svg { width: 12px; height: 12px; }
+      .status .live-dot {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--ink-mute);
+        animation: pulse 1.4s ease-in-out infinite;
       }
-
-      @keyframes processItemIn {
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.4; }
+        50% { opacity: 1; }
       }
-
-      @keyframes finalBlockIn {
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      .status .live-cmd {
+        font-family: "SF Mono", "JetBrains Mono", "Menlo", monospace;
+        font-size: var(--t-2);
+        color: var(--ink-mute);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 70vw;
       }
+      .status.is-running { color: var(--ink-soft); }
+      .status.is-thinking { color: var(--ink-mute); }
+      .status.is-error { color: var(--accent); }
 
-      @keyframes stalledTokenTail {
-        0% {
-          background-position: 125% 0;
-          opacity: 0.78;
-        }
-        42% {
-          opacity: 1;
-        }
-        100% {
-          background-position: -125% 0;
-          opacity: 0.78;
-        }
+      /* ---------- user bubble ---------- */
+      .user {
+        display: flex;
+        justify-content: flex-end;
+        margin: 18px 0 8px;
       }
-
-      @media (prefers-reduced-motion: reduce) {
-        *,
-        *::before,
-        *::after {
-          animation-duration: 1ms !important;
-          animation-iteration-count: 1 !important;
-          scroll-behavior: auto !important;
-          transition-duration: 1ms !important;
-        }
+      .user-bubble {
+        background: var(--user-bubble);
+        color: var(--ink);
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: var(--t-body);
+        line-height: 1.55;
+        max-width: 60%;
+        position: relative;
       }
-
-      @media (max-width: 900px) {
-        .app {
-          padding: 16px;
-        }
-
-        .shell {
-          grid-template-columns: 1fr;
-        }
-
-        .debug-panel {
-          position: static;
-        }
-
-        .debug-actions {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .conversation-shell {
-          min-height: 680px;
-        }
-
-        .conversation {
-          width: min(100% - 32px, 760px);
-          padding-top: 28px;
-        }
+      .user-foot {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 4px;
+        color: var(--ink-faint);
       }
+      .user-foot svg { width: 13px; height: 13px; }
+
+      /* ---------- "thinking" live row ---------- */
+      .thinking {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: var(--t-2);
+        color: var(--ink-mute);
+        margin-top: 10px;
+      }
+      .thinking .pulse-dot {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--ink-mute);
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .thinking .caret {
+        display: inline-block;
+        width: 6px; height: 14px;
+        background: var(--ink-soft);
+        margin-left: 2px;
+        vertical-align: -2px;
+        animation: blink 1s steps(1) infinite;
+      }
+      @keyframes blink { 50% { opacity: 0; } }
+
+      /* ---------- composer ---------- */
+      .composer {
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        background: linear-gradient(180deg, rgba(247, 247, 245, 0) 0%, var(--paper) 36px);
+        padding: 60px 80px 24px;
+        pointer-events: none;
+      }
+      .composer > * { pointer-events: auto; }
+      .box {
+        background: var(--pane);
+        border: 1px solid var(--hairline);
+        border-radius: 16px;
+        padding: 14px 16px 12px;
+        max-width: 1480px;
+        margin: 0 auto;
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+      }
+      .box-input {
+        min-height: 28px;
+        color: var(--ink-faint);
+        font-size: var(--t-body);
+        line-height: 1.5;
+      }
+      .box-tools {
+        display: flex;
+        align-items: center;
+        margin-top: 10px;
+        gap: 4px;
+      }
+      .box-tools .plus {
+        width: 28px; height: 28px;
+        display: grid; place-items: center;
+        color: var(--ink-soft);
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .box-tools .plus:hover { background: rgba(0,0,0,.05); }
+      .box-tools .plus svg { width: 16px; height: 16px; }
+      .access {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: var(--t-2);
+        color: var(--accent);
+        padding: 4px 6px 4px 4px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .access .dot {
+        width: 14px; height: 14px; border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        display: grid; place-items: center;
+        font-size: 9px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .access .chev {
+        width: 10px; height: 10px; color: var(--accent);
+      }
+      .box-tools .spacer { flex: 1; }
+      .right {
+        display: inline-flex; align-items: center; gap: 14px;
+        color: var(--ink-soft);
+        font-size: var(--t-2);
+      }
+      .right .picker {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 2px 4px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .right .picker:hover { background: rgba(0,0,0,.04); }
+      .right .picker svg { width: 12px; height: 12px; }
+      .right .mic {
+        width: 22px; height: 22px; display: grid; place-items: center;
+        border-radius: 50%;
+        cursor: pointer;
+        color: var(--ink-soft);
+      }
+      .right .mic:hover { background: rgba(0,0,0,.05); }
+      .right .mic svg { width: 14px; height: 14px; }
+      .right .stop {
+        width: 30px; height: 30px; border-radius: 50%;
+        background: #111;
+        color: #fff;
+        display: grid; place-items: center;
+        cursor: pointer;
+      }
+      .right .stop svg { width: 11px; height: 11px; }
     </style>
   </head>
   <body>
-    <main class="app">
-      <div class="shell">
-        <aside class="debug-panel" aria-label="消息流调试按钮">
-          <h1 class="debug-title">消息流原型</h1>
-          <p class="debug-note">调试按钮会模拟真实 turn：运行中展开过程，完成后折叠，只突出最后一段 final text。</p>
-          <div class="debug-actions">
-            <button type="button" data-run="success">播放完整成功流</button>
-            <button type="button" data-run="stall">模拟 token 卡顿</button>
-            <button type="button" data-run="waiting">模拟等待用户选择</button>
-            <button type="button" data-run="failed">模拟处理失败</button>
-            <button type="button" data-run="stopped">模拟中途停止</button>
-            <button type="button" data-run="completed">加载完成态</button>
-            <button type="button" data-run="toggle">展开/收起过程</button>
-            <button type="button" data-run="reset">重置</button>
+    <div class="window" id="w">
+      <!-- macOS chrome -->
+      <div class="chrome">
+        <div class="traffic">
+          <span class="r"></span><span class="y"></span><span class="g"></span>
+        </div>
+        <div class="chrome-divider"></div>
+        <div class="icon-btn">
+          <!-- sidebar toggle -->
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="3" width="12" height="10" rx="1.5"/>
+            <line x1="6" y1="3" x2="6" y2="13"/>
+          </svg>
+          <i class="dot"></i>
+        </div>
+        <div class="icon-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M10 3 L5 8 L10 13" />
+            <line x1="5" y1="8" x2="14" y2="8" />
+          </svg>
+        </div>
+        <div class="icon-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M6 3 L11 8 L6 13" />
+            <line x1="11" y1="8" x2="2" y2="8" />
+          </svg>
+        </div>
+        <div class="icon-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M3 11 L8 3 L13 11 Z"/>
+          </svg>
+        </div>
+        <div class="title">查看未提交内容</div>
+        <div class="more">···</div>
+        <div class="right-cluster">
+          <div class="pip">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <rect x="2" y="3" width="12" height="10" rx="1.5"/>
+              <line x1="5" y1="6" x2="11" y2="6"/>
+              <line x1="5" y1="9" x2="11" y2="9"/>
+            </svg>
+            <svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 4.5 L6 8 L9 4.5 Z"/></svg>
           </div>
-          <div class="debug-section" aria-label="模拟参数">
-            <h2 class="debug-section-title">参数</h2>
-            <div class="control-stack">
-              <div class="control-row">
-                <div class="control-row-header">
-                  <label for="tokenRate">token 速率</label>
-                  <output id="tokenRateValue" for="tokenRate">22 token/s</output>
+          <div class="icon-btn">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <circle cx="4" cy="5" r="1.4"/><circle cx="4" cy="11" r="1.4"/>
+              <circle cx="8" cy="5" r="1.4"/><circle cx="8" cy="11" r="1.4"/>
+              <circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="11" r="1.4"/>
+            </svg>
+          </div>
+          <div class="icon-btn">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <line x1="2" y1="5" x2="14" y2="5"/>
+            </svg>
+          </div>
+          <div class="icon-btn">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <rect x="3" y="3" width="10" height="10" rx="1.5"/>
+            </svg>
+          </div>
+          <div class="icon-btn">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <path d="M4 4 L12 4 L12 12 L4 12 Z"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- session strip -->
+      <div class="strip">
+        <div class="tab">会话 1<div class="close">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M4 4 L12 12 M12 4 L4 12"/>
+          </svg>
+        </div></div>
+        <div class="tab active">启动动画<div class="close">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M4 4 L12 12 M12 4 L4 12"/>
+          </svg>
+        </div></div>
+        <div class="tab">调研报告<div class="close">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M4 4 L12 12 M12 4 L4 12"/>
+          </svg>
+        </div></div>
+        <div class="add">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M8 3 L8 13 M3 8 L13 8"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- conversation body -->
+      <div class="body">
+        <div class="scroll" id="scroll">
+          <div class="thread">
+
+            <!-- ============ TURN 1 (user) ============ -->
+            <div class="turn">
+              <div class="user">
+                <div style="max-width:60%">
+                  <div class="user-bubble">那你帮我重启一下吧 至少让其吃上先</div>
+                  <div class="user-foot">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+                      <rect x="4" y="4" width="9" height="9" rx="1.2"/>
+                      <path d="M3 11 L3 13 L5 13"/>
+                    </svg>
+                  </div>
                 </div>
-                <input id="tokenRate" type="range" min="3" max="80" step="1" value="22" />
               </div>
-              <div class="control-row">
-                <div class="control-row-header">
-                  <label for="stepSpeed">过程步进速度</label>
-                  <output id="stepSpeedValue" for="stepSpeed">1.0x</output>
+            </div>
+
+            <!-- ============ TURN 2 (assistant) ============ -->
+            <div class="turn">
+              <div class="turn-meta"><span>已处理 32s</span></div>
+              <div class="assistant">
+                <p>当前运行中的 <span class="code">wuu app-server</span> 是 <strong>2026-06-17 00:20:08</strong> 启动的；刚刚的提交 <span class="code">222ca654</span> 是 2026-06-17 00:54:24 才创建的。所以现在桌面里跑的后端还是旧版本。</p>
+                <p>原因是桌面开发模式下后端是通过 <span class="code">go run ./cmd/wuu app-server</span> 启动的长进程，Go 代码不会热更新。需要完整重启桌面 dev 进程，至少重启 <span class="code">electron-vite dev</span> 和它拉起的 <span class="code">app-server</span>，新启动后才会重新编译并吃到这次 Git 工具改造。</p>
+              </div>
+            </div>
+
+            <!-- ============ TURN 3 (assistant) ============ -->
+            <div class="turn">
+              <div class="turn-meta"><span>已处理 47s</span></div>
+              <div class="assistant">
+                <p>我会做完整重启，不只杀 <span class="code">app-server</span>。因为这次涉及 Go 后端工具，重启 <span class="code">electron-vite dev</span> 后它会重新拉起新的 <span class="code">go run ./cmd/wuu app-server</span>，这样才会吃到刚刚的提交。</p>
+                <div class="status">
+                  <span class="glyph">
+                    <svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+                  </span>
+                  已运行 2 条命令
                 </div>
-                <input id="stepSpeed" type="range" min="0.35" max="2.5" step="0.05" value="1" />
-              </div>
-              <div class="control-row">
-                <div class="control-row-header">
-                  <label for="sweepSpeed">文字扫光周期</label>
-                  <output id="sweepSpeedValue" for="sweepSpeed">3.0s</output>
+                <p>我看到其实现在这组进程已经是 01:11 启动的，晚于 00:54 的提交，理论上已经吃到了 <span class="code">222ca654</span>。但为了排除缓存和主进程状态问题，我还是做一次完整重启。</p>
+                <div class="status">
+                  <span class="glyph">
+                    <svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+                  </span>
+                  已运行 1 条命令
                 </div>
-                <input id="sweepSpeed" type="range" min="1.6" max="5" step="0.1" value="3" />
-              </div>
-              <div class="control-row">
-                <div class="control-row-header">
-                  <label for="stallThreshold">停顿提示阈值</label>
-                  <output id="stallThresholdValue" for="stallThreshold">3.0s</output>
+                <p>旧的桌面进程和 <span class="code">app-server</span> 已经发出停止信号。我现在重新启动桌面开发进程，让它重新编译后端。</p>
+                <div class="status">
+                  <span class="glyph">
+                    <svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+                  </span>
+                  已运行 1 条命令
                 </div>
-                <input id="stallThreshold" type="range" min="1.5" max="6" step="0.5" value="3" />
+                <p>新进程已启动，我等几秒确认 Electron 和新的 <span class="code">app-server</span> 都起来，并检查启动时间。</p>
+                <div class="status is-running">
+                  <span class="glyph">
+                    <svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+                  </span>
+                  <span class="live-dot"></span>
+                  <span>正在运行</span>
+                  <span class="live-cmd">sleep 4; ps -eo pid,ppid,lstart,command | grep -E "electron-vite|Electron.app/Contents/MacOS/Ele…"</span>
+                </div>
               </div>
-              <label class="toggle-row">
-                <span>完成后自动折叠过程</span>
-                <input id="autoCollapse" type="checkbox" checked />
-              </label>
+            </div>
+
+            <!-- ============ TURN 4 (assistant, multi-step) ============ -->
+            <div class="turn">
+              <div class="turn-meta"><span>已处理 1m 12s</span></div>
+              <div class="assistant">
+                <p>刚启动后没有看到新进程，说明 <span class="code">npm run dev</span> 可能立刻退出了。我会看启动日志定位原因。</p>
+                <div class="status">
+                  <span class="glyph">
+                    <svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+                  </span>
+                  Read a file<span style="color:var(--ink-faint)">·已运行 1 条命令</span>
+                </div>
+                <p>这次 <span class="code">detached</span> 启动没有留下进程，日志也是空的。我会改用前台方式拉起一次，确认实际错误；如果它正常常驻，我再保留这个开发进程运行。</p>
+                <div class="status">
+                  <span class="glyph">
+                    <svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+                  </span>
+                  Read a file 和已列出文件<span style="color:var(--ink-faint)">·已运行 2 条命令</span>
+                </div>
+                <p>基础环境没问题。我现在用常驻方式直接启动，观察它是否进入运行状态。</p>
+                <div class="status is-running">
+                  <span class="glyph">
+                    <svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+                  </span>
+                  <span class="live-dot"></span>
+                  <span>正在运行</span>
+                  <span class="live-cmd">npm run dev</span>
+                </div>
+                <p>Electron Dev 已经重新拉起来了，<span class="code">renderer</span> 在 <span class="code">http://localhost:5173/</span>。我再确认新的 <span class="code">app-server</span> 进程和启动时间。</p>
+                <div class="thinking">
+                  <span class="pulse-dot"></span>
+                  正在思考
+                  <span class="caret"></span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- composer -->
+        <div class="composer">
+          <div class="box">
+            <div class="box-input">要求后续变更</div>
+            <div class="box-tools">
+              <div class="plus">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M8 3 L8 13 M3 8 L13 8"/>
+                </svg>
+              </div>
+              <div class="access">
+                <span class="dot">!</span>
+                完全访问
+                <svg class="chev" viewBox="0 0 12 12" fill="currentColor">
+                  <path d="M3 4.5 L6 8 L9 4.5 Z"/>
+                </svg>
+              </div>
+              <div class="spacer"></div>
+              <div class="right">
+                <div class="picker">
+                  <svg viewBox="0 0 12 12" fill="currentColor">
+                    <path d="M6 1 L6 7 M3 5 L6 1 L9 5 M2 10 L10 10"/>
+                  </svg>
+                  5.5
+                </div>
+                <div class="picker">
+                  超高
+                  <svg viewBox="0 0 12 12" fill="currentColor">
+                    <path d="M3 4.5 L6 8 L9 4.5 Z"/>
+                  </svg>
+                </div>
+                <div class="mic">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+                    <rect x="6" y="2" width="4" height="8" rx="2"/>
+                    <path d="M3 8 a5 5 0 0 0 10 0 M8 13 L8 15"/>
+                  </svg>
+                </div>
+                <div class="stop">
+                  <svg viewBox="0 0 12 12" fill="currentColor">
+                    <rect x="3" y="3" width="6" height="6" rx="0.5"/>
+                  </svg>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="constraint-list">
-            <strong>已编码约束：</strong><br />
-            final text 无容器；过程无背景；摘要状态按阶段聚合；运行态文字慢扫光；支持 token 流式和长停顿提示；运行中过程展开；完成后过程折叠；思考是过程正文；工具是动作行；代码块保留轻容器。
-          </div>
-        </aside>
-
-        <section class="conversation-shell" aria-label="消息流预览">
-          <header class="conversation-header">
-            <strong>中间消息流</strong>
-            <span>Apple-like text-first prototype</span>
-          </header>
-          <div class="conversation">
-            <article class="turn" id="turn">
-              <div class="empty-hint" id="emptyHint">点击左侧调试按钮开始模拟。</div>
-            </article>
-          </div>
-        </section>
+        </div>
       </div>
-    </main>
+    </div>
 
     <script>
-      const turn = document.querySelector("#turn");
-      const buttons = document.querySelectorAll("[data-run]");
-      const tokenRateControl = document.querySelector("#tokenRate");
-      const stepSpeedControl = document.querySelector("#stepSpeed");
-      const sweepSpeedControl = document.querySelector("#sweepSpeed");
-      const stallThresholdControl = document.querySelector("#stallThreshold");
-      const autoCollapseControl = document.querySelector("#autoCollapse");
-      const tokenRateValue = document.querySelector("#tokenRateValue");
-      const stepSpeedValue = document.querySelector("#stepSpeedValue");
-      const sweepSpeedValue = document.querySelector("#sweepSpeedValue");
-      const stallThresholdValue = document.querySelector("#stallThresholdValue");
-
-      let timers = [];
-      let ticker = 0;
-      let startedAt = 0;
-      let elapsedOverride = null;
-      let processExpanded = true;
-      let processItemCount = 0;
-      let runID = 0;
-      const statusText = {
-        processing: "正在处理",
-        replying: "正在回复",
-        stalled: "仍在生成"
-      };
-
-      const wait = (ms) => new Promise((resolve) => {
-        const timer = window.setTimeout(resolve, ms);
-        timers.push(timer);
-      });
-
-      const successMarkdown = [
-        "我建议把中间消息流改成一个 text-first 的任务 turn：运行时让过程保持可见，完成后把过程整体折叠，只让最后一段回复成为主内容。",
-        "",
-        "## 核心规则",
-        "",
-        "1. 最终内容只取最后一段模型回复。",
-        "2. 中间过程可以包含思考正文和工具动作，但完成后统一折叠。",
-        "3. 状态变化靠文字本身的慢扫光表达，不使用图标、进度条或 spinner。",
-        "",
-        "> 过程不是隐藏掉，而是在完成后降级成可回看的上下文。",
-        "",
-        "```tsx",
-        "const finalText = lastAgentMessage(turn.items);",
-        "const processItems = itemsBefore(finalText);",
-        "",
-        "return (",
-        "  <Turn>",
-        "    <ProcessSummary items={processItems} collapsed={turn.done} />",
-        "    <FinalText text={finalText.text} />",
-        "  </Turn>",
-        ");",
-        "```",
-        "",
-        "| 内容 | 运行中 | 完成后 |",
-        "| --- | --- | --- |",
-        "| 思考正文 | 淡灰正文可见 | 折叠进过程 |",
-        "| 工具动作 | 动作 + 对象 | 折叠进过程 |",
-        "| 最终回复 | 自然流式出现 | 纯文字主显示 |",
-        "",
-        "这样做的结果是：用户能确认系统正在推进，也能在需要时回看过程，但阅读焦点始终落在真正的最终回复上。"
-      ].join("\n");
-
-      const completedMarkdown = [
-        "这是完成态：过程已经折叠，最终回复是纯文字，没有容器。只有代码块、表格这类需要边界的内容才有轻容器。",
-        "",
-        "## 完成态展示",
-        "",
-        "- 过程行只显示 `过程记录 · N 项 · 18s`。",
-        "- 展开后可以回看淡灰过程正文和工具动作。",
-        "- 最终回复不显示助手标题、不显示头像、不包卡片。"
-      ].join("\n");
-
-      function clearTimers() {
-        for (const timer of timers) {
-          window.clearTimeout(timer);
-        }
-        timers = [];
-        if (ticker) {
-          window.clearInterval(ticker);
-          ticker = 0;
-        }
-      }
-
-      function currentTokenRate() {
-        return Math.max(1, Number(tokenRateControl?.value ?? 22));
-      }
-
-      function currentStepSpeed() {
-        return Math.max(0.1, Number(stepSpeedControl?.value ?? 1));
-      }
-
-      function currentStallThreshold() {
-        return Math.max(0.5, Number(stallThresholdControl?.value ?? 3));
-      }
-
-      function waitStep(ms) {
-        return wait(ms / currentStepSpeed());
-      }
-
-      function syncControls() {
-        const tokenRate = currentTokenRate();
-        const stepSpeed = currentStepSpeed();
-        const sweepSpeed = Math.max(0.5, Number(sweepSpeedControl?.value ?? 3));
-        const stallThreshold = currentStallThreshold();
-        if (tokenRateValue) {
-          tokenRateValue.textContent = `${tokenRate} token/s`;
-        }
-        if (stepSpeedValue) {
-          stepSpeedValue.textContent = `${stepSpeed.toFixed(2).replace(/\.00$/, ".0")}x`;
-        }
-        if (sweepSpeedValue) {
-          sweepSpeedValue.textContent = `${sweepSpeed.toFixed(1)}s`;
-        }
-        if (stallThresholdValue) {
-          stallThresholdValue.textContent = `${stallThreshold.toFixed(1)}s`;
-        }
-        document.documentElement.style.setProperty("--sweep-duration", `${sweepSpeed}s`);
-      }
-
-      function resetTurn() {
-        runID += 1;
-        clearTimers();
-        startedAt = 0;
-        elapsedOverride = null;
-        processExpanded = true;
-        processItemCount = 0;
-        turn.innerHTML = '<div class="empty-hint" id="emptyHint">点击左侧调试按钮开始模拟。</div>';
-      }
-
-      function createTurn(userText) {
-        runID += 1;
-        clearTimers();
-        startedAt = Date.now();
-        elapsedOverride = null;
-        processExpanded = true;
-        processItemCount = 0;
-        turn.innerHTML = `
-          <div class="user-message-block">
-            <div class="user-message">${escapeHTML(userText)}</div>
-          </div>
-          <section class="process expanded running" id="process">
-            <button class="process-toggle" id="processToggle" type="button" aria-expanded="true">
-              <span class="status-viewport" id="statusViewport"></span>
-              <span class="process-meta" id="processMeta">· 0s</span>
-              <span class="chevron" aria-hidden="true">›</span>
-            </button>
-            <div class="process-details">
-              <div class="process-details-inner">
-                <div class="process-list" id="processList"></div>
-              </div>
-            </div>
-          </section>
-          <article class="final-text" id="finalText"></article>
-        `;
-        document.querySelector("#processToggle").addEventListener("click", toggleProcess);
-        setStatus(statusText.processing, "running");
-        startTicker();
-        return runID;
-      }
-
-      function startTicker() {
-        updateMeta();
-        ticker = window.setInterval(updateMeta, 1000);
-      }
-
-      function updateMeta() {
-        const meta = document.querySelector("#processMeta");
-        if (!meta || !startedAt) {
-          return;
-        }
-        const elapsed = elapsedOverride ?? Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-        if (isCompleted()) {
-          meta.textContent = `· ${processItemCount} 项 · ${elapsed}s`;
-          return;
-        }
-        meta.textContent = `· ${elapsed}s`;
-      }
-
-      function isCompleted() {
-        const process = document.querySelector("#process");
-        return Boolean(process?.classList.contains("completed") || process?.classList.contains("stopped") || process?.classList.contains("failed"));
-      }
-
-      function setStatus(text, mode) {
-        const viewport = document.querySelector("#statusViewport");
-        if (!viewport) {
-          return;
-        }
-        const current = viewport.querySelector(".state-label.current");
-        if (current && current.dataset.label === text && current.dataset.mode === mode) {
-          return;
-        }
-        if (current) {
-          current.classList.remove("current", "entering");
-          current.classList.add("leaving");
-          window.setTimeout(() => current.remove(), 190);
-        }
-        const next = document.createElement("span");
-        next.className = `state-label current entering ${mode || ""}`.trim();
-        next.textContent = text;
-        next.dataset.label = text;
-        next.dataset.mode = mode || "";
-        viewport.appendChild(next);
-      }
-
-      function toggleProcess() {
-        const process = document.querySelector("#process");
-        const toggle = document.querySelector("#processToggle");
-        if (!process || !toggle) {
-          return;
-        }
-        processExpanded = !process.classList.contains("expanded");
-        process.classList.toggle("expanded", processExpanded);
-        toggle.setAttribute("aria-expanded", String(processExpanded));
-      }
-
-      function setProcessExpanded(expanded) {
-        const process = document.querySelector("#process");
-        const toggle = document.querySelector("#processToggle");
-        if (!process || !toggle) {
-          return;
-        }
-        processExpanded = expanded;
-        process.classList.toggle("expanded", expanded);
-        toggle.setAttribute("aria-expanded", String(expanded));
-      }
-
-      function addProcessItem(kind, text, extraHTML = "") {
-        const list = document.querySelector("#processList");
-        if (!list) {
-          return;
-        }
-        processItemCount += 1;
-        const item = document.createElement("div");
-        item.className = `process-item ${kind}`;
-        item.style.animationDelay = `${Math.min(120, processItemCount * 18)}ms`;
-        item.innerHTML = `${escapeHTML(text)}${extraHTML}`;
-        list.appendChild(item);
-        updateMeta();
-      }
-
-      function appendFinalBlock(html) {
-        const finalText = document.querySelector("#finalText");
-        if (!finalText) {
-          return;
-        }
-        const block = document.createElement("div");
-        block.className = "final-block";
-        block.innerHTML = html;
-        finalText.appendChild(block);
-      }
-
-      function completeProcess({ status = "completed", elapsed = 18 } = {}) {
-        const process = document.querySelector("#process");
-        if (!process) {
-          return;
-        }
-        elapsedOverride = elapsed;
-        process.classList.remove("running", "waiting");
-        process.classList.add(status);
-        if (status === "completed") {
-          setStatus("过程记录", "");
-          setProcessExpanded(Boolean(autoCollapseControl?.checked) ? false : processExpanded);
-        } else if (status === "stopped") {
-          setStatus("已停止", "");
-          setProcessExpanded(Boolean(autoCollapseControl?.checked) ? false : processExpanded);
-        } else if (status === "failed") {
-          setStatus("处理失败", "failed");
-          setProcessExpanded(true);
-        }
-        updateMeta();
-        if (ticker && status !== "failed") {
-          window.clearInterval(ticker);
-          ticker = 0;
-        }
-      }
-
-      async function runSuccess() {
-        const id = createTurn("我们重构中间消息流：发送后少展示信息，运行中展开过程，完成后只突出最后回复。");
-        await playCommonProcess(id);
-        if (!isActiveRun(id)) return;
-        setStatus(statusText.replying, "running");
-        await streamFinalMarkdown(successMarkdown, id);
-        if (!isActiveRun(id)) return;
-        await waitStep(540);
-        if (!isActiveRun(id)) return;
-        completeProcess({ status: "completed", elapsed: 18 });
-      }
-
-      async function runStalledToken() {
-        const id = createTurn("模拟真实流式输出忽快忽慢，并在某个 token 上短暂停住。");
-        await playCommonProcess(id);
-        if (!isActiveRun(id)) return;
-        setStatus(statusText.replying, "running");
-        await streamFinalMarkdown(successMarkdown, id, {
-          jitter: true,
-          stall: {
-            afterTokenIndex: 150,
-            durationMs: currentStallThreshold() * 1000 + 3600,
-            thresholdMs: currentStallThreshold() * 1000
-          }
-        });
-        if (!isActiveRun(id)) return;
-        await waitStep(540);
-        if (!isActiveRun(id)) return;
-        completeProcess({ status: "completed", elapsed: 24 });
-      }
-
-      async function playCommonProcess(id) {
-        await waitStep(350);
-        if (!isActiveRun(id)) return;
-        addProcessItem("thought", "我先确认消息流里哪些内容属于最终回复，哪些属于中间过程。");
-        await waitStep(650);
-        if (!isActiveRun(id)) return;
-        addProcessItem("action", "搜索 ThreadItemView");
-        await waitStep(520);
-        if (!isActiveRun(id)) return;
-        addProcessItem("action", "读取 App.tsx");
-        await waitStep(520);
-        if (!isActiveRun(id)) return;
-        addProcessItem("action", "读取 model.go");
-        await waitStep(600);
-        if (!isActiveRun(id)) return;
-        addProcessItem("thought", "代码已经把 agent_message、reasoning 和 tool_call 分成不同 item，UI 可以按类型组织。");
-        await waitStep(700);
-        if (!isActiveRun(id)) return;
-        addProcessItem("action", "运行 npm run typecheck");
-        await waitStep(400);
-      }
-
-      async function runWaiting() {
-        const id = createTurn("如果 agent 中间需要我选择，消息流应该怎么显示？");
-        await waitStep(320);
-        if (!isActiveRun(id)) return;
-        addProcessItem("thought", "我先收敛两个可行方向，然后让用户选择一个更符合产品气质的方案。");
-        await waitStep(600);
-        if (!isActiveRun(id)) return;
-        setStatus("等待你选择", "waiting");
-        const choices = `
-          <div class="choice-inline">
-            <button class="choice-button" type="button" data-choice="minimal">极简过程</button>
-            <button class="choice-button" type="button" data-choice="detailed">详细过程</button>
-          </div>
-        `;
-        addProcessItem("thought", "选择过程默认展示的密度。", choices);
-        document.querySelectorAll("[data-choice]").forEach((button) => {
-          button.addEventListener("click", async () => {
-            if (button.disabled) {
-              return;
-            }
-            document.querySelectorAll("[data-choice]").forEach((item) => {
-              item.disabled = true;
-            });
-            addProcessItem("action", `收到选择：${button.textContent.trim()}`);
-            await waitStep(500);
-            setStatus(statusText.replying, "running");
-            await streamFinalMarkdown("已按你的选择继续。等待用户选择时仍然使用同一条状态行，只是状态更明确，不需要额外做大卡片。", runID);
-            await waitStep(420);
-            completeProcess({ status: "completed", elapsed: 11 });
-          });
-        });
-      }
-
-      async function runFailed() {
-        const id = createTurn("如果模型或工具失败了，消息流应该怎么处理？");
-        await waitStep(320);
-        if (!isActiveRun(id)) return;
-        addProcessItem("thought", "我会保留同一条状态行体系，只把失败态的文字调成轻红色。");
-        await waitStep(520);
-        if (!isActiveRun(id)) return;
-        addProcessItem("action", "运行 npm run typecheck");
-        await waitStep(700);
-        if (!isActiveRun(id)) return;
-        addProcessItem("error", "检查失败：存在 2 个类型错误，需要用户修正或让我继续处理。");
-        completeProcess({ status: "failed", elapsed: 7 });
-      }
-
-      async function runStopped() {
-        const id = createTurn("如果我中途点了停止，过程应该怎么收束？");
-        await waitStep(300);
-        if (!isActiveRun(id)) return;
-        addProcessItem("thought", "我已经开始分析消息流，但这个 turn 会在中途被停止。");
-        await waitStep(520);
-        if (!isActiveRun(id)) return;
-        addProcessItem("action", "读取 App.tsx");
-        await waitStep(650);
-        if (!isActiveRun(id)) return;
-        addProcessItem("action", "搜索 process group");
-        await waitStep(460);
-        if (!isActiveRun(id)) return;
-        completeProcess({ status: "stopped", elapsed: 6 });
-      }
-
-      function loadCompleted() {
-        createTurn("加载一个完成态，直接看最终效果。");
-        addProcessItem("thought", "我检查了现有事件流，确认 final text 和过程 item 已经分离。");
-        addProcessItem("action", "搜索 ThreadItemView");
-        addProcessItem("action", "读取 App.tsx");
-        addProcessItem("action", "读取 model.go");
-        addProcessItem("thought", "完成后过程整体折叠，只保留一行轻量入口。");
-        renderFinalMarkdown(completedMarkdown);
-        completeProcess({ status: "completed", elapsed: 18 });
-      }
-
-      function isActiveRun(id) {
-        return id === runID;
-      }
-
-      async function streamFinalMarkdown(markdown, id, options = {}) {
-        const finalText = document.querySelector("#finalText");
-        if (!finalText) {
-          return;
-        }
-        finalText.classList.remove("is-stalled");
-        finalText.classList.add("is-streaming");
-        let buffer = "";
-        const tokens = tokenizeStream(markdown);
-        let didStall = false;
-        for (let index = 0; index < tokens.length; index += 1) {
-          if (!isActiveRun(id)) {
-            return;
-          }
-          buffer += tokens[index];
-          renderFinalMarkdown(buffer);
-          if (options.stall && !didStall && index === options.stall.afterTokenIndex) {
-            didStall = true;
-            await holdDuringTokenStall(id, finalText, options.stall);
-            if (!isActiveRun(id)) {
-              return;
-            }
-            setStatus(statusText.replying, "running");
-          }
-          await wait(streamTokenDelay(index, Boolean(options.jitter)));
-        }
-        finalText.classList.remove("is-streaming", "is-stalled");
-        renderFinalMarkdown(markdown);
-      }
-
-      function streamTokenDelay(index, jitter) {
-        const baseDelay = 1000 / currentTokenRate();
-        if (!jitter) {
-          return baseDelay;
-        }
-        const multipliers = [0.45, 0.82, 1.28, 0.6, 1.95, 0.72, 1.42, 0.54, 1.68, 0.9];
-        return Math.min(920, Math.max(18, baseDelay * multipliers[index % multipliers.length]));
-      }
-
-      async function holdDuringTokenStall(id, finalText, stall) {
-        const thresholdMs = Math.max(0, Number(stall.thresholdMs ?? 3000));
-        const durationMs = Math.max(thresholdMs, Number(stall.durationMs ?? thresholdMs + 3000));
-        let tailVisible = false;
-        const tailTimer = window.setTimeout(() => {
-          if (!isActiveRun(id)) {
-            return;
-          }
-          tailVisible = true;
-          setStatus(statusText.stalled, "running");
-          finalText.classList.add("is-stalled");
-          markStalledTextTail(finalText);
-        }, thresholdMs);
-        timers.push(tailTimer);
-        await wait(durationMs);
-        window.clearTimeout(tailTimer);
-        if (tailVisible && isActiveRun(id)) {
-          finalText.classList.remove("is-stalled");
-          clearStalledTextTail(finalText);
-        }
-      }
-
-      function renderFinalMarkdown(markdown) {
-        const finalText = document.querySelector("#finalText");
-        if (!finalText) {
-          return;
-        }
-        finalText.innerHTML = renderMarkdown(markdown);
-      }
-
-      function markStalledTextTail(root) {
-        clearStalledTextTail(root);
-        const textNode = latestReadableTextNode(root);
-        if (!textNode?.nodeValue || !textNode.parentNode) {
-          return;
-        }
-        const raw = textNode.nodeValue;
-        const end = raw.search(/\s*$/);
-        const tailEnd = end < 0 ? raw.length : end;
-        if (tailEnd <= 0) {
-          return;
-        }
-        const tailStart = Math.max(0, tailEnd - 8);
-        const before = raw.slice(0, tailStart);
-        const tail = raw.slice(tailStart, tailEnd);
-        const after = raw.slice(tailEnd);
-        const span = document.createElement("span");
-        span.className = "stream-stall-tail";
-        span.textContent = tail;
-        const fragment = document.createDocumentFragment();
-        if (before) {
-          fragment.appendChild(document.createTextNode(before));
-        }
-        fragment.appendChild(span);
-        if (after) {
-          fragment.appendChild(document.createTextNode(after));
-        }
-        textNode.parentNode.replaceChild(fragment, textNode);
-      }
-
-      function clearStalledTextTail(root) {
-        root.querySelectorAll(".stream-stall-tail").forEach((tail) => {
-          tail.replaceWith(document.createTextNode(tail.textContent ?? ""));
-        });
-      }
-
-      function latestReadableTextNode(root) {
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-          acceptNode(node) {
-            const text = node.nodeValue ?? "";
-            const parent = node.parentElement;
-            if (!text.trim() || !parent) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            if (parent.closest("code, pre, .code-card, .table-wrap, .copy-button")) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            return NodeFilter.FILTER_ACCEPT;
-          }
-        });
-        let current = walker.nextNode();
-        let latest = null;
-        while (current) {
-          latest = current;
-          current = walker.nextNode();
-        }
-        return latest;
-      }
-
-      function tokenizeStream(text) {
-        const tokens = text.match(/[\u4e00-\u9fff]|[A-Za-z0-9_]+|[^\sA-Za-z0-9_\u4e00-\u9fff]|\s+/gu);
-        return tokens ?? [];
-      }
-
-      function renderMarkdown(markdown) {
-        const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-        const out = [];
-        let index = 0;
-        while (index < lines.length) {
-          const line = lines[index];
-          if (/^\s*$/.test(line)) {
-            index += 1;
-            continue;
-          }
-
-          const fence = line.match(/^```([\w-]*)/);
-          if (fence) {
-            const language = fence[1] || "text";
-            const code = [];
-            index += 1;
-            while (index < lines.length && !/^```/.test(lines[index])) {
-              code.push(lines[index]);
-              index += 1;
-            }
-            if (index < lines.length && /^```/.test(lines[index])) {
-              index += 1;
-            }
-            out.push(renderCodeCard(language, code.join("\n")));
-            continue;
-          }
-
-          if (isTableStart(lines, index)) {
-            const headers = splitTableCells(lines[index]);
-            index += 2;
-            const rows = [];
-            while (index < lines.length && /\|/.test(lines[index]) && !/^\s*$/.test(lines[index])) {
-              rows.push(splitTableCells(lines[index]));
-              index += 1;
-            }
-            out.push(renderTable(headers, rows));
-            continue;
-          }
-
-          const heading = line.match(/^(#{1,6})\s+(.+)$/);
-          if (heading) {
-            out.push(`<h2>${renderInline(heading[2])}</h2>`);
-            index += 1;
-            continue;
-          }
-
-          if (/^>\s?/.test(line)) {
-            const quote = [];
-            while (index < lines.length && /^>\s?/.test(lines[index])) {
-              quote.push(lines[index].replace(/^>\s?/, ""));
-              index += 1;
-            }
-            out.push(`<blockquote>${quote.map(renderInline).join("<br />")}</blockquote>`);
-            continue;
-          }
-
-          const listMatch = line.match(/^\s*((?:[-*])|(?:\d+\.))\s+(.+)$/);
-          if (listMatch) {
-            const ordered = /\d+\./.test(listMatch[1]);
-            const items = [];
-            while (index < lines.length) {
-              const itemMatch = lines[index].match(/^\s*((?:[-*])|(?:\d+\.))\s+(.+)$/);
-              if (!itemMatch || /\d+\./.test(itemMatch[1]) !== ordered) {
-                break;
-              }
-              items.push(itemMatch[2]);
-              index += 1;
-            }
-            const tag = ordered ? "ol" : "ul";
-            out.push(`<${tag}>${items.map((item) => `<li>${renderInline(item)}</li>`).join("")}</${tag}>`);
-            continue;
-          }
-
-          const paragraph = [line];
-          index += 1;
-          while (
-            index < lines.length &&
-            !/^\s*$/.test(lines[index]) &&
-            !/^```/.test(lines[index]) &&
-            !/^(#{1,6})\s+/.test(lines[index]) &&
-            !/^>\s?/.test(lines[index]) &&
-            !/^\s*((?:[-*])|(?:\d+\.))\s+/.test(lines[index]) &&
-            !isTableStart(lines, index)
-          ) {
-            paragraph.push(lines[index]);
-            index += 1;
-          }
-          out.push(`<p>${renderInline(paragraph.join(" "))}</p>`);
-        }
-        return out.join("");
-      }
-
-      function isTableStart(lines, index) {
-        return Boolean(lines[index]?.includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1] ?? ""));
-      }
-
-      function splitTableCells(line) {
-        let value = line.trim();
-        if (value.startsWith("|")) {
-          value = value.slice(1);
-        }
-        if (value.endsWith("|")) {
-          value = value.slice(0, -1);
-        }
-        return value.split("|").map((cell) => cell.trim());
-      }
-
-      function renderTable(headers, rows) {
-        const head = headers.map((cell) => `<th>${renderInline(cell)}</th>`).join("");
-        const body = rows
-          .map((row) => `<tr>${headers.map((_, cellIndex) => `<td>${renderInline(row[cellIndex] ?? "")}</td>`).join("")}</tr>`)
-          .join("");
-        return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
-      }
-
-      function renderCodeCard(language, code) {
-        return `
-          <div class="code-card">
-            <div class="code-toolbar"><span>${escapeHTML(language || "text")}</span><button class="copy-button" type="button">复制</button></div>
-            <pre><code>${escapeHTML(code)}</code></pre>
-          </div>
-        `;
-      }
-
-      function renderInline(text) {
-        return String(text)
-          .split(/(`[^`]*`)/g)
-          .map((part) => {
-            if (part.startsWith("`") && part.endsWith("`") && part.length >= 2) {
-              return `<span class="inline-code">${escapeHTML(part.slice(1, -1))}</span>`;
-            }
-            return escapeHTML(part).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-          })
-          .join("");
-      }
-
-      function escapeHTML(value) {
-        return String(value)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#039;");
-      }
-
-      document.addEventListener("click", (event) => {
-        const button = event.target instanceof Element ? event.target.closest(".copy-button") : null;
-        if (!button) {
-          return;
-        }
-        const code = button.closest(".code-card")?.querySelector("code")?.textContent ?? "";
-        if (!code) {
-          return;
-        }
-        void navigator.clipboard?.writeText(code);
-        button.textContent = "已复制";
-        window.setTimeout(() => {
-          button.textContent = "复制";
-        }, 900);
-      });
-
-      buttons.forEach((button) => {
-        button.addEventListener("click", () => {
-          const run = button.dataset.run;
-          if (run === "success") {
-            void runSuccess();
-          } else if (run === "stall") {
-            void runStalledToken();
-          } else if (run === "waiting") {
-            void runWaiting();
-          } else if (run === "failed") {
-            void runFailed();
-          } else if (run === "stopped") {
-            void runStopped();
-          } else if (run === "completed") {
-            loadCompleted();
-          } else if (run === "toggle") {
-            toggleProcess();
-          } else {
-            resetTurn();
-          }
-        });
-      });
-
-      [tokenRateControl, stepSpeedControl, sweepSpeedControl, stallThresholdControl].forEach((control) => {
-        control?.addEventListener("input", syncControls);
-      });
-      syncControls();
+      // optional: scroll the thread to bottom on load so the "正在思考" line is visible
+      const scroll = document.getElementById('scroll');
+      if (scroll) scroll.scrollTop = scroll.scrollHeight;
     </script>
   </body>
 </html>

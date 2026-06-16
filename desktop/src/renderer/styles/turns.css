@@ -7,19 +7,41 @@
   margin-bottom: 48px;
 }
 
+/* Turn rhythm: the hairline separates "what the user said" from
+   "the assistant's reply" — it sits between the user-message
+   block and the assistant-turn shell, not above the user message.
+   A single turn section contains both [user items] + [assistant
+   shell] in document order, so anchoring the hairline on the
+   assistant-turn shell (and skipping the very first turn, which
+   has no preceding beat to separate from) gives the right
+   placement. */
+.turn > .assistant-turn-shell {
+  border-top: 1px solid var(--wuu-hairline);
+  padding-top: 18px;
+  margin-top: 8px;
+}
+
+.turn:first-of-type > .assistant-turn-shell,
+.turn:first-child > .assistant-turn-shell {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
 .assistant-turn-shell {
-  display: grid;
-  /* The assistant turn spans the full flow width. The
-     --conversation-message-max-width cap (720px) was inherited from
-     the user-message-bubble model, but the assistant turn is NOT a
-     right-aligned bubble — it's a full-width prose block, and
-     capping it makes long-form code blocks, tables, and
-     multi-paragraph replies feel pinched. The user message keeps
-     its own 720px cap below (.user-message-block) because the
-     bubble shape wants to stay compact. */
+  display: flex;
+  /* Text-first: the assistant turn is a single continuous flow.
+     Process records (tool calls, reasoning, live preview) and the
+     final answer live in the same column with no divider, no
+     "过程" header, no timeline, no avatar slot — every line is
+     just text (or a plain status row) on the page. The user
+     message keeps its 720px bubble cap below because the bubble
+     shape wants to stay compact; the assistant turn is full-width
+     prose. */
   width: 100%;
   min-width: 0;
-  gap: var(--conversation-shell-gap);
+  flex-direction: column;
+  gap: 4px;
 }
 
 .conversation-split-width .assistant-turn-shell {
@@ -30,43 +52,38 @@
   width: 100%;
 }
 
-/* Front content ("过程"区): the collapsible timeline of reasoning,
-   tool calls, and commentary. Sits in the same shell column as the
-   body, separated from the body by a thin divider when both are
-   present. */
+/* Front ("过程") and final ("回复") content used to live in two
+   separate grid lanes. The new design is single-layer: every
+   item — reasoning, tool call, commentary, final answer — is
+   rendered as a sibling in the assistant-turn-shell flex column.
+   The classes are kept as a stable hook for tests / state
+   management, but the visual split is gone. */
 .assistant-turn-front,
 .assistant-turn-final {
-  display: grid;
-  min-width: 0;
+  display: contents;
 }
 
 .assistant-turn-front {
-  gap: var(--conversation-process-gap);
+  gap: 0;
 }
 
 .assistant-turn-final {
-  /* The body is only the user-facing reply. Process commentary lives
-     in the front lane and uses the compact process-record style. */
   gap: 0;
 }
 
 .assistant-turn-shell:not(.has-body) .assistant-turn-final {
-  display: none;
+  display: contents;
 }
 
 .assistant-turn-shell.has-front.has-body {
-  gap: var(--conversation-process-answer-gap);
+  gap: 4px;
 }
 
-/* Divider between the front content and the body. Drawn only when
-   there is exactly one final_answer and the turn shape is normal.
-   Kept visually light on purpose — it separates "what the model did"
-   from "what the model said" without competing with either. */
+/* Divider between the front content and the body used to draw a
+   1px hairline. The single-layer flow no longer needs it — the
+   turn-meta hairline above the turn carries that role. */
 .answer-divider {
-  height: 1px;
-  margin: 2px 0;
-  background: rgba(31, 35, 40, 0.08);
-  border: 0;
+  display: none;
 }
 
 /* Empty reply visual: a completed turn kept process records but did
@@ -94,7 +111,13 @@
 
 .user-message {
   align-self: flex-end;
-  background: var(--wuu-surface-muted);
+  /* User bubble keeps its gray fill — it's the iOS-style
+     right-aligned chat bubble convention the user wants to
+     preserve. Toned slightly cooler than --wuu-surface-muted
+     (#f5f5f2) so the bubble has a touch more presence against
+     the paper background without going darker than the
+     prototype reference. */
+  background: #e8e8e4;
   color: #1f2328;
 }
 
@@ -2234,36 +2257,28 @@
 }
 
 .turn-process-group {
-  display: grid;
+  display: block;
   width: 100%;
   min-width: 0;
-  gap: var(--conversation-process-gap);
   color: #8f9498;
   font-size: var(--font-ui);
 }
 
 .turn-process-toggle {
-  display: grid;
+  display: flex;
   width: 100%;
-  min-height: 18px;
-  /* Two rows (status + optional process preview), three columns
-     (avatar | text | chevron). Both avatar slots live in col 1 so
-     the row-1 brain and row-2 speech-bubble line up vertically with
-     no indent — that's the whole point of using grid here vs.
-     flex-with-nested-icon. */
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
-  align-items: flex-start;
-  column-gap: 8px;
-  row-gap: var(--conversation-process-gap);
+  min-height: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 8px;
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
   font: inherit;
   font-weight: var(--weight-medium);
-  line-height: 1.25;
-  padding: 2px 0;
+  line-height: var(--conversation-meta-line-height);
+  padding: 0;
   text-align: left;
 }
 
@@ -2286,48 +2301,21 @@
   color: currentColor;
 }
 
+/* Avatar slot (Brain / MessageCircle) used to be an 18×18 outline
+   placeholder reserved for a future mascot. With the text-first
+   redesign the slot is gone — the JSX still renders the spans for
+   state / test stability, but visually they take no space. */
 .turn-process-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  grid-column: 1;
-  width: 18px;
-  height: 18px;
-  color: #7d8388;
-  border-radius: 50%;
-  /* Subtle background hint for the future mascot slot. When the
-     mascot character lands, it fills this 18x18 area; for now the
-     faint outline keeps the slot discoverable without competing
-     with the actual text. */
-  background: transparent;
-  box-shadow: inset 0 0 0 1px rgba(125, 131, 136, 0.18);
-  transition: box-shadow 120ms ease;
+  display: none !important;
 }
 
 .turn-process-avatar-secondary {
-  /* Pinned to row 2 col 1 — same x as the row-1 brain so the two
-     slots align vertically. Only rendered when a preview exists. */
-  grid-row: 2;
-}
-
-.turn-process-toggle:hover .turn-process-avatar,
-.turn-process-toggle:focus-visible .turn-process-avatar {
-  box-shadow: inset 0 0 0 1px rgba(125, 131, 136, 0.35);
-}
-
-.turn-process-avatar svg {
-  width: 100%;
-  height: 100%;
-  /* The Brain / MessageCircle placeholders sit subtly behind the
-     future mascot by dropping opacity to 0.55. */
-  opacity: 0.55;
+  display: none !important;
 }
 
 .turn-process-header {
-  display: flex;
+  display: contents;
   min-width: 0;
-  grid-column: 2;
-  grid-row: 1;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 7px;
@@ -2337,9 +2325,53 @@
 .turn-process-title {
   min-width: 0;
   overflow: hidden;
-  color: #7d8388;
+  color: #8a8f94;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Text-first glyph: a small play-triangle (▶) that sits at the
+   start of every process status row. Same color as the text so
+   the row reads as a single line. Filled rather than outlined
+   so the cue is unmistakable at 12px. */
+.turn-process-glyph {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  color: #a8acb0;
+  transform: translateY(1px);
+}
+
+/* Live process indicator: a 6px pulsing dot rendered next to the
+   live command preview. The animation runs in a 1.2s loop, dim to
+   bright, so the user can tell the command is still going. */
+.turn-process-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8a8f94;
+  margin-right: 6px;
+  vertical-align: middle;
+  transform: translateY(-1px);
+  animation: turn-process-live-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes turn-process-live-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-process-live-dot {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 .turn-process-checkpoint {
@@ -2386,24 +2418,21 @@
 }
 
 .turn-process-meta {
-  color: #a1a5a9;
+  color: #a8acb0;
   font-size: var(--font-sm);
   line-height: var(--conversation-meta-line-height);
 }
 
-/* Row 2 of the fold header: live process preview. Pinned to
-    col 2 row 2 in the toggle grid, so the preview text starts at
-    the same x as the status text in row 1. The row-2 avatar slot
-    (speech-bubble placeholder) is a sibling in col 1, not a child
-    of this element, so it lines up with the row-1 brain slot
-    exactly. The text itself stays on a single line via ellipsis. */
+/* Row 2 of the fold header: live process preview. Used to be
+   pinned to col 2 row 2 of a 3-col grid. With the avatar column
+   gone, the preview is now a plain inline span in the flex toggle
+   — the second visual line of the status row, after the title +
+   meta. The text itself still ellipsises on a single line. */
 .turn-process-preview {
-  display: flex;
+  display: inline;
   min-width: 0;
-  grid-column: 2;
-  grid-row: 2;
   align-items: center;
-  color: #5a6064;
+  color: #8a8f94;
   font-size: var(--font-sm);
   line-height: var(--conversation-meta-line-height);
 }
@@ -2456,16 +2485,18 @@
   }
 }
 
+/* The chevron used to sit in col 3 of the toggle grid to hint that
+   the process group folds open. With the text-first redesign the
+   fold affordance is gone — process records always render as
+   plain rows in the flow, no chevron needed. The class is kept
+   for state-manager compatibility, but visually it's hidden. */
 .turn-process-chevron {
-  grid-column: 3;
-  grid-row: 1;
-  align-self: center;
-  transition: transform var(--collapse-chevron-duration) ease;
+  display: none;
 }
 
 .turn-process-group.expanded .turn-process-chevron,
 .activity-group.expanded .activity-chevron {
-  transform: rotate(180deg);
+  display: none;
 }
 
 .collapsible-details {
@@ -2517,29 +2548,22 @@
 }
 
 .turn-process-stack {
-  position: relative;
-  display: grid;
+  position: static;
+  display: block;
   min-height: 0;
-  overflow: hidden;
-  gap: 10px;
-  margin-left: 26px;
-  padding: 2px 0 2px 14px;
+  overflow: visible;
+  gap: 0;
+  margin-left: 0;
+  padding: 0;
 }
 
 .turn-process-stack::before {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 0;
-  width: 1px;
-  border-radius: 999px;
-  background: #e4e6e1;
-  content: "";
+  display: none;
 }
 
 .turn-process-entry {
-  position: relative;
-  display: grid;
+  position: static;
+  display: block;
   min-width: 0;
   color: #73787c;
   font-size: var(--font-ui);
@@ -2548,15 +2572,7 @@
 }
 
 .turn-process-entry::before {
-  position: absolute;
-  top: 0.72em;
-  left: -17px;
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: #cfd3cc;
-  box-shadow: 0 0 0 3px #fff;
-  content: "";
+  display: none;
 }
 
 .turn-process-entry-pending,
@@ -2656,42 +2672,56 @@
 }
 
 .activity-group {
-  display: grid;
-  gap: 2px;
+  display: block;
+  gap: 0;
 }
 
 .activity-row {
-  display: flex;
+  /* Text-first status row: a single inline line of muted text. No
+     background, no border, no rounded chip. Sits in the assistant
+     flow on its own line, just like the prototype. The leading
+     icon (Terminal / Play / Square from lucide) is sized to 12px
+     so it visually matches a baseline x-height of 12-13px. */
+  display: inline-flex;
   min-width: 0;
-  min-height: 22px;
+  min-height: 0;
   align-items: center;
-  gap: 7px;
-  color: #9a9da1;
-  font-size: var(--font-ui);
+  gap: 6px;
+  color: #8a8f94;
+  font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-control-line-height);
+  padding: 0;
+  margin: 0;
 }
 
 .activity-toggle {
-  width: 100%;
+  width: auto;
   border: 0;
   background: transparent;
   cursor: pointer;
   padding: 0;
   text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  font: inherit;
 }
 
 .activity-toggle:hover {
-  color: #73777b;
+  color: #6a6f74;
 }
 
 .activity-row svg {
   flex: 0 0 auto;
-  color: #9a9da1;
+  color: currentColor;
+  width: 12px;
+  height: 12px;
 }
 
 .activity-toggle:hover svg {
-  color: #73777b;
+  color: currentColor;
 }
 
 .activity-group.failed .activity-row,
@@ -2702,7 +2732,7 @@
 }
 
 .activity-copy {
-  display: flex;
+  display: inline;
   min-width: 0;
   flex-wrap: wrap;
   align-items: baseline;
@@ -2710,36 +2740,31 @@
 }
 
 .activity-chevron {
-  flex: 0 0 auto;
-  margin-left: 0;
-  transition: transform var(--collapse-chevron-duration) ease;
+  display: none;
 }
 
 .activity-details {
-  margin: 0 0 1px;
+  display: contents;
+  margin: 0;
 }
 
 .activity-details-inner {
-  display: grid;
+  display: block;
   min-height: 0;
-  overflow: hidden;
-  gap: 6px;
+  overflow: visible;
+  gap: 0;
 }
 
 .activity-detail {
-  display: grid;
+  display: block;
   min-width: 0;
-  gap: 6px;
+  gap: 0;
   color: #767b80;
-  padding: 2px 0;
+  padding: 0;
 }
 
 .activity-detail-marker {
-  display: grid;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  place-items: center;
+  display: none;
 }
 
 .activity-detail-marker svg {
@@ -2747,28 +2772,30 @@
 }
 
 .activity-detail-body {
-  display: grid;
+  display: block;
   min-width: 0;
-  gap: 6px;
+  gap: 0;
 }
 
 .activity-command-list {
-  display: grid;
+  display: block;
   min-width: 0;
-  gap: 5px;
+  gap: 0;
 }
 
 .activity-command {
-  display: block;
-  color: #8f9498;
-  font-size: var(--font-ui);
-  line-height: 1.5;
+  display: inline;
+  color: #8a8f94;
+  font-size: var(--font-sm);
+  line-height: var(--conversation-control-line-height);
+  font-weight: var(--weight-medium);
+  font-family: "SFMono-Regular", Consolas, monospace;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .activity-command.running {
-  color: #c0c3c7;
+  color: #8a8f94;
 }
 
 .activity-command.failed {
@@ -2776,14 +2803,14 @@
 }
 
 .activity-detail-title {
-  display: grid;
+  display: inline;
   min-width: 0;
 }
 
 .activity-detail-title strong {
   overflow: hidden;
-  color: #686e73;
-  font-size: var(--font-ui);
+  color: inherit;
+  font-size: inherit;
   font-weight: var(--weight-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2791,8 +2818,8 @@
 
 .activity-detail-title span {
   overflow: hidden;
-  color: #9a9ea3;
-  font-size: var(--font-sm);
+  color: #a8acb0;
+  font-size: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2814,13 +2841,18 @@
 }
 
 .activity-detail-error {
-  border-radius: 8px;
-  background: #fff2f0;
+  /* Text-first: a 2px left rule in the failure color, no background
+     fill, no rounded chip. The error message sits on the same
+     baseline as surrounding text. */
+  border-radius: 0;
+  background: transparent;
+  border-left: 2px solid #e89088;
   color: #b42318;
   font-size: var(--font-sm);
-  line-height: 1.35;
-  margin-top: 3px;
-  padding: 5px 8px;
+  line-height: 1.55;
+  margin: 4px 0 4px 0;
+  padding: 0 0 0 10px;
+  font-family: "SFMono-Regular", Consolas, monospace;
 }
 
 .activity-file {
@@ -2924,18 +2956,20 @@
 }
 
 .rich-content :not(pre) > code {
-  /* Notion-style inline code: zero border, very subtle bg, 4px
-     radius. The slightly larger horizontal padding (0.4em vs
-     0.34em) keeps the chip from feeling like a tightly-clamped
-     monospace token when it sits next to surrounding prose. */
+  /* Text-first inline code: a small, soft gray pill that sits
+     inline with the surrounding text. The padding is slightly
+     larger than a "tight" inline code chip so the pill reads as
+     part of the prose, not as a token pasted on top of it. */
   border: 0;
-  border-radius: 4px;
-  background: rgba(31, 35, 40, 0.05);
-  color: #343940;
+  border-radius: 4.5px;
+  background: rgba(31, 35, 40, 0.055);
+  color: #1f2328;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.92em;
-  padding: 0.1em 0.4em;
+  padding: 1px 6px;
+  line-height: 1.45;
   white-space: break-spaces;
+  vertical-align: 1px;
 }
 
 .rich-image-block {

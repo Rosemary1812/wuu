@@ -1,4 +1,4 @@
-import { Brain, ChevronDown, Info, MessageCircle } from "lucide-react";
+import { Info, Play } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { Turn } from "../shared/protocol";
 import type {
@@ -131,24 +131,19 @@ function TurnProcessGroup({
 
   const toggleContent = (
     <>
-      {/* Row 1 avatar slot: brain placeholder. Reserved for the
-          future mascot character. */}
-      <span className="turn-process-avatar" aria-hidden>
-        <Brain size={15} />
-      </span>
-      {/* Row 2 avatar slot: speech-bubble placeholder. Only rendered
-          when there's a live process preview, so a turn without
-          live process text shows only the status row + brain slot. Both
-          slots share col 1 of the grid below so the icons line up
-          vertically with no indent between rows. */}
-      {hasPreview ? (
-        <span
-          className="turn-process-avatar turn-process-avatar-secondary"
-          aria-hidden
-        >
-          <MessageCircle size={15} />
-        </span>
-      ) : null}
+      {/* Text-first status row. The previous Brain / MessageCircle
+          avatar slots and ChevronDown are gone — the assistant flow
+          no longer carries a "mascot" placeholder or a fold
+          affordance. Status lives on its own line, prefixed with a
+          play-triangle glyph (▶) for the visual cue that this row
+          describes a tool run / live command, matching the prototype.
+      */}
+      <Play
+        className="turn-process-glyph"
+        size={12}
+        aria-hidden
+        fill="currentColor"
+      />
       <span className="turn-process-header">
         <span className="turn-process-title">{processLabel}</span>
         {metaParts.map((part) => (
@@ -163,13 +158,11 @@ function TurnProcessGroup({
             turn.status === "in_progress" ? " is-live" : ""
           }`}
         >
+          <span className="turn-process-live-dot" aria-hidden />
           <span className="turn-process-preview-text">
             {latestProcessPreview?.text}
           </span>
         </span>
-      ) : null}
-      {hasDetails ? (
-        <ChevronDown className="turn-process-chevron" size={15} />
       ) : null}
     </>
   );

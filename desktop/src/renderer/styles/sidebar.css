@@ -920,8 +920,9 @@
   width: 24px;
   height: 24px;
   place-items: center;
+  border: 0;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.64);
+  background: transparent;
   color: #69726d;
   transition:
     background-color 120ms ease,
@@ -932,7 +933,7 @@
 .thread-row-action:hover,
 .thread-row-action:focus-visible {
   outline: 0;
-  background: #fff;
+  background: rgba(17, 19, 21, 0.06);
   color: #202427;
 }
 
@@ -945,7 +946,7 @@
 }
 
 .thread-row-action.archive.confirm {
-  background: #fff4f1;
+  background: rgba(184, 79, 53, 0.1);
   color: #b84f35;
 }
 

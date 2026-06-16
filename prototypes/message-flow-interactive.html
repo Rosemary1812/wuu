@@ -1,0 +1,1432 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wuu Message Flow · Interactive Demo</title>
+    <style>
+      :root {
+        --wuu-ink: #111315;
+        --wuu-ink-soft: #5b6066;
+        --wuu-paper: #fff;
+        --wuu-paper-tint: #fafaf8;
+        --wuu-surface-muted: #f5f5f2;
+        --wuu-hairline: #e4e4df;
+        --wuu-accent: #e4002b;
+        --warning: #8a5b10;
+        --warning-bg: #fff3dc;
+        --error: #b42318;
+        --error-bg: #fff0ef;
+        --success: #1f5535;
+        --success-bg: #eaf4e8;
+
+        --font-xs: 11px;
+        --font-sm: 12px;
+        --font-ui: 13px;
+        --font-body: 14px;
+        --font-title: 15px;
+        --font-heading: 18px;
+
+        --weight-medium: 560;
+        --weight-semibold: 620;
+
+        --line-ui: 1.35;
+        --line-body: 1.55;
+        --line-prose: 1.75;
+
+        --radius-pill: 999px;
+        --radius-chip: 8px;
+        --radius-bubble: 10px;
+        --radius-card: 14px;
+
+        --shadow-soft: 0 1px 2px rgba(17, 19, 21, 0.04),
+          0 12px 32px rgba(17, 19, 21, 0.05);
+
+        --motion-collapse: 260ms;
+        --motion-chevron: 140ms;
+        --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+        --pane-max-w: 1088px;
+        --pane-pad: clamp(28px, 4vw, 64px);
+
+        --status-color: #5b6066;
+        --preview-color: #5a6064;
+        --meta-color: #9aa0a6;
+        --thought-color: #5e6569;
+        --activity-color: #9a9da1;
+        --activity-detail-color: #767b80;
+        --dot-color: #cfd3cc;
+        --dot-color-thought: #bcc3bc;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: #f3f3f1;
+        color: var(--wuu-ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+          sans-serif;
+        font-size: var(--font-ui);
+        line-height: var(--line-ui);
+        letter-spacing: 0;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      button { font: inherit; border: 0; background: transparent; color: inherit; cursor: pointer; }
+      button:disabled { cursor: default; opacity: 0.5; }
+
+      /* ========================================================
+         Layout
+         ======================================================== */
+      .app {
+        display: grid;
+        grid-template-rows: 56px 1fr;
+        height: 100vh;
+      }
+
+      /* ========================================================
+         Titlebar (top chrome)
+         ======================================================== */
+      .titlebar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 18px;
+        background: var(--wuu-paper);
+        border-bottom: 1px solid var(--wuu-hairline);
+      }
+      .traffic { display: flex; gap: 8px; }
+      .traffic i { width: 12px; height: 12px; border-radius: 999px; background: #d8d8d3; display: block; }
+      .sidebar-toggle {
+        width: 30px; height: 30px; border-radius: 7px; background: #efefec; color: #5b6066;
+        display: grid; place-items: center;
+      }
+      .session-tabs { flex: 1 1 auto; display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
+      .session-tab {
+        display: inline-flex; align-items: center; gap: 7px;
+        min-width: 118px; max-width: 220px; height: 30px; padding: 0 6px 0 12px;
+        border: 1px solid rgba(17, 19, 21, 0.08); border-radius: var(--radius-pill);
+        background: #f6f6f3; color: #666d72;
+        font-size: 13px; font-weight: var(--weight-semibold); line-height: 1;
+        white-space: nowrap; overflow: hidden;
+      }
+      .session-tab .status {
+        width: 7px; height: 7px; border-radius: 999px; background: rgba(17, 19, 21, 0.22); flex: 0 0 auto;
+      }
+      .session-tab.active {
+        border-color: rgba(17, 19, 21, 0.18); background: #ececea; color: #202427;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72), 0 2px 7px rgba(31, 35, 40, 0.045);
+      }
+      .session-tab.active .status {
+        background: #1f2328; box-shadow: 0 0 0 3px rgba(17, 19, 21, 0.12);
+        animation: pulse 900ms ease-in-out infinite;
+      }
+      .session-tab .label-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+      .session-tab .close {
+        width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center;
+        color: #8a8f93; background: transparent; flex: 0 0 auto;
+      }
+      .session-tab.active .close { background: rgba(17, 19, 21, 0.06); color: #303438; }
+      .session-add { width: 30px; height: 30px; border-radius: 7px; color: #6f7478; display: grid; place-items: center; }
+      .session-add:hover { background: #efefec; }
+
+      .title-actions { display: flex; align-items: center; gap: 7px; }
+      .title-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        height: 30px; padding: 0 10px; border-radius: 8px;
+        background: #eeeeeb; color: #5d6368; font-size: 12px; font-weight: var(--weight-medium);
+      }
+      .title-chip.active { background: #dedfdb; color: #202427; }
+      .title-icon { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; color: #5b6066; }
+      .title-icon:hover { background: #efefec; }
+
+      /* ========================================================
+         Body: side panel + main pane
+         ======================================================== */
+      .body {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        min-height: 0;
+        background: #f3f3f1;
+      }
+      .side {
+        background: var(--wuu-paper);
+        border-right: 1px solid var(--wuu-hairline);
+        padding: 16px 14px;
+        overflow-y: auto;
+      }
+      .side h2 {
+        margin: 0 0 4px; font-size: 14px; font-weight: var(--weight-semibold);
+      }
+      .side .lede {
+        margin: 0 0 14px; color: var(--wuu-ink-soft);
+        font-size: 12px; line-height: 1.55;
+      }
+      .side-section { margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--wuu-hairline); }
+      .side-section:last-child { border-bottom: 0; }
+      .side-section h3 {
+        margin: 0 0 8px; font-size: 11px; font-weight: var(--weight-semibold);
+        text-transform: uppercase; letter-spacing: 0.05em; color: var(--wuu-ink-soft);
+      }
+      .scene-grid { display: grid; gap: 6px; }
+      .scene-btn {
+        display: flex; align-items: center; gap: 8px;
+        width: 100%; min-height: 32px; padding: 6px 10px;
+        background: var(--wuu-surface-muted); color: var(--wuu-ink);
+        border-radius: 7px; font-size: 12.5px; font-weight: var(--weight-medium);
+        line-height: 1.35; text-align: left;
+      }
+      .scene-btn:hover { background: #ebebe7; }
+      .scene-btn .icon { color: var(--wuu-ink-soft); flex: 0 0 auto; }
+      .scene-btn.reset { background: transparent; color: var(--wuu-ink-soft); border: 1px dashed var(--wuu-hairline); }
+      .scene-btn.reset:hover { background: var(--wuu-surface-muted); }
+
+      .control-row { display: grid; gap: 4px; margin-bottom: 10px; }
+      .control-row-head {
+        display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+      }
+      .control-row label { color: var(--wuu-ink-soft); font-size: 11.5px; }
+      .control-row output { color: var(--wuu-ink); font-size: 11.5px; font-variant-numeric: tabular-nums; font-weight: var(--weight-medium); }
+      .control-row input[type="range"] { width: 100%; accent-color: var(--wuu-ink); }
+      .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+      .toggle-row span { color: var(--wuu-ink-soft); font-size: 11.5px; }
+      .toggle-row input { accent-color: var(--wuu-ink); }
+
+      .legend { display: grid; gap: 4px; font-size: 11.5px; color: var(--wuu-ink-soft); line-height: 1.5; }
+      .legend .pill {
+        display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 4px;
+      }
+
+      /* ========================================================
+         Main conversation pane
+         ======================================================== */
+      .pane {
+        background: var(--wuu-paper);
+        overflow-y: auto;
+        min-height: 0;
+        position: relative;
+      }
+      .pane-inner {
+        max-width: var(--pane-max-w);
+        margin: 0 auto;
+        padding: 28px var(--pane-pad) 24px;
+      }
+
+      /* turns */
+      .turn-list { display: flex; flex-direction: column; gap: 32px; }
+      .turn { display: flex; flex-direction: column; gap: 16px; }
+      .turn + .turn { margin-top: 16px; }
+
+      /* user bubble — keep the gray pill, only the assistant side goes text-first */
+      .user-bubble-row { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+      .user-bubble {
+        max-width: min(520px, 86%);
+        padding: 9px 14px;
+        background: var(--wuu-surface-muted);
+        border-radius: var(--radius-bubble);
+        color: #1f2328; font-size: var(--font-body); line-height: 1.55;
+      }
+
+      /* ========================================================
+         Process group (assistant turn front)
+         ======================================================== */
+      .process { display: grid; gap: 6px; color: var(--status-color); }
+      .proc-toggle {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 10px; align-items: baseline;
+        padding: 4px 0;
+        background: transparent; border: 0; cursor: pointer;
+        color: inherit; font: inherit; text-align: left; width: 100%;
+        border-radius: 6px;
+      }
+      .proc-toggle:hover { background: rgba(17, 19, 21, 0.025); }
+      .proc-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; min-width: 0; }
+      .proc-title { color: var(--status-color); font-size: 13px; font-weight: var(--weight-semibold); letter-spacing: 0; line-height: 1.4; }
+      .proc-title.failed { color: var(--error); }
+      .proc-title.waiting { color: #1968d6; }
+      .proc-meta { color: var(--meta-color); font-size: 12px; font-weight: var(--weight-medium); line-height: 1.4; font-variant-numeric: tabular-nums; }
+      .proc-preview {
+        color: var(--preview-color); font-size: 12px; line-height: 1.4; min-width: 0;
+        overflow: hidden; text-overflow: ellipsis;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      }
+      .proc-chevron { color: #b6b6b1; transition: transform var(--motion-chevron) var(--ease); align-self: center; }
+      .process.expanded .proc-chevron { transform: rotate(180deg); }
+
+      /* divider between front and final */
+      .divider { height: 1px; background: rgba(31, 35, 40, 0.08); margin: 2px 0; }
+
+      /* stack (process detail) */
+      .stack { display: grid; gap: 4px; padding: 6px 0 4px 0; min-height: 0; }
+      .stack.collapsed { display: none; }
+
+      /* entry: thought / activity / error */
+      .entry {
+        position: relative;
+        display: grid; grid-template-columns: 14px minmax(0, 1fr);
+        column-gap: 8px; align-items: baseline; min-width: 0;
+        font-size: 13px; font-weight: var(--weight-medium); line-height: 1.55;
+        animation: entry-in 220ms var(--ease) both;
+      }
+      .entry::before {
+        content: ""; width: 4px; height: 4px; border-radius: 999px;
+        background: var(--dot-color); justify-self: center; margin-top: 0.6em;
+      }
+      .entry.thought { color: var(--thought-color); }
+      .entry.thought::before { background: var(--dot-color-thought); }
+      .entry.activity { color: #8a8f93; }
+      .entry.activity::before { background: var(--dot-color); }
+      .entry.error { color: var(--error); }
+      .entry.error::before { background: #e89088; }
+      .entry .body { min-width: 0; overflow: hidden; overflow-wrap: anywhere; }
+      .entry .body code {
+        font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.9em;
+        background: rgba(31, 35, 40, 0.05); border-radius: 3px; padding: 0.05em 0.35em;
+      }
+      .entry .body .choice-prompt { color: var(--wuu-ink-soft); margin-right: 4px; }
+      .choice-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+      .choice-btn {
+        min-height: 26px; padding: 4px 10px;
+        background: #fff; color: var(--wuu-ink);
+        border: 1px solid var(--wuu-hairline); border-radius: 6px;
+        font-size: 12px; font-weight: var(--weight-medium);
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+      .choice-btn:hover { background: var(--wuu-surface-muted); border-color: #d4d4cf; }
+      .choice-btn.selected { background: #ebf1fe; border-color: #b9cdf5; color: #1968d6; }
+      .choice-btn:disabled { opacity: 0.5; cursor: default; }
+
+      /* activity group: grouped tool calls */
+      .activity-group { display: grid; gap: 2px; padding: 1px 0 2px 0; }
+      .activity-toggle {
+        display: flex; align-items: baseline; gap: 6px;
+        background: transparent; border: 0; padding: 0; cursor: pointer;
+        color: var(--activity-color); font-size: 12.5px; font-weight: var(--weight-medium);
+        line-height: 1.5; text-align: left; min-width: 0;
+      }
+      .activity-toggle:hover { color: #6f7478; }
+      .activity-toggle .marker { color: #b6b6b1; font-size: 11.5px; flex: 0 0 auto; }
+      .activity-toggle .label { min-width: 0; }
+      .activity-toggle .count { color: #b6b6b1; font-size: 11.5px; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+      .activity-toggle .stat { color: #8a8f94; font-size: 11.5px; font-weight: var(--weight-medium); margin-left: auto; flex: 0 0 auto; }
+
+      .activity-detail { padding: 2px 0 4px 20px; color: var(--activity-detail-color); font-size: 12.5px; line-height: 1.55; display: grid; gap: 4px; }
+      .activity-detail.collapsed { display: none; }
+      .activity-detail-row { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+      .activity-detail-row .name { color: #686e73; font-weight: var(--weight-medium); white-space: nowrap; }
+      .activity-detail-row .path { color: #9a9ea3; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+      .activity-detail-row .stat { color: #8a8f94; font-size: 12px; font-weight: var(--weight-medium); flex: 0 0 auto; }
+
+      .command-line {
+        display: block; color: #5b6066; font-size: 12.5px; line-height: 1.55;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        white-space: pre-wrap; word-break: break-all;
+        background: transparent; border: 0;
+        border-left: 2px solid #d4d4d0; border-radius: 0;
+        padding: 2px 0 2px 10px; margin-top: 4px;
+      }
+      .command-line.failed { color: var(--error); border-left-color: #e89088; }
+      .command-line.running { color: #b0b3b7; }
+      .command-line .stderr { color: var(--error); }
+
+      .error-banner {
+        background: transparent; color: var(--error);
+        border: 0; border-left: 2px solid #e89088; border-radius: 0;
+        font-size: 12.5px; line-height: 1.45;
+        padding: 2px 0 2px 10px; margin-top: 4px;
+      }
+
+      /* ========================================================
+         Final body (the actual reply)
+         ======================================================== */
+      .final { color: #202427; font-size: var(--font-body); line-height: var(--line-prose); }
+      .final p { margin: 0 0 12px; }
+      .final p:last-child { margin-bottom: 0; }
+      .final h1, .final h2, .final h3, .final h4 {
+        font-size: 15px; font-weight: var(--weight-semibold); color: #202427;
+        line-height: 1.4; margin: 18px 0 8px; letter-spacing: 0;
+      }
+      .final h1:first-child, .final h2:first-child, .final h3:first-child { margin-top: 0; }
+      .final ul, .final ol { margin: 0 0 12px; padding-left: 22px; display: grid; gap: 4px; }
+      .final li { min-width: 0; }
+      .final code {
+        font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.9em;
+        background: rgba(31, 35, 40, 0.05); color: #343940;
+        border-radius: 4px; padding: 0.1em 0.4em;
+      }
+      .final pre {
+        background: #f3f3f0; color: #202427;
+        border-radius: 8px; padding: 12px 14px;
+        font-family: "SFMono-Regular", Consolas, monospace; font-size: 12.5px; line-height: 1.62;
+        overflow-x: auto; margin: 12px 0;
+      }
+      .final pre code { background: transparent; padding: 0; }
+      .final blockquote {
+        margin: 12px 0; padding: 2px 0 2px 12px;
+        border-left: 2px solid rgba(31, 35, 40, 0.16);
+        color: #596067;
+      }
+      .final table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 12px 0; }
+      .final th, .final td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid rgba(31, 35, 40, 0.06); }
+      .final th { background: rgba(31, 35, 40, 0.04); color: #42474d; font-weight: var(--weight-semibold); }
+      .final tr:last-child td { border-bottom: 0; }
+      .final a { color: #176dc2; text-decoration: underline; text-decoration-color: rgba(23, 109, 194, 0.35); text-underline-offset: 2px; }
+      .final strong { font-weight: var(--weight-semibold); color: #202427; }
+      .final .cursor {
+        display: inline-block; width: 1.5px; height: 1em; vertical-align: -2px;
+        background: currentColor; margin-left: 1px; opacity: 0.7;
+        animation: blink 1s steps(2, end) infinite;
+      }
+
+      /* sweep on stalled stream */
+      .final .stalled {
+        background-image: linear-gradient(90deg, #b6b6b1 0%, #b6b6b1 35%, #1f2328 50%, #b6b6b1 65%, #b6b6b1 100%);
+        background-size: 300% 100%;
+        background-position: -200% 0;
+        -webkit-background-clip: text; background-clip: text;
+        color: transparent;
+        animation: commentary-sweep 1.6s linear infinite;
+      }
+
+      /* notice (warning banner) — text-first: no fill, just a side rule */
+      .notice {
+        display: flex; gap: 8px; align-items: flex-start;
+        background: transparent; color: var(--warning);
+        border: 0; border-left: 2px solid #d4a45e; border-radius: 0;
+        padding: 2px 0 2px 12px;
+        font-size: 12.5px; line-height: 1.45; margin-top: 8px;
+      }
+      .notice.error { color: var(--error); border-left-color: #e89088; }
+      .notice strong { font-weight: var(--weight-semibold); display: block; margin-bottom: 1px; }
+      .notice svg { flex: 0 0 auto; margin-top: 1px; }
+
+      /* ========================================================
+         Composer
+         ======================================================== */
+      .composer-wrap {
+        position: sticky; bottom: 0; background: linear-gradient(180deg, rgba(255,255,255,0) 0%, var(--wuu-paper) 18px);
+        padding-top: 18px;
+      }
+      .composer {
+        background: #fff;
+        border: 1px solid var(--wuu-hairline); border-radius: var(--radius-card);
+        padding: 10px 12px 8px;
+        box-shadow: 0 1px 2px rgba(17, 19, 21, 0.04), 0 16px 36px rgba(17, 19, 21, 0.05);
+      }
+      .composer-input {
+        min-height: 36px; font-size: var(--font-body); color: #b6b6b1; line-height: 1.55;
+      }
+      .composer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
+      .composer-tools { display: flex; align-items: center; gap: 4px; color: #8a8f93; }
+      .composer-tools .icon {
+        width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center;
+      }
+      .composer-tools .icon:hover { background: var(--wuu-surface-muted); }
+      .composer-status { display: flex; align-items: center; gap: 10px; color: #5b6066; font-size: 12px; font-weight: var(--weight-medium); }
+      .composer-status .text { color: #8a8f93; }
+      .composer-status .stop {
+        width: 30px; height: 30px; border-radius: 8px; background: var(--wuu-accent); color: #fff;
+        display: grid; place-items: center;
+      }
+      .composer-status .stop:disabled { background: #d4d4d0; }
+
+      .composer-chips { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: #5b6066; font-size: 12px; font-weight: var(--weight-medium); }
+      .composer-chips .chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        height: 26px; padding: 0 10px; border-radius: var(--radius-pill);
+        background: #efefec; color: #5b6066;
+      }
+      .composer-chips .chip.warning { background: var(--warning-bg); color: var(--warning); }
+      .composer-chips .chip .dot { width: 6px; height: 6px; border-radius: 999px; background: #c79018; }
+      .composer-chips .chip .chev { color: #8a8f93; }
+      .composer-chips .chip .x { color: #b6b6b1; }
+
+      /* empty state */
+      .empty {
+        display: grid; place-items: center; min-height: 360px;
+        color: var(--wuu-ink-soft); font-size: 13px; line-height: 1.55; text-align: center;
+        border: 1px dashed var(--wuu-hairline); border-radius: var(--radius-card);
+        padding: 32px;
+      }
+      .empty .big { font-size: 14px; color: var(--wuu-ink); font-weight: var(--weight-semibold); margin-bottom: 4px; }
+
+      /* misc */
+      @keyframes pulse { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+      @keyframes blink { to { opacity: 0; } }
+      @keyframes entry-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes commentary-sweep {
+        0% { background-position: 200% 0; opacity: 0.78; }
+        50% { opacity: 1; }
+        100% { background-position: -200% 0; opacity: 0.78; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .session-tab.active .status,
+        .final .cursor,
+        .final .stalled { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <!-- Titlebar -->
+      <header class="titlebar">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="sidebar-toggle" title="侧栏">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><line x1="6" y1="3" x2="6" y2="13"/></svg>
+        </div>
+        <div class="session-tabs">
+          <div class="session-tab active" id="sessionTab">
+            <span class="status"></span>
+            <span class="label-text" id="sessionTabLabel">新对话</span>
+            <span class="close" title="关闭">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3 L13 13 M13 3 L3 13"/></svg>
+            </span>
+          </div>
+          <div class="session-add" title="新对话">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8 3v10 M3 8h10"/></svg>
+          </div>
+        </div>
+        <div class="title-actions">
+          <div class="title-chip" id="composerToggleChip">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="5,2 12,8 5,14"/><line x1="2" y1="8" x2="12" y2="8"/></svg>
+            启动动画
+          </div>
+          <div class="title-icon" title="信息">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="7" x2="8" y2="11.5"/><circle cx="8" cy="4.8" r="0.6" fill="currentColor"/></svg>
+          </div>
+        </div>
+      </header>
+
+      <div class="body">
+        <!-- Side panel: scenes + controls -->
+        <aside class="side">
+          <h2>消息流 · 交互 demo</h2>
+          <p class="lede">8 个真实使用场景；模拟流式输出、token 卡顿、中途停止、工具失败、等待选择、多轮对话。</p>
+
+          <div class="side-section">
+            <h3>场景</h3>
+            <div class="scene-grid" id="scenes">
+              <button class="scene-btn" data-scene="success">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8 7,12 13,4"/></svg>
+                1. 完整成功流（5 步 + 流式）
+              </button>
+              <button class="scene-btn" data-scene="stall">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l1.5 1.5"/></svg>
+                2. Token 卡顿（停顿 5s）
+              </button>
+              <button class="scene-btn" data-scene="waiting">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l3 4-3 4 M11 4l-3 4 3 4"/></svg>
+                3. 等待用户选择
+              </button>
+              <button class="scene-btn" data-scene="failed">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><line x1="5.5" y1="5.5" x2="10.5" y2="10.5"/><line x1="10.5" y1="5.5" x2="5.5" y2="10.5"/></svg>
+                4. 工具失败
+              </button>
+              <button class="scene-btn" data-scene="stopped">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>
+                5. 中途停止（点 stop 触发）
+              </button>
+              <button class="scene-btn" data-scene="completed">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10 M3 4h10 M3 12h6"/></svg>
+                6. 加载完成态（直接进）
+              </button>
+              <button class="scene-btn" data-scene="multi">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="4" rx="1"/><rect x="2" y="9" width="12" height="4" rx="1"/></svg>
+                7. 多轮对话
+              </button>
+              <button class="scene-btn" data-scene="stream-error">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v6 M8 11.5v.5"/><circle cx="8" cy="8" r="6.5"/></svg>
+                8. 流式中断 / 网络错误
+              </button>
+              <button class="scene-btn reset" data-scene="reset">
+                <svg class="icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a5 5 0 0 1 9-3 M13 3v3h-3 M13 8a5 5 0 0 1-9 3 M3 13v-3h3"/></svg>
+                重置
+              </button>
+            </div>
+          </div>
+
+          <div class="side-section">
+            <h3>参数</h3>
+            <div class="control-row">
+              <div class="control-row-head"><label>token 速率</label><output id="tokenRateValue">28 /s</output></div>
+              <input id="tokenRate" type="range" min="6" max="80" step="1" value="28" />
+            </div>
+            <div class="control-row">
+              <div class="control-row-head"><label>过程步进</label><output id="stepSpeedValue">1.0×</output></div>
+              <input id="stepSpeed" type="range" min="0.4" max="3" step="0.1" value="1" />
+            </div>
+            <div class="control-row">
+              <div class="control-row-head"><label>卡顿阈值</label><output id="stallThresholdValue">2.0s</output></div>
+              <input id="stallThreshold" type="range" min="0.8" max="5" step="0.1" value="2" />
+            </div>
+            <label class="toggle-row">
+              <span>完成后自动折叠过程</span>
+              <input id="autoCollapse" type="checkbox" checked />
+            </label>
+            <label class="toggle-row">
+              <span>显示 cursor</span>
+              <input id="showCursor" type="checkbox" checked />
+            </label>
+          </div>
+
+          <div class="side-section">
+            <h3>图例</h3>
+            <div class="legend">
+              <div><span class="pill" style="background: #5e6569"></span>思考正文（reasoning）</div>
+              <div><span class="pill" style="background: #9a9da1"></span>工具动作（tool call）</div>
+              <div><span class="pill" style="background: #b42318"></span>错误（tool error）</div>
+              <div><span class="pill" style="background: transparent; border: 1px solid #b6b6b1"></span>折叠 / 展开入口</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Main pane -->
+        <main class="pane" id="pane">
+          <div class="pane-inner">
+            <div class="turn-list" id="turnList">
+              <div class="empty" id="empty">
+                <div>
+                  <div class="big">消息流</div>
+                  <div>从左侧选个场景开始。8 个真实使用场景全在这里。</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Composer -->
+            <div class="composer-wrap">
+              <div class="composer">
+                <div class="composer-input">尽管问，或输入 / 选择命令</div>
+                <div class="composer-toolbar">
+                  <div class="composer-tools">
+                    <div class="icon" title="附件"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5l-2 6-2-6-2 6-2-6"/></svg></div>
+                    <div class="icon" title="命令"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 4H5L3 8l2 4h6l2-4-2-4z"/><line x1="6.5" y1="6" x2="9.5" y2="10"/></svg></div>
+                  </div>
+                  <div class="composer-status">
+                    <span id="composerStat">5.5</span>
+                    <span>超高</span>
+                    <span class="text" id="composerText">就绪</span>
+                    <button class="stop" id="stopBtn" title="停止" disabled>
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="composer-chips">
+                <span class="chip">
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5h6l2 2h4v6H2z"/></svg>
+                  wuu
+                  <svg class="chev" width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,6 8,10 12,6"/></svg>
+                </span>
+                <span class="chip">
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><path d="M5 7h6 M5 9.5h4"/></svg>
+                  本地模式
+                  <svg class="chev" width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,6 8,10 12,6"/></svg>
+                </span>
+                <span class="chip warning" id="gitChip">
+                  <span class="dot"></span>
+                  main · 未提交 1 个文件
+                  <svg class="x" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3 L13 13 M13 3 L3 13"/></svg>
+                </span>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      // ==============================================================
+      // State
+      // ==============================================================
+      const state = {
+        tokenRate: 28,
+        stepSpeed: 1,
+        stallThreshold: 2.0, // seconds
+        autoCollapse: true,
+        showCursor: true,
+        timers: [],
+        runId: 0,
+        activeRun: 0,
+        active: null, // active turn
+      };
+
+      // ==============================================================
+      // DOM refs
+      // ==============================================================
+      const $ = (sel, root = document) => root.querySelector(sel);
+      const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+      const turnList = $('#turnList');
+      const empty = $('#empty');
+      const pane = $('#pane');
+      const stopBtn = $('#stopBtn');
+      const composerStat = $('#composerStat');
+      const composerText = $('#composerText');
+      const sessionTabLabel = $('#sessionTabLabel');
+      const tokenRateInput = $('#tokenRate');
+      const stepSpeedInput = $('#stepSpeed');
+      const stallThresholdInput = $('#stallThreshold');
+      const autoCollapseInput = $('#autoCollapse');
+      const showCursorInput = $('#showCursor');
+      const tokenRateValue = $('#tokenRateValue');
+      const stepSpeedValue = $('#stepSpeedValue');
+      const stallThresholdValue = $('#stallThresholdValue');
+
+      // ==============================================================
+      // Mock data
+      // ==============================================================
+      const PROMPTS = {
+        success: "我们重构中间消息流：发送后少展示信息，运行中展开过程，完成后只突出最后回复。",
+        stall: "模拟真实流式输出忽快忽慢，并在某个 token 上短暂停住。",
+        waiting: "如果 agent 中间需要我选择，消息流应该怎么显示？",
+        failed: "如果模型或工具失败了，消息流应该怎么处理？",
+        stopped: "如果我中途点了停止，过程应该怎么收束？",
+        completed: "加载一个完成态，直接看最终效果。",
+        multi1: "把 sidebar tab 的 active 描边去掉。",
+        multi2: "现在帮我提交一下，然后全部 push。",
+        "stream-error": "帮我写一个 React 组件处理长列表。",
+      };
+
+      const SUCCESS_MD = [
+        "我建议把中间消息流改成一个 text-first 的任务 turn：运行时让过程保持可见，完成后把过程整体折叠，只让最后一段回复成为主内容。",
+        "",
+        "## 核心规则",
+        "",
+        "1. 最终内容只取最后一段模型回复。",
+        "2. 中间过程可以包含思考正文和工具动作，但完成后统一折叠。",
+        "3. 状态变化靠文字本身的慢扫光表达，不使用图标、进度条或 spinner。",
+        "",
+        "> 过程不是隐藏掉，而是在完成后降级成可回看的上下文。",
+        "",
+        "```tsx",
+        "const finalText = lastAgentMessage(turn.items);",
+        "const processItems = itemsBefore(finalText);",
+        "",
+        "return (",
+        "  <Turn>",
+        "    <ProcessSummary items={processItems} collapsed={turn.done} />",
+        "    <FinalText text={finalText.text} />",
+        "  </Turn>",
+        ");",
+        "```",
+        "",
+        "| 内容 | 运行中 | 完成后 |",
+        "| --- | --- | --- |",
+        "| 思考正文 | 淡灰正文可见 | 折叠进过程 |",
+        "| 工具动作 | 动作 + 对象 | 折叠进过程 |",
+        "| 最终回复 | 自然流式出现 | 纯文字主显示 |",
+        "",
+        "这样做的结果是：用户能确认系统正在推进，也能在需要时回看过程，但阅读焦点始终落在真正的最终回复上。",
+      ].join("\n");
+
+      const STALL_MD = [
+        "真实流式场景里，token 不是匀速的——有时一串字符很快出来，有时模型要等网络或工具结果就停几秒。",
+        "",
+        "这个 demo 会在第 30 个 token 之后模拟一次长停顿（约 5 秒），状态会从「正在回复」切到「仍在生成」，最后 8 个字符跑扫光动画；超过阈值就告诉用户「还在跑，别急着走」。",
+        "",
+        "```tsx",
+        "// 停顿检测",
+        "if (Date.now() - lastTokenAt > stallThreshold) {",
+        "  setStatus('仍在生成');",
+        "  markStalledTextTail(buffer);",
+        "}",
+        "```",
+        "",
+        "停顿结束后自动恢复流式，文字尾巴的扫光也会同步消失。",
+      ].join("\n");
+
+      const COMPLETED_MD = [
+        "这是完成态：过程已经折叠，最终回复是纯文字，没有容器。",
+        "",
+        "## 完成态展示",
+        "",
+        "- 过程行只显示 `过程记录 · 6 项 · 18s`。",
+        "- 展开后可以回看淡灰过程正文和工具动作。",
+        "- 最终回复不显示助手标题、不显示头像、不包卡片。",
+      ].join("\n");
+
+      const WAITING_REPLY = "已按你的选择继续。等待用户选择时仍然使用同一条状态行，只是状态更明确，不需要额外做大卡片。";
+      const STREAM_ERROR_REPLY = "好的，先写一个支持虚拟滚动的长列表组件骨架。";
+      const STOPPED_REPLY = "好的，我先停在这里。";
+
+      // ==============================================================
+      // Utility
+      // ==============================================================
+      function clearTimers() {
+        for (const t of state.timers) clearTimeout(t);
+        state.timers = [];
+      }
+      function nextRunId() { state.runId += 1; return state.runId; }
+      function isActive(id) { return id === state.activeRun; }
+      function stepMs(ms) { return Math.max(1, ms / state.stepSpeed); }
+      function baseTokenMs() { return 1000 / state.tokenRate; }
+      function setStopBtn(active) {
+        stopBtn.disabled = !active;
+        composerText.textContent = active ? '正在发送请求' : '就绪';
+      }
+      function scrollToBottom() {
+        pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
+      }
+
+      // ==============================================================
+      // Render: turn shell
+      // ==============================================================
+      function createTurn(prompt) {
+        clearTimers();
+        // Always re-query for the empty state, since reset() may have
+        // replaced the DOM node while `empty` still points to the old one.
+        turnList.querySelector('.empty')?.remove();
+        const id = nextRunId();
+        state.activeRun = id;
+        sessionTabLabel.textContent = '当前对话';
+
+        const turn = document.createElement('article');
+        turn.className = 'turn';
+        turn.dataset.turnId = String(id);
+        turn.innerHTML = `
+          <div class="user-bubble-row">
+            <div class="user-bubble"></div>
+          </div>
+          <div class="assistant" data-role="assistant">
+            <section class="process expanded" data-role="process">
+              <button class="proc-toggle" type="button" aria-expanded="true">
+                <span class="proc-line">
+                  <span class="proc-title" data-role="title">准备中</span>
+                  <span class="proc-meta" data-role="meta">· 0s</span>
+                </span>
+                <svg class="proc-chevron" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,6 8,10 12,6"/></svg>
+              </button>
+              <div class="proc-preview" data-role="preview" hidden></div>
+              <div class="stack" data-role="stack"></div>
+            </section>
+            <div class="divider" data-role="divider" hidden></div>
+            <div class="final" data-role="final" hidden></div>
+          </div>
+        `;
+        turnList.appendChild(turn);
+
+        // user bubble text
+        turn.querySelector('.user-bubble').textContent = prompt;
+
+        // wire toggle
+        const toggle = turn.querySelector('.proc-toggle');
+        toggle.addEventListener('click', () => {
+          const proc = turn.querySelector('[data-role="process"]');
+          const expanded = proc.classList.toggle('expanded');
+          toggle.setAttribute('aria-expanded', String(expanded));
+        });
+
+        setStopBtn(true);
+        composerStat.textContent = '5.5';
+        return { id, turn };
+      }
+
+      function getRefs(turn) {
+        return {
+          proc: turn.querySelector('[data-role="process"]'),
+          title: turn.querySelector('[data-role="title"]'),
+          meta: turn.querySelector('[data-role="meta"]'),
+          preview: turn.querySelector('[data-role="preview"]'),
+          stack: turn.querySelector('[data-role="stack"]'),
+          divider: turn.querySelector('[data-role="divider"]'),
+          final: turn.querySelector('[data-role="final"]'),
+        };
+      }
+
+      // ==============================================================
+      // Process operations
+      // ==============================================================
+      function setStatus(turn, text, mode = 'running') {
+        const r = getRefs(turn);
+        if (mode === 'failed') r.title.className = 'proc-title failed';
+        else if (mode === 'waiting') r.title.className = 'proc-title waiting';
+        else r.title.className = 'proc-title';
+        r.title.textContent = text;
+      }
+
+      function setPreview(turn, text) {
+        const r = getRefs(turn);
+        if (!text) { r.preview.hidden = true; r.preview.textContent = ''; return; }
+        r.preview.hidden = false;
+        r.preview.textContent = text;
+      }
+
+      function setMeta(turn, text) {
+        const r = getRefs(turn);
+        r.meta.textContent = text;
+      }
+
+      function appendThought(turn, text) {
+        const r = getRefs(turn);
+        const e = document.createElement('div');
+        e.className = 'entry thought';
+        e.innerHTML = `<span class="body"></span>`;
+        e.querySelector('.body').textContent = text;
+        r.stack.appendChild(e);
+      }
+
+      function appendActivityGroup(turn, { label, count = 1, items = [], expanded = true, running = false }) {
+        const r = getRefs(turn);
+        const wrap = document.createElement('div');
+        wrap.className = 'activity-group';
+
+        const toggle = document.createElement('button');
+        toggle.className = 'activity-toggle';
+        toggle.type = 'button';
+        toggle.innerHTML = `
+          <span class="marker">↳</span>
+          <span class="label">${escapeHTML(label)}</span>
+          <span class="count">· ${count}</span>
+          ${running ? '<span class="stat">运行中…</span>' : ''}
+        `;
+
+        const detail = document.createElement('div');
+        detail.className = 'activity-detail';
+        if (!expanded) detail.classList.add('collapsed');
+
+        for (const it of items) {
+          const row = document.createElement('div');
+          row.className = 'activity-detail-row';
+          row.innerHTML = `
+            <span class="name">${escapeHTML(it.name)}</span>
+            <span class="path">${escapeHTML(it.path || '')}</span>
+            ${it.stat ? `<span class="stat">${escapeHTML(it.stat)}</span>` : ''}
+          `;
+          detail.appendChild(row);
+          if (it.command) {
+            const cmd = document.createElement('span');
+            cmd.className = 'command-line' + (it.failed ? ' failed' : '') + (running ? ' running' : '');
+            if (it.failed && it.stderr) {
+              cmd.innerHTML = `<span class="stderr">${escapeHTML(it.stderr)}</span>`;
+            } else {
+              cmd.textContent = it.command;
+            }
+            detail.appendChild(cmd);
+          }
+          if (it.error) {
+            const err = document.createElement('div');
+            err.className = 'error-banner';
+            err.textContent = it.error;
+            detail.appendChild(err);
+          }
+        }
+
+        toggle.addEventListener('click', () => {
+          detail.classList.toggle('collapsed');
+        });
+
+        wrap.appendChild(toggle);
+        wrap.appendChild(detail);
+        r.stack.appendChild(wrap);
+        return { toggle, detail, wrap };
+      }
+
+      function appendError(turn, message) {
+        const r = getRefs(turn);
+        const e = document.createElement('div');
+        e.className = 'entry error';
+        e.innerHTML = `<span class="body"></span>`;
+        e.querySelector('.body').textContent = message;
+        r.stack.appendChild(e);
+      }
+
+      function appendChoiceRow(turn, { prompt, options }) {
+        const r = getRefs(turn);
+        const e = document.createElement('div');
+        e.className = 'entry thought';
+        e.innerHTML = `
+          <span class="body">
+            <span class="choice-prompt">${escapeHTML(prompt)}</span>
+            <span class="choice-row"></span>
+          </span>
+        `;
+        const row = e.querySelector('.choice-row');
+        let chosen = null;
+        const buttons = options.map((opt) => {
+          const b = document.createElement('button');
+          b.className = 'choice-btn';
+          b.type = 'button';
+          b.textContent = opt.label;
+          b.addEventListener('click', async () => {
+            if (chosen) return;
+            chosen = opt;
+            buttons.forEach((x) => { x.disabled = true; });
+            b.classList.add('selected');
+            await onChoose(turn, opt);
+          });
+          row.appendChild(b);
+          return b;
+        });
+        r.stack.appendChild(e);
+        return new Promise((resolve) => { onChooseResolve = resolve; });
+      }
+      let onChooseResolve = null;
+      async function onChoose(turn, opt) {
+        if (onChooseResolve) { onChooseResolve(opt); onChooseResolve = null; }
+      }
+
+      function completeProcess(turn, { status = 'completed', elapsed = 18, items = 0 } = {}) {
+        const r = getRefs(turn);
+        r.proc.classList.remove('expanded');
+        if (status === 'completed') {
+          setStatus(turn, '过程记录', 'idle');
+          setMeta(turn, `· ${items} 项 · ${elapsed}s`);
+        } else if (status === 'stopped') {
+          setStatus(turn, '已停止', 'idle');
+          setMeta(turn, `· ${items} 项 · ${elapsed}s`);
+        } else if (status === 'failed') {
+          setStatus(turn, '处理失败', 'failed');
+          setMeta(turn, `· ${elapsed}s`);
+          r.proc.classList.add('expanded');
+        }
+        if (state.autoCollapse && status !== 'failed') {
+          r.proc.classList.remove('expanded');
+          turn.querySelector('.proc-toggle').setAttribute('aria-expanded', 'false');
+        }
+        setStopBtn(false);
+      }
+
+      // ==============================================================
+      // Streaming final text
+      // ==============================================================
+      function tokenize(text) {
+        return text.match(/[\u4e00-\u9fff]|[A-Za-z0-9_]+|[^\sA-Za-z0-9_\u4e00-\u9fff]|\s+/gu) || [];
+      }
+
+      function renderMarkdown(md) {
+        // tiny markdown renderer (subset)
+        const lines = md.replace(/\r\n/g, '\n').split('\n');
+        const out = [];
+        let i = 0;
+        while (i < lines.length) {
+          const line = lines[i];
+          if (/^\s*$/.test(line)) { i += 1; continue; }
+          // fenced code
+          const fence = line.match(/^```(\w*)/);
+          if (fence) {
+            const lang = fence[1] || '';
+            const code = [];
+            i += 1;
+            while (i < lines.length && !/^```/.test(lines[i])) { code.push(lines[i]); i += 1; }
+            if (i < lines.length) i += 1;
+            out.push(`<pre><code>${escapeHTML(code.join('\n'))}</code></pre>`);
+            continue;
+          }
+          // table
+          if (line.includes('|') && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+            const headers = splitRow(lines[i]);
+            i += 2;
+            const rows = [];
+            while (i < lines.length && lines[i].includes('|') && !/^\s*$/.test(lines[i])) {
+              rows.push(splitRow(lines[i])); i += 1;
+            }
+            out.push(renderTable(headers, rows));
+            continue;
+          }
+          // heading
+          const h = line.match(/^(#{1,6})\s+(.+)$/);
+          if (h) {
+            const lvl = Math.min(h[1].length, 3);
+            out.push(`<h${lvl}>${renderInline(h[2])}</h${lvl}>`);
+            i += 1; continue;
+          }
+          // blockquote
+          if (/^>\s?/.test(line)) {
+            const q = [];
+            while (i < lines.length && /^>\s?/.test(lines[i])) { q.push(lines[i].replace(/^>\s?/, '')); i += 1; }
+            out.push(`<blockquote>${q.map(renderInline).join('<br/>')}</blockquote>`);
+            continue;
+          }
+          // list
+          const lm = line.match(/^\s*([-*]|\d+\.)\s+(.+)$/);
+          if (lm) {
+            const ordered = /\d+\./.test(lm[1]);
+            const items = [];
+            while (i < lines.length) {
+              const m = lines[i].match(/^\s*([-*]|\d+\.)\s+(.+)$/);
+              if (!m || (/\d+\./.test(m[1])) !== ordered) break;
+              items.push(m[2]); i += 1;
+            }
+            const tag = ordered ? 'ol' : 'ul';
+            out.push(`<${tag}>${items.map((x) => `<li>${renderInline(x)}</li>`).join('')}</${tag}>`);
+            continue;
+          }
+          // paragraph
+          const para = [line]; i += 1;
+          while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^```/.test(lines[i]) && !/^(#{1,6})\s+/.test(lines[i]) && !/^>\s?/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s+/.test(lines[i]) && !(lines[i].includes('|') && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]))) {
+            para.push(lines[i]); i += 1;
+          }
+          out.push(`<p>${renderInline(para.join(' '))}</p>`);
+        }
+        return out.join('');
+      }
+      function splitRow(line) {
+        let v = line.trim();
+        if (v.startsWith('|')) v = v.slice(1);
+        if (v.endsWith('|')) v = v.slice(0, -1);
+        return v.split('|').map((c) => c.trim());
+      }
+      function renderTable(headers, rows) {
+        const h = headers.map((c) => `<th>${renderInline(c)}</th>`).join('');
+        const b = rows.map((row) => `<tr>${headers.map((_, i) => `<td>${renderInline(row[i] || '')}</td>`).join('')}</tr>`).join('');
+        return `<table><thead><tr>${h}</tr></thead><tbody>${b}</tbody></table>`;
+      }
+      function renderInline(text) {
+        return escapeHTML(text)
+          .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
+          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      }
+      function escapeHTML(s) {
+        return String(s)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      async function streamFinal(turn, markdown, opts = {}) {
+        const r = getRefs(turn);
+        r.divider.hidden = false;
+        r.final.hidden = false;
+        const tokens = tokenize(markdown);
+        let buffer = '';
+        let lastTokenAt = Date.now();
+        let stalledActive = false;
+
+        const tick = async (i) => {
+          if (!isActive(state.activeRun === turn.dataset.turnId ? +turn.dataset.turnId : -1)) return;
+          if (opts.shouldStop && opts.shouldStop()) {
+            r.final.innerHTML = renderMarkdown(buffer) + (state.showCursor ? '' : '');
+            return false;
+          }
+          if (i >= tokens.length) {
+            r.final.innerHTML = renderMarkdown(buffer);
+            r.final.classList.remove('stalled');
+            return true;
+          }
+          buffer += tokens[i];
+          // base delay with optional jitter
+          const base = baseTokenMs();
+          const delay = opts.jitter
+            ? base * [0.5, 0.8, 1.3, 0.6, 1.9, 0.7, 1.4, 0.55, 1.7, 0.9][i % 10]
+            : base;
+          await new Promise((res) => { const t = setTimeout(res, Math.max(8, Math.min(900, delay))); state.timers.push(t); });
+          // stall detection
+          if (opts.stallAt != null && i === opts.stallAt && !stalledActive) {
+            stalledActive = true;
+            setStatus(turn, '仍在生成', 'stalled');
+            const start = Date.now();
+            const stallMs = (opts.stallMs ?? 5000);
+            // mark tail with stalled class
+            r.final.classList.add('stalled');
+            while (Date.now() - start < stallMs) {
+              if (!isActive(+turn.dataset.turnId)) return;
+              if (opts.shouldStop && opts.shouldStop()) {
+                r.final.classList.remove('stalled');
+                return;
+              }
+              const elapsed = Math.round((Date.now() - start) / 1000);
+              setMeta(turn, `· 仍在生成 · ${elapsed}s`);
+              // re-render with stalled class on last text node tail
+              r.final.innerHTML = renderMarkdownWithStallTail(buffer);
+              await new Promise((res) => { const t = setTimeout(res, 200); state.timers.push(t); });
+            }
+            r.final.classList.remove('stalled');
+            setStatus(turn, '正在回复', 'running');
+            setMeta(turn, '');
+          }
+          // render
+          r.final.innerHTML = renderMarkdown(buffer) + (state.showCursor && opts.cursor ? `<span class="cursor"></span>` : '');
+          // live meta: tokens seen
+          if (opts.stallAt == null) setMeta(turn, `· ${i + 1} token`);
+          return tick(i + 1);
+        };
+        // start
+        setMeta(turn, '· 0 token');
+        const finished = await tick(0);
+        return finished;
+      }
+
+      function renderMarkdownWithStallTail(buffer) {
+        // Render markdown then wrap the last 6-8 visible chars in a .stalled span
+        const html = renderMarkdown(buffer);
+        // naive: append a stalled span at the end inside a tail div
+        // (most of the sweep effect comes from the .stalled CSS class on the final element)
+        return html;
+      }
+
+      // ==============================================================
+      // Scenarios
+      // ==============================================================
+      async function playCommonProcess(turn, id) {
+        await wait(stepMs(350)); if (!isActive(id)) return;
+        setStatus(turn, '正在处理', 'running');
+        setMeta(turn, '· 0s');
+        setPreview(turn, '我先确认消息流里哪些内容属于最终回复，哪些属于中间过程。');
+        appendThought(turn, '我先确认消息流里哪些内容属于最终回复，哪些属于中间过程。');
+        await wait(stepMs(650)); if (!isActive(id)) return;
+        appendActivityGroup(turn, { label: '搜索 ThreadItemView', count: 1, items: [{ name: 'ThreadItemView.tsx', path: 'desktop/src/renderer/ThreadItemView.tsx', stat: '12 处' }] });
+        await wait(stepMs(520)); if (!isActive(id)) return;
+        appendActivityGroup(turn, { label: '读取 App.tsx', count: 1, items: [{ name: 'App.tsx', path: 'desktop/src/renderer/App.tsx', stat: '340 行' }] });
+        await wait(stepMs(520)); if (!isActive(id)) return;
+        appendActivityGroup(turn, { label: '读取 model.go', count: 1, items: [{ name: 'model.go', path: 'internal/agent/model.go', stat: '180 行' }] });
+        await wait(stepMs(600)); if (!isActive(id)) return;
+        appendThought(turn, '代码已经把 agent_message、reasoning 和 tool_call 分成不同 item，UI 可以按类型组织。');
+        await wait(stepMs(700)); if (!isActive(id)) return;
+        appendActivityGroup(turn, { label: '运行 npm run typecheck', count: 1, items: [
+          { name: 'npm run typecheck', command: '$ npm run typecheck\n> tsc --noEmit\nChecking 124 files…', running: true }
+        ] });
+        await wait(stepMs(400)); if (!isActive(id)) return;
+      }
+
+      async function scenarioSuccess() {
+        const { id, turn } = createTurn(PROMPTS.success);
+        await playCommonProcess(turn, id);
+        if (!isActive(id)) return;
+        setStatus(turn, '正在回复', 'running');
+        setMeta(turn, '');
+        setPreview(turn, '已收完 4 个工具结果，开始写最终回复。');
+        const ok = await streamFinal(turn, SUCCESS_MD, { cursor: true });
+        if (!isActive(id)) return;
+        if (ok) {
+          await wait(stepMs(540));
+          if (!isActive(id)) return;
+          completeProcess(turn, { status: 'completed', elapsed: 18, items: 5 });
+        }
+        scrollToBottom();
+      }
+
+      async function scenarioStall() {
+        const { id, turn } = createTurn(PROMPTS.stall);
+        await playCommonProcess(turn, id);
+        if (!isActive(id)) return;
+        setStatus(turn, '正在回复', 'running');
+        setMeta(turn, '');
+        const ok = await streamFinal(turn, STALL_MD, {
+          cursor: true,
+          jitter: true,
+          stallAt: 30,
+          stallMs: 5000,
+        });
+        if (!isActive(id)) return;
+        if (ok) {
+          await wait(stepMs(540));
+          completeProcess(turn, { status: 'completed', elapsed: 24, items: 5 });
+        }
+        scrollToBottom();
+      }
+
+      async function scenarioWaiting() {
+        const { id, turn } = createTurn(PROMPTS.waiting);
+        setStatus(turn, '正在处理', 'running');
+        setPreview(turn, '我先收敛两个可行方向，然后让用户选择一个更符合产品气质的方案。');
+        await wait(stepMs(360)); if (!isActive(id)) return;
+        appendThought(turn, '我先收敛两个可行方向，然后让用户选择一个更符合产品气质的方案。');
+        await wait(stepMs(700)); if (!isActive(id)) return;
+        setStatus(turn, '等待你选择', 'waiting');
+        setMeta(turn, '');
+        const choice = await appendChoiceRow(turn, {
+          prompt: '选一个方案：',
+          options: [
+            { id: 'minimal', label: '极简过程' },
+            { id: 'detailed', label: '详细过程' },
+          ]
+        });
+        if (!isActive(id)) return;
+        appendActivityGroup(turn, { label: `收到选择：${choice.label}`, count: 1, items: [{ name: 'user_choice', stat: choice.id }] });
+        await wait(stepMs(420)); if (!isActive(id)) return;
+        setStatus(turn, '正在回复', 'running');
+        setPreview(turn, '');
+        const ok = await streamFinal(turn, WAITING_REPLY, { cursor: true });
+        if (!isActive(id)) return;
+        if (ok) {
+          await wait(stepMs(420));
+          completeProcess(turn, { status: 'completed', elapsed: 11, items: 1 });
+        }
+        scrollToBottom();
+      }
+
+      async function scenarioFailed() {
+        const { id, turn } = createTurn(PROMPTS.failed);
+        setStatus(turn, '正在处理', 'running');
+        setPreview(turn, '我会保留同一条状态行体系，只把失败态的文字调成轻红色。');
+        await wait(stepMs(360)); if (!isActive(id)) return;
+        appendThought(turn, '我会保留同一条状态行体系，只把失败态的文字调成轻红色。');
+        await wait(stepMs(540)); if (!isActive(id)) return;
+        appendActivityGroup(turn, { label: '运行 npm run typecheck', count: 1, items: [
+          { name: 'npm run typecheck', command: '$ npm run typecheck\nerror TS2304: Cannot find name "foo".\nFound 2 errors. Watching for file changes.', failed: true, stderr: 'npm ERR! code ELIFECYCLE\nnpm ERR! errno 1' }
+        ] });
+        await wait(stepMs(420)); if (!isActive(id)) return;
+        appendError(turn, '检查失败：存在 2 个类型错误，需要用户修正或让我继续处理。');
+        completeProcess(turn, { status: 'failed', elapsed: 7, items: 2 });
+        scrollToBottom();
+      }
+
+      async function scenarioStopped() {
+        const { id, turn } = createTurn(PROMPTS.stopped);
+        setStatus(turn, '正在处理', 'running');
+        setPreview(turn, '我已经开始分析消息流，但这个 turn 会在中途被停止。');
+        await wait(stepMs(360)); if (!isActive(id)) return;
+        appendThought(turn, '我已经开始分析消息流，但这个 turn 会在中途被停止。');
+        await wait(stepMs(540)); if (!isActive(id)) return;
+        appendActivityGroup(turn, { label: '读取 App.tsx', count: 1, items: [{ name: 'App.tsx', path: 'desktop/src/renderer/App.tsx', stat: '340 行' }] });
+        await wait(stepMs(800)); if (!isActive(id)) return;
+        appendActivityGroup(turn, { label: '搜索 process group', count: 1, items: [{ name: 'turn-process-group', path: 'desktop/src/renderer/styles/turns.css', stat: '12 处' }] });
+        await wait(stepMs(900)); if (!isActive(id)) return;
+        // wait for user click on stop OR auto-stop after 3s
+        composerText.textContent = '点 stop 触发停止';
+        await new Promise((res) => {
+          const t = setTimeout(() => { state.runId += 1; state.activeRun = 0; res(); }, 3000);
+          state.timers.push(t);
+        });
+        if (!isActive(id)) {
+          completeProcess(turn, { status: 'stopped', elapsed: 4, items: 3 });
+          composerText.textContent = '已停止';
+          scrollToBottom();
+          return;
+        }
+      }
+
+      async function scenarioCompleted() {
+        const { id, turn } = createTurn(PROMPTS.completed);
+        setStatus(turn, '过程记录', 'idle');
+        setPreview(turn, '');
+        appendThought(turn, '我检查了现有事件流，确认 final text 和过程 item 已经分离。');
+        appendActivityGroup(turn, { label: '搜索 ThreadItemView', count: 1, items: [{ name: 'ThreadItemView.tsx', path: 'desktop/src/renderer/ThreadItemView.tsx' }] });
+        appendActivityGroup(turn, { label: '读取 App.tsx', count: 1, items: [{ name: 'App.tsx', path: 'desktop/src/renderer/App.tsx' }] });
+        appendActivityGroup(turn, { label: '读取 model.go', count: 1, items: [{ name: 'model.go', path: 'internal/agent/model.go' }] });
+        appendThought(turn, '完成后过程整体折叠，只保留一行轻量入口。');
+        const r = getRefs(turn);
+        r.divider.hidden = false;
+        r.final.hidden = false;
+        r.final.innerHTML = renderMarkdown(COMPLETED_MD);
+        completeProcess(turn, { status: 'completed', elapsed: 18, items: 4 });
+        scrollToBottom();
+      }
+
+      async function scenarioMulti() {
+        // first turn (completed)
+        const first = createTurn(PROMPTS.multi1);
+        setStatus(first.turn, '过程记录', 'idle');
+        appendActivityGroup(first.turn, { label: '读取 sidebar.css', count: 1, items: [{ name: 'sidebar.css', path: 'desktop/src/renderer/styles/sidebar.css', stat: '18 行' }] });
+        const fr = getRefs(first.turn);
+        fr.divider.hidden = false; fr.final.hidden = false;
+        fr.final.innerHTML = renderMarkdown("已去掉 `session-tab.active` 的 1px 边框，改用 inset 0 0 0 1px 白色叠加层。");
+        completeProcess(first.turn, { status: 'completed', elapsed: 4, items: 1 });
+        await wait(stepMs(600));
+        // second turn (in progress)
+        await scenarioSuccess();
+      }
+
+      async function scenarioStreamError() {
+        const { id, turn } = createTurn(PROMPTS['stream-error']);
+        await playCommonProcess(turn, id);
+        if (!isActive(id)) return;
+        setStatus(turn, '正在回复', 'running');
+        // stream a short bit, then fail
+        const partial = STREAM_ERROR_REPLY;
+        const tokens = tokenize(partial);
+        const r = getRefs(turn);
+        r.divider.hidden = false; r.final.hidden = false;
+        for (let i = 0; i < tokens.length; i += 1) {
+          if (!isActive(id)) return;
+          const buffer = tokens.slice(0, i + 1).join('');
+          r.final.innerHTML = renderMarkdown(buffer) + (state.showCursor ? `<span class="cursor"></span>` : '');
+          await wait(baseTokenMs());
+        }
+        // stream error
+        setStatus(turn, '连接中断', 'failed');
+        setMeta(turn, '');
+        const notice = document.createElement('div');
+        notice.className = 'notice error';
+        notice.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><line x1="5.5" y1="5.5" x2="10.5" y2="10.5"/><line x1="10.5" y1="5.5" x2="5.5" y2="10.5"/></svg>
+          <span>
+            <strong>流式连接中断</strong>
+            <span>已收到的内容会保留。可以点 stop 结束，或重试。</span>
+          </span>
+        `;
+        r.final.appendChild(notice);
+        completeProcess(turn, { status: 'failed', elapsed: 6, items: 5 });
+        scrollToBottom();
+      }
+
+      function reset() {
+        clearTimers();
+        state.runId += 1;
+        state.activeRun = 0;
+        turnList.innerHTML = `
+          <div class="empty" id="empty">
+            <div>
+              <div class="big">消息流</div>
+              <div>从左侧选个场景开始。8 个真实使用场景全在这里。</div>
+            </div>
+          </div>
+        `;
+        sessionTabLabel.textContent = '新对话';
+        setStopBtn(false);
+        composerText.textContent = '就绪';
+      }
+
+      // ==============================================================
+      // Wiring
+      // ==============================================================
+      function wait(ms) { return new Promise((res) => { const t = setTimeout(res, ms); state.timers.push(t); }); }
+      function syncControls() {
+        state.tokenRate = +tokenRateInput.value;
+        state.stepSpeed = +stepSpeedInput.value;
+        state.stallThreshold = +stallThresholdInput.value;
+        state.autoCollapse = autoCollapseInput.checked;
+        state.showCursor = showCursorInput.checked;
+        tokenRateValue.textContent = `${state.tokenRate} /s`;
+        stepSpeedValue.textContent = `${state.stepSpeed.toFixed(1)}×`;
+        stallThresholdValue.textContent = `${state.stallThreshold.toFixed(1)}s`;
+      }
+      [tokenRateInput, stepSpeedInput, stallThresholdInput].forEach((el) => el.addEventListener('input', syncControls));
+      [autoCollapseInput, showCursorInput].forEach((el) => el.addEventListener('change', syncControls));
+
+      $('#scenes').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-scene]');
+        if (!btn) return;
+        const scene = btn.dataset.scene;
+        clearTimers();
+        if (scene === 'reset') { reset(); return; }
+        if (scene === 'success') scenarioSuccess();
+        else if (scene === 'stall') scenarioStall();
+        else if (scene === 'waiting') scenarioWaiting();
+        else if (scene === 'failed') scenarioFailed();
+        else if (scene === 'stopped') scenarioStopped();
+        else if (scene === 'completed') scenarioCompleted();
+        else if (scene === 'multi') scenarioMulti();
+        else if (scene === 'stream-error') scenarioStreamError();
+      });
+
+      stopBtn.addEventListener('click', () => {
+        if (!state.activeRun) return;
+        // find active turn
+        const turnEl = turnList.querySelector(`.turn[data-turn-id="${state.activeRun}"]`);
+        if (!turnEl) return;
+        state.runId += 1;
+        state.activeRun = 0;
+        const r = getRefs(turnEl);
+        setStatus(turnEl, '已停止', 'idle');
+        // append notice
+        const notice = document.createElement('div');
+        notice.className = 'notice';
+        notice.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>
+          <span><strong>已停止</strong><span>已收到的内容保留，剩余 token 不再生成。</span></span>
+        `;
+        r.stack.appendChild(notice);
+        setStopBtn(false);
+        composerText.textContent = '已停止';
+        scrollToBottom();
+      });
+
+      syncControls();
+    </script>
+  </body>
+</html>
