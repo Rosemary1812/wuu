@@ -16,6 +16,7 @@ import type {
   DesktopProject,
   GitStatusResult,
   InitializeResult,
+  PermissionSummary,
   ProviderModelSummary,
   ProviderSummary,
   RuntimeContext,
@@ -27,7 +28,7 @@ import type {
   CodexRuntimeMenu,
   ComposerVariant,
   FloatingMenuPlacement,
-  ToolPolicyProfile
+  PermissionMode
 } from "./ComposerTypes";
 import {
   codexEffortOptions,
@@ -40,54 +41,73 @@ import {
 } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
-type ToolPolicyProfileOption = {
-  profile: ToolPolicyProfile;
+type PermissionModeOption = {
+  mode: PermissionMode;
   label: string;
   chipLabel: string;
   short: string;
   tone?: "danger";
 };
 
-const TOOL_POLICY_PROFILE_OPTIONS: ToolPolicyProfileOption[] = [
+const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
   {
-    profile: "safe",
-    label: "手动",
-    chipLabel: "手动",
-    short: "写入前确认"
+    mode: "read_only",
+    label: "只读",
+    chipLabel: "只读",
+    short: "读取和分析项目"
   },
   {
-    profile: "auto",
-    label: "自动",
-    chipLabel: "自动",
-    short: "低风险自动，关键处暂停"
+    mode: "default",
+    label: "默认",
+    chipLabel: "默认",
+    short: "工作区内自动，越界时确认"
   },
   {
-    profile: "autonomous",
+    mode: "approve_for_me",
+    label: "替我审批",
+    chipLabel: "替我审批",
+    short: "由受限审查器处理审批"
+  },
+  {
+    mode: "full_access",
     label: "完全访问",
     chipLabel: "完全访问",
-    short: "尽量不中断",
+    short: "跳过审批和边界保护",
     tone: "danger"
   }
 ];
 
-export function toolPolicyProfileFromSummary(policy?: ToolPolicySummary): ToolPolicyProfile {
+export function permissionModeFromSummary(
+  permissions?: PermissionSummary,
+  policy?: ToolPolicySummary
+): PermissionMode {
+  const mode = permissions?.mode?.trim();
+  switch (mode) {
+    case "read_only":
+      return "read_only";
+    case "default":
+      return "default";
+    case "approve_for_me":
+      return "approve_for_me";
+    case "full_access":
+      return "full_access";
+  }
   const profile = policy?.profile?.trim();
   switch (profile) {
     case "safe":
-      return "safe";
+    case "enterprise_restricted":
+      return "read_only";
     case "balanced":
     case "auto":
-      return "auto";
+      return "default";
     case "autonomous":
-      return "autonomous";
-    case "enterprise_restricted":
-      return "safe";
+      return "full_access";
     default:
-      return "autonomous";
+      return "full_access";
   }
 }
 
-export function toolPolicyHasPresetOverrides(policy?: ToolPolicySummary): boolean {
+export function permissionModeHasAdvancedOverrides(policy?: ToolPolicySummary): boolean {
   return Boolean(
     policy?.default_action ||
       Object.keys(policy?.tools ?? {}).length > 0 ||
@@ -96,9 +116,8 @@ export function toolPolicyHasPresetOverrides(policy?: ToolPolicySummary): boolea
   );
 }
 
-export function toolPolicyProfileOption(profile: ToolPolicyProfile): ToolPolicyProfileOption {
-  const visibleProfile = profile === "balanced" ? "auto" : profile === "enterprise_restricted" ? "safe" : profile;
-  return TOOL_POLICY_PROFILE_OPTIONS.find((option) => option.profile === visibleProfile) ?? TOOL_POLICY_PROFILE_OPTIONS[1];
+export function permissionModeOption(mode: PermissionMode): PermissionModeOption {
+  return PERMISSION_MODE_OPTIONS.find((option) => option.mode === mode) ?? PERMISSION_MODE_OPTIONS[1];
 }
 
 export function RuntimePicker({
@@ -409,17 +428,19 @@ function normalizedVariantForRuntimeModel(
 }
 
 export function AccessMenu({
+  permissions,
   policy,
   disabled,
   onSelect
 }: {
+  permissions?: PermissionSummary;
   policy?: ToolPolicySummary;
   disabled: boolean;
-  onSelect: (profile: ToolPolicyProfile) => void;
+  onSelect: (mode: PermissionMode) => void;
 }): JSX.Element {
-  const hasOverrides = toolPolicyHasPresetOverrides(policy);
-  const profile = toolPolicyProfileFromSummary(policy);
-  const activeProfile = hasOverrides ? undefined : profile;
+  const hasOverrides = permissionModeHasAdvancedOverrides(policy);
+  const mode = permissionModeFromSummary(permissions, policy);
+  const activeMode = hasOverrides ? undefined : mode;
   return (
     <div className="composer-context-menu access-menu" role="menu">
       {hasOverrides ? (
@@ -428,16 +449,16 @@ export function AccessMenu({
           <span>当前配置包含高级覆盖；选择任一模式会改为该预设</span>
         </div>
       ) : null}
-      {TOOL_POLICY_PROFILE_OPTIONS.map((option) => (
+      {PERMISSION_MODE_OPTIONS.map((option) => (
         <button
-          key={option.profile}
+          key={option.mode}
           className={`permission-mode-option${option.tone === "danger" ? " danger" : ""}`}
           role="menuitemradio"
-          aria-checked={activeProfile === option.profile}
+          aria-checked={activeMode === option.mode}
           aria-label={`${option.label}：${option.short}`}
           type="button"
           disabled={disabled}
-          onClick={() => onSelect(option.profile)}
+          onClick={() => onSelect(option.mode)}
         >
           <strong>{option.label}</strong>
         </button>

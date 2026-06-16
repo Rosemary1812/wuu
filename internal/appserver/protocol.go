@@ -117,6 +117,7 @@ type InitializeResult struct {
 	Variant         string            `json:"variant,omitempty"`
 	WorkspaceRoot   string            `json:"workspace_root"`
 	ToolPolicy      ToolPolicySummary `json:"tool_policy"`
+	Permissions     PermissionSummary `json:"permissions"`
 	Providers       []ProviderSummary `json:"providers,omitempty"`
 }
 
@@ -129,6 +130,7 @@ type ConfigReadResult struct {
 	WorkspaceRoot string            `json:"workspace_root"`
 	SessionDir    string            `json:"session_dir"`
 	ToolPolicy    ToolPolicySummary `json:"tool_policy"`
+	Permissions   PermissionSummary `json:"permissions"`
 	Providers     []ProviderSummary `json:"providers,omitempty"`
 }
 
@@ -140,24 +142,33 @@ type ToolPolicySummary struct {
 	Risks         map[string]string `json:"risks,omitempty"`
 }
 
+type PermissionSummary struct {
+	Mode              string `json:"mode,omitempty"`
+	PermissionProfile string `json:"permission_profile,omitempty"`
+	ApprovalPolicy    string `json:"approval_policy,omitempty"`
+	ApprovalsReviewer string `json:"approvals_reviewer,omitempty"`
+}
+
 type ConfigModelUpdateParams struct {
 	Provider          string  `json:"provider,omitempty"`
 	Model             string  `json:"model"`
 	Effort            *string `json:"effort,omitempty"`
 	Variant           *string `json:"variant,omitempty"`
 	ToolPolicyProfile *string `json:"tool_policy_profile,omitempty"`
+	PermissionMode    *string `json:"permission_mode,omitempty"`
 	BaseURL           *string `json:"base_url,omitempty"`
 	APIKey            *string `json:"api_key,omitempty"`
 	CreateProvider    bool    `json:"create_provider,omitempty"`
 }
 
 type ConfigModelUpdateResult struct {
-	Provider   string            `json:"provider"`
-	Model      string            `json:"model"`
-	Effort     string            `json:"effort,omitempty"`
-	Variant    string            `json:"variant,omitempty"`
-	ToolPolicy ToolPolicySummary `json:"tool_policy"`
-	Providers  []ProviderSummary `json:"providers,omitempty"`
+	Provider    string            `json:"provider"`
+	Model       string            `json:"model"`
+	Effort      string            `json:"effort,omitempty"`
+	Variant     string            `json:"variant,omitempty"`
+	ToolPolicy  ToolPolicySummary `json:"tool_policy"`
+	Permissions PermissionSummary `json:"permissions"`
+	Providers   []ProviderSummary `json:"providers,omitempty"`
 }
 
 type ConfigCodexModelsParams struct {

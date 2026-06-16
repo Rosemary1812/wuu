@@ -54,6 +54,7 @@ export type InitializeResult = {
   variant?: string;
   workspace_root: string;
   tool_policy?: ToolPolicySummary;
+  permissions?: PermissionSummary;
   providers?: ProviderSummary[];
 };
 
@@ -65,12 +66,20 @@ export type ToolPolicySummary = {
   risks?: Record<string, string>;
 };
 
+export type PermissionSummary = {
+  mode?: string;
+  permission_profile?: string;
+  approval_policy?: string;
+  approvals_reviewer?: string;
+};
+
 export type ConfigModelUpdateResult = {
   provider: string;
   model: string;
   effort?: string;
   variant?: string;
   tool_policy?: ToolPolicySummary;
+  permissions?: PermissionSummary;
   providers?: ProviderSummary[];
 };
 
@@ -789,7 +798,7 @@ export type WuuDesktopApi = {
     effort?: string,
     connection?: RuntimeConnectionUpdate,
     variant?: string,
-    toolPolicyProfile?: string
+    permissionMode?: string
   ) => Promise<ConfigModelUpdateResult>;
   listManagedProcesses: () => Promise<ManagedProcessListResult>;
   stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;

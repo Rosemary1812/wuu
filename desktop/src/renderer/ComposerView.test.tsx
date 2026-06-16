@@ -3,13 +3,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   Composer,
-  toolPolicyHasPresetOverrides,
-  toolPolicyProfileFromSummary,
+  permissionModeFromSummary,
+  permissionModeHasAdvancedOverrides,
   type CodexModelLoadState,
-  type ToolPolicyProfile,
+  type PermissionMode,
 } from "./ComposerView";
 import type { QueuedComposerMessage } from "./ComposerMessages";
-import type { InitializeResult, ToolPolicySummary } from "../shared/protocol";
+import type { InitializeResult, PermissionSummary, ToolPolicySummary } from "../shared/protocol";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -30,13 +30,14 @@ afterEach(() => {
     .forEach((element) => element.remove());
 });
 
-function initialized(toolPolicy?: ToolPolicySummary): InitializeResult {
+function initialized(toolPolicy?: ToolPolicySummary, permissions?: PermissionSummary): InitializeResult {
   return {
     protocol_version: "wuu-app-server/v0.1",
     provider: "fake",
     model: "fake-model",
     workspace_root: "/tmp/project",
     tool_policy: toolPolicy,
+    permissions,
     providers: [
       {
         name: "fake",
@@ -59,14 +60,15 @@ function renderComposer(props: {
   onGuideQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string) => void;
   onEditGuideMessage?: (id: string) => void;
-  onSelectToolPolicyProfile?: (profile: ToolPolicyProfile) => void;
-}): { onSelectToolPolicyProfile: (profile: ToolPolicyProfile) => void } {
+  permissions?: PermissionSummary;
+  onSelectPermissionMode?: (mode: PermissionMode) => void;
+}): { onSelectPermissionMode: (mode: PermissionMode) => void } {
   const codexModels: CodexModelLoadState = {
     loading: false,
     error: "",
     models: [],
   };
-  const onSelectToolPolicyProfile = props.onSelectToolPolicyProfile ?? vi.fn();
+  const onSelectPermissionMode = props.onSelectPermissionMode ?? vi.fn();
   act(() => {
     root = createRoot(container);
     root.render(
@@ -80,7 +82,7 @@ function renderComposer(props: {
         running={props.running ?? false}
         status="ready"
         readOnly={false}
-        initialized={initialized(props.toolPolicy)}
+        initialized={initialized(props.toolPolicy, props.permissions)}
         projects={[]}
         codexModels={codexModels}
         codexRuntimeMenu={null}
@@ -98,7 +100,7 @@ function renderComposer(props: {
         onToggleCodexRuntimeMenu={() => {}}
         onSelectRuntimeModel={() => {}}
         onSelectRuntimeEffort={() => {}}
-        onSelectToolPolicyProfile={onSelectToolPolicyProfile}
+        onSelectPermissionMode={onSelectPermissionMode}
         onToggleModeMenu={() => {}}
         onToggleBranchMenu={() => {}}
         onOpenSettings={() => {}}
@@ -122,7 +124,7 @@ function renderComposer(props: {
       />,
     );
   });
-  return { onSelectToolPolicyProfile };
+  return { onSelectPermissionMode };
 }
 
 describe("Composer send control", () => {
@@ -210,31 +212,35 @@ describe("Composer queue strip", () => {
 });
 
 describe("Composer permission menu", () => {
-  it("maps tool policy summaries to preset chip states", () => {
-    expect(toolPolicyProfileFromSummary()).toBe("autonomous");
-    expect(toolPolicyProfileFromSummary({ profile: "safe" })).toBe("safe");
-    expect(toolPolicyProfileFromSummary({ profile: "balanced" })).toBe("auto");
-    expect(toolPolicyProfileFromSummary({ profile: "auto" })).toBe("auto");
-    expect(toolPolicyProfileFromSummary({ profile: "enterprise_restricted" })).toBe("safe");
-    expect(toolPolicyHasPresetOverrides({ profile: "safe" })).toBe(false);
+  it("maps permission summaries and legacy tool policies to mode chip states", () => {
+    expect(permissionModeFromSummary()).toBe("full_access");
+    expect(permissionModeFromSummary({ mode: "read_only" })).toBe("read_only");
+    expect(permissionModeFromSummary({ mode: "default" })).toBe("default");
+    expect(permissionModeFromSummary({ mode: "approve_for_me" })).toBe("approve_for_me");
+    expect(permissionModeFromSummary(undefined, { profile: "safe" })).toBe("read_only");
+    expect(permissionModeFromSummary(undefined, { profile: "balanced" })).toBe("default");
+    expect(permissionModeFromSummary(undefined, { profile: "auto" })).toBe("default");
+    expect(permissionModeFromSummary(undefined, { profile: "enterprise_restricted" })).toBe("read_only");
+    expect(permissionModeHasAdvancedOverrides({ profile: "safe" })).toBe(false);
     expect(
-      toolPolicyHasPresetOverrides({
+      permissionModeHasAdvancedOverrides({
         profile: "safe",
         tools: { run_shell: "allow" },
       }),
     ).toBe(true);
   });
 
-  it("shows only the three everyday permission modes in the composer menu", () => {
-    const onSelectToolPolicyProfile = vi.fn();
+  it("shows the Codex-shaped everyday permission modes in the composer menu", () => {
+    const onSelectPermissionMode = vi.fn();
     renderComposer({
       accessMenuOpen: true,
       toolPolicy: { profile: "auto" },
-      onSelectToolPolicyProfile,
+      permissions: { mode: "default" },
+      onSelectPermissionMode,
     });
 
     const chip = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"权限模式：自动\"]",
+      "button[aria-label=\"权限模式：默认\"]",
     );
     expect(chip).not.toBeNull();
     expect(chip?.disabled).toBe(false);
@@ -244,7 +250,7 @@ describe("Composer permission menu", () => {
         "button[role=\"menuitemradio\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(labels).toEqual(["手动", "自动", "完全访问"]);
+    expect(labels).toEqual(["只读", "默认", "替我审批", "完全访问"]);
     expect(document.body.textContent).not.toContain("平衡");
     expect(document.body.textContent).not.toContain("严格");
 
@@ -253,31 +259,47 @@ describe("Composer permission menu", () => {
         "button[role=\"menuitemradio\"][aria-checked=\"true\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(checkedLabels).toEqual(["自动"]);
+    expect(checkedLabels).toEqual(["默认"]);
   });
 
-  it("lets the user switch between manual, automatic, and full access", () => {
-    const onSelectToolPolicyProfile = vi.fn();
+  it("lets the user switch between read only, approve for me, and full access", () => {
+    const onSelectPermissionMode = vi.fn();
     renderComposer({
       accessMenuOpen: true,
       toolPolicy: { profile: "auto" },
-      onSelectToolPolicyProfile,
+      permissions: { mode: "default" },
+      onSelectPermissionMode,
     });
 
-    const manualOption = Array.from(
+    const readOnlyOption = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
         "button[role=\"menuitemradio\"]",
       ),
-    ).find((button) => button.textContent?.includes("手动"));
-    expect(manualOption).not.toBeUndefined();
+    ).find((button) => button.textContent?.includes("只读"));
+    expect(readOnlyOption).not.toBeUndefined();
 
     act(() => {
-      manualOption?.dispatchEvent(
+      readOnlyOption?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
     });
 
-    expect(onSelectToolPolicyProfile).toHaveBeenCalledWith("safe");
+    expect(onSelectPermissionMode).toHaveBeenCalledWith("read_only");
+
+    const approveForMeOption = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "button[role=\"menuitemradio\"]",
+      ),
+    ).find((button) => button.textContent?.includes("替我审批"));
+    expect(approveForMeOption).not.toBeUndefined();
+
+    act(() => {
+      approveForMeOption?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(onSelectPermissionMode).toHaveBeenCalledWith("approve_for_me");
 
     const fullAccessOption = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
@@ -292,7 +314,7 @@ describe("Composer permission menu", () => {
       );
     });
 
-    expect(onSelectToolPolicyProfile).toHaveBeenCalledWith("autonomous");
+    expect(onSelectPermissionMode).toHaveBeenCalledWith("full_access");
   });
 
   it("shows a custom state when advanced overrides are present", () => {

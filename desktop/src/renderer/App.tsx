@@ -72,7 +72,7 @@ import {
   type CodexRuntimeMenu,
   type ComposerVariant,
   type FloatingMenuOwner,
-  type ToolPolicyProfile,
+  type PermissionMode,
 } from "./ComposerView";
 import {
   QueryHistoryPopover,
@@ -1578,8 +1578,8 @@ export function App(): JSX.Element {
         onSelectRuntimeEffort={(nextVariant) =>
           void selectRuntimeEffort(nextVariant)
         }
-        onSelectToolPolicyProfile={(profile) =>
-          void selectToolPolicyProfile(profile)
+        onSelectPermissionMode={(mode) =>
+          void selectPermissionMode(mode)
         }
         onOpenSettings={() => {
           closeProjectMenus();
@@ -3808,14 +3808,14 @@ export function App(): JSX.Element {
     effort?: string,
     connection?: RuntimeConnectionUpdate,
     variant?: string,
-    toolPolicyProfile?: string,
+    permissionMode?: string,
   ): Promise<void> {
     const nextProvider = provider.trim();
     const nextModel = model.trim();
     const nextEffort = effort === undefined ? undefined : effort.trim();
     const nextVariant = variant === undefined ? undefined : variant.trim();
-    const nextToolPolicyProfile =
-      toolPolicyProfile === undefined ? undefined : toolPolicyProfile.trim();
+    const nextPermissionMode =
+      permissionMode === undefined ? undefined : permissionMode.trim();
     const nextConnection =
       connection === undefined
         ? undefined
@@ -3836,8 +3836,8 @@ export function App(): JSX.Element {
       Boolean(nextConnection?.api_key) ||
       (nextConnection?.base_url !== undefined &&
         nextConnection.base_url !== (currentProvider?.base_url ?? ""));
-    const currentToolPolicyProfile =
-      state.initialized?.tool_policy?.profile ?? "";
+    const currentPermissionMode =
+      state.initialized?.permissions?.mode ?? "";
     const currentToolPolicy = state.initialized?.tool_policy;
     const currentToolPolicyHasOverrides = Boolean(
       currentToolPolicy?.default_action ||
@@ -3845,9 +3845,9 @@ export function App(): JSX.Element {
         Object.keys(currentToolPolicy?.kinds ?? {}).length > 0 ||
         Object.keys(currentToolPolicy?.risks ?? {}).length > 0,
     );
-    const toolPolicyChanged =
-      nextToolPolicyProfile !== undefined &&
-      (nextToolPolicyProfile !== currentToolPolicyProfile ||
+    const permissionModeChanged =
+      nextPermissionMode !== undefined &&
+      (nextPermissionMode !== currentPermissionMode ||
         currentToolPolicyHasOverrides);
     if (
       !nextProvider ||
@@ -3861,7 +3861,7 @@ export function App(): JSX.Element {
         (nextVariant === undefined ||
           nextVariant === (state.initialized.variant ?? "")) &&
         !connectionChanged &&
-        !toolPolicyChanged)
+        !permissionModeChanged)
     ) {
       return;
     }
@@ -3872,7 +3872,7 @@ export function App(): JSX.Element {
         nextEffort,
         nextConnection,
         nextVariant,
-        nextToolPolicyProfile,
+        nextPermissionMode,
       );
       setState((current) => {
         const initialized = current.initialized
@@ -3883,6 +3883,7 @@ export function App(): JSX.Element {
               effort: updated.effort ?? "",
               variant: updated.variant ?? "",
               tool_policy: updated.tool_policy ?? current.initialized.tool_policy,
+              permissions: updated.permissions ?? current.initialized.permissions,
               providers: updated.providers ?? current.initialized.providers,
             }
           : current.initialized;
@@ -4000,8 +4001,8 @@ export function App(): JSX.Element {
     setCodexRuntimeMenu(null);
   }
 
-  async function selectToolPolicyProfile(
-    profile: ToolPolicyProfile,
+  async function selectPermissionMode(
+    mode: PermissionMode,
   ): Promise<void> {
     if (!state.initialized || anyThreadIsRunning) {
       return;
@@ -4012,7 +4013,7 @@ export function App(): JSX.Element {
       undefined,
       undefined,
       undefined,
-      profile,
+      mode,
     );
     setAccessMenuOpen(false);
   }

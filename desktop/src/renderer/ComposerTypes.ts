@@ -16,9 +16,8 @@ export type FloatingMenuOwner =
   | "composer-query-history";
 export type FloatingMenuPlacement = "above" | "below" | "middle";
 export type FloatingMenuAlign = "left" | "right";
-export type ToolPolicyProfile =
-  | "safe"
-  | "balanced"
-  | "auto"
-  | "autonomous"
-  | "enterprise_restricted";
+export type PermissionMode =
+  | "read_only"
+  | "default"
+  | "approve_for_me"
+  | "full_access";

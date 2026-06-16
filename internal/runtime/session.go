@@ -79,6 +79,7 @@ type Session struct {
 	UserSystemPrompt            string
 	WuuHome                     string
 	ToolPolicy                  config.ToolPolicyConfig
+	Permissions                 config.ResolvedPermissions
 	CoordinatorPreamble         string
 	ExperimentalCoordinatorMode bool
 	CronScheduler               *cron.Scheduler
@@ -322,6 +323,7 @@ func NewSession(opts Options) (*Session, error) {
 		UserSystemPrompt:            userSystemPrompt,
 		WuuHome:                     wuuHome,
 		ToolPolicy:                  cfg.Agent.ToolPolicy,
+		Permissions:                 config.ResolveAgentPermissions(cfg.Agent),
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
 	}, nil

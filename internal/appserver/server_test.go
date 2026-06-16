@@ -487,6 +487,11 @@ func TestServerConfigModelUpdatePersistsToolPolicyProfile(t *testing.T) {
 	if result.ToolPolicy.Profile != "auto" || len(result.ToolPolicy.Tools) != 0 {
 		t.Fatalf("unexpected tool policy result: %+v", result.ToolPolicy)
 	}
+	if result.Permissions.Mode != config.PermissionModeDefault ||
+		result.Permissions.PermissionProfile != config.PermissionProfileWorkspaceWrite ||
+		result.Permissions.ApprovalsReviewer != config.ApprovalsReviewerUser {
+		t.Fatalf("unexpected permission result: %+v", result.Permissions)
+	}
 	if rt.ToolPolicy.Profile != "auto" || len(rt.ToolPolicy.Tools) != 0 {
 		t.Fatalf("runtime tool policy not updated: %+v", rt.ToolPolicy)
 	}
@@ -500,6 +505,71 @@ func TestServerConfigModelUpdatePersistsToolPolicyProfile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"profile": "auto"`) || strings.Contains(string(data), `"run_shell"`) {
 		t.Fatalf("tool policy profile was not persisted cleanly: %s", data)
+	}
+}
+
+func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new runtime toolkit: %v", err)
+	}
+	rt.Toolkit = kit
+	rt.ToolPolicy = config.ToolPolicyConfig{Profile: "balanced"}
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "agent": {
+    "tool_policy": {
+      "profile": "balanced"
+    }
+  },
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/model/update","params":{"model":"fake-model","permission_mode":"approve_for_me"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Permissions.Mode != config.PermissionModeApproveForMe ||
+		result.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
+		t.Fatalf("unexpected permissions result: %+v", result.Permissions)
+	}
+	if result.ToolPolicy.Profile != "auto" {
+		t.Fatalf("approve for me should keep current legacy auto tool policy during migration: %+v", result.ToolPolicy)
+	}
+	if rt.Permissions.Mode != config.PermissionModeApproveForMe || rt.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
+		t.Fatalf("runtime permissions not updated: %+v", rt.Permissions)
+	}
+	if rt.ToolPolicy.Profile != "auto" {
+		t.Fatalf("runtime tool policy not updated: %+v", rt.ToolPolicy)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	for _, want := range []string{
+		`"permission_mode": "approve_for_me"`,
+		`"permission_profile": "workspace_write"`,
+		`"approval_policy": "on_request"`,
+		`"approvals_reviewer": "auto_review"`,
+		`"profile": "auto"`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("config missing %s: %s", want, data)
+		}
 	}
 }
 

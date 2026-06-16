@@ -47,7 +47,7 @@ const api: WuuDesktopApi = {
     effort?: string,
     connection?: Parameters<WuuDesktopApi["updateRuntimeSettings"]>[3],
     variant?: string,
-    toolPolicyProfile?: string,
+    permissionMode?: string,
   ) =>
     ipcRenderer.invoke(
       "wuu:config-model-update",
@@ -56,7 +56,7 @@ const api: WuuDesktopApi = {
       effort,
       connection,
       variant,
-      toolPolicyProfile,
+      permissionMode,
     ),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   getGoalSnapshot: (threadId?: string) =>

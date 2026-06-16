@@ -210,6 +210,15 @@ type AgentConfig struct {
 	// instructions that should customize, not replace, wuu's base behavior.
 	AppendSystemPrompt string           `json:"append_system_prompt,omitempty"`
 	ToolPolicy         ToolPolicyConfig `json:"tool_policy,omitempty"`
+	// PermissionMode is the user-facing Codex-style permission preset.
+	// Empty resolves to the Default preset.
+	PermissionMode string `json:"permission_mode,omitempty"`
+	// PermissionProfile, ApprovalPolicy, and ApprovalsReviewer are the
+	// normalized runtime fields behind PermissionMode. Advanced configs can set
+	// them directly; preset selection rewrites them together.
+	PermissionProfile string `json:"permission_profile,omitempty"`
+	ApprovalPolicy    string `json:"approval_policy,omitempty"`
+	ApprovalsReviewer string `json:"approvals_reviewer,omitempty"`
 	// Effort controls reasoning depth. Valid: "low", "medium", "high",
 	// "max" (Anthropic only). Empty = API default. Aligned with Claude
 	// Code's /effort command and Codex's reasoning_effort setting.
@@ -407,7 +416,26 @@ func (c Config) Validate() error {
 	if err := validateToolPolicyConfig(c.Agent.ToolPolicy); err != nil {
 		return err
 	}
+	if err := validatePermissionConfig(c.Agent); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+func validatePermissionConfig(agent AgentConfig) error {
+	if err := validatePermissionMode(agent.PermissionMode); err != nil {
+		return err
+	}
+	if err := validatePermissionProfile(agent.PermissionProfile); err != nil {
+		return err
+	}
+	if err := validateApprovalPolicy(agent.ApprovalPolicy); err != nil {
+		return err
+	}
+	if err := validateApprovalsReviewer(agent.ApprovalsReviewer); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -455,6 +483,42 @@ func validateToolPolicyProfile(profile string) error {
 		return nil
 	default:
 		return fmt.Errorf("agent.tool_policy.profile must be one of safe, balanced, auto, autonomous, enterprise_restricted")
+	}
+}
+
+func validatePermissionMode(mode string) error {
+	switch normalizePermissionMode(mode) {
+	case "", PermissionModeReadOnly, PermissionModeDefault, PermissionModeApproveForMe, PermissionModeFullAccess:
+		return nil
+	default:
+		return fmt.Errorf("agent.permission_mode must be one of read_only, default, approve_for_me, full_access")
+	}
+}
+
+func validatePermissionProfile(profile string) error {
+	switch normalizePermissionProfile(profile) {
+	case "", PermissionProfileReadOnly, PermissionProfileWorkspaceWrite, PermissionProfileDangerFullAccess:
+		return nil
+	default:
+		return fmt.Errorf("agent.permission_profile must be one of read_only, workspace_write, danger_full_access")
+	}
+}
+
+func validateApprovalPolicy(policy string) error {
+	switch normalizeApprovalPolicy(policy) {
+	case "", ApprovalPolicyOnRequest, ApprovalPolicyNever:
+		return nil
+	default:
+		return fmt.Errorf("agent.approval_policy must be one of on_request, never")
+	}
+}
+
+func validateApprovalsReviewer(reviewer string) error {
+	switch normalizeApprovalsReviewer(reviewer) {
+	case "", ApprovalsReviewerUser, ApprovalsReviewerAutoReview:
+		return nil
+	default:
+		return fmt.Errorf("agent.approvals_reviewer must be one of user, auto_review")
 	}
 }
 
@@ -521,6 +585,10 @@ func Default() Config {
 			ToolPolicy: ToolPolicyConfig{
 				Profile: "auto",
 			},
+			PermissionMode:    PermissionModeDefault,
+			PermissionProfile: PermissionProfileWorkspaceWrite,
+			ApprovalPolicy:    ApprovalPolicyOnRequest,
+			ApprovalsReviewer: ApprovalsReviewerUser,
 			// 0 = unlimited. Aligned with Claude Code, which has no
 			// default step cap; the model decides when to stop. Users
 			// who want a runaway safety net can set this explicitly.
@@ -677,28 +745,28 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, nil, false)
 }
 
 // UpdateProviderSelectionAndEffort changes the default provider, selected
 // provider's model, and global reasoning effort in the config file at configPath.
 func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, nil, nil, false)
 }
 
 // UpdateProviderRuntime changes the default provider and editable connection
 // fields for that provider. A nil apiKey keeps the existing key configuration.
-func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, toolPolicyProfile, false)
+func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode, false)
 }
 
 // CreateProviderRuntime creates a new OpenAI-compatible provider, selects it,
 // and persists its editable runtime fields.
-func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, toolPolicyProfile, true)
+func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode, true)
 }
 
-func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile *string, createProvider bool) error {
+func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode *string, createProvider bool) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -773,7 +841,27 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 			agent["variant"] = strings.TrimSpace(*variant)
 		}
 	}
-	if toolPolicyProfile != nil {
+	if permissionMode != nil {
+		mode := normalizePermissionMode(*permissionMode)
+		if err := validatePermissionMode(mode); err != nil {
+			return err
+		}
+		permissions, _ := PermissionPresetForMode(mode)
+		agent, _ := raw["agent"].(map[string]any)
+		if agent == nil {
+			agent = make(map[string]any)
+			raw["agent"] = agent
+		}
+		agent["permission_mode"] = permissions.Mode
+		agent["permission_profile"] = permissions.PermissionProfile
+		agent["approval_policy"] = permissions.ApprovalPolicy
+		agent["approvals_reviewer"] = permissions.ApprovalsReviewer
+		if profile := LegacyToolPolicyProfileForPermissionMode(permissions.Mode); profile != "" {
+			agent["tool_policy"] = map[string]any{
+				"profile": profile,
+			}
+		}
+	} else if toolPolicyProfile != nil {
 		profile := strings.TrimSpace(*toolPolicyProfile)
 		if err := validateToolPolicyProfile(profile); err != nil {
 			return err
@@ -790,6 +878,13 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 				"profile": profile,
 			}
 		}
+		if mode := PermissionModeForLegacyToolPolicyProfile(profile); mode != "" {
+			permissions, _ := PermissionPresetForMode(mode)
+			agent["permission_mode"] = permissions.Mode
+			agent["permission_profile"] = permissions.PermissionProfile
+			agent["approval_policy"] = permissions.ApprovalPolicy
+			agent["approvals_reviewer"] = permissions.ApprovalsReviewer
+		}
 	}
 
 	out, err := json.MarshalIndent(raw, "", "  ")
@@ -802,6 +897,19 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Agent.Name) == "" {
 		cfg.Agent.Name = DefaultAgentName
+	}
+	permissions := ResolveAgentPermissions(cfg.Agent)
+	if strings.TrimSpace(cfg.Agent.PermissionMode) == "" {
+		cfg.Agent.PermissionMode = permissions.Mode
+	}
+	if strings.TrimSpace(cfg.Agent.PermissionProfile) == "" {
+		cfg.Agent.PermissionProfile = permissions.PermissionProfile
+	}
+	if strings.TrimSpace(cfg.Agent.ApprovalPolicy) == "" {
+		cfg.Agent.ApprovalPolicy = permissions.ApprovalPolicy
+	}
+	if strings.TrimSpace(cfg.Agent.ApprovalsReviewer) == "" {
+		cfg.Agent.ApprovalsReviewer = permissions.ApprovalsReviewer
 	}
 	// max_steps = 0 means unlimited (no step cap, the model decides
 	// when to stop). Aligned with Claude Code's default behavior.

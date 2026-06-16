@@ -36,6 +36,7 @@ func (s *Server) handleInitialize(req Request) error {
 		Variant:       s.currentVariant(),
 		WorkspaceRoot: s.rt.RootDir,
 		ToolPolicy:    s.currentToolPolicySummary(),
+		Permissions:   s.currentPermissionSummary(),
 		Providers:     s.providerSummaries(),
 	}, nil)
 }
@@ -50,6 +51,7 @@ func (s *Server) handleConfigRead(req Request) error {
 		WorkspaceRoot: s.rt.RootDir,
 		SessionDir:    s.rt.SessionDir,
 		ToolPolicy:    s.currentToolPolicySummary(),
+		Permissions:   s.currentPermissionSummary(),
 		Providers:     s.providerSummaries(),
 	}, nil)
 }
@@ -65,6 +67,26 @@ func (s *Server) currentToolPolicySummary() ToolPolicySummary {
 		Tools:         cloneStringMap(policy.Tools),
 		Kinds:         cloneStringMap(policy.Kinds),
 		Risks:         cloneStringMap(policy.Risks),
+	}
+}
+
+func (s *Server) currentPermissionSummary() PermissionSummary {
+	if s == nil || s.rt == nil {
+		return PermissionSummary{}
+	}
+	permissions := s.rt.Permissions
+	if strings.TrimSpace(permissions.Mode) == "" {
+		mode := config.PermissionModeForLegacyToolPolicyProfile(s.rt.ToolPolicy.Profile)
+		if mode == "" {
+			mode = config.PermissionModeDefault
+		}
+		permissions, _ = config.PermissionPresetForMode(mode)
+	}
+	return PermissionSummary{
+		Mode:              strings.TrimSpace(permissions.Mode),
+		PermissionProfile: strings.TrimSpace(permissions.PermissionProfile),
+		ApprovalPolicy:    strings.TrimSpace(permissions.ApprovalPolicy),
+		ApprovalsReviewer: strings.TrimSpace(permissions.ApprovalsReviewer),
 	}
 }
 
@@ -208,9 +230,9 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	if creatingProvider {
-		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.ToolPolicyProfile)
+		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.ToolPolicyProfile, params.PermissionMode)
 	} else {
-		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.ToolPolicyProfile)
+		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.ToolPolicyProfile, params.PermissionMode)
 	}
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -225,8 +247,20 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if s.rt.Toolkit != nil {
 		s.rt.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
 	}
-	if params.ToolPolicyProfile != nil {
-		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: strings.TrimSpace(*params.ToolPolicyProfile)}
+	if params.PermissionMode != nil {
+		permissions, _ := config.PermissionPresetForMode(*params.PermissionMode)
+		s.rt.Permissions = permissions
+		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: config.LegacyToolPolicyProfileForPermissionMode(permissions.Mode)}
+		if s.rt.Toolkit != nil {
+			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+		}
+	} else if params.ToolPolicyProfile != nil {
+		profile := strings.TrimSpace(*params.ToolPolicyProfile)
+		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: profile}
+		if mode := config.PermissionModeForLegacyToolPolicyProfile(profile); mode != "" {
+			permissions, _ := config.PermissionPresetForMode(mode)
+			s.rt.Permissions = permissions
+		}
 		if s.rt.Toolkit != nil {
 			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
 		}
@@ -250,12 +284,13 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
-		Provider:   resolvedName,
-		Model:      model,
-		Effort:     effort,
-		Variant:    selection.Variant,
-		ToolPolicy: s.currentToolPolicySummary(),
-		Providers:  s.providerSummaries(),
+		Provider:    resolvedName,
+		Model:       model,
+		Effort:      effort,
+		Variant:     selection.Variant,
+		ToolPolicy:  s.currentToolPolicySummary(),
+		Permissions: s.currentPermissionSummary(),
+		Providers:   s.providerSummaries(),
 	}, nil)
 }
 

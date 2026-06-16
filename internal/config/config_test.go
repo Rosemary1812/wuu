@@ -1156,7 +1156,7 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
+	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
@@ -1210,7 +1210,7 @@ func TestUpdateProviderRuntimePersistsToolPolicyProfilePreset(t *testing.T) {
 	}
 
 	profile := "auto"
-	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, &profile); err != nil {
+	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, &profile, nil); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
@@ -1223,6 +1223,58 @@ func TestUpdateProviderRuntimePersistsToolPolicyProfilePreset(t *testing.T) {
 	}
 	if cfg.Agent.ToolPolicy.DefaultAction != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 || len(cfg.Agent.ToolPolicy.Risks) != 0 {
 		t.Fatalf("preset update should clear fine-grained overrides: %+v", cfg.Agent.ToolPolicy)
+	}
+	if cfg.Agent.PermissionMode != PermissionModeDefault ||
+		cfg.Agent.PermissionProfile != PermissionProfileWorkspaceWrite ||
+		cfg.Agent.ApprovalPolicy != ApprovalPolicyOnRequest ||
+		cfg.Agent.ApprovalsReviewer != ApprovalsReviewerUser {
+		t.Fatalf("legacy preset should update resolved permissions: %+v", ResolveAgentPermissions(cfg.Agent))
+	}
+}
+
+func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "agent": {
+    "tool_policy": {
+      "profile": "balanced",
+      "tools": {
+        "run_shell": "allow"
+      }
+    }
+  },
+  "default_provider": "old",
+  "providers": {
+    "old": {
+      "type": "openai-compatible",
+      "base_url": "https://old.example.com",
+      "model": "old-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode := PermissionModeApproveForMe
+	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, nil, &mode); err != nil {
+		t.Fatalf("UpdateProviderRuntime: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.Agent.ToolPolicy.Profile != "auto" || len(cfg.Agent.ToolPolicy.Tools) != 0 {
+		t.Fatalf("permission mode should reset legacy tool policy preset: %+v", cfg.Agent.ToolPolicy)
+	}
+	permissions := ResolveAgentPermissions(cfg.Agent)
+	if permissions.Mode != PermissionModeApproveForMe ||
+		permissions.PermissionProfile != PermissionProfileWorkspaceWrite ||
+		permissions.ApprovalPolicy != ApprovalPolicyOnRequest ||
+		permissions.ApprovalsReviewer != ApprovalsReviewerAutoReview {
+		t.Fatalf("permission mode not persisted: %+v", permissions)
 	}
 }
 
@@ -1246,7 +1298,7 @@ func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := CreateProviderRuntime(path, "custom-1", "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
+	if err := CreateProviderRuntime(path, "custom-1", "custom-model", &baseURL, &apiKey, nil, nil, nil, nil); err != nil {
 		t.Fatalf("CreateProviderRuntime: %v", err)
 	}
 
