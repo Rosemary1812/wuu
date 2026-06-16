@@ -189,7 +189,7 @@ func TestThreadStateReplacesActiveAgentMessageText(t *testing.T) {
 	}
 }
 
-func TestThreadStateMarksPostToolTextAsFinalPhaseOnFirstDelta(t *testing.T) {
+func TestThreadStateMarksPostToolTextAsCommentaryOnFirstDelta(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
@@ -213,21 +213,76 @@ func TestThreadStateMarksPostToolTextAsFinalPhaseOnFirstDelta(t *testing.T) {
 
 	turn := th.ensureTurnLocked("turn", now)
 	if len(turn.Items) != 3 {
-		t.Fatalf("expected user, tool, and final assistant items, got %+v", turn.Items)
+		t.Fatalf("expected user, tool, and live agent items, got %+v", turn.Items)
 	}
-	final := turn.Items[2]
-	if final.Type != ThreadItemAgentMessage || final.Status != ThreadItemStatusInProgress {
-		t.Fatalf("post-tool text should start a live assistant item, got %+v", final)
+	// Streaming text is intermediate until EventAssistantMessage arrives.
+	// Marking it final_answer here used to leak the text into the
+	// renderer's final-answer slot and only fix itself when EventToolUseStart
+	// flipped the phase back to commentary on the next tool call.
+	streamed := turn.Items[2]
+	if streamed.Type != ThreadItemAgentMessage || streamed.Status != ThreadItemStatusInProgress {
+		t.Fatalf("post-tool text should start a live assistant item, got %+v", streamed)
 	}
-	if final.Phase != ThreadItemPhaseFinalAnswer {
-		t.Fatalf("post-tool text should be marked final as soon as it starts, got %+v", final)
+	if streamed.Phase != ThreadItemPhaseCommentary {
+		t.Fatalf("post-tool streaming text should be commentary, not final_answer, got %+v", streamed)
 	}
 	if len(out) == 0 {
-		t.Fatal("expected notifications for first final delta")
+		t.Fatal("expected notifications for first commentary delta")
 	}
 	started, ok := out[0].params.(ItemStartedNotification)
-	if !ok || started.Item.Phase != ThreadItemPhaseFinalAnswer {
-		t.Fatalf("started notification should carry final phase, got %#v", out[0].params)
+	if !ok || started.Item.Phase != ThreadItemPhaseCommentary {
+		t.Fatalf("started notification should carry commentary phase, got %#v", out[0].params)
+	}
+}
+
+func TestThreadStateMovesStreamingCommentaryToFinalAnswerOnAssistantMessage(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+
+	// 1. Stream preamble + tool_use + tool_result + streamed "final" text.
+	//    While streaming, the assistant item is commentary — never final_answer.
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventToolUseStart,
+		ToolCall: &providers.ToolCall{
+			ID:   "call_1",
+			Name: "read_file",
+		},
+	}, now)
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:       providers.EventToolUseEnd,
+		ToolCall:   &providers.ToolCall{ID: "call_1", Name: "read_file"},
+		ToolResult: "file contents",
+	}, now)
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:    providers.EventContentDelta,
+		Content: "The result is clear.",
+	}, now)
+
+	// 2. The complete assistant message arrives (no ToolCalls → final_answer).
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventMessage,
+		Message: &providers.ChatMessage{
+			Role:    "assistant",
+			Content: "The result is clear.",
+		},
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	var agentItems []ThreadItem
+	for _, item := range turn.Items {
+		if item.Type == ThreadItemAgentMessage {
+			agentItems = append(agentItems, item)
+		}
+	}
+	if len(agentItems) != 1 {
+		t.Fatalf("expected exactly one agent item, got %+v", agentItems)
+	}
+	if agentItems[0].Phase != ThreadItemPhaseFinalAnswer {
+		t.Fatalf("EventAssistantMessage should promote streaming commentary to final_answer, got %+v", agentItems[0])
+	}
+	if agentItems[0].Status != ThreadItemStatusCompleted {
+		t.Fatalf("EventAssistantMessage should mark the agent item completed, got %+v", agentItems[0])
 	}
 }
 

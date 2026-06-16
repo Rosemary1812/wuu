@@ -222,9 +222,18 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if ev.Content == "" {
 			return nil
 		}
+		// Streaming text is always intermediate. We can't decide final_answer
+		// here — the model may still be thinking, may interleave another
+		// tool_use, or may stop streaming without ever emitting
+		// EventAssistantMessage. Marking this as final_answer used to leak
+		// commentary text into the renderer's final-answer slot until
+		// EventToolUseStart flipped the phase back to commentary, producing
+		// a visible "commentary in the final position" race. EventAssistantMessage
+		// (the only path that sees the complete, non-streaming message) is
+		// the place that promotes an agent item to final_answer.
 		phase := ThreadItemPhasePending
 		if th.turnHasPriorProcessLocked(turnID) {
-			phase = ThreadItemPhaseFinalAnswer
+			phase = ThreadItemPhaseCommentary
 		}
 		item, started := th.ensureActiveAgentItemLocked(turnID, now, phase)
 		if started {
@@ -245,9 +254,10 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if th.activeAgentItemID == "" && ev.Content == "" {
 			return nil
 		}
+		// See EventContentDelta: streaming text is never final_answer here.
 		phase := ThreadItemPhasePending
 		if th.turnHasPriorProcessLocked(turnID) {
-			phase = ThreadItemPhaseFinalAnswer
+			phase = ThreadItemPhaseCommentary
 		}
 		item, started := th.ensureActiveAgentItemLocked(turnID, now, phase)
 		if started {
