@@ -53,7 +53,7 @@ type StreamRunner struct {
 	// window for this model instead of consulting the built-in
 	// registry. Use it when a user has configured an unknown or
 	// proxied model that wuu wouldn't otherwise recognize. Zero
-	// means "ask providers.ContextWindowFor(Model)".
+	// means "use the known-model registry if it recognizes Model".
 	ContextWindowOverride int
 	// MaxInputTokens lets callers pass a provider/model prompt limit
 	// when it is smaller than the total context window.
@@ -175,7 +175,9 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 
 	maxCtx := r.ContextWindowOverride
 	if maxCtx <= 0 {
-		maxCtx = providers.ContextWindowFor(r.Model)
+		if window, ok := providers.KnownContextWindowFor(r.Model); ok {
+			maxCtx = window
+		}
 	}
 	if r.DisableAutoCompact {
 		maxCtx = 0 // disables the proactive trigger inside RunToolLoop

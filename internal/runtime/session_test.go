@@ -972,6 +972,84 @@ func TestNewSessionResolvesConfiguredVariantOptions(t *testing.T) {
 	}
 }
 
+func TestNewSessionUsesConfiguredModelLimitForContextWindow(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "custom",
+			Providers: map[string]config.ProviderConfig{
+				"custom": {
+					Type:      "anthropic",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "private-1m-model",
+					Models: map[string]config.ProviderModelConfig{
+						"private-1m-model": {
+							Limit: &config.ProviderModelLimitConfig{
+								Context: 1_000_000,
+								Output:  128_000,
+							},
+						},
+					},
+				},
+			},
+			Agent: config.AgentConfig{Name: "Mia Agent"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	if rt.StreamRunner.ContextWindowOverride != 1_000_000 {
+		t.Fatalf("ContextWindowOverride = %d", rt.StreamRunner.ContextWindowOverride)
+	}
+	if rt.StreamRunner.MaxInputTokens != 0 {
+		t.Fatalf("MaxInputTokens = %d, want 0 without an explicit input limit", rt.StreamRunner.MaxInputTokens)
+	}
+}
+
+func TestNewSessionUnknownModelDisablesProactiveContextWindow(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "custom",
+			Providers: map[string]config.ProviderConfig{
+				"custom": {
+					Type:      "anthropic",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "private-unknown-byo-model",
+				},
+			},
+			Agent: config.AgentConfig{Name: "Mia Agent"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	if rt.StreamRunner.ContextWindowOverride != 0 {
+		t.Fatalf("ContextWindowOverride = %d, want 0 for unknown BYOK model", rt.StreamRunner.ContextWindowOverride)
+	}
+	if rt.StreamRunner.MaxInputTokens != 0 {
+		t.Fatalf("MaxInputTokens = %d, want 0 for unknown BYOK model", rt.StreamRunner.MaxInputTokens)
+	}
+}
+
 func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -1052,9 +1130,45 @@ func TestResolveInputWindow_CapsCodexSubscriptionGPT5(t *testing.T) {
 	got := ResolveInputWindow("gpt-5.5", config.ProviderConfig{
 		Type:  "openai-codex",
 		Model: "gpt-5.5",
-	}, 1_048_576)
+	})
 	if got != codexSubscriptionGPT5InputCap {
 		t.Fatalf("ResolveInputWindow = %d, want %d", got, codexSubscriptionGPT5InputCap)
+	}
+}
+
+func TestResolveWindowsFallBackToAPIModelLimits(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:  "openai-compatible",
+		Model: "fast-alias",
+		Models: map[string]config.ProviderModelConfig{
+			"fast-alias": {
+				ID: "base-model",
+			},
+			"base-model": {
+				Limit: &config.ProviderModelLimitConfig{
+					Context: 1_000_000,
+					Input:   900_000,
+				},
+			},
+		},
+	}
+
+	if got := ResolveContextWindow("fast-alias", provider, 0); got != 1_000_000 {
+		t.Fatalf("ResolveContextWindow = %d, want 1000000", got)
+	}
+	if got := ResolveInputWindow("fast-alias", provider); got != 900_000 {
+		t.Fatalf("ResolveInputWindow = %d, want 900000", got)
+	}
+}
+
+func TestResolveInputWindowDoesNotSynthesizeFromContextWindow(t *testing.T) {
+	got := ResolveInputWindow("private-1m-model", config.ProviderConfig{
+		Type:          "anthropic",
+		Model:         "private-1m-model",
+		ContextWindow: 1_000_000,
+	})
+	if got != 0 {
+		t.Fatalf("ResolveInputWindow = %d, want 0 without explicit input limit", got)
 	}
 }
 

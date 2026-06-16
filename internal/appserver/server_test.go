@@ -429,7 +429,7 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	if rt.Model != "new-model" || rt.StreamRunner.Model != "new-model" {
 		t.Fatalf("runtime model not updated: runtime=%q stream_runner=%q", rt.Model, rt.StreamRunner.Model)
 	}
-	if rt.StreamRunner.ContextWindowOverride != providers.ContextWindowFor("new-model") {
+	if rt.StreamRunner.ContextWindowOverride != 0 {
 		t.Fatalf("context window override not updated: got %d", rt.StreamRunner.ContextWindowOverride)
 	}
 	data, err := os.ReadFile(rt.ConfigPath)

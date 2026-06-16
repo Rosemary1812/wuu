@@ -1209,19 +1209,27 @@ func TestSetTemporaryEnvUnsetsMissingValue(t *testing.T) {
 }
 
 func TestResolveContextWindow_PrefersProviderOverride(t *testing.T) {
-	if got := runtime.ResolveContextWindow("gpt-5.4", 777, 555); got != 777 {
+	provider := config.ProviderConfig{
+		ContextWindow: 777,
+		Models: map[string]config.ProviderModelConfig{
+			"gpt-5.4": {
+				Limit: &config.ProviderModelLimitConfig{Context: 1_050_000},
+			},
+		},
+	}
+	if got := runtime.ResolveContextWindow("gpt-5.4", provider, 555); got != 777 {
 		t.Fatalf("expected provider override, got %d", got)
 	}
 }
 
 func TestResolveContextWindow_FallsBackToAgentOverride(t *testing.T) {
-	if got := runtime.ResolveContextWindow("gpt-5.4", 0, 555); got != 555 {
+	if got := runtime.ResolveContextWindow("gpt-5.4", config.ProviderConfig{}, 555); got != 555 {
 		t.Fatalf("expected agent override, got %d", got)
 	}
 }
 
 func TestResolveContextWindow_UsesModelRegistryByDefault(t *testing.T) {
-	if got := runtime.ResolveContextWindow("gpt-5.4", 0, 0); got != 400000 {
+	if got := runtime.ResolveContextWindow("gpt-5.4", config.ProviderConfig{}, 0); got != 400000 {
 		t.Fatalf("expected model registry context window, got %d", got)
 	}
 }

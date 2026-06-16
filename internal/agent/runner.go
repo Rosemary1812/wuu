@@ -64,9 +64,8 @@ type Runner struct {
 	MaxSteps     int
 	Temperature  float64
 	// ContextWindowOverride pins the context window for this run
-	// instead of consulting providers.ContextWindowFor. Zero falls
-	// back to the registry. Used by sub-agents whose model isn't in
-	// the registry but whose owner knows the right number.
+	// instead of consulting the known-model registry. Zero disables
+	// proactive compaction when the model is unknown.
 	ContextWindowOverride int
 	// MaxInputTokens pins the prompt/input budget when lower than the
 	// model's total context window.
@@ -113,7 +112,9 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 
 	maxCtx := r.ContextWindowOverride
 	if maxCtx <= 0 {
-		maxCtx = providers.ContextWindowFor(r.Model)
+		if window, ok := providers.KnownContextWindowFor(r.Model); ok {
+			maxCtx = window
+		}
 	}
 	cfg := LoopConfig{
 		Tools:            r.Tools,

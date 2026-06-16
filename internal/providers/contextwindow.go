@@ -4,11 +4,8 @@ import (
 	"strings"
 )
 
-// ContextWindowFor returns the context window size in tokens for the
-// given model identifier. The lookup is provider-agnostic — it
-// inspects the model name string only, so the same registry serves
-// direct Anthropic / direct OpenAI / OpenRouter / third-party proxies
-// equally well as long as they don't rewrite model names.
+// KnownContextWindowFor returns the context window size in tokens for a model
+// only when wuu has explicit model metadata for it.
 //
 // Resolution order:
 //
@@ -20,21 +17,18 @@ import (
 //     fallback for models catwalk hasn't shipped yet, plus generic
 //     family rules ("claude-sonnet" → 200k) that catch any vendor's
 //     proxy-renamed variant.
-//  3. defaultContextWindow if nothing matched.
 //
-// The registry intentionally errs on the side of UNDERREPORTING (a
-// smaller window than the model actually has) for unknown variants,
-// so the proactive auto-compact triggers a bit early instead of
-// missing the threshold and only catching the failure reactively via
-// providers.IsContextOverflow.
-func ContextWindowFor(model string) int {
+// If neither source recognizes the model, ok is false. Agent runtimes use this
+// path for proactive auto-compact so BYOK models with unknown limits do not get
+// silently treated as 64k-context models.
+func KnownContextWindowFor(model string) (window int, ok bool) {
 	if model == "" {
-		return defaultContextWindow
+		return 0, false
 	}
 
 	// Layer 1: catwalk curated index.
 	if w := catwalkLookup(model); w > 0 {
-		return w
+		return w, true
 	}
 
 	// Layer 2: wuu's hand-rolled substring registry.
@@ -51,8 +45,19 @@ func ContextWindowFor(model string) int {
 		// Patterns are stored lowercased; case-insensitive substring
 		// match against either the full or stripped model id.
 		if strings.Contains(lower, entry.pattern) || strings.Contains(stripped, entry.pattern) {
-			return entry.size
+			return entry.size, true
 		}
+	}
+	return 0, false
+}
+
+// ContextWindowFor returns the context window size in tokens for the given model
+// identifier. Unknown models fall back to defaultContextWindow for legacy callers
+// and display code. Runtime proactive auto-compact should use
+// KnownContextWindowFor instead so unknown BYOK models remain reactive-only.
+func ContextWindowFor(model string) int {
+	if w, ok := KnownContextWindowFor(model); ok {
+		return w
 	}
 	return defaultContextWindow
 }

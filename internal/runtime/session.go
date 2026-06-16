@@ -260,7 +260,7 @@ func NewSession(opts Options) (*Session, error) {
 	modelSelection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 	contextWindow := ResolveContextWindow(
 		providerCfg.Model,
-		ruleProviderCfg.ContextWindow,
+		ruleProviderCfg,
 		cfg.Agent.MaxContextTokens,
 	)
 	profileMemoryNudgeInterval := cfg.Memory.ProfileMemoryNudgeInterval()
@@ -291,7 +291,7 @@ func NewSession(opts Options) (*Session, error) {
 		Variant:               modelSelection.Variant,
 		ProviderOptions:       modelSelection.ProviderOptions,
 		ContextWindowOverride: contextWindow,
-		MaxInputTokens:        ResolveInputWindow(providerCfg.Model, ruleProviderCfg, contextWindow),
+		MaxInputTokens:        ResolveInputWindow(providerCfg.Model, ruleProviderCfg),
 		DisableAutoCompact:    cfg.Agent.DisableAutoCompact,
 		BeforeRequest:         EnvContextInjector(rootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
 		AfterTurn:             afterTurn,
@@ -755,21 +755,30 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 	return s.ProcessManager.CleanupSessionWithResult()
 }
 
-// ResolveContextWindow resolves the effective model context size.
-func ResolveContextWindow(model string, providerOverride, agentOverride int) int {
-	if providerOverride > 0 {
-		return providerOverride
+// ResolveContextWindow resolves the trusted model context size used for
+// proactive auto-compact. A zero return means the model limit is unknown; the
+// runtime should skip proactive compaction and rely on provider overflow errors.
+func ResolveContextWindow(model string, provider config.ProviderConfig, agentOverride int) int {
+	if provider.ContextWindow > 0 {
+		return provider.ContextWindow
+	}
+	if limit := configuredModelContextLimit(model, provider); limit > 0 {
+		return limit
 	}
 	if agentOverride > 0 {
 		return agentOverride
 	}
-	return providers.ContextWindowFor(model)
+	if window, ok := providers.KnownContextWindowFor(model); ok {
+		return window
+	}
+	return 0
 }
 
-// ResolveInputWindow resolves the effective prompt/input budget. It is often
-// lower than the total context window because providers reserve output tokens
-// server-side before validating the request.
-func ResolveInputWindow(model string, provider config.ProviderConfig, contextWindow int) int {
+// ResolveInputWindow resolves the effective prompt/input budget when the
+// provider publishes a separate input cap. It intentionally does not synthesize
+// an input cap from context-output; proactive compaction handles output reserve
+// separately.
+func ResolveInputWindow(model string, provider config.ProviderConfig) int {
 	if limit := configuredModelInputLimit(model, provider); limit > 0 {
 		if cap := codexSubscriptionInputCap(model, provider.Type); cap > 0 && cap < limit {
 			return cap
@@ -779,31 +788,46 @@ func ResolveInputWindow(model string, provider config.ProviderConfig, contextWin
 	if cap := codexSubscriptionInputCap(model, provider.Type); cap > 0 {
 		return cap
 	}
-	if contextWindow <= 0 {
-		return 0
+	return 0
+}
+
+func configuredModelContextLimit(model string, provider config.ProviderConfig) int {
+	for _, cfg := range configuredModelCandidates(model, provider) {
+		if cfg.ContextWindow > 0 {
+			return cfg.ContextWindow
+		}
+		if cfg.Limit != nil && cfg.Limit.Context > 0 {
+			return cfg.Limit.Context
+		}
 	}
-	reserve := providers.MaxOutputTokensFor(model)
-	if reserve <= 0 || reserve >= contextWindow {
-		return 0
-	}
-	return contextWindow - reserve
+	return 0
 }
 
 func configuredModelInputLimit(model string, provider config.ProviderConfig) int {
-	model = strings.TrimSpace(model)
-	if model == "" || len(provider.Models) == 0 {
-		return 0
-	}
-	if cfg, ok := provider.Models[model]; ok && cfg.Limit != nil && cfg.Limit.Input > 0 {
-		return cfg.Limit.Input
-	}
-	apiModel := modelcatalog.APIModel(provider, model)
-	if apiModel != "" && apiModel != model {
-		if cfg, ok := provider.Models[apiModel]; ok && cfg.Limit != nil && cfg.Limit.Input > 0 {
+	for _, cfg := range configuredModelCandidates(model, provider) {
+		if cfg.Limit != nil && cfg.Limit.Input > 0 {
 			return cfg.Limit.Input
 		}
 	}
 	return 0
+}
+
+func configuredModelCandidates(model string, provider config.ProviderConfig) []config.ProviderModelConfig {
+	model = strings.TrimSpace(model)
+	if model == "" || len(provider.Models) == 0 {
+		return nil
+	}
+	out := make([]config.ProviderModelConfig, 0, 2)
+	if cfg, ok := provider.Models[model]; ok {
+		out = append(out, cfg)
+	}
+	apiModel := modelcatalog.APIModel(provider, model)
+	if apiModel != "" && apiModel != model {
+		if cfg, ok := provider.Models[apiModel]; ok {
+			out = append(out, cfg)
+		}
+	}
+	return out
 }
 
 const codexSubscriptionGPT5InputCap = 272_000

@@ -83,6 +83,28 @@ func TestContextWindowFor_DefaultForUnknown(t *testing.T) {
 	}
 }
 
+func TestKnownContextWindowFor_UnknownModelIsNotDefaulted(t *testing.T) {
+	cases := []string{
+		"some-brand-new-model-2030",
+		"my-private-llm-7b",
+		"",
+	}
+	for _, m := range cases {
+		t.Run(m, func(t *testing.T) {
+			if got, ok := KnownContextWindowFor(m); ok || got != 0 {
+				t.Fatalf("KnownContextWindowFor(%q) = %d, %v; want 0, false", m, got, ok)
+			}
+		})
+	}
+}
+
+func TestKnownContextWindowFor_KnownModel(t *testing.T) {
+	got, ok := KnownContextWindowFor("gpt-4o")
+	if !ok || got <= 0 {
+		t.Fatalf("KnownContextWindowFor(gpt-4o) = %d, %v; want known positive window", got, ok)
+	}
+}
+
 func TestContextWindowFor_EmptyString(t *testing.T) {
 	if got := ContextWindowFor(""); got != defaultContextWindow {
 		t.Fatalf("expected default for empty string, got %d", got)

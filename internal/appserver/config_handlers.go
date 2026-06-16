@@ -279,9 +279,10 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)
 		s.rt.StreamRunner.ContextWindowOverride = runtime.ResolveContextWindow(
 			model,
-			ruleProviderCfg.ContextWindow,
+			ruleProviderCfg,
 			cfg.Agent.MaxContextTokens,
 		)
+		s.rt.StreamRunner.MaxInputTokens = runtime.ResolveInputWindow(model, ruleProviderCfg)
 	}
 	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
@@ -413,6 +414,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 					th.execRuntime.StreamRunner.Variant = s.currentVariant()
 					th.execRuntime.StreamRunner.ProviderOptions = s.currentProviderOptions()
 					th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
+					th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
 				}
 				if th.execRuntime.Toolkit != nil {
 					th.execRuntime.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
