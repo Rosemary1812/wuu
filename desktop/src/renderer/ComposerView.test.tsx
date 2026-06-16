@@ -8,6 +8,7 @@ import {
   type CodexModelLoadState,
   type ToolPolicyProfile,
 } from "./ComposerView";
+import type { QueuedComposerMessage } from "./ComposerMessages";
 import type { InitializeResult, ToolPolicySummary } from "../shared/protocol";
 
 let container: HTMLDivElement;
@@ -48,7 +49,16 @@ function initialized(toolPolicy?: ToolPolicySummary): InitializeResult {
 
 function renderComposer(props: {
   accessMenuOpen?: boolean;
+  prompt?: string;
+  running?: boolean;
+  queuedMessages?: QueuedComposerMessage[];
+  guideMessages?: QueuedComposerMessage[];
   toolPolicy?: ToolPolicySummary;
+  onInterrupt?: () => void;
+  onSend?: () => void;
+  onGuideQueuedMessage?: (id: string) => void;
+  onEditQueuedMessage?: (id: string) => void;
+  onEditGuideMessage?: (id: string) => void;
   onSelectToolPolicyProfile?: (profile: ToolPolicyProfile) => void;
 }): { onSelectToolPolicyProfile: (profile: ToolPolicyProfile) => void } {
   const codexModels: CodexModelLoadState = {
@@ -61,13 +71,13 @@ function renderComposer(props: {
     root = createRoot(container);
     root.render(
       <Composer
-        prompt=""
+        prompt={props.prompt ?? ""}
         setPrompt={() => {}}
         files={[]}
         images={[]}
-        queuedMessages={[]}
-        guideMessages={[]}
-        running={false}
+        queuedMessages={props.queuedMessages ?? []}
+        guideMessages={props.guideMessages ?? []}
+        running={props.running ?? false}
         status="ready"
         readOnly={false}
         initialized={initialized(props.toolPolicy)}
@@ -104,15 +114,100 @@ function renderComposer(props: {
         onRemoveImage={() => {}}
         onRemoveQueuedMessage={() => {}}
         onRemoveGuideMessage={() => {}}
-        onGuideQueuedMessage={() => {}}
-        onClearQueuedMessages={() => {}}
-        onSend={() => {}}
-        onInterrupt={() => {}}
+        onGuideQueuedMessage={props.onGuideQueuedMessage ?? (() => {})}
+        onEditQueuedMessage={props.onEditQueuedMessage ?? (() => {})}
+        onEditGuideMessage={props.onEditGuideMessage ?? (() => {})}
+        onSend={props.onSend ?? (() => {})}
+        onInterrupt={props.onInterrupt ?? (() => {})}
       />,
     );
   });
   return { onSelectToolPolicyProfile };
 }
+
+describe("Composer send control", () => {
+  it("shows one stateful action button while a request is running", () => {
+    const onInterrupt = vi.fn();
+    const onSend = vi.fn();
+    renderComposer({
+      prompt: "queued follow-up",
+      running: true,
+      onInterrupt,
+      onSend,
+    });
+
+    expect(
+      container.querySelectorAll(".composer-action-button.composer-stop-button"),
+    ).toHaveLength(1);
+    expect(container.querySelector("button[aria-label=\"发送\"]")).toBeNull();
+    expect(container.querySelector("button[aria-label=\"排队发送\"]")).toBeNull();
+
+    const stopButton = container.querySelector<HTMLButtonElement>("button[aria-label=\"停止\"]");
+    expect(stopButton).not.toBeNull();
+
+    act(() => {
+      stopButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onInterrupt).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+});
+
+describe("Composer queue strip", () => {
+  it("lets a queued message become a guide", () => {
+    const onGuideQueuedMessage = vi.fn();
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "要求后续变更", images: [], files: [] },
+      ],
+      onGuideQueuedMessage,
+    });
+
+    const guideButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"作为引导发送\"]",
+    );
+    expect(guideButton).not.toBeNull();
+
+    act(() => {
+      guideButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onGuideQueuedMessage).toHaveBeenCalledWith("queue-1");
+  });
+
+  it("opens the queued message menu and edits the selected item", () => {
+    const onEditQueuedMessage = vi.fn();
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "要求后续变更", images: [], files: [] },
+      ],
+      onEditQueuedMessage,
+    });
+
+    const menuButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"待发送消息操作\"]",
+    );
+    expect(menuButton).not.toBeNull();
+
+    act(() => {
+      menuButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    const editItem = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("button[role=\"menuitem\"]"),
+    ).find((button) => button.textContent?.includes("编辑消息"));
+    expect(editItem).not.toBeUndefined();
+
+    act(() => {
+      editItem?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onEditQueuedMessage).toHaveBeenCalledWith("queue-1");
+  });
+});
 
 describe("Composer permission menu", () => {
   it("maps tool policy summaries to preset chip states", () => {

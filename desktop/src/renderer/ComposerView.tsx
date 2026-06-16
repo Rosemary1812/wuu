@@ -136,7 +136,8 @@ export function Composer({
   onRemoveQueuedMessage,
   onRemoveGuideMessage,
   onGuideQueuedMessage,
-  onClearQueuedMessages,
+  onEditQueuedMessage,
+  onEditGuideMessage,
   onSend,
   onInterrupt,
   queryHistorySessionID,
@@ -191,7 +192,8 @@ export function Composer({
   onRemoveQueuedMessage: (id: string) => void;
   onRemoveGuideMessage: (id: string) => void;
   onGuideQueuedMessage: (id: string) => void;
-  onClearQueuedMessages: () => void;
+  onEditQueuedMessage: (id: string) => void;
+  onEditGuideMessage: (id: string) => void;
   onSend: () => void;
   onInterrupt: () => void;
   queryHistorySessionID?: string;
@@ -349,7 +351,8 @@ export function Composer({
         onRemoveGuideMessage={onRemoveGuideMessage}
         onRemoveQueuedMessage={onRemoveQueuedMessage}
         onGuideQueuedMessage={onGuideQueuedMessage}
-        onClearQueuedMessages={onClearQueuedMessages}
+        onEditGuideMessage={onEditGuideMessage}
+        onEditQueuedMessage={onEditQueuedMessage}
       />
       <div className="composer-shell">
         {slashMenuOpen ? (
@@ -521,39 +524,16 @@ export function Composer({
               </>
             )}
             {statusText ? <span className="status-label">{statusText}</span> : null}
-            {running ? (
-              <>
-                <button
-                  className="composer-action-button composer-send-button composer-queue-send-button"
-                  type="button"
-                  onClick={onSend}
-                  aria-label="排队发送"
-                  title="排队发送"
-                  disabled={readOnly || !hasDraft}
-                >
-                  <Send size={18} />
-                </button>
-                <button
-                  className="composer-action-button composer-stop-button"
-                  type="button"
-                  onClick={onInterrupt}
-                  aria-label="停止"
-                  title="停止"
-                >
-                  <Square size={17} />
-                </button>
-              </>
-            ) : (
-              <button
-                className="composer-action-button composer-send-button"
-                type="button"
-                onClick={onSend}
-                aria-label="发送"
-                disabled={readOnly || !hasDraft}
-              >
-                <Send size={18} />
-              </button>
-            )}
+            <button
+              className={`composer-action-button ${running ? "composer-stop-button" : "composer-send-button"}`}
+              type="button"
+              onClick={running ? onInterrupt : onSend}
+              aria-label={running ? "停止" : "发送"}
+              title={running ? "停止" : "发送"}
+              disabled={!running && (readOnly || !hasDraft)}
+            >
+              {running ? <Square size={17} /> : <Send size={18} />}
+            </button>
           </div>
         </div>
         <div className="composer-context-bar" ref={menuRef}>

@@ -3,12 +3,13 @@ import {
   FileText,
   MoreHorizontal,
   Paperclip,
+  Pencil,
   Send,
   Square,
   Trash2,
   X
 } from "lucide-react";
-import { type KeyboardEvent as ReactKeyboardEvent, useRef } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useRef, useState } from "react";
 import { isComposerTextComposing } from "./ComposerSlashCommands";
 import {
   clipboardAttachmentFiles,
@@ -203,14 +204,16 @@ export function ComposerQueueStrip({
   onRemoveGuideMessage,
   onRemoveQueuedMessage,
   onGuideQueuedMessage,
-  onClearQueuedMessages
+  onEditGuideMessage,
+  onEditQueuedMessage
 }: {
   guideMessages: QueuedComposerMessage[];
   queuedMessages: QueuedComposerMessage[];
   onRemoveGuideMessage: (id: string) => void;
   onRemoveQueuedMessage: (id: string) => void;
   onGuideQueuedMessage: (id: string) => void;
-  onClearQueuedMessages: () => void;
+  onEditGuideMessage: (id: string) => void;
+  onEditQueuedMessage: (id: string) => void;
 }): JSX.Element | null {
   const total = guideMessages.length + queuedMessages.length;
   if (total === 0) {
@@ -225,7 +228,7 @@ export function ComposerQueueStrip({
             key={message.id}
             message={message}
             kind="guide"
-            onClearAll={onClearQueuedMessages}
+            onEdit={() => onEditGuideMessage(message.id)}
             onRemove={() => onRemoveGuideMessage(message.id)}
           />
         ))}
@@ -235,7 +238,7 @@ export function ComposerQueueStrip({
             message={message}
             kind="queue"
             onGuide={() => onGuideQueuedMessage(message.id)}
-            onClearAll={onClearQueuedMessages}
+            onEdit={() => onEditQueuedMessage(message.id)}
             onRemove={() => onRemoveQueuedMessage(message.id)}
           />
         ))}
@@ -248,15 +251,18 @@ function ComposerQueueItem({
   message,
   kind,
   onGuide,
-  onClearAll,
+  onEdit,
   onRemove
 }: {
   message: QueuedComposerMessage;
   kind: "guide" | "queue";
   onGuide?: () => void;
-  onClearAll: () => void;
+  onEdit: () => void;
   onRemove: () => void;
 }): JSX.Element {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeLabel = kind === "guide" ? "关闭引导" : "关闭排队";
+
   return (
     <div className={`composer-queue-item ${kind}`}>
       <CornerDownRight className="composer-queue-corner" size={18} aria-hidden="true" />
@@ -272,12 +278,52 @@ function ComposerQueueItem({
           <span>引导</span>
         </button>
       )}
-      <button className="composer-queue-icon" type="button" aria-label="移除待发送消息" onClick={onRemove}>
+      <button
+        className="composer-queue-icon"
+        type="button"
+        aria-label="移除待发送消息"
+        onClick={onRemove}
+      >
         <Trash2 size={16} />
       </button>
-      <button className="composer-queue-icon" type="button" aria-label="清空全部待发送消息" onClick={onClearAll}>
-        <MoreHorizontal size={18} />
-      </button>
+      <div className="composer-queue-menu-anchor">
+        <button
+          className="composer-queue-icon"
+          type="button"
+          aria-label="待发送消息操作"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <MoreHorizontal size={18} />
+        </button>
+        {menuOpen ? (
+          <div className="composer-queue-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onEdit();
+              }}
+            >
+              <Pencil size={16} aria-hidden="true" />
+              <span>编辑消息</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onRemove();
+              }}
+            >
+              <CornerDownRight size={16} aria-hidden="true" />
+              <span>{closeLabel}</span>
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

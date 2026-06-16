@@ -1340,39 +1340,114 @@ export function App(): JSX.Element {
     }));
   }
 
-  async function removeQueuedMessage(id: string): Promise<void> {
-    setQueuedMessagesNow(
-      queuedMessagesRef.current.filter((message) => message.id !== id),
-    );
+  async function removeQueuedMessage(id: string): Promise<boolean> {
+    const previous = queuedMessagesRef.current;
+    const removedIndex = previous.findIndex((message) => message.id === id);
+    const removedMessage = previous[removedIndex];
+    if (!removedMessage) {
+      return false;
+    }
+    setQueuedMessagesNow(previous.filter((message) => message.id !== id));
     const targetThread = activeThreadForState(appStateRef.current);
     if (!targetThread) {
-      return;
+      return true;
     }
     try {
       await window.wuu.dequeueTurn(targetThread.id, id);
+      return true;
     } catch (error) {
+      if (!queuedMessagesRef.current.some((message) => message.id === id)) {
+        const current = queuedMessagesRef.current;
+        const insertAt = Math.min(removedIndex, current.length);
+        setQueuedMessagesNow([
+          ...current.slice(0, insertAt),
+          removedMessage,
+          ...current.slice(insertAt),
+        ]);
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "取消排队失败",
       }));
+      return false;
     }
   }
 
-  async function removeGuideMessage(id: string): Promise<void> {
-    setGuideMessagesNow(
-      guideMessagesRef.current.filter((message) => message.id !== id),
-    );
+  async function removeGuideMessage(id: string): Promise<boolean> {
+    const previous = guideMessagesRef.current;
+    const removedIndex = previous.findIndex((message) => message.id === id);
+    const removedMessage = previous[removedIndex];
+    if (!removedMessage) {
+      return false;
+    }
+    setGuideMessagesNow(previous.filter((message) => message.id !== id));
     const targetThread = activeThreadForState(appStateRef.current);
     if (!targetThread) {
-      return;
+      return true;
     }
     try {
       await window.wuu.unsteerTurn(targetThread.id, id);
+      return true;
     } catch (error) {
+      if (!guideMessagesRef.current.some((message) => message.id === id)) {
+        const current = guideMessagesRef.current;
+        const insertAt = Math.min(removedIndex, current.length);
+        setGuideMessagesNow([
+          ...current.slice(0, insertAt),
+          removedMessage,
+          ...current.slice(insertAt),
+        ]);
+      }
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "取消引导失败",
       }));
+      return false;
+    }
+  }
+
+  function restorePendingComposerMessage(message: QueuedComposerMessage): void {
+    setPrompt(message.text);
+    setComposerImages(message.images.map((image) => ({ ...image })));
+    setComposerFiles(message.files.map((file) => ({ ...file })));
+  }
+
+  function canRestorePendingComposerMessage(): boolean {
+    if (
+      prompt.trim().length === 0 &&
+      composerImages.length === 0 &&
+      composerFiles.length === 0
+    ) {
+      return true;
+    }
+    setState((current) => ({
+      ...current,
+      status: "先发送或清空当前输入，再编辑排队消息",
+    }));
+    return false;
+  }
+
+  async function editQueuedMessage(id: string): Promise<void> {
+    const message = queuedMessagesRef.current.find(
+      (candidate) => candidate.id === id,
+    );
+    if (!message || !canRestorePendingComposerMessage()) {
+      return;
+    }
+    if (await removeQueuedMessage(id)) {
+      restorePendingComposerMessage(message);
+    }
+  }
+
+  async function editGuideMessage(id: string): Promise<void> {
+    const message = guideMessagesRef.current.find(
+      (candidate) => candidate.id === id,
+    );
+    if (!message || !canRestorePendingComposerMessage()) {
+      return;
+    }
+    if (await removeGuideMessage(id)) {
+      restorePendingComposerMessage(message);
     }
   }
 
@@ -1523,7 +1598,8 @@ export function App(): JSX.Element {
         onRemoveQueuedMessage={removeQueuedMessage}
         onRemoveGuideMessage={removeGuideMessage}
         onGuideQueuedMessage={(id) => void guideQueuedMessage(id)}
-        onClearQueuedMessages={clearPendingComposerMessages}
+        onEditQueuedMessage={(id) => void editQueuedMessage(id)}
+        onEditGuideMessage={(id) => void editGuideMessage(id)}
         onSend={() => void sendPrompt()}
         onInterrupt={() => void interrupt()}
         queryHistorySessionID={activeThread?.id}
