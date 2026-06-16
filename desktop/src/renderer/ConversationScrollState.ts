@@ -10,7 +10,11 @@ import {
 import type { Turn } from "../shared/protocol";
 import type { ConversationPaneID } from "./AppState";
 
-const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 48;
+// Tight threshold so the conversation only re-engages auto-follow when the
+// user is effectively parked at the bottom. The previous 48px band let one
+// mouse-wheel notch land inside the band and silently re-arm auto-follow,
+// which made slow scroll-up get yanked back to the bottom mid-gesture.
+const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 16;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
 
 export function useConversationScrollState({
@@ -42,6 +46,13 @@ export function useConversationScrollState({
   handleConversationScroll: (scrolledNode?: HTMLElement) => void;
   scrollConversationToBottom: (options?: { force?: boolean }) => void;
   enableConversationAutoFollow: () => void;
+  /**
+   * Pause auto-follow so a programmatic scroll (e.g. query-history
+   * jump) doesn't get pulled back to the bottom by the next stream
+   * tick. Auto-follow resumes naturally once the user scrolls back
+   * near the bottom.
+   */
+  disableConversationAutoFollow: () => void;
 } {
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const splitPaneRefs = useRef<Record<ConversationPaneID, HTMLElement | null>>({
@@ -55,6 +66,7 @@ export function useConversationScrollState({
   }, []);
   const dockComposerHeightRef = useRef(0);
   const conversationAutoFollowRef = useRef(true);
+  const lastConversationScrollTopRef = useRef(0);
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
 
@@ -63,14 +75,6 @@ export function useConversationScrollState({
       return splitPaneRefs.current[activePane] ?? undefined;
     }
     return conversationScrollRef.current ?? undefined;
-  }
-
-  function isConversationNearBottom(node: HTMLElement): boolean {
-    const distanceFromBottom = Math.max(
-      0,
-      node.scrollHeight - node.scrollTop - node.clientHeight
-    );
-    return distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
   }
 
   function showConversationScrollbar(node: HTMLElement): void {
@@ -99,7 +103,12 @@ export function useConversationScrollState({
       }
       node.scrollTop = node.scrollHeight;
       showConversationScrollbar(node);
-      conversationAutoFollowRef.current = true;
+      // Do NOT re-arm auto-follow here. The browser fires a scroll event after
+      // the programmatic assignment, which runs handleConversationScroll and
+      // re-engages auto-follow when distanceFromBottom is within the band.
+      // Re-arming here caused a feedback loop where any successful
+      // programmatic scroll silently re-enabled auto-follow even when the
+      // user had explicitly scrolled up.
     },
     [activePane, splitConversation]
   );
@@ -121,13 +130,37 @@ export function useConversationScrollState({
     conversationAutoFollowRef.current = true;
   }, []);
 
+  const disableConversationAutoFollow = useCallback((): void => {
+    conversationAutoFollowRef.current = false;
+  }, []);
+
   function handleConversationScroll(scrolledNode?: HTMLElement): void {
     const node = scrolledNode ?? conversationViewport();
     if (!node) {
       return;
     }
     showConversationScrollbar(node);
-    conversationAutoFollowRef.current = isConversationNearBottom(node);
+
+    // Direction-sensitive auto-follow: the moment the user scrolls UP, drop
+    // out of auto-follow even if they are still inside the bottom band. Only
+    // re-engage when they explicitly scroll DOWN and reach the bottom band
+    // again. This is the pattern ChatGPT / Claude.ai / Slack use, and it
+    // removes the "slow scroll-up gets silently yanked back to bottom"
+    // symptom that the symmetric distance-from-bottom check produced.
+    const distanceFromBottom = Math.max(
+      0,
+      node.scrollHeight - node.scrollTop - node.clientHeight
+    );
+    const scrolledUp = node.scrollTop < lastConversationScrollTopRef.current;
+    lastConversationScrollTopRef.current = node.scrollTop;
+
+    if (scrolledUp) {
+      conversationAutoFollowRef.current = false;
+      return;
+    }
+    if (distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX) {
+      conversationAutoFollowRef.current = true;
+    }
   }
 
   useLayoutEffect(() => {
@@ -150,9 +183,16 @@ export function useConversationScrollState({
       ) {
         return;
       }
+      const wasVisible = dockComposerHeightRef.current > 0;
+      const isVisible = nextHeight > 0;
+      const visibilityChanged = wasVisible !== isVisible;
       dockComposerHeightRef.current = nextHeight;
       pane?.style.setProperty("--dock-composer-height", nextValue);
-      if (nextHeight > 0 && conversationAutoFollowRef.current) {
+      // Only re-scroll on a visibility transition (composer hidden → visible
+      // or vice versa), not on every continuous resize from typing or focus
+      // changes. Continuous resize firing scrollConversationToBottom used to
+      // fight the user whenever they tried to scroll up.
+      if (visibilityChanged && isVisible && conversationAutoFollowRef.current) {
         scrollConversationToBottom();
       }
     };
@@ -200,6 +240,7 @@ export function useConversationScrollState({
     scheduleStreamScroll,
     handleConversationScroll,
     scrollConversationToBottom,
-    enableConversationAutoFollow
+    enableConversationAutoFollow,
+    disableConversationAutoFollow
   };
 }
