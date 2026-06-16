@@ -162,6 +162,11 @@ func (t *Toolkit) rebuildRegistry() {
 		NewLoadSkillTool(e),
 		// Durable session/workspace memory
 		NewSessionMemoryTool(e),
+		// Goals
+		NewStartGoalTool(e),
+		NewUpdateGoalTool(e),
+		NewCompleteGoalTool(e),
+		NewGoalStatusTool(e),
 		// Workflows
 		NewListWorkflowsTool(e),
 		NewLoadWorkflowTool(e),

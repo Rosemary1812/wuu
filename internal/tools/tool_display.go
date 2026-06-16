@@ -84,6 +84,14 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("skill", "加载技能")
 		}
 		return toolDisplay("skill", "加载技能 "+displayTruncate(skill, 70))
+	case "start_goal":
+		return toolDisplay("goal", "启动 Goal "+displayTarget(displayString(args, "goal", "goal_id"), ""))
+	case "update_goal":
+		return toolDisplay("goal", "更新 Goal "+displayTarget(displayString(args, "goal_id"), ""))
+	case "complete_goal":
+		return toolDisplay("goal", "完成 Goal "+displayTarget(displayString(args, "goal_id"), ""))
+	case "goal_status":
+		return toolDisplay("goal", "查看 Goal "+displayTarget(displayString(args, "goal_id"), ""))
 	case "list_workflows":
 		return toolDisplay("workflow", "查看工作流")
 	case "load_workflow":

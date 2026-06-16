@@ -374,6 +374,14 @@ func (t *StartWorkflowTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Optional caller-provided run id. Omit for an auto-generated id.",
 				},
+				"goal_id": map[string]any{
+					"type":        "string",
+					"description": "Optional existing Goal id from start_goal. Pass with goal_dir to bind this workflow to the broader user-visible Goal.",
+				},
+				"goal_dir": map[string]any{
+					"type":        "string",
+					"description": "Optional existing Goal directory from start_goal.",
+				},
 				"script": map[string]any{
 					"type":        "string",
 					"description": "Ad hoc WORKFLOW.js script. When present, auto uses the script driver.",
@@ -494,6 +502,14 @@ func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Optional caller-provided run id. Omit for an auto-generated id.",
 				},
+				"goal_id": map[string]any{
+					"type":        "string",
+					"description": "Optional existing Goal id from start_goal. Pass with goal_dir to bind this workflow to the broader user-visible Goal.",
+				},
+				"goal_dir": map[string]any{
+					"type":        "string",
+					"description": "Optional existing Goal directory from start_goal.",
+				},
 				"background": map[string]any{
 					"type":        "boolean",
 					"description": "Whether to start the script in the background. Defaults true.",
@@ -517,6 +533,8 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		Arguments      string `json:"arguments"`
 		Script         string `json:"script"`
 		RunID          string `json:"run_id"`
+		GoalID         string `json:"goal_id"`
+		GoalDir        string `json:"goal_dir"`
 		Background     *bool  `json:"background"`
 		MaxAgents      int    `json:"max_agents"`
 		MaxConcurrency int    `json:"max_concurrency"`
@@ -574,7 +592,7 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 	if err != nil {
 		return "", fmt.Errorf("resolve workflow store: %w", err)
 	}
-	run, err := store.CreateRun(workflow.Run{
+	runInput, err := bindWorkflowRunToGoal(t.env, workflow.Run{
 		ID:             runID,
 		DefinitionName: def.Name,
 		DefinitionPath: def.Path,
@@ -584,7 +602,11 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		Status:         status,
 		PauseReason:    pauseReason,
 		ResumeHint:     resumeHint,
-	})
+	}, args.GoalID, args.GoalDir)
+	if err != nil {
+		return "", err
+	}
+	run, err := store.CreateRun(runInput)
 	if err != nil {
 		return "", err
 	}
@@ -667,10 +689,34 @@ func newWorkflowScriptRuntime(env *Env, store *workflow.Store, run workflow.Run,
 	})
 }
 
+func bindWorkflowRunToGoal(env *Env, run workflow.Run, goalID, goalDir string) (workflow.Run, error) {
+	goalID = strings.TrimSpace(goalID)
+	goalDir = strings.TrimSpace(goalDir)
+	if goalID == "" && goalDir == "" {
+		return run, nil
+	}
+	store, state, err := env.ResolveGoalStore(goalID, goalDir)
+	if err != nil {
+		return workflow.Run{}, err
+	}
+	run.GoalID = state.ID
+	run.GoalDir = store.Dir()
+	return run, nil
+}
+
 func attachWorkflowGoal(env *Env, store *workflow.Store, run workflow.Run) (workflow.Run, goalrunner.State, error) {
 	if strings.TrimSpace(run.GoalID) != "" && strings.TrimSpace(run.GoalDir) != "" {
 		goalStore := goalrunner.NewStore(run.GoalDir)
 		state, err := goalStore.LoadState()
+		if err != nil {
+			return run, goalrunner.State{}, err
+		}
+		run.GoalID = state.ID
+		run.GoalDir = goalStore.Dir()
+		if err := store.SaveRun(run); err != nil {
+			return run, goalrunner.State{}, err
+		}
+		state, err = initializeWorkflowGoalStatus(goalStore, state, run)
 		if err != nil {
 			return run, goalrunner.State{}, err
 		}
@@ -869,6 +915,14 @@ func (t *CreateWorkflowTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Optional caller-provided run id. Omit for an auto-generated id.",
 				},
+				"goal_id": map[string]any{
+					"type":        "string",
+					"description": "Optional existing Goal id from start_goal. Pass with goal_dir to bind this workflow to the broader user-visible Goal.",
+				},
+				"goal_dir": map[string]any{
+					"type":        "string",
+					"description": "Optional existing Goal directory from start_goal.",
+				},
 			},
 		},
 	}
@@ -887,6 +941,8 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		Phases         []workflowPhaseInput `json:"phases"`
 		InitialStatus  string               `json:"initial_status"`
 		RunID          string               `json:"run_id"`
+		GoalID         string               `json:"goal_id"`
+		GoalDir        string               `json:"goal_dir"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -946,7 +1002,7 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	if err != nil {
 		return "", fmt.Errorf("resolve workflow store: %w", err)
 	}
-	run, err := store.CreateRun(workflow.Run{
+	runInput, err := bindWorkflowRunToGoal(t.env, workflow.Run{
 		ID:             runID,
 		DefinitionName: def.Name,
 		DefinitionPath: def.Path,
@@ -957,7 +1013,11 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		Phases:         phases,
 		PauseReason:    pauseReason,
 		ResumeHint:     resumeHint,
-	})
+	}, args.GoalID, args.GoalDir)
+	if err != nil {
+		return "", err
+	}
+	run, err := store.CreateRun(runInput)
 	if err != nil {
 		return "", err
 	}
