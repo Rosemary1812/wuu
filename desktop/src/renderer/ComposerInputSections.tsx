@@ -168,7 +168,7 @@ export function SplitPaneComposer({
             disabled={readOnly}
             onClick={() => attachmentInputRef.current?.click()}
           >
-            <Paperclip size={16} />
+            <Paperclip aria-hidden="true" />
           </button>
           {statusText ? <span className="split-composer-status">{statusText}</span> : <span />}
           {running ? (
@@ -179,7 +179,7 @@ export function SplitPaneComposer({
               aria-label="停止"
               title="停止"
             >
-              <Square size={16} />
+              <Square aria-hidden="true" />
             </button>
           ) : (
             <button
@@ -189,7 +189,7 @@ export function SplitPaneComposer({
               aria-label="发送"
               disabled={readOnly || !hasDraft}
             >
-              <Send size={17} />
+              <Send aria-hidden="true" />
             </button>
           )}
         </div>
