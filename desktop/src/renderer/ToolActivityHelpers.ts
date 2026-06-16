@@ -71,9 +71,9 @@ export function activitySummaryText(
   if (sections.length === 0) {
     return fallback.text;
   }
-  const fragments = sections
-    .map((section) => sectionSummaryText(section))
-    .filter(Boolean);
+  const fragments = uniqueStrings(
+    sections.map((section) => sectionSummaryText(section)).filter(Boolean),
+  );
   if (fragments.length === 0) {
     return fallback.text;
   }
@@ -322,7 +322,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "read",
-        title: `查看 ${items.length} 处`,
+        title: "查看",
         detail: compactDetailText(compactToolTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -332,7 +332,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "search",
-        title: `搜索 ${items.length} 次`,
+        title: "搜索",
         detail: compactDetailText(compactSearchTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -342,7 +342,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "edit",
-        title: `更新 ${items.length} 个文件`,
+        title: "更新文件",
         detail: compactDetailText(compactToolTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -352,7 +352,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "command",
-        title: `检查 ${items.length} 项`,
+        title: "检查",
         detail: compactDetailText(compactCommandLabels(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -362,7 +362,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "agent",
-        title: `子任务 ${items.length} 项`,
+        title: "子任务",
         detail: compactDetailText(compactAgentLabels(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -372,7 +372,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "plan",
-        title: `计划 ${items.length} 次`,
+        title: "计划",
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -381,7 +381,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "interaction",
-        title: `等待用户 ${items.length} 次`,
+        title: "等待用户",
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -390,7 +390,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "schedule",
-        title: `定时任务 ${items.length} 项`,
+        title: "定时任务",
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -399,7 +399,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "browser",
-        title: `浏览器 ${items.length} 次`,
+        title: "浏览器",
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -408,7 +408,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "skill",
-        title: `技能 ${items.length} 项`,
+        title: "技能",
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -417,7 +417,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "unknown",
-        title: `工具 ${items.length} 项`,
+        title: "工具",
         detail: compactDetailText(
           uniqueStrings(items.map((item) => readableToolName(item.name))),
         ),
