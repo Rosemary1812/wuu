@@ -26,17 +26,115 @@ function userMessageAnchorSelector(turnID: string, itemID: string): string {
   return `#${userMessageAnchorID(turnID, itemID)}`;
 }
 
-export function scrollToUserMessage(turnID: string, itemID: string): void {
-  if (typeof document === "undefined") {
+const JUMP_HIGHLIGHT_CLASS = "user-message-jump-flash";
+const JUMP_HIGHLIGHT_DURATION_MS = 1600;
+// Try, then retry. The first attempt usually wins, but split conversations
+// (and just-mounted threads) can take a frame or two to mount the anchor.
+const JUMP_RETRY_DELAYS_MS: readonly number[] = [0, 80, 200];
+// Padding above the target so the previous turn header stays in view
+// and the message doesn't slam into the scroll container's top edge.
+const JUMP_TOP_OFFSET_PX = 64;
+
+function flashJumpTarget(node: HTMLElement): void {
+  node.classList.remove(JUMP_HIGHLIGHT_CLASS);
+  // Force reflow so re-adding the class restarts the animation even when
+  // the user clicks two entries back-to-back.
+  void node.offsetWidth;
+  node.classList.add(JUMP_HIGHLIGHT_CLASS);
+  window.setTimeout(() => {
+    node.classList.remove(JUMP_HIGHLIGHT_CLASS);
+  }, JUMP_HIGHLIGHT_DURATION_MS);
+}
+
+function findScrollContainer(start: HTMLElement): HTMLElement | null {
+  // Walk up looking for the conversation pane's scroll surface. We probe
+  // both the single-pane (.scroll-region) and split-pane containers so
+  // the same helper works whether split mode is active or not.
+  let parent: HTMLElement | null = start.parentElement;
+  while (parent) {
+    if (
+      parent.classList.contains("scroll-region") ||
+      parent.classList.contains("conversation-split-body")
+    ) {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+  return null;
+}
+
+function scrollAnchorIntoContainer(
+  node: HTMLElement,
+  container: HTMLElement,
+): void {
+  const containerRect = container.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+  const currentOffset =
+    nodeRect.top - containerRect.top + container.scrollTop;
+  const targetTop = Math.max(
+    0,
+    Math.min(
+      currentOffset - JUMP_TOP_OFFSET_PX,
+      container.scrollHeight - container.clientHeight,
+    ),
+  );
+  if (Math.abs(targetTop - container.scrollTop) < 2) {
     return;
+  }
+  const prefersReducedMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+  container.scrollTo({
+    top: targetTop,
+    behavior: prefersReducedMotion ? "auto" : "smooth",
+  });
+}
+
+function attemptJump(turnID: string, itemID: string): boolean {
+  if (typeof document === "undefined") {
+    return false;
   }
   const node = document.querySelector<HTMLElement>(
     userMessageAnchorSelector(turnID, itemID),
   );
   if (!node) {
+    return false;
+  }
+  const container = findScrollContainer(node);
+  if (!container) {
+    // Fallback: still flash the target so the user gets feedback, even
+    // if we couldn't locate the scroll container for an exact offset.
+    flashJumpTarget(node);
+    return true;
+  }
+  scrollAnchorIntoContainer(node, container);
+  flashJumpTarget(node);
+  return true;
+}
+
+/**
+ * Scroll the user message at `turnID`/`itemID` into the visible area of
+ * the conversation scroll surface. Adds a short highlight pulse to the
+ * target so the jump is unmistakable. Safe to call before the anchor is
+ * mounted — retries a few frames before giving up.
+ */
+export function scrollToUserMessage(turnID: string, itemID: string): void {
+  if (typeof window === "undefined") {
     return;
   }
-  node.scrollIntoView({ behavior: "smooth", block: "start" });
+  let attemptIndex = 0;
+  const tryOnce = (): void => {
+    if (attemptJump(turnID, itemID)) {
+      return;
+    }
+    const nextDelay = JUMP_RETRY_DELAYS_MS[attemptIndex + 1];
+    if (nextDelay === undefined) {
+      return;
+    }
+    attemptIndex += 1;
+    window.setTimeout(tryOnce, nextDelay);
+  };
+  tryOnce();
 }
 
 export function turnHasAssistantOutput(turn: Turn): boolean {
