@@ -1,10 +1,12 @@
 import type {
   Agent,
   AppServerNotification,
+  AppServerRequest,
   DesktopProject,
   GitStatusResult,
   InitializeResult,
   ManagedProcess,
+  PendingToolApproval,
   PlanUpdate,
   RuntimeContext,
   ServerEvent,
@@ -114,6 +116,7 @@ type AppState = {
   threads: Thread[];
   running: boolean;
   status: string;
+  pendingToolApproval?: PendingToolApproval;
 };
 
 const INITIAL_DRAFT_SESSION_TAB_ID = "draft:initial";
@@ -134,6 +137,16 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
     case "notification":
       return reduceNotification(state, event.message);
     case "server-request": {
+      if (event.message.method === "tool/approval/request") {
+        const approval = toolApprovalFromServerRequest(event.message);
+        if (approval) {
+          return {
+            ...state,
+            pendingToolApproval: approval,
+            status: "等待审批",
+          };
+        }
+      }
       void window.wuu.rejectServerRequest(
         event.message.id,
         `unsupported server request: ${event.message.method}`,
@@ -152,6 +165,40 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
         status: "wuu 遇到内部错误。后台服务已退出，请重启桌面端。",
       };
   }
+}
+
+function toolApprovalFromServerRequest(
+  request: Required<AppServerRequest>,
+): PendingToolApproval | undefined {
+  const params = isRecord(request.params) ? request.params : undefined;
+  if (!params) {
+    void window.wuu.rejectServerRequest(request.id, "tool approval request params missing");
+    return undefined;
+  }
+  const id = stringValue(params, "id");
+  const toolName = stringValue(params, "tool_name");
+  if (!id || !toolName) {
+    void window.wuu.rejectServerRequest(request.id, "tool approval request is invalid");
+    return undefined;
+  }
+  return {
+    server_request_id: request.id,
+    id,
+    tool_name: toolName,
+    call_id: stringValue(params, "call_id"),
+    kind: stringValue(params, "kind"),
+    risk: stringValue(params, "risk"),
+    policy_action: stringValue(params, "policy_action"),
+    policy_reason: stringValue(params, "policy_reason"),
+    classification_reason: stringValue(params, "classification_reason"),
+    read_only: params.read_only === true,
+    destructive: params.destructive === true,
+    revision: stringValue(params, "revision"),
+    arguments_sha256: stringValue(params, "arguments_sha256"),
+    arguments_preview: stringValue(params, "arguments_preview"),
+    approval_ref: stringValue(params, "approval_ref"),
+    model_next_action: stringValue(params, "model_next_action"),
+  };
 }
 
 function serverEventTargetsActiveContext(

@@ -43,6 +43,7 @@ import type {
   GitStatusResult,
   InitializeResult,
   ManagedProcess,
+  PendingToolApproval,
   PlanUpdate,
   ProjectListResult,
   RuntimeConnectionUpdate,
@@ -4082,6 +4083,28 @@ export function App(): JSX.Element {
     await window.wuu.interruptTurn(thread.id);
   }
 
+  async function resolveToolApproval(
+    approval: PendingToolApproval,
+    decision: "approved" | "approved_for_session" | "denied",
+  ): Promise<void> {
+    await window.wuu.respondToServerRequest(approval.server_request_id, {
+      decision,
+      reason:
+        decision === "denied"
+          ? "user denied the requested tool call"
+          : "user approved the requested tool call",
+    });
+    setState((current) =>
+      current.pendingToolApproval?.server_request_id === approval.server_request_id
+        ? {
+            ...current,
+            pendingToolApproval: undefined,
+            status: current.running ? current.status : "ready",
+          }
+        : current,
+    );
+  }
+
   if (settingsOpen) {
     return (
       <SettingsView
@@ -4181,6 +4204,21 @@ export function App(): JSX.Element {
         onSelectIndex={setConversationSearchSelectedIndex}
         onSelectResult={selectConversationSearchResult}
       />
+
+      {state.pendingToolApproval ? (
+        <ToolApprovalDialog
+          approval={state.pendingToolApproval}
+          onApprove={() =>
+            void resolveToolApproval(state.pendingToolApproval!, "approved")
+          }
+          onApproveForSession={() =>
+            void resolveToolApproval(state.pendingToolApproval!, "approved_for_session")
+          }
+          onDeny={() =>
+            void resolveToolApproval(state.pendingToolApproval!, "denied")
+          }
+        />
+      ) : null}
 
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
@@ -4559,6 +4597,51 @@ export function App(): JSX.Element {
           </div>
         </FloatingMenuPortal>
       ) : null}
+    </div>
+  );
+}
+
+function ToolApprovalDialog({
+  approval,
+  onApprove,
+  onApproveForSession,
+  onDeny,
+}: {
+  approval: PendingToolApproval;
+  onApprove: () => void;
+  onApproveForSession: () => void;
+  onDeny: () => void;
+}): JSX.Element {
+  const preview = approval.arguments_preview?.trim();
+  return (
+    <div className="modal-backdrop environment-modal-backdrop">
+      <section className="environment-dialog" role="dialog" aria-modal="true" aria-label="工具审批">
+        <div className="environment-dialog-header">
+          <span className="environment-dialog-icon">
+            <AlertCircle size={18} />
+          </span>
+          <div>
+            <h2>审批工具调用</h2>
+            <p>{approval.tool_name}</p>
+          </div>
+        </div>
+        <div className="environment-dialog-summary">
+          <strong>{approval.risk ? `风险：${approval.risk}` : "需要确认"}</strong>
+          <span>{approval.policy_reason || approval.classification_reason || "这个工具调用需要人工审批后才能继续。"}</span>
+        </div>
+        {preview ? <pre className="environment-dialog-error">{preview}</pre> : null}
+        <div className="environment-dialog-footer">
+          <button type="button" onClick={onDeny}>
+            拒绝
+          </button>
+          <button type="button" onClick={onApproveForSession}>
+            本会话批准
+          </button>
+          <button className="primary-button" type="button" onClick={onApprove}>
+            批准一次
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

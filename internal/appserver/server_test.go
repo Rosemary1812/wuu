@@ -573,6 +573,78 @@ func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
 	}
 }
 
+func TestServerToolApprovalRequestApprovesToolkitExecution(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new runtime toolkit: %v", err)
+	}
+	kit.SetToolPolicy(tools.ToolPolicy{
+		ToolActions: map[string]tools.ToolPolicyAction{
+			"write_file": tools.ToolPolicyRequireApproval,
+		},
+	})
+	rt.Toolkit = kit
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	done := make(chan error, 1)
+	go func() {
+		_, execErr := kit.Execute(context.Background(), providers.ToolCall{
+			ID:        "call-write",
+			Name:      "write_file",
+			Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
+		})
+		done <- execErr
+	}()
+
+	var request map[string]any
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		raw := out.String()
+		if !strings.Contains(raw, MethodToolApprovalRequest) {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		for _, msg := range parseOutput(t, raw) {
+			if msg["method"] == MethodToolApprovalRequest {
+				request = msg
+				break
+			}
+		}
+		if request != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if request == nil {
+		t.Fatalf("tool approval request not emitted; output=%s", out.String())
+	}
+	params := remarshal[ToolApprovalRequest](t, request["params"])
+	if params.ToolName != "write_file" || params.ArgumentsPreview == "" {
+		t.Fatalf("unexpected approval request params: %+v", params)
+	}
+	id, ok := request["id"].(string)
+	if !ok || id == "" {
+		t.Fatalf("approval request missing id: %+v", request)
+	}
+	response := fmt.Sprintf(`{"id":%q,"result":{"decision":"approved","reason":"test approved"}}`, id)
+	if err := srv.handleLine(context.Background(), []byte(response)); err != nil {
+		t.Fatalf("approval response: %v", err)
+	}
+	select {
+	case execErr := <-done:
+		if execErr != nil {
+			t.Fatalf("tool execution after approval: %v", execErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("tool execution did not resume after approval")
+	}
+	if _, err := os.Stat(filepath.Join(rt.RootDir, "notes.txt")); err != nil {
+		t.Fatalf("approved tool did not write file: %v", err)
+	}
+}
+
 func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)

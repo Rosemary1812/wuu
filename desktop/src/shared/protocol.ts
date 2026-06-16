@@ -765,6 +765,28 @@ export type ServerEvent = {
   | { kind: "server-exit"; code: number | null }
 );
 
+export type ToolApprovalRequest = {
+  id: string;
+  tool_name: string;
+  call_id?: string;
+  kind?: string;
+  risk?: string;
+  policy_action?: string;
+  policy_reason?: string;
+  classification_reason?: string;
+  read_only?: boolean;
+  destructive?: boolean;
+  revision?: string;
+  arguments_sha256?: string;
+  arguments_preview?: string;
+  approval_ref?: string;
+  model_next_action?: string;
+};
+
+export type PendingToolApproval = ToolApprovalRequest & {
+  server_request_id: string;
+};
+
 export type WindowResizeState = {
   resizing: boolean;
 };

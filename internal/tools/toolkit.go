@@ -51,6 +51,8 @@ type Toolkit struct {
 	activatedDeferredTools map[string]struct{}
 	toolPolicy             ToolPolicy
 	autoModeClassifier     AutoModeClassifier
+	approvalReviewer       ToolApprovalReviewer
+	approvalStore          *ToolApprovalStore
 	// mcpManager, when set, exposes MCP server tools alongside built-in
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
@@ -82,7 +84,7 @@ func New(rootDir string) (*Toolkit, error) {
 		RootDir:  abs,
 		StateDir: stateDir,
 	}
-	t := &Toolkit{env: env, autoModeClassifier: DefaultAutoModeClassifier{}}
+	t := &Toolkit{env: env, autoModeClassifier: DefaultAutoModeClassifier{}, approvalStore: NewToolApprovalStore()}
 	t.rebuildRegistry()
 	t.SetEditToolMode(EditToolModeText)
 	return t, nil
@@ -119,6 +121,8 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		env:                &env,
 		toolPolicy:         t.toolPolicy,
 		autoModeClassifier: t.autoModeClassifier,
+		approvalReviewer:   t.approvalReviewer,
+		approvalStore:      t.approvalStore,
 		mcpManager:         t.mcpManager,
 	}
 	if len(t.disabledTools) > 0 {
@@ -342,6 +346,16 @@ func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
 // profile. Passing nil makes auto mode fail closed for non-low-risk calls.
 func (t *Toolkit) SetAutoModeClassifier(classifier AutoModeClassifier) {
 	t.autoModeClassifier = classifier
+}
+
+// SetToolApprovalReviewer installs the reviewer used when policy requires
+// approval. A nil reviewer preserves the legacy fail-closed behavior: the
+// request is written as an approval artifact and returned to the model.
+func (t *Toolkit) SetToolApprovalReviewer(reviewer ToolApprovalReviewer) {
+	t.approvalReviewer = reviewer
+	if t.approvalStore == nil {
+		t.approvalStore = NewToolApprovalStore()
+	}
 }
 
 // AgentControl returns the attached agent control runtime, or nil.

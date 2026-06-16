@@ -4316,6 +4316,150 @@ func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
 	}
 }
 
+type recordingToolApprovalReviewer struct {
+	reviews  []ToolApprovalReview
+	errs     []error
+	requests []ToolApprovalReviewRequest
+}
+
+func (r *recordingToolApprovalReviewer) ReviewToolApproval(_ context.Context, request ToolApprovalReviewRequest) (ToolApprovalReview, error) {
+	r.requests = append(r.requests, request)
+	if len(r.errs) > 0 {
+		err := r.errs[0]
+		r.errs = r.errs[1:]
+		return ToolApprovalReview{}, err
+	}
+	if len(r.reviews) == 0 {
+		return ToolApprovalReview{Decision: ToolApprovalDecisionDenied, Reason: "no scripted review"}, nil
+	}
+	review := r.reviews[0]
+	r.reviews = r.reviews[1:]
+	return review, nil
+}
+
+func TestToolkit_ToolApprovalReviewerApprovesAndExecutes(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	sessionDir := filepath.Join(t.TempDir(), "session")
+	kit.SetSessionDir(sessionDir)
+	kit.SetToolPolicy(ToolPolicy{
+		ToolActions: map[string]ToolPolicyAction{
+			"write_file": ToolPolicyRequireApproval,
+		},
+	})
+	reviewer := &recordingToolApprovalReviewer{
+		reviews: []ToolApprovalReview{{Decision: ToolApprovalDecisionApproved, Reason: "user approved"}},
+	}
+	kit.SetToolApprovalReviewer(reviewer)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-write",
+		Name:      "write_file",
+		Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
+	})
+	if err != nil {
+		t.Fatalf("write_file after approval: %v", err)
+	}
+	if !strings.Contains(resp, `"action":"create"`) {
+		t.Fatalf("unexpected response: %s", resp)
+	}
+	if len(reviewer.requests) != 1 {
+		t.Fatalf("expected one approval request, got %+v", reviewer.requests)
+	}
+	request := reviewer.requests[0]
+	if request.ToolName != "write_file" || request.ApprovalRef == "" || request.ApprovalKey == "" {
+		t.Fatalf("approval request missing details: %+v", request)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 telemetry record, got %d", len(records))
+	}
+	record := records[0]
+	if !record.Success || record.PolicyAction != ToolPolicyRequireApproval ||
+		record.ApprovalDecision != ToolApprovalDecisionApproved ||
+		record.ApprovalReason != "user approved" ||
+		record.ApprovalRef == "" {
+		t.Fatalf("unexpected approved telemetry: %+v", record)
+	}
+}
+
+func TestToolkit_ToolApprovalReviewerDeniesWithoutExecuting(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetToolPolicy(ToolPolicy{
+		ToolActions: map[string]ToolPolicyAction{
+			"write_file": ToolPolicyRequireApproval,
+		},
+	})
+	kit.SetToolApprovalReviewer(&recordingToolApprovalReviewer{
+		reviews: []ToolApprovalReview{{Decision: ToolApprovalDecisionDenied, Reason: "outside requested scope"}},
+	})
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-write",
+		Name:      "write_file",
+		Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_denied") ||
+		!strings.Contains(err.Error(), "outside requested scope") {
+		t.Fatalf("expected approval denial, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "notes.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("denied write_file should not create file, stat err=%v", statErr)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 1 || records[0].Success || records[0].ApprovalDecision != ToolApprovalDecisionDenied {
+		t.Fatalf("unexpected denied telemetry: %+v", records)
+	}
+}
+
+func TestToolkit_ToolApprovalReviewerCachesApprovedForSession(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetToolPolicy(ToolPolicy{
+		ToolActions: map[string]ToolPolicyAction{
+			"run_shell": ToolPolicyRequireApproval,
+		},
+	})
+	reviewer := &recordingToolApprovalReviewer{
+		reviews: []ToolApprovalReview{{Decision: ToolApprovalDecisionApprovedForSession, Reason: "same command allowed"}},
+	}
+	kit.SetToolApprovalReviewer(reviewer)
+	call := providers.ToolCall{
+		ID:        "call-shell",
+		Name:      "run_shell",
+		Arguments: `{"command":"printf hi > out.txt"}`,
+	}
+
+	if _, err := kit.Execute(context.Background(), call); err != nil {
+		t.Fatalf("first approved shell: %v", err)
+	}
+	call.ID = "call-shell-2"
+	if _, err := kit.Execute(context.Background(), call); err != nil {
+		t.Fatalf("second cached shell: %v", err)
+	}
+	if len(reviewer.requests) != 1 {
+		t.Fatalf("expected one approval request due session cache, got %+v", reviewer.requests)
+	}
+	records := kit.ToolTelemetry()
+	if len(records) != 2 {
+		t.Fatalf("expected 2 telemetry records, got %d", len(records))
+	}
+	if records[0].ApprovalDecision != ToolApprovalDecisionApprovedForSession ||
+		records[1].ApprovalDecision != ToolApprovalDecisionApprovedForSession {
+		t.Fatalf("approval cache telemetry missing approved_for_session: %+v", records)
+	}
+}
+
 func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

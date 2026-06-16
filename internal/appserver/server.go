@@ -92,6 +92,9 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		pendingQueuedTurns:           make(map[string][]queuedTurn),
 		drainingQueuedTurns:          make(map[string]bool),
 	}
+	if rt != nil {
+		s.installToolApprovalReviewer(rt.Toolkit)
+	}
 	_ = rt
 	return s
 }

@@ -29,34 +29,36 @@ const (
 // ToolExecutionRecord captures benchmark-oriented facts about one tool
 // execution. It deliberately excludes arguments and output content.
 type ToolExecutionRecord struct {
-	Name                 string           `json:"name"`
-	CallID               string           `json:"call_id,omitempty"`
-	ArgumentsSHA256      string           `json:"arguments_sha256,omitempty"`
-	ResultAction         string           `json:"result_action,omitempty"`
-	Kind                 ToolKind         `json:"kind"`
-	Exposure             ToolExposure     `json:"exposure"`
-	Risk                 ToolRisk         `json:"risk"`
-	ClassificationReason string           `json:"classification_reason,omitempty"`
-	PolicyAction         ToolPolicyAction `json:"policy_action"`
-	PolicyReason         string           `json:"policy_reason,omitempty"`
-	AutoModeDecision     AutoModeDecision `json:"auto_mode_decision,omitempty"`
-	AutoModeReason       string           `json:"auto_mode_reason,omitempty"`
-	ReadOnly             bool             `json:"read_only"`
-	ConcurrencySafe      bool             `json:"concurrency_safe"`
-	StartedAt            time.Time        `json:"started_at"`
-	DurationMS           int64            `json:"duration_ms"`
-	RevisionBefore       string           `json:"revision_before,omitempty"`
-	RevisionAfter        string           `json:"revision_after,omitempty"`
-	Success              bool             `json:"success"`
-	Error                string           `json:"error,omitempty"`
-	ErrorKind            string           `json:"error_kind,omitempty"`
-	RawOutputBytes       int              `json:"raw_output_bytes"`
-	ReturnedOutputBytes  int              `json:"returned_output_bytes"`
-	ResultBudgeted       bool             `json:"result_budgeted"`
-	ResultRef            string           `json:"result_ref,omitempty"`
-	ArtifactRefs         []string         `json:"artifact_refs,omitempty"`
-	ApprovalRef          string           `json:"approval_ref,omitempty"`
-	PatchRiskSummary     *ToolPatchRisk   `json:"patch_risk_summary,omitempty"`
+	Name                 string               `json:"name"`
+	CallID               string               `json:"call_id,omitempty"`
+	ArgumentsSHA256      string               `json:"arguments_sha256,omitempty"`
+	ResultAction         string               `json:"result_action,omitempty"`
+	Kind                 ToolKind             `json:"kind"`
+	Exposure             ToolExposure         `json:"exposure"`
+	Risk                 ToolRisk             `json:"risk"`
+	ClassificationReason string               `json:"classification_reason,omitempty"`
+	PolicyAction         ToolPolicyAction     `json:"policy_action"`
+	PolicyReason         string               `json:"policy_reason,omitempty"`
+	AutoModeDecision     AutoModeDecision     `json:"auto_mode_decision,omitempty"`
+	AutoModeReason       string               `json:"auto_mode_reason,omitempty"`
+	ReadOnly             bool                 `json:"read_only"`
+	ConcurrencySafe      bool                 `json:"concurrency_safe"`
+	StartedAt            time.Time            `json:"started_at"`
+	DurationMS           int64                `json:"duration_ms"`
+	RevisionBefore       string               `json:"revision_before,omitempty"`
+	RevisionAfter        string               `json:"revision_after,omitempty"`
+	Success              bool                 `json:"success"`
+	Error                string               `json:"error,omitempty"`
+	ErrorKind            string               `json:"error_kind,omitempty"`
+	RawOutputBytes       int                  `json:"raw_output_bytes"`
+	ReturnedOutputBytes  int                  `json:"returned_output_bytes"`
+	ResultBudgeted       bool                 `json:"result_budgeted"`
+	ResultRef            string               `json:"result_ref,omitempty"`
+	ArtifactRefs         []string             `json:"artifact_refs,omitempty"`
+	ApprovalRef          string               `json:"approval_ref,omitempty"`
+	ApprovalDecision     ToolApprovalDecision `json:"approval_decision,omitempty"`
+	ApprovalReason       string               `json:"approval_reason,omitempty"`
+	PatchRiskSummary     *ToolPatchRisk       `json:"patch_risk_summary,omitempty"`
 }
 
 type ToolPatchRisk struct {
@@ -120,18 +122,27 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	decision := t.toolPolicy.Decide(info)
 	startedAt := time.Now()
 	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
+	approvalRef := ""
+	approvalReview := ToolApprovalReview{}
 
 	if autoDecision, err := t.applyAutoModeDecision(ctx, call, info, decision); err != nil {
 		decision = autoDecision
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", err)
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
 		return "", err
 	} else {
 		decision = autoDecision
 	}
 	if err := decision.blockingError(call.Name); err != nil {
-		approvalRef := t.persistApprovalRequest(call, info, decision, startedAt, revisionBefore)
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, err)
-		return "", err
+		approvalRef = t.persistApprovalRequest(call, info, decision, startedAt, revisionBefore)
+		var approvalErr error
+		approvalReview, approvalErr = t.requestToolApproval(ctx, call, info, decision, startedAt, revisionBefore, approvalRef)
+		if approvalErr != nil {
+			if errors.Is(approvalErr, errToolApprovalReviewerUnavailable) {
+				approvalErr = err
+			}
+			t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, approvalReview, approvalErr)
+			return "", approvalErr
+		}
 	}
 	if priorRepeats := t.repeatedToolInputCount(call, revisionBefore); priorRepeats >= repeatedToolInputPriorLimit {
 		err := repeatedToolInputError{
@@ -141,7 +152,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 			PriorRepeats:    priorRepeats,
 			MaxPriorRepeats: repeatedToolInputPriorLimit,
 		}
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", err)
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
 		return "", err
 	}
 
@@ -157,7 +168,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	}
 
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
-	t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, "", err)
+	t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, approvalRef, approvalReview, err)
 
 	return returned, err
 }
@@ -259,6 +270,7 @@ func (t *Toolkit) recordToolExecution(
 	resultRef string,
 	resultBudgeted bool,
 	approvalRef string,
+	approvalReview ToolApprovalReview,
 	err error,
 ) {
 	artifactRefs := extractToolArtifactRefs(result, resultRef)
@@ -291,6 +303,8 @@ func (t *Toolkit) recordToolExecution(
 		ResultRef:            resultRef,
 		ArtifactRefs:         artifactRefs,
 		ApprovalRef:          approvalRef,
+		ApprovalDecision:     approvalReview.Decision,
+		ApprovalReason:       approvalReview.Reason,
 		PatchRiskSummary:     extractToolPatchRisk(call.Name, result),
 	}
 	if err != nil {
@@ -349,10 +363,6 @@ func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo,
 		return ""
 	}
 	id := approvalRequestID(call, createdAt)
-	argsPreview := redactToolOutput(strings.TrimSpace(call.Arguments))
-	if len(argsPreview) > 1200 {
-		argsPreview = argsPreview[:1200] + "\n...[truncated]"
-	}
 	request := toolApprovalRequest{
 		ID:                   id,
 		ToolName:             call.Name,
@@ -367,7 +377,7 @@ func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo,
 		CreatedAt:            createdAt.UTC(),
 		Revision:             revision,
 		ArgumentsSHA256:      toolArgumentsSHA256(call.Arguments),
-		ArgumentsPreview:     argsPreview,
+		ArgumentsPreview:     approvalArgumentsPreview(call.Arguments),
 		ModelNextAction:      "ask the user for approval or choose a lower-risk alternative",
 		ApprovalOptions:      []string{"ask_user", "choose_lower_risk_alternative", "stop"},
 	}

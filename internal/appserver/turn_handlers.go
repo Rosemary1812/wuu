@@ -275,6 +275,7 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		return nil, err
 	}
 	if threadRuntime.Toolkit != nil {
+		s.installToolApprovalReviewer(threadRuntime.Toolkit)
 		if _, restoreErr := threadRuntime.Toolkit.RestorePlanFromHistory(history); restoreErr != nil {
 			providers.DebugLogf("restore update_plan for thread %q: %v", th.ID, restoreErr)
 		}
