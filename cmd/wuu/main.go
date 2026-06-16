@@ -47,6 +47,8 @@ func run(args []string) error {
 		return runProbeTitle(args[1:])
 	case "eval":
 		return runEval(args[1:])
+	case "goal":
+		return runGoal(args[1:])
 	case "loop":
 		return runLoop(args[1:])
 	case "tui":
@@ -575,8 +577,8 @@ Usage:
   wuu models [flags]
   wuu run [flags] "your coding task"
   wuu eval [flags]
-  wuu loop demo [flags]
-  wuu loop status [flags]
+  wuu goal demo [flags]
+  wuu goal status [flags]
   wuu app-server [flags]
   wuu probe-title [flags]   run the LLM title pipeline against a real provider
   wuu version [--long|--json]
@@ -611,11 +613,11 @@ Eval flags:
   --live-codex-oauth
                    run live MCP E2E with local Codex OAuth
 
-Loop flags:
+Goal flags:
   demo --workdir DIR --goal TEXT [--id ID] [--verify-command CMD]
-                   write a durable demo workflow under Wuu workspace state
+                   write a durable demo goal under Wuu workspace state
   status --workdir DIR [--id ID] [--json]
-                   read loop state from Wuu workspace state
+                   read goal state from Wuu workspace state
 
 App server flags:
   --provider        provider name from config

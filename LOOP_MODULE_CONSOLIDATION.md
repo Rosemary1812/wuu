@@ -1,8 +1,8 @@
-# Loop Module Consolidation
+# Goal / Loop Module Consolidation
 
 ## Problem
 
-The P0 loop work added durable loop state, but Wuu already had durable
+The P0 loop work added durable goal state, but Wuu already had durable
 workflow and harness stores. Without an explicit consolidation boundary, the
 system can drift into three parallel task systems:
 
@@ -214,8 +214,8 @@ Implemented pieces:
 
 ### P1: Control Plane
 
-Expose loop snapshot/status through app-server and desktop. Workflow/harness UI
-panels should read through loop-level status first and then drill down to source
+Expose goal snapshot/status through app-server and desktop. Workflow/harness UI
+panels should read through goal-level status first and then drill down to source
 stores.
 
 Implemented pieces:
@@ -234,7 +234,7 @@ Implemented pieces:
 - Desktop preload exposes `window.wuu.getLoopSnapshot(threadId?)`.
 - `desktop/src/shared/protocol.ts` defines the loop snapshot wire types so
   renderer panels can consume loop-level status first.
-- Desktop workspace tools include a read-only `Loop` panel that calls
+- Desktop workspace tools include a read-only `Goal` panel that calls
   `getLoopSnapshot(threadId?)` and renders workflow runs, attention items,
   thread-scoped harness tasks, reports, warnings, team counts, agent counts,
   and event counts from the loop projection.
@@ -280,7 +280,7 @@ Implemented pieces:
 - `loop.SnapshotSystem` projects workspace loop states and pending approvals
   into the control-plane snapshot. App-server exposes
   `loop/approval/resolve` behind `confirm_user_approved`, and desktop proxies
-  it as `resolveLoopApproval(...)`; the Loop panel renders pending approvals
+  it as `resolveLoopApproval(...)`; the Goal panel renders pending approvals
   read-only from the snapshot.
 
 Remaining work: add mutation surfaces behind explicit approval gates, such as

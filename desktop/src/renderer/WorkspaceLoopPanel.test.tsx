@@ -139,7 +139,7 @@ describe("WorkspaceLoopPanel", () => {
     expect(container.textContent).toContain("tests still fail");
   });
 
-  it("does not read loop state while closed", async () => {
+  it("does not read goal state while closed", async () => {
     const getLoopSnapshot = installWuu({
       snapshot: {
         generated_at: "2026-06-14T07:00:00Z",

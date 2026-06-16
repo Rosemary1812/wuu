@@ -97,7 +97,7 @@ func TestRunInitWritesDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestRunLoopDemoWritesDurableState(t *testing.T) {
+func TestRunGoalDemoWritesDurableState(t *testing.T) {
 	workdir := t.TempDir()
 	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
 	t.Setenv("WUU_HOME", wuuHome)
@@ -107,13 +107,13 @@ func TestRunLoopDemoWritesDurableState(t *testing.T) {
 
 	output := captureStdout(t, func() {
 		if err := run([]string{
-			"loop", "demo",
+			"goal", "demo",
 			"--workdir", workdir,
 			"--id", "loop-test",
-			"--goal", "prove durable loop",
+			"--goal", "prove durable goal",
 			"--verify-command", "test -f marker.txt",
 		}); err != nil {
-			t.Fatalf("run loop demo: %v", err)
+			t.Fatalf("run goal demo: %v", err)
 		}
 	})
 	if !strings.Contains(output, "status: completed") {
@@ -144,8 +144,8 @@ func TestRunLoopDemoWritesDurableState(t *testing.T) {
 	}
 
 	status := captureStdout(t, func() {
-		if err := run([]string{"loop", "status", "--workdir", workdir, "--id", "loop-test", "--json"}); err != nil {
-			t.Fatalf("run loop status: %v", err)
+		if err := run([]string{"goal", "status", "--workdir", workdir, "--id", "loop-test", "--json"}); err != nil {
+			t.Fatalf("run goal status: %v", err)
 		}
 	})
 	var state struct {
@@ -157,30 +157,30 @@ func TestRunLoopDemoWritesDurableState(t *testing.T) {
 		} `json:"test_results"`
 	}
 	if err := json.Unmarshal([]byte(status), &state); err != nil {
-		t.Fatalf("parse loop status JSON: %v\n%s", err, status)
+		t.Fatalf("parse goal status JSON: %v\n%s", err, status)
 	}
 	if state.ID != "loop-test" || state.Status != "completed" || state.Final == "" {
-		t.Fatalf("unexpected loop state: %+v", state)
+		t.Fatalf("unexpected goal state: %+v", state)
 	}
 	if len(state.TestResults) != 1 || !state.TestResults[0].Passed {
 		t.Fatalf("expected one passing test result, got %+v", state.TestResults)
 	}
 }
 
-func TestRunLoopDemoRecordsVerificationFailure(t *testing.T) {
+func TestRunGoalDemoRecordsVerificationFailure(t *testing.T) {
 	workdir := t.TempDir()
 	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
 	t.Setenv("WUU_HOME", wuuHome)
 
 	output := captureStdout(t, func() {
 		if err := run([]string{
-			"loop", "demo",
+			"goal", "demo",
 			"--workdir", workdir,
 			"--id", "loop-fail",
 			"--goal", "capture failure",
 			"--verify-command", "test -f missing.txt",
 		}); err != nil {
-			t.Fatalf("run loop demo: %v", err)
+			t.Fatalf("run goal demo: %v", err)
 		}
 	})
 	if !strings.Contains(output, "status: needs_human") {
@@ -196,6 +196,26 @@ func TestRunLoopDemoRecordsVerificationFailure(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(workdir, ".loop")); !os.IsNotExist(err) {
 		t.Fatalf("project root .loop should not be created, stat err=%v", err)
+	}
+}
+
+func TestRunLoopCommandRemainsGoalAlias(t *testing.T) {
+	workdir := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"loop", "demo",
+			"--workdir", workdir,
+			"--id", "loop-alias",
+			"--goal", "prove old command alias",
+		}); err != nil {
+			t.Fatalf("run loop alias: %v", err)
+		}
+	})
+	if !strings.Contains(output, "goal_id: loop-alias") {
+		t.Fatalf("expected goal summary from loop alias, got %q", output)
 	}
 }
 

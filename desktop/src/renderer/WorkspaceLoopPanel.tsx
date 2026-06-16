@@ -75,8 +75,8 @@ export function WorkspaceLoopPanel({
         <span className="workspace-panel-empty-icon" aria-hidden="true">
           <Activity size={21} />
         </span>
-        <strong>Loop</strong>
-        <span>选择工作区后显示运行状态</span>
+        <strong>Goal</strong>
+        <span>选择工作区后显示目标状态</span>
       </div>
     );
   }
@@ -85,16 +85,16 @@ export function WorkspaceLoopPanel({
   const loading = state.status === "loading";
 
   return (
-    <section className="workspace-loop-panel" aria-label="Loop 状态">
+    <section className="workspace-loop-panel" aria-label="Goal 状态">
       <div className="workspace-loop-toolbar">
         <div>
-          <strong>Loop</strong>
+          <strong>Goal</strong>
           <span>{snapshot?.generated_at ? formatTimestamp(snapshot.generated_at) : "未同步"}</span>
         </div>
         <button
           className="icon-button workspace-loop-refresh"
           type="button"
-          aria-label="刷新 Loop 状态"
+          aria-label="刷新 Goal 状态"
           disabled={loading}
           onClick={() => setRefreshKey((value) => value + 1)}
         >
@@ -114,8 +114,8 @@ export function WorkspaceLoopPanel({
           <span className="workspace-panel-empty-icon" aria-hidden="true">
             <CircleDot size={21} />
           </span>
-          <strong>{loading ? "读取中" : "暂无 Loop"}</strong>
-          <span>{loading ? "正在同步工作区状态" : "当前工作区还没有持久化 loop 运行"}</span>
+          <strong>{loading ? "读取中" : "暂无 Goal"}</strong>
+          <span>{loading ? "正在同步工作区状态" : "当前工作区还没有持久化目标"}</span>
         </div>
       )}
     </section>
@@ -137,7 +137,7 @@ function LoopSnapshotView({
       defer
       options={OVERLAY_SCROLLBAR_OPTIONS}
     >
-      <div className="workspace-loop-summary" aria-label="Loop 汇总">
+      <div className="workspace-loop-summary" aria-label="Goal 汇总">
         <LoopMetric icon={<GitBranch size={16} />} label="运行" value={summary.workflowCount} />
         <LoopMetric icon={<Activity size={16} />} label="活跃" value={summary.activeWorkflowCount} />
         <LoopMetric icon={<AlertTriangle size={16} />} label="关注" value={summary.attentionCount} />
@@ -274,7 +274,7 @@ function ApprovalRow({ approval }: { approval: LoopApprovalSnapshot }): JSX.Elem
       <div>
         <strong>{firstText(approval.title, approval.id)}</strong>
         <span>
-          {firstText(approval.loop_id, approval.source, "loop")}
+          {firstText(approval.loop_id, approval.source, "goal")}
           {approval.requested_action ? ` / ${approval.requested_action}` : ""}
         </span>
       </div>

@@ -1,7 +1,7 @@
 ---
 name: regression-test
 description: Add or run focused tests that prove a behavior stays fixed.
-trigger-condition: Use after a bugfix, behavior change, or loop workflow change.
+trigger-condition: Use after a bugfix, behavior change, or goal workflow change.
 allowed-tools: [read_file, apply_patch, run_test, run_shell]
 required-context: [changed behavior, failure mode, target package, existing test style]
 examples: [cover state persistence, test worktree conflict detection, verify skill routing]

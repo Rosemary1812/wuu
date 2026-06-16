@@ -17,6 +17,6 @@ Use browser evidence for UI-facing changes.
 2. Start or reuse the correct local app server.
 3. Open the target in the in-app browser when available.
 4. Check page load, console errors, DOM state, and screenshot framing.
-5. Record failures in durable loop state.
+5. Record failures in durable goal state.
 
 Do not claim UI verification from code inspection alone when the running app matters.

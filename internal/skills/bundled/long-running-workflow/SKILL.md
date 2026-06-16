@@ -4,9 +4,9 @@ description: Run durable multi-phase work without relying on one context window.
 trigger-condition: Use for large tasks that need research, plan, execution, verification, review, and resumability.
 allowed-tools: [read_file, apply_patch, run_shell, run_test, spawn_agent]
 required-context: [goal, durable state, progress log, failure log, verification policy, worktree status]
-examples: [resume loop workflow, coordinate agent team, recover after failed verification]
+examples: [resume goal workflow, coordinate agent team, recover after failed verification]
 verification-checklist: [state updated, artifacts written, failures captured, reviewer or verifier separated from worker]
-progressive-disclosure: Always read the loop state.json and recent failure view from Wuu-managed loop storage before loading detailed artifacts.
+progressive-disclosure: Always read the goal state.json and recent failure view from Wuu-managed goal storage before loading detailed artifacts.
 ---
 
 # Long Running Workflow

@@ -16,28 +16,36 @@ import (
 
 const defaultLoopID = "demo"
 
+func runGoal(args []string) error {
+	return runGoalCommand(args, "goal")
+}
+
 func runLoop(args []string) error {
+	return runGoalCommand(args, "loop")
+}
+
+func runGoalCommand(args []string, commandName string) error {
 	if len(args) == 0 {
-		return errors.New("loop subcommand is required (demo or status)")
+		return fmt.Errorf("%s subcommand is required (demo or status)", commandName)
 	}
 	switch args[0] {
 	case "demo":
-		return runLoopDemo(args[1:])
+		return runGoalDemo(args[1:], commandName)
 	case "status":
-		return runLoopStatus(args[1:])
+		return runGoalStatus(args[1:], commandName)
 	default:
-		return fmt.Errorf("unknown loop subcommand %q", args[0])
+		return fmt.Errorf("unknown %s subcommand %q", commandName, args[0])
 	}
 }
 
-func runLoopDemo(args []string) error {
-	fs := flag.NewFlagSet("loop demo", flag.ContinueOnError)
+func runGoalDemo(args []string, commandName string) error {
+	fs := flag.NewFlagSet(commandName+" demo", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	workdir := fs.String("workdir", "", "workspace directory")
-	id := fs.String("id", "", "loop id")
-	goal := fs.String("goal", "Demonstrate durable loop workflow", "loop goal")
+	id := fs.String("id", "", "goal id")
+	goal := fs.String("goal", "Demonstrate durable goal workflow", "goal objective")
 	task := fs.String("task", "", "optional task detail")
-	jsonOutput := fs.Bool("json", false, "output final loop state as JSON")
+	jsonOutput := fs.Bool("json", false, "output final goal state as JSON")
 	var verifyCommands stringListFlag
 	fs.Var(&verifyCommands, "verify-command", "verification command to run; may be repeated")
 	if err := fs.Parse(args); err != nil {
@@ -120,12 +128,12 @@ func runLoopDemo(args []string) error {
 	return nil
 }
 
-func runLoopStatus(args []string) error {
-	fs := flag.NewFlagSet("loop status", flag.ContinueOnError)
+func runGoalStatus(args []string, commandName string) error {
+	fs := flag.NewFlagSet(commandName+" status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	workdir := fs.String("workdir", "", "workspace directory")
-	id := fs.String("id", "", "loop id")
-	jsonOutput := fs.Bool("json", false, "output loop state as JSON")
+	id := fs.String("id", "", "goal id")
+	jsonOutput := fs.Bool("json", false, "output goal state as JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -154,7 +162,7 @@ func runLoopStatus(args []string) error {
 }
 
 func printLoopStateSummary(state looprunner.State, loopDir string) {
-	fmt.Printf("loop_id: %s\n", state.ID)
+	fmt.Printf("goal_id: %s\n", state.ID)
 	fmt.Printf("status: %s\n", state.Status)
 	if state.CurrentStep != "" {
 		fmt.Printf("current_step: %s\n", state.CurrentStep)
@@ -192,10 +200,10 @@ func resolveLoopStore(rootDir, requestedID string) (*looprunner.Store, string, s
 
 func validateLoopID(loopID string) error {
 	if loopID == "" {
-		return errors.New("loop id is required")
+		return errors.New("goal id is required")
 	}
 	if loopID == "." || loopID == ".." || filepath.Base(loopID) != loopID || strings.ContainsAny(loopID, `/\`) {
-		return fmt.Errorf("loop id must be an id, not a path: %q", loopID)
+		return fmt.Errorf("goal id must be an id, not a path: %q", loopID)
 	}
 	return nil
 }

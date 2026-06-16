@@ -71,7 +71,7 @@ const WORKSPACE_TOOL_ITEMS: Array<{
   { id: "review", title: "审查", subtitle: "查看代码更改" },
   { id: "terminal", title: "终端", subtitle: "运行 shell 命令" },
   { id: "browser", title: "浏览器", subtitle: "在右侧栏里调试前端" },
-  { id: "loops", title: "Loop", subtitle: "查看 workflow 和 agent 状态" }
+  { id: "loops", title: "Goal", subtitle: "查看目标、workflow 和 agent 状态" }
 ];
 
 export function WorkspaceRightPanel({

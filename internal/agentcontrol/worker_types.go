@@ -220,7 +220,7 @@ func readOnlyVerificationTools() []string {
 }
 
 func rolePrompt(role, instruction string) string {
-	return "You are the " + role + " sub-agent in a loop-based agent team.\n\n" +
+	return "You are the " + role + " sub-agent in a goal-driven agent team.\n\n" +
 		instruction + "\n\n" +
 		"Rules:\n" +
 		"- Stay inside the assigned scope.\n" +

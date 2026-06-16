@@ -1,9 +1,9 @@
-# Loop Engineering RFC
+# Goal / Loop Engineering RFC
 
 ## Architecture Audit
 
-Wuu already has the pieces of a loop-based agent system, but they are not yet
-one durable product loop.
+Wuu already has the pieces of a goal-driven agent system, but they are not yet
+one durable product goal.
 
 Existing capabilities:
 
@@ -54,7 +54,7 @@ Main gaps:
 - Failures are visible in tool telemetry and hook events, but they are not
   always written into a durable failure ledger that the next loop step must
   read before acting.
-- The desktop control plane does not yet expose loop runs, agent teams,
+- The desktop control plane does not yet expose goal runs, agent teams,
   worktree leases, verifier results, failure logs, or approval queues.
 
 ## Target Architecture
@@ -116,7 +116,7 @@ Packages/surfaces: `cmd/wuu`, `internal/appserver`, `desktop`.
 
 Responsibilities:
 
-- Start, inspect, resume, cancel, and summarize loops.
+- Start, inspect, resume, cancel, and summarize goals.
 - Show current task state, agent team, worktrees, diff review, verifier result,
   failures, and approval requests.
 - Bridge manual, scheduled, git/CI/mock, and future connector triggers into
@@ -126,7 +126,8 @@ Responsibilities:
 
 ### LoopRunner
 
-`LoopRunner` is a durable workflow executor for a goal, not a model wrapper. It
+`LoopRunner` is the internal durable workflow executor for a user-visible goal,
+not a model wrapper. It
 does not replace `internal/agent.RunToolLoop`; it sits above it.
 
 State fields:
@@ -309,7 +310,7 @@ summary:
 
 - Add `internal/loop` with durable state store, event log, markdown ledgers,
   failure feedback, verifier pipeline, role registry, and demo runner.
-- Add CLI `wuu loop demo/status` as a minimal control-plane entry point.
+- Add CLI `wuu goal demo/status` as a minimal control-plane entry point.
 - Upgrade `internal/worktree` with lease manifest, status snapshot, diff review,
   merge preview, and rollback helpers.
 - Extend skill discovery for project `.wuu/skills` and user `$WUU_HOME/skills`.
@@ -327,7 +328,7 @@ summary:
 - Wire LoopRunner into `start_workflow` so agent-managed workflows can run
   declarative phases instead of relying on manual prompt sequencing.
 - Add app-server methods for loop list/status/events/artifacts.
-- Add desktop loop control plane: active loops, team topology, worktrees,
+- Add desktop goal control plane: active goals, team topology, worktrees,
   verification results, failure log, approval queue, and final artifact.
 - Add browser/UI verification connector with console error capture and
   screenshot/DOM evidence.
