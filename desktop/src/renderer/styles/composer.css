@@ -392,6 +392,20 @@
   color: #8a8e91;
 }
 
+/* All lucide icons inside the composer toolbars snap to a single cell.
+   This is the grid: one size token, every SVG inherits it. */
+.composer-bar > svg,
+.composer-bar svg,
+.composer-context-bar > svg,
+.composer-context-bar svg,
+.split-composer-bar > svg,
+.split-composer-bar svg {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex: 0 0 auto;
+  stroke-width: var(--icon-stroke);
+}
+
 .composer-tool-button:hover {
   background: #f1f2ef;
   color: #22262a;
@@ -401,11 +415,15 @@
   transform: scale(0.96);
 }
 
-.composer-slash-button span {
-  transform: translateY(-1px);
-  font-size: 19px;
-  font-weight: var(--weight-semibold);
-  line-height: 1;
+/* Chevron inside a chip is a secondary affordance — slightly smaller
+   so it doesn't compete with the primary icon next to the label. */
+.composer-context-bar svg + svg,
+.permission-chip svg + svg,
+.context-project-button svg + svg,
+.context-mode-chip svg + svg,
+.context-branch-chip svg + svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
 }
 
 .permission-menu-anchor {
@@ -484,8 +502,9 @@
 }
 
 .composer-send-button svg {
-  width: 16px;
-  height: 16px;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  stroke-width: 2.25;
 }
 
 .composer-send-button:hover {

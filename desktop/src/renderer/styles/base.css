@@ -28,6 +28,11 @@
   --weight-bold: 700;
   --line-ui: 1.35;
   --line-body: 1.55;
+  /* Icon cell — single source of truth for lucide icon optical size.
+     Müller-Brockmann principle: define one grid cell, then snap every icon to it. */
+  --icon-size: 16px;
+  --icon-size-sm: 14px;
+  --icon-stroke: 2;
   --menu-bg: rgba(255, 255, 255, 0.98);
   --menu-border: rgba(31, 35, 40, 0.1);
   --menu-hover: #f2f3f0;
@@ -45,7 +50,7 @@
   --collapse-chevron-duration: 140ms;
   --collapse-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
   --collapse-enter-offset-y: -2px;
-  --conversation-turn-gap: 32px;
+  --conversation-turn-gap: 8px;
   --sidebar-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 245, 0.9));
   --sidebar-glass-border: rgba(17, 19, 21, 0.11);
   --sidebar-glass-highlight: rgba(255, 255, 255, 0.62);
