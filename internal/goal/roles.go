@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"fmt"
@@ -69,7 +69,7 @@ func BuiltinRoles() []RoleConfig {
 			Role:         "Worker",
 			ContextScope: ContextScopeRelevant,
 			AllowedTools: nil,
-			SystemPrompt: "Implement the assigned scoped change and its tests. Report changed files and verification evidence. Do not declare the whole loop complete.",
+			SystemPrompt: "Implement the assigned scoped change and its tests. Report changed files and verification evidence. Do not declare the whole goal complete.",
 			OutputSchema: "handoff: changed_files, work_done, tests, risks, next_steps",
 			SuccessCriteria: []string{
 				"Implementation matches assigned scope.",
@@ -142,7 +142,7 @@ func FindRole(name string) (RoleConfig, bool) {
 func MustRole(name string) (RoleConfig, error) {
 	role, ok := FindRole(name)
 	if !ok {
-		return RoleConfig{}, fmt.Errorf("unknown loop role %q", name)
+		return RoleConfig{}, fmt.Errorf("unknown goal role %q", name)
 	}
 	return role, nil
 }

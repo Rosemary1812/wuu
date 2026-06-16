@@ -14,8 +14,8 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
+	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/hooks"
-	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -89,27 +89,27 @@ func writeSessionTestFile(t *testing.T, path, content string) {
 	}
 }
 
-func waitForScheduledLoopState(t *testing.T, stateDir, taskID string) looprunner.State {
+func waitForScheduledGoalState(t *testing.T, stateDir, taskID string) goalrunner.State {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		entries, err := os.ReadDir(filepath.Join(stateDir, "loops"))
+		entries, err := os.ReadDir(filepath.Join(stateDir, "goals"))
 		if err != nil {
 			lastErr = err
 			time.Sleep(20 * time.Millisecond)
 			continue
 		}
 		for _, entry := range entries {
-			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "cron-loop-"+taskID+"-") {
+			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "cron-goal-"+taskID+"-") {
 				continue
 			}
-			state, err := looprunner.NewStore(filepath.Join(stateDir, "loops", entry.Name())).LoadState()
+			state, err := goalrunner.NewStore(filepath.Join(stateDir, "goals", entry.Name())).LoadState()
 			if err != nil {
 				lastErr = err
 				continue
 			}
-			if state.Status == looprunner.StatusCompleted {
+			if state.Status == goalrunner.StatusCompleted {
 				return state
 			}
 			lastErr = nil
@@ -117,10 +117,10 @@ func waitForScheduledLoopState(t *testing.T, stateDir, taskID string) looprunner
 		time.Sleep(20 * time.Millisecond)
 	}
 	if lastErr != nil {
-		t.Fatalf("scheduled loop state not found: %v", lastErr)
+		t.Fatalf("scheduled goal state not found: %v", lastErr)
 	}
-	t.Fatalf("scheduled loop state for task %q not completed", taskID)
-	return looprunner.State{}
+	t.Fatalf("scheduled goal state for task %q not completed", taskID)
+	return goalrunner.State{}
 }
 
 func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
@@ -185,18 +185,18 @@ func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
 		t.Fatalf("one-shot workflow task should be removed after firing, got %+v", tasks)
 	}
 
-	loopState := waitForScheduledLoopState(t, stateDir, "prompt-1")
-	if loopState.Status != looprunner.StatusCompleted {
-		t.Fatalf("scheduled loop status = %s, want completed: %+v", loopState.Status, loopState)
+	goalState := waitForScheduledGoalState(t, stateDir, "prompt-1")
+	if goalState.Status != goalrunner.StatusCompleted {
+		t.Fatalf("scheduled goal status = %s, want completed: %+v", goalState.Status, goalState)
 	}
-	if loopState.Trigger.Type != "scheduled" || loopState.Trigger.Source != "cron" {
-		t.Fatalf("scheduled loop trigger not recorded: %+v", loopState.Trigger)
+	if goalState.Trigger.Type != "scheduled" || goalState.Trigger.Source != "cron" {
+		t.Fatalf("scheduled goal trigger not recorded: %+v", goalState.Trigger)
 	}
-	if loopState.Trigger.Payload["workflow_name"] != "weekly-qa" || loopState.Trigger.Payload["kind"] != "workflow" {
-		t.Fatalf("scheduled loop missing workflow metadata: %+v", loopState.Trigger.Payload)
+	if goalState.Trigger.Payload["workflow_name"] != "weekly-qa" || goalState.Trigger.Payload["kind"] != "workflow" {
+		t.Fatalf("scheduled goal missing workflow metadata: %+v", goalState.Trigger.Payload)
 	}
-	if loopState.AssignedAgent != "cron-scheduler" {
-		t.Fatalf("scheduled loop assigned agent = %q", loopState.AssignedAgent)
+	if goalState.AssignedAgent != "cron-scheduler" {
+		t.Fatalf("scheduled goal assigned agent = %q", goalState.AssignedAgent)
 	}
 }
 

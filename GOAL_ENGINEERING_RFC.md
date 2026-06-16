@@ -1,4 +1,4 @@
-# Goal / Loop Engineering RFC
+# Goal / Goal Engineering RFC
 
 ## Architecture Audit
 
@@ -32,12 +32,12 @@ Existing capabilities:
 
 Main gaps:
 
-- There is no single `LoopRunner` abstraction. Core agent loop, workflow state,
+- There is no single `GoalRunner` abstraction. Core agent loop, workflow state,
   harness state, worktree isolation, verifier policy, retry policy, escalation,
   and failure feedback are spread across tools and prompt instructions.
 - Durable task state is fragmented under `.wuu/...`; there is no stable
-  Wuu-managed `loops/<loop_id>/state.json`,
-  `loops/<loop_id>/events.jsonl`, and `loops/<loop_id>/views/*.md`
+  Wuu-managed `goals/<goal_id>/state.json`,
+  `goals/<goal_id>/events.jsonl`, and `goals/<goal_id>/views/*.md`
   contract.
 - Workflows are still mostly model-driven. Agent-managed runs create durable
   records, but the model manually chooses when to spawn, await, verify, review,
@@ -46,13 +46,13 @@ Main gaps:
   yet provide a unified manifest, branch binding, status snapshot, merge
   preview, conflict check, or rollback API.
 - Skill routing exists, but project-native `.wuu/skills` discovery, richer
-  skill metadata, verification checklists, and the core loop-engineering skills
+  skill metadata, verification checklists, and the core goal-engineering skills
   are incomplete.
 - Maker/checker separation is available through the `verification` worker, but
   it is not enforced by workflow state. A coding worker can still finish without
   an independent verifier or reviewer being recorded.
 - Failures are visible in tool telemetry and hook events, but they are not
-  always written into a durable failure ledger that the next loop step must
+  always written into a durable failure ledger that the next goal step must
   read before acting.
 - The desktop control plane does not yet expose goal runs, agent teams,
   worktree leases, verifier results, failure logs, or approval queues.
@@ -95,9 +95,9 @@ Responsibilities:
 - External tool/connectors such as MCP and future GitHub/CI/browser/log
   connectors.
 
-### Workflow Loop
+### Workflow Goal
 
-Packages: new `internal/loop`, existing `internal/workflow`,
+Packages: new `internal/goal`, existing `internal/workflow`,
 `internal/worktree`, `internal/agentcontrol`.
 
 Responsibilities:
@@ -120,13 +120,13 @@ Responsibilities:
 - Show current task state, agent team, worktrees, diff review, verifier result,
   failures, and approval requests.
 - Bridge manual, scheduled, git/CI/mock, and future connector triggers into
-  workflow loops.
+  workflow goals.
 
 ## Core Abstractions
 
-### LoopRunner
+### GoalRunner
 
-`LoopRunner` is the internal durable workflow executor for a user-visible goal,
+`GoalRunner` is the internal durable workflow executor for a user-visible goal,
 not a model wrapper. It
 does not replace `internal/agent.RunToolLoop`; it sits above it.
 
@@ -153,8 +153,8 @@ Durable files:
 
 ```text
 <Wuu workspace state>/
-  loops/
-    <loop_id>/
+  goals/
+    <goal_id>/
       state.json
       events.jsonl
       artifacts/
@@ -227,7 +227,7 @@ Minimum roles:
 
 Each role needs a name, role prompt, allowed tools, context scope, output
 schema, and success criteria. Coding workers may produce implementation
-artifacts, but loop completion requires reviewer or verifier evidence.
+artifacts, but goal completion requires reviewer or verifier evidence.
 
 ### Verification Policy
 
@@ -266,7 +266,7 @@ Write:
 - `state.json.current_blocker`
 - `state.json.next_steps`
 
-The next loop step must read state and failures before selecting action.
+The next goal step must read state and failures before selecting action.
 
 ## Workflow Example
 
@@ -275,7 +275,7 @@ manual trigger:
   goal: "Fix flaky Electron startup test"
 
 init:
-  write state.json and events.jsonl in the Wuu-managed loop store
+  write state.json and events.jsonl in the Wuu-managed goal store
 
 research:
   researcher reads app-server, desktop main, failing logs
@@ -308,13 +308,13 @@ summary:
 
 ### P0
 
-- Add `internal/loop` with durable state store, event log, markdown ledgers,
+- Add `internal/goal` with durable state store, event log, markdown ledgers,
   failure feedback, verifier pipeline, role registry, and demo runner.
 - Add CLI `wuu goal demo/status` as a minimal control-plane entry point.
 - Upgrade `internal/worktree` with lease manifest, status snapshot, diff review,
   merge preview, and rollback helpers.
 - Extend skill discovery for project `.wuu/skills` and user `$WUU_HOME/skills`.
-- Add bundled loop-engineering skills:
+- Add bundled goal-engineering skills:
   `codebase-research`, `implementation-plan`, `safe-edit`,
   `regression-test`, `ci-failure-triage`, `diff-review`, `browser-task`,
   `electron-debug`, `long-running-workflow`, `release-check`.
@@ -325,9 +325,9 @@ summary:
 
 ### P1
 
-- Wire LoopRunner into `start_workflow` so agent-managed workflows can run
+- Wire GoalRunner into `start_workflow` so agent-managed workflows can run
   declarative phases instead of relying on manual prompt sequencing.
-- Add app-server methods for loop list/status/events/artifacts.
+- Add app-server methods for goal list/status/events/artifacts.
 - Add desktop goal control plane: active goals, team topology, worktrees,
   verification results, failure log, approval queue, and final artifact.
 - Add browser/UI verification connector with console error capture and
@@ -337,32 +337,32 @@ summary:
 
 ### P2
 
-- Add resumable background daemon mode for scheduled and event-triggered loops.
+- Add resumable background daemon mode for scheduled and event-triggered goals.
 - Add real GitHub, Linear/Jira, Slack/Discord, CI, logs, database, and browser
   connectors behind one connector interface.
 - Add regression eval suites for UI changes, Electron debugging, browser
   workflows, long-running refactors, failing-test repair, and docs updates.
-- Add cost/latency budget dashboards and loop replay views.
+- Add cost/latency budget dashboards and goal replay views.
 - Add policy-backed approval UI for destructive git, install, network,
   credential, mass rewrite, and external mutation actions.
 
 ## Migration Plan
 
 1. Keep `internal/agent` stable. Do not rewrite the core tool loop.
-2. Add `internal/loop` as an additive package with a demo CLI path.
+2. Add `internal/goal` as an additive package with a demo CLI path.
 3. Reuse existing `workflow.Store`, `harness.Store`, and `worktree.Manager`
    where possible; only add missing APIs.
 4. Make bundled skills available without forcing project-local files.
 5. Expose additional subagent roles through existing `spawn_agent`.
-6. Move workflow tools onto LoopRunner once the minimal loop is tested.
-7. Add app-server and Electron read-only loop views before adding mutation UI.
+6. Move workflow tools onto GoalRunner once the minimal goal is tested.
+7. Add app-server and Electron read-only goal views before adding mutation UI.
 
 ## Risks
 
 - Over-abstracting before the product path is proven. Mitigation: P0 runs as a
   concrete demo workflow and has tests.
 - Mixing runtime state with repo source. Mitigation: generated run state uses
-  workspace state under `$WUU_HOME` and does not write loop state into the
+  workspace state under `$WUU_HOME` and does not write goal state into the
   project tree.
 - Breaking existing subagent behavior. Mitigation: keep `general-purpose` and
   `verification` semantics unchanged; add new roles as opt-in values.

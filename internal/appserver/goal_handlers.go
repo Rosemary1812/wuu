@@ -6,49 +6,49 @@ import (
 	"path/filepath"
 	"strings"
 
+	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/harness"
-	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
-func (s *Server) handleLoopSnapshot(req Request) error {
-	var params LoopSnapshotParams
+func (s *Server) handleGoalSnapshot(req Request) error {
+	var params GoalSnapshotParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop snapshot params: %w", err))
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal snapshot params: %w", err))
 		}
 	}
 
-	workflowStore, err := s.loopWorkflowStore()
+	workflowStore, err := s.goalWorkflowStore()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	harnessStore, err := s.loopHarnessStore(params.ThreadID)
+	harnessStore, err := s.goalHarnessStore(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
-	snapshot := looprunner.SnapshotSystem(looprunner.SnapshotOptions{
-		LoopRoot:      filepath.Join(filepath.Clean(workflowStore.Dir()), "loops"),
+	snapshot := goalrunner.SnapshotSystem(goalrunner.SnapshotOptions{
+		GoalRoot:      statepath.GoalRoot(filepath.Clean(workflowStore.Dir())),
 		WorkflowStore: workflowStore,
 		HarnessStore:  harnessStore,
 	})
-	return s.writeResponse(req.ID, LoopSnapshotResult{Snapshot: snapshot}, nil)
+	return s.writeResponse(req.ID, GoalSnapshotResult{Snapshot: snapshot}, nil)
 }
 
-func (s *Server) handleLoopWorktreeReview(req Request) error {
-	var params LoopWorktreeReviewParams
+func (s *Server) handleGoalWorktreeReview(req Request) error {
+	var params GoalWorktreeReviewParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop worktree review params: %w", err))
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal worktree review params: %w", err))
 		}
 	}
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	review, err := looprunner.ReviewWorktree(looprunner.WorktreeReviewOptions{
+	review, err := goalrunner.ReviewWorktree(goalrunner.WorktreeReviewOptions{
 		ParentRepo:   s.rt.RootDir,
 		WorktreeRoot: statepath.WorktreeRoot(stateDir),
 		WorktreePath: params.WorktreePath,
@@ -58,21 +58,21 @@ func (s *Server) handleLoopWorktreeReview(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, LoopWorktreeReviewResult{Review: review}, nil)
+	return s.writeResponse(req.ID, GoalWorktreeReviewResult{Review: review}, nil)
 }
 
-func (s *Server) handleLoopWorktreeCleanup(req Request) error {
-	var params LoopWorktreeCleanupParams
+func (s *Server) handleGoalWorktreeCleanup(req Request) error {
+	var params GoalWorktreeCleanupParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop worktree cleanup params: %w", err))
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal worktree cleanup params: %w", err))
 		}
 	}
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	cleanup, err := looprunner.CleanupWorktreeIfClean(looprunner.WorktreeCleanupOptions{
+	cleanup, err := goalrunner.CleanupWorktreeIfClean(goalrunner.WorktreeCleanupOptions{
 		ParentRepo:                 s.rt.RootDir,
 		WorktreeRoot:               statepath.WorktreeRoot(stateDir),
 		WorktreePath:               params.WorktreePath,
@@ -82,21 +82,21 @@ func (s *Server) handleLoopWorktreeCleanup(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, LoopWorktreeCleanupResult{Cleanup: cleanup}, nil)
+	return s.writeResponse(req.ID, GoalWorktreeCleanupResult{Cleanup: cleanup}, nil)
 }
 
-func (s *Server) handleLoopWorktreeRollback(req Request) error {
-	var params LoopWorktreeRollbackParams
+func (s *Server) handleGoalWorktreeRollback(req Request) error {
+	var params GoalWorktreeRollbackParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop worktree rollback params: %w", err))
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal worktree rollback params: %w", err))
 		}
 	}
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	rollback, err := looprunner.RollbackWorktree(looprunner.WorktreeRollbackOptions{
+	rollback, err := goalrunner.RollbackWorktree(goalrunner.WorktreeRollbackOptions{
 		ParentRepo:                    s.rt.RootDir,
 		WorktreeRoot:                  statepath.WorktreeRoot(stateDir),
 		WorktreePath:                  params.WorktreePath,
@@ -106,21 +106,21 @@ func (s *Server) handleLoopWorktreeRollback(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, LoopWorktreeRollbackResult{Rollback: rollback}, nil)
+	return s.writeResponse(req.ID, GoalWorktreeRollbackResult{Rollback: rollback}, nil)
 }
 
-func (s *Server) handleLoopWorktreeMerge(req Request) error {
-	var params LoopWorktreeMergeParams
+func (s *Server) handleGoalWorktreeMerge(req Request) error {
+	var params GoalWorktreeMergeParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop worktree merge params: %w", err))
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal worktree merge params: %w", err))
 		}
 	}
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	merge, err := looprunner.MergeWorktree(looprunner.WorktreeMergeOptions{
+	merge, err := goalrunner.MergeWorktree(goalrunner.WorktreeMergeOptions{
 		ParentRepo:                s.rt.RootDir,
 		WorktreeRoot:              statepath.WorktreeRoot(stateDir),
 		WorktreePath:              params.WorktreePath,
@@ -132,24 +132,24 @@ func (s *Server) handleLoopWorktreeMerge(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, LoopWorktreeMergeResult{Merge: merge}, nil)
+	return s.writeResponse(req.ID, GoalWorktreeMergeResult{Merge: merge}, nil)
 }
 
-func (s *Server) handleLoopApprovalResolve(req Request) error {
-	var params LoopApprovalResolveParams
+func (s *Server) handleGoalApprovalResolve(req Request) error {
+	var params GoalApprovalResolveParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("parse loop approval resolve params: %w", err))
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal approval resolve params: %w", err))
 		}
 	}
 	if !params.ConfirmUserApproved {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("loop approval resolve requires confirm_user_approved=true"))
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal approval resolve requires confirm_user_approved=true"))
 	}
-	store, err := s.loopStoreForID(params.LoopID)
+	store, err := s.goalStoreForID(params.GoalID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	_, approval, err := store.ResolveApproval(looprunner.ApprovalResolution{
+	_, approval, err := store.ResolveApproval(goalrunner.ApprovalResolution{
 		ID:         params.ApprovalID,
 		Approved:   params.Approved,
 		Rejected:   params.Rejected,
@@ -159,10 +159,10 @@ func (s *Server) handleLoopApprovalResolve(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, LoopApprovalResolveResult{Approval: approval}, nil)
+	return s.writeResponse(req.ID, GoalApprovalResolveResult{Approval: approval}, nil)
 }
 
-func (s *Server) loopWorkflowStore() (*workflow.Store, error) {
+func (s *Server) goalWorkflowStore() (*workflow.Store, error) {
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func (s *Server) loopWorkflowStore() (*workflow.Store, error) {
 	return workflow.NewStore(stateDir), nil
 }
 
-func (s *Server) loopHarnessStore(threadID string) (*harness.Store, error) {
+func (s *Server) goalHarnessStore(threadID string) (*harness.Store, error) {
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
 		if s != nil && s.rt != nil && s.rt.AgentControl != nil {
@@ -188,17 +188,17 @@ func (s *Server) loopHarnessStore(threadID string) (*harness.Store, error) {
 	return harness.NewStore(filepath.Join(statepath.SessionArtifactDir(stateDir, threadID), "harness")), nil
 }
 
-func (s *Server) loopStoreForID(loopID string) (*looprunner.Store, error) {
-	loopID = strings.TrimSpace(loopID)
-	if loopID == "" {
-		return nil, fmt.Errorf("loop_id is required")
+func (s *Server) goalStoreForID(goalID string) (*goalrunner.Store, error) {
+	goalID = strings.TrimSpace(goalID)
+	if goalID == "" {
+		return nil, fmt.Errorf("goal_id is required")
 	}
-	if loopID == "." || loopID == ".." || filepath.Base(loopID) != loopID || strings.ContainsAny(loopID, `/\`) {
-		return nil, fmt.Errorf("loop_id must be a loop id, not a path")
+	if goalID == "." || goalID == ".." || filepath.Base(goalID) != goalID || strings.ContainsAny(goalID, `/\`) {
+		return nil, fmt.Errorf("goal_id must be a goal id, not a path")
 	}
 	stateDir, err := s.workspaceStateDir()
 	if err != nil {
 		return nil, err
 	}
-	return looprunner.NewStore(filepath.Join(stateDir, "loops", loopID)), nil
+	return goalrunner.NewStore(statepath.GoalDir(stateDir, goalID)), nil
 }

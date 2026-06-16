@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"strings"
@@ -6,10 +6,10 @@ import (
 )
 
 func TestSyncSnapshotFailuresRecordsExternalAttentionOnce(t *testing.T) {
-	store := NewStore(loopTestDir(t, "loop-sync"))
+	store := NewStore(goalTestDir(t, "goal-sync"))
 	store.SetClock(fixedClock())
 	if _, err := store.Init(Spec{
-		ID:   "loop-sync",
+		ID:   "goal-sync",
 		Goal: "sync external failures",
 	}); err != nil {
 		t.Fatalf("Init: %v", err)

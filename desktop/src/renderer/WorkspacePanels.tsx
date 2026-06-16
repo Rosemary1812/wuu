@@ -19,11 +19,11 @@ import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
-import { WorkspaceLoopPanel } from "./WorkspaceLoopPanel";
+import { WorkspaceGoalPanel } from "./WorkspaceGoalPanel";
 import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 
-export type WorkspacePanelView = "files" | "review" | "terminal" | "browser" | "loops";
+export type WorkspacePanelView = "files" | "review" | "terminal" | "browser" | "goals";
 export type WorkspaceRightPanelView = "tools" | WorkspacePanelView;
 
 export function WorkspaceMainPanel({
@@ -55,8 +55,8 @@ export function WorkspaceMainPanel({
     return <WorkspaceDiffReview activeContext={activeContext} gitStatus={gitStatus} />;
   }
 
-  if (view === "loops") {
-    return <WorkspaceLoopPanel activeContext={activeContext} threadId={threadId} open />;
+  if (view === "goals") {
+    return <WorkspaceGoalPanel activeContext={activeContext} threadId={threadId} open />;
   }
 
   return null;
@@ -71,7 +71,7 @@ const WORKSPACE_TOOL_ITEMS: Array<{
   { id: "review", title: "审查", subtitle: "查看代码更改" },
   { id: "terminal", title: "终端", subtitle: "运行 shell 命令" },
   { id: "browser", title: "浏览器", subtitle: "在右侧栏里调试前端" },
-  { id: "loops", title: "Goal", subtitle: "查看目标、workflow 和 agent 状态" }
+  { id: "goals", title: "Goal", subtitle: "查看目标、workflow 和 agent 状态" }
 ];
 
 export function WorkspaceRightPanel({
@@ -233,8 +233,8 @@ export function WorkspaceRightPanel({
                 onBrowserURLConsumed={onBrowserURLConsumed}
                 onCurrentURLChange={onBrowserURLChange}
               />
-            ) : view === "loops" ? (
-              <WorkspaceLoopPanel activeContext={activeContext} threadId={threadId} open={open} />
+            ) : view === "goals" ? (
+              <WorkspaceGoalPanel activeContext={activeContext} threadId={threadId} open={open} />
             ) : null}
           </div>
         </>
@@ -424,7 +424,7 @@ export function WorkspaceToolIcon({ view, size }: { view: WorkspacePanelView; si
       return <Terminal size={size} />;
     case "browser":
       return <Globe size={size} />;
-    case "loops":
+    case "goals":
       return <Activity size={size} />;
   }
 }

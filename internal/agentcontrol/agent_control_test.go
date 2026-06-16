@@ -561,7 +561,7 @@ func TestRecordAgentReportRejectsMissingArtifact(t *testing.T) {
 	}
 }
 
-func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
+func TestRecordAgentReportSyncsReportSinkWithGoalBinding(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 	reportSink := &captureReportSink{}
@@ -571,9 +571,9 @@ func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
 		DefaultModel:  "fake-model",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
-		SessionID:     "sess-agent-report-loop",
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-loop", "threads"),
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-loop", "harness"),
+		SessionID:     "sess-agent-report-goal",
+		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-goal", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-goal", "harness"),
 		ReportSink:    reportSink,
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
@@ -583,10 +583,10 @@ func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
 	t.Cleanup(c.Close)
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        DefaultSubagentType,
-		TaskName:    "structured_report_loop",
+		TaskName:    "structured_report_goal",
 		Prompt:      "inspect code",
-		LoopID:      "workflow-run-1",
-		LoopDir:     filepath.Join(dir, ".wuu", "state", "loops", "workflow-run-1"),
+		GoalID:      "workflow-run-1",
+		GoalDir:     filepath.Join(dir, ".wuu", "state", "goals", "workflow-run-1"),
 		Synchronous: true,
 	})
 	if err != nil {
@@ -596,8 +596,8 @@ func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].LoopID != "workflow-run-1" || tasks[0].LoopDir == "" {
-		t.Fatalf("harness task missing loop binding: %+v", tasks)
+	if len(tasks) != 1 || tasks[0].GoalID != "workflow-run-1" || tasks[0].GoalDir == "" {
+		t.Fatalf("harness task missing goal binding: %+v", tasks)
 	}
 	artifactPath := filepath.Join(tasks[0].Workspace.Root, "reports", "worker.patch")
 	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
@@ -623,8 +623,8 @@ func TestRecordAgentReportSyncsReportSinkWithLoopBinding(t *testing.T) {
 		t.Fatalf("expected one synced report, got %+v", reports)
 	}
 	got := reports[0]
-	if got.LoopID != "workflow-run-1" || got.LoopDir == "" || got.ReportPath != sessionRefPath(t, c, report.ReportPath) {
-		t.Fatalf("synced report missing loop/report binding: %+v", got)
+	if got.GoalID != "workflow-run-1" || got.GoalDir == "" || got.ReportPath != sessionRefPath(t, c, report.ReportPath) {
+		t.Fatalf("synced report missing goal/report binding: %+v", got)
 	}
 	if len(got.ChangedFiles) != 1 || got.ChangedFiles[0] != "internal/agentcontrol/report.go" || len(got.Verification) != 1 || len(got.Artifacts) != 1 {
 		t.Fatalf("synced report missing handoff facts: %+v", got)

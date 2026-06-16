@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import "time"
 
@@ -202,7 +202,7 @@ type State struct {
 
 type Event struct {
 	Type      string    `json:"type"`
-	LoopID    string    `json:"loop_id,omitempty"`
+	GoalID    string    `json:"goal_id,omitempty"`
 	Step      Step      `json:"step,omitempty"`
 	Agent     string    `json:"agent,omitempty"`
 	Message   string    `json:"message,omitempty"`

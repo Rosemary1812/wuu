@@ -59,47 +59,47 @@ const api: WuuDesktopApi = {
       toolPolicyProfile,
     ),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
-  getLoopSnapshot: (threadId?: string) =>
-    ipcRenderer.invoke("wuu:loop-snapshot", threadId),
-  getLoopWorktreeReview: (worktreePath: string) =>
-    ipcRenderer.invoke("wuu:loop-worktree-review", worktreePath),
-  cleanupLoopWorktree: (
+  getGoalSnapshot: (threadId?: string) =>
+    ipcRenderer.invoke("wuu:goal-snapshot", threadId),
+  getGoalWorktreeReview: (worktreePath: string) =>
+    ipcRenderer.invoke("wuu:goal-worktree-review", worktreePath),
+  cleanupGoalWorktree: (
     worktreePath: string,
     confirmUserApproved: boolean,
     confirmRemoveCleanWorktree: boolean,
   ) =>
     ipcRenderer.invoke(
-      "wuu:loop-worktree-cleanup",
+      "wuu:goal-worktree-cleanup",
       worktreePath,
       confirmUserApproved,
       confirmRemoveCleanWorktree,
     ),
-  rollbackLoopWorktree: (
+  rollbackGoalWorktree: (
     worktreePath: string,
     confirmUserApproved: boolean,
     confirmDiscardWorktreeChanges: boolean,
   ) =>
     ipcRenderer.invoke(
-      "wuu:loop-worktree-rollback",
+      "wuu:goal-worktree-rollback",
       worktreePath,
       confirmUserApproved,
       confirmDiscardWorktreeChanges,
     ),
-  mergeLoopWorktree: (
+  mergeGoalWorktree: (
     worktreePath: string,
     confirmUserApproved: boolean,
     confirmApplyWorktreeDiff: boolean,
     confirmTargetRepoMutation: boolean,
   ) =>
     ipcRenderer.invoke(
-      "wuu:loop-worktree-merge",
+      "wuu:goal-worktree-merge",
       worktreePath,
       confirmUserApproved,
       confirmApplyWorktreeDiff,
       confirmTargetRepoMutation,
     ),
-  resolveLoopApproval: (
-    loopId: string,
+  resolveGoalApproval: (
+    goalId: string,
     approvalId: string,
     approved: boolean,
     rejected: boolean,
@@ -108,8 +108,8 @@ const api: WuuDesktopApi = {
     confirmUserApproved: boolean,
   ) =>
     ipcRenderer.invoke(
-      "wuu:loop-approval-resolve",
-      loopId,
+      "wuu:goal-approval-resolve",
+      goalId,
       approvalId,
       approved,
       rejected,

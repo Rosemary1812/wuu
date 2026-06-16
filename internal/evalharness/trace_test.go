@@ -70,7 +70,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				Success:        true,
 				RawOutputBytes: 42,
 			}},
-			LoopAttention: []LoopAttentionObservation{{
+			GoalAttention: []GoalAttentionObservation{{
 				Source:  "workflow_agent",
 				ID:      "worker-1",
 				Status:  "missing_report",
@@ -82,7 +82,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		},
 	}, time.Unix(100, 0).UTC())
 
-	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_inventory", "tool_records", "loop_attention", "workflow_runs", "harness_tasks", "harness_reports", "final"}
+	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_inventory", "tool_records", "goal_attention", "workflow_runs", "harness_tasks", "harness_reports", "final"}
 	if len(events) != len(wantTypes) {
 		t.Fatalf("event count = %d, want %d: %+v", len(events), len(wantTypes), events)
 	}
@@ -137,12 +137,12 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	if len(task.VerificationEvidence) != 1 || task.VerificationEvidence[0].Command != "go test ./..." {
 		t.Fatalf("task event missing verification evidence: %+v", task)
 	}
-	attention, ok := events[7].Data.([]LoopAttentionObservation)
+	attention, ok := events[7].Data.([]GoalAttentionObservation)
 	if !ok {
-		t.Fatalf("loop_attention event data has wrong type: %#v", events[7].Data)
+		t.Fatalf("goal_attention event data has wrong type: %#v", events[7].Data)
 	}
 	if len(attention) != 1 || attention[0].Source != "workflow_agent" || attention[0].Status != "missing_report" {
-		t.Fatalf("loop_attention event missing attention item: %+v", attention)
+		t.Fatalf("goal_attention event missing attention item: %+v", attention)
 	}
 }
 
@@ -263,7 +263,7 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				RevisionBefore:  "rev-before",
 				Success:         false,
 			}},
-			LoopAttention: []LoopAttentionObservation{{
+			GoalAttention: []GoalAttentionObservation{{
 				Source:  "workflow_conflict",
 				ID:      "run-1",
 				Status:  "changed_file_overlap",
@@ -359,10 +359,10 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if len(summary.WorkflowRunIDs) != 1 || summary.WorkflowRunIDs[0] != "run-1" {
 		t.Fatalf("replay missing workflow runs: %+v", summary.WorkflowRunIDs)
 	}
-	if len(summary.LoopAttention) != 1 ||
-		summary.LoopAttention[0].Source != "workflow_conflict" ||
-		summary.LoopAttention[0].Path != "shared.go" {
-		t.Fatalf("replay missing loop attention: %+v", summary.LoopAttention)
+	if len(summary.GoalAttention) != 1 ||
+		summary.GoalAttention[0].Source != "workflow_conflict" ||
+		summary.GoalAttention[0].Path != "shared.go" {
+		t.Fatalf("replay missing goal attention: %+v", summary.GoalAttention)
 	}
 	if len(summary.WorkflowRuns) != 1 ||
 		summary.WorkflowRuns[0].RunDir != "/tmp/state/workflows/run-1" ||
@@ -486,8 +486,8 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 	}
 }
 
-func TestLoopValidationIssuesSummarizesAttention(t *testing.T) {
-	issues := LoopValidationIssues([]LoopAttentionObservation{{
+func TestGoalValidationIssuesSummarizesAttention(t *testing.T) {
+	issues := GoalValidationIssues([]GoalAttentionObservation{{
 		Source:  "workflow_agent",
 		ID:      "agent-missing",
 		Status:  "missing_report",
@@ -525,7 +525,7 @@ func TestLoopValidationIssuesSummarizesAttention(t *testing.T) {
 		"run-2:status=running",
 	}
 	if strings.Join(issues, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("loop issues = %+v, want %+v", issues, want)
+		t.Fatalf("goal issues = %+v, want %+v", issues, want)
 	}
 }
 

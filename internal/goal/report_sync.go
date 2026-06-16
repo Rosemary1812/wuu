@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"fmt"
@@ -66,12 +66,12 @@ func (s *Store) RecordExternalReport(report ExternalReport) (State, error) {
 	state.ModifiedFiles = appendUniqueStrings(state.ModifiedFiles, report.ChangedFiles)
 	state.Artifacts = appendExternalArtifactRefs(state.Artifacts, source, sourceID, "report", []string{report.ReportPath}, report.CreatedAt)
 	state.Artifacts = appendExternalArtifactRefs(state.Artifacts, source, sourceID, "evidence", report.Artifacts, report.CreatedAt)
-	if len(trimLoopStrings(report.Verification)) > 0 || len(trimLoopStrings(report.Blockers)) > 0 {
+	if len(trimGoalStrings(report.Verification)) > 0 || len(trimGoalStrings(report.Blockers)) > 0 {
 		state.TestResults = upsertTestResult(state.TestResults, TestResult{
 			Name:      source + ":" + sourceID,
 			Passed:    externalReportPassed(report.Outcome, report.Blockers),
-			Output:    strings.Join(trimLoopStrings(report.Verification), "\n"),
-			Error:     strings.Join(trimLoopStrings(report.Blockers), "\n"),
+			Output:    strings.Join(trimGoalStrings(report.Verification), "\n"),
+			Error:     strings.Join(trimGoalStrings(report.Blockers), "\n"),
 			CreatedAt: report.CreatedAt,
 		})
 	}
@@ -81,7 +81,7 @@ func (s *Store) RecordExternalReport(report ExternalReport) (State, error) {
 	}
 	return state, s.AppendEvent(Event{
 		Type:     "agent_report_synced",
-		LoopID:   state.ID,
+		GoalID:   state.ID,
 		Step:     StepExecution,
 		Message:  summary,
 		Artifact: strings.TrimSpace(report.ReportPath),
@@ -89,9 +89,9 @@ func (s *Store) RecordExternalReport(report ExternalReport) (State, error) {
 			"source":         source,
 			"source_id":      sourceID,
 			"outcome":        strings.TrimSpace(report.Outcome),
-			"changed_files":  len(trimLoopStrings(report.ChangedFiles)),
-			"verification":   len(trimLoopStrings(report.Verification)),
-			"artifact_paths": len(trimLoopStrings(report.Artifacts)),
+			"changed_files":  len(trimGoalStrings(report.ChangedFiles)),
+			"verification":   len(trimGoalStrings(report.Verification)),
+			"artifact_paths": len(trimGoalStrings(report.Artifacts)),
 		},
 	})
 }
@@ -139,7 +139,7 @@ func (s *Store) RecordExternalArtifact(ref ExternalArtifact) (State, error) {
 	}
 	return state, s.AppendEvent(Event{
 		Type:     "external_artifact_synced",
-		LoopID:   state.ID,
+		GoalID:   state.ID,
 		Step:     state.CurrentStep,
 		Message:  kind,
 		Artifact: path,
@@ -161,7 +161,7 @@ func progressContainsSource(entries []ProgressEntry, source, sourceID string) bo
 }
 
 func appendExternalArtifactRefs(items []Artifact, source, sourceID, kind string, paths []string, createdAt time.Time) []Artifact {
-	for i, path := range trimLoopStrings(paths) {
+	for i, path := range trimGoalStrings(paths) {
 		if artifactPathExists(items, path) {
 			continue
 		}
@@ -199,7 +199,7 @@ func externalArtifactName(source, sourceID, kind, path string, index int) string
 }
 
 func externalReportPassed(outcome string, blockers []string) bool {
-	if len(trimLoopStrings(blockers)) > 0 {
+	if len(trimGoalStrings(blockers)) > 0 {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(outcome)) {
@@ -244,7 +244,7 @@ func appendUniqueStrings(values []string, additions ...[]string) []string {
 	return out
 }
 
-func trimLoopStrings(values []string) []string {
+func trimGoalStrings(values []string) []string {
 	out := make([]string, 0, len(values))
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {

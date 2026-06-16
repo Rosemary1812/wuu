@@ -97,13 +97,13 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 					"type":        "boolean",
 					"description": "Set to true to run this agent in the background. You will be notified when it completes. Omit or false to keep a fresh specialized agent in the foreground; forks and verification agents run in the background.",
 				},
-				"loop_id": map[string]any{
+				"goal_id": map[string]any{
 					"type":        "string",
-					"description": "Optional loop id returned by start_workflow. Pass it when spawning agents for that workflow so agent_report can update the workflow loop state.",
+					"description": "Optional goal id returned by start_workflow. Pass it when spawning agents for that workflow so agent_report can update the workflow goal state.",
 				},
-				"loop_dir": map[string]any{
+				"goal_dir": map[string]any{
 					"type":        "string",
-					"description": "Optional loop_dir returned by start_workflow. Use with loop_id for workflow-bound spawned agents.",
+					"description": "Optional goal_dir returned by start_workflow. Use with goal_id for workflow-bound spawned agents.",
 				},
 			},
 			"required": []string{"description", "prompt"},
@@ -123,8 +123,8 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		AgentProfile    string `json:"agent_profile"`
 		Isolation       string `json:"isolation"`
 		RunInBackground bool   `json:"run_in_background"`
-		LoopID          string `json:"loop_id"`
-		LoopDir         string `json:"loop_dir"`
+		GoalID          string `json:"goal_id"`
+		GoalDir         string `json:"goal_dir"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -194,8 +194,8 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		Prompt:       prompt,
 		ParentID:     strings.TrimSpace(t.env.AgentID),
 		ParentPath:   currentAgentPath(t.env),
-		LoopID:       strings.TrimSpace(args.LoopID),
-		LoopDir:      strings.TrimSpace(args.LoopDir),
+		GoalID:       strings.TrimSpace(args.GoalID),
+		GoalDir:      strings.TrimSpace(args.GoalDir),
 		Isolation:    isolation,
 		Synchronous:  !args.RunInBackground && !wt.Background,
 	})

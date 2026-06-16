@@ -73,8 +73,8 @@ type Task struct {
 	Name          string         `json:"name,omitempty"`
 	Role          string         `json:"role,omitempty"`
 	Intent        string         `json:"intent,omitempty"`
-	LoopID        string         `json:"loop_id,omitempty"`
-	LoopDir       string         `json:"loop_dir,omitempty"`
+	GoalID        string         `json:"goal_id,omitempty"`
+	GoalDir       string         `json:"goal_dir,omitempty"`
 	Constraints   []string       `json:"constraints,omitempty"`
 	Workspace     WorkspaceLease `json:"workspace,omitempty"`
 	Status        TaskStatus     `json:"status"`

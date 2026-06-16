@@ -1,12 +1,12 @@
-# Goal / Loop Module Consolidation
+# Goal / Goal Module Consolidation
 
 ## Problem
 
-The P0 loop work added durable goal state, but Wuu already had durable
+The P0 goal work added durable goal state, but Wuu already had durable
 workflow and harness stores. Without an explicit consolidation boundary, the
 system can drift into three parallel task systems:
 
-- `internal/loop`: goal state, phase step, event log, artifacts, failures, test
+- `internal/goal`: goal state, phase step, event log, artifacts, failures, test
   results.
 - `internal/workflow`: workflow runs, phases, agent runs, team plans,
   checkpoints, memory candidates, final reports, workflow events.
@@ -15,11 +15,11 @@ system can drift into three parallel task systems:
 
 The target is not to delete existing stores immediately. Existing product
 paths depend on them. The target is to make ownership explicit, then migrate
-read and write paths toward a single loop-level view.
+read and write paths toward a single goal-level view.
 
 ## Source Of Truth
 
-### `internal/loop`
+### `internal/goal`
 
 Owns long-running task state:
 
@@ -48,7 +48,7 @@ Owns workflow definitions and workflow-local execution records:
   memory candidates.
 
 It should stop growing independent product-level completion logic. When a
-workflow needs durable product state, it should sync through `internal/loop`.
+workflow needs durable product state, it should sync through `internal/goal`.
 
 ### `internal/harness`
 
@@ -60,8 +60,8 @@ Owns spawned-agent execution facts:
 - Evidence artifacts.
 - Harness event log.
 
-It does not decide whether the user-level loop is complete. It reports facts
-for `internal/loop` and control-plane consumers.
+It does not decide whether the user-level goal is complete. It reports facts
+for `internal/goal` and control-plane consumers.
 
 ### `internal/worktree`
 
@@ -94,27 +94,27 @@ It should not define a separate workflow state machine.
 
 ### Control Plane
 
-CLI, app-server, desktop, cron, and eval should use loop APIs to inspect or
+CLI, app-server, desktop, cron, and eval should use goal APIs to inspect or
 drive long-running work. They should not grow new long-running state models.
 
 ## Current Duplicates
 
 | Concern | Current places | Consolidation |
 | --- | --- | --- |
-| Run status | `loop.Status`, `workflow.RunState`, `harness.TaskStatus` | `loop.Status` is product state; workflow/harness statuses are projections. |
-| Phase status | `loop.Step`, `workflow.PhaseState` | `loop.Step` is product phase; workflow phases remain workflow-local. |
-| Agent status | `workflow.AgentRunState`, `harness.TaskStatus` | `agentcontrol` and `harness` own execution facts; loop consumes summary. |
-| Artifacts | loop `artifacts/`, workflow plan/script/final-report, harness artifacts/reports | Loop owns final product artifacts; workflow/harness artifacts are evidence refs. |
-| Events | loop `events.jsonl`, workflow `events.jsonl`, harness `events.jsonl` | Loop event log is the product replay log; other logs are source evidence. |
-| Failure feedback | `loop.failures`, workflow `Error`, harness `Error`/`Blockers` | Loop owns blocker/failure ledger; other stores feed it. |
-| Verification | `loop.TestResult`, eval verification, harness report verification strings | Loop owns reusable verification result; eval is benchmark-specific. |
-| Worktree | `loop.WorktreeLease`, `harness.WorkspaceLease`, `workflow.AgentRun.WorktreePath`, `worktree.Lease` | `internal/worktree` is the implementation; loop/harness/workflow store references only. |
+| Run status | `goal.Status`, `workflow.RunState`, `harness.TaskStatus` | `goal.Status` is product state; workflow/harness statuses are projections. |
+| Phase status | `goal.Step`, `workflow.PhaseState` | `goal.Step` is product phase; workflow phases remain workflow-local. |
+| Agent status | `workflow.AgentRunState`, `harness.TaskStatus` | `agentcontrol` and `harness` own execution facts; goal consumes summary. |
+| Artifacts | goal `artifacts/`, workflow plan/script/final-report, harness artifacts/reports | Goal owns final product artifacts; workflow/harness artifacts are evidence refs. |
+| Events | goal `events.jsonl`, workflow `events.jsonl`, harness `events.jsonl` | Goal event log is the product replay log; other logs are source evidence. |
+| Failure feedback | `goal.failures`, workflow `Error`, harness `Error`/`Blockers` | Goal owns blocker/failure ledger; other stores feed it. |
+| Verification | `goal.TestResult`, eval verification, harness report verification strings | Goal owns reusable verification result; eval is benchmark-specific. |
+| Worktree | `goal.WorktreeLease`, `harness.WorkspaceLease`, `workflow.AgentRun.WorktreePath`, `worktree.Lease` | `internal/worktree` is the implementation; goal/harness/workflow store references only. |
 
 ## Migration Plan
 
 ### P0.1: Unified Read Projection
 
-Add a loop-level snapshot API that reads workflow and harness stores and emits
+Add a goal-level snapshot API that reads workflow and harness stores and emits
 one product-neutral view:
 
 - workflow run summary
@@ -131,85 +131,85 @@ harness stores as separate systems.
 
 Implemented pieces:
 
-- Eval observability calls `loop.SnapshotSystem` and converts the projection to
+- Eval observability calls `goal.SnapshotSystem` and converts the projection to
   compatibility workflow/harness observations.
-- Eval trace writes and replays `loop_attention` as its own event type.
-- Eval validation now derives workflow issues from loop attention and projected
-  workflow compatibility fields through one loop-level validator, so old traces
+- Eval trace writes and replays `goal_attention` as its own event type.
+- Eval validation now derives workflow issues from goal attention and projected
+  workflow compatibility fields through one goal-level validator, so old traces
   keep their diagnostics without making eval a separate state owner.
 
 ### P0.2: Failure Sync
 
-When workflow or harness records a terminal failure, add a loop-level failure
-entry for the active loop when one is known.
+When workflow or harness records a terminal failure, add a goal-level failure
+entry for the active goal when one is known.
 
-The first implementation is opt-in. Callers must pass an explicit loop store or
-failure sink. The system does not discover or guess an active loop from the
+The first implementation is opt-in. Callers must pass an explicit goal store or
+failure sink. The system does not discover or guess an active goal from the
 workspace.
 
 Implemented pieces:
 
-- `loop.SyncSnapshotFailures` converts workflow/harness snapshot attention
-  items into loop failures.
-- `loop.Failure` carries `source` and `source_id` so external failures are
+- `goal.SyncSnapshotFailures` converts workflow/harness snapshot attention
+  items into goal failures.
+- `goal.Failure` carries `source` and `source_id` so external failures are
   idempotent across repeated syncs.
 - `agentcontrol.FailureSink` lets the control plane receive spawned-agent
-  failure facts without importing `internal/loop`.
-- `loop.NewAgentControlFailureSink` adapts those facts into the loop failure
-  view when an explicit loop store is configured.
+  failure facts without importing `internal/goal`.
+- `goal.NewAgentControlFailureSink` adapts those facts into the goal failure
+  view when an explicit goal store is configured.
 - `AgentControl` calls the sink for failed harness tasks and for `agent_report`
   submissions with blockers, `stuck`, or `error` outcomes.
 
 ### P0.3: Workflow Start Bridge
 
-`start_workflow` should create or attach a loop state record. Workflow run id
-and loop id should be linked in metadata. Workflow artifacts become loop
+`start_workflow` should create or attach a goal state record. Workflow run id
+and goal id should be linked in metadata. Workflow artifacts become goal
 artifacts or evidence refs.
 
 Implemented pieces:
 
-- `workflow.Run` stores `loop_id` and `loop_dir` as compatibility metadata.
-- Workflow-created loop state lives at `stateDir/loops/<workflow-run-id>` so
+- `workflow.Run` stores `goal_id` and `goal_dir` as compatibility metadata.
+- Workflow-created goal state lives at `stateDir/goals/<workflow-run-id>` so
   parallel workflow runs and CLI demos share the same Wuu-managed storage model.
 - `start_workflow` reaches this bridge through both concrete creation paths:
   `create_workflow` and `run_workflow`.
-- Script workflow completion and failure sync back to the bound loop status for
+- Script workflow completion and failure sync back to the bound goal status for
   foreground runs and best-effort background runs.
-- Loop bindings are projected through `loop.SystemSnapshot` and eval
+- Goal bindings are projected through `goal.SystemSnapshot` and eval
   observability.
 - `workflow.Store` exposes an artifact sink and emits workflow artifact facts
   from the shared `WritePlan`, `WriteScript`, and `WriteFinalReport` write
   paths.
-- `loop.NewWorkflowArtifactSink` records those facts with
+- `goal.NewWorkflowArtifactSink` records those facts with
   `Store.RecordExternalArtifact`, so workflow plan/script/final report files
-  appear in loop state as external artifact refs instead of living only in the
+  appear in goal state as external artifact refs instead of living only in the
   workflow run record.
-- `tools.Env.WorkflowStore` installs the loop artifact sink for workflow tool
+- `tools.Env.WorkflowStore` installs the goal artifact sink for workflow tool
   execution paths.
 
 ### P0.4: Harness Report Bridge
 
-Agent reports submitted through `agent_report` should update loop progress,
+Agent reports submitted through `agent_report` should update goal progress,
 modified files, artifacts, verification strings, and failures when associated
-with a loop.
+with a goal.
 
 Implemented pieces:
 
-- `harness.Task` stores `loop_id` and `loop_dir` so each spawned-agent task can
-  route handoff facts to the correct loop.
-- `workflow.ScriptRuntime` passes the workflow run's loop binding into
+- `harness.Task` stores `goal_id` and `goal_dir` so each spawned-agent task can
+  route handoff facts to the correct goal.
+- `workflow.ScriptRuntime` passes the workflow run's goal binding into
   workflow-spawned `SpawnRequest`s.
-- `spawn_agent` accepts optional `loop_id` and `loop_dir` so agent-managed
+- `spawn_agent` accepts optional `goal_id` and `goal_dir` so agent-managed
   workflows can pass the binding returned by `start_workflow`.
 - `agentcontrol.ReportSink` emits structured `agent_report` handoff facts
-  without importing `internal/loop`.
-- `loop.AgentControlFailureSink` also implements report sync. When a report has
-  `loop_dir`, it updates loop progress, modified files, external artifact refs,
+  without importing `internal/goal`.
+- `goal.AgentControlFailureSink` also implements report sync. When a report has
+  `goal_dir`, it updates goal progress, modified files, external artifact refs,
   verification results, next steps, and the existing failure path.
-- Runtime installs the loop sink for both report and failure sync. Reports
-  without `loop_dir` are ignored by this sink, so ordinary non-workflow agents
-  do not write to a guessed loop.
-- Harness task loop bindings are projected through `loop.SystemSnapshot` and
+- Runtime installs the goal sink for both report and failure sync. Reports
+  without `goal_dir` are ignored by this sink, so ordinary non-workflow agents
+  do not write to a guessed goal.
+- Harness task goal bindings are projected through `goal.SystemSnapshot` and
   eval observability.
 
 ### P1: Control Plane
@@ -220,76 +220,76 @@ stores.
 
 Implemented pieces:
 
-- Local `main` desktop split commits are merged into this loop branch. New loop
+- Local `main` desktop split commits are merged into this goal branch. New goal
   control-plane wiring uses the extracted main/preload/shared protocol
   boundary instead of adding more state to `desktop/src/renderer/App.tsx`.
-- App-server exposes `loop/snapshot` with optional `thread_id`.
-- `loop/snapshot` reads the workspace `workflow.Store` and, when `thread_id`
+- App-server exposes `goal/snapshot` with optional `thread_id`.
+- `goal/snapshot` reads the workspace `workflow.Store` and, when `thread_id`
   is provided, the thread-scoped `harness.Store` under
   `stateDir/sessions/<thread-id>/harness`.
 - If a thread is live, app-server prefers the live `AgentControl` harness
   store; if it is not live, it falls back to the durable harness files. This
   keeps long-running workflow state recoverable after UI or process restart.
-- Desktop main process proxies `wuu:loop-snapshot` to app-server.
-- Desktop preload exposes `window.wuu.getLoopSnapshot(threadId?)`.
-- `desktop/src/shared/protocol.ts` defines the loop snapshot wire types so
-  renderer panels can consume loop-level status first.
+- Desktop main process proxies `wuu:goal-snapshot` to app-server.
+- Desktop preload exposes `window.wuu.getGoalSnapshot(threadId?)`.
+- `desktop/src/shared/protocol.ts` defines the goal snapshot wire types so
+  renderer panels can consume goal-level status first.
 - Desktop workspace tools include a read-only `Goal` panel that calls
-  `getLoopSnapshot(threadId?)` and renders workflow runs, attention items,
+  `getGoalSnapshot(threadId?)` and renders workflow runs, attention items,
   thread-scoped harness tasks, reports, warnings, team counts, agent counts,
-  and event counts from the loop projection.
-- Scheduled cron triggers initialize a durable loop record under
-  `stateDir/loops/cron-loop-*` when they fire. The cron package still owns only
+  and event counts from the goal projection.
+- Scheduled cron triggers initialize a durable goal record under
+  `stateDir/goals/cron-goal-*` when they fire. The cron package still owns only
   schedule storage; runtime records trigger execution, metadata, prompt
-  artifact, success, and failure through `internal/loop`.
-- `loop.ReviewWorktree` exposes a read-only worktree review surface that
+  artifact, success, and failure through `internal/goal`.
+- `goal.ReviewWorktree` exposes a read-only worktree review surface that
   validates the worktree path is inside the managed workspace worktree root,
   then delegates status, diff, and merge preview to `internal/worktree`.
-- App-server exposes `loop/worktree/review`, and desktop main/preload proxy it
-  as `getLoopWorktreeReview(worktreePath)`. Desktop does not run git diff or
+- App-server exposes `goal/worktree/review`, and desktop main/preload proxy it
+  as `getGoalWorktreeReview(worktreePath)`. Desktop does not run git diff or
   merge-preview logic itself.
-- `loop.CleanupWorktreeIfClean` exposes the first mutation surface with an
+- `goal.CleanupWorktreeIfClean` exposes the first mutation surface with an
   explicit approval gate. It validates the path is inside the managed worktree
   root, requires both `confirm_user_approved` and
   `confirm_remove_clean_worktree`, delegates cleanup to `internal/worktree`,
   and preserves dirty worktrees for review.
-- App-server exposes `loop/worktree/cleanup`, and desktop main/preload proxy it
-  as `cleanupLoopWorktree(...)` without auto-confirming on the renderer's
+- App-server exposes `goal/worktree/cleanup`, and desktop main/preload proxy it
+  as `cleanupGoalWorktree(...)` without auto-confirming on the renderer's
   behalf.
-- `loop.RollbackWorktree` exposes a second gated mutation. It validates the
+- `goal.RollbackWorktree` exposes a second gated mutation. It validates the
   managed worktree root, requires both `confirm_user_approved` and
   `confirm_discard_worktree_changes`, delegates reset/clean to
   `internal/worktree`, and returns before/after dirty state for the control
   plane.
-- App-server exposes `loop/worktree/rollback`, and desktop main/preload proxy
-  it as `rollbackLoopWorktree(...)` without auto-confirming.
+- App-server exposes `goal/worktree/rollback`, and desktop main/preload proxy
+  it as `rollbackGoalWorktree(...)` without auto-confirming.
 - `internal/worktree.ApplyToTarget` is the sole implementation for applying a
   managed worktree diff into the target repository. It rejects untracked
   worktree files because they are not represented in the tracked git diff.
-- `loop.MergeWorktree` exposes the gated merge surface. It requires
+- `goal.MergeWorktree` exposes the gated merge surface. It requires
   `confirm_user_approved`, `confirm_apply_worktree_diff`, and
   `confirm_target_repo_mutation`, verifies the merge preview, delegates apply
   to `internal/worktree`, and returns the applied file list.
-- App-server exposes `loop/worktree/merge`, and desktop main/preload proxy it
-  as `mergeLoopWorktree(...)` without auto-confirming.
-- `internal/loop` owns a durable human approval queue through
+- App-server exposes `goal/worktree/merge`, and desktop main/preload proxy it
+  as `mergeGoalWorktree(...)` without auto-confirming.
+- `internal/goal` owns a durable human approval queue through
   `RequestApproval` / `ResolveApproval`. Pending approvals live in
   `state.json`, render to `views/approvals.md`, emit `approval_requested` /
-  `approval_resolved` events, and move the loop into `needs_human` until the
+  `approval_resolved` events, and move the goal into `needs_human` until the
   last pending approval is resolved.
-- `loop.SnapshotSystem` projects workspace loop states and pending approvals
+- `goal.SnapshotSystem` projects workspace goal states and pending approvals
   into the control-plane snapshot. App-server exposes
-  `loop/approval/resolve` behind `confirm_user_approved`, and desktop proxies
-  it as `resolveLoopApproval(...)`; the Goal panel renders pending approvals
+  `goal/approval/resolve` behind `confirm_user_approved`, and desktop proxies
+  it as `resolveGoalApproval(...)`; the Goal panel renders pending approvals
   read-only from the snapshot.
 
 Remaining work: add mutation surfaces behind explicit approval gates, such as
-retry queues. Those should still call loop/worktree APIs instead of writing
+retry queues. Those should still call goal/worktree APIs instead of writing
 directly to workflow or harness stores.
 
 ### P2: Store Reduction
 
-After all read paths use loop projections and write paths sync to loop, reduce
+After all read paths use goal projections and write paths sync to goal, reduce
 duplicated workflow/harness product fields. Keep compatibility readers for old
 state directories.
 
@@ -297,22 +297,22 @@ state directories.
 
 The first implementation step is intentionally narrow:
 
-1. Add `internal/loop.SystemSnapshot`.
+1. Add `internal/goal.SystemSnapshot`.
 2. Add projection helpers that read `workflow.Store` and `harness.Store`.
-3. Update eval observability collection to call the loop snapshot API before
+3. Update eval observability collection to call the goal snapshot API before
    converting to existing eval trace structs.
 4. Keep existing workflow/harness files and JSON schemas intact.
 
-This moves consumers toward one loop-level read model without breaking current
+This moves consumers toward one goal-level read model without breaking current
 workflow or subagent behavior.
 
 ## Second Code Step
 
 The second step adds failure feedback without collapsing module ownership:
 
-1. Loop remains the owner of the durable failure ledger.
+1. Goal remains the owner of the durable failure ledger.
 2. Workflow/harness facts are converted through explicit sync functions or
    sink interfaces.
-3. AgentControl emits failure facts but does not depend on loop internals.
+3. AgentControl emits failure facts but does not depend on goal internals.
 4. Repeated sync of the same external failure is deduplicated by source and
    source id.

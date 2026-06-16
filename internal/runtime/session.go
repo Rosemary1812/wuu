@@ -16,8 +16,8 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
+	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/hooks"
-	looprunner "github.com/blueberrycongee/wuu/internal/loop"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
@@ -200,7 +200,7 @@ func NewSession(opts Options) (*Session, error) {
 			return nil, fmt.Errorf("build worker client: %w", werr)
 		}
 
-		loopSink := looprunner.NewAgentControlFailureSink(nil)
+		loopSink := goalrunner.NewAgentControlFailureSink(nil)
 		c, cerr := agentcontrol.New(agentcontrol.Config{
 			Client:          workerClient,
 			DefaultModel:    providerCfg.Model,
@@ -372,7 +372,7 @@ func (s *Session) runScheduledPrompt(task cron.Task) {
 	if prompt == "" || s.StreamRunner == nil {
 		return
 	}
-	loopStore := s.startScheduledLoop(task, prompt)
+	goalStore := s.startScheduledGoal(task, prompt)
 	runner := s.StreamRunner
 	if threadRT, err := s.NewThreadRuntime(scheduledCronSessionID("cron-task", task.ID)); err == nil && threadRT.StreamRunner != nil {
 		runner = threadRT.StreamRunner
@@ -381,9 +381,9 @@ func (s *Session) runScheduledPrompt(task cron.Task) {
 	}
 	if _, err := runner.Run(context.Background(), prompt); err != nil {
 		providers.DebugLogf("cron prompt task %q failed: %v", task.ID, err)
-		if loopStore != nil {
-			_, _ = loopStore.AddFailure(looprunner.Failure{
-				Step:     looprunner.StepExecution,
+		if goalStore != nil {
+			_, _ = goalStore.AddFailure(goalrunner.Failure{
+				Step:     goalrunner.StepExecution,
 				Kind:     "scheduled_task_failed",
 				Source:   "cron",
 				SourceID: task.ID,
@@ -392,20 +392,20 @@ func (s *Session) runScheduledPrompt(task cron.Task) {
 		}
 		return
 	}
-	if loopStore != nil {
-		_, _ = loopStore.MarkStepCompleted(looprunner.StepExecution)
-		_, _ = loopStore.AddProgress(looprunner.StepSummary, "Scheduled task execution completed.")
-		_, _ = loopStore.SetStatus(looprunner.StatusCompleted, looprunner.StepSummary, "scheduled task execution completed")
+	if goalStore != nil {
+		_, _ = goalStore.MarkStepCompleted(goalrunner.StepExecution)
+		_, _ = goalStore.AddProgress(goalrunner.StepSummary, "Scheduled task execution completed.")
+		_, _ = goalStore.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, "scheduled task execution completed")
 	}
 }
 
-func (s *Session) startScheduledLoop(task cron.Task, prompt string) *looprunner.Store {
+func (s *Session) startScheduledGoal(task cron.Task, prompt string) *goalrunner.Store {
 	stateDir := strings.TrimSpace(s.StateDir)
 	if stateDir == "" {
 		return nil
 	}
-	loopID := scheduledCronSessionID("cron-loop", task.ID)
-	store := looprunner.NewStore(filepath.Join(stateDir, "loops", loopID))
+	goalID := scheduledCronSessionID("cron-goal", task.ID)
+	store := goalrunner.NewStore(filepath.Join(stateDir, "goals", goalID))
 	kind := strings.TrimSpace(task.Metadata["kind"])
 	if kind == "" {
 		kind = "prompt"
@@ -425,32 +425,32 @@ func (s *Session) startScheduledLoop(task cron.Task, prompt string) *looprunner.
 			triggerPayload[key] = value
 		}
 	}
-	runner := looprunner.Runner{Store: store}
-	if _, err := runner.Init(context.Background(), looprunner.Spec{
-		ID:            loopID,
+	runner := goalrunner.Runner{Store: store}
+	if _, err := runner.Init(context.Background(), goalrunner.Spec{
+		ID:            goalID,
 		Goal:          goal,
 		Task:          strings.TrimSpace(prompt),
 		AssignedAgent: "cron-scheduler",
-		Trigger: looprunner.Trigger{
+		Trigger: goalrunner.Trigger{
 			Type:    "scheduled",
 			Source:  "cron",
 			Payload: triggerPayload,
 		},
 	}); err != nil {
-		providers.DebugLogf("cron prompt task %q failed to initialize loop: %v", task.ID, err)
+		providers.DebugLogf("cron prompt task %q failed to initialize goal: %v", task.ID, err)
 		return nil
 	}
-	if _, err := store.SetStatus(looprunner.StatusRunning, looprunner.StepExecution, "scheduled task fired"); err != nil {
-		providers.DebugLogf("cron prompt task %q failed to mark loop running: %v", task.ID, err)
+	if _, err := store.SetStatus(goalrunner.StatusRunning, goalrunner.StepExecution, "scheduled task fired"); err != nil {
+		providers.DebugLogf("cron prompt task %q failed to mark goal running: %v", task.ID, err)
 		return store
 	}
-	if _, _, err := store.AddArtifact("trigger.md", "trigger", renderScheduledLoopTrigger(task, prompt)); err != nil {
-		providers.DebugLogf("cron prompt task %q failed to write loop trigger artifact: %v", task.ID, err)
+	if _, _, err := store.AddArtifact("trigger.md", "trigger", renderScheduledGoalTrigger(task, prompt)); err != nil {
+		providers.DebugLogf("cron prompt task %q failed to write goal trigger artifact: %v", task.ID, err)
 	}
 	return store
 }
 
-func renderScheduledLoopTrigger(task cron.Task, prompt string) string {
+func renderScheduledGoalTrigger(task cron.Task, prompt string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Scheduled Trigger\n\n")
 	fmt.Fprintf(&b, "- Task: %s\n", strings.TrimSpace(task.ID))
@@ -535,7 +535,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				}
 			}
 			var control *agentcontrol.AgentControl
-			loopSink := looprunner.NewAgentControlFailureSink(nil)
+			loopSink := goalrunner.NewAgentControlFailureSink(nil)
 			control, _ = agentcontrol.New(agentcontrol.Config{
 				Client:          workerClient,
 				DefaultModel:    s.Model,

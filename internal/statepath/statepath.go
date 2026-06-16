@@ -99,14 +99,14 @@ func WorktreeRoot(workspaceStateDir string) string {
 	return filepath.Join(workspaceStateDir, "worktrees")
 }
 
-// LoopRoot returns the workspace-scoped durable loop state directory.
-func LoopRoot(workspaceStateDir string) string {
-	return filepath.Join(workspaceStateDir, "loops")
+// GoalRoot returns the workspace-scoped durable goal state directory.
+func GoalRoot(workspaceStateDir string) string {
+	return filepath.Join(workspaceStateDir, "goals")
 }
 
-// LoopDir returns the workspace-scoped durable state directory for one loop.
-func LoopDir(workspaceStateDir, loopID string) string {
-	return filepath.Join(LoopRoot(workspaceStateDir), loopID)
+// GoalDir returns the workspace-scoped durable state directory for one goal.
+func GoalDir(workspaceStateDir, goalID string) string {
+	return filepath.Join(GoalRoot(workspaceStateDir), goalID)
 }
 
 // SharedDir returns the workspace-scoped shared agent directory.

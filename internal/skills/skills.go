@@ -22,7 +22,7 @@ type Skill struct {
 	Path         string // filesystem path to the SKILL.md file
 	Dir          string // directory containing the skill (parent of SKILL.md, or file's parent for flat)
 	ArgumentHint string // gray help text shown after skill name in /<name> ...
-	// Loop-engineering metadata. These are optional; older skills remain valid.
+	// Goal-engineering metadata. These are optional; older skills remain valid.
 	TriggerCondition      string
 	RequiredContext       []string
 	Examples              []string

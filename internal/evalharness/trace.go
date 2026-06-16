@@ -68,7 +68,7 @@ type TraceReplaySummary struct {
 	ToolSummary       *ToolReplaySummary         `json:"tool_summary,omitempty"`
 	WorkflowRuns      []WorkflowRunObservation   `json:"workflow_runs,omitempty"`
 	WorkflowRunIDs    []string                   `json:"workflow_run_ids,omitempty"`
-	LoopAttention     []LoopAttentionObservation `json:"loop_attention,omitempty"`
+	GoalAttention     []GoalAttentionObservation `json:"goal_attention,omitempty"`
 	HarnessTaskIDs    []string                   `json:"harness_task_ids,omitempty"`
 	HarnessReportIDs  []string                   `json:"harness_report_ids,omitempty"`
 	Validation        *ValidationReplaySummary   `json:"validation,omitempty"`
@@ -214,8 +214,8 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 	if len(obs.ToolRecords) > 0 {
 		events = append(events, TraceEvent{Type: "tool_records", TaskID: taskID, CreatedAt: createdAt, Data: obs.ToolRecords})
 	}
-	if len(obs.LoopAttention) > 0 {
-		events = append(events, TraceEvent{Type: "loop_attention", TaskID: taskID, CreatedAt: createdAt, Data: obs.LoopAttention})
+	if len(obs.GoalAttention) > 0 {
+		events = append(events, TraceEvent{Type: "goal_attention", TaskID: taskID, CreatedAt: createdAt, Data: obs.GoalAttention})
 	}
 	if len(obs.WorkflowRuns) > 0 {
 		events = append(events, TraceEvent{Type: "workflow_runs", TaskID: taskID, CreatedAt: createdAt, Data: obs.WorkflowRuns})
@@ -388,12 +388,12 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 			return err
 		}
 		summary.ToolInventory = append(summary.ToolInventory, inventory...)
-	case "loop_attention":
-		var attention []LoopAttentionObservation
+	case "goal_attention":
+		var attention []GoalAttentionObservation
 		if err := json.Unmarshal(data, &attention); err != nil {
 			return err
 		}
-		summary.LoopAttention = append(summary.LoopAttention, attention...)
+		summary.GoalAttention = append(summary.GoalAttention, attention...)
 	case "workflow_runs":
 		var runs []WorkflowRunObservation
 		if err := json.Unmarshal(data, &runs); err != nil {
@@ -727,8 +727,8 @@ func validationNextActions(validation *ValidationReplaySummary) []string {
 	}
 }
 
-func LoopValidationIssues(attention []LoopAttentionObservation, runs []WorkflowRunObservation) []string {
-	issues := LoopAttentionValidationIssues(attention)
+func GoalValidationIssues(attention []GoalAttentionObservation, runs []WorkflowRunObservation) []string {
+	issues := GoalAttentionValidationIssues(attention)
 	for _, issue := range WorkflowValidationIssues(runs) {
 		issues = appendUniqueTraceString(issues, issue)
 	}
@@ -736,7 +736,7 @@ func LoopValidationIssues(attention []LoopAttentionObservation, runs []WorkflowR
 	return issues
 }
 
-func LoopAttentionValidationIssues(items []LoopAttentionObservation) []string {
+func GoalAttentionValidationIssues(items []GoalAttentionObservation) []string {
 	var issues []string
 	for _, item := range items {
 		source := strings.TrimSpace(item.Source)
@@ -762,7 +762,7 @@ func LoopAttentionValidationIssues(items []LoopAttentionObservation) []string {
 			case "failed":
 				issues = appendUniqueTraceString(issues, runID+":failed="+id)
 			default:
-				issues = appendUniqueTraceString(issues, loopAttentionIssueLabel(item))
+				issues = appendUniqueTraceString(issues, goalAttentionIssueLabel(item))
 			}
 		case "workflow_conflict":
 			runID := id
@@ -780,15 +780,15 @@ func LoopAttentionValidationIssues(items []LoopAttentionObservation) []string {
 			}
 			issues = appendUniqueTraceString(issues, label)
 		default:
-			issues = appendUniqueTraceString(issues, loopAttentionIssueLabel(item))
+			issues = appendUniqueTraceString(issues, goalAttentionIssueLabel(item))
 		}
 	}
 	sort.Strings(issues)
 	return issues
 }
 
-func loopAttentionIssueLabel(item LoopAttentionObservation) string {
-	parts := []string{firstNonEmptyTraceString(item.Source, "loop")}
+func goalAttentionIssueLabel(item GoalAttentionObservation) string {
+	parts := []string{firstNonEmptyTraceString(item.Source, "goal")}
 	if id := strings.TrimSpace(item.ID); id != "" {
 		parts = append(parts, id)
 	}
@@ -801,7 +801,7 @@ func loopAttentionIssueLabel(item LoopAttentionObservation) string {
 	return strings.Join(parts, ":")
 }
 
-func workflowRunIDFromAttention(item LoopAttentionObservation) string {
+func workflowRunIDFromAttention(item GoalAttentionObservation) string {
 	words := strings.Fields(item.Message)
 	for i := 0; i+2 < len(words); i++ {
 		if words[i] == "workflow" && words[i+1] == "run" {

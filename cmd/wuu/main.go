@@ -49,8 +49,6 @@ func run(args []string) error {
 		return runEval(args[1:])
 	case "goal":
 		return runGoal(args[1:])
-	case "loop":
-		return runLoop(args[1:])
 	case "tui":
 		return errors.New("the TUI has been removed; use the desktop GUI or `wuu run` for one-shot CLI tasks")
 	case "app-server":

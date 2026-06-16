@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"strings"
@@ -15,7 +15,7 @@ func NewAgentControlFailureSink(store *Store) AgentControlFailureSink {
 }
 
 func (s AgentControlFailureSink) RecordAgentFailure(in agentcontrol.AgentFailure) error {
-	store, ok, err := s.resolveStore(in.LoopDir)
+	store, ok, err := s.resolveStore(in.GoalDir)
 	if err != nil || !ok {
 		return err
 	}
@@ -41,7 +41,7 @@ func (s AgentControlFailureSink) RecordAgentFailure(in agentcontrol.AgentFailure
 }
 
 func (s AgentControlFailureSink) RecordAgentReport(in agentcontrol.AgentReport) error {
-	store, ok, err := s.resolveStore(in.LoopDir)
+	store, ok, err := s.resolveStore(in.GoalDir)
 	if err != nil || !ok {
 		return err
 	}
@@ -65,8 +65,8 @@ func (s AgentControlFailureSink) RecordAgentReport(in agentcontrol.AgentReport) 
 	return err
 }
 
-func (s AgentControlFailureSink) resolveStore(loopDir string) (*Store, bool, error) {
-	return resolveExternalLoopStore(s.Store, loopDir, "agentcontrol")
+func (s AgentControlFailureSink) resolveStore(goalDir string) (*Store, bool, error) {
+	return resolveExternalGoalStore(s.Store, goalDir, "agentcontrol")
 }
 
 func agentFailureSourceID(in agentcontrol.AgentFailure) string {

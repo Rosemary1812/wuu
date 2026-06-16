@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"context"
@@ -19,7 +19,7 @@ func (r *Runner) Init(ctx context.Context, spec Spec) (State, error) {
 		return State{}, err
 	}
 	if r == nil || r.Store == nil {
-		return State{}, errors.New("loop runner store is required")
+		return State{}, errors.New("goal runner store is required")
 	}
 	if r.Now != nil {
 		r.Store.SetClock(r.Now)
@@ -32,7 +32,7 @@ func (r *Runner) RunDemo(ctx context.Context, spec Spec) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
-	if _, err := r.Store.SetStatus(StatusRunning, StepInit, "demo loop started"); err != nil {
+	if _, err := r.Store.SetStatus(StatusRunning, StepInit, "demo goal started"); err != nil {
 		return State{}, err
 	}
 
@@ -63,7 +63,7 @@ func (r *Runner) RunDemo(ctx context.Context, spec Spec) (State, error) {
 	if err := r.phase(ctx, StepSummary, "Final artifact written.", "final.md", renderFinalArtifact(state)); err != nil {
 		return State{}, err
 	}
-	return r.Store.SetStatus(StatusCompleted, StepSummary, "demo loop completed")
+	return r.Store.SetStatus(StatusCompleted, StepSummary, "demo goal completed")
 }
 
 func (r *Runner) RunVerification(ctx context.Context) (State, error) {
@@ -71,7 +71,7 @@ func (r *Runner) RunVerification(ctx context.Context) (State, error) {
 		return State{}, err
 	}
 	if r == nil || r.Store == nil {
-		return State{}, errors.New("loop runner store is required")
+		return State{}, errors.New("goal runner store is required")
 	}
 	state, err := r.Store.LoadState()
 	if err != nil {
@@ -158,9 +158,9 @@ func renderResearchArtifact(state State) string {
 Goal: %s
 
 Findings:
-- Loop state is durable outside model context.
+- Goal state is durable outside model context.
 - Next phases must read state.json, events.jsonl, and views/failures.md from
-  the Wuu-managed loop store before acting.
+  the Wuu-managed goal store before acting.
 `, state.Goal)
 }
 
@@ -170,8 +170,8 @@ func renderPlanArtifact(state State) string {
 Goal: %s
 
 Plan:
-1. Keep the core agent loop unchanged.
-2. Persist workflow state and artifacts in the Wuu-managed loop store.
+1. Keep the core agent tool loop unchanged.
+2. Persist workflow state and artifacts in the Wuu-managed goal store.
 3. Run verification before final summary.
 4. Require reviewer or human approval when policy asks for it.
 `, state.Goal)
@@ -180,7 +180,7 @@ Plan:
 func renderTodoArtifact(_ State) string {
 	return `# Todo
 
-- [x] Initialize durable loop state.
+- [x] Initialize durable goal state.
 - [x] Write research artifact.
 - [x] Write plan artifact.
 - [ ] Run verification.
@@ -205,7 +205,7 @@ this phase to an independent reviewer role.
 func renderIntegrationArtifact(state State) string {
 	return fmt.Sprintf(`# Integration
 
-Loop: %s
+Goal: %s
 
 Integration status:
 - Worktree: %s

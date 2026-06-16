@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	looprunner "github.com/blueberrycongee/wuu/internal/loop"
+	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/workflow"
@@ -588,7 +588,7 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 	if err != nil {
 		return "", err
 	}
-	run, loopState, err := attachWorkflowLoop(t.env, store, run)
+	run, goalState, err := attachWorkflowGoal(t.env, store, run)
 	if err != nil {
 		return "", err
 	}
@@ -616,11 +616,11 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		if background {
 			go func() {
 				finished, _ := runtime.Run(context.Background())
-				_, _ = syncWorkflowLoopStatus(finished)
+				_, _ = syncWorkflowGoalStatus(finished)
 			}()
 		} else {
 			run, err = runtime.Run(ctx)
-			if _, syncErr := syncWorkflowLoopStatus(run); syncErr != nil {
+			if _, syncErr := syncWorkflowGoalStatus(run); syncErr != nil {
 				return "", syncErr
 			}
 			if err != nil {
@@ -635,8 +635,8 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		"entrypoint":         run.Entrypoint,
 		"run_id":             run.ID,
 		"status":             run.Status,
-		"loop_id":            run.LoopID,
-		"loop_dir":           run.LoopDir,
+		"goal_id":            run.GoalID,
+		"goal_dir":           run.GoalDir,
 		"definition_name":    run.DefinitionName,
 		"definition_path":    run.DefinitionPath,
 		"script_path":        scriptPath,
@@ -644,7 +644,7 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		"profile_resolution": profileResolution,
 		"next_steps":         runWorkflowNextSteps(run.Status),
 		"workflow_status":    map[string]string{"run_id": run.ID},
-		"loop_status":        map[string]string{"loop_id": loopState.ID, "state_path": filepath.Join(run.LoopDir, "state.json")},
+		"goal_status":        map[string]string{"goal_id": goalState.ID, "state_path": filepath.Join(run.GoalDir, "state.json")},
 	})
 }
 
@@ -656,8 +656,8 @@ func newWorkflowScriptRuntime(env *Env, store *workflow.Store, run workflow.Run,
 		CurrentAgentID:   env.AgentID,
 		CurrentAgentPath: env.AgentPath,
 		RunID:            run.ID,
-		LoopID:           run.LoopID,
-		LoopDir:          run.LoopDir,
+		GoalID:           run.GoalID,
+		GoalDir:          run.GoalDir,
 		DefinitionName:   run.DefinitionName,
 		DefinitionPath:   run.DefinitionPath,
 		Arguments:        strings.TrimSpace(run.Arguments),
@@ -667,29 +667,29 @@ func newWorkflowScriptRuntime(env *Env, store *workflow.Store, run workflow.Run,
 	})
 }
 
-func attachWorkflowLoop(env *Env, store *workflow.Store, run workflow.Run) (workflow.Run, looprunner.State, error) {
-	if strings.TrimSpace(run.LoopID) != "" && strings.TrimSpace(run.LoopDir) != "" {
-		loopStore := looprunner.NewStore(run.LoopDir)
-		state, err := loopStore.LoadState()
+func attachWorkflowGoal(env *Env, store *workflow.Store, run workflow.Run) (workflow.Run, goalrunner.State, error) {
+	if strings.TrimSpace(run.GoalID) != "" && strings.TrimSpace(run.GoalDir) != "" {
+		goalStore := goalrunner.NewStore(run.GoalDir)
+		state, err := goalStore.LoadState()
 		if err != nil {
-			return run, looprunner.State{}, err
+			return run, goalrunner.State{}, err
 		}
 		return run, state, nil
 	}
-	loopStore, err := env.WorkflowLoopStore(run.ID)
+	goalStore, err := env.WorkflowGoalStore(run.ID)
 	if err != nil {
-		return run, looprunner.State{}, err
+		return run, goalrunner.State{}, err
 	}
-	state, err := loopStore.LoadState()
+	state, err := goalStore.LoadState()
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return run, looprunner.State{}, err
+			return run, goalrunner.State{}, err
 		}
-		state, err = loopStore.Init(looprunner.Spec{
+		state, err = goalStore.Init(goalrunner.Spec{
 			ID:   run.ID,
-			Goal: workflowLoopGoal(run),
+			Goal: workflowGoalTitle(run),
 			Task: strings.TrimSpace(run.Arguments),
-			Trigger: looprunner.Trigger{
+			Trigger: goalrunner.Trigger{
 				Type:   "workflow",
 				Source: "start_workflow",
 				Payload: map[string]string{
@@ -699,73 +699,73 @@ func attachWorkflowLoop(env *Env, store *workflow.Store, run workflow.Run) (work
 				},
 			},
 			AssignedAgent: "workflow",
-			EscalationPolicy: looprunner.EscalationPolicy{
+			EscalationPolicy: goalrunner.EscalationPolicy{
 				EscalateOnFailure: true,
 			},
 		})
 		if err != nil {
-			return run, looprunner.State{}, err
+			return run, goalrunner.State{}, err
 		}
-		state, err = initializeWorkflowLoopStatus(loopStore, state, run)
+		state, err = initializeWorkflowGoalStatus(goalStore, state, run)
 		if err != nil {
-			return run, looprunner.State{}, err
+			return run, goalrunner.State{}, err
 		}
 	}
-	run.LoopID = state.ID
-	run.LoopDir = loopStore.Dir()
+	run.GoalID = state.ID
+	run.GoalDir = goalStore.Dir()
 	if err := store.SaveRun(run); err != nil {
-		return run, looprunner.State{}, err
+		return run, goalrunner.State{}, err
 	}
 	return run, state, nil
 }
 
-func initializeWorkflowLoopStatus(store *looprunner.Store, state looprunner.State, run workflow.Run) (looprunner.State, error) {
+func initializeWorkflowGoalStatus(store *goalrunner.Store, state goalrunner.State, run workflow.Run) (goalrunner.State, error) {
 	message := "workflow run " + run.ID + " created"
 	switch run.Status {
 	case workflow.RunStateRunning:
-		step := looprunner.StepPlan
+		step := goalrunner.StepPlan
 		if run.Driver == workflow.RunDriverScript {
-			step = looprunner.StepExecution
+			step = goalrunner.StepExecution
 		}
-		return store.SetStatus(looprunner.StatusRunning, step, message)
+		return store.SetStatus(goalrunner.StatusRunning, step, message)
 	case workflow.RunStatePaused:
-		return store.AddFailure(looprunner.Failure{
-			Step:     looprunner.StepApproval,
+		return store.AddFailure(goalrunner.Failure{
+			Step:     goalrunner.StepApproval,
 			Kind:     "workflow_paused",
 			Source:   "workflow",
 			SourceID: run.ID,
-			Message:  firstWorkflowLoopText(run.PauseReason, run.ResumeHint, "workflow run is paused"),
+			Message:  firstWorkflowGoalText(run.PauseReason, run.ResumeHint, "workflow run is paused"),
 		})
 	case workflow.RunStateFailed:
-		return store.AddFailure(looprunner.Failure{
-			Step:     looprunner.StepExecution,
+		return store.AddFailure(goalrunner.Failure{
+			Step:     goalrunner.StepExecution,
 			Kind:     "workflow_failed",
 			Source:   "workflow",
 			SourceID: run.ID,
-			Message:  firstWorkflowLoopText(run.Error, "workflow run failed"),
+			Message:  firstWorkflowGoalText(run.Error, "workflow run failed"),
 		})
 	case workflow.RunStateCompleted:
-		return store.SetStatus(looprunner.StatusCompleted, looprunner.StepSummary, message)
+		return store.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, message)
 	case workflow.RunStateCancelled:
-		return store.SetStatus(looprunner.StatusCancelled, state.CurrentStep, message)
+		return store.SetStatus(goalrunner.StatusCancelled, state.CurrentStep, message)
 	default:
 		return state, nil
 	}
 }
 
-func syncWorkflowLoopStatus(run workflow.Run) (looprunner.State, error) {
-	if strings.TrimSpace(run.LoopDir) == "" {
-		return looprunner.State{}, nil
+func syncWorkflowGoalStatus(run workflow.Run) (goalrunner.State, error) {
+	if strings.TrimSpace(run.GoalDir) == "" {
+		return goalrunner.State{}, nil
 	}
-	store := looprunner.NewStore(run.LoopDir)
+	store := goalrunner.NewStore(run.GoalDir)
 	state, err := store.LoadState()
 	if err != nil {
-		return looprunner.State{}, err
+		return goalrunner.State{}, err
 	}
-	return initializeWorkflowLoopStatus(store, state, run)
+	return initializeWorkflowGoalStatus(store, state, run)
 }
 
-func workflowLoopGoal(run workflow.Run) string {
+func workflowGoalTitle(run workflow.Run) string {
 	name := strings.TrimSpace(run.DefinitionName)
 	if name == "" {
 		name = strings.TrimSpace(run.ID)
@@ -779,7 +779,7 @@ func workflowLoopGoal(run workflow.Run) string {
 	return "Workflow " + name
 }
 
-func firstWorkflowLoopText(values ...string) string {
+func firstWorkflowGoalText(values ...string) string {
 	for _, value := range values {
 		if value = strings.TrimSpace(value); value != "" {
 			return value
@@ -961,7 +961,7 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
-	run, loopState, err := attachWorkflowLoop(t.env, store, run)
+	run, goalState, err := attachWorkflowGoal(t.env, store, run)
 	if err != nil {
 		return "", err
 	}
@@ -980,8 +980,8 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		"entrypoint":         run.Entrypoint,
 		"run_id":             run.ID,
 		"status":             run.Status,
-		"loop_id":            run.LoopID,
-		"loop_dir":           run.LoopDir,
+		"goal_id":            run.GoalID,
+		"goal_dir":           run.GoalDir,
 		"definition_name":    run.DefinitionName,
 		"definition_path":    run.DefinitionPath,
 		"plan_path":          planPath,
@@ -989,6 +989,6 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		"profile_resolution": profileResolution,
 		"next_steps":         workflowNextSteps(status),
 		"workflow_status":    map[string]string{"run_id": run.ID},
-		"loop_status":        map[string]string{"loop_id": loopState.ID, "state_path": filepath.Join(run.LoopDir, "state.json")},
+		"goal_status":        map[string]string{"goal_id": goalState.ID, "state_path": filepath.Join(run.GoalDir, "state.json")},
 	})
 }

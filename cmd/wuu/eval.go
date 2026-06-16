@@ -18,7 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
-	looprunner "github.com/blueberrycongee/wuu/internal/loop"
+	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
@@ -454,7 +454,7 @@ func applyEvalWorkflowIssues(result *evalharness.Result) {
 	if result == nil || result.Observability == nil {
 		return
 	}
-	result.WorkflowIssues = evalharness.LoopValidationIssues(result.Observability.LoopAttention, result.Observability.WorkflowRuns)
+	result.WorkflowIssues = evalharness.GoalValidationIssues(result.Observability.GoalAttention, result.Observability.WorkflowRuns)
 	if len(result.WorkflowIssues) > 0 {
 		result.Success = false
 	}
@@ -514,15 +514,15 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 	if obs.StateDir != "" {
 		workflowStore = workflow.NewStore(obs.StateDir)
 	}
-	snapshotOpts := looprunner.SnapshotOptions{
+	snapshotOpts := goalrunner.SnapshotOptions{
 		WorkflowStore: workflowStore,
 	}
 	if rt.AgentControl != nil {
 		snapshotOpts.HarnessStore = rt.AgentControl.HarnessStore()
 	}
-	snapshot := looprunner.SnapshotSystem(snapshotOpts)
+	snapshot := goalrunner.SnapshotSystem(snapshotOpts)
 	obs.HarnessDir = snapshot.HarnessDir
-	obs.LoopAttention = evalLoopAttentionObservations(snapshot.Attention)
+	obs.GoalAttention = evalGoalAttentionObservations(snapshot.Attention)
 	obs.WorkflowRuns = evalWorkflowObservations(snapshot.Workflows)
 	obs.HarnessTasks = evalHarnessTaskObservations(snapshot.Harness.Tasks)
 	obs.HarnessReports = evalHarnessReportObservations(snapshot.Harness.Reports)
@@ -714,10 +714,10 @@ func evalToolInventoryObservations(infos []tools.ToolInfo) []evalharness.ToolInv
 	return out
 }
 
-func evalLoopAttentionObservations(items []looprunner.AttentionItem) []evalharness.LoopAttentionObservation {
-	out := make([]evalharness.LoopAttentionObservation, 0, len(items))
+func evalGoalAttentionObservations(items []goalrunner.AttentionItem) []evalharness.GoalAttentionObservation {
+	out := make([]evalharness.GoalAttentionObservation, 0, len(items))
 	for _, item := range items {
-		out = append(out, evalharness.LoopAttentionObservation{
+		out = append(out, evalharness.GoalAttentionObservation{
 			Source:  item.Source,
 			ID:      item.ID,
 			Status:  item.Status,
@@ -728,7 +728,7 @@ func evalLoopAttentionObservations(items []looprunner.AttentionItem) []evalharne
 	return out
 }
 
-func evalWorkflowObservations(runs []looprunner.WorkflowSnapshot) []evalharness.WorkflowRunObservation {
+func evalWorkflowObservations(runs []goalrunner.WorkflowSnapshot) []evalharness.WorkflowRunObservation {
 	out := make([]evalharness.WorkflowRunObservation, 0, len(runs))
 	for _, run := range runs {
 		item := evalharness.WorkflowRunObservation{
@@ -742,8 +742,8 @@ func evalWorkflowObservations(runs []looprunner.WorkflowSnapshot) []evalharness.
 			Error:           evalSafePreview(run.Error, evalTextPreviewLimit),
 			ScriptPath:      run.ScriptPath,
 			FinalReportPath: run.FinalReportPath,
-			LoopID:          run.LoopID,
-			LoopDir:         run.LoopDir,
+			GoalID:          run.GoalID,
+			GoalDir:         run.GoalDir,
 			Phases:          evalWorkflowPhaseObservations(run.Phases),
 			AgentRuns:       evalWorkflowAgentRunObservations(run.AgentRuns),
 			TeamArbitration: evalWorkflowTeamArbitration(run.Arbitration),
@@ -757,7 +757,7 @@ func evalWorkflowObservations(runs []looprunner.WorkflowSnapshot) []evalharness.
 	return out
 }
 
-func evalWorkflowTeamArbitration(in looprunner.WorkflowArbitration) evalharness.WorkflowTeamArbitration {
+func evalWorkflowTeamArbitration(in goalrunner.WorkflowArbitration) evalharness.WorkflowTeamArbitration {
 	overlaps := make([]evalharness.WorkflowChangedFileOverlapObservation, 0, len(in.ChangedFileOverlaps))
 	for _, overlap := range in.ChangedFileOverlaps {
 		overlaps = append(overlaps, evalharness.WorkflowChangedFileOverlapObservation{
@@ -775,7 +775,7 @@ func evalWorkflowTeamArbitration(in looprunner.WorkflowArbitration) evalharness.
 	}
 }
 
-func evalWorkflowTeamObservation(team looprunner.WorkflowTeamSnapshot) *evalharness.WorkflowTeamObservation {
+func evalWorkflowTeamObservation(team goalrunner.WorkflowTeamSnapshot) *evalharness.WorkflowTeamObservation {
 	out := &evalharness.WorkflowTeamObservation{
 		CreatedAt: team.CreatedAt,
 		UpdatedAt: team.UpdatedAt,
@@ -795,7 +795,7 @@ func evalWorkflowTeamObservation(team looprunner.WorkflowTeamSnapshot) *evalharn
 	return out
 }
 
-func evalWorkflowPhaseObservations(phases []looprunner.WorkflowPhaseSnapshot) []evalharness.WorkflowPhaseObservation {
+func evalWorkflowPhaseObservations(phases []goalrunner.WorkflowPhaseSnapshot) []evalharness.WorkflowPhaseObservation {
 	out := make([]evalharness.WorkflowPhaseObservation, 0, len(phases))
 	for _, phase := range phases {
 		out = append(out, evalharness.WorkflowPhaseObservation{
@@ -809,7 +809,7 @@ func evalWorkflowPhaseObservations(phases []looprunner.WorkflowPhaseSnapshot) []
 	return out
 }
 
-func evalWorkflowAgentRunObservations(agents []looprunner.WorkflowAgentSnapshot) []evalharness.WorkflowAgentRunObservation {
+func evalWorkflowAgentRunObservations(agents []goalrunner.WorkflowAgentSnapshot) []evalharness.WorkflowAgentRunObservation {
 	out := make([]evalharness.WorkflowAgentRunObservation, 0, len(agents))
 	for _, agent := range agents {
 		out = append(out, evalharness.WorkflowAgentRunObservation{
@@ -834,7 +834,7 @@ func evalWorkflowAgentRunObservations(agents []looprunner.WorkflowAgentSnapshot)
 	return out
 }
 
-func evalHarnessTaskObservations(tasks []looprunner.HarnessTaskSnapshot) []evalharness.HarnessTaskObservation {
+func evalHarnessTaskObservations(tasks []goalrunner.HarnessTaskSnapshot) []evalharness.HarnessTaskObservation {
 	out := make([]evalharness.HarnessTaskObservation, 0, len(tasks))
 	for _, task := range tasks {
 		out = append(out, evalharness.HarnessTaskObservation{
@@ -843,8 +843,8 @@ func evalHarnessTaskObservations(tasks []looprunner.HarnessTaskSnapshot) []evalh
 			Path:          task.Path,
 			Name:          task.Name,
 			Role:          task.Role,
-			LoopID:        task.LoopID,
-			LoopDir:       task.LoopDir,
+			GoalID:        task.GoalID,
+			GoalDir:       task.GoalDir,
 			Status:        task.Status,
 			ReportPath:    task.ReportPath,
 			ArtifactPaths: append([]string(nil), task.ArtifactPaths...),
@@ -856,7 +856,7 @@ func evalHarnessTaskObservations(tasks []looprunner.HarnessTaskSnapshot) []evalh
 	return out
 }
 
-func evalHarnessReportObservations(reports []looprunner.HarnessReportSnapshot) []evalharness.HarnessReportObservation {
+func evalHarnessReportObservations(reports []goalrunner.HarnessReportSnapshot) []evalharness.HarnessReportObservation {
 	out := make([]evalharness.HarnessReportObservation, 0, len(reports))
 	for _, report := range reports {
 		out = append(out, evalharness.HarnessReportObservation{
@@ -1307,8 +1307,8 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	if summary.Task != nil && len(summary.Task.WorkflowIssues) > 0 {
 		fmt.Printf("  workflow_issues: %s\n", strings.Join(summary.Task.WorkflowIssues, ","))
 	}
-	if attention := formatEvalLoopAttention(summary.LoopAttention); attention != "" {
-		fmt.Printf("  loop_attention: %s\n", attention)
+	if attention := formatEvalGoalAttention(summary.GoalAttention); attention != "" {
+		fmt.Printf("  goal_attention: %s\n", attention)
 	}
 	if summary.ToolSummary != nil {
 		fmt.Printf("  tool_summary: total=%d succeeded=%d failed=%d\n", summary.ToolSummary.Total, summary.ToolSummary.Succeeded, summary.ToolSummary.Failed)
@@ -1474,12 +1474,12 @@ func formatEvalWorkflowRuns(runs []evalharness.WorkflowRunObservation, fallbackI
 	return strings.Join(fallbackIDs, ",")
 }
 
-func formatEvalLoopAttention(items []evalharness.LoopAttentionObservation) string {
+func formatEvalGoalAttention(items []evalharness.GoalAttentionObservation) string {
 	parts := make([]string, 0, len(items))
 	for _, item := range items {
 		source := strings.TrimSpace(item.Source)
 		if source == "" {
-			source = "loop"
+			source = "goal"
 		}
 		labelParts := []string{source}
 		if id := strings.TrimSpace(item.ID); id != "" {

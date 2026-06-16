@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"bytes"

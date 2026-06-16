@@ -12,22 +12,22 @@ import {
 } from "lucide-react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
-  LoopAttentionItem,
-  LoopApprovalSnapshot,
-  LoopHarnessReportSnapshot,
-  LoopHarnessTaskSnapshot,
-  LoopSystemSnapshot,
-  LoopWorkflowSnapshot,
+  GoalAttentionItem,
+  GoalApprovalSnapshot,
+  GoalHarnessReportSnapshot,
+  GoalHarnessTaskSnapshot,
+  GoalSystemSnapshot,
+  GoalWorkflowSnapshot,
   RuntimeContext,
 } from "../shared/protocol";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
-type LoopPanelState =
-  | { status: "idle" | "loading"; snapshot?: LoopSystemSnapshot; error?: undefined }
-  | { status: "ready"; snapshot: LoopSystemSnapshot; error?: undefined }
-  | { status: "error"; snapshot?: LoopSystemSnapshot; error: string };
+type GoalPanelState =
+  | { status: "idle" | "loading"; snapshot?: GoalSystemSnapshot; error?: undefined }
+  | { status: "ready"; snapshot: GoalSystemSnapshot; error?: undefined }
+  | { status: "error"; snapshot?: GoalSystemSnapshot; error: string };
 
-export function WorkspaceLoopPanel({
+export function WorkspaceGoalPanel({
   activeContext,
   threadId,
   open,
@@ -36,7 +36,7 @@ export function WorkspaceLoopPanel({
   threadId?: string;
   open: boolean;
 }): JSX.Element {
-  const [state, setState] = useState<LoopPanelState>({ status: "idle" });
+  const [state, setState] = useState<GoalPanelState>({ status: "idle" });
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export function WorkspaceLoopPanel({
       snapshot: current.snapshot,
     }));
     window.wuu
-      .getLoopSnapshot(threadId)
+      .getGoalSnapshot(threadId)
       .then((result) => {
         if (!cancelled) {
           setState({ status: "ready", snapshot: result.snapshot });
@@ -85,14 +85,14 @@ export function WorkspaceLoopPanel({
   const loading = state.status === "loading";
 
   return (
-    <section className="workspace-loop-panel" aria-label="Goal 状态">
-      <div className="workspace-loop-toolbar">
+    <section className="workspace-goal-panel" aria-label="Goal 状态">
+      <div className="workspace-goal-toolbar">
         <div>
           <strong>Goal</strong>
           <span>{snapshot?.generated_at ? formatTimestamp(snapshot.generated_at) : "未同步"}</span>
         </div>
         <button
-          className="icon-button workspace-loop-refresh"
+          className="icon-button workspace-goal-refresh"
           type="button"
           aria-label="刷新 Goal 状态"
           disabled={loading}
@@ -102,13 +102,13 @@ export function WorkspaceLoopPanel({
         </button>
       </div>
       {state.status === "error" ? (
-        <div className="workspace-loop-error" role="status">
+        <div className="workspace-goal-error" role="status">
           <AlertTriangle size={15} />
           <span>{state.error}</span>
         </div>
       ) : null}
       {snapshot ? (
-        <LoopSnapshotView snapshot={snapshot} loading={loading} />
+        <GoalSnapshotView snapshot={snapshot} loading={loading} />
       ) : (
         <div className="workspace-panel-empty">
           <span className="workspace-panel-empty-icon" aria-hidden="true">
@@ -122,99 +122,99 @@ export function WorkspaceLoopPanel({
   );
 }
 
-function LoopSnapshotView({
+function GoalSnapshotView({
   snapshot,
   loading,
 }: {
-  snapshot: LoopSystemSnapshot;
+  snapshot: GoalSystemSnapshot;
   loading: boolean;
 }): JSX.Element {
-  const summary = useMemo(() => summarizeLoopSnapshot(snapshot), [snapshot]);
+  const summary = useMemo(() => summarizeGoalSnapshot(snapshot), [snapshot]);
   return (
     <OverlayScrollbarsComponent
-      className={`workspace-loop-scroll${loading ? " loading" : ""}`}
+      className={`workspace-goal-scroll${loading ? " loading" : ""}`}
       data-overlayscrollbars-initialize
       defer
       options={OVERLAY_SCROLLBAR_OPTIONS}
     >
-      <div className="workspace-loop-summary" aria-label="Goal 汇总">
-        <LoopMetric icon={<GitBranch size={16} />} label="运行" value={summary.workflowCount} />
-        <LoopMetric icon={<Activity size={16} />} label="活跃" value={summary.activeWorkflowCount} />
-        <LoopMetric icon={<AlertTriangle size={16} />} label="关注" value={summary.attentionCount} />
-        <LoopMetric icon={<Users size={16} />} label="任务" value={summary.taskCount} />
+      <div className="workspace-goal-summary" aria-label="Goal 汇总">
+        <GoalMetric icon={<GitBranch size={16} />} label="运行" value={summary.workflowCount} />
+        <GoalMetric icon={<Activity size={16} />} label="活跃" value={summary.activeWorkflowCount} />
+        <GoalMetric icon={<AlertTriangle size={16} />} label="关注" value={summary.attentionCount} />
+        <GoalMetric icon={<Users size={16} />} label="任务" value={summary.taskCount} />
       </div>
-      <LoopSection title="关注项" count={snapshot.attention?.length ?? 0}>
+      <GoalSection title="关注项" count={snapshot.attention?.length ?? 0}>
         {snapshot.attention?.length ? (
-          <div className="workspace-loop-list">
+          <div className="workspace-goal-list">
             {snapshot.attention.map((item, index) => (
               <AttentionRow key={`${item.source}-${item.id ?? index}-${item.status ?? ""}`} item={item} />
             ))}
           </div>
         ) : (
-          <LoopEmpty text="没有需要处理的失败或冲突" />
+          <GoalEmpty text="没有需要处理的失败或冲突" />
         )}
-      </LoopSection>
-      <LoopSection title="Approvals" count={snapshot.approvals?.length ?? 0}>
+      </GoalSection>
+      <GoalSection title="Approvals" count={snapshot.approvals?.length ?? 0}>
         {snapshot.approvals?.length ? (
-          <div className="workspace-loop-list">
+          <div className="workspace-goal-list">
             {snapshot.approvals.map((approval) => (
-              <ApprovalRow key={`${approval.loop_id ?? ""}-${approval.id}`} approval={approval} />
+              <ApprovalRow key={`${approval.goal_id ?? ""}-${approval.id}`} approval={approval} />
             ))}
           </div>
         ) : (
-          <LoopEmpty text="没有待处理审批" />
+          <GoalEmpty text="没有待处理审批" />
         )}
-      </LoopSection>
-      <LoopSection title="Workflow" count={snapshot.workflows?.length ?? 0}>
+      </GoalSection>
+      <GoalSection title="Workflow" count={snapshot.workflows?.length ?? 0}>
         {snapshot.workflows?.length ? (
-          <div className="workspace-loop-list">
+          <div className="workspace-goal-list">
             {snapshot.workflows.map((workflow) => (
               <WorkflowCard key={workflow.id} workflow={workflow} />
             ))}
           </div>
         ) : (
-          <LoopEmpty text="没有 workflow 运行" />
+          <GoalEmpty text="没有 workflow 运行" />
         )}
-      </LoopSection>
-      <LoopSection title="Agent Tasks" count={snapshot.harness?.tasks?.length ?? 0}>
+      </GoalSection>
+      <GoalSection title="Agent Tasks" count={snapshot.harness?.tasks?.length ?? 0}>
         {snapshot.harness?.tasks?.length ? (
-          <div className="workspace-loop-list">
+          <div className="workspace-goal-list">
             {snapshot.harness.tasks.map((task) => (
               <HarnessTaskRow key={task.id} task={task} />
             ))}
           </div>
         ) : (
-          <LoopEmpty text="当前 thread 没有 agent task" />
+          <GoalEmpty text="当前 thread 没有 agent task" />
         )}
-      </LoopSection>
-      <LoopSection title="Reports" count={snapshot.harness?.reports?.length ?? 0}>
+      </GoalSection>
+      <GoalSection title="Reports" count={snapshot.harness?.reports?.length ?? 0}>
         {snapshot.harness?.reports?.length ? (
-          <div className="workspace-loop-list">
+          <div className="workspace-goal-list">
             {snapshot.harness.reports.map((report) => (
               <HarnessReportRow key={report.id} report={report} />
             ))}
           </div>
         ) : (
-          <LoopEmpty text="还没有 agent report" />
+          <GoalEmpty text="还没有 agent report" />
         )}
-      </LoopSection>
+      </GoalSection>
       {snapshot.warnings?.length ? (
-        <LoopSection title="Warnings" count={snapshot.warnings.length}>
-          <div className="workspace-loop-list">
+        <GoalSection title="Warnings" count={snapshot.warnings.length}>
+          <div className="workspace-goal-list">
             {snapshot.warnings.map((warning, index) => (
-              <div className="workspace-loop-row warning" key={`${warning}-${index}`}>
+              <div className="workspace-goal-row warning" key={`${warning}-${index}`}>
                 <AlertTriangle size={15} />
                 <span>{warning}</span>
               </div>
             ))}
           </div>
-        </LoopSection>
+        </GoalSection>
       ) : null}
     </OverlayScrollbarsComponent>
   );
 }
 
-function LoopMetric({
+function GoalMetric({
   icon,
   label,
   value,
@@ -224,7 +224,7 @@ function LoopMetric({
   value: number;
 }): JSX.Element {
   return (
-    <div className="workspace-loop-metric">
+    <div className="workspace-goal-metric">
       <span aria-hidden="true">{icon}</span>
       <strong>{value}</strong>
       <small>{label}</small>
@@ -232,7 +232,7 @@ function LoopMetric({
   );
 }
 
-function LoopSection({
+function GoalSection({
   title,
   count,
   children,
@@ -242,7 +242,7 @@ function LoopSection({
   children: JSX.Element;
 }): JSX.Element {
   return (
-    <section className="workspace-loop-section">
+    <section className="workspace-goal-section">
       <header>
         <h3>{title}</h3>
         <span>{count}</span>
@@ -252,9 +252,9 @@ function LoopSection({
   );
 }
 
-function AttentionRow({ item }: { item: LoopAttentionItem }): JSX.Element {
+function AttentionRow({ item }: { item: GoalAttentionItem }): JSX.Element {
   return (
-    <div className="workspace-loop-row attention">
+    <div className="workspace-goal-row attention">
       <AlertTriangle size={15} />
       <div>
         <strong>{firstText(item.message, item.id, item.source)}</strong>
@@ -267,14 +267,14 @@ function AttentionRow({ item }: { item: LoopAttentionItem }): JSX.Element {
   );
 }
 
-function ApprovalRow({ approval }: { approval: LoopApprovalSnapshot }): JSX.Element {
+function ApprovalRow({ approval }: { approval: GoalApprovalSnapshot }): JSX.Element {
   return (
-    <div className="workspace-loop-row attention">
+    <div className="workspace-goal-row attention">
       <AlertTriangle size={15} />
       <div>
         <strong>{firstText(approval.title, approval.id)}</strong>
         <span>
-          {firstText(approval.loop_id, approval.source, "goal")}
+          {firstText(approval.goal_id, approval.source, "goal")}
           {approval.requested_action ? ` / ${approval.requested_action}` : ""}
         </span>
       </div>
@@ -283,27 +283,27 @@ function ApprovalRow({ approval }: { approval: LoopApprovalSnapshot }): JSX.Elem
   );
 }
 
-function WorkflowCard({ workflow }: { workflow: LoopWorkflowSnapshot }): JSX.Element {
+function WorkflowCard({ workflow }: { workflow: GoalWorkflowSnapshot }): JSX.Element {
   const phaseCount = workflow.phases?.length ?? 0;
   const agentCount = workflow.agent_runs?.length ?? 0;
   const memberCount = workflow.team?.members?.length ?? 0;
   return (
-    <article className="workspace-loop-card">
-      <div className="workspace-loop-card-header">
+    <article className="workspace-goal-card">
+      <div className="workspace-goal-card-header">
         <div>
           <strong>{firstText(workflow.definition_name, workflow.id)}</strong>
-          <span>{workflow.loop_id || workflow.id}</span>
+          <span>{workflow.goal_id || workflow.id}</span>
         </div>
         <StatusPill status={workflow.status} />
       </div>
-      <div className="workspace-loop-card-grid">
-        <LoopFact icon={<ListChecks size={14} />} label="phases" value={phaseCount} />
-        <LoopFact icon={<Users size={14} />} label="agents" value={agentCount} />
-        <LoopFact icon={<FileText size={14} />} label="events" value={workflow.event_count ?? 0} />
-        <LoopFact icon={<Activity size={14} />} label="team" value={memberCount} />
+      <div className="workspace-goal-card-grid">
+        <GoalFact icon={<ListChecks size={14} />} label="phases" value={phaseCount} />
+        <GoalFact icon={<Users size={14} />} label="agents" value={agentCount} />
+        <GoalFact icon={<FileText size={14} />} label="events" value={workflow.event_count ?? 0} />
+        <GoalFact icon={<Activity size={14} />} label="team" value={memberCount} />
       </div>
       {workflow.arbitration?.next_actions?.length ? (
-        <div className="workspace-loop-next">
+        <div className="workspace-goal-next">
           {workflow.arbitration.next_actions.slice(0, 2).map((action) => (
             <span key={action}>{action}</span>
           ))}
@@ -313,15 +313,15 @@ function WorkflowCard({ workflow }: { workflow: LoopWorkflowSnapshot }): JSX.Ele
   );
 }
 
-function HarnessTaskRow({ task }: { task: LoopHarnessTaskSnapshot }): JSX.Element {
+function HarnessTaskRow({ task }: { task: GoalHarnessTaskSnapshot }): JSX.Element {
   return (
-    <div className="workspace-loop-row">
+    <div className="workspace-goal-row">
       <Users size={15} />
       <div>
         <strong>{firstText(task.name, task.id)}</strong>
         <span>
           {firstText(task.role, "agent")}
-          {task.loop_id ? ` / ${task.loop_id}` : ""}
+          {task.goal_id ? ` / ${task.goal_id}` : ""}
         </span>
       </div>
       <StatusPill status={task.status} />
@@ -329,9 +329,9 @@ function HarnessTaskRow({ task }: { task: LoopHarnessTaskSnapshot }): JSX.Elemen
   );
 }
 
-function HarnessReportRow({ report }: { report: LoopHarnessReportSnapshot }): JSX.Element {
+function HarnessReportRow({ report }: { report: GoalHarnessReportSnapshot }): JSX.Element {
   return (
-    <div className="workspace-loop-row">
+    <div className="workspace-goal-row">
       <CheckCircle2 size={15} />
       <div>
         <strong>{firstText(report.summary, report.task_id)}</strong>
@@ -344,7 +344,7 @@ function HarnessReportRow({ report }: { report: LoopHarnessReportSnapshot }): JS
   );
 }
 
-function LoopFact({
+function GoalFact({
   icon,
   label,
   value,
@@ -354,7 +354,7 @@ function LoopFact({
   value: number;
 }): JSX.Element {
   return (
-    <span className="workspace-loop-fact">
+    <span className="workspace-goal-fact">
       {icon}
       <span>{label}</span>
       <strong>{value}</strong>
@@ -362,15 +362,15 @@ function LoopFact({
   );
 }
 
-function LoopEmpty({ text }: { text: string }): JSX.Element {
-  return <div className="workspace-loop-empty">{text}</div>;
+function GoalEmpty({ text }: { text: string }): JSX.Element {
+  return <div className="workspace-goal-empty">{text}</div>;
 }
 
 function StatusPill({ status }: { status: string }): JSX.Element {
-  return <span className={`workspace-loop-status ${statusClass(status)}`}>{status || "unknown"}</span>;
+  return <span className={`workspace-goal-status ${statusClass(status)}`}>{status || "unknown"}</span>;
 }
 
-function summarizeLoopSnapshot(snapshot: LoopSystemSnapshot): {
+function summarizeGoalSnapshot(snapshot: GoalSystemSnapshot): {
   workflowCount: number;
   activeWorkflowCount: number;
   attentionCount: number;

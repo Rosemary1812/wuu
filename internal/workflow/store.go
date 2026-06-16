@@ -28,8 +28,8 @@ type Run struct {
 	PlanPath        string    `json:"plan_path,omitempty"`
 	ScriptPath      string    `json:"script_path,omitempty"`
 	FinalReportPath string    `json:"final_report_path,omitempty"`
-	LoopID          string    `json:"loop_id,omitempty"`
-	LoopDir         string    `json:"loop_dir,omitempty"`
+	GoalID          string    `json:"goal_id,omitempty"`
+	GoalDir         string    `json:"goal_dir,omitempty"`
 	PauseReason     string    `json:"pause_reason,omitempty"`
 	ResumeHint      string    `json:"resume_hint,omitempty"`
 	RollbackHint    string    `json:"rollback_hint,omitempty"`
@@ -181,8 +181,8 @@ const (
 
 type WorkflowArtifact struct {
 	RunID     string
-	LoopID    string
-	LoopDir   string
+	GoalID    string
+	GoalDir   string
 	Kind      WorkflowArtifactKind
 	Path      string
 	CreatedAt time.Time
@@ -804,13 +804,13 @@ func (s *Store) WriteFinalReport(runID, content string) (string, error) {
 }
 
 func (s *Store) recordWorkflowArtifact(run Run, kind WorkflowArtifactKind, path string) error {
-	if s == nil || s.artifactSink == nil || strings.TrimSpace(run.LoopDir) == "" {
+	if s == nil || s.artifactSink == nil || strings.TrimSpace(run.GoalDir) == "" {
 		return nil
 	}
 	return s.artifactSink.RecordWorkflowArtifact(WorkflowArtifact{
 		RunID:     run.ID,
-		LoopID:    run.LoopID,
-		LoopDir:   run.LoopDir,
+		GoalID:    run.GoalID,
+		GoalDir:   run.GoalDir,
 		Kind:      kind,
 		Path:      path,
 		CreatedAt: time.Now().UTC(),

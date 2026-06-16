@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"fmt"
@@ -12,12 +12,12 @@ type FailureSyncResult struct {
 }
 
 // SyncSnapshotFailures writes attention items from workflow and harness
-// projections into the loop failure ledger. Callers must pass the intended
-// loop store explicitly; this function does not discover or guess an active
-// loop from the workspace.
+// projections into the goal failure ledger. Callers must pass the intended
+// goal store explicitly; this function does not discover or guess an active
+// goal from the workspace.
 func SyncSnapshotFailures(store *Store, snapshot SystemSnapshot) (FailureSyncResult, error) {
 	if store == nil {
-		return FailureSyncResult{}, fmt.Errorf("loop failure sync requires a store")
+		return FailureSyncResult{}, fmt.Errorf("goal failure sync requires a store")
 	}
 	var result FailureSyncResult
 	state, err := store.LoadState()

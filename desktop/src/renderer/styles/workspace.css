@@ -615,7 +615,7 @@
   line-height: 1.45;
 }
 
-.workspace-loop-panel {
+.workspace-goal-panel {
   display: grid;
   height: 100%;
   min-width: 0;
@@ -624,7 +624,7 @@
   gap: 10px;
 }
 
-.workspace-loop-toolbar {
+.workspace-goal-toolbar {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -635,19 +635,19 @@
   padding: 10px 10px 10px 12px;
 }
 
-.workspace-loop-toolbar > div {
+.workspace-goal-toolbar > div {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
-.workspace-loop-toolbar strong {
+.workspace-goal-toolbar strong {
   color: #25292d;
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
 }
 
-.workspace-loop-toolbar span {
+.workspace-goal-toolbar span {
   min-width: 0;
   overflow: hidden;
   color: #7a8085;
@@ -657,13 +657,13 @@
   white-space: nowrap;
 }
 
-.workspace-loop-refresh {
+.workspace-goal-refresh {
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
 }
 
-.workspace-loop-error {
+.workspace-goal-error {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -676,24 +676,24 @@
   padding: 9px 10px;
 }
 
-.workspace-loop-error span {
+.workspace-goal-error span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.workspace-loop-scroll {
+.workspace-goal-scroll {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
 
-.workspace-loop-scroll.loading {
+.workspace-goal-scroll.loading {
   opacity: 0.72;
 }
 
-.workspace-loop-scroll > [data-overlayscrollbars-contents] {
+.workspace-goal-scroll > [data-overlayscrollbars-contents] {
   display: grid;
   min-width: 0;
   align-content: start;
@@ -701,14 +701,14 @@
   padding-bottom: 10px;
 }
 
-.workspace-loop-summary {
+.workspace-goal-summary {
   display: grid;
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.workspace-loop-metric {
+.workspace-goal-metric {
   display: grid;
   min-width: 0;
   min-height: 74px;
@@ -722,29 +722,29 @@
   text-align: center;
 }
 
-.workspace-loop-metric > span {
+.workspace-goal-metric > span {
   color: #6f7770;
 }
 
-.workspace-loop-metric strong {
+.workspace-goal-metric strong {
   font-size: 20px;
   font-weight: var(--weight-semibold);
   line-height: 1;
 }
 
-.workspace-loop-metric small {
+.workspace-goal-metric small {
   color: #777d82;
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
 }
 
-.workspace-loop-section {
+.workspace-goal-section {
   display: grid;
   min-width: 0;
   gap: 8px;
 }
 
-.workspace-loop-section header {
+.workspace-goal-section header {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -753,7 +753,7 @@
   padding: 0 2px;
 }
 
-.workspace-loop-section h3 {
+.workspace-goal-section h3 {
   min-width: 0;
   margin: 0;
   overflow: hidden;
@@ -764,7 +764,7 @@
   white-space: nowrap;
 }
 
-.workspace-loop-section header > span {
+.workspace-goal-section header > span {
   display: grid;
   min-width: 22px;
   height: 20px;
@@ -776,26 +776,26 @@
   font-weight: var(--weight-semibold);
 }
 
-.workspace-loop-list {
+.workspace-goal-list {
   display: grid;
   min-width: 0;
   gap: 7px;
 }
 
-.workspace-loop-card,
-.workspace-loop-row {
+.workspace-goal-card,
+.workspace-goal-row {
   min-width: 0;
   border-radius: 8px;
   background: #fff;
 }
 
-.workspace-loop-card {
+.workspace-goal-card {
   display: grid;
   gap: 10px;
   padding: 11px;
 }
 
-.workspace-loop-card-header {
+.workspace-goal-card-header {
   display: flex;
   min-width: 0;
   align-items: start;
@@ -803,14 +803,14 @@
   gap: 10px;
 }
 
-.workspace-loop-card-header > div {
+.workspace-goal-card-header > div {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
-.workspace-loop-card-header strong,
-.workspace-loop-row strong {
+.workspace-goal-card-header strong,
+.workspace-goal-row strong {
   min-width: 0;
   overflow: hidden;
   color: #25292d;
@@ -820,8 +820,8 @@
   white-space: nowrap;
 }
 
-.workspace-loop-card-header span,
-.workspace-loop-row span {
+.workspace-goal-card-header span,
+.workspace-goal-row span {
   min-width: 0;
   overflow: hidden;
   color: #7a8085;
@@ -831,14 +831,14 @@
   white-space: nowrap;
 }
 
-.workspace-loop-card-grid {
+.workspace-goal-card-grid {
   display: grid;
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
-.workspace-loop-fact {
+.workspace-goal-fact {
   display: grid;
   min-width: 0;
   height: 30px;
@@ -851,7 +851,7 @@
   padding: 0 8px;
 }
 
-.workspace-loop-fact > span {
+.workspace-goal-fact > span {
   min-width: 0;
   overflow: hidden;
   font-size: var(--font-sm);
@@ -860,19 +860,19 @@
   white-space: nowrap;
 }
 
-.workspace-loop-fact strong {
+.workspace-goal-fact strong {
   color: #303438;
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
 }
 
-.workspace-loop-next {
+.workspace-goal-next {
   display: grid;
   min-width: 0;
   gap: 5px;
 }
 
-.workspace-loop-next span {
+.workspace-goal-next span {
   min-width: 0;
   overflow: hidden;
   border-radius: 7px;
@@ -885,7 +885,7 @@
   white-space: nowrap;
 }
 
-.workspace-loop-row {
+.workspace-goal-row {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
@@ -894,24 +894,24 @@
   padding: 9px 10px;
 }
 
-.workspace-loop-row.attention {
+.workspace-goal-row.attention {
   background: #fff8e9;
   color: #8a6520;
 }
 
-.workspace-loop-row.warning {
+.workspace-goal-row.warning {
   grid-template-columns: 18px minmax(0, 1fr);
   background: #fff4ed;
   color: #8b3f22;
 }
 
-.workspace-loop-row > div {
+.workspace-goal-row > div {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.workspace-loop-status {
+.workspace-goal-status {
   display: inline-grid;
   max-width: 112px;
   height: 22px;
@@ -923,27 +923,27 @@
   white-space: nowrap;
 }
 
-.workspace-loop-status.completed {
+.workspace-goal-status.completed {
   background: #e9f5ec;
   color: #386744;
 }
 
-.workspace-loop-status.failed {
+.workspace-goal-status.failed {
   background: #fdece8;
   color: #8a3c2e;
 }
 
-.workspace-loop-status.running {
+.workspace-goal-status.running {
   background: #e8f1f8;
   color: #35647d;
 }
 
-.workspace-loop-status.pending {
+.workspace-goal-status.pending {
   background: #eeeeeb;
   color: #6b7075;
 }
 
-.workspace-loop-empty {
+.workspace-goal-empty {
   border-radius: 8px;
   background: #fff;
   color: #81878c;

@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"errors"
@@ -143,7 +143,7 @@ func truncateReviewDiff(diff string, maxBytes int) (string, bool) {
 
 func CleanupWorktreeIfClean(opts WorktreeCleanupOptions) (WorktreeCleanupResult, error) {
 	if !opts.ConfirmUserApproved || !opts.ConfirmRemoveCleanWorktree {
-		return WorktreeCleanupResult{}, errors.New("loop worktree cleanup requires confirm_user_approved=true and confirm_remove_clean_worktree=true")
+		return WorktreeCleanupResult{}, errors.New("goal worktree cleanup requires confirm_user_approved=true and confirm_remove_clean_worktree=true")
 	}
 	parentRepo := strings.TrimSpace(opts.ParentRepo)
 	if parentRepo == "" {
@@ -180,7 +180,7 @@ func CleanupWorktreeIfClean(opts WorktreeCleanupOptions) (WorktreeCleanupResult,
 
 func RollbackWorktree(opts WorktreeRollbackOptions) (WorktreeRollbackResult, error) {
 	if !opts.ConfirmUserApproved || !opts.ConfirmDiscardWorktreeChanges {
-		return WorktreeRollbackResult{}, errors.New("loop worktree rollback requires confirm_user_approved=true and confirm_discard_worktree_changes=true")
+		return WorktreeRollbackResult{}, errors.New("goal worktree rollback requires confirm_user_approved=true and confirm_discard_worktree_changes=true")
 	}
 	parentRepo := strings.TrimSpace(opts.ParentRepo)
 	if parentRepo == "" {
@@ -220,7 +220,7 @@ func RollbackWorktree(opts WorktreeRollbackOptions) (WorktreeRollbackResult, err
 
 func MergeWorktree(opts WorktreeMergeOptions) (WorktreeMergeResult, error) {
 	if !opts.ConfirmUserApproved || !opts.ConfirmApplyWorktreeDiff || !opts.ConfirmTargetRepoMutation {
-		return WorktreeMergeResult{}, errors.New("loop worktree merge requires confirm_user_approved=true, confirm_apply_worktree_diff=true, and confirm_target_repo_mutation=true")
+		return WorktreeMergeResult{}, errors.New("goal worktree merge requires confirm_user_approved=true, confirm_apply_worktree_diff=true, and confirm_target_repo_mutation=true")
 	}
 	parentRepo := strings.TrimSpace(opts.ParentRepo)
 	if parentRepo == "" {

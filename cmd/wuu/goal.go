@@ -10,36 +10,28 @@ import (
 	"path/filepath"
 	"strings"
 
-	looprunner "github.com/blueberrycongee/wuu/internal/loop"
+	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
-const defaultLoopID = "demo"
+const defaultGoalID = "demo"
 
 func runGoal(args []string) error {
-	return runGoalCommand(args, "goal")
-}
-
-func runLoop(args []string) error {
-	return runGoalCommand(args, "loop")
-}
-
-func runGoalCommand(args []string, commandName string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%s subcommand is required (demo or status)", commandName)
+		return fmt.Errorf("goal subcommand is required (demo or status)")
 	}
 	switch args[0] {
 	case "demo":
-		return runGoalDemo(args[1:], commandName)
+		return runGoalDemo(args[1:])
 	case "status":
-		return runGoalStatus(args[1:], commandName)
+		return runGoalStatus(args[1:])
 	default:
-		return fmt.Errorf("unknown %s subcommand %q", commandName, args[0])
+		return fmt.Errorf("unknown goal subcommand %q", args[0])
 	}
 }
 
-func runGoalDemo(args []string, commandName string) error {
-	fs := flag.NewFlagSet(commandName+" demo", flag.ContinueOnError)
+func runGoalDemo(args []string) error {
+	fs := flag.NewFlagSet("goal demo", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	workdir := fs.String("workdir", "", "workspace directory")
 	id := fs.String("id", "", "goal id")
@@ -56,17 +48,17 @@ func runGoalDemo(args []string, commandName string) error {
 	if err != nil {
 		return err
 	}
-	store, loopID, workspaceStateDir, err := resolveLoopStore(rootDir, *id)
+	store, goalID, workspaceStateDir, err := resolveGoalStore(rootDir, *id)
 	if err != nil {
 		return err
 	}
-	commands := make([]looprunner.CommandCheck, 0, len(verifyCommands))
+	commands := make([]goalrunner.CommandCheck, 0, len(verifyCommands))
 	for i, command := range verifyCommands {
 		command = strings.TrimSpace(command)
 		if command == "" {
 			continue
 		}
-		commands = append(commands, looprunner.CommandCheck{
+		commands = append(commands, goalrunner.CommandCheck{
 			Name:           fmt.Sprintf("command-%d", i+1),
 			Command:        command,
 			WorkDir:        rootDir,
@@ -75,18 +67,18 @@ func runGoalDemo(args []string, commandName string) error {
 		})
 	}
 
-	spec := looprunner.Spec{
-		ID:            loopID,
+	spec := goalrunner.Spec{
+		ID:            goalID,
 		Goal:          strings.TrimSpace(*goal),
 		Task:          strings.TrimSpace(*task),
 		AssignedAgent: "lead",
-		Trigger: looprunner.Trigger{
+		Trigger: goalrunner.Trigger{
 			Type:   "manual",
 			Source: "cli",
 		},
-		Permissions: looprunner.Permissions{
+		Permissions: goalrunner.Permissions{
 			ReadOnly:                  true,
-			EditAllowedPaths:          []string{filepath.Join(workspaceStateDir, "loops", loopID, "**")},
+			EditAllowedPaths:          []string{filepath.Join(workspaceStateDir, "goals", goalID, "**")},
 			ShellAllowedCommands:      append([]string(nil), verifyCommands...),
 			NetworkAllowed:            false,
 			BrowserAllowed:            false,
@@ -95,22 +87,22 @@ func runGoalDemo(args []string, commandName string) error {
 			SecretAccessPolicy:        "deny",
 			ExternalConnectorPolicy:   "deny",
 		},
-		VerificationPolicy: looprunner.VerificationPolicy{
+		VerificationPolicy: goalrunner.VerificationPolicy{
 			Commands:      commands,
 			RequireReview: true,
 		},
-		RetryPolicy: looprunner.RetryPolicy{
+		RetryPolicy: goalrunner.RetryPolicy{
 			MaxRetries: 1,
 		},
-		EscalationPolicy: looprunner.EscalationPolicy{
+		EscalationPolicy: goalrunner.EscalationPolicy{
 			EscalateOnFailure:      true,
 			EscalateOnRetryExhaust: true,
 			HumanReviewRequired:    false,
 		},
 	}
-	runner := looprunner.Runner{
+	runner := goalrunner.Runner{
 		Store:    store,
-		Verifier: looprunner.CommandVerifier{WorkDir: rootDir},
+		Verifier: goalrunner.CommandVerifier{WorkDir: rootDir},
 	}
 	state, err := runner.RunDemo(context.Background(), spec)
 	if err != nil {
@@ -124,12 +116,12 @@ func runGoalDemo(args []string, commandName string) error {
 		fmt.Println(string(data))
 		return nil
 	}
-	printLoopStateSummary(state, runner.Store.Dir())
+	printGoalStateSummary(state, runner.Store.Dir())
 	return nil
 }
 
-func runGoalStatus(args []string, commandName string) error {
-	fs := flag.NewFlagSet(commandName+" status", flag.ContinueOnError)
+func runGoalStatus(args []string) error {
+	fs := flag.NewFlagSet("goal status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	workdir := fs.String("workdir", "", "workspace directory")
 	id := fs.String("id", "", "goal id")
@@ -141,7 +133,7 @@ func runGoalStatus(args []string, commandName string) error {
 	if err != nil {
 		return err
 	}
-	store, _, _, err := resolveLoopStore(rootDir, *id)
+	store, _, _, err := resolveGoalStore(rootDir, *id)
 	if err != nil {
 		return err
 	}
@@ -157,17 +149,17 @@ func runGoalStatus(args []string, commandName string) error {
 		fmt.Println(string(data))
 		return nil
 	}
-	printLoopStateSummary(state, store.Dir())
+	printGoalStateSummary(state, store.Dir())
 	return nil
 }
 
-func printLoopStateSummary(state looprunner.State, loopDir string) {
+func printGoalStateSummary(state goalrunner.State, goalDir string) {
 	fmt.Printf("goal_id: %s\n", state.ID)
 	fmt.Printf("status: %s\n", state.Status)
 	if state.CurrentStep != "" {
 		fmt.Printf("current_step: %s\n", state.CurrentStep)
 	}
-	fmt.Printf("state: %s\n", filepath.Join(loopDir, "state.json"))
+	fmt.Printf("state: %s\n", filepath.Join(goalDir, "state.json"))
 	if state.FinalArtifact != "" {
 		fmt.Printf("final_artifact: %s\n", state.FinalArtifact)
 	}
@@ -179,12 +171,12 @@ func printLoopStateSummary(state looprunner.State, loopDir string) {
 	}
 }
 
-func resolveLoopStore(rootDir, requestedID string) (*looprunner.Store, string, string, error) {
-	loopID := strings.TrimSpace(requestedID)
-	if loopID == "" {
-		loopID = defaultLoopID
+func resolveGoalStore(rootDir, requestedID string) (*goalrunner.Store, string, string, error) {
+	goalID := strings.TrimSpace(requestedID)
+	if goalID == "" {
+		goalID = defaultGoalID
 	}
-	if err := validateLoopID(loopID); err != nil {
+	if err := validateGoalID(goalID); err != nil {
 		return nil, "", "", err
 	}
 	wuuHome, err := statepath.Home("")
@@ -195,15 +187,15 @@ func resolveLoopStore(rootDir, requestedID string) (*looprunner.Store, string, s
 	if err != nil {
 		return nil, "", "", err
 	}
-	return looprunner.NewStore(statepath.LoopDir(workspaceStateDir, loopID)), loopID, workspaceStateDir, nil
+	return goalrunner.NewStore(statepath.GoalDir(workspaceStateDir, goalID)), goalID, workspaceStateDir, nil
 }
 
-func validateLoopID(loopID string) error {
-	if loopID == "" {
+func validateGoalID(goalID string) error {
+	if goalID == "" {
 		return errors.New("goal id is required")
 	}
-	if loopID == "." || loopID == ".." || filepath.Base(loopID) != loopID || strings.ContainsAny(loopID, `/\`) {
-		return fmt.Errorf("goal id must be an id, not a path: %q", loopID)
+	if goalID == "." || goalID == ".." || filepath.Base(goalID) != goalID || strings.ContainsAny(goalID, `/\`) {
+		return fmt.Errorf("goal id must be an id, not a path: %q", goalID)
 	}
 	return nil
 }

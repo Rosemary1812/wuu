@@ -236,8 +236,8 @@ type SpawnRequest struct {
 	Prompt       string
 	ParentID     string
 	ParentPath   string
-	LoopID       string
-	LoopDir      string
+	GoalID       string
+	GoalDir      string
 	BaseRepo     string // optional: chain off another worktree (worktree mode only)
 	Synchronous  bool
 	Timeout      time.Duration
@@ -273,8 +273,8 @@ type preparedSpawn struct {
 	ThreadMeta    agentthread.Metadata
 	Description   string
 	Prompt        string
-	LoopID        string
-	LoopDir       string
+	GoalID        string
+	GoalDir       string
 	Isolation     IsolationMode
 	BaseRepo      string
 	IsFork        bool
@@ -288,8 +288,8 @@ type queuedSpawnPayload struct {
 	ThreadMeta    agentthread.Metadata    `json:"thread_meta"`
 	Description   string                  `json:"description,omitempty"`
 	Prompt        string                  `json:"prompt"`
-	LoopID        string                  `json:"loop_id,omitempty"`
-	LoopDir       string                  `json:"loop_dir,omitempty"`
+	GoalID        string                  `json:"goal_id,omitempty"`
+	GoalDir       string                  `json:"goal_dir,omitempty"`
 	Isolation     string                  `json:"isolation"`
 	BaseRepo      string                  `json:"base_repo,omitempty"`
 	IsFork        bool                    `json:"is_fork,omitempty"`
@@ -340,12 +340,12 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			ThreadMeta:  threadMeta,
 			Description: req.Description,
 			Prompt:      req.Prompt,
-			LoopID:      strings.TrimSpace(req.LoopID),
-			LoopDir:     strings.TrimSpace(req.LoopDir),
+			GoalID:      strings.TrimSpace(req.GoalID),
+			GoalDir:     strings.TrimSpace(req.GoalDir),
 			Isolation:   isolation,
 			BaseRepo:    req.BaseRepo,
 		}
-		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo, req.LoopID, req.LoopDir)
+		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
 			c.recordHarnessTaskFailure(workerID, err)
 			return nil, err
@@ -391,7 +391,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		}
 		return nil, err
 	}
-	c.recordHarnessTaskStart(threadMeta, wtype, req.Prompt, workerRoot, isolation, req.BaseRepo, req.LoopID, req.LoopDir)
+	c.recordHarnessTaskStart(threadMeta, wtype, req.Prompt, workerRoot, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
 
 	// 3. Build worker's toolkit rooted at the chosen working directory.
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
@@ -1209,7 +1209,7 @@ func (c *AgentControl) registerChildThreadWithStatus(id, taskName, agentProfile,
 	return meta, nil
 }
 
-func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, intent, workerRoot string, isolation IsolationMode, baseRepo, loopID, loopDir string) {
+func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, intent, workerRoot string, isolation IsolationMode, baseRepo, goalID, goalDir string) {
 	if c == nil || c.harnessStore == nil {
 		return
 	}
@@ -1229,8 +1229,8 @@ func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, i
 		Name:       meta.TaskName,
 		Role:       role,
 		Intent:     intent,
-		LoopID:     strings.TrimSpace(loopID),
-		LoopDir:    strings.TrimSpace(loopDir),
+		GoalID:     strings.TrimSpace(goalID),
+		GoalDir:    strings.TrimSpace(goalDir),
 		Workspace: harness.WorkspaceLease{
 			Mode:      workspaceMode,
 			Root:      workerRoot,
@@ -1289,7 +1289,7 @@ func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, i
 	})
 }
 
-func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, intent string, isolation IsolationMode, baseRepo, loopID, loopDir string) {
+func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, intent string, isolation IsolationMode, baseRepo, goalID, goalDir string) {
 	if c == nil || c.harnessStore == nil {
 		return
 	}
@@ -1308,8 +1308,8 @@ func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, 
 		Name:       meta.TaskName,
 		Role:       role,
 		Intent:     intent,
-		LoopID:     strings.TrimSpace(loopID),
-		LoopDir:    strings.TrimSpace(loopDir),
+		GoalID:     strings.TrimSpace(goalID),
+		GoalDir:    strings.TrimSpace(goalDir),
 		Workspace: harness.WorkspaceLease{
 			Mode:     workspaceMode,
 			BaseRepo: strings.TrimSpace(baseRepo),
@@ -1417,8 +1417,8 @@ func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 		ThreadMeta:    prepared.ThreadMeta,
 		Description:   prepared.Description,
 		Prompt:        prepared.Prompt,
-		LoopID:        prepared.LoopID,
-		LoopDir:       prepared.LoopDir,
+		GoalID:        prepared.GoalID,
+		GoalDir:       prepared.GoalDir,
 		Isolation:     string(prepared.Isolation),
 		BaseRepo:      prepared.BaseRepo,
 		IsFork:        prepared.IsFork,
@@ -1452,8 +1452,8 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		ThreadMeta:    payload.ThreadMeta,
 		Description:   payload.Description,
 		Prompt:        payload.Prompt,
-		LoopID:        payload.LoopID,
-		LoopDir:       payload.LoopDir,
+		GoalID:        payload.GoalID,
+		GoalDir:       payload.GoalDir,
 		Isolation:     isolation,
 		BaseRepo:      payload.BaseRepo,
 		IsFork:        payload.IsFork,
@@ -1511,7 +1511,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	if running, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusRunning, time.Now().UTC()); ok {
 		_ = c.threadStore.RecordStatus(running)
 	}
-	c.recordHarnessTaskStart(prepared.ThreadMeta, prepared.WorkerType.Name, prepared.Prompt, workerRoot, prepared.Isolation, prepared.BaseRepo, prepared.LoopID, prepared.LoopDir)
+	c.recordHarnessTaskStart(prepared.ThreadMeta, prepared.WorkerType.Name, prepared.Prompt, workerRoot, prepared.Isolation, prepared.BaseRepo, prepared.GoalID, prepared.GoalDir)
 	workerKit, err := c.workerFact(workerRoot, prepared.WorkerType, prepared.ThreadMeta)
 	if err != nil {
 		if worktreeRef != nil {
@@ -1602,8 +1602,8 @@ func (c *AgentControl) recordHarnessTaskFailure(taskID string, err error) {
 		TaskID:    taskID,
 		RunID:     runID,
 		AgentID:   taskID,
-		LoopID:    task.LoopID,
-		LoopDir:   task.LoopDir,
+		GoalID:    task.GoalID,
+		GoalDir:   task.GoalDir,
 		Outcome:   string(harness.TaskStatusFailed),
 		Message:   errText,
 		CreatedAt: now,

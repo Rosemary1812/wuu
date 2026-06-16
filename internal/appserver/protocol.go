@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
-	"github.com/blueberrycongee/wuu/internal/loop"
+	"github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -17,12 +17,12 @@ const (
 	MethodConfigModelUpdate     = "config/model/update"
 	MethodConfigCodexModels     = "config/codex/models"
 	MethodSkillList             = "skill/list"
-	MethodLoopSnapshot          = "loop/snapshot"
-	MethodLoopWorktreeReview    = "loop/worktree/review"
-	MethodLoopWorktreeCleanup   = "loop/worktree/cleanup"
-	MethodLoopWorktreeRollback  = "loop/worktree/rollback"
-	MethodLoopWorktreeMerge     = "loop/worktree/merge"
-	MethodLoopApprovalResolve   = "loop/approval/resolve"
+	MethodGoalSnapshot          = "goal/snapshot"
+	MethodGoalWorktreeReview    = "goal/worktree/review"
+	MethodGoalWorktreeCleanup   = "goal/worktree/cleanup"
+	MethodGoalWorktreeRollback  = "goal/worktree/rollback"
+	MethodGoalWorktreeMerge     = "goal/worktree/merge"
+	MethodGoalApprovalResolve   = "goal/approval/resolve"
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
@@ -199,56 +199,56 @@ type SkillListResult struct {
 	Skills []SkillSummary `json:"skills"`
 }
 
-type LoopSnapshotParams struct {
+type GoalSnapshotParams struct {
 	ThreadID string `json:"thread_id,omitempty"`
 }
 
-type LoopSnapshotResult struct {
-	Snapshot loop.SystemSnapshot `json:"snapshot"`
+type GoalSnapshotResult struct {
+	Snapshot goal.SystemSnapshot `json:"snapshot"`
 }
 
-type LoopWorktreeReviewParams struct {
+type GoalWorktreeReviewParams struct {
 	WorktreePath string `json:"worktree_path"`
 	MaxDiffBytes int    `json:"max_diff_bytes,omitempty"`
 }
 
-type LoopWorktreeReviewResult struct {
-	Review loop.WorktreeReview `json:"review"`
+type GoalWorktreeReviewResult struct {
+	Review goal.WorktreeReview `json:"review"`
 }
 
-type LoopWorktreeCleanupParams struct {
+type GoalWorktreeCleanupParams struct {
 	WorktreePath               string `json:"worktree_path"`
 	ConfirmUserApproved        bool   `json:"confirm_user_approved,omitempty"`
 	ConfirmRemoveCleanWorktree bool   `json:"confirm_remove_clean_worktree,omitempty"`
 }
 
-type LoopWorktreeCleanupResult struct {
-	Cleanup loop.WorktreeCleanupResult `json:"cleanup"`
+type GoalWorktreeCleanupResult struct {
+	Cleanup goal.WorktreeCleanupResult `json:"cleanup"`
 }
 
-type LoopWorktreeRollbackParams struct {
+type GoalWorktreeRollbackParams struct {
 	WorktreePath                  string `json:"worktree_path"`
 	ConfirmUserApproved           bool   `json:"confirm_user_approved,omitempty"`
 	ConfirmDiscardWorktreeChanges bool   `json:"confirm_discard_worktree_changes,omitempty"`
 }
 
-type LoopWorktreeRollbackResult struct {
-	Rollback loop.WorktreeRollbackResult `json:"rollback"`
+type GoalWorktreeRollbackResult struct {
+	Rollback goal.WorktreeRollbackResult `json:"rollback"`
 }
 
-type LoopWorktreeMergeParams struct {
+type GoalWorktreeMergeParams struct {
 	WorktreePath              string `json:"worktree_path"`
 	ConfirmUserApproved       bool   `json:"confirm_user_approved,omitempty"`
 	ConfirmApplyWorktreeDiff  bool   `json:"confirm_apply_worktree_diff,omitempty"`
 	ConfirmTargetRepoMutation bool   `json:"confirm_target_repo_mutation,omitempty"`
 }
 
-type LoopWorktreeMergeResult struct {
-	Merge loop.WorktreeMergeResult `json:"merge"`
+type GoalWorktreeMergeResult struct {
+	Merge goal.WorktreeMergeResult `json:"merge"`
 }
 
-type LoopApprovalResolveParams struct {
-	LoopID              string `json:"loop_id"`
+type GoalApprovalResolveParams struct {
+	GoalID              string `json:"goal_id"`
 	ApprovalID          string `json:"approval_id"`
 	Approved            bool   `json:"approved,omitempty"`
 	Rejected            bool   `json:"rejected,omitempty"`
@@ -257,8 +257,8 @@ type LoopApprovalResolveParams struct {
 	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
 }
 
-type LoopApprovalResolveResult struct {
-	Approval loop.ApprovalRequest `json:"approval"`
+type GoalApprovalResolveResult struct {
+	Approval goal.ApprovalRequest `json:"approval"`
 }
 
 type ManagedProcessSummary struct {

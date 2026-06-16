@@ -608,7 +608,7 @@ func workflowNextSteps(status workflow.RunState) []string {
 		return []string{
 			"Call list_agent_profiles, choose reuse_profile/create_profile/ephemeral members for this run, then record the Workflow Team with workflow_control action=record_workflow_team.",
 			"Write each team member prompt from the Base Agent Brief Contract and include workflow run, phase, team member, and result-binding context.",
-			"Spawn reuse_profile/create_profile members with spawn_agent.agent_profile set to the recorded profile; spawn ephemeral members without agent_profile. Pass the workflow's loop_id and loop_dir to spawn_agent so agent_report updates the loop state.",
+			"Spawn reuse_profile/create_profile members with spawn_agent.agent_profile set to the recorded profile; spawn ephemeral members without agent_profile. Pass the workflow's goal_id and goal_dir to spawn_agent so agent_report updates the goal state.",
 			"Require each workflow agent to call agent_report before treating its work as complete.",
 			"Create file checkpoints before risky direct edits that may need rollback.",
 			"Use await_agents when synthesis depends on agent output, then workflow_control action=record_await_results to bind results to the workflow run.",

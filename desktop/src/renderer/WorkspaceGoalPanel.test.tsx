@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { LoopSnapshotResult, WuuDesktopApi } from "../shared/protocol";
-import { WorkspaceLoopPanel } from "./WorkspaceLoopPanel";
+import type { GoalSnapshotResult, WuuDesktopApi } from "../shared/protocol";
+import { WorkspaceGoalPanel } from "./WorkspaceGoalPanel";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -28,20 +28,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function installWuu(result: LoopSnapshotResult): ReturnType<typeof vi.fn> {
-  const getLoopSnapshot = vi.fn(() => Promise.resolve(result));
+function installWuu(result: GoalSnapshotResult): ReturnType<typeof vi.fn> {
+  const getGoalSnapshot = vi.fn(() => Promise.resolve(result));
   Object.defineProperty(window, "wuu", {
     configurable: true,
-    value: { getLoopSnapshot } as Partial<WuuDesktopApi>,
+    value: { getGoalSnapshot } as Partial<WuuDesktopApi>,
   });
-  return getLoopSnapshot;
+  return getGoalSnapshot;
 }
 
 async function render(open: boolean): Promise<void> {
   await act(async () => {
     root = createRoot(container);
     root.render(
-      <WorkspaceLoopPanel
+      <WorkspaceGoalPanel
         activeContext={{ kind: "no_project", cwd: "/repo" }}
         threadId="thread-1"
         open={open}
@@ -53,14 +53,14 @@ async function render(open: boolean): Promise<void> {
   });
 }
 
-describe("WorkspaceLoopPanel", () => {
-  it("loads the unified loop snapshot for the active thread", async () => {
-    const getLoopSnapshot = installWuu({
+describe("WorkspaceGoalPanel", () => {
+  it("loads the unified goal snapshot for the active thread", async () => {
+    const getGoalSnapshot = installWuu({
       snapshot: {
         generated_at: "2026-06-14T07:00:00Z",
-        loops: [
+        goals: [
           {
-            id: "loop-1",
+            id: "goal-1",
             goal: "release",
             status: "needs_human",
             current_step: "approval",
@@ -68,7 +68,7 @@ describe("WorkspaceLoopPanel", () => {
             pending_approvals: [
               {
                 id: "approval-1",
-                loop_id: "loop-1",
+                goal_id: "goal-1",
                 title: "Approve merge",
                 requested_action: "merge worktree",
                 status: "pending",
@@ -80,7 +80,7 @@ describe("WorkspaceLoopPanel", () => {
         approvals: [
           {
             id: "approval-1",
-            loop_id: "loop-1",
+            goal_id: "goal-1",
             title: "Approve merge",
             requested_action: "merge worktree",
             status: "pending",
@@ -92,7 +92,7 @@ describe("WorkspaceLoopPanel", () => {
             id: "workflow-1",
             definition_name: "release-check",
             status: "running",
-            loop_id: "loop-1",
+            goal_id: "goal-1",
             phases: [{ id: "verify", name: "Verify", status: "running" }],
             agent_runs: [{ id: "agent-1", status: "completed" }],
             event_count: 3,
@@ -104,7 +104,7 @@ describe("WorkspaceLoopPanel", () => {
               id: "task-1",
               name: "QA pass",
               role: "verifier",
-              loop_id: "loop-1",
+              goal_id: "goal-1",
               status: "failed",
             },
           ],
@@ -131,7 +131,7 @@ describe("WorkspaceLoopPanel", () => {
 
     await render(true);
 
-    expect(getLoopSnapshot).toHaveBeenCalledWith("thread-1");
+    expect(getGoalSnapshot).toHaveBeenCalledWith("thread-1");
     expect(container.textContent).toContain("release-check");
     expect(container.textContent).toContain("QA pass");
     expect(container.textContent).toContain("Approve merge");
@@ -140,7 +140,7 @@ describe("WorkspaceLoopPanel", () => {
   });
 
   it("does not read goal state while closed", async () => {
-    const getLoopSnapshot = installWuu({
+    const getGoalSnapshot = installWuu({
       snapshot: {
         generated_at: "2026-06-14T07:00:00Z",
       },
@@ -148,6 +148,6 @@ describe("WorkspaceLoopPanel", () => {
 
     await render(false);
 
-    expect(getLoopSnapshot).not.toHaveBeenCalled();
+    expect(getGoalSnapshot).not.toHaveBeenCalled();
   });
 });

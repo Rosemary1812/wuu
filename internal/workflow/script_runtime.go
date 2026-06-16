@@ -27,8 +27,8 @@ type ScriptRuntimeOptions struct {
 	CurrentAgentID   string
 	CurrentAgentPath string
 	RunID            string
-	LoopID           string
-	LoopDir          string
+	GoalID           string
+	GoalDir          string
 	DefinitionName   string
 	DefinitionPath   string
 	Arguments        string
@@ -138,8 +138,8 @@ func (r *ScriptRuntime) installGlobals(ctx context.Context, vm *goja.Runtime) {
 	_ = vm.Set("args", parseScriptArguments(r.opts.Arguments))
 	_ = vm.Set("workflow", map[string]any{
 		"runId":          r.opts.RunID,
-		"loopId":         r.opts.LoopID,
-		"loopDir":        r.opts.LoopDir,
+		"loopId":         r.opts.GoalID,
+		"goalDir":        r.opts.GoalDir,
 		"definitionName": r.opts.DefinitionName,
 		"definitionPath": r.opts.DefinitionPath,
 		"rootDir":        r.opts.RootDir,
@@ -383,8 +383,8 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 		Prompt:       prompt,
 		ParentID:     strings.TrimSpace(r.opts.CurrentAgentID),
 		ParentPath:   r.currentAgentPath(),
-		LoopID:       r.opts.LoopID,
-		LoopDir:      r.opts.LoopDir,
+		GoalID:       r.opts.GoalID,
+		GoalDir:      r.opts.GoalDir,
 		Synchronous:  foreground,
 		Timeout:      timeout,
 		Isolation:    strings.TrimSpace(spec.Isolation),

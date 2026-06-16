@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"strings"
@@ -15,7 +15,7 @@ func NewWorkflowArtifactSink(store *Store) WorkflowArtifactSink {
 }
 
 func (s WorkflowArtifactSink) RecordWorkflowArtifact(in workflow.WorkflowArtifact) error {
-	store, ok, err := resolveExternalLoopStore(s.Store, in.LoopDir, "workflow")
+	store, ok, err := resolveExternalGoalStore(s.Store, in.GoalDir, "workflow")
 	if err != nil || !ok {
 		return err
 	}
@@ -37,8 +37,8 @@ func workflowArtifactSourceID(in workflow.WorkflowArtifact) string {
 	if runID := strings.TrimSpace(in.RunID); runID != "" {
 		return runID
 	}
-	if loopID := strings.TrimSpace(in.LoopID); loopID != "" {
-		return loopID
+	if goalID := strings.TrimSpace(in.GoalID); goalID != "" {
+		return goalID
 	}
 	return strings.TrimSpace(in.Path)
 }

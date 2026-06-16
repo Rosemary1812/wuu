@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"os"
@@ -11,16 +11,16 @@ import (
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
-// SystemSnapshot is the loop-level read model for existing workflow and
+// SystemSnapshot is the goal-level read model for existing workflow and
 // harness stores. It is intentionally a projection: workflow and harness keep
 // their current JSON schemas, while control-plane and eval callers can use one
-// loop-owned view.
+// goal-owned view.
 type SystemSnapshot struct {
 	GeneratedAt time.Time           `json:"generated_at"`
-	LoopRoot    string              `json:"loop_root,omitempty"`
+	GoalRoot    string              `json:"goal_root,omitempty"`
 	WorkflowDir string              `json:"workflow_dir,omitempty"`
 	HarnessDir  string              `json:"harness_dir,omitempty"`
-	Loops       []LoopStateSnapshot `json:"loops,omitempty"`
+	Goals       []GoalStateSnapshot `json:"goals,omitempty"`
 	Workflows   []WorkflowSnapshot  `json:"workflows,omitempty"`
 	Harness     HarnessSnapshot     `json:"harness,omitempty"`
 	Approvals   []ApprovalSnapshot  `json:"approvals,omitempty"`
@@ -28,9 +28,9 @@ type SystemSnapshot struct {
 	Warnings    []string            `json:"warnings,omitempty"`
 }
 
-type LoopStateSnapshot struct {
+type GoalStateSnapshot struct {
 	ID               string             `json:"id"`
-	LoopDir          string             `json:"loop_dir,omitempty"`
+	GoalDir          string             `json:"goal_dir,omitempty"`
 	Goal             string             `json:"goal"`
 	Task             string             `json:"task,omitempty"`
 	Status           string             `json:"status"`
@@ -47,8 +47,8 @@ type LoopStateSnapshot struct {
 
 type ApprovalSnapshot struct {
 	ID              string    `json:"id"`
-	LoopID          string    `json:"loop_id,omitempty"`
-	LoopDir         string    `json:"loop_dir,omitempty"`
+	GoalID          string    `json:"goal_id,omitempty"`
+	GoalDir         string    `json:"goal_dir,omitempty"`
 	Step            string    `json:"step,omitempty"`
 	Source          string    `json:"source,omitempty"`
 	SourceID        string    `json:"source_id,omitempty"`
@@ -76,8 +76,8 @@ type WorkflowSnapshot struct {
 	Error           string                  `json:"error,omitempty"`
 	ScriptPath      string                  `json:"script_path,omitempty"`
 	FinalReportPath string                  `json:"final_report_path,omitempty"`
-	LoopID          string                  `json:"loop_id,omitempty"`
-	LoopDir         string                  `json:"loop_dir,omitempty"`
+	GoalID          string                  `json:"goal_id,omitempty"`
+	GoalDir         string                  `json:"goal_dir,omitempty"`
 	Phases          []WorkflowPhaseSnapshot `json:"phases,omitempty"`
 	AgentRuns       []WorkflowAgentSnapshot `json:"agent_runs,omitempty"`
 	Team            *WorkflowTeamSnapshot   `json:"team,omitempty"`
@@ -153,8 +153,8 @@ type HarnessTaskSnapshot struct {
 	Path          string   `json:"path,omitempty"`
 	Name          string   `json:"name,omitempty"`
 	Role          string   `json:"role,omitempty"`
-	LoopID        string   `json:"loop_id,omitempty"`
-	LoopDir       string   `json:"loop_dir,omitempty"`
+	GoalID        string   `json:"goal_id,omitempty"`
+	GoalDir       string   `json:"goal_dir,omitempty"`
 	Status        string   `json:"status"`
 	ReportPath    string   `json:"report_path,omitempty"`
 	ArtifactPaths []string `json:"artifact_paths,omitempty"`
@@ -186,7 +186,7 @@ type AttentionItem struct {
 }
 
 type SnapshotOptions struct {
-	LoopRoot      string
+	GoalRoot      string
 	WorkflowStore *workflow.Store
 	HarnessStore  *harness.Store
 	Now           func() time.Time
@@ -198,10 +198,10 @@ func SnapshotSystem(opts SnapshotOptions) SystemSnapshot {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	snap := SystemSnapshot{GeneratedAt: now()}
-	if strings.TrimSpace(opts.LoopRoot) != "" {
-		snap.LoopRoot = strings.TrimSpace(opts.LoopRoot)
-		loops, approvals, attention, warnings := SnapshotLoops(opts.LoopRoot)
-		snap.Loops = loops
+	if strings.TrimSpace(opts.GoalRoot) != "" {
+		snap.GoalRoot = strings.TrimSpace(opts.GoalRoot)
+		goals, approvals, attention, warnings := SnapshotGoals(opts.GoalRoot)
+		snap.Goals = goals
 		snap.Approvals = approvals
 		snap.Attention = append(snap.Attention, attention...)
 		snap.Warnings = append(snap.Warnings, warnings...)
@@ -223,22 +223,22 @@ func SnapshotSystem(opts SnapshotOptions) SystemSnapshot {
 	return snap
 }
 
-func SnapshotLoops(loopRoot string) ([]LoopStateSnapshot, []ApprovalSnapshot, []AttentionItem, []string) {
-	loopRoot = strings.TrimSpace(loopRoot)
-	if loopRoot == "" {
+func SnapshotGoals(goalRoot string) ([]GoalStateSnapshot, []ApprovalSnapshot, []AttentionItem, []string) {
+	goalRoot = strings.TrimSpace(goalRoot)
+	if goalRoot == "" {
 		return nil, nil, nil, nil
 	}
-	entries, err := os.ReadDir(loopRoot)
+	entries, err := os.ReadDir(goalRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil, nil, nil
 		}
-		return nil, nil, nil, []string{"list loop states: " + err.Error()}
+		return nil, nil, nil, []string{"list goal states: " + err.Error()}
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() < entries[j].Name()
 	})
-	loops := make([]LoopStateSnapshot, 0, len(entries))
+	goals := make([]GoalStateSnapshot, 0, len(entries))
 	var approvals []ApprovalSnapshot
 	var attention []AttentionItem
 	var warnings []string
@@ -246,27 +246,27 @@ func SnapshotLoops(loopRoot string) ([]LoopStateSnapshot, []ApprovalSnapshot, []
 		if !entry.IsDir() {
 			continue
 		}
-		loopDir := filepath.Join(loopRoot, entry.Name())
-		state, err := NewStore(loopDir).LoadState()
+		goalDir := filepath.Join(goalRoot, entry.Name())
+		state, err := NewStore(goalDir).LoadState()
 		if err != nil {
-			warnings = append(warnings, "load loop state "+entry.Name()+": "+err.Error())
+			warnings = append(warnings, "load goal state "+entry.Name()+": "+err.Error())
 			continue
 		}
-		item := loopStateSnapshot(loopDir, state)
-		loops = append(loops, item)
+		item := goalStateSnapshot(goalDir, state)
+		goals = append(goals, item)
 		approvals = append(approvals, item.PendingApprovals...)
 		if state.Status == StatusBlocked || state.Status == StatusFailed || state.Status == StatusNeedsHuman || state.NeedsHuman {
 			attention = append(attention, AttentionItem{
-				Source:  "loop",
+				Source:  "goal",
 				ID:      state.ID,
 				Status:  string(state.Status),
 				Message: firstSnapshotText(state.CurrentBlocker, state.Goal),
-				Path:    filepath.Join(loopDir, "state.json"),
+				Path:    filepath.Join(goalDir, "state.json"),
 			})
 		}
 		for _, approval := range item.PendingApprovals {
 			attention = append(attention, AttentionItem{
-				Source:  "loop_approval",
+				Source:  "goal_approval",
 				ID:      approval.ID,
 				Status:  approval.Status,
 				Message: firstSnapshotText(approval.Title, approval.Reason),
@@ -274,7 +274,7 @@ func SnapshotLoops(loopRoot string) ([]LoopStateSnapshot, []ApprovalSnapshot, []
 			})
 		}
 	}
-	return loops, approvals, attention, warnings
+	return goals, approvals, attention, warnings
 }
 
 func SnapshotWorkflows(store *workflow.Store) ([]WorkflowSnapshot, []AttentionItem, []string) {
@@ -301,8 +301,8 @@ func SnapshotWorkflows(store *workflow.Store) ([]WorkflowSnapshot, []AttentionIt
 			Error:           strings.TrimSpace(run.Error),
 			ScriptPath:      run.ScriptPath,
 			FinalReportPath: run.FinalReportPath,
-			LoopID:          run.LoopID,
-			LoopDir:         run.LoopDir,
+			GoalID:          run.GoalID,
+			GoalDir:         run.GoalDir,
 			Phases:          workflowPhaseSnapshots(run.Phases),
 		}
 		if run.Status == workflow.RunStateFailed || run.Status == workflow.RunStatePaused {
@@ -385,10 +385,10 @@ func SnapshotHarness(store *harness.Store) (HarnessSnapshot, []AttentionItem, []
 	return snap, attention, warnings
 }
 
-func loopStateSnapshot(loopDir string, state State) LoopStateSnapshot {
-	return LoopStateSnapshot{
+func goalStateSnapshot(goalDir string, state State) GoalStateSnapshot {
+	return GoalStateSnapshot{
 		ID:               state.ID,
-		LoopDir:          loopDir,
+		GoalDir:          goalDir,
 		Goal:             state.Goal,
 		Task:             state.Task,
 		Status:           string(state.Status),
@@ -399,27 +399,27 @@ func loopStateSnapshot(loopDir string, state State) LoopStateSnapshot {
 		FinalArtifact:    state.FinalArtifact,
 		ModifiedFiles:    append([]string(nil), state.ModifiedFiles...),
 		RetryCount:       state.RetryCount,
-		PendingApprovals: pendingApprovalSnapshots(loopDir, state),
+		PendingApprovals: pendingApprovalSnapshots(goalDir, state),
 		UpdatedAt:        state.UpdatedAt,
 	}
 }
 
-func pendingApprovalSnapshots(loopDir string, state State) []ApprovalSnapshot {
+func pendingApprovalSnapshots(goalDir string, state State) []ApprovalSnapshot {
 	var out []ApprovalSnapshot
 	for _, approval := range state.Approvals {
 		if approval.Status != ApprovalStatusPending {
 			continue
 		}
-		out = append(out, approvalSnapshot(loopDir, state.ID, approval))
+		out = append(out, approvalSnapshot(goalDir, state.ID, approval))
 	}
 	return out
 }
 
-func approvalSnapshot(loopDir, loopID string, approval ApprovalRequest) ApprovalSnapshot {
+func approvalSnapshot(goalDir, goalID string, approval ApprovalRequest) ApprovalSnapshot {
 	return ApprovalSnapshot{
 		ID:              approval.ID,
-		LoopID:          loopID,
-		LoopDir:         loopDir,
+		GoalID:          goalID,
+		GoalDir:         goalDir,
 		Step:            string(approval.Step),
 		Source:          approval.Source,
 		SourceID:        approval.SourceID,
@@ -537,8 +537,8 @@ func harnessTaskSnapshots(tasks []harness.Task) []HarnessTaskSnapshot {
 			Path:          task.Path,
 			Name:          task.Name,
 			Role:          task.Role,
-			LoopID:        task.LoopID,
-			LoopDir:       task.LoopDir,
+			GoalID:        task.GoalID,
+			GoalDir:       task.GoalDir,
 			Status:        string(task.Status),
 			ReportPath:    task.ReportPath,
 			ArtifactPaths: append([]string(nil), task.ArtifactPaths...),

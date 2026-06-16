@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"strings"
@@ -8,11 +8,11 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 )
 
-func TestAgentControlFailureSinkWritesLoopFailure(t *testing.T) {
-	store := NewStore(loopTestDir(t, "loop-agentcontrol"))
+func TestAgentControlFailureSinkWritesGoalFailure(t *testing.T) {
+	store := NewStore(goalTestDir(t, "goal-agentcontrol"))
 	store.SetClock(fixedClock())
 	if _, err := store.Init(Spec{
-		ID:   "loop-agentcontrol",
+		ID:   "goal-agentcontrol",
 		Goal: "capture agentcontrol failures",
 	}); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -56,11 +56,11 @@ func TestAgentControlFailureSinkWritesLoopFailure(t *testing.T) {
 	}
 }
 
-func TestAgentControlFailureSinkWritesLoopReportProgress(t *testing.T) {
-	store := NewStore(loopTestDir(t, "loop-agent-report"))
+func TestAgentControlFailureSinkWritesGoalReportProgress(t *testing.T) {
+	store := NewStore(goalTestDir(t, "goal-agent-report"))
 	store.SetClock(fixedClock())
 	if _, err := store.Init(Spec{
-		ID:   "loop-agent-report",
+		ID:   "goal-agent-report",
 		Goal: "capture agent report",
 	}); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -70,13 +70,13 @@ func TestAgentControlFailureSinkWritesLoopReportProgress(t *testing.T) {
 		Source:       "harness_report",
 		TaskID:       "agent-2",
 		RunID:        "agent-2-run",
-		LoopID:       "loop-agent-report",
-		LoopDir:      store.Dir(),
+		GoalID:       "goal-agent-report",
+		GoalDir:      store.Dir(),
 		Outcome:      "completed",
 		Summary:      "Implemented the worker change.",
 		ReportPath:   "harness/reports/agent-2.md",
-		ChangedFiles: []string{"internal/loop/report_sync.go"},
-		Verification: []string{"go test ./internal/loop"},
+		ChangedFiles: []string{"internal/goal/report_sync.go"},
+		Verification: []string{"go test ./internal/goal"},
 		Artifacts:    []string{"harness/artifacts/agent-2.patch"},
 		NextSteps:    []string{"review worker diff"},
 		CreatedAt:    time.Date(2026, 6, 14, 1, 2, 3, 0, time.UTC),
@@ -88,12 +88,12 @@ func TestAgentControlFailureSinkWritesLoopReportProgress(t *testing.T) {
 		Source:       "harness_report",
 		TaskID:       "agent-2",
 		RunID:        "agent-2-run",
-		LoopDir:      store.Dir(),
+		GoalDir:      store.Dir(),
 		Outcome:      "completed",
 		Summary:      "Implemented the worker change.",
 		ReportPath:   "harness/reports/agent-2.md",
-		ChangedFiles: []string{"internal/loop/report_sync.go"},
-		Verification: []string{"go test ./internal/loop"},
+		ChangedFiles: []string{"internal/goal/report_sync.go"},
+		Verification: []string{"go test ./internal/goal"},
 		Artifacts:    []string{"harness/artifacts/agent-2.patch"},
 	}); err != nil {
 		t.Fatalf("RecordAgentReport duplicate: %v", err)
@@ -105,13 +105,13 @@ func TestAgentControlFailureSinkWritesLoopReportProgress(t *testing.T) {
 	if len(state.Progress) != 1 || state.Progress[0].SourceID != "agent-2:agent-2-run:harness/reports/agent-2.md" {
 		t.Fatalf("unexpected progress: %+v", state.Progress)
 	}
-	if len(state.ModifiedFiles) != 1 || state.ModifiedFiles[0] != "internal/loop/report_sync.go" {
+	if len(state.ModifiedFiles) != 1 || state.ModifiedFiles[0] != "internal/goal/report_sync.go" {
 		t.Fatalf("unexpected modified files: %+v", state.ModifiedFiles)
 	}
 	if len(state.Artifacts) != 2 {
 		t.Fatalf("expected report and evidence artifact refs, got %+v", state.Artifacts)
 	}
-	if len(state.TestResults) != 1 || !state.TestResults[0].Passed || !strings.Contains(state.TestResults[0].Output, "go test ./internal/loop") {
+	if len(state.TestResults) != 1 || !state.TestResults[0].Passed || !strings.Contains(state.TestResults[0].Output, "go test ./internal/goal") {
 		t.Fatalf("unexpected test results: %+v", state.TestResults)
 	}
 	if len(state.NextSteps) != 1 || state.NextSteps[0] != "review worker diff" {

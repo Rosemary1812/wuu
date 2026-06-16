@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"path/filepath"
@@ -11,12 +11,12 @@ import (
 
 func TestSnapshotSystemProjectsWorkflowAndHarnessAttention(t *testing.T) {
 	root := t.TempDir()
-	loopRoot := filepath.Join(root, "state", "loops")
-	loopStore := NewStore(filepath.Join(loopRoot, "loop-approval"))
-	if _, err := loopStore.Init(Spec{ID: "loop-approval", Goal: "merge worker result"}); err != nil {
-		t.Fatalf("Init loop: %v", err)
+	goalRoot := filepath.Join(root, "state", "goals")
+	goalStore := NewStore(filepath.Join(goalRoot, "goal-approval"))
+	if _, err := goalStore.Init(Spec{ID: "goal-approval", Goal: "merge worker result"}); err != nil {
+		t.Fatalf("Init goal: %v", err)
 	}
-	if _, _, err := loopStore.RequestApproval(ApprovalRequest{
+	if _, _, err := goalStore.RequestApproval(ApprovalRequest{
 		ID:              "approval-1",
 		Title:           "Approve merge",
 		RequestedAction: "merge worktree",
@@ -85,13 +85,13 @@ func TestSnapshotSystemProjectsWorkflowAndHarnessAttention(t *testing.T) {
 	}
 
 	snapshot := SnapshotSystem(SnapshotOptions{
-		LoopRoot:      loopRoot,
+		GoalRoot:      goalRoot,
 		WorkflowStore: workflowStore,
 		HarnessStore:  harnessStore,
 		Now:           fixedClock(),
 	})
-	if len(snapshot.Loops) != 1 || len(snapshot.Approvals) != 1 {
-		t.Fatalf("loop approvals missing from snapshot: %+v", snapshot)
+	if len(snapshot.Goals) != 1 || len(snapshot.Approvals) != 1 {
+		t.Fatalf("goal approvals missing from snapshot: %+v", snapshot)
 	}
 	if len(snapshot.Workflows) != 1 {
 		t.Fatalf("Workflows = %+v", snapshot.Workflows)
@@ -117,8 +117,8 @@ func TestSnapshotSystemProjectsWorkflowAndHarnessAttention(t *testing.T) {
 	if !attentionContains(snapshot.Attention, "harness_report", "partial") {
 		t.Fatalf("missing harness report attention: %+v", snapshot.Attention)
 	}
-	if !attentionContains(snapshot.Attention, "loop_approval", string(ApprovalStatusPending)) {
-		t.Fatalf("missing loop approval attention: %+v", snapshot.Attention)
+	if !attentionContains(snapshot.Attention, "goal_approval", string(ApprovalStatusPending)) {
+		t.Fatalf("missing goal approval attention: %+v", snapshot.Attention)
 	}
 }
 

@@ -1,4 +1,4 @@
-package loop
+package goal
 
 import (
 	"bufio"
@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = "wuu/loop/v0.1"
+const SchemaVersion = "wuu/goal/v0.1"
 
 type Store struct {
 	dir string
@@ -45,15 +45,15 @@ func (s *Store) SetClock(now func() time.Time) {
 
 func (s *Store) Init(spec Spec) (State, error) {
 	if s == nil || s.dir == "" {
-		return State{}, errors.New("loop store is not configured")
+		return State{}, errors.New("goal store is not configured")
 	}
 	if strings.TrimSpace(spec.Goal) == "" {
-		return State{}, errors.New("loop goal is required")
+		return State{}, errors.New("goal objective is required")
 	}
 	now := s.now()
 	id := strings.TrimSpace(spec.ID)
 	if id == "" {
-		id = "loop-" + randomID()
+		id = "goal-" + randomID()
 	}
 	state := State{
 		SchemaVersion:      SchemaVersion,
@@ -81,7 +81,7 @@ func (s *Store) Init(spec Spec) (State, error) {
 	if err := s.SaveState(state); err != nil {
 		return State{}, err
 	}
-	if err := s.AppendEvent(Event{Type: "loop_initialized", LoopID: state.ID, Step: StepInit, Message: state.Goal}); err != nil {
+	if err := s.AppendEvent(Event{Type: "goal_initialized", GoalID: state.ID, Step: StepInit, Message: state.Goal}); err != nil {
 		return State{}, err
 	}
 	return state, nil
@@ -89,7 +89,7 @@ func (s *Store) Init(spec Spec) (State, error) {
 
 func (s *Store) LoadState() (State, error) {
 	if s == nil || s.dir == "" {
-		return State{}, errors.New("loop store is not configured")
+		return State{}, errors.New("goal store is not configured")
 	}
 	var state State
 	if err := readJSON(filepath.Join(s.dir, "state.json"), &state); err != nil {
@@ -100,13 +100,13 @@ func (s *Store) LoadState() (State, error) {
 
 func (s *Store) SaveState(state State) error {
 	if s == nil || s.dir == "" {
-		return errors.New("loop store is not configured")
+		return errors.New("goal store is not configured")
 	}
 	if strings.TrimSpace(state.ID) == "" {
-		return errors.New("loop state id is required")
+		return errors.New("goal state id is required")
 	}
 	if strings.TrimSpace(state.Goal) == "" {
-		return errors.New("loop state goal is required")
+		return errors.New("goal state goal is required")
 	}
 	if state.SchemaVersion == "" {
 		state.SchemaVersion = SchemaVersion
@@ -126,7 +126,7 @@ func (s *Store) SaveState(state State) error {
 
 func (s *Store) AppendEvent(event Event) error {
 	if s == nil || s.dir == "" {
-		return errors.New("loop store is not configured")
+		return errors.New("goal store is not configured")
 	}
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = s.now()
@@ -147,7 +147,7 @@ func (s *Store) AppendEvent(event Event) error {
 
 func (s *Store) Events() ([]Event, error) {
 	if s == nil || s.dir == "" {
-		return nil, errors.New("loop store is not configured")
+		return nil, errors.New("goal store is not configured")
 	}
 	file, err := os.Open(filepath.Join(s.dir, "events.jsonl"))
 	if err != nil {
@@ -190,7 +190,7 @@ func (s *Store) AddProgress(step Step, message string) (State, error) {
 	if err := s.SaveState(state); err != nil {
 		return State{}, err
 	}
-	return state, s.AppendEvent(Event{Type: "progress", LoopID: state.ID, Step: step, Message: message})
+	return state, s.AppendEvent(Event{Type: "progress", GoalID: state.ID, Step: step, Message: message})
 }
 
 func (s *Store) AddDecision(step Step, summary, reason string) (State, error) {
@@ -203,7 +203,7 @@ func (s *Store) AddDecision(step Step, summary, reason string) (State, error) {
 	if err := s.SaveState(state); err != nil {
 		return State{}, err
 	}
-	return state, s.AppendEvent(Event{Type: "decision", LoopID: state.ID, Step: step, Message: summary})
+	return state, s.AppendEvent(Event{Type: "decision", GoalID: state.ID, Step: step, Message: summary})
 }
 
 func (s *Store) AddFailure(failure Failure) (State, error) {
@@ -240,14 +240,14 @@ func (s *Store) AddFailure(failure Failure) (State, error) {
 		state.Status = StatusNeedsHuman
 	}
 	if len(state.NextSteps) == 0 {
-		state.NextSteps = []string{"read views/failures.md in the loop store and fix the recorded failure before retrying"}
+		state.NextSteps = []string{"read views/failures.md in the goal store and fix the recorded failure before retrying"}
 	}
 	if err := s.SaveState(state); err != nil {
 		return State{}, err
 	}
 	return state, s.AppendEvent(Event{
 		Type:     "failure",
-		LoopID:   state.ID,
+		GoalID:   state.ID,
 		Step:     failure.Step,
 		Message:  failure.Message,
 		Artifact: failure.Artifact,
@@ -306,13 +306,13 @@ func (s *Store) RequestApproval(request ApprovalRequest) (State, ApprovalRequest
 	state.Status = StatusNeedsHuman
 	state.NeedsHuman = true
 	state.CurrentBlocker = request.Title
-	state.NextSteps = appendUniqueStrings(state.NextSteps, []string{"review pending approvals in loop state before continuing"})
+	state.NextSteps = appendUniqueStrings(state.NextSteps, []string{"review pending approvals in goal state before continuing"})
 	if err := s.SaveState(state); err != nil {
 		return State{}, ApprovalRequest{}, err
 	}
 	return state, request, s.AppendEvent(Event{
 		Type:     "approval_requested",
-		LoopID:   state.ID,
+		GoalID:   state.ID,
 		Step:     StepApproval,
 		Message:  request.Title,
 		Artifact: request.Artifact,
@@ -392,7 +392,7 @@ func (s *Store) ResolveApproval(resolution ApprovalResolution) (State, ApprovalR
 	}
 	return state, resolved, s.AppendEvent(Event{
 		Type:     "approval_resolved",
-		LoopID:   state.ID,
+		GoalID:   state.ID,
 		Step:     StepApproval,
 		Message:  string(resolved.Status),
 		Artifact: resolved.Artifact,
@@ -432,7 +432,7 @@ func (s *Store) AddArtifact(name, kind, content string) (State, string, error) {
 	if err := s.SaveState(state); err != nil {
 		return State{}, "", err
 	}
-	return state, path, s.AppendEvent(Event{Type: "artifact_written", LoopID: state.ID, Step: state.CurrentStep, Artifact: path, Message: name})
+	return state, path, s.AppendEvent(Event{Type: "artifact_written", GoalID: state.ID, Step: state.CurrentStep, Artifact: path, Message: name})
 }
 
 func (s *Store) MarkStepCompleted(step Step) (State, error) {
@@ -446,7 +446,7 @@ func (s *Store) MarkStepCompleted(step Step) (State, error) {
 	if err := s.SaveState(state); err != nil {
 		return State{}, err
 	}
-	return state, s.AppendEvent(Event{Type: "step_completed", LoopID: state.ID, Step: step})
+	return state, s.AppendEvent(Event{Type: "step_completed", GoalID: state.ID, Step: step})
 }
 
 func (s *Store) SetStatus(status Status, step Step, message string) (State, error) {
@@ -465,7 +465,7 @@ func (s *Store) SetStatus(status Status, step Step, message string) (State, erro
 	if err := s.SaveState(state); err != nil {
 		return State{}, err
 	}
-	return state, s.AppendEvent(Event{Type: "status_changed", LoopID: state.ID, Step: state.CurrentStep, Message: message, Data: map[string]string{"status": string(status)}})
+	return state, s.AppendEvent(Event{Type: "status_changed", GoalID: state.ID, Step: state.CurrentStep, Message: message, Data: map[string]string{"status": string(status)}})
 }
 
 func (s *Store) RecordTestResults(results []TestResult) (State, error) {
@@ -477,7 +477,7 @@ func (s *Store) RecordTestResults(results []TestResult) (State, error) {
 	if err := s.SaveState(state); err != nil {
 		return State{}, err
 	}
-	return state, s.AppendEvent(Event{Type: "verification_recorded", LoopID: state.ID, Step: StepVerification, Data: map[string]int{"checks": len(results)}})
+	return state, s.AppendEvent(Event{Type: "verification_recorded", GoalID: state.ID, Step: StepVerification, Data: map[string]int{"checks": len(results)}})
 }
 
 func (s *Store) FailureContext() (string, error) {

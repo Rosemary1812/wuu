@@ -217,12 +217,12 @@ func TestStoreSyncsWorkflowArtifactsToSink(t *testing.T) {
 	sink := &captureArtifactSink{}
 	store := NewStore(t.TempDir())
 	store.SetArtifactSink(sink)
-	loopDir := filepath.Join(t.TempDir(), "loops", "loop-1")
+	goalDir := filepath.Join(t.TempDir(), "goals", "goal-1")
 	if _, err := store.CreateRun(Run{
 		ID:      "run_1",
 		Status:  RunStateRunning,
-		LoopID:  "loop-1",
-		LoopDir: loopDir,
+		GoalID:  "goal-1",
+		GoalDir: goalDir,
 	}); err != nil {
 		t.Fatalf("CreateRun: %v", err)
 	}
@@ -252,19 +252,19 @@ func TestStoreSyncsWorkflowArtifactsToSink(t *testing.T) {
 	}
 	for i, want := range want {
 		got := sink.records[i]
-		if got.RunID != "run_1" || got.LoopID != "loop-1" || got.LoopDir != loopDir || got.Kind != want.kind || got.Path != want.path {
+		if got.RunID != "run_1" || got.GoalID != "goal-1" || got.GoalDir != goalDir || got.Kind != want.kind || got.Path != want.path {
 			t.Fatalf("artifact sink record %d = %+v, want kind=%s path=%s", i, got, want.kind, want.path)
 		}
 	}
 
-	if _, err := store.CreateRun(Run{ID: "run_without_loop", Status: RunStateRunning}); err != nil {
-		t.Fatalf("CreateRun without loop: %v", err)
+	if _, err := store.CreateRun(Run{ID: "run_without_goal", Status: RunStateRunning}); err != nil {
+		t.Fatalf("CreateRun without goal binding: %v", err)
 	}
-	if _, err := store.WritePlan("run_without_loop", "plan body"); err != nil {
-		t.Fatalf("WritePlan without loop: %v", err)
+	if _, err := store.WritePlan("run_without_goal", "plan body"); err != nil {
+		t.Fatalf("WritePlan without goal binding: %v", err)
 	}
 	if len(sink.records) != len(want) {
-		t.Fatalf("run without loop binding should not sync artifacts: %+v", sink.records)
+		t.Fatalf("run without goal binding should not sync artifacts: %+v", sink.records)
 	}
 }
 
