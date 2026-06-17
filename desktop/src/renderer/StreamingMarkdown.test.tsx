@@ -51,7 +51,7 @@ function unmount(): void {
 
 afterEach(() => {
   unmount();
-  for (const itemID of ["s1", "s2", "s3", "s4", "s5", "s6", "s7"]) {
+  for (const itemID of ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"]) {
     streamTextStore.clearItem("turn", itemID);
   }
 });
@@ -88,6 +88,20 @@ describe("StreamingMarkdown", () => {
     expect(cursor).toBeTruthy();
     expect(cursor?.tagName).toBe("SPAN");
     expect(cursor?.closest(".rich-paragraph")).toBeTruthy();
+  });
+
+  it("uses the same live cursor treatment for commentary text", async () => {
+    const key = streamTextKey("turn", "s8", "text");
+    streamTextStore.seed(key, "Working through it");
+    mount({ streamKey: key, initialText: "Working", isLive: true, phase: "commentary" });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    });
+
+    const surface = document.querySelector(".streaming-markdown") as HTMLElement;
+    expect(surface.classList.contains("streaming-commentary-live")).toBe(false);
+    expect(surface.querySelector(".stream-cursor")).toBeTruthy();
   });
 
   it("does not use a clip-path mask (no .streaming-cover)", async () => {

@@ -196,10 +196,10 @@
 }
 
 .turn-process-entry-commentary {
-  color: #5e6569;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  line-height: 1.55;
+  color: #202427;
+  font-size: var(--conversation-message-font-size);
+  font-weight: 400;
+  line-height: var(--conversation-prose-line-height);
 }
 
 .turn-process-entry-commentary .agent-text,
@@ -592,99 +592,6 @@
 
 .reasoning-stream.streaming-markdown .rich-paragraph {
   color: inherit;
-}
-
-/* Commentary sweep: a wide highlight band that travels
-   left-to-right across the visible text while the commentary
-   is streaming. Replaces the typewriter cursor for commentary,
-   which the user found too "writing-document" for a chat
-   surface that already shows the latest live process record in the
-   fold header preview.
-
-   The trick is `background-clip: text` + a horizontally
-   translating gradient — the text itself is rendered as
-   `color: transparent`, the gradient peeks through, and only
-   the characters inside the bright band show the bright
-   color. The base color (at 0% / 100% of the gradient) is a
-   deliberately light gray (#a8acb0) so the contrast against
-   the bright spot (#1f2328 body ink) is unmistakable; the
-   earlier #5a6064 base was so close to the ink that the sweep
-   read as a no-op. The bright band stops at 35% / 50% / 65%
-   — a 30% gradient transition, which with background-size
-   300% renders as ~10% of the text width (≈6-7 characters
-   at 16px), wide enough that the eye registers it as a band,
-   not a stray pixel. A 1px text-shadow on the bright peak
-   adds a faint "halo" so the sweep feels lit, not just colored.
-
-   Animation: -200% → 0% over 3s, linear, infinite. The 200%
-   position range covers off-screen left → off-screen right,
-   with the visible sweep occupying the middle half of the
-   cycle and the other half a quiet reset between sweeps —
-   matches a real scanning light's rhythm. */
-.streaming-markdown.streaming-commentary-live {
-  --commentary-sweep-base: #a8acb0;
-  --commentary-sweep-bright: #1f2328;
-  background-image: linear-gradient(
-    90deg,
-    var(--commentary-sweep-base) 0%,
-    var(--commentary-sweep-base) 35%,
-    var(--commentary-sweep-bright) 50%,
-    var(--commentary-sweep-base) 65%,
-    var(--commentary-sweep-base) 100%
-  );
-  background-size: 300% 100%;
-  background-position: -200% 0;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  /* The drop-shadow renders under the bright peak only because
-     the shadow color sits at the same 50% gradient stop as the
-     bright color (the brightest part). Drops a faint ink-color
-     halo behind the text at the peak, which reads as "this
-     text is currently being lit up" rather than "this text
-     just changed color". */
-  filter: drop-shadow(0 0 0.4px rgba(31, 35, 40, 0.18));
-  animation: commentary-sweep 3s linear infinite;
-}
-
-.streaming-markdown.streaming-commentary-live .rich-paragraph,
-.streaming-markdown.streaming-commentary-live .rich-list,
-.streaming-markdown.streaming-commentary-live .rich-code,
-.streaming-markdown.streaming-commentary-live .rich-blockquote,
-.streaming-markdown.streaming-commentary-live .rich-table-wrap {
-  /* Block children render their own backgrounds (code block, table
-     wrap, blockquote border). Resetting color is enough — we don't
-     need to override those block-level surfaces, only the inline
-     text gradient. */
-  color: inherit;
-  background-color: transparent;
-}
-
-@keyframes commentary-sweep {
-  /* Bright spot path: starts off-screen left, sweeps across the
-     full text, exits off-screen right. The 200% position range
-     is intentional: with background-size 300% the bright peak
-     (50% of the gradient) lives 200% of the way through the
-     animation, so half the cycle is the visible sweep and the
-     other half is the eye-reset pause between sweeps. */
-  from {
-    background-position: -200% 0;
-  }
-  to {
-    background-position: 0% 0;
-  }
-}
-
-/* Reduced motion: skip the sweep entirely. Fall back to the
-   comment's own body color (no gradient, no transparent text) so
-   the user can still read the streaming commentary, just without
-   the moving highlight band. */
-@media (prefers-reduced-motion: reduce) {
-  .streaming-markdown.streaming-commentary-live {
-    background-image: none;
-    color: inherit;
-    animation: none;
-  }
 }
 
 /* Reduced motion: skip the fade transition entirely. */
@@ -2620,11 +2527,9 @@
 
 /* Fold-header preview text is a committed snapshot, not a live
    surface. The body's StreamingMarkdown is the single place that
-   should advance while a stream is in flight; the body-side
-   sweep still lives on .streaming-markdown.streaming-commentary-live
-   a few hundred lines above. Reintroducing text animation here
-   would create a second live surface that races the body's
-   cursor — the original "two places incrementing" bug. The
+   should advance while a stream is in flight. Reintroducing text
+   animation here would create a second live surface that races the
+   body's cursor — the original "two places incrementing" bug. The
    live-dot alone communicates "still working". */
 
 /* The chevron used to sit in col 3 of the toggle grid to hint that
@@ -2732,7 +2637,10 @@
 }
 
 .turn-process-entry-commentary {
-  color: #5e6569;
+  color: #202427;
+  font-size: var(--conversation-message-font-size);
+  font-weight: 400;
+  line-height: var(--conversation-prose-line-height);
 }
 
 .turn-process-entry-commentary::before {
@@ -2759,6 +2667,10 @@
 .turn-process-entry .rich-content {
   gap: 8px;
   line-height: inherit;
+}
+
+.turn-process-entry.turn-process-entry-commentary .rich-content {
+  gap: var(--conversation-prose-block-gap, 10px);
 }
 
 .turn-process-entry .rich-content .rich-paragraph,

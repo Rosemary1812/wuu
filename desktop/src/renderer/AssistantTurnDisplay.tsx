@@ -46,8 +46,8 @@ export type TurnEntryKind =
 
 export type AssistantTurnDisplay = {
   entries: TurnEntry[];
-  /** True when the turn has at least one `answer`-position entry. Drives
-   *  the default collapsed state of the process fold. */
+  /** True when the turn has at least one `answer`-position entry. The shell
+   *  uses this to collapse earlier process records once answer text begins. */
   hasAnswer: boolean;
   /** Present when a completed turn produced process text but no final
    *  answer. This is a user-facing outcome, not an internal bug label. */

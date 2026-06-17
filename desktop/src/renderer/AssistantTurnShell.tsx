@@ -44,12 +44,10 @@ export function AssistantTurnShell({
     (entry) => entry.position === "answer",
   );
 
-  // The single rule for the default collapse state: if every process
-  // entry has settled AND the turn has at least one answer body, the
-  // process fold can stay collapsed — the user has what they came for.
-  const allProcessSettled =
-    processEntries.length > 0 && processEntries.every((e) => e.settled);
-  const defaultCollapsed = allProcessSettled && answerEntries.length > 0;
+  // Collapse process records as soon as an answer body exists. This mirrors
+  // Codex's shape: prior commentary/tools stay available, but the active
+  // reading surface becomes the final-answer stream.
+  const defaultCollapsed = answerEntries.length > 0;
 
   const hasProcess =
     processEntries.length > 0 || Boolean(display.latestProcessPreview);

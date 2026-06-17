@@ -47,18 +47,18 @@ function useReducedMotion(): boolean {
 /**
  * Progressive Markdown renderer used while assistant text is arriving.
  *
- * Single source of truth: the parent owns `isLive` and `phase`, both
- * derived from the back-end thread item. We do not maintain an internal
+ * Single source of truth: the parent owns `isLive`, derived from the
+ * back-end thread item. We do not maintain an internal
  * streaming/settling/settled state machine — `isLive` flips the renderer
  * between two modes:
- *   - `isLive=true`:  RAF loop reveals characters one at a time. Commentary
- *                     uses a sweep band; final answers use a cursor.
+ *   - `isLive=true`:  RAF loop reveals characters one at a time with a cursor.
  *   - `isLive=false`: text is rendered in full immediately. The cursor
  *                     fades out and `onSettled` fires once the visible
  *                     cursor reaches the end of the text.
  *
- * `phase` only chooses the visual treatment (sweep vs typewriter cursor);
- * it never affects rendering of the text itself.
+ * `phase` is accepted so callers can pass the same semantic state they use
+ * elsewhere, but typography and streaming affordances stay stable across
+ * commentary and final-answer text.
  */
 type StreamingMarkdownProps = {
   streamKey: string;
@@ -68,9 +68,8 @@ type StreamingMarkdownProps = {
   /** Whether the source item is still receiving deltas. */
   isLive: boolean;
   /**
-   * The thread item phase. Drives the cursor / sweep visual only. Commentary
-   * uses the sweep band; final answers use the typewriter cursor. When
-   * `isLive=false` the cursor is hidden regardless of phase.
+   * The thread item phase. It is semantic metadata for the parent layout;
+   * this renderer keeps commentary and final-answer text visually identical.
    */
   phase: "commentary" | "final_answer";
   onFrame?: () => void;
@@ -104,7 +103,6 @@ export function StreamingMarkdown({
   cwd,
   className = DEFAULT_CLASS_NAME,
   isLive,
-  phase: itemPhase,
   onFrame,
   onSettled
 }: StreamingMarkdownProps): JSX.Element {
@@ -124,8 +122,7 @@ export function StreamingMarkdown({
 
   /* ------------------------------ Phase ----------------------------------- */
   // Single internal phase: streaming while upstream is live, settled once
-  // it isn't. The back-end `itemPhase` only affects the cursor / sweep
-  // visual — it never gates rendering of the text itself.
+  // it isn't. The back-end message phase never gates rendering of the text.
   const phase: StreamPhase = isLive ? "streaming" : "settled";
 
   /* ------------------------- Visible character cursor -------------------- */
@@ -318,13 +315,10 @@ export function StreamingMarkdown({
 
   /* ------------------------- Derived view data -------------------------- */
   const visibleText = renderedText.slice(0, visibleLength);
-  // Commentary uses a sweep band across the text instead of a typewriter
-  // cursor. The sweep / cursor only appears while the item is still live;
-  // settled items render the full text without any trailing affordance.
-  const isCommentaryPhase = itemPhase === "commentary";
-  const showCursor = cursorState !== "gone" && !isCommentaryPhase;
-  const isLiveCommentary =
-    isCommentaryPhase && isLive && visibleText.length > 0;
+  // The cursor appears for all live assistant text. Commentary and final
+  // answers share the same visual treatment so a later phase resolution does
+  // not cause a typography or affordance jump.
+  const showCursor = cursorState !== "gone";
   const cursorClassName =
     CURSOR_CLASS_NAME + (cursorState === "fading" ? " is-fading" : "");
   const cursorTextRenderer = useMemo(
@@ -351,14 +345,11 @@ export function StreamingMarkdown({
     [phase, visibleText]
   );
   const tailText = showCursor ? `${split.tail}${CURSOR_SENTINEL}` : split.tail;
-  const containerClass = isLiveCommentary
-    ? `${className} streaming-commentary-live`
-    : className;
 
   /* ------------------------------- Render -------------------------------- */
   return (
     <div
-      className={containerClass}
+      className={className}
       data-stream-state={phase}
     >
       {split.blocks.map((block, index) => (
