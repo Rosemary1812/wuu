@@ -637,6 +637,47 @@ func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdateAppliesPermissionBoundary(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new runtime toolkit: %v", err)
+	}
+	rt.Toolkit = kit
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/model/update","params":{"model":"fake-model","permission_mode":"read_only"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Permissions.PermissionProfile != config.PermissionProfileReadOnly {
+		t.Fatalf("unexpected permissions: %+v", result.Permissions)
+	}
+	_, err = rt.Toolkit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"blocked.txt","content":"nope"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=permission_boundary_denied") {
+		t.Fatalf("expected read-only runtime boundary, got %v", err)
+	}
+}
+
 func TestServerToolApprovalRequestApprovesToolkitExecution(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)

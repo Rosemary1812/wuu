@@ -1159,6 +1159,44 @@ func TestNewSessionResolvesRoleModelSelections(t *testing.T) {
 	}
 }
 
+func TestNewSessionAppliesPermissionBoundary(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "custom",
+			Providers: map[string]config.ProviderConfig{
+				"custom": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "main-model",
+				},
+			},
+			Agent: config.AgentConfig{
+				PermissionMode: config.PermissionModeReadOnly,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	_, err = rt.Toolkit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"blocked.txt","content":"nope"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=permission_boundary_denied") {
+		t.Fatalf("expected read-only runtime boundary, got %v", err)
+	}
+}
+
 func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	rt := &Session{
 		RootDir:          t.TempDir(),

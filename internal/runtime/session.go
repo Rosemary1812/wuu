@@ -116,6 +116,7 @@ func NewSession(opts Options) (*Session, error) {
 	profileName := cfg.Agent.ProfileName()
 	profileMemoryEnabled := cfg.Agent.ProfileMemoryEnabled()
 	userSystemPrompt := cfg.Agent.UserSystemPrompt()
+	permissions := config.ResolveAgentPermissions(cfg.Agent)
 
 	providerCfg, resolvedName, err := cfg.ResolveProvider(opts.ProviderName)
 	if err != nil {
@@ -179,6 +180,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetSkills(discoveredSkills)
 		kit.SetWorkflows(discoveredWorkflows)
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+		kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 		kit.ConfigureEditToolsForProviderModel(ruleProviderName, toolModeModel)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		if profileMemoryEnabled {
@@ -255,6 +257,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
 				wkit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+				wkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 				wkit.ConfigureEditToolsForProviderModel(ruleProviderName, toolModeModel)
 				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 				if strings.TrimSpace(meta.AgentProfile) != "" {
@@ -346,7 +349,7 @@ func NewSession(opts Options) (*Session, error) {
 		UserSystemPrompt:            userSystemPrompt,
 		WuuHome:                     wuuHome,
 		ToolPolicy:                  cfg.Agent.ToolPolicy,
-		Permissions:                 config.ResolveAgentPermissions(cfg.Agent),
+		Permissions:                 permissions,
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
 	}, nil
@@ -604,6 +607,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 					workerKit.SetSkills(s.Skills)
 					workerKit.SetWorkflows(s.Workflows)
 					workerKit.SetAgentControl(control)
+					workerKit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.Permissions.PermissionProfile))
 					if strings.TrimSpace(meta.AgentProfile) != "" {
 						memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
 						if memErr != nil {
@@ -630,6 +634,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		kit.SetSkills(s.Skills)
 		kit.SetWorkflows(s.Workflows)
 		kit.SetAgentControl(agentControl)
+		kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.Permissions.PermissionProfile))
 		kit.SetSessionID(id)
 		kit.SetSessionDir(artifactDir)
 		kit.SetAgentIdentity(id, agentthread.RootPath)

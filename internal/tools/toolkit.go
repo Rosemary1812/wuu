@@ -50,6 +50,7 @@ type Toolkit struct {
 	exposureMu             sync.RWMutex
 	activatedDeferredTools map[string]struct{}
 	toolPolicy             ToolPolicy
+	permissionBoundary     PermissionBoundary
 	autoModeClassifier     AutoModeClassifier
 	approvalReviewer       ToolApprovalReviewer
 	approvalStore          *ToolApprovalStore
@@ -120,6 +121,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	clone := &Toolkit{
 		env:                &env,
 		toolPolicy:         t.toolPolicy,
+		permissionBoundary: t.permissionBoundary,
 		autoModeClassifier: t.autoModeClassifier,
 		approvalReviewer:   t.approvalReviewer,
 		approvalStore:      t.approvalStore,
@@ -340,6 +342,12 @@ func (t *Toolkit) SetMCPManager(m *mcp.Manager) {
 // SetToolPolicy installs the runtime policy used before executing known tools.
 func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
 	t.toolPolicy = policy
+}
+
+// SetPermissionBoundary installs the hard runtime boundary below tool policy.
+// The zero value leaves the legacy unrestricted behavior in place.
+func (t *Toolkit) SetPermissionBoundary(boundary PermissionBoundary) {
+	t.permissionBoundary = boundary
 }
 
 // SetAutoModeClassifier installs the classifier used by the auto permission

@@ -18,6 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
 
@@ -306,6 +307,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: config.LegacyToolPolicyProfileForPermissionMode(permissions.Mode)}
 		if s.rt.Toolkit != nil {
 			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+			s.rt.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
 			s.installToolApprovalReviewer(s.rt.Toolkit)
 		}
 	} else if params.ToolPolicyProfile != nil {
@@ -317,6 +319,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 		if s.rt.Toolkit != nil {
 			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+			s.rt.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
 			s.installToolApprovalReviewer(s.rt.Toolkit)
 		}
 	}
@@ -474,6 +477,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 					th.execRuntime.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
 					if s.rt != nil {
 						th.execRuntime.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+						th.execRuntime.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
 						s.installToolApprovalReviewer(th.execRuntime.Toolkit)
 					}
 				}

@@ -125,6 +125,13 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	approvalRef := ""
 	approvalReview := ToolApprovalReview{}
 
+	if err := t.permissionBoundary.Check(info); err != nil {
+		decision.Action = ToolPolicyDeny
+		decision.Reason = "permission boundary"
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		return "", err
+	}
+
 	if autoDecision, err := t.applyAutoModeDecision(ctx, call, info, decision); err != nil {
 		decision = autoDecision
 		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
