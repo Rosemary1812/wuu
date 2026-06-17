@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -198,6 +199,52 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	}
 }
 
+func TestServerInitializeExposesModelRoles(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	cfg := config.Config{
+		DefaultProvider: "fake-provider",
+		Providers: map[string]config.ProviderConfig{
+			"fake-provider": {
+				Type:    "openai-compatible",
+				BaseURL: "https://example.test/v1",
+				Model:   "fake-model",
+			},
+		},
+		Agent: config.AgentConfig{
+			ModelRoles: config.ModelRolesConfig{
+				Title: config.ModelRoleConfig{Model: "gpt-4.1-mini"},
+			},
+		},
+	}
+	roles, err := modelroles.Resolve(cfg, modelroles.ResolveOptions{})
+	if err != nil {
+		t.Fatalf("modelroles.Resolve: %v", err)
+	}
+	rt.ModelRoles = roles
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if len(result.ModelRoles) != 7 {
+		t.Fatalf("expected all role summaries, got %+v", result.ModelRoles)
+	}
+	title := modelRoleByName(t, result.ModelRoles, "title")
+	if title.Inherited || title.Model != "gpt-4.1-mini" || title.Behavior.Family != "gpt" {
+		t.Fatalf("unexpected title role summary: %+v", title)
+	}
+	review := modelRoleByName(t, result.ModelRoles, "review")
+	if !review.Inherited || review.Model != "fake-model" {
+		t.Fatalf("review should inherit main model: %+v", review)
+	}
+	if !review.Capabilities.Tools || review.Capabilities.ProtocolFamily == "" {
+		t.Fatalf("review capabilities missing: %+v", review.Capabilities)
+	}
+}
+
 func TestProviderSummariesExposeOpenCodeStyleVariants(t *testing.T) {
 	cfg := config.Config{
 		DefaultProvider: "xiaomi",
@@ -244,6 +291,12 @@ func TestProviderSummariesExposeOpenCodeStyleVariants(t *testing.T) {
 	xiaomiModel := providerModelByID(t, xiaomi, "mimo-v2.5-pro")
 	if xiaomiModel.DisplayName != "MiMo-V2.5-Pro" || xiaomiModel.Source != "models.dev" {
 		t.Fatalf("unexpected xiaomi model summary: %+v", xiaomiModel)
+	}
+	if xiaomiModel.Capabilities.ContextWindow != 1048576 || !xiaomiModel.Capabilities.Reasoning {
+		t.Fatalf("xiaomi capabilities = %+v", xiaomiModel.Capabilities)
+	}
+	if xiaomiModel.Behavior.Family != "portable" || xiaomiModel.Behavior.JSONReliability == 0 {
+		t.Fatalf("xiaomi behavior = %+v", xiaomiModel.Behavior)
 	}
 	if got := variantIDs(xiaomiModel.Variants); strings.Join(got, ",") != "low,medium,high" {
 		t.Fatalf("xiaomi variants = %+v", got)
@@ -386,6 +439,17 @@ func providerModelByID(t *testing.T, provider ProviderSummary, id string) Provid
 	}
 	t.Fatalf("model %s not found in provider %+v", id, provider)
 	return ProviderModelSummary{}
+}
+
+func modelRoleByName(t *testing.T, roles []ModelRoleSummary, name string) ModelRoleSummary {
+	t.Helper()
+	for _, role := range roles {
+		if role.Role == name {
+			return role
+		}
+	}
+	t.Fatalf("role %s not found in %+v", name, roles)
+	return ModelRoleSummary{}
 }
 
 func variantIDs(variants []ProviderModelVariantSummary) []string {
@@ -1740,6 +1804,52 @@ func TestServerGeneratesThreadTitleFromFirstTurnSnapshot(t *testing.T) {
 	prompt := titleClient.requests[0].Messages[len(titleClient.requests[0].Messages)-1].Content
 	if !strings.Contains(prompt, "first task") || strings.Contains(prompt, "second task") {
 		t.Fatalf("title prompt should use first-turn snapshot, got %q", prompt)
+	}
+}
+
+func TestServerGeneratesThreadTitleUsesTitleRoleSelection(t *testing.T) {
+	titleClient := &fakeClient{response: providers.ChatResponse{Content: "Role title"}}
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.TitleClient = titleClient
+	cfg := config.Config{
+		DefaultProvider: "fake-provider",
+		Providers: map[string]config.ProviderConfig{
+			"fake-provider": {
+				Type:    "openai-compatible",
+				BaseURL: "https://example.test/v1",
+				Model:   "fake-model",
+			},
+		},
+		Agent: config.AgentConfig{
+			ModelRoles: config.ModelRolesConfig{
+				Title: config.ModelRoleConfig{Model: "gpt-4.1-mini", Effort: "high"},
+			},
+		},
+	}
+	roles, err := modelroles.Resolve(cfg, modelroles.ResolveOptions{})
+	if err != nil {
+		t.Fatalf("modelroles.Resolve: %v", err)
+	}
+	rt.ModelRoles = roles
+	srv := New(rt, &lockedBuffer{})
+
+	result, err := srv.generateThreadTitleCore("title-role-thread", []providers.ChatMessage{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "make the title role explicit"},
+	}, false, false, true)
+	if err != nil {
+		t.Fatalf("generateThreadTitleCore: %v", err)
+	}
+	if result.Model != "gpt-4.1-mini" || result.CleanedTitle != "Role title" {
+		t.Fatalf("unexpected title result: %+v", result)
+	}
+	titleClient.mu.Lock()
+	defer titleClient.mu.Unlock()
+	if len(titleClient.requests) != 1 {
+		t.Fatalf("expected one title request, got %d", len(titleClient.requests))
+	}
+	if req := titleClient.requests[0]; req.Model != "gpt-4.1-mini" || req.Effort != "high" {
+		t.Fatalf("title request did not use title role: %+v", req)
 	}
 }
 

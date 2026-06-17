@@ -1099,6 +1099,66 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	}
 }
 
+func TestNewSessionResolvesRoleModelSelections(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "custom",
+			Providers: map[string]config.ProviderConfig{
+				"custom": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "main-model",
+					Models: map[string]config.ProviderModelConfig{
+						"title-alias": {
+							ID: "title-api-model",
+						},
+						"worker-alias": {
+							ID: "worker-api-model",
+							Variants: map[string]map[string]any{
+								"deep": {"reasoningEffort": "high"},
+							},
+						},
+					},
+				},
+			},
+			Agent: config.AgentConfig{
+				ModelRoles: config.ModelRolesConfig{
+					Title:  config.ModelRoleConfig{Model: "title-alias", Effort: "low"},
+					Worker: config.ModelRoleConfig{Model: "worker-alias", Variant: "deep"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	if rt.StreamRunner.Model != "main-model" {
+		t.Fatalf("main runner model = %q", rt.StreamRunner.Model)
+	}
+	if rt.ModelRoles.Title.Inherited || rt.ModelRoles.Title.APIModel != "title-api-model" || rt.ModelRoles.Title.LegacyEffort != "low" {
+		t.Fatalf("unexpected title role: %+v", rt.ModelRoles.Title)
+	}
+	if rt.ModelRoles.Worker.Inherited || rt.ModelRoles.Worker.APIModel != "worker-api-model" || rt.ModelRoles.Worker.Variant != "deep" {
+		t.Fatalf("unexpected worker role: %+v", rt.ModelRoles.Worker)
+	}
+	if got := rt.ModelRoles.Worker.ProviderOptions["reasoningEffort"]; got != "high" {
+		t.Fatalf("worker role provider options = %#v", rt.ModelRoles.Worker.ProviderOptions)
+	}
+	if rt.TitleClient == nil || rt.WorkerClient == nil {
+		t.Fatalf("expected title and worker clients to be configured: title=%T worker=%T", rt.TitleClient, rt.WorkerClient)
+	}
+}
+
 func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	rt := &Session{
 		RootDir:          t.TempDir(),

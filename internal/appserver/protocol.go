@@ -6,6 +6,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -109,29 +110,31 @@ type CoreBuildInfo struct {
 }
 
 type InitializeResult struct {
-	ProtocolVersion string            `json:"protocol_version"`
-	Core            CoreBuildInfo     `json:"core"`
-	Provider        string            `json:"provider"`
-	Model           string            `json:"model"`
-	Effort          string            `json:"effort,omitempty"`
-	Variant         string            `json:"variant,omitempty"`
-	WorkspaceRoot   string            `json:"workspace_root"`
-	ToolPolicy      ToolPolicySummary `json:"tool_policy"`
-	Permissions     PermissionSummary `json:"permissions"`
-	Providers       []ProviderSummary `json:"providers,omitempty"`
+	ProtocolVersion string             `json:"protocol_version"`
+	Core            CoreBuildInfo      `json:"core"`
+	Provider        string             `json:"provider"`
+	Model           string             `json:"model"`
+	Effort          string             `json:"effort,omitempty"`
+	Variant         string             `json:"variant,omitempty"`
+	WorkspaceRoot   string             `json:"workspace_root"`
+	ToolPolicy      ToolPolicySummary  `json:"tool_policy"`
+	Permissions     PermissionSummary  `json:"permissions"`
+	ModelRoles      []ModelRoleSummary `json:"model_roles,omitempty"`
+	Providers       []ProviderSummary  `json:"providers,omitempty"`
 }
 
 type ConfigReadResult struct {
-	Provider      string            `json:"provider"`
-	Model         string            `json:"model"`
-	Effort        string            `json:"effort,omitempty"`
-	Variant       string            `json:"variant,omitempty"`
-	ConfigPath    string            `json:"config_path"`
-	WorkspaceRoot string            `json:"workspace_root"`
-	SessionDir    string            `json:"session_dir"`
-	ToolPolicy    ToolPolicySummary `json:"tool_policy"`
-	Permissions   PermissionSummary `json:"permissions"`
-	Providers     []ProviderSummary `json:"providers,omitempty"`
+	Provider      string             `json:"provider"`
+	Model         string             `json:"model"`
+	Effort        string             `json:"effort,omitempty"`
+	Variant       string             `json:"variant,omitempty"`
+	ConfigPath    string             `json:"config_path"`
+	WorkspaceRoot string             `json:"workspace_root"`
+	SessionDir    string             `json:"session_dir"`
+	ToolPolicy    ToolPolicySummary  `json:"tool_policy"`
+	Permissions   PermissionSummary  `json:"permissions"`
+	ModelRoles    []ModelRoleSummary `json:"model_roles,omitempty"`
+	Providers     []ProviderSummary  `json:"providers,omitempty"`
 }
 
 type ToolPolicySummary struct {
@@ -162,13 +165,14 @@ type ConfigModelUpdateParams struct {
 }
 
 type ConfigModelUpdateResult struct {
-	Provider    string            `json:"provider"`
-	Model       string            `json:"model"`
-	Effort      string            `json:"effort,omitempty"`
-	Variant     string            `json:"variant,omitempty"`
-	ToolPolicy  ToolPolicySummary `json:"tool_policy"`
-	Permissions PermissionSummary `json:"permissions"`
-	Providers   []ProviderSummary `json:"providers,omitempty"`
+	Provider    string             `json:"provider"`
+	Model       string             `json:"model"`
+	Effort      string             `json:"effort,omitempty"`
+	Variant     string             `json:"variant,omitempty"`
+	ToolPolicy  ToolPolicySummary  `json:"tool_policy"`
+	Permissions PermissionSummary  `json:"permissions"`
+	ModelRoles  []ModelRoleSummary `json:"model_roles,omitempty"`
+	Providers   []ProviderSummary  `json:"providers,omitempty"`
 }
 
 type ConfigCodexModelsParams struct {
@@ -328,8 +332,26 @@ type ProviderModelSummary struct {
 	DefaultVariant   string                        `json:"default_variant,omitempty"`
 	SupportedEfforts []string                      `json:"supported_efforts,omitempty"`
 	Variants         []ProviderModelVariantSummary `json:"variants,omitempty"`
+	Capabilities     ModelCapabilitySummary        `json:"capabilities,omitempty"`
+	Behavior         ModelBehaviorSummary          `json:"behavior,omitempty"`
 	Source           string                        `json:"source,omitempty"`
 }
+
+type ModelRoleSummary struct {
+	Role         string                 `json:"role"`
+	Provider     string                 `json:"provider"`
+	Model        string                 `json:"model"`
+	APIModel     string                 `json:"api_model,omitempty"`
+	Effort       string                 `json:"effort,omitempty"`
+	Variant      string                 `json:"variant,omitempty"`
+	Inherited    bool                   `json:"inherited,omitempty"`
+	Capabilities ModelCapabilitySummary `json:"capabilities,omitempty"`
+	Behavior     ModelBehaviorSummary   `json:"behavior,omitempty"`
+}
+
+type ModelCapabilitySummary = modelroles.Capabilities
+
+type ModelBehaviorSummary = modelroles.Behavior
 
 type ProviderModelVariantSummary struct {
 	ID      string         `json:"id"`

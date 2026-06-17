@@ -226,6 +226,10 @@ type AgentConfig struct {
 	// Variant selects a model-scoped provider option bundle. It supersedes
 	// Effort when the selected provider/model exposes OpenCode-style variants.
 	Variant string `json:"variant,omitempty"`
+	// ModelRoles lets role-specific runtime work use a different model while
+	// preserving the main model as the default. Empty role entries inherit the
+	// active provider/model/effort/variant selected above.
+	ModelRoles ModelRolesConfig `json:"model_roles,omitempty"`
 	// DisableAutoCompact turns off the proactive auto-compact pass
 	// that fires when the conversation reaches the model's usable input
 	// window after reserving output headroom. The reactive overflow
@@ -247,6 +251,30 @@ type AgentConfig struct {
 	// user-facing contract is still unclear: the main agent loses some
 	// direct write tools but not every mutating capability.
 	ExperimentalCoordinatorMode bool `json:"experimental_coordinator_mode,omitempty"`
+}
+
+// ModelRolesConfig configures provider/model choices for non-main runtime
+// roles. The runtime resolves empty role fields by inheriting from the active
+// main model, so adding this shape is backwards-compatible with existing
+// configs.
+type ModelRolesConfig struct {
+	Review   ModelRoleConfig `json:"review,omitempty"`
+	Compact  ModelRoleConfig `json:"compact,omitempty"`
+	Title    ModelRoleConfig `json:"title,omitempty"`
+	Memory   ModelRoleConfig `json:"memory,omitempty"`
+	Worker   ModelRoleConfig `json:"worker,omitempty"`
+	Fallback ModelRoleConfig `json:"fallback,omitempty"`
+}
+
+// ModelRoleConfig pins a role to a provider/model/variant selection. Provider
+// defaults to the main provider. Model defaults to the selected provider's
+// configured model. Variant supersedes Effort when the provider exposes
+// model-scoped variants, matching AgentConfig's main model semantics.
+type ModelRoleConfig struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+	Variant  string `json:"variant,omitempty"`
 }
 
 // ToolPolicyConfig configures the runtime policy layer that runs before tool
@@ -419,7 +447,31 @@ func (c Config) Validate() error {
 	if err := validatePermissionConfig(c.Agent); err != nil {
 		return err
 	}
+	if err := validateModelRolesConfig(c); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+func validateModelRolesConfig(c Config) error {
+	roles := map[string]ModelRoleConfig{
+		"review":   c.Agent.ModelRoles.Review,
+		"compact":  c.Agent.ModelRoles.Compact,
+		"title":    c.Agent.ModelRoles.Title,
+		"memory":   c.Agent.ModelRoles.Memory,
+		"worker":   c.Agent.ModelRoles.Worker,
+		"fallback": c.Agent.ModelRoles.Fallback,
+	}
+	for role, cfg := range roles {
+		provider := strings.TrimSpace(cfg.Provider)
+		if provider == "" {
+			continue
+		}
+		if _, ok := c.Providers[provider]; !ok {
+			return fmt.Errorf("agent.model_roles.%s.provider %q not found in providers", role, provider)
+		}
+	}
 	return nil
 }
 

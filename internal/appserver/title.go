@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -204,7 +205,9 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 		providers.DebugLogf("title[%s]: skipped (%s)", threadID, res.SkipReason)
 		return res, nil
 	}
+	titleRole := s.rt.ModelRoles.Title
 	res.Model = firstNonEmpty(
+		titleRole.APIModel,
 		nonEmptyModel(s.rt.StreamRunner),
 		s.rt.Model,
 	)
@@ -243,6 +246,8 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 			{Role: "system", Content: threadTitleSystemPrompt},
 			{Role: "user", Content: "Generate a title for this conversation:\n" + firstUser},
 		},
+		Effort:          titleRole.LegacyEffort,
+		ProviderOptions: modelvariant.CloneOptions(titleRole.ProviderOptions),
 	}
 	if sendTemp {
 		req.Temperature = temp

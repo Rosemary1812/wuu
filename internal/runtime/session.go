@@ -22,6 +22,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/memory"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
+	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/process"
@@ -75,6 +76,7 @@ type Session struct {
 	ProcessManager              *process.Manager
 	Toolkit                     *tools.Toolkit
 	WorkerClient                providers.StreamClient
+	ModelRoles                  modelroles.Set
 	BaseSystemPrompt            string
 	UserSystemPrompt            string
 	WuuHome                     string
@@ -122,12 +124,31 @@ func NewSession(opts Options) (*Session, error) {
 	if opts.ModelOverride != "" {
 		providerCfg.Model = opts.ModelOverride
 	}
-	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
-	toolModeModel := modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model)
+	roleSelections, err := modelroles.Resolve(cfg, modelroles.ResolveOptions{
+		ProviderName:   resolvedName,
+		ProviderConfig: providerCfg,
+		Model:          providerCfg.Model,
+		Effort:         cfg.Agent.Effort,
+		Variant:        cfg.Agent.Variant,
+	})
+	if err != nil {
+		return nil, err
+	}
+	mainRole := roleSelections.Main
+	ruleProviderName, ruleProviderCfg := mainRole.RuleProvider, mainRole.RuleProviderConfig
+	toolModeModel := mainRole.APIModel
 
 	client, err := providerfactory.BuildStreamClient(ruleProviderCfg, resolvedName)
 	if err != nil {
 		return nil, err
+	}
+	titleClient := providers.Client(client)
+	if !roleSelections.Title.Inherited {
+		roleClient, roleErr := providerfactory.BuildStreamClient(roleSelections.Title.RuleProviderConfig, roleSelections.Title.Provider)
+		if roleErr != nil {
+			return nil, fmt.Errorf("build title client: %w", roleErr)
+		}
+		titleClient = roleClient
 	}
 
 	providers.InitDebugLog(statepath.LogDir(wuuHome))
@@ -196,7 +217,7 @@ func NewSession(opts Options) (*Session, error) {
 	if toolkit != nil {
 		workerRetry := providerfactory.SubAgentRetryConfig()
 		var werr error
-		workerClient, werr = providerfactory.BuildStreamClientWithRetry(providerCfg, resolvedName, &workerRetry)
+		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
 			return nil, fmt.Errorf("build worker client: %w", werr)
 		}
@@ -204,7 +225,9 @@ func NewSession(opts Options) (*Session, error) {
 		loopSink := goalrunner.NewAgentControlFailureSink(nil)
 		c, cerr := agentcontrol.New(agentcontrol.Config{
 			Client:          workerClient,
-			DefaultModel:    providerCfg.Model,
+			DefaultModel:    roleSelections.Worker.APIModel,
+			DefaultEffort:   roleSelections.Worker.LegacyEffort,
+			DefaultOptions:  modelvariant.CloneOptions(roleSelections.Worker.ProviderOptions),
 			ParentRepo:      rootDir,
 			WorktreeRoot:    statepath.WorktreeRoot(workspaceStateDir),
 			SessionID:       "session-pending",
@@ -257,7 +280,6 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	sessionDir := statepath.SessionsDir(wuuHome)
-	modelSelection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 	contextWindow := ResolveContextWindow(
 		providerCfg.Model,
 		ruleProviderCfg,
@@ -287,9 +309,9 @@ func NewSession(opts Options) (*Session, error) {
 		SystemPrompt:          baseSystemPrompt,
 		MaxSteps:              cfg.Agent.MaxSteps,
 		Temperature:           cfg.Agent.Temperature,
-		Effort:                modelSelection.LegacyEffort,
-		Variant:               modelSelection.Variant,
-		ProviderOptions:       modelSelection.ProviderOptions,
+		Effort:                mainRole.LegacyEffort,
+		Variant:               mainRole.Variant,
+		ProviderOptions:       modelvariant.CloneOptions(mainRole.ProviderOptions),
 		ContextWindowOverride: contextWindow,
 		MaxInputTokens:        ResolveInputWindow(providerCfg.Model, ruleProviderCfg),
 		DisableAutoCompact:    cfg.Agent.DisableAutoCompact,
@@ -305,7 +327,7 @@ func NewSession(opts Options) (*Session, error) {
 		ConfigPath:                  opts.ConfigPath,
 		SessionDir:                  sessionDir,
 		StreamRunner:                streamRunner,
-		TitleClient:                 client,
+		TitleClient:                 titleClient,
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
 		Workflows:                   discoveredWorkflows,
@@ -319,6 +341,7 @@ func NewSession(opts Options) (*Session, error) {
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
 		WorkerClient:                workerClient,
+		ModelRoles:                  roleSelections,
 		BaseSystemPrompt:            baseSystemPrompt,
 		UserSystemPrompt:            userSystemPrompt,
 		WuuHome:                     wuuHome,
@@ -538,9 +561,15 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 			}
 			var control *agentcontrol.AgentControl
 			loopSink := goalrunner.NewAgentControlFailureSink(nil)
+			workerModel := s.Model
+			if roleModel := strings.TrimSpace(s.ModelRoles.Worker.APIModel); roleModel != "" {
+				workerModel = roleModel
+			}
 			control, _ = agentcontrol.New(agentcontrol.Config{
 				Client:          workerClient,
-				DefaultModel:    s.Model,
+				DefaultModel:    workerModel,
+				DefaultEffort:   s.ModelRoles.Worker.LegacyEffort,
+				DefaultOptions:  modelvariant.CloneOptions(s.ModelRoles.Worker.ProviderOptions),
 				ParentRepo:      s.RootDir,
 				WorktreeRoot:    statepath.WorktreeRoot(stateDir),
 				SessionID:       id,

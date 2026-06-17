@@ -112,6 +112,72 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	}
 }
 
+func TestConfig_ModelRoles(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "model": "gpt-5-codex"
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "base_url": "https://api.anthropic.com",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "model": "claude-sonnet-4-5"
+    }
+  },
+  "agent": {
+    "model_roles": {
+      "review": {"provider": "anthropic", "model": "claude-sonnet-4-5"},
+      "worker": {"model": "gpt-5-codex", "variant": "high"}
+    }
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if cfg.Agent.ModelRoles.Review.Provider != "anthropic" || cfg.Agent.ModelRoles.Review.Model != "claude-sonnet-4-5" {
+		t.Fatalf("review role not parsed: %+v", cfg.Agent.ModelRoles.Review)
+	}
+	if cfg.Agent.ModelRoles.Worker.Variant != "high" {
+		t.Fatalf("worker variant not parsed: %+v", cfg.Agent.ModelRoles.Worker)
+	}
+}
+
+func TestConfig_ModelRolesRejectUnknownProvider(t *testing.T) {
+	cfg := Config{
+		DefaultProvider: "main",
+		Providers: map[string]ProviderConfig{
+			"main": {
+				Type:    "openai-compatible",
+				BaseURL: "https://example.com/v1",
+				Model:   "gpt-5-codex",
+			},
+		},
+		Agent: AgentConfig{
+			ModelRoles: ModelRolesConfig{
+				Review: ModelRoleConfig{Provider: "missing", Model: "review-model"},
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), `agent.model_roles.review.provider "missing" not found`) {
+		t.Fatalf("expected unknown provider validation error, got %v", err)
+	}
+}
+
 func TestMemoryConfig_ProfileMemoryNudgeInterval(t *testing.T) {
 	var cfg MemoryConfig
 	if got := cfg.ProfileMemoryNudgeInterval(); got != 10 {

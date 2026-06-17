@@ -82,6 +82,8 @@ type Config struct {
 	// the interactive main agent.
 	Client          providers.StreamClient
 	DefaultModel    string
+	DefaultEffort   string
+	DefaultOptions  map[string]any
 	ParentRepo      string // absolute path to the user's workspace
 	WorktreeRoot    string // workspace-state worktrees directory (only used when workspace is a git repo)
 	HistoryDir      string // session artifact workers directory
@@ -119,7 +121,10 @@ func New(cfg Config) (*AgentControl, error) {
 		}
 	}
 
-	mgr := subagent.NewManager(cfg.Client, cfg.DefaultModel)
+	mgr := subagent.NewManagerWithOptions(cfg.Client, cfg.DefaultModel, subagent.ManagerOptions{
+		DefaultEffort:          cfg.DefaultEffort,
+		DefaultProviderOptions: cfg.DefaultOptions,
+	})
 	threadRegistry := agentthread.NewRegistry()
 
 	maxP := cfg.MaxParallel

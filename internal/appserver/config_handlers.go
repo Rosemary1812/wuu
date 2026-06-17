@@ -11,6 +11,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
+	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -37,6 +38,7 @@ func (s *Server) handleInitialize(req Request) error {
 		WorkspaceRoot: s.rt.RootDir,
 		ToolPolicy:    s.currentToolPolicySummary(),
 		Permissions:   s.currentPermissionSummary(),
+		ModelRoles:    s.currentModelRoleSummaries(),
 		Providers:     s.providerSummaries(),
 	}, nil)
 }
@@ -52,8 +54,31 @@ func (s *Server) handleConfigRead(req Request) error {
 		SessionDir:    s.rt.SessionDir,
 		ToolPolicy:    s.currentToolPolicySummary(),
 		Permissions:   s.currentPermissionSummary(),
+		ModelRoles:    s.currentModelRoleSummaries(),
 		Providers:     s.providerSummaries(),
 	}, nil)
+}
+
+func (s *Server) currentModelRoleSummaries() []ModelRoleSummary {
+	if s == nil || s.rt == nil || s.rt.ModelRoles.Empty() {
+		return nil
+	}
+	selections := s.rt.ModelRoles.List()
+	out := make([]ModelRoleSummary, 0, len(selections))
+	for _, selection := range selections {
+		out = append(out, ModelRoleSummary{
+			Role:         string(selection.Role),
+			Provider:     selection.Provider,
+			Model:        selection.Model,
+			APIModel:     selection.APIModel,
+			Effort:       selection.Effort,
+			Variant:      selection.Variant,
+			Inherited:    selection.Inherited,
+			Capabilities: selection.Capabilities,
+			Behavior:     selection.Behavior,
+		})
+	}
+	return out
 }
 
 func (s *Server) currentToolPolicySummary() ToolPolicySummary {
@@ -238,11 +263,39 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
+	previousRuntimeProvider := s.rt.ProviderName
 	s.rt.ProviderName = resolvedName
 	s.rt.Model = model
+	roleSelections, err := modelroles.Resolve(cfg, modelroles.ResolveOptions{
+		ProviderName:   resolvedName,
+		ProviderConfig: providerCfg,
+		Model:          model,
+		Effort:         selection.LegacyEffort,
+		Variant:        selection.Variant,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	s.rt.ModelRoles = roleSelections
 	apiModel := modelcatalog.APIModel(ruleProviderCfg, model)
-	if client != nil {
-		s.rt.TitleClient = client
+	if roleSelections.Title.Inherited {
+		if client != nil {
+			s.rt.TitleClient = client
+		}
+	} else {
+		titleClient, titleErr := providerfactory.BuildStreamClient(roleSelections.Title.RuleProviderConfig, roleSelections.Title.Provider)
+		if titleErr != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("build title client: %w", titleErr))
+		}
+		s.rt.TitleClient = titleClient
+	}
+	if s.rt.Toolkit != nil && (!roleSelections.Worker.Inherited || connectionChanged || modelHeadersChanged || resolvedName != previousRuntimeProvider) {
+		workerRetry := providerfactory.SubAgentRetryConfig()
+		workerClient, workerErr := providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
+		if workerErr != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("build worker client: %w", workerErr))
+		}
+		s.rt.WorkerClient = workerClient
 	}
 	if s.rt.Toolkit != nil {
 		s.rt.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
@@ -293,6 +346,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		Variant:     selection.Variant,
 		ToolPolicy:  s.currentToolPolicySummary(),
 		Permissions: s.currentPermissionSummary(),
+		ModelRoles:  s.currentModelRoleSummaries(),
 		Providers:   s.providerSummaries(),
 	}, nil)
 }
@@ -538,6 +592,7 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 			continue
 		}
 		model = ruleProvider.Models[id]
+		capabilities, behavior := modelroles.BuildFacts(ruleProviderName, ruleProvider, id)
 		models[id] = ProviderModelSummary{
 			ID:               id,
 			DisplayName:      strings.TrimSpace(model.Name),
@@ -545,6 +600,8 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 			DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
 			SupportedEfforts: modelvariant.SupportedEffortsForProvider(ruleProviderName, ruleProvider, id, model),
 			Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(ruleProviderName, ruleProvider, id)),
+			Capabilities:     capabilities,
+			Behavior:         behavior,
 			Source:           "config",
 		}
 	}
@@ -558,6 +615,7 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 				continue
 			}
 			model := ruleProvider.Models[id]
+			capabilities, behavior := modelroles.BuildFacts(ruleProviderName, ruleProvider, id)
 			models[id] = ProviderModelSummary{
 				ID:               id,
 				DisplayName:      strings.TrimSpace(model.Name),
@@ -565,6 +623,8 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 				DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
 				SupportedEfforts: modelvariant.SupportedEffortsForProvider(ruleProviderName, ruleProvider, id, model),
 				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(ruleProviderName, ruleProvider, id)),
+				Capabilities:     capabilities,
+				Behavior:         behavior,
 				Source:           "models.dev",
 			}
 		}
@@ -573,10 +633,13 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 	if current != "" {
 		if _, ok := models[current]; !ok {
 			selectedRuleProviderName, selectedRuleProvider := modelcatalog.EnrichProvider(providerName, provider, current)
+			capabilities, behavior := modelroles.BuildFacts(selectedRuleProviderName, selectedRuleProvider, current)
 			models[current] = ProviderModelSummary{
 				ID:               current,
 				SupportedEfforts: modelvariant.SupportedEffortsForProvider(selectedRuleProviderName, selectedRuleProvider, current, selectedRuleProvider.Models[current]),
 				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(selectedRuleProviderName, selectedRuleProvider, current)),
+				Capabilities:     capabilities,
+				Behavior:         behavior,
 				Source:           "selected",
 			}
 		}

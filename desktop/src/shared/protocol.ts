@@ -55,6 +55,7 @@ export type InitializeResult = {
   workspace_root: string;
   tool_policy?: ToolPolicySummary;
   permissions?: PermissionSummary;
+  model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
 };
 
@@ -80,6 +81,7 @@ export type ConfigModelUpdateResult = {
   variant?: string;
   tool_policy?: ToolPolicySummary;
   permissions?: PermissionSummary;
+  model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
 };
 
@@ -100,7 +102,72 @@ export type ProviderModelSummary = {
   default_variant?: string;
   supported_efforts?: string[];
   variants?: ProviderModelVariantSummary[];
+  capabilities?: ModelCapabilitySummary;
+  behavior?: ModelBehaviorSummary;
   source?: string;
+};
+
+export type ModelRoleSummary = {
+  role: string;
+  provider: string;
+  model: string;
+  api_model?: string;
+  effort?: string;
+  variant?: string;
+  inherited?: boolean;
+  capabilities?: ModelCapabilitySummary;
+  behavior?: ModelBehaviorSummary;
+};
+
+export type ModelCapabilitySummary = {
+  chat: boolean;
+  responses?: boolean;
+  tools: boolean;
+  tool_calling?: string;
+  structured_output: boolean;
+  streaming: boolean;
+  streaming_tool_args?: boolean;
+  freeform_tool?: boolean;
+  parallel_tool_calls?: boolean;
+  system_role: boolean;
+  developer_role?: boolean;
+  reasoning: boolean;
+  context_window?: number;
+  input_limit?: number;
+  output_limit?: number;
+  image_input?: boolean;
+  file_input?: boolean;
+  prompt_cache?: boolean;
+  cache_granularity?: string;
+  protocol_family?: string;
+  retry_safe_error_categories?: string[];
+};
+
+export type ModelBehaviorSummary = {
+  family?: string;
+  default_write_mode?: string;
+  preferred_edit_primitive?: string;
+  preferred_patch_grammar?: string;
+  patch_reliability?: number;
+  exact_edit_reliability?: number;
+  whole_file_reliability?: number;
+  json_reliability?: number;
+  long_horizon_score?: number;
+  default_max_autonomous_steps?: number;
+  default_search_budget?: number;
+  needs_read_before_write?: boolean;
+  allow_parallel_read_only?: boolean;
+  allow_direct_shell?: boolean;
+  latency?: string;
+  suitable?: {
+    main?: boolean;
+    review?: boolean;
+    compact?: boolean;
+    title?: boolean;
+    memory?: boolean;
+    worker?: boolean;
+    fallback?: boolean;
+  };
 };
 
 export type ProviderModelVariantSummary = {

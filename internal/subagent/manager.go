@@ -11,14 +11,17 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 // Manager registers and orchestrates sub-agents. It is safe for
 // concurrent use from multiple goroutines.
 type Manager struct {
-	client       providers.StreamClient
-	defaultModel string
+	client                 providers.StreamClient
+	defaultModel           string
+	defaultEffort          string
+	defaultProviderOptions map[string]any
 
 	mu        sync.Mutex
 	agents    map[string]*SubAgent
@@ -26,13 +29,26 @@ type Manager struct {
 	streams   []chan<- StreamNotification
 }
 
+type ManagerOptions struct {
+	DefaultEffort          string
+	DefaultProviderOptions map[string]any
+}
+
 // NewManager constructs a Manager backed by the given streaming LLM
 // client. defaultModel is used when SpawnOptions.Model is empty.
 func NewManager(client providers.StreamClient, defaultModel string) *Manager {
+	return NewManagerWithOptions(client, defaultModel, ManagerOptions{})
+}
+
+// NewManagerWithOptions constructs a Manager with default request options for
+// workers that do not override them per spawn.
+func NewManagerWithOptions(client providers.StreamClient, defaultModel string, opts ManagerOptions) *Manager {
 	return &Manager{
-		client:       client,
-		defaultModel: defaultModel,
-		agents:       make(map[string]*SubAgent),
+		client:                 client,
+		defaultModel:           defaultModel,
+		defaultEffort:          strings.TrimSpace(opts.DefaultEffort),
+		defaultProviderOptions: provideroptions.Clone(opts.DefaultProviderOptions),
+		agents:                 make(map[string]*SubAgent),
 	}
 }
 
@@ -200,13 +216,15 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	}
 
 	runner := &agent.StreamRunner{
-		Client:       sa.client,
-		Tools:        sa.toolkit,
-		Model:        sa.model,
-		SystemPrompt: sa.systemPrompt,
-		MaxSteps:     maxSteps,
-		Temperature:  0.2,
-		OnUsage:      onUsage,
+		Client:          sa.client,
+		Tools:           sa.toolkit,
+		Model:           sa.model,
+		SystemPrompt:    sa.systemPrompt,
+		MaxSteps:        maxSteps,
+		Temperature:     0.2,
+		Effort:          m.defaultEffort,
+		ProviderOptions: provideroptions.Clone(m.defaultProviderOptions),
+		OnUsage:         onUsage,
 	}
 
 	beforeStep := func() []providers.ChatMessage {

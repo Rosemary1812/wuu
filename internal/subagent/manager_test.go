@@ -118,6 +118,38 @@ func TestSpawn_HappyPath(t *testing.T) {
 	}
 }
 
+func TestSpawn_UsesManagerDefaultRequestOptions(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "all done"}}
+	mgr := NewManagerWithOptions(client, "worker-api-model", ManagerOptions{
+		DefaultEffort: "high",
+		DefaultProviderOptions: map[string]any{
+			"reasoningEffort": "high",
+		},
+	})
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:    "worker",
+		Prompt:  "do work",
+		Toolkit: fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if _, err := mgr.Wait(context.Background(), sa.ID); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	req := client.lastRequest.Load()
+	if req == nil {
+		t.Fatal("expected a provider request")
+	}
+	if req.Model != "worker-api-model" || req.Effort != "high" {
+		t.Fatalf("request did not use manager defaults: %+v", *req)
+	}
+	if got := req.ProviderOptions["reasoningEffort"]; got != "high" {
+		t.Fatalf("ProviderOptions = %#v", req.ProviderOptions)
+	}
+}
+
 func TestSpawn_LLMError(t *testing.T) {
 	client := &fakeClient{err: errors.New("boom")}
 	mgr := NewManager(client, "fake-model")
