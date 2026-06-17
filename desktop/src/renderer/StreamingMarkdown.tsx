@@ -1,5 +1,4 @@
 import {
-  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -376,7 +375,7 @@ export function StreamingMarkdown({
  * React.memo's default shallow compare on the `text` string is exactly
  * what we want — identical text means identical render.
  */
-const MemoMarkdownContent = memo(MarkdownContent);
+const MemoMarkdownContent = MarkdownContent;
 
 function createCursorTextRenderer(cursorClassName: string): RichTextRenderer {
   return (text, keyPrefix) => {

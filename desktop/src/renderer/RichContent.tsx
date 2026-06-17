@@ -1,4 +1,4 @@
-import { Children, cloneElement, isValidElement, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -27,15 +27,15 @@ type MermaidState =
 const IMAGE_MARKDOWN_PATTERN = /!\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 const IMAGE_FILE_PATTERN = /\.(apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
 
-export function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
+export const RichContent = memo(function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
   return (
     <div className="rich-content">
       <MarkdownContent text={text} cwd={cwd} />
     </div>
   );
-}
+});
 
-export function MarkdownContent({
+function MarkdownContentView({
   text,
   cwd,
   renderText,
@@ -53,6 +53,8 @@ export function MarkdownContent({
     </ReactMarkdown>
   );
 }
+
+export const MarkdownContent = memo(MarkdownContentView);
 
 export function RichContentBlock({
   block,
