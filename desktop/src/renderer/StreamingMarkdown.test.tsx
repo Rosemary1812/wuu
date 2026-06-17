@@ -60,7 +60,7 @@ describe("StreamingMarkdown", () => {
   it("renders the visible text as markdown during streaming", async () => {
     const key = streamTextKey("turn", "s1", "text");
     streamTextStore.seed(key, "");
-    mount({ streamKey: key, initialText: "", final: false, live: true });
+    mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
 
     await act(async () => {
       streamTextStore.append(key, "**hi**");
@@ -77,7 +77,7 @@ describe("StreamingMarkdown", () => {
   it("shows a 1px cursor span during streaming", async () => {
     const key = streamTextKey("turn", "s2", "text");
     streamTextStore.seed(key, "Hello world");
-    mount({ streamKey: key, initialText: "Hello", final: false, live: true });
+    mount({ streamKey: key, initialText: "Hello", isLive: true, phase: "final_answer" });
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -93,7 +93,7 @@ describe("StreamingMarkdown", () => {
   it("does not use a clip-path mask (no .streaming-cover)", async () => {
     const key = streamTextKey("turn", "s3", "text");
     streamTextStore.seed(key, "Hello world");
-    mount({ streamKey: key, initialText: "Hello", final: false, live: true });
+    mount({ streamKey: key, initialText: "Hello", isLive: true, phase: "final_answer" });
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 80));
@@ -106,7 +106,7 @@ describe("StreamingMarkdown", () => {
   it("renders the full text immediately when not live", () => {
     const key = streamTextKey("turn", "s4", "text");
     streamTextStore.seed(key, "Hello world");
-    mount({ streamKey: key, initialText: "Hello world", final: true, live: false });
+    mount({ streamKey: key, initialText: "Hello world", isLive: false, phase: "final_answer" });
 
     const surface = document.querySelector(".streaming-markdown") as HTMLElement;
     expect(surface.textContent).toContain("Hello world");
@@ -115,7 +115,7 @@ describe("StreamingMarkdown", () => {
   it("removes the cursor from the DOM after the fade-out completes", async () => {
     const key = streamTextKey("turn", "s5", "text");
     streamTextStore.seed(key, "Hello world");
-    mount({ streamKey: key, initialText: "Hello world", final: true, live: false });
+    mount({ streamKey: key, initialText: "Hello world", isLive: false, phase: "final_answer" });
 
     // Wait for the 200ms fade-out to complete.
     await act(async () => {
@@ -126,22 +126,24 @@ describe("StreamingMarkdown", () => {
     expect(surface.querySelector(".stream-cursor")).toBeNull();
   });
 
-  it("notifies once when a final live stream catches up", async () => {
+  it("notifies once when isLive flips off and the cursor is caught up", async () => {
     const key = streamTextKey("turn", "s6", "text");
     streamTextStore.set(key, "Done");
     let settledCount = 0;
     mount({
       streamKey: key,
       initialText: "",
-      final: true,
-      live: true,
+      isLive: false,
+      phase: "final_answer",
       onSettled: () => {
         settledCount += 1;
       }
     });
 
+    // isLive=false immediately calls syncImmediate + trySettle, so the
+    // settled callback fires synchronously in the mount's commit pass.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
     expect(settledCount).toBe(1);
@@ -150,7 +152,7 @@ describe("StreamingMarkdown", () => {
   it("keeps the cursor inside a streaming list item", async () => {
     const key = streamTextKey("turn", "s7", "text");
     streamTextStore.seed(key, "- first item");
-    mount({ streamKey: key, initialText: "", final: false, live: true });
+    mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 300));

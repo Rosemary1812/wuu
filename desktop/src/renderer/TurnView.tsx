@@ -71,7 +71,16 @@ export function TurnView({
     <section className="turn" id={turnAnchorID(turn.id)} data-turn-id={turn.id}>
       {userItems.map((item) => renderThreadItem(item, false))}
       {assistantDisplay ? (
-        <AssistantTurnShell turn={turn} display={assistantDisplay} />
+        <AssistantTurnShell
+          turn={turn}
+          display={assistantDisplay}
+          cwd={cwd}
+          actionableAgentMessageID={actionableAgentMessageID}
+          latestAgentMessageID={latestAgentMessageID}
+          onStreamFrame={onStreamFrame}
+          onForkMessage={onForkMessage}
+          onNoticeAction={onNoticeAction}
+        />
       ) : null}
       {notice ? <TurnNotice display={notice} onAction={onNoticeAction} /> : null}
     </section>

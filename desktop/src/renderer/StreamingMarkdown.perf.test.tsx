@@ -84,8 +84,8 @@ describe("StreamingMarkdown perf", () => {
         <StreamingMarkdown
           streamKey={key}
           initialText=""
-          final={false}
-          live={true}
+          isLive={true}
+          phase="final_answer"
         />
       );
     });

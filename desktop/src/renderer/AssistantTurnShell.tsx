@@ -1,58 +1,96 @@
 import { Info, Play } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Turn } from "../shared/protocol";
 import type {
   AssistantTurnDisplay,
-  TurnProcessEntry,
+  TurnEntry,
   TurnProcessPreview,
 } from "./AssistantTurnDisplay";
-import { CollapsibleDetails } from "./CollapsibleMotion";
-import { messageFlowStatusLabel } from "./message-flow-display";
+import { ToolActivityTimeline } from "./ToolActivity";
+import { ThreadItemView } from "./ThreadItemView";
+import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
 import { formatDuration, useLiveNow } from "./TurnProgress";
 import {
   turnHasAssistantOutput,
   turnProgressContent,
 } from "./TurnViewHelpers";
+import type { UserFacingErrorAction } from "./UserFacingErrors";
+import { userFacingErrorForMessage } from "./UserFacingErrors";
 
 export function AssistantTurnShell({
   turn,
   display,
+  cwd,
+  actionableAgentMessageID,
+  latestAgentMessageID,
+  onStreamFrame,
+  onForkMessage,
+  onNoticeAction,
 }: {
   turn: Turn;
   display: AssistantTurnDisplay;
+  cwd?: string;
+  actionableAgentMessageID?: string;
+  latestAgentMessageID?: string;
+  onStreamFrame: () => void;
+  onForkMessage?: (turnID: string, itemID: string) => void;
+  onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
-  const hasFront =
-    display.frontEntries.length > 0 || Boolean(display.latestProcessPreview);
-  const hasBody = display.finalAnswerItems.length > 0;
+  const processEntries = display.entries.filter(
+    (entry) => entry.position === "process",
+  );
+  const answerEntries = display.entries.filter(
+    (entry) => entry.position === "answer",
+  );
+
+  // The single rule for the default collapse state: if every process
+  // entry has settled AND the turn has at least one answer body, the
+  // process fold can stay collapsed — the user has what they came for.
+  const allProcessSettled =
+    processEntries.length > 0 && processEntries.every((e) => e.settled);
+  const defaultCollapsed = allProcessSettled && answerEntries.length > 0;
+
+  const hasProcess =
+    processEntries.length > 0 || Boolean(display.latestProcessPreview);
+  const hasAnswer = answerEntries.length > 0;
+
   const className = [
     "assistant-turn-shell",
-    hasFront ? " has-front" : "",
-    hasBody ? " has-body" : "",
-    display.missingReplyMessage ? " missing-reply-turn" : "",
+    hasProcess ? "has-process" : "",
+    hasAnswer ? "has-answer" : "",
+    display.missingReplyMessage ? "missing-reply-turn" : "",
   ]
     .filter(Boolean)
-    .join("");
+    .join(" ");
+
+  const entryProps = {
+    turn,
+    cwd,
+    actionableAgentMessageID,
+    latestAgentMessageID,
+    onStreamFrame,
+    onForkMessage,
+    onNoticeAction,
+  };
 
   return (
     <div className={className}>
-      {hasFront ? (
-        <div className="assistant-turn-front">
-          <TurnProcessGroup
-            turn={turn}
-            entries={display.frontEntries}
-            defaultCollapsed={display.frontDefaultCollapsed}
-            showTurnStatus
-            latestProcessPreview={display.latestProcessPreview}
-          />
+      {hasProcess ? (
+        <TurnProcessFold
+          entries={processEntries}
+          defaultCollapsed={defaultCollapsed}
+          latestPreview={display.latestProcessPreview}
+          {...entryProps}
+        />
+      ) : null}
+      {hasAnswer ? (
+        <div className="turn-answer-body">
+          {answerEntries.map((entry) => (
+            <EntryRenderer key={entry.key} entry={entry} {...entryProps} />
+          ))}
         </div>
       ) : null}
-      {display.showDivider ? <div className="answer-divider" aria-hidden /> : null}
-      <div className="assistant-turn-final">
-        {display.finalAnswerItems.map((answer) => (
-          <Fragment key={answer.item.id}>{answer.element}</Fragment>
-        ))}
-      </div>
       {display.missingReplyMessage ? (
         <aside
           className="turn-notice warning assistant-turn-missing-reply"
@@ -71,27 +109,33 @@ export function AssistantTurnShell({
   );
 }
 
-function TurnProcessGroup({
+function TurnProcessFold({
   turn,
   entries,
   defaultCollapsed,
-  showTurnStatus,
-  latestProcessPreview,
+  latestPreview,
+  cwd,
+  actionableAgentMessageID,
+  latestAgentMessageID,
+  onStreamFrame,
+  onForkMessage,
+  onNoticeAction,
 }: {
   turn: Turn;
-  entries: TurnProcessEntry[];
+  entries: TurnEntry[];
   defaultCollapsed: boolean;
-  showTurnStatus: boolean;
-  latestProcessPreview?: TurnProcessPreview;
+  latestPreview?: TurnProcessPreview;
+  cwd?: string;
+  actionableAgentMessageID?: string;
+  latestAgentMessageID?: string;
+  onStreamFrame: () => void;
+  onForkMessage?: (turnID: string, itemID: string) => void;
+  onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
   const previousDefaultCollapsed = useRef(defaultCollapsed);
-  const detailsID = `${turn.id}-process-details`;
-  const hasDetails = entries.length > 0;
-  const hasPreview = Boolean(latestProcessPreview);
-  const className = `turn-process-group${expanded ? " expanded" : " collapsed"}${
-    hasDetails ? "" : " no-details"
-  }${hasPreview ? " has-preview" : ""}`;
+  const detailsID = `${turn.id}-process-fold`;
+
   const processCount = entries.reduce(
     (total, entry) => total + (entry.count ?? 1),
     0,
@@ -100,28 +144,22 @@ function TurnProcessGroup({
     typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = parseTurnTimestampMs(turn.started_at);
   const liveDuration =
-    showTurnStatus &&
     completedDuration === undefined &&
     turn.status === "in_progress" &&
     Number.isFinite(startedAt);
   const liveNow = useLiveNow(liveDuration);
   const elapsedMs =
     completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
-  const processLabel = showTurnStatus
-    ? turnProgressContent(turn, elapsedMs, turnHasAssistantOutput(turn)).label
-    : messageFlowStatusLabel({
-        done: true,
-        failed: turn.status === "failed",
-        hasFinalText: turnHasAssistantOutput(turn),
-        locale: "zh",
-      });
-  const metaParts = turnProcessMetaParts(
+  const processLabel = turnProgressContent(
     turn,
-    processCount,
     elapsedMs,
-    showTurnStatus,
-  );
+    turnHasAssistantOutput(turn),
+  ).label;
+  const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs);
 
+  // Once the parent (Shell) flips `defaultCollapsed` from false → true,
+  // collapse the fold; never re-open it automatically. The user is the
+  // only one who expands it from there.
   useEffect(() => {
     if (!previousDefaultCollapsed.current && defaultCollapsed) {
       setExpanded(false);
@@ -129,15 +167,11 @@ function TurnProcessGroup({
     previousDefaultCollapsed.current = defaultCollapsed;
   }, [defaultCollapsed]);
 
+  const hasDetails = entries.length > 0;
+  const hasPreview = Boolean(latestPreview);
+
   const toggleContent = (
     <>
-      {/* Text-first status row. The previous Brain / MessageCircle
-          avatar slots and ChevronDown are gone — the assistant flow
-          no longer carries a "mascot" placeholder or a fold
-          affordance. Status lives on its own line, prefixed with a
-          play-triangle glyph (▶) for the visual cue that this row
-          describes a tool run / live command, matching the prototype.
-      */}
       <Play
         className="turn-process-glyph"
         size={12}
@@ -154,72 +188,129 @@ function TurnProcessGroup({
       </span>
       {hasPreview ? (
         <span
-          className={`turn-process-preview turn-process-preview-${latestProcessPreview?.kind ?? "process"}${
+          className={`turn-process-preview turn-process-preview-${latestPreview?.kind ?? "process"}${
             turn.status === "in_progress" ? " is-live" : ""
           }`}
         >
           <span className="turn-process-live-dot" aria-hidden />
-          <span className="turn-process-preview-text">
-            {latestProcessPreview?.text}
-          </span>
+          <span className="turn-process-preview-text">{latestPreview?.text}</span>
         </span>
       ) : null}
     </>
   );
 
   return (
-    <div className={className}>
+    <details
+      open={expanded}
+      className={`turn-process-fold${expanded ? " expanded" : " collapsed"}${
+        hasDetails ? "" : " no-details"
+      }${hasPreview ? " has-preview" : ""}`}
+      id={detailsID}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="turn-process-toggle">{toggleContent}</summary>
       {hasDetails ? (
-        <button
-          className="turn-process-toggle"
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={detailsID}
-          onClick={() => setExpanded((open) => !open)}
-        >
-          {toggleContent}
-        </button>
-      ) : (
-        <div className="turn-process-toggle turn-process-toggle-static">
-          {toggleContent}
-        </div>
-      )}
-      {hasDetails ? (
-        <CollapsibleDetails
-          className="turn-process-details"
-          id={detailsID}
-          expanded={expanded}
-          innerClassName="turn-process-stack"
-        >
+        <div className="turn-process-fold-body">
           {entries.map((entry) => (
             <div
               className={`turn-process-entry turn-process-entry-${entry.kind}`}
               key={entry.key}
             >
-              {entry.element}
+              <EntryRenderer
+                key={entry.key}
+                entry={entry}
+                turn={turn}
+                cwd={cwd}
+                actionableAgentMessageID={actionableAgentMessageID}
+                latestAgentMessageID={latestAgentMessageID}
+                onStreamFrame={onStreamFrame}
+                onForkMessage={onForkMessage}
+                onNoticeAction={onNoticeAction}
+              />
             </div>
           ))}
-        </CollapsibleDetails>
+        </div>
       ) : null}
-    </div>
+    </details>
   );
+}
+
+function EntryRenderer({
+  entry,
+  turn,
+  cwd,
+  actionableAgentMessageID,
+  latestAgentMessageID,
+  onStreamFrame,
+  onForkMessage,
+  onNoticeAction,
+}: {
+  entry: TurnEntry;
+  turn: Turn;
+  cwd?: string;
+  actionableAgentMessageID?: string;
+  latestAgentMessageID?: string;
+  onStreamFrame: () => void;
+  onForkMessage?: (turnID: string, itemID: string) => void;
+  onNoticeAction: (action: UserFacingErrorAction) => void;
+}): JSX.Element | null {
+  const { item, kind, streaming } = entry;
+  if (kind === "activity") {
+    if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
+      return (
+        <ToolActivityTimeline
+          items={[item]}
+          collapseWhenIdle={entry.collapseWhenIdle}
+          revealItems={streaming}
+        />
+      );
+    }
+    return null;
+  }
+  if (item.type === "agent_message" || item.type === "reasoning") {
+    return (
+      <ThreadItemView
+        turnID={turn.id}
+        turnStatus={turn.status}
+        item={item}
+        cwd={cwd}
+        streaming={streaming}
+        actionableAgentMessageID={actionableAgentMessageID}
+        latestAgentMessageID={latestAgentMessageID}
+        onStreamFrame={onStreamFrame}
+        onForkMessage={onForkMessage}
+        onNoticeAction={onNoticeAction}
+      />
+    );
+  }
+  if (item.type === "context_compaction") {
+    return <ContextCompactionNotice text={item.text} />;
+  }
+  if (item.type === "error") {
+    return (
+      <TurnNotice
+        display={userFacingErrorForMessage(item.error ?? "", "turn")}
+        onAction={onNoticeAction}
+      />
+    );
+  }
+  return null;
 }
 
 function turnProcessMetaParts(
   turn: Turn,
   processCount: number,
   elapsedMs: number,
-  showTurnStatus: boolean,
 ): string[] {
   const parts: string[] = [];
-  if (showTurnStatus && turn.status === "in_progress") {
+  if (turn.status === "in_progress") {
     parts.push(formatDuration(elapsedMs));
     return parts;
   }
   if (processCount > 0) {
     parts.push(`${processCount} 项`);
   }
-  if (showTurnStatus && typeof turn.duration_ms === "number") {
+  if (typeof turn.duration_ms === "number") {
     parts.push(formatDuration(turn.duration_ms));
   }
   return parts;

@@ -46,36 +46,39 @@ function useReducedMotion(): boolean {
 
 /**
  * Progressive Markdown renderer used while assistant text is arriving.
- * The stream reveals text with a small inline cursor and keeps the final
- * markup on the same surface so completion does not cause a layout swap.
+ *
+ * Single source of truth: the parent owns `isLive` and `phase`, both
+ * derived from the back-end thread item. We do not maintain an internal
+ * streaming/settling/settled state machine — `isLive` flips the renderer
+ * between two modes:
+ *   - `isLive=true`:  RAF loop reveals characters one at a time,
+ *                     sweep band runs across the text for `commentary`.
+ *   - `isLive=false`: text is rendered in full immediately. The cursor
+ *                     fades out and `onSettled` fires once the visible
+ *                     cursor reaches the end of the text.
+ *
+ * `phase` only chooses the visual treatment (sweep vs typewriter cursor);
+ * it never affects rendering of the text itself.
  */
 type StreamingMarkdownProps = {
   streamKey: string;
   initialText?: string;
   cwd?: string;
   className?: string;
-  /** When true, the upstream has finished writing. The component will
-   *  drain the visible cursor to the end of the target text and then
-   *  fire `onSettled`. */
-  final?: boolean;
-  /** When true, the surface is "live" — it animates the visible cursor
-   *  toward the target. When false, the surface renders the full text
-   *  immediately with no animation. */
-  live?: boolean;
-  /** What kind of text we're rendering. "commentary" is the model's
-   *  scratch / "thinking aloud" stream — it's a low-priority
-   *  hint, not the actual reply, so the typewriter cursor looks
-   *  out of place. "commentary" suppresses the cursor and
-   *  instead marks the container with `streaming-commentary-live`
-   *  while live, which CSS uses to draw a 2-3-char sweep band
-   *  across the text from left to right. "final_answer" is the
-   *  default and keeps the cursor as-is. */
-  textKind?: "commentary" | "final_answer";
+  /** Whether the source item is still receiving deltas. */
+  isLive: boolean;
+  /**
+   * The thread item phase. Drives the cursor / sweep visual only.
+   * `pending` and `commentary` use the sweep band (no typewriter cursor);
+   * `final_answer` uses the typewriter cursor. When `isLive=false` the
+   * cursor is hidden regardless of phase.
+   */
+  phase: "pending" | "commentary" | "final_answer";
   onFrame?: () => void;
   onSettled?: () => void;
 };
 
-type StreamPhase = "streaming" | "settling" | "settled";
+type StreamPhase = "streaming" | "settled";
 
 const DEFAULT_CLASS_NAME = "streaming-markdown rich-content";
 const CURSOR_CLASS_NAME = "stream-cursor";
@@ -101,9 +104,8 @@ export function StreamingMarkdown({
   initialText = "",
   cwd,
   className = DEFAULT_CLASS_NAME,
-  final = false,
-  live = !final,
-  textKind = "final_answer",
+  isLive,
+  phase: itemPhase,
   onFrame,
   onSettled
 }: StreamingMarkdownProps): JSX.Element {
@@ -122,9 +124,10 @@ export function StreamingMarkdown({
   }, [targetText, renderedText]);
 
   /* ------------------------------ Phase ----------------------------------- */
-  const phase: StreamPhase = final
-    ? live ? "settling" : "settled"
-    : "streaming";
+  // Single internal phase: streaming while upstream is live, settled once
+  // it isn't. The back-end `itemPhase` only affects the cursor / sweep
+  // visual — it never gates rendering of the text itself.
+  const phase: StreamPhase = isLive ? "streaming" : "settled";
 
   /* ------------------------- Visible character cursor -------------------- */
   const [visibleLength, setVisibleLength] = useState<number>(initialText.length);
@@ -137,8 +140,7 @@ export function StreamingMarkdown({
   const visibleRef = useRef(visibleLength);
   const rafRef = useRef<number | undefined>(undefined);
   const lastFrameTsRef = useRef<number | undefined>(undefined);
-  const finalRef = useRef(final);
-  const liveRef = useRef(live);
+  const isLiveRef = useRef(isLive);
   const onFrameRef = useRef(onFrame);
   const onSettledRef = useRef(onSettled);
   const settledNotifiedRef = useRef(false);
@@ -151,29 +153,28 @@ export function StreamingMarkdown({
     visibleRef.current = visibleLength;
   }, [visibleLength]);
   useLayoutEffect(() => {
-    finalRef.current = final;
-    liveRef.current = live;
+    isLiveRef.current = isLive;
     onFrameRef.current = onFrame;
     onSettledRef.current = onSettled;
-  }, [final, live, onFrame, onSettled]);
+  }, [isLive, onFrame, onSettled]);
 
   /* -------------------------- Settle notification ------------------------ */
-  // Fire `onSettled` once the upstream is final and the visible cursor has
-  // caught up. The parent uses this callback to turn `live` off and clear the
-  // stream cache.
+  // Fire `onSettled` once the upstream is no longer live AND the visible
+  // cursor has caught up to the target text. The parent uses this to drop
+  // any external "live" tracking (we don't manage it ourselves anymore).
   const trySettle = useCallback((): void => {
     if (settledNotifiedRef.current) return;
-    if (!finalRef.current || !liveRef.current) return;
+    if (isLiveRef.current) return;
     if (visibleRef.current < renderedTextRef.current.length) return;
     settledNotifiedRef.current = true;
     onSettledRef.current?.();
   }, []);
 
-  // If `final` arrives after the cursor has already caught up, there is no
-  // animation frame left to trigger the callback.
+  // If `isLive` arrives after the cursor has already caught up, there is
+  // no animation frame left to trigger the callback.
   useEffect(() => {
     trySettle();
-  }, [final, live, renderedText, trySettle]);
+  }, [isLive, renderedText, trySettle]);
 
   /* --------------------------- Sync / RAF loop --------------------------- */
   // Snap visible to text length without animation. Used when the surface
@@ -244,7 +245,7 @@ export function StreamingMarkdown({
   /* -------------------- Effect: keep target in sync --------------------- */
   useEffect(() => {
     // Non-live surfaces render the latest text without animation.
-    if (!liveRef.current) {
+    if (!isLiveRef.current) {
       syncImmediate(renderedTextRef.current);
       return undefined;
     }
@@ -269,7 +270,24 @@ export function StreamingMarkdown({
         rafRef.current = undefined;
       }
     };
-  }, [renderedText, live, startFrameLoop, syncImmediate, trySettle]);
+  }, [renderedText, isLive, startFrameLoop, syncImmediate, trySettle]);
+
+  /* --------- Effect: settled path skips the RAF chase -------------------- */
+  // The legacy implementation gated "settled" on the RAF loop catching up
+  // to `renderedText`, which made long commentary items (1000+ chars)
+  // appear to keep streaming for seconds after the upstream went idle. We
+  // now treat `isLive=false` as an authoritative settle signal: snap the
+  // visible cursor to the end of the text immediately and let `trySettle`
+  // fire `onSettled` in the next effect tick.
+  useEffect(() => {
+    if (isLive) return;
+    const text = renderedTextRef.current;
+    if (visibleRef.current < text.length) {
+      syncImmediate(text);
+    }
+    settledNotifiedRef.current = false;
+    trySettle();
+  }, [isLive, syncImmediate, trySettle]);
 
   /* --------------------- Cursor visibility & fade-out ------------------- */
   const hasMoreToReveal = visibleLength < renderedText.length;
@@ -280,7 +298,7 @@ export function StreamingMarkdown({
       setCursorState("shown");
       return;
     }
-    if (!live) {
+    if (!isLive) {
       // Caught up and not live: fade out, then remove from DOM. When the
       // user prefers reduced motion, skip the fade and remove the cursor
       // immediately so the settled DOM matches the non-streaming render
@@ -297,19 +315,20 @@ export function StreamingMarkdown({
     }
     // Caught up but still live: keep visible while we wait for more.
     setCursorState("shown");
-  }, [hasMoreToReveal, live, prefersReducedMotion]);
+  }, [hasMoreToReveal, isLive, prefersReducedMotion]);
 
   /* ------------------------- Derived view data -------------------------- */
   const visibleText = renderedText.slice(0, visibleLength);
-  // Commentary uses a sweep effect on the text itself (CSS
-  // background-clip:text gradient) instead of a typewriter cursor.
-  // The cursor is suppressed entirely; the `streaming-commentary-live`
-  // class is what drives the visual. We keep the rest of the
-  // reveal-rate machinery identical so the comment still streams
-  // at the same character cadence — only the trailing glyph changes.
-  const showCursor = cursorState !== "gone" && textKind !== "commentary";
+  // `pending` and `commentary` use a sweep band across the text instead of
+  // a typewriter cursor — the cursor would look out of place for the
+  // model's scratch stream. `final_answer` keeps the cursor as-is. The
+  // sweep / cursor only appears while the item is still live; settled
+  // items render the full text without any trailing affordance.
+  const isCommentaryPhase =
+    itemPhase === "pending" || itemPhase === "commentary";
+  const showCursor = cursorState !== "gone" && !isCommentaryPhase;
   const isLiveCommentary =
-    textKind === "commentary" && phase !== "settled" && visibleText.length > 0;
+    isCommentaryPhase && isLive && visibleText.length > 0;
   const cursorClassName =
     CURSOR_CLASS_NAME + (cursorState === "fading" ? " is-fading" : "");
   const cursorTextRenderer = useMemo(

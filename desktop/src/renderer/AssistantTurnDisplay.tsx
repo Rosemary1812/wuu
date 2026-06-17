@@ -4,72 +4,64 @@ import { streamFieldValue } from "./ThreadItemText";
 import { ToolActivityTimeline } from "./ToolActivity";
 import { readableToolActivityCommand } from "./ToolActivityHelpers";
 
-export type AssistantTurnDisplay = {
-  /**
-   * Front content: the process lane. Carries reasoning, tool calls,
-   * context_compaction, pending assistant text, and commentary in the
-   * order they appeared in the turn. The shell renders these entries as
-   * process records, not as answer prose.
-   */
-  frontEntries: TurnProcessEntry[];
-  /**
-   * Body: the user-facing reply. Multiple final-answer text segments are
-   * rendered in arrival order as one reply surface instead of becoming a
-   * user-facing warning state.
-   */
-  finalAnswerItems: AssistantTurnAnswerItem[];
-  /**
-   * Present when a completed turn produced process text but no final
-   * answer. This is a user-facing outcome, not an internal bug label.
-   */
-  missingReplyMessage?: string;
-  /**
-   * True when a completed turn has final-answer body text. The shell draws
-   * a thin horizontal divider between the front and the body in that case.
-   */
-  showDivider: boolean;
-  /**
-   * Initial collapse state of the front content. The user can always
-   * toggle the front afterwards, so this is purely a hint about the
-   * default render.
-   */
-  frontDefaultCollapsed: boolean;
-  /**
-   * Latest process record shown in the fold header while the turn is
-   * live. Usually pending/commentary text, but it can also be the latest
-   * tool action when no newer text has arrived yet.
-   */
-  latestProcessPreview?: TurnProcessPreview;
-};
-
-export type AssistantTurnAnswerItem = {
-  item: ThreadItem;
-  streaming: boolean;
-  element: JSX.Element;
-  /**
-   * True when the turn has a reasoning block that the model just finished
-   * writing. The first text item waits a short beat so the reasoning cursor
-   * can fully settle before its own cursor starts animating.
-   */
-  pendingCompanionReasoning?: boolean;
-};
-
-export type TurnProcessEntry = {
+/**
+ * The single, ordered list of items that make up an assistant turn.
+ *
+ * The shell renders this list top-to-bottom inside two visual groups
+ * (`process` fold + `answer` body) but the data itself is one
+ * chronological sequence — the old `frontEntries` / `finalAnswerItems`
+ * split let the same item drift between arrays as `phase` flipped,
+ * which is exactly the transition race that produced the "commentary
+ * appeared in the final slot" bug.
+ *
+ * `settled` is derived from `item.status`, not from `phase`:
+ *   - `settled = item.status !== "in_progress"`
+ *   - the back end marks the item complete when the entire message
+ *     (including all deltas) has been committed, so `settled` flips
+ *     atomically the moment streaming is over.
+ *
+ * `position` only describes which visual group the entry belongs to,
+ * not whether it is "active" — that's `settled`.
+ */
+export type TurnEntry = {
+  /** Stable React key. Distinct from `item.id` only when several items
+   *  share an id (e.g. consecutive tool calls collapsed into one group). */
   key: string;
-  element: JSX.Element;
+  item: ThreadItem;
+  position: "process" | "answer";
+  settled: boolean;
+  streaming: boolean;
+  kind: TurnEntryKind;
   count?: number;
-  kind: TurnProcessEntryKind;
+  /** Used only for `kind: "activity"` entries to hint the underlying
+   *  ToolActivityTimeline whether to fold itself once idle. */
+  collapseWhenIdle?: boolean;
 };
 
-export type TurnProcessEntryKind =
+export type TurnEntryKind =
   | "pending"
   | "commentary"
+  | "answer"
   | "activity"
   | "process";
 
+export type AssistantTurnDisplay = {
+  entries: TurnEntry[];
+  /** True when the turn has at least one `answer`-position entry. Drives
+   *  the default collapsed state of the process fold. */
+  hasAnswer: boolean;
+  /** Present when a completed turn produced process text but no final
+   *  answer. This is a user-facing outcome, not an internal bug label. */
+  missingReplyMessage?: string;
+  /** Latest process record shown in the fold header while the turn is
+   *  live. Usually pending/commentary text, but it can also be the
+   *  latest tool action when no newer text has arrived yet. */
+  latestProcessPreview?: TurnProcessPreview;
+};
+
 export type TurnProcessPreview = {
   text: string;
-  kind: TurnProcessEntryKind;
+  kind: TurnEntryKind;
 };
 
 export function buildAssistantTurnDisplay(
@@ -81,35 +73,60 @@ export function buildAssistantTurnDisplay(
     pendingCompanionReasoning?: boolean,
   ) => JSX.Element | null,
 ): AssistantTurnDisplay | undefined {
-  const frontEntries: TurnProcessEntry[] = [];
-  const finalAnswerItems: AssistantTurnAnswerItem[] = [];
+  const entries: TurnEntry[] = [];
+  // Defensive dedupe. The back-end's `upsertItemLocked` already de-dupes
+  // by item id, but a partial resync could in principle leave the list
+  // with two of the same id; we never want to render an item twice.
+  const seenItemIDs = new Set<string>();
   let sawAssistantWork = false;
-  const turnHasReasoning = turn.items.some((item) => item.type === "reasoning");
+  let hasAnswer = false;
   const isInProgress = turn.status === "in_progress";
+  const turnHasReasoning = turn.items.some((item) => item.type === "reasoning");
   let firstTextItemRendered = false;
 
-  function appendFrontEntry(entry: TurnProcessEntry | null): void {
-    if (entry) {
-      frontEntries.push(entry);
+  function isProcessItemLive(item: ThreadItem): boolean {
+    return isInProgress && item.status === "in_progress";
+  }
+
+  function entryPosition(item: ThreadItem): "process" | "answer" {
+    if (item.type === "agent_message" && item.phase === "final_answer") {
+      return "answer";
     }
+    return "process";
+  }
+
+  function entryKind(item: ThreadItem): TurnEntryKind {
+    if (item.type === "agent_message") {
+      if (item.phase === "final_answer") return "answer";
+      // Legacy shape: an in-flight agent_message without a phase field
+      // is the very first token of a turn — treat it as pending until
+      // the back-end promotes it to commentary or final_answer.
+      const phaseIsUnsetOrPending =
+        item.phase === "pending" ||
+        (!item.phase && isInProgress && item.status === "in_progress");
+      if (phaseIsUnsetOrPending) return "pending";
+      return "commentary";
+    }
+    if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
+      return "activity";
+    }
+    return "process";
   }
 
   for (let index = 0; index < turn.items.length; index++) {
     const item = turn.items[index];
-    if (item.type === "user_message") {
-      continue;
-    }
+    if (item.type === "user_message") continue;
+    if (seenItemIDs.has(item.id)) continue;
+    seenItemIDs.add(item.id);
+
     sawAssistantWork = true;
 
+    // Empty agent_message items carry no value once the turn is no longer
+    // in flight; drop them so the process fold doesn't show ghost rows.
     if (item.type === "agent_message") {
-      const streaming =
-        turn.status === "in_progress" && item.status === "in_progress";
+      const streaming = isProcessItemLive(item);
       const text = streamFieldValue(turn.id, item, "text");
-      if (text.trim().length === 0 && !streaming) {
-        continue;
-      }
-      const isFinalAnswer = item.phase === "final_answer";
-      const isPendingText = isPendingAgentText(item, isInProgress);
+      if (text.trim().length === 0 && !streaming) continue;
       const shouldDelayCursor = turnHasReasoning && !firstTextItemRendered;
       firstTextItemRendered = true;
       const rendered = renderThreadItem(
@@ -117,23 +134,22 @@ export function buildAssistantTurnDisplay(
         streaming,
         shouldDelayCursor ? true : undefined,
       );
-      if (isFinalAnswer) {
-        if (!rendered) {
-          continue;
-        }
-        finalAnswerItems.push({ item, streaming, element: rendered });
-      } else if (rendered) {
-        appendFrontEntry({
-          key: item.id,
-          element: rendered,
-          kind: isPendingText ? "pending" : "commentary",
-        });
-      }
+      if (!rendered) continue;
+      const position = entryPosition(item);
+      if (position === "answer") hasAnswer = true;
+      entries.push({
+        key: item.id,
+        item,
+        position,
+        settled: !streaming,
+        streaming,
+        kind: entryKind(item),
+      });
       continue;
     }
 
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
-      const group = [item];
+      const group: ThreadItem[] = [item];
       let nextIndex = index + 1;
       while (
         nextIndex < turn.items.length &&
@@ -143,45 +159,45 @@ export function buildAssistantTurnDisplay(
         group.push(turn.items[nextIndex]);
         nextIndex++;
       }
-      appendFrontEntry({
+      const allSettled = group.every((g) => g.status !== "in_progress");
+      entries.push({
         key: `${item.id}-activity`,
-        element: (
-          <ToolActivityTimeline
-            key={`${item.id}-activity`}
-            items={group}
-            collapseWhenIdle={agentMessageWithTextFollows(turn, nextIndex - 1)}
-            revealItems={turn.status === "in_progress"}
-          />
-        ),
-        count: group.length,
+        item,
+        position: "process",
+        settled: allSettled,
+        streaming: isInProgress && !allSettled,
         kind: "activity",
+        count: group.length,
+        // Collapsing hint for the underlying ToolActivityTimeline; the
+        // fold decides its own default, but this lets the row fold
+        // itself when it has a following agent message.
+        collapseWhenIdle: agentMessageWithTextFollows(turn, nextIndex - 1),
       });
       index = nextIndex - 1;
       continue;
     }
 
-    const rendered = renderThreadItem(
+    // reasoning, error, context_compaction, ...
+    const streaming = isProcessItemLive(item);
+    const rendered = renderThreadItem(item, streaming);
+    if (!rendered) continue;
+    entries.push({
+      key: item.id,
       item,
-      turn.status === "in_progress" && item.status === "in_progress",
-    );
-    if (rendered) {
-      appendFrontEntry({
-        key: item.id,
-        element: rendered,
-        kind: "process",
-      });
-    }
+      position: "process",
+      settled: !streaming,
+      streaming,
+      kind: entryKind(item),
+    });
   }
 
   if (!sawAssistantWork) {
     return undefined;
   }
 
-  const finalCount = finalAnswerItems.length;
   const isCompleted = turn.status === "completed";
-
   let missingReplyMessage: string | undefined;
-  if (isCompleted && finalAnswerItems.length === 0) {
+  if (isCompleted && !hasAnswer) {
     const hasCommentary = turn.items.some(
       (item) => item.type === "agent_message" && item.phase === "commentary",
     );
@@ -190,27 +206,18 @@ export function buildAssistantTurnDisplay(
     }
   }
 
-  const showDivider = isCompleted && finalCount > 0 && !missingReplyMessage;
-  const frontDefaultCollapsed = finalCount > 0;
-
   const latestProcessPreview = isInProgress
     ? latestInProgressProcessPreview(turn)
     : undefined;
 
-  if (
-    frontEntries.length === 0 &&
-    finalAnswerItems.length === 0 &&
-    !latestProcessPreview
-  ) {
+  if (entries.length === 0 && !latestProcessPreview) {
     return undefined;
   }
 
   return {
-    frontEntries,
-    finalAnswerItems,
+    entries,
+    hasAnswer,
     missingReplyMessage,
-    showDivider,
-    frontDefaultCollapsed,
     latestProcessPreview,
   };
 }

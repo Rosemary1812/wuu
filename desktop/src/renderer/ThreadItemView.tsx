@@ -186,12 +186,16 @@ function AgentMessageContent({
   onStreamFrame: () => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
-  const hasBufferedStream = streamTextStore.has(streamKeyValue);
-  const [streamSettled, setStreamSettled] = useState(false);
+  // isLive is driven entirely by `item.status`: once the back-end marks
+  // the item completed the surface must settle, no matter what the
+  // streaming buffer looks like. This is what makes "two places
+  // streaming at once" impossible — there's exactly one source of
+  // liveness and it changes atomically when the back-end commits.
+  const isLive = item.status === "in_progress";
   // Hold the cursor back when a just-completed reasoning block is still
   // visually settling. The reasoning and text streams are sequential on
-  // the wire, but the StreamingMarkdown cursor's "settling" phase and the
-  // next text's "streaming" phase can briefly race in the UI.
+  // the wire, but the cursor reveal and the next text's reveal can briefly
+  // race in the UI.
   const [cursorArmed, setCursorArmed] = useState<boolean>(
     !pendingCompanionReasoning,
   );
@@ -210,12 +214,19 @@ function AgentMessageContent({
       window.clearTimeout(timer);
     };
   }, [pendingCompanionReasoning]);
-  const liveStream =
-    (streaming || hasBufferedStream) && !streamSettled && cursorArmed;
 
+  // When the item completes, drop the buffered stream immediately. Doing
+  // this here (instead of inside StreamingMarkdown's onSettled callback)
+  // means the store is cleared even if the component is about to unmount
+  // and the callback never fires. The store entry is no longer needed
+  // for rendering, since the final text lives on `item.text`.
   useEffect(() => {
-    setStreamSettled(false);
-  }, [streamKeyValue]);
+    if (!isLive) {
+      streamTextStore.clearItem(turnID, item.id);
+    }
+  }, [turnID, item.id, isLive]);
+
+  const hasBufferedStream = streamTextStore.has(streamKeyValue);
 
   return (
     <StreamingMarkdown
@@ -226,19 +237,13 @@ function AgentMessageContent({
           : item.text
       }
       cwd={cwd}
-      final={!streaming}
-      live={liveStream}
-      textKind={
-        item.phase === "pending" || item.phase === "commentary"
-          ? "commentary"
-          : "final_answer"
+      isLive={isLive && cursorArmed}
+      phase={
+        item.phase === "final_answer"
+          ? "final_answer"
+          : (item.phase ?? "commentary")
       }
       onFrame={onStreamFrame}
-      onSettled={() => {
-        setStreamSettled(true);
-        streamTextStore.clearItem(turnID, item.id);
-        onStreamFrame();
-      }}
     />
   );
 }
@@ -255,8 +260,17 @@ function ReasoningContent({
   onStreamFrame: () => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
+  const isLive = item.status === "in_progress";
+
+  // Same clear-on-settle pattern as AgentMessageContent — we own the
+  // lifecycle instead of relying on the StreamingMarkdown callback.
+  useEffect(() => {
+    if (!isLive) {
+      streamTextStore.clearItem(turnID, item.id);
+    }
+  }, [turnID, item.id, isLive]);
+
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
-  const liveStream = streaming || hasBufferedStream;
 
   return (
     <StreamingMarkdown
@@ -267,13 +281,9 @@ function ReasoningContent({
           : item.text
       }
       className="streaming-markdown rich-content reasoning-stream"
-      final={!streaming}
-      live={liveStream}
+      isLive={isLive}
+      phase="commentary"
       onFrame={onStreamFrame}
-      onSettled={() => {
-        streamTextStore.clearItem(turnID, item.id);
-        onStreamFrame();
-      }}
     />
   );
 }
