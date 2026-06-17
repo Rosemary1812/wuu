@@ -39,7 +39,6 @@ export type TurnEntry = {
 };
 
 export type TurnEntryKind =
-  | "pending"
   | "commentary"
   | "answer"
   | "activity"
@@ -112,7 +111,6 @@ export function buildAssistantTurnDisplay(
       if (item.phase === "final_answer" || isUnknownLiveAgentText(item)) {
         return "answer";
       }
-      if (isLegacyPendingAgentText(item)) return "pending";
       return "commentary";
     }
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
@@ -247,10 +245,7 @@ function processPreviewForItem(
   item: ThreadItem,
 ): TurnProcessPreview | undefined {
   if (item.type === "agent_message") {
-    if (
-      item.phase !== "commentary" &&
-      !isLegacyPendingAgentText(item)
-    ) {
+    if (item.phase !== "commentary") {
       return undefined;
     }
     // The fold-header preview is a committed snapshot, not a live
@@ -265,7 +260,7 @@ function processPreviewForItem(
     return text
       ? {
           text,
-          kind: isLegacyPendingAgentText(item) ? "pending" : "commentary",
+          kind: "commentary",
         }
       : undefined;
   }
@@ -276,13 +271,6 @@ function processPreviewForItem(
   }
 
   return undefined;
-}
-
-function isLegacyPendingAgentText(item: ThreadItem): boolean {
-  return (
-    item.type === "agent_message" &&
-    (item.phase as string | undefined) === "pending"
-  );
 }
 
 function compactProcessPreview(raw: string | undefined): string | undefined {

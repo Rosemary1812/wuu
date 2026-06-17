@@ -97,10 +97,7 @@ export function ThreadItemView({
         copyable;
       const actionsPersistent =
         actionsVisible && item.id === latestAgentMessageID;
-      const isLegacyPendingText =
-        (item.phase as string | undefined) === "pending";
-      const isProcessText =
-        isLegacyPendingText || item.phase === "commentary";
+      const isProcessText = item.phase === "commentary";
       const reserveActionSlot =
         copyable &&
         !isProcessText &&

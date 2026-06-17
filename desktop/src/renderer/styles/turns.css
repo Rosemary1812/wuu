@@ -2731,12 +2731,10 @@
   display: none;
 }
 
-.turn-process-entry-pending,
 .turn-process-entry-commentary {
   color: #5e6569;
 }
 
-.turn-process-entry-pending::before,
 .turn-process-entry-commentary::before {
   background: #bcc3bc;
 }

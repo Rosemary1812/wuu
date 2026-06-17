@@ -476,7 +476,7 @@ func shouldUpdateAgentPhase(current, next ThreadItemPhase) bool {
 	if next == "" || current == next {
 		return false
 	}
-	return current == "" || string(current) == "pending"
+	return current == ""
 }
 
 func (th *threadState) completeActiveAgentItemLocked(turnID string, now time.Time, phase ThreadItemPhase) []outboundNotification {

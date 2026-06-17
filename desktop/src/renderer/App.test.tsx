@@ -76,20 +76,9 @@ function makeFinalAnswer(text: string): ThreadItem {
 
 function makeLiveUnclassifiedAgentMessage(text: string): ThreadItem {
   return {
-    id: nextID("pending-agent"),
+    id: nextID("live-agent"),
     type: "agent_message",
     status: "in_progress",
-    role: "assistant",
-    text,
-  };
-}
-
-function makeLegacyPendingAgentMessage(text: string): ThreadItem {
-  return {
-    id: nextID("pending-agent"),
-    type: "agent_message",
-    status: "in_progress",
-    phase: "pending" as unknown as ThreadItem["phase"],
     role: "assistant",
     text,
   };
@@ -310,34 +299,20 @@ describe("assistant turn fold header preview", () => {
   });
 
   it("in_progress + phase-unknown live agent text → answer candidate, not process preview", () => {
-    const pending = makeLiveUnclassifiedAgentMessage(
+    const live = makeLiveUnclassifiedAgentMessage(
       "I will inspect the current prompt path.",
     );
-    const turn = makeTurn({ status: "in_progress", items: [pending] });
+    const turn = makeTurn({ status: "in_progress", items: [live] });
 
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
     expect(display?.latestProcessPreview?.text).toBeUndefined();
     expect(processItemIDs(display)).toEqual([]);
-    const pendingEntry = display?.entries.find((e) => e.item.id === pending.id);
-    expect(pendingEntry?.kind).toBe("answer");
-    expect(answerItemIDs(display)).toEqual([pending.id]);
+    const liveEntry = display?.entries.find((e) => e.item.id === live.id);
+    expect(liveEntry?.kind).toBe("answer");
+    expect(answerItemIDs(display)).toEqual([live.id]);
     expect(display?.hasAnswer).toBe(true);
-  });
-
-  it("in_progress + legacy pending live agent text → preview and process entry", () => {
-    const pending = makeLegacyPendingAgentMessage(
-      "I will inspect the current prompt path.",
-    );
-    const turn = makeTurn({ status: "in_progress", items: [pending] });
-
-    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
-
-    expect(display).toBeDefined();
-    expect(display?.latestProcessPreview?.kind).toBe("pending");
-    const pendingEntry = display?.entries.find((e) => e.item.id === pending.id);
-    expect(pendingEntry?.kind).toBe("pending");
   });
 
   it("in_progress + multiple commentaries → preview = the LATEST commentary, in arrival order", () => {
@@ -422,10 +397,10 @@ describe("assistant turn fold header preview", () => {
 
   it("every entry exposes settled from item.status (single source of truth)", () => {
     const commentary = makeCommentary("settled commentary");
-    const livePending = makeLiveUnclassifiedAgentMessage("streaming text");
+    const liveAgent = makeLiveUnclassifiedAgentMessage("streaming text");
     const turn = makeTurn({
       status: "in_progress",
-      items: [commentary, livePending],
+      items: [commentary, liveAgent],
     });
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
     expect(display).toBeDefined();
@@ -433,7 +408,7 @@ describe("assistant turn fold header preview", () => {
       (e) => e.item.id === commentary.id,
     );
     const liveEntry = display?.entries.find(
-      (e) => e.item.id === livePending.id,
+      (e) => e.item.id === liveAgent.id,
     );
     expect(commentaryEntry?.settled).toBe(true);
     expect(commentaryEntry?.streaming).toBe(false);
