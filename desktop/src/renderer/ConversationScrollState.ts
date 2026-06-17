@@ -162,10 +162,11 @@ export function useConversationScrollState({
     //
     // We do not infer "scrolled away" purely from the scroll direction. If
     // the conversation fits inside the viewport (scrollHeight <= clientHeight)
-    // there is nothing below to jump to, so the pill must stay hidden even if
-    // a stale lastConversationScrollTopRef would otherwise claim the user
-    // once scrolled up. Similarly, if the user is parked inside the bottom
-    // band, they are already at the latest message — hide the pill.
+    // there is nothing below the fold to jump to, so the pill must stay
+    // hidden even if a stale lastConversationScrollTopRef would otherwise
+    // claim the user once scrolled up. Similarly, if the user is parked
+    // inside the bottom band, they are already at the latest message —
+    // hide the pill.
     //
     // The direction-sensitive check (drop auto-follow the moment scrollTop
     // decreases) is preserved for the *programmatic* auto-follow decision,
