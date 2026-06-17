@@ -18,8 +18,9 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
-	sessionid "github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
 
@@ -51,6 +52,8 @@ func run(args []string) error {
 		return runGoal(args[1:])
 	case "tui":
 		return errors.New("the TUI has been removed; use the desktop GUI or `wuu run` for one-shot CLI tasks")
+	case "session-show":
+		return runSessionShow(args[1:])
 	case "app-server":
 		return runAppServer(args[1:])
 	case "version", "-v", "--version":
@@ -233,6 +236,112 @@ func runModels(args []string) error {
 	return nil
 }
 
+func runSessionShow(args []string) error {
+	fs := flag.NewFlagSet("session-show", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	threadID := fs.String("thread", "", "thread (session) ID; defaults to the most recent session")
+	jsonOutput := fs.Bool("json", false, "output as JSON (default: human-readable)")
+	limit := fs.Int("limit", 200, "max history records to print (ignored with --json)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	home, err := statepath.Home("")
+	if err != nil {
+		return fmt.Errorf("resolve wuu home: %w", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	if sessDir == "" {
+		return errors.New("sessions dir is empty")
+	}
+
+	id := strings.TrimSpace(*threadID)
+	if id == "" {
+		recent, err := session.MostRecent(sessDir)
+		if err != nil {
+			return fmt.Errorf("find most recent session: %w", err)
+		}
+		if recent == "" {
+			return errors.New("no sessions found")
+		}
+		id = recent
+	}
+
+	meta, ok, err := session.Find(sessDir, id)
+	if err != nil {
+		return fmt.Errorf("lookup %q: %w", id, err)
+	}
+	if !ok {
+		return fmt.Errorf("%w: %q", session.ErrSessionNotFound, id)
+	}
+	records, err := session.LoadHistoryRecords(sessDir, id, true)
+	if err != nil {
+		return fmt.Errorf("load history %q: %w", id, err)
+	}
+
+	if *jsonOutput {
+		payload := map[string]any{
+			"thread_id": id,
+			"session":   meta,
+			"history":   records,
+		}
+		data, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal session: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	fmt.Printf("thread_id: %s\n", id)
+	fmt.Printf("title: %s\n", meta.Title)
+	if meta.Summary != "" {
+		fmt.Printf("summary: %s\n", meta.Summary)
+	}
+	if meta.CWD != "" {
+		fmt.Printf("cwd: %s\n", meta.CWD)
+	}
+	fmt.Printf("created: %s\n", meta.CreatedAt.Format(time.RFC3339))
+	if meta.UpdatedAt.After(meta.CreatedAt) {
+		fmt.Printf("updated: %s\n", meta.UpdatedAt.Format(time.RFC3339))
+	}
+	if meta.PinnedAt != nil {
+		fmt.Printf("pinned: %s\n", meta.PinnedAt.Format(time.RFC3339))
+	}
+	if meta.ArchivedAt != nil {
+		fmt.Printf("archived: %s\n", meta.ArchivedAt.Format(time.RFC3339))
+	}
+	if meta.ForkedFromID != "" {
+		fmt.Printf("forked_from: %s\n", meta.ForkedFromID)
+	}
+	fmt.Printf("entries: %d\n", meta.Entries)
+	fmt.Printf("history_records: %d\n\n", len(records))
+
+	shown := *limit
+	if shown > 0 && shown < len(records) {
+		fmt.Printf("(showing first %d of %d records; use --limit 0 for all or --json for full output)\n\n", shown, len(records))
+	}
+	for i, rec := range records {
+		if shown > 0 && i >= shown {
+			break
+		}
+		prefix := "  "
+		if rec.Steered {
+			prefix = "* "
+		}
+		role := rec.Role
+		if role == "" {
+			role = "?"
+		}
+		content := rec.Content
+		if len(content) > 240 {
+			content = content[:240] + "..."
+		}
+		fmt.Printf("%s[%d] %s: %s\n", prefix, i+1, role, content)
+	}
+	return nil
+}
+
 func runTask(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -272,7 +381,7 @@ func runTask(args []string) error {
 		return err
 	}
 	defer rt.Cleanup()
-	cliSessionID := "cli-" + sessionid.NewID()
+	cliSessionID := "cli-" + session.NewID()
 	rt.SetSessionID(cliSessionID)
 
 	runner := rt.StreamRunner

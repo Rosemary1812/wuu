@@ -18,6 +18,7 @@ import (
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
@@ -1270,4 +1271,64 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestRunSessionShowReturnsCreatedSessionJSON(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+
+	home, err := statepath.Home("")
+	if err != nil {
+		t.Fatalf("statepath.Home: %v", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	if sessDir == "" {
+		t.Fatal("statepath.SessionsDir returned empty path")
+	}
+
+	const id = "cli-thread-1"
+	sess, err := session.CreateWithMetadata(sessDir, id, "/tmp/workdir")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := session.AppendHistoryRecord(sessDir, sess.ID, session.HistoryRecord{
+		Role:    "user",
+		Content: "hello from CLI",
+	}); err != nil {
+		t.Fatalf("append history: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"session-show", "--thread", sess.ID, "--json"}); err != nil {
+			t.Fatalf("run session-show: %v", err)
+		}
+	})
+
+	var payload struct {
+		ThreadID string                  `json:"thread_id"`
+		Session  session.Session         `json:"session"`
+		History  []session.HistoryRecord `json:"history"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, output)
+	}
+	if payload.ThreadID != sess.ID {
+		t.Errorf("expected thread_id %q, got %q", sess.ID, payload.ThreadID)
+	}
+	if len(payload.History) != 1 || payload.History[0].Content != "hello from CLI" {
+		t.Errorf("unexpected history: %+v", payload.History)
+	}
+}
+
+func TestRunSessionShowNotFoundReturnsError(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+
+	err := run([]string{"session-show", "--thread", "missing-id"})
+	if err == nil {
+		t.Fatal("expected error for missing thread id")
+	}
+	if !strings.Contains(err.Error(), "session not found") {
+		t.Errorf("expected session-not-found, got: %v", err)
+	}
 }

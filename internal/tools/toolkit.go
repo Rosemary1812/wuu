@@ -170,6 +170,10 @@ func (t *Toolkit) rebuildRegistry() {
 		NewLoadSkillTool(e),
 		// Durable session/workspace memory
 		NewSessionMemoryTool(e),
+		// Session/thread lookup (used after right-click "copy ID" on the
+		// desktop session tree — agents receive a thread ID and resolve it
+		// back to the full conversation via this tool).
+		NewThreadGetTool(e),
 		// Goals
 		NewStartGoalTool(e),
 		NewUpdateGoalTool(e),
