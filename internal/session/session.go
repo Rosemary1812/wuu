@@ -63,6 +63,7 @@ type ForkMetadata struct {
 type HistoryRecord struct {
 	Role             string          `json:"role"`
 	Content          string          `json:"content"`
+	Phase            string          `json:"phase,omitempty"`
 	ClientID         string          `json:"client_id,omitempty"`
 	Steered          bool            `json:"steered,omitempty"`
 	ReasoningContent string          `json:"reasoning_content,omitempty"`
@@ -578,6 +579,7 @@ func migrateSchema(db *sql.DB) error {
 			seq INTEGER NOT NULL,
 			role TEXT NOT NULL,
 			content TEXT NOT NULL DEFAULT '',
+			phase TEXT NOT NULL DEFAULT '',
 			client_id TEXT NOT NULL DEFAULT '',
 			steered INTEGER NOT NULL DEFAULT 0,
 			reasoning_content TEXT NOT NULL DEFAULT '',
@@ -603,6 +605,37 @@ func migrateSchema(db *sql.DB) error {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("migrate sessions database: %w", err)
 		}
+	}
+	if err := addColumnIfMissing(db, "session_messages", "phase", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func addColumnIfMissing(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return fmt.Errorf("inspect %s columns: %w", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("scan %s columns: %w", table, err)
+		}
+		if strings.EqualFold(name, column) {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scan %s columns: %w", table, err)
+	}
+	if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, definition)); err != nil {
+		return fmt.Errorf("add %s.%s column: %w", table, column, err)
 	}
 	return nil
 }
@@ -894,11 +927,11 @@ func appendHistoryRecordTx(tx *sql.Tx, id string, rec HistoryRecord) error {
 func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) error {
 	_, err := tx.Exec(`
 INSERT INTO session_messages (
-	session_id, seq, role, content, client_id, steered, reasoning_content,
+	session_id, seq, role, content, phase, client_id, steered, reasoning_content,
 	reasoning_blocks_json, images_json, files_json, tool_calls_json,
 	tool_call_id, name, at, input_tokens, output_tokens
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, rec.ClientID, boolInt(rec.Steered), rec.ReasoningContent,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, strings.TrimSpace(rec.Phase), rec.ClientID, boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls),
 		rec.ToolCallID, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens,
 	)
@@ -910,7 +943,7 @@ INSERT INTO session_messages (
 
 func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
 	query := `
-SELECT role, content, client_id, steered, reasoning_content,
+SELECT role, content, phase, client_id, steered, reasoning_content,
        reasoning_blocks_json, images_json, files_json, tool_calls_json,
        tool_call_id, name, at, input_tokens, output_tokens
 FROM session_messages
@@ -934,7 +967,7 @@ WHERE session_id = ?`
 		var reasoningBlocks, images, files, toolCalls string
 		var at sql.NullString
 		if err := rows.Scan(
-			&rec.Role, &rec.Content, &rec.ClientID, &steered, &rec.ReasoningContent,
+			&rec.Role, &rec.Content, &rec.Phase, &rec.ClientID, &steered, &rec.ReasoningContent,
 			&reasoningBlocks, &images, &files, &toolCalls,
 			&rec.ToolCallID, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens,
 		); err != nil {

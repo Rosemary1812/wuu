@@ -44,6 +44,7 @@ func TestChat_SendsRequestAndParsesToolCall(t *testing.T) {
     {
       "message": {
         "content": "",
+        "phase": "commentary",
         "tool_calls": [
           {
             "id": "call_1",
@@ -84,6 +85,9 @@ func TestChat_SendsRequestAndParsesToolCall(t *testing.T) {
 	}
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
+	}
+	if resp.Phase != providers.MessagePhaseCommentary {
+		t.Fatalf("unexpected phase: %q", resp.Phase)
 	}
 	if resp.ToolCalls[0].Name != "run_shell" {
 		t.Fatalf("unexpected tool name: %s", resp.ToolCalls[0].Name)
@@ -1024,7 +1028,7 @@ func TestStreamChat_ConnectTimeout(t *testing.T) {
 }
 
 func TestStreamChat_SSE(t *testing.T) {
-	ssePayload := "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n" +
+	ssePayload := "data: {\"choices\":[{\"delta\":{\"phase\":\"final_answer\",\"content\":\"Hello\"}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"\"}}]}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\"}}]}}]}\n\n" +
@@ -1061,13 +1065,18 @@ func TestStreamChat_SSE(t *testing.T) {
 
 	// Verify content deltas arrive in order.
 	var contentParts []string
+	var phases []providers.MessagePhase
 	for _, ev := range events {
 		if ev.Type == providers.EventContentDelta {
 			contentParts = append(contentParts, ev.Content)
+			phases = append(phases, ev.Phase)
 		}
 	}
 	if len(contentParts) != 2 || contentParts[0] != "Hello" || contentParts[1] != " world" {
 		t.Fatalf("unexpected content deltas: %v", contentParts)
+	}
+	if len(phases) != 2 || phases[0] != providers.MessagePhaseFinalAnswer || phases[1] != providers.MessagePhaseFinalAnswer {
+		t.Fatalf("unexpected content phases: %v", phases)
 	}
 
 	// Verify tool call events.
@@ -1651,6 +1660,7 @@ func TestResponsesChat_ParsesMessageContent(t *testing.T) {
     {
       "type": "message",
       "role": "assistant",
+      "phase": "final_answer",
       "content": [
         {"type": "output_text", "text": "hello"},
         {"type": "output_text", "text": "world"}
@@ -1675,6 +1685,9 @@ func TestResponsesChat_ParsesMessageContent(t *testing.T) {
 	}
 	if resp.Content != "hello\nworld" {
 		t.Fatalf("unexpected content: %q", resp.Content)
+	}
+	if resp.Phase != providers.MessagePhaseFinalAnswer {
+		t.Fatalf("unexpected phase: %q", resp.Phase)
 	}
 }
 
@@ -1706,7 +1719,9 @@ func TestResponsesChat_ContextLengthExceededClassified(t *testing.T) {
 }
 
 func TestResponsesStreamChat_SSE(t *testing.T) {
-	ssePayload := "event: response.output_text.delta\n" +
+	ssePayload := "event: response.output_item.added\n" +
+		"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"phase\":\"final_answer\",\"status\":\"in_progress\"},\"output_index\":0}\n\n" +
+		"event: response.output_text.delta\n" +
 		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n" +
 		"event: response.output_item.added\n" +
 		"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"status\":\"in_progress\",\"arguments\":\"\",\"call_id\":\"call_1\",\"name\":\"read_file\"},\"output_index\":0}\n\n" +
@@ -1753,6 +1768,7 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 	}
 
 	var content string
+	var contentPhase providers.MessagePhase
 	var toolStarts, toolEnds int
 	var endToolCall *providers.ToolCall
 	var done *providers.StreamEvent
@@ -1761,6 +1777,9 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 		switch ev.Type {
 		case providers.EventContentDelta:
 			content += ev.Content
+			if ev.Content != "" {
+				contentPhase = ev.Phase
+			}
 		case providers.EventToolUseStart:
 			toolStarts++
 			if ev.ToolCall == nil || ev.ToolCall.ID != "call_1" || ev.ToolCall.Name != "read_file" {
@@ -1775,6 +1794,9 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 	}
 	if content != "Hello" {
 		t.Fatalf("unexpected content: %q", content)
+	}
+	if contentPhase != providers.MessagePhaseFinalAnswer {
+		t.Fatalf("unexpected content phase: %q", contentPhase)
 	}
 	if toolStarts != 1 || toolEnds != 1 {
 		t.Fatalf("expected one tool start/end, got starts=%d ends=%d events=%+v", toolStarts, toolEnds, events)

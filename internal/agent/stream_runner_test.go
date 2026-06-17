@@ -218,6 +218,36 @@ func TestStreamRunner_SimpleContent(t *testing.T) {
 	}
 }
 
+func TestStreamRunnerCarriesStreamedMessagePhaseToCommittedMessage(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "Done.", Phase: providers.MessagePhaseFinalAnswer},
+			{Type: providers.EventDone},
+		},
+	}
+
+	var committed *providers.ChatMessage
+	runner := StreamRunner{
+		Client: client,
+		Model:  "test-model",
+		OnEvent: func(ev providers.StreamEvent) {
+			if ev.Type == providers.EventMessage {
+				committed = ev.Message
+			}
+		},
+	}
+
+	if _, err := runner.Run(context.Background(), "answer"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if committed == nil {
+		t.Fatal("expected committed assistant message")
+	}
+	if committed.Phase != providers.MessagePhaseFinalAnswer {
+		t.Fatalf("committed message phase = %q", committed.Phase)
+	}
+}
+
 func TestStreamRunner_EmitsPlanUpdateEventAfterUpdatePlan(t *testing.T) {
 	client := &mockStreamClient{
 		attempts: []mockStreamAttempt{

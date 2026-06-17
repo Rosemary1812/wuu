@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -50,12 +51,35 @@ type ReasoningBlock struct {
 	Data      string
 }
 
+// MessagePhase classifies assistant text when a provider exposes the same
+// structured phase signal Codex uses. Empty means unknown.
+type MessagePhase string
+
+const (
+	MessagePhaseCommentary  MessagePhase = "commentary"
+	MessagePhaseFinalAnswer MessagePhase = "final_answer"
+)
+
+// NormalizeMessagePhase returns a known phase value or empty for unsupported
+// provider strings.
+func NormalizeMessagePhase(phase string) MessagePhase {
+	switch strings.ToLower(strings.TrimSpace(phase)) {
+	case string(MessagePhaseCommentary):
+		return MessagePhaseCommentary
+	case string(MessagePhaseFinalAnswer):
+		return MessagePhaseFinalAnswer
+	default:
+		return ""
+	}
+}
+
 // ChatMessage is a generic multi-provider chat message.
 type ChatMessage struct {
 	Role     string
 	Name     string
 	ClientID string
 	Content  string
+	Phase    MessagePhase
 	// Steered marks user input that was injected into an already-running turn.
 	// Providers ignore this; app-server history uses it to restore turn items.
 	Steered bool
@@ -131,6 +155,7 @@ type ChatRequest struct {
 // ChatResponse is the normalized response from providers.
 type ChatResponse struct {
 	Content          string
+	Phase            MessagePhase
 	ReasoningContent string
 	ReasoningBlocks  []ReasoningBlock
 	ToolCalls        []ToolCall
@@ -258,6 +283,7 @@ func (u TokenUsage) TotalContextTokens() int {
 type StreamEvent struct {
 	Type           StreamEventType
 	Content        string
+	Phase          MessagePhase
 	Message        *ChatMessage
 	ReasoningBlock *ReasoningBlock
 	ToolCall       *ToolCall

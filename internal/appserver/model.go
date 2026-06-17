@@ -222,10 +222,9 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if ev.Content == "" {
 			return nil
 		}
-		// Streaming text has unknown phase. The complete assistant message
-		// decides final_answer vs commentary; a later tool_use commits the
-		// active text as commentary.
-		item, started := th.ensureActiveAgentItemLocked(turnID, now, "")
+		// Streaming text usually has unknown phase. If the provider exposes
+		// Codex-style phase metadata on the active output item, keep it.
+		item, started := th.ensureActiveAgentItemLocked(turnID, now, threadItemPhaseFromProvider(ev.Phase))
 		if started {
 			out = append(out, itemStarted(th.ID, turnID, item, now))
 		}
@@ -244,8 +243,7 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if th.activeAgentItemID == "" && ev.Content == "" {
 			return nil
 		}
-		// See EventContentDelta: streaming text stays phase-unknown here.
-		item, started := th.ensureActiveAgentItemLocked(turnID, now, "")
+		item, started := th.ensureActiveAgentItemLocked(turnID, now, threadItemPhaseFromProvider(ev.Phase))
 		if started {
 			out = append(out, itemStarted(th.ID, turnID, item, now))
 		}
@@ -822,10 +820,24 @@ func threadItemTypeForTool(name string) ThreadItemType {
 }
 
 func assistantMessagePhase(msg providers.ChatMessage) ThreadItemPhase {
+	if phase := threadItemPhaseFromProvider(msg.Phase); phase != "" {
+		return phase
+	}
 	if len(msg.ToolCalls) > 0 {
 		return ThreadItemPhaseCommentary
 	}
 	return ThreadItemPhaseFinalAnswer
+}
+
+func threadItemPhaseFromProvider(phase providers.MessagePhase) ThreadItemPhase {
+	switch phase {
+	case providers.MessagePhaseCommentary:
+		return ThreadItemPhaseCommentary
+	case providers.MessagePhaseFinalAnswer:
+		return ThreadItemPhaseFinalAnswer
+	default:
+		return ""
+	}
 }
 
 func threadPreview(history []providers.ChatMessage) string {

@@ -273,6 +273,7 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{
 		Role:      "assistant",
 		Content:   "done",
+		Phase:     "final_answer",
 		ToolCalls: json.RawMessage(`[{"id":"call_1","name":"read_file","arguments":"{}"}]`),
 		At:        time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC),
 	}); err != nil {
@@ -291,7 +292,7 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(visible) != 1 || visible[0].Role != "assistant" || string(visible[0].ToolCalls) == "" {
+	if len(visible) != 1 || visible[0].Role != "assistant" || visible[0].Phase != "final_answer" || string(visible[0].ToolCalls) == "" {
 		t.Fatalf("unexpected visible history: %+v", visible)
 	}
 

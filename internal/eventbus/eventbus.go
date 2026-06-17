@@ -56,6 +56,7 @@ type Event struct {
 
 	// Content carries text deltas, compact notices, error strings, etc.
 	Content string
+	Phase   providers.MessagePhase
 
 	// Message carries a full chat message (for TurnBegin/TurnEnd/Message).
 	Message *providers.ChatMessage
@@ -138,9 +139,9 @@ func (b *Bus) Close() {
 func AdaptStreamEvent(se providers.StreamEvent) Event {
 	switch se.Type {
 	case providers.EventContentDelta:
-		return Event{Type: TextDelta, Content: se.Content}
+		return Event{Type: TextDelta, Content: se.Content, Phase: se.Phase}
 	case providers.EventContentReplace:
-		return Event{Type: TextReplace, Content: se.Content}
+		return Event{Type: TextReplace, Content: se.Content, Phase: se.Phase}
 	case providers.EventThinkingDelta:
 		return Event{Type: ThinkingDelta, Content: se.Content}
 	case providers.EventThinkingReplace:
@@ -177,9 +178,9 @@ func AdaptStreamEvent(se providers.StreamEvent) Event {
 func ToStreamEvent(ev Event) providers.StreamEvent {
 	switch ev.Type {
 	case TextDelta:
-		return providers.StreamEvent{Type: providers.EventContentDelta, Content: ev.Content}
+		return providers.StreamEvent{Type: providers.EventContentDelta, Content: ev.Content, Phase: ev.Phase}
 	case TextReplace:
-		return providers.StreamEvent{Type: providers.EventContentReplace, Content: ev.Content}
+		return providers.StreamEvent{Type: providers.EventContentReplace, Content: ev.Content, Phase: ev.Phase}
 	case ThinkingDelta:
 		return providers.StreamEvent{Type: providers.EventThinkingDelta, Content: ev.Content}
 	case ThinkingReplace:

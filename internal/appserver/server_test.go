@@ -2844,6 +2844,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 		Role:             "assistant",
 		ClientID:         "client-msg-1",
 		Content:          "done",
+		Phase:            providers.MessagePhaseFinalAnswer,
 		Steered:          true,
 		ReasoningContent: "inspect before answering",
 		ReasoningBlocks: []providers.ReasoningBlock{{
@@ -2880,7 +2881,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 		t.Fatalf("expected one message, got %+v", history)
 	}
 	got := history[0]
-	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
+	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || got.Phase != msg.Phase || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
 		t.Fatalf("message scalar fields did not round-trip: %+v", got)
 	}
 	if len(got.ReasoningBlocks) != 1 || got.ReasoningBlocks[0].Signature != "sig-1" || got.ReasoningBlocks[0].Data != "opaque" {

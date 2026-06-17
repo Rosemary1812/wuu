@@ -223,6 +223,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 
 	resp := providers.ChatResponse{
 		Content:          content,
+		Phase:            providers.NormalizeMessagePhase(message.Phase),
 		ReasoningContent: message.ReasoningContent,
 		ToolCalls:        calls,
 		StopReason:       strings.ToLower(choice.FinishReason),
@@ -396,6 +397,7 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 		lastFinishReason string
 		sawThinking      bool
 		thinkingDone     bool
+		currentPhase     providers.MessagePhase
 	)
 
 	emitToolEnds := func() {
@@ -480,6 +482,17 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 			}
 		}
 
+		deltaPhase := providers.NormalizeMessagePhase(choice.Delta.Phase)
+		if deltaPhase != "" {
+			currentPhase = deltaPhase
+			if choice.Delta.Content == "" {
+				ch <- providers.StreamEvent{
+					Type:  providers.EventContentDelta,
+					Phase: currentPhase,
+				}
+			}
+		}
+
 		if choice.Delta.Content != "" {
 			if sawThinking && !thinkingDone {
 				ch <- providers.StreamEvent{Type: providers.EventThinkingDone}
@@ -488,6 +501,7 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 			ch <- providers.StreamEvent{
 				Type:    providers.EventContentDelta,
 				Content: choice.Delta.Content,
+				Phase:   currentPhase,
 			}
 		}
 
@@ -960,6 +974,7 @@ type chatChoice struct {
 
 type chatResponseMessage struct {
 	Content          json.RawMessage `json:"content"`
+	Phase            string          `json:"phase,omitempty"`
 	ReasoningContent string          `json:"reasoning_content,omitempty"`
 	ToolCalls        []toolCall      `json:"tool_calls"`
 }
@@ -976,6 +991,7 @@ type chatChunkChoice struct {
 
 type chatChunkDelta struct {
 	Content          string          `json:"content,omitempty"`
+	Phase            string          `json:"phase,omitempty"`
 	ReasoningContent string          `json:"reasoning_content,omitempty"`
 	ToolCalls        []toolCallDelta `json:"tool_calls,omitempty"`
 }

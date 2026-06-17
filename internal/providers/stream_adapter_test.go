@@ -41,6 +41,7 @@ func TestAdaptStreamClient_WrapsUnaryResponseIntoEvents(t *testing.T) {
 	usage := &TokenUsage{InputTokens: 10, OutputTokens: 4}
 	client := &unaryOnlyClient{resp: ChatResponse{
 		Content: "hello",
+		Phase:   MessagePhaseFinalAnswer,
 		ToolCalls: []ToolCall{{
 			ID:        "call_1",
 			Name:      "run_shell",
@@ -64,7 +65,7 @@ func TestAdaptStreamClient_WrapsUnaryResponseIntoEvents(t *testing.T) {
 	if len(events) != 4 {
 		t.Fatalf("expected 4 events, got %d", len(events))
 	}
-	if events[0].Type != EventContentDelta || events[0].Content != "hello" {
+	if events[0].Type != EventContentDelta || events[0].Content != "hello" || events[0].Phase != MessagePhaseFinalAnswer {
 		t.Fatalf("unexpected first event: %+v", events[0])
 	}
 	if events[1].Type != EventToolUseStart || events[1].ToolCall == nil || events[1].ToolCall.ID != "call_1" {

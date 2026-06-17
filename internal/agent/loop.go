@@ -279,6 +279,7 @@ func RunToolLoop(
 			appendMessage(providers.ChatMessage{
 				Role:             "assistant",
 				Content:          result.Content,
+				Phase:            result.Phase,
 				ReasoningContent: result.ReasoningContent,
 				ReasoningBlocks:  cloneReasoningBlocks(result.ReasoningBlocks),
 			})
@@ -303,6 +304,7 @@ func RunToolLoop(
 		assistant := providers.ChatMessage{
 			Role:             "assistant",
 			Content:          result.Content,
+			Phase:            result.Phase,
 			ReasoningContent: result.ReasoningContent,
 			ReasoningBlocks:  cloneReasoningBlocks(result.ReasoningBlocks),
 			ToolCalls:        result.ToolCalls,

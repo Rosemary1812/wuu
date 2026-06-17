@@ -89,6 +89,31 @@ func TestThreadStateLeavesUnresolvedTextPhaseUnknown(t *testing.T) {
 	}
 }
 
+func TestThreadStateUsesProviderPhaseOnStreamingText(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+
+	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:    providers.EventContentDelta,
+		Content: "The result is clear.",
+		Phase:   providers.MessagePhaseFinalAnswer,
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 {
+		t.Fatalf("expected user and live assistant items, got %+v", turn.Items)
+	}
+	live := turn.Items[1]
+	if live.Phase != ThreadItemPhaseFinalAnswer {
+		t.Fatalf("streaming text should preserve provider phase, got %+v", live)
+	}
+	started, ok := out[0].params.(ItemStartedNotification)
+	if !ok || started.Item.Phase != ThreadItemPhaseFinalAnswer {
+		t.Fatalf("started notification should carry provider phase, got %#v", out[0].params)
+	}
+}
+
 func TestThreadStateCarriesToolCallDisplay(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
@@ -309,6 +334,26 @@ func TestTurnsFromHistoryMarksAssistantMessagePhases(t *testing.T) {
 	}
 	if len(phases) != 2 || phases[0] != ThreadItemPhaseCommentary || phases[1] != ThreadItemPhaseFinalAnswer {
 		t.Fatalf("unexpected assistant phases: %+v", phases)
+	}
+}
+
+func TestTurnsFromHistoryPreservesProviderAssistantPhase(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	turns := turnsFromHistory("thread", []providers.ChatMessage{
+		{Role: "user", Content: "inspect"},
+		{
+			Role:    "assistant",
+			Content: "I checked the files.",
+			Phase:   providers.MessagePhaseCommentary,
+		},
+	}, now)
+
+	if len(turns) != 1 || len(turns[0].Items) != 2 {
+		t.Fatalf("expected one turn with user and assistant, got %+v", turns)
+	}
+	item := turns[0].Items[1]
+	if item.Type != ThreadItemAgentMessage || item.Phase != ThreadItemPhaseCommentary {
+		t.Fatalf("history should preserve provider assistant phase, got %+v", item)
 	}
 }
 

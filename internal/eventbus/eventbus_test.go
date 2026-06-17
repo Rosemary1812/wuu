@@ -34,3 +34,19 @@ func TestAdaptStreamEventPreservesRequestContext(t *testing.T) {
 		t.Fatalf("request context changed during stream conversion: got %+v want %+v", stream.RequestContext, summary)
 	}
 }
+
+func TestAdaptStreamEventPreservesTextPhase(t *testing.T) {
+	event := AdaptStreamEvent(providers.StreamEvent{
+		Type:    providers.EventContentDelta,
+		Content: "answer",
+		Phase:   providers.MessagePhaseFinalAnswer,
+	})
+	if event.Type != TextDelta || event.Content != "answer" || event.Phase != providers.MessagePhaseFinalAnswer {
+		t.Fatalf("text phase not adapted: %+v", event)
+	}
+
+	stream := ToStreamEvent(event)
+	if stream.Type != providers.EventContentDelta || stream.Content != "answer" || stream.Phase != providers.MessagePhaseFinalAnswer {
+		t.Fatalf("text phase not converted back: %+v", stream)
+	}
+}

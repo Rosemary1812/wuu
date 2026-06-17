@@ -396,6 +396,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 
 	pending := newResponsesPendingTools()
 	var sawToolCall bool
+	var currentTextPhase providers.MessagePhase
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -426,11 +427,17 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 		switch event.Type {
 		case "response.output_text.delta":
 			if event.Delta != "" {
-				ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta}
+				ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta, Phase: currentTextPhase}
 			}
 
 		case "response.output_item.added":
-			if event.Item.Type == "function_call" {
+			switch event.Item.Type {
+			case "message":
+				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
+					currentTextPhase = phase
+					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase}
+				}
+			case "function_call":
 				sawToolCall = true
 				pending.start(event.Item, event.outputIndex(), ch)
 			}
@@ -444,7 +451,13 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 			pending.setArguments(event)
 
 		case "response.output_item.done":
-			if event.Item.Type == "function_call" {
+			switch event.Item.Type {
+			case "message":
+				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
+					currentTextPhase = phase
+					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase}
+				}
+			case "function_call":
 				sawToolCall = true
 				pt := pending.start(event.Item, event.outputIndex(), ch)
 				pending.emitEnd(pt, event.Item.Arguments, ch)
@@ -720,9 +733,13 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 
 	var contentParts []string
 	calls := make([]providers.ToolCall, 0)
+	var phase providers.MessagePhase
 	for _, item := range r.Output {
 		switch item.Type {
 		case "message":
+			if itemPhase := providers.NormalizeMessagePhase(item.Phase); itemPhase != "" {
+				phase = itemPhase
+			}
 			content, err := parseResponsesContent(item.Content)
 			if err != nil {
 				return providers.ChatResponse{}, err
@@ -751,6 +768,7 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 
 	return providers.ChatResponse{
 		Content:    strings.Join(contentParts, "\n"),
+		Phase:      phase,
 		ToolCalls:  calls,
 		Usage:      r.Usage.asTokenUsage(),
 		StopReason: stopReason,
@@ -762,6 +780,7 @@ type responsesOutputItem struct {
 	ID        string          `json:"id"`
 	Type      string          `json:"type"`
 	Role      string          `json:"role,omitempty"`
+	Phase     string          `json:"phase,omitempty"`
 	Status    string          `json:"status,omitempty"`
 	Content   json.RawMessage `json:"content,omitempty"`
 	CallID    string          `json:"call_id,omitempty"`

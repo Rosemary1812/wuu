@@ -37,6 +37,7 @@ type persistedFile struct {
 type persistedMessage struct {
 	Role             string                     `json:"role"`
 	Content          string                     `json:"content"`
+	Phase            string                     `json:"phase,omitempty"`
 	ClientID         string                     `json:"client_id,omitempty"`
 	Steered          bool                       `json:"steered,omitempty"`
 	ReasoningContent string                     `json:"reasoning_content,omitempty"`
@@ -89,6 +90,7 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 			Name:             rec.Name,
 			ClientID:         rec.ClientID,
 			Content:          rec.Content,
+			Phase:            providers.NormalizeMessagePhase(rec.Phase),
 			Steered:          rec.Steered,
 			ReasoningContent: rec.ReasoningContent,
 			ReasoningBlocks:  append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
@@ -247,6 +249,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 	out := persistedMessage{
 		Role:             strings.ToLower(msg.Role),
 		Content:          msg.Content,
+		Phase:            string(msg.Phase),
 		ClientID:         msg.ClientID,
 		Steered:          msg.Steered,
 		ReasoningContent: msg.ReasoningContent,
@@ -400,6 +403,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 	return sessionstore.HistoryRecord{
 		Role:             rec.Role,
 		Content:          rec.Content,
+		Phase:            rec.Phase,
 		ClientID:         rec.ClientID,
 		Steered:          rec.Steered,
 		ReasoningContent: rec.ReasoningContent,
@@ -419,6 +423,7 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 	out := persistedMessage{
 		Role:             rec.Role,
 		Content:          rec.Content,
+		Phase:            rec.Phase,
 		ClientID:         rec.ClientID,
 		Steered:          rec.Steered,
 		ReasoningContent: rec.ReasoningContent,

@@ -400,6 +400,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		usage           *providers.TokenUsage
 		stopReason      string
 		truncated       bool
+		messagePhase    providers.MessagePhase
 	)
 
 	var toolRuntime *TurnToolRuntime
@@ -425,7 +426,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			toolRuntime = NewTurnToolRuntime(s.tools)
 		}
 	}
-	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &usage, &stopReason, &truncated, resetRuntime); err != nil {
+	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &usage, &stopReason, &truncated, resetRuntime); err != nil {
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
 		}
@@ -472,6 +473,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			s.onEvent(providers.StreamEvent{
 				Type:    providers.EventContentDelta,
 				Content: resp.Content,
+				Phase:   resp.Phase,
 			})
 			s.onEvent(providers.StreamEvent{
 				Type:       providers.EventDone,
@@ -481,6 +483,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		}
 		return StepResult{
 			Content:          resp.Content,
+			Phase:            resp.Phase,
 			ReasoningContent: resp.ReasoningContent,
 			ReasoningBlocks:  cloneReasoningBlocks(resp.ReasoningBlocks),
 			ToolCalls:        fbToolCalls,
@@ -496,6 +499,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 
 	return StepResult{
 		Content:          contentBuf.String(),
+		Phase:            messagePhase,
 		ReasoningContent: thinkingBuf.String(),
 		ReasoningBlocks:  cloneReasoningBlocks(reasoningBlocks),
 		ToolCalls:        toolCalls,
@@ -559,6 +563,7 @@ func (s *streamStep) runStreamWithReconnect(
 	thinkingBuf *strings.Builder,
 	reasoningBlocks *[]providers.ReasoningBlock,
 	pendingTools map[int]*providers.ToolCall,
+	messagePhase *providers.MessagePhase,
 	usage **providers.TokenUsage,
 	stopReason *string,
 	truncated *bool,
@@ -606,6 +611,7 @@ func (s *streamStep) runStreamWithReconnect(
 		contentBuf.Reset()
 		thinkingBuf.Reset()
 		*reasoningBlocks = nil
+		*messagePhase = ""
 		*usage = nil
 		*stopReason = ""
 		*truncated = false
@@ -711,6 +717,16 @@ func (s *streamStep) runStreamWithReconnect(
 		for event := range ch {
 			switch event.Type {
 			case providers.EventContentDelta:
+				if event.Phase != "" {
+					*messagePhase = event.Phase
+				}
+				contentBuf.WriteString(event.Content)
+
+			case providers.EventContentReplace:
+				if event.Phase != "" {
+					*messagePhase = event.Phase
+				}
+				contentBuf.Reset()
 				contentBuf.WriteString(event.Content)
 
 			case providers.EventThinkingDelta:
