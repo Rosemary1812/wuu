@@ -57,7 +57,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"asked for a sandbox. Do not use a worktree just because the task involves writing " +
 			"files; small additive or clearly disjoint edits can share the current repo when shared visibility helps. " +
 			"Always include a short description (3-5 words) summarizing what the agent will do. " +
-			"Each fresh subagent_type invocation starts without conversation context, so prompt must be complete. " +
+			"Each fresh subagent_type invocation starts without conversation context, so the `prompt` parameter must be a complete brief. " +
 			"Forks inherit your current context; do not use a fork when a fresh independent second opinion is needed. " +
 			"Use run_in_background=true when you have genuinely independent work to do in parallel. Otherwise keep the " +
 			"agent in the foreground so its result can inform your next step. Verification agents always run in the background. " +
@@ -150,7 +150,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 	agentProfile := strings.TrimSpace(args.AgentProfile)
 	if strings.EqualFold(agentProfile, config.DefaultAgentName) {
-		return "", errors.New("spawn_agent: agent_profile \"default\" is reserved for ordinary temporary sessions; omit agent_profile or choose a named profile")
+		return "", errors.New("spawn_agent: agent_profile \"default\" is reserved for ordinary temporary sessions. Omit agent_profile or choose a named profile")
 	}
 	subagentType := strings.TrimSpace(args.SubagentType)
 	if subagentType == "" {
