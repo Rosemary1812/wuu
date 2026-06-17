@@ -55,6 +55,7 @@ export type InitializeResult = {
   workspace_root: string;
   tool_policy?: ToolPolicySummary;
   permissions?: PermissionSummary;
+  extension_trust?: ExtensionTrustSummary;
   model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
 };
@@ -74,6 +75,28 @@ export type PermissionSummary = {
   approvals_reviewer?: string;
 };
 
+export type ExtensionTrustSummary = {
+  main_session?: ExtensionSessionTrustSummary;
+  reviewer_session?: ExtensionSessionTrustSummary;
+};
+
+export type ExtensionSessionTrustSummary = {
+  mcp?: ExtensionSurfaceTrustSummary;
+  hooks?: ExtensionSurfaceTrustSummary;
+  plugins?: ExtensionSurfaceTrustSummary;
+  skills?: ExtensionSurfaceTrustSummary;
+  workflows?: ExtensionSurfaceTrustSummary;
+  external_tools?: ExtensionSurfaceTrustSummary;
+};
+
+export type ExtensionSurfaceTrustSummary = {
+  allowed: boolean;
+  active: boolean;
+  count?: number;
+  known_tools?: number;
+  visible_tools?: number;
+};
+
 export type ConfigModelUpdateResult = {
   provider: string;
   model: string;
@@ -81,6 +104,7 @@ export type ConfigModelUpdateResult = {
   variant?: string;
   tool_policy?: ToolPolicySummary;
   permissions?: PermissionSummary;
+  extension_trust?: ExtensionTrustSummary;
   model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
 };

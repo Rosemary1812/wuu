@@ -110,31 +110,33 @@ type CoreBuildInfo struct {
 }
 
 type InitializeResult struct {
-	ProtocolVersion string             `json:"protocol_version"`
-	Core            CoreBuildInfo      `json:"core"`
-	Provider        string             `json:"provider"`
-	Model           string             `json:"model"`
-	Effort          string             `json:"effort,omitempty"`
-	Variant         string             `json:"variant,omitempty"`
-	WorkspaceRoot   string             `json:"workspace_root"`
-	ToolPolicy      ToolPolicySummary  `json:"tool_policy"`
-	Permissions     PermissionSummary  `json:"permissions"`
-	ModelRoles      []ModelRoleSummary `json:"model_roles,omitempty"`
-	Providers       []ProviderSummary  `json:"providers,omitempty"`
+	ProtocolVersion string                `json:"protocol_version"`
+	Core            CoreBuildInfo         `json:"core"`
+	Provider        string                `json:"provider"`
+	Model           string                `json:"model"`
+	Effort          string                `json:"effort,omitempty"`
+	Variant         string                `json:"variant,omitempty"`
+	WorkspaceRoot   string                `json:"workspace_root"`
+	ToolPolicy      ToolPolicySummary     `json:"tool_policy"`
+	Permissions     PermissionSummary     `json:"permissions"`
+	ExtensionTrust  ExtensionTrustSummary `json:"extension_trust"`
+	ModelRoles      []ModelRoleSummary    `json:"model_roles,omitempty"`
+	Providers       []ProviderSummary     `json:"providers,omitempty"`
 }
 
 type ConfigReadResult struct {
-	Provider      string             `json:"provider"`
-	Model         string             `json:"model"`
-	Effort        string             `json:"effort,omitempty"`
-	Variant       string             `json:"variant,omitempty"`
-	ConfigPath    string             `json:"config_path"`
-	WorkspaceRoot string             `json:"workspace_root"`
-	SessionDir    string             `json:"session_dir"`
-	ToolPolicy    ToolPolicySummary  `json:"tool_policy"`
-	Permissions   PermissionSummary  `json:"permissions"`
-	ModelRoles    []ModelRoleSummary `json:"model_roles,omitempty"`
-	Providers     []ProviderSummary  `json:"providers,omitempty"`
+	Provider       string                `json:"provider"`
+	Model          string                `json:"model"`
+	Effort         string                `json:"effort,omitempty"`
+	Variant        string                `json:"variant,omitempty"`
+	ConfigPath     string                `json:"config_path"`
+	WorkspaceRoot  string                `json:"workspace_root"`
+	SessionDir     string                `json:"session_dir"`
+	ToolPolicy     ToolPolicySummary     `json:"tool_policy"`
+	Permissions    PermissionSummary     `json:"permissions"`
+	ExtensionTrust ExtensionTrustSummary `json:"extension_trust"`
+	ModelRoles     []ModelRoleSummary    `json:"model_roles,omitempty"`
+	Providers      []ProviderSummary     `json:"providers,omitempty"`
 }
 
 type ToolPolicySummary struct {
@@ -152,6 +154,28 @@ type PermissionSummary struct {
 	ApprovalsReviewer string `json:"approvals_reviewer,omitempty"`
 }
 
+type ExtensionTrustSummary struct {
+	MainSession     ExtensionSessionTrustSummary `json:"main_session"`
+	ReviewerSession ExtensionSessionTrustSummary `json:"reviewer_session"`
+}
+
+type ExtensionSessionTrustSummary struct {
+	MCP           ExtensionSurfaceTrustSummary `json:"mcp"`
+	Hooks         ExtensionSurfaceTrustSummary `json:"hooks"`
+	Plugins       ExtensionSurfaceTrustSummary `json:"plugins"`
+	Skills        ExtensionSurfaceTrustSummary `json:"skills"`
+	Workflows     ExtensionSurfaceTrustSummary `json:"workflows"`
+	ExternalTools ExtensionSurfaceTrustSummary `json:"external_tools"`
+}
+
+type ExtensionSurfaceTrustSummary struct {
+	Allowed      bool `json:"allowed"`
+	Active       bool `json:"active"`
+	Count        int  `json:"count,omitempty"`
+	KnownTools   int  `json:"known_tools,omitempty"`
+	VisibleTools int  `json:"visible_tools,omitempty"`
+}
+
 type ConfigModelUpdateParams struct {
 	Provider          string  `json:"provider,omitempty"`
 	Model             string  `json:"model"`
@@ -165,14 +189,15 @@ type ConfigModelUpdateParams struct {
 }
 
 type ConfigModelUpdateResult struct {
-	Provider    string             `json:"provider"`
-	Model       string             `json:"model"`
-	Effort      string             `json:"effort,omitempty"`
-	Variant     string             `json:"variant,omitempty"`
-	ToolPolicy  ToolPolicySummary  `json:"tool_policy"`
-	Permissions PermissionSummary  `json:"permissions"`
-	ModelRoles  []ModelRoleSummary `json:"model_roles,omitempty"`
-	Providers   []ProviderSummary  `json:"providers,omitempty"`
+	Provider       string                `json:"provider"`
+	Model          string                `json:"model"`
+	Effort         string                `json:"effort,omitempty"`
+	Variant        string                `json:"variant,omitempty"`
+	ToolPolicy     ToolPolicySummary     `json:"tool_policy"`
+	Permissions    PermissionSummary     `json:"permissions"`
+	ExtensionTrust ExtensionTrustSummary `json:"extension_trust"`
+	ModelRoles     []ModelRoleSummary    `json:"model_roles,omitempty"`
+	Providers      []ProviderSummary     `json:"providers,omitempty"`
 }
 
 type ConfigCodexModelsParams struct {

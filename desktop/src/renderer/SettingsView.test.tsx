@@ -141,4 +141,40 @@ describe("SettingsView About section", () => {
     });
     expect(text()).toContain("未连接");
   });
+
+  it("renders extension trust summary", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const { text } = renderSettings({
+      initialized: baseInitialized({
+        extension_trust: {
+          main_session: {
+            mcp: { allowed: true, active: false },
+            hooks: { allowed: true, active: true },
+            plugins: { allowed: true, active: true, count: 1 },
+            skills: { allowed: true, active: true, count: 2, known_tools: 1, visible_tools: 1 },
+            workflows: { allowed: true, active: false },
+            external_tools: { allowed: true, active: false },
+          },
+          reviewer_session: {
+            mcp: { allowed: false, active: false },
+            hooks: { allowed: false, active: false },
+            plugins: { allowed: false, active: false },
+            skills: { allowed: false, active: false },
+            workflows: { allowed: false, active: false },
+            external_tools: { allowed: false, active: false },
+          },
+        },
+      }),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(text()).toContain("扩展边界");
+    expect(text()).toContain("Plugins 1");
+    expect(text()).toContain("Skills 2");
+    expect(text()).toContain("Reviewer：关闭扩展");
+  });
 });

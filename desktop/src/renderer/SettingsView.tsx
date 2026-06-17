@@ -9,7 +9,15 @@ import {
   useState
 } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import type { DesktopBuildInfo, InitializeResult, ProviderSummary, RuntimeConnectionUpdate } from "../shared/protocol";
+import type {
+  DesktopBuildInfo,
+  ExtensionSessionTrustSummary,
+  ExtensionSurfaceTrustSummary,
+  ExtensionTrustSummary,
+  InitializeResult,
+  ProviderSummary,
+  RuntimeConnectionUpdate
+} from "../shared/protocol";
 import { providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
@@ -395,6 +403,13 @@ export function SettingsView({
                   </span>
                   <span className="settings-about-value">{initialized?.protocol_version ?? "—"}</span>
                 </div>
+                <div className="settings-row">
+                  <span>
+                    <strong>扩展边界</strong>
+                    <small>MCP、Hooks、Plugins、Skills 和 Workflows 的运行时状态</small>
+                  </span>
+                  <span className="settings-about-value">{formatExtensionTrust(initialized?.extension_trust)}</span>
+                </div>
               </dl>
             </div>
           </section>
@@ -426,6 +441,41 @@ function formatCoreBuild(core: InitializeResult["core"]): string {
     pieces.push(formatBuildDate(core.date));
   }
   return pieces.join(" · ");
+}
+
+function formatExtensionTrust(trust?: ExtensionTrustSummary): string {
+  if (!trust) {
+    return "未连接";
+  }
+  const active: string[] = [];
+  appendExtensionSurface(active, "MCP", trust.main_session?.mcp);
+  appendExtensionSurface(active, "Hooks", trust.main_session?.hooks);
+  appendExtensionSurface(active, "Plugins", trust.main_session?.plugins);
+  appendExtensionSurface(active, "Skills", trust.main_session?.skills);
+  appendExtensionSurface(active, "Workflows", trust.main_session?.workflows);
+  const mainSummary = active.length > 0 ? active.join("，") : "无活跃扩展";
+  const reviewerSummary = extensionSessionAllowsAny(trust.reviewer_session) ? "Reviewer：允许部分扩展" : "Reviewer：关闭扩展";
+  return `主会话：${mainSummary} · ${reviewerSummary}`;
+}
+
+function appendExtensionSurface(parts: string[], label: string, surface?: ExtensionSurfaceTrustSummary): void {
+  if (!surface?.active) {
+    return;
+  }
+  const count = surface.count ?? surface.known_tools ?? surface.visible_tools ?? 0;
+  const disabled = surface.allowed ? "" : "（已禁用）";
+  parts.push(count > 0 ? `${label} ${count}${disabled}` : `${label}${disabled}`);
+}
+
+function extensionSessionAllowsAny(session?: ExtensionSessionTrustSummary): boolean {
+  return Boolean(
+    session?.mcp?.allowed ||
+      session?.hooks?.allowed ||
+      session?.plugins?.allowed ||
+      session?.skills?.allowed ||
+      session?.workflows?.allowed ||
+      session?.external_tools?.allowed
+  );
 }
 
 function providerDisplayLabels(providers: ProviderSummary[]): Map<string, string> {

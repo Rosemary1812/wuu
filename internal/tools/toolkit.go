@@ -51,6 +51,7 @@ type Toolkit struct {
 	activatedDeferredTools map[string]struct{}
 	toolPolicy             ToolPolicy
 	permissionBoundary     PermissionBoundary
+	extensionSurfacePolicy ExtensionSurfacePolicy
 	autoModeClassifier     AutoModeClassifier
 	approvalReviewer       ToolApprovalReviewer
 	approvalStore          *ToolApprovalStore
@@ -119,13 +120,14 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	env.toolTelemetry = toolTelemetry{}
 
 	clone := &Toolkit{
-		env:                &env,
-		toolPolicy:         t.toolPolicy,
-		permissionBoundary: t.permissionBoundary,
-		autoModeClassifier: t.autoModeClassifier,
-		approvalReviewer:   t.approvalReviewer,
-		approvalStore:      t.approvalStore,
-		mcpManager:         t.mcpManager,
+		env:                    &env,
+		toolPolicy:             t.toolPolicy,
+		permissionBoundary:     t.permissionBoundary,
+		extensionSurfacePolicy: t.extensionSurfacePolicy,
+		autoModeClassifier:     t.autoModeClassifier,
+		approvalReviewer:       t.approvalReviewer,
+		approvalStore:          t.approvalStore,
+		mcpManager:             t.mcpManager,
 	}
 	if len(t.disabledTools) > 0 {
 		clone.disabledTools = make(map[string]struct{}, len(t.disabledTools))
@@ -348,6 +350,12 @@ func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
 // The zero value leaves the legacy unrestricted behavior in place.
 func (t *Toolkit) SetPermissionBoundary(boundary PermissionBoundary) {
 	t.permissionBoundary = boundary
+}
+
+// SetExtensionSurfacePolicy installs the runtime trust policy for extension
+// backed tools such as MCP, skills, and workflows. The zero value allows all.
+func (t *Toolkit) SetExtensionSurfacePolicy(policy ExtensionSurfacePolicy) {
+	t.extensionSurfacePolicy = policy
 }
 
 // SetAutoModeClassifier installs the classifier used by the auto permission

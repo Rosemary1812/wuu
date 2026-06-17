@@ -19,7 +19,9 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
+	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -27,6 +29,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 type fakeClient struct {
@@ -196,6 +199,49 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	}
 	if configResult.ToolPolicy.Profile != "balanced" || configResult.ToolPolicy.Risks["high"] != "deny" {
 		t.Fatalf("config/read missing tool policy summary: %+v", configResult.ToolPolicy)
+	}
+}
+
+func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("New toolkit: %v", err)
+	}
+	rt.Toolkit = kit
+	rt.Skills = []skills.Skill{{Name: "docs", Description: "Docs"}}
+	rt.Workflows = []workflow.Definition{{Name: "ship", Description: "Ship"}}
+	rt.Plugins = []pluginpkg.Plugin{{Manifest: pluginpkg.Manifest{ID: "compose-kit"}}}
+	rt.HookDispatcher = hooks.NewDispatcher(hooks.NewRegistry(map[hooks.Event][]hooks.HookConfig{
+		hooks.PreToolUse: {{Command: "true"}},
+	}))
+	kit.SetSkills(rt.Skills)
+	kit.SetWorkflows(rt.Workflows)
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[InitializeResult](t, responseByID(t, msgs, "1")["result"])
+	main := result.ExtensionTrust.MainSession
+	if !main.Skills.Allowed || !main.Skills.Active || main.Skills.Count != 1 || main.Skills.KnownTools == 0 {
+		t.Fatalf("unexpected skills trust summary: %+v", main.Skills)
+	}
+	if !main.Workflows.Allowed || !main.Workflows.Active || main.Workflows.Count != 1 || main.Workflows.KnownTools == 0 {
+		t.Fatalf("unexpected workflow trust summary: %+v", main.Workflows)
+	}
+	if !main.Hooks.Allowed || !main.Hooks.Active {
+		t.Fatalf("unexpected hooks trust summary: %+v", main.Hooks)
+	}
+	if !main.Plugins.Allowed || !main.Plugins.Active || main.Plugins.Count != 1 {
+		t.Fatalf("unexpected plugins trust summary: %+v", main.Plugins)
+	}
+	reviewer := result.ExtensionTrust.ReviewerSession
+	if reviewer.MCP.Allowed || reviewer.Hooks.Allowed || reviewer.Plugins.Allowed || reviewer.Skills.Allowed || reviewer.Workflows.Allowed || reviewer.ExternalTools.Allowed {
+		t.Fatalf("reviewer extension surfaces should be denied by default: %+v", reviewer)
 	}
 }
 

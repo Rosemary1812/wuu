@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
@@ -32,31 +33,33 @@ func (s *Server) handleInitialize(req Request) error {
 			Date:    core.Date,
 			Dirty:   core.Dirty,
 		},
-		Provider:      s.rt.ProviderName,
-		Model:         s.rt.Model,
-		Effort:        s.currentDisplayEffort(),
-		Variant:       s.currentVariant(),
-		WorkspaceRoot: s.rt.RootDir,
-		ToolPolicy:    s.currentToolPolicySummary(),
-		Permissions:   s.currentPermissionSummary(),
-		ModelRoles:    s.currentModelRoleSummaries(),
-		Providers:     s.providerSummaries(),
+		Provider:       s.rt.ProviderName,
+		Model:          s.rt.Model,
+		Effort:         s.currentDisplayEffort(),
+		Variant:        s.currentVariant(),
+		WorkspaceRoot:  s.rt.RootDir,
+		ToolPolicy:     s.currentToolPolicySummary(),
+		Permissions:    s.currentPermissionSummary(),
+		ExtensionTrust: s.currentExtensionTrustSummary(),
+		ModelRoles:     s.currentModelRoleSummaries(),
+		Providers:      s.providerSummaries(),
 	}, nil)
 }
 
 func (s *Server) handleConfigRead(req Request) error {
 	return s.writeResponse(req.ID, ConfigReadResult{
-		Provider:      s.rt.ProviderName,
-		Model:         s.rt.Model,
-		Effort:        s.currentDisplayEffort(),
-		Variant:       s.currentVariant(),
-		ConfigPath:    s.rt.ConfigPath,
-		WorkspaceRoot: s.rt.RootDir,
-		SessionDir:    s.rt.SessionDir,
-		ToolPolicy:    s.currentToolPolicySummary(),
-		Permissions:   s.currentPermissionSummary(),
-		ModelRoles:    s.currentModelRoleSummaries(),
-		Providers:     s.providerSummaries(),
+		Provider:       s.rt.ProviderName,
+		Model:          s.rt.Model,
+		Effort:         s.currentDisplayEffort(),
+		Variant:        s.currentVariant(),
+		ConfigPath:     s.rt.ConfigPath,
+		WorkspaceRoot:  s.rt.RootDir,
+		SessionDir:     s.rt.SessionDir,
+		ToolPolicy:     s.currentToolPolicySummary(),
+		Permissions:    s.currentPermissionSummary(),
+		ExtensionTrust: s.currentExtensionTrustSummary(),
+		ModelRoles:     s.currentModelRoleSummaries(),
+		Providers:      s.providerSummaries(),
 	}, nil)
 }
 
@@ -114,6 +117,65 @@ func (s *Server) currentPermissionSummary() PermissionSummary {
 		ApprovalPolicy:    strings.TrimSpace(permissions.ApprovalPolicy),
 		ApprovalsReviewer: strings.TrimSpace(permissions.ApprovalsReviewer),
 	}
+}
+
+func (s *Server) currentExtensionTrustSummary() ExtensionTrustSummary {
+	main := ExtensionSessionTrustSummary{}
+	if s != nil && s.rt != nil {
+		toolStates := tools.ExtensionToolSurfaceStates{}
+		if s.rt.Toolkit != nil {
+			toolStates = s.rt.Toolkit.ExtensionToolSurfaceStates()
+		}
+		main.MCP = extensionSurfaceFromToolState(toolStates.MCP, toolStates.MCP.KnownTools > 0, toolStates.MCP.KnownTools)
+		main.Skills = extensionSurfaceFromToolState(toolStates.Skills, len(s.rt.Skills) > 0, len(s.rt.Skills))
+		main.Workflows = extensionSurfaceFromToolState(toolStates.Workflows, len(s.rt.Workflows) > 0, len(s.rt.Workflows))
+		main.Hooks = ExtensionSurfaceTrustSummary{Allowed: s.rt.HookDispatcher != nil, Active: hookDispatcherHasAny(s.rt.HookDispatcher)}
+		main.Plugins = ExtensionSurfaceTrustSummary{Allowed: true, Active: len(s.rt.Plugins) > 0, Count: len(s.rt.Plugins)}
+		main.ExternalTools = main.MCP
+	}
+	reviewer := ExtensionSessionTrustSummary{
+		MCP:           ExtensionSurfaceTrustSummary{Allowed: false, Active: false},
+		Hooks:         ExtensionSurfaceTrustSummary{Allowed: false, Active: false},
+		Plugins:       ExtensionSurfaceTrustSummary{Allowed: false, Active: false},
+		Skills:        ExtensionSurfaceTrustSummary{Allowed: false, Active: false},
+		Workflows:     ExtensionSurfaceTrustSummary{Allowed: false, Active: false},
+		ExternalTools: ExtensionSurfaceTrustSummary{Allowed: false, Active: false},
+	}
+	return ExtensionTrustSummary{
+		MainSession:     main,
+		ReviewerSession: reviewer,
+	}
+}
+
+func extensionSurfaceFromToolState(state tools.ExtensionToolSurfaceState, active bool, count int) ExtensionSurfaceTrustSummary {
+	return ExtensionSurfaceTrustSummary{
+		Allowed:      state.Allowed,
+		Active:       active,
+		Count:        count,
+		KnownTools:   state.KnownTools,
+		VisibleTools: state.VisibleTools,
+	}
+}
+
+func hookDispatcherHasAny(dispatcher *hooks.Dispatcher) bool {
+	if dispatcher == nil {
+		return false
+	}
+	for _, event := range []hooks.Event{
+		hooks.PreToolUse,
+		hooks.PostToolUse,
+		hooks.PostToolUseFailure,
+		hooks.UserPromptSubmit,
+		hooks.SessionStart,
+		hooks.SessionEnd,
+		hooks.Stop,
+		hooks.FileChanged,
+	} {
+		if dispatcher.HasHooks(event) {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneStringMap(in map[string]string) map[string]string {
@@ -343,14 +405,15 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
-		Provider:    resolvedName,
-		Model:       model,
-		Effort:      effort,
-		Variant:     selection.Variant,
-		ToolPolicy:  s.currentToolPolicySummary(),
-		Permissions: s.currentPermissionSummary(),
-		ModelRoles:  s.currentModelRoleSummaries(),
-		Providers:   s.providerSummaries(),
+		Provider:       resolvedName,
+		Model:          model,
+		Effort:         effort,
+		Variant:        selection.Variant,
+		ToolPolicy:     s.currentToolPolicySummary(),
+		Permissions:    s.currentPermissionSummary(),
+		ExtensionTrust: s.currentExtensionTrustSummary(),
+		ModelRoles:     s.currentModelRoleSummaries(),
+		Providers:      s.providerSummaries(),
 	}, nil)
 }
 

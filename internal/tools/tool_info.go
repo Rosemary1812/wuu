@@ -94,6 +94,9 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if t.isToolDisabled(name) {
 		return ToolExposureHidden
 	}
+	if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
+		return ToolExposureHidden
+	}
 	if t.isDeferredToolActive(name) {
 		return ToolExposureDirect
 	}

@@ -125,6 +125,13 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	approvalRef := ""
 	approvalReview := ToolApprovalReview{}
 
+	if err := t.extensionSurfacePolicy.Check(info); err != nil {
+		decision.Action = ToolPolicyDeny
+		decision.Reason = "extension surface policy"
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		return "", err
+	}
+
 	if err := t.permissionBoundary.Check(info); err != nil {
 		decision.Action = ToolPolicyDeny
 		decision.Reason = "permission boundary"

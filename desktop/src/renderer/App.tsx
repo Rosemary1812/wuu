@@ -3891,6 +3891,7 @@ export function App(): JSX.Element {
               variant: updated.variant ?? "",
               tool_policy: updated.tool_policy ?? current.initialized.tool_policy,
               permissions: updated.permissions ?? current.initialized.permissions,
+              extension_trust: updated.extension_trust ?? current.initialized.extension_trust,
               providers: updated.providers ?? current.initialized.providers,
             }
           : current.initialized;
