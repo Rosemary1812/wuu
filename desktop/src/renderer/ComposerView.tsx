@@ -417,7 +417,7 @@ export function Composer({
           <textarea
             ref={textareaRef}
             value={prompt}
-            placeholder={readOnly ? "子任务会话只读" : hasAttachments ? "添加描述" : "尽管问，或输入 / 选择命令"}
+            placeholder={readOnly ? "子任务会话只读" : hasAttachments ? "添加描述" : "向 wuu 提问，或输入 / 选择命令"}
             disabled={readOnly}
             aria-readonly={readOnly}
             aria-controls={slashMenuOpen ? slashMenuID : undefined}
