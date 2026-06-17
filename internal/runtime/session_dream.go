@@ -218,7 +218,11 @@ func (e *sessionDreamExecutor) Execute(ctx context.Context, call providers.ToolC
 	if tool == nil {
 		return "", fmt.Errorf("background dream: tool %q is not available", call.Name)
 	}
-	return tool.Execute(ctx, call.Arguments)
+	result, err := tool.Execute(ctx, call.Arguments)
+	if err == nil && call.Name == "session_memory" {
+		_ = recordBackgroundMemoryEvent("session_dream", call.Name, result)
+	}
+	return result, err
 }
 
 func (e *sessionDreamExecutor) ToolMetadata(call providers.ToolCall) (agent.ToolMetadata, bool) {

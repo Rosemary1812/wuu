@@ -192,7 +192,11 @@ func (e *profileMemoryOnlyExecutor) Execute(ctx context.Context, call providers.
 	if tool == nil {
 		return "", fmt.Errorf("background memory review: tool %q is not available", call.Name)
 	}
-	return tool.Execute(ctx, call.Arguments)
+	result, err := tool.Execute(ctx, call.Arguments)
+	if err == nil && call.Name == "write_memory" {
+		_ = recordBackgroundMemoryEvent("profile_memory_review", call.Name, result)
+	}
+	return result, err
 }
 
 func (e *profileMemoryOnlyExecutor) ToolMetadata(call providers.ToolCall) (agent.ToolMetadata, bool) {

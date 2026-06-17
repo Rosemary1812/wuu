@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -117,6 +118,23 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	}
 	if !exists || !strings.Contains(content, "visual QA before tagging") {
 		t.Fatalf("project memory not written: exists=%t content=%q", exists, content)
+	}
+	eventPath := filepath.Join(workspaceState, "memory", "events.jsonl")
+	eventData, err := os.ReadFile(eventPath)
+	if err != nil {
+		t.Fatalf("read background memory events: %v", err)
+	}
+	eventText := string(eventData)
+	for _, want := range []string{
+		`"source":"session_dream"`,
+		`"tool":"session_memory"`,
+		`"target":"project_memory"`,
+		`"path":"` + filepath.Join(workspaceState, "memory", "MEMORY.md") + `"`,
+		`"written":true`,
+	} {
+		if !strings.Contains(eventText, want) {
+			t.Fatalf("background memory event missing %q:\n%s", want, eventText)
+		}
 	}
 	state, err := sessionmemory.LoadDreamState(workspaceState)
 	if err != nil {

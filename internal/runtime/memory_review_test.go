@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -99,6 +101,22 @@ func TestProfileMemoryReview_RunWritesMemoryWithMemoryOnlyTools(t *testing.T) {
 	}
 	if !hasProfileMemoryTag(entries[0].Tags, "target:user") {
 		t.Fatalf("stored tags = %+v, want target:user", entries[0].Tags)
+	}
+	eventData, err := os.ReadFile(filepath.Join(filepath.Dir(provider.MarkdownPath()), "events.jsonl"))
+	if err != nil {
+		t.Fatalf("read background memory events: %v", err)
+	}
+	eventText := string(eventData)
+	for _, want := range []string{
+		`"source":"profile_memory_review"`,
+		`"tool":"write_memory"`,
+		`"target":"user"`,
+		`"path":"` + provider.MarkdownPath() + `"`,
+		`"written":true`,
+	} {
+		if !strings.Contains(eventText, want) {
+			t.Fatalf("background memory event missing %q:\n%s", want, eventText)
+		}
 	}
 	if len(client.requests) != 2 {
 		t.Fatalf("chat calls = %d, want 2", len(client.requests))
