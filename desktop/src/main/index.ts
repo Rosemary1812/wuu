@@ -44,8 +44,6 @@ import { WorkspaceFileService } from "./workspaceFiles";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 920;
-const MAIN_WINDOW_MIN_WIDTH = 980;
-const MAIN_WINDOW_MIN_HEIGHT = 920;
 registerRenderableFileScheme();
 
 let mainWindow: BrowserWindow | null = null;
@@ -154,8 +152,6 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: MAIN_WINDOW_DEFAULT_WIDTH,
     height: MAIN_WINDOW_DEFAULT_HEIGHT,
-    minWidth: MAIN_WINDOW_MIN_WIDTH,
-    minHeight: MAIN_WINDOW_MIN_HEIGHT,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 16 },
     backgroundColor: "#f6f6f4",
