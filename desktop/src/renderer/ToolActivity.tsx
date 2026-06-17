@@ -1,11 +1,8 @@
-import { ChevronDown } from "lucide-react";
-import { useEffect, useState, type CSSProperties } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import type { ThreadItem } from "../shared/protocol";
 import {
-  activitySummaryText,
   buildToolActivitySections,
   summarizeToolActivity,
-  type ToolActivitySection,
 } from "./ToolActivityHelpers";
 export type { JsonRecord } from "./ToolActivityHelpers";
 export {
@@ -21,11 +18,9 @@ const TOOL_ACTIVITY_REVEAL_INTERVAL_MS = 85;
 
 export function ToolActivityTimeline({
   items,
-  collapseWhenIdle = false,
   revealItems = false,
 }: {
   items: ThreadItem[];
-  collapseWhenIdle?: boolean;
   revealItems?: boolean;
 }): JSX.Element {
   const [visibleCount, setVisibleCount] = useState(() =>
@@ -55,12 +50,6 @@ export function ToolActivityTimeline({
     return () => window.clearTimeout(timer);
   }, [itemSignature, items.length, revealItems, visibleCount]);
 
-  if (items.length <= 1) {
-    return (
-      <ToolActivityRow items={items} collapseWhenIdle={collapseWhenIdle} />
-    );
-  }
-
   return (
     <div
       className="activity-timeline"
@@ -72,59 +61,52 @@ export function ToolActivityTimeline({
           key={item.id}
           style={{ "--activity-index": index } as CSSProperties}
         >
-          <ToolActivityRow
-            items={[item]}
-            collapseWhenIdle={collapseWhenIdle}
-          />
+          <ToolActivityRow items={[item]} />
         </div>
       ))}
     </div>
   );
 }
 
+// A single tool activity row is now one line of plain prose plus, when
+// there is an error, a single indented error line below it. We no longer
+// render a separate collapsible "details" block: in nearly every case
+// (list_files, read_file, grep, run_shell with a readable label) the
+// toggle summary and the detail command text were the same string, so
+// the previous toggle+details pair read as the same tool call shown
+// twice. Consolidating to one line removes the duplication; errors get
+// the only line below the summary, since they're the one piece of
+// information that genuinely is not already in the summary.
 export function ToolActivityRow({
   items,
-  collapseWhenIdle = false,
 }: {
   items: ThreadItem[];
-  collapseWhenIdle?: boolean;
 }): JSX.Element {
   const summary = summarizeToolActivity(items);
   const sections = buildToolActivitySections(items);
-  const summaryText = activitySummaryText(sections, summary);
-  const shouldExpandForStatus = summary.running || summary.failed;
-  const [expanded, setExpanded] = useState(
-    !collapseWhenIdle && shouldExpandForStatus,
-  );
-  const className = `activity-group${expanded ? " expanded" : ""}${summary.running ? " running" : ""}${
+
+  // Section detail wins over title: "查看 docs" is informative, while
+  // "查看" alone reads as a fragment waiting for a target. For sections
+  // that genuinely have no detail (e.g. "计划"), fall back to the title.
+  // Multiple sections of the same row join with "，".
+  const summaryText = sections
+    .map((s) => s.detail || s.title)
+    .filter(Boolean)
+    .join("，");
+
+  const errors = sections
+    .map((s) => s.error)
+    .filter((e): e is string => Boolean(e));
+
+  const className = `activity-group${summary.running ? " running" : ""}${
     summary.failed ? " failed" : ""
   }`;
 
-  useEffect(() => {
-    if (shouldExpandForStatus) {
-      setExpanded(true);
-      return;
-    }
-    if (collapseWhenIdle) {
-      const timer = window.setTimeout(() => setExpanded(false), 140);
-      return () => window.clearTimeout(timer);
-    }
-    return undefined;
-  }, [collapseWhenIdle, shouldExpandForStatus]);
-
   return (
     <article className={className}>
-      <button
-        className="activity-row activity-toggle"
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((open) => !open)}
-      >
+      <span className="activity-row activity-summary">
         <span className="activity-copy">
           <span>{summaryText}</span>
-          {summary.fileName ? (
-            <span className="activity-file">{summary.fileName}</span>
-          ) : null}
           {summary.additions > 0 ? (
             <span className="activity-add">+{summary.additions}</span>
           ) : null}
@@ -132,41 +114,16 @@ export function ToolActivityRow({
             <span className="activity-delete">-{summary.deletions}</span>
           ) : null}
         </span>
-        <ChevronDown className="activity-chevron" size={13} />
-      </button>
-      <div className="activity-details" aria-hidden={!expanded}>
-        <div className="activity-details-inner">
-          {sections.map((section) => (
-            <ToolActivitySectionView key={section.id} section={section} />
-          ))}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function ToolActivitySectionView({
-  section,
-}: {
-  section: ToolActivitySection;
-}): JSX.Element {
-  return (
-    <section className="activity-detail">
-      <div className="activity-detail-body">
-        <div className="activity-command-list">
-          {section.commands.map((command, index) => (
-            <div
-              className={`activity-command ${command.status}`}
-              key={`${section.id}-${index}`}
-            >
-              {command.text}
+      </span>
+      {errors.length > 0 ? (
+        <div className="activity-errors">
+          {errors.map((message, index) => (
+            <div className="activity-detail-error" key={`error-${index}`}>
+              {message}
             </div>
           ))}
         </div>
-        {section.error ? (
-          <div className="activity-detail-error">{section.error}</div>
-        ) : null}
-      </div>
-    </section>
+      ) : null}
+    </article>
   );
 }

@@ -258,11 +258,7 @@ function EntryRenderer({
   if (kind === "activity") {
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
       return (
-        <ToolActivityTimeline
-          items={[item]}
-          collapseWhenIdle={entry.collapseWhenIdle}
-          revealItems={streaming}
-        />
+        <ToolActivityTimeline items={[item]} revealItems={streaming} />
       );
     }
     return null;

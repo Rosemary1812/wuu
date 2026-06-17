@@ -167,6 +167,18 @@
   flex: 0 0 auto;
 }
 
+/* When the fold is expanded, the body shows every process row in full
+   — including the latest tool call that the header preview mirrors.
+   Showing the same line twice (header preview + body row) reads as
+   "search is happening twice" rather than one in-progress tool call.
+   Hide the header preview when expanded; the fold header still
+   carries the duration + status label, and the body has the full
+   record. When the fold is collapsed the preview is the only signal
+   the user gets, so it stays visible there. */
+.turn-process-fold.expanded .turn-process-preview {
+  display: none;
+}
+
 .turn-process-fold-body {
   display: flex;
   flex-direction: column;
@@ -2660,6 +2672,20 @@
 }
 
 .activity-details {
+  display: none;
+}
+
+/* Tool activity rows used to use a collapsible-details pattern: a
+   toggle button showed the section title and a hidden details block
+   rendered the matching command text. In nearly every case (list_files,
+   read_file, grep, run_shell with a readable label) the toggle summary
+   and the command text were identical strings, so the row read as the
+   same tool call shown twice. The panel was hidden via display: none
+   upstream and the collapse transition machinery below is no longer
+   reached, but kept commented so the original intent is documented if
+   a future caller needs to re-introduce the expander for genuinely
+   divergent summary/command text. */
+/* .activity-details {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
@@ -2675,7 +2701,7 @@
   grid-template-rows: 1fr;
   opacity: 1;
   transform: translateY(0);
-}
+} */
 
 .turn-process-stack {
   position: static;
@@ -2869,20 +2895,45 @@
   gap: 0 7px;
 }
 
+/* The summary is now a <span>, not a <button>. Inherit the same
+   inline-flex row used by .activity-row, drop the cursor / focus /
+   hover affordances that belonged to the click-to-expand toggle. */
+.activity-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+
 .activity-chevron {
   display: none;
 }
 
 .activity-details {
-  display: contents;
-  margin: 0;
+  /* The collapsible details panel no longer exists in this surface —
+     each tool activity row is a single line of prose plus, when
+     relevant, an error line below. Earlier versions had a toggle
+     button + collapsible details block that always rendered together
+     (because of a display:contents override that flattened the
+     details into the row). That made the same tool call appear twice
+     in the flow, which the user flagged as redundant. Consolidating
+     removes both the duplicate command line and the need for any
+     grid-template-rows collapse animation here. */
+  display: none;
 }
 
-.activity-details-inner {
-  display: block;
-  min-height: 0;
-  overflow: visible;
-  gap: 0;
+.activity-errors {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+  padding: 4px 0 0 10px;
 }
 
 .activity-detail {
