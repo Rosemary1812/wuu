@@ -2409,6 +2409,13 @@
   color: #8a8f94;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Match meta and preview font-size so all three share the same
+     text metrics and line up on one baseline. Without this, the
+     title silently inherits the body's --font-ui (13px) while
+     meta and preview are --font-sm (12px) — same row, different
+     baselines, reads as "not aligned". */
+  font-size: var(--font-sm);
+  line-height: var(--conversation-meta-line-height);
 }
 
 /* Text-first glyph: a small play-triangle (▶) that sits at the
@@ -2420,7 +2427,11 @@
   width: 12px;
   height: 12px;
   color: #a8acb0;
-  transform: translateY(1px);
+  /* Center on the flex line so the icon shares the visual center
+     of the surrounding text. The previous translateY(1px) hack
+     drifted out of sync with the dot's translateY(-1px), leaving
+     the glyph and dot at opposite offsets. */
+  align-self: center;
 }
 
 /* Live process indicator: a 6px pulsing dot rendered next to the
@@ -2434,7 +2445,10 @@
   background: #8a8f94;
   margin-right: 6px;
   vertical-align: middle;
-  transform: translateY(-1px);
+  /* Dropped the translateY(-1px) hack — it was compensating for a
+     baseline mismatch that no longer exists once title/meta/preview
+     share font-size. vertical-align: middle keeps the dot on the
+     text x-height naturally. */
   animation: turn-process-live-pulse 1.2s ease-in-out infinite;
 }
 
