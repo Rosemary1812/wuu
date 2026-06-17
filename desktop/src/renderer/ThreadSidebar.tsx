@@ -1,6 +1,7 @@
 import { Archive, ChevronRight, CornerDownRight, Folder, FolderOpen, MessageSquarePlus, Pin } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
 import type { Agent, DesktopProject, Thread } from "../shared/protocol";
+import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
 import {
   agentLabel,
   agentNestedLabel,
@@ -272,6 +273,16 @@ function ThreadRows({
   onArchive: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; thread: Thread } | null>(null);
+
+  function handleContextMenu(
+    targetThread: Thread,
+    e: { clientX: number; clientY: number; preventDefault: () => void }
+  ): void {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, thread: targetThread });
+  }
+
   return (
     <>
       {threads.map((thread) => {
@@ -287,6 +298,7 @@ function ThreadRows({
               }`}
               aria-current={thread.id === activeID ? "page" : undefined}
               onMouseLeave={() => onClearArchiveConfirm(thread.id)}
+              onContextMenu={(e) => handleContextMenu(thread, e)}
             >
               <button
                 className="thread-row-main"
@@ -325,11 +337,27 @@ function ThreadRows({
                 activeID={activeID}
                 pendingThreadID={pendingThreadID}
                 onSelect={onSelectChildAgent}
+                onContextMenu={(e) => handleContextMenu(thread, e)}
               />
             ) : null}
           </Fragment>
         );
       })}
+      {contextMenu ? (
+        <ThreadContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={[
+            {
+              label: "复制 thread ID",
+              onSelect: () => {
+                void copyToClipboard(contextMenu.thread.id);
+              }
+            }
+          ]}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
     </>
   );
 }
@@ -338,12 +366,14 @@ function ThreadChildAgentRows({
   agents,
   activeID,
   pendingThreadID,
-  onSelect
+  onSelect,
+  onContextMenu
 }: {
   agents: Agent[];
   activeID?: string;
   pendingThreadID?: string;
   onSelect: (agent: Agent) => void;
+  onContextMenu: (e: { clientX: number; clientY: number; preventDefault: () => void }) => void;
 }): JSX.Element {
   return (
     <div className="thread-child-agent-list" aria-label="子任务">
@@ -365,6 +395,7 @@ function ThreadChildAgentRows({
             aria-label={`${label}，${agentStatusLabel(agent.status)}`}
             title={agentTooltip(agent)}
             onClick={() => onSelect(agent)}
+            onContextMenu={onContextMenu}
           >
             <CornerDownRight className="thread-child-agent-branch" size={13} />
             <span className="thread-child-agent-name">{label}</span>

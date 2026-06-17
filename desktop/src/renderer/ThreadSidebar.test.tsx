@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { ThreadContextMenu } from "./ThreadContextMenu";
 import { ThreadRowTitle } from "./ThreadSidebar";
 
 let container: HTMLDivElement;
@@ -86,4 +87,51 @@ describe("ThreadRowTitle", () => {
     expect(container.querySelector(".thread-row-title")?.getAttribute("data-title-swap")).toBe("3");
   });
 
+});
+
+describe("ThreadContextMenu", () => {
+  function renderMenu(): { onSelect: ReturnType<typeof vi.fn>; onClose: ReturnType<typeof vi.fn> } {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ThreadContextMenu
+          x={10}
+          y={20}
+          items={[{ label: "复制 thread ID", onSelect }]}
+          onClose={onClose}
+        />
+      );
+    });
+    return { onSelect, onClose };
+  }
+
+  it("renders a menu with one item per entry", () => {
+    renderMenu();
+    const menu = container.querySelector('[role="menu"]');
+    const items = container.querySelectorAll('[role="menuitem"]');
+    expect(menu).not.toBeNull();
+    expect(items.length).toBe(1);
+    expect(items[0]?.textContent).toBe("复制 thread ID");
+  });
+
+  it("invokes onSelect and onClose when an item is clicked", () => {
+    const { onSelect, onClose } = renderMenu();
+    const button = container.querySelector("button") as HTMLButtonElement | null;
+    expect(button).not.toBeNull();
+    act(() => {
+      button!.click();
+    });
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes when Escape is pressed", () => {
+    const { onClose } = renderMenu();
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

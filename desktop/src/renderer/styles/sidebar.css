@@ -981,3 +981,53 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
   transform: translateX(1px);
 }
+
+/*
+ * Right-click menu for thread rows. Position is fixed because the caller
+ * passes raw clientX/clientY from a contextmenu event. The visual treatment
+ * mirrors .project-add-menu so the two menus feel like the same component.
+ */
+.thread-row-context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 180px;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 6px;
+  backdrop-filter: blur(16px);
+  transform-origin: top left;
+  --menu-enter-x: -4px;
+  --menu-enter-y: -4px;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.thread-row-context-menu-item {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #1f2328;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  padding: 0 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thread-row-context-menu-item:hover {
+  background: var(--menu-hover);
+}
+
+.thread-row-context-menu-item span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

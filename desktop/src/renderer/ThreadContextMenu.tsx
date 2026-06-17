@@ -1,0 +1,100 @@
+import { useEffect, useRef } from "react";
+
+/**
+ * ThreadContextMenu is a lightweight right-click menu for thread rows in the
+ * session tree. Items trigger an action (typically a clipboard write) and the
+ * menu auto-closes on selection, Escape, or an outside click.
+ *
+ * The menu is positioned via fixed coordinates so callers can pass raw
+ * clientX/clientY from a contextmenu event without computing offsets against
+ * any parent container.
+ */
+export type ThreadContextMenuItem = {
+  label: string;
+  /**
+   * Action to perform when the item is selected. The promise is intentionally
+   * not awaited so the menu closes immediately even if the action is slow
+   * (e.g. a clipboard write with feedback animation).
+   */
+  onSelect: () => void | Promise<void>;
+};
+
+export function ThreadContextMenu({
+  x,
+  y,
+  items,
+  onClose
+}: {
+  x: number;
+  y: number;
+  items: ThreadContextMenuItem[];
+  onClose: () => void;
+}): JSX.Element {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handleMouseDown(event: MouseEvent): void {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      role="menu"
+      className="thread-row-context-menu"
+      style={{ left: x, top: y }}
+      data-testid="thread-row-context-menu"
+    >
+      {items.map((item, idx) => (
+        <button
+          key={`${item.label}-${idx}`}
+          role="menuitem"
+          type="button"
+          className="thread-row-context-menu-item"
+          onClick={() => {
+            void item.onSelect();
+            onClose();
+          }}
+        >
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * copyToClipboard writes text to the system clipboard and returns whether the
+ * write succeeded. The error is intentionally swallowed because clipboard
+ * failures (denied permission, focus loss) are not actionable in this UI;
+ * the caller can show its own "failed" state if it tracks copy feedback.
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  if (text.trim() === "") {
+    return false;
+  }
+  try {
+    const clipboard = navigator.clipboard;
+    if (!clipboard?.writeText) {
+      return false;
+    }
+    await clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
