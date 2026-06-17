@@ -346,16 +346,16 @@ export function Composer({
 
   const content = (
     <div className="composer-stack">
-      <ComposerQueueStrip
-        guideMessages={guideMessages}
-        queuedMessages={queuedMessages}
-        onRemoveGuideMessage={onRemoveGuideMessage}
-        onRemoveQueuedMessage={onRemoveQueuedMessage}
-        onGuideQueuedMessage={onGuideQueuedMessage}
-        onEditGuideMessage={onEditGuideMessage}
-        onEditQueuedMessage={onEditQueuedMessage}
-      />
       <div className="composer-shell">
+        <ComposerQueueStrip
+          guideMessages={guideMessages}
+          queuedMessages={queuedMessages}
+          onRemoveGuideMessage={onRemoveGuideMessage}
+          onRemoveQueuedMessage={onRemoveQueuedMessage}
+          onGuideQueuedMessage={onGuideQueuedMessage}
+          onEditGuideMessage={onEditGuideMessage}
+          onEditQueuedMessage={onEditQueuedMessage}
+        />
         {slashMenuOpen ? (
           <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label="斜杠命令">
             {visibleSlashCommands.length > 0 ? (

@@ -196,152 +196,164 @@
   color: #1f2328;
 }
 
-.composer-queue-strip {
-  position: relative;
-  z-index: 1;
+/* Queue messages live INSIDE the composer shell, above the attachment strip.
+   Each row spans the shell width; rows are separated by hairlines instead of
+   a card. The list is the queue count — no separate "已排队 N 条" badge. */
+.composer-queue-list {
   display: flex;
-  padding: 0 34px;
-  margin-bottom: -6px;
-  transform: translateY(4px);
-}
-
-.composer-queue-strip:has(.composer-queue-icon[aria-expanded="true"]) {
-  z-index: 6;
-}
-
-.composer-queue-items {
-  display: flex;
-  width: 100%;
-  min-width: 0;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  margin: 0;
+  padding: 6px 8px 0;
+  list-style: none;
+  border-bottom: 1px solid rgba(31, 35, 40, 0.06);
 }
 
-.composer-queue-item {
-  position: relative;
+.composer-queue-row {
   display: grid;
-  width: fit-content;
-  max-width: min(640px, 100%);
-  min-width: min(360px, 100%);
-  min-height: 48px;
-  grid-template-columns: auto minmax(0, auto) auto auto auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  border: 1px solid #e3e3df;
-  border-radius: 16px;
-  background: #fff;
-  color: #6e7276;
-  font-size: var(--font-body);
-  padding: 6px 8px 6px 12px;
-  box-shadow: 0 12px 28px rgba(20, 24, 28, 0.08);
+  min-height: 36px;
+  padding: 4px 6px;
+  color: #1f2328;
+  font-size: 13.5px;
+  line-height: 1.5;
+  transition: background-color 120ms ease;
 }
 
-.composer-queue-item.guide {
-  border-color: #eaded7;
+.composer-queue-row + .composer-queue-row {
+  border-top: 1px solid rgba(31, 35, 40, 0.05);
 }
 
-.composer-queue-corner {
-  flex: 0 0 auto;
-  color: #9b9fa3;
+.composer-queue-row:hover,
+.composer-queue-row:focus-within {
+  background: rgba(31, 35, 40, 0.035);
 }
 
-.composer-queue-item strong {
+/* Guide state: warmer text tone to distinguish from regular queued items. */
+.composer-queue-row.guide .composer-queue-preview {
+  color: var(--turn-warning-text, #8a5b10);
+}
+
+.composer-queue-index {
+  color: #9aa0a6;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  user-select: none;
+}
+
+.composer-queue-preview {
   min-width: 0;
-  max-width: 340px;
   overflow: hidden;
+  background: transparent;
+  border: 0;
+  padding: 0;
   color: inherit;
-  font-weight: var(--weight-semibold);
+  font: inherit;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
 }
 
-.composer-queue-guide {
-  display: inline-flex;
-  height: 30px;
-  flex: 0 0 auto;
+.composer-queue-preview:hover {
+  color: #1f2328;
+}
+
+.composer-queue-preview:focus-visible {
+  outline: 2px solid rgba(31, 35, 40, 0.18);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.composer-queue-actions {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  border-radius: 8px;
-  color: #73777b;
-  font-size: var(--font-body);
-  font-weight: var(--weight-semibold);
-  padding: 0 8px;
-}
-
-.composer-queue-guide:hover {
-  background: #f3f4f1;
-  color: #34393d;
-}
-
-.composer-queue-guide.active {
-  color: #99521e;
-}
-
-.composer-queue-guide.active:hover {
-  background: transparent;
-}
-
-.composer-queue-icon {
-  display: grid;
-  width: 30px;
-  height: 30px;
+  gap: 1px;
   flex: 0 0 auto;
+}
+
+.composer-queue-action {
+  display: grid;
+  width: 24px;
+  height: 24px;
   place-items: center;
-  border-radius: 8px;
-  color: currentColor;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #8a8e91;
+  cursor: pointer;
 }
 
-.composer-queue-icon:hover {
+.composer-queue-action:hover {
   background: rgba(31, 35, 40, 0.08);
+  color: #1f2328;
 }
 
-.composer-queue-icon[aria-expanded="true"] {
-  background: rgba(31, 35, 40, 0.08);
-  color: #24282c;
+.composer-queue-action.danger:hover {
+  color: #b42318;
+}
+
+.composer-queue-action:focus-visible {
+  outline: 2px solid rgba(31, 35, 40, 0.2);
+  outline-offset: 1px;
 }
 
 .composer-queue-menu-anchor {
   position: relative;
   display: grid;
-  width: 30px;
-  height: 30px;
   place-items: center;
 }
 
 .composer-queue-menu {
   position: absolute;
-  top: 36px;
+  top: calc(100% + 4px);
   right: 0;
   z-index: 30;
   display: grid;
-  min-width: 148px;
-  gap: 2px;
-  border: 1px solid #ddddda;
-  border-radius: 14px;
-  background: #fff;
-  padding: 7px;
-  box-shadow: 0 14px 34px rgba(20, 24, 28, 0.14);
+  min-width: 152px;
+  gap: 1px;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 5px;
+  transform-origin: top right;
+  --menu-enter-y: -4px;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+  backdrop-filter: blur(16px);
 }
 
 .composer-queue-menu button {
   display: inline-flex;
   width: 100%;
-  height: 34px;
+  height: 30px;
   align-items: center;
-  gap: 9px;
-  border-radius: 9px;
-  color: #3c4145;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
+  gap: 8px;
+  border-radius: 7px;
+  background: transparent;
+  color: #202427;
+  font-size: 12.5px;
+  font-weight: 500;
   padding: 0 10px;
   text-align: left;
   white-space: nowrap;
 }
 
-.composer-queue-menu button:hover {
-  background: #f3f4f1;
+.composer-queue-menu button:hover:not(:disabled) {
+  background: var(--menu-hover);
   color: #1f2328;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-queue-menu {
+    animation: none;
+  }
+  .composer-queue-row {
+    transition: none;
+  }
 }
 
 .composer textarea {

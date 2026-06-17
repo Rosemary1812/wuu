@@ -57,6 +57,7 @@ function renderComposer(props: {
   toolPolicy?: ToolPolicySummary;
   onInterrupt?: () => void;
   onSend?: () => void;
+  onRemoveQueuedMessage?: (id: string) => void;
   onGuideQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string) => void;
   onEditGuideMessage?: (id: string) => void;
@@ -114,7 +115,7 @@ function renderComposer(props: {
         onPasteAttachmentFiles={() => {}}
         onRemoveFile={() => {}}
         onRemoveImage={() => {}}
-        onRemoveQueuedMessage={() => {}}
+        onRemoveQueuedMessage={props.onRemoveQueuedMessage ?? (() => {})}
         onRemoveGuideMessage={() => {}}
         onGuideQueuedMessage={props.onGuideQueuedMessage ?? (() => {})}
         onEditQueuedMessage={props.onEditQueuedMessage ?? (() => {})}
@@ -157,26 +158,100 @@ describe("Composer send control", () => {
 });
 
 describe("Composer queue strip", () => {
-  it("lets a queued message become a guide", () => {
+  it("renders queued and guide messages in combined sequential order", () => {
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "第一个排队消息", images: [], files: [] },
+        { id: "queue-2", text: "第二个排队消息", images: [], files: [] }
+      ],
+      guideMessages: [
+        { id: "guide-1", text: "唯一一条引导消息", images: [], files: [] }
+      ]
+    });
+
+    const rows = Array.from(
+      container.querySelectorAll<HTMLLIElement>(".composer-queue-row")
+    );
+    expect(rows).toHaveLength(3);
+    // guide (oldest, first) → queue items follow in queue order
+    expect(rows[0]?.dataset.position).toBe("1");
+    expect(rows[0]?.classList.contains("guide")).toBe(true);
+    expect(rows[0]?.querySelector(".composer-queue-index")?.textContent).toBe("1");
+    expect(rows[1]?.dataset.position).toBe("2");
+    expect(rows[1]?.classList.contains("queue")).toBe(true);
+    expect(rows[1]?.querySelector(".composer-queue-index")?.textContent).toBe("2");
+    expect(rows[2]?.dataset.position).toBe("3");
+    expect(rows[2]?.classList.contains("queue")).toBe(true);
+    expect(rows[2]?.querySelector(".composer-queue-index")?.textContent).toBe("3");
+  });
+
+  it("lives inside the composer shell so the queue spans the input width", () => {
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "排队宽度测试", images: [], files: [] }
+      ]
+    });
+
+    const list = container.querySelector(".composer-queue-list");
+    const shell = container.querySelector(".composer-shell");
+    expect(list).not.toBeNull();
+    expect(shell).not.toBeNull();
+    expect(shell?.contains(list ?? null)).toBe(true);
+  });
+
+  it("lets a queued message become a guide from the per-row menu", () => {
     const onGuideQueuedMessage = vi.fn();
     renderComposer({
       running: true,
       queuedMessages: [
-        { id: "queue-1", text: "要求后续变更", images: [], files: [] },
+        { id: "queue-1", text: "要求后续变更", images: [], files: [] }
       ],
-      onGuideQueuedMessage,
+      onGuideQueuedMessage
     });
 
-    const guideButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"作为引导发送\"]",
+    const menuButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"待发送消息操作\"]"
     );
-    expect(guideButton).not.toBeNull();
+    expect(menuButton).not.toBeNull();
 
     act(() => {
-      guideButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      menuButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    const guideItem = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("button[role=\"menuitem\"]")
+    ).find((button) => button.textContent?.includes("转为引导"));
+    expect(guideItem).not.toBeUndefined();
+
+    act(() => {
+      guideItem?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(onGuideQueuedMessage).toHaveBeenCalledWith("queue-1");
+  });
+
+  it("removes a queued message from the inline close button", () => {
+    const onRemoveQueuedMessage = vi.fn();
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "准备删除", images: [], files: [] }
+      ],
+      onRemoveQueuedMessage
+    });
+
+    const removeButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"移除排队消息 1\"]"
+    );
+    expect(removeButton).not.toBeNull();
+
+    act(() => {
+      removeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onRemoveQueuedMessage).toHaveBeenCalledWith("queue-1");
   });
 
   it("opens the queued message menu and edits the selected item", () => {
@@ -184,13 +259,13 @@ describe("Composer queue strip", () => {
     renderComposer({
       running: true,
       queuedMessages: [
-        { id: "queue-1", text: "要求后续变更", images: [], files: [] },
+        { id: "queue-1", text: "要求后续变更", images: [], files: [] }
       ],
-      onEditQueuedMessage,
+      onEditQueuedMessage
     });
 
     const menuButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"待发送消息操作\"]",
+      "button[aria-label=\"待发送消息操作\"]"
     );
     expect(menuButton).not.toBeNull();
 
@@ -199,7 +274,7 @@ describe("Composer queue strip", () => {
     });
 
     const editItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>("button[role=\"menuitem\"]"),
+      container.querySelectorAll<HTMLButtonElement>("button[role=\"menuitem\"]")
     ).find((button) => button.textContent?.includes("编辑消息"));
     expect(editItem).not.toBeUndefined();
 

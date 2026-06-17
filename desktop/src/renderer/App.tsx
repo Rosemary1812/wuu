@@ -1339,12 +1339,7 @@ export function App(): JSX.Element {
   }
 
   function enqueueComposerMessage(message: QueuedComposerMessage): void {
-    const next = [...queuedMessagesRef.current, message];
-    setQueuedMessagesNow(next);
-    setState((current) => ({
-      ...current,
-      status: `已排队 ${next.length} 条`,
-    }));
+    setQueuedMessagesNow([...queuedMessagesRef.current, message]);
   }
 
   async function removeQueuedMessage(id: string): Promise<boolean> {

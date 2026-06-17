@@ -6,7 +6,6 @@ import {
   Pencil,
   Send,
   Square,
-  Trash2,
   X
 } from "lucide-react";
 import { type KeyboardEvent as ReactKeyboardEvent, useRef, useState } from "react";
@@ -198,6 +197,32 @@ export function SplitPaneComposer({
   );
 }
 
+type QueueRowKind = "guide" | "queue";
+
+type QueueRowEntry = {
+  key: string;
+  message: QueuedComposerMessage;
+  kind: QueueRowKind;
+};
+
+function buildQueueRows(
+  guideMessages: QueuedComposerMessage[],
+  queuedMessages: QueuedComposerMessage[]
+): QueueRowEntry[] {
+  return [
+    ...guideMessages.map((message) => ({
+      key: `guide-${message.id}`,
+      message,
+      kind: "guide" as const
+    })),
+    ...queuedMessages.map((message) => ({
+      key: `queue-${message.id}`,
+      message,
+      kind: "queue" as const
+    }))
+  ];
+}
+
 export function ComposerQueueStrip({
   guideMessages,
   queuedMessages,
@@ -215,115 +240,129 @@ export function ComposerQueueStrip({
   onEditGuideMessage: (id: string) => void;
   onEditQueuedMessage: (id: string) => void;
 }): JSX.Element | null {
-  const total = guideMessages.length + queuedMessages.length;
-  if (total === 0) {
+  const rows = buildQueueRows(guideMessages, queuedMessages);
+  if (rows.length === 0) {
     return null;
   }
 
   return (
-    <div className="composer-queue-strip" aria-label="待发送消息">
-      <div className="composer-queue-items">
-        {guideMessages.map((message) => (
-          <ComposerQueueItem
-            key={message.id}
-            message={message}
-            kind="guide"
-            onEdit={() => onEditGuideMessage(message.id)}
-            onRemove={() => onRemoveGuideMessage(message.id)}
-          />
-        ))}
-        {queuedMessages.map((message) => (
-          <ComposerQueueItem
-            key={message.id}
-            message={message}
-            kind="queue"
-            onGuide={() => onGuideQueuedMessage(message.id)}
-            onEdit={() => onEditQueuedMessage(message.id)}
-            onRemove={() => onRemoveQueuedMessage(message.id)}
-          />
-        ))}
-      </div>
-    </div>
+    <ol className="composer-queue-list" aria-label="待发送消息">
+      {rows.map((row, index) => (
+        <ComposerQueueItem
+          key={row.key}
+          position={index + 1}
+          message={row.message}
+          kind={row.kind}
+          onGuide={
+            row.kind === "queue" ? () => onGuideQueuedMessage(row.message.id) : undefined
+          }
+          onEdit={() =>
+            row.kind === "queue"
+              ? onEditQueuedMessage(row.message.id)
+              : onEditGuideMessage(row.message.id)
+          }
+          onRemove={() =>
+            row.kind === "queue"
+              ? onRemoveQueuedMessage(row.message.id)
+              : onRemoveGuideMessage(row.message.id)
+          }
+        />
+      ))}
+    </ol>
   );
 }
 
 function ComposerQueueItem({
+  position,
   message,
   kind,
   onGuide,
   onEdit,
   onRemove
 }: {
+  position: number;
   message: QueuedComposerMessage;
-  kind: "guide" | "queue";
+  kind: QueueRowKind;
   onGuide?: () => void;
   onEdit: () => void;
   onRemove: () => void;
 }): JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
-  const closeLabel = kind === "guide" ? "关闭引导" : "关闭排队";
-
   return (
-    <div className={`composer-queue-item ${kind}`}>
-      <CornerDownRight className="composer-queue-corner" size={18} aria-hidden="true" />
-      <strong>{queuedMessagePreview(message)}</strong>
-      {kind === "guide" ? (
-        <span className="composer-queue-guide active">
-          <CornerDownRight size={16} aria-hidden="true" />
-          引导
-        </span>
-      ) : (
-        <button className="composer-queue-guide" type="button" aria-label="作为引导发送" onClick={onGuide}>
-          <CornerDownRight size={16} aria-hidden="true" />
-          <span>引导</span>
-        </button>
-      )}
+    <li className={`composer-queue-row ${kind}`} data-position={position}>
+      <span className="composer-queue-index" aria-hidden="true">
+        {position}
+      </span>
       <button
-        className="composer-queue-icon"
         type="button"
-        aria-label="移除待发送消息"
-        onClick={onRemove}
+        className="composer-queue-preview"
+        aria-label={`编辑排队消息 ${position}`}
+        title={message.text}
+        onClick={onEdit}
       >
-        <Trash2 size={16} />
+        {queuedMessagePreview(message)}
       </button>
-      <div className="composer-queue-menu-anchor">
+      <div className="composer-queue-actions">
         <button
-          className="composer-queue-icon"
           type="button"
-          aria-label="待发送消息操作"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}
+          className="composer-queue-action danger"
+          aria-label={`移除排队消息 ${position}`}
+          onClick={onRemove}
         >
-          <MoreHorizontal size={18} />
+          <X size={14} aria-hidden="true" />
         </button>
-        {menuOpen ? (
-          <div className="composer-queue-menu" role="menu">
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onEdit();
-              }}
-            >
-              <Pencil size={16} aria-hidden="true" />
-              <span>编辑消息</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onRemove();
-              }}
-            >
-              <CornerDownRight size={16} aria-hidden="true" />
-              <span>{closeLabel}</span>
-            </button>
-          </div>
-        ) : null}
+        <div className="composer-queue-menu-anchor">
+          <button
+            type="button"
+            className="composer-queue-action"
+            aria-label="待发送消息操作"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <MoreHorizontal size={14} aria-hidden="true" />
+          </button>
+          {menuOpen ? (
+            <div className="composer-queue-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onEdit();
+                }}
+              >
+                <Pencil size={14} aria-hidden="true" />
+                <span>编辑消息</span>
+              </button>
+              {onGuide ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onGuide();
+                  }}
+                >
+                  <CornerDownRight size={14} aria-hidden="true" />
+                  <span>转为引导</span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onRemove();
+                }}
+              >
+                <X size={14} aria-hidden="true" />
+                <span>{kind === "guide" ? "取消引导" : "移除"}</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </li>
   );
 }
