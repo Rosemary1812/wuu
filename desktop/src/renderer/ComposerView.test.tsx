@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   Composer,
+  SplitPaneComposer,
   permissionModeFromSummary,
   permissionModeHasAdvancedOverrides,
   type CodexModelLoadState,
@@ -128,6 +129,36 @@ function renderComposer(props: {
   return { onSelectPermissionMode };
 }
 
+function renderSplitPaneComposer(props: {
+  prompt?: string;
+  running?: boolean;
+  onSend?: () => void;
+}): void {
+  act(() => {
+    root = createRoot(container);
+    root.render(
+      <SplitPaneComposer
+        prompt={props.prompt ?? ""}
+        setPrompt={() => {}}
+        files={[]}
+        images={[]}
+        running={props.running ?? false}
+        readOnly={false}
+        status="ready"
+        onPasteAttachmentFiles={() => {}}
+        onRemoveFile={() => {}}
+        onRemoveImage={() => {}}
+        onSend={props.onSend ?? (() => {})}
+        onInterrupt={() => {}}
+      />,
+    );
+  });
+}
+
+async function nextAnimationFrame(): Promise<void> {
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
 describe("Composer send control", () => {
   it("shows one stateful action button while a request is running", () => {
     const onInterrupt = vi.fn();
@@ -154,6 +185,56 @@ describe("Composer send control", () => {
 
     expect(onInterrupt).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("returns focus to the textarea after clicking send", async () => {
+    const onSend = vi.fn();
+    renderComposer({
+      prompt: "send this",
+      onSend,
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    const sendButton = container.querySelector<HTMLButtonElement>("button[aria-label=\"发送\"]");
+    expect(textarea).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    act(() => {
+      sendButton?.focus();
+      sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    await act(async () => {
+      await nextAnimationFrame();
+    });
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it("returns focus to the split-pane textarea after clicking send", async () => {
+    const onSend = vi.fn();
+    renderSplitPaneComposer({
+      prompt: "continue this branch",
+      onSend,
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    const sendButton = container.querySelector<HTMLButtonElement>("button[aria-label=\"发送\"]");
+    expect(textarea).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    act(() => {
+      sendButton?.focus();
+      sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    await act(async () => {
+      await nextAnimationFrame();
+    });
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(textarea);
   });
 });
 

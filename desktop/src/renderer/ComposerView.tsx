@@ -245,6 +245,12 @@ export function Composer({
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
+  function submitComposer(): void {
+    resetQueryHistoryNavigation();
+    onSend();
+    focusComposerSoon();
+  }
+
   function revealSlashCommands(): void {
     if (readOnly) {
       return;
@@ -339,8 +345,7 @@ export function Composer({
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      resetQueryHistoryNavigation();
-      onSend();
+      submitComposer();
     }
   }
 
@@ -529,7 +534,7 @@ export function Composer({
             <button
               className={`composer-action-button ${running ? "composer-stop-button" : "composer-send-button"}`}
               type="button"
-              onClick={running ? onInterrupt : onSend}
+              onClick={running ? onInterrupt : submitComposer}
               aria-label={running ? "停止" : "发送"}
               title={running ? "停止" : "发送"}
               disabled={!running && (readOnly || !hasDraft)}

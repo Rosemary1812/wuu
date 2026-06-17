@@ -102,6 +102,16 @@ export function SplitPaneComposer({
     textareaRef
   });
 
+  function focusComposerSoon(): void {
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function submitComposer(): void {
+    resetQueryHistoryNavigation();
+    onSend();
+    focusComposerSoon();
+  }
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
     if (readOnly || isComposerTextComposing(event)) {
       return;
@@ -111,8 +121,7 @@ export function SplitPaneComposer({
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      resetQueryHistoryNavigation();
-      onSend();
+      submitComposer();
     }
   }
 
@@ -184,7 +193,7 @@ export function SplitPaneComposer({
             <button
               className="composer-action-button composer-send-button"
               type="button"
-              onClick={onSend}
+              onClick={submitComposer}
               aria-label="发送"
               disabled={readOnly || !hasDraft}
             >
