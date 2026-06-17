@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/reviewsession"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -114,6 +115,10 @@ func TestReviewer_DirectJSONApproved(t *testing.T) {
 	if review.Source != tools.ApprovalSourceGuardian {
 		t.Fatalf("source = %q, want guardian", review.Source)
 	}
+	if review.ReviewModel != "m" || review.ReviewRole != "guardian" || review.ReviewOutcome != string(reviewsession.OutcomeCompleted) ||
+		review.ReviewRequestFingerprint == "" || review.ReviewDurationMS < 0 {
+		t.Fatalf("review session metadata missing: %+v", review)
+	}
 	if len(provider.received.Tools) != 0 {
 		t.Fatalf("guardian review session must not send tools: %+v", provider.received.Tools)
 	}
@@ -189,6 +194,9 @@ func TestReviewer_InvalidDecisionFailsClosed(t *testing.T) {
 	}
 	if !strings.Contains(review.Reason, "invalid decision") {
 		t.Fatalf("reason should mention invalid decision: %q", review.Reason)
+	}
+	if review.ReviewOutcome != string(reviewsession.OutcomeCompleted) || review.ReviewRequestFingerprint == "" {
+		t.Fatalf("parse failures should retain review session metadata: %+v", review)
 	}
 }
 

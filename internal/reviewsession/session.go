@@ -2,6 +2,9 @@ package reviewsession
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -53,6 +56,16 @@ type Config struct {
 	Boundary        Boundary
 }
 
+type ForkOptions struct {
+	Role            string
+	ParentSessionID string
+	ParentTurnID    string
+	Timeout         time.Duration
+	MaxTokens       int
+	Effort          string
+	ProviderOptions map[string]any
+}
+
 type Session struct {
 	client          providers.Client
 	model           string
@@ -76,18 +89,19 @@ type Request struct {
 }
 
 type Result struct {
-	Outcome         Outcome
-	Content         string
-	Error           string
-	ErrorKind       string
-	Model           string
-	Role            string
-	ParentSessionID string
-	ParentTurnID    string
-	Boundary        Boundary
-	StartedAt       time.Time
-	CompletedAt     time.Time
-	DurationMS      int64
+	Outcome            Outcome
+	Content            string
+	Error              string
+	ErrorKind          string
+	RequestFingerprint string
+	Model              string
+	Role               string
+	ParentSessionID    string
+	ParentTurnID       string
+	Boundary           Boundary
+	StartedAt          time.Time
+	CompletedAt        time.Time
+	DurationMS         int64
 }
 
 func New(cfg Config) (*Session, error) {
@@ -125,6 +139,37 @@ func New(cfg Config) (*Session, error) {
 		providerOptions: modelvariant.CloneOptions(cfg.ProviderOptions),
 		boundary:        boundary,
 	}, nil
+}
+
+func (s *Session) Fork(opts ForkOptions) (*Session, error) {
+	if s == nil || s.client == nil {
+		return nil, errors.New("review session is not configured")
+	}
+	fork := *s
+	if role := strings.TrimSpace(opts.Role); role != "" {
+		fork.role = role
+	}
+	if parentSessionID := strings.TrimSpace(opts.ParentSessionID); parentSessionID != "" {
+		fork.parentSessionID = parentSessionID
+	}
+	if parentTurnID := strings.TrimSpace(opts.ParentTurnID); parentTurnID != "" {
+		fork.parentTurnID = parentTurnID
+	}
+	if opts.Timeout > 0 {
+		fork.timeout = opts.Timeout
+	}
+	if opts.MaxTokens > 0 {
+		fork.maxTokens = opts.MaxTokens
+	}
+	if effort := strings.TrimSpace(opts.Effort); effort != "" {
+		fork.effort = effort
+	}
+	if len(opts.ProviderOptions) > 0 {
+		fork.providerOptions = modelvariant.CloneOptions(opts.ProviderOptions)
+	} else {
+		fork.providerOptions = modelvariant.CloneOptions(s.providerOptions)
+	}
+	return &fork, nil
 }
 
 func RestrictedBoundary() Boundary {
@@ -171,13 +216,8 @@ func (s *Session) Role() string {
 func (s *Session) Run(ctx context.Context, req Request) (result Result) {
 	startedAt := time.Now().UTC()
 	result = Result{
-		Outcome:         OutcomeFailed,
-		Model:           s.model,
-		Role:            s.role,
-		ParentSessionID: s.parentSessionID,
-		ParentTurnID:    s.parentTurnID,
-		Boundary:        s.boundary,
-		StartedAt:       startedAt,
+		Outcome:   OutcomeFailed,
+		StartedAt: startedAt,
 	}
 	defer func() {
 		result.CompletedAt = time.Now().UTC()
@@ -187,6 +227,12 @@ func (s *Session) Run(ctx context.Context, req Request) (result Result) {
 	if s == nil || s.client == nil {
 		return result.withError(OutcomeFailed, "invalid_config", "review session is not configured")
 	}
+	result.Model = s.model
+	result.Role = s.role
+	result.ParentSessionID = s.parentSessionID
+	result.ParentTurnID = s.parentTurnID
+	result.Boundary = s.boundary
+
 	messages := buildMessages(req)
 	if len(messages) == 0 {
 		return result.withError(OutcomeFailed, "invalid_request", "review session request requires messages or prompt")
@@ -212,6 +258,15 @@ func (s *Session) Run(ctx context.Context, req Request) (result Result) {
 	if len(req.ProviderOptions) > 0 {
 		options = modelvariant.CloneOptions(req.ProviderOptions)
 	}
+	result.RequestFingerprint = reviewRequestFingerprint(reviewRequestFingerprintInput{
+		Model:           s.model,
+		Role:            s.role,
+		Boundary:        s.boundary,
+		Messages:        messages,
+		MaxTokens:       maxTokens,
+		Effort:          effort,
+		ProviderOptions: options,
+	})
 
 	resp, err := s.client.Chat(callCtx, providers.ChatRequest{
 		Model:           s.model,
@@ -251,4 +306,23 @@ func (r Result) withError(outcome Outcome, kind, message string) Result {
 	r.ErrorKind = strings.TrimSpace(kind)
 	r.Error = strings.TrimSpace(message)
 	return r
+}
+
+type reviewRequestFingerprintInput struct {
+	Model           string                  `json:"model"`
+	Role            string                  `json:"role,omitempty"`
+	Boundary        Boundary                `json:"boundary"`
+	Messages        []providers.ChatMessage `json:"messages"`
+	MaxTokens       int                     `json:"max_tokens,omitempty"`
+	Effort          string                  `json:"effort,omitempty"`
+	ProviderOptions map[string]any          `json:"provider_options,omitempty"`
+}
+
+func reviewRequestFingerprint(input reviewRequestFingerprintInput) string {
+	data, err := json.Marshal(input)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

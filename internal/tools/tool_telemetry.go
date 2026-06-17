@@ -29,36 +29,43 @@ const (
 // ToolExecutionRecord captures benchmark-oriented facts about one tool
 // execution. It deliberately excludes arguments and output content.
 type ToolExecutionRecord struct {
-	Name                 string               `json:"name"`
-	CallID               string               `json:"call_id,omitempty"`
-	ArgumentsSHA256      string               `json:"arguments_sha256,omitempty"`
-	ResultAction         string               `json:"result_action,omitempty"`
-	Kind                 ToolKind             `json:"kind"`
-	Exposure             ToolExposure         `json:"exposure"`
-	Risk                 ToolRisk             `json:"risk"`
-	ClassificationReason string               `json:"classification_reason,omitempty"`
-	PolicyAction         ToolPolicyAction     `json:"policy_action"`
-	PolicyReason         string               `json:"policy_reason,omitempty"`
-	AutoModeDecision     AutoModeDecision     `json:"auto_mode_decision,omitempty"`
-	AutoModeReason       string               `json:"auto_mode_reason,omitempty"`
-	ReadOnly             bool                 `json:"read_only"`
-	ConcurrencySafe      bool                 `json:"concurrency_safe"`
-	StartedAt            time.Time            `json:"started_at"`
-	DurationMS           int64                `json:"duration_ms"`
-	RevisionBefore       string               `json:"revision_before,omitempty"`
-	RevisionAfter        string               `json:"revision_after,omitempty"`
-	Success              bool                 `json:"success"`
-	Error                string               `json:"error,omitempty"`
-	ErrorKind            string               `json:"error_kind,omitempty"`
-	RawOutputBytes       int                  `json:"raw_output_bytes"`
-	ReturnedOutputBytes  int                  `json:"returned_output_bytes"`
-	ResultBudgeted       bool                 `json:"result_budgeted"`
-	ResultRef            string               `json:"result_ref,omitempty"`
-	ArtifactRefs         []string             `json:"artifact_refs,omitempty"`
-	ApprovalRef          string               `json:"approval_ref,omitempty"`
-	ApprovalDecision     ToolApprovalDecision `json:"approval_decision,omitempty"`
-	ApprovalReason       string               `json:"approval_reason,omitempty"`
-	PatchRiskSummary     *ToolPatchRisk       `json:"patch_risk_summary,omitempty"`
+	Name                             string               `json:"name"`
+	CallID                           string               `json:"call_id,omitempty"`
+	ArgumentsSHA256                  string               `json:"arguments_sha256,omitempty"`
+	ResultAction                     string               `json:"result_action,omitempty"`
+	Kind                             ToolKind             `json:"kind"`
+	Exposure                         ToolExposure         `json:"exposure"`
+	Risk                             ToolRisk             `json:"risk"`
+	ClassificationReason             string               `json:"classification_reason,omitempty"`
+	PolicyAction                     ToolPolicyAction     `json:"policy_action"`
+	PolicyReason                     string               `json:"policy_reason,omitempty"`
+	AutoModeDecision                 AutoModeDecision     `json:"auto_mode_decision,omitempty"`
+	AutoModeReason                   string               `json:"auto_mode_reason,omitempty"`
+	ReadOnly                         bool                 `json:"read_only"`
+	ConcurrencySafe                  bool                 `json:"concurrency_safe"`
+	StartedAt                        time.Time            `json:"started_at"`
+	DurationMS                       int64                `json:"duration_ms"`
+	RevisionBefore                   string               `json:"revision_before,omitempty"`
+	RevisionAfter                    string               `json:"revision_after,omitempty"`
+	Success                          bool                 `json:"success"`
+	Error                            string               `json:"error,omitempty"`
+	ErrorKind                        string               `json:"error_kind,omitempty"`
+	RawOutputBytes                   int                  `json:"raw_output_bytes"`
+	ReturnedOutputBytes              int                  `json:"returned_output_bytes"`
+	ResultBudgeted                   bool                 `json:"result_budgeted"`
+	ResultRef                        string               `json:"result_ref,omitempty"`
+	ArtifactRefs                     []string             `json:"artifact_refs,omitempty"`
+	ApprovalRef                      string               `json:"approval_ref,omitempty"`
+	ApprovalDecision                 ToolApprovalDecision `json:"approval_decision,omitempty"`
+	ApprovalReason                   string               `json:"approval_reason,omitempty"`
+	ApprovalSource                   string               `json:"approval_source,omitempty"`
+	ApprovalRiskLevel                GuardianRiskLevel    `json:"approval_risk_level,omitempty"`
+	ApprovalReviewModel              string               `json:"approval_review_model,omitempty"`
+	ApprovalReviewRole               string               `json:"approval_review_role,omitempty"`
+	ApprovalReviewOutcome            string               `json:"approval_review_outcome,omitempty"`
+	ApprovalReviewRequestFingerprint string               `json:"approval_review_request_fingerprint,omitempty"`
+	ApprovalReviewDurationMS         int64                `json:"approval_review_duration_ms,omitempty"`
+	PatchRiskSummary                 *ToolPatchRisk       `json:"patch_risk_summary,omitempty"`
 }
 
 type ToolPatchRisk struct {
@@ -292,34 +299,41 @@ func (t *Toolkit) recordToolExecution(
 		artifactRefs = appendUniqueString(artifactRefs, approvalRef)
 	}
 	record := ToolExecutionRecord{
-		Name:                 call.Name,
-		CallID:               call.ID,
-		ArgumentsSHA256:      toolArgumentsSHA256(call.Arguments),
-		ResultAction:         extractToolResultAction(result),
-		Kind:                 info.Kind,
-		Exposure:             info.Exposure,
-		Risk:                 info.Risk,
-		ClassificationReason: info.Reason,
-		PolicyAction:         decision.Action,
-		PolicyReason:         decision.Reason,
-		AutoModeDecision:     decision.AutoModeDecision,
-		AutoModeReason:       decision.AutoModeReason,
-		ReadOnly:             info.ReadOnly,
-		ConcurrencySafe:      info.ConcurrencySafe,
-		StartedAt:            startedAt,
-		DurationMS:           time.Since(startedAt).Milliseconds(),
-		RevisionBefore:       revisionBefore,
-		RevisionAfter:        revisionAfter,
-		Success:              err == nil,
-		RawOutputBytes:       len(result),
-		ReturnedOutputBytes:  len(returned),
-		ResultBudgeted:       resultBudgeted,
-		ResultRef:            resultRef,
-		ArtifactRefs:         artifactRefs,
-		ApprovalRef:          approvalRef,
-		ApprovalDecision:     approvalReview.Decision,
-		ApprovalReason:       approvalReview.Reason,
-		PatchRiskSummary:     extractToolPatchRisk(call.Name, result),
+		Name:                             call.Name,
+		CallID:                           call.ID,
+		ArgumentsSHA256:                  toolArgumentsSHA256(call.Arguments),
+		ResultAction:                     extractToolResultAction(result),
+		Kind:                             info.Kind,
+		Exposure:                         info.Exposure,
+		Risk:                             info.Risk,
+		ClassificationReason:             info.Reason,
+		PolicyAction:                     decision.Action,
+		PolicyReason:                     decision.Reason,
+		AutoModeDecision:                 decision.AutoModeDecision,
+		AutoModeReason:                   decision.AutoModeReason,
+		ReadOnly:                         info.ReadOnly,
+		ConcurrencySafe:                  info.ConcurrencySafe,
+		StartedAt:                        startedAt,
+		DurationMS:                       time.Since(startedAt).Milliseconds(),
+		RevisionBefore:                   revisionBefore,
+		RevisionAfter:                    revisionAfter,
+		Success:                          err == nil,
+		RawOutputBytes:                   len(result),
+		ReturnedOutputBytes:              len(returned),
+		ResultBudgeted:                   resultBudgeted,
+		ResultRef:                        resultRef,
+		ArtifactRefs:                     artifactRefs,
+		ApprovalRef:                      approvalRef,
+		ApprovalDecision:                 approvalReview.Decision,
+		ApprovalReason:                   approvalReview.Reason,
+		ApprovalSource:                   approvalReview.Source,
+		ApprovalRiskLevel:                approvalReview.RiskLevel,
+		ApprovalReviewModel:              approvalReview.ReviewModel,
+		ApprovalReviewRole:               approvalReview.ReviewRole,
+		ApprovalReviewOutcome:            approvalReview.ReviewOutcome,
+		ApprovalReviewRequestFingerprint: approvalReview.ReviewRequestFingerprint,
+		ApprovalReviewDurationMS:         approvalReview.ReviewDurationMS,
+		PatchRiskSummary:                 extractToolPatchRisk(call.Name, result),
 	}
 	if err != nil {
 		record.Error = err.Error()

@@ -85,7 +85,7 @@ func (r *Reviewer) ReviewToolApproval(ctx context.Context, req tools.ToolApprova
 
 	// 3. Run the prompt inside a restricted review session. Any session
 	//    construction/runtime failure is a fail-closed denial.
-	session, err := r.reviewSession()
+	session, err := r.reviewSessionForRequest()
 	if err != nil {
 		review := denyReview("guardian review session unavailable: " + err.Error())
 		r.notifyBreaker(review.Decision)
@@ -100,7 +100,7 @@ func (r *Reviewer) ReviewToolApproval(ctx context.Context, req tools.ToolApprova
 		if reason == "" {
 			reason = string(result.Outcome)
 		}
-		review := denyReview("guardian review session " + string(result.Outcome) + ": " + reason)
+		review := annotateReviewWithSessionResult(denyReview("guardian review session "+string(result.Outcome)+": "+reason), result)
 		r.notifyBreaker(review.Decision)
 		return review, nil
 	}
@@ -109,18 +109,18 @@ func (r *Reviewer) ReviewToolApproval(ctx context.Context, req tools.ToolApprova
 	//    single-line JSON object so the response should fit comfortably.
 	parsed, err := parseGuardianDecision(result.Content)
 	if err != nil {
-		review := denyReview("guardian response parse failed: " + err.Error())
+		review := annotateReviewWithSessionResult(denyReview("guardian response parse failed: "+err.Error()), result)
 		r.notifyBreaker(review.Decision)
 		return review, nil
 	}
 
 	// 6. Build the review value.
-	review := tools.ToolApprovalReview{
+	review := annotateReviewWithSessionResult(tools.ToolApprovalReview{
 		Decision:  parsed.Decision,
 		Reason:    parsed.Rationale,
 		RiskLevel: parsed.RiskLevel,
 		Source:    tools.ApprovalSourceGuardian,
-	}
+	}, result)
 
 	// 7. Notify the breaker.
 	r.notifyBreaker(review.Decision)
@@ -135,12 +135,12 @@ func (r *Reviewer) ReviewToolApproval(ctx context.Context, req tools.ToolApprova
 	return review, nil
 }
 
-func (r *Reviewer) reviewSession() (*reviewsession.Session, error) {
+func (r *Reviewer) reviewSessionForRequest() (*reviewsession.Session, error) {
 	if r == nil {
 		return nil, errors.New("guardian reviewer is not configured")
 	}
 	if r.Session != nil {
-		return r.Session, nil
+		return r.Session.Fork(reviewsession.ForkOptions{ParentTurnID: r.currentTurnID()})
 	}
 	if r.Client == nil {
 		return nil, errors.New("guardian reviewer client is not configured")
@@ -157,6 +157,7 @@ func (r *Reviewer) reviewSession() (*reviewsession.Session, error) {
 		MaxTokens:       256,
 		Effort:          r.Effort,
 		ProviderOptions: r.ProviderOptions,
+		ParentTurnID:    r.currentTurnID(),
 	})
 }
 
@@ -164,16 +165,29 @@ func (r *Reviewer) notifyBreaker(decision tools.ToolApprovalDecision) {
 	if r.Breaker == nil {
 		return
 	}
-	turnID := ""
-	if r.TurnID != nil {
-		turnID = strings.TrimSpace(r.TurnID())
-	}
+	turnID := r.currentTurnID()
 	switch decision {
 	case tools.ToolApprovalDecisionDenied:
 		r.Breaker.RecordDenial(turnID)
 	default:
 		r.Breaker.RecordApproval(turnID)
 	}
+}
+
+func (r *Reviewer) currentTurnID() string {
+	if r == nil || r.TurnID == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.TurnID())
+}
+
+func annotateReviewWithSessionResult(review tools.ToolApprovalReview, result reviewsession.Result) tools.ToolApprovalReview {
+	review.ReviewModel = result.Model
+	review.ReviewRole = result.Role
+	review.ReviewOutcome = string(result.Outcome)
+	review.ReviewRequestFingerprint = result.RequestFingerprint
+	review.ReviewDurationMS = result.DurationMS
+	return review
 }
 
 func denyReview(reason string) tools.ToolApprovalReview {

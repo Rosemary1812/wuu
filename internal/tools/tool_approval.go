@@ -61,10 +61,15 @@ type ToolApprovalReviewRequest struct {
 }
 
 type ToolApprovalReview struct {
-	Decision  ToolApprovalDecision `json:"decision"`
-	Reason    string               `json:"reason,omitempty"`
-	RiskLevel GuardianRiskLevel    `json:"risk_level,omitempty"`
-	Source    string               `json:"source,omitempty"`
+	Decision                 ToolApprovalDecision `json:"decision"`
+	Reason                   string               `json:"reason,omitempty"`
+	RiskLevel                GuardianRiskLevel    `json:"risk_level,omitempty"`
+	Source                   string               `json:"source,omitempty"`
+	ReviewModel              string               `json:"review_model,omitempty"`
+	ReviewRole               string               `json:"review_role,omitempty"`
+	ReviewOutcome            string               `json:"review_outcome,omitempty"`
+	ReviewRequestFingerprint string               `json:"review_request_fingerprint,omitempty"`
+	ReviewDurationMS         int64                `json:"review_duration_ms,omitempty"`
 }
 
 type ToolApprovalReviewer interface {
@@ -119,15 +124,22 @@ func normalizeToolApprovalReview(review ToolApprovalReview) ToolApprovalReview {
 	case ToolApprovalDecisionApproved, ToolApprovalDecisionApprovedForSession, ToolApprovalDecisionDenied:
 		return review
 	default:
-		// Preserve audit metadata (RiskLevel, Source) even when the
+		// Preserve audit metadata even when the
 		// reviewer returned an unrecognised decision string: downstream
 		// logs and the UI still need to know who made the call and at
 		// what risk level so the model can be steered accordingly.
+		review.Decision = ToolApprovalDecisionDenied
+		review.Reason = "approval reviewer returned an invalid decision"
 		return ToolApprovalReview{
-			Decision:  ToolApprovalDecisionDenied,
-			Reason:    "approval reviewer returned an invalid decision",
-			RiskLevel: review.RiskLevel,
-			Source:    review.Source,
+			Decision:                 review.Decision,
+			Reason:                   review.Reason,
+			RiskLevel:                review.RiskLevel,
+			Source:                   review.Source,
+			ReviewModel:              review.ReviewModel,
+			ReviewRole:               review.ReviewRole,
+			ReviewOutcome:            review.ReviewOutcome,
+			ReviewRequestFingerprint: review.ReviewRequestFingerprint,
+			ReviewDurationMS:         review.ReviewDurationMS,
 		}
 	}
 }

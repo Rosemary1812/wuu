@@ -54,27 +54,29 @@ type TraceObservability struct {
 }
 
 type TraceReplaySummary struct {
-	Path              string                     `json:"path,omitempty"`
-	Mode              string                     `json:"mode"`
-	EventCount        int                        `json:"event_count"`
-	EventTypes        map[string]int             `json:"event_types,omitempty"`
-	Task              *TraceTask                 `json:"task,omitempty"`
-	Observability     *TraceObservability        `json:"observability,omitempty"`
-	ModelProfile      *ModelProfileObservation   `json:"model_profile,omitempty"`
-	ContextBlocks     []ContextBlockObservation  `json:"context_blocks,omitempty"`
-	ContextBlockKinds []string                   `json:"context_block_kinds,omitempty"`
-	ToolInventory     []ToolInventoryObservation `json:"tool_inventory,omitempty"`
-	ToolNames         []string                   `json:"tool_names,omitempty"`
-	ToolSummary       *ToolReplaySummary         `json:"tool_summary,omitempty"`
-	WorkflowRuns      []WorkflowRunObservation   `json:"workflow_runs,omitempty"`
-	WorkflowRunIDs    []string                   `json:"workflow_run_ids,omitempty"`
-	GoalAttention     []GoalAttentionObservation `json:"goal_attention,omitempty"`
-	HarnessTaskIDs    []string                   `json:"harness_task_ids,omitempty"`
-	HarnessReportIDs  []string                   `json:"harness_report_ids,omitempty"`
-	Validation        *ValidationReplaySummary   `json:"validation,omitempty"`
-	Final             *TraceReplayFinal          `json:"final,omitempty"`
-	Complete          bool                       `json:"complete"`
-	Warnings          []string                   `json:"warnings,omitempty"`
+	Path                        string                       `json:"path,omitempty"`
+	Mode                        string                       `json:"mode"`
+	EventCount                  int                          `json:"event_count"`
+	EventTypes                  map[string]int               `json:"event_types,omitempty"`
+	Task                        *TraceTask                   `json:"task,omitempty"`
+	Observability               *TraceObservability          `json:"observability,omitempty"`
+	ModelProfile                *ModelProfileObservation     `json:"model_profile,omitempty"`
+	ContextBlocks               []ContextBlockObservation    `json:"context_blocks,omitempty"`
+	ContextBlockKinds           []string                     `json:"context_block_kinds,omitempty"`
+	ToolInventory               []ToolInventoryObservation   `json:"tool_inventory,omitempty"`
+	ToolRecords                 []ToolObservation            `json:"tool_records,omitempty"`
+	ToolNames                   []string                     `json:"tool_names,omitempty"`
+	ToolSummary                 *ToolReplaySummary           `json:"tool_summary,omitempty"`
+	ModelProfileRecommendations []ModelProfileRecommendation `json:"model_profile_recommendations,omitempty"`
+	WorkflowRuns                []WorkflowRunObservation     `json:"workflow_runs,omitempty"`
+	WorkflowRunIDs              []string                     `json:"workflow_run_ids,omitempty"`
+	GoalAttention               []GoalAttentionObservation   `json:"goal_attention,omitempty"`
+	HarnessTaskIDs              []string                     `json:"harness_task_ids,omitempty"`
+	HarnessReportIDs            []string                     `json:"harness_report_ids,omitempty"`
+	Validation                  *ValidationReplaySummary     `json:"validation,omitempty"`
+	Final                       *TraceReplayFinal            `json:"final,omitempty"`
+	Complete                    bool                         `json:"complete"`
+	Warnings                    []string                     `json:"warnings,omitempty"`
 }
 
 type ToolReplaySummary struct {
@@ -333,6 +335,7 @@ func ReplayTrace(path string) (TraceReplaySummary, error) {
 	}
 	summary.finalizeToolSummary()
 	summary.finalizeValidationSummary()
+	summary.ModelProfileRecommendations = BuildModelProfileRecommendations(summary)
 	summary.Complete = summary.EventTypes["task"] > 0 && summary.EventTypes["final"] > 0
 	return summary, nil
 }
@@ -376,6 +379,7 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 		if err := json.Unmarshal(data, &records); err != nil {
 			return err
 		}
+		summary.ToolRecords = append(summary.ToolRecords, records...)
 		for _, record := range records {
 			if record.Name != "" {
 				summary.ToolNames = append(summary.ToolNames, record.Name)

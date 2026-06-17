@@ -371,6 +371,57 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	}
 }
 
+func TestReplayTraceBuildsModelProfileRecommendationsFromEvidence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace", "eval-trace.jsonl")
+	start := time.Unix(100, 0).UTC()
+	err := WriteTrace(path, Result{
+		TaskID:   "task-1",
+		TaskName: "Task One",
+		Success:  true,
+		Observability: &Observability{
+			ModelProfile: &ModelProfileObservation{
+				ProviderName:          "portable",
+				Model:                 "coder",
+				AllowParallelReadOnly: false,
+			},
+			ToolRecords: []ToolObservation{{
+				Name:            "read_file",
+				ReadOnly:        true,
+				ConcurrencySafe: true,
+				StartedAt:       start,
+				DurationMS:      200,
+				Success:         true,
+			}, {
+				Name:            "grep",
+				ReadOnly:        true,
+				ConcurrencySafe: true,
+				StartedAt:       start.Add(50 * time.Millisecond),
+				DurationMS:      100,
+				Success:         true,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("WriteTrace: %v", err)
+	}
+
+	summary, err := ReplayTrace(path)
+	if err != nil {
+		t.Fatalf("ReplayTrace: %v", err)
+	}
+	if len(summary.ModelProfileRecommendations) != 1 {
+		t.Fatalf("expected one profile recommendation, got %+v", summary.ModelProfileRecommendations)
+	}
+	rec := summary.ModelProfileRecommendations[0]
+	if rec.Field != "workflow.allow_parallel_read_only" ||
+		rec.CurrentValue != "false" ||
+		rec.RecommendedValue != "true" ||
+		len(rec.Evidence) == 0 ||
+		!strings.Contains(rec.Evidence[0], "read_file overlaps grep") {
+		t.Fatalf("unexpected profile recommendation: %+v", rec)
+	}
+}
+
 func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "trace", "eval-trace.jsonl")
 	err := WriteTrace(path, Result{

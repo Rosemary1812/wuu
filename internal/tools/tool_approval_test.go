@@ -19,16 +19,26 @@ func TestToolApprovalReview_JSONRoundtrip(t *testing.T) {
 		{
 			name: "approved with risk and source",
 			review: ToolApprovalReview{
-				Decision:  ToolApprovalDecisionApproved,
-				Reason:    "looks fine",
-				RiskLevel: GuardianRiskLow,
-				Source:    ApprovalSourceGuardian,
+				Decision:                 ToolApprovalDecisionApproved,
+				Reason:                   "looks fine",
+				RiskLevel:                GuardianRiskLow,
+				Source:                   ApprovalSourceGuardian,
+				ReviewModel:              "review-model",
+				ReviewRole:               "guardian",
+				ReviewOutcome:            "completed",
+				ReviewRequestFingerprint: strings.Repeat("a", 64),
+				ReviewDurationMS:         123,
 			},
 			wantSubs: []string{
 				`"decision":"approved"`,
 				`"reason":"looks fine"`,
 				`"risk_level":"low"`,
 				`"source":"guardian"`,
+				`"review_model":"review-model"`,
+				`"review_role":"guardian"`,
+				`"review_outcome":"completed"`,
+				`"review_request_fingerprint":"` + strings.Repeat("a", 64) + `"`,
+				`"review_duration_ms":123`,
 			},
 		},
 		{
@@ -98,9 +108,14 @@ func TestToolApprovalReview_JSONRoundtrip(t *testing.T) {
 // is replaced with Denied.
 func TestNormalizeToolApprovalReview_PreservesNewFields(t *testing.T) {
 	got := normalizeToolApprovalReview(ToolApprovalReview{
-		Decision:  ToolApprovalDecision("bogus"),
-		RiskLevel: GuardianRiskCritical,
-		Source:    ApprovalSourceGuardian,
+		Decision:                 ToolApprovalDecision("bogus"),
+		RiskLevel:                GuardianRiskCritical,
+		Source:                   ApprovalSourceGuardian,
+		ReviewModel:              "review-model",
+		ReviewRole:               "guardian",
+		ReviewOutcome:            "completed",
+		ReviewRequestFingerprint: strings.Repeat("b", 64),
+		ReviewDurationMS:         456,
 	})
 	if got.Decision != ToolApprovalDecisionDenied {
 		t.Fatalf("decision = %q, want denied", got.Decision)
@@ -110,5 +125,9 @@ func TestNormalizeToolApprovalReview_PreservesNewFields(t *testing.T) {
 	}
 	if got.Source != ApprovalSourceGuardian {
 		t.Fatalf("source = %q, want guardian", got.Source)
+	}
+	if got.ReviewModel != "review-model" || got.ReviewRole != "guardian" || got.ReviewOutcome != "completed" ||
+		got.ReviewRequestFingerprint != strings.Repeat("b", 64) || got.ReviewDurationMS != 456 {
+		t.Fatalf("review metadata not preserved: %+v", got)
 	}
 }

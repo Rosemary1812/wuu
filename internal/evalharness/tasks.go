@@ -139,6 +139,16 @@ type ModelProfileObservation struct {
 	AllowDirectShell          bool   `json:"allow_direct_shell,omitempty"`
 }
 
+type ModelProfileRecommendation struct {
+	ProviderName     string   `json:"provider_name,omitempty"`
+	Model            string   `json:"model,omitempty"`
+	Field            string   `json:"field"`
+	CurrentValue     string   `json:"current_value,omitempty"`
+	RecommendedValue string   `json:"recommended_value"`
+	Reason           string   `json:"reason"`
+	Evidence         []string `json:"evidence,omitempty"`
+}
+
 type ToolInventoryObservation struct {
 	Name            string `json:"name"`
 	Kind            string `json:"kind,omitempty"`

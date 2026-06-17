@@ -3,6 +3,7 @@ package reviewsession
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -131,5 +132,117 @@ func TestRunProviderErrorFailsClosed(t *testing.T) {
 	result := session.Run(context.Background(), Request{Prompt: "review"})
 	if result.Outcome != OutcomeFailed || result.ErrorKind != "provider_error" {
 		t.Fatalf("expected provider_error result, got %+v", result)
+	}
+}
+
+func TestRunRequestFingerprintStableForEquivalentProviderRequests(t *testing.T) {
+	client := &fakeReviewClient{response: providers.ChatResponse{Content: `{"decision":"approved"}`}}
+	session, err := New(Config{
+		Client:          client,
+		Model:           "review-model",
+		Role:            "guardian",
+		ParentSessionID: "session-1",
+		ParentTurnID:    "turn-1",
+		Effort:          "low",
+		ProviderOptions: map[string]any{"reasoningEffort": "low"},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	fork, err := session.Fork(ForkOptions{ParentTurnID: "turn-2"})
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+
+	first := session.Run(context.Background(), Request{Prompt: "review this"})
+	second := fork.Run(context.Background(), Request{Prompt: "review this"})
+	changed := session.Run(context.Background(), Request{Prompt: "review something else"})
+
+	if first.RequestFingerprint == "" {
+		t.Fatal("request fingerprint should be set")
+	}
+	if first.RequestFingerprint != second.RequestFingerprint {
+		t.Fatalf("trace-only fork metadata should not change request fingerprint: %q != %q", first.RequestFingerprint, second.RequestFingerprint)
+	}
+	if first.RequestFingerprint == changed.RequestFingerprint {
+		t.Fatal("different provider request should change request fingerprint")
+	}
+}
+
+func TestForkOverridesTraceWithoutMutatingParent(t *testing.T) {
+	client := &fakeReviewClient{response: providers.ChatResponse{Content: `{"decision":"approved"}`}}
+	parent, err := New(Config{
+		Client:          client,
+		Model:           "review-model",
+		Role:            "guardian",
+		ParentSessionID: "session-1",
+		ParentTurnID:    "turn-1",
+		Effort:          "low",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	fork, err := parent.Fork(ForkOptions{ParentTurnID: "turn-2", Effort: "high"})
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+
+	forkResult := fork.Run(context.Background(), Request{Prompt: "review"})
+	parentResult := parent.Run(context.Background(), Request{Prompt: "review"})
+
+	if forkResult.ParentTurnID != "turn-2" || parentResult.ParentTurnID != "turn-1" {
+		t.Fatalf("fork should not mutate parent trace metadata: fork=%+v parent=%+v", forkResult, parentResult)
+	}
+	if len(client.requests) != 2 || client.requests[0].Effort != "high" || client.requests[1].Effort != "low" {
+		t.Fatalf("fork should override effort without mutating parent: %+v", client.requests)
+	}
+}
+
+type concurrentReviewClient struct {
+	mu       sync.Mutex
+	requests []providers.ChatRequest
+}
+
+func (c *concurrentReviewClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	c.mu.Lock()
+	c.requests = append(c.requests, req)
+	c.mu.Unlock()
+	return providers.ChatResponse{Content: `{"decision":"approved"}`}, nil
+}
+
+func TestForkedSessionsCanRunConcurrently(t *testing.T) {
+	client := &concurrentReviewClient{}
+	parent, err := New(Config{Client: client, Model: "review-model", Role: "guardian"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 6)
+	for i := 0; i < 6; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fork, forkErr := parent.Fork(ForkOptions{ParentTurnID: time.Unix(int64(i), 0).UTC().Format(time.RFC3339)})
+			if forkErr != nil {
+				errs <- forkErr
+				return
+			}
+			result := fork.Run(context.Background(), Request{Prompt: "review"})
+			if result.Outcome != OutcomeCompleted || result.RequestFingerprint == "" {
+				errs <- errors.New("forked review did not complete with fingerprint")
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent fork failed: %v", err)
+		}
+	}
+	if len(client.requests) != 6 {
+		t.Fatalf("expected 6 review requests, got %d", len(client.requests))
 	}
 }

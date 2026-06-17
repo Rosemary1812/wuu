@@ -4351,7 +4351,17 @@ func TestToolkit_ToolApprovalReviewerApprovesAndExecutes(t *testing.T) {
 		},
 	})
 	reviewer := &recordingToolApprovalReviewer{
-		reviews: []ToolApprovalReview{{Decision: ToolApprovalDecisionApproved, Reason: "user approved"}},
+		reviews: []ToolApprovalReview{{
+			Decision:                 ToolApprovalDecisionApproved,
+			Reason:                   "user approved",
+			Source:                   ApprovalSourceGuardian,
+			RiskLevel:                GuardianRiskLow,
+			ReviewModel:              "review-model",
+			ReviewRole:               "guardian",
+			ReviewOutcome:            "completed",
+			ReviewRequestFingerprint: strings.Repeat("c", 64),
+			ReviewDurationMS:         42,
+		}},
 	}
 	kit.SetToolApprovalReviewer(reviewer)
 
@@ -4381,6 +4391,13 @@ func TestToolkit_ToolApprovalReviewerApprovesAndExecutes(t *testing.T) {
 	if !record.Success || record.PolicyAction != ToolPolicyRequireApproval ||
 		record.ApprovalDecision != ToolApprovalDecisionApproved ||
 		record.ApprovalReason != "user approved" ||
+		record.ApprovalSource != ApprovalSourceGuardian ||
+		record.ApprovalRiskLevel != GuardianRiskLow ||
+		record.ApprovalReviewModel != "review-model" ||
+		record.ApprovalReviewRole != "guardian" ||
+		record.ApprovalReviewOutcome != "completed" ||
+		record.ApprovalReviewRequestFingerprint != strings.Repeat("c", 64) ||
+		record.ApprovalReviewDurationMS != 42 ||
 		record.ApprovalRef == "" {
 		t.Fatalf("unexpected approved telemetry: %+v", record)
 	}
