@@ -69,7 +69,7 @@ func (b *Builder) AddMemory(files []memory.File) {
 	var sb strings.Builder
 	sb.WriteString("# Memory\n\n")
 	sb.WriteString("The following markdown memory files were discovered for this session. ")
-	sb.WriteString("User, project, and local instruction files may contain conventions, style guides, and constraints that you must follow unless they conflict with higher-priority system, developer, or tool rules. ")
+	sb.WriteString("They may contain conventions, style guides, and constraints — follow them unless they conflict with higher-priority system, developer, or tool rules. ")
 	sb.WriteString("Durable MEMORY.md files are saved context and facts; use them to orient yourself, but verify time-sensitive or repo-specific details against the current workspace before acting.\n\n")
 	for _, f := range files {
 		content := TruncateMemory(f.Content, MaxMemoryLines, MaxMemoryBytes)
