@@ -28,7 +28,8 @@ func (t *ScheduleCronTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "schedule_cron",
 		Description: "Create a scheduled task that runs a prompt or saved workflow at cron intervals. " +
-			"Use workflow_name for scheduled, repeatable, multi-agent work; scheduled workflow tasks should start with start_workflow. " +
+			"Pass `workflow_name` to schedule a saved workflow (use this for repeatable, multi-agent work); the task's prompt will trigger `start_workflow`. " +
+			"Otherwise pass `prompt` for an ad-hoc task. " +
 			"The task can be recurring (runs repeatedly until deleted or expired) or one-shot (runs once).",
 		InputSchema: map[string]any{
 			"type": "object",
