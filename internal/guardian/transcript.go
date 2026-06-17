@@ -7,7 +7,12 @@
 // circuit breaker, and the provider-backed reviewer live in sibling files.
 package guardian
 
-import "context"
+import (
+	"context"
+	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/providers"
+)
 
 // TranscriptRole tags the source of a transcript entry passed to the reviewer.
 // It mirrors the role taxonomy used by providers.ChatMessage so callers can
@@ -69,4 +74,50 @@ func TranscriptFromContext(ctx context.Context) (Transcript, bool) {
 		t.Entries = []TranscriptEntry{}
 	}
 	return t, true
+}
+
+// TranscriptFromChatMessages converts a chat history into a Transcript
+// suitable for the guardian reviewer. The function drops messages whose
+// role is unknown to the reviewer (system, custom agent roles, ...) and
+// skips assistant tool-call messages whose Content is empty — those
+// carry the action metadata in providers.ToolCall, which the reviewer
+// already receives via the request side. Tool result messages with
+// non-empty Content are kept so the reviewer can see what the model
+// has already learned.
+//
+// The returned Transcript is then passed through truncateTranscript in
+// BuildPrompt, so per-entry and total length caps still apply.
+func TranscriptFromChatMessages(messages []providers.ChatMessage) Transcript {
+	if len(messages) == 0 {
+		return Transcript{Entries: []TranscriptEntry{}}
+	}
+	entries := make([]TranscriptEntry, 0, len(messages))
+	for _, msg := range messages {
+		role := transcriptRoleForMessage(msg.Role)
+		if role == "" {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		entries = append(entries, TranscriptEntry{
+			Role:    role,
+			Content: content,
+		})
+	}
+	return Transcript{Entries: entries}
+}
+
+func transcriptRoleForMessage(role string) TranscriptRole {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "user":
+		return TranscriptRoleUser
+	case "assistant":
+		return TranscriptRoleAssistant
+	case "tool":
+		return TranscriptRoleTool
+	default:
+		return ""
+	}
 }

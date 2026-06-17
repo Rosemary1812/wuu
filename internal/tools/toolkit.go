@@ -358,6 +358,18 @@ func (t *Toolkit) SetToolApprovalReviewer(reviewer ToolApprovalReviewer) {
 	}
 }
 
+// ApprovalStore returns the session-wide approval cache the toolkit uses
+// to skip the reviewer for repeated identical tool calls. Returns nil
+// only when the toolkit itself is nil. Callers (e.g. the LLM-driven
+// guardian reviewer) can pass the result through to keep their own
+// short-circuit on top of the toolkit's already-failed attempts.
+func (t *Toolkit) ApprovalStore() *ToolApprovalStore {
+	if t == nil {
+		return nil
+	}
+	return t.approvalStore
+}
+
 // AgentControl returns the attached agent control runtime, or nil.
 func (t *Toolkit) AgentControl() *agentcontrol.AgentControl {
 	return t.env.AgentControl

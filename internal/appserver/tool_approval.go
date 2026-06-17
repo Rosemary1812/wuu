@@ -3,9 +3,12 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/guardian"
+	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -34,12 +37,27 @@ type ToolApprovalResponse struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
+// installToolApprovalReviewer wires the toolkit's reviewer based on the
+// runtime permission profile:
+//
+//   - ApprovalsReviewer == auto_review: try to construct an LLM-driven
+//     guardian.Reviewer from the current provider config. On any
+//     construction failure (bad config, missing API key, etc) fail closed:
+//     approval requests are denied instead of falling back to local rules.
+//   - everything else: keep the legacy IPC path that asks the user via
+//     the desktop app-server.
 func (s *Server) installToolApprovalReviewer(kit *tools.Toolkit) {
 	if s == nil || kit == nil {
 		return
 	}
 	if s.rt != nil && s.rt.Permissions.ApprovalsReviewer == config.ApprovalsReviewerAutoReview {
-		kit.SetToolApprovalReviewer(tools.DefaultAutoApprovalReviewer{})
+		if reviewer, ok := s.buildGuardianReviewer(kit); ok {
+			kit.SetToolApprovalReviewer(reviewer)
+			return
+		}
+		reason := "auto_review guardian unavailable; approval blocked"
+		s.logGuardianFallback(reason)
+		kit.SetToolApprovalReviewer(unavailableGuardianReviewer(reason))
 		return
 	}
 	kit.SetToolApprovalReviewer(tools.ToolApprovalReviewerFunc(func(ctx context.Context, request tools.ToolApprovalReviewRequest) (tools.ToolApprovalReview, error) {
@@ -74,4 +92,70 @@ func (s *Server) installToolApprovalReviewer(kit *tools.Toolkit) {
 			Reason:   strings.TrimSpace(response.Reason),
 		}, nil
 	}))
+}
+
+// buildGuardianReviewer constructs a guardian.Reviewer wired to the
+// runtime's configured provider. Returns (nil, false) whenever any step
+// fails — bad runtime, missing config, unresolvable provider name, or a
+// BuildClient error — so the caller can fail closed without needing to
+// inspect each failure mode.
+//
+// BuildClient is the same synchronous factory used by the runtime when
+// constructing the main agent's StreamRunner client (see
+// internal/providerfactory/factory.go), so the guardian reuses the
+// resolved auth, base URL, and provider-specific wiring the user
+// already configured.
+func (s *Server) buildGuardianReviewer(kit *tools.Toolkit) (*guardian.Reviewer, bool) {
+	if s == nil || s.rt == nil || kit == nil {
+		return nil, false
+	}
+	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return nil, false
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(s.rt.ProviderName)
+	if err != nil {
+		return nil, false
+	}
+	client, err := providerfactory.BuildClient(providerCfg, resolvedName)
+	if err != nil || client == nil {
+		return nil, false
+	}
+	model := ""
+	if s.rt.StreamRunner != nil {
+		model = s.rt.StreamRunner.Model
+	}
+	return &guardian.Reviewer{
+		Client:  client,
+		Model:   strings.TrimSpace(model),
+		Cache:   kit.ApprovalStore(),
+		Breaker: s.guardianBreaker,
+	}, true
+}
+
+func unavailableGuardianReviewer(reason string) tools.ToolApprovalReviewer {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "auto_review guardian unavailable; approval blocked"
+	}
+	return tools.ToolApprovalReviewerFunc(func(context.Context, tools.ToolApprovalReviewRequest) (tools.ToolApprovalReview, error) {
+		return tools.ToolApprovalReview{
+			Decision:  tools.ToolApprovalDecisionDenied,
+			Reason:    reason,
+			RiskLevel: tools.GuardianRiskHigh,
+			Source:    tools.ApprovalSourceGuardian,
+		}, nil
+	})
+}
+
+// logGuardianFallback records the auto-review failure reason on the Server so it
+// can be surfaced by the desktop layer without us polluting the
+// JSON-RPC out stream with diagnostic log lines. Concurrent-safe.
+func (s *Server) logGuardianFallback(msg string) {
+	if s == nil || strings.TrimSpace(msg) == "" {
+		return
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.lastFallback = msg
 }

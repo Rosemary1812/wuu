@@ -645,7 +645,7 @@ func TestServerToolApprovalRequestApprovesToolkitExecution(t *testing.T) {
 	}
 }
 
-func TestServerAutoReviewApprovesFileWithoutClientRequest(t *testing.T) {
+func TestServerAutoReviewFailsClosedWithoutGuardianProvider(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)
 	if err != nil {
@@ -664,25 +664,33 @@ func TestServerAutoReviewApprovesFileWithoutClientRequest(t *testing.T) {
 		ApprovalsReviewer: config.ApprovalsReviewerAutoReview,
 	}
 	out := &lockedBuffer{}
-	New(rt, out)
+	srv := New(rt, out)
 
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		ID:        "call-write",
 		Name:      "write_file",
 		Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
-	}); err != nil {
-		t.Fatalf("auto-reviewed write_file: %v", err)
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_denied") ||
+		!strings.Contains(err.Error(), "auto_review guardian unavailable") {
+		t.Fatalf("expected fail-closed guardian denial, got %v", err)
 	}
 	if strings.Contains(out.String(), MethodToolApprovalRequest) {
 		t.Fatalf("auto review should not emit client approval request: %s", out.String())
 	}
+	if srv.lastFallback == "" {
+		t.Fatal("expected guardian setup failure to be recorded")
+	}
+	if _, statErr := os.Stat(filepath.Join(rt.RootDir, "notes.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("denied auto-review write should not create file, stat err=%v", statErr)
+	}
 	records := kit.ToolTelemetry()
-	if len(records) != 1 || records[0].ApprovalDecision != tools.ToolApprovalDecisionApproved {
-		t.Fatalf("auto approval telemetry missing: %+v", records)
+	if len(records) != 1 || records[0].ApprovalDecision != tools.ToolApprovalDecisionDenied {
+		t.Fatalf("auto review denial telemetry missing: %+v", records)
 	}
 }
 
-func TestServerAutoReviewDeniesHighRiskShellWithoutClientRequest(t *testing.T) {
+func TestServerAutoReviewDeniesShellWithoutClientRequestWhenGuardianUnavailable(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)
 	if err != nil {

@@ -38,7 +38,6 @@ const (
 	ApprovalSourceUser       = "user"
 	ApprovalSourceAutoReview = "auto_review"
 	ApprovalSourceGuardian   = "guardian"
-	ApprovalSourceRule       = "rule"
 )
 
 type ToolApprovalReviewRequest struct {
@@ -76,37 +75,6 @@ type ToolApprovalReviewerFunc func(ctx context.Context, request ToolApprovalRevi
 
 func (f ToolApprovalReviewerFunc) ReviewToolApproval(ctx context.Context, request ToolApprovalReviewRequest) (ToolApprovalReview, error) {
 	return f(ctx, request)
-}
-
-type DefaultAutoApprovalReviewer struct{}
-
-func (DefaultAutoApprovalReviewer) ReviewToolApproval(_ context.Context, request ToolApprovalReviewRequest) (ToolApprovalReview, error) {
-	if request.Destructive {
-		return ToolApprovalReview{
-			Decision: ToolApprovalDecisionDenied,
-			Reason:   "destructive tool calls require user approval",
-			Source:   ApprovalSourceRule,
-		}, nil
-	}
-	if request.ReadOnly || request.Risk == ToolRiskLow {
-		return ToolApprovalReview{
-			Decision: ToolApprovalDecisionApproved,
-			Reason:   "low-risk tool call",
-			Source:   ApprovalSourceRule,
-		}, nil
-	}
-	if request.Kind == ToolKindFile {
-		return ToolApprovalReview{
-			Decision: ToolApprovalDecisionApproved,
-			Reason:   "non-destructive workspace file change",
-			Source:   ApprovalSourceRule,
-		}, nil
-	}
-	return ToolApprovalReview{
-		Decision: ToolApprovalDecisionDenied,
-		Reason:   "high-risk tool call requires user approval",
-		Source:   ApprovalSourceRule,
-	}, nil
 }
 
 type ToolApprovalStore struct {

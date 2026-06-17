@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 )
@@ -78,6 +79,18 @@ type Server struct {
 	queuedTurnMu        sync.Mutex
 	pendingQueuedTurns  map[string][]queuedTurn
 	drainingQueuedTurns map[string]bool
+
+	// guardianBreaker tracks recent auto-review denials so a runaway
+	// rejection loop can interrupt the host turn instead of burning LLM
+	// tokens on a broken path. Shared across turns; cleared via ClearTurn
+	// by the host turn layer when a turn completes.
+	guardianBreaker *guardian.RejectionCircuitBreaker
+
+	// lastFallback records the most recent auto_review guardian setup
+	// failure, if any. Set under writeMu. The field exists so the desktop
+	// (and tests) can observe why auto-review failed closed without us
+	// polluting the JSON-RPC out stream with log lines.
+	lastFallback string
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
@@ -91,6 +104,8 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingAgentCompletionTurns: make(map[string]bool),
 		pendingQueuedTurns:           make(map[string][]queuedTurn),
 		drainingQueuedTurns:          make(map[string]bool),
+
+		guardianBreaker: guardian.NewRejectionCircuitBreaker(),
 	}
 	if rt != nil {
 		s.installToolApprovalReviewer(rt.Toolkit)

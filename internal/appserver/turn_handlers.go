@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -472,6 +473,11 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		runner.BeforeStep = baseBeforeStep
 		runner.OnRequestContext = baseOnRequestContext
 	}()
+	// Hang the recent transcript off the request context so the LLM-driven
+	// guardian reviewer can judge pending tool calls in light of user intent.
+	// The snapshot is taken at turn entry; per-step updates would require
+	// plumbing through the streaming callback and are deferred for v1.
+	ctx = guardian.WithTranscript(ctx, guardian.TranscriptFromChatMessages(history))
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
 		th.mu.Lock()
 		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())

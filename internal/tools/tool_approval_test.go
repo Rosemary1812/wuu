@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -89,52 +88,6 @@ func TestToolApprovalReview_JSONRoundtrip(t *testing.T) {
 			}
 			if got.Source != tc.review.Source {
 				t.Fatalf("source = %q, want %q", got.Source, tc.review.Source)
-			}
-		})
-	}
-}
-
-// TestDefaultAutoApprovalReviewer_TagsSource verifies that the legacy rule
-// engine marks its verdicts with ApprovalSourceRule so audit logs can
-// distinguish rule-driven decisions from LLM-driven ones.
-func TestDefaultAutoApprovalReviewer_TagsSource(t *testing.T) {
-	reviewer := DefaultAutoApprovalReviewer{}
-
-	cases := []struct {
-		name    string
-		request ToolApprovalReviewRequest
-		source  string
-	}{
-		{
-			name:    "destructive denies with rule source",
-			request: ToolApprovalReviewRequest{Destructive: true, Kind: ToolKindShell, Risk: ToolRiskHigh},
-			source:  ApprovalSourceRule,
-		},
-		{
-			name:    "read-only approves with rule source",
-			request: ToolApprovalReviewRequest{ReadOnly: true, Kind: ToolKindFile, Risk: ToolRiskLow},
-			source:  ApprovalSourceRule,
-		},
-		{
-			name:    "non-destructive file write approves with rule source",
-			request: ToolApprovalReviewRequest{Kind: ToolKindFile, Risk: ToolRiskMedium},
-			source:  ApprovalSourceRule,
-		},
-		{
-			name:    "high-risk shell denies with rule source",
-			request: ToolApprovalReviewRequest{Kind: ToolKindShell, Risk: ToolRiskHigh},
-			source:  ApprovalSourceRule,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := reviewer.ReviewToolApproval(context.Background(), tc.request)
-			if err != nil {
-				t.Fatalf("review: %v", err)
-			}
-			if got.Source != tc.source {
-				t.Fatalf("source = %q, want %q", got.Source, tc.source)
 			}
 		})
 	}

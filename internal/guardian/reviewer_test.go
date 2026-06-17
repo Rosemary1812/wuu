@@ -73,7 +73,7 @@ func TestReviewer_CacheHitSkipsLLM(t *testing.T) {
 	cache.ApproveForSession("k", tools.ToolApprovalReview{
 		Decision: tools.ToolApprovalDecisionApproved,
 		Reason:   "cached ok",
-		Source:   tools.ApprovalSourceRule,
+		Source:   tools.ApprovalSourceGuardian,
 	})
 	r := &Reviewer{Client: provider, Model: "m", Cache: cache}
 	review, err := r.ReviewToolApproval(context.Background(), newReq("k"))
