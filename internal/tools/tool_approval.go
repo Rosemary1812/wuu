@@ -19,6 +19,28 @@ const (
 	ToolApprovalDecisionDenied             ToolApprovalDecision = "denied"
 )
 
+// GuardianRiskLevel lets an automatic reviewer communicate how dangerous it
+// considered the action it just decided on. It mirrors Codex's
+// GuardianRiskLevel taxonomy (low/medium/high/critical) so audit logs and the
+// UI can surface this signal consistently.
+type GuardianRiskLevel string
+
+const (
+	GuardianRiskLow      GuardianRiskLevel = "low"
+	GuardianRiskMedium   GuardianRiskLevel = "medium"
+	GuardianRiskHigh     GuardianRiskLevel = "high"
+	GuardianRiskCritical GuardianRiskLevel = "critical"
+)
+
+// ApprovalSource tags who produced a given approval verdict so audit logs and
+// downstream UI can distinguish user-driven decisions from automatic ones.
+const (
+	ApprovalSourceUser       = "user"
+	ApprovalSourceAutoReview = "auto_review"
+	ApprovalSourceGuardian   = "guardian"
+	ApprovalSourceRule       = "rule"
+)
+
 type ToolApprovalReviewRequest struct {
 	ID                   string           `json:"id"`
 	ToolName             string           `json:"tool_name"`
@@ -40,8 +62,10 @@ type ToolApprovalReviewRequest struct {
 }
 
 type ToolApprovalReview struct {
-	Decision ToolApprovalDecision `json:"decision"`
-	Reason   string               `json:"reason,omitempty"`
+	Decision  ToolApprovalDecision `json:"decision"`
+	Reason    string               `json:"reason,omitempty"`
+	RiskLevel GuardianRiskLevel    `json:"risk_level,omitempty"`
+	Source    string               `json:"source,omitempty"`
 }
 
 type ToolApprovalReviewer interface {
@@ -61,23 +85,27 @@ func (DefaultAutoApprovalReviewer) ReviewToolApproval(_ context.Context, request
 		return ToolApprovalReview{
 			Decision: ToolApprovalDecisionDenied,
 			Reason:   "destructive tool calls require user approval",
+			Source:   ApprovalSourceRule,
 		}, nil
 	}
 	if request.ReadOnly || request.Risk == ToolRiskLow {
 		return ToolApprovalReview{
 			Decision: ToolApprovalDecisionApproved,
 			Reason:   "low-risk tool call",
+			Source:   ApprovalSourceRule,
 		}, nil
 	}
 	if request.Kind == ToolKindFile {
 		return ToolApprovalReview{
 			Decision: ToolApprovalDecisionApproved,
 			Reason:   "non-destructive workspace file change",
+			Source:   ApprovalSourceRule,
 		}, nil
 	}
 	return ToolApprovalReview{
 		Decision: ToolApprovalDecisionDenied,
 		Reason:   "high-risk tool call requires user approval",
+		Source:   ApprovalSourceRule,
 	}, nil
 }
 
@@ -123,9 +151,15 @@ func normalizeToolApprovalReview(review ToolApprovalReview) ToolApprovalReview {
 	case ToolApprovalDecisionApproved, ToolApprovalDecisionApprovedForSession, ToolApprovalDecisionDenied:
 		return review
 	default:
+		// Preserve audit metadata (RiskLevel, Source) even when the
+		// reviewer returned an unrecognised decision string: downstream
+		// logs and the UI still need to know who made the call and at
+		// what risk level so the model can be steered accordingly.
 		return ToolApprovalReview{
-			Decision: ToolApprovalDecisionDenied,
-			Reason:   "approval reviewer returned an invalid decision",
+			Decision:  ToolApprovalDecisionDenied,
+			Reason:    "approval reviewer returned an invalid decision",
+			RiskLevel: review.RiskLevel,
+			Source:    review.Source,
 		}
 	}
 }
