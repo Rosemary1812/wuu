@@ -47,7 +47,7 @@ func TestSessionMemoryToolAppendReadAndContextBlocks(t *testing.T) {
 	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
 		t.Fatalf("parse status: %v", err)
 	}
-	if status.Action != sessionMemoryActionStatus || len(status.Files) != 3 {
+	if status.Action != sessionMemoryActionStatus || len(status.Files) != 4 {
 		t.Fatalf("unexpected status response: %+v", status)
 	}
 	if status.Dream.LastStatus != sessionmemory.DreamStatusCompleted || !status.Dream.LastRunAt.Equal(dreamTime) {
@@ -103,23 +103,23 @@ func TestSessionMemoryToolAppendReadAndContextBlocks(t *testing.T) {
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      sessionMemoryName,
-		Arguments: `{"action":"replace","target":"checkpoint","content":"# Session Checkpoint\n\n## Active Intent\n\nShip session memory."}`,
+		Arguments: `{"action":"replace","target":"summary","content":"# Session Summary\n\n## Active Intent\n\nShip session memory."}`,
 	}); err != nil {
-		t.Fatalf("replace checkpoint: %v", err)
+		t.Fatalf("replace summary: %v", err)
 	}
 
 	blocks := kit.ContextBlocks()
 	foundMemory := false
-	foundCheckpoint := false
+	foundSummary := false
 	for _, block := range blocks {
 		if block.Kind == wuucontext.BlockMemory && strings.Contains(block.Content, "Project uses make install") {
 			foundMemory = true
 		}
 		if block.Kind == wuucontext.BlockTaskState && strings.Contains(block.Content, "Ship session memory") {
-			foundCheckpoint = true
+			foundSummary = true
 		}
 	}
-	if !foundMemory || !foundCheckpoint {
+	if !foundMemory || !foundSummary {
 		t.Fatalf("ContextBlocks missing session memory content: %+v", blocks)
 	}
 }

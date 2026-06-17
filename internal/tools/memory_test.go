@@ -206,6 +206,9 @@ func TestWriteMemoryTool_Execute(t *testing.T) {
 	if target, _ := resp["target"].(string); target != "memory" {
 		t.Errorf("default target = %q, want memory", target)
 	}
+	if path, _ := resp["path"].(string); path != p.MarkdownPath() {
+		t.Errorf("path = %q, want %q", path, p.MarkdownPath())
+	}
 	if src, _ := resp["source"].(string); src != "assistant" {
 		t.Errorf("default source = %q, want assistant", src)
 	}
@@ -690,5 +693,12 @@ func TestMemoryTools_EndToEndWithFileProvider(t *testing.T) {
 	}
 	if rec["content"] != "end-to-end test" {
 		t.Fatalf("on-disk content = %v", rec["content"])
+	}
+	md, err := os.ReadFile(filepath.Join(dir, "MEMORY.md"))
+	if err != nil {
+		t.Fatalf("read MEMORY.md: %v", err)
+	}
+	if !strings.Contains(string(md), "- end-to-end test _[tags: e2e]_") {
+		t.Fatalf("MEMORY.md missing stored memory:\n%s", string(md))
 	}
 }

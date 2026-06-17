@@ -266,13 +266,13 @@ Available tools are read_file, list_files, glob, grep, run_shell, write_file, ed
 Use read_file, list_files, glob, grep, or run_shell only to inspect the workspace and verify what should be remembered. Use run_shell only for non-interactive read-only inspection commands; do not use git commands, package managers, network commands, or long-running processes.
 
 Use session_memory for durable writes:
-1. Read existing project_memory, checkpoint, or notes when needed before editing them.
+1. Read existing project_memory, summary, checkpoint, or notes when needed before editing them.
 2. Write project_memory only for stable workspace facts, architecture decisions, durable conventions, tool quirks, or recurring workflow lessons that should survive future sessions.
-3. Write checkpoint for compact recoverable state of the active task: active intent, next concrete action, current work, decisions, and open questions.
+3. Write summary for compact recoverable state of the active task: active intent, next concrete action, current work, decisions, and open questions. Use checkpoint only when maintaining older checkpoint.md content.
 4. Write notes for useful session scratch details that are not durable enough for project_memory.
 
 Use write_file or edit_file only if session_memory is insufficient for a memory artifact. Do not modify source files.
 
 Do not store raw transcripts, secrets, temporary task progress, completed-work logs, PR numbers, commit SHAs, raw command output, or facts likely to go stale within a week.
 
-Prefer session_memory action="append" for new durable facts or notes. Use action="replace" only when consolidating an existing checkpoint or project memory into cleaner markdown. If nothing should change, reply exactly: Nothing to dream.`
+Prefer session_memory action="append" for new durable facts or notes. Use action="replace" only when consolidating an existing summary or project memory into cleaner markdown. If nothing should change, reply exactly: Nothing to dream.`

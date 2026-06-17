@@ -21,6 +21,11 @@ import (
 // directly. Use a FileProvider (or another Provider) to read state.
 const entriesFile = "entries.jsonl"
 
+// markdownFile is the human-facing profile memory document. entries.jsonl
+// remains the indexed event log; MEMORY.md is the stable markdown surface
+// shown to users and future markdown-native backends.
+const markdownFile = "MEMORY.md"
+
 // logRecord is the on-disk wrapper around Entry. The Deleted field
 // marks a tombstone line in the log; otherwise the line is a normal
 // entry. We do not expose Deleted on the public Entry type because
@@ -57,11 +62,18 @@ func NewFileProvider(dir string) (*FileProvider, error) {
 	if err := fp.load(); err != nil {
 		return nil, fmt.Errorf("memory store: load existing entries: %w", err)
 	}
+	if err := fp.ensureMarkdown(); err != nil {
+		return nil, fmt.Errorf("memory store: write markdown snapshot: %w", err)
+	}
 	return fp, nil
 }
 
 // logPath returns the full path to the JSONL log file.
 func (f *FileProvider) logPath() string { return filepath.Join(f.dir, entriesFile) }
+
+// MarkdownPath returns the full path to the human-readable markdown memory
+// document maintained by the provider.
+func (f *FileProvider) MarkdownPath() string { return filepath.Join(f.dir, markdownFile) }
 
 // load replays the on-disk log into the in-memory index. It locks
 // the Provider for the duration of the read; subsequent calls are
@@ -70,6 +82,17 @@ func (f *FileProvider) load() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.loadLocked()
+}
+
+func (f *FileProvider) ensureMarkdown() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.loaded {
+		if err := f.loadLocked(); err != nil {
+			return err
+		}
+	}
+	return f.rewriteMarkdownLocked()
 }
 
 // loadLocked reads the log and rebuilds the in-memory index. It
@@ -172,6 +195,9 @@ func (f *FileProvider) Store(_ context.Context, entry Entry) (ID, error) {
 		delete(f.entries, entry.ID)
 		return "", err
 	}
+	if err := f.rewriteMarkdownLocked(); err != nil {
+		return "", err
+	}
 	return entry.ID, nil
 }
 
@@ -263,6 +289,9 @@ func (f *FileProvider) Delete(_ context.Context, id ID) error {
 		delete(f.tombstones, id)
 		return err
 	}
+	if err := f.rewriteMarkdownLocked(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -309,6 +338,111 @@ func (f *FileProvider) appendLocked(rec *logRecord) error {
 		return err
 	}
 	return file.Sync()
+}
+
+// rewriteMarkdownLocked rewrites the profile memory document from the current
+// live index. Caller must hold f.mu.
+func (f *FileProvider) rewriteMarkdownLocked() error {
+	path := f.MarkdownPath()
+	data := []byte(renderMarkdownLocked(f.queryLocked(func(e *Entry) bool {
+		if e.ID == "" {
+			return false
+		}
+		if _, gone := f.tombstones[e.ID]; gone {
+			return false
+		}
+		return true
+	}, 0)))
+	return writeFileAtomic(path, data)
+}
+
+func renderMarkdownLocked(entries []Entry) string {
+	byTarget := map[string][]Entry{
+		"user":   {},
+		"memory": {},
+	}
+	for _, entry := range entries {
+		target := entryTarget(entry)
+		byTarget[target] = append(byTarget[target], entry)
+	}
+
+	var b strings.Builder
+	b.WriteString("# Profile Memory\n\n")
+	b.WriteString("## User\n\n")
+	writeMarkdownEntries(&b, byTarget["user"])
+	b.WriteString("\n## Agent Notes\n\n")
+	writeMarkdownEntries(&b, byTarget["memory"])
+	return b.String()
+}
+
+func writeMarkdownEntries(b *strings.Builder, entries []Entry) {
+	if len(entries) == 0 {
+		b.WriteString("_No saved memories._\n")
+		return
+	}
+	for _, entry := range entries {
+		content := strings.TrimSpace(strings.Join(strings.Fields(entry.Content), " "))
+		if content == "" {
+			continue
+		}
+		b.WriteString("- ")
+		b.WriteString(content)
+		if tags := visibleTags(entry.Tags); len(tags) > 0 {
+			b.WriteString(" _[tags: ")
+			b.WriteString(strings.Join(tags, ", "))
+			b.WriteString("]_")
+		}
+		b.WriteString("\n")
+	}
+}
+
+func entryTarget(entry Entry) string {
+	for _, tag := range entry.Tags {
+		switch strings.TrimSpace(tag) {
+		case "target:user":
+			return "user"
+		case "target:memory":
+			return "memory"
+		}
+	}
+	return "memory"
+}
+
+func visibleTags(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" || strings.HasPrefix(tag, "target:") {
+			continue
+		}
+		out = append(out, tag)
+	}
+	return out
+}
+
+func writeFileAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // tagsMatch reports whether the entry's tags satisfy the filter.

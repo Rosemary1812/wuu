@@ -42,6 +42,17 @@ func memoryProvider(env *Env) store.Provider {
 	return env.Memory
 }
 
+type memoryDocumentProvider interface {
+	MarkdownPath() string
+}
+
+func memoryDocumentPath(mem store.Provider) string {
+	if p, ok := mem.(memoryDocumentProvider); ok {
+		return strings.TrimSpace(p.MarkdownPath())
+	}
+	return ""
+}
+
 func isMemoryToolName(name string) bool {
 	return name == readMemoryName || name == writeMemoryName
 }
@@ -293,7 +304,7 @@ func (t *writeMemoryTool) IsConcurrencySafe() bool { return true }
 func (t *writeMemoryTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: writeMemoryName,
-		Description: "Save compact, durable information to this agent profile's bounded long-term memory. " +
+		Description: "Save compact, durable information to this agent profile's bounded long-term markdown memory document. " +
 			"Use proactively when the user corrects you, shares a stable preference, asks you to remember something, " +
 			"or when you learn a durable environment fact, project convention, or tool quirk that will matter in future sessions. " +
 			"Do not save task progress, completed-work logs, PR numbers, commit SHAs, temporary TODOs, raw data dumps, or facts likely to go stale within a week. " +
@@ -393,6 +404,7 @@ func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a 
 				"written":   false,
 				"duplicate": true,
 				"target":    target,
+				"path":      memoryDocumentPath(mem),
 				"source":    string(entry.Source),
 				"tags":      memoryUserTags(entry.Tags),
 				"length":    len([]rune(content)),
@@ -429,6 +441,7 @@ func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a 
 		"id":      string(id),
 		"written": true,
 		"target":  target,
+		"path":    memoryDocumentPath(mem),
 		"source":  string(source),
 		"tags":    memoryUserTags(entry.Tags),
 		"length":  len([]rune(content)),
@@ -493,6 +506,7 @@ func (t *writeMemoryTool) executeReplace(ctx context.Context, mem store.Provider
 		"replaced_id": string(oldEntry.ID),
 		"written":     true,
 		"target":      target,
+		"path":        memoryDocumentPath(mem),
 		"source":      string(source),
 		"tags":        memoryUserTags(entry.Tags),
 		"length":      len([]rune(content)),
@@ -522,6 +536,7 @@ func (t *writeMemoryTool) executeRemove(ctx context.Context, mem store.Provider,
 		"removed":    true,
 		"removed_id": string(oldEntry.ID),
 		"target":     target,
+		"path":       memoryDocumentPath(mem),
 	}
 	b, err := json.Marshal(out)
 	if err != nil {
@@ -586,7 +601,7 @@ func (t *readMemoryTool) IsConcurrencySafe() bool { return true }
 func (t *readMemoryTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: readMemoryName,
-		Description: "Read this agent profile's long-term memory. With a query, searches entry content; without a query, returns recent entries. " +
+		Description: "Read this agent profile's long-term markdown memory document through the indexed memory store. With a query, searches entry content; without a query, returns recent entries. " +
 			"Use this when the user refers to remembered preferences, prior durable facts, or stable project/environment conventions. " +
 			"Use target=\"user\" for user profile facts and target=\"memory\" for agent notes; omit target to search both.",
 		InputSchema: map[string]any{
@@ -677,6 +692,9 @@ func (t *readMemoryTool) Execute(ctx context.Context, args string) (string, erro
 	out := map[string]any{
 		"count":   len(dtos),
 		"entries": dtos,
+	}
+	if path := memoryDocumentPath(mem); path != "" {
+		out["path"] = path
 	}
 	if query != "" {
 		out["query"] = query

@@ -44,6 +44,13 @@ func TestAppendReplaceReadAndStatus(t *testing.T) {
 	if replacePath != filepath.Join(sessionArtifact, "memory", "checkpoint.md") {
 		t.Fatalf("checkpoint path = %q", replacePath)
 	}
+	summaryPath, _, err := ReplaceTarget(workspaceState, sessionArtifact, TargetSummary, "# Session Summary\n\n## Active Intent\n\nShip memory support.")
+	if err != nil {
+		t.Fatalf("ReplaceTarget summary: %v", err)
+	}
+	if summaryPath != filepath.Join(sessionArtifact, "session-memory", "summary.md") {
+		t.Fatalf("summary path = %q", summaryPath)
+	}
 
 	status, err := Status(workspaceState, sessionArtifact)
 	if err != nil {
@@ -58,6 +65,9 @@ func TestAppendReplaceReadAndStatus(t *testing.T) {
 	}
 	if !byTarget[TargetCheckpoint].Exists || byTarget[TargetCheckpoint].Bytes == 0 {
 		t.Fatalf("checkpoint status missing: %+v", status)
+	}
+	if !byTarget[TargetSummary].Exists || byTarget[TargetSummary].Bytes == 0 {
+		t.Fatalf("summary status missing: %+v", status)
 	}
 	if byTarget[TargetNotes].Exists {
 		t.Fatalf("notes should not exist yet: %+v", status)
@@ -97,6 +107,29 @@ func TestContextBlocksSkipsMissingAndInjectsExistingFiles(t *testing.T) {
 	}
 	if !sources["workspace.memory:project_memory"] || !sources["session.notes:notes"] {
 		t.Fatalf("unexpected block sources: %+v", blocks)
+	}
+}
+
+func TestContextBlocksPrefersSummaryOverLegacyCheckpoint(t *testing.T) {
+	workspaceState := filepath.Join(t.TempDir(), "workspace-state")
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
+
+	if _, _, err := ReplaceTarget(workspaceState, sessionArtifact, TargetCheckpoint, "# Session Checkpoint\n\nLegacy checkpoint."); err != nil {
+		t.Fatalf("ReplaceTarget checkpoint: %v", err)
+	}
+	if _, _, err := ReplaceTarget(workspaceState, sessionArtifact, TargetSummary, "# Session Summary\n\nCurrent summary."); err != nil {
+		t.Fatalf("ReplaceTarget summary: %v", err)
+	}
+
+	blocks := ContextBlocks(workspaceState, sessionArtifact)
+	if len(blocks) != 1 {
+		t.Fatalf("blocks len = %d, want 1: %+v", len(blocks), blocks)
+	}
+	if blocks[0].Source != "session.summary:summary" || !strings.Contains(blocks[0].Content, "Current summary") {
+		t.Fatalf("summary block not injected: %+v", blocks[0])
+	}
+	if strings.Contains(blocks[0].Content, "Legacy checkpoint") {
+		t.Fatalf("legacy checkpoint should not be injected when summary exists: %+v", blocks[0])
 	}
 }
 

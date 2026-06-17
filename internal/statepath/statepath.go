@@ -129,11 +129,9 @@ func ScheduledTasksLockPath(workspaceStateDir string) string {
 	return filepath.Join(workspaceStateDir, "scheduled_tasks.lock")
 }
 
-// ProfileMemoryDir returns the profile-scoped directory for the durable memory
-// store. The store keeps an append-only JSONL log (entries.jsonl) plus its
-// own lockfile inside this directory; the directory is created lazily by
-// the store on first write, so it is safe to read here even before any
-// memory has been written.
+// ProfileMemoryDir returns the profile-scoped directory for durable memory.
+// The file-backed store keeps an indexed log plus the human-facing MEMORY.md
+// document inside this directory; the directory is created lazily by the store.
 func ProfileMemoryDir(profileStateDir string) string {
 	return filepath.Join(profileStateDir, "memory")
 }

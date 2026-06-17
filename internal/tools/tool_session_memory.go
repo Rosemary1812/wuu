@@ -30,6 +30,7 @@ var allowedSessionMemoryActions = []string{
 
 var allowedSessionMemoryTargets = []string{
 	sessionmemory.TargetProjectMemory,
+	sessionmemory.TargetSummary,
 	sessionmemory.TargetCheckpoint,
 	sessionmemory.TargetNotes,
 }
@@ -58,10 +59,10 @@ func (t *SessionMemoryTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: sessionMemoryName,
 		Description: "Read or update durable workspace/session memory files that are injected as per-turn context. " +
-			"Use target=\"checkpoint\" for compact recoverable state of the active task, target=\"notes\" for session scratch notes, " +
+			"Use target=\"summary\" for compact recoverable state of the active task, target=\"checkpoint\" only for legacy checkpoint compatibility, target=\"notes\" for session scratch notes, " +
 			"and target=\"project_memory\" only for stable workspace facts that should survive across future sessions. " +
 			"Do not store raw transcripts, secrets, temporary task progress, PR numbers, commit SHAs, or facts likely to go stale within a week. " +
-			"Prefer append for incremental notes; use replace when consolidating a checkpoint or project memory after review.",
+			"Prefer append for incremental notes; use replace when consolidating a summary or project memory after review.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -75,7 +76,7 @@ func (t *SessionMemoryTool) Definition() providers.ToolDefinition {
 				"target": map[string]any{
 					"type":        "string",
 					"enum":        allowedSessionMemoryTargets,
-					"description": "Required for read, append, and replace. project_memory is workspace-level; checkpoint and notes are session-level.",
+					"description": "Required for read, append, and replace. project_memory is workspace-level; summary, checkpoint, and notes are session-level.",
 				},
 				"content": map[string]any{
 					"type":        "string",

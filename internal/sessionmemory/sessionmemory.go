@@ -16,6 +16,7 @@ import (
 
 const (
 	TargetProjectMemory = "project_memory"
+	TargetSummary       = "summary"
 	TargetCheckpoint    = "checkpoint"
 	TargetNotes         = "notes"
 
@@ -37,6 +38,7 @@ const (
 // Paths groups the durable memory files for one workspace and session.
 type Paths struct {
 	ProjectMemory string `json:"project_memory"`
+	Summary       string `json:"summary"`
 	Checkpoint    string `json:"checkpoint"`
 	Notes         string `json:"notes"`
 	TasksDir      string `json:"tasks_dir"`
@@ -76,6 +78,8 @@ func PathsFor(workspaceStateDir, sessionArtifactDir string) Paths {
 	}
 	if dir := strings.TrimSpace(sessionArtifactDir); dir != "" {
 		sessionMemoryDir := filepath.Join(dir, "memory")
+		ccSessionMemoryDir := filepath.Join(dir, "session-memory")
+		paths.Summary = filepath.Join(ccSessionMemoryDir, "summary.md")
 		paths.Checkpoint = filepath.Join(sessionMemoryDir, "checkpoint.md")
 		paths.Notes = filepath.Join(sessionMemoryDir, "notes.md")
 		paths.TasksDir = filepath.Join(sessionMemoryDir, "tasks")
@@ -245,6 +249,7 @@ func Status(workspaceStateDir, sessionArtifactDir string) ([]FileStatus, error) 
 		path string
 	}{
 		{TargetProjectMemory, paths.ProjectMemory},
+		{TargetSummary, paths.Summary},
 		{TargetCheckpoint, paths.Checkpoint},
 		{TargetNotes, paths.Notes},
 	}
@@ -336,7 +341,9 @@ func ContextBlocks(workspaceStateDir, sessionArtifactDir string) []wuucontext.Bl
 	if block, ok := fileBlock(TargetProjectMemory, paths.ProjectMemory, wuucontext.BlockMemory, "Workspace project memory", "workspace.memory", projectMemoryTokenBudget); ok {
 		blocks = append(blocks, block)
 	}
-	if block, ok := fileBlock(TargetCheckpoint, paths.Checkpoint, wuucontext.BlockTaskState, "Session checkpoint", "session.checkpoint", checkpointTokenBudget); ok {
+	if block, ok := fileBlock(TargetSummary, paths.Summary, wuucontext.BlockTaskState, "Session summary", "session.summary", checkpointTokenBudget); ok {
+		blocks = append(blocks, block)
+	} else if block, ok := fileBlock(TargetCheckpoint, paths.Checkpoint, wuucontext.BlockTaskState, "Session checkpoint", "session.checkpoint", checkpointTokenBudget); ok {
 		blocks = append(blocks, block)
 	}
 	if block, ok := fileBlock(TargetNotes, paths.Notes, wuucontext.BlockTaskState, "Session notes", "session.notes", notesTokenBudget); ok {
@@ -353,6 +360,11 @@ func targetPath(workspaceStateDir, sessionArtifactDir, target string) (string, e
 			return "", fmt.Errorf("workspace state directory is required for %s", TargetProjectMemory)
 		}
 		return paths.ProjectMemory, nil
+	case TargetSummary:
+		if strings.TrimSpace(sessionArtifactDir) == "" {
+			return "", fmt.Errorf("session artifact directory is required for %s", TargetSummary)
+		}
+		return paths.Summary, nil
 	case TargetCheckpoint:
 		if strings.TrimSpace(sessionArtifactDir) == "" {
 			return "", fmt.Errorf("session artifact directory is required for %s", TargetCheckpoint)
@@ -476,6 +488,8 @@ func templateForTarget(target string) string {
 	switch target {
 	case TargetProjectMemory:
 		return "# Project Memory\n\nDurable workspace facts that should survive across sessions.\n\n## Project Context\n\n## Rules\n\n## Architecture Decisions\n\n## Discovered Durable Knowledge\n"
+	case TargetSummary:
+		return "# Session Summary\n\nCompact recoverable state for the active session.\n\n## Active Intent\n\n## Next Action\n\n## Current Work\n\n## Decisions\n\n## Open Questions\n"
 	case TargetCheckpoint:
 		return "# Session Checkpoint\n\nCompact recoverable state for the active session.\n\n## Active Intent\n\n## Next Action\n\n## Current Work\n\n## Decisions\n\n## Open Questions\n"
 	case TargetNotes:

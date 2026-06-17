@@ -8,8 +8,10 @@
 //
 // The first and only supported backend is file-backed: entries live as
 // a JSONL log under a profile-local directory, with an in-memory index
-// for fast recall. New backends (e.g. a remote memory service)
-// implement the Provider interface and slot in via Env.
+// for fast recall. It also maintains a human-readable MEMORY.md document
+// in the same directory so the product surface stays markdown-first.
+// New backends (e.g. a remote memory service) implement the Provider
+// interface and slot in via Env.
 package store
 
 import (

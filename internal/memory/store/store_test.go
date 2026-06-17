@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -26,6 +28,12 @@ func TestFileProvider_New_AcceptsDir(t *testing.T) {
 	}
 	if fp.Name() != "file" {
 		t.Errorf("Name() = %q, want %q", fp.Name(), "file")
+	}
+	if fp.MarkdownPath() == "" || filepath.Base(fp.MarkdownPath()) != "MEMORY.md" {
+		t.Fatalf("MarkdownPath() = %q, want MEMORY.md", fp.MarkdownPath())
+	}
+	if _, err := os.Stat(fp.MarkdownPath()); err != nil {
+		t.Fatalf("MEMORY.md should be created on provider init: %v", err)
 	}
 }
 
@@ -94,6 +102,63 @@ func TestFileProvider_Store_AssignsIDAndPersists(t *testing.T) {
 	// Empty content must fail.
 	if _, err := fp.Store(ctx, Entry{Content: "   "}); err == nil {
 		t.Error("empty content should fail")
+	}
+}
+
+func TestFileProvider_MaintainsMarkdownMemoryDocument(t *testing.T) {
+	dir := t.TempDir()
+	fp, err := NewFileProvider(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	userID, err := fp.Store(ctx, Entry{
+		Content: "User prefers concise Chinese replies",
+		Tags:    []string{"target:user", "tone"},
+		Source:  SourceUser,
+	})
+	if err != nil {
+		t.Fatalf("Store user memory: %v", err)
+	}
+	if _, err := fp.Store(ctx, Entry{
+		Content: "Project uses make install for local CLI refresh",
+		Tags:    []string{"target:memory", "wuu"},
+		Source:  SourceAssistant,
+	}); err != nil {
+		t.Fatalf("Store agent memory: %v", err)
+	}
+
+	data, err := os.ReadFile(fp.MarkdownPath())
+	if err != nil {
+		t.Fatalf("read MEMORY.md: %v", err)
+	}
+	doc := string(data)
+	for _, want := range []string{
+		"# Profile Memory",
+		"## User",
+		"- User prefers concise Chinese replies _[tags: tone]_",
+		"## Agent Notes",
+		"- Project uses make install for local CLI refresh _[tags: wuu]_",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("MEMORY.md missing %q:\n%s", want, doc)
+		}
+	}
+
+	if err := fp.Delete(ctx, userID); err != nil {
+		t.Fatalf("Delete user memory: %v", err)
+	}
+	data, err = os.ReadFile(fp.MarkdownPath())
+	if err != nil {
+		t.Fatalf("read MEMORY.md after delete: %v", err)
+	}
+	doc = string(data)
+	if strings.Contains(doc, "User prefers concise Chinese replies") {
+		t.Fatalf("deleted memory still present in MEMORY.md:\n%s", doc)
+	}
+	if !strings.Contains(doc, "_No saved memories._") {
+		t.Fatalf("empty user section should show placeholder:\n%s", doc)
 	}
 }
 
