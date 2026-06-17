@@ -88,6 +88,8 @@
   border-bottom: 1px solid #ececea;
   margin-bottom: 10px;
   padding: 3px 8px 13px;
+  max-height: min(320px, calc(100vh - 360px));
+  overflow-y: auto;
 }
 
 .environment-plan-meta {
@@ -108,7 +110,7 @@
 
 .environment-plan-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -123,7 +125,7 @@
   color: #676c70;
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
-  line-height: 1.32;
+  line-height: 1.25;
 }
 
 .environment-plan-item > span:last-child {
