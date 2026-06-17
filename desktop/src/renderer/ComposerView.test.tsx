@@ -284,6 +284,62 @@ describe("Composer queue strip", () => {
 
     expect(onEditQueuedMessage).toHaveBeenCalledWith("queue-1");
   });
+
+  it("closes the menu when clicking outside the row", () => {
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "测试点击外部", images: [], files: [] }
+      ]
+    });
+
+    const menuButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"待发送消息操作\"]"
+    );
+    expect(menuButton).not.toBeNull();
+
+    act(() => {
+      menuButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true })
+      );
+    });
+    expect(container.querySelector('[role="menu"]')).not.toBeNull();
+
+    act(() => {
+      document.body.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true })
+      );
+    });
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("closes the menu on Escape key", () => {
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "测试 Escape", images: [], files: [] }
+      ]
+    });
+
+    const menuButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"待发送消息操作\"]"
+    );
+    expect(menuButton).not.toBeNull();
+
+    act(() => {
+      menuButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true })
+      );
+    });
+    expect(container.querySelector('[role="menu"]')).not.toBeNull();
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+      );
+    });
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
 });
 
 describe("Composer permission menu", () => {

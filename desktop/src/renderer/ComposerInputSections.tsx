@@ -8,7 +8,7 @@ import {
   Square,
   X
 } from "lucide-react";
-import { type KeyboardEvent as ReactKeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import { isComposerTextComposing } from "./ComposerSlashCommands";
 import {
   clipboardAttachmentFiles,
@@ -288,6 +288,40 @@ function ComposerQueueItem({
   onRemove: () => void;
 }): JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Close on outside click (mousedown) and on Escape. The menu button itself
+  // stays in the "inside" set so the toggle click doesn't race against this
+  // listener; the toggle click handler still owns the open/close flip.
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    function handlePointerDown(event: MouseEvent): void {
+      const target = event.target as Node | null;
+      if (menuRef.current?.contains(target ?? null)) {
+        return;
+      }
+      if (menuButtonRef.current?.contains(target ?? null)) {
+        return;
+      }
+      setMenuOpen(false);
+    }
+    function handleKey(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [menuOpen]);
+
   return (
     <li className={`composer-queue-row ${kind}`} data-position={position}>
       <span className="composer-queue-index" aria-hidden="true">
@@ -313,6 +347,7 @@ function ComposerQueueItem({
         </button>
         <div className="composer-queue-menu-anchor">
           <button
+            ref={menuButtonRef}
             type="button"
             className="composer-queue-action"
             aria-label="待发送消息操作"
@@ -323,7 +358,7 @@ function ComposerQueueItem({
             <MoreHorizontal size={14} aria-hidden="true" />
           </button>
           {menuOpen ? (
-            <div className="composer-queue-menu" role="menu">
+            <div ref={menuRef} className="composer-queue-menu" role="menu">
               <button
                 type="button"
                 role="menuitem"
