@@ -154,6 +154,20 @@ func (s *Session) Boundary() Boundary {
 	return s.boundary
 }
 
+func (s *Session) Model() string {
+	if s == nil {
+		return ""
+	}
+	return s.model
+}
+
+func (s *Session) Role() string {
+	if s == nil {
+		return ""
+	}
+	return s.role
+}
+
 func (s *Session) Run(ctx context.Context, req Request) (result Result) {
 	startedAt := time.Now().UTC()
 	result = Result{

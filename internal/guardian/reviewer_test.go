@@ -114,6 +114,9 @@ func TestReviewer_DirectJSONApproved(t *testing.T) {
 	if review.Source != tools.ApprovalSourceGuardian {
 		t.Fatalf("source = %q, want guardian", review.Source)
 	}
+	if len(provider.received.Tools) != 0 {
+		t.Fatalf("guardian review session must not send tools: %+v", provider.received.Tools)
+	}
 }
 
 func TestReviewer_DirectJSONDenied(t *testing.T) {
@@ -367,18 +370,20 @@ func TestReviewer_ProviderErrorStillNotifiesBreaker(t *testing.T) {
 	}
 }
 
-func TestReviewer_MissingModelStillCalls(t *testing.T) {
-	// Provider implementations usually fall back to a default model when
-	// Model is empty. We just verify the reviewer does not panic or
-	// short-circuit when Model is blank.
+func TestReviewer_MissingModelFailsClosed(t *testing.T) {
 	provider := &mockProvider{response: providers.ChatResponse{
 		Content: `{"decision":"approved","risk_level":"low","rationale":"ok"}`,
 	}}
 	r := &Reviewer{Client: provider} // Model empty
-	if _, err := r.ReviewToolApproval(context.Background(), newReq("k")); err != nil {
+	review, err := r.ReviewToolApproval(context.Background(), newReq("k"))
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if provider.calls != 1 {
-		t.Fatalf("expected 1 LLM call, got %d", provider.calls)
+	if review.Decision != tools.ToolApprovalDecisionDenied ||
+		!strings.Contains(review.Reason, "review session unavailable") {
+		t.Fatalf("expected fail-closed missing-model review, got %+v", review)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("missing model should not call provider, got %d calls", provider.calls)
 	}
 }

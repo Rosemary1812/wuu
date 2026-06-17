@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/reviewsession"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -31,10 +32,18 @@ const DefaultReviewerTimeout = 30 * time.Second
 // Denied handling bubbles the reason to the model without losing the
 // Source / RiskLevel audit metadata.
 type Reviewer struct {
+	// Session is the restricted child runtime used for review calls. When nil,
+	// Client/Model are used to construct a restricted session lazily for
+	// backwards-compatible tests and call sites.
+	Session *reviewsession.Session
 	// Client is the LLM client used to make the review call. Required.
 	Client providers.Client
 	// Model is the model identifier passed to the provider. Required.
 	Model string
+	// Effort and ProviderOptions are forwarded to the restricted session when
+	// Session is nil and the reviewer builds one from Client/Model.
+	Effort          string
+	ProviderOptions map[string]any
 	// Timeout caps each review call. Defaults to DefaultReviewerTimeout
 	// when zero or negative.
 	Timeout time.Duration
@@ -54,7 +63,7 @@ type Reviewer struct {
 // call from multiple goroutines, although in practice the toolkit only
 // invokes it sequentially per turn.
 func (r *Reviewer) ReviewToolApproval(ctx context.Context, req tools.ToolApprovalReviewRequest) (tools.ToolApprovalReview, error) {
-	if r == nil || r.Client == nil {
+	if r == nil {
 		return denyReview("guardian reviewer is not configured"), nil
 	}
 
@@ -74,29 +83,31 @@ func (r *Reviewer) ReviewToolApproval(ctx context.Context, req tools.ToolApprova
 		return review, nil
 	}
 
-	// 3. Apply timeout.
-	timeout := r.Timeout
-	if timeout <= 0 {
-		timeout = DefaultReviewerTimeout
+	// 3. Run the prompt inside a restricted review session. Any session
+	//    construction/runtime failure is a fail-closed denial.
+	session, err := r.reviewSession()
+	if err != nil {
+		review := denyReview("guardian review session unavailable: " + err.Error())
+		r.notifyBreaker(review.Decision)
+		return review, nil
 	}
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	// 4. Call the LLM. A 256-token cap is plenty: the prompt asks for a
-	//    single-line JSON object so the response should fit comfortably.
-	resp, err := r.Client.Chat(callCtx, providers.ChatRequest{
-		Model:     strings.TrimSpace(r.Model),
-		Messages:  []providers.ChatMessage{{Role: "user", Content: prompt}},
+	result := session.Run(ctx, reviewsession.Request{
+		Prompt:    prompt,
 		MaxTokens: 256,
 	})
-	if err != nil {
-		review := denyReview("guardian LLM call failed: " + err.Error())
+	if result.Outcome != reviewsession.OutcomeCompleted {
+		reason := strings.TrimSpace(result.Error)
+		if reason == "" {
+			reason = string(result.Outcome)
+		}
+		review := denyReview("guardian review session " + string(result.Outcome) + ": " + reason)
 		r.notifyBreaker(review.Decision)
 		return review, nil
 	}
 
-	// 5. Parse the response (fail closed on any error).
-	parsed, err := parseGuardianDecision(resp.Content)
+	// 4. Parse the response. A 256-token cap is plenty: the prompt asks for a
+	//    single-line JSON object so the response should fit comfortably.
+	parsed, err := parseGuardianDecision(result.Content)
 	if err != nil {
 		review := denyReview("guardian response parse failed: " + err.Error())
 		r.notifyBreaker(review.Decision)
@@ -122,6 +133,31 @@ func (r *Reviewer) ReviewToolApproval(ctx context.Context, req tools.ToolApprova
 		r.Cache.ApproveForSession(req.ApprovalKey, review)
 	}
 	return review, nil
+}
+
+func (r *Reviewer) reviewSession() (*reviewsession.Session, error) {
+	if r == nil {
+		return nil, errors.New("guardian reviewer is not configured")
+	}
+	if r.Session != nil {
+		return r.Session, nil
+	}
+	if r.Client == nil {
+		return nil, errors.New("guardian reviewer client is not configured")
+	}
+	timeout := r.Timeout
+	if timeout <= 0 {
+		timeout = DefaultReviewerTimeout
+	}
+	return reviewsession.New(reviewsession.Config{
+		Client:          r.Client,
+		Model:           strings.TrimSpace(r.Model),
+		Role:            "guardian",
+		Timeout:         timeout,
+		MaxTokens:       256,
+		Effort:          r.Effort,
+		ProviderOptions: r.ProviderOptions,
+	})
 }
 
 func (r *Reviewer) notifyBreaker(decision tools.ToolApprovalDecision) {

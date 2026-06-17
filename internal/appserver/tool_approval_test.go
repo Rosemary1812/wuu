@@ -2,11 +2,15 @@ package appserver
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/reviewsession"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -56,6 +60,66 @@ func TestBuildGuardianReviewer_BadConfigDir(t *testing.T) {
 	}
 	if reviewer, ok := s.buildGuardianReviewer(kit); ok || reviewer != nil {
 		t.Fatalf("bad config dir should return (nil, false); got (%+v, %v)", reviewer, ok)
+	}
+}
+
+func TestBuildGuardianReviewerUsesReviewRoleSelection(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("TEST_WUU_KEY", "abc")
+	if err := os.WriteFile(filepath.Join(root, ".wuu.json"), []byte(`{
+  "default_provider": "custom",
+  "providers": {
+    "custom": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key_env": "TEST_WUU_KEY",
+      "model": "main-model",
+      "models": {
+        "review-alias": {"id": "review-api-model"}
+      }
+    }
+  },
+  "agent": {
+    "model_roles": {
+      "review": {"model": "review-alias", "effort": "low"}
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, _, err := config.LoadFrom(root, home)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	roles, err := modelroles.Resolve(cfg, modelroles.ResolveOptions{})
+	if err != nil {
+		t.Fatalf("modelroles.Resolve: %v", err)
+	}
+	kit, err := tools.New(root)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	s := &Server{rt: &runtime.Session{
+		RootDir:      root,
+		ProviderName: "custom",
+		Model:        "main-model",
+		ModelRoles:   roles,
+	}}
+
+	reviewer, ok := s.buildGuardianReviewer(kit)
+	if !ok || reviewer == nil || reviewer.Session == nil {
+		t.Fatalf("expected guardian reviewer with review session, got reviewer=%+v ok=%v", reviewer, ok)
+	}
+	if reviewer.Session.Model() != "review-api-model" || reviewer.Session.Role() != "guardian" {
+		t.Fatalf("guardian should use review role API model, got model=%q role=%q", reviewer.Session.Model(), reviewer.Session.Role())
+	}
+	boundary := reviewer.Session.Boundary()
+	if boundary.PermissionProfile != reviewsession.PermissionProfileReadOnly ||
+		boundary.ApprovalPolicy != reviewsession.ApprovalPolicyNever ||
+		boundary.Tools || boundary.MCP || boundary.Hooks || boundary.Plugins || boundary.Skills || boundary.MemoryWrites || boundary.DurableWrites {
+		t.Fatalf("guardian review session should be restricted: %+v", boundary)
 	}
 }
 

@@ -8,7 +8,9 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/guardian"
+	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
+	"github.com/blueberrycongee/wuu/internal/reviewsession"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -113,21 +115,40 @@ func (s *Server) buildGuardianReviewer(kit *tools.Toolkit) (*guardian.Reviewer, 
 	if err != nil {
 		return nil, false
 	}
-	providerCfg, resolvedName, err := cfg.ResolveProvider(s.rt.ProviderName)
-	if err != nil {
-		return nil, false
+	selection := s.rt.ModelRoles.Review
+	if strings.TrimSpace(selection.Provider) == "" || strings.TrimSpace(selection.Model) == "" {
+		providerCfg, resolvedName, err := cfg.ResolveProvider(s.rt.ProviderName)
+		if err != nil {
+			return nil, false
+		}
+		roles, resolveErr := modelroles.Resolve(cfg, modelroles.ResolveOptions{
+			ProviderName:   resolvedName,
+			ProviderConfig: providerCfg,
+			Model:          providerCfg.Model,
+		})
+		if resolveErr != nil {
+			return nil, false
+		}
+		selection = roles.Review
 	}
-	client, err := providerfactory.BuildClient(providerCfg, resolvedName)
+	client, err := providerfactory.BuildClient(selection.RuleProviderConfig, selection.Provider)
 	if err != nil || client == nil {
 		return nil, false
 	}
-	model := ""
-	if s.rt.StreamRunner != nil {
-		model = s.rt.StreamRunner.Model
+	session, err := reviewsession.New(reviewsession.Config{
+		Client:          client,
+		Model:           firstNonEmpty(selection.APIModel, selection.Model),
+		Role:            "guardian",
+		Timeout:         guardian.DefaultReviewerTimeout,
+		MaxTokens:       256,
+		Effort:          selection.LegacyEffort,
+		ProviderOptions: selection.ProviderOptions,
+	})
+	if err != nil {
+		return nil, false
 	}
 	return &guardian.Reviewer{
-		Client:  client,
-		Model:   strings.TrimSpace(model),
+		Session: session,
 		Cache:   kit.ApprovalStore(),
 		Breaker: s.guardianBreaker,
 	}, true
