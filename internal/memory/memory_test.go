@@ -173,6 +173,97 @@ func TestDiscover_MultipleUserDirs(t *testing.T) {
 	}
 }
 
+func TestDiscover_ClaudeCodeProjectMemoryLayout(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".claude", "rules", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	filesToWrite := map[string]string{
+		"CLAUDE.md":                     "project claude",
+		".claude/CLAUDE.md":             "dot claude",
+		".claude/rules/style.md":        "style rule",
+		".claude/rules/nested/tests.md": "test rule",
+		"CLAUDE.local.md":               "local private",
+		".claude/rules/ignored.txt":     "ignored",
+	}
+	for rel, content := range filesToWrite {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files := Discover(root, "", testOpts(nil))
+	byContent := map[string]File{}
+	for _, f := range files {
+		byContent[f.Content] = f
+	}
+	for _, want := range []string{"project claude", "dot claude", "style rule", "test rule", "local private"} {
+		if _, ok := byContent[want]; !ok {
+			t.Fatalf("missing %q in discovered files: %+v", want, files)
+		}
+	}
+	if byContent["local private"].Source != "local" {
+		t.Fatalf("CLAUDE.local.md source = %q, want local", byContent["local private"].Source)
+	}
+	if _, ok := byContent["ignored"]; ok {
+		t.Fatalf("non-md rule should not be loaded: %+v", files)
+	}
+}
+
+func TestDiscover_ClaudeCodeUserRules(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(filepath.Join(claudeDir, "rules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "rules", "go.md"), []byte("user go rule"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := Discover("", home, testOpts([]string{"~/.claude"}))
+	if len(files) != 1 {
+		t.Fatalf("expected one user rule, got %d: %+v", len(files), files)
+	}
+	if files[0].Content != "user go rule" || files[0].Source != "user" {
+		t.Fatalf("unexpected user rule file: %+v", files[0])
+	}
+}
+
+func TestDiscover_ClaudeCodeAutoMemoryEntrypoint(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "repo")
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	projectKeyRoot := root
+	if ev, err := filepath.EvalSymlinks(projectKeyRoot); err == nil {
+		projectKeyRoot = ev
+	}
+	projectKey := claudeCodeSanitizePath(filepath.Clean(projectKeyRoot))
+	memoryPath := filepath.Join(home, ".claude", "projects", projectKey, "memory", "MEMORY.md")
+	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(memoryPath, []byte("cc auto memory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := Discover(root, home, testOpts(nil))
+	if len(files) != 1 {
+		t.Fatalf("expected one auto memory file, got %d: %+v", len(files), files)
+	}
+	if files[0].Content != "cc auto memory" || files[0].Source != "claude_auto" || files[0].Name != "MEMORY.md" {
+		t.Fatalf("unexpected auto memory file: %+v", files[0])
+	}
+}
+
 func TestDiscover_TildeExpansion(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".config", "wuu"), 0o755); err != nil {

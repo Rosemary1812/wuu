@@ -21,15 +21,19 @@
 package memory
 
 import (
+	"hash/fnv"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 )
 
 // File holds one loaded memory file.
 type File struct {
 	Path    string // absolute path on disk
 	Content string // raw file contents
-	Source  string // "user" or "project"
+	Source  string // "user", "project", "local", "claude_auto", etc.
 	Name    string // base name (AGENTS.md, CLAUDE.md, ...)
 }
 
@@ -51,14 +55,24 @@ type Options struct {
 	// missing directories are silently skipped. Defaults expand to
 	// ~/.config/wuu, ~/.claude, ~/.codex.
 	UserDirs []string
+
+	// IncludeClaudeCodeMemory enables compatibility with Claude Code's
+	// markdown memory layout:
+	//   - .claude/CLAUDE.md and .claude/rules/*.md in projects
+	//   - CLAUDE.local.md in projects
+	//   - ~/.claude/rules/*.md
+	//   - ~/.claude/projects/<project>/memory/MEMORY.md
+	// It defaults to true.
+	IncludeClaudeCodeMemory *bool
 }
 
 // DefaultOptions returns the recommended configuration.
 func DefaultOptions() Options {
 	return Options{
-		Filenames:          []string{"AGENTS.md", "AGENTS.override.md", "CLAUDE.md"},
-		ProjectRootMarkers: []string{".git", ".hg", ".jj", ".svn"},
-		UserDirs:           []string{"~/.config/wuu", "~/.claude", "~/.codex"},
+		Filenames:               []string{"AGENTS.md", "AGENTS.override.md", "CLAUDE.md"},
+		ProjectRootMarkers:      []string{".git", ".hg", ".jj", ".svn"},
+		UserDirs:                []string{"~/.config/wuu", "~/.claude", "~/.codex"},
+		IncludeClaudeCodeMemory: boolPtr(true),
 	}
 }
 
@@ -81,6 +95,10 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 	if opts.UserDirs == nil {
 		opts.UserDirs = DefaultOptions().UserDirs
 	}
+	if opts.IncludeClaudeCodeMemory == nil {
+		opts.IncludeClaudeCodeMemory = DefaultOptions().IncludeClaudeCodeMemory
+	}
+	includeClaudeCodeMemory := opts.IncludeClaudeCodeMemory != nil && *opts.IncludeClaudeCodeMemory
 
 	var out []File
 	seen := make(map[string]struct{})
@@ -115,23 +133,121 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 		for _, name := range opts.Filenames {
 			add(filepath.Join(dir, name), "user")
 		}
+		if includeClaudeCodeMemory {
+			addRulesDir(filepath.Join(dir, "rules"), "user", add)
+		}
 	}
 
 	// 2. Project hierarchy bounded by project root markers.
+	var projectRoot string
+	var absRoot string
 	if rootDir != "" {
-		absRoot, err := filepath.Abs(rootDir)
+		var err error
+		absRoot, err = filepath.Abs(rootDir)
 		if err == nil {
-			projectRoot := findProjectRoot(absRoot, opts.ProjectRootMarkers)
+			projectRoot = findProjectRoot(absRoot, opts.ProjectRootMarkers)
 			dirs := walkBetween(projectRoot, absRoot)
 			for _, dir := range dirs {
 				for _, name := range opts.Filenames {
 					add(filepath.Join(dir, name), "project")
 				}
+				if includeClaudeCodeMemory {
+					add(filepath.Join(dir, ".claude", "CLAUDE.md"), "project")
+					addRulesDir(filepath.Join(dir, ".claude", "rules"), "project", add)
+					add(filepath.Join(dir, "CLAUDE.local.md"), "local")
+				}
 			}
 		}
 	}
 
+	if includeClaudeCodeMemory && absRoot != "" {
+		for _, path := range claudeCodeAutoMemoryPaths(absRoot, projectRoot, homeDir) {
+			add(path, "claude_auto")
+		}
+	}
+
 	return out
+}
+
+func addRulesDir(dir, source string, add func(path, source string)) {
+	var paths []string
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ".md") {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	sort.Strings(paths)
+	for _, path := range paths {
+		add(path, source)
+	}
+}
+
+func claudeCodeAutoMemoryPaths(absRoot, projectRoot, homeDir string) []string {
+	if override := strings.TrimSpace(os.Getenv("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE")); override != "" {
+		return []string{filepath.Join(override, "MEMORY.md")}
+	}
+	base := strings.TrimSpace(os.Getenv("CLAUDE_CODE_REMOTE_MEMORY_DIR"))
+	if base == "" {
+		base = claudeConfigHomeDir(homeDir)
+	}
+	if strings.TrimSpace(base) == "" {
+		return nil
+	}
+	projectKeyRoot := projectRoot
+	if strings.TrimSpace(projectKeyRoot) == "" {
+		projectKeyRoot = absRoot
+	}
+	if ev, err := filepath.EvalSymlinks(projectKeyRoot); err == nil {
+		projectKeyRoot = ev
+	}
+	projectKeyRoot = filepath.Clean(projectKeyRoot)
+	return []string{
+		filepath.Join(base, "projects", claudeCodeSanitizePath(projectKeyRoot), "memory", "MEMORY.md"),
+	}
+}
+
+func claudeConfigHomeDir(homeDir string) string {
+	if override := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); override != "" {
+		return override
+	}
+	if strings.TrimSpace(homeDir) == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, ".claude")
+}
+
+func claudeCodeSanitizePath(path string) string {
+	var b strings.Builder
+	for _, r := range path {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := b.String()
+	const maxSanitizedLength = 200
+	if len(out) <= maxSanitizedLength {
+		return out
+	}
+	return out[:maxSanitizedLength] + "-" + base36AbsFNV32(path)
+}
+
+func base36AbsFNV32(value string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(value))
+	return strings.ToLower(strconv.FormatUint(uint64(h.Sum32()), 36))
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 // findProjectRoot walks up from start looking for any of the marker
