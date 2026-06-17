@@ -54,8 +54,8 @@ export type AssistantTurnDisplay = {
    *  answer. This is a user-facing outcome, not an internal bug label. */
   missingReplyMessage?: string;
   /** Latest process record shown in the fold header while the turn is
-   *  live. Usually pending/commentary text, but it can also be the
-   *  latest tool action when no newer text has arrived yet. */
+   *  live. Usually commentary text, but it can also be the latest tool
+   *  action when no newer text has arrived yet. */
   latestProcessPreview?: TurnProcessPreview;
 };
 
@@ -88,8 +88,20 @@ export function buildAssistantTurnDisplay(
     return isInProgress && item.status === "in_progress";
   }
 
+  function isUnknownLiveAgentText(item: ThreadItem): boolean {
+    return (
+      item.type === "agent_message" &&
+      !item.phase &&
+      isInProgress &&
+      item.status === "in_progress"
+    );
+  }
+
   function entryPosition(item: ThreadItem): "process" | "answer" {
-    if (item.type === "agent_message" && item.phase === "final_answer") {
+    if (
+      item.type === "agent_message" &&
+      (item.phase === "final_answer" || isUnknownLiveAgentText(item))
+    ) {
       return "answer";
     }
     return "process";
@@ -97,14 +109,10 @@ export function buildAssistantTurnDisplay(
 
   function entryKind(item: ThreadItem): TurnEntryKind {
     if (item.type === "agent_message") {
-      if (item.phase === "final_answer") return "answer";
-      // Legacy shape: an in-flight agent_message without a phase field
-      // is the very first token of a turn — treat it as pending until
-      // the back-end promotes it to commentary or final_answer.
-      const phaseIsUnsetOrPending =
-        item.phase === "pending" ||
-        (!item.phase && isInProgress && item.status === "in_progress");
-      if (phaseIsUnsetOrPending) return "pending";
+      if (item.phase === "final_answer" || isUnknownLiveAgentText(item)) {
+        return "answer";
+      }
+      if (isLegacyPendingAgentText(item)) return "pending";
       return "commentary";
     }
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
@@ -240,9 +248,8 @@ function processPreviewForItem(
 ): TurnProcessPreview | undefined {
   if (item.type === "agent_message") {
     if (
-      item.phase !== "pending" &&
       item.phase !== "commentary" &&
-      !isPendingAgentText(item, turn.status === "in_progress")
+      !isLegacyPendingAgentText(item)
     ) {
       return undefined;
     }
@@ -258,11 +265,7 @@ function processPreviewForItem(
     return text
       ? {
           text,
-          kind:
-            item.phase === "pending" ||
-            isPendingAgentText(item, turn.status === "in_progress")
-              ? "pending"
-              : "commentary",
+          kind: isLegacyPendingAgentText(item) ? "pending" : "commentary",
         }
       : undefined;
   }
@@ -275,11 +278,10 @@ function processPreviewForItem(
   return undefined;
 }
 
-function isPendingAgentText(item: ThreadItem, turnInProgress: boolean): boolean {
+function isLegacyPendingAgentText(item: ThreadItem): boolean {
   return (
     item.type === "agent_message" &&
-    (item.phase === "pending" ||
-      (!item.phase && turnInProgress && item.status === "in_progress"))
+    (item.phase as string | undefined) === "pending"
   );
 }
 

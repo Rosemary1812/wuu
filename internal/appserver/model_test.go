@@ -62,7 +62,7 @@ func TestThreadStateCompletesPreambleBeforeToolStart(t *testing.T) {
 	}
 }
 
-func TestThreadStateMarksUnresolvedTextAsPending(t *testing.T) {
+func TestThreadStateLeavesUnresolvedTextPhaseUnknown(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
@@ -74,18 +74,18 @@ func TestThreadStateMarksUnresolvedTextAsPending(t *testing.T) {
 
 	turn := th.ensureTurnLocked("turn", now)
 	if len(turn.Items) != 2 {
-		t.Fatalf("expected user and pending assistant items, got %+v", turn.Items)
+		t.Fatalf("expected user and live assistant items, got %+v", turn.Items)
 	}
-	pending := turn.Items[1]
-	if pending.Type != ThreadItemAgentMessage || pending.Status != ThreadItemStatusInProgress {
-		t.Fatalf("expected live assistant item, got %+v", pending)
+	live := turn.Items[1]
+	if live.Type != ThreadItemAgentMessage || live.Status != ThreadItemStatusInProgress {
+		t.Fatalf("expected live assistant item, got %+v", live)
 	}
-	if pending.Phase != ThreadItemPhasePending {
-		t.Fatalf("unresolved assistant text should be pending, got %+v", pending)
+	if live.Phase != "" {
+		t.Fatalf("unresolved assistant text should have unknown phase, got %+v", live)
 	}
 	started, ok := out[0].params.(ItemStartedNotification)
-	if !ok || started.Item.Phase != ThreadItemPhasePending {
-		t.Fatalf("started notification should carry pending phase, got %#v", out[0].params)
+	if !ok || started.Item.Phase != "" {
+		t.Fatalf("started notification should leave phase unknown, got %#v", out[0].params)
 	}
 }
 
@@ -189,7 +189,7 @@ func TestThreadStateReplacesActiveAgentMessageText(t *testing.T) {
 	}
 }
 
-func TestThreadStateMarksPostToolTextAsCommentaryOnFirstDelta(t *testing.T) {
+func TestThreadStateLeavesPostToolStreamingTextPhaseUnknownOnFirstDelta(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
@@ -215,33 +215,29 @@ func TestThreadStateMarksPostToolTextAsCommentaryOnFirstDelta(t *testing.T) {
 	if len(turn.Items) != 3 {
 		t.Fatalf("expected user, tool, and live agent items, got %+v", turn.Items)
 	}
-	// Streaming text is intermediate until EventAssistantMessage arrives.
-	// Marking it final_answer here used to leak the text into the
-	// renderer's final-answer slot and only fix itself when EventToolUseStart
-	// flipped the phase back to commentary on the next tool call.
 	streamed := turn.Items[2]
 	if streamed.Type != ThreadItemAgentMessage || streamed.Status != ThreadItemStatusInProgress {
 		t.Fatalf("post-tool text should start a live assistant item, got %+v", streamed)
 	}
-	if streamed.Phase != ThreadItemPhaseCommentary {
-		t.Fatalf("post-tool streaming text should be commentary, not final_answer, got %+v", streamed)
+	if streamed.Phase != "" {
+		t.Fatalf("post-tool streaming text should have unknown phase, got %+v", streamed)
 	}
 	if len(out) == 0 {
-		t.Fatal("expected notifications for first commentary delta")
+		t.Fatal("expected notifications for first text delta")
 	}
 	started, ok := out[0].params.(ItemStartedNotification)
-	if !ok || started.Item.Phase != ThreadItemPhaseCommentary {
-		t.Fatalf("started notification should carry commentary phase, got %#v", out[0].params)
+	if !ok || started.Item.Phase != "" {
+		t.Fatalf("started notification should leave phase unknown, got %#v", out[0].params)
 	}
 }
 
-func TestThreadStateMovesStreamingCommentaryToFinalAnswerOnAssistantMessage(t *testing.T) {
+func TestThreadStateMovesStreamingTextToFinalAnswerOnAssistantMessage(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
 
 	// 1. Stream preamble + tool_use + tool_result + streamed "final" text.
-	//    While streaming, the assistant item is commentary — never final_answer.
+	//    While streaming, the assistant item phase is unknown.
 	th.applyStreamEventLocked("turn", providers.StreamEvent{
 		Type: providers.EventToolUseStart,
 		ToolCall: &providers.ToolCall{

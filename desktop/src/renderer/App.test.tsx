@@ -9,19 +9,19 @@
  * from `item.status`. The shell uses `settled` to decide the fold's
  * default collapse state.
  *
- * Commentary / pending text live in the `process` position (they
- * describe what the model is doing, not what it is telling the
- * user). `final_answer` agent messages live in the `answer`
- * position. Reasoning, tool calls, and other process types are also
- * `process`. Multi-`final_answer` turns keep all answer text in
- * arrival order so they don't expose internal stream shape.
+ * Commentary text lives in the `process` position (it describes what
+ * the model is doing, not what it is telling the user). `final_answer`
+ * messages and phase-unknown live text live in the `answer` position.
+ * Reasoning, tool calls, and other process types are also `process`.
+ * Multi-`final_answer` turns keep all answer text in arrival order so
+ * they don't expose internal stream shape.
  *
  * Empty reply: a completed turn that produced commentary but no
  * `final_answer` carries a `missingReplyMessage` — a user-facing
  * outcome, not an internal bug label.
  *
- * Live preview: the fold header shows the latest pending/commentary
- * text or the latest tool command while the turn is `in_progress`.
+ * Live preview: the fold header shows the latest commentary text or
+ * the latest tool command while the turn is `in_progress`.
  * Completed turns drop the preview; the fold header collapses to
  * the status line.
  */
@@ -84,12 +84,12 @@ function makeLiveUnclassifiedAgentMessage(text: string): ThreadItem {
   };
 }
 
-function makePendingAgentMessage(text: string): ThreadItem {
+function makeLegacyPendingAgentMessage(text: string): ThreadItem {
   return {
     id: nextID("pending-agent"),
     type: "agent_message",
     status: "in_progress",
-    phase: "pending",
+    phase: "pending" as unknown as ThreadItem["phase"],
     role: "assistant",
     text,
   };
@@ -309,8 +309,8 @@ describe("assistant turn fold header preview", () => {
     expect(display?.latestProcessPreview?.text).toBe("Let me look that up.");
   });
 
-  it("in_progress + pending live agent text → preview and process entry, not answer", () => {
-    const pending = makePendingAgentMessage(
+  it("in_progress + phase-unknown live agent text → answer candidate, not process preview", () => {
+    const pending = makeLiveUnclassifiedAgentMessage(
       "I will inspect the current prompt path.",
     );
     const turn = makeTurn({ status: "in_progress", items: [pending] });
@@ -318,18 +318,16 @@ describe("assistant turn fold header preview", () => {
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
-    expect(display?.latestProcessPreview?.text).toBe(
-      "I will inspect the current prompt path.",
-    );
-    expect(display?.latestProcessPreview?.kind).toBe("pending");
-    expect(processItemIDs(display)).toEqual([pending.id]);
+    expect(display?.latestProcessPreview?.text).toBeUndefined();
+    expect(processItemIDs(display)).toEqual([]);
     const pendingEntry = display?.entries.find((e) => e.item.id === pending.id);
-    expect(pendingEntry?.kind).toBe("pending");
-    expect(answerItemIDs(display)).toEqual([]);
+    expect(pendingEntry?.kind).toBe("answer");
+    expect(answerItemIDs(display)).toEqual([pending.id]);
+    expect(display?.hasAnswer).toBe(true);
   });
 
-  it("in_progress + legacy unclassified live agent text → treated as pending", () => {
-    const pending = makeLiveUnclassifiedAgentMessage(
+  it("in_progress + legacy pending live agent text → preview and process entry", () => {
+    const pending = makeLegacyPendingAgentMessage(
       "I will inspect the current prompt path.",
     );
     const turn = makeTurn({ status: "in_progress", items: [pending] });
@@ -424,7 +422,7 @@ describe("assistant turn fold header preview", () => {
 
   it("every entry exposes settled from item.status (single source of truth)", () => {
     const commentary = makeCommentary("settled commentary");
-    const livePending = makePendingAgentMessage("streaming text");
+    const livePending = makeLiveUnclassifiedAgentMessage("streaming text");
     const turn = makeTurn({
       status: "in_progress",
       items: [commentary, livePending],

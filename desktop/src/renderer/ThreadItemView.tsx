@@ -97,8 +97,10 @@ export function ThreadItemView({
         copyable;
       const actionsPersistent =
         actionsVisible && item.id === latestAgentMessageID;
+      const isLegacyPendingText =
+        (item.phase as string | undefined) === "pending";
       const isProcessText =
-        item.phase === "pending" || item.phase === "commentary";
+        isLegacyPendingText || item.phase === "commentary";
       const reserveActionSlot =
         copyable &&
         !isProcessText &&
@@ -239,9 +241,10 @@ function AgentMessageContent({
       cwd={cwd}
       isLive={isLive && cursorArmed}
       phase={
-        item.phase === "final_answer"
+        item.phase === "final_answer" ||
+        (!item.phase && item.status === "in_progress")
           ? "final_answer"
-          : (item.phase ?? "commentary")
+          : "commentary"
       }
       onFrame={onStreamFrame}
     />

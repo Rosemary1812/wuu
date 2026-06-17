@@ -661,7 +661,8 @@ const (
 type ThreadItemPhase string
 
 const (
-	ThreadItemPhasePending     ThreadItemPhase = "pending"
+	// Empty phase means unknown while text is streaming. This mirrors Codex's
+	// nullable message phase: only committed messages are classified.
 	ThreadItemPhaseCommentary  ThreadItemPhase = "commentary"
 	ThreadItemPhaseFinalAnswer ThreadItemPhase = "final_answer"
 )

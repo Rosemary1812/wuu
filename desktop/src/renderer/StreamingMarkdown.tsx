@@ -51,8 +51,8 @@ function useReducedMotion(): boolean {
  * derived from the back-end thread item. We do not maintain an internal
  * streaming/settling/settled state machine — `isLive` flips the renderer
  * between two modes:
- *   - `isLive=true`:  RAF loop reveals characters one at a time,
- *                     sweep band runs across the text for `commentary`.
+ *   - `isLive=true`:  RAF loop reveals characters one at a time. Commentary
+ *                     uses a sweep band; final answers use a cursor.
  *   - `isLive=false`: text is rendered in full immediately. The cursor
  *                     fades out and `onSettled` fires once the visible
  *                     cursor reaches the end of the text.
@@ -68,12 +68,11 @@ type StreamingMarkdownProps = {
   /** Whether the source item is still receiving deltas. */
   isLive: boolean;
   /**
-   * The thread item phase. Drives the cursor / sweep visual only.
-   * `pending` and `commentary` use the sweep band (no typewriter cursor);
-   * `final_answer` uses the typewriter cursor. When `isLive=false` the
-   * cursor is hidden regardless of phase.
+   * The thread item phase. Drives the cursor / sweep visual only. Commentary
+   * uses the sweep band; final answers use the typewriter cursor. When
+   * `isLive=false` the cursor is hidden regardless of phase.
    */
-  phase: "pending" | "commentary" | "final_answer";
+  phase: "commentary" | "final_answer";
   onFrame?: () => void;
   onSettled?: () => void;
 };
@@ -319,13 +318,10 @@ export function StreamingMarkdown({
 
   /* ------------------------- Derived view data -------------------------- */
   const visibleText = renderedText.slice(0, visibleLength);
-  // `pending` and `commentary` use a sweep band across the text instead of
-  // a typewriter cursor — the cursor would look out of place for the
-  // model's scratch stream. `final_answer` keeps the cursor as-is. The
-  // sweep / cursor only appears while the item is still live; settled
-  // items render the full text without any trailing affordance.
-  const isCommentaryPhase =
-    itemPhase === "pending" || itemPhase === "commentary";
+  // Commentary uses a sweep band across the text instead of a typewriter
+  // cursor. The sweep / cursor only appears while the item is still live;
+  // settled items render the full text without any trailing affordance.
+  const isCommentaryPhase = itemPhase === "commentary";
   const showCursor = cursorState !== "gone" && !isCommentaryPhase;
   const isLiveCommentary =
     isCommentaryPhase && isLive && visibleText.length > 0;

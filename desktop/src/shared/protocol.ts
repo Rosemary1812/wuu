@@ -620,7 +620,7 @@ export type ThreadItemType =
   | "context_compaction"
   | "error";
 export type ThreadItemStatus = "in_progress" | "completed" | "failed";
-export type ThreadItemPhase = "pending" | "commentary" | "final_answer";
+export type ThreadItemPhase = "commentary" | "final_answer";
 
 export type ToolCallDisplay = {
   kind?: string;
