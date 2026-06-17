@@ -13,6 +13,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Slash,
   Square,
   Terminal,
   Wrench,
@@ -59,9 +60,9 @@ import {
   ModeMenu,
   ProjectPickerMenu,
   RuntimePicker,
-  toolPolicyHasPresetOverrides,
-  toolPolicyProfileFromSummary,
-  toolPolicyProfileOption
+  permissionModeFromSummary,
+  permissionModeHasAdvancedOverrides,
+  permissionModeOption
 } from "./ComposerRuntimeMenus";
 import { useComposerQueryHistory } from "./ComposerQueryHistory";
 import type {
@@ -69,7 +70,7 @@ import type {
   CodexRuntimeMenu,
   ComposerVariant,
   FloatingMenuPlacement,
-  ToolPolicyProfile
+  PermissionMode
 } from "./ComposerTypes";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 
@@ -80,11 +81,11 @@ export type {
   FloatingMenuOwner,
   FloatingMenuPlacement,
   FloatingMenuAlign,
-  ToolPolicyProfile
+  PermissionMode
 } from "./ComposerTypes";
 export { FloatingMenuPortal, isInsideFloatingMenu } from "./ComposerFloatingMenu";
 export { ComposerAttachmentStrip, SplitPaneComposer } from "./ComposerInputSections";
-export { toolPolicyHasPresetOverrides, toolPolicyProfileFromSummary } from "./ComposerRuntimeMenus";
+export { permissionModeFromSummary, permissionModeHasAdvancedOverrides } from "./ComposerRuntimeMenus";
 
 export function Composer({
   variant = "dock",
@@ -119,7 +120,7 @@ export function Composer({
   onToggleCodexRuntimeMenu,
   onSelectRuntimeModel,
   onSelectRuntimeEffort,
-  onSelectToolPolicyProfile,
+  onSelectPermissionMode,
   onToggleModeMenu,
   onToggleBranchMenu,
   onOpenSettings,
@@ -175,7 +176,7 @@ export function Composer({
   onToggleCodexRuntimeMenu: (menu: Exclude<CodexRuntimeMenu, null>) => void;
   onSelectRuntimeModel: (provider: string, model: string, variant?: string) => void;
   onSelectRuntimeEffort: (variant: string) => void;
-  onSelectToolPolicyProfile: (profile: ToolPolicyProfile) => void;
+  onSelectPermissionMode: (mode: PermissionMode) => void;
   onToggleModeMenu: () => void;
   onToggleBranchMenu: () => void;
   onOpenSettings: () => void;
@@ -216,10 +217,10 @@ export function Composer({
     [activeContext, initialized, running]
   );
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
-  const toolPolicyHasOverrides = toolPolicyHasPresetOverrides(initialized?.tool_policy);
-  const toolPolicyProfile = toolPolicyProfileFromSummary(initialized?.tool_policy);
-  const toolPolicyOption = toolPolicyProfileOption(toolPolicyProfile);
-  const toolPolicyChipLabel = toolPolicyHasOverrides ? "自定义权限" : toolPolicyOption.chipLabel;
+  const permissionModeHasOverrides = permissionModeHasAdvancedOverrides(initialized?.tool_policy);
+  const permissionMode = permissionModeFromSummary(initialized?.permissions, initialized?.tool_policy);
+  const permissionOption = permissionModeOption(permissionMode);
+  const permissionChipLabel = permissionModeHasOverrides ? "自定义权限" : permissionOption.chipLabel;
   const visibleSlashCommands = useMemo(
     () => filterComposerSlashCommands(slashCommands, slashQuery),
     [slashCommands, slashQuery]
@@ -457,7 +458,7 @@ export function Composer({
               disabled={readOnly}
               onClick={() => attachmentInputRef.current?.click()}
             >
-              <Paperclip size={18} />
+              <Paperclip aria-hidden="true" />
             </button>
             <button
               className="composer-tool-button composer-slash-button"
@@ -467,7 +468,7 @@ export function Composer({
               disabled={readOnly}
               onClick={revealSlashCommands}
             >
-              <span>/</span>
+              <Slash aria-hidden="true" />
             </button>
             <div className="permission-menu-anchor" ref={accessMenuRef}>
               <button
@@ -475,13 +476,13 @@ export function Composer({
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={accessMenuOpen}
-                aria-label={`权限模式：${toolPolicyChipLabel}`}
+                aria-label={`权限模式：${permissionChipLabel}`}
                 disabled={!initialized || readOnly || running}
                 onClick={onToggleAccessMenu}
               >
-                <ShieldCheck size={16} />
-                <span>{toolPolicyChipLabel}</span>
-                <ChevronDown size={15} />
+                <ShieldCheck aria-hidden="true" />
+                <span>{permissionChipLabel}</span>
+                <ChevronDown aria-hidden="true" />
               </button>
               {accessMenuOpen ? (
                 <FloatingMenuPortal
@@ -493,9 +494,10 @@ export function Composer({
                   width={176}
                 >
                   <AccessMenu
+                    permissions={initialized?.permissions}
                     policy={initialized?.tool_policy}
                     disabled={!initialized || readOnly || running}
-                    onSelect={onSelectToolPolicyProfile}
+                    onSelect={onSelectPermissionMode}
                   />
                 </FloatingMenuPortal>
               ) : null}
@@ -532,15 +534,15 @@ export function Composer({
               title={running ? "停止" : "发送"}
               disabled={!running && (readOnly || !hasDraft)}
             >
-              {running ? <Square size={17} /> : <Send size={18} />}
+              {running ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
             </button>
           </div>
         </div>
         <div className="composer-context-bar" ref={menuRef}>
           <button className="context-project-button" onClick={onToggleMenu} aria-haspopup="menu" aria-expanded={menuOpen}>
-            {activeContext?.kind === "project" ? <Folder size={18} /> : <FolderX size={18} />}
+            {activeContext?.kind === "project" ? <Folder aria-hidden="true" /> : <FolderX aria-hidden="true" />}
             <span>{contextLabel}</span>
-            <ChevronDown size={16} />
+            <ChevronDown aria-hidden="true" />
           </button>
           <button
             className="context-mode-chip"
@@ -549,9 +551,9 @@ export function Composer({
             aria-expanded={modeMenuOpen}
             onClick={onToggleModeMenu}
           >
-            <Laptop size={17} />
+            <Laptop aria-hidden="true" />
             <span>本地模式</span>
-            <ChevronDown size={15} />
+            <ChevronDown aria-hidden="true" />
           </button>
           {gitStatus?.is_repo && gitStatus.branch ? (
             <button
@@ -561,10 +563,10 @@ export function Composer({
               aria-expanded={branchMenuOpen}
               onClick={onToggleBranchMenu}
             >
-              <GitBranch size={17} />
+              <GitBranch aria-hidden="true" />
               <span>{gitStatus.branch}</span>
               {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
-              <ChevronDown size={15} />
+              <ChevronDown aria-hidden="true" />
             </button>
           ) : null}
           {modeMenuOpen ? (
