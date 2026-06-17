@@ -102,6 +102,25 @@ func TestBuilder_AddMemory_SmallFile(t *testing.T) {
 	}
 }
 
+func TestBuilder_AddMemory_DistinguishesDurableMemoryFromInstructions(t *testing.T) {
+	files := []memory.File{
+		{Name: "MEMORY.md", Source: "claude_auto", Path: "~/.claude/projects/repo/memory/MEMORY.md", Content: "Project usually runs make install."},
+	}
+
+	var b Builder
+	b.AddMemory(files)
+	result := b.Build()
+
+	for _, want := range []string{"markdown memory files", "Durable MEMORY.md files are saved context and facts", "verify time-sensitive"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("memory prompt missing %q:\n%s", want, result)
+		}
+	}
+	if strings.Contains(result, "Treat them as binding instructions") {
+		t.Fatalf("durable memory should not be described as unconditionally binding:\n%s", result)
+	}
+}
+
 func TestBuilder_AddSkills(t *testing.T) {
 	sks := []skills.Skill{
 		{Name: "commit", Description: "Create a commit", WhenToUse: "When user asks to commit"},

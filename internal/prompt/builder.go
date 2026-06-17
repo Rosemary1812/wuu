@@ -68,8 +68,9 @@ func (b *Builder) AddMemory(files []memory.File) {
 	}
 	var sb strings.Builder
 	sb.WriteString("# Memory\n\n")
-	sb.WriteString("The following memory files contain project- and user-defined conventions, ")
-	sb.WriteString("style guides, and constraints. Treat them as binding instructions for this session.\n\n")
+	sb.WriteString("The following markdown memory files were discovered for this session. ")
+	sb.WriteString("User, project, and local instruction files may contain conventions, style guides, and constraints that you must follow unless they conflict with higher-priority system, developer, or tool rules. ")
+	sb.WriteString("Durable MEMORY.md files are saved context and facts; use them to orient yourself, but verify time-sensitive or repo-specific details against the current workspace before acting.\n\n")
 	for _, f := range files {
 		content := TruncateMemory(f.Content, MaxMemoryLines, MaxMemoryBytes)
 		fmt.Fprintf(&sb, "## %s _[%s · %s]_\n\n", f.Name, f.Source, f.Path)
@@ -97,7 +98,7 @@ func (b *Builder) AddProfileMemoryWithLimits(entries []store.Entry, memoryChars,
 	}
 	var sb strings.Builder
 	sb.WriteString("# Persistent Memory\n\n")
-	sb.WriteString("You have bounded, profile-scoped persistent memory across sessions for this named agent. ")
+	sb.WriteString("You have a bounded, profile-scoped markdown memory document across sessions for this named agent. ")
 	sb.WriteString("Use `write_memory` to save compact durable facts and `read_memory` to retrieve them when needed.\n\n")
 	sb.WriteString("**When to save:**\n")
 	sb.WriteString("- The user corrects you, says to remember or stop doing something, or shares a durable preference.\n")
@@ -117,7 +118,7 @@ func (b *Builder) AddProfileMemoryWithLimits(entries []store.Entry, memoryChars,
 	memoryBlock := renderProfileMemoryTarget(entries, "memory", memoryChars)
 	if userBlock != "" || memoryBlock != "" {
 		sb.WriteString("\n## Current Profile Memory Snapshot\n\n")
-		sb.WriteString("The following entries were captured at session start. Mid-session writes update disk but do not change this snapshot until the next session.\n\n")
+		sb.WriteString("The following entries were captured at session start. Mid-session writes update the MEMORY.md document and index but do not change this snapshot until the next session.\n\n")
 		if userBlock != "" {
 			sb.WriteString("### User Profile\n\n")
 			sb.WriteString(userBlock)
