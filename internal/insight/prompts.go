@@ -58,7 +58,7 @@ var insightSections = []insightSectionDef{
 	{
 		Name:  "usage_patterns",
 		Title: "Usage Patterns",
-		Prompt: `Based on these session statistics, describe the user's usage patterns in 2-3 short paragraphs.
+		Prompt: `Based on these session statistics, describe the user's usage patterns in 2-3 sentences.
 Focus on: when they use the tool, how long sessions last, how many messages per session.
 Write in second person ("you"). Be specific, reference the data.
 
@@ -85,7 +85,7 @@ Respond as a markdown list with **bold area names** and descriptions.`,
 		Title: "How You Use Tools",
 		Prompt: `Based on these tool usage statistics, describe how this user interacts with coding tools.
 What tools do they use most? What does this say about their workflow?
-Write in second person, 2-3 short paragraphs.
+Write in second person, 2-3 sentences.
 
 Data:
 %s
@@ -108,7 +108,7 @@ Respond as a numbered markdown list with **bold titles** and 1-2 sentence descri
 	{
 		Name:  "friction_analysis",
 		Title: "Where Things Go Wrong",
-		Prompt: `Based on these friction data and session details, identify the top 3 categories of friction the user experiences.
+		Prompt: `Based on these friction details and session data, identify the top 3 categories of friction the user experiences.
 For each, give 1-2 concrete examples from their sessions and suggest what could help.
 
 Data:
@@ -129,7 +129,7 @@ Respond as a markdown list with **bold friction type** names, examples, and sugg
 Data:
 %s
 
-Be specific and practical. Don't be generic. Write in second person.
+Be specific and practical. Don't be generic.
 Respond in markdown with the three categories as headers.`,
 		MaxTokens: 1536,
 	},
@@ -141,7 +141,7 @@ Use this 4-part structure:
 
 1. **What's working** — What is the user's unique style and what impactful things have they done? Keep it high level, 2-3 sentences. Don't be fluffy.
 
-2. **What's hindering you** — Split into (a) assistant's fault (misunderstandings, wrong approaches) and (b) user-side friction (not enough context, environment issues). Be honest but constructive. 2-3 sentences.
+2. **What's getting in the way** — Split into (a) assistant's fault (misunderstandings, wrong approaches) and (b) user-side friction (not enough context, environment issues). Be honest but constructive. 2-3 sentences.
 
 3. **Quick wins to try** — Specific features or workflow techniques they should try. Avoid generic advice. 2-3 sentences.
 
