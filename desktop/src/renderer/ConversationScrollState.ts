@@ -158,25 +158,35 @@ export function useConversationScrollState({
     }
     showConversationScrollbar(node);
 
-    // Direction-sensitive auto-follow: the moment the user scrolls UP, drop
-    // out of auto-follow even if they are still inside the bottom band. Only
-    // re-engage when they explicitly scroll DOWN and reach the bottom band
-    // again. This is the pattern ChatGPT / Claude.ai / Slack use, and it
-    // removes the "slow scroll-up gets silently yanked back to bottom"
-    // symptom that the symmetric distance-from-bottom check produced.
+    // Position-driven userScrolledAway (drives the "Jump to latest" pill).
+    //
+    // We do not infer "scrolled away" purely from the scroll direction. If
+    // the conversation fits inside the viewport (scrollHeight <= clientHeight)
+    // there is nothing below to jump to, so the pill must stay hidden even if
+    // a stale lastConversationScrollTopRef would otherwise claim the user
+    // once scrolled up. Similarly, if the user is parked inside the bottom
+    // band, they are already at the latest message — hide the pill.
+    //
+    // The direction-sensitive check (drop auto-follow the moment scrollTop
+    // decreases) is preserved for the *programmatic* auto-follow decision,
+    // so a slow wheel-up does not get silently yanked back to the bottom by
+    // the next stream tick. The two are now independent: userScrolledAway is
+    // about the pill; setAutoFollow is about the stream-follow behaviour.
     const distanceFromBottom = Math.max(
       0,
       node.scrollHeight - node.scrollTop - node.clientHeight
     );
+    const isScrollable = node.scrollHeight > node.clientHeight;
     const scrolledUp = node.scrollTop < lastConversationScrollTopRef.current;
     lastConversationScrollTopRef.current = node.scrollTop;
 
-    if (scrolledUp) {
-      setAutoFollow(false);
-      return;
-    }
-    if (distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX) {
+    const atLatestView =
+      !isScrollable ||
+      distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
+    if (atLatestView) {
       setAutoFollow(true);
+    } else if (scrolledUp) {
+      setAutoFollow(false);
     }
   }
 
