@@ -701,6 +701,23 @@ func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
 	}
 }
 
+func TestDefaultSystemPrompt_AssistantMessagePhases(t *testing.T) {
+	prompt := DefaultSystemPrompt()
+	for _, want := range []string{
+		"Assistant message phases",
+		"Use progress commentary only while work is still underway",
+		"Do not put final conclusions",
+		"Use the final response only when the turn is complete or genuinely blocked",
+		"runtime metadata, not user-facing text",
+		`"commentary"`,
+		`"final_answer"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("default system prompt must include assistant phase guidance %q: %q", want, prompt)
+		}
+	}
+}
+
 func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	if !strings.Contains(prompt, "spawn sub-agents") {
