@@ -83,13 +83,19 @@
 }
 
 .environment-plan-section {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
   border-bottom: 1px solid #ececea;
   margin-bottom: 10px;
   padding: 3px 8px 13px;
   max-height: min(320px, calc(100vh - 360px));
-  overflow-y: auto;
+}
+
+.environment-plan-scroll {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  gap: 8px;
 }
 
 .environment-plan-meta {
