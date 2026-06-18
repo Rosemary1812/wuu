@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -202,6 +203,31 @@ func TestManagerAllToolsUsesClientOverrides(t *testing.T) {
 	}
 	if !tools[0].IsReadOnly() || !tools[0].IsConcurrencySafe() {
 		t.Fatalf("override metadata not applied: readOnly=%t concurrencySafe=%t", tools[0].IsReadOnly(), tools[0].IsConcurrencySafe())
+	}
+}
+
+func TestManagerAllToolsReturnsStableSortedOrder(t *testing.T) {
+	manager := NewManager()
+
+	manager.mu.Lock()
+	manager.clients["z_server"] = &Client{name: "z_server", tools: []Tool{{Name: "b"}, {Name: "a"}}}
+	manager.clients["a_server"] = &Client{name: "a_server", tools: []Tool{{Name: "z"}, {Name: "a"}}}
+	manager.mu.Unlock()
+
+	tools := manager.AllTools()
+	var names []string
+	for _, tool := range tools {
+		names = append(names, tool.Name())
+	}
+
+	want := []string{
+		"mcp_a_server_a",
+		"mcp_a_server_z",
+		"mcp_z_server_a",
+		"mcp_z_server_b",
+	}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("AllTools order = %+v, want %+v", names, want)
 	}
 }
 

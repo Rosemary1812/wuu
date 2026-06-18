@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -81,6 +82,9 @@ func (m *Manager) AllTools() []*MCPTool {
 			out = append(out, NewMCPTool(c, t))
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name() < out[j].Name()
+	})
 	return out
 }
 
