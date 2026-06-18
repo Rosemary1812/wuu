@@ -66,6 +66,14 @@ import {
   type QueuedComposerMessage,
 } from "./ComposerMessages";
 import {
+  emptyThreadPendingComposerMessages,
+  findPendingComposerMessage,
+  pendingComposerMessagesForThread,
+  threadPendingComposerMessagesIsEmpty,
+  type PendingComposerMessagesByThread,
+  type ThreadPendingComposerMessages,
+} from "./ComposerPendingMessages";
+import {
   Composer,
   FloatingMenuPortal,
   isInsideFloatingMenu,
@@ -146,6 +154,7 @@ import {
   sessionTabDraftForThread,
   setThreadForPane,
   sortThreads,
+  threadForTab,
   threadForPane,
   threadItemFromRecord,
   threadFromRecord,
@@ -642,12 +651,8 @@ export function App(): JSX.Element {
   const [splitComposerDrafts, setSplitComposerDrafts] = useState<
     Record<ConversationPaneID, ComposerDraftState>
   >(initialSplitComposerDrafts);
-  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>(
-    [],
-  );
-  const [guideMessages, setGuideMessages] = useState<QueuedComposerMessage[]>(
-    [],
-  );
+  const [pendingComposerMessagesByThread, setPendingComposerMessagesByThread] =
+    useState<PendingComposerMessagesByThread>({});
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const {
@@ -786,8 +791,8 @@ export function App(): JSX.Element {
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
-  const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
-  const guideMessagesRef = useRef<QueuedComposerMessage[]>([]);
+  const pendingComposerMessagesByThreadRef =
+    useRef<PendingComposerMessagesByThread>({});
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
   const viewSwitchRequestRef = useRef(0);
   const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
@@ -800,6 +805,12 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const activePendingComposerMessages = pendingComposerMessagesForThread(
+    pendingComposerMessagesByThread,
+    activeThreadID,
+  );
+  const queuedMessages = activePendingComposerMessages.queued;
+  const guideMessages = activePendingComposerMessages.guides;
   const [usageRange, setUsageRange] = useState<SettingsUsageRange>("all");
   const [settingsUsage, setSettingsUsage] = useState<SettingsUsageData | undefined>(
     undefined,
@@ -1490,7 +1501,6 @@ export function App(): JSX.Element {
     const tab = createSkillsSessionTab(state.activeContext);
     setArchiveConfirmThreadID(undefined);
     setWorkspaceMode(undefined);
-    clearPendingComposerMessages();
     setSplitComposerDrafts(initialSplitComposerDrafts());
     setState((current) => ({
       ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
@@ -1521,7 +1531,6 @@ export function App(): JSX.Element {
     );
     setArchiveConfirmThreadID(undefined);
     setWorkspaceMode(undefined);
-    clearPendingComposerMessages();
     restorePrimaryComposerDraft(draft);
     setSplitComposerDrafts(initialSplitComposerDrafts());
     setState((current) => ({
@@ -1658,37 +1667,53 @@ export function App(): JSX.Element {
     setSplitComposerDrafts(initialSplitComposerDrafts());
   }
 
-  function setQueuedMessagesNow(messages: QueuedComposerMessage[]): void {
-    queuedMessagesRef.current = messages;
-    setQueuedMessages(messages);
+  function setPendingComposerMessagesByThreadNow(
+    messagesByThread: PendingComposerMessagesByThread,
+  ): void {
+    pendingComposerMessagesByThreadRef.current = messagesByThread;
+    setPendingComposerMessagesByThread(messagesByThread);
   }
 
-  function setGuideMessagesNow(messages: QueuedComposerMessage[]): void {
-    guideMessagesRef.current = messages;
-    setGuideMessages(messages);
+  function updateThreadPendingComposerMessages(
+    threadID: string,
+    update: (
+      previous: ThreadPendingComposerMessages,
+    ) => ThreadPendingComposerMessages,
+  ): void {
+    const previousByThread = pendingComposerMessagesByThreadRef.current;
+    const previous =
+      previousByThread[threadID] ?? emptyThreadPendingComposerMessages();
+    const nextForThread = update(previous);
+    const nextByThread = { ...previousByThread };
+    if (threadPendingComposerMessagesIsEmpty(nextForThread)) {
+      delete nextByThread[threadID];
+    } else {
+      nextByThread[threadID] = nextForThread;
+    }
+    setPendingComposerMessagesByThreadNow(nextByThread);
   }
 
-  function clearPendingComposerMessages(): void {
-    setQueuedMessagesNow([]);
-    setGuideMessagesNow([]);
-  }
-
-  function removePendingComposerMessageByID(id: string): void {
-    if (!id) {
+  function clearThreadPendingComposerMessages(threadID: string): void {
+    const previousByThread = pendingComposerMessagesByThreadRef.current;
+    if (!previousByThread[threadID]) {
       return;
     }
-    const nextQueued = queuedMessagesRef.current.filter(
-      (message) => message.id !== id,
-    );
-    const nextGuides = guideMessagesRef.current.filter(
-      (message) => message.id !== id,
-    );
-    if (nextQueued.length !== queuedMessagesRef.current.length) {
-      setQueuedMessagesNow(nextQueued);
+    const nextByThread = { ...previousByThread };
+    delete nextByThread[threadID];
+    setPendingComposerMessagesByThreadNow(nextByThread);
+  }
+
+  function removePendingComposerMessageByID(
+    threadID: string | undefined,
+    id: string,
+  ): void {
+    if (!threadID || !id) {
+      return;
     }
-    if (nextGuides.length !== guideMessagesRef.current.length) {
-      setGuideMessagesNow(nextGuides);
-    }
+    updateThreadPendingComposerMessages(threadID, (previous) => ({
+      queued: previous.queued.filter((message) => message.id !== id),
+      guides: previous.guides.filter((message) => message.id !== id),
+    }));
   }
 
   function syncPendingComposerMessagesFromServerEvent(event: ServerEvent): void {
@@ -1701,57 +1726,78 @@ export function App(): JSX.Element {
     if (!params) {
       return;
     }
+    const threadID = stringValue(params, "thread_id");
     if (event.message.method === "turn/started") {
       const queueID = stringValue(params, "queue_id");
       if (queueID) {
-        removePendingComposerMessageByID(queueID);
+        removePendingComposerMessageByID(threadID, queueID);
       }
       return;
     }
     if (event.message.method === "turn/dequeued") {
       const queueID = stringValue(params, "queue_id");
       if (queueID) {
-        removePendingComposerMessageByID(queueID);
+        removePendingComposerMessageByID(threadID, queueID);
       }
       return;
     }
     if (event.message.method === "item/completed") {
       const item = threadItemFromRecord(recordValue(params, "item"));
       if (item?.type === "user_message" && item.source_id) {
-        removePendingComposerMessageByID(item.source_id);
+        removePendingComposerMessageByID(threadID, item.source_id);
       }
     }
   }
 
-  function enqueueComposerMessage(message: QueuedComposerMessage): void {
-    setQueuedMessagesNow([...queuedMessagesRef.current, message]);
+  function enqueueComposerMessage(
+    threadID: string,
+    message: QueuedComposerMessage,
+  ): void {
+    updateThreadPendingComposerMessages(threadID, (previous) => ({
+      ...previous,
+      queued: [...previous.queued, message],
+    }));
   }
 
   async function removeQueuedMessage(id: string): Promise<boolean> {
-    const previous = queuedMessagesRef.current;
-    const removedIndex = previous.findIndex((message) => message.id === id);
-    const removedMessage = previous[removedIndex];
-    if (!removedMessage) {
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "queue",
+      activeThreadIDForState(appStateRef.current),
+    );
+    if (!target) {
       return false;
     }
-    setQueuedMessagesNow(previous.filter((message) => message.id !== id));
-    const targetThread = activeThreadForState(appStateRef.current);
-    if (!targetThread) {
-      return true;
-    }
+    updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+      ...previous,
+      queued: previous.queued.filter((message) => message.id !== id),
+    }));
     try {
-      await window.wuu.dequeueTurn(targetThread.id, id);
+      const result = await window.wuu.dequeueTurn(target.threadID, id);
+      if (!result.ok) {
+        setState((current) => ({
+          ...current,
+          status: "排队消息已被处理，无法取消",
+        }));
+        return false;
+      }
       return true;
     } catch (error) {
-      if (!queuedMessagesRef.current.some((message) => message.id === id)) {
-        const current = queuedMessagesRef.current;
-        const insertAt = Math.min(removedIndex, current.length);
-        setQueuedMessagesNow([
-          ...current.slice(0, insertAt),
-          removedMessage,
-          ...current.slice(insertAt),
-        ]);
-      }
+      updateThreadPendingComposerMessages(target.threadID, (previous) => {
+        if (previous.queued.some((message) => message.id === id)) {
+          return previous;
+        }
+        const insertAt = Math.min(target.index, previous.queued.length);
+        return {
+          ...previous,
+          queued: [
+            ...previous.queued.slice(0, insertAt),
+            target.message,
+            ...previous.queued.slice(insertAt),
+          ],
+        };
+      });
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "取消排队失败",
@@ -1761,30 +1807,44 @@ export function App(): JSX.Element {
   }
 
   async function removeGuideMessage(id: string): Promise<boolean> {
-    const previous = guideMessagesRef.current;
-    const removedIndex = previous.findIndex((message) => message.id === id);
-    const removedMessage = previous[removedIndex];
-    if (!removedMessage) {
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "guide",
+      activeThreadIDForState(appStateRef.current),
+    );
+    if (!target) {
       return false;
     }
-    setGuideMessagesNow(previous.filter((message) => message.id !== id));
-    const targetThread = activeThreadForState(appStateRef.current);
-    if (!targetThread) {
-      return true;
-    }
+    updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+      ...previous,
+      guides: previous.guides.filter((message) => message.id !== id),
+    }));
     try {
-      await window.wuu.unsteerTurn(targetThread.id, id);
+      const result = await window.wuu.unsteerTurn(target.threadID, id);
+      if (!result.ok) {
+        setState((current) => ({
+          ...current,
+          status: "引导消息已被处理，无法取消",
+        }));
+        return false;
+      }
       return true;
     } catch (error) {
-      if (!guideMessagesRef.current.some((message) => message.id === id)) {
-        const current = guideMessagesRef.current;
-        const insertAt = Math.min(removedIndex, current.length);
-        setGuideMessagesNow([
-          ...current.slice(0, insertAt),
-          removedMessage,
-          ...current.slice(insertAt),
-        ]);
-      }
+      updateThreadPendingComposerMessages(target.threadID, (previous) => {
+        if (previous.guides.some((message) => message.id === id)) {
+          return previous;
+        }
+        const insertAt = Math.min(target.index, previous.guides.length);
+        return {
+          ...previous,
+          guides: [
+            ...previous.guides.slice(0, insertAt),
+            target.message,
+            ...previous.guides.slice(insertAt),
+          ],
+        };
+      });
       setState((current) => ({
         ...current,
         status: error instanceof Error ? error.message : "取消引导失败",
@@ -1815,49 +1875,56 @@ export function App(): JSX.Element {
   }
 
   async function editQueuedMessage(id: string): Promise<void> {
-    const message = queuedMessagesRef.current.find(
-      (candidate) => candidate.id === id,
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "queue",
+      activeThreadIDForState(appStateRef.current),
     );
-    if (!message || !canRestorePendingComposerMessage()) {
+    if (!target || !canRestorePendingComposerMessage()) {
       return;
     }
     if (await removeQueuedMessage(id)) {
-      restorePendingComposerMessage(message);
+      restorePendingComposerMessage(target.message);
     }
   }
 
   async function editGuideMessage(id: string): Promise<void> {
-    const message = guideMessagesRef.current.find(
-      (candidate) => candidate.id === id,
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "guide",
+      activeThreadIDForState(appStateRef.current),
     );
-    if (!message || !canRestorePendingComposerMessage()) {
+    if (!target || !canRestorePendingComposerMessage()) {
       return;
     }
     if (await removeGuideMessage(id)) {
-      restorePendingComposerMessage(message);
+      restorePendingComposerMessage(target.message);
     }
   }
 
   async function guideQueuedMessage(id: string): Promise<void> {
-    const queuedIndex = queuedMessagesRef.current.findIndex(
-      (message) => message.id === id,
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "queue",
+      activeThreadIDForState(appStateRef.current),
     );
-    if (queuedIndex < 0) {
+    if (!target) {
       return;
     }
-    const message = queuedMessagesRef.current[queuedIndex];
-    const remainingQueued = [
-      ...queuedMessagesRef.current.slice(0, queuedIndex),
-      ...queuedMessagesRef.current.slice(queuedIndex + 1),
-    ];
     const currentState = appStateRef.current;
-    if (!isStateActiveThreadRunning(currentState)) {
-      setQueuedMessagesNow(remainingQueued);
-      void sendComposerMessage(message);
+    const targetThread = threadForTab(currentState, target.threadID);
+    if (!targetThread) {
       return;
     }
-    const targetThread = activeThreadForState(currentState);
-    if (!targetThread) {
+    if (!isThreadRunning(targetThread)) {
+      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+        ...previous,
+        queued: previous.queued.filter((message) => message.id !== id),
+      }));
+      void sendComposerMessageToThread(target.message, targetThread);
       return;
     }
     const turnID = activeTurnIDForThread(targetThread);
@@ -1869,17 +1936,19 @@ export function App(): JSX.Element {
       return;
     }
     try {
-      const files = inputFilesFromComposer(message.files);
+      const files = inputFilesFromComposer(target.message.files);
       await window.wuu.steerTurn(
         targetThread.id,
         turnID,
-        message.text.trim(),
-        inputImagesFromComposer(message.images),
-        message.id,
+        target.message.text.trim(),
+        inputImagesFromComposer(target.message.images),
+        target.message.id,
         files,
       );
-      setQueuedMessagesNow(remainingQueued);
-      setGuideMessagesNow([...guideMessagesRef.current, message]);
+      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+        queued: previous.queued.filter((message) => message.id !== id),
+        guides: [...previous.guides, target.message],
+      }));
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -2220,7 +2289,6 @@ export function App(): JSX.Element {
         setPrompt("");
         setComposerImages([]);
         setComposerFiles([]);
-        clearPendingComposerMessages();
         setState((current) => ({
           ...persistActiveSessionTabDraft(
             current,
@@ -2250,7 +2318,6 @@ export function App(): JSX.Element {
       if (!finishViewSwitch(requestID)) {
         return;
       }
-      clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) => {
         const next = withLoadedRuntimeSessionTab(
@@ -2292,7 +2359,6 @@ export function App(): JSX.Element {
         setPrompt("");
         setComposerImages([]);
         setComposerFiles([]);
-        clearPendingComposerMessages();
         setState((current) => ({
           ...persistActiveSessionTabDraft(
             current,
@@ -2331,7 +2397,6 @@ export function App(): JSX.Element {
       if (!finishViewSwitch(requestID)) {
         return;
       }
-      clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) => {
         const next = withLoadedRuntimeSessionTab(
@@ -2371,7 +2436,6 @@ export function App(): JSX.Element {
       setPrompt("");
       setComposerImages([]);
       setComposerFiles([]);
-      clearPendingComposerMessages();
       const nextTab =
         activeSessionTab(state)?.kind === "draft" &&
         !prompt.trim() &&
@@ -2411,7 +2475,6 @@ export function App(): JSX.Element {
       setPrompt("");
       setComposerImages([]);
       setComposerFiles([]);
-      clearPendingComposerMessages();
       const nextTab = nextDraftSessionTab(loadedState.activeContext);
       setState((current) => {
         const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
@@ -2461,7 +2524,6 @@ export function App(): JSX.Element {
       if (!finishViewSwitch(requestID)) {
         return;
       }
-      clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) =>
         withLoadedRuntimeSessionTab(
@@ -2503,7 +2565,6 @@ export function App(): JSX.Element {
       if (!finishViewSwitch(requestID)) {
         return;
       }
-      clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) =>
         withLoadedRuntimeSessionTab(
@@ -2539,7 +2600,6 @@ export function App(): JSX.Element {
       if (!finishViewSwitch(requestID)) {
         return;
       }
-      clearPendingComposerMessages();
       restoreLoadedRuntimeComposerDraft(loadedState);
       setState((current) =>
         withLoadedRuntimeSessionTab(
@@ -2886,7 +2946,6 @@ export function App(): JSX.Element {
         if (requestID === undefined) {
           cancelViewSwitch();
         }
-        clearPendingComposerMessages();
         setSplitComposerDrafts(initialSplitComposerDrafts());
         setWorkspaceMode("files");
         setState((current) => {
@@ -2936,7 +2995,6 @@ export function App(): JSX.Element {
         if (requestID === undefined) {
           cancelViewSwitch();
         }
-        clearPendingComposerMessages();
         setSplitComposerDrafts(initialSplitComposerDrafts());
         setWorkspaceMode(undefined);
         setState((current) => {
@@ -2987,7 +3045,6 @@ export function App(): JSX.Element {
         if (requestID === undefined) {
           cancelViewSwitch();
         }
-        clearPendingComposerMessages();
         restoreSessionTabComposerDraft(tab);
         setState((current) => {
           const withDraft = persistActiveSessionTabDraft(
@@ -3039,7 +3096,6 @@ export function App(): JSX.Element {
       if (!finishViewSwitch(requestID)) {
         return;
       }
-      clearPendingComposerMessages();
       restorePrimaryComposerDraft(targetDraft);
       setSplitComposerDrafts(initialSplitComposerDrafts());
       setState((current) => {
@@ -3096,7 +3152,6 @@ export function App(): JSX.Element {
       nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
     setArchiveConfirmThreadID(undefined);
-    clearPendingComposerMessages();
     if (fallbackTab.kind === "file") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
@@ -3297,7 +3352,6 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
-    clearPendingComposerMessages();
     if (
       state.activeContext.kind === "no_project" &&
       (state.thread || state.secondaryThread)
@@ -3339,7 +3393,6 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
-    clearPendingComposerMessages();
     const demo = createAgentTreeDemo(activeContext.cwd, state.initialized);
     const demoThreads = [demo.parent, ...demo.children];
     localDemoThreadsRef.current = new Map([
@@ -3374,7 +3427,6 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
-    clearPendingComposerMessages();
     const thread = createConversationFixture(
       kind,
       activeContext.cwd,
@@ -3436,7 +3488,6 @@ export function App(): JSX.Element {
     const demoThread = localDemoThreadsRef.current.get(threadId);
     if (demoThread) {
       cancelViewSwitch();
-      clearPendingComposerMessages();
       restorePrimaryComposerDraft(targetDraft);
       setSplitComposerDrafts(initialSplitComposerDrafts());
       setState((current) => {
@@ -3472,7 +3523,6 @@ export function App(): JSX.Element {
       ) {
         return;
       }
-      clearPendingComposerMessages();
       restorePrimaryComposerDraft(targetDraft);
       setSplitComposerDrafts(initialSplitComposerDrafts());
       setState((current) => {
@@ -3544,7 +3594,6 @@ export function App(): JSX.Element {
       }
       restorePrimaryComposerDraft(targetDraft);
       setSplitComposerDrafts(initialSplitComposerDrafts());
-      clearPendingComposerMessages();
       setState((current) => {
         const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
         return {
@@ -3597,7 +3646,6 @@ export function App(): JSX.Element {
   }
 
   function closeConversationPane(pane: ConversationPaneID): void {
-    clearPendingComposerMessages();
     moveSplitDraftToGlobalComposer(
       pane === "secondary" ? "primary" : "secondary",
     );
@@ -3780,7 +3828,7 @@ export function App(): JSX.Element {
       setArchiveConfirmThreadID(thread.id);
       return;
     }
-    clearPendingComposerMessages();
+    clearThreadPendingComposerMessages(thread.id);
     const archivedActiveThread = thread.id === activeThreadID;
     const fallbackDraft = archivedActiveThread
       ? nextDraftSessionTab(state.activeContext)
@@ -3931,8 +3979,17 @@ export function App(): JSX.Element {
       return false;
     }
     try {
-      await window.wuu.queueTurn(targetThread.id, text, images, message.id, files);
-      enqueueComposerMessage(message);
+      const result = await window.wuu.queueTurn(
+        targetThread.id,
+        text,
+        images,
+        message.id,
+        files,
+      );
+      enqueueComposerMessage(targetThread.id, {
+        ...message,
+        id: result.queued.id || message.id,
+      });
       return true;
     } catch (error) {
       setState((current) => ({
@@ -4204,6 +4261,92 @@ export function App(): JSX.Element {
         ...current,
         activePane: pane,
         running: false,
+        status: errorMessage,
+      }));
+      return false;
+    }
+    return true;
+  }
+
+  async function sendComposerMessageToThread(
+    message: QueuedComposerMessage,
+    targetThread: Thread,
+  ): Promise<boolean> {
+    const currentState = appStateRef.current;
+    const text = message.text.trim();
+    const images = inputImagesFromComposer(message.images);
+    const files = inputFilesFromComposer(message.files);
+    if (
+      (!text && images.length === 0 && files.length === 0) ||
+      targetThread.read_only ||
+      !currentState.activeContext ||
+      !currentState.initialized ||
+      viewSwitchPending ||
+      isThreadRunning(targetThread)
+    ) {
+      return false;
+    }
+    const targetIsActive = activeThreadIDForState(currentState) === targetThread.id;
+    if (targetIsActive) {
+      enableConversationAutoFollow();
+      resetRunDebugEvents({
+        source: "client",
+        method: "client/send",
+        detail: composerSubmissionDetail(images.length, files.length),
+        tone: "running",
+        threadID: targetThread.id,
+      });
+      appStateRef.current = {
+        ...currentState,
+        running: true,
+        status: "正在发送请求",
+      };
+      setState((current) => ({
+        ...current,
+        running: true,
+        status: "正在发送请求",
+      }));
+    }
+    try {
+      const result = await window.wuu.startTurn(targetThread.id, text, images, files);
+      setState((current) =>
+        updateThreadByID(
+          current,
+          targetThread.id,
+          (thread) => upsertTurn(thread, result.turn),
+          targetIsActive ? { running: true } : {},
+        ),
+      );
+      if (targetIsActive) {
+        appendRunDebugEvent({
+          source: "client",
+          method: "turn/start response",
+          detail: "服务端已接受本轮请求",
+          tone: "running",
+          threadID: targetThread.id,
+          turnID: result.turn.id,
+        });
+      }
+    } catch (error) {
+      const rawMessage = rawErrorMessage(error, "send failed");
+      const errorMessage = statusMessageForError(rawMessage, "send failed");
+      if (targetIsActive) {
+        appendRunDebugEvent({
+          source: "client",
+          method: "turn/start failed",
+          detail: rawMessage,
+          tone: "error",
+          threadID: targetThread.id,
+        });
+      }
+      appStateRef.current = {
+        ...appStateRef.current,
+        running: targetIsActive ? false : appStateRef.current.running,
+        status: errorMessage,
+      };
+      setState((current) => ({
+        ...current,
+        running: targetIsActive ? false : current.running,
         status: errorMessage,
       }));
       return false;
