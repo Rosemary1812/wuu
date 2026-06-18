@@ -83,6 +83,10 @@ type Options struct {
 	Effort            string
 	Variant           string
 	PermissionMode    string
+	AllowTools        []string
+	DenyTools         []string
+	ApprovalHandler   string
+	ApprovalSocket    string
 	NoTools           bool
 	JSON              bool
 	Ephemeral         bool

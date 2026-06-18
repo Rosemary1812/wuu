@@ -126,6 +126,28 @@ func TestRunExecResumeLastUsesResumePath(t *testing.T) {
 	}
 }
 
+func TestRunExecResumeAllUsesResumePath(t *testing.T) {
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "continued"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"exec", "resume", "--all", "--json", "thread-1", "continue"}); err != nil {
+			t.Fatalf("run exec resume --all: %v", err)
+		}
+	})
+
+	if controller.startedThread || controller.resumedThread != "thread-1" {
+		t.Fatalf("resume --all should resume thread-1, got started=%v resumed=%q", controller.startedThread, controller.resumedThread)
+	}
+	events := parseCLIJSONLines(t, output)
+	if got := events[1]["type"]; got != "thread_resumed" {
+		t.Fatalf("second event = %v, want thread_resumed\n%s", got, output)
+	}
+}
+
 func TestRunExecForkUsesForkPath(t *testing.T) {
 	controller := newCLIExecFakeController(
 		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "fork-thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "forked"}),
@@ -356,6 +378,72 @@ func TestExecOptionsFromInputJSONAcceptsOutputSchema(t *testing.T) {
 	}
 	if opts.OutputSchemaPath != "schema.json" {
 		t.Fatalf("OutputSchemaPath = %q, want schema.json", opts.OutputSchemaPath)
+	}
+}
+
+func TestExecOptionsFromCLIAcceptsApprovalAndToolOverrides(t *testing.T) {
+	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse([]string{
+		"--approval-handler", "approve-tool",
+		"--allow-tool", "run_shell",
+		"--deny-tool", "write_file",
+	}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	opts, err := execOptionsFromCLI(cfg, "hello", "", false, nil)
+	if err != nil {
+		t.Fatalf("execOptionsFromCLI: %v", err)
+	}
+	if opts.ApprovalHandler != "approve-tool" {
+		t.Fatalf("ApprovalHandler = %q", opts.ApprovalHandler)
+	}
+	if !reflect.DeepEqual(opts.AllowTools, []string{"run_shell"}) || !reflect.DeepEqual(opts.DenyTools, []string{"write_file"}) {
+		t.Fatalf("tool overrides = allow %+v deny %+v", opts.AllowTools, opts.DenyTools)
+	}
+}
+
+func TestExecOptionsFromInputJSONAcceptsApprovalSocketAndToolOverrides(t *testing.T) {
+	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	opts, err := execOptionsFromCLI(cfg, "hello", "", false, &execInputPayload{
+		ApprovalSocket: "/tmp/wuu-approval.sock",
+		AllowTools:     []string{"read_file"},
+		DenyTools:      []string{"run_shell"},
+	})
+	if err != nil {
+		t.Fatalf("execOptionsFromCLI: %v", err)
+	}
+	if opts.ApprovalSocket != "/tmp/wuu-approval.sock" {
+		t.Fatalf("ApprovalSocket = %q", opts.ApprovalSocket)
+	}
+	if !reflect.DeepEqual(opts.AllowTools, []string{"read_file"}) || !reflect.DeepEqual(opts.DenyTools, []string{"run_shell"}) {
+		t.Fatalf("tool overrides = allow %+v deny %+v", opts.AllowTools, opts.DenyTools)
+	}
+}
+
+func TestRunExecRejectsConflictingToolOverrides(t *testing.T) {
+	err := run([]string{"exec", "--allow-tool", "run_shell", "--deny-tool", "run_shell", "hello"})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "both allowed and denied") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunExecRejectsConflictingApprovalHandlers(t *testing.T) {
+	err := run([]string{"exec", "--approval-handler", "approve", "--approval-socket", "/tmp/wuu.sock", "hello"})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

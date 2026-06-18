@@ -83,8 +83,9 @@ JSON
 stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
-`strict_config`, `env`, `max_turns`, `output_schema`, `no_tools`, `timeout`,
-and `output_last_message`.
+`strict_config`, `env`, `allow_tools`, `deny_tools`, `approval_handler`,
+`approval_socket`, `max_turns`, `output_schema`, `no_tools`, `timeout`, and
+`output_last_message`.
 
 ## Resume
 
@@ -99,13 +100,16 @@ wuu exec review --commit <sha>
 
 `resume --last` asks app-server to resume the latest visible session for the
 current workspace. `resume <thread-id>` resumes a specific session.
+`resume --all <thread-id>` is accepted for agent workflows that want to be
+explicit about restoring all available persisted context; app-server resume
+already loads the full persisted thread context, so this flag uses the same
+runtime path.
 
 `fork <thread-id>` creates a new session through app-server `thread/fork`, then
 starts the requested turn in that fork.
 
 `review` builds a scoped review task and runs it through the same exec path.
 The agent inspects the requested diff or commit with normal repository tools.
-`resume --all` is part of the target surface but is not fully implemented yet.
 
 ## Attachments
 
@@ -183,6 +187,10 @@ Current implemented flags:
 --ignore-user-config
 --strict-config
 --env KEY=VALUE
+--allow-tool <name>
+--deny-tool <name>
+--approval-handler <command>
+--approval-socket <path>
 --file <path>
 --image <path>
 --no-tools
@@ -206,15 +214,38 @@ JSON, validates the final answer locally, and gives the agent a limited number
 of correction turns when the result does not match the schema. JSONL `result`
 events include `structured_result` after successful validation.
 
-Target flags that still need implementation:
+`--allow-tool` and `--deny-tool` are repeatable one-run tool policy overrides.
+They affect only the current exec run and do not write back to configuration.
+A tool cannot be both allowed and denied in the same run.
 
-```bash
---approval-handler <command>
---approval-socket <path>
+`--approval-handler <command>` lets automation respond to app-server approval
+requests. Wuu sends one JSON object to the command on stdin:
+
+```json
+{
+  "id": "server-1",
+  "method": "tool/approval/request",
+  "params": {
+    "id": "approval-id",
+    "tool_name": "write_file",
+    "risk": "high",
+    "arguments_preview": "..."
+  }
+}
 ```
 
-Unimplemented target flags should fail clearly rather than silently changing
-behavior.
+The command must write a JSON approval response to stdout:
+
+```json
+{"decision":"approved","reason":"policy allowed this run"}
+```
+
+It may also return a JSON-RPC-like object with a `result` field containing the
+same response shape.
+
+`--approval-socket <path>` uses the same request and response JSON over a Unix
+socket, one newline-delimited object per approval request. `--approval-handler`
+and `--approval-socket` are mutually exclusive.
 
 ## Session Inspection
 

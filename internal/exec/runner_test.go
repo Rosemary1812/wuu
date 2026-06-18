@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -290,6 +291,170 @@ func TestRunTurnErrorReturnsExitCodeOne(t *testing.T) {
 	}
 }
 
+func TestRunJSONLEmitsWorkEventFamilies(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationItemStarted, appserver.ItemStartedNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Item: appserver.ThreadItem{
+				ID:        "item-shell",
+				Type:      appserver.ThreadItemToolCall,
+				Name:      "run_shell",
+				Arguments: `{"command":"go test ./..."}`,
+			},
+		}),
+		notification(appserver.NotificationToolCallOutput, appserver.ToolCallOutputNotification{ThreadID: "thread-1", TurnID: "turn-1", ItemID: "item-shell", Delta: "ok\n"}),
+		notification(appserver.NotificationItemCompleted, appserver.ItemCompletedNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Item: appserver.ThreadItem{
+				ID:     "item-shell",
+				Type:   appserver.ThreadItemToolCall,
+				Name:   "run_shell",
+				Status: appserver.ThreadItemStatusCompleted,
+			},
+		}),
+		notification(appserver.NotificationItemCompleted, appserver.ItemCompletedNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Item: appserver.ThreadItem{
+				ID:     "item-write",
+				Type:   appserver.ThreadItemToolCall,
+				Name:   "write_file",
+				Status: appserver.ThreadItemStatusCompleted,
+				Result: `{"action":"create","path":"notes.txt","new_file_sha":"sha256:abc","workspace_revision":"fs:worktree:1"}`,
+			},
+		}),
+		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
+			ThreadID: "thread-1",
+			Agent:    appserver.Agent{ID: "agent-1", Type: "subagent", TaskName: "worker", Status: "running"},
+		}),
+		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
+			ThreadID: "thread-1",
+			Agent:    appserver.Agent{ID: "agent-1", Type: "subagent", TaskName: "worker", Status: "completed", Result: "done"},
+		}),
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "done"}),
+	)
+	var stdout bytes.Buffer
+
+	if err := Run(context.Background(), Options{
+		Prompt:     "do work",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	events := parseJSONLines(t, stdout.String())
+	types := eventTypes(events)
+	for _, want := range []string{"command_started", "command_output_delta", "command_completed", "file_changed", "subagent_started", "subagent_completed"} {
+		if !containsString(types, want) {
+			t.Fatalf("missing %s in events %#v\n%s", want, types, stdout.String())
+		}
+	}
+	commandStarted := firstEventOfType(t, events, "command_started")
+	if commandStarted["command"] != "go test ./..." {
+		t.Fatalf("command_started missing command: %+v", commandStarted)
+	}
+	fileChanged := firstEventOfType(t, events, "file_changed")
+	if fileChanged["path"] != "notes.txt" || fileChanged["action"] != "create" || fileChanged["new_file_sha"] != "sha256:abc" {
+		t.Fatalf("unexpected file_changed: %+v", fileChanged)
+	}
+}
+
+func TestRunApprovalUnavailableReturnsPermissionExit(t *testing.T) {
+	controller := newFakeController(
+		notification(notificationApprovalRequested, approvalRequestedNotification{
+			RequestID: "server-1",
+			Method:    appserver.MethodToolApprovalRequest,
+			Request:   appserver.ToolApprovalRequest{ID: "approval-1", ToolName: "write_file", Risk: "high"},
+		}),
+		notification(notificationApprovalResolved, approvalResolvedNotification{
+			RequestID: "server-1",
+			Method:    appserver.MethodToolApprovalRequest,
+			Error:     "non-interactive exec cannot handle app-server request",
+		}),
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "approval required"}),
+	)
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Prompt:     "write file",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	})
+	if ExitCode(err) != ExitPermissionDenied {
+		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
+	}
+	events := parseJSONLines(t, stdout.String())
+	types := eventTypes(events)
+	for _, want := range []string{"approval_requested", "approval_resolved", "result"} {
+		if !containsString(types, want) {
+			t.Fatalf("missing %s in events %#v\n%s", want, types, stdout.String())
+		}
+	}
+	result := events[len(events)-1]
+	if result["status"] != "permission_denied" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestProtocolClientHandlesApprovalRequest(t *testing.T) {
+	serverToClientR, serverToClientW := io.Pipe()
+	clientToServerR, clientToServerW := io.Pipe()
+	defer serverToClientR.Close()
+	defer serverToClientW.Close()
+	defer clientToServerR.Close()
+	defer clientToServerW.Close()
+
+	client := NewProtocolClientWithServerRequestHandler(context.Background(), serverToClientR, clientToServerW, func(_ context.Context, req ServerRequest) ServerRequestResult {
+		if req.Method != appserver.MethodToolApprovalRequest {
+			t.Fatalf("unexpected request method: %s", req.Method)
+		}
+		return ServerRequestResult{Result: appserver.ToolApprovalResponse{Decision: "approved", Reason: "test"}}
+	})
+	request := appserver.ToolApprovalRequest{ID: "approval-1", ToolName: "write_file"}
+	rawParams, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	go func() {
+		_ = json.NewEncoder(serverToClientW).Encode(protocolEnvelope{
+			ID:     json.RawMessage(`"server-1"`),
+			Method: appserver.MethodToolApprovalRequest,
+			Params: rawParams,
+		})
+	}()
+
+	var response protocolEnvelope
+	if err := json.NewDecoder(clientToServerR).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error != nil {
+		t.Fatalf("unexpected response error: %+v", response.Error)
+	}
+	var approval appserver.ToolApprovalResponse
+	if err := json.Unmarshal(response.Result, &approval); err != nil {
+		t.Fatalf("decode approval response: %v", err)
+	}
+	if approval.Decision != "approved" {
+		t.Fatalf("approval decision = %q", approval.Decision)
+	}
+	seen := []string{}
+	for len(seen) < 2 {
+		select {
+		case notification := <-client.Notifications():
+			seen = append(seen, notification.Method)
+		default:
+			t.Fatalf("missing approval notifications, saw %#v", seen)
+		}
+	}
+	if !reflect.DeepEqual(seen, []string{notificationApprovalRequested, notificationApprovalResolved}) {
+		t.Fatalf("approval notifications = %#v", seen)
+	}
+}
+
 func TestRunOutputSchemaEmitsStructuredResult(t *testing.T) {
 	schemaPath := writeExecSchema(t, `{
 		"type": "object",
@@ -395,6 +560,36 @@ func parseJSONLines(t *testing.T, text string) []map[string]any {
 		events = append(events, event)
 	}
 	return events
+}
+
+func eventTypes(events []map[string]any) []string {
+	out := make([]string, 0, len(events))
+	for _, event := range events {
+		if typ, _ := event["type"].(string); typ != "" {
+			out = append(out, typ)
+		}
+	}
+	return out
+}
+
+func firstEventOfType(t *testing.T, events []map[string]any, typ string) map[string]any {
+	t.Helper()
+	for _, event := range events {
+		if event["type"] == typ {
+			return event
+		}
+	}
+	t.Fatalf("event %s not found in %+v", typ, events)
+	return nil
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func writeExecSchema(t *testing.T, content string) string {

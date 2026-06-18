@@ -60,9 +60,8 @@ The target event family list is:
 - `error`
 - `result`
 
-Some event families are already emitted by `wuu exec`; others are target
-surface area that still needs mapping from app-server notifications or tool
-telemetry.
+The current `wuu exec` implementation emits these families from app-server
+notifications, app-server client requests, and structured tool results.
 
 ## Event Shapes
 
@@ -185,6 +184,152 @@ omitted.
 }
 ```
 
+### `command_started`
+
+Emitted in addition to `tool_started` for command-like tools such as
+`run_shell`, `run_test`, and managed process tools.
+
+```json
+{
+  "type": "command_started",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "item_id": "item-id",
+  "name": "run_shell",
+  "command": "go test ./...",
+  "arguments": "{\"command\":\"go test ./...\"}"
+}
+```
+
+### `command_output_delta`
+
+```json
+{
+  "type": "command_output_delta",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "item_id": "item-id",
+  "name": "run_shell",
+  "command": "go test ./...",
+  "delta": "ok\n"
+}
+```
+
+### `command_completed`
+
+```json
+{
+  "type": "command_completed",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "item_id": "item-id",
+  "name": "run_shell",
+  "command": "go test ./...",
+  "status": "completed",
+  "error": ""
+}
+```
+
+### `file_changed`
+
+Emitted from structured results produced by file-changing tools such as
+`write_file`, `edit_file`, `apply_patch`, and checkpoint restore. The event
+does not duplicate full diffs or file contents.
+
+```json
+{
+  "type": "file_changed",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "item_id": "item-id",
+  "tool_name": "edit_file",
+  "path": "internal/exec/runner.go",
+  "action": "edit",
+  "old_file_sha": "sha256:old",
+  "new_file_sha": "sha256:new",
+  "workspace_revision": "fs:worktree:..."
+}
+```
+
+### `subagent_started`
+
+```json
+{
+  "type": "subagent_started",
+  "thread_id": "thread-id",
+  "agent_id": "agent-id",
+  "agent_type": "subagent",
+  "status": "running",
+  "task_name": "worker"
+}
+```
+
+### `subagent_updated`
+
+```json
+{
+  "type": "subagent_updated",
+  "thread_id": "thread-id",
+  "agent_id": "agent-id",
+  "status": "running",
+  "input_tokens": 100,
+  "output_tokens": 20
+}
+```
+
+### `subagent_completed`
+
+```json
+{
+  "type": "subagent_completed",
+  "thread_id": "thread-id",
+  "agent_id": "agent-id",
+  "status": "completed",
+  "result": "summary",
+  "result_path": "/path/to/report.md",
+  "error": ""
+}
+```
+
+### `approval_requested`
+
+Emitted when app-server asks the non-interactive client for approval.
+
+```json
+{
+  "type": "approval_requested",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "request_id": "server-1",
+  "method": "tool/approval/request",
+  "request": {
+    "id": "approval-id",
+    "tool_name": "write_file",
+    "risk": "high",
+    "arguments_sha256": "...",
+    "arguments_preview": "..."
+  }
+}
+```
+
+### `approval_resolved`
+
+```json
+{
+  "type": "approval_resolved",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "request_id": "server-1",
+  "method": "tool/approval/request",
+  "decision": "approved",
+  "reason": "approved by handler",
+  "error": ""
+}
+```
+
+If approval cannot be obtained in a non-interactive run, Wuu fails closed and
+the final `result` uses `status: "permission_denied"` with exit code `3`.
+
 ### `turn_completed`
 
 ```json
@@ -195,6 +340,20 @@ omitted.
   "input_tokens": 100,
   "output_tokens": 20,
   "trace_path": "/path/to/session-trace.jsonl"
+}
+```
+
+### `turn_interrupted`
+
+Emitted when `wuu exec` interrupts the active turn because of timeout or
+process cancellation.
+
+```json
+{
+  "type": "turn_interrupted",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "reason": "timeout"
 }
 ```
 
@@ -232,6 +391,7 @@ Allowed `status` values include:
 
 - `completed`
 - `failed`
+- `permission_denied`
 - `timeout`
 - `interrupted`
 

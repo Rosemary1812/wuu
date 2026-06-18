@@ -35,6 +35,10 @@ func NewLocalAppServerController(ctx context.Context, opts Options) (Controller,
 	if err := applyConfigOverrides(&cfg, opts); err != nil {
 		return nil, err
 	}
+	requestHandler, err := newServerRequestHandler(opts)
+	if err != nil {
+		return nil, err
+	}
 
 	rt, err := runtime.NewSession(runtime.Options{
 		RootDir:       rootDir,
@@ -54,7 +58,7 @@ func NewLocalAppServerController(ctx context.Context, opts Options) (Controller,
 	serverCtx, cancel := context.WithCancel(ctx)
 	controller := &localAppServerController{
 		rt:     rt,
-		client: NewProtocolClient(serverOutR, serverInW),
+		client: NewProtocolClientWithServerRequestHandler(serverCtx, serverOutR, serverInW, requestHandler),
 		cancel: cancel,
 		done:   make(chan error, 1),
 		pipes:  []io.Closer{serverInR, serverInW, serverOutR, serverOutW},
@@ -197,5 +201,52 @@ func applyConfigOverrides(cfg *config.Config, opts Options) error {
 			return fmt.Errorf("invalid permission mode %q", opts.PermissionMode)
 		}
 	}
+	if err := applyToolPolicyOverrides(&cfg.Agent.ToolPolicy, opts.AllowTools, opts.DenyTools); err != nil {
+		return err
+	}
 	return nil
+}
+
+func applyToolPolicyOverrides(policy *config.ToolPolicyConfig, allowTools, denyTools []string) error {
+	if policy == nil {
+		return nil
+	}
+	allow := normalizedToolList(allowTools)
+	deny := normalizedToolList(denyTools)
+	if len(allow) == 0 && len(deny) == 0 {
+		return nil
+	}
+	conflicts := map[string]bool{}
+	for _, name := range allow {
+		conflicts[name] = true
+	}
+	for _, name := range deny {
+		if conflicts[name] {
+			return fmt.Errorf("tool %q cannot be both allowed and denied", name)
+		}
+	}
+	if policy.Tools == nil {
+		policy.Tools = make(map[string]string)
+	}
+	for _, name := range allow {
+		policy.Tools[name] = "allow"
+	}
+	for _, name := range deny {
+		policy.Tools[name] = "deny"
+	}
+	return nil
+}
+
+func normalizedToolList(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }

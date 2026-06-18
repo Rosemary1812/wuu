@@ -20,11 +20,19 @@ type runState struct {
 	finalMessage        string
 	tracePath           string
 	status              string
+	commandItems        map[string]appserver.ThreadItem
+	toolOutputs         map[string]string
+	seenSubagents       map[string]bool
+	permissionDenied    bool
+	permissionError     string
 	structuredResult    any
 	structuredResultSet bool
 }
 
 func Run(ctx context.Context, opts Options) error {
+	if err := validateRunOptions(opts); err != nil {
+		return WithExitCode(ExitInvalidInput, err)
+	}
 	restoreEnv, err := applyRunEnv(opts.Env)
 	if err != nil {
 		return WithExitCode(ExitInvalidInput, err)
@@ -110,6 +118,8 @@ func Run(ctx context.Context, opts Options) error {
 		state.finalMessage = ""
 		state.turnID = ""
 		state.status = "running"
+		state.commandItems = nil
+		state.toolOutputs = nil
 		input := TurnInput{Prompt: prompt}
 		if attempt == 0 {
 			input.Images = attachments.Images
@@ -126,15 +136,26 @@ func Run(ctx context.Context, opts Options) error {
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				_ = interruptBestEffort(controller, state.threadID)
+				emitTurnInterrupted(opts, state, "timeout")
 				emitResult(opts, state, "timeout", "timeout")
 				return WithExitCode(ExitTimeout, err)
 			}
 			if errors.Is(ctx.Err(), context.Canceled) {
 				_ = interruptBestEffort(controller, state.threadID)
+				emitTurnInterrupted(opts, state, "interrupted")
 				emitResult(opts, state, "interrupted", "interrupted")
 				return WithExitCode(ExitInterrupted, err)
 			}
 			return err
+		}
+		if state.permissionDenied {
+			errorText := state.permissionError
+			if errorText == "" {
+				errorText = "permission denied"
+			}
+			state.status = "permission_denied"
+			emitResult(opts, state, "permission_denied", errorText)
+			return WithExitCode(ExitPermissionDenied, errors.New(errorText))
 		}
 
 		if outputSchema == nil {
@@ -168,6 +189,30 @@ func Run(ctx context.Context, opts Options) error {
 		}
 		if state.finalMessage != "" {
 			fmt.Fprintln(opts.Stdout, state.finalMessage)
+		}
+	}
+	return nil
+}
+
+func validateRunOptions(opts Options) error {
+	if strings.TrimSpace(opts.ApprovalHandler) != "" && strings.TrimSpace(opts.ApprovalSocket) != "" {
+		return errors.New("--approval-handler and --approval-socket cannot be used together")
+	}
+	allowed := make(map[string]bool, len(opts.AllowTools))
+	for _, name := range opts.AllowTools {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return errors.New("tool override name is required")
+		}
+		allowed[name] = true
+	}
+	for _, name := range opts.DenyTools {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return errors.New("tool override name is required")
+		}
+		if allowed[name] {
+			return fmt.Errorf("tool %q cannot be both allowed and denied", name)
 		}
 	}
 	return nil
@@ -278,19 +323,27 @@ func handleNotification(opts Options, notification Notification, state *runState
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
-		emitItemStarted(opts, params)
+		emitItemStarted(opts, params, state)
 	case appserver.NotificationItemCompleted:
 		var params appserver.ItemCompletedNotification
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
-		emitItemCompleted(opts, params)
+		emitItemCompleted(opts, params, state)
 	case appserver.NotificationToolCallOutput:
 		var params appserver.ToolCallOutputNotification
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
+		state.appendToolOutput(params.ItemID, params.Delta)
 		emitJSON(opts, map[string]any{"type": "tool_output_delta", "thread_id": params.ThreadID, "turn_id": params.TurnID, "item_id": params.ItemID, "delta": params.Delta})
+		emitCommandOutputDelta(opts, params, state)
+	case appserver.NotificationAgentUpdated:
+		var params appserver.AgentUpdatedNotification
+		if err := decodeNotification(notification, &params); err != nil {
+			return false, err
+		}
+		emitSubagentUpdated(opts, params, state)
 	case appserver.NotificationTurnUsage:
 		var params appserver.TurnUsageNotification
 		if err := decodeNotification(notification, &params); err != nil {
@@ -325,9 +378,31 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.threadID = params.ThreadID
 		state.turnID = params.TurnID
 		state.status = "failed"
+		status := "failed"
+		code := ExitTurnFailed
+		if state.permissionDenied || isPermissionFailure(params.Error) {
+			status = "permission_denied"
+			code = ExitPermissionDenied
+			state.permissionDenied = true
+			if state.permissionError == "" {
+				state.permissionError = params.Error
+			}
+		}
 		emitJSON(opts, map[string]any{"type": "turn_failed", "thread_id": params.ThreadID, "turn_id": params.TurnID, "error": params.Error})
-		emitResult(opts, *state, "failed", params.Error)
-		return false, WithExitCode(ExitTurnFailed, errors.New(params.Error))
+		emitResult(opts, *state, status, params.Error)
+		return false, WithExitCode(code, errors.New(params.Error))
+	case notificationApprovalRequested:
+		var params approvalRequestedNotification
+		if err := decodeNotification(notification, &params); err != nil {
+			return false, err
+		}
+		emitApprovalRequested(opts, state, params)
+	case notificationApprovalResolved:
+		var params approvalResolvedNotification
+		if err := decodeNotification(notification, &params); err != nil {
+			return false, err
+		}
+		emitApprovalResolved(opts, state, params)
 	}
 	return false, nil
 }
@@ -369,25 +444,361 @@ func emitTurnStarted(opts Options, threadID string, turn appserver.Turn) {
 	fmt.Fprintf(opts.Stderr, "turn_id: %s\n", turn.ID)
 }
 
-func emitItemStarted(opts Options, params appserver.ItemStartedNotification) {
+func emitItemStarted(opts Options, params appserver.ItemStartedNotification, state *runState) {
 	switch params.Item.Type {
 	case appserver.ThreadItemToolCall, appserver.ThreadItemCollabAgentTool:
 		emitJSON(opts, map[string]any{"type": "tool_started", "thread_id": params.ThreadID, "turn_id": params.TurnID, "item_id": params.Item.ID, "name": params.Item.Name, "arguments": params.Item.Arguments})
+		if isCommandTool(params.Item.Name) {
+			state.rememberCommandItem(params.Item)
+			emitJSON(opts, commandEventPayload("command_started", params.ThreadID, params.TurnID, params.Item))
+		}
 		if !opts.JSON && params.Item.Name != "" {
 			fmt.Fprintf(opts.Stderr, "tool_started: %s\n", params.Item.Name)
 		}
 	}
 }
 
-func emitItemCompleted(opts Options, params appserver.ItemCompletedNotification) {
+func emitItemCompleted(opts Options, params appserver.ItemCompletedNotification, state *runState) {
 	switch params.Item.Type {
 	case appserver.ThreadItemToolCall, appserver.ThreadItemCollabAgentTool:
-		payload := map[string]any{"type": "tool_completed", "thread_id": params.ThreadID, "turn_id": params.TurnID, "item_id": params.Item.ID, "name": params.Item.Name, "status": params.Item.Status, "error": params.Item.Error}
+		item := params.Item
+		if item.Result == "" {
+			item.Result = state.toolOutput(item.ID)
+		}
+		payload := map[string]any{"type": "tool_completed", "thread_id": params.ThreadID, "turn_id": params.TurnID, "item_id": item.ID, "name": item.Name, "status": item.Status, "error": item.Error}
 		emitJSON(opts, payload)
+		if isCommandTool(item.Name) {
+			commandPayload := commandEventPayload("command_completed", params.ThreadID, params.TurnID, item)
+			commandPayload["status"] = item.Status
+			commandPayload["error"] = item.Error
+			emitJSON(opts, commandPayload)
+			state.forgetCommandItem(item.ID)
+		}
+		for _, event := range fileChangeEventsFromToolResult(params.ThreadID, params.TurnID, item) {
+			emitJSON(opts, event)
+		}
 		if !opts.JSON && params.Item.Name != "" {
 			fmt.Fprintf(opts.Stderr, "tool_completed: %s\n", params.Item.Name)
 		}
 	}
+}
+
+func emitCommandOutputDelta(opts Options, params appserver.ToolCallOutputNotification, state *runState) {
+	item, ok := state.commandItem(params.ItemID)
+	if !ok {
+		return
+	}
+	payload := commandEventPayload("command_output_delta", params.ThreadID, params.TurnID, item)
+	payload["delta"] = params.Delta
+	emitJSON(opts, payload)
+}
+
+func emitSubagentUpdated(opts Options, params appserver.AgentUpdatedNotification, state *runState) {
+	agent := params.Agent
+	if strings.TrimSpace(agent.ID) == "" {
+		return
+	}
+	state.ensureMaps()
+	eventType := "subagent_updated"
+	if !state.seenSubagents[agent.ID] {
+		eventType = "subagent_started"
+		state.seenSubagents[agent.ID] = true
+	}
+	if isTerminalAgentStatus(agent.Status) {
+		eventType = "subagent_completed"
+	}
+	payload := map[string]any{
+		"type":                  eventType,
+		"thread_id":             params.ThreadID,
+		"agent_id":              agent.ID,
+		"agent_type":            agent.Type,
+		"status":                agent.Status,
+		"task_name":             agent.TaskName,
+		"agent_profile":         agent.AgentProfile,
+		"agent_path":            agent.AgentPath,
+		"parent_id":             agent.ParentID,
+		"description":           agent.Description,
+		"result":                agent.Result,
+		"result_path":           agent.ResultPath,
+		"result_bytes":          agent.ResultBytes,
+		"result_truncated":      agent.ResultTruncated,
+		"error":                 agent.Error,
+		"input_tokens":          agent.InputTokens,
+		"output_tokens":         agent.OutputTokens,
+		"cache_creation_tokens": agent.CacheCreationTokens,
+		"cache_read_tokens":     agent.CacheReadTokens,
+	}
+	emitJSON(opts, payload)
+}
+
+func emitApprovalRequested(opts Options, state *runState, params approvalRequestedNotification) {
+	payload := map[string]any{
+		"type":       "approval_requested",
+		"thread_id":  state.threadID,
+		"turn_id":    state.turnID,
+		"request_id": params.RequestID,
+		"method":     params.Method,
+		"request":    params.Request,
+	}
+	emitJSON(opts, payload)
+}
+
+func emitApprovalResolved(opts Options, state *runState, params approvalResolvedNotification) {
+	payload := map[string]any{
+		"type":       "approval_resolved",
+		"thread_id":  state.threadID,
+		"turn_id":    state.turnID,
+		"request_id": params.RequestID,
+		"method":     params.Method,
+		"decision":   params.Decision,
+		"reason":     params.Reason,
+		"error":      params.Error,
+	}
+	emitJSON(opts, payload)
+	if params.Error != "" || strings.TrimSpace(params.Decision) == "denied" {
+		state.permissionDenied = true
+		if params.Error != "" {
+			state.permissionError = params.Error
+		} else if params.Reason != "" {
+			state.permissionError = params.Reason
+		} else {
+			state.permissionError = "approval denied"
+		}
+	}
+}
+
+func emitTurnInterrupted(opts Options, state runState, reason string) {
+	emitJSON(opts, map[string]any{
+		"type":      "turn_interrupted",
+		"thread_id": state.threadID,
+		"turn_id":   state.turnID,
+		"reason":    reason,
+	})
+}
+
+func (s *runState) ensureMaps() {
+	if s.commandItems == nil {
+		s.commandItems = make(map[string]appserver.ThreadItem)
+	}
+	if s.toolOutputs == nil {
+		s.toolOutputs = make(map[string]string)
+	}
+	if s.seenSubagents == nil {
+		s.seenSubagents = make(map[string]bool)
+	}
+}
+
+func (s *runState) rememberCommandItem(item appserver.ThreadItem) {
+	if strings.TrimSpace(item.ID) == "" {
+		return
+	}
+	s.ensureMaps()
+	s.commandItems[item.ID] = item
+}
+
+func (s *runState) commandItem(itemID string) (appserver.ThreadItem, bool) {
+	if s == nil || s.commandItems == nil {
+		return appserver.ThreadItem{}, false
+	}
+	item, ok := s.commandItems[itemID]
+	return item, ok
+}
+
+func (s *runState) forgetCommandItem(itemID string) {
+	if s == nil || s.commandItems == nil {
+		return
+	}
+	delete(s.commandItems, itemID)
+}
+
+func (s *runState) appendToolOutput(itemID, delta string) {
+	if strings.TrimSpace(itemID) == "" || delta == "" {
+		return
+	}
+	s.ensureMaps()
+	s.toolOutputs[itemID] += delta
+}
+
+func (s *runState) toolOutput(itemID string) string {
+	if s == nil || s.toolOutputs == nil {
+		return ""
+	}
+	return s.toolOutputs[itemID]
+}
+
+func isCommandTool(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "run_shell", "run_test", "start_process", "stop_process", "read_process_output", "write_stdin":
+		return true
+	default:
+		return false
+	}
+}
+
+func commandEventPayload(eventType, threadID, turnID string, item appserver.ThreadItem) map[string]any {
+	payload := map[string]any{
+		"type":      eventType,
+		"thread_id": threadID,
+		"turn_id":   turnID,
+		"item_id":   item.ID,
+		"name":      item.Name,
+		"arguments": item.Arguments,
+	}
+	for _, key := range []string{"command", "process_id"} {
+		if value := stringArgument(item.Arguments, key); value != "" {
+			payload[key] = value
+		}
+	}
+	return payload
+}
+
+func stringArgument(args, key string) string {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(args), &payload); err != nil {
+		return ""
+	}
+	value, _ := payload[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func isTerminalAgentStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "completed", "failed", "cancelled", "canceled":
+		return true
+	default:
+		return false
+	}
+}
+
+func fileChangeEventsFromToolResult(threadID, turnID string, item appserver.ThreadItem) []map[string]any {
+	if strings.TrimSpace(item.Result) == "" {
+		return nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(item.Result), &payload); err != nil {
+		return nil
+	}
+	switch strings.TrimSpace(item.Name) {
+	case "write_file", "edit_file":
+		event := fileChangeEventBase(threadID, turnID, item, payload)
+		if path, _ := payload["path"].(string); strings.TrimSpace(path) != "" {
+			event["path"] = strings.TrimSpace(path)
+			return []map[string]any{event}
+		}
+	case "apply_patch":
+		return applyPatchFileChangeEvents(threadID, turnID, item, payload)
+	case "checkpoint":
+		return checkpointFileChangeEvents(threadID, turnID, item, payload)
+	}
+	return nil
+}
+
+func fileChangeEventBase(threadID, turnID string, item appserver.ThreadItem, result map[string]any) map[string]any {
+	event := map[string]any{
+		"type":      "file_changed",
+		"thread_id": threadID,
+		"turn_id":   turnID,
+		"item_id":   item.ID,
+		"tool_name": item.Name,
+	}
+	for _, key := range []string{"action", "old_file_sha", "new_file_sha", "workspace_revision", "patch_journal_path", "manifest_path"} {
+		if value, _ := result[key].(string); strings.TrimSpace(value) != "" {
+			event[key] = strings.TrimSpace(value)
+		}
+	}
+	return event
+}
+
+func applyPatchFileChangeEvents(threadID, turnID string, item appserver.ThreadItem, result map[string]any) []map[string]any {
+	files, ok := result["files"].([]any)
+	if !ok {
+		return fileChangeEventsFromChangedFiles(threadID, turnID, item, result)
+	}
+	events := make([]map[string]any, 0, len(files))
+	for _, raw := range files {
+		file, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		event := fileChangeEventBase(threadID, turnID, item, result)
+		copyStringField(event, file, "path")
+		copyStringField(event, file, "move_path")
+		copyStringField(event, file, "action")
+		copyStringField(event, file, "old_file_sha")
+		copyStringField(event, file, "new_file_sha")
+		if _, ok := event["path"]; !ok {
+			continue
+		}
+		events = append(events, event)
+	}
+	return events
+}
+
+func fileChangeEventsFromChangedFiles(threadID, turnID string, item appserver.ThreadItem, result map[string]any) []map[string]any {
+	changed, ok := result["changed_files"].([]any)
+	if !ok {
+		return nil
+	}
+	events := make([]map[string]any, 0, len(changed))
+	for _, raw := range changed {
+		path, _ := raw.(string)
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		event := fileChangeEventBase(threadID, turnID, item, result)
+		event["path"] = path
+		events = append(events, event)
+	}
+	return events
+}
+
+func checkpointFileChangeEvents(threadID, turnID string, item appserver.ThreadItem, result map[string]any) []map[string]any {
+	restored, ok := result["restored_files"].([]any)
+	if !ok {
+		return nil
+	}
+	events := make([]map[string]any, 0, len(restored))
+	for _, raw := range restored {
+		file, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		path, _ := file["path"].(string)
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		event := fileChangeEventBase(threadID, turnID, item, result)
+		event["path"] = path
+		copyStringField(event, file, "action")
+		events = append(events, event)
+	}
+	return events
+}
+
+func copyStringField(dst map[string]any, src map[string]any, key string) {
+	value, _ := src[key].(string)
+	if strings.TrimSpace(value) != "" {
+		dst[key] = strings.TrimSpace(value)
+	}
+}
+
+func isPermissionFailure(text string) bool {
+	text = strings.ToLower(text)
+	for _, marker := range []string{
+		"error_kind=approval_denied",
+		"error_kind=approval_required",
+		"error_kind=approval_reviewer_error",
+		"error_kind=permission_boundary_denied",
+		"non_interactive_unavailable",
+		"approval denied",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {

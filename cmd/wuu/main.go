@@ -1187,6 +1187,10 @@ type execCLIConfig struct {
 	env               *stringListFlag
 	files             *stringListFlag
 	images            *stringListFlag
+	allowTools        *stringListFlag
+	denyTools         *stringListFlag
+	approvalHandler   *string
+	approvalSocket    *string
 	noTools           *bool
 	jsonOutput        *bool
 	timeout           *time.Duration
@@ -1268,9 +1272,7 @@ func runExecResume(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
-	if *all {
-		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec resume --all is not implemented yet"))
-	}
+	_ = *all
 	if err := validateExecFlags(cfg); err != nil {
 		return err
 	}
@@ -1393,9 +1395,13 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 	files := stringListFlag{}
 	images := stringListFlag{}
 	env := stringListFlag{}
+	allowTools := stringListFlag{}
+	denyTools := stringListFlag{}
 	fs.Var(&files, "file", "attach a local file (repeatable)")
 	fs.Var(&images, "image", "attach a local image (repeatable)")
 	fs.Var(&env, "env", "set an environment variable for the run (KEY=VALUE, repeatable)")
+	fs.Var(&allowTools, "allow-tool", "allow a tool for this run (repeatable)")
+	fs.Var(&denyTools, "deny-tool", "deny a tool for this run (repeatable)")
 	return execCLIConfig{
 		provider:          fs.String("provider", "", "provider name in config"),
 		model:             fs.String("model", "", "model override"),
@@ -1410,6 +1416,10 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		env:               &env,
 		files:             &files,
 		images:            &images,
+		allowTools:        &allowTools,
+		denyTools:         &denyTools,
+		approvalHandler:   fs.String("approval-handler", "", "command that handles approval requests"),
+		approvalSocket:    fs.String("approval-socket", "", "Unix socket that handles approval requests"),
 		noTools:           fs.Bool("no-tools", false, "disable local tools"),
 		jsonOutput:        fs.Bool("json", false, "emit machine-readable JSONL to stdout"),
 		timeout:           fs.Duration("timeout", 0, "total timeout (e.g. 20m)"),
@@ -1429,6 +1439,12 @@ func validateExecFlags(cfg execCLIConfig) error {
 	}
 	if cfg.maxTurns != nil && *cfg.maxTurns < 0 {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --max-turns must be non-negative"))
+	}
+	if valueOfStringFlag(cfg.approvalHandler) != "" && valueOfStringFlag(cfg.approvalSocket) != "" {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("--approval-handler and --approval-socket cannot be used together"))
+	}
+	if err := validateToolOverrideFlags(stringListValues(cfg.allowTools), stringListValues(cfg.denyTools)); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
 	return nil
 }
@@ -1451,6 +1467,10 @@ type execInputPayload struct {
 	IgnoreUserConfig  *bool                      `json:"ignore_user_config"`
 	StrictConfig      *bool                      `json:"strict_config"`
 	Env               []string                   `json:"env"`
+	AllowTools        []string                   `json:"allow_tools"`
+	DenyTools         []string                   `json:"deny_tools"`
+	ApprovalHandler   string                     `json:"approval_handler"`
+	ApprovalSocket    string                     `json:"approval_socket"`
 	MaxTurns          *int                       `json:"max_turns"`
 	NoTools           *bool                      `json:"no_tools"`
 	JSON              *bool                      `json:"json"`
@@ -1476,6 +1496,10 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		IgnoreUserConfig:  valueOfBoolFlag(cfg.ignoreUserConfig),
 		StrictConfig:      valueOfBoolFlag(cfg.strictConfig),
 		Env:               stringListValues(cfg.env),
+		AllowTools:        stringListValues(cfg.allowTools),
+		DenyTools:         stringListValues(cfg.denyTools),
+		ApprovalHandler:   valueOfStringFlag(cfg.approvalHandler),
+		ApprovalSocket:    valueOfStringFlag(cfg.approvalSocket),
 		MaxTurns:          valueOfIntFlag(cfg.maxTurns),
 		NoTools:           valueOfBoolFlag(cfg.noTools),
 		JSON:              valueOfBoolFlag(cfg.jsonOutput),
@@ -1534,6 +1558,20 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 		opts.StrictConfig = *input.StrictConfig
 	}
 	opts.Env = append(opts.Env, input.Env...)
+	opts.AllowTools = append(opts.AllowTools, input.AllowTools...)
+	opts.DenyTools = append(opts.DenyTools, input.DenyTools...)
+	if opts.ApprovalHandler == "" {
+		opts.ApprovalHandler = strings.TrimSpace(input.ApprovalHandler)
+	}
+	if opts.ApprovalSocket == "" {
+		opts.ApprovalSocket = strings.TrimSpace(input.ApprovalSocket)
+	}
+	if opts.ApprovalHandler != "" && opts.ApprovalSocket != "" {
+		return errors.New("approval_handler and approval_socket cannot be used together")
+	}
+	if err := validateToolOverrideFlags(opts.AllowTools, opts.DenyTools); err != nil {
+		return err
+	}
 	if input.MaxTurns != nil && opts.MaxTurns == 0 {
 		opts.MaxTurns = *input.MaxTurns
 	}
@@ -1561,6 +1599,27 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 			return fmt.Errorf("parse input_json.timeout: %w", err)
 		}
 		opts.Timeout = timeout
+	}
+	return nil
+}
+
+func validateToolOverrideFlags(allowTools, denyTools []string) error {
+	allowed := map[string]bool{}
+	for _, name := range allowTools {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return errors.New("tool override name is required")
+		}
+		allowed[name] = true
+	}
+	for _, name := range denyTools {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return errors.New("tool override name is required")
+		}
+		if allowed[name] {
+			return fmt.Errorf("tool %q cannot be both allowed and denied", name)
+		}
 	}
 	return nil
 }
@@ -1846,6 +1905,12 @@ Exec flags:
                    ignore user-level config
   --strict-config   fail if config cannot be loaded
   --env KEY=VALUE   set environment variable for the run (repeatable)
+  --allow-tool      allow a tool for this run (repeatable)
+  --deny-tool       deny a tool for this run (repeatable)
+  --approval-handler
+                   command that handles approval requests
+  --approval-socket
+                   Unix socket that handles approval requests
   --file            attach a local file (repeatable)
   --image           attach a local image (repeatable)
   --no-tools        disable local tools

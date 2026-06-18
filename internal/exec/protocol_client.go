@@ -18,6 +18,38 @@ type Notification struct {
 	Params json.RawMessage
 }
 
+const (
+	notificationApprovalRequested = "exec/approval/requested"
+	notificationApprovalResolved  = "exec/approval/resolved"
+)
+
+type ServerRequest struct {
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params,omitempty"`
+}
+
+type ServerRequestResult struct {
+	Result any
+	Error  *appserver.ResponseError
+}
+
+type ServerRequestHandler func(context.Context, ServerRequest) ServerRequestResult
+
+type approvalRequestedNotification struct {
+	RequestID string                        `json:"request_id"`
+	Method    string                        `json:"method"`
+	Request   appserver.ToolApprovalRequest `json:"request"`
+}
+
+type approvalResolvedNotification struct {
+	RequestID string `json:"request_id"`
+	Method    string `json:"method"`
+	Decision  string `json:"decision,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
 type protocolResponse struct {
 	result json.RawMessage
 	err    *appserver.ResponseError
@@ -32,23 +64,34 @@ type protocolEnvelope struct {
 }
 
 type ProtocolClient struct {
-	in            io.Reader
-	out           io.Writer
-	writeMu       sync.Mutex
-	mu            sync.Mutex
-	nextID        int64
-	pending       map[string]chan protocolResponse
-	notifications chan Notification
-	readDone      chan error
+	in             io.Reader
+	out            io.Writer
+	writeMu        sync.Mutex
+	mu             sync.Mutex
+	nextID         int64
+	pending        map[string]chan protocolResponse
+	notifications  chan Notification
+	readDone       chan error
+	ctx            context.Context
+	requestHandler ServerRequestHandler
 }
 
 func NewProtocolClient(in io.Reader, out io.Writer) *ProtocolClient {
+	return NewProtocolClientWithServerRequestHandler(context.Background(), in, out, nil)
+}
+
+func NewProtocolClientWithServerRequestHandler(ctx context.Context, in io.Reader, out io.Writer, handler ServerRequestHandler) *ProtocolClient {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	c := &ProtocolClient{
-		in:            in,
-		out:           out,
-		pending:       make(map[string]chan protocolResponse),
-		notifications: make(chan Notification, 256),
-		readDone:      make(chan error, 1),
+		in:             in,
+		out:            out,
+		pending:        make(map[string]chan protocolResponse),
+		notifications:  make(chan Notification, 256),
+		readDone:       make(chan error, 1),
+		ctx:            ctx,
+		requestHandler: handler,
 	}
 	go c.readLoop()
 	return c
@@ -124,13 +167,7 @@ func (c *ProtocolClient) readLoop() {
 			break
 		}
 		if strings.TrimSpace(msg.Method) != "" && len(msg.ID) > 0 {
-			_ = c.writeJSON(protocolEnvelope{
-				ID: msg.ID,
-				Error: &appserver.ResponseError{
-					Code:    "non_interactive_unavailable",
-					Message: fmt.Sprintf("non-interactive exec cannot handle app-server request %q", msg.Method),
-				},
-			})
+			c.handleServerRequest(msg)
 			continue
 		}
 		if strings.TrimSpace(msg.Method) != "" {
@@ -155,6 +192,92 @@ func (c *ProtocolClient) readLoop() {
 	close(c.notifications)
 	c.readDone <- readErr
 	close(c.readDone)
+}
+
+func (c *ProtocolClient) handleServerRequest(msg protocolEnvelope) {
+	req := ServerRequest{ID: msg.ID, Method: strings.TrimSpace(msg.Method), Params: msg.Params}
+	if req.Method == appserver.MethodToolApprovalRequest {
+		c.emitApprovalRequested(req)
+	}
+
+	result := ServerRequestResult{
+		Error: &appserver.ResponseError{
+			Code:    "non_interactive_unavailable",
+			Message: fmt.Sprintf("non-interactive exec cannot handle app-server request %q", req.Method),
+		},
+	}
+	if c.requestHandler != nil {
+		result = c.requestHandler(c.ctx, req)
+	}
+	if req.Method == appserver.MethodToolApprovalRequest {
+		c.emitApprovalResolved(req, result)
+	}
+	_ = c.writeJSON(protocolEnvelope{
+		ID:     msg.ID,
+		Result: marshalServerRequestResult(result.Result),
+		Error:  result.Error,
+	})
+}
+
+func (c *ProtocolClient) emitApprovalRequested(req ServerRequest) {
+	var request appserver.ToolApprovalRequest
+	_ = json.Unmarshal(req.Params, &request)
+	c.emitSyntheticNotification(notificationApprovalRequested, approvalRequestedNotification{
+		RequestID: rawIDString(req.ID),
+		Method:    req.Method,
+		Request:   request,
+	})
+}
+
+func (c *ProtocolClient) emitApprovalResolved(req ServerRequest, result ServerRequestResult) {
+	resolved := approvalResolvedNotification{RequestID: rawIDString(req.ID), Method: req.Method}
+	if result.Error != nil {
+		resolved.Error = result.Error.Message
+	} else {
+		var response appserver.ToolApprovalResponse
+		if raw, ok := result.Result.(json.RawMessage); ok {
+			_ = json.Unmarshal(raw, &response)
+		} else {
+			data, _ := json.Marshal(result.Result)
+			_ = json.Unmarshal(data, &response)
+		}
+		resolved.Decision = strings.TrimSpace(response.Decision)
+		resolved.Reason = strings.TrimSpace(response.Reason)
+	}
+	c.emitSyntheticNotification(notificationApprovalResolved, resolved)
+}
+
+func rawIDString(raw json.RawMessage) string {
+	var id string
+	if err := json.Unmarshal(raw, &id); err == nil {
+		return id
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func (c *ProtocolClient) emitSyntheticNotification(method string, params any) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	select {
+	case c.notifications <- Notification{Method: method, Params: data}:
+	default:
+	}
+}
+
+func marshalServerRequestResult(result any) json.RawMessage {
+	if result == nil {
+		return nil
+	}
+	if raw, ok := result.(json.RawMessage); ok {
+		return raw
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 func (c *ProtocolClient) writeJSON(v any) error {
