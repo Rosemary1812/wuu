@@ -84,7 +84,7 @@ export function userFacingErrorForMessage(
         title: "连接暂时不可用",
         detail: "没有完成这次请求。可以稍后再发，或检查当前 provider 状态。",
         recommendedActions: [
-          { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
+          copyDebugAction(category, context, message),
         ],
       };
     case "auth":
@@ -105,7 +105,7 @@ export function userFacingErrorForMessage(
         detail:
           "可能是上下文超出窗口、模型限流或上游中断。",
         recommendedActions: [
-          { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
+          copyDebugAction(category, context, message),
         ],
       };
     case "tool":
@@ -115,7 +115,7 @@ export function userFacingErrorForMessage(
         title: "工具调用失败",
         detail: "某个工具没有完成。原始错误已留在调试信息中。",
         recommendedActions: [
-          { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
+          copyDebugAction(category, context, message),
         ],
       };
     case "local":
@@ -136,10 +136,35 @@ export function userFacingErrorForMessage(
         title: "wuu 遇到内部错误",
         detail: "没有完成这次请求。调试信息可用于排查。",
         recommendedActions: [
-          { kind: "copyDebug", label: "复制调试信息", variant: "secondary" },
+          copyDebugAction("internal", context, message),
         ],
       };
   }
+}
+
+function copyDebugAction(
+  category: UserFacingErrorCategory,
+  context: UserFacingErrorContext,
+  message: string,
+): UserFacingErrorAction {
+  return {
+    kind: "copyDebug",
+    label: "复制调试信息",
+    variant: "secondary",
+    payload: {
+      category,
+      context,
+      message: truncateDebugMessage(message),
+    },
+  };
+}
+
+function truncateDebugMessage(message: string): string {
+  const limit = 12_000;
+  if (message.length <= limit) {
+    return message;
+  }
+  return `${message.slice(0, limit)}…`;
 }
 
 function classifyUserFacingError(message: string, context: UserFacingErrorContext): UserFacingErrorCategory {

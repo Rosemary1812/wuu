@@ -33,12 +33,18 @@ describe("userFacingErrorForMessage", () => {
     });
 
     it("provider context overflow offers only currently wired debug action", () => {
+      const raw = "context_length_exceeded: too many tokens";
       const display = userFacingErrorForMessage(
-        "context_length_exceeded: too many tokens",
+        raw,
         "turn",
       );
       const kinds = display.recommendedActions.map((a) => a.kind);
       expect(kinds).toEqual(["copyDebug"]);
+      expect(display.recommendedActions[0]?.payload).toMatchObject({
+        category: "provider",
+        context: "turn",
+        message: raw,
+      });
     });
 
     it("internal error offers only currently wired debug action", () => {

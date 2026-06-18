@@ -4048,15 +4048,18 @@ export function App(): JSX.Element {
         return;
       }
       case "copyDebug": {
-        // Snapshot whatever the user can see right now. Doesn't
-        // include a turn ID because the action is generic; if a
-        // turn-scoped variant is needed, pass turn.id via payload.
+        const current = appStateRef.current;
+        const thread = activeThreadForState(current);
         const snapshot = JSON.stringify(
           {
             kind: "wuu-notice-debug",
-            category: action.payload,
+            notice: action.payload ?? {},
             at: new Date().toISOString(),
-            status: appStateRef.current.status,
+            status: current.status,
+            running: current.running,
+            thread_id: thread?.id,
+            provider: thread?.model_provider,
+            model: thread?.model,
           },
           null,
           2,
