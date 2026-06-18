@@ -154,6 +154,9 @@ type LoopConfig struct {
 	// token counts when the provider reports them. The loop also
 	// accumulates totals into LoopResult.
 	OnUsage func(input, output int)
+	// OnTokenUsage is invoked once per LLM round-trip with the full
+	// provider token usage, including prompt cache read/write counts.
+	OnTokenUsage func(usage providers.TokenUsage)
 	// OnMessage is invoked whenever the loop appends a semantic chat
 	// message to its live history. Streaming callers use it to persist
 	// assistant/tool/internal follow-up messages incrementally instead of
@@ -208,6 +211,8 @@ type LoopResult struct {
 	// InputTokens / OutputTokens are the cumulative usage across
 	// every round in this run, including any compact + recovery
 	// rounds. Zero when the provider doesn't report usage.
-	InputTokens  int
-	OutputTokens int
+	InputTokens         int
+	OutputTokens        int
+	CacheCreationTokens int
+	CacheReadTokens     int
 }

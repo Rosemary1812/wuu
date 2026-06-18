@@ -35,21 +35,23 @@ type persistedFile struct {
 }
 
 type persistedMessage struct {
-	Role             string                     `json:"role"`
-	Content          string                     `json:"content"`
-	Phase            string                     `json:"phase,omitempty"`
-	ClientID         string                     `json:"client_id,omitempty"`
-	Steered          bool                       `json:"steered,omitempty"`
-	ReasoningContent string                     `json:"reasoning_content,omitempty"`
-	ReasoningBlocks  []providers.ReasoningBlock `json:"reasoning_blocks,omitempty"`
-	Images           []persistedImage           `json:"images,omitempty"`
-	Files            []persistedFile            `json:"files,omitempty"`
-	ToolCalls        []persistedToolCall        `json:"tool_calls,omitempty"`
-	ToolCallID       string                     `json:"tool_call_id,omitempty"`
-	Name             string                     `json:"name,omitempty"`
-	At               time.Time                  `json:"at,omitempty"`
-	InputTokens      int                        `json:"input_tokens,omitempty"`
-	OutputTokens     int                        `json:"output_tokens,omitempty"`
+	Role                string                     `json:"role"`
+	Content             string                     `json:"content"`
+	Phase               string                     `json:"phase,omitempty"`
+	ClientID            string                     `json:"client_id,omitempty"`
+	Steered             bool                       `json:"steered,omitempty"`
+	ReasoningContent    string                     `json:"reasoning_content,omitempty"`
+	ReasoningBlocks     []providers.ReasoningBlock `json:"reasoning_blocks,omitempty"`
+	Images              []persistedImage           `json:"images,omitempty"`
+	Files               []persistedFile            `json:"files,omitempty"`
+	ToolCalls           []persistedToolCall        `json:"tool_calls,omitempty"`
+	ToolCallID          string                     `json:"tool_call_id,omitempty"`
+	Name                string                     `json:"name,omitempty"`
+	At                  time.Time                  `json:"at,omitempty"`
+	InputTokens         int                        `json:"input_tokens,omitempty"`
+	OutputTokens        int                        `json:"output_tokens,omitempty"`
+	CacheCreationTokens int                        `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int                        `json:"cache_read_tokens,omitempty"`
 }
 
 type persistedAgentHistory struct {
@@ -215,16 +217,18 @@ func rewriteChatHistory(path string, msgs []providers.ChatMessage) error {
 	return nil
 }
 
-func appendTokenUsage(path string, inputTokens, outputTokens int) error {
-	if strings.TrimSpace(path) == "" || (inputTokens == 0 && outputTokens == 0) {
+func appendTokenUsage(path string, usage providers.TokenUsage) error {
+	if strings.TrimSpace(path) == "" || (usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.CacheCreationTokens == 0 && usage.CacheReadTokens == 0) {
 		return nil
 	}
 	rec := persistedMessage{
-		Role:         "meta",
-		Content:      "token_usage",
-		At:           time.Now().UTC(),
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
+		Role:                "meta",
+		Content:             "token_usage",
+		At:                  time.Now().UTC(),
+		InputTokens:         usage.InputTokens,
+		OutputTokens:        usage.OutputTokens,
+		CacheCreationTokens: usage.CacheCreationTokens,
+		CacheReadTokens:     usage.CacheReadTokens,
 	}
 	if sessDir, id, ok, err := managedHistoryTarget(path); err != nil {
 		return err
@@ -401,37 +405,41 @@ func managedHistoryTarget(path string) (string, string, bool, error) {
 
 func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.HistoryRecord {
 	return sessionstore.HistoryRecord{
-		Role:             rec.Role,
-		Content:          rec.Content,
-		Phase:            rec.Phase,
-		ClientID:         rec.ClientID,
-		Steered:          rec.Steered,
-		ReasoningContent: rec.ReasoningContent,
-		ReasoningBlocks:  mustJSON(rec.ReasoningBlocks),
-		Images:           mustJSON(rec.Images),
-		Files:            mustJSON(rec.Files),
-		ToolCalls:        mustJSON(rec.ToolCalls),
-		ToolCallID:       rec.ToolCallID,
-		Name:             rec.Name,
-		At:               rec.At,
-		InputTokens:      rec.InputTokens,
-		OutputTokens:     rec.OutputTokens,
+		Role:                rec.Role,
+		Content:             rec.Content,
+		Phase:               rec.Phase,
+		ClientID:            rec.ClientID,
+		Steered:             rec.Steered,
+		ReasoningContent:    rec.ReasoningContent,
+		ReasoningBlocks:     mustJSON(rec.ReasoningBlocks),
+		Images:              mustJSON(rec.Images),
+		Files:               mustJSON(rec.Files),
+		ToolCalls:           mustJSON(rec.ToolCalls),
+		ToolCallID:          rec.ToolCallID,
+		Name:                rec.Name,
+		At:                  rec.At,
+		InputTokens:         rec.InputTokens,
+		OutputTokens:        rec.OutputTokens,
+		CacheCreationTokens: rec.CacheCreationTokens,
+		CacheReadTokens:     rec.CacheReadTokens,
 	}
 }
 
 func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persistedMessage, error) {
 	out := persistedMessage{
-		Role:             rec.Role,
-		Content:          rec.Content,
-		Phase:            rec.Phase,
-		ClientID:         rec.ClientID,
-		Steered:          rec.Steered,
-		ReasoningContent: rec.ReasoningContent,
-		ToolCallID:       rec.ToolCallID,
-		Name:             rec.Name,
-		At:               rec.At,
-		InputTokens:      rec.InputTokens,
-		OutputTokens:     rec.OutputTokens,
+		Role:                rec.Role,
+		Content:             rec.Content,
+		Phase:               rec.Phase,
+		ClientID:            rec.ClientID,
+		Steered:             rec.Steered,
+		ReasoningContent:    rec.ReasoningContent,
+		ToolCallID:          rec.ToolCallID,
+		Name:                rec.Name,
+		At:                  rec.At,
+		InputTokens:         rec.InputTokens,
+		OutputTokens:        rec.OutputTokens,
+		CacheCreationTokens: rec.CacheCreationTokens,
+		CacheReadTokens:     rec.CacheReadTokens,
 	}
 	if err := unmarshalRaw(rec.ReasoningBlocks, &out.ReasoningBlocks); err != nil {
 		return persistedMessage{}, err

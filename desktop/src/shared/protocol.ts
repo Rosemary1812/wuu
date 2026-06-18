@@ -731,6 +731,8 @@ export type Agent = {
   error?: string;
   input_tokens?: number;
   output_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_read_tokens?: number;
   nested_count?: number;
   nested_running_count?: number;
   started_at?: string;
@@ -797,6 +799,8 @@ export type TurnCompletedNotification = {
   content: string;
   input_tokens?: number;
   output_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_read_tokens?: number;
   trace_path?: string;
 };
 
@@ -805,6 +809,8 @@ export type TurnUsageNotification = {
   turn_id: string;
   input_tokens?: number;
   output_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_read_tokens?: number;
 };
 
 export type ThreadItem = {

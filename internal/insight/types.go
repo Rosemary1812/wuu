@@ -8,22 +8,24 @@ import (
 
 // SessionMeta is extracted from a session JSONL file without LLM calls.
 type SessionMeta struct {
-	ID             string         `json:"id"`
-	CreatedAt      time.Time      `json:"created_at"`
-	Duration       time.Duration  `json:"duration"`
-	UserMessages   int            `json:"user_messages"`
-	AssistantMsgs  int            `json:"assistant_messages"`
-	ToolCounts     map[string]int `json:"tool_counts"`
-	Languages      map[string]int `json:"languages"`
-	EstTokens      int            `json:"est_tokens"`
-	InputTokens    int            `json:"input_tokens"`
-	OutputTokens   int            `json:"output_tokens"`
-	FirstUserMsg   string         `json:"first_user_msg"`
-	MessageHours   []int          `json:"message_hours"`
-	LinesAdded     int            `json:"lines_added"`
-	LinesRemoved   int            `json:"lines_removed"`
-	FilesModified  int            `json:"files_modified"`
-	UserTimestamps []time.Time    `json:"user_timestamps"`
+	ID                  string         `json:"id"`
+	CreatedAt           time.Time      `json:"created_at"`
+	Duration            time.Duration  `json:"duration"`
+	UserMessages        int            `json:"user_messages"`
+	AssistantMsgs       int            `json:"assistant_messages"`
+	ToolCounts          map[string]int `json:"tool_counts"`
+	Languages           map[string]int `json:"languages"`
+	EstTokens           int            `json:"est_tokens"`
+	InputTokens         int            `json:"input_tokens"`
+	OutputTokens        int            `json:"output_tokens"`
+	CacheCreationTokens int            `json:"cache_creation_tokens"`
+	CacheReadTokens     int            `json:"cache_read_tokens"`
+	FirstUserMsg        string         `json:"first_user_msg"`
+	MessageHours        []int          `json:"message_hours"`
+	LinesAdded          int            `json:"lines_added"`
+	LinesRemoved        int            `json:"lines_removed"`
+	FilesModified       int            `json:"files_modified"`
+	UserTimestamps      []time.Time    `json:"user_timestamps"`
 }
 
 // Facet is the LLM-extracted structured analysis of a single session.
@@ -44,29 +46,31 @@ type Facet struct {
 
 // AggregatedData combines statistics from all sessions and facets.
 type AggregatedData struct {
-	TotalSessions      int              `json:"total_sessions"`
-	SessionsWithFacets int              `json:"sessions_with_facets"`
-	DateRange          [2]string        `json:"date_range"`
-	TotalMessages      int              `json:"total_messages"`
-	TotalDurationH     float64          `json:"total_duration_hours"`
-	TotalEstTokens     int              `json:"total_est_tokens"`
-	TotalInputTokens   int              `json:"total_input_tokens"`
-	TotalOutputTokens  int              `json:"total_output_tokens"`
-	ToolCounts         map[string]int   `json:"tool_counts"`
-	Languages          map[string]int   `json:"languages"`
-	GoalCategories     map[string]int   `json:"goal_categories"`
-	Outcomes           map[string]int   `json:"outcomes"`
-	Satisfaction       map[string]int   `json:"satisfaction"`
-	SessionTypes       map[string]int   `json:"session_types"`
-	Friction           map[string]int   `json:"friction"`
-	Success            map[string]int   `json:"success"`
-	Summaries          []SessionSummary `json:"summaries"`
-	TotalLinesAdded    int              `json:"total_lines_added"`
-	TotalLinesRemoved  int              `json:"total_lines_removed"`
-	TotalFilesModified int              `json:"total_files_modified"`
-	DaysActive         int              `json:"days_active"`
-	MessagesPerDay     float64          `json:"messages_per_day"`
-	MessageHours       []int            `json:"message_hours"`
+	TotalSessions            int              `json:"total_sessions"`
+	SessionsWithFacets       int              `json:"sessions_with_facets"`
+	DateRange                [2]string        `json:"date_range"`
+	TotalMessages            int              `json:"total_messages"`
+	TotalDurationH           float64          `json:"total_duration_hours"`
+	TotalEstTokens           int              `json:"total_est_tokens"`
+	TotalInputTokens         int              `json:"total_input_tokens"`
+	TotalOutputTokens        int              `json:"total_output_tokens"`
+	TotalCacheCreationTokens int              `json:"total_cache_creation_tokens"`
+	TotalCacheReadTokens     int              `json:"total_cache_read_tokens"`
+	ToolCounts               map[string]int   `json:"tool_counts"`
+	Languages                map[string]int   `json:"languages"`
+	GoalCategories           map[string]int   `json:"goal_categories"`
+	Outcomes                 map[string]int   `json:"outcomes"`
+	Satisfaction             map[string]int   `json:"satisfaction"`
+	SessionTypes             map[string]int   `json:"session_types"`
+	Friction                 map[string]int   `json:"friction"`
+	Success                  map[string]int   `json:"success"`
+	Summaries                []SessionSummary `json:"summaries"`
+	TotalLinesAdded          int              `json:"total_lines_added"`
+	TotalLinesRemoved        int              `json:"total_lines_removed"`
+	TotalFilesModified       int              `json:"total_files_modified"`
+	DaysActive               int              `json:"days_active"`
+	MessagesPerDay           float64          `json:"messages_per_day"`
+	MessageHours             []int            `json:"message_hours"`
 }
 
 // SessionSummary is a short summary entry used in aggregated data.

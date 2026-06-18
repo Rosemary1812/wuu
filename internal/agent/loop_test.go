@@ -542,14 +542,30 @@ func TestErrorJSONIncludesActionableEnvelope(t *testing.T) {
 }
 
 func TestRunToolLoop_OnUsageReceivesPerCall(t *testing.T) {
-	step := &fakeStep{results: []StepResult{{Content: "done", Usage: &providers.TokenUsage{InputTokens: 10, OutputTokens: 5}}}}
+	step := &fakeStep{results: []StepResult{{Content: "done", Usage: &providers.TokenUsage{InputTokens: 10, OutputTokens: 5, CacheCreationTokens: 7, CacheReadTokens: 3}}}}
 	var seenIn, seenOut int
-	cfg := LoopConfig{Model: "m", OnUsage: func(in, out int) { seenIn += in; seenOut += out }}
+	var seenFull providers.TokenUsage
+	cfg := LoopConfig{
+		Model: "m",
+		OnUsage: func(in, out int) {
+			seenIn += in
+			seenOut += out
+		},
+		OnTokenUsage: func(usage providers.TokenUsage) {
+			seenFull.InputTokens += usage.InputTokens
+			seenFull.OutputTokens += usage.OutputTokens
+			seenFull.CacheCreationTokens += usage.CacheCreationTokens
+			seenFull.CacheReadTokens += usage.CacheReadTokens
+		},
+	}
 	res, _ := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
 	if seenIn != 10 || seenOut != 5 {
 		t.Fatalf("OnUsage missed: in=%d out=%d", seenIn, seenOut)
 	}
-	if res.InputTokens != 10 || res.OutputTokens != 5 {
+	if seenFull.InputTokens != 10 || seenFull.OutputTokens != 5 || seenFull.CacheCreationTokens != 7 || seenFull.CacheReadTokens != 3 {
+		t.Fatalf("OnTokenUsage missed: %+v", seenFull)
+	}
+	if res.InputTokens != 10 || res.OutputTokens != 5 || res.CacheCreationTokens != 7 || res.CacheReadTokens != 3 {
 		t.Fatalf("LoopResult totals wrong: %+v", res)
 	}
 }

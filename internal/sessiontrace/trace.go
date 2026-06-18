@@ -30,20 +30,22 @@ type Event struct {
 }
 
 type TurnRecord struct {
-	ThreadID         string              `json:"thread_id"`
-	TurnID           string              `json:"turn_id"`
-	Status           string              `json:"status"`
-	ProviderName     string              `json:"provider_name,omitempty"`
-	Model            string              `json:"model,omitempty"`
-	APIModel         string              `json:"api_model,omitempty"`
-	ModelProfile     *ModelProfileRecord `json:"model_profile,omitempty"`
-	StartedAt        *time.Time          `json:"started_at,omitempty"`
-	CompletedAt      *time.Time          `json:"completed_at,omitempty"`
-	DurationMS       *int64              `json:"duration_ms,omitempty"`
-	InputTokens      int                 `json:"input_tokens,omitempty"`
-	OutputTokens     int                 `json:"output_tokens,omitempty"`
-	HistoryRewritten bool                `json:"history_rewritten,omitempty"`
-	Error            string              `json:"error,omitempty"`
+	ThreadID            string              `json:"thread_id"`
+	TurnID              string              `json:"turn_id"`
+	Status              string              `json:"status"`
+	ProviderName        string              `json:"provider_name,omitempty"`
+	Model               string              `json:"model,omitempty"`
+	APIModel            string              `json:"api_model,omitempty"`
+	ModelProfile        *ModelProfileRecord `json:"model_profile,omitempty"`
+	StartedAt           *time.Time          `json:"started_at,omitempty"`
+	CompletedAt         *time.Time          `json:"completed_at,omitempty"`
+	DurationMS          *int64              `json:"duration_ms,omitempty"`
+	InputTokens         int                 `json:"input_tokens,omitempty"`
+	OutputTokens        int                 `json:"output_tokens,omitempty"`
+	CacheCreationTokens int                 `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int                 `json:"cache_read_tokens,omitempty"`
+	HistoryRewritten    bool                `json:"history_rewritten,omitempty"`
+	Error               string              `json:"error,omitempty"`
 }
 
 type ModelProfileRecord struct {
@@ -120,11 +122,13 @@ func NewModelProfileRecordWithBudget(providerName, model, apiModel string, budge
 }
 
 type FinalRecord struct {
-	Status             string `json:"status"`
-	InputTokens        int    `json:"input_tokens,omitempty"`
-	OutputTokens       int    `json:"output_tokens,omitempty"`
-	FinalAnswerPreview string `json:"final_answer_preview,omitempty"`
-	Error              string `json:"error,omitempty"`
+	Status              string `json:"status"`
+	InputTokens         int    `json:"input_tokens,omitempty"`
+	OutputTokens        int    `json:"output_tokens,omitempty"`
+	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
+	FinalAnswerPreview  string `json:"final_answer_preview,omitempty"`
+	Error               string `json:"error,omitempty"`
 }
 
 type ReplaySummary struct {

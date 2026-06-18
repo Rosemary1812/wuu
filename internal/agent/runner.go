@@ -77,9 +77,11 @@ type Runner struct {
 
 // RunResult is the structured outcome of a Runner.RunWithUsage call.
 type RunResult struct {
-	Content      string
-	InputTokens  int
-	OutputTokens int
+	Content             string
+	InputTokens         int
+	OutputTokens        int
+	CacheCreationTokens int
+	CacheReadTokens     int
 }
 
 // Run executes one prompt with optional tool-use loop.
@@ -139,8 +141,10 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 
 	res, err := RunToolLoop(ctx, history, cfg, &streamStep{client: providers.AdaptStreamClient(r.Client)})
 	return RunResult{
-		Content:      res.Content,
-		InputTokens:  res.InputTokens,
-		OutputTokens: res.OutputTokens,
+		Content:             res.Content,
+		InputTokens:         res.InputTokens,
+		OutputTokens:        res.OutputTokens,
+		CacheCreationTokens: res.CacheCreationTokens,
+		CacheReadTokens:     res.CacheReadTokens,
 	}, err
 }

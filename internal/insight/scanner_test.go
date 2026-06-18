@@ -129,7 +129,7 @@ func TestBuildUsageReportAggregatesLocalSessions(t *testing.T) {
 		{Role: "tool", Content: `{"diff":{"hunks":[{"lines":[{"op":"insert"},{"op":"delete"}]}]}}`, ToolCallID: "call_1", Name: "write_file", At: start.Add(20 * time.Second)},
 		{Role: "user", Content: "show the totals", At: start.Add(2 * time.Minute)},
 		{Role: "assistant", Content: "done", At: start.Add(3 * time.Minute)},
-		{Role: "meta", Content: "token_usage", InputTokens: 1200, OutputTokens: 300, At: start.Add(3 * time.Minute)},
+		{Role: "meta", Content: "token_usage", InputTokens: 1200, OutputTokens: 300, CacheCreationTokens: 200, CacheReadTokens: 500, At: start.Add(3 * time.Minute)},
 	})
 
 	report, err := BuildUsageReport(dir, 0)
@@ -142,12 +142,15 @@ func TestBuildUsageReportAggregatesLocalSessions(t *testing.T) {
 	if report.Stats.TotalInputTokens != 1200 || report.Stats.TotalOutputTokens != 300 {
 		t.Fatalf("unexpected token totals: in=%d out=%d", report.Stats.TotalInputTokens, report.Stats.TotalOutputTokens)
 	}
+	if report.Stats.TotalCacheCreationTokens != 200 || report.Stats.TotalCacheReadTokens != 500 {
+		t.Fatalf("unexpected cache totals: write=%d read=%d", report.Stats.TotalCacheCreationTokens, report.Stats.TotalCacheReadTokens)
+	}
 	if report.Stats.ToolCounts["write_file"] != 1 {
 		t.Fatalf("expected write_file count, got %+v", report.Stats.ToolCounts)
 	}
 
 	out := FormatUsageReport(report)
-	for _, want := range []string{"Usage", "Sessions: 1", "Tokens: 1.2k input / 300 output", "Top tools", "Languages"} {
+	for _, want := range []string{"Usage", "Sessions: 1", "Tokens: 1.2k input / 300 output", "Prompt cache: 500 read / 200 written", "Top tools", "Languages"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage output missing %q: %s", want, out)
 		}
@@ -222,13 +225,15 @@ func historyRecordFromMemoryRecord(t *testing.T, rec memoryRecord) sessionstore.
 		t.Fatalf("marshal tool calls: %v", err)
 	}
 	return sessionstore.HistoryRecord{
-		Role:         rec.Role,
-		Content:      rec.Content,
-		ToolCalls:    toolCalls,
-		ToolCallID:   rec.ToolCallID,
-		Name:         rec.Name,
-		At:           rec.At,
-		InputTokens:  rec.InputTokens,
-		OutputTokens: rec.OutputTokens,
+		Role:                rec.Role,
+		Content:             rec.Content,
+		ToolCalls:           toolCalls,
+		ToolCallID:          rec.ToolCallID,
+		Name:                rec.Name,
+		At:                  rec.At,
+		InputTokens:         rec.InputTokens,
+		OutputTokens:        rec.OutputTokens,
+		CacheCreationTokens: rec.CacheCreationTokens,
+		CacheReadTokens:     rec.CacheReadTokens,
 	}
 }

@@ -111,20 +111,22 @@ type SpawnOptions struct {
 
 // SubAgent is an isolated agent instance managed by Manager.
 type SubAgent struct {
-	ID           string
-	Type         string
-	TaskName     string
-	AgentProfile string
-	AgentPath    string
-	ParentID     string
-	Description  string
-	Status       Status
-	StartedAt    time.Time
-	CompletedAt  time.Time
-	Result       string // final assistant message text
-	Error        error  // populated when Status == failed
-	InputTokens  int    // cumulative input tokens used so far
-	OutputTokens int    // cumulative output tokens used so far
+	ID                  string
+	Type                string
+	TaskName            string
+	AgentProfile        string
+	AgentPath           string
+	ParentID            string
+	Description         string
+	Status              Status
+	StartedAt           time.Time
+	CompletedAt         time.Time
+	Result              string // final assistant message text
+	Error               error  // populated when Status == failed
+	InputTokens         int    // cumulative input tokens used so far
+	OutputTokens        int    // cumulative output tokens used so far
+	CacheCreationTokens int    // cumulative prompt-cache write tokens
+	CacheReadTokens     int    // cumulative prompt-cache read tokens
 
 	// Activity is a short, human-readable phrase describing what the
 	// sub-agent is currently doing ("→ read_file", "thinking",
@@ -183,22 +185,24 @@ func (s *SubAgent) HistorySnapshot() []providers.ChatMessage {
 // SubAgentSnapshot is an immutable view of a SubAgent's state at a
 // point in time.
 type SubAgentSnapshot struct {
-	ID           string
-	Type         string
-	TaskName     string
-	AgentProfile string
-	AgentPath    string
-	ParentID     string
-	Description  string
-	Status       Status
-	StartedAt    time.Time
-	CompletedAt  time.Time
-	Result       string
-	Error        error
-	InputTokens  int
-	OutputTokens int
-	Activity     string
-	ActivityAt   time.Time
+	ID                  string
+	Type                string
+	TaskName            string
+	AgentProfile        string
+	AgentPath           string
+	ParentID            string
+	Description         string
+	Status              Status
+	StartedAt           time.Time
+	CompletedAt         time.Time
+	Result              string
+	Error               error
+	InputTokens         int
+	OutputTokens        int
+	CacheCreationTokens int
+	CacheReadTokens     int
+	Activity            string
+	ActivityAt          time.Time
 }
 
 // Notification is sent to listeners when a sub-agent's status changes

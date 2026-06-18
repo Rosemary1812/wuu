@@ -46,6 +46,9 @@ func FormatUsageReport(r *UsageReport) string {
 	fmt.Fprintf(&b, "Messages/day: %.1f\n", stats.MessagesPerDay)
 	if stats.TotalInputTokens > 0 || stats.TotalOutputTokens > 0 {
 		fmt.Fprintf(&b, "Tokens: %s input / %s output\n", compactCount(stats.TotalInputTokens), compactCount(stats.TotalOutputTokens))
+		if stats.TotalCacheReadTokens > 0 || stats.TotalCacheCreationTokens > 0 {
+			fmt.Fprintf(&b, "Prompt cache: %s read / %s written\n", compactCount(stats.TotalCacheReadTokens), compactCount(stats.TotalCacheCreationTokens))
+		}
 	} else if stats.TotalEstTokens > 0 {
 		fmt.Fprintf(&b, "Estimated tokens: %s\n", compactCount(stats.TotalEstTokens))
 	}

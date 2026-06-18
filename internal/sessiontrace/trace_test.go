@@ -15,19 +15,23 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session-trace.jsonl")
 	err := AppendTurn(path,
 		TurnRecord{
-			ThreadID:     "thread-1",
-			TurnID:       "turn-1",
-			Status:       "completed",
-			ProviderName: "openai",
-			Model:        "gpt-test",
-			APIModel:     "gpt-5-codex",
-			ModelProfile: NewModelProfileRecord("openai", "gpt-test", "gpt-5-codex"),
-			InputTokens:  12,
-			OutputTokens: 34,
+			ThreadID:            "thread-1",
+			TurnID:              "turn-1",
+			Status:              "completed",
+			ProviderName:        "openai",
+			Model:               "gpt-test",
+			APIModel:            "gpt-5-codex",
+			ModelProfile:        NewModelProfileRecord("openai", "gpt-test", "gpt-5-codex"),
+			InputTokens:         12,
+			OutputTokens:        34,
+			CacheCreationTokens: 8,
+			CacheReadTokens:     5,
 		},
 		FinalRecord{
-			Status:             "completed",
-			FinalAnswerPreview: "done API_KEY=secret-value-1234567890",
+			Status:              "completed",
+			CacheCreationTokens: 8,
+			CacheReadTokens:     5,
+			FinalAnswerPreview:  "done API_KEY=secret-value-1234567890",
 		},
 		[]tools.ToolInfo{{Name: "read_file", Kind: tools.ToolKindFile, Risk: tools.ToolRiskLow, ReadOnly: true}},
 		[]tools.ToolExecutionRecord{{Name: "read_file", Kind: tools.ToolKindFile, Risk: tools.ToolRiskLow, Success: true, RawOutputBytes: 100}},
@@ -63,6 +67,9 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "secret-value") || !strings.Contains(string(raw), "[REDACTED]") {
 		t.Fatalf("trace should redact secret-like final previews:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), `"cache_creation_tokens":8`) || !strings.Contains(string(raw), `"cache_read_tokens":5`) {
+		t.Fatalf("trace should include prompt cache usage:\n%s", raw)
 	}
 }
 

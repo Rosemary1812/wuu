@@ -192,6 +192,15 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		sa.mu.Unlock()
 		m.BroadcastSnapshot(sa)
 	}
+	onTokenUsage := func(usage providers.TokenUsage) {
+		sa.mu.Lock()
+		sa.CacheCreationTokens += usage.CacheCreationTokens
+		sa.CacheReadTokens += usage.CacheReadTokens
+		sa.mu.Unlock()
+		if usage.CacheCreationTokens != 0 || usage.CacheReadTokens != 0 {
+			m.BroadcastSnapshot(sa)
+		}
+	}
 
 	// Activity tracker: watch the worker's stream events and update
 	// sa.Activity on phase transitions only (thinking → responding,
@@ -225,6 +234,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		Effort:          m.defaultEffort,
 		ProviderOptions: provideroptions.Clone(m.defaultProviderOptions),
 		OnUsage:         onUsage,
+		OnTokenUsage:    onTokenUsage,
 	}
 
 	beforeStep := func() []providers.ChatMessage {
@@ -614,21 +624,23 @@ func cloneToolCall(call providers.ToolCall) providers.ToolCall {
 
 func snapshotLocked(s *SubAgent) SubAgentSnapshot {
 	return SubAgentSnapshot{
-		ID:           s.ID,
-		Type:         s.Type,
-		TaskName:     s.TaskName,
-		AgentProfile: s.AgentProfile,
-		AgentPath:    s.AgentPath,
-		ParentID:     s.ParentID,
-		Description:  s.Description,
-		Status:       s.Status,
-		StartedAt:    s.StartedAt,
-		CompletedAt:  s.CompletedAt,
-		Result:       s.Result,
-		Error:        s.Error,
-		InputTokens:  s.InputTokens,
-		OutputTokens: s.OutputTokens,
-		Activity:     s.Activity,
-		ActivityAt:   s.ActivityAt,
+		ID:                  s.ID,
+		Type:                s.Type,
+		TaskName:            s.TaskName,
+		AgentProfile:        s.AgentProfile,
+		AgentPath:           s.AgentPath,
+		ParentID:            s.ParentID,
+		Description:         s.Description,
+		Status:              s.Status,
+		StartedAt:           s.StartedAt,
+		CompletedAt:         s.CompletedAt,
+		Result:              s.Result,
+		Error:               s.Error,
+		InputTokens:         s.InputTokens,
+		OutputTokens:        s.OutputTokens,
+		CacheCreationTokens: s.CacheCreationTokens,
+		CacheReadTokens:     s.CacheReadTokens,
+		Activity:            s.Activity,
+		ActivityAt:          s.ActivityAt,
 	}
 }

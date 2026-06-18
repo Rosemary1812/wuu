@@ -61,21 +61,23 @@ type ForkMetadata struct {
 // translation, while app-server remains responsible for provider-specific
 // ChatMessage conversion.
 type HistoryRecord struct {
-	Role             string          `json:"role"`
-	Content          string          `json:"content"`
-	Phase            string          `json:"phase,omitempty"`
-	ClientID         string          `json:"client_id,omitempty"`
-	Steered          bool            `json:"steered,omitempty"`
-	ReasoningContent string          `json:"reasoning_content,omitempty"`
-	ReasoningBlocks  json.RawMessage `json:"reasoning_blocks,omitempty"`
-	Images           json.RawMessage `json:"images,omitempty"`
-	Files            json.RawMessage `json:"files,omitempty"`
-	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
-	ToolCallID       string          `json:"tool_call_id,omitempty"`
-	Name             string          `json:"name,omitempty"`
-	At               time.Time       `json:"at,omitempty"`
-	InputTokens      int             `json:"input_tokens,omitempty"`
-	OutputTokens     int             `json:"output_tokens,omitempty"`
+	Role                string          `json:"role"`
+	Content             string          `json:"content"`
+	Phase               string          `json:"phase,omitempty"`
+	ClientID            string          `json:"client_id,omitempty"`
+	Steered             bool            `json:"steered,omitempty"`
+	ReasoningContent    string          `json:"reasoning_content,omitempty"`
+	ReasoningBlocks     json.RawMessage `json:"reasoning_blocks,omitempty"`
+	Images              json.RawMessage `json:"images,omitempty"`
+	Files               json.RawMessage `json:"files,omitempty"`
+	ToolCalls           json.RawMessage `json:"tool_calls,omitempty"`
+	ToolCallID          string          `json:"tool_call_id,omitempty"`
+	Name                string          `json:"name,omitempty"`
+	At                  time.Time       `json:"at,omitempty"`
+	InputTokens         int             `json:"input_tokens,omitempty"`
+	OutputTokens        int             `json:"output_tokens,omitempty"`
+	CacheCreationTokens int             `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int             `json:"cache_read_tokens,omitempty"`
 }
 
 // NewID generates a human-readable, sortable session ID: YYYYMMDD-HHMMSS-xxxxxxxxxxxxxxxx.
@@ -601,14 +603,16 @@ func migrateSchema(db *sql.DB) error {
 			images_json TEXT NOT NULL DEFAULT '',
 			files_json TEXT NOT NULL DEFAULT '',
 			tool_calls_json TEXT NOT NULL DEFAULT '',
-			tool_call_id TEXT NOT NULL DEFAULT '',
-			name TEXT NOT NULL DEFAULT '',
-			at TEXT,
-			input_tokens INTEGER NOT NULL DEFAULT 0,
-			output_tokens INTEGER NOT NULL DEFAULT 0,
-			PRIMARY KEY(session_id, seq),
-			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
-		)`,
+				tool_call_id TEXT NOT NULL DEFAULT '',
+				name TEXT NOT NULL DEFAULT '',
+				at TEXT,
+				input_tokens INTEGER NOT NULL DEFAULT 0,
+				output_tokens INTEGER NOT NULL DEFAULT 0,
+				cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+				cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+				PRIMARY KEY(session_id, seq),
+				FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+			)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_messages_role ON session_messages(session_id, role, seq)`,
 		`CREATE TABLE IF NOT EXISTS store_state (
 			key TEXT PRIMARY KEY,
@@ -621,6 +625,12 @@ func migrateSchema(db *sql.DB) error {
 		}
 	}
 	if err := addColumnIfMissing(db, "session_messages", "phase", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "cache_creation_tokens", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "cache_read_tokens", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	return nil
@@ -940,14 +950,14 @@ func appendHistoryRecordTx(tx *sql.Tx, id string, rec HistoryRecord) error {
 
 func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) error {
 	_, err := tx.Exec(`
-INSERT INTO session_messages (
-	session_id, seq, role, content, phase, client_id, steered, reasoning_content,
-	reasoning_blocks_json, images_json, files_json, tool_calls_json,
-	tool_call_id, name, at, input_tokens, output_tokens
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	INSERT INTO session_messages (
+		session_id, seq, role, content, phase, client_id, steered, reasoning_content,
+		reasoning_blocks_json, images_json, files_json, tool_calls_json,
+		tool_call_id, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, strings.TrimSpace(rec.Phase), rec.ClientID, boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls),
-		rec.ToolCallID, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens,
+		rec.ToolCallID, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
 	)
 	if err != nil {
 		return fmt.Errorf("insert history record: %w", err)
@@ -957,10 +967,10 @@ INSERT INTO session_messages (
 
 func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
 	query := `
-SELECT role, content, phase, client_id, steered, reasoning_content,
-       reasoning_blocks_json, images_json, files_json, tool_calls_json,
-       tool_call_id, name, at, input_tokens, output_tokens
-FROM session_messages
+	SELECT role, content, phase, client_id, steered, reasoning_content,
+	       reasoning_blocks_json, images_json, files_json, tool_calls_json,
+	       tool_call_id, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
+	FROM session_messages
 WHERE session_id = ?`
 	args := []any{id}
 	if !includeMeta {
@@ -983,7 +993,7 @@ WHERE session_id = ?`
 		if err := rows.Scan(
 			&rec.Role, &rec.Content, &rec.Phase, &rec.ClientID, &steered, &rec.ReasoningContent,
 			&reasoningBlocks, &images, &files, &toolCalls,
-			&rec.ToolCallID, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens,
+			&rec.ToolCallID, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
 		); err != nil {
 			return nil, fmt.Errorf("scan session history: %w", err)
 		}

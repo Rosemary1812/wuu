@@ -14,14 +14,16 @@ import (
 
 // memoryRecord mirrors the session history JSONL schema.
 type memoryRecord struct {
-	Role         string        `json:"role"`
-	Content      string        `json:"content"`
-	At           time.Time     `json:"at"`
-	ToolCalls    []toolCallRec `json:"tool_calls,omitempty"`
-	ToolCallID   string        `json:"tool_call_id,omitempty"`
-	Name         string        `json:"name,omitempty"`
-	InputTokens  int           `json:"input_tokens,omitempty"`
-	OutputTokens int           `json:"output_tokens,omitempty"`
+	Role                string        `json:"role"`
+	Content             string        `json:"content"`
+	At                  time.Time     `json:"at"`
+	ToolCalls           []toolCallRec `json:"tool_calls,omitempty"`
+	ToolCallID          string        `json:"tool_call_id,omitempty"`
+	Name                string        `json:"name,omitempty"`
+	InputTokens         int           `json:"input_tokens,omitempty"`
+	OutputTokens        int           `json:"output_tokens,omitempty"`
+	CacheCreationTokens int           `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int           `json:"cache_read_tokens,omitempty"`
 }
 
 type toolCallRec struct {
@@ -193,6 +195,8 @@ func scanSessionRecords(records []sessionstore.HistoryRecord, id string) Session
 			// Token usage records.
 			meta.InputTokens += rec.InputTokens
 			meta.OutputTokens += rec.OutputTokens
+			meta.CacheCreationTokens += rec.CacheCreationTokens
+			meta.CacheReadTokens += rec.CacheReadTokens
 		}
 	}
 
@@ -253,13 +257,15 @@ func FormatTranscript(sessDir, sessionID string) (string, error) {
 
 func memoryRecordFromHistoryRecord(rec sessionstore.HistoryRecord) memoryRecord {
 	out := memoryRecord{
-		Role:         rec.Role,
-		Content:      rec.Content,
-		At:           rec.At,
-		ToolCallID:   rec.ToolCallID,
-		Name:         rec.Name,
-		InputTokens:  rec.InputTokens,
-		OutputTokens: rec.OutputTokens,
+		Role:                rec.Role,
+		Content:             rec.Content,
+		At:                  rec.At,
+		ToolCallID:          rec.ToolCallID,
+		Name:                rec.Name,
+		InputTokens:         rec.InputTokens,
+		OutputTokens:        rec.OutputTokens,
+		CacheCreationTokens: rec.CacheCreationTokens,
+		CacheReadTokens:     rec.CacheReadTokens,
 	}
 	if len(rec.ToolCalls) > 0 {
 		_ = json.Unmarshal(rec.ToolCalls, &out.ToolCalls)
@@ -290,6 +296,8 @@ func Aggregate(metas []SessionMeta, facets map[string]Facet) AggregatedData {
 		agg.TotalEstTokens += m.EstTokens
 		agg.TotalInputTokens += m.InputTokens
 		agg.TotalOutputTokens += m.OutputTokens
+		agg.TotalCacheCreationTokens += m.CacheCreationTokens
+		agg.TotalCacheReadTokens += m.CacheReadTokens
 		agg.TotalLinesAdded += m.LinesAdded
 		agg.TotalLinesRemoved += m.LinesRemoved
 		agg.TotalFilesModified += m.FilesModified

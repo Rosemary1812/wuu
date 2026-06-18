@@ -48,6 +48,9 @@ type StreamRunner struct {
 	// callers driving long-lived background runs (e.g. sub-agents) can
 	// surface live token accumulation while the run is still going.
 	OnUsage func(input, output int)
+	// OnTokenUsage reports the full per-call token usage, including
+	// prompt cache read/write counts.
+	OnTokenUsage func(usage providers.TokenUsage)
 
 	// ContextWindowOverride lets the caller pin a specific context
 	// window for this model instead of consulting the built-in
@@ -220,7 +223,8 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				RequestContext: requestContextSummary(info),
 			})
 		},
-		OnUsage: r.OnUsage,
+		OnUsage:      r.OnUsage,
+		OnTokenUsage: r.OnTokenUsage,
 		OnMessage: func(msg providers.ChatMessage) {
 			if effectiveOnEvent == nil || isEphemeralHistoryMessage(msg) {
 				return

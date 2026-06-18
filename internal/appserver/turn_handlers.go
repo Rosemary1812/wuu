@@ -446,20 +446,32 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	baseOnRequestContext := runner.OnRequestContext
 	// Forward cumulative token usage updates from the agent loop into a
 	// throttled "turn/usage" notification so live UIs can render a real-time
-	// generation speed gauge. OnUsage fires once per LLM round-trip; we
+	// generation speed gauge. OnTokenUsage fires once per LLM round-trip; we
 	// coalesce pushes to roughly ten per second so the IPC stream stays
 	// smooth even if a single step fans out multiple updates.
 	const usageNotifyInterval = 100 * time.Millisecond
 	var usagePushMu sync.Mutex
 	var lastUsagePushAt time.Time
+	var cumulativeUsage providers.TokenUsage
 	baseOnUsage := runner.OnUsage
+	baseOnTokenUsage := runner.OnTokenUsage
 	runner.OnUsage = func(inputTokens, outputTokens int) {
 		if baseOnUsage != nil {
 			baseOnUsage(inputTokens, outputTokens)
 		}
+	}
+	runner.OnTokenUsage = func(usage providers.TokenUsage) {
+		if baseOnTokenUsage != nil {
+			baseOnTokenUsage(usage)
+		}
 		usagePushMu.Lock()
+		cumulativeUsage.InputTokens += usage.InputTokens
+		cumulativeUsage.OutputTokens += usage.OutputTokens
+		cumulativeUsage.CacheCreationTokens += usage.CacheCreationTokens
+		cumulativeUsage.CacheReadTokens += usage.CacheReadTokens
 		now := time.Now()
 		shouldPush := lastUsagePushAt.IsZero() || now.Sub(lastUsagePushAt) >= usageNotifyInterval
+		usageSnapshot := cumulativeUsage
 		if shouldPush {
 			lastUsagePushAt = now
 		}
@@ -468,10 +480,12 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 			return
 		}
 		notify(NotificationTurnUsage, TurnUsageNotification{
-			ThreadID:     th.ID,
-			TurnID:       turnID,
-			InputTokens:  inputTokens,
-			OutputTokens: outputTokens,
+			ThreadID:            th.ID,
+			TurnID:              turnID,
+			InputTokens:         usageSnapshot.InputTokens,
+			OutputTokens:        usageSnapshot.OutputTokens,
+			CacheCreationTokens: usageSnapshot.CacheCreationTokens,
+			CacheReadTokens:     usageSnapshot.CacheReadTokens,
 		})
 	}
 	var contextRequests []sessiontrace.RequestContextRecord
@@ -504,6 +518,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		runner.BeforeStep = baseBeforeStep
 		runner.OnRequestContext = baseOnRequestContext
 		runner.OnUsage = baseOnUsage
+		runner.OnTokenUsage = baseOnTokenUsage
 	}()
 	// Hang the recent transcript off the request context so the LLM-driven
 	// guardian reviewer can judge pending tool calls in light of user intent.
@@ -582,12 +597,14 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		return
 	}
 	notify(NotificationTurnCompleted, TurnCompletedNotification{
-		ThreadID:     th.ID,
-		Turn:         turn,
-		Content:      res.Content,
-		InputTokens:  res.InputTokens,
-		OutputTokens: res.OutputTokens,
-		TracePath:    tracePath,
+		ThreadID:            th.ID,
+		Turn:                turn,
+		Content:             res.Content,
+		InputTokens:         res.InputTokens,
+		OutputTokens:        res.OutputTokens,
+		CacheCreationTokens: res.CacheCreationTokens,
+		CacheReadTokens:     res.CacheReadTokens,
+		TracePath:           tracePath,
 	})
 	go s.generateThreadTitle(th.ID, titleHistory)
 	s.kickAgentCompletionDrain(th.ID)
@@ -618,27 +635,31 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 		errorText = runErr.Error()
 	}
 	turnRecord := sessiontrace.TurnRecord{
-		ThreadID:         threadID,
-		TurnID:           turn.ID,
-		Status:           string(turn.Status),
-		ProviderName:     providerName,
-		Model:            model,
-		APIModel:         apiModel,
-		ModelProfile:     sessiontrace.NewModelProfileRecordWithBudget(providerName, model, apiModel, modelBudget),
-		StartedAt:        turn.StartedAt,
-		CompletedAt:      turn.CompletedAt,
-		DurationMS:       turn.DurationMS,
-		InputTokens:      res.InputTokens,
-		OutputTokens:     res.OutputTokens,
-		HistoryRewritten: res.HistoryRewritten,
-		Error:            errorText,
+		ThreadID:            threadID,
+		TurnID:              turn.ID,
+		Status:              string(turn.Status),
+		ProviderName:        providerName,
+		Model:               model,
+		APIModel:            apiModel,
+		ModelProfile:        sessiontrace.NewModelProfileRecordWithBudget(providerName, model, apiModel, modelBudget),
+		StartedAt:           turn.StartedAt,
+		CompletedAt:         turn.CompletedAt,
+		DurationMS:          turn.DurationMS,
+		InputTokens:         res.InputTokens,
+		OutputTokens:        res.OutputTokens,
+		CacheCreationTokens: res.CacheCreationTokens,
+		CacheReadTokens:     res.CacheReadTokens,
+		HistoryRewritten:    res.HistoryRewritten,
+		Error:               errorText,
 	}
 	finalRecord := sessiontrace.FinalRecord{
-		Status:             string(turn.Status),
-		InputTokens:        res.InputTokens,
-		OutputTokens:       res.OutputTokens,
-		FinalAnswerPreview: res.Content,
-		Error:              errorText,
+		Status:              string(turn.Status),
+		InputTokens:         res.InputTokens,
+		OutputTokens:        res.OutputTokens,
+		CacheCreationTokens: res.CacheCreationTokens,
+		CacheReadTokens:     res.CacheReadTokens,
+		FinalAnswerPreview:  res.Content,
+		Error:               errorText,
 	}
 	records := threadRuntime.Toolkit.ToolTelemetry()
 	if toolRecordStart > 0 && toolRecordStart < len(records) {
@@ -1132,7 +1153,12 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 			}
 		}
 	}
-	if err := appendTokenUsage(th.MemoryPath, res.InputTokens, res.OutputTokens); err != nil {
+	if err := appendTokenUsage(th.MemoryPath, providers.TokenUsage{
+		InputTokens:         res.InputTokens,
+		OutputTokens:        res.OutputTokens,
+		CacheCreationTokens: res.CacheCreationTokens,
+		CacheReadTokens:     res.CacheReadTokens,
+	}); err != nil {
 		return err
 	}
 	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))

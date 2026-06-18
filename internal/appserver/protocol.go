@@ -32,7 +32,7 @@ const (
 	MethodThreadPin             = "thread/pin"
 	MethodThreadArchive         = "thread/archive"
 	MethodThreadRegenerateTitle = "thread/regenerate-title"
-	MethodThreadRename           = "thread/rename"
+	MethodThreadRename          = "thread/rename"
 	MethodTurnStart             = "turn/start"
 	MethodTurnQueue             = "turn/queue"
 	MethodTurnDequeue           = "turn/dequeue"
@@ -589,41 +589,47 @@ type TurnErrorNotification struct {
 }
 
 type TurnUsageNotification struct {
-	ThreadID     string `json:"thread_id"`
-	TurnID       string `json:"turn_id"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
+	ThreadID            string `json:"thread_id"`
+	TurnID              string `json:"turn_id"`
+	InputTokens         int    `json:"input_tokens"`
+	OutputTokens        int    `json:"output_tokens"`
+	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
 }
 
 type TurnCompletedNotification struct {
-	ThreadID     string `json:"thread_id"`
-	Turn         Turn   `json:"turn"`
-	Content      string `json:"content"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
-	TracePath    string `json:"trace_path,omitempty"`
+	ThreadID            string `json:"thread_id"`
+	Turn                Turn   `json:"turn"`
+	Content             string `json:"content"`
+	InputTokens         int    `json:"input_tokens"`
+	OutputTokens        int    `json:"output_tokens"`
+	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
+	TracePath           string `json:"trace_path,omitempty"`
 }
 
 type Agent struct {
-	ID                 string    `json:"id"`
-	Type               string    `json:"type"`
-	TaskName           string    `json:"task_name,omitempty"`
-	AgentProfile       string    `json:"agent_profile,omitempty"`
-	AgentPath          string    `json:"agent_path,omitempty"`
-	ParentID           string    `json:"parent_id,omitempty"`
-	Description        string    `json:"description,omitempty"`
-	Status             string    `json:"status"`
-	Result             string    `json:"result,omitempty"`
-	ResultPath         string    `json:"result_path,omitempty"`
-	ResultBytes        int       `json:"result_bytes,omitempty"`
-	ResultTruncated    bool      `json:"result_truncated,omitempty"`
-	Error              string    `json:"error,omitempty"`
-	InputTokens        int       `json:"input_tokens,omitempty"`
-	OutputTokens       int       `json:"output_tokens,omitempty"`
-	NestedCount        int       `json:"nested_count,omitempty"`
-	NestedRunningCount int       `json:"nested_running_count,omitempty"`
-	StartedAt          time.Time `json:"started_at"`
-	CompletedAt        time.Time `json:"completed_at,omitempty"`
+	ID                  string    `json:"id"`
+	Type                string    `json:"type"`
+	TaskName            string    `json:"task_name,omitempty"`
+	AgentProfile        string    `json:"agent_profile,omitempty"`
+	AgentPath           string    `json:"agent_path,omitempty"`
+	ParentID            string    `json:"parent_id,omitempty"`
+	Description         string    `json:"description,omitempty"`
+	Status              string    `json:"status"`
+	Result              string    `json:"result,omitempty"`
+	ResultPath          string    `json:"result_path,omitempty"`
+	ResultBytes         int       `json:"result_bytes,omitempty"`
+	ResultTruncated     bool      `json:"result_truncated,omitempty"`
+	Error               string    `json:"error,omitempty"`
+	InputTokens         int       `json:"input_tokens,omitempty"`
+	OutputTokens        int       `json:"output_tokens,omitempty"`
+	CacheCreationTokens int       `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int       `json:"cache_read_tokens,omitempty"`
+	NestedCount         int       `json:"nested_count,omitempty"`
+	NestedRunningCount  int       `json:"nested_running_count,omitempty"`
+	StartedAt           time.Time `json:"started_at"`
+	CompletedAt         time.Time `json:"completed_at,omitempty"`
 }
 
 type AgentUpdatedNotification struct {

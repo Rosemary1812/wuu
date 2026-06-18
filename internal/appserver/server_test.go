@@ -1560,7 +1560,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	client := &fakeClient{
 		response: providers.ChatResponse{
 			Content: "done",
-			Usage:   &providers.TokenUsage{InputTokens: 10, OutputTokens: 3},
+			Usage:   &providers.TokenUsage{InputTokens: 10, OutputTokens: 3, CacheCreationTokens: 6, CacheReadTokens: 4},
 		},
 	}
 	rt := newTestRuntime(t, client)
@@ -1602,7 +1602,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if params.Turn.StartedAt == nil || params.Turn.CompletedAt == nil || params.Turn.DurationMS == nil {
 		t.Fatalf("completed turn should include timing: %+v", params.Turn)
 	}
-	if params.InputTokens != 10 || params.OutputTokens != 3 {
+	if params.InputTokens != 10 || params.OutputTokens != 3 || params.CacheCreationTokens != 6 || params.CacheReadTokens != 4 {
 		t.Fatalf("unexpected usage: %+v", params)
 	}
 	if params.TracePath == "" {
@@ -3128,7 +3128,7 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	if err := appendChatMessage(sessionPath, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
 		t.Fatalf("append old assistant: %v", err)
 	}
-	if err := appendTokenUsage(sessionPath, 11, 7); err != nil {
+	if err := appendTokenUsage(sessionPath, providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}); err != nil {
 		t.Fatalf("append token usage: %v", err)
 	}
 
@@ -3147,7 +3147,7 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	if err != nil {
 		t.Fatalf("load raw history: %v", err)
 	}
-	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 11 || all[1].OutputTokens != 7 {
+	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 11 || all[1].OutputTokens != 7 || all[1].CacheCreationTokens != 5 || all[1].CacheReadTokens != 3 {
 		t.Fatalf("rewrite should preserve token usage metadata, got %+v", all)
 	}
 }

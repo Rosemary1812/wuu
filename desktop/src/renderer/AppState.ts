@@ -117,7 +117,7 @@ type AppState = {
   running: boolean;
   status: string;
   pendingToolApproval?: PendingToolApproval;
-  // turnTokenUsage tracks per-turn cumulative input/output token counts
+  // turnTokenUsage tracks per-turn cumulative token counts
   // pushed by the appserver's "turn/usage" notification. The samples field
   // is a rolling window used to derive a smoothed tokens-per-second read
   // for the live token-speed gauge in the composer.
@@ -133,6 +133,8 @@ type TurnTokenUsage = {
   threadID: string;
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   samples: TurnTokenSample[];
 };
 
@@ -513,6 +515,8 @@ function reduceNotification(
         stringValue(params, "thread_id") ?? "",
         numberValue(params, "input_tokens") ?? 0,
         numberValue(params, "output_tokens") ?? 0,
+        numberValue(params, "cache_creation_tokens") ?? 0,
+        numberValue(params, "cache_read_tokens") ?? 0,
         Date.now(),
       );
     }
@@ -1404,6 +1408,8 @@ function appendTurnTokenSample(
   threadID: string,
   inputTokens: number,
   outputTokens: number,
+  cacheCreationTokens: number,
+  cacheReadTokens: number,
   at: number,
 ): AppState {
   const turnTokenUsage = state.turnTokenUsage ?? {};
@@ -1428,6 +1434,8 @@ function appendTurnTokenSample(
         threadID,
         inputTokens,
         outputTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
         samples,
       },
     },

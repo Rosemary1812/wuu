@@ -49,6 +49,8 @@ describe("AppState token usage", () => {
       "thread-1",
       10,
       2,
+      0,
+      0,
       1_000,
     );
     const second = appendTurnTokenSample(
@@ -57,10 +59,14 @@ describe("AppState token usage", () => {
       "thread-1",
       10,
       22,
+      4,
+      8,
       2_000,
     );
 
     expect(activeTurnTokenSpeed(second, "turn-1")).toBe(20);
+    expect(second.turnTokenUsage["turn-1"].cacheCreationTokens).toBe(4);
+    expect(second.turnTokenUsage["turn-1"].cacheReadTokens).toBe(8);
   });
 });
 
@@ -84,6 +90,8 @@ describe("turn token speed", () => {
       "thread-1",
       0,
       100,
+      0,
+      0,
       Date.now(),
     );
     expect(activeTurnTokenSpeed(state, "turn-1")).toBe(0);
@@ -96,6 +104,8 @@ describe("turn token speed", () => {
       "thread-1",
       0,
       100,
+      0,
+      0,
       Date.now(),
     );
     vi.advanceTimersByTime(500);
@@ -105,6 +115,8 @@ describe("turn token speed", () => {
       "thread-1",
       0,
       140,
+      0,
+      0,
       Date.now(),
     );
     expect(activeTurnTokenSpeed(state, "turn-1")).toBeCloseTo(80, 0);
@@ -117,6 +129,8 @@ describe("turn token speed", () => {
       "thread-1",
       0,
       100,
+      0,
+      0,
       Date.now(),
     );
     vi.advanceTimersByTime(2500);
@@ -126,6 +140,8 @@ describe("turn token speed", () => {
       "thread-1",
       0,
       200,
+      0,
+      0,
       Date.now(),
     );
     expect(state.turnTokenUsage["turn-1"].samples).toHaveLength(1);

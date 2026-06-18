@@ -99,7 +99,7 @@ func RunToolLoop(
 	currentMaxTokens := cfg.DefaultMaxTokens // 0 = provider default
 
 	var (
-		totalIn, totalOut int
+		totalIn, totalOut, totalCacheCreation, totalCacheRead int
 		// Accumulates partial assistant text across truncation-recovery
 		// rounds. Concatenated into the final answer when the model
 		// finally returns a non-truncated response.
@@ -164,10 +164,12 @@ func RunToolLoop(
 		}
 		if normalized, changed, nerr := normalizeLiveMessages(messages); nerr != nil {
 			return LoopResult{
-				NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-				HistoryRewritten: historyRewritten,
-				InputTokens:      totalIn,
-				OutputTokens:     totalOut,
+				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+				HistoryRewritten:    historyRewritten,
+				InputTokens:         totalIn,
+				OutputTokens:        totalOut,
+				CacheCreationTokens: totalCacheCreation,
+				CacheReadTokens:     totalCacheRead,
 			}, nerr
 		} else if changed {
 			messages = normalized
@@ -187,10 +189,12 @@ func RunToolLoop(
 				requestMessages = append(requestMessages, transient...)
 				if normalized, _, nerr := normalizeLiveMessages(requestMessages); nerr != nil {
 					return LoopResult{
-						NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-						HistoryRewritten: historyRewritten,
-						InputTokens:      totalIn,
-						OutputTokens:     totalOut,
+						NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+						HistoryRewritten:    historyRewritten,
+						InputTokens:         totalIn,
+						OutputTokens:        totalOut,
+						CacheCreationTokens: totalCacheCreation,
+						CacheReadTokens:     totalCacheRead,
 					}, nerr
 				} else {
 					requestMessages = normalized
@@ -243,18 +247,25 @@ func RunToolLoop(
 				}
 			}
 			return LoopResult{
-				NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-				HistoryRewritten: historyRewritten,
-				InputTokens:      totalIn,
-				OutputTokens:     totalOut,
+				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+				HistoryRewritten:    historyRewritten,
+				InputTokens:         totalIn,
+				OutputTokens:        totalOut,
+				CacheCreationTokens: totalCacheCreation,
+				CacheReadTokens:     totalCacheRead,
 			}, err
 		}
 
 		if result.Usage != nil {
 			totalIn += result.Usage.InputTokens
 			totalOut += result.Usage.OutputTokens
+			totalCacheCreation += result.Usage.CacheCreationTokens
+			totalCacheRead += result.Usage.CacheReadTokens
 			if cfg.OnUsage != nil {
 				cfg.OnUsage(result.Usage.InputTokens, result.Usage.OutputTokens)
+			}
+			if cfg.OnTokenUsage != nil {
+				cfg.OnTokenUsage(*result.Usage)
 			}
 			// Fold the precise per-call usage into the tracker. This
 			// collapses any pending estimate into ground truth.
@@ -262,10 +273,12 @@ func RunToolLoop(
 		}
 		if err := providers.ValidateToolCalls(result.ToolCalls); err != nil {
 			return LoopResult{
-				NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-				HistoryRewritten: historyRewritten,
-				InputTokens:      totalIn,
-				OutputTokens:     totalOut,
+				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+				HistoryRewritten:    historyRewritten,
+				InputTokens:         totalIn,
+				OutputTokens:        totalOut,
+				CacheCreationTokens: totalCacheCreation,
+				CacheReadTokens:     totalCacheRead,
 			}, fmt.Errorf("provider returned invalid tool_calls: %w", err)
 		}
 
@@ -319,35 +332,43 @@ func RunToolLoop(
 			if strings.TrimSpace(finalContent) == "" {
 				if isLegitimateEmptyCompletion(result.StopReason) {
 					return LoopResult{
-						Content:          "",
-						NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-						HistoryRewritten: historyRewritten,
-						InputTokens:      totalIn,
-						OutputTokens:     totalOut,
+						Content:             "",
+						NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+						HistoryRewritten:    historyRewritten,
+						InputTokens:         totalIn,
+						OutputTokens:        totalOut,
+						CacheCreationTokens: totalCacheCreation,
+						CacheReadTokens:     totalCacheRead,
 					}, nil
 				}
 				return LoopResult{
-					NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-					HistoryRewritten: historyRewritten,
-					InputTokens:      totalIn,
-					OutputTokens:     totalOut,
+					NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+					HistoryRewritten:    historyRewritten,
+					InputTokens:         totalIn,
+					OutputTokens:        totalOut,
+					CacheCreationTokens: totalCacheCreation,
+					CacheReadTokens:     totalCacheRead,
 				}, &EmptyAnswerError{StopReason: result.StopReason}
 			}
 			return LoopResult{
-				Content:          finalContent,
-				NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-				HistoryRewritten: historyRewritten,
-				InputTokens:      totalIn,
-				OutputTokens:     totalOut,
+				Content:             finalContent,
+				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+				HistoryRewritten:    historyRewritten,
+				InputTokens:         totalIn,
+				OutputTokens:        totalOut,
+				CacheCreationTokens: totalCacheCreation,
+				CacheReadTokens:     totalCacheRead,
 			}, nil
 		}
 
 		if cfg.Tools == nil {
 			return LoopResult{
-				NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-				HistoryRewritten: historyRewritten,
-				InputTokens:      totalIn,
-				OutputTokens:     totalOut,
+				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+				HistoryRewritten:    historyRewritten,
+				InputTokens:         totalIn,
+				OutputTokens:        totalOut,
+				CacheCreationTokens: totalCacheCreation,
+				CacheReadTokens:     totalCacheRead,
 			}, errors.New("model requested tools but none are configured")
 		}
 
@@ -372,10 +393,12 @@ func RunToolLoop(
 	}
 
 	return LoopResult{
-		NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
-		HistoryRewritten: historyRewritten,
-		InputTokens:      totalIn,
-		OutputTokens:     totalOut,
+		NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+		HistoryRewritten:    historyRewritten,
+		InputTokens:         totalIn,
+		OutputTokens:        totalOut,
+		CacheCreationTokens: totalCacheCreation,
+		CacheReadTokens:     totalCacheRead,
 	}, fmt.Errorf("max steps exceeded (%d)", cfg.MaxSteps)
 }
 

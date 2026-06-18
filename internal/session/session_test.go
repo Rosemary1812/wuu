@@ -313,10 +313,12 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{
-		Role:         "meta",
-		Content:      "token_usage",
-		InputTokens:  12,
-		OutputTokens: 4,
+		Role:                "meta",
+		Content:             "token_usage",
+		InputTokens:         12,
+		OutputTokens:        4,
+		CacheCreationTokens: 6,
+		CacheReadTokens:     2,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +335,7 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 12 || all[1].OutputTokens != 4 {
+	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 12 || all[1].OutputTokens != 4 || all[1].CacheCreationTokens != 6 || all[1].CacheReadTokens != 2 {
 		t.Fatalf("unexpected full history: %+v", all)
 	}
 }
