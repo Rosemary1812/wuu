@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -80,6 +81,9 @@ type Server struct {
 	pendingQueuedTurns  map[string][]queuedTurn
 	drainingQueuedTurns map[string]bool
 
+	codexModelsMu   sync.Mutex
+	codexModelCache map[string]map[string]config.ProviderModelConfig
+
 	// guardianBreaker tracks recent auto-review denials so a runaway
 	// rejection loop can interrupt the host turn instead of burning LLM
 	// tokens on a broken path. Shared across turns; cleared via ClearTurn
@@ -104,6 +108,7 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingAgentCompletionTurns: make(map[string]bool),
 		pendingQueuedTurns:           make(map[string][]queuedTurn),
 		drainingQueuedTurns:          make(map[string]bool),
+		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 
 		guardianBreaker: guardian.NewRejectionCircuitBreaker(),
 	}

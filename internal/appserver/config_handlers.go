@@ -11,6 +11,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/hooks"
+	"github.com/blueberrycongee/wuu/internal/modelbudget"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
@@ -239,6 +240,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
+		providerCfg = s.withCachedCodexModels(resolvedName, providerCfg)
 	}
 	previousProviderCfg := providerCfg
 	previousModel := strings.TrimSpace(providerCfg.Model)
@@ -448,6 +450,7 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	s.cacheCodexModels(resolvedName, models)
 	out := make([]CodexModelSummary, 0, len(models))
 	for _, model := range models {
 		out = append(out, CodexModelSummary{
@@ -458,6 +461,7 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 			SupportedInAPI:        model.SupportedInAPI,
 		})
 	}
+	providerCfg = s.withCachedCodexModels(resolvedName, providerCfg)
 	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
 	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
 	effort := selection.DisplayEffort
@@ -772,6 +776,152 @@ func isCodexProviderType(providerType string) bool {
 	s := strings.ToLower(strings.TrimSpace(providerType))
 	s = strings.ReplaceAll(s, "_", "-")
 	return s == "openai-codex" || s == "codex-subscription" || s == "chatgpt-codex"
+}
+
+func (s *Server) cacheCodexModels(providerName string, models []codex.ModelInfo) {
+	providerName = strings.TrimSpace(providerName)
+	if s == nil || providerName == "" {
+		return
+	}
+	configs := codexLiveModelConfigs(models)
+	s.codexModelsMu.Lock()
+	defer s.codexModelsMu.Unlock()
+	if s.codexModelCache == nil {
+		s.codexModelCache = make(map[string]map[string]config.ProviderModelConfig)
+	}
+	s.codexModelCache[providerName] = configs
+}
+
+func (s *Server) withCachedCodexModels(providerName string, provider config.ProviderConfig) config.ProviderConfig {
+	if s == nil || !isCodexProviderType(provider.Type) {
+		return provider
+	}
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		return provider
+	}
+	s.codexModelsMu.Lock()
+	cached := cloneProviderModelConfigs(s.codexModelCache[providerName])
+	s.codexModelsMu.Unlock()
+	if len(cached) == 0 {
+		return provider
+	}
+	out := provider
+	out.Models = cloneProviderModelConfigs(provider.Models)
+	if out.Models == nil {
+		out.Models = make(map[string]config.ProviderModelConfig, len(cached))
+	}
+	for id, live := range cached {
+		out.Models[id] = modelcatalog.MergeModelConfig(live, out.Models[id])
+	}
+	return out
+}
+
+func codexLiveModelConfigs(models []codex.ModelInfo) map[string]config.ProviderModelConfig {
+	out := make(map[string]config.ProviderModelConfig, len(models))
+	for _, model := range models {
+		id := strings.TrimSpace(model.Slug)
+		if id == "" {
+			continue
+		}
+		cfg := codexCatalogFallbackModelConfig(id)
+		cfg.ID = id
+		if name := strings.TrimSpace(model.DisplayName); name != "" {
+			cfg.Name = name
+		}
+		efforts := normalizedCodexEfforts(model.SupportedReasoning)
+		if len(efforts) > 0 || strings.TrimSpace(model.DefaultReasoningLevel) != "" {
+			reasoning := true
+			cfg.Reasoning = &reasoning
+		}
+		if len(efforts) > 0 {
+			cfg.SupportedEfforts = efforts
+			cfg.Variants = codexReasoningVariants(efforts)
+		}
+		if effort := strings.TrimSpace(model.DefaultReasoningLevel); effort != "" {
+			cfg.DefaultEffort = effort
+			cfg.DefaultVariant = effort
+		}
+		applyCodexSubscriptionLimit(id, &cfg)
+		out[id] = cfg
+	}
+	return out
+}
+
+func codexCatalogFallbackModelConfig(modelID string) config.ProviderModelConfig {
+	provider, ok := modelcatalog.MatchProvider("openai", config.ProviderConfig{Type: "openai"})
+	if !ok {
+		return config.ProviderModelConfig{ID: modelID}
+	}
+	for _, model := range provider.Models {
+		if strings.TrimSpace(model.ID) == modelID {
+			return modelcatalog.ModelConfig(model)
+		}
+	}
+	return config.ProviderModelConfig{ID: modelID}
+}
+
+func applyCodexSubscriptionLimit(modelID string, cfg *config.ProviderModelConfig) {
+	if cfg == nil {
+		return
+	}
+	id := strings.ToLower(strings.TrimSpace(modelID))
+	if !strings.Contains(id, "gpt-5.5") {
+		return
+	}
+	cfg.ContextWindow = 400_000
+	cfg.Limit = &config.ProviderModelLimitConfig{
+		Context: 400_000,
+		Input:   modelbudget.CodexSubscriptionGPT5InputCap,
+		Output:  128_000,
+	}
+}
+
+func normalizedCodexEfforts(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func codexReasoningVariants(efforts []string) map[string]map[string]any {
+	if len(efforts) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(efforts))
+	for _, effort := range efforts {
+		effort = strings.TrimSpace(effort)
+		if effort == "" {
+			continue
+		}
+		out[effort] = map[string]any{
+			"reasoningEffort":  effort,
+			"reasoningSummary": "auto",
+			"include":          []any{"reasoning.encrypted_content"},
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cloneProviderModelConfigs(input map[string]config.ProviderModelConfig) map[string]config.ProviderModelConfig {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]config.ProviderModelConfig, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func stringValue(value *string) string {

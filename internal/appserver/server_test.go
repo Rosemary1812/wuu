@@ -1369,6 +1369,25 @@ func TestServerConfigCodexModels(t *testing.T) {
 	if got := result.Models[0].SupportedReasoning; len(got) != 2 || got[0] != "low" || got[1] != "xhigh" {
 		t.Fatalf("unexpected reasoning levels: %+v", got)
 	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"2","method":"config/model/update","params":{"provider":"openai-codex","model":"gpt-5.5","variant":"xhigh"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+	update := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	if update.Provider != "openai-codex" || update.Model != "gpt-5.5" || update.Variant != "xhigh" {
+		t.Fatalf("unexpected update: %+v", update)
+	}
+	if got := rt.StreamRunner.ProviderOptions["reasoningEffort"]; got != "xhigh" {
+		t.Fatalf("runtime provider options = %#v", rt.StreamRunner.ProviderOptions)
+	}
+	if rt.StreamRunner.ContextWindowOverride != 400000 ||
+		rt.StreamRunner.MaxInputTokens != 272000 ||
+		rt.StreamRunner.OutputReserveTokens != 128000 {
+		t.Fatalf("runtime budget not updated from live Codex model: context=%d input=%d output=%d",
+			rt.StreamRunner.ContextWindowOverride,
+			rt.StreamRunner.MaxInputTokens,
+			rt.StreamRunner.OutputReserveTokens)
+	}
 }
 
 func TestServerSkillList(t *testing.T) {
