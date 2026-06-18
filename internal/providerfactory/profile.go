@@ -58,8 +58,32 @@ func resolveProviderProfile(provider config.ProviderConfig) (providerProfile, er
 			Auth:     authAnthropicToken,
 		}, nil
 	default:
+		if inferred := nativeProviderTypeForNPM(provider.NPM); inferred != "" {
+			next := provider
+			next.Type = inferred
+			return resolveProviderProfile(next)
+		}
 		return providerProfile{}, fmt.Errorf("unsupported provider type %q", provider.Type)
 	}
+}
+
+func nativeProviderTypeForNPM(npm string) string {
+	switch normalizeNPM(npm) {
+	case "@ai-sdk/anthropic":
+		return "anthropic"
+	case "@ai-sdk/openai":
+		return "openai"
+	case "@ai-sdk/openai-compatible", "@openrouter/ai-sdk-provider":
+		return "openai-compatible"
+	default:
+		return ""
+	}
+}
+
+func normalizeNPM(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimPrefix(value, "npm:")
+	return value
 }
 
 func resolveOpenAIWire(value string) (wireProtocol, error) {

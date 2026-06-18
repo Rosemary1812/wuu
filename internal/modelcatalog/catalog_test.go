@@ -223,3 +223,28 @@ func TestMergeProviderCarriesModelOptionsAndHeaders(t *testing.T) {
 		t.Fatalf("unexpected merged headers: %+v", enriched.Headers)
 	}
 }
+
+func TestMergeProviderPromotesSelectedModelProviderOverride(t *testing.T) {
+	ruleName, enriched := EnrichProvider("zenmux", config.ProviderConfig{
+		Type:  "openai-compatible",
+		Model: "anthropic/claude-opus-4.7",
+	}, "anthropic/claude-opus-4.7")
+	if ruleName != "zenmux" {
+		t.Fatalf("rule provider name = %q", ruleName)
+	}
+	if enriched.Type != "anthropic" {
+		t.Fatalf("provider type = %q, want anthropic", enriched.Type)
+	}
+	if enriched.API != "https://zenmux.ai/api/anthropic/v1" || enriched.BaseURL != "https://zenmux.ai/api/anthropic/v1" {
+		t.Fatalf("provider endpoint not promoted: api=%q base=%q", enriched.API, enriched.BaseURL)
+	}
+	if enriched.NPM != "@ai-sdk/anthropic" {
+		t.Fatalf("provider npm = %q", enriched.NPM)
+	}
+	if enriched.APIKeyEnv != "ZENMUX_API_KEY" {
+		t.Fatalf("provider api_key_env = %q", enriched.APIKeyEnv)
+	}
+	if enriched.ContextWindow != 1000000 {
+		t.Fatalf("ContextWindow = %d", enriched.ContextWindow)
+	}
+}

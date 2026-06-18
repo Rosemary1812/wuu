@@ -143,6 +143,12 @@ func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, mod
 	if strings.TrimSpace(out.NPM) == "" {
 		out.NPM = catalogProvider.NPM
 	}
+	if strings.TrimSpace(out.BaseURL) == "" && strings.TrimSpace(out.API) != "" {
+		out.BaseURL = out.API
+	}
+	if strings.TrimSpace(out.APIKeyEnv) == "" && strings.TrimSpace(out.APIKey) == "" {
+		out.APIKeyEnv = firstCatalogEnv(catalogProvider.Env)
+	}
 
 	modelSet := make(map[string]bool, len(modelIDs))
 	for _, modelID := range modelIDs {
@@ -184,7 +190,50 @@ func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, mod
 			}
 		}
 	}
+	if len(modelSet) == 1 {
+		for id := range modelSet {
+			applyModelProviderOverride(&out, models[id])
+		}
+	}
 	return out
+}
+
+func firstCatalogEnv(values []string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func applyModelProviderOverride(provider *config.ProviderConfig, model config.ProviderModelConfig) {
+	if provider == nil || model.Provider == nil {
+		return
+	}
+	if api := strings.TrimSpace(model.Provider.API); api != "" {
+		provider.API = api
+		provider.BaseURL = api
+	}
+	if npm := strings.TrimSpace(model.Provider.NPM); npm != "" {
+		provider.NPM = npm
+		if providerType := nativeProviderTypeForNPM(npm); providerType != "" {
+			provider.Type = providerType
+		}
+	}
+}
+
+func nativeProviderTypeForNPM(npm string) string {
+	switch normalizeNPM(npm) {
+	case "@ai-sdk/anthropic":
+		return "anthropic"
+	case "@ai-sdk/openai":
+		return "openai"
+	case "@ai-sdk/openai-compatible", "@openrouter/ai-sdk-provider":
+		return "openai-compatible"
+	default:
+		return ""
+	}
 }
 
 func ModelConfig(model Model) config.ProviderModelConfig {
@@ -479,6 +528,12 @@ func endpointCandidates(provider config.ProviderConfig) []string {
 func normalizeID(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	value = strings.ReplaceAll(value, "_", "-")
+	return value
+}
+
+func normalizeNPM(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimPrefix(value, "npm:")
 	return value
 }
 

@@ -96,6 +96,39 @@ func TestResolveProviderProfile_Anthropic(t *testing.T) {
 	}
 }
 
+func TestResolveProviderProfile_InfersKnownOpenCodeNPMProviders(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		npm  string
+		wire wireProtocol
+		auth authMode
+	}{
+		{name: "openai compatible", npm: "@ai-sdk/openai-compatible", wire: wireOpenAIChat, auth: authAPIKey},
+		{name: "openrouter", npm: "@openrouter/ai-sdk-provider", wire: wireOpenAIChat, auth: authAPIKey},
+		{name: "anthropic", npm: "@ai-sdk/anthropic", wire: wireAnthropicMessages, auth: authAnthropicToken},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			profile, err := resolveProviderProfile(config.ProviderConfig{Type: "opencode-provider-id", NPM: tc.npm})
+			if err != nil {
+				t.Fatalf("resolveProviderProfile returned error: %v", err)
+			}
+			if profile.Wire != tc.wire {
+				t.Fatalf("Wire = %q, want %q", profile.Wire, tc.wire)
+			}
+			if profile.Auth != tc.auth {
+				t.Fatalf("Auth = %q, want %q", profile.Auth, tc.auth)
+			}
+		})
+	}
+}
+
+func TestResolveProviderProfile_RejectsUnsupportedNPMProviders(t *testing.T) {
+	_, err := resolveProviderProfile(config.ProviderConfig{Type: "google", NPM: "@ai-sdk/google"})
+	if err == nil {
+		t.Fatal("expected unsupported provider error")
+	}
+}
+
 func TestResolveProviderProfile_OpenAICodexRejectsChatWire(t *testing.T) {
 	_, err := resolveProviderProfile(config.ProviderConfig{Type: "openai-codex", WireAPI: "chat"})
 	if err == nil {
