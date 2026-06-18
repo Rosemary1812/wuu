@@ -294,8 +294,15 @@
 .project-list {
   margin-top: 28px;
   min-height: 0;
-  flex: 1;
-  overflow: visible;
+  flex: 1 1 0;
+  /*
+   * Internal scroll for the project list so an expanded project with many
+   * threads cannot overflow the sidebar and push the settings button (and
+   * any subsequent projects) past the window bottom. overscroll-behavior
+   * keeps the scroll event from bubbling up to the sidebar/page level.
+   */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .pinned-thread-section {
@@ -953,6 +960,7 @@
 .sidebar-settings {
   position: relative;
   margin-top: 14px;
+  flex-shrink: 0;
 }
 
 .settings-button {
