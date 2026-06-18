@@ -1,48 +1,74 @@
 /* Live token-speed gauge shown next to the model picker in the composer.
-   It stays icon-like in the toolbar: a speedmark arc and sweeping needle.
+   It stays in the same 32px line-icon cell as the composer tools.
    The exact tok/s number only appears on hover. */
 
 :root {
-  --token-gauge-idle: rgba(120, 120, 130, 0.55);
-  --token-gauge-low: #10b981;
-  --token-gauge-mid: #f59e0b;
-  --token-gauge-high: #ef4444;
-  --token-gauge-track: rgba(120, 120, 130, 0.2);
-  --token-gauge-text: rgba(110, 110, 120, 0.85);
-  --token-gauge-hub-ring: rgba(255, 255, 255, 0.96);
-  --token-gauge-tooltip-bg: rgba(20, 20, 24, 0.94);
-  --token-gauge-tooltip-text: #f8f8fa;
+  --token-gauge-idle: #8a8e91;
+  --token-gauge-low: #7d8488;
+  --token-gauge-mid: #d48345;
+  --token-gauge-high: #ef5b18;
+  --token-gauge-track: rgba(138, 142, 145, 0.24);
+  --token-gauge-tooltip-bg: rgba(255, 255, 255, 0.98);
+  --token-gauge-tooltip-text: #1f2328;
+  --token-gauge-tooltip-border: rgba(31, 35, 40, 0.12);
 }
 
 .composer-token-gauge {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 4px;
-  color: var(--token-gauge-text);
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
   user-select: none;
   line-height: 1;
   cursor: default;
+  transition:
+    background-color 160ms ease,
+    color 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.composer-token-gauge:hover {
+  background: #f1f2ef;
 }
 
 /* Higher-specificity descendant selector so this rule wins over the generic
-   `.composer-bar svg { width: var(--icon-size); ... }` rule in composer.css,
-   which would otherwise squash the gauge into a 16x16 icon-sized square and
-   override per-element stroke-widths with `--icon-stroke`. We restore the
-   tachometer's aspect ratio while keeping its visual height close to the
-   surrounding composer icons. */
+   `.composer-bar svg { width: var(--icon-size); ... }` rule in composer.css. */
 .composer-token-gauge .composer-token-gauge-svg {
   display: block;
   overflow: visible;
-  width: 31px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   stroke-width: initial;
 }
 
+.composer-token-gauge-track,
+.composer-token-gauge-progress,
+.composer-token-gauge-needle-shape,
+.composer-token-gauge-hub {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.composer-token-gauge-track {
+  stroke: var(--token-gauge-track);
+  stroke-width: 2;
+}
+
+.composer-token-gauge-progress,
+.composer-token-gauge-needle-shape,
+.composer-token-gauge-hub {
+  stroke: currentColor;
+}
+
 .composer-token-gauge-progress {
+  stroke-width: 2;
   transition:
-    stroke-dashoffset 220ms cubic-bezier(0.23, 1, 0.32, 1),
-    stroke 200ms ease-out;
+    stroke-dashoffset 620ms cubic-bezier(0.16, 1, 0.3, 1),
+    stroke 420ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .composer-token-gauge-progress {
@@ -50,11 +76,18 @@
 }
 
 .composer-token-gauge-needle {
-  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 
 .composer-token-gauge-needle-shape {
-  transition: fill 200ms ease-out;
+  stroke-width: 2.2;
+  transition: stroke 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.composer-token-gauge-hub {
+  fill: var(--wuu-paper);
+  stroke-width: 1.8;
 }
 
 /* Numeric readout that only appears on hover. Lives inside the gauge
@@ -66,21 +99,24 @@
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%) scale(0.9);
-  padding: 3px 9px;
+  padding: 4px 9px;
   background: var(--token-gauge-tooltip-bg);
   color: var(--token-gauge-tooltip-text);
+  border: 1px solid var(--token-gauge-tooltip-border);
   border-radius: 5px;
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
   transition:
-    opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow:
+    0 8px 22px rgba(20, 24, 28, 0.12),
+    0 1px 4px rgba(20, 24, 28, 0.08);
   z-index: 5;
 }
 
@@ -92,15 +128,15 @@
 
 .composer-token-gauge[data-state="stopping"] {
   opacity: 0.55;
-  transition: opacity 220ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .composer-token-gauge,
   .composer-token-gauge-progress,
   .composer-token-gauge-needle,
   .composer-token-gauge-needle-shape,
   .composer-token-gauge-tooltip,
   .composer-token-gauge[data-state="stopping"] {
-    transition: opacity 200ms ease, color 200ms ease;
+    transition: none;
   }
 }
