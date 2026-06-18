@@ -1484,6 +1484,231 @@ func TestResponsesChat_SerializesDeferredToolDefinition(t *testing.T) {
 	}
 }
 
+func TestResponsesChat_SerializesToolSearchAsNativeToolAndParsesCall(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		tools, ok := body["tools"].([]any)
+		if !ok || len(tools) != 1 {
+			t.Fatalf("unexpected tools payload: %#v", body["tools"])
+		}
+		tool, ok := tools[0].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected responses tool: %#v", tools[0])
+		}
+		if tool["type"] != "tool_search" || tool["execution"] != "client" {
+			t.Fatalf("tool_search should use native Responses shape: %#v", tool)
+		}
+		if _, exists := tool["name"]; exists {
+			t.Fatalf("native tool_search should not include function name: %#v", tool)
+		}
+		if _, exists := tool["strict"]; exists {
+			t.Fatalf("native tool_search should not include strict: %#v", tool)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "status": "completed",
+  "output": [
+    {
+      "type": "tool_search_call",
+      "call_id": "search_1",
+      "execution": "client",
+      "arguments": {"query":"docs search","limit":1}
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "find a tool"}},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", Description: "Search deferred tools", InputSchema: map[string]any{"type": "object"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("expected one tool call, got %+v", resp.ToolCalls)
+	}
+	call := resp.ToolCalls[0]
+	if call.ID != "search_1" || call.Name != "tool_search" || call.Kind != providers.ToolCallKindToolSearch {
+		t.Fatalf("unexpected tool_search call: %+v", call)
+	}
+	if call.Arguments != `{"query":"docs search","limit":1}` {
+		t.Fatalf("unexpected tool_search arguments: %q", call.Arguments)
+	}
+}
+
+func TestResponsesChat_RendersToolSearchHistoryAsNativeOutputAndOmitsDiscoveredTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		tools, ok := body["tools"].([]any)
+		if !ok || len(tools) != 1 {
+			t.Fatalf("expected only tool_search top-level tool, got %#v", body["tools"])
+		}
+		topLevelTool := tools[0].(map[string]any)
+		if topLevelTool["type"] != "tool_search" {
+			t.Fatalf("discovered tool should not be reinjected as top-level function: %#v", tools)
+		}
+
+		input, ok := body["input"].([]any)
+		if !ok || len(input) != 3 {
+			t.Fatalf("unexpected input payload: %#v", body["input"])
+		}
+		callItem := input[1].(map[string]any)
+		if callItem["type"] != "tool_search_call" || callItem["call_id"] != "search_1" || callItem["execution"] != "client" {
+			t.Fatalf("unexpected tool_search_call input: %#v", callItem)
+		}
+		args, ok := callItem["arguments"].(map[string]any)
+		if !ok || args["query"] != "docs search" {
+			t.Fatalf("tool_search_call arguments should be an object, got %#v", callItem["arguments"])
+		}
+		outputItem := input[2].(map[string]any)
+		if outputItem["type"] != "tool_search_output" || outputItem["call_id"] != "search_1" || outputItem["status"] != "completed" || outputItem["execution"] != "client" {
+			t.Fatalf("unexpected tool_search_output input: %#v", outputItem)
+		}
+		outputTools, ok := outputItem["tools"].([]any)
+		if !ok || len(outputTools) != 1 {
+			t.Fatalf("unexpected tool_search_output tools: %#v", outputItem["tools"])
+		}
+		discovered := outputTools[0].(map[string]any)
+		if discovered["type"] != "function" || discovered["name"] != "mcp_docs_search" || discovered["strict"] != false || discovered["defer_loading"] != true {
+			t.Fatalf("unexpected loadable tool shape: %#v", discovered)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "find a docs tool"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID:        "search_1",
+				Name:      "tool_search",
+				Kind:      providers.ToolCallKindToolSearch,
+				Arguments: `{"query":"docs search"}`,
+			}}},
+			{
+				Role:           "tool",
+				Name:           "tool_search",
+				ToolCallID:     "search_1",
+				ToolResultKind: providers.ToolCallKindToolSearch,
+				Content: `{
+  "loadable_tools": [
+    {
+      "type": "function",
+      "name": "mcp_docs_search",
+      "description": "Search docs through MCP",
+      "input_schema": {"type":"object","properties":{"query":{"type":"string"}}},
+      "defer_loading": true
+    }
+  ]
+}`,
+			},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", Description: "Search deferred tools", InputSchema: map[string]any{"type": "object"}},
+			{Name: "mcp_docs_search", Description: "Search docs through MCP", InputSchema: map[string]any{"type": "object"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+func TestResponsesChat_RendersFailedToolSearchAsEmptyNativeOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		input, ok := body["input"].([]any)
+		if !ok || len(input) != 3 {
+			t.Fatalf("unexpected input payload: %#v", body["input"])
+		}
+		outputItem := input[2].(map[string]any)
+		if outputItem["type"] != "tool_search_output" || outputItem["call_id"] != "search_1" {
+			t.Fatalf("unexpected tool_search_output input: %#v", outputItem)
+		}
+		outputTools, ok := outputItem["tools"].([]any)
+		if !ok {
+			t.Fatalf("tool_search_output must include tools array, got %#v", outputItem)
+		}
+		if len(outputTools) != 0 {
+			t.Fatalf("expected empty tools array, got %#v", outputTools)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "find a docs tool"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID:        "search_1",
+				Name:      "tool_search",
+				Kind:      providers.ToolCallKindToolSearch,
+				Arguments: `{"query":"docs search"}`,
+			}}},
+			{
+				Role:           "tool",
+				Name:           "tool_search",
+				ToolCallID:     "search_1",
+				ToolResultKind: providers.ToolCallKindToolSearch,
+				Content:        `{"error":"tool_search failed"}`,
+			},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", Description: "Search deferred tools", InputSchema: map[string]any{"type": "object"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestResponsesChat_FiltersUnsupportedProviderOptions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {
@@ -1861,6 +2086,66 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 	}
 	if done.Usage == nil || done.Usage.InputTokens != 5 || done.Usage.OutputTokens != 2 {
 		t.Fatalf("unexpected usage: %+v", done.Usage)
+	}
+}
+
+func TestResponsesStreamChat_ParsesToolSearchCall(t *testing.T) {
+	ssePayload := "event: response.output_item.done\n" +
+		"data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"tool_search_call\",\"call_id\":\"search_1\",\"execution\":\"client\",\"status\":\"completed\",\"arguments\":{\"query\":\"docs search\",\"limit\":1}},\"output_index\":0}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ssePayload))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", Description: "Search deferred tools", InputSchema: map[string]any{"type": "object"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var starts, ends int
+	var endToolCall *providers.ToolCall
+	var done *providers.StreamEvent
+	for ev := range ch {
+		switch ev.Type {
+		case providers.EventToolUseStart:
+			starts++
+			if ev.ToolCall == nil || ev.ToolCall.ID != "search_1" || ev.ToolCall.Name != "tool_search" || ev.ToolCall.Kind != providers.ToolCallKindToolSearch {
+				t.Fatalf("unexpected tool start: %+v", ev.ToolCall)
+			}
+		case providers.EventToolUseEnd:
+			ends++
+			endToolCall = ev.ToolCall
+		case providers.EventDone:
+			done = &ev
+		}
+	}
+	if starts != 1 || ends != 1 {
+		t.Fatalf("expected one tool start/end, got starts=%d ends=%d", starts, ends)
+	}
+	if endToolCall == nil || endToolCall.Kind != providers.ToolCallKindToolSearch || endToolCall.Arguments != `{"query":"docs search","limit":1}` {
+		t.Fatalf("unexpected tool end: %+v", endToolCall)
+	}
+	if done == nil || done.StopReason != "tool_calls" {
+		t.Fatalf("unexpected done event: %+v", done)
 	}
 }
 

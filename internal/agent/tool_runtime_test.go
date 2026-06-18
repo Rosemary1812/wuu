@@ -103,6 +103,31 @@ func (f *cancelAwareRuntimeTools) recordedCalls() []providers.ToolCall {
 	return out
 }
 
+func TestTurnToolRuntime_PreservesToolSearchKindOnResult(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &runtimeTestTools{
+		results: map[string]string{"search_1": `{"loadable_tools":[]}`},
+	}
+	runtime := NewTurnToolRuntime(tools)
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
+		ID:        "search_1",
+		Name:      "tool_search",
+		Kind:      providers.ToolCallKindToolSearch,
+		Arguments: `{"query":"docs"}`,
+	}}, nil)
+
+	calls := tools.recordedCalls()
+	if len(calls) != 1 || calls[0].Kind != providers.ToolCallKindToolSearch {
+		t.Fatalf("tool call kind not preserved into execution: %+v", calls)
+	}
+	if len(msgs) != 1 || msgs[0].ToolResultKind != providers.ToolCallKindToolSearch {
+		t.Fatalf("tool result kind not preserved: %+v", msgs)
+	}
+}
+
 func TestTurnToolRuntime_ReusesStreamingStartedConcurrentRuns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

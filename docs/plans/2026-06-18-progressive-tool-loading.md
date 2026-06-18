@@ -22,7 +22,7 @@ That fallback makes matched tools visible on the next turn by changing the
 ordinary `tools` array, so discovered tool state is not represented in provider
 protocol history.
 
-## First-stage boundary
+## Stage 0 / foundation boundary
 
 This stage adds provider-neutral structure without enabling provider-native
 progressive loading by default:
@@ -36,11 +36,35 @@ progressive loading by default:
 - OpenAI Responses serializes `defer_loading` only when a tool definition is
   explicitly marked. Chat Completions and Anthropic continue to ignore it.
 
-## Next stages
+## Stage 1 / OpenAI Responses native route
 
-OpenAI Responses should add a native `tool_search_call` route and convert
-`loadable_tools` into `tool_search_output.tools`, then stop injecting matched
-tools into the ordinary top-level `tools` array for that route.
+The Responses adapter now has a provider-native tool-search loop aligned with
+Codex's `tool_search_call` and `tool_search_output.tools` design:
+
+- Top-level `tool_search` is serialized as a native Responses tool:
+  `{"type":"tool_search","execution":"client",...}` rather than as an ordinary
+  function tool.
+- Non-streaming and streaming Responses output items of type
+  `tool_search_call` are parsed into a normal executable wuu tool call named
+  `tool_search`, tagged with `ToolCallKindToolSearch`.
+- Tool execution preserves that kind on the follow-up tool result message.
+- Responses history replays a `tool_search` result as
+  `tool_search_output` with `status:"completed"`, `execution:"client"`, and a
+  `tools` array converted from `loadable_tools`.
+- If a searched tool appears in `tool_search_output.tools`, the Responses
+  adapter omits that same tool from the ordinary top-level `tools` array on
+  follow-up requests. The model should rely on the provider-native history
+  item instead of a changing top-level tool list.
+- Failed or empty `tool_search` results still replay as
+  `tool_search_output.tools: []`, keeping tool-call/tool-output pairing valid.
+- The kind marker is stored in JSONL/session history so resume and fork paths
+  can reconstruct the native output shape.
+
+Chat Completions, Anthropic without native support, and the existing
+`Toolkit.activatedDeferredTools` fallback remain available. The fallback still
+matters for non-Responses providers and for later Anthropic gating.
+
+## Next stages
 
 Anthropic should add gated support for `defer_loading` plus `tool_reference`
 only when the selected provider and model support the required beta behavior.

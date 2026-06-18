@@ -104,12 +104,13 @@ func (r *TurnToolRuntime) addStreamToolStart(call *providers.ToolCall) {
 	}
 	if existing := r.byID[call.ID]; existing != nil {
 		existing.call.Name = call.Name
+		existing.call.Kind = call.Kind
 		existing.concurrencySafe = toolCanRunConcurrently(r.executor, existing.call)
 		existing.streamSafe = toolCanStartDuringStreaming(r.executor, existing.call)
 		return
 	}
 	run := &toolRun{
-		call:  providers.ToolCall{ID: call.ID, Name: call.Name},
+		call:  providers.ToolCall{ID: call.ID, Name: call.Name, Kind: call.Kind},
 		order: len(r.runs),
 		done:  make(chan struct{}),
 	}
@@ -148,6 +149,7 @@ func (r *TurnToolRuntime) finalizeStreamTool(ctx context.Context, call *provider
 		r.byID[call.ID] = run
 	}
 	run.call.Name = call.Name
+	run.call.Kind = call.Kind
 	if call.Arguments != "" {
 		run.call.Arguments = call.Arguments
 	}
@@ -326,10 +328,11 @@ func (r *TurnToolRuntime) executeBatch(
 				onResult(call, result)
 			}
 			msgs = append(msgs, providers.ChatMessage{
-				Role:       "tool",
-				Name:       call.Name,
-				ToolCallID: call.ID,
-				Content:    result,
+				Role:           "tool",
+				Name:           call.Name,
+				ToolCallID:     call.ID,
+				ToolResultKind: call.Kind,
+				Content:        result,
 			})
 			if hasCtxProvider {
 				if extra := ctxProvider.LastAdditionalContext(); extra != "" {
@@ -359,10 +362,11 @@ func (r *TurnToolRuntime) executeBatch(
 			onResult(call, result)
 		}
 		msgs[i] = providers.ChatMessage{
-			Role:       "tool",
-			Name:       call.Name,
-			ToolCallID: call.ID,
-			Content:    result,
+			Role:           "tool",
+			Name:           call.Name,
+			ToolCallID:     call.ID,
+			ToolResultKind: call.Kind,
+			Content:        result,
 		}
 	}
 	return msgs

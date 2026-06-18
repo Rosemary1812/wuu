@@ -49,11 +49,32 @@ type ToolCallDisplay struct {
 	Text string `json:"text,omitempty"`
 }
 
+// ToolCallKind distinguishes ordinary function calls from provider-native
+// tool discovery calls that use different wire-format input/output items.
+type ToolCallKind string
+
+const (
+	ToolCallKindFunction   ToolCallKind = "function"
+	ToolCallKindToolSearch ToolCallKind = "tool_search"
+)
+
+func NormalizeToolCallKind(kind string) ToolCallKind {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case string(ToolCallKindToolSearch):
+		return ToolCallKindToolSearch
+	case string(ToolCallKindFunction):
+		return ToolCallKindFunction
+	default:
+		return ""
+	}
+}
+
 // ToolCall is a model requested tool execution.
 type ToolCall struct {
 	ID        string           `json:"id,omitempty"`
 	Name      string           `json:"name,omitempty"`
 	Arguments string           `json:"arguments,omitempty"`
+	Kind      ToolCallKind     `json:"kind,omitempty"`
 	Display   *ToolCallDisplay `json:"display,omitempty"`
 }
 
@@ -121,6 +142,7 @@ type ChatMessage struct {
 	Images           []InputImage
 	Files            []InputFile
 	ToolCallID       string
+	ToolResultKind   ToolCallKind
 	ToolCalls        []ToolCall
 }
 

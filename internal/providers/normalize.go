@@ -82,14 +82,18 @@ func NormalizeMessages(msgs []ChatMessage) []ChatMessage {
 				continue
 			}
 			if tm, ok := toolResults[tc.ID]; ok {
+				if tm.ToolResultKind == "" {
+					tm.ToolResultKind = tc.Kind
+				}
 				ordered = append(ordered, tm)
 				delete(toolResults, tc.ID)
 			} else {
 				ordered = append(ordered, ChatMessage{
-					Role:       "tool",
-					Name:       tc.Name,
-					ToolCallID: tc.ID,
-					Content:    `{"error":"aborted"}`,
+					Role:           "tool",
+					Name:           tc.Name,
+					ToolCallID:     tc.ID,
+					ToolResultKind: tc.Kind,
+					Content:        `{"error":"aborted"}`,
 				})
 			}
 		}

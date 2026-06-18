@@ -20,6 +20,7 @@ type persistedToolCall struct {
 	ID        string                     `json:"id"`
 	Name      string                     `json:"name"`
 	Arguments string                     `json:"arguments"`
+	Kind      string                     `json:"kind,omitempty"`
 	Display   *providers.ToolCallDisplay `json:"display,omitempty"`
 }
 
@@ -46,6 +47,7 @@ type persistedMessage struct {
 	Files               []persistedFile            `json:"files,omitempty"`
 	ToolCalls           []persistedToolCall        `json:"tool_calls,omitempty"`
 	ToolCallID          string                     `json:"tool_call_id,omitempty"`
+	ToolResultKind      string                     `json:"tool_result_kind,omitempty"`
 	Name                string                     `json:"name,omitempty"`
 	At                  time.Time                  `json:"at,omitempty"`
 	InputTokens         int                        `json:"input_tokens,omitempty"`
@@ -97,6 +99,7 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 			ReasoningContent: rec.ReasoningContent,
 			ReasoningBlocks:  append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
 			ToolCallID:       rec.ToolCallID,
+			ToolResultKind:   providers.NormalizeToolCallKind(rec.ToolResultKind),
 		}
 		for _, image := range rec.Images {
 			if strings.TrimSpace(image.Data) == "" {
@@ -122,6 +125,7 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 				ID:        tc.ID,
 				Name:      tc.Name,
 				Arguments: tc.Arguments,
+				Kind:      providers.NormalizeToolCallKind(tc.Kind),
 				Display:   cloneToolCallDisplay(tc.Display),
 			})
 		}
@@ -259,6 +263,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		ReasoningContent: msg.ReasoningContent,
 		ReasoningBlocks:  append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...),
 		ToolCallID:       msg.ToolCallID,
+		ToolResultKind:   string(msg.ToolResultKind),
 		Name:             msg.Name,
 		At:               time.Now().UTC(),
 	}
@@ -288,6 +293,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 			ID:        tc.ID,
 			Name:      tc.Name,
 			Arguments: tc.Arguments,
+			Kind:      string(tc.Kind),
 			Display:   cloneToolCallDisplay(tc.Display),
 		})
 	}
@@ -416,6 +422,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		Files:               mustJSON(rec.Files),
 		ToolCalls:           mustJSON(rec.ToolCalls),
 		ToolCallID:          rec.ToolCallID,
+		ToolResultKind:      rec.ToolResultKind,
 		Name:                rec.Name,
 		At:                  rec.At,
 		InputTokens:         rec.InputTokens,
@@ -434,6 +441,7 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		Steered:             rec.Steered,
 		ReasoningContent:    rec.ReasoningContent,
 		ToolCallID:          rec.ToolCallID,
+		ToolResultKind:      rec.ToolResultKind,
 		Name:                rec.Name,
 		At:                  rec.At,
 		InputTokens:         rec.InputTokens,

@@ -73,7 +73,7 @@ func TestNormalizeMessages_missingOutputInserted(t *testing.T) {
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "", ToolCalls: []ToolCall{
 			{ID: "call_1", Name: "read_file"},
-			{ID: "call_2", Name: "grep"},
+			{ID: "call_2", Name: "tool_search", Kind: ToolCallKindToolSearch},
 		}},
 		{Role: "tool", ToolCallID: "call_1", Content: "ok"},
 	}
@@ -89,6 +89,9 @@ func TestNormalizeMessages_missingOutputInserted(t *testing.T) {
 	}
 	if got[3].Content != `{"error":"aborted"}` {
 		t.Fatalf("expected aborted content, got %q", got[3].Content)
+	}
+	if got[3].ToolResultKind != ToolCallKindToolSearch {
+		t.Fatalf("expected synthetic output to keep tool_search kind, got %+v", got[3])
 	}
 }
 

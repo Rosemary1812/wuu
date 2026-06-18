@@ -256,6 +256,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				ID:        call.ID,
 				Name:      call.Name,
 				Arguments: call.Arguments,
+				Kind:      call.Kind,
 				Display:   call.Display,
 			})
 			effectiveOnEvent(providers.StreamEvent{
@@ -766,6 +767,7 @@ func (s *streamStep) runStreamWithReconnect(
 					toolCall := enrichToolCallDisplay(s.tools, providers.ToolCall{
 						ID:   event.ToolCall.ID,
 						Name: event.ToolCall.Name,
+						Kind: event.ToolCall.Kind,
 					})
 					pendingTools[idx] = &toolCall
 					event.ToolCall = &toolCall
@@ -787,6 +789,9 @@ func (s *streamStep) runStreamWithReconnect(
 							}
 							if toolCall.Arguments != "" {
 								tc.Arguments = toolCall.Arguments
+							}
+							if toolCall.Kind != "" {
+								tc.Kind = toolCall.Kind
 							}
 							if toolCall.Display != nil {
 								tc.Display = toolCall.Display

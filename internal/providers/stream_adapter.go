@@ -51,7 +51,7 @@ func (a adaptedStreamClient) StreamChat(ctx context.Context, req ChatRequest) (<
 		toolCall := call
 		events = append(events, StreamEvent{
 			Type:     EventToolUseStart,
-			ToolCall: &ToolCall{ID: toolCall.ID, Name: toolCall.Name},
+			ToolCall: &ToolCall{ID: toolCall.ID, Name: toolCall.Name, Kind: toolCall.Kind},
 		})
 		events = append(events, StreamEvent{
 			Type:     EventToolUseEnd,

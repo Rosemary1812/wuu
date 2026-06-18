@@ -87,7 +87,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 	instructions, messages := splitResponsesInstructions(normalized)
 	input := make([]responsesInputItem, 0, len(messages))
 	for _, msg := range messages {
-		input = appendResponsesInputItem(input, msg)
+		input = appendResponsesInputItem(input, msg, req.Model)
 	}
 
 	payload := responsesRequest{
@@ -109,17 +109,17 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		payload.Reasoning = &responsesReasoning{Effort: req.Effort}
 	}
 	if len(req.Tools) > 0 {
-		payload.ToolChoice = "auto"
-		payload.Tools = make([]responsesToolDefinition, 0, len(req.Tools))
+		discoveredToolNames := responsesDiscoveredToolNames(normalized)
+		tools := make([]responsesToolDefinition, 0, len(req.Tools))
 		for _, tool := range req.Tools {
-			payload.Tools = append(payload.Tools, responsesToolDefinition{
-				Type:         "function",
-				Name:         tool.Name,
-				Description:  tool.Description,
-				Strict:       false,
-				DeferLoading: tool.DeferLoading,
-				Parameters:   responsesToolParameters(providers.ToolInputSchemaForModel(req.Model, tool.InputSchema)),
-			})
+			if shouldOmitResponsesTopLevelTool(tool, discoveredToolNames) {
+				continue
+			}
+			tools = append(tools, responsesToolDefinitionFromProvider(req.Model, tool))
+		}
+		if len(tools) > 0 {
+			payload.ToolChoice = "auto"
+			payload.Tools = tools
 		}
 	}
 
@@ -217,8 +217,17 @@ func splitResponsesInstructions(messages []providers.ChatMessage) (string, []pro
 	return strings.Join(instructions, "\n\n"), input
 }
 
-func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMessage) []responsesInputItem {
+func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMessage, model string) []responsesInputItem {
 	if msg.Role == "tool" {
+		if isResponsesToolSearchResult(msg) {
+			return append(input, responsesInputItem{
+				Type:      "tool_search_output",
+				CallID:    msg.ToolCallID,
+				Status:    "completed",
+				Execution: "client",
+				Tools:     responsesToolSearchOutputTools(model, msg.Content),
+			})
+		}
 		return append(input, responsesInputItem{
 			Type:   "function_call_output",
 			CallID: msg.ToolCallID,
@@ -234,6 +243,16 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 			})
 		}
 		for _, call := range msg.ToolCalls {
+			if isResponsesToolSearchCall(call) {
+				input = append(input, responsesInputItem{
+					Type:      "tool_search_call",
+					CallID:    call.ID,
+					Status:    "completed",
+					Execution: "client",
+					Arguments: responsesToolSearchArguments(call.Arguments),
+				})
+				continue
+			}
 			input = append(input, responsesInputItem{
 				Type:      "function_call",
 				CallID:    call.ID,
@@ -322,6 +341,111 @@ func responsesToolParameters(schema map[string]any) map[string]any {
 		}
 	}
 	return out
+}
+
+func responsesToolDefinitionFromProvider(model string, tool providers.ToolDefinition) responsesToolDefinition {
+	if strings.EqualFold(tool.Name, "tool_search") {
+		return responsesToolDefinition{
+			Type:        "tool_search",
+			Description: tool.Description,
+			Execution:   "client",
+			Parameters:  responsesToolParameters(providers.ToolInputSchemaForModel(model, tool.InputSchema)),
+		}
+	}
+	strict := false
+	return responsesToolDefinition{
+		Type:         "function",
+		Name:         tool.Name,
+		Description:  tool.Description,
+		Strict:       &strict,
+		DeferLoading: tool.DeferLoading,
+		Parameters:   responsesToolParameters(providers.ToolInputSchemaForModel(model, tool.InputSchema)),
+	}
+}
+
+func responsesToolDefinitionFromLoadable(model string, tool providers.LoadableToolDefinition) responsesToolDefinition {
+	strict := false
+	typ := strings.TrimSpace(tool.Type)
+	if typ == "" {
+		typ = "function"
+	}
+	return responsesToolDefinition{
+		Type:         typ,
+		Name:         tool.Name,
+		Description:  tool.Description,
+		Strict:       &strict,
+		DeferLoading: true,
+		Parameters:   responsesToolParameters(providers.ToolInputSchemaForModel(model, tool.InputSchema)),
+	}
+}
+
+func responsesToolSearchOutputTools(model string, content string) []responsesToolDefinition {
+	var parsed struct {
+		LoadableTools []providers.LoadableToolDefinition `json:"loadable_tools"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &parsed); err != nil {
+		return []responsesToolDefinition{}
+	}
+	tools := make([]responsesToolDefinition, 0, len(parsed.LoadableTools))
+	for _, tool := range parsed.LoadableTools {
+		if strings.TrimSpace(tool.Name) == "" {
+			continue
+		}
+		tools = append(tools, responsesToolDefinitionFromLoadable(model, tool))
+	}
+	return tools
+}
+
+func responsesDiscoveredToolNames(messages []providers.ChatMessage) map[string]struct{} {
+	names := map[string]struct{}{}
+	for _, msg := range messages {
+		if !isResponsesToolSearchResult(msg) {
+			continue
+		}
+		var parsed struct {
+			LoadableTools []providers.LoadableToolDefinition `json:"loadable_tools"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(msg.Content)), &parsed); err != nil {
+			continue
+		}
+		for _, tool := range parsed.LoadableTools {
+			if name := strings.TrimSpace(tool.Name); name != "" {
+				names[name] = struct{}{}
+			}
+		}
+	}
+	return names
+}
+
+func shouldOmitResponsesTopLevelTool(tool providers.ToolDefinition, discovered map[string]struct{}) bool {
+	if len(discovered) == 0 {
+		return false
+	}
+	if strings.EqualFold(tool.Name, "tool_search") {
+		return false
+	}
+	_, ok := discovered[tool.Name]
+	return ok
+}
+
+func isResponsesToolSearchCall(call providers.ToolCall) bool {
+	return call.Kind == providers.ToolCallKindToolSearch || strings.EqualFold(call.Name, "tool_search")
+}
+
+func isResponsesToolSearchResult(msg providers.ChatMessage) bool {
+	return msg.ToolResultKind == providers.ToolCallKindToolSearch || strings.EqualFold(msg.Name, "tool_search")
+}
+
+func responsesToolSearchArguments(arguments string) any {
+	trimmed := strings.TrimSpace(arguments)
+	if trimmed == "" {
+		return map[string]any{}
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return trimmed
+	}
+	return decoded
 }
 
 func (c *Client) doSingleResponsesRequest(
@@ -438,17 +562,17 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 					currentTextPhase = phase
 					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase}
 				}
-			case "function_call":
+			case "function_call", "tool_search_call":
 				sawToolCall = true
 				pending.start(event.Item, event.outputIndex(), ch)
 			}
 
-		case "response.function_call_arguments.delta":
+		case "response.function_call_arguments.delta", "response.tool_search_call.arguments.delta":
 			if event.Delta != "" {
 				pending.appendDelta(event, ch)
 			}
 
-		case "response.function_call_arguments.done":
+		case "response.function_call_arguments.done", "response.tool_search_call.arguments.done":
 			pending.setArguments(event)
 
 		case "response.output_item.done":
@@ -458,10 +582,10 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 					currentTextPhase = phase
 					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase}
 				}
-			case "function_call":
+			case "function_call", "tool_search_call":
 				sawToolCall = true
 				pt := pending.start(event.Item, event.outputIndex(), ch)
-				pending.emitEnd(pt, event.Item.Arguments, ch)
+				pending.emitEnd(pt, event.Item.argumentsString(), ch)
 			}
 
 		case "response.completed":
@@ -543,6 +667,7 @@ type responsesPendingTool struct {
 	outputIndex int
 	id          string
 	name        string
+	kind        providers.ToolCallKind
 	args        strings.Builder
 	ended       bool
 }
@@ -578,10 +703,11 @@ func (p *responsesPendingTools) start(item responsesOutputItem, outputIndex int,
 		itemID:      item.ID,
 		outputIndex: outputIndex,
 		id:          item.CallID,
-		name:        item.Name,
+		name:        item.toolCallName(),
+		kind:        item.toolCallKind(),
 	}
-	if item.Arguments != "" {
-		pt.args.WriteString(item.Arguments)
+	if args := item.argumentsString(); args != "" {
+		pt.args.WriteString(args)
 	}
 	p.items = append(p.items, pt)
 	if item.ID != "" {
@@ -595,6 +721,7 @@ func (p *responsesPendingTools) start(item responsesOutputItem, outputIndex int,
 		ToolCall: &providers.ToolCall{
 			ID:   pt.id,
 			Name: pt.name,
+			Kind: pt.kind,
 		},
 	}
 	return pt
@@ -610,11 +737,12 @@ func (p *responsesPendingTools) appendDelta(event responsesStreamEvent, ch chan<
 
 func (p *responsesPendingTools) setArguments(event responsesStreamEvent) {
 	pt := p.find(event)
-	if pt == nil || event.Arguments == "" {
+	args := event.argumentsString()
+	if pt == nil || args == "" {
 		return
 	}
 	pt.args.Reset()
-	pt.args.WriteString(event.Arguments)
+	pt.args.WriteString(args)
 }
 
 func (p *responsesPendingTools) emitEnd(pt *responsesPendingTool, arguments string, ch chan<- providers.StreamEvent) {
@@ -631,6 +759,7 @@ func (p *responsesPendingTools) emitEnd(pt *responsesPendingTool, arguments stri
 		ToolCall: &providers.ToolCall{
 			ID:        pt.id,
 			Name:      pt.name,
+			Kind:      pt.kind,
 			Arguments: pt.args.String(),
 		},
 	}
@@ -670,7 +799,10 @@ func (p *responsesPendingTool) update(item responsesOutputItem, outputIndex int)
 		p.id = item.CallID
 	}
 	if p.name == "" {
-		p.name = item.Name
+		p.name = item.toolCallName()
+	}
+	if p.kind == "" {
+		p.kind = item.toolCallKind()
 	}
 }
 
@@ -699,8 +831,11 @@ type responsesInputItem struct {
 	Content   any    `json:"content,omitempty"`
 	CallID    string `json:"call_id,omitempty"`
 	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Execution string `json:"execution,omitempty"`
+	Arguments any    `json:"arguments,omitempty"`
 	Output    string `json:"output,omitempty"`
+	Tools     any    `json:"tools,omitempty"`
 }
 
 type responsesInputContentPart struct {
@@ -713,9 +848,10 @@ type responsesInputContentPart struct {
 
 type responsesToolDefinition struct {
 	Type         string         `json:"type"`
-	Name         string         `json:"name"`
+	Name         string         `json:"name,omitempty"`
 	Description  string         `json:"description,omitempty"`
-	Strict       bool           `json:"strict"`
+	Strict       *bool          `json:"strict,omitempty"`
+	Execution    string         `json:"execution,omitempty"`
 	DeferLoading bool           `json:"defer_loading,omitempty"`
 	Parameters   map[string]any `json:"parameters"`
 }
@@ -753,7 +889,14 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 			calls = append(calls, providers.ToolCall{
 				ID:        item.CallID,
 				Name:      item.Name,
-				Arguments: item.Arguments,
+				Arguments: item.argumentsString(),
+			})
+		case "tool_search_call":
+			calls = append(calls, providers.ToolCall{
+				ID:        item.CallID,
+				Name:      "tool_search",
+				Kind:      providers.ToolCallKindToolSearch,
+				Arguments: item.argumentsString(),
 			})
 		}
 	}
@@ -787,7 +930,45 @@ type responsesOutputItem struct {
 	Content   json.RawMessage `json:"content,omitempty"`
 	CallID    string          `json:"call_id,omitempty"`
 	Name      string          `json:"name,omitempty"`
-	Arguments string          `json:"arguments,omitempty"`
+	Execution string          `json:"execution,omitempty"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+}
+
+func (i responsesOutputItem) toolCallName() string {
+	if i.Type == "tool_search_call" {
+		return "tool_search"
+	}
+	return i.Name
+}
+
+func (i responsesOutputItem) toolCallKind() providers.ToolCallKind {
+	if i.Type == "tool_search_call" {
+		return providers.ToolCallKindToolSearch
+	}
+	return ""
+}
+
+func (i responsesOutputItem) argumentsString() string {
+	return rawResponseArgumentsString(i.Arguments)
+}
+
+func (e responsesStreamEvent) argumentsString() string {
+	return rawResponseArgumentsString(e.Arguments)
+}
+
+func rawResponseArgumentsString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return asString
+	}
+	var compacted bytes.Buffer
+	if err := json.Compact(&compacted, raw); err == nil {
+		return compacted.String()
+	}
+	return string(raw)
 }
 
 type responsesContentPart struct {
@@ -875,7 +1056,7 @@ func (e *responsesError) asError() error {
 type responsesStreamEvent struct {
 	Type        string              `json:"type"`
 	Delta       string              `json:"delta,omitempty"`
-	Arguments   string              `json:"arguments,omitempty"`
+	Arguments   json.RawMessage     `json:"arguments,omitempty"`
 	ItemID      string              `json:"item_id,omitempty"`
 	OutputIndex *int                `json:"output_index,omitempty"`
 	Item        responsesOutputItem `json:"item,omitempty"`
