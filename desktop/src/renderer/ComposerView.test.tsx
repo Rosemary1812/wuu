@@ -612,13 +612,14 @@ describe("ComposerTokenGauge", () => {
     const gauge = container.querySelector(".composer-token-gauge");
     expect(gauge).not.toBeNull();
     expect(gauge?.getAttribute("data-state")).toBe("idle");
+    expect(gauge?.getAttribute("aria-label")).toContain("0.0");
 
-    const tooltip = container.querySelector(".composer-token-gauge-tooltip");
-    expect(tooltip).not.toBeNull();
-    expect(tooltip?.textContent).toContain("0.0 tok/s");
+    // Tooltip is portaled out of the cell and only mounted on hover, so it
+    // must not be in the DOM until the user hovers the gauge.
+    expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
   });
 
-  it("renders a live gauge with a hover-only tooltip carrying the tok/s value", () => {
+  it("renders a live gauge and ports the hover tooltip out of the 32px cell", () => {
     renderComposer({ running: true, tokensPerSecond: 18.4 });
 
     const gauge = container.querySelector(".composer-token-gauge");
@@ -626,10 +627,20 @@ describe("ComposerTokenGauge", () => {
     expect(gauge?.getAttribute("data-state")).toBe("running");
     expect(gauge?.getAttribute("title")).toBeNull();
 
-    const tooltip = container.querySelector(".composer-token-gauge-tooltip");
-    expect(tooltip).not.toBeNull();
-    expect(tooltip?.textContent).toContain("18.4");
-    expect(tooltip?.textContent).toContain("tok/s");
+    // No tooltip in the DOM before hover.
+    expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
+
+    act(() => {
+      gauge?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+
+    // After hover the tooltip is portaled to document.body (escapes the
+    // 32px cell) and is not a child of the gauge container.
+    const portaled = document.body.querySelector(".composer-token-gauge-tooltip");
+    expect(portaled).not.toBeNull();
+    expect(container.querySelector(".composer-token-gauge-tooltip")).toBeNull();
+    expect(portaled?.textContent).toContain("18.4");
+    expect(portaled?.textContent).toContain("tok/s");
 
     const svg = container.querySelector(".composer-token-gauge-svg");
     expect(svg?.getAttribute("width")).toBe("20");
@@ -648,7 +659,12 @@ describe("ComposerTokenGauge", () => {
       tokenSpeedSource: "estimated",
     });
 
-    const tooltip = container.querySelector(".composer-token-gauge-tooltip");
+    const gauge = container.querySelector(".composer-token-gauge");
+    act(() => {
+      gauge?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+
+    const tooltip = document.body.querySelector(".composer-token-gauge-tooltip");
     expect(tooltip?.textContent).toContain("约 18.4 tok/s");
   });
 });

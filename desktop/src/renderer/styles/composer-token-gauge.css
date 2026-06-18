@@ -1,10 +1,10 @@
 /* Live token-speed gauge shown next to the model picker in the composer.
    It stays in the same 32px line-icon cell as the composer tools.
-   The exact tok/s number only appears on hover. */
+   The exact tok/s number is portaled above the gauge on hover so the
+   readout never overlaps the 32px cell. */
 
 :root {
   --token-gauge-idle: #8a8e91;
-  --token-gauge-low: #7d8488;
   --token-gauge-mid: #d48345;
   --token-gauge-high: #ef5b18;
   --token-gauge-track: rgba(138, 142, 145, 0.24);
@@ -90,15 +90,11 @@
   stroke-width: 1.8;
 }
 
-/* Numeric readout that only appears on hover. Lives inside the gauge
-   container (absolutely positioned over the hub area) so it can never
-   overflow the .composer-bar / .composer-shell bounds and get clipped.
-   On hover, the badge scales up to its final size with a small lift. */
+/* Numeric readout portaled to document.body. Position/transform is set
+   inline in the React component so the badge can escape the 32x32 cell and
+   the composer bar's overflow boundary. Visibility is controlled by the
+   component's hover state; CSS just gives the entry fade-in. */
 .composer-token-gauge-tooltip {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) scale(0.9);
   padding: 4px 9px;
   background: var(--token-gauge-tooltip-bg);
   color: var(--token-gauge-tooltip-text);
@@ -109,21 +105,17 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   white-space: nowrap;
-  opacity: 0;
   pointer-events: none;
-  transition:
-    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1000;
   box-shadow:
     0 8px 22px rgba(20, 24, 28, 0.12),
     0 1px 4px rgba(20, 24, 28, 0.08);
-  z-index: 5;
+  animation: composer-token-gauge-tooltip-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.composer-token-gauge:hover .composer-token-gauge-tooltip,
-.composer-token-gauge:focus-within .composer-token-gauge-tooltip {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
+@keyframes composer-token-gauge-tooltip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -132,6 +124,7 @@
   .composer-token-gauge-needle,
   .composer-token-gauge-needle-shape,
   .composer-token-gauge-tooltip {
+    animation: none;
     transition: none;
   }
 }
