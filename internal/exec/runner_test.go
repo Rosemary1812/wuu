@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
 )
@@ -322,6 +323,39 @@ func TestRunTurnErrorClassifiesToolFailure(t *testing.T) {
 	})
 	if ExitCode(err) != ExitToolFailed {
 		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
+	}
+}
+
+func TestRunTimeoutInterruptsAndReturnsExitCodeFour(t *testing.T) {
+	controller := newFakeController()
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Prompt:     "do work",
+		JSON:       true,
+		Timeout:    20 * time.Millisecond,
+		Stdout:     &stdout,
+		Controller: controller,
+	})
+	if ExitCode(err) != ExitTimeout {
+		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
+	}
+	if controller.interrupted != "thread-1" {
+		t.Fatalf("interrupted thread = %q", controller.interrupted)
+	}
+	if !controller.shutdown {
+		t.Fatal("controller was not shutdown")
+	}
+	events := parseJSONLines(t, stdout.String())
+	types := eventTypes(events)
+	for _, want := range []string{"turn_interrupted", "result"} {
+		if !containsString(types, want) {
+			t.Fatalf("missing %s in events %#v\n%s", want, types, stdout.String())
+		}
+	}
+	result := events[len(events)-1]
+	if result["status"] != "timeout" || result["error"] != "timeout" {
+		t.Fatalf("unexpected timeout result: %+v", result)
 	}
 }
 
