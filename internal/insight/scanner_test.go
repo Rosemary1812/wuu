@@ -157,6 +157,126 @@ func TestBuildUsageReportAggregatesLocalSessions(t *testing.T) {
 	}
 }
 
+func TestScanSessionsAggregatesModelBreakdowns(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, time.April, 17, 9, 0, 0, 0, time.UTC)
+
+	if _, err := sessionstore.CreateWithMetadata(dir, "sess-anthropic", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessionstore.CreateWithMetadata(dir, "sess-openai", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessionstore.CreateWithMetadata(dir, "sess-mixed", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Session 1: two token_usage rows on the same provider/model — should
+	// collapse into a single bucket with summed tokens.
+	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-anthropic"), []memoryRecord{
+		{Role: "user", Content: "implement feature a", At: start},
+		{Role: "assistant", Content: "ok", At: start.Add(time.Minute)},
+		{Role: "user", Content: "continue feature a", At: start.Add(2 * time.Minute)},
+		{Role: "meta", Content: "token_usage", Provider: "anthropic", Model: "claude-sonnet-4-6", InputTokens: 100, OutputTokens: 50, CacheCreationTokens: 80, CacheReadTokens: 20, At: start.Add(2 * time.Minute)},
+		{Role: "meta", Content: "token_usage", Provider: "anthropic", Model: "claude-sonnet-4-6", InputTokens: 200, OutputTokens: 80, CacheCreationTokens: 100, CacheReadTokens: 50, At: start.Add(3 * time.Minute)},
+	})
+
+	// Session 2: a different provider/model entirely.
+	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-openai"), []memoryRecord{
+		{Role: "user", Content: "implement feature b", At: start},
+		{Role: "assistant", Content: "ok", At: start.Add(time.Minute)},
+		{Role: "user", Content: "continue feature b", At: start.Add(2 * time.Minute)},
+		{Role: "meta", Content: "token_usage", Provider: "openai", Model: "gpt-4o", InputTokens: 500, OutputTokens: 200, CacheCreationTokens: 0, CacheReadTokens: 100, At: start.Add(2 * time.Minute)},
+	})
+
+	// Session 3: legacy row with no provider/model — should bucket as
+	// "(unknown)".
+	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-mixed"), []memoryRecord{
+		{Role: "user", Content: "legacy session", At: start},
+		{Role: "assistant", Content: "ok", At: start.Add(time.Minute)},
+		{Role: "user", Content: "more", At: start.Add(2 * time.Minute)},
+		{Role: "meta", Content: "token_usage", InputTokens: 50, OutputTokens: 10, CacheCreationTokens: 0, CacheReadTokens: 0, At: start.Add(2 * time.Minute)},
+	})
+
+	metas, err := ScanSessions(dir, 0)
+	if err != nil {
+		t.Fatalf("ScanSessions: %v", err)
+	}
+	if len(metas) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(metas))
+	}
+
+	byID := make(map[string]SessionMeta, len(metas))
+	for _, m := range metas {
+		byID[m.ID] = m
+	}
+
+	aMeta := byID["sess-anthropic"]
+	if got := len(aMeta.ModelBreakdowns); got != 1 {
+		t.Fatalf("anthropic session: expected 1 bucket, got %d (%+v)", got, aMeta.ModelBreakdowns)
+	}
+	for _, b := range aMeta.ModelBreakdowns {
+		if b.Provider != "anthropic" || b.Model != "claude-sonnet-4-6" {
+			t.Fatalf("anthropic session: unexpected bucket %+v", b)
+		}
+		if b.InputTokens != 300 || b.OutputTokens != 130 || b.CacheCreationTokens != 180 || b.CacheReadTokens != 70 {
+			t.Fatalf("anthropic session: unexpected bucket totals %+v", b)
+		}
+	}
+
+	oMeta := byID["sess-openai"]
+	if got := len(oMeta.ModelBreakdowns); got != 1 {
+		t.Fatalf("openai session: expected 1 bucket, got %d", got)
+	}
+	for _, b := range oMeta.ModelBreakdowns {
+		if b.Provider != "openai" || b.Model != "gpt-4o" {
+			t.Fatalf("openai session: unexpected bucket %+v", b)
+		}
+	}
+
+	mMeta := byID["sess-mixed"]
+	if got := len(mMeta.ModelBreakdowns); got != 1 {
+		t.Fatalf("mixed session: expected 1 bucket, got %d", got)
+	}
+	for _, b := range mMeta.ModelBreakdowns {
+		if b.Provider != "" || b.Model != "" {
+			t.Fatalf("legacy session: bucket should have empty provider/model, got %+v", b)
+		}
+	}
+
+	// Aggregate: 3 distinct provider/model buckets, sorted by total context
+	// tokens desc.
+	agg := Aggregate(metas, nil)
+	if got := len(agg.ModelBreakdowns); got != 3 {
+		t.Fatalf("aggregate: expected 3 buckets, got %d (%+v)", got, agg.ModelBreakdowns)
+	}
+	// Anthropic total = 300 + 70 + 130 = 500
+	// OpenAI total    = 500 + 100 + 200 = 800
+	// (unknown) total = 50 + 0 + 10 = 60
+	if agg.ModelBreakdowns[0].Provider != "openai" {
+		t.Fatalf("aggregate: expected openai first, got %q", agg.ModelBreakdowns[0].Provider)
+	}
+	if agg.ModelBreakdowns[1].Provider != "anthropic" {
+		t.Fatalf("aggregate: expected anthropic second, got %q", agg.ModelBreakdowns[1].Provider)
+	}
+	if agg.ModelBreakdowns[2].Provider != "" {
+		t.Fatalf("aggregate: expected (unknown) last, got %q", agg.ModelBreakdowns[2].Provider)
+	}
+
+	for _, b := range agg.ModelBreakdowns {
+		if b.Sessions != 1 {
+			t.Fatalf("bucket %+v: expected Sessions=1, got %d", b, b.Sessions)
+		}
+	}
+
+	// Cache hit rate: cacheRead / (input + cacheRead) across all buckets.
+	// = (70 + 100 + 0) / ((300 + 500 + 50) + (70 + 100 + 0)) = 170 / 1020.
+	expectedRate := float64(170) / float64(1020)
+	if diff := agg.OverallCacheHitRate - expectedRate; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("aggregate: OverallCacheHitRate=%f, want %f", agg.OverallCacheHitRate, expectedRate)
+	}
+}
+
 func TestUsageDataPathsStayUnderUserState(t *testing.T) {
 	home := t.TempDir()
 	usageDir := UsageDataDir(home)
@@ -235,5 +355,7 @@ func historyRecordFromMemoryRecord(t *testing.T, rec memoryRecord) sessionstore.
 		OutputTokens:        rec.OutputTokens,
 		CacheCreationTokens: rec.CacheCreationTokens,
 		CacheReadTokens:     rec.CacheReadTokens,
+		Provider:            rec.Provider,
+		Model:               rec.Model,
 	}
 }

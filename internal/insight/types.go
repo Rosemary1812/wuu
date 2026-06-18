@@ -26,6 +26,41 @@ type SessionMeta struct {
 	LinesRemoved        int            `json:"lines_removed"`
 	FilesModified       int            `json:"files_modified"`
 	UserTimestamps      []time.Time    `json:"user_timestamps"`
+	// ModelBreakdowns maps "provider|model" keys to per-bucket usage within
+	// this session. The key is an internal identifier; UI code renders
+	// empty provider+model as "(unknown)". Populated only when the session
+	// has at least one token_usage meta row with usable data.
+	ModelBreakdowns map[string]*ModelUsage `json:"model_breakdowns"`
+}
+
+// ModelUsage aggregates token consumption and session count for one
+// provider/model pair. Empty Provider+Model represents legacy token_usage
+// rows persisted before provider/model were tracked; UI code renders
+// these as "(unknown)".
+type ModelUsage struct {
+	Provider            string `json:"provider"`
+	Model               string `json:"model"`
+	InputTokens         int    `json:"input_tokens"`
+	OutputTokens        int    `json:"output_tokens"`
+	CacheCreationTokens int    `json:"cache_creation_tokens"`
+	CacheReadTokens     int    `json:"cache_read_tokens"`
+	Sessions            int    `json:"sessions"`
+}
+
+// TotalContextTokens mirrors providers.TokenUsage.TotalContextTokens.
+func (m ModelUsage) TotalContextTokens() int {
+	return m.InputTokens + m.CacheReadTokens + m.OutputTokens
+}
+
+// CacheHitRate returns the prompt-cache hit rate across this bucket.
+// Returns nil when there is no input to cache.
+func (m ModelUsage) CacheHitRate() *float64 {
+	promptTokens := m.InputTokens + m.CacheReadTokens
+	if promptTokens <= 0 {
+		return nil
+	}
+	rate := float64(m.CacheReadTokens) / float64(promptTokens)
+	return &rate
 }
 
 // Facet is the LLM-extracted structured analysis of a single session.
@@ -71,6 +106,13 @@ type AggregatedData struct {
 	DaysActive               int              `json:"days_active"`
 	MessagesPerDay           float64          `json:"messages_per_day"`
 	MessageHours             []int            `json:"message_hours"`
+	// ModelBreakdowns aggregates per provider/model across all sessions,
+	// sorted by total context tokens descending. Empty provider+model
+	// buckets (legacy rows) appear last with display label "(unknown)".
+	ModelBreakdowns []ModelUsage `json:"model_breakdowns"`
+	// OverallCacheHitRate is the prompt-cache hit rate across all usage
+	// (weighted by token count). Zero when no usage data exists.
+	OverallCacheHitRate float64 `json:"overall_cache_hit_rate"`
 }
 
 // SessionSummary is a short summary entry used in aggregated data.

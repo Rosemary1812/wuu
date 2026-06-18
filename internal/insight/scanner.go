@@ -24,6 +24,11 @@ type memoryRecord struct {
 	OutputTokens        int           `json:"output_tokens,omitempty"`
 	CacheCreationTokens int           `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int           `json:"cache_read_tokens,omitempty"`
+	// Provider and Model carry which provider/model produced this token_usage
+	// meta row. Empty for non-meta records and for legacy rows written before
+	// these fields were added.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 type toolCallRec struct {
@@ -192,11 +197,26 @@ func scanSessionRecords(records []sessionstore.HistoryRecord, id string) Session
 			meta.LinesAdded += added
 			meta.LinesRemoved += removed
 		case "meta":
-			// Token usage records.
+			// Token usage records. Accumulate into per-session totals and
+			// the per-provider/model breakdown so Aggregate can roll up
+			// across sessions without re-reading history.
 			meta.InputTokens += rec.InputTokens
 			meta.OutputTokens += rec.OutputTokens
 			meta.CacheCreationTokens += rec.CacheCreationTokens
 			meta.CacheReadTokens += rec.CacheReadTokens
+			if meta.ModelBreakdowns == nil {
+				meta.ModelBreakdowns = make(map[string]*ModelUsage)
+			}
+			key := rec.Provider + "|" + rec.Model
+			bucket, ok := meta.ModelBreakdowns[key]
+			if !ok {
+				bucket = &ModelUsage{Provider: rec.Provider, Model: rec.Model}
+				meta.ModelBreakdowns[key] = bucket
+			}
+			bucket.InputTokens += rec.InputTokens
+			bucket.OutputTokens += rec.OutputTokens
+			bucket.CacheCreationTokens += rec.CacheCreationTokens
+			bucket.CacheReadTokens += rec.CacheReadTokens
 		}
 	}
 
@@ -266,6 +286,8 @@ func memoryRecordFromHistoryRecord(rec sessionstore.HistoryRecord) memoryRecord 
 		OutputTokens:        rec.OutputTokens,
 		CacheCreationTokens: rec.CacheCreationTokens,
 		CacheReadTokens:     rec.CacheReadTokens,
+		Provider:            rec.Provider,
+		Model:               rec.Model,
 	}
 	if len(rec.ToolCalls) > 0 {
 		_ = json.Unmarshal(rec.ToolCalls, &out.ToolCalls)
@@ -366,6 +388,41 @@ func Aggregate(metas []SessionMeta, facets map[string]Facet) AggregatedData {
 	agg.DaysActive = len(daysSet)
 	if agg.DaysActive > 0 {
 		agg.MessagesPerDay = float64(agg.TotalMessages) / float64(agg.DaysActive)
+	}
+
+	// Merge per-session ModelBreakdowns into a single sorted list and
+	// compute the overall prompt-cache hit rate across all usage.
+	bucketMap := make(map[string]*ModelUsage)
+	for _, m := range metas {
+		for _, b := range m.ModelBreakdowns {
+			key := b.Provider + "|" + b.Model
+			merged, ok := bucketMap[key]
+			if !ok {
+				merged = &ModelUsage{Provider: b.Provider, Model: b.Model}
+				bucketMap[key] = merged
+			}
+			merged.InputTokens += b.InputTokens
+			merged.OutputTokens += b.OutputTokens
+			merged.CacheCreationTokens += b.CacheCreationTokens
+			merged.CacheReadTokens += b.CacheReadTokens
+			// One session contributes 1 to each bucket it touched.
+			merged.Sessions++
+		}
+	}
+	breakdowns := make([]ModelUsage, 0, len(bucketMap))
+	totalInput := 0
+	totalCacheRead := 0
+	for _, b := range bucketMap {
+		breakdowns = append(breakdowns, *b)
+		totalInput += b.InputTokens
+		totalCacheRead += b.CacheReadTokens
+	}
+	sort.Slice(breakdowns, func(i, j int) bool {
+		return breakdowns[i].TotalContextTokens() > breakdowns[j].TotalContextTokens()
+	})
+	agg.ModelBreakdowns = breakdowns
+	if denom := totalInput + totalCacheRead; denom > 0 {
+		agg.OverallCacheHitRate = float64(totalCacheRead) / float64(denom)
 	}
 
 	return agg
