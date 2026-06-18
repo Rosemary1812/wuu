@@ -162,8 +162,8 @@ export function ComposerTokenGauge({
     >
       <svg
         viewBox="0 0 100 60"
-        width="56"
-        height="32"
+        width="34"
+        height="20"
         className="composer-token-gauge-svg"
         aria-hidden="true"
       >

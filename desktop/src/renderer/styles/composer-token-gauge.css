@@ -28,16 +28,25 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  padding: 2px 6px;
+  padding: 2px 4px;
   color: var(--token-gauge-text);
   user-select: none;
   line-height: 1;
   cursor: default;
 }
 
-.composer-token-gauge-svg {
+/* Higher-specificity descendant selector so this rule wins over the generic
+   `.composer-bar svg { width: var(--icon-size); ... }` rule in composer.css,
+   which would otherwise squash the gauge into a 16x16 icon-sized square and
+   override per-element stroke-widths with `--icon-stroke`. We restore the
+   tachometer's aspect ratio while keeping its visual height close to the
+   surrounding composer icons. */
+.composer-token-gauge .composer-token-gauge-svg {
   display: block;
   overflow: visible;
+  width: 34px;
+  height: 20px;
+  stroke-width: initial;
 }
 
 .composer-token-gauge-progress,

@@ -620,5 +620,9 @@ describe("ComposerTokenGauge", () => {
     expect(tooltip).not.toBeNull();
     expect(tooltip?.textContent).toContain("18.4");
     expect(tooltip?.textContent).toContain("tok/s");
+
+    const svg = container.querySelector(".composer-token-gauge-svg");
+    expect(svg?.getAttribute("width")).toBe("34");
+    expect(svg?.getAttribute("height")).toBe("20");
   });
 });
