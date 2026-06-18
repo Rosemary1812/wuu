@@ -261,19 +261,6 @@ func TestBuilder_AddProfileMemoryGuidanceWithoutEntries(t *testing.T) {
 	}
 }
 
-func TestBuilder_AddGitContext(t *testing.T) {
-	var b Builder
-	b.AddGitContext("Branch: main\n\nStatus: clean")
-	result := b.Build()
-
-	if !strings.Contains(result, "Branch: main") {
-		t.Error("expected git context in output")
-	}
-	if !strings.Contains(result, "# Git Context") {
-		t.Error("expected git context header")
-	}
-}
-
 func TestTruncateMemory_Lines(t *testing.T) {
 	lines := make([]string, 250)
 	for i := range lines {
@@ -321,7 +308,6 @@ func TestBuilder_FullAssembly(t *testing.T) {
 	b.AddWorkflows([]workflow.Definition{
 		{Name: "feature", Description: "Feature workflow"},
 	})
-	b.AddGitContext("Branch: main")
 
 	result := b.Build()
 
@@ -333,7 +319,7 @@ func TestBuilder_FullAssembly(t *testing.T) {
 	}
 
 	// All sections present.
-	for _, want := range []string{"coding agent", "Coordinator", "project rules", "test", "feature", "Branch: main"} {
+	for _, want := range []string{"coding agent", "Coordinator", "project rules", "test", "feature"} {
 		if !strings.Contains(result, want) {
 			t.Errorf("missing %q in output", want)
 		}

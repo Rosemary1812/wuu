@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -283,6 +284,54 @@ func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
 		if defs[name] {
 			t.Fatalf("default profile should not expose %s", name)
 		}
+	}
+}
+
+func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	writeSessionTestFile(t, filepath.Join(root, "changed.txt"), "dirty\n")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	for _, disallowed := range []string{"# Git Context", "Recent commits:", "Status:\n", "Branch:"} {
+		if strings.Contains(rt.BaseSystemPrompt, disallowed) {
+			t.Fatalf("base system prompt should not include volatile git context %q:\n%s", disallowed, rt.BaseSystemPrompt)
+		}
+	}
+
+	msgs := EnvContextInjector(root, nil, "")()
+	if len(msgs) != 1 {
+		t.Fatalf("expected one injected context message, got %+v", msgs)
+	}
+	if !strings.Contains(msgs[0].Content, "[ENVIRONMENT]") || !strings.Contains(msgs[0].Content, "Git status:") {
+		t.Fatalf("per-turn environment context should still carry live git state:\n%s", msgs[0].Content)
 	}
 }
 

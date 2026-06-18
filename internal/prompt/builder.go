@@ -1,9 +1,10 @@
 // Package prompt implements a section-based system prompt builder.
 //
 // Static sections (base prompt, coordinator preamble) are placed first
-// so the prompt prefix stays stable across turns — maximising provider
-// prompt-cache hit rates. Dynamic sections (memory, skills, git
-// context) follow.
+// so the prompt prefix stays stable across turns, maximizing provider
+// prompt-cache hit rates. Session-scoped discovered sections such as
+// memory, skills, and workflows follow. Volatile environment and git
+// state belong in per-turn context injection, not in this builder.
 //
 // Memory files are truncated to MaxMemoryLines / MaxMemoryBytes to
 // prevent prompt explosion from large AGENTS.md or CLAUDE.md files.
@@ -37,7 +38,7 @@ const (
 type Section struct {
 	Key     string // unique identifier for dedup / replacement
 	Content string
-	Static  bool // true = part of the stable cache prefix
+	Static  bool // true = part of the fixed built-in prefix
 }
 
 // Builder assembles the final system prompt from sections.
@@ -215,14 +216,6 @@ func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
 		sb.WriteString("\n")
 	}
 	b.AddSection("workflows", strings.TrimRight(sb.String(), "\n"), false)
-}
-
-// AddGitContext adds git status information as a dynamic section.
-func (b *Builder) AddGitContext(gitInfo string) {
-	if strings.TrimSpace(gitInfo) == "" {
-		return
-	}
-	b.AddSection("git_context", "# Git Context\n\n"+gitInfo, false)
 }
 
 func workflowProfileNames(profiles []workflow.ProfileRef) string {
