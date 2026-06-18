@@ -6,10 +6,10 @@ const MAX_TOKENS_PER_SEC = 100;
 const HIGH_SPEED_RATIO = 0.7;
 const DISPLAY_LERP = 0.055;
 
-const GAUGE_ARC_PATH = "M 4.5 15.5 A 7.5 7.5 0 0 1 19.5 15.5";
+const GAUGE_ARC_PATH = "M 2.5 17 A 9.5 9.5 0 0 1 21.5 17";
 const GAUGE_ARC_PATH_LENGTH = 100;
 const GAUGE_CENTER_X = 12;
-const GAUGE_CENTER_Y = 15.5;
+const GAUGE_CENTER_Y = 17;
 const NEEDLE_START_DEG = -154;
 const NEEDLE_END_DEG = -26;
 const NEEDLE_ANGLE = NEEDLE_END_DEG - NEEDLE_START_DEG;
@@ -88,8 +88,8 @@ export function ComposerTokenGauge({
     >
       <svg
         viewBox="0 0 24 24"
-        width="18"
-        height="18"
+        width="20"
+        height="20"
         className="composer-token-gauge-svg"
         aria-hidden="true"
       >
@@ -116,13 +116,13 @@ export function ComposerTokenGauge({
         >
           <path
             className="composer-token-gauge-needle-shape"
-            d={`M ${GAUGE_CENTER_X} ${GAUGE_CENTER_Y} L 17.7 ${GAUGE_CENTER_Y}`}
+            d={`M ${GAUGE_CENTER_X} ${GAUGE_CENTER_Y} L 19.4 ${GAUGE_CENTER_Y}`}
           />
         </g>
         <circle
           cx={GAUGE_CENTER_X}
           cy={GAUGE_CENTER_Y}
-          r="1.55"
+          r="1.7"
           className="composer-token-gauge-hub"
         />
       </svg>

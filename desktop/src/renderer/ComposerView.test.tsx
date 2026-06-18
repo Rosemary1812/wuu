@@ -625,8 +625,8 @@ describe("ComposerTokenGauge", () => {
     expect(tooltip?.textContent).toContain("tok/s");
 
     const svg = container.querySelector(".composer-token-gauge-svg");
-    expect(svg?.getAttribute("width")).toBe("18");
-    expect(svg?.getAttribute("height")).toBe("18");
+    expect(svg?.getAttribute("width")).toBe("20");
+    expect(svg?.getAttribute("height")).toBe("20");
     expect(container.querySelector(".composer-token-gauge-progress")).not.toBeNull();
     expect(container.querySelector(".composer-token-gauge-needle")).not.toBeNull();
     expect(container.querySelector(".composer-token-gauge-inner-arc")).toBeNull();
