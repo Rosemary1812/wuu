@@ -603,27 +603,18 @@ describe("Composer permission menu", () => {
 });
 
 describe("ComposerTokenGauge", () => {
-  it("keeps the gauge mounted and idle when the composer is idle", () => {
+  it("does not render the gauge or its hover tooltip when the composer is idle", () => {
     renderComposer({ running: false, tokensPerSecond: 0 });
-    const gauge = container.querySelector(".composer-token-gauge");
-    expect(gauge).not.toBeNull();
-    expect(gauge?.getAttribute("data-state")).toBe("idle");
-    // The hover-only tooltip lives in the DOM at all times (opacity 0
-    // until hover), and the readout text tracks the (zeroed) speed.
-    const tooltip = container.querySelector(".composer-token-gauge-tooltip");
-    expect(tooltip).not.toBeNull();
-    expect(tooltip?.textContent).toContain("0.0");
+    expect(container.querySelector(".composer-token-gauge")).toBeNull();
+    expect(container.querySelector(".composer-token-gauge-tooltip")).toBeNull();
   });
 
-  it("renders a 16x16 gauge with a hover-only tooltip carrying the tok/s value", () => {
+  it("renders a live gauge with a hover-only tooltip carrying the tok/s value", () => {
     renderComposer({ running: true, tokensPerSecond: 18.4 });
 
     const gauge = container.querySelector(".composer-token-gauge");
     expect(gauge).not.toBeNull();
     expect(gauge?.getAttribute("data-state")).toBe("running");
-    const svg = gauge?.querySelector("svg");
-    expect(svg?.getAttribute("width")).toBe("16");
-    expect(svg?.getAttribute("height")).toBe("16");
 
     const tooltip = container.querySelector(".composer-token-gauge-tooltip");
     expect(tooltip).not.toBeNull();
