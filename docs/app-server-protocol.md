@@ -64,6 +64,8 @@ trust summary, and protocol version.
 `thread/start`
 
 Creates a new persistent conversation thread backed by normal session storage.
+When called with `{"ephemeral": true}`, creates an in-memory thread that is not
+written to the session store and cannot be resumed after the server exits.
 
 `thread/resume`
 

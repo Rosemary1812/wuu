@@ -228,9 +228,9 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 	th := s.thread(threadID)
 	if th != nil {
 		th.mu.Lock()
-		if th.ReadOnly || th.ParentID != "" || strings.TrimSpace(th.Title) != "" {
+		if th.ReadOnly || th.Ephemeral || th.ParentID != "" || strings.TrimSpace(th.Title) != "" {
 			th.mu.Unlock()
-			res.SkipReason = "thread already titled / read-only / forked"
+			res.SkipReason = "thread already titled / read-only / ephemeral / forked"
 			providers.DebugLogf("title[%s]: skipped (%s)", threadID, res.SkipReason)
 			return res, nil
 		}

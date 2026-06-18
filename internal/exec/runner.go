@@ -36,9 +36,6 @@ func Run(ctx context.Context, opts Options) error {
 	if opts.Stderr == nil {
 		opts.Stderr = io.Discard
 	}
-	if opts.Ephemeral {
-		return WithExitCode(ExitInvalidInput, errors.New("--ephemeral is not implemented yet"))
-	}
 	if opts.PermissionMode != "" {
 		// The concrete validation happens during config application. Keep this
 		// branch so CLI parse tests can distinguish an explicit invalid value
@@ -137,7 +134,7 @@ func startOrResumeThread(ctx context.Context, controller Controller, opts Option
 	if id := strings.TrimSpace(opts.ResumeID); id != "" {
 		return controller.ResumeThread(ctx, id)
 	}
-	return controller.StartThread(ctx)
+	return controller.StartThread(ctx, opts.Ephemeral)
 }
 
 func waitForTurn(ctx context.Context, controller Controller, opts Options, state *runState) error {

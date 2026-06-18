@@ -106,6 +106,9 @@ func (s *Server) threadSearchSources() ([]threadSearchSource, error) {
 		history := cloneHistory(th.History)
 		entry := threadListEntry{thread: thread, pinnedAt: th.PinnedAt}
 		th.mu.Unlock()
+		if thread.Ephemeral {
+			continue
+		}
 		if thread.ReadOnly {
 			continue
 		}

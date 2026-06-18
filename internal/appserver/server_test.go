@@ -1556,6 +1556,38 @@ func TestServerProcessListRedactsSensitiveCommandAndError(t *testing.T) {
 	}
 }
 
+func TestServerThreadStartEphemeralDoesNotPersistSession(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start","params":{"ephemeral":true}}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	result := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Thread.ID == "" || !result.Thread.Ephemeral {
+		t.Fatalf("expected ephemeral thread: %+v", result.Thread)
+	}
+	if _, ok, err := session.Find(rt.SessionDir, result.Thread.ID); err != nil || ok {
+		t.Fatalf("ephemeral thread should not create a session, ok=%v err=%v", ok, err)
+	}
+	sessions, err := session.List(rt.SessionDir, 0)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("ephemeral thread should not appear in session store: %+v", sessions)
+	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"2","method":"thread/list"}`)); err != nil {
+		t.Fatalf("thread/list: %v", err)
+	}
+	listed := remarshal[ThreadListResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	if len(listed.Threads) != 0 {
+		t.Fatalf("ephemeral thread should not appear in thread list: %+v", listed.Threads)
+	}
+}
+
 func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	client := &fakeClient{
 		response: providers.ChatResponse{

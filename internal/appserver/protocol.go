@@ -389,6 +389,10 @@ type ProviderModelVariantSummary struct {
 	Options map[string]any `json:"options,omitempty"`
 }
 
+type ThreadStartParams struct {
+	Ephemeral bool `json:"ephemeral,omitempty"`
+}
+
 type ThreadStartResult struct {
 	Thread Thread `json:"thread"`
 }
@@ -675,6 +679,7 @@ type Thread struct {
 	CWD              string       `json:"cwd"`
 	Status           ThreadStatus `json:"status"`
 	ReadOnly         bool         `json:"read_only,omitempty"`
+	Ephemeral        bool         `json:"ephemeral,omitempty"`
 	Pinned           bool         `json:"pinned,omitempty"`
 	Archived         bool         `json:"archived,omitempty"`
 	ForkedFromID     string       `json:"forked_from_id,omitempty"`

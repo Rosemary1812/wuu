@@ -17,16 +17,27 @@ import (
 )
 
 func (s *Server) handleThreadStart(req Request) error {
-	id := session.NewID()
-	sess, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir)
-	if err != nil {
+	var params ThreadStartParams
+	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
+	}
+	id := session.NewID()
+	memoryPath := ""
+	if !params.Ephemeral {
+		sess, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		memoryPath = session.FilePath(s.rt.SessionDir, sess.ID)
+	} else {
+		id = "ephemeral-" + id
 	}
 	history := make([]providers.ChatMessage, 0, 1)
 	if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, session.FilePath(s.rt.SessionDir, sess.ID), time.Now().UTC())
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, memoryPath, time.Now().UTC())
+	th.Ephemeral = params.Ephemeral
 
 	s.mu.Lock()
 	s.threads[id] = th
@@ -264,6 +275,9 @@ func (s *Server) handleThreadList(req Request) error {
 		thread := th.snapshotLocked()
 		entry := threadListEntry{thread: thread, pinnedAt: th.PinnedAt}
 		th.mu.Unlock()
+		if thread.Ephemeral {
+			continue
+		}
 		if thread.ReadOnly {
 			continue
 		}

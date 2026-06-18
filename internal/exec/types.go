@@ -92,7 +92,7 @@ type Options struct {
 
 type Controller interface {
 	Initialize(context.Context) (appserver.InitializeResult, error)
-	StartThread(context.Context) (appserver.Thread, error)
+	StartThread(context.Context, bool) (appserver.Thread, error)
 	ResumeThread(context.Context, string) (appserver.Thread, error)
 	ForkThread(context.Context, string) (appserver.Thread, error)
 	StartTurn(context.Context, string, TurnInput) (appserver.Turn, error)

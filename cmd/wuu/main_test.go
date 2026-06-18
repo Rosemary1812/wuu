@@ -153,6 +153,24 @@ func TestRunExecForkUsesForkPath(t *testing.T) {
 	}
 }
 
+func TestRunExecEphemeralUsesEphemeralStart(t *testing.T) {
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "done"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	_ = captureStdout(t, func() {
+		if err := run([]string{"exec", "--ephemeral", "--json", "scratch task"}); err != nil {
+			t.Fatalf("run exec ephemeral: %v", err)
+		}
+	})
+
+	if !controller.startedThread || !controller.startEphemeral {
+		t.Fatalf("expected ephemeral thread start: %+v", controller)
+	}
+}
+
 func TestRunExecPassesFileAndImageAttachments(t *testing.T) {
 	workdir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workdir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
@@ -1363,12 +1381,13 @@ type cliExecFakeController struct {
 	turn       appserver.Turn
 	events     []wuuexec.Notification
 
-	startedThread bool
-	resumedThread string
-	forkedThread  string
-	startedPrompt string
-	startedImages []appserver.TurnStartImage
-	startedFiles  []appserver.TurnStartFile
+	startedThread  bool
+	startEphemeral bool
+	resumedThread  string
+	forkedThread   string
+	startedPrompt  string
+	startedImages  []appserver.TurnStartImage
+	startedFiles   []appserver.TurnStartFile
 }
 
 func newCLIExecFakeController(events ...wuuexec.Notification) *cliExecFakeController {
@@ -1390,8 +1409,10 @@ func (f *cliExecFakeController) Initialize(context.Context) (appserver.Initializ
 	return f.initResult, nil
 }
 
-func (f *cliExecFakeController) StartThread(context.Context) (appserver.Thread, error) {
+func (f *cliExecFakeController) StartThread(_ context.Context, ephemeral bool) (appserver.Thread, error) {
 	f.startedThread = true
+	f.startEphemeral = ephemeral
+	f.thread.Ephemeral = ephemeral
 	return f.thread, nil
 }
 

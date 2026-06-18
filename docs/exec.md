@@ -155,6 +155,7 @@ Current implemented flags:
 --image <path>
 --no-tools
 --json
+--ephemeral
 --timeout <duration>
 --output-last-message <file>
 ```
@@ -163,7 +164,6 @@ Target flags that still need implementation:
 
 ```bash
 --max-turns <n>
---ephemeral
 --output-schema <schema.json>
 --input-json
 --approval-handler <command>

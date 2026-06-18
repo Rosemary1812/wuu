@@ -17,14 +17,15 @@ type fakeController struct {
 	turn       appserver.Turn
 	events     []Notification
 
-	startedThread bool
-	resumedThread string
-	forkedThread  string
-	startedPrompt string
-	startedImages []appserver.TurnStartImage
-	startedFiles  []appserver.TurnStartFile
-	interrupted   string
-	shutdown      bool
+	startedThread  bool
+	startEphemeral bool
+	resumedThread  string
+	forkedThread   string
+	startedPrompt  string
+	startedImages  []appserver.TurnStartImage
+	startedFiles   []appserver.TurnStartFile
+	interrupted    string
+	shutdown       bool
 }
 
 func newFakeController(events ...Notification) *fakeController {
@@ -46,8 +47,10 @@ func (f *fakeController) Initialize(context.Context) (appserver.InitializeResult
 	return f.initResult, nil
 }
 
-func (f *fakeController) StartThread(context.Context) (appserver.Thread, error) {
+func (f *fakeController) StartThread(_ context.Context, ephemeral bool) (appserver.Thread, error) {
 	f.startedThread = true
+	f.startEphemeral = ephemeral
+	f.thread.Ephemeral = ephemeral
 	return f.thread, nil
 }
 
@@ -149,6 +152,23 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	result := events[len(events)-1]
 	if result["status"] != "completed" || result["thread_id"] != "thread-1" || result["turn_id"] != "turn-1" || result["final_message"] != "hello" || result["trace_path"] != "/trace.jsonl" {
 		t.Fatalf("unexpected result event: %+v", result)
+	}
+}
+
+func TestRunEphemeralStartsEphemeralThread(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "done"}),
+	)
+
+	if err := Run(context.Background(), Options{
+		Prompt:     "scratch task",
+		Ephemeral:  true,
+		Controller: controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !controller.startedThread || !controller.startEphemeral {
+		t.Fatalf("expected ephemeral start, got %+v", controller)
 	}
 }
 

@@ -47,6 +47,7 @@ func (th *threadState) snapshotLocked() Thread {
 		CWD:              th.CWD,
 		Status:           status,
 		ReadOnly:         th.ReadOnly,
+		Ephemeral:        th.Ephemeral,
 		Pinned:           th.PinnedAt != nil,
 		Archived:         th.ArchivedAt != nil,
 		ForkedFromID:     th.ForkedFromID,

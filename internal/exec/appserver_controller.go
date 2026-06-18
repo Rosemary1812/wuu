@@ -72,9 +72,10 @@ func (c *localAppServerController) Initialize(ctx context.Context) (appserver.In
 	return result, err
 }
 
-func (c *localAppServerController) StartThread(ctx context.Context) (appserver.Thread, error) {
+func (c *localAppServerController) StartThread(ctx context.Context, ephemeral bool) (appserver.Thread, error) {
 	var result appserver.ThreadStartResult
-	err := c.client.Call(ctx, appserver.MethodThreadStart, nil, &result)
+	params := appserver.ThreadStartParams{Ephemeral: ephemeral}
+	err := c.client.Call(ctx, appserver.MethodThreadStart, params, &result)
 	return result.Thread, err
 }
 
