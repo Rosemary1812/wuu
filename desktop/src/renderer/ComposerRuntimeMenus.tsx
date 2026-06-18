@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Check,
   ChevronDown,
   ChevronRight,
@@ -7,7 +8,11 @@ import {
   FolderPlus,
   FolderX,
   GitBranch,
-  Search
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldQuestion,
+  type LucideIcon
 } from "lucide-react";
 import type { RefObject } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
@@ -41,11 +46,15 @@ import {
 } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
+type ChipTone = "safe" | "accent" | "review" | "danger";
+
 type PermissionModeOption = {
   mode: PermissionMode;
   label: string;
   chipLabel: string;
   short: string;
+  icon: LucideIcon;
+  chipTone: ChipTone;
   tone?: "danger";
 };
 
@@ -54,25 +63,33 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "read_only",
     label: "只读",
     chipLabel: "只读",
-    short: "读取和分析项目"
+    short: "读取和分析项目",
+    icon: BookOpen,
+    chipTone: "safe"
   },
   {
     mode: "default",
     label: "默认",
     chipLabel: "默认",
-    short: "工作区内自动，越界时确认"
+    short: "工作区内自动，越界时确认",
+    icon: ShieldCheck,
+    chipTone: "accent"
   },
   {
     mode: "approve_for_me",
     label: "替我审批",
     chipLabel: "替我审批",
-    short: "由受限审查器处理审批"
+    short: "由受限审查器处理审批",
+    icon: ShieldQuestion,
+    chipTone: "review"
   },
   {
     mode: "full_access",
     label: "完全访问",
     chipLabel: "完全访问",
     short: "跳过审批和边界保护",
+    icon: ShieldAlert,
+    chipTone: "danger",
     tone: "danger"
   }
 ];

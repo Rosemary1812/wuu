@@ -12,7 +12,6 @@ import {
   Search,
   Send,
   Settings,
-  ShieldCheck,
   Slash,
   Square,
   Terminal,
@@ -486,7 +485,7 @@ export function Composer({
             </button>
             <div className="permission-menu-anchor" ref={accessMenuRef}>
               <button
-                className="permission-chip"
+                className={`permission-chip tone-${permissionOption.chipTone}`}
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={accessMenuOpen}
@@ -494,7 +493,7 @@ export function Composer({
                 disabled={!initialized || readOnly || running}
                 onClick={onToggleAccessMenu}
               >
-                <ShieldCheck aria-hidden="true" />
+                <permissionOption.icon aria-hidden="true" />
                 <span>{permissionChipLabel}</span>
                 <ChevronDown aria-hidden="true" />
               </button>
