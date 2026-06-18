@@ -372,7 +372,8 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "plan",
-        title: "计划",
+        title: "更新计划",
+        detail: compactDetailText(compactPlanUpdates(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -408,7 +409,8 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "skill",
-        title: "技能",
+        title: "加载技能",
+        detail: compactDetailText(compactSkillTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -458,6 +460,30 @@ function compactToolTargets(items: ThreadItem[]): string[] {
           stringValue(args, "path") ??
           stringValue(args, "file");
         return path ? fileBaseName(path) : undefined;
+      })
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function compactSkillTargets(items: ThreadItem[]): string[] {
+  return uniqueStrings(
+    items
+      .map((item) => {
+        const args = parseJSONRecord(item.arguments);
+        const skill = stringValue(args, "name");
+        return skill ? truncateText(skill.replace(/^\//, ""), 70) : undefined;
+      })
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function compactPlanUpdates(items: ThreadItem[]): string[] {
+  return uniqueStrings(
+    items
+      .map((item) => {
+        const args = parseJSONRecord(item.arguments);
+        const explanation = stringValue(args, "explanation")?.trim();
+        return explanation ? truncateText(explanation, 90) : undefined;
       })
       .filter((value): value is string => Boolean(value)),
   );
