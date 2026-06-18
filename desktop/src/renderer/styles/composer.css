@@ -388,15 +388,15 @@
   min-width: 0;
   height: 48px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   overflow: hidden;
   padding: 0 8px 8px;
 }
 
 .composer-tool-button {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 8px;
@@ -450,7 +450,7 @@
   display: inline-flex;
   width: 100%;
   min-width: 0;
-  height: 34px;
+  height: 32px;
   align-items: center;
   gap: 7px;
   border-radius: 8px;
@@ -495,8 +495,8 @@
 
 .composer-action-button {
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 999px;
