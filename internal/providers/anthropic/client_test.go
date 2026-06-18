@@ -390,7 +390,7 @@ func TestBuildAnthropicRequest_SmooshesSystemReminderIntoToolResult(t *testing.T
 	}
 }
 
-func TestBuildAnthropicRequest_CacheBoundarySkipsFoldedSystemReminder(t *testing.T) {
+func TestBuildAnthropicRequest_CacheBoundaryKeepsSystemReminderAfterToolResult(t *testing.T) {
 	reminder := wuucontext.FormatSystemReminder(wuucontext.EnvInfo{
 		CWD:       "/tmp/project",
 		Date:      "2026-04-21",
@@ -417,19 +417,53 @@ func TestBuildAnthropicRequest_CacheBoundarySkipsFoldedSystemReminder(t *testing
 	if len(payload.Messages) != 3 {
 		t.Fatalf("expected 3 messages after merge, got %d", len(payload.Messages))
 	}
-	assistant := payload.Messages[1]
-	if len(assistant.Content) != 1 || assistant.Content[0].Type != "tool_use" {
-		t.Fatalf("expected assistant tool_use block, got %+v", assistant.Content)
-	}
-	if assistant.Content[0].CacheControl == nil || assistant.Content[0].CacheControl.Type != "ephemeral" {
-		t.Fatalf("expected cache marker on stable tool_use block, got %+v", assistant.Content[0].CacheControl)
+	if payload.Messages[1].Content[0].CacheControl != nil {
+		t.Fatalf("did not expect cache marker to stop at tool_use, got %+v", payload.Messages[1].Content[0].CacheControl)
 	}
 	last := payload.Messages[2]
-	if len(last.Content) != 1 || last.Content[0].Type != "tool_result" {
-		t.Fatalf("expected folded tool_result block, got %+v", last.Content)
+	if len(last.Content) != 2 {
+		t.Fatalf("expected tool_result plus volatile reminder, got %+v", last.Content)
 	}
-	if last.Content[0].CacheControl != nil {
-		t.Fatalf("expected folded tool_result to remain unmarked, got %+v", last.Content[0].CacheControl)
+	if last.Content[0].Type != "tool_result" {
+		t.Fatalf("expected tool_result block, got %+v", last.Content[0])
+	}
+	if last.Content[0].CacheControl == nil || last.Content[0].CacheControl.Type != "ephemeral" {
+		t.Fatalf("expected cache marker on stable tool_result block, got %+v", last.Content[0].CacheControl)
+	}
+	content, ok := last.Content[0].Content.(string)
+	if !ok {
+		t.Fatalf("expected string tool_result content, got %#v", last.Content[0].Content)
+	}
+	if strings.Contains(content, "<system-reminder>") {
+		t.Fatalf("did not expect volatile reminder in cached tool_result, got %q", content)
+	}
+	if last.Content[1].Type != "text" || !strings.Contains(last.Content[1].Text, "<system-reminder>") {
+		t.Fatalf("expected volatile system reminder after cache boundary, got %+v", last.Content[1])
+	}
+}
+
+func TestBuildAnthropicRequest_ClampsOverlargeStablePrefixCacheHint(t *testing.T) {
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "first"},
+			{Role: "assistant", Content: "stable reply"},
+		},
+		CacheHint: &providers.CacheHint{StablePrefixMessages: 99},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+
+	if len(payload.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(payload.Messages))
+	}
+	last := payload.Messages[1]
+	if len(last.Content) != 1 || last.Content[0].Type != "text" {
+		t.Fatalf("expected assistant text block, got %+v", last.Content)
+	}
+	if last.Content[0].CacheControl == nil || last.Content[0].CacheControl.Type != "ephemeral" {
+		t.Fatalf("expected cache marker on clamped stable prefix, got %+v", last.Content[0].CacheControl)
 	}
 }
 

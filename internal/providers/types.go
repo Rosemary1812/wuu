@@ -172,8 +172,8 @@ type CacheHint struct {
 	StableSystem bool
 	// StablePrefixMessages is the number of leading non-system entries
 	// in ChatRequest.Messages that belong to the stable prefix.
-	// Providers that lift system prompts out of the normal message
-	// array can use this value directly without reindexing.
+	// Providers that merge, split, or lift messages must map this
+	// source-message count onto their final wire-format block boundary.
 	StablePrefixMessages int
 	// HasCompactSummary reports that the leading system prompt contains
 	// a compacted conversation summary. This lets providers prefer a

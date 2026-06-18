@@ -624,6 +624,18 @@ func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHin
 	if boundary != nil && markAnthropicBoundaryForCache(payload.Messages, *boundary) {
 		return
 	}
+	stable := hint.StablePrefixMessages
+	if stable > len(payload.Messages) {
+		stable = len(payload.Messages)
+	}
+	if stable == 0 {
+		return
+	}
+	for i := stable - 1; i >= 0; i-- {
+		if markAnthropicMessageForCache(&payload.Messages[i]) {
+			return
+		}
+	}
 }
 
 func markAnthropicMessageForCache(msg *anthropicMessage) bool {
@@ -650,9 +662,6 @@ func markAnthropicBoundaryForCache(messages []anthropicMessage, boundary anthrop
 	if blockIdx >= len(messages[msgIdx].Content) {
 		blockIdx = len(messages[msgIdx].Content) - 1
 	}
-	if boundaryWouldFoldVolatileReminder(messages[msgIdx], blockIdx) {
-		blockIdx--
-	}
 	for i := msgIdx; i >= 0; i-- {
 		start := len(messages[i].Content) - 1
 		if i == msgIdx && blockIdx < start {
@@ -664,21 +673,6 @@ func markAnthropicBoundaryForCache(messages []anthropicMessage, boundary anthrop
 				continue
 			}
 			block.CacheControl = ephemeralCacheControl()
-			return true
-		}
-	}
-	return false
-}
-
-func boundaryWouldFoldVolatileReminder(msg anthropicMessage, blockIdx int) bool {
-	if msg.Role != "user" || blockIdx < 0 || blockIdx >= len(msg.Content) {
-		return false
-	}
-	if msg.Content[blockIdx].Type != "tool_result" {
-		return false
-	}
-	for _, block := range msg.Content[blockIdx+1:] {
-		if block.Type == "text" && wuucontext.IsSystemReminder("", block.Text) {
 			return true
 		}
 	}
@@ -1173,6 +1167,9 @@ func smooshSystemReminderBlocks(msg anthropicMessage) anthropicMessage {
 	}
 
 	toolResult := kept[lastToolResultIdx]
+	if toolResult.CacheControl != nil {
+		return msg
+	}
 	parts := make([]string, 0, 1+len(reminders))
 	existingContent, ok := toolResult.Content.(string)
 	if !ok {
