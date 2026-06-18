@@ -305,6 +305,50 @@
   overscroll-behavior: contain;
 }
 
+/*
+ * Slim scrollbar matching the main conversation pane. The thumb stays
+ * transparent until AppSidebar's scroll listener adds `.scrollbar-visible`
+ * while the user is actively scrolling, then fades back after 700ms of
+ * idle. The track is always transparent so the sidebar glass effect is
+ * never interrupted.
+ */
+.project-list::-webkit-scrollbar {
+  width: 10px;
+  background: transparent;
+}
+
+.project-list::-webkit-scrollbar-track,
+.project-list::-webkit-scrollbar-track-piece {
+  border: 0;
+  background: transparent;
+}
+
+.project-list::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-left-width: 4px;
+  border-radius: 999px;
+  background-color: transparent;
+  background-clip: padding-box;
+  transition: background-color 160ms ease;
+}
+
+.project-list.scrollbar-visible::-webkit-scrollbar-thumb {
+  background-color: rgba(82, 88, 94, 0.32);
+}
+
+.project-list.scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(56, 88, 118, 0.48);
+}
+
+.project-list.scrollbar-visible::-webkit-scrollbar-thumb:active {
+  background-color: rgba(38, 70, 98, 0.64);
+}
+
+.project-list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .pinned-thread-section {
   display: flex;
   min-width: 0;

@@ -11,11 +11,15 @@ import {
   Settings,
   Wrench,
 } from "lucide-react";
-import type { RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type { Agent, Thread } from "../shared/protocol";
 import type { AppState } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { PinnedThreadList, ProjectList } from "./ThreadSidebar";
+
+// Matches ConversationScrollState.CONVERSATION_SCROLLBAR_HIDE_DELAY_MS so
+// the sidebar scrollbar feels identical to the main conversation pane.
+const SIDEBAR_SCROLLBAR_HIDE_DELAY_MS = 700;
 
 export function AppSidebar({
   state,
@@ -80,6 +84,42 @@ export function AppSidebar({
 }): JSX.Element {
   const hasRuntimeContext = Boolean(state.activeContext);
   const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
+
+  /*
+   * Fade the project-list scrollbar in while the user is actively scrolling
+   * and out after 700ms of idle, matching the main conversation pane. The
+   * scrollHeight check mirrors ConversationScrollState so a list that fits
+   * inside the sidebar never paints a phantom scrollbar.
+   */
+  const projectListRef = useRef<HTMLElement | null>(null);
+  const sidebarScrollbarHideTimerRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const node = projectListRef.current;
+    if (!node) {
+      return;
+    }
+    function showScrollbar(scrollNode: HTMLElement): void {
+      if (scrollNode.scrollHeight <= scrollNode.clientHeight) {
+        return;
+      }
+      scrollNode.classList.add("scrollbar-visible");
+      if (sidebarScrollbarHideTimerRef.current !== undefined) {
+        window.clearTimeout(sidebarScrollbarHideTimerRef.current);
+      }
+      sidebarScrollbarHideTimerRef.current = window.setTimeout(() => {
+        sidebarScrollbarHideTimerRef.current = undefined;
+        scrollNode.classList.remove("scrollbar-visible");
+      }, SIDEBAR_SCROLLBAR_HIDE_DELAY_MS);
+    }
+    node.addEventListener("scroll", () => showScrollbar(node), { passive: true });
+    return () => {
+      node.removeEventListener("scroll", () => showScrollbar(node));
+      if (sidebarScrollbarHideTimerRef.current !== undefined) {
+        window.clearTimeout(sidebarScrollbarHideTimerRef.current);
+        sidebarScrollbarHideTimerRef.current = undefined;
+      }
+    };
+  }, []);
 
   return (
     <aside className="sidebar">
@@ -177,7 +217,7 @@ export function AppSidebar({
           </section>
         ) : null}
 
-        <section className="project-list" aria-label="项目">
+        <section className="project-list" aria-label="项目" ref={projectListRef}>
           <div className="project-section-header" ref={projectMenuRef}>
             <div className="section-label">项目</div>
             <button
