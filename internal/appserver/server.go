@@ -215,6 +215,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 			return err
 		}
 		return errShutdown
+	case MethodSettingsUsage:
+		return s.handleSettingsUsage(req)
 	default:
 		return s.writeResponse(req.ID, nil, fmt.Errorf("unknown method %q", req.Method))
 	}

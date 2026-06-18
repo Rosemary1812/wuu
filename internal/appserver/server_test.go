@@ -3981,3 +3981,140 @@ func remarshal[T any](t *testing.T, value any) T {
 	}
 	return out
 }
+
+func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+
+	sess1, err := session.CreateWithMetadata(rt.SessionDir, "usage-anthropic", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendHistoryRecord(rt.SessionDir, sess1.ID, session.HistoryRecord{
+		Role: "user", Content: "anthropic session",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendHistoryRecord(rt.SessionDir, sess1.ID, session.HistoryRecord{
+		Role: "user", Content: "follow up",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendHistoryRecord(rt.SessionDir, sess1.ID, session.HistoryRecord{
+		Role: "meta", Content: "token_usage",
+		Provider: "anthropic", Model: "claude-sonnet-4-6",
+		InputTokens: 100, OutputTokens: 50,
+		CacheCreationTokens: 80, CacheReadTokens: 20,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess2, err := session.CreateWithMetadata(rt.SessionDir, "usage-openai", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendHistoryRecord(rt.SessionDir, sess2.ID, session.HistoryRecord{
+		Role: "user", Content: "openai session",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendHistoryRecord(rt.SessionDir, sess2.ID, session.HistoryRecord{
+		Role: "user", Content: "follow up",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendHistoryRecord(rt.SessionDir, sess2.ID, session.HistoryRecord{
+		Role: "meta", Content: "token_usage",
+		Provider: "openai", Model: "gpt-4o",
+		InputTokens: 200, OutputTokens: 100,
+		CacheCreationTokens: 0, CacheReadTokens: 50,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	raw, err := json.Marshal(map[string]any{
+		"id":     "1",
+		"method": MethodSettingsUsage,
+		"params": map[string]any{"range": string(SettingsUsageRangeAll)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("handleLine: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[SettingsUsageResponse](t, responseByID(t, msgs, "1")["result"])
+
+	if result.Range != SettingsUsageRangeAll {
+		t.Fatalf("range=%q, want %q", result.Range, SettingsUsageRangeAll)
+	}
+	if result.TotalSessions != 2 {
+		t.Fatalf("total_sessions=%d, want 2", result.TotalSessions)
+	}
+	if len(result.ModelBreakdowns) != 2 {
+		t.Fatalf("expected 2 breakdowns, got %d (%+v)", len(result.ModelBreakdowns), result.ModelBreakdowns)
+	}
+	// openai total = 200 + 50 + 100 = 350
+	// anthropic total = 100 + 20 + 50 = 170
+	if result.ModelBreakdowns[0].Provider != "openai" {
+		t.Fatalf("expected openai first, got %q", result.ModelBreakdowns[0].Provider)
+	}
+	if result.ModelBreakdowns[1].Provider != "anthropic" {
+		t.Fatalf("expected anthropic second, got %q", result.ModelBreakdowns[1].Provider)
+	}
+}
+
+func TestSettingsUsageRangeCutoff(t *testing.T) {
+	now := time.Date(2026, time.June, 18, 12, 0, 0, 0, time.UTC)
+
+	if c := settingsUsageRangeCutoff(SettingsUsageRangeAll, now); c != nil {
+		t.Fatalf("all range: expected nil cutoff, got %v", c)
+	}
+	if c := settingsUsageRangeCutoff("", now); c != nil {
+		t.Fatalf("empty range: expected nil cutoff, got %v", c)
+	}
+
+	cases := []struct {
+		name string
+		r    SettingsUsageRange
+		days int
+	}{
+		{"7d", SettingsUsageRange7d, 7},
+		{"30d", SettingsUsageRange30d, 30},
+		{"90d", SettingsUsageRange90d, 90},
+	}
+	for _, tc := range cases {
+		want := now.AddDate(0, 0, -tc.days)
+		got := settingsUsageRangeCutoff(tc.r, now)
+		if got == nil || !got.Equal(want) {
+			t.Fatalf("%s: expected %v, got %v", tc.name, want, got)
+		}
+	}
+}
+
+func TestSettingsUsageRejectsInvalidRange(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	raw, err := json.Marshal(map[string]any{
+		"id":     "1",
+		"method": MethodSettingsUsage,
+		"params": map[string]any{"range": "nonsense"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("handleLine: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	if got := responseByID(t, msgs, "1")["error"]; got == nil {
+		t.Fatalf("expected error response, got %+v", msgs)
+	}
+}

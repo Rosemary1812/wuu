@@ -12,6 +12,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/guardian"
+	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -1181,4 +1182,78 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 		return err
 	}
 	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))
+}
+
+// handleSettingsUsage returns the aggregated per-provider/model token
+// usage snapshot for the desktop settings page. The optional Range
+// field on SettingsUsageQuery selects a time window ("all" / "7d" /
+// "30d" / "90d"); empty defaults to "all". Sessions with zero CreatedAt
+// (no time info) are always included so we don't accidentally drop
+// freshly imported legacy data.
+func (s *Server) handleSettingsUsage(req Request) error {
+	var params SettingsUsageQuery
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	rangeFilter := params.Range
+	if rangeFilter == "" {
+		rangeFilter = SettingsUsageRangeAll
+	}
+	if err := validateSettingsUsageRange(rangeFilter); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	sessDir := s.rt.SessionDir
+	metas, err := insight.ScanSessions(sessDir, 0)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("scan sessions: %w", err))
+	}
+
+	cutoff := settingsUsageRangeCutoff(rangeFilter, time.Now().UTC())
+	filtered := make([]insight.SessionMeta, 0, len(metas))
+	for _, m := range metas {
+		if cutoff == nil || m.CreatedAt.IsZero() || !m.CreatedAt.Before(*cutoff) {
+			filtered = append(filtered, m)
+		}
+	}
+
+	agg := insight.Aggregate(filtered, nil)
+	return s.writeResponse(req.ID, SettingsUsageResponse{
+		Range:           rangeFilter,
+		TotalSessions:   agg.TotalSessions,
+		DateRange:       agg.DateRange,
+		ModelBreakdowns: agg.ModelBreakdowns,
+		CacheHitRate:    agg.OverallCacheHitRate,
+		GeneratedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}, nil)
+}
+
+// validateSettingsUsageRange rejects unknown range strings so the
+// desktop gets a clear error instead of a silently empty snapshot.
+func validateSettingsUsageRange(r SettingsUsageRange) error {
+	switch r {
+	case SettingsUsageRangeAll, SettingsUsageRange7d, SettingsUsageRange30d, SettingsUsageRange90d:
+		return nil
+	}
+	return fmt.Errorf("invalid settings/usage range %q", r)
+}
+
+// settingsUsageRangeCutoff returns the exclusive lower-bound timestamp
+// for the requested range. "all" (and the empty string) returns nil,
+// meaning no time filter applies.
+func settingsUsageRangeCutoff(r SettingsUsageRange, now time.Time) *time.Time {
+	switch r {
+	case SettingsUsageRangeAll, "":
+		return nil
+	case SettingsUsageRange7d:
+		c := now.AddDate(0, 0, -7)
+		return &c
+	case SettingsUsageRange30d:
+		c := now.AddDate(0, 0, -30)
+		return &c
+	case SettingsUsageRange90d:
+		c := now.AddDate(0, 0, -90)
+		return &c
+	}
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -42,6 +43,10 @@ const (
 	MethodProcessList           = "process/list"
 	MethodProcessStop           = "process/stop"
 	MethodShutdown              = "shutdown"
+	// MethodSettingsUsage returns the aggregated per-provider/model token
+	// usage snapshot for the desktop settings page. Range filter selects
+	// the time window ("all", "7d", "30d", "90d"); empty defaults to "all".
+	MethodSettingsUsage = "settings/usage"
 
 	NotificationThreadStarted = "thread/started"
 	NotificationThreadResumed = "thread/resumed"
@@ -844,4 +849,35 @@ type StreamEventPayload struct {
 	StopReason     string                           `json:"stop_reason,omitempty"`
 	Truncated      bool                             `json:"truncated,omitempty"`
 	Error          string                           `json:"error,omitempty"`
+}
+
+// SettingsUsageRange selects which time window the settings/usage RPC
+// covers. Empty string is treated as "all" by the appserver.
+type SettingsUsageRange string
+
+const (
+	SettingsUsageRangeAll SettingsUsageRange = "all"
+	SettingsUsageRange7d  SettingsUsageRange = "7d"
+	SettingsUsageRange30d SettingsUsageRange = "30d"
+	SettingsUsageRange90d SettingsUsageRange = "90d"
+)
+
+// SettingsUsageQuery is the input for the settings/usage RPC. Range
+// selects the time window; empty defaults to "all".
+type SettingsUsageQuery struct {
+	Range SettingsUsageRange `json:"range,omitempty"`
+}
+
+// SettingsUsageResponse carries the aggregated usage snapshot returned
+// to the desktop. ModelBreakdowns is sorted by total context tokens
+// descending; empty Provider+Model entries are bucketed as "(unknown)"
+// in the UI. CacheHitRate is the prompt-cache hit rate weighted by
+// token count.
+type SettingsUsageResponse struct {
+	Range           SettingsUsageRange   `json:"range"`
+	TotalSessions   int                  `json:"total_sessions"`
+	DateRange       [2]string            `json:"date_range"`
+	ModelBreakdowns []insight.ModelUsage `json:"model_breakdowns"`
+	CacheHitRate    float64              `json:"cache_hit_rate"`
+	GeneratedAt     string               `json:"generated_at"`
 }
