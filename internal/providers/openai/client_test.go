@@ -1646,6 +1646,117 @@ func TestResponsesChat_RendersToolSearchHistoryAsNativeOutputAndOmitsDiscoveredT
 	}
 }
 
+func TestResponsesRequest_KeepsTopLevelToolsStableAcrossToolSearchLifecycle(t *testing.T) {
+	client := &Client{}
+	toolSearch := providers.ToolDefinition{
+		Name:        "tool_search",
+		Description: "Search deferred tools",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	discovered := providers.ToolDefinition{
+		Name:        "mcp_docs_search",
+		Description: "Search docs through MCP",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	cacheHint := &providers.CacheHint{PromptCacheKey: "thread-cache-key"}
+
+	base, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "find a docs tool"}},
+		Tools:     []providers.ToolDefinition{toolSearch},
+		CacheHint: cacheHint,
+	}, false)
+	if err != nil {
+		t.Fatalf("build base request: %v", err)
+	}
+
+	followup, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "find a docs tool"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID:        "search_1",
+				Name:      "tool_search",
+				Kind:      providers.ToolCallKindToolSearch,
+				Arguments: `{"query":"docs search"}`,
+			}}},
+			{
+				Role:           "tool",
+				Name:           "tool_search",
+				ToolCallID:     "search_1",
+				ToolResultKind: providers.ToolCallKindToolSearch,
+				Content: `{
+  "loadable_tools": [
+    {
+      "type": "function",
+      "name": "mcp_docs_search",
+      "description": "Search docs through MCP",
+      "input_schema": {"type":"object","properties":{"query":{"type":"string"}}},
+      "defer_loading": true
+    }
+  ]
+}`,
+			},
+		},
+		Tools:     []providers.ToolDefinition{toolSearch, discovered},
+		CacheHint: cacheHint,
+	}, false)
+	if err != nil {
+		t.Fatalf("build followup request: %v", err)
+	}
+	if !reflect.DeepEqual(base.Tools, followup.Tools) {
+		t.Fatalf("top-level tools changed after tool_search history:\nbase=%+v\nfollowup=%+v", base.Tools, followup.Tools)
+	}
+	if len(followup.Tools) != 1 || followup.Tools[0].Type != "tool_search" {
+		t.Fatalf("expected only native tool_search top-level tool, got %+v", followup.Tools)
+	}
+	if base.PromptCacheKey != "thread-cache-key" || followup.PromptCacheKey != base.PromptCacheKey {
+		t.Fatalf("prompt cache key drifted: base=%q followup=%q", base.PromptCacheKey, followup.PromptCacheKey)
+	}
+	if len(followup.Input) != 3 {
+		t.Fatalf("unexpected followup input: %+v", followup.Input)
+	}
+	outputItem := followup.Input[2]
+	if outputItem.Type != "tool_search_output" || outputItem.Execution != "client" || outputItem.CallID != "search_1" {
+		t.Fatalf("unexpected tool_search output item: %+v", outputItem)
+	}
+	outputTools, ok := outputItem.Tools.([]responsesToolDefinition)
+	if !ok || len(outputTools) != 1 || outputTools[0].Name != "mcp_docs_search" || !outputTools[0].DeferLoading {
+		t.Fatalf("unexpected tool_search output tools: %#v", outputItem.Tools)
+	}
+
+	compacted, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{
+				Role:    "system",
+				Content: "[Conversation summary]\nSummary:\nOlder turns discovered the docs search tool.",
+				DiscoveredTools: []providers.LoadableToolDefinition{{
+					Type:        "function",
+					Name:        "mcp_docs_search",
+					Description: "Search docs through MCP",
+					InputSchema: map[string]any{"type": "object"},
+				}},
+			},
+			{Role: "user", Content: "continue"},
+		},
+		Tools:     []providers.ToolDefinition{toolSearch, discovered},
+		CacheHint: cacheHint,
+	}, false)
+	if err != nil {
+		t.Fatalf("build compacted request: %v", err)
+	}
+	if !reflect.DeepEqual(base.Tools, compacted.Tools) {
+		t.Fatalf("top-level tools changed after compact restore:\nbase=%+v\ncompacted=%+v", base.Tools, compacted.Tools)
+	}
+	if compacted.PromptCacheKey != base.PromptCacheKey {
+		t.Fatalf("compacted prompt cache key drifted: base=%q compacted=%q", base.PromptCacheKey, compacted.PromptCacheKey)
+	}
+	if len(compacted.Input) != 2 || compacted.Input[0].Type != "tool_search_output" || compacted.Input[0].Execution != "server" {
+		t.Fatalf("unexpected compact restore input: %+v", compacted.Input)
+	}
+}
+
 func TestResponsesChat_RestoresCompactedDiscoveredToolsAsServerOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {

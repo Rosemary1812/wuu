@@ -3381,6 +3381,7 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	kit.registry = NewRegistry(
+		NewReadFileTool(kit.env),
 		NewToolSearchTool(kit),
 		&stubTool{
 			name: "mcp_docs_search",
@@ -3401,7 +3402,14 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 		&stubTool{name: "mcp_other_four", def: providers.ToolDefinition{Name: "mcp_other_four", Description: "Other MCP tool"}},
 	)
 
-	if definitionNames(kit.Definitions())["mcp_docs_search"] {
+	initialDefs := kit.Definitions()
+	if len(initialDefs) != 2 || initialDefs[0].Name != "read_file" || initialDefs[1].Name != "tool_search" {
+		t.Fatalf("large MCP set should start behind stable built-ins, got %+v", initialDefs)
+	}
+	if !initialDefs[0].CacheStable || !initialDefs[1].CacheStable {
+		t.Fatalf("initial built-in tools should be cache-stable: %+v", initialDefs)
+	}
+	if definitionNames(initialDefs)["mcp_docs_search"] {
 		t.Fatal("mcp_docs_search should start deferred")
 	}
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
@@ -3449,6 +3457,22 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 	}
 	if !definitionNames(kit.Definitions())["mcp_docs_search"] {
 		t.Fatal("mcp_docs_search should be exposed after tool_search")
+	}
+	activatedDefs := kit.Definitions()
+	if len(activatedDefs) != 3 {
+		t.Fatalf("expected activated definition appended after stable prefix, got %+v", activatedDefs)
+	}
+	wantNames := []string{"read_file", "tool_search", "mcp_docs_search"}
+	for i, want := range wantNames {
+		if activatedDefs[i].Name != want {
+			t.Fatalf("definition %d = %q, want %q; all=%+v", i, activatedDefs[i].Name, want, activatedDefs)
+		}
+	}
+	if !activatedDefs[0].CacheStable || !activatedDefs[1].CacheStable {
+		t.Fatalf("activated built-in prefix should stay cache-stable: %+v", activatedDefs)
+	}
+	if activatedDefs[2].CacheStable {
+		t.Fatalf("activated MCP tool should stay outside cache-stable prefix: %+v", activatedDefs[2])
 	}
 	info, ok := kit.ToolInfo("mcp_docs_search")
 	if !ok {
