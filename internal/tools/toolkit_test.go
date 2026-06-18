@@ -3230,21 +3230,24 @@ func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
 	}
 }
 
-func TestToolkit_DefersLowFrequencyAndMCPToolsFromDefinitions(t *testing.T) {
+func TestToolkit_DefersLowFrequencyAndLargeMCPToolSetsFromDefinitions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.registry = NewRegistry(
+	registered := []Tool{
 		NewReadFileTool(kit.env),
 		NewToolSearchTool(kit),
 		NewScheduleCronTool(kit.env),
-		&stubTool{
-			name: "mcp_docs_search",
-			def:  providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search docs through MCP"},
-		},
-	)
+	}
+	for _, name := range []string{"mcp_docs_search", "mcp_docs_read", "mcp_docs_write", "mcp_docs_list", "mcp_docs_status"} {
+		registered = append(registered, &stubTool{
+			name: name,
+			def:  providers.ToolDefinition{Name: name, Description: "Search docs through MCP"},
+		})
+	}
+	kit.registry = NewRegistry(registered...)
 
 	defs := definitionNames(kit.Definitions())
 	for _, name := range []string{"read_file", "tool_search"} {
@@ -3252,7 +3255,7 @@ func TestToolkit_DefersLowFrequencyAndMCPToolsFromDefinitions(t *testing.T) {
 			t.Fatalf("%s should be directly exposed", name)
 		}
 	}
-	for _, name := range []string{"schedule_cron", "mcp_docs_search"} {
+	for _, name := range []string{"schedule_cron", "mcp_docs_search", "mcp_docs_read", "mcp_docs_write", "mcp_docs_list", "mcp_docs_status"} {
 		if defs[name] {
 			t.Fatalf("%s should be deferred from definitions", name)
 		}
@@ -3263,6 +3266,80 @@ func TestToolkit_DefersLowFrequencyAndMCPToolsFromDefinitions(t *testing.T) {
 		if info.Exposure != ToolExposureDeferred {
 			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureDeferred)
 		}
+	}
+}
+
+func TestToolkit_ExposesSmallStableMCPToolSetAfterStablePrefix(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewReadFileTool(kit.env),
+		NewToolSearchTool(kit),
+		&stubTool{
+			name:   "mcp_docs_search",
+			def:    providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search docs through MCP", InputSchema: map[string]any{"type": "object"}},
+			result: `{"action":"mcp_docs_search"}`,
+		},
+		&stubTool{
+			name:   "mcp_docs_read",
+			def:    providers.ToolDefinition{Name: "mcp_docs_read", Description: "Read docs through MCP", InputSchema: map[string]any{"type": "object"}},
+			result: `{"action":"mcp_docs_read"}`,
+		},
+	)
+
+	defs := kit.Definitions()
+	names := definitionNames(defs)
+	if !names["mcp_docs_search"] || !names["mcp_docs_read"] {
+		t.Fatalf("small stable MCP tool set should be directly visible: %+v", defs)
+	}
+	if len(defs) != 4 {
+		t.Fatalf("expected 4 definitions, got %+v", defs)
+	}
+	if defs[0].Name != "read_file" || defs[1].Name != "tool_search" {
+		t.Fatalf("stable built-in prefix should remain first, got %+v", defs)
+	}
+	if !defs[0].CacheStable || !defs[1].CacheStable {
+		t.Fatalf("built-in prefix should stay cache-stable: %+v", defs)
+	}
+	if defs[2].CacheStable || defs[3].CacheStable {
+		t.Fatalf("direct MCP tools must stay outside cache-stable prefix: %+v", defs)
+	}
+	info, ok := kit.ToolInfo("mcp_docs_search")
+	if !ok || info.Exposure != ToolExposureDirect {
+		t.Fatalf("small MCP tool exposure = %+v, ok=%v", info, ok)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`}); err != nil {
+		t.Fatalf("direct small MCP tool should execute without tool_search: %v", err)
+	}
+}
+
+func TestToolkit_DefersOversizedMCPToolEvenInSmallSet(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name: "mcp_docs_search",
+			def: providers.ToolDefinition{
+				Name:        "mcp_docs_search",
+				Description: strings.Repeat("verbose ", directMCPDescriptionMaxRunes),
+				InputSchema: map[string]any{"type": "object"},
+			},
+		},
+	)
+
+	if definitionNames(kit.Definitions())["mcp_docs_search"] {
+		t.Fatal("oversized MCP tool should stay deferred")
+	}
+	info, ok := kit.ToolInfo("mcp_docs_search")
+	if !ok || info.Exposure != ToolExposureDeferred {
+		t.Fatalf("oversized MCP exposure = %+v, ok=%v", info, ok)
 	}
 }
 
@@ -3318,6 +3395,10 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 				},
 			},
 		},
+		&stubTool{name: "mcp_other_one", def: providers.ToolDefinition{Name: "mcp_other_one", Description: "Other MCP tool"}},
+		&stubTool{name: "mcp_other_two", def: providers.ToolDefinition{Name: "mcp_other_two", Description: "Other MCP tool"}},
+		&stubTool{name: "mcp_other_three", def: providers.ToolDefinition{Name: "mcp_other_three", Description: "Other MCP tool"}},
+		&stubTool{name: "mcp_other_four", def: providers.ToolDefinition{Name: "mcp_other_four", Description: "Other MCP tool"}},
 	)
 
 	if definitionNames(kit.Definitions())["mcp_docs_search"] {

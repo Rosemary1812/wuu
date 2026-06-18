@@ -1,6 +1,16 @@
 package tools
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+	"unicode/utf8"
+)
+
+const (
+	directMCPToolLimit           = 4
+	directMCPDescriptionMaxRunes = 600
+	directMCPInputSchemaMaxBytes = 8 * 1024
+)
 
 // ToolKind groups tools by their primary product behavior. It is intentionally
 // coarse so future telemetry can compare broad tool classes without depending
@@ -100,10 +110,58 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if t.isDeferredToolActive(name) {
 		return ToolExposureDirect
 	}
+	if classifyToolKind(name) == ToolKindMCP {
+		if t.shouldExposeMCPDirectly(name) {
+			return ToolExposureDirect
+		}
+		return ToolExposureDeferred
+	}
 	if isDeferredByDefault(name) {
 		return ToolExposureDeferred
 	}
 	return ToolExposureDirect
+}
+
+func (t *Toolkit) shouldExposeMCPDirectly(name string) bool {
+	tools := t.mcpToolsForExposure()
+	if len(tools) == 0 || len(tools) > directMCPToolLimit {
+		return false
+	}
+	for _, tool := range tools {
+		if tool.Name() != name {
+			continue
+		}
+		return isDirectMCPToolCandidate(tool)
+	}
+	return false
+}
+
+func (t *Toolkit) mcpToolsForExposure() []Tool {
+	all := t.allKnownTools()
+	out := make([]Tool, 0, len(all))
+	for _, tool := range all {
+		if classifyToolKind(tool.Name()) == ToolKindMCP {
+			out = append(out, tool)
+		}
+	}
+	return out
+}
+
+func isDirectMCPToolCandidate(tool Tool) bool {
+	def := tool.Definition()
+	if strings.TrimSpace(def.Name) == "" {
+		return false
+	}
+	if utf8.RuneCountInString(def.Description) > directMCPDescriptionMaxRunes {
+		return false
+	}
+	if len(def.InputSchema) > 0 {
+		raw, err := json.Marshal(def.InputSchema)
+		if err != nil || len(raw) > directMCPInputSchemaMaxBytes {
+			return false
+		}
+	}
+	return true
 }
 
 func classifyToolKind(name string) ToolKind {
