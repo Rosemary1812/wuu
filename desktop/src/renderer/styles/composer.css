@@ -418,13 +418,27 @@
   stroke-width: var(--icon-stroke);
 }
 
-.composer-tool-button:hover {
+.composer-tool-button:hover:not(:disabled) {
   background: #f1f2ef;
   color: #22262a;
 }
 
 .composer-tool-button:active:not(:disabled) {
   transform: scale(0.96);
+}
+
+/* Disabled composer tool buttons should match the permission chip's
+   "blocked" affordance: not-allowed cursor + no hover tint, so the
+   user can tell the action is locked instead of just dim. The chip
+   also has a text label and tone color; the icon-only tool buttons
+   can only rely on cursor + hover suppression to communicate state. */
+.composer-tool-button:disabled {
+  cursor: not-allowed;
+}
+
+.composer-tool-button:disabled:hover {
+  background: transparent;
+  color: #8a8e91;
 }
 
 /* Chevron inside a chip is a secondary affordance — slightly smaller
@@ -469,9 +483,43 @@
   white-space: nowrap;
 }
 
-.permission-chip:hover,
-.permission-chip[aria-expanded="true"] {
+/* Mode-driven chip tone. The trigger button always carries one of these
+   tone-* classes so the color and icon react to the active permission mode
+   (read_only / default / approve_for_me / full_access). */
+.permission-chip.tone-safe {
+  color: #1f883d;
+}
+
+.permission-chip.tone-accent {
+  color: #ef5b18;
+}
+
+.permission-chip.tone-review {
+  color: #0969da;
+}
+
+.permission-chip.tone-danger {
+  color: #cf222e;
+}
+
+.permission-chip.tone-safe:hover,
+.permission-chip.tone-safe[aria-expanded="true"] {
+  background: #dafbe1;
+}
+
+.permission-chip.tone-accent:hover,
+.permission-chip.tone-accent[aria-expanded="true"] {
   background: #fff3ec;
+}
+
+.permission-chip.tone-review:hover,
+.permission-chip.tone-review[aria-expanded="true"] {
+  background: #ddf4ff;
+}
+
+.permission-chip.tone-danger:hover,
+.permission-chip.tone-danger[aria-expanded="true"] {
+  background: #ffebe9;
 }
 
 .permission-chip:disabled {
@@ -508,9 +556,8 @@
 }
 
 .composer-send-button {
-  background: #ef5b18;
+  background: #1f2328;
   color: #fff;
-  box-shadow: 0 1px 2px rgba(239, 91, 24, 0.22);
 }
 
 .composer-send-button svg {
@@ -520,15 +567,13 @@
 }
 
 .composer-send-button:hover {
-  background: #c94c13;
-  box-shadow: 0 2px 6px rgba(239, 91, 24, 0.28);
+  background: #2f3438;
 }
 
 .composer-send-button:disabled {
   cursor: default;
   background: #d2d4cf;
   color: rgba(255, 255, 255, 0.86);
-  box-shadow: none;
 }
 
 .composer-send-button:disabled:hover {
@@ -536,16 +581,15 @@
 }
 
 .composer-stop-button {
-  border-radius: 12px;
+  /* Inherits border-radius: 999px from .composer-action-button so the
+     send → stop transition is a pure icon swap, not a shape change. */
   background: #b42318;
   color: #fff;
-  box-shadow: 0 1px 2px rgba(180, 35, 24, 0.22);
 }
 
 .composer-stop-button:hover {
   background: #8f1d15;
   color: #fff;
-  box-shadow: 0 2px 6px rgba(180, 35, 24, 0.28);
 }
 
 .composer-context-bar {

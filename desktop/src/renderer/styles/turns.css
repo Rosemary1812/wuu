@@ -3313,42 +3313,44 @@
   min-width: 0;
 }
 
-/* Streaming shimmer — the "正在思考" label carries a light streak
-   sweeping left → right across the glyphs to mark "the agent is
-   working on this row right now." Settled rows are static gray;
-   only the active row gets the animation.
+/* Streaming shimmer — the "正在思考" label carries a narrow vertical
+   white light bar sweeping left → right across the glyphs to mark
+   "the agent is working on this row right now." Settled rows are
+   static gray; only the active row gets the animation.
 
    Implementation: paint the text color through a horizontal
-   linear-gradient sized 220% wider than the text so the gradient's
-   peak sits well outside the visible area on either side. The
-   gradient plateaus on the text's gray color, peaks at a translucent
-   white in the middle, then plateaus again. Animating
-   `background-position` from `-120%` to `220%` slides the peak from
-   left-off-screen to right-off-screen. `background-clip: text` plus
-   `color: transparent` makes only the glyphs show the gradient. */
+   linear-gradient with `ink-soft` plateaus on both sides and a
+   tight white peak in the middle. background-size 250% stretches
+   the gradient so the white band itself covers only ~10% of the
+   text width (Claude-style shimmer). Animating `background-position`
+   from `150%` to `-50%` slides the bar from off-screen-left to
+   off-screen-right. `background-clip: text` plus `color: transparent`
+   makes only the glyphs show the gradient. */
 .turn-reasoning-summary-text.is-streaming {
   background-image: linear-gradient(
     90deg,
     var(--wuu-ink-soft) 0%,
-    var(--wuu-ink-soft) 32%,
-    rgba(255, 255, 255, 0.55) 50%,
-    var(--wuu-ink-soft) 68%,
+    var(--wuu-ink-soft) 45%,
+    rgba(255, 255, 255, 0.6) 48%,
+    #ffffff 50%,
+    rgba(255, 255, 255, 0.6) 52%,
+    var(--wuu-ink-soft) 55%,
     var(--wuu-ink-soft) 100%
   );
-  background-size: 220% 100%;
-  background-position: -120% 0;
+  background-size: 250% 100%;
+  background-position: 150% 0;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  animation: reasoning-shimmer 1.8s linear infinite;
+  animation: reasoning-shimmer 6.4s linear infinite;
 }
 
 @keyframes reasoning-shimmer {
   from {
-    background-position: -120% 0;
+    background-position: 150% 0;
   }
   to {
-    background-position: 220% 0;
+    background-position: -50% 0;
   }
 }
 
@@ -5085,6 +5087,7 @@ pre {
   .thread-row-loading,
   .thread-row.pending-switch::before,
   .thread-row.running::before,
+  .thread-row-spinner,
   .session-tab.running .session-tab-status,
   .session-tab.pending-switch .session-tab-status,
   .turn-progress.in_progress .turn-progress-label svg,

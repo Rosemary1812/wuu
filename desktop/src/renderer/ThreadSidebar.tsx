@@ -11,6 +11,7 @@ import {
   sortChildAgents
 } from "./ThreadAgents";
 import { threadDisplayTitle } from "./ThreadTitles";
+import { isThreadUnread } from "./AppState";
 
 function projectThreads(threads: Thread[]): Thread[] {
   return threads.filter((thread) => !thread.pinned);
@@ -29,6 +30,7 @@ export function ProjectList({
   activeThreadID,
   pendingThreadID,
   archiveConfirmThreadID,
+  lastViewedTurnByThreadID,
   onSelectProject,
   onToggleProjectCollapsed,
   onStartNewThread,
@@ -47,6 +49,7 @@ export function ProjectList({
   activeThreadID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
+  lastViewedTurnByThreadID: Record<string, string>;
   onSelectProject: (id: string) => void;
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThread: (id: string) => void;
@@ -113,6 +116,7 @@ export function ProjectList({
                   activeID={activeThreadID}
                   pendingThreadID={pendingThreadID}
                   archiveConfirmThreadID={archiveConfirmThreadID}
+                  lastViewedTurnByThreadID={lastViewedTurnByThreadID}
                   visibleCount={visibleThreadCountForProject(project.id)}
                   onSelect={onSelectThread}
                   onSelectChildAgent={onSelectChildAgent}
@@ -135,6 +139,7 @@ function ThreadList({
   activeID,
   pendingThreadID,
   archiveConfirmThreadID,
+  lastViewedTurnByThreadID,
   visibleCount,
   onSelect,
   onSelectChildAgent,
@@ -147,6 +152,7 @@ function ThreadList({
   activeID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
+  lastViewedTurnByThreadID: Record<string, string>;
   visibleCount: number;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
@@ -166,6 +172,7 @@ function ThreadList({
         activeID={activeID}
         pendingThreadID={pendingThreadID}
         archiveConfirmThreadID={archiveConfirmThreadID}
+        lastViewedTurnByThreadID={lastViewedTurnByThreadID}
         onSelect={onSelect}
         onSelectChildAgent={onSelectChildAgent}
         onTogglePinned={onTogglePinned}
@@ -219,6 +226,7 @@ export function PinnedThreadList({
   activeID,
   pendingThreadID,
   archiveConfirmThreadID,
+  lastViewedTurnByThreadID,
   onSelect,
   onSelectChildAgent,
   onTogglePinned,
@@ -229,6 +237,7 @@ export function PinnedThreadList({
   activeID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
+  lastViewedTurnByThreadID: Record<string, string>;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: Thread) => void;
@@ -242,6 +251,7 @@ export function PinnedThreadList({
         activeID={activeID}
         pendingThreadID={pendingThreadID}
         archiveConfirmThreadID={archiveConfirmThreadID}
+        lastViewedTurnByThreadID={lastViewedTurnByThreadID}
         onSelect={onSelect}
         onSelectChildAgent={onSelectChildAgent}
         onTogglePinned={onTogglePinned}
@@ -257,6 +267,7 @@ function ThreadRows({
   activeID,
   pendingThreadID,
   archiveConfirmThreadID,
+  lastViewedTurnByThreadID,
   onSelect,
   onSelectChildAgent,
   onTogglePinned,
@@ -267,6 +278,7 @@ function ThreadRows({
   activeID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
+  lastViewedTurnByThreadID: Record<string, string>;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: Thread) => void;
@@ -290,16 +302,24 @@ function ThreadRows({
         const pendingSwitch = pendingThreadID === thread.id;
         const running = threadRunning(thread);
         const title = threadDisplayTitle(thread, threads);
+        const unread =
+          !running &&
+          !pendingSwitch &&
+          thread.id !== activeID &&
+          isThreadUnread(thread, lastViewedTurnByThreadID[thread.id]);
         return (
           <Fragment key={thread.id}>
             <div
               className={`thread-row ${thread.id === activeID ? "active" : ""}${running ? " running" : ""}${
                 pendingSwitch ? " pending-switch" : ""
-              }`}
+              }${unread ? " has-unread" : ""}`}
               aria-current={thread.id === activeID ? "page" : undefined}
               onMouseLeave={() => onClearArchiveConfirm(thread.id)}
               onContextMenu={(e) => handleContextMenu(thread, e)}
             >
+              {running ? (
+                <span className="thread-row-spinner" aria-hidden="true" />
+              ) : null}
               <button
                 className="thread-row-main"
                 type="button"

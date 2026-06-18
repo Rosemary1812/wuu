@@ -754,11 +754,37 @@
   transform: scale(1);
 }
 
+/* Running thread row: hide the static ::before dot and render a real
+   spinner element instead (see ThreadSidebar.tsx's thread-row-spinner
+   span). Driving the rotation from a plain flex item avoids the
+   transform/transition baseline on ::before that was preventing the
+   animation from starting. Reuses the session-loading-spin keyframe for
+   consistency with .project-row-loading and .thread-row-loading. */
 .thread-row.running::before {
-  background: var(--sidebar-accent);
-  box-shadow: 0 0 0 3px rgba(17, 19, 21, 0.12);
+  display: none;
+}
+
+.thread-row-spinner {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 1.5px solid rgba(95, 126, 104, 0.22);
+  border-top-color: var(--sidebar-accent);
+  border-radius: 999px;
+  animation: session-loading-spin 720ms linear infinite;
+}
+
+/* Use a distinct blue (vs. var(--sidebar-accent) used by the running
+   spinner) so users can tell at a glance which session is in progress
+   vs. which has unread replies. */
+.thread-row.has-unread::before {
+  background: #3b82f6;
   transform: scale(1);
-  animation: session-loading-pulse 900ms ease-in-out infinite;
+}
+
+.thread-row.has-unread .thread-row-title {
+  color: #202427;
+  font-weight: var(--weight-semibold);
 }
 
 .thread-child-agent-list {
@@ -867,9 +893,7 @@
 
 .thread-row.pending-switch::before {
   background: var(--sidebar-accent);
-  box-shadow: 0 0 0 3px rgba(95, 126, 104, 0.14);
   transform: scale(1);
-  animation: session-loading-pulse 900ms ease-in-out infinite;
 }
 
 .thread-row-main {
