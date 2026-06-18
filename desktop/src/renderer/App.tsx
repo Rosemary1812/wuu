@@ -1496,10 +1496,6 @@ export function App(): JSX.Element {
       );
       setQueuedMessagesNow(remainingQueued);
       setGuideMessagesNow([...guideMessagesRef.current, message]);
-      setState((current) => ({
-        ...current,
-        status: "已引导当前任务",
-      }));
     } catch (error) {
       setState((current) => ({
         ...current,
