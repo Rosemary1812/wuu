@@ -417,12 +417,13 @@ func runSessionShowSubcommand(args []string) error {
 	jsonOutput := fs.Bool("json", false, "output as JSON")
 	limit := fs.Int("limit", 200, "max history records to print in human mode")
 	threadFlag := fs.String("thread", "", "thread id; defaults to most recent for this workspace")
+	last := fs.Bool("last", false, "show the most recent session for this workspace")
 	workdir := fs.String("workdir", "", "workspace directory")
 	if err := fs.Parse(args); err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
 	id := strings.TrimSpace(*threadFlag)
-	if id == "" && len(fs.Args()) > 0 {
+	if !*last && id == "" && len(fs.Args()) > 0 {
 		id = strings.TrimSpace(fs.Args()[0])
 	}
 	sessDir, err := resolveSessionsDir()
@@ -441,12 +442,13 @@ func runSessionTrace(args []string) error {
 	fs.SetOutput(io.Discard)
 	jsonOutput := fs.Bool("json", false, "output as JSON")
 	threadFlag := fs.String("thread", "", "thread id; defaults to most recent for this workspace")
+	last := fs.Bool("last", false, "trace the most recent session for this workspace")
 	workdir := fs.String("workdir", "", "workspace directory")
 	if err := fs.Parse(args); err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
 	id := strings.TrimSpace(*threadFlag)
-	if id == "" && len(fs.Args()) > 0 {
+	if !*last && id == "" && len(fs.Args()) > 0 {
 		id = strings.TrimSpace(fs.Args()[0])
 	}
 	sessDir, err := resolveSessionsDir()
@@ -1931,9 +1933,9 @@ Exec review:
 Session commands:
   list --json [--workdir DIR] [--all-workdirs]
                    list visible sessions for the workspace
-  show --json [THREAD_ID] [--workdir DIR]
+  show --json [--last|THREAD_ID] [--workdir DIR]
                    show session metadata and history
-  trace --json [THREAD_ID] [--workdir DIR]
+  trace --json [--last|THREAD_ID] [--workdir DIR]
                    replay a session trace artifact
   search --json QUERY [--workdir DIR]
                    search session metadata and history

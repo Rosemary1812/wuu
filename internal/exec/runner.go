@@ -380,13 +380,18 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.status = "failed"
 		status := "failed"
 		code := ExitTurnFailed
-		if state.permissionDenied || isPermissionFailure(params.Error) {
+		switch {
+		case state.permissionDenied || isPermissionFailure(params.Error):
 			status = "permission_denied"
 			code = ExitPermissionDenied
 			state.permissionDenied = true
 			if state.permissionError == "" {
 				state.permissionError = params.Error
 			}
+		case isProviderModelFailure(params.Error):
+			code = ExitProviderModelError
+		case isToolFailure(params.Error):
+			code = ExitToolFailed
 		}
 		emitJSON(opts, map[string]any{"type": "turn_failed", "thread_id": params.ThreadID, "turn_id": params.TurnID, "error": params.Error})
 		emitResult(opts, *state, status, params.Error)
@@ -801,6 +806,41 @@ func isPermissionFailure(text string) bool {
 	return false
 }
 
+func isProviderModelFailure(text string) bool {
+	text = strings.ToLower(text)
+	for _, marker := range []string{
+		"provider",
+		"model not found",
+		"unsupported model",
+		"unknown model",
+		"no model",
+		"api key",
+		"auth token",
+		"unsupported wire",
+		"unsupported api",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isToolFailure(text string) bool {
+	text = strings.ToLower(text)
+	for _, marker := range []string{
+		"tool execution failed",
+		"tool call failed",
+		"tool failed",
+		"error_kind=tool",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {
 	switch params.Event.Type {
 	case "plan_update":
@@ -868,6 +908,9 @@ func decodeNotification(notification Notification, dst any) error {
 func classifySetupError(err error) error {
 	if err == nil {
 		return nil
+	}
+	if isProviderModelFailure(err.Error()) {
+		return WithExitCode(ExitProviderModelError, err)
 	}
 	return WithExitCode(ExitInvalidInput, err)
 }

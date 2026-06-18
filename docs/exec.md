@@ -253,7 +253,9 @@ Agent-facing session inspection lives under `wuu session`:
 
 ```bash
 wuu session list --json
+wuu session show --json --last
 wuu session show --json <thread-id>
+wuu session trace --json --last
 wuu session trace --json <thread-id>
 wuu session search --json <query>
 wuu session archive --json <thread-id>

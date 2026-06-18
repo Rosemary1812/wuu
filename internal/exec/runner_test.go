@@ -291,6 +291,47 @@ func TestRunTurnErrorReturnsExitCodeOne(t *testing.T) {
 	}
 }
 
+func TestRunTurnErrorClassifiesProviderModelError(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{ThreadID: "thread-1", TurnID: "turn-1", Error: "provider returned an error"}),
+	)
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Prompt:     "do work",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	})
+	if ExitCode(err) != ExitProviderModelError {
+		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
+	}
+}
+
+func TestRunTurnErrorClassifiesToolFailure(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{ThreadID: "thread-1", TurnID: "turn-1", Error: "tool execution failed: run_shell failed"}),
+	)
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Prompt:     "do work",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	})
+	if ExitCode(err) != ExitToolFailed {
+		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
+	}
+}
+
+func TestClassifySetupErrorReturnsProviderModelExit(t *testing.T) {
+	err := classifySetupError(fmt.Errorf("no API key found for provider %q", "test"))
+	if ExitCode(err) != ExitProviderModelError {
+		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
+	}
+}
+
 func TestRunJSONLEmitsWorkEventFamilies(t *testing.T) {
 	controller := newFakeController(
 		notification(appserver.NotificationItemStarted, appserver.ItemStartedNotification{

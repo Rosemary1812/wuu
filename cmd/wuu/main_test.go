@@ -1962,6 +1962,48 @@ func TestRunSessionShowSubcommandReturnsHistoryJSON(t *testing.T) {
 	}
 }
 
+func TestRunSessionShowLastReturnsMostRecentForWorkspace(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	workdir := t.TempDir()
+
+	home, err := statepath.Home("")
+	if err != nil {
+		t.Fatalf("statepath.Home: %v", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	if _, err := session.CreateWithMetadata(sessDir, "older-thread", workdir); err != nil {
+		t.Fatalf("create older session: %v", err)
+	}
+	latest, err := session.CreateWithMetadata(sessDir, "latest-thread", workdir)
+	if err != nil {
+		t.Fatalf("create latest session: %v", err)
+	}
+	if err := session.AppendHistoryRecord(sessDir, latest.ID, session.HistoryRecord{
+		Role:    "assistant",
+		Content: "latest answer",
+	}); err != nil {
+		t.Fatalf("append history: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"session", "show", "--json", "--last", "--workdir", workdir}); err != nil {
+			t.Fatalf("run session show --last: %v", err)
+		}
+	})
+
+	var payload struct {
+		ThreadID string                  `json:"thread_id"`
+		History  []session.HistoryRecord `json:"history"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, output)
+	}
+	if payload.ThreadID != latest.ID || len(payload.History) != 1 || payload.History[0].Content != "latest answer" {
+		t.Fatalf("unexpected session show payload: %+v", payload)
+	}
+}
+
 func TestRunSessionSearchJSONMatchesHistoryAndFiltersWorkspace(t *testing.T) {
 	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
 	t.Setenv("WUU_HOME", wuuHome)
@@ -2310,6 +2352,57 @@ func TestRunSessionTraceJSONReplaysTrace(t *testing.T) {
 		t.Fatalf("parse JSON: %v\noutput: %s", err, output)
 	}
 	if payload.ThreadID != sess.ID || payload.TracePath != tracePath || !payload.Summary.Complete || payload.Summary.LatestTurn == nil || payload.Summary.LatestTurn.OutputTokens != 4 {
+		t.Fatalf("unexpected trace payload: %+v", payload)
+	}
+}
+
+func TestRunSessionTraceLastReplaysMostRecentTrace(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	workdir := t.TempDir()
+
+	home, err := statepath.Home("")
+	if err != nil {
+		t.Fatalf("statepath.Home: %v", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	if _, err := session.CreateWithMetadata(sessDir, "older-trace-thread", workdir); err != nil {
+		t.Fatalf("create older session: %v", err)
+	}
+	latest, err := session.CreateWithMetadata(sessDir, "latest-trace-thread", workdir)
+	if err != nil {
+		t.Fatalf("create latest session: %v", err)
+	}
+	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, workdir)
+	if err != nil {
+		t.Fatalf("WorkspaceDir: %v", err)
+	}
+	tracePath := sessiontrace.Path(statepath.SessionArtifactDir(workspaceStateDir, latest.ID))
+	if err := sessiontrace.AppendTurn(
+		tracePath,
+		sessiontrace.TurnRecord{ThreadID: latest.ID, TurnID: "turn-1", Status: "completed", InputTokens: 1, OutputTokens: 2},
+		sessiontrace.FinalRecord{Status: "completed", FinalAnswerPreview: "latest"},
+		nil,
+		nil,
+	); err != nil {
+		t.Fatalf("append trace: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"session", "trace", "--json", "--last", "--workdir", workdir}); err != nil {
+			t.Fatalf("run session trace --last: %v", err)
+		}
+	})
+
+	var payload struct {
+		ThreadID  string                     `json:"thread_id"`
+		TracePath string                     `json:"trace_path"`
+		Summary   sessiontrace.ReplaySummary `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, output)
+	}
+	if payload.ThreadID != latest.ID || payload.TracePath != tracePath || !payload.Summary.Complete {
 		t.Fatalf("unexpected trace payload: %+v", payload)
 	}
 }
