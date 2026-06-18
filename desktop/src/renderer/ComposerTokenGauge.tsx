@@ -1,34 +1,35 @@
 import { useEffect, useRef, useState } from "react";
 
 // Compact toolbar gauge. The numeric readout lives in a hover-only tooltip;
-// the default render stays icon-like: a simple half arc and needle.
+// the default render stays icon-like: a speedmark arc and sweeping needle.
 const MAX_TOKENS_PER_SEC = 100;
 const HIGH_SPEED_RATIO = 0.7;
 
-const NEEDLE_LENGTH = 15;
-const NEEDLE_TAIL = 3;
-const NEEDLE_STROKE = 1.5;
-const PIVOT_RADIUS = 2.4;
+const NEEDLE_LENGTH = 26;
+const PIVOT_RADIUS = 5.2;
+const PIVOT_INNER_RADIUS = 2.4;
 
-const ARC_CENTER_X = 24;
-const ARC_CENTER_Y = 24;
-const ARC_RADIUS = 18;
-const ARC_STROKE = 3.2;
+const GAUGE_CENTER_X = 30;
+const GAUGE_CENTER_Y = 31;
+const OUTER_ARC_RADIUS = 25;
+const INNER_ARC_RADIUS = 18.5;
+const OUTER_ARC_STROKE = 6.8;
+const INNER_ARC_STROKE = 3.2;
 
-const ARC_START_DEG = 180;
-const ARC_END_DEG = 360;
+const ARC_START_DEG = 190;
+const ARC_END_DEG = 330;
 const ARC_ANGLE = ARC_END_DEG - ARC_START_DEG;
-const ARC_PATH_LENGTH = Math.PI * ARC_RADIUS;
+const ARC_PATH_LENGTH = (Math.PI * OUTER_ARC_RADIUS * ARC_ANGLE) / 180;
 
 function polarPoint(cx: number, cy: number, r: number, deg: number): { x: number; y: number } {
   const rad = (deg * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
-function trackPath(): string {
-  const start = polarPoint(ARC_CENTER_X, ARC_CENTER_Y, ARC_RADIUS, ARC_START_DEG);
-  const end = polarPoint(ARC_CENTER_X, ARC_CENTER_Y, ARC_RADIUS, ARC_END_DEG);
-  return `M ${start.x} ${start.y} A ${ARC_RADIUS} ${ARC_RADIUS} 0 0 1 ${end.x} ${end.y}`;
+function arcPath(radius: number, startDeg = ARC_START_DEG, endDeg = ARC_END_DEG): string {
+  const start = polarPoint(GAUGE_CENTER_X, GAUGE_CENTER_Y, radius, startDeg);
+  const end = polarPoint(GAUGE_CENTER_X, GAUGE_CENTER_Y, radius, endDeg);
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 0 1 ${end.x} ${end.y}`;
 }
 
 function speedColor(tps: number): string {
@@ -88,8 +89,6 @@ export function ComposerTokenGauge({
   const dashOffset = ARC_PATH_LENGTH * (1 - ratio);
   const color = speedColor(displayed);
   const needleDeg = ARC_START_DEG + ARC_ANGLE * ratio;
-  const tip = polarPoint(ARC_CENTER_X, ARC_CENTER_Y, NEEDLE_LENGTH, needleDeg);
-  const tail = polarPoint(ARC_CENTER_X, ARC_CENTER_Y, NEEDLE_TAIL, needleDeg + 180);
   const rounded = Math.round(displayed * 10) / 10;
   const tooltipColor =
     displayed < 25
@@ -111,49 +110,82 @@ export function ComposerTokenGauge({
       title={speedLabel}
     >
       <svg
-        viewBox="0 0 48 28"
-        width="30"
-        height="18"
+        viewBox="0 0 68 40"
+        width="34"
+        height="20"
         className="composer-token-gauge-svg"
         aria-hidden="true"
       >
         <path
-          d={trackPath()}
+          d={arcPath(OUTER_ARC_RADIUS)}
           className="composer-token-gauge-track"
           stroke="var(--token-gauge-track)"
-          strokeWidth={ARC_STROKE}
+          strokeWidth={OUTER_ARC_STROKE}
           fill="none"
           strokeLinecap="round"
         />
         <path
-          d={trackPath()}
+          d={arcPath(INNER_ARC_RADIUS, 198, 282)}
+          className="composer-token-gauge-inner-arc"
+          stroke="var(--token-gauge-inner-arc)"
+          strokeWidth={INNER_ARC_STROKE}
+          fill="none"
+          strokeLinecap="round"
+        />
+        <path
+          d={arcPath(OUTER_ARC_RADIUS)}
           className="composer-token-gauge-progress"
           style={{
             stroke: color,
             strokeDasharray: ARC_PATH_LENGTH,
             strokeDashoffset: dashOffset,
           }}
-          strokeWidth={ARC_STROKE}
+          strokeWidth={OUTER_ARC_STROKE}
           fill="none"
           strokeLinecap="round"
         />
-        <line
-          x1={tail.x}
-          y1={tail.y}
-          x2={tip.x}
-          y2={tip.y}
-          className="composer-token-gauge-needle"
-          stroke={color}
-          strokeWidth={NEEDLE_STROKE}
-          strokeLinecap="round"
+        <rect
+          x="55.5"
+          y="18.5"
+          width="4.5"
+          height="4.5"
+          rx="1.1"
+          className="composer-token-gauge-speed-dot"
         />
+        <rect
+          x="62"
+          y="16"
+          width="4.8"
+          height="4.8"
+          rx="1.1"
+          className="composer-token-gauge-speed-dot"
+        />
+        <g
+          className="composer-token-gauge-needle"
+          style={{
+            transform: `rotate(${needleDeg}deg)`,
+            transformOrigin: `${GAUGE_CENTER_X}px ${GAUGE_CENTER_Y}px`,
+          }}
+        >
+          <path
+            className="composer-token-gauge-needle-shape"
+            d={`M ${GAUGE_CENTER_X - 3.2} ${GAUGE_CENTER_Y + 0.6} L ${GAUGE_CENTER_X + 2.3} ${GAUGE_CENTER_Y - 5.3} L ${GAUGE_CENTER_X + NEEDLE_LENGTH} ${GAUGE_CENTER_Y - 1.2} Q ${GAUGE_CENTER_X + 17} ${GAUGE_CENTER_Y + 7.2} ${GAUGE_CENTER_X + 2.4} ${GAUGE_CENTER_Y + 5.2} Z`}
+            fill={color}
+          />
+        </g>
         <circle
-          cx={ARC_CENTER_X}
-          cy={ARC_CENTER_Y}
+          cx={GAUGE_CENTER_X}
+          cy={GAUGE_CENTER_Y}
           r={PIVOT_RADIUS}
           fill={color}
           stroke="var(--token-gauge-hub-ring)"
-          strokeWidth="0.7"
+          strokeWidth="1"
+        />
+        <circle
+          cx={GAUGE_CENTER_X + 0.7}
+          cy={GAUGE_CENTER_Y - 0.7}
+          r={PIVOT_INNER_RADIUS}
+          fill="var(--token-gauge-hub-ring)"
         />
       </svg>
       <span

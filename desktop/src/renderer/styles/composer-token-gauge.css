@@ -1,13 +1,16 @@
 /* Live token-speed gauge shown next to the model picker in the composer.
-   It stays icon-like in the toolbar: a quiet half arc, colored progress,
-   and a small needle. The exact tok/s number only appears on hover. */
+   It stays icon-like in the toolbar: a speedmark arc, sweeping needle,
+   and a small high-speed marker pair. The exact tok/s number only appears
+   on hover. */
 
 :root {
   --token-gauge-idle: rgba(120, 120, 130, 0.55);
   --token-gauge-low: #10b981;
   --token-gauge-mid: #f59e0b;
   --token-gauge-high: #ef4444;
-  --token-gauge-track: rgba(120, 120, 130, 0.24);
+  --token-gauge-track: rgba(120, 120, 130, 0.2);
+  --token-gauge-inner-arc: rgba(120, 120, 130, 0.36);
+  --token-gauge-dot: rgba(120, 120, 130, 0.62);
   --token-gauge-text: rgba(110, 110, 120, 0.85);
   --token-gauge-hub-ring: rgba(255, 255, 255, 0.96);
   --token-gauge-tooltip-bg: rgba(20, 20, 24, 0.94);
@@ -34,13 +37,12 @@
 .composer-token-gauge .composer-token-gauge-svg {
   display: block;
   overflow: visible;
-  width: 30px;
-  height: 18px;
+  width: 34px;
+  height: 20px;
   stroke-width: initial;
 }
 
-.composer-token-gauge-progress,
-.composer-token-gauge-needle {
+.composer-token-gauge-progress {
   transition:
     stroke-dashoffset 220ms cubic-bezier(0.23, 1, 0.32, 1),
     stroke 200ms ease-out;
@@ -51,10 +53,16 @@
 }
 
 .composer-token-gauge-needle {
-  transition:
-    x2 220ms cubic-bezier(0.23, 1, 0.32, 1),
-    y2 220ms cubic-bezier(0.23, 1, 0.32, 1),
-    stroke 200ms ease-out;
+  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.composer-token-gauge-needle-shape {
+  transition: fill 200ms ease-out;
+}
+
+.composer-token-gauge-speed-dot {
+  fill: var(--token-gauge-dot);
+  transition: fill 200ms ease-out;
 }
 
 /* Numeric readout that only appears on hover. Lives inside the gauge
@@ -98,6 +106,8 @@
 @media (prefers-reduced-motion: reduce) {
   .composer-token-gauge-progress,
   .composer-token-gauge-needle,
+  .composer-token-gauge-needle-shape,
+  .composer-token-gauge-speed-dot,
   .composer-token-gauge-tooltip,
   .composer-token-gauge[data-state="stopping"] {
     transition: opacity 200ms ease, color 200ms ease;
