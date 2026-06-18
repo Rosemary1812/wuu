@@ -11,7 +11,12 @@
   pointer-events: none;
 }
 
-.environment-side-stack > .environment-panel {
+/* Both direct children of the stack — the environment panel and any
+   docked sidecar (e.g. query history popover) — must opt back into
+   pointer events. The stack container itself stays click-through so its
+   empty gutter doesn't absorb clicks on the conversation underneath. */
+.environment-side-stack > .environment-panel,
+.environment-side-stack > .query-history-environment-slot {
   position: relative;
   top: auto;
   right: auto;
