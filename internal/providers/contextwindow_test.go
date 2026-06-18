@@ -105,6 +105,26 @@ func TestKnownContextWindowFor_KnownModel(t *testing.T) {
 	}
 }
 
+func TestKnownContextWindowFor_MiniMaxM3(t *testing.T) {
+	got, ok := KnownContextWindowFor("MiniMax-M3")
+	if !ok || got != 1_000_000 {
+		t.Fatalf("KnownContextWindowFor(MiniMax-M3) = %d, %v; want 1000000, true", got, ok)
+	}
+}
+
+func TestKnownContextWindowFor_MiniMaxM2(t *testing.T) {
+	got, ok := KnownContextWindowFor("MiniMax-M2.7")
+	if !ok || got != 204_800 {
+		t.Fatalf("KnownContextWindowFor(MiniMax-M2.7) = %d, %v; want 204800, true", got, ok)
+	}
+}
+
+func TestMaxOutputTokensFor_MiniMaxM3(t *testing.T) {
+	if got := MaxOutputTokensFor("MiniMax-M3"); got != 131_072 {
+		t.Fatalf("MaxOutputTokensFor(MiniMax-M3) = %d, want 131072", got)
+	}
+}
+
 func TestContextWindowFor_EmptyString(t *testing.T) {
 	if got := ContextWindowFor(""); got != defaultContextWindow {
 		t.Fatalf("expected default for empty string, got %d", got)

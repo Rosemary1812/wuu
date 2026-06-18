@@ -9,11 +9,13 @@ import (
 //
 // Resolution order:
 //
-//  1. Catwalk's curated, community-maintained model index (loaded
+//  1. Wuu's exact local corrections for provider docs that are newer
+//     or more precise than the embedded catalog snapshot.
+//  2. Catwalk's curated, community-maintained model index (loaded
 //     from charm.land/catwalk's embedded snapshot at process start;
 //     a future remote sync path will refresh it without restart).
 //     This covers the broadest set of models with the freshest data.
-//  2. Wuu's hand-rolled substring registry below — kept as a robust
+//  3. Wuu's hand-rolled substring registry below — kept as a robust
 //     fallback for models catwalk hasn't shipped yet, plus generic
 //     family rules ("claude-sonnet" → 200k) that catch any vendor's
 //     proxy-renamed variant.
@@ -26,12 +28,6 @@ func KnownContextWindowFor(model string) (window int, ok bool) {
 		return 0, false
 	}
 
-	// Layer 1: catwalk curated index.
-	if w := catwalkLookup(model); w > 0 {
-		return w, true
-	}
-
-	// Layer 2: wuu's hand-rolled substring registry.
 	lower := strings.ToLower(strings.TrimSpace(model))
 	// OpenRouter and similar gateways prefix model names with the
 	// upstream vendor: "anthropic/claude-sonnet-4-5". Strip the prefix
@@ -41,6 +37,18 @@ func KnownContextWindowFor(model string) (window int, ok bool) {
 		stripped = lower[idx+1:]
 	}
 
+	// Layer 0: exact local corrections for provider docs that are newer
+	// or more precise than the embedded catalog snapshot.
+	if window, ok := exactContextWindowOverride(lower, stripped); ok {
+		return window, true
+	}
+
+	// Layer 1: catwalk curated index.
+	if w := catwalkLookup(model); w > 0 {
+		return w, true
+	}
+
+	// Layer 2: wuu's hand-rolled substring registry.
 	for _, entry := range contextWindowRegistry {
 		// Patterns are stored lowercased; case-insensitive substring
 		// match against either the full or stripped model id.
@@ -71,6 +79,30 @@ const defaultContextWindow = 64_000
 type contextWindowEntry struct {
 	pattern string // lowercase substring match
 	size    int    // tokens
+}
+
+func exactContextWindowOverride(lower, stripped string) (int, bool) {
+	for _, entry := range exactContextWindowOverrides {
+		if lower == entry.pattern || stripped == entry.pattern {
+			return entry.size, true
+		}
+	}
+	return 0, false
+}
+
+var exactContextWindowOverrides = []contextWindowEntry{
+	// MiniMax official docs list MiniMax-M3 at 1M context and M2-series
+	// text models at 204,800. Keep these exact overrides ahead of the
+	// embedded catalog because older catalog snapshots have reported
+	// MiniMax-M3 as 200k.
+	{"minimax-m3", 1_000_000},
+	{"minimax-m2.7-highspeed", 204_800},
+	{"minimax-m2.7", 204_800},
+	{"minimax-m2.5-highspeed", 204_800},
+	{"minimax-m2.5", 204_800},
+	{"minimax-m2.1-highspeed", 204_800},
+	{"minimax-m2.1", 204_800},
+	{"minimax-m2", 204_800},
 }
 
 // contextWindowRegistry is the model → window lookup table. Order
@@ -214,6 +246,9 @@ var maxOutputTokensRegistry = []contextWindowEntry{
 	{"o1", 32_768},
 	// DeepSeek
 	{"deepseek", 8_192},
+	// MiniMax-M3 documents 128K as the recommended Chat Completions output
+	// cap, with larger values allowed by explicit request.
+	{"minimax-m3", 131_072},
 	// Gemini
 	{"gemini-2.5-pro", 65_536},
 	{"gemini-2", 8_192},

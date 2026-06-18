@@ -21,6 +21,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
+	"github.com/blueberrycongee/wuu/internal/modelbudget"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
@@ -77,6 +78,7 @@ type Session struct {
 	Toolkit                     *tools.Toolkit
 	WorkerClient                providers.StreamClient
 	ModelRoles                  modelroles.Set
+	ModelBudget                 modelbudget.Budget
 	BaseSystemPrompt            string
 	UserSystemPrompt            string
 	WuuHome                     string
@@ -95,6 +97,7 @@ type ThreadRuntime struct {
 	StreamRunner *agent.StreamRunner
 	Toolkit      *tools.Toolkit
 	AgentControl *agentcontrol.AgentControl
+	ModelBudget  modelbudget.Budget
 }
 
 // NewSession builds the shared runtime for an interactive agent surface.
@@ -283,7 +286,7 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	sessionDir := statepath.SessionsDir(wuuHome)
-	contextWindow := ResolveContextWindow(
+	modelBudget := ResolveModelBudget(
 		providerCfg.Model,
 		ruleProviderCfg,
 		cfg.Agent.MaxContextTokens,
@@ -315,8 +318,8 @@ func NewSession(opts Options) (*Session, error) {
 		Effort:                mainRole.LegacyEffort,
 		Variant:               mainRole.Variant,
 		ProviderOptions:       modelvariant.CloneOptions(mainRole.ProviderOptions),
-		ContextWindowOverride: contextWindow,
-		MaxInputTokens:        ResolveInputWindow(providerCfg.Model, ruleProviderCfg),
+		ContextWindowOverride: modelBudget.ContextWindowTokens,
+		MaxInputTokens:        modelBudget.InputLimitTokens,
 		DisableAutoCompact:    cfg.Agent.DisableAutoCompact,
 		BeforeRequest:         EnvContextInjector(rootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
 		AfterTurn:             afterTurn,
@@ -345,6 +348,7 @@ func NewSession(opts Options) (*Session, error) {
 		Toolkit:                     toolkit,
 		WorkerClient:                workerClient,
 		ModelRoles:                  roleSelections,
+		ModelBudget:                 modelBudget,
 		BaseSystemPrompt:            baseSystemPrompt,
 		UserSystemPrompt:            userSystemPrompt,
 		WuuHome:                     wuuHome,
@@ -659,6 +663,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		StreamRunner: runner,
 		Toolkit:      kit,
 		AgentControl: agentControl,
+		ModelBudget:  s.ModelBudget,
 	}, nil
 }
 
@@ -789,23 +794,15 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 	return s.ProcessManager.CleanupSessionWithResult()
 }
 
+func ResolveModelBudget(model string, provider config.ProviderConfig, agentOverride int) modelbudget.Budget {
+	return modelbudget.Resolve(model, provider, agentOverride)
+}
+
 // ResolveContextWindow resolves the trusted model context size used for
 // proactive auto-compact. A zero return means the model limit is unknown; the
 // runtime should skip proactive compaction and rely on provider overflow errors.
 func ResolveContextWindow(model string, provider config.ProviderConfig, agentOverride int) int {
-	if provider.ContextWindow > 0 {
-		return provider.ContextWindow
-	}
-	if limit := configuredModelContextLimit(model, provider); limit > 0 {
-		return limit
-	}
-	if agentOverride > 0 {
-		return agentOverride
-	}
-	if window, ok := providers.KnownContextWindowFor(model); ok {
-		return window
-	}
-	return 0
+	return ResolveModelBudget(model, provider, agentOverride).ContextWindowTokens
 }
 
 // ResolveInputWindow resolves the effective prompt/input budget when the
@@ -813,80 +810,13 @@ func ResolveContextWindow(model string, provider config.ProviderConfig, agentOve
 // an input cap from context-output; proactive compaction handles output reserve
 // separately.
 func ResolveInputWindow(model string, provider config.ProviderConfig) int {
-	if limit := configuredModelInputLimit(model, provider); limit > 0 {
-		if cap := codexSubscriptionInputCap(model, provider.Type); cap > 0 && cap < limit {
-			return cap
-		}
-		return limit
-	}
-	if cap := codexSubscriptionInputCap(model, provider.Type); cap > 0 {
-		return cap
-	}
-	return 0
+	return ResolveModelBudget(model, provider, 0).InputLimitTokens
 }
 
-func configuredModelContextLimit(model string, provider config.ProviderConfig) int {
-	for _, cfg := range configuredModelCandidates(model, provider) {
-		if cfg.ContextWindow > 0 {
-			return cfg.ContextWindow
-		}
-		if cfg.Limit != nil && cfg.Limit.Context > 0 {
-			return cfg.Limit.Context
-		}
-	}
-	return 0
-}
-
-func configuredModelInputLimit(model string, provider config.ProviderConfig) int {
-	for _, cfg := range configuredModelCandidates(model, provider) {
-		if cfg.Limit != nil && cfg.Limit.Input > 0 {
-			return cfg.Limit.Input
-		}
-	}
-	return 0
-}
-
-func configuredModelCandidates(model string, provider config.ProviderConfig) []config.ProviderModelConfig {
-	model = strings.TrimSpace(model)
-	if model == "" || len(provider.Models) == 0 {
-		return nil
-	}
-	out := make([]config.ProviderModelConfig, 0, 2)
-	if cfg, ok := provider.Models[model]; ok {
-		out = append(out, cfg)
-	}
-	apiModel := modelcatalog.APIModel(provider, model)
-	if apiModel != "" && apiModel != model {
-		if cfg, ok := provider.Models[apiModel]; ok {
-			out = append(out, cfg)
-		}
-	}
-	return out
-}
-
-const codexSubscriptionGPT5InputCap = 272_000
+const codexSubscriptionGPT5InputCap = modelbudget.CodexSubscriptionGPT5InputCap
 
 func codexSubscriptionInputCap(model, providerType string) int {
-	if !isCodexSubscriptionProviderType(providerType) {
-		return 0
-	}
-	id := strings.ToLower(strings.TrimSpace(model))
-	if idx := strings.LastIndex(id, "/"); idx >= 0 {
-		id = id[idx+1:]
-	}
-	if strings.Contains(id, "gpt-5") {
-		return codexSubscriptionGPT5InputCap
-	}
-	return 0
-}
-
-func isCodexSubscriptionProviderType(providerType string) bool {
-	switch strings.ToLower(strings.TrimSpace(providerType)) {
-	case "openai-codex", "codex-subscription", "chatgpt-codex":
-		return true
-	default:
-		return false
-	}
+	return modelbudget.CodexSubscriptionInputCap(model, providerType)
 }
 
 // EnvContextInjector returns dynamic runtime context injected into each model

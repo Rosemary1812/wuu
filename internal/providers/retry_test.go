@@ -112,6 +112,13 @@ func TestDetectContextOverflow_RequestBufferLimit(t *testing.T) {
 	}
 }
 
+func TestDetectContextOverflow_MiniMaxMessage(t *testing.T) {
+	msg := `HTTP 400: {"type":"error","error":{"type":"invalid_request_error","message":"invalid params, context window exceeds limit (2013)"}}`
+	if !DetectContextOverflow(msg) {
+		t.Fatal("expected MiniMax context-window message to be detected")
+	}
+}
+
 func TestNewProviderStreamError_Auth(t *testing.T) {
 	err := NewProviderStreamError("authentication_error", "invalid api key")
 	if !IsAuthError(err) {

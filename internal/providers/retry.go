@@ -228,7 +228,9 @@ func DetectContextOverflow(body string) bool {
 	return strings.Contains(msg, "context_length_exceeded") ||
 		strings.Contains(msg, "context length exceeded") ||
 		strings.Contains(msg, "exceeds the context window") ||
+		strings.Contains(msg, "context window exceeds limit") ||
 		strings.Contains(msg, "maximum context length") ||
+		strings.Contains(msg, "model_context_window_exceeded") ||
 		strings.Contains(msg, "prompt is too long") ||
 		strings.Contains(msg, "input is too long") ||
 		strings.Contains(msg, "request too large") ||

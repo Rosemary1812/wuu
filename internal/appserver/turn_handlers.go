@@ -580,6 +580,7 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 		model = runner.Model
 		apiModel = runner.APIModel
 	}
+	modelBudget := threadRuntime.ModelBudget
 	errorText := ""
 	if runErr != nil {
 		errorText = runErr.Error()
@@ -591,7 +592,7 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 		ProviderName:     providerName,
 		Model:            model,
 		APIModel:         apiModel,
-		ModelProfile:     sessiontrace.NewModelProfileRecord(providerName, model, apiModel),
+		ModelProfile:     sessiontrace.NewModelProfileRecordWithBudget(providerName, model, apiModel, modelBudget),
 		StartedAt:        turn.StartedAt,
 		CompletedAt:      turn.CompletedAt,
 		DurationMS:       turn.DurationMS,

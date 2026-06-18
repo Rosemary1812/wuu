@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/modelbudget"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 	"github.com/blueberrycongee/wuu/internal/tools"
@@ -54,6 +55,13 @@ type ModelProfileRecord struct {
 	FreeformTool              bool   `json:"freeform_tool,omitempty"`
 	ParallelToolCalls         bool   `json:"parallel_tool_calls,omitempty"`
 	ContextWindowTokens       int    `json:"context_window_tokens,omitempty"`
+	ContextWindowSource       string `json:"context_window_source,omitempty"`
+	ContextWindowKnown        bool   `json:"context_window_known,omitempty"`
+	InputLimitTokens          int    `json:"input_limit_tokens,omitempty"`
+	OutputLimitTokens         int    `json:"output_limit_tokens,omitempty"`
+	OutputReserveTokens       int    `json:"output_reserve_tokens,omitempty"`
+	UsableInputTokens         int    `json:"usable_input_tokens,omitempty"`
+	CompactThresholdTokens    int    `json:"compact_threshold_tokens,omitempty"`
 	DefaultWriteMode          string `json:"default_write_mode,omitempty"`
 	DefaultSearchBudget       int    `json:"default_search_budget,omitempty"`
 	DefaultMaxAutonomousSteps int    `json:"default_max_autonomous_steps,omitempty"`
@@ -63,6 +71,10 @@ type ModelProfileRecord struct {
 }
 
 func NewModelProfileRecord(providerName, model, apiModel string) *ModelProfileRecord {
+	return NewModelProfileRecordWithBudget(providerName, model, apiModel, modelbudget.Budget{})
+}
+
+func NewModelProfileRecordWithBudget(providerName, model, apiModel string, budget modelbudget.Budget) *ModelProfileRecord {
 	providerName = strings.TrimSpace(providerName)
 	model = strings.TrimSpace(model)
 	apiModel = strings.TrimSpace(apiModel)
@@ -74,6 +86,14 @@ func NewModelProfileRecord(providerName, model, apiModel string) *ModelProfileRe
 		modelForProfile = model
 	}
 	profile := modelprofile.Resolve(providerName, modelForProfile)
+	contextWindow := profile.Context.WindowTokens
+	contextSource := ""
+	contextKnown := false
+	if budget.ContextWindowSource != "" {
+		contextWindow = budget.ContextWindowTokens
+		contextSource = string(budget.ContextWindowSource)
+		contextKnown = budget.ContextWindowKnown
+	}
 	return &ModelProfileRecord{
 		ProviderName:              providerName,
 		Model:                     model,
@@ -82,7 +102,14 @@ func NewModelProfileRecord(providerName, model, apiModel string) *ModelProfileRe
 		ToolCalling:               string(profile.APIShape.ToolCalling),
 		FreeformTool:              profile.APIShape.FreeformTool,
 		ParallelToolCalls:         profile.APIShape.ParallelToolCalls,
-		ContextWindowTokens:       profile.Context.WindowTokens,
+		ContextWindowTokens:       contextWindow,
+		ContextWindowSource:       contextSource,
+		ContextWindowKnown:        contextKnown,
+		InputLimitTokens:          budget.InputLimitTokens,
+		OutputLimitTokens:         budget.OutputLimitTokens,
+		OutputReserveTokens:       budget.OutputReserveTokens,
+		UsableInputTokens:         budget.UsableInputTokens,
+		CompactThresholdTokens:    budget.CompactThresholdTokens,
 		DefaultWriteMode:          string(profile.Workflow.DefaultWriteMode),
 		DefaultSearchBudget:       profile.Workflow.DefaultSearchBudget,
 		DefaultMaxAutonomousSteps: profile.Workflow.DefaultMaxAutonomousSteps,

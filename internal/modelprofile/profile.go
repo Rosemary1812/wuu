@@ -189,6 +189,7 @@ func FamilyForProviderModel(providerName, model string) Family {
 }
 
 func baseProfile(providerName, model string, family Family) Profile {
+	window, _ := providers.KnownContextWindowFor(model)
 	return Profile{
 		ProviderName: providerName,
 		Model:        model,
@@ -200,7 +201,7 @@ func baseProfile(providerName, model string, family Family) Profile {
 			SystemRole:        true,
 		},
 		Context: Context{
-			WindowTokens:     providers.ContextWindowFor(model),
+			WindowTokens:     window,
 			CacheGranularity: CacheGranularityNone,
 		},
 		Reasoning: Reasoning{

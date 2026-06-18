@@ -175,8 +175,15 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 
 	maxCtx := r.ContextWindowOverride
 	if maxCtx <= 0 {
-		if window, ok := providers.KnownContextWindowFor(r.Model); ok {
-			maxCtx = window
+		if requestModel != "" && requestModel != r.Model {
+			if window, ok := providers.KnownContextWindowFor(requestModel); ok {
+				maxCtx = window
+			}
+		}
+		if maxCtx <= 0 {
+			if window, ok := providers.KnownContextWindowFor(r.Model); ok {
+				maxCtx = window
+			}
 		}
 	}
 	if r.DisableAutoCompact {

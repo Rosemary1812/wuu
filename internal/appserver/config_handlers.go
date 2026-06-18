@@ -386,6 +386,8 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	systemPrompt := s.rt.RefreshSystemPrompt(resolvedName, apiModel)
+	modelBudget := runtime.ResolveModelBudget(model, ruleProviderCfg, cfg.Agent.MaxContextTokens)
+	s.rt.ModelBudget = modelBudget
 	if s.rt.StreamRunner != nil {
 		if client != nil {
 			s.rt.StreamRunner.Client = client
@@ -395,12 +397,8 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.StreamRunner.Effort = selection.LegacyEffort
 		s.rt.StreamRunner.Variant = selection.Variant
 		s.rt.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)
-		s.rt.StreamRunner.ContextWindowOverride = runtime.ResolveContextWindow(
-			model,
-			ruleProviderCfg,
-			cfg.Agent.MaxContextTokens,
-		)
-		s.rt.StreamRunner.MaxInputTokens = runtime.ResolveInputWindow(model, ruleProviderCfg)
+		s.rt.StreamRunner.ContextWindowOverride = modelBudget.ContextWindowTokens
+		s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
 	}
 	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
@@ -536,6 +534,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 					th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
 					th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
 				}
+				th.execRuntime.ModelBudget = s.rt.ModelBudget
 				if th.execRuntime.Toolkit != nil {
 					th.execRuntime.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
 					if s.rt != nil {
