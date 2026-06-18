@@ -8,6 +8,9 @@ reusable foundation; the Electron desktop is the current shell. Future
 shells (VS Code, JetBrains) can reuse the core by spawning the
 `wuu app-server` process.
 
+Wuu has no TUI. Use Electron for human interaction and `wuu exec` for agents,
+scripts, CI, and automation.
+
 Named after its author (Wu) — the goal is to build a coding companion so good that every developer goes *wuuuuu!*
 
 ## Install
@@ -30,14 +33,16 @@ go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 
 ```bash
 wuu init                         # write .wuu.json
-wuu run "describe this repo"     # one-shot CLI task
+wuu exec "describe this repo"    # agent-friendly text task
+wuu exec --json "review this PR" # machine-readable JSONL
+wuu session list --json          # inspect sessions from scripts
 wuu app-server --workdir .       # backend used by the desktop GUI
 cd desktop && npm install && npm run dev  # local desktop GUI
 ```
 
 Interactive work runs through the Electron desktop GUI. The `wuu` binary
 provides the app-server backend (used by the desktop shell and any future
-shell) plus non-interactive CLI tools.
+shell) plus the `wuu exec` text entrypoint for non-interactive automation.
 
 ## Versioning
 
@@ -67,7 +72,8 @@ When a `v*` tag is pushed, GitHub Actions + GoReleaser publishes release artifac
 - Go core: agent runtime, providers (Anthropic, OpenAI-compatible), tool loop, sessions, config, app-server
 - Electron desktop GUI backed by the Go app-server for conversations, workspace context, and session streaming
 - Reusable core: future shells (VS Code, JetBrains) consume the same `wuu app-server` process
-- One-shot CLI task runner for non-interactive use
+- Agent-friendly text entrypoint: `wuu exec` for agents, scripts, CI, and automation
+- Session inspection commands: `wuu session list/show/trace --json`
 - Agentic tool-calling loop — reads, writes, edits, searches, and runs shell commands in your repo
 - Supports OpenAI-compatible APIs (OpenAI / OpenRouter / one-api / etc.) and Anthropic Messages API
 - Built-in tools: `run_shell`, `git`, `read_file`, `write_file`, `edit_file`, `apply_patch`, `list_files`, `repo_map`, `grep`, `glob`, `ast_search`, `semantic_search`, `web_search`, `web_fetch`

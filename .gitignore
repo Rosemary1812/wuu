@@ -25,7 +25,11 @@ AGENTS.md
 
 # Local docs/notes
 /doc/
-/docs/
+/docs/*
+!/docs/
+!/docs/exec.md
+!/docs/app-server-protocol.md
+!/docs/jsonl-events.md
 
 # Worktrees
 .worktrees/

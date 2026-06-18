@@ -1,0 +1,179 @@
+# `wuu exec`
+
+`wuu exec` is the agent-friendly text entrypoint for Wuu.
+
+Wuu has no TUI. Use Electron for human interaction and `wuu exec` for agents,
+scripts, CI, and automation.
+
+## Goal
+
+`wuu exec` lets a caller drive the same Go core, app-server protocol, session
+store, tool system, and permission model used by the Electron desktop. It is
+not a terminal UI and it is not a second runtime.
+
+The intended loop is:
+
+```text
+agent or script sends a task
+-> wuu exec starts or resumes a Wuu thread through app-server
+-> the normal tool loop runs
+-> stdout/stderr or JSONL expose progress and final state
+-> another agent or Electron can resume the same session
+```
+
+## Basic Usage
+
+```bash
+wuu exec "fix the failing test and verify it"
+wuu exec --json "review this PR"
+wuu exec --timeout 20m --output-last-message result.md "summarize this repo"
+```
+
+`wuu exec` supports prompt text as positional arguments:
+
+```bash
+wuu exec "describe this repo"
+```
+
+It supports stdin as the prompt:
+
+```bash
+wuu exec - < task.md
+printf "describe this repo" | wuu exec
+```
+
+When both positional text and piped stdin are present, stdin is passed as
+additional context:
+
+```bash
+wuu exec "use this log to fix the bug" < error.log
+```
+
+The prompt delivered to the agent is:
+
+```text
+use this log to fix the bug
+
+<stdin>
+...
+</stdin>
+```
+
+Empty input fails before a turn is started.
+
+## Resume
+
+```bash
+wuu exec resume --last "continue from the failure"
+wuu exec resume <thread-id> "continue this session"
+```
+
+`resume --last` asks app-server to resume the latest visible session for the
+current workspace. `resume <thread-id>` resumes a specific session.
+
+`resume --all`, `fork`, and review-specific entrypoints are part of the target
+surface but are not fully implemented yet.
+
+## Output Modes
+
+Default mode is automation-safe:
+
+- stdout contains only the final agent message.
+- stderr contains run metadata such as provider, model, workspace, thread id,
+  turn id, tool progress, and trace path.
+- stdout does not contain banners, progress lines, terminal control codes, or
+  debug logs.
+
+JSONL mode is enabled with `--json`:
+
+```bash
+wuu exec --json "review this change"
+```
+
+In JSONL mode:
+
+- stdout is JSONL.
+- every stdout line is one JSON object.
+- diagnostics and debug logs must not pollute stdout.
+- the final event is `result`.
+
+See [jsonl-events.md](jsonl-events.md) for the event contract.
+
+## Exit Codes
+
+`wuu exec` uses stable exit codes:
+
+- `0`: completed successfully.
+- `1`: agent turn failed.
+- `2`: CLI arguments, config, or input validation failed.
+- `3`: permission denied or non-interactive approval could not be obtained.
+- `4`: timeout.
+- `5`: interrupted.
+- `6`: app-server protocol error.
+- `7`: provider or model error.
+- `8`: tool execution failed and the agent did not recover.
+
+Scripts should use exit codes instead of parsing natural-language error text.
+
+## Supported Flags
+
+Current implemented flags:
+
+```bash
+--provider <name>
+--model <model>
+--effort <level>
+--variant <name>
+--permission-mode <mode>
+--workdir <dir>
+--no-tools
+--json
+--timeout <duration>
+--output-last-message <file>
+```
+
+Target flags that still need implementation:
+
+```bash
+--max-turns <n>
+--ephemeral
+--output-schema <schema.json>
+--file <path>
+--image <path>
+--input-json
+--approval-handler <command>
+--approval-socket <path>
+--config <path>
+--profile <name>
+--ignore-user-config
+--strict-config
+--env KEY=VALUE
+```
+
+Unimplemented target flags should fail clearly rather than silently changing
+behavior.
+
+## Session Inspection
+
+Agent-facing session inspection lives under `wuu session`:
+
+```bash
+wuu session list --json
+wuu session show --json <thread-id>
+wuu session trace --json <thread-id>
+```
+
+These commands are read-only and expose session metadata, persisted history,
+and trace replay data for automation.
+
+## Safety
+
+`wuu exec` runs through the normal Wuu permission model. Non-interactive runs
+must fail closed when they need approval and no approval handler is available.
+They must not silently approve destructive work.
+
+## Legacy `wuu run`
+
+`wuu run` is the old one-shot CLI runner. The target migration is to make it a
+legacy wrapper around `wuu exec`, so future non-interactive product behavior is
+defined by `wuu exec`.

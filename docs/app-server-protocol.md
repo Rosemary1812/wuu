@@ -1,0 +1,133 @@
+# App-Server Protocol
+
+The Wuu app-server protocol is the UI-neutral boundary between shells and the
+Go core runtime.
+
+Wuu has no TUI. Electron is the human shell. `wuu exec`, scripts, CI,
+automation, and future IDE shells should drive Wuu through this protocol rather
+than building separate agent loops.
+
+## Transport
+
+The current app-server transport is newline-delimited JSON over stdio.
+
+Requests have this shape:
+
+```json
+{"id":"1","method":"initialize","params":{}}
+```
+
+Responses have this shape:
+
+```json
+{"id":"1","result":{}}
+```
+
+Errors have this shape:
+
+```json
+{"id":"1","error":{"code":"error","message":"..."}}
+```
+
+Notifications have no `id`:
+
+```json
+{"method":"turn/completed","params":{}}
+```
+
+The protocol version is reported by `initialize` as
+`wuu-app-server/v0.1`.
+
+## Required `wuu exec` Lifecycle
+
+`wuu exec` must use the same lifecycle as Electron:
+
+```text
+initialize
+thread/start or thread/resume
+turn/start
+consume notifications until terminal turn state
+shutdown
+```
+
+It must not call `StreamRunner.RunWithCallback` directly for the target path.
+The direct runner path is legacy compatibility only.
+
+## Core Methods
+
+`initialize`
+
+Returns provider, model, workspace, tool policy, permission summary, extension
+trust summary, and protocol version.
+
+`thread/start`
+
+Creates a new persistent conversation thread backed by normal session storage.
+
+`thread/resume`
+
+Resumes an existing session. An empty session id means "most recent visible
+thread" in the app-server implementation.
+
+`thread/fork`
+
+Creates a new thread from an existing thread, turn, or item. This is part of
+the target text entrypoint surface and still needs CLI wiring.
+
+`turn/start`
+
+Starts a user turn with prompt text and optional attachments.
+
+`turn/interrupt`
+
+Interrupts the active turn. `wuu exec` uses this for Ctrl+C and timeout
+cleanup.
+
+`shutdown`
+
+Requests a clean app-server shutdown.
+
+## Notifications Used By Text Clients
+
+Text clients consume these notifications and map them to human stderr or JSONL
+stdout:
+
+- `thread/started`
+- `thread/resumed`
+- `turn/started`
+- `turn/event`
+- `turn/usage`
+- `turn/completed`
+- `turn/error`
+- `item/started`
+- `item/completed`
+- `item/agentMessage/delta`
+- `item/agentMessage/replace`
+- `item/reasoning/delta`
+- `item/reasoning/replace`
+- `item/toolCall/delta`
+- `item/toolCall/outputDelta`
+- `agent/updated`
+- `agent/mailbox`
+
+## Non-Interactive Client Requests
+
+The app-server can send requests back to the client, for example approval
+requests. `wuu exec` is non-interactive by default, so it must fail closed when
+it cannot handle a request. Future approval handlers can be added through an
+explicit command or socket.
+
+## Session Contract
+
+Persistent runs must create or update normal Wuu sessions so that:
+
+- `wuu exec` sessions can be inspected by `wuu session`.
+- `wuu exec` sessions can be resumed by Electron.
+- Electron sessions can be resumed by `wuu exec`.
+- traces live under workspace-scoped session artifacts.
+
+## Protocol Compatibility
+
+Changes to method names, notification names, field names, stdout/stderr
+behavior, or exit code meaning are product-level compatibility changes. Treat
+them as public API once automation depends on them.
