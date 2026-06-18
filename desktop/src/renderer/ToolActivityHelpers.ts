@@ -163,8 +163,8 @@ export function readableToolActivityCommand(
     case "load_skill": {
       const skill = stringValue(args, "name");
       return skill
-        ? `加载技能 ${truncateText(skill.replace(/^\//, ""), 70)}`
-        : "加载技能";
+        ? `学习 ${truncateText(skill.replace(/^\//, ""), 70)} 技能`
+        : "学习技能";
     }
     case "update_plan":
       return "更新计划";
@@ -409,7 +409,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "skill",
-        title: "加载技能",
+        title: "学习",
         detail: compactDetailText(compactSkillTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -471,7 +471,9 @@ function compactSkillTargets(items: ThreadItem[]): string[] {
       .map((item) => {
         const args = parseJSONRecord(item.arguments);
         const skill = stringValue(args, "name");
-        return skill ? truncateText(skill.replace(/^\//, ""), 70) : undefined;
+        return skill
+          ? `${truncateText(skill.replace(/^\//, ""), 70)} 技能`
+          : undefined;
       })
       .filter((value): value is string => Boolean(value)),
   );
@@ -647,7 +649,7 @@ export function readableToolName(name: string | undefined): string {
     case "tool_search":
       return "搜索工具";
     case "load_skill":
-      return "加载技能";
+      return "学习技能";
     case "update_plan":
       return "更新计划";
     case "start_process":

@@ -85,12 +85,17 @@ export function ToolActivityRow({
   const summary = summarizeToolActivity(items);
   const sections = buildToolActivitySections(items);
 
-  // Section detail wins over title: "查看 docs" is informative, while
-  // "查看" alone reads as a fragment waiting for a target. For sections
-  // that genuinely have no detail (e.g. "计划"), fall back to the title.
-  // Multiple sections of the same row join with "，".
+  // Each section carries both an action verb (title) and a target (detail).
+  // Concatenate them so the rendered row reads as "动词 目标" — without
+  // this, taking detail alone would drop the verb and surface a bare file
+  // name with no hint of what was done to it. Sections without a detail
+  // (e.g. "计划") fall back to the title alone. Multiple sections in the
+  // same row join with "，".
   const summaryText = sections
-    .map((s) => s.detail || s.title)
+    .map((s) => {
+      if (s.detail && s.title) return `${s.title} ${s.detail}`;
+      return s.detail || s.title;
+    })
     .filter(Boolean)
     .join("，");
 
