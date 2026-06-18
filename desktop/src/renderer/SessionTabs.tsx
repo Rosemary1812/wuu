@@ -24,10 +24,16 @@ import {
   threadForTab,
   type AppState,
 } from "./AppState";
+import {
+  pendingComposerMessageCount,
+  pendingComposerMessagesForThread,
+  type PendingComposerMessagesByThread,
+} from "./ComposerPendingMessages";
 
 export function SessionTabStrip({
   state,
   pendingSwitchThreadID,
+  pendingComposerMessagesByThread,
   canStartNewThread,
   onSelect,
   onClose,
@@ -36,6 +42,7 @@ export function SessionTabStrip({
 }: {
   state: AppState;
   pendingSwitchThreadID?: string;
+  pendingComposerMessagesByThread: PendingComposerMessagesByThread;
   canStartNewThread: boolean;
   onSelect: (tabID: string) => void;
   onClose: (tabID: string) => void;
@@ -100,6 +107,15 @@ export function SessionTabStrip({
                 pendingSwitchThreadID !== undefined &&
                 tab.kind === "thread" &&
                 pendingSwitchThreadID === tab.threadID;
+              const pendingCount =
+                tab.kind === "thread"
+                  ? pendingComposerMessageCount(
+                      pendingComposerMessagesForThread(
+                        pendingComposerMessagesByThread,
+                        tab.threadID,
+                      ),
+                    )
+                  : 0;
               const label = sessionTabLabel(tab, state);
               const closeLabel =
                 tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
@@ -110,6 +126,7 @@ export function SessionTabStrip({
                   active={active}
                   running={running}
                   pendingSwitch={pendingSwitch}
+                  pendingCount={pendingCount}
                   label={label}
                   closeLabel={closeLabel}
                   reorderable={state.sessionTabs.length > 1}
@@ -130,6 +147,16 @@ export function SessionTabStrip({
             <SessionTabDragPreview
               active={draggingTab.id === state.activeSessionTabID}
               label={sessionTabLabel(draggingTab, state)}
+              pendingCount={
+                draggingTab.kind === "thread"
+                  ? pendingComposerMessageCount(
+                      pendingComposerMessagesForThread(
+                        pendingComposerMessagesByThread,
+                        draggingTab.threadID,
+                      ),
+                    )
+                  : 0
+              }
               running={
                 draggingTab.kind === "thread"
                   ? isThreadRunning(threadForTab(state, draggingTab.threadID))
@@ -159,6 +186,7 @@ type SortableSessionTabProps = {
   active: boolean;
   running: boolean;
   pendingSwitch: boolean;
+  pendingCount: number;
   label: string;
   closeLabel: string;
   reorderable: boolean;
@@ -171,6 +199,7 @@ function SortableSessionTab({
   active,
   running,
   pendingSwitch,
+  pendingCount,
   label,
   closeLabel,
   reorderable,
@@ -193,12 +222,15 @@ function SortableSessionTab({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  const displayPendingCount = pendingCount > 9 ? "9+" : String(pendingCount);
+  const tabTitle =
+    pendingCount > 0 ? `${label} · ${pendingCount} 条待处理输入` : label;
   return (
     <div
       ref={setNodeRef}
       className={`session-tab${active ? " active" : ""}${running ? " running" : ""}${
         pendingSwitch ? " pending-switch" : ""
-      }${reorderable ? " can-reorder" : ""}${isDragging ? " dragging" : ""}`}
+      }${pendingCount > 0 ? " has-pending" : ""}${reorderable ? " can-reorder" : ""}${isDragging ? " dragging" : ""}`}
       style={style}
       aria-grabbed={isDragging || undefined}
     >
@@ -208,13 +240,21 @@ function SortableSessionTab({
         type="button"
         aria-current={active ? "page" : undefined}
         aria-busy={pendingSwitch}
-        title={label}
+        title={tabTitle}
         onClick={onSelect}
         {...attributes}
         {...listeners}
       >
         <span className="session-tab-status" aria-hidden="true" />
         <span className="session-tab-title">{label}</span>
+        {pendingCount > 0 ? (
+          <span
+            className="session-tab-pending-count"
+            aria-label={`${pendingCount} 条待处理输入`}
+          >
+            {displayPendingCount}
+          </span>
+        ) : null}
       </button>
       <button
         className="session-tab-close"
@@ -237,21 +277,29 @@ function SessionTabDragPreview({
   active,
   running,
   label,
+  pendingCount,
   width,
 }: {
   active: boolean;
   running: boolean;
   label: string;
+  pendingCount: number;
   width?: number;
 }): JSX.Element {
+  const displayPendingCount = pendingCount > 9 ? "9+" : String(pendingCount);
   return (
     <div
-      className={`session-tab session-tab-drag-overlay${active ? " active" : ""}${running ? " running" : ""}`}
+      className={`session-tab session-tab-drag-overlay${active ? " active" : ""}${running ? " running" : ""}${pendingCount > 0 ? " has-pending" : ""}`}
       style={width ? { width } : undefined}
     >
       <div className="session-tab-main">
         <span className="session-tab-status" aria-hidden="true" />
         <span className="session-tab-title">{label}</span>
+        {pendingCount > 0 ? (
+          <span className="session-tab-pending-count" aria-hidden="true">
+            {displayPendingCount}
+          </span>
+        ) : null}
       </div>
       <div className="session-tab-close" aria-hidden="true">
         <X size={13} />

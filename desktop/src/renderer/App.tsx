@@ -2110,6 +2110,7 @@ export function App(): JSX.Element {
       <SessionTabStrip
         state={state}
         pendingSwitchThreadID={visiblePendingThreadID}
+        pendingComposerMessagesByThread={pendingComposerMessagesByThread}
         canStartNewThread={Boolean(state.activeContext)}
         onSelect={(tabID) => void selectSessionTab(tabID)}
         onClose={(tabID) => void closeSessionTab(tabID)}
