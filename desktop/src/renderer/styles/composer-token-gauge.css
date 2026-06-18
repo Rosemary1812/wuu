@@ -73,14 +73,14 @@
 }
 
 /* Numeric readout that only appears on hover. Lives inside the gauge
-   container (absolutely positioned over the hub area) so it can never
-   overflow the .composer-bar / .composer-shell bounds and get clipped.
-   On hover, the badge scales up to its final size with a small lift. */
+   container (absolutely positioned above the SVG so it can never
+   overflow the .composer-bar / .composer-shell bounds and get clipped)
+   but it never overlaps the 16x16 icon-sized gauge either. */
 .composer-token-gauge-tooltip {
   position: absolute;
+  bottom: calc(100% + 6px);
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) scale(0.9);
+  transform: translate(-50%, 4px);
   padding: 3px 9px;
   background: var(--token-gauge-tooltip-bg);
   color: var(--token-gauge-tooltip-text);
@@ -102,7 +102,7 @@
 .composer-token-gauge:hover .composer-token-gauge-tooltip,
 .composer-token-gauge:focus-within .composer-token-gauge-tooltip {
   opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
+  transform: translate(-50%, 0);
 }
 
 .composer-token-gauge[data-state="stopping"] {
