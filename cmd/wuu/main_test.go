@@ -1496,6 +1496,60 @@ func installExecControllerOverride(t *testing.T, controller wuuexec.Controller) 
 	}
 }
 
+type fakeDebugAppServerClient struct {
+	opts     debugAppServerOptions
+	calls    []fakeDebugCall
+	results  map[string]json.RawMessage
+	shutdown bool
+}
+
+type fakeDebugCall struct {
+	method string
+	params json.RawMessage
+}
+
+func (f *fakeDebugAppServerClient) Call(_ context.Context, method string, params any, result any) error {
+	var rawParams json.RawMessage
+	if params != nil {
+		data, err := json.Marshal(params)
+		if err != nil {
+			return err
+		}
+		rawParams = append(json.RawMessage(nil), data...)
+	}
+	f.calls = append(f.calls, fakeDebugCall{method: method, params: rawParams})
+
+	data := f.results[method]
+	if len(data) == 0 {
+		data = json.RawMessage(`null`)
+	}
+	if result == nil {
+		return nil
+	}
+	if rawResult, ok := result.(*json.RawMessage); ok {
+		*rawResult = append(json.RawMessage(nil), data...)
+		return nil
+	}
+	return json.Unmarshal(data, result)
+}
+
+func (f *fakeDebugAppServerClient) Shutdown(context.Context) error {
+	f.shutdown = true
+	return nil
+}
+
+func installDebugAppServerClientOverride(t *testing.T, client *fakeDebugAppServerClient) func() {
+	t.Helper()
+	previous := debugAppServerClientOverride
+	debugAppServerClientOverride = func(_ context.Context, opts debugAppServerOptions) (debugAppServerClient, error) {
+		client.opts = opts
+		return client, nil
+	}
+	return func() {
+		debugAppServerClientOverride = previous
+	}
+}
+
 func cliExecNotification(method string, params any) wuuexec.Notification {
 	data, err := json.Marshal(params)
 	if err != nil {
@@ -1771,6 +1825,131 @@ func TestRunSessionArchiveHidesSessionFromList(t *testing.T) {
 	}
 	if len(listPayload.Sessions) != 1 || listPayload.Sessions[0].ID != sess.ID {
 		t.Fatalf("include archived should return archived session: %+v", listPayload.Sessions)
+	}
+}
+
+func TestRunDebugAppServerInitializeUsesClient(t *testing.T) {
+	client := &fakeDebugAppServerClient{
+		results: map[string]json.RawMessage{
+			appserver.MethodInitialize: json.RawMessage(`{"protocol_version":"test/v1","provider":"p","model":"m"}`),
+		},
+	}
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"debug", "app-server", "initialize", "--workdir", "/tmp/repo", "--provider", "p", "--model", "m", "--no-tools"}); err != nil {
+			t.Fatalf("run debug app-server initialize: %v", err)
+		}
+	})
+
+	if len(client.calls) != 1 || client.calls[0].method != appserver.MethodInitialize {
+		t.Fatalf("unexpected calls: %+v", client.calls)
+	}
+	if client.opts.workdir != "/tmp/repo" || client.opts.provider != "p" || client.opts.model != "m" || !client.opts.noTools {
+		t.Fatalf("options not passed to debug client: %+v", client.opts)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse JSON: %v\n%s", err, output)
+	}
+	if payload["protocol_version"] != "test/v1" || payload["provider"] != "p" {
+		t.Fatalf("unexpected initialize output: %+v", payload)
+	}
+	if !client.shutdown {
+		t.Fatal("debug client should be shut down")
+	}
+}
+
+func TestRunDebugAppServerSendForwardsMethodAndParams(t *testing.T) {
+	client := &fakeDebugAppServerClient{
+		results: map[string]json.RawMessage{
+			appserver.MethodThreadResume: json.RawMessage(`{"thread":{"id":"thread-1"}}`),
+		},
+	}
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"debug", "app-server", "send", appserver.MethodThreadResume, `{"session_id":"thread-1"}`}); err != nil {
+			t.Fatalf("run debug app-server send: %v", err)
+		}
+	})
+
+	if len(client.calls) != 1 || client.calls[0].method != appserver.MethodThreadResume {
+		t.Fatalf("unexpected calls: %+v", client.calls)
+	}
+	var params map[string]any
+	if err := json.Unmarshal(client.calls[0].params, &params); err != nil {
+		t.Fatalf("parse params: %v", err)
+	}
+	if params["session_id"] != "thread-1" {
+		t.Fatalf("unexpected params: %+v", params)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	thread := payload["thread"].(map[string]any)
+	if thread["id"] != "thread-1" {
+		t.Fatalf("unexpected output: %+v", payload)
+	}
+}
+
+func TestRunDebugProtocolEventsJSONReadsTraceEvents(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	workdir := t.TempDir()
+
+	home, err := statepath.Home("")
+	if err != nil {
+		t.Fatalf("statepath.Home: %v", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	sess, err := session.CreateWithMetadata(sessDir, "debug-thread", workdir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, workdir)
+	if err != nil {
+		t.Fatalf("WorkspaceDir: %v", err)
+	}
+	tracePath := sessiontrace.Path(statepath.SessionArtifactDir(workspaceStateDir, sess.ID))
+	if err := sessiontrace.AppendTurn(
+		tracePath,
+		sessiontrace.TurnRecord{ThreadID: sess.ID, TurnID: "turn-1", Status: "completed"},
+		sessiontrace.FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
+		nil,
+		nil,
+	); err != nil {
+		t.Fatalf("append trace: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"debug", "protocol", "events", "--json", sess.ID}); err != nil {
+			t.Fatalf("run debug protocol events: %v", err)
+		}
+	})
+
+	var payload struct {
+		ThreadID  string            `json:"thread_id"`
+		TracePath string            `json:"trace_path"`
+		Events    []json.RawMessage `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse JSON: %v\n%s", err, output)
+	}
+	if payload.ThreadID != sess.ID || payload.TracePath != tracePath || len(payload.Events) != 2 {
+		t.Fatalf("unexpected protocol events payload: %+v", payload)
+	}
+	var first struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(payload.Events[0], &first); err != nil {
+		t.Fatalf("parse first event: %v", err)
+	}
+	if first.Type != "turn" {
+		t.Fatalf("first event type = %q", first.Type)
 	}
 }
 

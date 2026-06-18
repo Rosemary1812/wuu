@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -60,6 +61,8 @@ func run(args []string) error {
 		return runSession(args[1:])
 	case "session-show":
 		return runSessionShow(args[1:])
+	case "debug":
+		return runDebug(args[1:])
 	case "app-server":
 		return runAppServer(args[1:])
 	case "version", "-v", "--version":
@@ -782,6 +785,331 @@ func firstNonEmptyString(values ...string) string {
 	return ""
 }
 
+type debugAppServerClient interface {
+	Call(context.Context, string, any, any) error
+	Shutdown(context.Context) error
+}
+
+var debugAppServerClientOverride func(context.Context, debugAppServerOptions) (debugAppServerClient, error)
+
+type debugAppServerOptions struct {
+	workdir  string
+	provider string
+	model    string
+	noTools  bool
+}
+
+type debugAppServerCLIConfig struct {
+	workdir  *string
+	provider *string
+	model    *string
+	noTools  *bool
+}
+
+func runDebug(args []string) error {
+	if len(args) == 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("debug subcommand is required"))
+	}
+	switch args[0] {
+	case "app-server":
+		return runDebugAppServer(args[1:])
+	case "protocol":
+		return runDebugProtocol(args[1:])
+	default:
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("unknown debug subcommand %q", args[0]))
+	}
+}
+
+func runDebugAppServer(args []string) error {
+	if len(args) == 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("debug app-server subcommand is required"))
+	}
+	switch args[0] {
+	case "initialize":
+		return runDebugAppServerInitialize(args[1:])
+	case "send":
+		return runDebugAppServerSend(args[1:])
+	default:
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("unknown debug app-server subcommand %q", args[0]))
+	}
+}
+
+func runDebugAppServerInitialize(args []string) error {
+	fs := flag.NewFlagSet("debug app-server initialize", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addDebugAppServerFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	client, err := newDebugAppServerClient(context.Background(), debugAppServerOptionsFromCLI(cfg))
+	if err != nil {
+		return err
+	}
+	defer shutdownDebugClient(client)
+
+	var result json.RawMessage
+	if err := client.Call(context.Background(), appserver.MethodInitialize, nil, &result); err != nil {
+		return err
+	}
+	return printRawJSON(result)
+}
+
+func runDebugAppServerSend(args []string) error {
+	fs := flag.NewFlagSet("debug app-server send", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addDebugAppServerFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	remaining := fs.Args()
+	if len(remaining) == 0 || strings.TrimSpace(remaining[0]) == "" {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("method is required"))
+	}
+	method := strings.TrimSpace(remaining[0])
+	params, err := parseDebugJSONParams(remaining[1:])
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	client, err := newDebugAppServerClient(context.Background(), debugAppServerOptionsFromCLI(cfg))
+	if err != nil {
+		return err
+	}
+	defer shutdownDebugClient(client)
+
+	var result json.RawMessage
+	if err := client.Call(context.Background(), method, params, &result); err != nil {
+		return err
+	}
+	return printRawJSON(result)
+}
+
+func addDebugAppServerFlags(fs *flag.FlagSet) debugAppServerCLIConfig {
+	return debugAppServerCLIConfig{
+		workdir:  fs.String("workdir", "", "workspace directory"),
+		provider: fs.String("provider", "", "provider name in config"),
+		model:    fs.String("model", "", "model override"),
+		noTools:  fs.Bool("no-tools", false, "disable local tools"),
+	}
+}
+
+func debugAppServerOptionsFromCLI(cfg debugAppServerCLIConfig) debugAppServerOptions {
+	return debugAppServerOptions{
+		workdir:  valueOfStringFlag(cfg.workdir),
+		provider: valueOfStringFlag(cfg.provider),
+		model:    valueOfStringFlag(cfg.model),
+		noTools:  valueOfBoolFlag(cfg.noTools),
+	}
+}
+
+func newDebugAppServerClient(ctx context.Context, opts debugAppServerOptions) (debugAppServerClient, error) {
+	if debugAppServerClientOverride != nil {
+		return debugAppServerClientOverride(ctx, opts)
+	}
+	return newLocalDebugAppServerClient(ctx, opts)
+}
+
+type localDebugAppServerClient struct {
+	rt     *runtime.Session
+	client *wuuexec.ProtocolClient
+	cancel context.CancelFunc
+	done   chan error
+	pipes  []io.Closer
+}
+
+func newLocalDebugAppServerClient(ctx context.Context, opts debugAppServerOptions) (*localDebugAppServerClient, error) {
+	rootDir, err := resolveWorkdir(opts.workdir)
+	if err != nil {
+		return nil, wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	homeDir := os.Getenv("HOME")
+	cfg, configPath, err := loadOrCreateAppServerConfig(rootDir, homeDir)
+	if err != nil {
+		return nil, err
+	}
+	rt, err := runtime.NewSession(runtime.Options{
+		RootDir:       rootDir,
+		HomeDir:       homeDir,
+		ConfigPath:    configPath,
+		Config:        cfg,
+		ProviderName:  opts.provider,
+		ModelOverride: opts.model,
+		NoTools:       opts.noTools,
+	})
+	if err != nil {
+		return nil, err
+	}
+	serverInR, serverInW := io.Pipe()
+	serverOutR, serverOutW := io.Pipe()
+	serverCtx, cancel := context.WithCancel(ctx)
+	client := &localDebugAppServerClient{
+		rt:     rt,
+		client: wuuexec.NewProtocolClient(serverOutR, serverInW),
+		cancel: cancel,
+		done:   make(chan error, 1),
+		pipes:  []io.Closer{serverInR, serverInW, serverOutR, serverOutW},
+	}
+	go func() {
+		client.done <- appserver.RunStdio(serverCtx, rt, serverInR, serverOutW)
+	}()
+	return client, nil
+}
+
+func (c *localDebugAppServerClient) Call(ctx context.Context, method string, params any, result any) error {
+	return c.client.Call(ctx, method, params, result)
+}
+
+func (c *localDebugAppServerClient) Shutdown(ctx context.Context) error {
+	if c.cancel != nil {
+		defer c.cancel()
+	}
+	var result appserver.OKResult
+	err := c.client.Call(ctx, appserver.MethodShutdown, nil, &result)
+	for _, pipe := range c.pipes {
+		_ = pipe.Close()
+	}
+	if c.rt != nil {
+		_, _ = c.rt.Cleanup()
+	}
+	select {
+	case runErr := <-c.done:
+		if err == nil && runErr != nil && !errors.Is(runErr, io.ErrClosedPipe) {
+			err = runErr
+		}
+	default:
+	}
+	return err
+}
+
+func shutdownDebugClient(client debugAppServerClient) {
+	if client == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = client.Shutdown(ctx)
+}
+
+func parseDebugJSONParams(args []string) (json.RawMessage, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	raw := strings.TrimSpace(strings.Join(args, " "))
+	if raw == "" {
+		return nil, nil
+	}
+	var params json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &params); err != nil {
+		return nil, fmt.Errorf("parse params JSON: %w", err)
+	}
+	return params, nil
+}
+
+func runDebugProtocol(args []string) error {
+	if len(args) == 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("debug protocol subcommand is required"))
+	}
+	switch args[0] {
+	case "events":
+		return runDebugProtocolEvents(args[1:])
+	default:
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("unknown debug protocol subcommand %q", args[0]))
+	}
+}
+
+func runDebugProtocolEvents(args []string) error {
+	fs := flag.NewFlagSet("debug protocol events", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output as one JSON object")
+	workdir := fs.String("workdir", "", "workspace directory")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	remaining := fs.Args()
+	if len(remaining) == 0 || strings.TrimSpace(remaining[0]) == "" {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("thread id is required"))
+	}
+	threadID := strings.TrimSpace(remaining[0])
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	rootDir, err := resolveWorkdir(*workdir)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	meta, ok, err := session.Find(sessDir, threadID)
+	if err != nil {
+		return fmt.Errorf("lookup %q: %w", threadID, err)
+	}
+	if !ok {
+		return fmt.Errorf("%w: %q", session.ErrSessionNotFound, threadID)
+	}
+	tracePath, err := tracePathForSession(meta, rootDir)
+	if err != nil {
+		return err
+	}
+	events, err := readTraceEvents(tracePath)
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		return printJSON(map[string]any{
+			"thread_id":  threadID,
+			"trace_path": tracePath,
+			"events":     events,
+		})
+	}
+	for _, event := range events {
+		data, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf("marshal trace event: %w", err)
+		}
+		fmt.Println(string(data))
+	}
+	return nil
+}
+
+func readTraceEvents(path string) ([]json.RawMessage, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open trace %q: %w", path, err)
+	}
+	defer file.Close()
+
+	var events []json.RawMessage
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	line := 0
+	for scanner.Scan() {
+		line++
+		raw := strings.TrimSpace(scanner.Text())
+		if raw == "" {
+			continue
+		}
+		var event json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			return nil, fmt.Errorf("decode trace line %d: %w", line, err)
+		}
+		events = append(events, event)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read trace %q: %w", path, err)
+	}
+	return events, nil
+}
+
+func printRawJSON(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		fmt.Println("null")
+		return nil
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("decode JSON result: %w", err)
+	}
+	return printJSON(value)
+}
+
 type execCLIConfig struct {
 	provider          *string
 	model             *string
@@ -1340,6 +1668,9 @@ Usage:
   wuu exec resume (--last|THREAD_ID) [flags] "continue task"
   wuu exec fork THREAD_ID [flags] "continue from a fork"
   wuu session list|show|trace|search|archive [flags]
+  wuu debug app-server initialize [flags]
+  wuu debug app-server send [flags] METHOD [JSON]
+  wuu debug protocol events [flags] THREAD_ID
   wuu run [flags] "your coding task"
   wuu eval [flags]
   wuu goal demo [flags]
@@ -1379,6 +1710,14 @@ Session commands:
                    search session metadata and history
   archive [--json] THREAD_ID
                    hide a session from default lists
+
+Debug commands:
+  app-server initialize [--workdir DIR] [--provider NAME] [--model MODEL] [--no-tools]
+                   start a local app-server and print its initialize result
+  app-server send [flags] METHOD [JSON]
+                   send one app-server method and print the raw JSON result
+  protocol events [--json] [--workdir DIR] THREAD_ID
+                   print trace JSONL events recorded for a session
 
 Run flags:
   --provider        provider name from config
