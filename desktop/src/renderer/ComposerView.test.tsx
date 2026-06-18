@@ -56,6 +56,7 @@ function renderComposer(props: {
   queuedMessages?: QueuedComposerMessage[];
   guideMessages?: QueuedComposerMessage[];
   toolPolicy?: ToolPolicySummary;
+  status?: string;
   onInterrupt?: () => void;
   onSend?: () => void;
   onRemoveQueuedMessage?: (id: string) => void;
@@ -82,7 +83,7 @@ function renderComposer(props: {
         queuedMessages={props.queuedMessages ?? []}
         guideMessages={props.guideMessages ?? []}
         running={props.running ?? false}
-        status="ready"
+        status={props.status ?? "ready"}
         readOnly={false}
         initialized={initialized(props.toolPolicy, props.permissions)}
         projects={[]}
@@ -132,6 +133,7 @@ function renderComposer(props: {
 function renderSplitPaneComposer(props: {
   prompt?: string;
   running?: boolean;
+  status?: string;
   onSend?: () => void;
 }): void {
   act(() => {
@@ -144,7 +146,7 @@ function renderSplitPaneComposer(props: {
         images={[]}
         running={props.running ?? false}
         readOnly={false}
-        status="ready"
+        status={props.status ?? "ready"}
         onPasteAttachmentFiles={() => {}}
         onRemoveFile={() => {}}
         onRemoveImage={() => {}}
@@ -235,6 +237,37 @@ describe("Composer send control", () => {
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(textarea);
+  });
+
+  it("hides the transient sending status from the composer bar", () => {
+    renderComposer({
+      prompt: "queued follow-up",
+      running: true,
+      status: "正在发送请求",
+    });
+
+    expect(container.querySelector(".status-label")).toBeNull();
+    expect(container.textContent).not.toContain("正在发送请求");
+  });
+
+  it("keeps non-transient composer status visible", () => {
+    renderComposer({
+      prompt: "retry later",
+      status: "发送失败",
+    });
+
+    expect(container.querySelector(".status-label")?.textContent).toBe("发送失败");
+  });
+
+  it("hides the transient sending status from the split-pane composer bar", () => {
+    renderSplitPaneComposer({
+      prompt: "continue this branch",
+      running: true,
+      status: "正在发送请求",
+    });
+
+    expect(container.querySelector(".split-composer-status")).toBeNull();
+    expect(container.textContent).not.toContain("正在发送请求");
   });
 });
 

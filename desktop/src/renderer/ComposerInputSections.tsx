@@ -19,6 +19,7 @@ import {
   type QueuedComposerMessage
 } from "./ComposerMessages";
 import { useComposerQueryHistory } from "./ComposerQueryHistory";
+import { composerStatusText } from "./ComposerTypes";
 
 export function ComposerAttachmentStrip({
   files,
@@ -92,7 +93,7 @@ export function SplitPaneComposer({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
-  const statusText = status === "ready" ? "" : status;
+  const statusText = composerStatusText(status);
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
     disabled: readOnly || hasAttachments,
     prompt,

@@ -72,6 +72,7 @@ import type {
   FloatingMenuPlacement,
   PermissionMode
 } from "./ComposerTypes";
+import { composerStatusText } from "./ComposerTypes";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 
 export type {
@@ -201,7 +202,7 @@ export function Composer({
   queryHistory?: string[];
 }): JSX.Element {
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
-  const statusText = status === "ready" ? "" : status;
+  const statusText = composerStatusText(status);
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;

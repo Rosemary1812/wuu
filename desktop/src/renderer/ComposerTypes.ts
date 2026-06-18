@@ -21,3 +21,9 @@ export type PermissionMode =
   | "default"
   | "approve_for_me"
   | "full_access";
+
+const HIDDEN_COMPOSER_STATUSES = new Set(["ready", "正在发送请求"]);
+
+export function composerStatusText(status: string): string {
+  return HIDDEN_COMPOSER_STATUSES.has(status) ? "" : status;
+}
