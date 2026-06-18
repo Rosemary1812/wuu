@@ -3,6 +3,7 @@
 /bin/
 dist/
 node_modules/
+.vite/
 desktop/dist/
 desktop/node_modules/
 desktop/out/
