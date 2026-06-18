@@ -82,7 +82,8 @@ JSON
 `prompt` and `stdin` are combined the same way as positional prompt plus piped
 stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
-`permission_mode`, `no_tools`, `timeout`, and `output_last_message`.
+`permission_mode`, `config`, `profile`, `ignore_user_config`,
+`strict_config`, `env`, `no_tools`, `timeout`, and `output_last_message`.
 
 ## Resume
 
@@ -176,6 +177,11 @@ Current implemented flags:
 --variant <name>
 --permission-mode <mode>
 --workdir <dir>
+--config <path>
+--profile <name>
+--ignore-user-config
+--strict-config
+--env KEY=VALUE
 --file <path>
 --image <path>
 --no-tools
@@ -186,6 +192,13 @@ Current implemented flags:
 --output-last-message <file>
 ```
 
+`--config` loads a specific config file. Relative config paths are resolved
+from `--workdir` when it is set, otherwise from the current directory.
+`--ignore-user-config` skips `~/.config/wuu/config.json`. `--strict-config` is
+accepted for automation compatibility; `wuu exec` already fails when no usable
+config can be loaded. `--env KEY=VALUE` is repeatable and applies only to the
+current run.
+
 Target flags that still need implementation:
 
 ```bash
@@ -193,11 +206,6 @@ Target flags that still need implementation:
 --output-schema <schema.json>
 --approval-handler <command>
 --approval-socket <path>
---config <path>
---profile <name>
---ignore-user-config
---strict-config
---env KEY=VALUE
 ```
 
 Unimplemented target flags should fail clearly rather than silently changing

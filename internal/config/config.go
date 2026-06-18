@@ -338,6 +338,26 @@ func LoadFrom(workdir, home string) (Config, string, error) {
 	return Config{}, "", fmt.Errorf("%w, run `wuu init` to create %s", ErrConfigNotFound, localPrimaryConfig)
 }
 
+func LoadPath(path string) (Config, string, error) {
+	resolved := strings.TrimSpace(path)
+	if resolved == "" {
+		return Config{}, "", errors.New("config path is required")
+	}
+	abs, err := filepath.Abs(resolved)
+	if err != nil {
+		return Config{}, "", fmt.Errorf("resolve config path: %w", err)
+	}
+	cfg, err := readConfig(abs)
+	if err != nil {
+		return Config{}, "", err
+	}
+	applyDefaults(&cfg)
+	if err := cfg.Validate(); err != nil {
+		return Config{}, "", err
+	}
+	return cfg, abs, nil
+}
+
 func readConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

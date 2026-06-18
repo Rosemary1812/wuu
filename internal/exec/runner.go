@@ -23,6 +23,12 @@ type runState struct {
 }
 
 func Run(ctx context.Context, opts Options) error {
+	restoreEnv, err := applyRunEnv(opts.Env)
+	if err != nil {
+		return WithExitCode(ExitInvalidInput, err)
+	}
+	defer restoreEnv()
+
 	attachments, err := resolveRunAttachments(opts)
 	if err != nil {
 		return WithExitCode(ExitInvalidInput, err)
@@ -122,6 +128,40 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 	return nil
+}
+
+func applyRunEnv(entries []string) (func(), error) {
+	type priorValue struct {
+		value string
+		ok    bool
+	}
+	prior := make(map[string]priorValue)
+	restore := func() {
+		for key, old := range prior {
+			if old.ok {
+				_ = os.Setenv(key, old.value)
+			} else {
+				_ = os.Unsetenv(key)
+			}
+		}
+	}
+	for _, entry := range entries {
+		key, value, ok := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" {
+			restore()
+			return func() {}, fmt.Errorf("--env must be KEY=VALUE")
+		}
+		if _, seen := prior[key]; !seen {
+			old, existed := os.LookupEnv(key)
+			prior[key] = priorValue{value: old, ok: existed}
+		}
+		if err := os.Setenv(key, value); err != nil {
+			restore()
+			return func() {}, fmt.Errorf("set env %s: %w", key, err)
+		}
+	}
+	return restore, nil
 }
 
 func startOrResumeThread(ctx context.Context, controller Controller, opts Options) (appserver.Thread, error) {

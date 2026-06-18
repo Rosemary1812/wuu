@@ -28,7 +28,7 @@ func NewLocalAppServerController(ctx context.Context, opts Options) (Controller,
 		return nil, err
 	}
 	homeDir := os.Getenv("HOME")
-	cfg, configPath, err := config.LoadFrom(rootDir, homeDir)
+	cfg, configPath, err := loadExecConfig(rootDir, homeDir, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +64,20 @@ func NewLocalAppServerController(ctx context.Context, opts Options) (Controller,
 		controller.done <- err
 	}()
 	return controller, nil
+}
+
+func loadExecConfig(rootDir, homeDir string, opts Options) (config.Config, string, error) {
+	if strings.TrimSpace(opts.ConfigPath) != "" {
+		path := strings.TrimSpace(opts.ConfigPath)
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(rootDir, path)
+		}
+		return config.LoadPath(path)
+	}
+	if opts.IgnoreUserConfig {
+		homeDir = ""
+	}
+	return config.LoadFrom(rootDir, homeDir)
 }
 
 func (c *localAppServerController) Initialize(ctx context.Context) (appserver.InitializeResult, error) {
@@ -160,6 +174,9 @@ func applyConfigOverrides(cfg *config.Config, opts Options) error {
 	}
 	if strings.TrimSpace(opts.Variant) != "" {
 		cfg.Agent.Variant = strings.TrimSpace(opts.Variant)
+	}
+	if strings.TrimSpace(opts.AgentProfile) != "" {
+		cfg.Agent.Name = strings.TrimSpace(opts.AgentProfile)
 	}
 	if strings.TrimSpace(opts.PermissionMode) != "" {
 		if permissions, ok := config.PermissionPresetForMode(opts.PermissionMode); ok {

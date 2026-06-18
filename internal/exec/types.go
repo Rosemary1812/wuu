@@ -72,6 +72,11 @@ type Options struct {
 	FilePaths         []string
 	Attachments       Attachments
 	Workdir           string
+	ConfigPath        string
+	AgentProfile      string
+	IgnoreUserConfig  bool
+	StrictConfig      bool
+	Env               []string
 	Provider          string
 	Model             string
 	Effort            string

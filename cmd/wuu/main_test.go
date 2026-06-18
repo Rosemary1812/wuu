@@ -303,6 +303,16 @@ func TestRunExecRejectsUnimplementedMaxTurnsWithExitCodeTwo(t *testing.T) {
 	}
 }
 
+func TestRunExecRejectsInvalidEnvWithExitCodeTwo(t *testing.T) {
+	err := run([]string{"exec", "--env", "not-an-assignment", "hello"})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "--env must be KEY=VALUE") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunCommandForwardsToExecControllerPath(t *testing.T) {
 	controller := newCLIExecFakeController(
 		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "run result"}),

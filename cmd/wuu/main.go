@@ -1180,6 +1180,11 @@ type execCLIConfig struct {
 	variant           *string
 	permissionMode    *string
 	workdir           *string
+	configPath        *string
+	agentProfile      *string
+	ignoreUserConfig  *bool
+	strictConfig      *bool
+	env               *stringListFlag
 	files             *stringListFlag
 	images            *stringListFlag
 	noTools           *bool
@@ -1387,8 +1392,10 @@ func reviewPromptFromFlags(uncommitted bool, base, commit string, extraArgs []st
 func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 	files := stringListFlag{}
 	images := stringListFlag{}
+	env := stringListFlag{}
 	fs.Var(&files, "file", "attach a local file (repeatable)")
 	fs.Var(&images, "image", "attach a local image (repeatable)")
+	fs.Var(&env, "env", "set an environment variable for the run (KEY=VALUE, repeatable)")
 	return execCLIConfig{
 		provider:          fs.String("provider", "", "provider name in config"),
 		model:             fs.String("model", "", "model override"),
@@ -1396,6 +1403,11 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		variant:           fs.String("variant", "", "model variant override"),
 		permissionMode:    fs.String("permission-mode", "", "permission mode override"),
 		workdir:           fs.String("workdir", "", "workspace directory"),
+		configPath:        fs.String("config", "", "explicit config file path"),
+		agentProfile:      fs.String("profile", "", "agent profile name"),
+		ignoreUserConfig:  fs.Bool("ignore-user-config", false, "ignore user-level config"),
+		strictConfig:      fs.Bool("strict-config", false, "fail if config cannot be loaded"),
+		env:               &env,
 		files:             &files,
 		images:            &images,
 		noTools:           fs.Bool("no-tools", false, "disable local tools"),
@@ -1437,6 +1449,11 @@ type execInputPayload struct {
 	Effort            string                     `json:"effort"`
 	Variant           string                     `json:"variant"`
 	PermissionMode    string                     `json:"permission_mode"`
+	ConfigPath        string                     `json:"config"`
+	AgentProfile      string                     `json:"profile"`
+	IgnoreUserConfig  *bool                      `json:"ignore_user_config"`
+	StrictConfig      *bool                      `json:"strict_config"`
+	Env               []string                   `json:"env"`
 	NoTools           *bool                      `json:"no_tools"`
 	JSON              *bool                      `json:"json"`
 	Ephemeral         *bool                      `json:"ephemeral"`
@@ -1455,6 +1472,11 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		Variant:           valueOfStringFlag(cfg.variant),
 		PermissionMode:    valueOfStringFlag(cfg.permissionMode),
 		Workdir:           valueOfStringFlag(cfg.workdir),
+		ConfigPath:        valueOfStringFlag(cfg.configPath),
+		AgentProfile:      valueOfStringFlag(cfg.agentProfile),
+		IgnoreUserConfig:  valueOfBoolFlag(cfg.ignoreUserConfig),
+		StrictConfig:      valueOfBoolFlag(cfg.strictConfig),
+		Env:               stringListValues(cfg.env),
 		NoTools:           valueOfBoolFlag(cfg.noTools),
 		JSON:              valueOfBoolFlag(cfg.jsonOutput),
 		Ephemeral:         valueOfBoolFlag(cfg.ephemeral),
@@ -1498,6 +1520,19 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 	if opts.PermissionMode == "" {
 		opts.PermissionMode = strings.TrimSpace(input.PermissionMode)
 	}
+	if opts.ConfigPath == "" {
+		opts.ConfigPath = strings.TrimSpace(input.ConfigPath)
+	}
+	if opts.AgentProfile == "" {
+		opts.AgentProfile = strings.TrimSpace(input.AgentProfile)
+	}
+	if input.IgnoreUserConfig != nil && !opts.IgnoreUserConfig {
+		opts.IgnoreUserConfig = *input.IgnoreUserConfig
+	}
+	if input.StrictConfig != nil && !opts.StrictConfig {
+		opts.StrictConfig = *input.StrictConfig
+	}
+	opts.Env = append(opts.Env, input.Env...)
 	if input.NoTools != nil && !opts.NoTools {
 		opts.NoTools = *input.NoTools
 	}
@@ -1788,10 +1823,18 @@ Exec flags:
   --variant         model variant override
   --permission-mode permission mode override
   --workdir         workspace directory
+  --config          explicit config file path
+  --profile         agent profile name
+  --ignore-user-config
+                   ignore user-level config
+  --strict-config   fail if config cannot be loaded
+  --env KEY=VALUE   set environment variable for the run (repeatable)
   --file            attach a local file (repeatable)
   --image           attach a local image (repeatable)
   --no-tools        disable local tools
   --json            emit JSONL to stdout
+  --ephemeral       run without creating a persistent session
+  --input-json      read machine input JSON from stdin
   --timeout         total timeout (e.g. 20m)
   --output-last-message
                    write final agent message to a file
