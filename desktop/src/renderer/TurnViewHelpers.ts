@@ -100,6 +100,18 @@ function attemptJump(turnID: string, itemID: string): boolean {
   if (!node) {
     return false;
   }
+  // The .turn ancestor has `content-visibility: auto`, which lets the
+  // browser skip layout and paint while the turn is off-screen. The
+  // anchor is still in the DOM tree, so querySelector finds it, but
+  // getBoundingClientRect below would return the placeholder size from
+  // `contain-intrinsic-size` instead of the real coordinates. Reading
+  // any layout property on a skipped subtree forces the browser to
+  // compute the real layout, so the subsequent scroll math sees the
+  // actual position. Without this, the first click on a query whose
+  // turn is above the current scroll viewport either scrolls to the
+  // wrong offset or bails out (targetTop ≈ currentScrollTop), and the
+  // user has to scroll up manually before the second click works.
+  void node.offsetWidth;
   const container = findScrollContainer(node);
   if (!container) {
     // Fallback: still flash the target so the user gets feedback, even
