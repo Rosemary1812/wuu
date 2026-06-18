@@ -35,7 +35,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
-	"github.com/blueberrycongee/wuu/internal/worktree"
 )
 
 // Options describes the shared agent runtime needed by interactive clients.
@@ -1310,10 +1309,6 @@ func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model 
 	}
 	pb.AddSkills(discoveredSkills)
 	pb.AddWorkflows(discoveredWorkflows)
-	if worktree.IsGitRepo(rootDir) {
-		gitCtx := prompt.NewGitContext(rootDir)
-		pb.AddGitContext(gitCtx.Collect())
-	}
 	return pb.Build()
 }
 
