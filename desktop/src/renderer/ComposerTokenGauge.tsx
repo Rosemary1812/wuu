@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 // Gauge layout constants. The viewBox is 100x60 user units; the rendered
-// size in the composer bar is set on the <svg> element below.
+// size in the composer bar is set on the <svg> element below. The numeric
+// readout lives in a hover-only tooltip overlay so the default rendering
+// stays purely visual: a small tachometer whose needle tracks speed.
 const MAX_TOKENS_PER_SEC = 100;
 const REDLINE_START_RATIO = 0.7; // 70+ tok/s sits in the red zone.
 
@@ -59,12 +61,10 @@ export function ComposerTokenGauge({
   running: boolean;
   tokensPerSecond: number;
 }): JSX.Element | null {
-  // Displayed value tracks the target with a per-frame lerp so the numeric
-  // readout settles instead of flickering on every sliding-window update.
-  // The initial value is the target itself: when the gauge mounts while the
-  // turn is already running there is nothing to interpolate from, and tests
-  // that render the component synchronously need to see the real number on
-  // first paint.
+  // Displayed value tracks the target with a per-frame lerp so the needle
+  // settles instead of jittering on every sliding-window update. The initial
+  // value is the target itself so the gauge paints the real number on first
+  // mount and tests that render synchronously can see the right value.
   const [displayed, setDisplayed] = useState(() =>
     running ? Math.max(0, tokensPerSecond) : 0,
   );
@@ -105,6 +105,12 @@ export function ComposerTokenGauge({
   const tip = polarPoint(ARC_CENTER_X, ARC_CENTER_Y, NEEDLE_LENGTH, needleDeg);
   const tail = polarPoint(ARC_CENTER_X, ARC_CENTER_Y, NEEDLE_TAIL, needleDeg + 180);
   const rounded = Math.round(displayed * 10) / 10;
+  const tooltipColor =
+    displayed < 25
+      ? "var(--token-gauge-low)"
+      : displayed < REDLINE_START_RATIO * MAX_TOKENS_PER_SEC
+        ? "var(--token-gauge-mid)"
+        : "var(--token-gauge-high)";
 
   const ticks: JSX.Element[] = [];
   const labels: JSX.Element[] = [];
@@ -152,12 +158,12 @@ export function ComposerTokenGauge({
       role="status"
       aria-live="polite"
       aria-label={`生成速度 ${rounded.toFixed(1)} token 每秒`}
-      title={`实时输出速度 ${rounded.toFixed(1)} tok/s`}
+      title={`${rounded.toFixed(1)} tok/s`}
     >
       <svg
         viewBox="0 0 100 60"
-        width="90"
-        height="54"
+        width="112"
+        height="68"
         className="composer-token-gauge-svg"
         aria-hidden="true"
       >
@@ -216,12 +222,12 @@ export function ComposerTokenGauge({
           fill={color}
         />
       </svg>
-      <div className="composer-token-gauge-readout">
-        <span className="composer-token-gauge-number" style={{ color }}>
-          {rounded.toFixed(1)}
-        </span>
-        <span className="composer-token-gauge-unit">tok/s</span>
-      </div>
+      <span
+        className="composer-token-gauge-tooltip"
+        style={{ color: tooltipColor }}
+      >
+        {rounded.toFixed(1)} tok/s
+      </span>
     </div>
   );
 }
