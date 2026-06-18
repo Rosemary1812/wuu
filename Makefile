@@ -1,4 +1,4 @@
-.PHONY: build install test vet clean release-dry snapshot print-version tag-release zig-lib
+.PHONY: build install test vet clean release-dry snapshot print-version tag-release
 
 VERSION_FILE := VERSION
 BASE_VERSION := $(shell cat $(VERSION_FILE) 2>/dev/null || echo "0.1.0")
@@ -10,20 +10,14 @@ LDFLAGS := -s -w \
 	-X github.com/blueberrycongee/wuu/internal/version.Commit=$(COMMIT) \
 	-X github.com/blueberrycongee/wuu/internal/version.Date=$(DATE)
 
-zig-lib:
-	cd internal/jsonl/zig && zig build
+build:
+	go build -ldflags "$(LDFLAGS)" -o bin/wuu ./cmd/wuu
 
-build: zig-lib
-	go build -tags zig -ldflags "$(LDFLAGS)" -o bin/wuu ./cmd/wuu
-
-install: zig-lib
-	go install -tags zig -ldflags "$(LDFLAGS)" ./cmd/wuu
+install:
+	go install -ldflags "$(LDFLAGS)" ./cmd/wuu
 
 test:
 	go test ./... -count=1
-
-test-zig: zig-lib
-	go test -tags zig ./internal/jsonl/... -count=1
 
 vet:
 	go vet ./...
