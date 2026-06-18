@@ -12,9 +12,7 @@ const PIVOT_INNER_RADIUS = 2.4;
 const GAUGE_CENTER_X = 30;
 const GAUGE_CENTER_Y = 31;
 const OUTER_ARC_RADIUS = 25;
-const INNER_ARC_RADIUS = 18.5;
 const OUTER_ARC_STROKE = 6.8;
-const INNER_ARC_STROKE = 3.2;
 
 const ARC_START_DEG = 190;
 const ARC_END_DEG = 330;
@@ -110,8 +108,8 @@ export function ComposerTokenGauge({
       title={speedLabel}
     >
       <svg
-        viewBox="0 0 68 40"
-        width="34"
+        viewBox="0 0 58 40"
+        width="31"
         height="20"
         className="composer-token-gauge-svg"
         aria-hidden="true"
@@ -121,14 +119,6 @@ export function ComposerTokenGauge({
           className="composer-token-gauge-track"
           stroke="var(--token-gauge-track)"
           strokeWidth={OUTER_ARC_STROKE}
-          fill="none"
-          strokeLinecap="round"
-        />
-        <path
-          d={arcPath(INNER_ARC_RADIUS, 198, 282)}
-          className="composer-token-gauge-inner-arc"
-          stroke="var(--token-gauge-inner-arc)"
-          strokeWidth={INNER_ARC_STROKE}
           fill="none"
           strokeLinecap="round"
         />
@@ -143,22 +133,6 @@ export function ComposerTokenGauge({
           strokeWidth={OUTER_ARC_STROKE}
           fill="none"
           strokeLinecap="round"
-        />
-        <rect
-          x="55.5"
-          y="18.5"
-          width="4.5"
-          height="4.5"
-          rx="1.1"
-          className="composer-token-gauge-speed-dot"
-        />
-        <rect
-          x="62"
-          y="16"
-          width="4.8"
-          height="4.8"
-          rx="1.1"
-          className="composer-token-gauge-speed-dot"
         />
         <g
           className="composer-token-gauge-needle"

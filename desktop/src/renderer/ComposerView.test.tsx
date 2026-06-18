@@ -624,11 +624,12 @@ describe("ComposerTokenGauge", () => {
     expect(tooltip?.textContent).toContain("tok/s");
 
     const svg = container.querySelector(".composer-token-gauge-svg");
-    expect(svg?.getAttribute("width")).toBe("34");
+    expect(svg?.getAttribute("width")).toBe("31");
     expect(svg?.getAttribute("height")).toBe("20");
     expect(container.querySelector(".composer-token-gauge-progress")).not.toBeNull();
     expect(container.querySelector(".composer-token-gauge-needle")).not.toBeNull();
-    expect(container.querySelectorAll(".composer-token-gauge-speed-dot")).toHaveLength(2);
+    expect(container.querySelector(".composer-token-gauge-inner-arc")).toBeNull();
+    expect(container.querySelectorAll(".composer-token-gauge-speed-dot")).toHaveLength(0);
     expect(container.querySelector(".composer-token-gauge-label")).toBeNull();
   });
 

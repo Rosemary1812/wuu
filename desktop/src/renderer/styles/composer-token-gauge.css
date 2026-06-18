@@ -1,7 +1,6 @@
 /* Live token-speed gauge shown next to the model picker in the composer.
-   It stays icon-like in the toolbar: a speedmark arc, sweeping needle,
-   and a small high-speed marker pair. The exact tok/s number only appears
-   on hover. */
+   It stays icon-like in the toolbar: a speedmark arc and sweeping needle.
+   The exact tok/s number only appears on hover. */
 
 :root {
   --token-gauge-idle: rgba(120, 120, 130, 0.55);
@@ -9,8 +8,6 @@
   --token-gauge-mid: #f59e0b;
   --token-gauge-high: #ef4444;
   --token-gauge-track: rgba(120, 120, 130, 0.2);
-  --token-gauge-inner-arc: rgba(120, 120, 130, 0.36);
-  --token-gauge-dot: rgba(120, 120, 130, 0.62);
   --token-gauge-text: rgba(110, 110, 120, 0.85);
   --token-gauge-hub-ring: rgba(255, 255, 255, 0.96);
   --token-gauge-tooltip-bg: rgba(20, 20, 24, 0.94);
@@ -37,7 +34,7 @@
 .composer-token-gauge .composer-token-gauge-svg {
   display: block;
   overflow: visible;
-  width: 34px;
+  width: 31px;
   height: 20px;
   stroke-width: initial;
 }
@@ -57,11 +54,6 @@
 }
 
 .composer-token-gauge-needle-shape {
-  transition: fill 200ms ease-out;
-}
-
-.composer-token-gauge-speed-dot {
-  fill: var(--token-gauge-dot);
   transition: fill 200ms ease-out;
 }
 
@@ -107,7 +99,6 @@
   .composer-token-gauge-progress,
   .composer-token-gauge-needle,
   .composer-token-gauge-needle-shape,
-  .composer-token-gauge-speed-dot,
   .composer-token-gauge-tooltip,
   .composer-token-gauge[data-state="stopping"] {
     transition: opacity 200ms ease, color 200ms ease;
