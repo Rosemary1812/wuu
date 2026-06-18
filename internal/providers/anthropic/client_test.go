@@ -390,6 +390,49 @@ func TestBuildAnthropicRequest_SmooshesSystemReminderIntoToolResult(t *testing.T
 	}
 }
 
+func TestBuildAnthropicRequest_CacheBoundarySkipsFoldedSystemReminder(t *testing.T) {
+	reminder := wuucontext.FormatSystemReminder(wuucontext.EnvInfo{
+		CWD:       "/tmp/project",
+		Date:      "2026-04-21",
+		GitBranch: "main",
+		GitStatus: "clean",
+	})
+
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "check repo"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{
+				{ID: "tool_1", Name: "git", Arguments: `{"subcommand":"status"}`},
+			}},
+			{Role: "tool", ToolCallID: "tool_1", Name: "git", Content: `{"exit_code":0}`},
+			{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: reminder},
+		},
+		CacheHint: &providers.CacheHint{StablePrefixMessages: 3},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+
+	if len(payload.Messages) != 3 {
+		t.Fatalf("expected 3 messages after merge, got %d", len(payload.Messages))
+	}
+	assistant := payload.Messages[1]
+	if len(assistant.Content) != 1 || assistant.Content[0].Type != "tool_use" {
+		t.Fatalf("expected assistant tool_use block, got %+v", assistant.Content)
+	}
+	if assistant.Content[0].CacheControl == nil || assistant.Content[0].CacheControl.Type != "ephemeral" {
+		t.Fatalf("expected cache marker on stable tool_use block, got %+v", assistant.Content[0].CacheControl)
+	}
+	last := payload.Messages[2]
+	if len(last.Content) != 1 || last.Content[0].Type != "tool_result" {
+		t.Fatalf("expected folded tool_result block, got %+v", last.Content)
+	}
+	if last.Content[0].CacheControl != nil {
+		t.Fatalf("expected folded tool_result to remain unmarked, got %+v", last.Content[0].CacheControl)
+	}
+}
+
 func TestBuildAnthropicRequest_ScrubsClaudeToolCallIDs(t *testing.T) {
 	payload, err := buildAnthropicRequest(providers.ChatRequest{
 		Model: "claude-opus-4.7",

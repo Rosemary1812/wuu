@@ -283,6 +283,8 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 	}
 
 	systemTexts := make([]string, 0, 1)
+	nonSystemSeen := 0
+	var cacheBoundary *anthropicCacheBoundary
 	for _, msg := range req.Messages {
 		if strings.EqualFold(msg.Role, "system") {
 			systemTexts = append(systemTexts, msg.Content)
@@ -293,6 +295,8 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		if err != nil {
 			return anthropicRequest{}, err
 		}
+		destIdx := len(payload.Messages)
+		destBlockEnd := len(mapped.Content)
 		if n := len(payload.Messages); n > 0 && payload.Messages[n-1].Role == mapped.Role {
 			// Anthropic's Messages API accepts mixed text + tool_result
 			// blocks in a single user message.  Always merge consecutive
@@ -301,12 +305,19 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 			// caused tool results to vanish when a worker mailbox text
 			// block landed between an assistant tool_call and its
 			// tool_result).
+			destIdx = n - 1
+			destBlockEnd = len(payload.Messages[n-1].Content) + len(mapped.Content)
 			payload.Messages[n-1].Content = append(payload.Messages[n-1].Content, mapped.Content...)
 		} else {
 			payload.Messages = append(payload.Messages, mapped)
 		}
+		nonSystemSeen++
+		if shouldMarkAnthropicStableBoundary(req.CacheHint, nonSystemSeen) {
+			cacheBoundary = &anthropicCacheBoundary{MessageIndex: destIdx, BlockEnd: destBlockEnd}
+		}
 	}
 	providers.DebugLogf("buildAnthropicRequest: %d input msgs → %d merged msgs", len(req.Messages), len(payload.Messages))
+	applyAnthropicCacheHint(&payload, req.CacheHint, cacheBoundary)
 	for i := range payload.Messages {
 		payload.Messages[i] = smooshSystemReminderBlocks(payload.Messages[i])
 	}
@@ -322,7 +333,6 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		providers.DebugLogf("buildAnthropicRequest: role sequence: [%s]", roles.String())
 	}
 	payload.System = buildAnthropicSystem(systemTexts, req.CacheHint)
-	applyAnthropicCacheHint(&payload, req.CacheHint)
 
 	if len(req.Tools) > 0 {
 		payload.Tools = buildAnthropicTools(
@@ -592,25 +602,27 @@ func stableToolPrefixLength(defs []providers.ToolDefinition) int {
 	return n
 }
 
-func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint) {
+type anthropicCacheBoundary struct {
+	MessageIndex int
+	BlockEnd     int
+}
+
+func shouldMarkAnthropicStableBoundary(hint *providers.CacheHint, nonSystemSeen int) bool {
+	return hint != nil && hint.StablePrefixMessages > 0 && nonSystemSeen == hint.StablePrefixMessages
+}
+
+func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint, boundary *anthropicCacheBoundary) {
 	if payload == nil || hint == nil || hint.StablePrefixMessages <= 0 {
 		return
 	}
-	stable := hint.StablePrefixMessages
-	if stable > len(payload.Messages) {
-		stable = len(payload.Messages)
-	}
-	if stable == 0 {
+	if len(payload.Messages) == 0 {
 		return
 	}
-
 	if hint.HasCompactSummary && markAnthropicMessageForCache(&payload.Messages[0]) {
 		return
 	}
-	for i := stable - 1; i >= 0; i-- {
-		if markAnthropicMessageForCache(&payload.Messages[i]) {
-			return
-		}
+	if boundary != nil && markAnthropicBoundaryForCache(payload.Messages, *boundary) {
+		return
 	}
 }
 
@@ -629,12 +641,56 @@ func markAnthropicMessageForCache(msg *anthropicMessage) bool {
 	return false
 }
 
+func markAnthropicBoundaryForCache(messages []anthropicMessage, boundary anthropicCacheBoundary) bool {
+	msgIdx := boundary.MessageIndex
+	blockIdx := boundary.BlockEnd - 1
+	if msgIdx < 0 || msgIdx >= len(messages) || blockIdx < 0 {
+		return false
+	}
+	if blockIdx >= len(messages[msgIdx].Content) {
+		blockIdx = len(messages[msgIdx].Content) - 1
+	}
+	if boundaryWouldFoldVolatileReminder(messages[msgIdx], blockIdx) {
+		blockIdx--
+	}
+	for i := msgIdx; i >= 0; i-- {
+		start := len(messages[i].Content) - 1
+		if i == msgIdx && blockIdx < start {
+			start = blockIdx
+		}
+		for j := start; j >= 0; j-- {
+			block := &messages[i].Content[j]
+			if !anthropicBlockSupportsCache(block) {
+				continue
+			}
+			block.CacheControl = ephemeralCacheControl()
+			return true
+		}
+	}
+	return false
+}
+
+func boundaryWouldFoldVolatileReminder(msg anthropicMessage, blockIdx int) bool {
+	if msg.Role != "user" || blockIdx < 0 || blockIdx >= len(msg.Content) {
+		return false
+	}
+	if msg.Content[blockIdx].Type != "tool_result" {
+		return false
+	}
+	for _, block := range msg.Content[blockIdx+1:] {
+		if block.Type == "text" && wuucontext.IsSystemReminder("", block.Text) {
+			return true
+		}
+	}
+	return false
+}
+
 func anthropicBlockSupportsCache(block *anthropicBlock) bool {
 	if block == nil {
 		return false
 	}
 	switch block.Type {
-	case "text", "tool_result":
+	case "text", "tool_use", "tool_result":
 		return true
 	default:
 		return false
