@@ -41,9 +41,11 @@ function speedColor(tps: number): string {
 export function ComposerTokenGauge({
   running,
   tokensPerSecond,
+  source = "none",
 }: {
   running: boolean;
   tokensPerSecond: number;
+  source?: "real" | "estimated" | "none";
 }): JSX.Element | null {
   // Displayed value tracks the target with a per-frame lerp so the needle
   // settles instead of jittering on every sliding-window update. The initial
@@ -95,6 +97,9 @@ export function ComposerTokenGauge({
       : displayed < HIGH_SPEED_RATIO * MAX_TOKENS_PER_SEC
         ? "var(--token-gauge-mid)"
         : "var(--token-gauge-high)";
+  const isEstimated = source === "estimated";
+  const speedLabel = `${isEstimated ? "约 " : ""}${rounded.toFixed(1)} tok/s`;
+  const ariaPrefix = isEstimated ? "估算生成速度" : "生成速度";
 
   return (
     <div
@@ -102,8 +107,8 @@ export function ComposerTokenGauge({
       data-state={running ? "running" : "stopping"}
       role="status"
       aria-live="polite"
-      aria-label={`生成速度 ${rounded.toFixed(1)} token 每秒`}
-      title={`${rounded.toFixed(1)} tok/s`}
+      aria-label={`${ariaPrefix} ${rounded.toFixed(1)} token 每秒`}
+      title={speedLabel}
     >
       <svg
         viewBox="0 0 48 28"
@@ -155,7 +160,7 @@ export function ComposerTokenGauge({
         className="composer-token-gauge-tooltip"
         style={{ color: tooltipColor }}
       >
-        {rounded.toFixed(1)} tok/s
+        {speedLabel}
       </span>
     </div>
   );

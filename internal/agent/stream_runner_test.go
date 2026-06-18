@@ -218,6 +218,28 @@ func TestStreamRunner_SimpleContent(t *testing.T) {
 	}
 }
 
+func TestStreamRunner_EventUsageUpdatesResultUsage(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "ok"},
+			{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}},
+			{Type: providers.EventDone},
+		},
+	}
+	runner := &StreamRunner{
+		Client: client,
+		Model:  "test-model",
+	}
+
+	result, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{{Role: "user", Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("RunWithCallback: %v", err)
+	}
+	if result.InputTokens != 11 || result.OutputTokens != 7 || result.CacheCreationTokens != 5 || result.CacheReadTokens != 3 {
+		t.Fatalf("usage not preserved from EventUsage: %+v", result)
+	}
+}
+
 func TestStreamRunnerCarriesStreamedMessagePhaseToCommittedMessage(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{

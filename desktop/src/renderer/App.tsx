@@ -106,7 +106,7 @@ import {
   activeThreadForState,
   activeThreadIDForState,
   activeTurnIDForThread,
-  activeTurnTokenSpeed,
+  activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   bindActiveSessionTabToThread,
   cloneSessionTabDraft,
@@ -1824,6 +1824,10 @@ export function App(): JSX.Element {
   }
 
   function renderComposer(variant: ComposerVariant): JSX.Element {
+    const tokenSpeed = activeTurnTokenSpeedSnapshot(
+      state,
+      activeThread ? activeTurnIDForThread(activeThread) : undefined,
+    );
     return (
       <Composer
         variant={variant}
@@ -1837,10 +1841,8 @@ export function App(): JSX.Element {
         running={
           (!activeThreadReadOnly && activeThreadIsRunning) || viewSwitchPending
         }
-        tokensPerSecond={activeTurnTokenSpeed(
-          state,
-          activeThread ? activeTurnIDForThread(activeThread) : undefined,
-        )}
+        tokensPerSecond={tokenSpeed.tokensPerSecond}
+        tokenSpeedSource={tokenSpeed.source}
         status={
           activeThreadReadOnly
             ? activeThreadIsRunning

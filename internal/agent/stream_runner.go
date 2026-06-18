@@ -802,6 +802,11 @@ func (s *streamStep) runStreamWithReconnect(
 					event.ToolCall = &toolCall
 				}
 
+			case providers.EventUsage:
+				if event.Usage != nil {
+					*usage = event.Usage
+				}
+
 			case providers.EventError:
 				if event.Error != nil {
 					streamErr = event.Error

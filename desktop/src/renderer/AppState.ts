@@ -129,6 +129,8 @@ type TurnTokenSample = {
   at: number;
 };
 
+type TokenSpeedSource = "real" | "estimated" | "none";
+
 type TurnTokenUsage = {
   threadID: string;
   inputTokens: number;
@@ -136,7 +138,13 @@ type TurnTokenUsage = {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   speedTokens: number;
+  speedSource: Exclude<TokenSpeedSource, "none">;
   samples: TurnTokenSample[];
+};
+
+type TurnTokenSpeedSnapshot = {
+  tokensPerSecond: number;
+  source: TokenSpeedSource;
 };
 
 const TOKEN_SPEED_WINDOW_MS = 2000;
@@ -1418,9 +1426,9 @@ function appendTurnTokenSample(
   const turnTokenUsage = state.turnTokenUsage ?? {};
   const previous = turnTokenUsage[turnID];
   const cutoff = at - TOKEN_SPEED_WINDOW_MS;
-  const speedTokens = Math.max(previous?.speedTokens ?? 0, outputTokens);
+  const speedTokens = outputTokens;
   const samples: TurnTokenSample[] = [];
-  if (previous) {
+  if (previous?.speedSource === "real") {
     for (const sample of previous.samples) {
       if (sample.at >= cutoff) {
         samples.push(sample);
@@ -1441,6 +1449,7 @@ function appendTurnTokenSample(
         cacheCreationTokens,
         cacheReadTokens,
         speedTokens,
+        speedSource: "real",
         samples,
       },
     },
@@ -1487,6 +1496,7 @@ function appendStreamingTokenSample(
         cacheCreationTokens: previous?.cacheCreationTokens ?? 0,
         cacheReadTokens: previous?.cacheReadTokens ?? 0,
         speedTokens,
+        speedSource: "estimated",
         samples,
       },
     },
@@ -1508,21 +1518,28 @@ function estimateStreamingOutputTokens(text: string): number {
 }
 
 function activeTurnTokenSpeed(state: AppState, turnID?: string): number {
+  return activeTurnTokenSpeedSnapshot(state, turnID).tokensPerSecond;
+}
+
+function activeTurnTokenSpeedSnapshot(
+  state: AppState,
+  turnID?: string,
+): TurnTokenSpeedSnapshot {
   if (!turnID) {
-    return 0;
+    return { tokensPerSecond: 0, source: "none" };
   }
   const usage = state.turnTokenUsage?.[turnID];
   if (!usage || usage.samples.length < 2) {
-    return 0;
+    return { tokensPerSecond: 0, source: usage?.speedSource ?? "none" };
   }
   const first = usage.samples[0];
   const last = usage.samples[usage.samples.length - 1];
   const delta = last.tokens - first.tokens;
   const elapsed = last.at - first.at;
   if (elapsed <= 0 || delta <= 0) {
-    return 0;
+    return { tokensPerSecond: 0, source: usage.speedSource };
   }
-  return (delta / elapsed) * 1000;
+  return { tokensPerSecond: (delta / elapsed) * 1000, source: usage.speedSource };
 }
 
 export {
@@ -1532,6 +1549,7 @@ export {
   activeThreadIDForState,
   activeTurnIDForThread,
   activeTurnTokenSpeed,
+  activeTurnTokenSpeedSnapshot,
   agentFromRecord,
   appendStreamingTokenSample,
   appendTurnTokenSample,

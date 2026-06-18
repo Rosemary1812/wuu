@@ -1033,6 +1033,7 @@ func TestStreamChat_SSE(t *testing.T) {
 		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"\"}}]}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\"}}]}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"test.go\\\"}\"}}]}},{\"finish_reason\":\"tool_calls\"}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3}}\n\n" +
 		"data: [DONE]\n\n"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1106,11 +1107,23 @@ func TestStreamChat_SSE(t *testing.T) {
 	if endToolCall.Arguments != `{"path":"test.go"}` {
 		t.Fatalf("unexpected tool arguments: %q", endToolCall.Arguments)
 	}
+	var usageEvents []providers.StreamEvent
+	for _, ev := range events {
+		if ev.Type == providers.EventUsage {
+			usageEvents = append(usageEvents, ev)
+		}
+	}
+	if len(usageEvents) != 1 || usageEvents[0].Usage == nil || usageEvents[0].Usage.OutputTokens != 3 {
+		t.Fatalf("unexpected usage events: %+v", usageEvents)
+	}
 
 	// Verify EventDone is the last event.
 	last := events[len(events)-1]
 	if last.Type != providers.EventDone {
 		t.Fatalf("expected last event to be EventDone, got %s", last.Type)
+	}
+	if last.Usage == nil || last.Usage.InputTokens != 10 || last.Usage.OutputTokens != 3 {
+		t.Fatalf("unexpected done usage: %+v", last.Usage)
 	}
 }
 

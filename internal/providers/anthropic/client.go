@@ -888,17 +888,25 @@ func (c *Client) handleSSEEvent(
 	case "message_delta":
 		var p messageDeltaPayload
 		if json.Unmarshal([]byte(raw.Data), &p) == nil {
+			usageUpdated := false
 			if p.Usage.InputTokens != nil {
 				usage.InputTokens = *p.Usage.InputTokens
+				usageUpdated = true
 			}
 			if p.Usage.OutputTokens != nil {
 				usage.OutputTokens = *p.Usage.OutputTokens
+				usageUpdated = true
 			}
 			if p.Usage.CacheCreationTokens != nil {
 				usage.CacheCreationTokens = *p.Usage.CacheCreationTokens
+				usageUpdated = true
 			}
 			if p.Usage.CacheReadTokens != nil {
 				usage.CacheReadTokens = *p.Usage.CacheReadTokens
+				usageUpdated = true
+			}
+			if usageUpdated {
+				ch <- providers.StreamEvent{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens}}
 			}
 			if p.Delta.StopReason != "" {
 				*stopReason = strings.ToLower(p.Delta.StopReason)

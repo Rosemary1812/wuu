@@ -444,34 +444,30 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	}
 	baseBeforeStep := runner.BeforeStep
 	baseOnRequestContext := runner.OnRequestContext
-	// Forward cumulative token usage updates from the agent loop into a
-	// throttled "turn/usage" notification so live UIs can render a real-time
-	// generation speed gauge. OnTokenUsage fires once per LLM round-trip; we
-	// coalesce pushes to roughly ten per second so the IPC stream stays
-	// smooth even if a single step fans out multiple updates.
+	// Forward provider-reported token usage into throttled "turn/usage"
+	// notifications so live UIs can render a real token-speed gauge when the
+	// provider exposes stream-time cumulative usage. We keep completed calls
+	// separate from the in-flight call because stream usage snapshots are
+	// cumulative for the current provider request, not deltas.
 	const usageNotifyInterval = 100 * time.Millisecond
 	var usagePushMu sync.Mutex
 	var lastUsagePushAt time.Time
-	var cumulativeUsage providers.TokenUsage
+	var completedUsage providers.TokenUsage
+	var liveUsage providers.TokenUsage
 	baseOnUsage := runner.OnUsage
 	baseOnTokenUsage := runner.OnTokenUsage
-	runner.OnUsage = func(inputTokens, outputTokens int) {
-		if baseOnUsage != nil {
-			baseOnUsage(inputTokens, outputTokens)
+	addUsage := func(a, b providers.TokenUsage) providers.TokenUsage {
+		return providers.TokenUsage{
+			InputTokens:         a.InputTokens + b.InputTokens,
+			OutputTokens:        a.OutputTokens + b.OutputTokens,
+			CacheCreationTokens: a.CacheCreationTokens + b.CacheCreationTokens,
+			CacheReadTokens:     a.CacheReadTokens + b.CacheReadTokens,
 		}
 	}
-	runner.OnTokenUsage = func(usage providers.TokenUsage) {
-		if baseOnTokenUsage != nil {
-			baseOnTokenUsage(usage)
-		}
-		usagePushMu.Lock()
-		cumulativeUsage.InputTokens += usage.InputTokens
-		cumulativeUsage.OutputTokens += usage.OutputTokens
-		cumulativeUsage.CacheCreationTokens += usage.CacheCreationTokens
-		cumulativeUsage.CacheReadTokens += usage.CacheReadTokens
+	notifyUsage := func(snapshot providers.TokenUsage, force bool) {
 		now := time.Now()
-		shouldPush := lastUsagePushAt.IsZero() || now.Sub(lastUsagePushAt) >= usageNotifyInterval
-		usageSnapshot := cumulativeUsage
+		usagePushMu.Lock()
+		shouldPush := force || lastUsagePushAt.IsZero() || now.Sub(lastUsagePushAt) >= usageNotifyInterval
 		if shouldPush {
 			lastUsagePushAt = now
 		}
@@ -482,11 +478,27 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		notify(NotificationTurnUsage, TurnUsageNotification{
 			ThreadID:            th.ID,
 			TurnID:              turnID,
-			InputTokens:         usageSnapshot.InputTokens,
-			OutputTokens:        usageSnapshot.OutputTokens,
-			CacheCreationTokens: usageSnapshot.CacheCreationTokens,
-			CacheReadTokens:     usageSnapshot.CacheReadTokens,
+			InputTokens:         snapshot.InputTokens,
+			OutputTokens:        snapshot.OutputTokens,
+			CacheCreationTokens: snapshot.CacheCreationTokens,
+			CacheReadTokens:     snapshot.CacheReadTokens,
 		})
+	}
+	runner.OnUsage = func(inputTokens, outputTokens int) {
+		if baseOnUsage != nil {
+			baseOnUsage(inputTokens, outputTokens)
+		}
+	}
+	runner.OnTokenUsage = func(usage providers.TokenUsage) {
+		if baseOnTokenUsage != nil {
+			baseOnTokenUsage(usage)
+		}
+		usagePushMu.Lock()
+		completedUsage = addUsage(completedUsage, usage)
+		liveUsage = providers.TokenUsage{}
+		usageSnapshot := completedUsage
+		usagePushMu.Unlock()
+		notifyUsage(usageSnapshot, true)
 	}
 	var contextRequests []sessiontrace.RequestContextRecord
 	runner.OnRequestContext = func(info agent.RequestContextInfo) {
@@ -526,6 +538,13 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	// plumbing through the streaming callback and are deferred for v1.
 	ctx = guardian.WithTranscript(ctx, guardian.TranscriptFromChatMessages(history))
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
+		if ev.Type == providers.EventUsage && ev.Usage != nil {
+			usagePushMu.Lock()
+			liveUsage = *ev.Usage
+			usageSnapshot := addUsage(completedUsage, liveUsage)
+			usagePushMu.Unlock()
+			notifyUsage(usageSnapshot, false)
+		}
 		th.mu.Lock()
 		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
 		th.mu.Unlock()

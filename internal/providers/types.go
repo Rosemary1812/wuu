@@ -243,6 +243,7 @@ const (
 	EventToolUseEnd      StreamEventType = "tool_use_end"
 	EventPlanUpdate      StreamEventType = "plan_update"
 	EventRequestContext  StreamEventType = "request_context"
+	EventUsage           StreamEventType = "usage"
 	EventMessage         StreamEventType = "message"
 	EventLifecycle       StreamEventType = "lifecycle"
 	EventReconnect       StreamEventType = "reconnect"

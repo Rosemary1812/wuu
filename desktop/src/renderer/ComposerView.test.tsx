@@ -68,6 +68,7 @@ function renderComposer(props: {
   permissions?: PermissionSummary;
   onSelectPermissionMode?: (mode: PermissionMode) => void;
   tokensPerSecond?: number;
+  tokenSpeedSource?: "real" | "estimated" | "none";
 }): { onSelectPermissionMode: (mode: PermissionMode) => void } {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -129,6 +130,7 @@ function renderComposer(props: {
         onSend={props.onSend ?? (() => {})}
         onInterrupt={props.onInterrupt ?? (() => {})}
         tokensPerSecond={props.tokensPerSecond ?? 0}
+        tokenSpeedSource={props.tokenSpeedSource}
       />,
     );
   });
@@ -627,5 +629,16 @@ describe("ComposerTokenGauge", () => {
     expect(container.querySelector(".composer-token-gauge-progress")).not.toBeNull();
     expect(container.querySelector(".composer-token-gauge-needle")).not.toBeNull();
     expect(container.querySelector(".composer-token-gauge-label")).toBeNull();
+  });
+
+  it("marks fallback token speed as approximate", () => {
+    renderComposer({
+      running: true,
+      tokensPerSecond: 18.4,
+      tokenSpeedSource: "estimated",
+    });
+
+    const tooltip = container.querySelector(".composer-token-gauge-tooltip");
+    expect(tooltip?.textContent).toContain("约 18.4 tok/s");
   });
 });

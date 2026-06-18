@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activeTurnTokenSpeed,
+  activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   appendTurnTokenSample,
   initialState,
@@ -66,6 +67,7 @@ describe("AppState token usage", () => {
     );
 
     expect(activeTurnTokenSpeed(second, "turn-1")).toBe(20);
+    expect(activeTurnTokenSpeedSnapshot(second, "turn-1").source).toBe("real");
     expect(second.turnTokenUsage["turn-1"].cacheCreationTokens).toBe(4);
     expect(second.turnTokenUsage["turn-1"].cacheReadTokens).toBe(8);
   });
@@ -91,7 +93,35 @@ describe("AppState token usage", () => {
     );
 
     expect(activeTurnTokenSpeed(second, "turn-1")).toBe(2);
+    expect(activeTurnTokenSpeedSnapshot(second, "turn-1").source).toBe("estimated");
     expect(second.turnTokenUsage["turn-1"].outputTokens).toBe(0);
+  });
+
+  it("discards estimated samples when real provider usage arrives", () => {
+    const estimated = appendStreamingTokenSample(
+      initialState,
+      {
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+        delta: "aaaaaaaaaaaaaaaa",
+      },
+      1_000,
+    );
+    const real = appendTurnTokenSample(
+      estimated,
+      "turn-1",
+      "thread-1",
+      10,
+      3,
+      0,
+      0,
+      1_500,
+    );
+
+    expect(activeTurnTokenSpeedSnapshot(real, "turn-1").source).toBe("real");
+    expect(real.turnTokenUsage["turn-1"].samples).toEqual([
+      { tokens: 3, at: 1_500 },
+    ]);
   });
 });
 

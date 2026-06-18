@@ -467,6 +467,7 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 
 		if chunk.Usage != nil {
 			lastUsage = chunk.Usage.asTokenUsage()
+			ch <- providers.StreamEvent{Type: providers.EventUsage, Usage: lastUsage}
 		}
 
 		if len(chunk.Choices) == 0 {

@@ -1393,13 +1393,20 @@ func TestStreamChat_SSE(t *testing.T) {
 
 	// Verify content deltas arrive in order.
 	var contentParts []string
+	var usageEvents []providers.StreamEvent
 	for _, ev := range events {
 		if ev.Type == providers.EventContentDelta {
 			contentParts = append(contentParts, ev.Content)
 		}
+		if ev.Type == providers.EventUsage {
+			usageEvents = append(usageEvents, ev)
+		}
 	}
 	if len(contentParts) != 2 || contentParts[0] != "Hello" || contentParts[1] != " world" {
 		t.Fatalf("unexpected content deltas: %v", contentParts)
+	}
+	if len(usageEvents) != 1 || usageEvents[0].Usage == nil || usageEvents[0].Usage.OutputTokens != 5 {
+		t.Fatalf("unexpected usage events: %+v", usageEvents)
 	}
 
 	// Verify EventDone is the last event.
@@ -1537,8 +1544,8 @@ func TestStreamChat_ThinkingDoneIncludesReasoningBlock(t *testing.T) {
 		events = append(events, ev)
 	}
 
-	if len(events) != 3 {
-		t.Fatalf("expected thinking delta + thinking done + done, got %d events", len(events))
+	if len(events) != 4 {
+		t.Fatalf("expected thinking delta + thinking done + usage + done, got %d events", len(events))
 	}
 	if events[0].Type != providers.EventThinkingDelta || events[0].Content != "inspect repo" {
 		t.Fatalf("unexpected first event: %+v", events[0])
@@ -1548,6 +1555,12 @@ func TestStreamChat_ThinkingDoneIncludesReasoningBlock(t *testing.T) {
 	}
 	if events[1].ReasoningBlock.Signature != "sig_1" || events[1].ReasoningBlock.Thinking != "inspect repo" {
 		t.Fatalf("unexpected reasoning block: %+v", events[1].ReasoningBlock)
+	}
+	if events[2].Type != providers.EventUsage || events[2].Usage == nil || events[2].Usage.OutputTokens != 8 {
+		t.Fatalf("expected usage event with output tokens, got %+v", events[2])
+	}
+	if events[3].Type != providers.EventDone {
+		t.Fatalf("expected done event, got %+v", events[3])
 	}
 }
 
