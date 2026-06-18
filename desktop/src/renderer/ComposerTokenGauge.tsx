@@ -29,7 +29,7 @@ export function ComposerTokenGauge({
   running: boolean;
   tokensPerSecond: number;
   source?: "real" | "estimated" | "none";
-}): JSX.Element | null {
+}): JSX.Element {
   // Displayed value tracks the target with a per-frame lerp so the needle
   // settles instead of jittering on every sliding-window update. The initial
   // value is the target itself so the gauge paints the real number on first
@@ -41,10 +41,6 @@ export function ComposerTokenGauge({
   targetRef.current = running ? Math.max(0, tokensPerSecond) : 0;
 
   useEffect(() => {
-    if (!running) {
-      setDisplayed(0);
-      return;
-    }
     let raf = 0;
     const tick = (): void => {
       setDisplayed((current) => {
@@ -61,11 +57,7 @@ export function ComposerTokenGauge({
     return () => {
       window.cancelAnimationFrame(raf);
     };
-  }, [running]);
-
-  if (!running && displayed < 0.05) {
-    return null;
-  }
+  }, []);
 
   const ratio = Math.max(0, Math.min(1, displayed / MAX_TOKENS_PER_SEC));
   const dashOffset = GAUGE_ARC_PATH_LENGTH * (1 - ratio);
@@ -80,7 +72,7 @@ export function ComposerTokenGauge({
   return (
     <div
       className="composer-token-gauge"
-      data-state={running ? "running" : "stopping"}
+      data-state={running ? "running" : "idle"}
       role="status"
       aria-live="polite"
       aria-label={`${ariaPrefix} ${rounded.toFixed(1)} token 每秒`}

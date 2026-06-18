@@ -126,17 +126,12 @@
   transform: translate(-50%, -50%) scale(1);
 }
 
-.composer-token-gauge[data-state="stopping"] {
-  opacity: 0.55;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .composer-token-gauge,
   .composer-token-gauge-progress,
   .composer-token-gauge-needle,
   .composer-token-gauge-needle-shape,
-  .composer-token-gauge-tooltip,
-  .composer-token-gauge[data-state="stopping"] {
+  .composer-token-gauge-tooltip {
     transition: none;
   }
 }

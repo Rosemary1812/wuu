@@ -605,10 +605,15 @@ describe("Composer permission menu", () => {
 });
 
 describe("ComposerTokenGauge", () => {
-  it("does not render the gauge or its hover tooltip when the composer is idle", () => {
+  it("keeps the gauge visible with an idle speed when the composer is idle", () => {
     renderComposer({ running: false, tokensPerSecond: 0 });
-    expect(container.querySelector(".composer-token-gauge")).toBeNull();
-    expect(container.querySelector(".composer-token-gauge-tooltip")).toBeNull();
+    const gauge = container.querySelector(".composer-token-gauge");
+    expect(gauge).not.toBeNull();
+    expect(gauge?.getAttribute("data-state")).toBe("idle");
+
+    const tooltip = container.querySelector(".composer-token-gauge-tooltip");
+    expect(tooltip).not.toBeNull();
+    expect(tooltip?.textContent).toContain("0.0 tok/s");
   });
 
   it("renders a live gauge with a hover-only tooltip carrying the tok/s value", () => {
