@@ -316,9 +316,11 @@ function buildSettingsUsageData(state: AppState): SettingsUsageData {
     turns: 0,
     agents: 0,
     buckets: [],
+    days: [],
     entries: [],
   };
   const buckets = new Map<string, SettingsUsageBucket>();
+  const days = new Map<string, SettingsUsageData["days"][number]>();
   const entries: SortableSettingsUsageEntry[] = [];
   const threads = loadedSettingsUsageThreads(state);
   const threadsByID = new Map(threads.map((thread) => [thread.id, thread]));
@@ -333,16 +335,20 @@ function buildSettingsUsageData(state: AppState): SettingsUsageData {
     const thread = threadsByID.get(turnUsage.threadID);
     const provider = nonEmptyLabel(thread?.model_provider, fallbackProvider);
     const model = nonEmptyLabel(thread?.model, fallbackModel);
+    const sortTime = latestTurnUsageSampleTime(turnUsage.samples) || parseTime(thread?.updated_at);
+    const date = dateKeyFromTime(sortTime);
     addSettingsUsage(usage, buckets, provider, model, tokens, "turn");
+    addSettingsUsageDay(days, date, tokens, "turn");
     entries.push({
       id: `turn:${turnID}`,
       kind: "turn",
       title: thread ? nonEmptyLabel(threadDisplayTitle(thread), "主会话") : "主会话",
       provider,
       model,
+      date,
       status: thread?.status === "in_progress" ? "运行中" : undefined,
       ...tokens,
-      sortTime: latestTurnUsageSampleTime(turnUsage.samples) || parseTime(thread?.updated_at),
+      sortTime,
       contextTokens: settingsUsageContextTokens(tokens),
     });
   }
@@ -361,16 +367,20 @@ function buildSettingsUsageData(state: AppState): SettingsUsageData {
       }
       const provider = nonEmptyLabel(thread.model_provider, fallbackProvider);
       const model = nonEmptyLabel(thread.model, fallbackModel);
+      const sortTime = parseTime(agent.completed_at) || parseTime(agent.started_at) || parseTime(thread.updated_at);
+      const date = dateKeyFromTime(sortTime);
       addSettingsUsage(usage, buckets, provider, model, tokens, "agent");
+      addSettingsUsageDay(days, date, tokens, "agent");
       entries.push({
         id: `agent:${agentKey}`,
         kind: "agent",
         title: nonEmptyLabel(agent.task_name || agent.description, "子任务"),
         provider,
         model,
+        date,
         status: settingsUsageAgentStatus(agent.status),
         ...tokens,
-        sortTime: parseTime(agent.completed_at) || parseTime(agent.started_at) || parseTime(thread.updated_at),
+        sortTime,
         contextTokens: settingsUsageContextTokens(tokens),
       });
     }
@@ -379,6 +389,7 @@ function buildSettingsUsageData(state: AppState): SettingsUsageData {
   usage.buckets = [...buckets.values()].sort(
     (a, b) => settingsUsageContextTokens(b) - settingsUsageContextTokens(a),
   );
+  usage.days = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
   usage.entries = entries
     .sort((a, b) => b.sortTime - a.sortTime || b.contextTokens - a.contextTokens)
     .map(({ sortTime: _sortTime, contextTokens: _contextTokens, ...entry }) => entry);
@@ -464,6 +475,38 @@ function addSettingsUsage(
   buckets.set(bucketID, bucket);
 }
 
+function addSettingsUsageDay(
+  days: Map<string, SettingsUsageData["days"][number]>,
+  date: string | undefined,
+  tokens: SettingsUsageTokenFields,
+  kind: "turn" | "agent",
+): void {
+  if (!date) {
+    return;
+  }
+  const day =
+    days.get(date) ??
+    {
+      date,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      turns: 0,
+      agents: 0,
+    };
+  day.inputTokens += tokens.inputTokens;
+  day.outputTokens += tokens.outputTokens;
+  day.cacheCreationTokens += tokens.cacheCreationTokens;
+  day.cacheReadTokens += tokens.cacheReadTokens;
+  if (kind === "turn") {
+    day.turns += 1;
+  } else {
+    day.agents += 1;
+  }
+  days.set(date, day);
+}
+
 function hasSettingsUsageTokens(tokens: SettingsUsageTokenFields): boolean {
   return (
     tokens.inputTokens > 0 ||
@@ -479,6 +522,20 @@ function settingsUsageContextTokens(tokens: {
   cacheReadTokens: number;
 }): number {
   return tokens.inputTokens + tokens.cacheReadTokens + tokens.outputTokens;
+}
+
+function dateKeyFromTime(time: number): string | undefined {
+  if (!Number.isFinite(time) || time <= 0) {
+    return undefined;
+  }
+  return localDateKey(new Date(time));
+}
+
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function latestTurnUsageSampleTime(samples: { at: number }[] | undefined): number {

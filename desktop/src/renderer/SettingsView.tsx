@@ -33,12 +33,23 @@ export type SettingsUsageBucket = {
   agents: number;
 };
 
+export type SettingsUsageDay = {
+  date: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  turns: number;
+  agents: number;
+};
+
 export type SettingsUsageEntry = {
   id: string;
   kind: "turn" | "agent";
   title: string;
   provider: string;
   model: string;
+  date?: string;
   status?: string;
   inputTokens: number;
   outputTokens: number;
@@ -54,6 +65,7 @@ export type SettingsUsageData = {
   turns: number;
   agents: number;
   buckets: SettingsUsageBucket[];
+  days: SettingsUsageDay[];
   entries: SettingsUsageEntry[];
 };
 
@@ -67,6 +79,7 @@ const EMPTY_USAGE: SettingsUsageData = {
   turns: 0,
   agents: 0,
   buckets: [],
+  days: [],
   entries: [],
 };
 
@@ -493,6 +506,8 @@ export function SettingsView({
 
 function SettingsUsagePage({ usage }: { usage: SettingsUsageData }): JSX.Element {
   const contextTokens = usageContextTokens(usage);
+  const hitRate = cacheHitRate(usage);
+  const heatmap = buildCacheHeatmap(usage.days);
   const hasUsage = contextTokens > 0 || usage.cacheCreationTokens > 0 || usage.entries.length > 0;
   return (
     <>
@@ -505,14 +520,15 @@ function SettingsUsagePage({ usage }: { usage: SettingsUsageData }): JSX.Element
           <UsageMetric label="上下文 token" value={contextTokens} detail="输入 + 缓存读取 + 输出" />
           <UsageMetric label="输入 token" value={usage.inputTokens} detail={`${usage.turns} 轮主会话`} />
           <UsageMetric label="输出 token" value={usage.outputTokens} detail={`${usage.agents} 个子任务`} />
-          <UsageMetric label="缓存读取" value={usage.cacheReadTokens} detail={`缓存写入 ${formatTokenCount(usage.cacheCreationTokens)}`} />
+          <UsageMetric label="缓存命中率" value={formatPercent(hitRate)} detail={`缓存读取 ${formatTokenCount(usage.cacheReadTokens)}`} />
+          <UsageMetric label="缓存写入" value={usage.cacheCreationTokens} detail="供后续请求复用" />
         </div>
       </section>
 
       <section className="settings-section">
         <div>
-          <h2>按模型</h2>
-          <p>按模型服务和模型名称合并统计。</p>
+          <h2>模型使用</h2>
+          <p>用过的模型服务、模型名称和缓存命中情况。</p>
         </div>
         <div className="settings-card settings-usage-table-card">
           {usage.buckets.length > 0 ? (
@@ -520,9 +536,10 @@ function SettingsUsagePage({ usage }: { usage: SettingsUsageData }): JSX.Element
               <thead>
                 <tr>
                   <th scope="col">模型</th>
+                  <th scope="col">上下文</th>
+                  <th scope="col">缓存命中</th>
                   <th scope="col">输入</th>
                   <th scope="col">输出</th>
-                  <th scope="col">缓存读取</th>
                   <th scope="col">记录</th>
                 </tr>
               </thead>
@@ -533,9 +550,10 @@ function SettingsUsagePage({ usage }: { usage: SettingsUsageData }): JSX.Element
                       <strong>{bucket.provider}</strong>
                       <small>{bucket.model}</small>
                     </td>
+                    <td>{formatTokenCount(usageContextTokens(bucket))}</td>
+                    <td>{formatPercent(cacheHitRate(bucket))}</td>
                     <td>{formatTokenCount(bucket.inputTokens)}</td>
                     <td>{formatTokenCount(bucket.outputTokens)}</td>
-                    <td>{formatTokenCount(bucket.cacheReadTokens)}</td>
                     <td>{formatUsageRecordCount(bucket)}</td>
                   </tr>
                 ))}
@@ -543,6 +561,47 @@ function SettingsUsagePage({ usage }: { usage: SettingsUsageData }): JSX.Element
             </table>
           ) : (
             <div className="settings-usage-empty">暂无用量记录</div>
+          )}
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <div>
+          <h2>缓存命中热力图</h2>
+          <p>最近 12 周每天的缓存命中率。</p>
+        </div>
+        <div className="settings-card settings-cache-heatmap-card">
+          {hasUsage ? (
+            <>
+              <div className="settings-cache-heatmap-summary">
+                <strong>{formatPercent(hitRate)}</strong>
+                <span>整体缓存命中率</span>
+                <small>
+                  读取 {formatTokenCount(usage.cacheReadTokens)} · 写入 {formatTokenCount(usage.cacheCreationTokens)}
+                </small>
+              </div>
+              <div className="settings-cache-heatmap" aria-label="缓存命中率热力图" role="grid">
+                {heatmap.map((day) => (
+                  <span
+                    className="settings-cache-heatmap-cell"
+                    data-level={day.level}
+                    key={day.date}
+                    role="gridcell"
+                    title={formatHeatmapTitle(day)}
+                    aria-label={formatHeatmapTitle(day)}
+                  />
+                ))}
+              </div>
+              <div className="settings-cache-heatmap-legend" aria-hidden="true">
+                <span>低</span>
+                {[0, 1, 2, 3, 4].map((level) => (
+                  <i data-level={level} key={level} />
+                ))}
+                <span>高</span>
+              </div>
+            </>
+          ) : (
+            <div className="settings-usage-empty">暂无缓存命中数据</div>
           )}
         </div>
       </section>
@@ -574,11 +633,16 @@ function SettingsUsagePage({ usage }: { usage: SettingsUsageData }): JSX.Element
   );
 }
 
-function UsageMetric({ label, value, detail }: { label: string; value: number; detail: string }): JSX.Element {
+type CacheHeatmapCell = SettingsUsageDay & {
+  level: number;
+  hitRate?: number;
+};
+
+function UsageMetric({ label, value, detail }: { label: string; value: number | string; detail: string }): JSX.Element {
   return (
     <div className="settings-usage-metric">
       <span>{label}</span>
-      <strong>{formatTokenCount(value)}</strong>
+      <strong>{typeof value === "number" ? formatTokenCount(value) : value}</strong>
       <small>{detail}</small>
     </div>
   );
@@ -596,6 +660,109 @@ function formatTokenCount(value: number): string {
   return Math.max(0, value).toLocaleString();
 }
 
+function cacheHitRate(usage: {
+  inputTokens: number;
+  cacheReadTokens: number;
+}): number | undefined {
+  const promptTokens = usage.inputTokens + usage.cacheReadTokens;
+  if (promptTokens <= 0) {
+    return undefined;
+  }
+  return usage.cacheReadTokens / promptTokens;
+}
+
+function formatPercent(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+}
+
+function buildCacheHeatmap(days: SettingsUsageDay[]): CacheHeatmapCell[] {
+  const byDate = new Map(days.map((day) => [day.date, day]));
+  const end = startOfLocalDay(new Date());
+  const start = startOfWeek(addDays(end, -77));
+  const cells: CacheHeatmapCell[] = [];
+  for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
+    const date = localDateKey(cursor);
+    const usage = byDate.get(date) ?? {
+      date,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      turns: 0,
+      agents: 0,
+    };
+    const hitRate = cacheHitRate(usage);
+    cells.push({
+      ...usage,
+      hitRate,
+      level: heatmapLevel(usage, hitRate),
+    });
+  }
+  return cells;
+}
+
+function heatmapLevel(day: SettingsUsageDay, hitRate: number | undefined): number {
+  if (!hasUsageDayData(day)) {
+    return 0;
+  }
+  if (hitRate === undefined || hitRate <= 0) {
+    return 1;
+  }
+  if (hitRate < 0.25) {
+    return 1;
+  }
+  if (hitRate < 0.5) {
+    return 2;
+  }
+  if (hitRate < 0.75) {
+    return 3;
+  }
+  return 4;
+}
+
+function hasUsageDayData(day: SettingsUsageDay): boolean {
+  return (
+    day.inputTokens > 0 ||
+    day.outputTokens > 0 ||
+    day.cacheCreationTokens > 0 ||
+    day.cacheReadTokens > 0 ||
+    day.turns > 0 ||
+    day.agents > 0
+  );
+}
+
+function formatHeatmapTitle(day: CacheHeatmapCell): string {
+  if (!hasUsageDayData(day)) {
+    return `${day.date}：暂无用量`;
+  }
+  return `${day.date}：缓存命中 ${formatPercent(day.hitRate)}，读取 ${formatTokenCount(day.cacheReadTokens)}，写入 ${formatTokenCount(day.cacheCreationTokens)}`;
+}
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function startOfWeek(date: Date): Date {
+  const day = date.getDay();
+  return addDays(startOfLocalDay(date), -day);
+}
+
+function addDays(date: Date, days: number): Date {
+  const out = new Date(date);
+  out.setDate(out.getDate() + days);
+  return out;
+}
+
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function formatUsageRecordCount(bucket: SettingsUsageBucket): string {
   const pieces: string[] = [];
   if (bucket.turns > 0) {
@@ -610,7 +777,8 @@ function formatUsageRecordCount(bucket: SettingsUsageBucket): string {
 function formatUsageEntryMeta(entry: SettingsUsageEntry): string {
   const kind = entry.kind === "agent" ? "子任务" : "主会话";
   const status = entry.status ? ` · ${entry.status}` : "";
-  return `${entry.provider} · ${entry.model} · ${kind}${status}`;
+  const date = entry.date ? ` · ${entry.date}` : "";
+  return `${entry.provider} · ${entry.model} · ${kind}${status}${date}`;
 }
 
 function formatBuildDate(iso: string): string {

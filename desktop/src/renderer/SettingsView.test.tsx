@@ -206,6 +206,17 @@ describe("SettingsView About section", () => {
           agents: 0,
         },
       ],
+      days: [
+        {
+          date: "2026-06-18",
+          inputTokens: 1000,
+          outputTokens: 200,
+          cacheCreationTokens: 20,
+          cacheReadTokens: 50,
+          turns: 1,
+          agents: 0,
+        },
+      ],
       entries: [
         {
           id: "turn:turn-1",
@@ -213,6 +224,7 @@ describe("SettingsView About section", () => {
           title: "测试会话",
           provider: "OpenAI API",
           model: "fake-model",
+          date: "2026-06-18",
           inputTokens: 1000,
           outputTokens: 200,
           cacheCreationTokens: 20,
@@ -233,7 +245,11 @@ describe("SettingsView About section", () => {
     });
     expect(container.querySelector("[data-testid=\"settings-usage\"]")).not.toBeNull();
     expect(rootText()).toContain("1,250");
+    expect(rootText()).toContain("模型使用");
+    expect(rootText()).toContain("缓存命中率");
+    expect(rootText()).toContain("5%");
     expect(rootText()).toContain("OpenAI API");
     expect(rootText()).toContain("测试会话");
+    expect(container.querySelector(".settings-cache-heatmap")).not.toBeNull();
   });
 });

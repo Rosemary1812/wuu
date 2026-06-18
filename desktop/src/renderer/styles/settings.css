@@ -277,7 +277,7 @@
 
 .settings-usage-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
   gap: 12px;
 }
 
@@ -320,7 +320,7 @@
 
 .settings-usage-table {
   width: 100%;
-  min-width: 640px;
+  min-width: 760px;
   border-collapse: collapse;
 }
 
@@ -404,8 +404,91 @@
   font-weight: var(--weight-medium);
 }
 
+.settings-cache-heatmap-card {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+}
+
+.settings-cache-heatmap-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.settings-cache-heatmap-summary strong {
+  color: #1f2328;
+  font-size: 26px;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+.settings-cache-heatmap-summary span {
+  color: #1f2328;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.settings-cache-heatmap-summary small {
+  color: #85898d;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.settings-cache-heatmap {
+  display: grid;
+  grid-auto-columns: 13px;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 13px);
+  gap: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.settings-cache-heatmap-cell,
+.settings-cache-heatmap-legend i {
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(31, 35, 40, 0.06);
+  border-radius: 3px;
+  background: #ebedf0;
+}
+
+.settings-cache-heatmap-cell[data-level="1"],
+.settings-cache-heatmap-legend i[data-level="1"] {
+  background: #d7f0db;
+}
+
+.settings-cache-heatmap-cell[data-level="2"],
+.settings-cache-heatmap-legend i[data-level="2"] {
+  background: #8fd19e;
+}
+
+.settings-cache-heatmap-cell[data-level="3"],
+.settings-cache-heatmap-legend i[data-level="3"] {
+  background: #35a853;
+}
+
+.settings-cache-heatmap-cell[data-level="4"],
+.settings-cache-heatmap-legend i[data-level="4"] {
+  background: #116b34;
+}
+
+.settings-cache-heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  color: #85898d;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
 @media (max-width: 900px) {
-  .settings-usage-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .settings-cache-heatmap-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
   }
 }
