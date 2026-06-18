@@ -1172,7 +1172,7 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 			}
 		}
 	}
-	if err := appendTokenUsage(th.MemoryPath, providers.TokenUsage{
+	if err := appendTokenUsage(th.MemoryPath, th.ModelProvider, th.Model, providers.TokenUsage{
 		InputTokens:         res.InputTokens,
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,

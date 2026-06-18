@@ -3236,7 +3236,7 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	if err := appendChatMessage(sessionPath, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
 		t.Fatalf("append old assistant: %v", err)
 	}
-	if err := appendTokenUsage(sessionPath, providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}); err != nil {
+	if err := appendTokenUsage(sessionPath, "anthropic", "claude-sonnet-4-6", providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}); err != nil {
 		t.Fatalf("append token usage: %v", err)
 	}
 
@@ -3257,6 +3257,9 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	}
 	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 11 || all[1].OutputTokens != 7 || all[1].CacheCreationTokens != 5 || all[1].CacheReadTokens != 3 {
 		t.Fatalf("rewrite should preserve token usage metadata, got %+v", all)
+	}
+	if all[1].Provider != "anthropic" || all[1].Model != "claude-sonnet-4-6" {
+		t.Fatalf("rewrite should preserve token usage metadata, got provider=%q model=%q", all[1].Provider, all[1].Model)
 	}
 }
 

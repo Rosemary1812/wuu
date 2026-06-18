@@ -55,6 +55,12 @@ type persistedMessage struct {
 	OutputTokens        int                                `json:"output_tokens,omitempty"`
 	CacheCreationTokens int                                `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int                                `json:"cache_read_tokens,omitempty"`
+	// Provider and Model carry which provider/model produced this row's
+	// token_usage. Only populated when Role=="meta" and Content=="token_usage";
+	// empty for chat records and for legacy token_usage rows written before
+	// this field was added.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 type persistedAgentHistory struct {
@@ -223,13 +229,19 @@ func rewriteChatHistory(path string, msgs []providers.ChatMessage) error {
 	return nil
 }
 
-func appendTokenUsage(path string, usage providers.TokenUsage) error {
+// appendTokenUsage persists one cumulative token usage snapshot to the session
+// history. provider and model tag the row so the insight scanner can aggregate
+// usage per provider/model across sessions. Empty values are preserved as empty
+// strings, which the scanner interprets as "unknown provider/model".
+func appendTokenUsage(path, provider, model string, usage providers.TokenUsage) error {
 	if strings.TrimSpace(path) == "" || (usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.CacheCreationTokens == 0 && usage.CacheReadTokens == 0) {
 		return nil
 	}
 	rec := persistedMessage{
 		Role:                "meta",
 		Content:             "token_usage",
+		Provider:            strings.TrimSpace(provider),
+		Model:               strings.TrimSpace(model),
 		At:                  time.Now().UTC(),
 		InputTokens:         usage.InputTokens,
 		OutputTokens:        usage.OutputTokens,
@@ -433,6 +445,8 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		OutputTokens:        rec.OutputTokens,
 		CacheCreationTokens: rec.CacheCreationTokens,
 		CacheReadTokens:     rec.CacheReadTokens,
+		Provider:            rec.Provider,
+		Model:               rec.Model,
 	}
 }
 
@@ -452,6 +466,8 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		OutputTokens:        rec.OutputTokens,
 		CacheCreationTokens: rec.CacheCreationTokens,
 		CacheReadTokens:     rec.CacheReadTokens,
+		Provider:            rec.Provider,
+		Model:               rec.Model,
 	}
 	if err := unmarshalRaw(rec.ReasoningBlocks, &out.ReasoningBlocks); err != nil {
 		return persistedMessage{}, err

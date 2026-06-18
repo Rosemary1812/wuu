@@ -80,6 +80,11 @@ type HistoryRecord struct {
 	OutputTokens        int             `json:"output_tokens,omitempty"`
 	CacheCreationTokens int             `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int             `json:"cache_read_tokens,omitempty"`
+	// Provider and Model carry which provider/model produced this token_usage
+	// row. Empty for chat records and for legacy token_usage rows written
+	// before this field existed; readers should treat empty as "unknown".
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 // NewID generates a human-readable, sortable session ID: YYYYMMDD-HHMMSS-xxxxxxxxxxxxxxxx.
@@ -654,6 +659,8 @@ func migrateSchema(db *sql.DB) error {
 			output_tokens INTEGER NOT NULL DEFAULT 0,
 			cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
 			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+			provider TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY(session_id, seq),
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
@@ -681,6 +688,12 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "session_messages", "discovered_tools_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "provider", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "model", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return nil
@@ -1003,11 +1016,13 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 	INSERT INTO session_messages (
 		session_id, seq, role, content, phase, client_id, steered, reasoning_content,
 		reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
-		tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+		provider, model
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, strings.TrimSpace(rec.Phase), rec.ClientID, boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls), rawJSONText(rec.DiscoveredTools),
 		rec.ToolCallID, rec.ToolResultKind, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
+		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model),
 	)
 	if err != nil {
 		return fmt.Errorf("insert history record: %w", err)
@@ -1019,7 +1034,8 @@ func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRec
 	query := `
 	SELECT role, content, phase, client_id, steered, reasoning_content,
 	       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
-	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
+	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+	       provider, model
 	FROM session_messages
 WHERE session_id = ?`
 	args := []any{id}
@@ -1044,6 +1060,7 @@ WHERE session_id = ?`
 			&rec.Role, &rec.Content, &rec.Phase, &rec.ClientID, &steered, &rec.ReasoningContent,
 			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
 			&rec.ToolCallID, &rec.ToolResultKind, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
+			&rec.Provider, &rec.Model,
 		); err != nil {
 			return nil, fmt.Errorf("scan session history: %w", err)
 		}
