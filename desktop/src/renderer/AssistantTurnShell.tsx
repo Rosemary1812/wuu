@@ -1,5 +1,5 @@
 import { Info, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { Turn } from "../shared/protocol";
 import type {
   AssistantTurnDisplay,
@@ -44,10 +44,13 @@ export function AssistantTurnShell({
     (entry) => entry.position === "answer",
   );
 
-  // Collapse process records as soon as an answer body exists. This mirrors
-  // Codex's shape: prior commentary/tools stay available, but the active
-  // reading surface becomes the final-answer stream.
-  const defaultCollapsed = answerEntries.length > 0;
+  // Process records (commentary, tool calls, reasoning) stay expanded so
+  // the user can scroll back through the agent's working trail while the
+  // final answer is still streaming — and after it settles. The Codex
+  // shape (collapse-on-answer) hid commentary mid-stream and read as the
+  // agent "forgetting" what it had just said; keep the fold open by
+  // default and let the user collapse it manually for long turns.
+  const defaultCollapsed = false;
 
   const hasProcess =
     processEntries.length > 0 || Boolean(display.latestProcessPreview);
@@ -131,7 +134,6 @@ function TurnProcessFold({
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
-  const previousDefaultCollapsed = useRef(defaultCollapsed);
   const detailsID = `${turn.id}-process-fold`;
 
   const processCount = entries.reduce(
@@ -155,15 +157,9 @@ function TurnProcessFold({
   ).label;
   const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs);
 
-  // Once the parent (Shell) flips `defaultCollapsed` from false → true,
-  // collapse the fold; never re-open it automatically. The user is the
-  // only one who expands it from there.
-  useEffect(() => {
-    if (!previousDefaultCollapsed.current && defaultCollapsed) {
-      setExpanded(false);
-    }
-    previousDefaultCollapsed.current = defaultCollapsed;
-  }, [defaultCollapsed]);
+  // `defaultCollapsed` is now constant (`false`); the fold stays open by
+  // default. The user is the only one who collapses it from here, so we
+  // no longer need to react to a parent-driven collapse transition.
 
   const hasDetails = entries.length > 0;
   const hasPreview = Boolean(latestPreview);
