@@ -212,7 +212,9 @@ describe("turn token speed", () => {
       Date.now(),
     );
 
-    expect(activeTurnTokenSpeed(state, "turn-1")).toBeCloseTo(80, 0);
+    const speed = activeTurnTokenSpeedSnapshot(state, "turn-1");
+    expect(speed.tokensPerSecond).toBeCloseTo(80, 0);
+    expect(speed.sampledAt).toBe(new Date(2026, 0, 1, 0, 0, 0, 500).getTime());
     expect(state.turnTokenUsage["turn-1"].samples).toEqual([
       { tokens: 100, at: new Date(2026, 0, 1, 0, 0, 0).getTime() },
       { tokens: 140, at: new Date(2026, 0, 1, 0, 0, 0, 500).getTime() },

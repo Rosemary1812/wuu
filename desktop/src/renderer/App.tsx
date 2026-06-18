@@ -1907,6 +1907,7 @@ export function App(): JSX.Element {
           (!activeThreadReadOnly && activeThreadIsRunning) || viewSwitchPending
         }
         tokensPerSecond={tokenSpeed.tokensPerSecond}
+        tokenSpeedSampledAt={tokenSpeed.sampledAt}
         tokenSpeedSource={tokenSpeed.source}
         status={
           activeThreadReadOnly

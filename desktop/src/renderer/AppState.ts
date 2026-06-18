@@ -145,6 +145,7 @@ type TurnTokenUsage = {
 type TurnTokenSpeedSnapshot = {
   tokensPerSecond: number;
   source: TokenSpeedSource;
+  sampledAt?: number;
 };
 
 const TOKEN_SPEED_WINDOW_MS = 2000;
@@ -1536,16 +1537,28 @@ function activeTurnTokenSpeedSnapshot(
   }
   const usage = state.turnTokenUsage?.[turnID];
   if (!usage || usage.samples.length < 2) {
-    return { tokensPerSecond: 0, source: usage?.speedSource ?? "none" };
+    return {
+      tokensPerSecond: 0,
+      source: usage?.speedSource ?? "none",
+      sampledAt: usage?.samples.at(-1)?.at,
+    };
   }
   const first = usage.samples[0];
   const last = usage.samples[usage.samples.length - 1];
   const delta = last.tokens - first.tokens;
   const elapsed = last.at - first.at;
   if (elapsed <= 0 || delta <= 0) {
-    return { tokensPerSecond: 0, source: usage.speedSource };
+    return {
+      tokensPerSecond: 0,
+      source: usage.speedSource,
+      sampledAt: last.at,
+    };
   }
-  return { tokensPerSecond: (delta / elapsed) * 1000, source: usage.speedSource };
+  return {
+    tokensPerSecond: (delta / elapsed) * 1000,
+    source: usage.speedSource,
+    sampledAt: last.at,
+  };
 }
 
 export {

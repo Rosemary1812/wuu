@@ -68,6 +68,7 @@ function renderComposer(props: {
   permissions?: PermissionSummary;
   onSelectPermissionMode?: (mode: PermissionMode) => void;
   tokensPerSecond?: number;
+  tokenSpeedSampledAt?: number;
   tokenSpeedSource?: "real" | "estimated" | "none";
 }): { onSelectPermissionMode: (mode: PermissionMode) => void } {
   const codexModels: CodexModelLoadState = {
@@ -130,6 +131,7 @@ function renderComposer(props: {
         onSend={props.onSend ?? (() => {})}
         onInterrupt={props.onInterrupt ?? (() => {})}
         tokensPerSecond={props.tokensPerSecond ?? 0}
+        tokenSpeedSampledAt={props.tokenSpeedSampledAt}
         tokenSpeedSource={props.tokenSpeedSource}
       />,
     );

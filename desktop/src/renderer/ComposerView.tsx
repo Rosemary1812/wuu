@@ -144,6 +144,7 @@ export function Composer({
   onSend,
   onInterrupt,
   tokensPerSecond,
+  tokenSpeedSampledAt,
   tokenSpeedSource,
   queryHistorySessionID,
   queryHistory = []
@@ -202,6 +203,7 @@ export function Composer({
   onSend: () => void;
   onInterrupt: () => void;
   tokensPerSecond: number;
+  tokenSpeedSampledAt?: number;
   tokenSpeedSource?: "real" | "estimated" | "none";
   queryHistorySessionID?: string;
   queryHistory?: string[];
@@ -517,6 +519,7 @@ export function Composer({
             <ComposerTokenGauge
               running={running}
               tokensPerSecond={tokensPerSecond}
+              sampledAt={tokenSpeedSampledAt}
               source={tokenSpeedSource}
             />
             <div className="composer-spacer" />
