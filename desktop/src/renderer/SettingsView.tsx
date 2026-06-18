@@ -1,4 +1,5 @@
 import { ArrowLeft, BarChart3, Plus, Settings, X } from "lucide-react";
+import type { SettingsUsageRange } from "../shared/protocol";
 import {
   type CSSProperties,
   type FormEvent as ReactFormEvent,
@@ -98,11 +99,15 @@ export function SettingsView({
   onDebugControlsChange,
   onSidebarResizeStart,
   onSidebarSeparatorKey,
-  onSidebarSeparatorDoubleClick
+  onSidebarSeparatorDoubleClick,
+  usageRange,
+  setUsageRange,
 }: {
   initialized?: InitializeResult;
   running: boolean;
   usage?: SettingsUsageData;
+  usageRange: SettingsUsageRange;
+  setUsageRange: (range: SettingsUsageRange) => void;
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
   sidebarWidth: number;
@@ -496,7 +501,11 @@ export function SettingsView({
               </section>
             </>
           ) : (
-            <SettingsUsagePage usage={usage ?? EMPTY_USAGE} />
+            <SettingsUsagePage
+              usage={usage ?? EMPTY_USAGE}
+              usageRange={usageRange}
+              setUsageRange={setUsageRange}
+            />
           )}
         </div>
       </OverlayScrollbarsComponent>
@@ -504,17 +513,45 @@ export function SettingsView({
   );
 }
 
-function SettingsUsagePage({ usage }: { usage: SettingsUsageData }): JSX.Element {
+function SettingsUsagePage({
+  usage,
+  usageRange,
+  setUsageRange,
+}: {
+  usage: SettingsUsageData;
+  usageRange: SettingsUsageRange;
+  setUsageRange: (range: SettingsUsageRange) => void;
+}): JSX.Element {
   const contextTokens = usageContextTokens(usage);
   const hitRate = cacheHitRate(usage);
   const heatmap = buildCacheHeatmap(usage.days);
   const hasUsage = contextTokens > 0 || usage.cacheCreationTokens > 0 || usage.entries.length > 0;
+  const ranges: SettingsUsageRange[] = ["all", "7d", "30d", "90d"];
   return (
     <>
       <section className="settings-section" data-testid="settings-usage">
         <div>
           <h2>本地用量</h2>
           <p>显示当前桌面已加载会话和子任务的 token 统计。</p>
+        </div>
+        <div
+          className="settings-usage-range"
+          role="tablist"
+          aria-label="时间范围"
+        >
+          {ranges.map((range) => (
+            <button
+              key={range}
+              type="button"
+              role="tab"
+              aria-selected={usageRange === range}
+              data-range={range}
+              className={`settings-usage-range-button${usageRange === range ? " active" : ""}`}
+              onClick={() => setUsageRange(range)}
+            >
+              {formatUsageRange(range)}
+            </button>
+          ))}
         </div>
         <div className="settings-usage-metrics">
           <UsageMetric label="上下文 token" value={contextTokens} detail="输入 + 缓存读取 + 输出" />
@@ -658,6 +695,19 @@ function usageContextTokens(usage: {
 
 function formatTokenCount(value: number): string {
   return Math.max(0, value).toLocaleString();
+}
+
+function formatUsageRange(range: SettingsUsageRange): string {
+  switch (range) {
+    case "all":
+      return "全部";
+    case "7d":
+      return "7 天";
+    case "30d":
+      return "30 天";
+    case "90d":
+      return "90 天";
+  }
 }
 
 function cacheHitRate(usage: {

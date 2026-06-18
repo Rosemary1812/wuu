@@ -4522,6 +4522,8 @@ export function App(): JSX.Element {
         initialized={state.initialized}
         running={anyThreadIsRunning}
         usage={settingsUsage}
+        usageRange={usageRange}
+        setUsageRange={setUsageRange}
         showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
         debugControlsEnabled={debugControlsEnabled}
         sidebarWidth={sidebarWidth}

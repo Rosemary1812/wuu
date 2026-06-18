@@ -49,7 +49,10 @@ function baseInitialized(overrides: Partial<InitializeResult> = {}): InitializeR
 function renderSettings(props: {
   initialized: InitializeResult | undefined;
   usage?: SettingsUsageData;
+  usageRange?: SettingsUsageRange;
 }): { about: Element | null; text: () => string; rootText: () => string } {
+  const usageRange: SettingsUsageRange = props.usageRange ?? "all";
+  const setUsageRange = vi.fn();
   act(() => {
     root = createRoot(container);
     root!.render(
@@ -57,6 +60,8 @@ function renderSettings(props: {
         initialized={props.initialized}
         running={false}
         usage={props.usage}
+        usageRange={usageRange}
+        setUsageRange={setUsageRange}
         showDebugControlsSetting={false}
         debugControlsEnabled={false}
         sidebarWidth={320}
