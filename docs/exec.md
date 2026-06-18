@@ -83,7 +83,8 @@ JSON
 stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
-`strict_config`, `env`, `no_tools`, `timeout`, and `output_last_message`.
+`strict_config`, `env`, `max_turns`, `no_tools`, `timeout`, and
+`output_last_message`.
 
 ## Resume
 
@@ -188,6 +189,7 @@ Current implemented flags:
 --json
 --ephemeral
 --input-json
+--max-turns <n>
 --timeout <duration>
 --output-last-message <file>
 ```
@@ -197,12 +199,11 @@ from `--workdir` when it is set, otherwise from the current directory.
 `--ignore-user-config` skips `~/.config/wuu/config.json`. `--strict-config` is
 accepted for automation compatibility; `wuu exec` already fails when no usable
 config can be loaded. `--env KEY=VALUE` is repeatable and applies only to the
-current run.
+current run. `--max-turns` caps the model/tool loop for the current user turn.
 
 Target flags that still need implementation:
 
 ```bash
---max-turns <n>
 --output-schema <schema.json>
 --approval-handler <command>
 --approval-socket <path>

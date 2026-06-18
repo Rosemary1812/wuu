@@ -178,6 +178,12 @@ func applyConfigOverrides(cfg *config.Config, opts Options) error {
 	if strings.TrimSpace(opts.AgentProfile) != "" {
 		cfg.Agent.Name = strings.TrimSpace(opts.AgentProfile)
 	}
+	if opts.MaxTurns < 0 {
+		return errors.New("max turns must be non-negative")
+	}
+	if opts.MaxTurns > 0 {
+		cfg.Agent.MaxSteps = opts.MaxTurns
+	}
 	if strings.TrimSpace(opts.PermissionMode) != "" {
 		if permissions, ok := config.PermissionPresetForMode(opts.PermissionMode); ok {
 			cfg.Agent.PermissionMode = permissions.Mode

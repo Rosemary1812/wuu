@@ -77,6 +77,7 @@ type Options struct {
 	IgnoreUserConfig  bool
 	StrictConfig      bool
 	Env               []string
+	MaxTurns          int
 	Provider          string
 	Model             string
 	Effort            string

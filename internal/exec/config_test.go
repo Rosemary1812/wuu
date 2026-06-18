@@ -56,6 +56,24 @@ func TestApplyConfigOverridesSetsAgentProfile(t *testing.T) {
 	}
 }
 
+func TestApplyConfigOverridesSetsMaxTurns(t *testing.T) {
+	cfg := config.Default()
+	cfg.Agent.MaxSteps = 9
+	if err := applyConfigOverrides(&cfg, Options{MaxTurns: 3}); err != nil {
+		t.Fatalf("applyConfigOverrides: %v", err)
+	}
+	if cfg.Agent.MaxSteps != 3 {
+		t.Fatalf("MaxSteps = %d, want 3", cfg.Agent.MaxSteps)
+	}
+}
+
+func TestApplyConfigOverridesRejectsNegativeMaxTurns(t *testing.T) {
+	cfg := config.Default()
+	if err := applyConfigOverrides(&cfg, Options{MaxTurns: -1}); err == nil {
+		t.Fatal("expected negative max turns error")
+	}
+}
+
 func TestApplyRunEnvSetsAndRestoresValues(t *testing.T) {
 	const existingKey = "WUU_EXEC_EXISTING_ENV_TEST"
 	const newKey = "WUU_EXEC_NEW_ENV_TEST"

@@ -1427,8 +1427,8 @@ func validateExecFlags(cfg execCLIConfig) error {
 			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("attachment path is required"))
 		}
 	}
-	if cfg.maxTurns != nil && *cfg.maxTurns > 0 {
-		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --max-turns is not implemented yet"))
+	if cfg.maxTurns != nil && *cfg.maxTurns < 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --max-turns must be non-negative"))
 	}
 	if cfg.outputSchema != nil && strings.TrimSpace(*cfg.outputSchema) != "" {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --output-schema is not implemented yet"))
@@ -1454,6 +1454,7 @@ type execInputPayload struct {
 	IgnoreUserConfig  *bool                      `json:"ignore_user_config"`
 	StrictConfig      *bool                      `json:"strict_config"`
 	Env               []string                   `json:"env"`
+	MaxTurns          *int                       `json:"max_turns"`
 	NoTools           *bool                      `json:"no_tools"`
 	JSON              *bool                      `json:"json"`
 	Ephemeral         *bool                      `json:"ephemeral"`
@@ -1477,6 +1478,7 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		IgnoreUserConfig:  valueOfBoolFlag(cfg.ignoreUserConfig),
 		StrictConfig:      valueOfBoolFlag(cfg.strictConfig),
 		Env:               stringListValues(cfg.env),
+		MaxTurns:          valueOfIntFlag(cfg.maxTurns),
 		NoTools:           valueOfBoolFlag(cfg.noTools),
 		JSON:              valueOfBoolFlag(cfg.jsonOutput),
 		Ephemeral:         valueOfBoolFlag(cfg.ephemeral),
@@ -1533,6 +1535,12 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 		opts.StrictConfig = *input.StrictConfig
 	}
 	opts.Env = append(opts.Env, input.Env...)
+	if input.MaxTurns != nil && opts.MaxTurns == 0 {
+		opts.MaxTurns = *input.MaxTurns
+	}
+	if opts.MaxTurns < 0 {
+		return errors.New("max_turns must be non-negative")
+	}
 	if input.NoTools != nil && !opts.NoTools {
 		opts.NoTools = *input.NoTools
 	}
@@ -1649,6 +1657,13 @@ func valueOfBoolFlag(v *bool) bool {
 }
 
 func valueOfDurationFlag(v *time.Duration) time.Duration {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func valueOfIntFlag(v *int) int {
 	if v == nil {
 		return 0
 	}
@@ -1835,6 +1850,7 @@ Exec flags:
   --json            emit JSONL to stdout
   --ephemeral       run without creating a persistent session
   --input-json      read machine input JSON from stdin
+  --max-turns       max agent loop turns
   --timeout         total timeout (e.g. 20m)
   --output-last-message
                    write final agent message to a file

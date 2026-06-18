@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"io"
 	"os"
 	"path/filepath"
@@ -293,12 +294,45 @@ func TestRunExecAllowsAttachmentOnlyPrompt(t *testing.T) {
 	}
 }
 
-func TestRunExecRejectsUnimplementedMaxTurnsWithExitCodeTwo(t *testing.T) {
-	err := run([]string{"exec", "--max-turns", "3", "hello"})
+func TestExecOptionsFromCLIAcceptsMaxTurns(t *testing.T) {
+	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse([]string{"--max-turns", "3"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	opts, err := execOptionsFromCLI(cfg, "hello", "", false, nil)
+	if err != nil {
+		t.Fatalf("execOptionsFromCLI: %v", err)
+	}
+	if opts.MaxTurns != 3 {
+		t.Fatalf("MaxTurns = %d, want 3", opts.MaxTurns)
+	}
+}
+
+func TestExecOptionsFromInputJSONAcceptsMaxTurns(t *testing.T) {
+	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	maxTurns := 4
+	opts, err := execOptionsFromCLI(cfg, "hello", "", false, &execInputPayload{MaxTurns: &maxTurns})
+	if err != nil {
+		t.Fatalf("execOptionsFromCLI: %v", err)
+	}
+	if opts.MaxTurns != 4 {
+		t.Fatalf("MaxTurns = %d, want 4", opts.MaxTurns)
+	}
+}
+
+func TestRunExecRejectsNegativeMaxTurnsWithExitCodeTwo(t *testing.T) {
+	err := run([]string{"exec", "--max-turns=-1", "hello"})
 	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
 		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
 	}
-	if !strings.Contains(err.Error(), "--max-turns is not implemented") {
+	if err == nil || !strings.Contains(err.Error(), "--max-turns must be non-negative") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
