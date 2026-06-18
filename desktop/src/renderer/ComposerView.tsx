@@ -516,13 +516,13 @@ export function Composer({
                 </FloatingMenuPortal>
               ) : null}
             </div>
+            <div className="composer-spacer" />
             <ComposerTokenGauge
               running={running}
               tokensPerSecond={tokensPerSecond}
               sampledAt={tokenSpeedSampledAt}
               source={tokenSpeedSource}
             />
-            <div className="composer-spacer" />
             {initialized ? (
               <RuntimePicker
                 variant={variant}
