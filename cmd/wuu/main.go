@@ -645,7 +645,7 @@ func runExec(args []string) error {
 		case "resume":
 			return runExecResume(args[1:])
 		case "fork":
-			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec fork is not implemented yet"))
+			return runExecFork(args[1:])
 		case "review":
 			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec review is not implemented yet"))
 		}
@@ -697,6 +697,33 @@ func runExecResume(args []string) error {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
 	return runExecWithPrompt(prompt, execOptionsFromCLI(cfg, prompt, threadID, *last))
+}
+
+func runExecFork(args []string) error {
+	fs := flag.NewFlagSet("exec fork", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if err := validateExecFlags(cfg); err != nil {
+		return err
+	}
+	remaining := fs.Args()
+	if len(remaining) == 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("fork requires a thread id"))
+	}
+	forkID := strings.TrimSpace(remaining[0])
+	if forkID == "" {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("fork requires a thread id"))
+	}
+	prompt, err := resolveExecPrompt(remaining[1:], hasExecAttachments(cfg))
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	opts := execOptionsFromCLI(cfg, prompt, "", false)
+	opts.ForkID = forkID
+	return runExecWithPrompt(prompt, opts)
 }
 
 func addExecFlags(fs *flag.FlagSet) execCLIConfig {
@@ -1148,6 +1175,7 @@ Usage:
   wuu models [flags]
   wuu exec [flags] "your coding task"
   wuu exec resume (--last|THREAD_ID) [flags] "continue task"
+  wuu exec fork THREAD_ID [flags] "continue from a fork"
   wuu session list|show|trace [flags]
   wuu run [flags] "your coding task"
   wuu eval [flags]

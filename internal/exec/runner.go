@@ -76,9 +76,12 @@ func Run(ctx context.Context, opts Options) error {
 		return classifyProtocolOrContextError(ctx, err)
 	}
 	state.threadID = thread.ID
-	if opts.ResumeLast || strings.TrimSpace(opts.ResumeID) != "" {
+	switch {
+	case strings.TrimSpace(opts.ForkID) != "":
+		emitThreadEvent(opts, "thread_forked", thread)
+	case opts.ResumeLast || strings.TrimSpace(opts.ResumeID) != "":
 		emitThreadEvent(opts, "thread_resumed", thread)
-	} else {
+	default:
 		emitThreadEvent(opts, "thread_started", thread)
 	}
 
@@ -125,6 +128,9 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 func startOrResumeThread(ctx context.Context, controller Controller, opts Options) (appserver.Thread, error) {
+	if id := strings.TrimSpace(opts.ForkID); id != "" {
+		return controller.ForkThread(ctx, id)
+	}
 	if opts.ResumeLast {
 		return controller.ResumeThread(ctx, "")
 	}

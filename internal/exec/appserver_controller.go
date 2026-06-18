@@ -85,6 +85,13 @@ func (c *localAppServerController) ResumeThread(ctx context.Context, threadID st
 	return result.Thread, err
 }
 
+func (c *localAppServerController) ForkThread(ctx context.Context, threadID string) (appserver.Thread, error) {
+	var result appserver.ThreadForkResult
+	params := appserver.ThreadForkParams{ThreadID: strings.TrimSpace(threadID)}
+	err := c.client.Call(ctx, appserver.MethodThreadFork, params, &result)
+	return result.Thread, err
+}
+
 func (c *localAppServerController) StartTurn(ctx context.Context, threadID string, input TurnInput) (appserver.Turn, error) {
 	var result appserver.TurnStartResult
 	params := appserver.TurnStartParams{

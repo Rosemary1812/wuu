@@ -84,6 +84,7 @@ type Options struct {
 	OutputLastMessage string
 	ResumeID          string
 	ResumeLast        bool
+	ForkID            string
 	Stdout            io.Writer
 	Stderr            io.Writer
 	Controller        Controller
@@ -93,6 +94,7 @@ type Controller interface {
 	Initialize(context.Context) (appserver.InitializeResult, error)
 	StartThread(context.Context) (appserver.Thread, error)
 	ResumeThread(context.Context, string) (appserver.Thread, error)
+	ForkThread(context.Context, string) (appserver.Thread, error)
 	StartTurn(context.Context, string, TurnInput) (appserver.Turn, error)
 	Interrupt(context.Context, string) error
 	Shutdown(context.Context) error

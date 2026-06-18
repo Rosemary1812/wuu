@@ -68,13 +68,17 @@ Empty input fails before a turn is started.
 ```bash
 wuu exec resume --last "continue from the failure"
 wuu exec resume <thread-id> "continue this session"
+wuu exec fork <thread-id> "try a different direction"
 ```
 
 `resume --last` asks app-server to resume the latest visible session for the
 current workspace. `resume <thread-id>` resumes a specific session.
 
-`resume --all`, `fork`, and review-specific entrypoints are part of the target
-surface but are not fully implemented yet.
+`fork <thread-id>` creates a new session through app-server `thread/fork`, then
+starts the requested turn in that fork.
+
+`resume --all` and review-specific entrypoints are part of the target surface
+but are not fully implemented yet.
 
 ## Attachments
 

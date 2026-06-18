@@ -19,6 +19,7 @@ type fakeController struct {
 
 	startedThread bool
 	resumedThread string
+	forkedThread  string
 	startedPrompt string
 	startedImages []appserver.TurnStartImage
 	startedFiles  []appserver.TurnStartFile
@@ -52,6 +53,13 @@ func (f *fakeController) StartThread(context.Context) (appserver.Thread, error) 
 
 func (f *fakeController) ResumeThread(_ context.Context, id string) (appserver.Thread, error) {
 	f.resumedThread = id
+	return f.thread, nil
+}
+
+func (f *fakeController) ForkThread(_ context.Context, id string) (appserver.Thread, error) {
+	f.forkedThread = id
+	f.thread.ID = "fork-thread-1"
+	f.thread.ForkedFromID = id
 	return f.thread, nil
 }
 
@@ -164,6 +172,33 @@ func TestRunResumeLastUsesResumePath(t *testing.T) {
 	}
 	if controller.resumedThread != "" {
 		t.Fatalf("resume last should pass empty thread id, got %q", controller.resumedThread)
+	}
+}
+
+func TestRunForkUsesForkPath(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "fork-thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "forked"}),
+	)
+	var stdout bytes.Buffer
+
+	if err := Run(context.Background(), Options{
+		Prompt:     "continue from fork",
+		ForkID:     "source-thread",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if controller.startedThread || controller.resumedThread != "" {
+		t.Fatalf("fork should not start or resume: started=%v resumed=%q", controller.startedThread, controller.resumedThread)
+	}
+	if controller.forkedThread != "source-thread" {
+		t.Fatalf("forkedThread = %q", controller.forkedThread)
+	}
+	events := parseJSONLines(t, stdout.String())
+	if got := events[1]["type"]; got != "thread_forked" {
+		t.Fatalf("second event = %v, want thread_forked\n%s", got, stdout.String())
 	}
 }
 

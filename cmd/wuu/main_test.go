@@ -127,6 +127,34 @@ func TestRunExecResumeLastUsesResumePath(t *testing.T) {
 	}
 }
 
+func TestRunExecForkUsesForkPath(t *testing.T) {
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "fork-thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "forked"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"exec", "fork", "--json", "source-thread", "continue"}); err != nil {
+			t.Fatalf("run exec fork: %v", err)
+		}
+	})
+
+	if controller.startedThread || controller.resumedThread != "" {
+		t.Fatalf("fork should not start or resume: started=%v resumed=%q", controller.startedThread, controller.resumedThread)
+	}
+	if controller.forkedThread != "source-thread" {
+		t.Fatalf("forkedThread = %q", controller.forkedThread)
+	}
+	if controller.startedPrompt != "continue" {
+		t.Fatalf("prompt = %q", controller.startedPrompt)
+	}
+	events := parseCLIJSONLines(t, output)
+	if got := events[1]["type"]; got != "thread_forked" {
+		t.Fatalf("second event = %v, want thread_forked\n%s", got, output)
+	}
+}
+
 func TestRunExecPassesFileAndImageAttachments(t *testing.T) {
 	workdir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workdir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
@@ -1394,6 +1422,7 @@ type cliExecFakeController struct {
 
 	startedThread bool
 	resumedThread string
+	forkedThread  string
 	startedPrompt string
 	startedImages []appserver.TurnStartImage
 	startedFiles  []appserver.TurnStartFile
@@ -1425,6 +1454,13 @@ func (f *cliExecFakeController) StartThread(context.Context) (appserver.Thread, 
 
 func (f *cliExecFakeController) ResumeThread(_ context.Context, id string) (appserver.Thread, error) {
 	f.resumedThread = id
+	return f.thread, nil
+}
+
+func (f *cliExecFakeController) ForkThread(_ context.Context, id string) (appserver.Thread, error) {
+	f.forkedThread = id
+	f.thread.ID = "fork-thread-1"
+	f.thread.ForkedFromID = id
 	return f.thread, nil
 }
 
