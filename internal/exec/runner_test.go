@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,19 +19,26 @@ type fakeController struct {
 	thread     appserver.Thread
 	turn       appserver.Turn
 	events     []Notification
+	batches    [][]Notification
 
 	startedThread  bool
 	startEphemeral bool
 	resumedThread  string
 	forkedThread   string
 	startedPrompt  string
+	startedPrompts []string
 	startedImages  []appserver.TurnStartImage
 	startedFiles   []appserver.TurnStartFile
 	interrupted    string
 	shutdown       bool
+	startCount     int
 }
 
 func newFakeController(events ...Notification) *fakeController {
+	return newFakeControllerBatches(events)
+}
+
+func newFakeControllerBatches(batches ...[]Notification) *fakeController {
 	return &fakeController{
 		initResult: appserver.InitializeResult{
 			ProtocolVersion: appserver.ProtocolVersion,
@@ -37,9 +47,9 @@ func newFakeController(events ...Notification) *fakeController {
 			WorkspaceRoot:   "/repo",
 			Permissions:     appserver.PermissionSummary{Mode: "default"},
 		},
-		thread: appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},
-		turn:   appserver.Turn{ID: "turn-1"},
-		events: events,
+		thread:  appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},
+		turn:    appserver.Turn{ID: "turn-1"},
+		batches: batches,
 	}
 }
 
@@ -67,10 +77,14 @@ func (f *fakeController) ForkThread(_ context.Context, id string) (appserver.Thr
 }
 
 func (f *fakeController) StartTurn(_ context.Context, _ string, input TurnInput) (appserver.Turn, error) {
+	f.startCount++
 	f.startedPrompt = input.Prompt
+	f.startedPrompts = append(f.startedPrompts, input.Prompt)
 	f.startedImages = append([]appserver.TurnStartImage(nil), input.Images...)
 	f.startedFiles = append([]appserver.TurnStartFile(nil), input.Files...)
-	return f.turn, nil
+	turn := f.turn
+	turn.ID = fmt.Sprintf("turn-%d", f.startCount)
+	return turn, nil
 }
 
 func (f *fakeController) Interrupt(_ context.Context, threadID string) error {
@@ -84,8 +98,15 @@ func (f *fakeController) Shutdown(context.Context) error {
 }
 
 func (f *fakeController) Notifications() <-chan Notification {
-	ch := make(chan Notification, len(f.events))
-	for _, ev := range f.events {
+	idx := f.startCount - 1
+	var events []Notification
+	if idx >= 0 && idx < len(f.batches) {
+		events = f.batches[idx]
+	} else {
+		events = f.events
+	}
+	ch := make(chan Notification, len(events))
+	for _, ev := range events {
 		ch <- ev
 	}
 	return ch
@@ -269,6 +290,88 @@ func TestRunTurnErrorReturnsExitCodeOne(t *testing.T) {
 	}
 }
 
+func TestRunOutputSchemaEmitsStructuredResult(t *testing.T) {
+	schemaPath := writeExecSchema(t, `{
+		"type": "object",
+		"required": ["summary"],
+		"properties": {
+			"summary": {"type": "string"}
+		},
+		"additionalProperties": false
+	}`)
+	controller := newFakeController(
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: `{"summary":"done"}`, TracePath: "/trace.jsonl"}),
+	)
+	var stdout bytes.Buffer
+
+	if err := Run(context.Background(), Options{
+		Prompt:           "summarize",
+		OutputSchemaPath: schemaPath,
+		JSON:             true,
+		Stdout:           &stdout,
+		Controller:       controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(controller.startedPrompt, "Return only JSON") || !strings.Contains(controller.startedPrompt, `"summary"`) {
+		t.Fatalf("prompt missing schema instructions: %q", controller.startedPrompt)
+	}
+	events := parseJSONLines(t, stdout.String())
+	result := events[len(events)-1]
+	structured, ok := result["structured_result"].(map[string]any)
+	if !ok || structured["summary"] != "done" {
+		t.Fatalf("structured_result = %+v", result["structured_result"])
+	}
+}
+
+func TestRunOutputSchemaRetriesInvalidFinalMessage(t *testing.T) {
+	schemaPath := writeExecSchema(t, `{
+		"type": "object",
+		"required": ["summary"],
+		"properties": {
+			"summary": {"type": "string"}
+		}
+	}`)
+	controller := newFakeControllerBatches(
+		[]Notification{
+			notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "not json"}),
+		},
+		[]Notification{
+			notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-2"}, Content: `{"summary":"fixed"}`}),
+		},
+	)
+	var stdout bytes.Buffer
+
+	if err := Run(context.Background(), Options{
+		Prompt:           "summarize",
+		OutputSchemaPath: schemaPath,
+		JSON:             true,
+		Stdout:           &stdout,
+		Controller:       controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if controller.startCount != 2 {
+		t.Fatalf("startCount = %d, want 2", controller.startCount)
+	}
+	if len(controller.startedPrompts) != 2 || !strings.Contains(controller.startedPrompts[1], "previous final answer did not validate") {
+		t.Fatalf("retry prompt missing validation context: %+v", controller.startedPrompts)
+	}
+	events := parseJSONLines(t, stdout.String())
+	gotTypes := make([]string, 0, len(events))
+	for _, event := range events {
+		gotTypes = append(gotTypes, event["type"].(string))
+	}
+	wantTypes := []string{"session_configured", "thread_started", "turn_started", "turn_completed", "error", "turn_started", "turn_completed", "result"}
+	if !reflect.DeepEqual(gotTypes, wantTypes) {
+		t.Fatalf("event types:\n got: %#v\nwant: %#v\njsonl:\n%s", gotTypes, wantTypes, stdout.String())
+	}
+	result := events[len(events)-1]
+	if result["status"] != "completed" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
 func notification(method string, params any) Notification {
 	data, err := json.Marshal(params)
 	if err != nil {
@@ -292,4 +395,13 @@ func parseJSONLines(t *testing.T, text string) []map[string]any {
 		events = append(events, event)
 	}
 	return events
+}
+
+func writeExecSchema(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "schema.json")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+	return path
 }

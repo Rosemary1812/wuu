@@ -83,8 +83,8 @@ JSON
 stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
-`strict_config`, `env`, `max_turns`, `no_tools`, `timeout`, and
-`output_last_message`.
+`strict_config`, `env`, `max_turns`, `output_schema`, `no_tools`, `timeout`,
+and `output_last_message`.
 
 ## Resume
 
@@ -190,6 +190,7 @@ Current implemented flags:
 --ephemeral
 --input-json
 --max-turns <n>
+--output-schema <schema.json>
 --timeout <duration>
 --output-last-message <file>
 ```
@@ -200,11 +201,14 @@ from `--workdir` when it is set, otherwise from the current directory.
 accepted for automation compatibility; `wuu exec` already fails when no usable
 config can be loaded. `--env KEY=VALUE` is repeatable and applies only to the
 current run. `--max-turns` caps the model/tool loop for the current user turn.
+`--output-schema` reads a JSON Schema file, instructs the agent to return only
+JSON, validates the final answer locally, and gives the agent a limited number
+of correction turns when the result does not match the schema. JSONL `result`
+events include `structured_result` after successful validation.
 
 Target flags that still need implementation:
 
 ```bash
---output-schema <schema.json>
 --approval-handler <command>
 --approval-socket <path>
 ```

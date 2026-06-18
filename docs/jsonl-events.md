@@ -220,9 +220,13 @@ The final event in a run.
   "thread_id": "thread-id",
   "turn_id": "turn-id",
   "final_message": "final answer",
+  "structured_result": {"summary": "valid JSON when --output-schema is used"},
   "trace_path": "/path/to/session-trace.jsonl"
 }
 ```
+
+`structured_result` is present only when `wuu exec --output-schema` is used and
+the final answer validates against the requested JSON Schema.
 
 Allowed `status` values include:
 

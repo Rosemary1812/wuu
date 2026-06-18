@@ -327,6 +327,38 @@ func TestExecOptionsFromInputJSONAcceptsMaxTurns(t *testing.T) {
 	}
 }
 
+func TestExecOptionsFromCLIAcceptsOutputSchema(t *testing.T) {
+	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse([]string{"--output-schema", "schema.json"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	opts, err := execOptionsFromCLI(cfg, "hello", "", false, nil)
+	if err != nil {
+		t.Fatalf("execOptionsFromCLI: %v", err)
+	}
+	if opts.OutputSchemaPath != "schema.json" {
+		t.Fatalf("OutputSchemaPath = %q, want schema.json", opts.OutputSchemaPath)
+	}
+}
+
+func TestExecOptionsFromInputJSONAcceptsOutputSchema(t *testing.T) {
+	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	opts, err := execOptionsFromCLI(cfg, "hello", "", false, &execInputPayload{OutputSchema: "schema.json"})
+	if err != nil {
+		t.Fatalf("execOptionsFromCLI: %v", err)
+	}
+	if opts.OutputSchemaPath != "schema.json" {
+		t.Fatalf("OutputSchemaPath = %q, want schema.json", opts.OutputSchemaPath)
+	}
+}
+
 func TestRunExecRejectsNegativeMaxTurnsWithExitCodeTwo(t *testing.T) {
 	err := run([]string{"exec", "--max-turns=-1", "hello"})
 	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {

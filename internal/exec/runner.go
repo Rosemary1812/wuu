@@ -15,11 +15,13 @@ import (
 )
 
 type runState struct {
-	threadID     string
-	turnID       string
-	finalMessage string
-	tracePath    string
-	status       string
+	threadID            string
+	turnID              string
+	finalMessage        string
+	tracePath           string
+	status              string
+	structuredResult    any
+	structuredResultSet bool
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -52,6 +54,14 @@ func Run(ctx context.Context, opts Options) error {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
 		defer cancel()
+	}
+	rootDir, err := resolveWorkdir(opts.Workdir)
+	if err != nil {
+		return WithExitCode(ExitInvalidInput, err)
+	}
+	outputSchema, err := loadOutputSchema(rootDir, opts.OutputSchemaPath)
+	if err != nil {
+		return WithExitCode(ExitInvalidInput, err)
 	}
 
 	controller := opts.Controller
@@ -88,32 +98,65 @@ func Run(ctx context.Context, opts Options) error {
 		emitThreadEvent(opts, "thread_started", thread)
 	}
 
-	turn, err := controller.StartTurn(ctx, thread.ID, TurnInput{
-		Prompt: opts.Prompt,
-		Images: attachments.Images,
-		Files:  attachments.Files,
-	})
-	if err != nil {
-		return classifyProtocolOrContextError(ctx, err)
+	prompt := opts.Prompt
+	if outputSchema != nil {
+		prompt = outputSchema.initialPrompt(prompt)
 	}
-	state.turnID = turn.ID
-	emitTurnStarted(opts, thread.ID, turn)
+	maxRetries := 0
+	if outputSchema != nil {
+		maxRetries = outputSchemaMaxRetries
+	}
+	for attempt := 0; ; attempt++ {
+		state.finalMessage = ""
+		state.turnID = ""
+		state.status = "running"
+		input := TurnInput{Prompt: prompt}
+		if attempt == 0 {
+			input.Images = attachments.Images
+			input.Files = attachments.Files
+		}
+		turn, err := controller.StartTurn(ctx, thread.ID, input)
+		if err != nil {
+			return classifyProtocolOrContextError(ctx, err)
+		}
+		state.turnID = turn.ID
+		emitTurnStarted(opts, thread.ID, turn)
 
-	err = waitForTurn(ctx, controller, opts, &state)
-	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			_ = interruptBestEffort(controller, state.threadID)
-			emitResult(opts, state, "timeout", "timeout")
-			return WithExitCode(ExitTimeout, err)
+		err = waitForTurn(ctx, controller, opts, &state)
+		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				_ = interruptBestEffort(controller, state.threadID)
+				emitResult(opts, state, "timeout", "timeout")
+				return WithExitCode(ExitTimeout, err)
+			}
+			if errors.Is(ctx.Err(), context.Canceled) {
+				_ = interruptBestEffort(controller, state.threadID)
+				emitResult(opts, state, "interrupted", "interrupted")
+				return WithExitCode(ExitInterrupted, err)
+			}
+			return err
 		}
-		if errors.Is(ctx.Err(), context.Canceled) {
-			_ = interruptBestEffort(controller, state.threadID)
-			emitResult(opts, state, "interrupted", "interrupted")
-			return WithExitCode(ExitInterrupted, err)
+
+		if outputSchema == nil {
+			break
 		}
-		return err
+		structuredResult, err := outputSchema.validate(state.finalMessage)
+		if err == nil {
+			state.structuredResult = structuredResult
+			state.structuredResultSet = true
+			break
+		}
+		retrying := attempt < maxRetries
+		emitStructuredOutputValidation(opts, state, err, retrying)
+		if !retrying {
+			state.status = "failed"
+			emitResult(opts, state, "failed", err.Error())
+			return WithExitCode(ExitTurnFailed, err)
+		}
+		prompt = outputSchema.retryPrompt(state.finalMessage, err)
 	}
 
+	emitResult(opts, state, "completed", "")
 	if opts.OutputLastMessage != "" {
 		if err := writeLastMessage(opts.OutputLastMessage, state.finalMessage); err != nil {
 			return WithExitCode(ExitTurnFailed, err)
@@ -273,7 +316,6 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.tracePath = params.TracePath
 		state.status = "completed"
 		emitJSON(opts, map[string]any{"type": "turn_completed", "thread_id": params.ThreadID, "turn_id": params.Turn.ID, "input_tokens": params.InputTokens, "output_tokens": params.OutputTokens, "trace_path": params.TracePath})
-		emitResult(opts, *state, "completed", "")
 		return true, nil
 	case appserver.NotificationTurnError:
 		var params appserver.TurnErrorNotification
@@ -355,6 +397,24 @@ func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {
 	}
 }
 
+func emitStructuredOutputValidation(opts Options, state runState, err error, retrying bool) {
+	if opts.JSON {
+		emitJSON(opts, map[string]any{
+			"type":      "error",
+			"thread_id": state.threadID,
+			"turn_id":   state.turnID,
+			"error":     err.Error(),
+			"retrying":  retrying,
+		})
+		return
+	}
+	if retrying {
+		fmt.Fprintf(opts.Stderr, "structured_output_validation_failed: %v; retrying\n", err)
+		return
+	}
+	fmt.Fprintf(opts.Stderr, "structured_output_validation_failed: %v\n", err)
+}
+
 func emitResult(opts Options, state runState, status, errorText string) {
 	if !opts.JSON {
 		return
@@ -369,6 +429,9 @@ func emitResult(opts Options, state runState, status, errorText string) {
 	}
 	if errorText != "" {
 		payload["error"] = errorText
+	}
+	if state.structuredResultSet {
+		payload["structured_result"] = state.structuredResult
 	}
 	emitJSON(opts, payload)
 }

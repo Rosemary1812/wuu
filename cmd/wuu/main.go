@@ -1430,9 +1430,6 @@ func validateExecFlags(cfg execCLIConfig) error {
 	if cfg.maxTurns != nil && *cfg.maxTurns < 0 {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --max-turns must be non-negative"))
 	}
-	if cfg.outputSchema != nil && strings.TrimSpace(*cfg.outputSchema) != "" {
-		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --output-schema is not implemented yet"))
-	}
 	return nil
 }
 
@@ -1460,6 +1457,7 @@ type execInputPayload struct {
 	Ephemeral         *bool                      `json:"ephemeral"`
 	Timeout           string                     `json:"timeout"`
 	OutputLastMessage string                     `json:"output_last_message"`
+	OutputSchema      string                     `json:"output_schema"`
 }
 
 func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast bool, input *execInputPayload) (wuuexec.Options, error) {
@@ -1484,6 +1482,7 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		Ephemeral:         valueOfBoolFlag(cfg.ephemeral),
 		Timeout:           valueOfDurationFlag(cfg.timeout),
 		OutputLastMessage: valueOfStringFlag(cfg.outputLastMessage),
+		OutputSchemaPath:  valueOfStringFlag(cfg.outputSchema),
 		ResumeID:          resumeID,
 		ResumeLast:        resumeLast,
 		Stdout:            os.Stdout,
@@ -1552,6 +1551,9 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 	}
 	if opts.OutputLastMessage == "" {
 		opts.OutputLastMessage = strings.TrimSpace(input.OutputLastMessage)
+	}
+	if opts.OutputSchemaPath == "" {
+		opts.OutputSchemaPath = strings.TrimSpace(input.OutputSchema)
 	}
 	if opts.Timeout == 0 && strings.TrimSpace(input.Timeout) != "" {
 		timeout, err := time.ParseDuration(strings.TrimSpace(input.Timeout))
@@ -1851,6 +1853,7 @@ Exec flags:
   --ephemeral       run without creating a persistent session
   --input-json      read machine input JSON from stdin
   --max-turns       max agent loop turns
+  --output-schema   JSON schema for structured final output
   --timeout         total timeout (e.g. 20m)
   --output-last-message
                    write final agent message to a file

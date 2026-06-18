@@ -88,6 +88,7 @@ type Options struct {
 	Ephemeral         bool
 	Timeout           time.Duration
 	OutputLastMessage string
+	OutputSchemaPath  string
 	ResumeID          string
 	ResumeLast        bool
 	ForkID            string

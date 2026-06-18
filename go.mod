@@ -6,6 +6,7 @@ require (
 	charm.land/catwalk v0.35.3
 	github.com/creack/pty v1.1.24
 	github.com/dop251/goja v0.0.0-20260603143327-1f200ca63355
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/sergi/go-diff v1.4.0
 	golang.org/x/net v0.43.0
 	modernc.org/sqlite v1.52.0
