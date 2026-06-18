@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
+	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -27,7 +29,7 @@ import (
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(wuuexec.ExitCode(err))
 	}
 }
 
@@ -44,6 +46,8 @@ func run(args []string) error {
 		return runModels(args[1:])
 	case "run":
 		return runTask(args[1:])
+	case "exec":
+		return runExec(args[1:])
 	case "probe-title":
 		return runProbeTitle(args[1:])
 	case "eval":
@@ -51,7 +55,7 @@ func run(args []string) error {
 	case "goal":
 		return runGoal(args[1:])
 	case "tui":
-		return errors.New("the TUI has been removed; use the desktop GUI or `wuu run` for one-shot CLI tasks")
+		return errors.New("the TUI has been removed; use the desktop GUI or `wuu exec` for agent-friendly text tasks")
 	case "session-show":
 		return runSessionShow(args[1:])
 	case "app-server":
@@ -340,6 +344,166 @@ func runSessionShow(args []string) error {
 		fmt.Printf("%s[%d] %s: %s\n", prefix, i+1, role, content)
 	}
 	return nil
+}
+
+type execCLIConfig struct {
+	provider          *string
+	model             *string
+	effort            *string
+	variant           *string
+	permissionMode    *string
+	workdir           *string
+	noTools           *bool
+	jsonOutput        *bool
+	timeout           *time.Duration
+	ephemeral         *bool
+	outputLastMessage *string
+	maxTurns          *int
+	outputSchema      *string
+}
+
+var execControllerOverride wuuexec.Controller
+
+func runExec(args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "resume":
+			return runExecResume(args[1:])
+		case "fork":
+			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec fork is not implemented yet"))
+		case "review":
+			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec review is not implemented yet"))
+		}
+	}
+
+	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if err := validateExecFlags(cfg); err != nil {
+		return err
+	}
+	prompt, err := resolveExecPrompt(fs.Args())
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	return runExecWithPrompt(prompt, execOptionsFromCLI(cfg, prompt, "", false))
+}
+
+func runExecResume(args []string) error {
+	fs := flag.NewFlagSet("exec resume", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	last := fs.Bool("last", false, "resume the most recent session for this workspace")
+	all := fs.Bool("all", false, "resume with full available session context")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if *all {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec resume --all is not implemented yet"))
+	}
+	if err := validateExecFlags(cfg); err != nil {
+		return err
+	}
+
+	remaining := fs.Args()
+	threadID := ""
+	if !*last {
+		if len(remaining) == 0 {
+			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("resume requires --last or a thread id"))
+		}
+		threadID = strings.TrimSpace(remaining[0])
+		remaining = remaining[1:]
+	}
+	prompt, err := resolveExecPrompt(remaining)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	return runExecWithPrompt(prompt, execOptionsFromCLI(cfg, prompt, threadID, *last))
+}
+
+func addExecFlags(fs *flag.FlagSet) execCLIConfig {
+	return execCLIConfig{
+		provider:          fs.String("provider", "", "provider name in config"),
+		model:             fs.String("model", "", "model override"),
+		effort:            fs.String("effort", "", "reasoning effort override"),
+		variant:           fs.String("variant", "", "model variant override"),
+		permissionMode:    fs.String("permission-mode", "", "permission mode override"),
+		workdir:           fs.String("workdir", "", "workspace directory"),
+		noTools:           fs.Bool("no-tools", false, "disable local tools"),
+		jsonOutput:        fs.Bool("json", false, "emit machine-readable JSONL to stdout"),
+		timeout:           fs.Duration("timeout", 0, "total timeout (e.g. 20m)"),
+		ephemeral:         fs.Bool("ephemeral", false, "run without creating a persistent session"),
+		outputLastMessage: fs.String("output-last-message", "", "write final agent message to a file"),
+		maxTurns:          fs.Int("max-turns", 0, "max agent turns"),
+		outputSchema:      fs.String("output-schema", "", "JSON schema for structured final output"),
+	}
+}
+
+func validateExecFlags(cfg execCLIConfig) error {
+	if cfg.maxTurns != nil && *cfg.maxTurns > 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --max-turns is not implemented yet"))
+	}
+	if cfg.outputSchema != nil && strings.TrimSpace(*cfg.outputSchema) != "" {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --output-schema is not implemented yet"))
+	}
+	return nil
+}
+
+func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast bool) wuuexec.Options {
+	return wuuexec.Options{
+		Prompt:            prompt,
+		Provider:          valueOfStringFlag(cfg.provider),
+		Model:             valueOfStringFlag(cfg.model),
+		Effort:            valueOfStringFlag(cfg.effort),
+		Variant:           valueOfStringFlag(cfg.variant),
+		PermissionMode:    valueOfStringFlag(cfg.permissionMode),
+		Workdir:           valueOfStringFlag(cfg.workdir),
+		NoTools:           valueOfBoolFlag(cfg.noTools),
+		JSON:              valueOfBoolFlag(cfg.jsonOutput),
+		Ephemeral:         valueOfBoolFlag(cfg.ephemeral),
+		Timeout:           valueOfDurationFlag(cfg.timeout),
+		OutputLastMessage: valueOfStringFlag(cfg.outputLastMessage),
+		ResumeID:          resumeID,
+		ResumeLast:        resumeLast,
+		Stdout:            os.Stdout,
+		Stderr:            os.Stderr,
+		Controller:        execControllerOverride,
+	}
+}
+
+func runExecWithPrompt(prompt string, opts wuuexec.Options) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return wuuexec.Run(ctx, opts)
+}
+
+func resolveExecPrompt(args []string) (string, error) {
+	return wuuexec.ResolvePrompt(wuuexec.PromptInput{
+		Args:        args,
+		Stdin:       os.Stdin,
+		StdinIsPipe: stdinHasInput(),
+	})
+}
+
+func valueOfStringFlag(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func valueOfBoolFlag(v *bool) bool {
+	return v != nil && *v
+}
+
+func valueOfDurationFlag(v *time.Duration) time.Duration {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 func runTask(args []string) error {
@@ -682,6 +846,8 @@ func printUsage() {
 Usage:
   wuu init [--force]
   wuu models [flags]
+  wuu exec [flags] "your coding task"
+  wuu exec resume (--last|THREAD_ID) [flags] "continue task"
   wuu run [flags] "your coding task"
   wuu eval [flags]
   wuu goal demo [flags]
@@ -694,6 +860,19 @@ Models flags:
   --provider        provider name from config
   --workdir         workspace directory
   --json            output model metadata as JSON
+
+Exec flags:
+  --provider        provider name from config
+  --model           model override
+  --effort          reasoning effort override
+  --variant         model variant override
+  --permission-mode permission mode override
+  --workdir         workspace directory
+  --no-tools        disable local tools
+  --json            emit JSONL to stdout
+  --timeout         total timeout (e.g. 20m)
+  --output-last-message
+                   write final agent message to a file
 
 Run flags:
   --provider        provider name from config

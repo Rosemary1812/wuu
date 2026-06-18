@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
+	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -71,6 +73,67 @@ func TestRunTUICommandIsRemoved(t *testing.T) {
 	err := run([]string{"tui"})
 	if err == nil || !strings.Contains(err.Error(), "TUI has been removed") {
 		t.Fatalf("expected removed TUI error, got %v", err)
+	}
+}
+
+func TestRunExecJSONUsesControllerPath(t *testing.T) {
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationAgentMessageDelta, appserver.AgentMessageDeltaNotification{ThreadID: "thread-1", TurnID: "turn-1", Delta: "ok"}),
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "ok"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"exec", "--json", "hello"}); err != nil {
+			t.Fatalf("run exec: %v", err)
+		}
+	})
+
+	if !controller.startedThread || controller.startedPrompt != "hello" {
+		t.Fatalf("exec did not use expected controller path: %+v", controller)
+	}
+	events := parseCLIJSONLines(t, output)
+	if got := events[0]["type"]; got != "session_configured" {
+		t.Fatalf("first event = %v, want session_configured", got)
+	}
+	if got := events[len(events)-1]["type"]; got != "result" {
+		t.Fatalf("last event = %v, want result", got)
+	}
+}
+
+func TestRunExecResumeLastUsesResumePath(t *testing.T) {
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "continued"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"exec", "resume", "--last", "--json", "continue"}); err != nil {
+			t.Fatalf("run exec resume: %v", err)
+		}
+	})
+
+	if controller.startedThread {
+		t.Fatal("resume should not start a new thread")
+	}
+	if controller.resumedThread != "" {
+		t.Fatalf("resume --last should pass empty thread id, got %q", controller.resumedThread)
+	}
+	events := parseCLIJSONLines(t, output)
+	if got := events[1]["type"]; got != "thread_resumed" {
+		t.Fatalf("second event = %v, want thread_resumed\n%s", got, output)
+	}
+}
+
+func TestRunExecRejectsUnimplementedMaxTurnsWithExitCodeTwo(t *testing.T) {
+	err := run([]string{"exec", "--max-turns", "3", "hello"})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
+	}
+	if !strings.Contains(err.Error(), "--max-turns is not implemented") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -1262,6 +1325,101 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 
 	return strings.TrimSpace(buf.String())
+}
+
+type cliExecFakeController struct {
+	initResult appserver.InitializeResult
+	thread     appserver.Thread
+	turn       appserver.Turn
+	events     []wuuexec.Notification
+
+	startedThread bool
+	resumedThread string
+	startedPrompt string
+}
+
+func newCLIExecFakeController(events ...wuuexec.Notification) *cliExecFakeController {
+	return &cliExecFakeController{
+		initResult: appserver.InitializeResult{
+			ProtocolVersion: appserver.ProtocolVersion,
+			Provider:        "test-provider",
+			Model:           "test-model",
+			WorkspaceRoot:   "/repo",
+			Permissions:     appserver.PermissionSummary{Mode: "default"},
+		},
+		thread: appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},
+		turn:   appserver.Turn{ID: "turn-1"},
+		events: events,
+	}
+}
+
+func (f *cliExecFakeController) Initialize(context.Context) (appserver.InitializeResult, error) {
+	return f.initResult, nil
+}
+
+func (f *cliExecFakeController) StartThread(context.Context) (appserver.Thread, error) {
+	f.startedThread = true
+	return f.thread, nil
+}
+
+func (f *cliExecFakeController) ResumeThread(_ context.Context, id string) (appserver.Thread, error) {
+	f.resumedThread = id
+	return f.thread, nil
+}
+
+func (f *cliExecFakeController) StartTurn(_ context.Context, _ string, prompt string) (appserver.Turn, error) {
+	f.startedPrompt = prompt
+	return f.turn, nil
+}
+
+func (f *cliExecFakeController) Interrupt(context.Context, string) error {
+	return nil
+}
+
+func (f *cliExecFakeController) Shutdown(context.Context) error {
+	return nil
+}
+
+func (f *cliExecFakeController) Notifications() <-chan wuuexec.Notification {
+	ch := make(chan wuuexec.Notification, len(f.events))
+	for _, event := range f.events {
+		ch <- event
+	}
+	return ch
+}
+
+func installExecControllerOverride(t *testing.T, controller wuuexec.Controller) func() {
+	t.Helper()
+	previous := execControllerOverride
+	execControllerOverride = controller
+	return func() {
+		execControllerOverride = previous
+	}
+}
+
+func cliExecNotification(method string, params any) wuuexec.Notification {
+	data, err := json.Marshal(params)
+	if err != nil {
+		panic(err)
+	}
+	return wuuexec.Notification{Method: method, Params: data}
+}
+
+func parseCLIJSONLines(t *testing.T, text string) []map[string]any {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	events := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("invalid JSONL line %q: %v", line, err)
+		}
+		events = append(events, event)
+	}
+	return events
 }
 
 func containsString(values []string, want string) bool {
