@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { SettingsView } from "./SettingsView";
+import { SettingsView, type SettingsUsageData } from "./SettingsView";
 import type { BuildInfoResult, InitializeResult, WuuDesktopApi } from "../shared/protocol";
 
 type GlobalWindow = typeof window & { wuu: WuuDesktopApi };
@@ -48,13 +48,15 @@ function baseInitialized(overrides: Partial<InitializeResult> = {}): InitializeR
 
 function renderSettings(props: {
   initialized: InitializeResult | undefined;
-}): { about: Element | null; text: () => string } {
+  usage?: SettingsUsageData;
+}): { about: Element | null; text: () => string; rootText: () => string } {
   act(() => {
     root = createRoot(container);
     root!.render(
       <SettingsView
         initialized={props.initialized}
         running={false}
+        usage={props.usage}
         showDebugControlsSetting={false}
         debugControlsEnabled={false}
         sidebarWidth={320}
@@ -74,6 +76,7 @@ function renderSettings(props: {
   return {
     about,
     text: () => about?.textContent ?? "",
+    rootText: () => container.textContent ?? "",
   };
 }
 
@@ -176,5 +179,61 @@ describe("SettingsView About section", () => {
     expect(text()).toContain("Plugins 1");
     expect(text()).toContain("Skills 2");
     expect(text()).toContain("Reviewer：关闭扩展");
+  });
+
+  it("switches to the usage page from the settings sidebar", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const usage: SettingsUsageData = {
+      inputTokens: 1000,
+      outputTokens: 200,
+      cacheCreationTokens: 20,
+      cacheReadTokens: 50,
+      turns: 1,
+      agents: 0,
+      buckets: [
+        {
+          id: "openai\nfake-model",
+          provider: "OpenAI API",
+          model: "fake-model",
+          inputTokens: 1000,
+          outputTokens: 200,
+          cacheCreationTokens: 20,
+          cacheReadTokens: 50,
+          turns: 1,
+          agents: 0,
+        },
+      ],
+      entries: [
+        {
+          id: "turn:turn-1",
+          kind: "turn",
+          title: "测试会话",
+          provider: "OpenAI API",
+          model: "fake-model",
+          inputTokens: 1000,
+          outputTokens: 200,
+          cacheCreationTokens: 20,
+          cacheReadTokens: 50,
+        },
+      ],
+    };
+    const { rootText } = renderSettings({
+      initialized: baseInitialized(),
+      usage,
+    });
+    const usageButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("用量"),
+    );
+    expect(usageButton).not.toBeUndefined();
+    await act(async () => {
+      usageButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector("[data-testid=\"settings-usage\"]")).not.toBeNull();
+    expect(rootText()).toContain("1,250");
+    expect(rootText()).toContain("OpenAI API");
+    expect(rootText()).toContain("测试会话");
   });
 });

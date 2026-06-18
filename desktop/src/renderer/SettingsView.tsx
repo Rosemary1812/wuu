@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus, Settings, X } from "lucide-react";
+import { ArrowLeft, BarChart3, Plus, Settings, X } from "lucide-react";
 import {
   type CSSProperties,
   type FormEvent as ReactFormEvent,
@@ -21,9 +21,59 @@ import type {
 import { providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
+export type SettingsUsageBucket = {
+  id: string;
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  turns: number;
+  agents: number;
+};
+
+export type SettingsUsageEntry = {
+  id: string;
+  kind: "turn" | "agent";
+  title: string;
+  provider: string;
+  model: string;
+  status?: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+};
+
+export type SettingsUsageData = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  turns: number;
+  agents: number;
+  buckets: SettingsUsageBucket[];
+  entries: SettingsUsageEntry[];
+};
+
+type SettingsPage = "general" | "usage";
+
+const EMPTY_USAGE: SettingsUsageData = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationTokens: 0,
+  cacheReadTokens: 0,
+  turns: 0,
+  agents: 0,
+  buckets: [],
+  entries: [],
+};
+
 export function SettingsView({
   initialized,
   running,
+  usage,
   showDebugControlsSetting,
   debugControlsEnabled,
   sidebarWidth,
@@ -39,6 +89,7 @@ export function SettingsView({
 }: {
   initialized?: InitializeResult;
   running: boolean;
+  usage?: SettingsUsageData;
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
   sidebarWidth: number;
@@ -62,6 +113,7 @@ export function SettingsView({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [desktopBuild, setDesktopBuild] = useState<DesktopBuildInfo | undefined>();
+  const [activePage, setActivePage] = useState<SettingsPage>("general");
 
   useEffect(() => {
     let cancelled = false;
@@ -185,9 +237,23 @@ export function SettingsView({
           <span>返回应用</span>
         </button>
         <nav className="settings-nav" aria-label="设置">
-          <button className="settings-nav-item active" type="button">
+          <button
+            className={`settings-nav-item${activePage === "general" ? " active" : ""}`}
+            type="button"
+            aria-current={activePage === "general" ? "page" : undefined}
+            onClick={() => setActivePage("general")}
+          >
             <Settings size={18} />
             <span>常规</span>
+          </button>
+          <button
+            className={`settings-nav-item${activePage === "usage" ? " active" : ""}`}
+            type="button"
+            aria-current={activePage === "usage" ? "page" : undefined}
+            onClick={() => setActivePage("usage")}
+          >
+            <BarChart3 size={18} />
+            <span>用量</span>
           </button>
         </nav>
       </aside>
@@ -212,211 +278,339 @@ export function SettingsView({
         options={OVERLAY_SCROLLBAR_OPTIONS}
       >
         <div className="settings-page">
-          <h1>常规</h1>
+          <h1>{activePage === "general" ? "常规" : "用量"}</h1>
 
-          <section className="settings-section">
-            <div>
-              <h2>模型</h2>
-              <p>选择请求要发送到哪个模型服务，以及传给服务的模型名称。</p>
-            </div>
-            <form className="settings-card" onSubmit={submit}>
-              <div className="settings-row">
-                <span>
-                  <strong>模型服务</strong>
-                  <small>{addingProvider ? "添加一个新的 OpenAI-compatible 服务" : "选择当前会话使用的连接方式"}</small>
-                </span>
-                {addingProvider ? (
-                  <div className="settings-provider-control">
-                    <div className="settings-new-provider-label">新的模型服务</div>
-                    <button className="settings-inline-button" type="button" onClick={cancelAddingProvider} disabled={running}>
-                      <X size={15} />
-                      <span>取消</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="settings-provider-control">
-                    {providers.length > 0 ? (
-                      <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
-                        {providers.map((provider) => (
-                          <option key={provider.name} value={provider.name}>
-                            {providerLabels.get(provider.name) ?? provider.name}
-                          </option>
-                        ))}
-                      </select>
+          {activePage === "general" ? (
+            <>
+              <section className="settings-section">
+                <div>
+                  <h2>模型</h2>
+                  <p>选择请求要发送到哪个模型服务，以及传给服务的模型名称。</p>
+                </div>
+                <form className="settings-card" onSubmit={submit}>
+                  <div className="settings-row">
+                    <span>
+                      <strong>模型服务</strong>
+                      <small>{addingProvider ? "添加一个新的 OpenAI-compatible 服务" : "选择当前会话使用的连接方式"}</small>
+                    </span>
+                    {addingProvider ? (
+                      <div className="settings-provider-control">
+                        <div className="settings-new-provider-label">新的模型服务</div>
+                        <button className="settings-inline-button" type="button" onClick={cancelAddingProvider} disabled={running}>
+                          <X size={15} />
+                          <span>取消</span>
+                        </button>
+                      </div>
                     ) : (
-                      <div className="settings-new-provider-label">暂无模型服务</div>
+                      <div className="settings-provider-control">
+                        {providers.length > 0 ? (
+                          <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
+                            {providers.map((provider) => (
+                              <option key={provider.name} value={provider.name}>
+                                {providerLabels.get(provider.name) ?? provider.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="settings-new-provider-label">暂无模型服务</div>
+                        )}
+                        <button className="settings-inline-button" type="button" onClick={startAddingProvider} disabled={running}>
+                          <Plus size={15} />
+                          <span>添加</span>
+                        </button>
+                      </div>
                     )}
-                    <button className="settings-inline-button" type="button" onClick={startAddingProvider} disabled={running}>
-                      <Plus size={15} />
-                      <span>添加</span>
+                  </div>
+                  <label className="settings-row">
+                    <span>
+                      <strong>模型名称</strong>
+                      <small>发送给模型服务的 model 名称</small>
+                    </span>
+                    <input
+                      value={modelDraft}
+                      onChange={(event) => {
+                        setModelDraft(event.target.value);
+                        setVariantDraft("");
+                        setSaved(false);
+                      }}
+                      disabled={running}
+                    />
+                  </label>
+                  <label className="settings-row">
+                    <span>
+                      <strong>思考强度</strong>
+                      <small>{variantOptions.length > 1 ? "当前模型支持的参数档位" : "当前模型没有可调参数档位"}</small>
+                    </span>
+                    <select
+                      value={variantDraft}
+                      onChange={(event) => {
+                        setVariantDraft(event.target.value);
+                        setSaved(false);
+                      }}
+                      disabled={running || variantOptions.length <= 1}
+                    >
+                      {variantOptions.map((variant) => (
+                        <option key={variant || "auto"} value={variant}>
+                          {variantLabel(variant)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="settings-row">
+                    <span>
+                      <strong>Base URL</strong>
+                      <small>{connectionLocked ? "由 OpenAI OAuth 管理" : "模型服务的 API 地址"}</small>
+                    </span>
+                    <input
+                      value={baseURLDraft}
+                      placeholder={connectionLocked ? "由 OpenAI OAuth 管理" : "https://api.openai.com/v1"}
+                      onChange={(event) => {
+                        setBaseURLDraft(event.target.value);
+                        setSaved(false);
+                      }}
+                      disabled={running || connectionLocked}
+                    />
+                  </label>
+                  <label className="settings-row">
+                    <span>
+                      <strong>API key</strong>
+                      <small>
+                        {connectionLocked
+                          ? "由 OpenAI OAuth 管理"
+                          : addingProvider
+                            ? "保存时写入这个服务"
+                            : selectedProvider?.api_key_configured
+                            ? "已配置，留空不修改"
+                            : "用于访问这个 Provider"}
+                      </small>
+                    </span>
+                    <input
+                      value={apiKeyDraft}
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder={
+                        connectionLocked
+                          ? "不需要 API key"
+                          : addingProvider
+                            ? "输入 API key"
+                            : selectedProvider?.api_key_configured
+                            ? "留空保持当前密钥"
+                            : "输入 API key"
+                      }
+                      onChange={(event) => {
+                        setAPIKeyDraft(event.target.value);
+                        setSaved(false);
+                      }}
+                      disabled={running || connectionLocked}
+                    />
+                  </label>
+                  <div className="settings-card-footer">
+                    {error ? <div className="settings-error">{error}</div> : null}
+                    {saved ? <div className="settings-saved">已保存</div> : null}
+                    <button type="submit" disabled={disabled}>
+                      {addingProvider ? "添加" : "保存"}
                     </button>
                   </div>
-                )}
-              </div>
-              <label className="settings-row">
-                <span>
-                  <strong>模型名称</strong>
-                  <small>发送给模型服务的 model 名称</small>
-                </span>
-                <input
-                  value={modelDraft}
-                  onChange={(event) => {
-                    setModelDraft(event.target.value);
-                    setVariantDraft("");
-                    setSaved(false);
-                  }}
-                  disabled={running}
-                />
-              </label>
-              <label className="settings-row">
-                <span>
-                  <strong>思考强度</strong>
-                  <small>{variantOptions.length > 1 ? "当前模型支持的参数档位" : "当前模型没有可调参数档位"}</small>
-                </span>
-                <select
-                  value={variantDraft}
-                  onChange={(event) => {
-                    setVariantDraft(event.target.value);
-                    setSaved(false);
-                  }}
-                  disabled={running || variantOptions.length <= 1}
-                >
-                  {variantOptions.map((variant) => (
-                    <option key={variant || "auto"} value={variant}>
-                      {variantLabel(variant)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="settings-row">
-                <span>
-                  <strong>Base URL</strong>
-                  <small>{connectionLocked ? "由 OpenAI OAuth 管理" : "模型服务的 API 地址"}</small>
-                </span>
-                <input
-                  value={baseURLDraft}
-                  placeholder={connectionLocked ? "由 OpenAI OAuth 管理" : "https://api.openai.com/v1"}
-                  onChange={(event) => {
-                    setBaseURLDraft(event.target.value);
-                    setSaved(false);
-                  }}
-                  disabled={running || connectionLocked}
-                />
-              </label>
-              <label className="settings-row">
-                <span>
-                  <strong>API key</strong>
-                  <small>
-                    {connectionLocked
-                      ? "由 OpenAI OAuth 管理"
-                      : addingProvider
-                        ? "保存时写入这个服务"
-                        : selectedProvider?.api_key_configured
-                        ? "已配置，留空不修改"
-                        : "用于访问这个 Provider"}
-                  </small>
-                </span>
-                <input
-                  value={apiKeyDraft}
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder={
-                    connectionLocked
-                      ? "不需要 API key"
-                      : addingProvider
-                        ? "输入 API key"
-                        : selectedProvider?.api_key_configured
-                        ? "留空保持当前密钥"
-                        : "输入 API key"
-                  }
-                  onChange={(event) => {
-                    setAPIKeyDraft(event.target.value);
-                    setSaved(false);
-                  }}
-                  disabled={running || connectionLocked}
-                />
-              </label>
-              <div className="settings-card-footer">
-                {error ? <div className="settings-error">{error}</div> : null}
-                {saved ? <div className="settings-saved">已保存</div> : null}
-                <button type="submit" disabled={disabled}>
-                  {addingProvider ? "添加" : "保存"}
-                </button>
-              </div>
-            </form>
-          </section>
+                </form>
+              </section>
 
-          {showDebugControlsSetting ? (
-            <section className="settings-section">
-              <div>
-                <h2>开发</h2>
-                <p>控制开发时才需要的界面入口。</p>
-              </div>
-              <div className="settings-card">
-                <div className="settings-row">
-                  <span>
-                    <strong>调试入口</strong>
-                    <small>显示启动动画、调试面板和开发样例入口</small>
-                  </span>
-                  <button
-                    className="settings-switch"
-                    type="button"
-                    role="switch"
-                    aria-checked={debugControlsEnabled}
-                    onClick={() => onDebugControlsChange(!debugControlsEnabled)}
-                  >
-                    <span className="settings-switch-thumb" aria-hidden="true" />
-                    <span className="sr-only">{debugControlsEnabled ? "关闭调试入口" : "打开调试入口"}</span>
-                  </button>
-                </div>
-              </div>
-            </section>
-          ) : null}
+              {showDebugControlsSetting ? (
+                <section className="settings-section">
+                  <div>
+                    <h2>开发</h2>
+                    <p>控制开发时才需要的界面入口。</p>
+                  </div>
+                  <div className="settings-card">
+                    <div className="settings-row">
+                      <span>
+                        <strong>调试入口</strong>
+                        <small>显示启动动画、调试面板和开发样例入口</small>
+                      </span>
+                      <button
+                        className="settings-switch"
+                        type="button"
+                        role="switch"
+                        aria-checked={debugControlsEnabled}
+                        onClick={() => onDebugControlsChange(!debugControlsEnabled)}
+                      >
+                        <span className="settings-switch-thumb" aria-hidden="true" />
+                        <span className="sr-only">{debugControlsEnabled ? "关闭调试入口" : "打开调试入口"}</span>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
 
-          <section className="settings-section" data-testid="settings-about">
-            <div>
-              <h2>关于</h2>
-              <p>wuu 桌面与核心的构建信息。报问题时带上这一段。</p>
-            </div>
-            <div className="settings-card">
-              <dl className="settings-about-list">
-                <div className="settings-row">
-                  <span>
-                    <strong>桌面端</strong>
-                    <small>Electron 客户端构建</small>
-                  </span>
-                  <span className="settings-about-value">
-                    {desktopBuild ? `v${desktopBuild.version} · ${formatBuildDate(desktopBuild.date)}` : "加载中…"}
-                  </span>
+              <section className="settings-section" data-testid="settings-about">
+                <div>
+                  <h2>关于</h2>
+                  <p>wuu 桌面与核心的构建信息。报问题时带上这一段。</p>
                 </div>
-                <div className="settings-row">
-                  <span>
-                    <strong>核心</strong>
-                    <small>wuu app-server 二进制构建</small>
-                  </span>
-                  <span className="settings-about-value">{formatCoreBuild(core)}</span>
+                <div className="settings-card">
+                  <dl className="settings-about-list">
+                    <div className="settings-row">
+                      <span>
+                        <strong>桌面端</strong>
+                        <small>Electron 客户端构建</small>
+                      </span>
+                      <span className="settings-about-value">
+                        {desktopBuild ? `v${desktopBuild.version} · ${formatBuildDate(desktopBuild.date)}` : "加载中…"}
+                      </span>
+                    </div>
+                    <div className="settings-row">
+                      <span>
+                        <strong>核心</strong>
+                        <small>wuu app-server 二进制构建</small>
+                      </span>
+                      <span className="settings-about-value">{formatCoreBuild(core)}</span>
+                    </div>
+                    <div className="settings-row">
+                      <span>
+                        <strong>App-server 协议</strong>
+                        <small>桌面与核心的 IPC 协议版本</small>
+                      </span>
+                      <span className="settings-about-value">{initialized?.protocol_version ?? "—"}</span>
+                    </div>
+                    <div className="settings-row">
+                      <span>
+                        <strong>扩展边界</strong>
+                        <small>MCP、Hooks、Plugins、Skills 和 Workflows 的运行时状态</small>
+                      </span>
+                      <span className="settings-about-value">{formatExtensionTrust(initialized?.extension_trust)}</span>
+                    </div>
+                  </dl>
                 </div>
-                <div className="settings-row">
-                  <span>
-                    <strong>App-server 协议</strong>
-                    <small>桌面与核心的 IPC 协议版本</small>
-                  </span>
-                  <span className="settings-about-value">{initialized?.protocol_version ?? "—"}</span>
-                </div>
-                <div className="settings-row">
-                  <span>
-                    <strong>扩展边界</strong>
-                    <small>MCP、Hooks、Plugins、Skills 和 Workflows 的运行时状态</small>
-                  </span>
-                  <span className="settings-about-value">{formatExtensionTrust(initialized?.extension_trust)}</span>
-                </div>
-              </dl>
-            </div>
-          </section>
+              </section>
+            </>
+          ) : (
+            <SettingsUsagePage usage={usage ?? EMPTY_USAGE} />
+          )}
         </div>
       </OverlayScrollbarsComponent>
     </div>
   );
+}
+
+function SettingsUsagePage({ usage }: { usage: SettingsUsageData }): JSX.Element {
+  const contextTokens = usageContextTokens(usage);
+  const hasUsage = contextTokens > 0 || usage.cacheCreationTokens > 0 || usage.entries.length > 0;
+  return (
+    <>
+      <section className="settings-section" data-testid="settings-usage">
+        <div>
+          <h2>本地用量</h2>
+          <p>显示当前桌面已加载会话和子任务的 token 统计。</p>
+        </div>
+        <div className="settings-usage-metrics">
+          <UsageMetric label="上下文 token" value={contextTokens} detail="输入 + 缓存读取 + 输出" />
+          <UsageMetric label="输入 token" value={usage.inputTokens} detail={`${usage.turns} 轮主会话`} />
+          <UsageMetric label="输出 token" value={usage.outputTokens} detail={`${usage.agents} 个子任务`} />
+          <UsageMetric label="缓存读取" value={usage.cacheReadTokens} detail={`缓存写入 ${formatTokenCount(usage.cacheCreationTokens)}`} />
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <div>
+          <h2>按模型</h2>
+          <p>按模型服务和模型名称合并统计。</p>
+        </div>
+        <div className="settings-card settings-usage-table-card">
+          {usage.buckets.length > 0 ? (
+            <table className="settings-usage-table">
+              <thead>
+                <tr>
+                  <th scope="col">模型</th>
+                  <th scope="col">输入</th>
+                  <th scope="col">输出</th>
+                  <th scope="col">缓存读取</th>
+                  <th scope="col">记录</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.buckets.map((bucket) => (
+                  <tr key={bucket.id}>
+                    <td>
+                      <strong>{bucket.provider}</strong>
+                      <small>{bucket.model}</small>
+                    </td>
+                    <td>{formatTokenCount(bucket.inputTokens)}</td>
+                    <td>{formatTokenCount(bucket.outputTokens)}</td>
+                    <td>{formatTokenCount(bucket.cacheReadTokens)}</td>
+                    <td>{formatUsageRecordCount(bucket)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="settings-usage-empty">暂无用量记录</div>
+          )}
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <div>
+          <h2>最近记录</h2>
+          <p>主会话轮次和子任务的最近用量。</p>
+        </div>
+        <div className="settings-card">
+          {hasUsage ? (
+            <div className="settings-usage-entries">
+              {usage.entries.slice(0, 8).map((entry) => (
+                <div className="settings-usage-entry" key={entry.id}>
+                  <span>
+                    <strong>{entry.title}</strong>
+                    <small>{formatUsageEntryMeta(entry)}</small>
+                  </span>
+                  <span className="settings-usage-entry-value">{formatTokenCount(usageContextTokens(entry))}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="settings-usage-empty">暂无用量记录</div>
+          )}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function UsageMetric({ label, value, detail }: { label: string; value: number; detail: string }): JSX.Element {
+  return (
+    <div className="settings-usage-metric">
+      <span>{label}</span>
+      <strong>{formatTokenCount(value)}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function usageContextTokens(usage: {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+}): number {
+  return usage.inputTokens + usage.cacheReadTokens + usage.outputTokens;
+}
+
+function formatTokenCount(value: number): string {
+  return Math.max(0, value).toLocaleString();
+}
+
+function formatUsageRecordCount(bucket: SettingsUsageBucket): string {
+  const pieces: string[] = [];
+  if (bucket.turns > 0) {
+    pieces.push(`${bucket.turns} 轮`);
+  }
+  if (bucket.agents > 0) {
+    pieces.push(`${bucket.agents} 子任务`);
+  }
+  return pieces.length > 0 ? pieces.join("，") : "—";
+}
+
+function formatUsageEntryMeta(entry: SettingsUsageEntry): string {
+  const kind = entry.kind === "agent" ? "子任务" : "主会话";
+  const status = entry.status ? ` · ${entry.status}` : "";
+  return `${entry.provider} · ${entry.model} · ${kind}${status}`;
 }
 
 function formatBuildDate(iso: string): string {

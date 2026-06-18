@@ -182,7 +182,12 @@ import {
   isCodexProvider,
   pullRequestUnavailableReason,
 } from "./RuntimeHelpers";
-import { SettingsView } from "./SettingsView";
+import {
+  SettingsView,
+  type SettingsUsageBucket,
+  type SettingsUsageData,
+  type SettingsUsageEntry,
+} from "./SettingsView";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
 import { SkillsCatalog } from "./SkillsCatalog";
@@ -287,6 +292,232 @@ function initialCollapsedProjectIDs(): Set<string> {
     );
   } catch {
     return new Set();
+  }
+}
+
+type SettingsUsageTokenFields = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+};
+
+type SortableSettingsUsageEntry = SettingsUsageEntry & {
+  sortTime: number;
+  contextTokens: number;
+};
+
+function buildSettingsUsageData(state: AppState): SettingsUsageData {
+  const usage: SettingsUsageData = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    turns: 0,
+    agents: 0,
+    buckets: [],
+    entries: [],
+  };
+  const buckets = new Map<string, SettingsUsageBucket>();
+  const entries: SortableSettingsUsageEntry[] = [];
+  const threads = loadedSettingsUsageThreads(state);
+  const threadsByID = new Map(threads.map((thread) => [thread.id, thread]));
+  const fallbackProvider = nonEmptyLabel(state.initialized?.provider, "未知服务");
+  const fallbackModel = nonEmptyLabel(state.initialized?.model, "未知模型");
+
+  for (const [turnID, turnUsage] of Object.entries(state.turnTokenUsage)) {
+    const tokens = normalizeSettingsUsageTokens(turnUsage);
+    if (!hasSettingsUsageTokens(tokens)) {
+      continue;
+    }
+    const thread = threadsByID.get(turnUsage.threadID);
+    const provider = nonEmptyLabel(thread?.model_provider, fallbackProvider);
+    const model = nonEmptyLabel(thread?.model, fallbackModel);
+    addSettingsUsage(usage, buckets, provider, model, tokens, "turn");
+    entries.push({
+      id: `turn:${turnID}`,
+      kind: "turn",
+      title: thread ? nonEmptyLabel(threadDisplayTitle(thread), "主会话") : "主会话",
+      provider,
+      model,
+      status: thread?.status === "in_progress" ? "运行中" : undefined,
+      ...tokens,
+      sortTime: latestTurnUsageSampleTime(turnUsage.samples) || parseTime(thread?.updated_at),
+      contextTokens: settingsUsageContextTokens(tokens),
+    });
+  }
+
+  const seenAgents = new Set<string>();
+  for (const thread of threads) {
+    for (const agent of thread.child_agents ?? []) {
+      const agentKey = agent.id || `${thread.id}:${agent.agent_path ?? agent.task_name ?? agent.description ?? ""}`;
+      if (seenAgents.has(agentKey)) {
+        continue;
+      }
+      seenAgents.add(agentKey);
+      const tokens = normalizeSettingsUsageTokens(agent);
+      if (!hasSettingsUsageTokens(tokens)) {
+        continue;
+      }
+      const provider = nonEmptyLabel(thread.model_provider, fallbackProvider);
+      const model = nonEmptyLabel(thread.model, fallbackModel);
+      addSettingsUsage(usage, buckets, provider, model, tokens, "agent");
+      entries.push({
+        id: `agent:${agentKey}`,
+        kind: "agent",
+        title: nonEmptyLabel(agent.task_name || agent.description, "子任务"),
+        provider,
+        model,
+        status: settingsUsageAgentStatus(agent.status),
+        ...tokens,
+        sortTime: parseTime(agent.completed_at) || parseTime(agent.started_at) || parseTime(thread.updated_at),
+        contextTokens: settingsUsageContextTokens(tokens),
+      });
+    }
+  }
+
+  usage.buckets = [...buckets.values()].sort(
+    (a, b) => settingsUsageContextTokens(b) - settingsUsageContextTokens(a),
+  );
+  usage.entries = entries
+    .sort((a, b) => b.sortTime - a.sortTime || b.contextTokens - a.contextTokens)
+    .map(({ sortTime: _sortTime, contextTokens: _contextTokens, ...entry }) => entry);
+  return usage;
+}
+
+function loadedSettingsUsageThreads(state: AppState): Thread[] {
+  const out: Thread[] = [];
+  const seen = new Set<string>();
+  const add = (thread: Thread | undefined): void => {
+    if (!thread || seen.has(thread.id)) {
+      return;
+    }
+    seen.add(thread.id);
+    out.push(thread);
+  };
+  for (const thread of state.threads) {
+    add(thread);
+  }
+  add(state.thread);
+  add(state.secondaryThread);
+  return out;
+}
+
+function normalizeSettingsUsageTokens(source: {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_read_tokens?: number;
+}): SettingsUsageTokenFields {
+  return {
+    inputTokens: usageNumber(source.inputTokens ?? source.input_tokens),
+    outputTokens: usageNumber(source.outputTokens ?? source.output_tokens),
+    cacheCreationTokens: usageNumber(source.cacheCreationTokens ?? source.cache_creation_tokens),
+    cacheReadTokens: usageNumber(source.cacheReadTokens ?? source.cache_read_tokens),
+  };
+}
+
+function addSettingsUsage(
+  usage: SettingsUsageData,
+  buckets: Map<string, SettingsUsageBucket>,
+  provider: string,
+  model: string,
+  tokens: SettingsUsageTokenFields,
+  kind: "turn" | "agent",
+): void {
+  usage.inputTokens += tokens.inputTokens;
+  usage.outputTokens += tokens.outputTokens;
+  usage.cacheCreationTokens += tokens.cacheCreationTokens;
+  usage.cacheReadTokens += tokens.cacheReadTokens;
+  if (kind === "turn") {
+    usage.turns += 1;
+  } else {
+    usage.agents += 1;
+  }
+  const bucketID = `${provider}\n${model}`;
+  const bucket =
+    buckets.get(bucketID) ??
+    {
+      id: bucketID,
+      provider,
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      turns: 0,
+      agents: 0,
+    };
+  bucket.inputTokens += tokens.inputTokens;
+  bucket.outputTokens += tokens.outputTokens;
+  bucket.cacheCreationTokens += tokens.cacheCreationTokens;
+  bucket.cacheReadTokens += tokens.cacheReadTokens;
+  if (kind === "turn") {
+    bucket.turns += 1;
+  } else {
+    bucket.agents += 1;
+  }
+  buckets.set(bucketID, bucket);
+}
+
+function hasSettingsUsageTokens(tokens: SettingsUsageTokenFields): boolean {
+  return (
+    tokens.inputTokens > 0 ||
+    tokens.outputTokens > 0 ||
+    tokens.cacheCreationTokens > 0 ||
+    tokens.cacheReadTokens > 0
+  );
+}
+
+function settingsUsageContextTokens(tokens: {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+}): number {
+  return tokens.inputTokens + tokens.cacheReadTokens + tokens.outputTokens;
+}
+
+function latestTurnUsageSampleTime(samples: { at: number }[] | undefined): number {
+  return samples && samples.length > 0 ? samples[samples.length - 1].at : 0;
+}
+
+function usageNumber(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(value));
+}
+
+function nonEmptyLabel(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+function parseTime(value: string | null | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function settingsUsageAgentStatus(status: string | undefined): string | undefined {
+  switch (status) {
+    case "running":
+      return "运行中";
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "失败";
+    case "cancelled":
+    case "canceled":
+      return "已取消";
+    default:
+      return undefined;
   }
 }
 
@@ -456,6 +687,10 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const settingsUsage = useMemo(
+    () => (settingsOpen ? buildSettingsUsageData(state) : undefined),
+    [settingsOpen, state],
+  );
   const {
     conversationSearch,
     conversationSearchResults,
@@ -4135,6 +4370,7 @@ export function App(): JSX.Element {
       <SettingsView
         initialized={state.initialized}
         running={anyThreadIsRunning}
+        usage={settingsUsage}
         showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
         debugControlsEnabled={debugControlsEnabled}
         sidebarWidth={sidebarWidth}

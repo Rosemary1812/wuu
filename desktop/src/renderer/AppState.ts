@@ -1383,6 +1383,8 @@ function agentFromRecord(record: JsonRecord | undefined): Agent | undefined {
     error: stringValue(record, "error"),
     input_tokens: numberValue(record, "input_tokens"),
     output_tokens: numberValue(record, "output_tokens"),
+    cache_creation_tokens: numberValue(record, "cache_creation_tokens"),
+    cache_read_tokens: numberValue(record, "cache_read_tokens"),
     nested_count: numberValue(record, "nested_count"),
     nested_running_count: numberValue(record, "nested_running_count"),
     started_at: stringValue(record, "started_at"),
