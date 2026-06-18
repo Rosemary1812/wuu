@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activeTurnTokenSpeed,
+  appendStreamingTokenSample,
   appendTurnTokenSample,
   initialState,
   reduceServerEvent,
@@ -67,6 +68,30 @@ describe("AppState token usage", () => {
     expect(activeTurnTokenSpeed(second, "turn-1")).toBe(20);
     expect(second.turnTokenUsage["turn-1"].cacheCreationTokens).toBe(4);
     expect(second.turnTokenUsage["turn-1"].cacheReadTokens).toBe(8);
+  });
+
+  it("derives live token speed from streamed model output deltas", () => {
+    const first = appendStreamingTokenSample(
+      initialState,
+      {
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+        delta: "aaaaaaaa",
+      },
+      1_000,
+    );
+    const second = appendStreamingTokenSample(
+      first,
+      {
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+        delta: "bbbbbbbb",
+      },
+      2_000,
+    );
+
+    expect(activeTurnTokenSpeed(second, "turn-1")).toBe(2);
+    expect(second.turnTokenUsage["turn-1"].outputTokens).toBe(0);
   });
 });
 

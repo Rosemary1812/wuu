@@ -135,6 +135,7 @@ type TurnTokenUsage = {
   outputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
+  speedTokens: number;
   samples: TurnTokenSample[];
 };
 
@@ -1417,6 +1418,7 @@ function appendTurnTokenSample(
   const turnTokenUsage = state.turnTokenUsage ?? {};
   const previous = turnTokenUsage[turnID];
   const cutoff = at - TOKEN_SPEED_WINDOW_MS;
+  const speedTokens = Math.max(previous?.speedTokens ?? 0, outputTokens);
   const samples: TurnTokenSample[] = [];
   if (previous) {
     for (const sample of previous.samples) {
@@ -1426,7 +1428,7 @@ function appendTurnTokenSample(
     }
   }
   if (outputTokens > 0) {
-    samples.push({ tokens: outputTokens, at });
+    samples.push({ tokens: speedTokens, at });
   }
   return {
     ...state,
@@ -1438,10 +1440,71 @@ function appendTurnTokenSample(
         outputTokens,
         cacheCreationTokens,
         cacheReadTokens,
+        speedTokens,
         samples,
       },
     },
   };
+}
+
+function appendStreamingTokenSample(
+  state: AppState,
+  params: Record<string, unknown> | undefined,
+  at: number,
+): AppState {
+  const turnID = stringValue(params, "turn_id");
+  const delta = stringValue(params, "delta");
+  if (!turnID || !delta) {
+    return state;
+  }
+  const estimatedTokens = estimateStreamingOutputTokens(delta);
+  if (estimatedTokens <= 0) {
+    return state;
+  }
+  const threadID = stringValue(params, "thread_id") ?? "";
+  const turnTokenUsage = state.turnTokenUsage ?? {};
+  const previous = turnTokenUsage[turnID];
+  const cutoff = at - TOKEN_SPEED_WINDOW_MS;
+  const samples: TurnTokenSample[] = [];
+  if (previous) {
+    for (const sample of previous.samples) {
+      if (sample.at >= cutoff) {
+        samples.push(sample);
+      }
+    }
+  }
+  const speedTokens =
+    (previous?.speedTokens ?? previous?.outputTokens ?? 0) + estimatedTokens;
+  samples.push({ tokens: speedTokens, at });
+  return {
+    ...state,
+    turnTokenUsage: {
+      ...turnTokenUsage,
+      [turnID]: {
+        threadID: previous?.threadID || threadID,
+        inputTokens: previous?.inputTokens ?? 0,
+        outputTokens: previous?.outputTokens ?? 0,
+        cacheCreationTokens: previous?.cacheCreationTokens ?? 0,
+        cacheReadTokens: previous?.cacheReadTokens ?? 0,
+        speedTokens,
+        samples,
+      },
+    },
+  };
+}
+
+function estimateStreamingOutputTokens(text: string): number {
+  let ascii = 0;
+  let nonAscii = 0;
+  for (const char of text) {
+    const codePoint = char.codePointAt(0) ?? 0;
+    if (codePoint <= 0x7f) {
+      ascii += 1;
+    } else {
+      nonAscii += 1;
+    }
+  }
+  return ascii / 4 + nonAscii / 1.7;
 }
 
 function activeTurnTokenSpeed(state: AppState, turnID?: string): number {
@@ -1470,6 +1533,7 @@ export {
   activeTurnIDForThread,
   activeTurnTokenSpeed,
   agentFromRecord,
+  appendStreamingTokenSample,
   appendTurnTokenSample,
   bindActiveSessionTabToThread,
   cloneComposerDraft,

@@ -107,6 +107,7 @@ import {
   activeThreadIDForState,
   activeTurnIDForThread,
   activeTurnTokenSpeed,
+  appendStreamingTokenSample,
   bindActiveSessionTabToThread,
   cloneSessionTabDraft,
   cloneComposerDraft,
@@ -306,6 +307,20 @@ type SortableSettingsUsageEntry = SettingsUsageEntry & {
   sortTime: number;
   contextTokens: number;
 };
+
+function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
+  if (event.kind !== "notification") {
+    return false;
+  }
+  switch (event.message.method) {
+    case "item/agentMessage/delta":
+    case "item/reasoning/delta":
+    case "item/toolCall/delta":
+      return true;
+    default:
+      return false;
+  }
+}
 
 function buildSettingsUsageData(state: AppState): SettingsUsageData {
   const usage: SettingsUsageData = {
@@ -970,6 +985,18 @@ export function App(): JSX.Element {
       const handling = handleStreamingNotification(event, appStateRef.current);
       if (handling === "stream" || handling === "stream-state") {
         scheduleStreamScroll();
+        if (
+          event.kind === "notification" &&
+          serverEventCarriesModelOutputDelta(event)
+        ) {
+          setState((current) =>
+            appendStreamingTokenSample(
+              current,
+              event.message.params as Record<string, unknown> | undefined,
+              Date.now(),
+            ),
+          );
+        }
       }
       if (handling === "stream") {
         return;
