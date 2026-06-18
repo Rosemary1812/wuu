@@ -328,10 +328,17 @@ function ReasoningFold({
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const label = streaming ? "正在思考" : "查看思考过程";
+  // Only the currently-streaming reasoning item carries the shimmer
+  // sweep — settled items read as static gray prose, matching the
+  // other "查看 X" tool rows. The shimmer is the visual signal that
+  // "the agent is thinking on this row right now."
+  const textClass = `turn-reasoning-summary-text${
+    streaming ? " is-streaming" : ""
+  }`;
   return (
     <details className="turn-reasoning-fold">
       <summary className="turn-reasoning-summary">
-        <span className="turn-reasoning-summary-text">{label}</span>
+        <span className={textClass}>{label}</span>
         <ChevronRight
           className="turn-reasoning-chevron"
           size={12}

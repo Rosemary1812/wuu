@@ -245,6 +245,34 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(reasoningSummaryText(folds[0])).toBe("正在思考");
   });
 
+  it("marks only the streaming reasoning summary with .is-streaming for the shimmer sweep", () => {
+    // Only the latest reasoning (the one still streaming) should carry
+    // the .is-streaming class so the shimmer animation knows where to
+    // paint. A settled reasoning item — even one that just finished —
+    // must read as static gray prose like any other "查看 X" tool row.
+    const settledA = makeReasoning("earlier deliberation, finished");
+    const settledB = makeReasoning("next deliberation, finished");
+    const streamingNow = makeStreamingReasoning("thinking right now");
+    const turn = makeTurn("in_progress", [
+      settledA,
+      settledB,
+      streamingNow,
+      makeFinalAnswer("not yet — turn still running"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const folds = reasoningFolds(container);
+    expect(folds).toHaveLength(3);
+
+    const summaries = folds.map((fold) =>
+      fold.querySelector(".turn-reasoning-summary-text"),
+    );
+    // Two settled rows, one streaming row.
+    expect(summaries[0]?.classList.contains("is-streaming")).toBe(false);
+    expect(summaries[1]?.classList.contains("is-streaming")).toBe(false);
+    expect(summaries[2]?.classList.contains("is-streaming")).toBe(true);
+  });
+
   it("keeps the reasoning fold closed even when the outer process fold is open", () => {
     // Running turn: outer process fold is open (rule 2). The
     // nested reasoning fold inside it must still default closed
