@@ -204,6 +204,7 @@ export function Composer({
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = composerStatusText(status);
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
+  const contextBarVisible = variant === "hero";
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const menuPlacement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
@@ -544,87 +545,89 @@ export function Composer({
             </button>
           </div>
         </div>
-        <div className="composer-context-bar" ref={menuRef}>
-          <button className="context-project-button" onClick={onToggleMenu} aria-haspopup="menu" aria-expanded={menuOpen}>
-            {activeContext?.kind === "project" ? <Folder aria-hidden="true" /> : <FolderX aria-hidden="true" />}
-            <span>{contextLabel}</span>
-            <ChevronDown aria-hidden="true" />
-          </button>
-          <button
-            className="context-mode-chip"
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={modeMenuOpen}
-            onClick={onToggleModeMenu}
-          >
-            <Laptop aria-hidden="true" />
-            <span>本地模式</span>
-            <ChevronDown aria-hidden="true" />
-          </button>
-          {gitStatus?.is_repo && gitStatus.branch ? (
-            <button
-              className="context-branch-chip"
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={branchMenuOpen}
-              onClick={onToggleBranchMenu}
-            >
-              <GitBranch aria-hidden="true" />
-              <span>{gitStatus.branch}</span>
-              {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
+        {contextBarVisible ? (
+          <div className="composer-context-bar" ref={menuRef}>
+            <button className="context-project-button" onClick={onToggleMenu} aria-haspopup="menu" aria-expanded={menuOpen}>
+              {activeContext?.kind === "project" ? <Folder aria-hidden="true" /> : <FolderX aria-hidden="true" />}
+              <span>{contextLabel}</span>
               <ChevronDown aria-hidden="true" />
             </button>
-          ) : null}
-          {modeMenuOpen ? (
-            <FloatingMenuPortal
-              anchorRef={menuRef}
-              owner="composer-runtime"
-              placement={menuPlacement}
-              align="left"
-              crossAxisOffset={170}
-              width={224}
+            <button
+              className="context-mode-chip"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={modeMenuOpen}
+              onClick={onToggleModeMenu}
             >
-              <ModeMenu
-                activeContext={activeContext}
-                onSelectNoProject={onSelectNoProject}
-                onOpenProject={onOpenProject}
-              />
-            </FloatingMenuPortal>
-          ) : null}
-          {branchMenuOpen && gitStatus?.is_repo ? (
-            <FloatingMenuPortal
-              anchorRef={menuRef}
-              owner="composer-runtime"
-              placement={menuPlacement}
-              align="left"
-              crossAxisOffset={304}
-              width={300}
-            >
-              <BranchMenu gitStatus={gitStatus} onSelectBranch={onSelectGitBranch} />
-            </FloatingMenuPortal>
-          ) : null}
-          {menuOpen ? (
-            <FloatingMenuPortal
-              anchorRef={menuRef}
-              owner="composer-runtime"
-              placement={menuPlacement}
-              align="left"
-              crossAxisOffset={12}
-              width={300}
-            >
-              <ProjectPickerMenu
-                projects={projects}
-                activeContext={activeContext}
-                query={projectFilter}
-                setQuery={setProjectFilter}
-                onSelectProject={onSelectProject}
-                onSelectNoProject={onSelectNoProject}
-                onCreateProject={onCreateProject}
-                onOpenProject={onOpenProject}
-              />
-            </FloatingMenuPortal>
-          ) : null}
-        </div>
+              <Laptop aria-hidden="true" />
+              <span>本地模式</span>
+              <ChevronDown aria-hidden="true" />
+            </button>
+            {gitStatus?.is_repo && gitStatus.branch ? (
+              <button
+                className="context-branch-chip"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={branchMenuOpen}
+                onClick={onToggleBranchMenu}
+              >
+                <GitBranch aria-hidden="true" />
+                <span>{gitStatus.branch}</span>
+                {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
+                <ChevronDown aria-hidden="true" />
+              </button>
+            ) : null}
+            {modeMenuOpen ? (
+              <FloatingMenuPortal
+                anchorRef={menuRef}
+                owner="composer-runtime"
+                placement={menuPlacement}
+                align="left"
+                crossAxisOffset={170}
+                width={224}
+              >
+                <ModeMenu
+                  activeContext={activeContext}
+                  onSelectNoProject={onSelectNoProject}
+                  onOpenProject={onOpenProject}
+                />
+              </FloatingMenuPortal>
+            ) : null}
+            {branchMenuOpen && gitStatus?.is_repo ? (
+              <FloatingMenuPortal
+                anchorRef={menuRef}
+                owner="composer-runtime"
+                placement={menuPlacement}
+                align="left"
+                crossAxisOffset={304}
+                width={300}
+              >
+                <BranchMenu gitStatus={gitStatus} onSelectBranch={onSelectGitBranch} />
+              </FloatingMenuPortal>
+            ) : null}
+            {menuOpen ? (
+              <FloatingMenuPortal
+                anchorRef={menuRef}
+                owner="composer-runtime"
+                placement={menuPlacement}
+                align="left"
+                crossAxisOffset={12}
+                width={300}
+              >
+                <ProjectPickerMenu
+                  projects={projects}
+                  activeContext={activeContext}
+                  query={projectFilter}
+                  setQuery={setProjectFilter}
+                  onSelectProject={onSelectProject}
+                  onSelectNoProject={onSelectNoProject}
+                  onCreateProject={onCreateProject}
+                  onOpenProject={onOpenProject}
+                />
+              </FloatingMenuPortal>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import {
   permissionModeFromSummary,
   permissionModeHasAdvancedOverrides,
   type CodexModelLoadState,
+  type ComposerVariant,
   type PermissionMode,
 } from "./ComposerView";
 import type { QueuedComposerMessage } from "./ComposerMessages";
@@ -51,6 +52,7 @@ function initialized(toolPolicy?: ToolPolicySummary, permissions?: PermissionSum
 
 function renderComposer(props: {
   accessMenuOpen?: boolean;
+  variant?: ComposerVariant;
   prompt?: string;
   running?: boolean;
   queuedMessages?: QueuedComposerMessage[];
@@ -76,6 +78,7 @@ function renderComposer(props: {
     root = createRoot(container);
     root.render(
       <Composer
+        variant={props.variant}
         prompt={props.prompt ?? ""}
         setPrompt={() => {}}
         files={[]}
@@ -268,6 +271,27 @@ describe("Composer send control", () => {
 
     expect(container.querySelector(".split-composer-status")).toBeNull();
     expect(container.textContent).not.toContain("正在发送请求");
+  });
+
+  it("hides session context chips in the dock composer", () => {
+    renderComposer({
+      variant: "dock",
+      prompt: "follow up",
+    });
+
+    expect(container.querySelector(".composer-context-bar")).toBeNull();
+    expect(container.querySelector(".context-project-button")).toBeNull();
+    expect(container.querySelector(".context-mode-chip")).toBeNull();
+  });
+
+  it("keeps context chips in the hero composer before a session starts", () => {
+    renderComposer({
+      variant: "hero",
+    });
+
+    expect(container.querySelector(".composer-context-bar")).not.toBeNull();
+    expect(container.querySelector(".context-project-button")).not.toBeNull();
+    expect(container.querySelector(".context-mode-chip")).not.toBeNull();
   });
 });
 
