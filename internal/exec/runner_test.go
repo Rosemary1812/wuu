@@ -20,6 +20,8 @@ type fakeController struct {
 	startedThread bool
 	resumedThread string
 	startedPrompt string
+	startedImages []appserver.TurnStartImage
+	startedFiles  []appserver.TurnStartFile
 	interrupted   string
 	shutdown      bool
 }
@@ -53,8 +55,10 @@ func (f *fakeController) ResumeThread(_ context.Context, id string) (appserver.T
 	return f.thread, nil
 }
 
-func (f *fakeController) StartTurn(_ context.Context, _ string, prompt string) (appserver.Turn, error) {
-	f.startedPrompt = prompt
+func (f *fakeController) StartTurn(_ context.Context, _ string, input TurnInput) (appserver.Turn, error) {
+	f.startedPrompt = input.Prompt
+	f.startedImages = append([]appserver.TurnStartImage(nil), input.Images...)
+	f.startedFiles = append([]appserver.TurnStartFile(nil), input.Files...)
 	return f.turn, nil
 }
 
@@ -160,6 +164,31 @@ func TestRunResumeLastUsesResumePath(t *testing.T) {
 	}
 	if controller.resumedThread != "" {
 		t.Fatalf("resume last should pass empty thread id, got %q", controller.resumedThread)
+	}
+}
+
+func TestRunPassesAttachmentsToTurnStart(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "done"}),
+	)
+	var stdout bytes.Buffer
+
+	if err := Run(context.Background(), Options{
+		Prompt: "inspect",
+		Attachments: Attachments{
+			Images: []appserver.TurnStartImage{{MediaType: "image/png", Data: "image-data"}},
+			Files:  []appserver.TurnStartFile{{MediaType: "application/pdf", Data: "file-data", Filename: "report.pdf"}},
+		},
+		Stdout:     &stdout,
+		Controller: controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(controller.startedImages) != 1 || controller.startedImages[0].MediaType != "image/png" || controller.startedImages[0].Data != "image-data" {
+		t.Fatalf("images not passed to StartTurn: %+v", controller.startedImages)
+	}
+	if len(controller.startedFiles) != 1 || controller.startedFiles[0].MediaType != "application/pdf" || controller.startedFiles[0].Filename != "report.pdf" {
+		t.Fatalf("files not passed to StartTurn: %+v", controller.startedFiles)
 	}
 }
 

@@ -62,3 +62,13 @@ func TestResolvePromptRejectsEmptyInput(t *testing.T) {
 		t.Fatalf("expected prompt required error, got %v", err)
 	}
 }
+
+func TestResolvePromptAllowsEmptyInputForAttachmentOnlyRun(t *testing.T) {
+	got, err := ResolvePrompt(PromptInput{AllowEmpty: true})
+	if err != nil {
+		t.Fatalf("ResolvePrompt: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("prompt = %q", got)
+	}
+}

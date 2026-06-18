@@ -85,9 +85,14 @@ func (c *localAppServerController) ResumeThread(ctx context.Context, threadID st
 	return result.Thread, err
 }
 
-func (c *localAppServerController) StartTurn(ctx context.Context, threadID, prompt string) (appserver.Turn, error) {
+func (c *localAppServerController) StartTurn(ctx context.Context, threadID string, input TurnInput) (appserver.Turn, error) {
 	var result appserver.TurnStartResult
-	params := appserver.TurnStartParams{ThreadID: threadID, Prompt: prompt}
+	params := appserver.TurnStartParams{
+		ThreadID: threadID,
+		Prompt:   input.Prompt,
+		Images:   append([]appserver.TurnStartImage(nil), input.Images...),
+		Files:    append([]appserver.TurnStartFile(nil), input.Files...),
+	}
 	err := c.client.Call(ctx, appserver.MethodTurnStart, params, &result)
 	return result.Turn, err
 }

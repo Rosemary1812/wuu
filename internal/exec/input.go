@@ -11,6 +11,7 @@ type PromptInput struct {
 	Args        []string
 	Stdin       io.Reader
 	StdinIsPipe bool
+	AllowEmpty  bool
 }
 
 func ResolvePrompt(input PromptInput) (string, error) {
@@ -46,6 +47,9 @@ func ResolvePrompt(input PromptInput) (string, error) {
 		}
 		if prompt == "" {
 			if stdinText == "" {
+				if input.AllowEmpty {
+					return "", nil
+				}
 				return "", errors.New("prompt is empty")
 			}
 			return stdinText, nil
@@ -53,6 +57,9 @@ func ResolvePrompt(input PromptInput) (string, error) {
 	}
 
 	if prompt == "" {
+		if input.AllowEmpty {
+			return "", nil
+		}
 		return "", errors.New("prompt is required (pass text or pipe stdin)")
 	}
 	return prompt, nil

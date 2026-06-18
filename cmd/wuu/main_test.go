@@ -127,6 +127,65 @@ func TestRunExecResumeLastUsesResumePath(t *testing.T) {
 	}
 }
 
+func TestRunExecPassesFileAndImageAttachments(t *testing.T) {
+	workdir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workdir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workdir, "report.pdf"), []byte("%PDF-1.7\n"), 0o644); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "ok"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	_ = captureStdout(t, func() {
+		if err := run([]string{"exec", "--workdir", workdir, "--file", "report.pdf", "--image", "shot.png", "inspect"}); err != nil {
+			t.Fatalf("run exec: %v", err)
+		}
+	})
+
+	if controller.startedPrompt != "inspect" {
+		t.Fatalf("prompt = %q", controller.startedPrompt)
+	}
+	if len(controller.startedFiles) != 1 || controller.startedFiles[0].Filename != "report.pdf" || controller.startedFiles[0].MediaType != "application/pdf" {
+		t.Fatalf("unexpected file attachments: %+v", controller.startedFiles)
+	}
+	if len(controller.startedImages) != 1 || controller.startedImages[0].MediaType != "image/png" {
+		t.Fatalf("unexpected image attachments: %+v", controller.startedImages)
+	}
+	if controller.startedFiles[0].Data == "" || controller.startedImages[0].Data == "" {
+		t.Fatalf("attachment data should be base64 encoded: files=%+v images=%+v", controller.startedFiles, controller.startedImages)
+	}
+}
+
+func TestRunExecAllowsAttachmentOnlyPrompt(t *testing.T) {
+	workdir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workdir, "report.pdf"), []byte("%PDF-1.7\n"), 0o644); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "ok"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	_ = captureStdout(t, func() {
+		if err := run([]string{"exec", "--workdir", workdir, "--file", "report.pdf"}); err != nil {
+			t.Fatalf("run exec: %v", err)
+		}
+	})
+
+	if controller.startedPrompt != "" {
+		t.Fatalf("prompt = %q, want empty attachment-only prompt", controller.startedPrompt)
+	}
+	if len(controller.startedFiles) != 1 {
+		t.Fatalf("file attachment missing: %+v", controller.startedFiles)
+	}
+}
+
 func TestRunExecRejectsUnimplementedMaxTurnsWithExitCodeTwo(t *testing.T) {
 	err := run([]string{"exec", "--max-turns", "3", "hello"})
 	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
@@ -1336,6 +1395,8 @@ type cliExecFakeController struct {
 	startedThread bool
 	resumedThread string
 	startedPrompt string
+	startedImages []appserver.TurnStartImage
+	startedFiles  []appserver.TurnStartFile
 }
 
 func newCLIExecFakeController(events ...wuuexec.Notification) *cliExecFakeController {
@@ -1367,8 +1428,10 @@ func (f *cliExecFakeController) ResumeThread(_ context.Context, id string) (apps
 	return f.thread, nil
 }
 
-func (f *cliExecFakeController) StartTurn(_ context.Context, _ string, prompt string) (appserver.Turn, error) {
-	f.startedPrompt = prompt
+func (f *cliExecFakeController) StartTurn(_ context.Context, _ string, input wuuexec.TurnInput) (appserver.Turn, error) {
+	f.startedPrompt = input.Prompt
+	f.startedImages = append([]appserver.TurnStartImage(nil), input.Images...)
+	f.startedFiles = append([]appserver.TurnStartFile(nil), input.Files...)
 	return f.turn, nil
 }
 

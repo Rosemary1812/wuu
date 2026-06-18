@@ -23,7 +23,11 @@ type runState struct {
 }
 
 func Run(ctx context.Context, opts Options) error {
-	if strings.TrimSpace(opts.Prompt) == "" {
+	attachments, err := resolveRunAttachments(opts)
+	if err != nil {
+		return WithExitCode(ExitInvalidInput, err)
+	}
+	if strings.TrimSpace(opts.Prompt) == "" && attachments.Empty() {
 		return WithExitCode(ExitInvalidInput, errors.New("prompt is required"))
 	}
 	if opts.Stdout == nil {
@@ -49,7 +53,6 @@ func Run(ctx context.Context, opts Options) error {
 
 	controller := opts.Controller
 	if controller == nil {
-		var err error
 		controller, err = NewLocalAppServerController(ctx, opts)
 		if err != nil {
 			return classifySetupError(err)
@@ -79,7 +82,11 @@ func Run(ctx context.Context, opts Options) error {
 		emitThreadEvent(opts, "thread_started", thread)
 	}
 
-	turn, err := controller.StartTurn(ctx, thread.ID, opts.Prompt)
+	turn, err := controller.StartTurn(ctx, thread.ID, TurnInput{
+		Prompt: opts.Prompt,
+		Images: attachments.Images,
+		Files:  attachments.Files,
+	})
 	if err != nil {
 		return classifyProtocolOrContextError(ctx, err)
 	}

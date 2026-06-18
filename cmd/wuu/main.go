@@ -626,6 +626,8 @@ type execCLIConfig struct {
 	variant           *string
 	permissionMode    *string
 	workdir           *string
+	files             *stringListFlag
+	images            *stringListFlag
 	noTools           *bool
 	jsonOutput        *bool
 	timeout           *time.Duration
@@ -658,7 +660,7 @@ func runExec(args []string) error {
 	if err := validateExecFlags(cfg); err != nil {
 		return err
 	}
-	prompt, err := resolveExecPrompt(fs.Args())
+	prompt, err := resolveExecPrompt(fs.Args(), hasExecAttachments(cfg))
 	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
@@ -690,7 +692,7 @@ func runExecResume(args []string) error {
 		threadID = strings.TrimSpace(remaining[0])
 		remaining = remaining[1:]
 	}
-	prompt, err := resolveExecPrompt(remaining)
+	prompt, err := resolveExecPrompt(remaining, hasExecAttachments(cfg))
 	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
@@ -698,6 +700,10 @@ func runExecResume(args []string) error {
 }
 
 func addExecFlags(fs *flag.FlagSet) execCLIConfig {
+	files := stringListFlag{}
+	images := stringListFlag{}
+	fs.Var(&files, "file", "attach a local file (repeatable)")
+	fs.Var(&images, "image", "attach a local image (repeatable)")
 	return execCLIConfig{
 		provider:          fs.String("provider", "", "provider name in config"),
 		model:             fs.String("model", "", "model override"),
@@ -705,6 +711,8 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		variant:           fs.String("variant", "", "model variant override"),
 		permissionMode:    fs.String("permission-mode", "", "permission mode override"),
 		workdir:           fs.String("workdir", "", "workspace directory"),
+		files:             &files,
+		images:            &images,
 		noTools:           fs.Bool("no-tools", false, "disable local tools"),
 		jsonOutput:        fs.Bool("json", false, "emit machine-readable JSONL to stdout"),
 		timeout:           fs.Duration("timeout", 0, "total timeout (e.g. 20m)"),
@@ -716,6 +724,11 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 }
 
 func validateExecFlags(cfg execCLIConfig) error {
+	for _, path := range append(stringListValues(cfg.files), stringListValues(cfg.images)...) {
+		if strings.TrimSpace(path) == "" {
+			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("attachment path is required"))
+		}
+	}
 	if cfg.maxTurns != nil && *cfg.maxTurns > 0 {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --max-turns is not implemented yet"))
 	}
@@ -728,6 +741,8 @@ func validateExecFlags(cfg execCLIConfig) error {
 func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast bool) wuuexec.Options {
 	return wuuexec.Options{
 		Prompt:            prompt,
+		ImagePaths:        stringListValues(cfg.images),
+		FilePaths:         stringListValues(cfg.files),
 		Provider:          valueOfStringFlag(cfg.provider),
 		Model:             valueOfStringFlag(cfg.model),
 		Effort:            valueOfStringFlag(cfg.effort),
@@ -753,12 +768,24 @@ func runExecWithPrompt(prompt string, opts wuuexec.Options) error {
 	return wuuexec.Run(ctx, opts)
 }
 
-func resolveExecPrompt(args []string) (string, error) {
+func resolveExecPrompt(args []string, allowEmpty bool) (string, error) {
 	return wuuexec.ResolvePrompt(wuuexec.PromptInput{
 		Args:        args,
 		Stdin:       os.Stdin,
 		StdinIsPipe: stdinHasInput(),
+		AllowEmpty:  allowEmpty,
 	})
+}
+
+func stringListValues(f *stringListFlag) []string {
+	if f == nil || len(*f) == 0 {
+		return nil
+	}
+	return append([]string(nil), (*f)...)
+}
+
+func hasExecAttachments(cfg execCLIConfig) bool {
+	return len(stringListValues(cfg.files)) > 0 || len(stringListValues(cfg.images)) > 0
 }
 
 func valueOfStringFlag(v *string) string {
@@ -1142,6 +1169,8 @@ Exec flags:
   --variant         model variant override
   --permission-mode permission mode override
   --workdir         workspace directory
+  --file            attach a local file (repeatable)
+  --image           attach a local image (repeatable)
   --no-tools        disable local tools
   --json            emit JSONL to stdout
   --timeout         total timeout (e.g. 20m)

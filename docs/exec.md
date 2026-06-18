@@ -26,6 +26,8 @@ agent or script sends a task
 ```bash
 wuu exec "fix the failing test and verify it"
 wuu exec --json "review this PR"
+wuu exec --file report.pdf "summarize and update the code"
+wuu exec --image screenshot.png "find the UI problem"
 wuu exec --timeout 20m --output-last-message result.md "summarize this repo"
 ```
 
@@ -73,6 +75,25 @@ current workspace. `resume <thread-id>` resumes a specific session.
 
 `resume --all`, `fork`, and review-specific entrypoints are part of the target
 surface but are not fully implemented yet.
+
+## Attachments
+
+Local files are attached with `--file`:
+
+```bash
+wuu exec --file report.pdf "summarize this PDF and update the code"
+```
+
+Local images are attached with `--image`:
+
+```bash
+wuu exec --image screenshot.png "find the UI issue"
+```
+
+Both flags are repeatable. Relative attachment paths are resolved from
+`--workdir` when it is set, otherwise from the current directory. Attachments
+are sent as structured app-server `turn/start` fields, not pasted into the
+prompt.
 
 ## Output Modes
 
@@ -126,6 +147,8 @@ Current implemented flags:
 --variant <name>
 --permission-mode <mode>
 --workdir <dir>
+--file <path>
+--image <path>
 --no-tools
 --json
 --timeout <duration>
@@ -138,8 +161,6 @@ Target flags that still need implementation:
 --max-turns <n>
 --ephemeral
 --output-schema <schema.json>
---file <path>
---image <path>
 --input-json
 --approval-handler <command>
 --approval-socket <path>

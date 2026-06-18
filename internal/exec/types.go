@@ -68,6 +68,9 @@ func ExitCode(err error) int {
 
 type Options struct {
 	Prompt            string
+	ImagePaths        []string
+	FilePaths         []string
+	Attachments       Attachments
 	Workdir           string
 	Provider          string
 	Model             string
@@ -90,8 +93,23 @@ type Controller interface {
 	Initialize(context.Context) (appserver.InitializeResult, error)
 	StartThread(context.Context) (appserver.Thread, error)
 	ResumeThread(context.Context, string) (appserver.Thread, error)
-	StartTurn(context.Context, string, string) (appserver.Turn, error)
+	StartTurn(context.Context, string, TurnInput) (appserver.Turn, error)
 	Interrupt(context.Context, string) error
 	Shutdown(context.Context) error
 	Notifications() <-chan Notification
+}
+
+type Attachments struct {
+	Images []appserver.TurnStartImage
+	Files  []appserver.TurnStartFile
+}
+
+func (a Attachments) Empty() bool {
+	return len(a.Images) == 0 && len(a.Files) == 0
+}
+
+type TurnInput struct {
+	Prompt string
+	Images []appserver.TurnStartImage
+	Files  []appserver.TurnStartFile
 }

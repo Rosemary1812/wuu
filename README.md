@@ -35,6 +35,8 @@ go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 wuu init                         # write .wuu.json
 wuu exec "describe this repo"    # agent-friendly text task
 wuu exec --json "review this PR" # machine-readable JSONL
+wuu exec --file report.pdf "summarize this PDF"
+wuu exec --image screenshot.png "find the UI issue"
 wuu session list --json          # inspect sessions from scripts
 wuu app-server --workdir .       # backend used by the desktop GUI
 cd desktop && npm install && npm run dev  # local desktop GUI
