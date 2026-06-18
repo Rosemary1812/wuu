@@ -792,7 +792,7 @@ export function App(): JSX.Element {
           setEnvironmentPanelMenu(null);
         }
         if (environmentPanelOpen && !environmentPanelHasRoom) {
-          setEnvironmentPanelOpen(false);
+          closeEnvironmentPanel();
         }
       }
       if (runDebugOpen && !runDebugRef.current?.contains(target)) {
@@ -2323,9 +2323,7 @@ export function App(): JSX.Element {
       return;
     }
     openBrowserURL(target);
-    setEnvironmentPanelOpen(false);
-    setEnvironmentPanelDismissed(true);
-    setEnvironmentPanelMenu(null);
+    closeEnvironmentPanel({ dismissed: true });
   }
 
   async function createAndCheckoutBranch(branch: string): Promise<void> {
@@ -2385,16 +2383,37 @@ export function App(): JSX.Element {
 
   function toggleEnvironmentPanel(): void {
     const visible = environmentPanelVisible;
-    setEnvironmentPanelOpen(!visible);
-    setEnvironmentPanelDismissed(visible);
     if (visible) {
-      setEnvironmentPanelMenu(null);
-    } else {
-      setRuntimeMenuOpen(false);
-      setAccessMenuOpen(false);
-      setModeMenuOpen(false);
-      setBranchMenuOpen(false);
-      setCodexRuntimeMenu(null);
+      closeEnvironmentPanel({ dismissed: true });
+      return;
+    }
+    setEnvironmentPanelOpen(true);
+    setEnvironmentPanelDismissed(false);
+    setRuntimeMenuOpen(false);
+    setAccessMenuOpen(false);
+    setModeMenuOpen(false);
+    setBranchMenuOpen(false);
+    setCodexRuntimeMenu(null);
+  }
+
+  function closeEnvironmentPanel({
+    dismissed = false,
+  }: { dismissed?: boolean } = {}): void {
+    restoreEnvironmentPanelFocus();
+    setEnvironmentPanelOpen(false);
+    if (dismissed) {
+      setEnvironmentPanelDismissed(true);
+    }
+    setEnvironmentPanelMenu(null);
+  }
+
+  function restoreEnvironmentPanelFocus(): void {
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLElement &&
+      environmentPanelRef.current?.contains(activeElement)
+    ) {
+      environmentToggleRef.current?.focus({ preventScroll: true });
     }
   }
 
@@ -4306,8 +4325,7 @@ export function App(): JSX.Element {
                   aria-label={runDebugOpen ? "隐藏调试信息" : "显示调试信息"}
                   aria-expanded={runDebugOpen}
                   onClick={() => {
-                    setEnvironmentPanelOpen(false);
-                    setEnvironmentPanelMenu(null);
+                    closeEnvironmentPanel();
                     setRunDebugOpen((open) => !open);
                   }}
                 >
@@ -4406,11 +4424,7 @@ export function App(): JSX.Element {
           queryHistoryDocked={queryHistoryDocked}
           queryHistory={pastQueries}
           onSetActiveMenu={setEnvironmentPanelMenu}
-          onClose={() => {
-            setEnvironmentPanelOpen(false);
-            setEnvironmentPanelDismissed(true);
-            setEnvironmentPanelMenu(null);
-          }}
+          onClose={() => closeEnvironmentPanel({ dismissed: true })}
           onOpenProject={() => void chooseProjectFolder()}
           onSelectNoProject={() => void useNoProject(false)}
           onSelectBranch={(branch) => void checkoutBranch(branch)}
@@ -4420,9 +4434,7 @@ export function App(): JSX.Element {
             setWorkspaceRightPanelView("review");
             setWorkspaceMode(undefined);
             setRightPanelOpenWithMotion(true);
-            setEnvironmentPanelOpen(false);
-            setEnvironmentPanelDismissed(true);
-            setEnvironmentPanelMenu(null);
+            closeEnvironmentPanel({ dismissed: true });
           }}
           onOpenCommit={() => setEnvironmentDialog("commit")}
           onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
