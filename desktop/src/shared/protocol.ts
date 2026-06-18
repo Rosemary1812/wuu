@@ -800,6 +800,13 @@ export type TurnCompletedNotification = {
   trace_path?: string;
 };
 
+export type TurnUsageNotification = {
+  thread_id: string;
+  turn_id: string;
+  input_tokens?: number;
+  output_tokens?: number;
+};
+
 export type ThreadItem = {
   id: string;
   source_id?: string;

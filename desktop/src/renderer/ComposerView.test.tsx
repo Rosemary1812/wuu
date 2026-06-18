@@ -67,6 +67,7 @@ function renderComposer(props: {
   onEditGuideMessage?: (id: string) => void;
   permissions?: PermissionSummary;
   onSelectPermissionMode?: (mode: PermissionMode) => void;
+  tokensPerSecond?: number;
 }): { onSelectPermissionMode: (mode: PermissionMode) => void } {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -127,6 +128,7 @@ function renderComposer(props: {
         onEditGuideMessage={props.onEditGuideMessage ?? (() => {})}
         onSend={props.onSend ?? (() => {})}
         onInterrupt={props.onInterrupt ?? (() => {})}
+        tokensPerSecond={props.tokensPerSecond ?? 0}
       />,
     );
   });
@@ -597,5 +599,22 @@ describe("Composer permission menu", () => {
 
     expect(container.textContent).toContain("自定义权限");
     expect(document.body.textContent).toContain("选择任一模式会改为该预设");
+  });
+});
+
+describe("ComposerTokenGauge", () => {
+  it("does not render the gauge when the composer is idle", () => {
+    renderComposer({ running: false, tokensPerSecond: 0 });
+    expect(container.querySelector(".composer-token-gauge")).toBeNull();
+  });
+
+  it("renders a live gauge with the current tok/s readout while running", () => {
+    renderComposer({ running: true, tokensPerSecond: 18.4 });
+
+    const gauge = container.querySelector(".composer-token-gauge");
+    expect(gauge).not.toBeNull();
+    expect(gauge?.getAttribute("data-state")).toBe("running");
+    expect(container.textContent).toContain("18.4");
+    expect(container.textContent).toContain("tok/s");
   });
 });

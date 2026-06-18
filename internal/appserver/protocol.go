@@ -52,6 +52,11 @@ const (
 	NotificationTurnEvent     = "turn/event"
 	NotificationTurnError     = "turn/error"
 	NotificationTurnCompleted = "turn/completed"
+	// NotificationTurnUsage carries cumulative input/output token counts
+	// for an in-flight turn so live UIs can render a real-time generation
+	// speed gauge. Appserver-side throttles to a small number of pushes
+	// per second; the renderer is expected to derive t/s from the deltas.
+	NotificationTurnUsage = "turn/usage"
 
 	NotificationItemStarted         = "item/started"
 	NotificationItemCompleted       = "item/completed"
@@ -581,6 +586,13 @@ type TurnErrorNotification struct {
 	TurnID   string `json:"turn_id"`
 	Error    string `json:"error"`
 	Turn     Turn   `json:"turn"`
+}
+
+type TurnUsageNotification struct {
+	ThreadID     string `json:"thread_id"`
+	TurnID       string `json:"turn_id"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
 }
 
 type TurnCompletedNotification struct {

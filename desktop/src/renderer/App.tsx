@@ -106,6 +106,7 @@ import {
   activeThreadForState,
   activeThreadIDForState,
   activeTurnIDForThread,
+  activeTurnTokenSpeed,
   bindActiveSessionTabToThread,
   cloneSessionTabDraft,
   cloneComposerDraft,
@@ -1521,6 +1522,10 @@ export function App(): JSX.Element {
         running={
           (!activeThreadReadOnly && activeThreadIsRunning) || viewSwitchPending
         }
+        tokensPerSecond={activeTurnTokenSpeed(
+          state,
+          activeThread ? activeTurnIDForThread(activeThread) : undefined,
+        )}
         status={
           activeThreadReadOnly
             ? activeThreadIsRunning

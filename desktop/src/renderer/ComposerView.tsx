@@ -74,6 +74,7 @@ import type {
 } from "./ComposerTypes";
 import { composerStatusText } from "./ComposerTypes";
 import type { WorkspacePanelView } from "./WorkspacePanels";
+import { ComposerTokenGauge } from "./ComposerTokenGauge";
 
 export type {
   CodexModelLoadState,
@@ -142,6 +143,7 @@ export function Composer({
   onEditGuideMessage,
   onSend,
   onInterrupt,
+  tokensPerSecond,
   queryHistorySessionID,
   queryHistory = []
 }: {
@@ -198,6 +200,7 @@ export function Composer({
   onEditGuideMessage: (id: string) => void;
   onSend: () => void;
   onInterrupt: () => void;
+  tokensPerSecond: number;
   queryHistorySessionID?: string;
   queryHistory?: string[];
 }): JSX.Element {
@@ -509,6 +512,10 @@ export function Composer({
                 </FloatingMenuPortal>
               ) : null}
             </div>
+            <ComposerTokenGauge
+              running={running}
+              tokensPerSecond={tokensPerSecond}
+            />
             <div className="composer-spacer" />
             {initialized ? (
               <RuntimePicker

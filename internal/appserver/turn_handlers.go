@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
@@ -443,6 +444,36 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	}
 	baseBeforeStep := runner.BeforeStep
 	baseOnRequestContext := runner.OnRequestContext
+	// Forward cumulative token usage updates from the agent loop into a
+	// throttled "turn/usage" notification so live UIs can render a real-time
+	// generation speed gauge. OnUsage fires once per LLM round-trip; we
+	// coalesce pushes to roughly ten per second so the IPC stream stays
+	// smooth even if a single step fans out multiple updates.
+	const usageNotifyInterval = 100 * time.Millisecond
+	var usagePushMu sync.Mutex
+	var lastUsagePushAt time.Time
+	baseOnUsage := runner.OnUsage
+	runner.OnUsage = func(inputTokens, outputTokens int) {
+		if baseOnUsage != nil {
+			baseOnUsage(inputTokens, outputTokens)
+		}
+		usagePushMu.Lock()
+		now := time.Now()
+		shouldPush := lastUsagePushAt.IsZero() || now.Sub(lastUsagePushAt) >= usageNotifyInterval
+		if shouldPush {
+			lastUsagePushAt = now
+		}
+		usagePushMu.Unlock()
+		if !shouldPush {
+			return
+		}
+		notify(NotificationTurnUsage, TurnUsageNotification{
+			ThreadID:     th.ID,
+			TurnID:       turnID,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+		})
+	}
 	var contextRequests []sessiontrace.RequestContextRecord
 	runner.OnRequestContext = func(info agent.RequestContextInfo) {
 		if baseOnRequestContext != nil {
@@ -472,6 +503,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	defer func() {
 		runner.BeforeStep = baseBeforeStep
 		runner.OnRequestContext = baseOnRequestContext
+		runner.OnUsage = baseOnUsage
 	}()
 	// Hang the recent transcript off the request context so the LLM-driven
 	// guardian reviewer can judge pending tool calls in light of user intent.

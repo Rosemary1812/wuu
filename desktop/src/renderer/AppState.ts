@@ -117,7 +117,26 @@ type AppState = {
   running: boolean;
   status: string;
   pendingToolApproval?: PendingToolApproval;
+  // turnTokenUsage tracks per-turn cumulative input/output token counts
+  // pushed by the appserver's "turn/usage" notification. The samples field
+  // is a rolling window used to derive a smoothed tokens-per-second read
+  // for the live token-speed gauge in the composer.
+  turnTokenUsage: Record<string, TurnTokenUsage>;
 };
+
+type TurnTokenSample = {
+  tokens: number;
+  at: number;
+};
+
+type TurnTokenUsage = {
+  threadID: string;
+  inputTokens: number;
+  outputTokens: number;
+  samples: TurnTokenSample[];
+};
+
+const TOKEN_SPEED_WINDOW_MS = 2000;
 
 const INITIAL_DRAFT_SESSION_TAB_ID = "draft:initial";
 
@@ -130,6 +149,7 @@ const initialState: AppState = {
   threads: [],
   running: false,
   status: "connecting",
+  turnTokenUsage: {},
 };
 
 function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
@@ -254,6 +274,8 @@ function handleStreamingNotification(
       return "stream";
     case "turn/event":
       return "skip";
+    case "turn/usage":
+      return "state";
     case "item/started":
     case "item/completed":
       if (notificationTargetsActiveThread(params, state)) {
@@ -478,6 +500,20 @@ function reduceNotification(
           running: false,
           status: "ready",
         },
+      );
+    }
+    case "turn/usage": {
+      const turnID = stringValue(params, "turn_id");
+      if (!turnID) {
+        return state;
+      }
+      return appendTurnTokenSample(
+        state,
+        turnID,
+        stringValue(params, "thread_id") ?? "",
+        numberValue(params, "input_tokens") ?? 0,
+        numberValue(params, "output_tokens") ?? 0,
+        Date.now(),
       );
     }
     default:
@@ -1361,13 +1397,70 @@ function agentPathDepth(path: string | undefined): number {
   const trimmed = path?.trim().replace(/^\/+|\/+$/g, "") ?? "";
   return trimmed ? trimmed.split("/").length : 0;
 }
+
+function appendTurnTokenSample(
+  state: AppState,
+  turnID: string,
+  threadID: string,
+  inputTokens: number,
+  outputTokens: number,
+  at: number,
+): AppState {
+  const turnTokenUsage = state.turnTokenUsage ?? {};
+  const previous = turnTokenUsage[turnID];
+  const cutoff = at - TOKEN_SPEED_WINDOW_MS;
+  const samples: TurnTokenSample[] = [];
+  if (previous) {
+    for (const sample of previous.samples) {
+      if (sample.at >= cutoff) {
+        samples.push(sample);
+      }
+    }
+  }
+  if (outputTokens > 0) {
+    samples.push({ tokens: outputTokens, at });
+  }
+  return {
+    ...state,
+    turnTokenUsage: {
+      ...turnTokenUsage,
+      [turnID]: {
+        threadID,
+        inputTokens,
+        outputTokens,
+        samples,
+      },
+    },
+  };
+}
+
+function activeTurnTokenSpeed(state: AppState, turnID?: string): number {
+  if (!turnID) {
+    return 0;
+  }
+  const usage = state.turnTokenUsage?.[turnID];
+  if (!usage || usage.samples.length < 2) {
+    return 0;
+  }
+  const first = usage.samples[0];
+  const last = usage.samples[usage.samples.length - 1];
+  const delta = last.tokens - first.tokens;
+  const elapsed = last.at - first.at;
+  if (elapsed <= 0 || delta <= 0) {
+    return 0;
+  }
+  return (delta / elapsed) * 1000;
+}
+
 export {
   activeProjectID,
   activeSessionTab,
   activeThreadForState,
   activeThreadIDForState,
   activeTurnIDForThread,
+  activeTurnTokenSpeed,
   agentFromRecord,
+  appendTurnTokenSample,
   bindActiveSessionTabToThread,
   cloneComposerDraft,
   cloneSessionTabDraft,
