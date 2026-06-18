@@ -32,6 +32,7 @@ const (
 	MethodThreadPin             = "thread/pin"
 	MethodThreadArchive         = "thread/archive"
 	MethodThreadRegenerateTitle = "thread/regenerate-title"
+	MethodThreadRename           = "thread/rename"
 	MethodTurnStart             = "turn/start"
 	MethodTurnQueue             = "turn/queue"
 	MethodTurnDequeue           = "turn/dequeue"
@@ -441,6 +442,15 @@ type ThreadArchiveResult struct {
 	Thread Thread `json:"thread"`
 }
 
+type ThreadRenameParams struct {
+	ThreadID string `json:"thread_id"`
+	Title    string `json:"title"`
+}
+
+type ThreadRenameResult struct {
+	Thread Thread `json:"thread"`
+}
+
 type TurnStartParams struct {
 	ThreadID string           `json:"thread_id"`
 	Prompt   string           `json:"prompt"`
@@ -641,6 +651,7 @@ type Thread struct {
 	ParentID         string       `json:"parent_id,omitempty"`
 	AgentPath        string       `json:"agent_path,omitempty"`
 	Preview          string       `json:"preview"`
+	Title            string       `json:"title,omitempty"`
 	ModelProvider    string       `json:"model_provider"`
 	Model            string       `json:"model"`
 	CWD              string       `json:"cwd"`

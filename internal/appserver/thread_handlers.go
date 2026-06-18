@@ -343,6 +343,26 @@ func (s *Server) handleThreadArchive(req Request) error {
 	return s.writeResponse(req.ID, ThreadArchiveResult{Thread: thread}, nil)
 }
 
+func (s *Server) handleThreadRename(req Request) error {
+	var params ThreadRenameParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	id := strings.TrimSpace(params.ThreadID)
+	if id == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	metadata, err := session.UpdateTitle(s.rt.SessionDir, id, params.Title)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	thread, err := s.threadAfterMetadataUpdate(metadata)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, ThreadRenameResult{Thread: thread}, nil)
+}
+
 type threadListEntry struct {
 	thread   Thread
 	pinnedAt *time.Time
@@ -377,6 +397,7 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 		thread: Thread{
 			ID:               sess.ID,
 			Preview:          firstNonEmpty(sess.Title, sess.Summary),
+			Title:            sess.Title,
 			ModelProvider:    provider,
 			Model:            model,
 			CWD:              sess.CWD,

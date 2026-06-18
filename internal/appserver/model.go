@@ -41,6 +41,7 @@ func (th *threadState) snapshotLocked() Thread {
 		ParentID:         th.ParentID,
 		AgentPath:        th.AgentPath,
 		Preview:          firstNonEmpty(th.Title, threadPreview(th.History)),
+		Title:            th.Title,
 		ModelProvider:    th.ModelProvider,
 		Model:            th.Model,
 		CWD:              th.CWD,

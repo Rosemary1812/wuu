@@ -290,6 +290,20 @@ func UpdateGeneratedTitle(sessDir, id string, title string) (Session, error) {
 	})
 }
 
+// UpdateTitle overwrites a session title unconditionally. Differs from
+// UpdateGeneratedTitle, which only fills an empty title. The right-click
+// Rename menu uses UpdateTitle to overwrite both the auto-generated
+// preview and any prior user-edited title.
+func UpdateTitle(sessDir, id string, title string) (Session, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return Session{}, fmt.Errorf("title is required")
+	}
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		s.Title = title
+	})
+}
+
 // UpdatePinned marks a session as pinned or unpinned.
 func UpdatePinned(sessDir, id string, pinned bool) (Session, error) {
 	now := time.Now().UTC()

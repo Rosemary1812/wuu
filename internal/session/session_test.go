@@ -151,6 +151,39 @@ func TestUpdateGeneratedTitle(t *testing.T) {
 	}
 }
 
+func TestUpdateTitle(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Create(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpdateTitle(dir, s.ID, "  "); err == nil {
+		t.Fatal("expected error for empty title")
+	}
+	updated, err := UpdateTitle(dir, s.ID, "Custom rename")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Title != "Custom rename" {
+		t.Fatalf("title not persisted: %+v", updated)
+	}
+
+	// UpdateTitle unconditionally overwrites — unlike UpdateGeneratedTitle,
+	// which only fills an empty title. The right-click Rename menu relies
+	// on this to replace both an auto-generated preview and any prior
+	// user-edited title.
+	if _, err := UpdateTitle(dir, s.ID, "Second rename"); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := List(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].Title != "Second rename" {
+		t.Fatalf("second rename should overwrite: %+v", sessions)
+	}
+}
+
 func TestListOrdersPinnedGroupsByActivity(t *testing.T) {
 	dir := t.TempDir()
 	base := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
