@@ -87,20 +87,15 @@ export function buildAssistantTurnDisplay(
     return isInProgress && item.status === "in_progress";
   }
 
-  function isUnknownLiveAgentText(item: ThreadItem): boolean {
-    return (
-      item.type === "agent_message" &&
-      !item.phase &&
-      isInProgress &&
-      item.status === "in_progress"
-    );
-  }
-
   function entryPosition(item: ThreadItem): "process" | "answer" {
-    if (
-      item.type === "agent_message" &&
-      (item.phase === "final_answer" || isUnknownLiveAgentText(item))
-    ) {
+    // Per the message-display policy: only a confirmed `final_answer`
+    // moves into the answer region. Empty / unparseable phase is
+    // treated as `unknown` (rule 5) and stays in process so it never
+    // collapses the process fold mid-stream (rule 7). The back-end
+    // settles the phase after streaming, so unknown items either
+    // upgrade to final_answer (which will re-enter here on the next
+    // render) or stay as commentary.
+    if (item.type === "agent_message" && item.phase === "final_answer") {
       return "answer";
     }
     return "process";
@@ -108,9 +103,10 @@ export function buildAssistantTurnDisplay(
 
   function entryKind(item: ThreadItem): TurnEntryKind {
     if (item.type === "agent_message") {
-      if (item.phase === "final_answer" || isUnknownLiveAgentText(item)) {
-        return "answer";
-      }
+      if (item.phase === "final_answer") return "answer";
+      // commentary covers both explicit `phase: "commentary"` items
+      // and `phase`-less in-flight agent text (rule 6: unknown is
+      // surfaced inline alongside commentary).
       return "commentary";
     }
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {

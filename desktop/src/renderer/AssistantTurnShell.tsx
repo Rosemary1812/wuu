@@ -1,6 +1,6 @@
-import { Info, Play } from "lucide-react";
+import { ChevronRight, Info, Play, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { Turn } from "../shared/protocol";
+import type { ThreadItem, Turn } from "../shared/protocol";
 import type {
   AssistantTurnDisplay,
   TurnEntry,
@@ -261,7 +261,26 @@ function EntryRenderer({
     }
     return null;
   }
-  if (item.type === "agent_message" || item.type === "reasoning") {
+  if (item.type === "reasoning") {
+    // Per the message-display policy (rule 3): reasoning is in the
+    // process region, but its content is folded by default. Show a
+    // single-line status row ("正在思考" while streaming, "查看思考
+    // 过程" once settled) and let the user expand to read the trail.
+    // Reasoning never collapses the outer fold on its own, and the
+    // user's expanded/collapsed choice persists across re-renders.
+    return (
+      <ReasoningFold
+        item={item}
+        streaming={streaming}
+        turnID={turn.id}
+        turnStatus={turn.status}
+        cwd={cwd}
+        onStreamFrame={onStreamFrame}
+        onNoticeAction={onNoticeAction}
+      />
+    );
+  }
+  if (item.type === "agent_message") {
     return (
       <ThreadItemView
         turnID={turn.id}
@@ -289,6 +308,56 @@ function EntryRenderer({
     );
   }
   return null;
+}
+
+function ReasoningFold({
+  item,
+  streaming,
+  turnID,
+  turnStatus,
+  cwd,
+  onStreamFrame,
+  onNoticeAction,
+}: {
+  item: ThreadItem;
+  streaming: boolean;
+  turnID: string;
+  turnStatus: Turn["status"];
+  cwd?: string;
+  onStreamFrame: () => void;
+  onNoticeAction: (action: UserFacingErrorAction) => void;
+}): JSX.Element {
+  const label = streaming ? "正在思考" : "查看思考过程";
+  return (
+    <details className="turn-reasoning-fold">
+      <summary className="turn-reasoning-summary">
+        <Sparkles
+          className="turn-reasoning-glyph"
+          size={12}
+          aria-hidden
+        />
+        <span className="turn-reasoning-summary-text">{label}</span>
+        <ChevronRight
+          className="turn-reasoning-chevron"
+          size={12}
+          aria-hidden
+        />
+      </summary>
+      <div className="turn-reasoning-body">
+        <div className="turn-reasoning-body-inner">
+          <ThreadItemView
+            turnID={turnID}
+            turnStatus={turnStatus}
+            item={item}
+            cwd={cwd}
+            streaming={streaming}
+            onStreamFrame={onStreamFrame}
+            onNoticeAction={onNoticeAction}
+          />
+        </div>
+      </div>
+    </details>
+  );
 }
 
 function turnProcessMetaParts(

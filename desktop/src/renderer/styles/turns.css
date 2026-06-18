@@ -3256,6 +3256,120 @@
   margin-top: 2px;
 }
 
+/* Reasoning fold — a nested <details> inside the process region.
+   Reasoning is grouped with commentary/tool activity in the process
+   region but folded by default (per the message-display policy:
+   rule 3 — "reasoning 内容默认折叠"). The summary row reads as a
+   single quiet gray line (same family as the process meta), and the
+   body is indented + uses a softer gray than commentary so the user
+   can tell at a glance that this is secondary content the agent
+   thought but did not surface directly. Chevron rotates on open;
+   the body uses grid-template-rows to animate the height change
+   smoothly (the native <details> toggle is otherwise instantaneous).
+   This mirrors the process fold's own "no box, inline with text
+   flow" principle — reasoning is part of the same conversation
+   stream, just at a quieter visual weight. */
+.turn-reasoning-fold {
+  min-width: 0;
+}
+
+.turn-reasoning-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  cursor: pointer;
+  list-style: none;
+  color: var(--wuu-ink-soft);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  line-height: var(--conversation-meta-line-height);
+  user-select: none;
+}
+
+.turn-reasoning-summary::-webkit-details-marker {
+  display: none;
+}
+
+.turn-reasoning-summary::marker {
+  display: none;
+}
+
+/* Subtle underline-on-hover so the summary still reads as part of
+   the text flow even when interactive (same convention as the outer
+   process fold toggle). */
+.turn-reasoning-summary:hover,
+.turn-reasoning-summary:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: rgba(31, 35, 40, 0.18);
+  text-underline-offset: 3px;
+  outline: 0;
+}
+
+.turn-reasoning-glyph {
+  flex: 0 0 auto;
+  color: var(--wuu-ink-soft);
+  opacity: 0.78;
+}
+
+.turn-reasoning-summary-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.turn-reasoning-chevron {
+  flex: 0 0 auto;
+  color: var(--wuu-ink-soft);
+  opacity: 0.7;
+  transform: rotate(0deg);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.turn-reasoning-fold[open] > .turn-reasoning-summary .turn-reasoning-chevron {
+  transform: rotate(90deg);
+  opacity: 1;
+}
+
+/* Body uses a grid-rows trick to animate height between 0fr (closed)
+   and 1fr (open). The inner wrapper carries overflow:hidden so the
+   collapsing content doesn't bleed out during the transition. The
+   opacity transition fades the content in alongside the height
+   change so it doesn't pop visually. */
+.turn-reasoning-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.turn-reasoning-fold[open] > .turn-reasoning-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.turn-reasoning-body-inner {
+  min-height: 0;
+  overflow: hidden;
+  padding: 4px 0 2px 20px;
+  /* Reasoning body keeps the same gray family as its summary so the
+     expanded content reads as part of the same quiet row, just
+     indented — commentary uses near-black prose color; reasoning is
+     one step lighter on purpose. */
+  color: var(--wuu-ink-soft);
+}
+
+/* When reasoning expands inside an already-open process fold (running
+   turn), the user is reading the agent's trail. Cap the body at a
+   reasonable max-height so a runaway reasoning block doesn't push
+   the rest of the conversation off-screen; a subtle scrollbar is the
+   lesser evil compared to eating the viewport. */
+.turn-reasoning-body-inner > .reasoning-block {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
 .tool-card {
   border: 1px solid #e5e5e1;
   border-radius: 8px;

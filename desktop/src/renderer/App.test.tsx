@@ -298,7 +298,16 @@ describe("assistant turn fold header preview", () => {
     expect(display?.latestProcessPreview?.text).toBe("Let me look that up.");
   });
 
-  it("in_progress + phase-unknown live agent text → answer candidate, not process preview", () => {
+  it("in_progress + phase-unknown live agent text → stays in process region, does NOT trigger final-only", () => {
+    // Per the message-display policy: unknown phase is treated like
+    // commentary while live (rule 6) and must not collapse the process
+    // fold mid-stream (rule 7). Only a confirmed `final_answer` may
+    // move into the answer region. Earlier behavior promoted unknown
+    // live text to "answer candidate" so the fold would stay open;
+    // that broke the moment a settled final arrived and the fold
+    // collapsed around the now-mislabeled unknown text. The correct
+    // shape is: unknown stays in process; the fold only collapses
+    // when an explicit final_answer is present.
     const live = makeLiveUnclassifiedAgentMessage(
       "I will inspect the current prompt path.",
     );
@@ -307,12 +316,15 @@ describe("assistant turn fold header preview", () => {
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
-    expect(display?.latestProcessPreview?.text).toBeUndefined();
-    expect(processItemIDs(display)).toEqual([]);
+    // The live text shows up as a process entry with commentary kind —
+    // it surfaces inline like a normal commentary, not as an answer.
+    expect(processItemIDs(display)).toEqual([live.id]);
     const liveEntry = display?.entries.find((e) => e.item.id === live.id);
-    expect(liveEntry?.kind).toBe("answer");
-    expect(answerItemIDs(display)).toEqual([live.id]);
-    expect(display?.hasAnswer).toBe(true);
+    expect(liveEntry?.kind).toBe("commentary");
+    // And critically: an unknown-phase in-progress item does NOT make
+    // `hasAnswer` true, so the process fold does not collapse.
+    expect(answerItemIDs(display)).toEqual([]);
+    expect(display?.hasAnswer).toBe(false);
   });
 
   it("in_progress + multiple commentaries → preview = the LATEST commentary, in arrival order", () => {
