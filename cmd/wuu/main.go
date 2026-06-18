@@ -56,6 +56,8 @@ func run(args []string) error {
 		return runGoal(args[1:])
 	case "tui":
 		return errors.New("the TUI has been removed; use the desktop GUI or `wuu exec` for agent-friendly text tasks")
+	case "session":
+		return runSession(args[1:])
 	case "session-show":
 		return runSessionShow(args[1:])
 	case "app-server":
@@ -344,6 +346,277 @@ func runSessionShow(args []string) error {
 		fmt.Printf("%s[%d] %s: %s\n", prefix, i+1, role, content)
 	}
 	return nil
+}
+
+func runSession(args []string) error {
+	if len(args) == 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("session subcommand is required"))
+	}
+	switch args[0] {
+	case "list":
+		return runSessionList(args[1:])
+	case "show":
+		return runSessionShowSubcommand(args[1:])
+	case "trace":
+		return runSessionTrace(args[1:])
+	case "search", "archive", "delete":
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("wuu session %s is not implemented yet", args[0]))
+	default:
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("unknown session subcommand %q", args[0]))
+	}
+}
+
+func runSessionList(args []string) error {
+	fs := flag.NewFlagSet("session list", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output as JSON")
+	limit := fs.Int("limit", 50, "max sessions to print")
+	workdir := fs.String("workdir", "", "workspace directory")
+	allWorkdirs := fs.Bool("all-workdirs", false, "list sessions from every workspace")
+	includeArchived := fs.Bool("include-archived", false, "include archived sessions")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	var sessions []session.Session
+	if *allWorkdirs {
+		sessions, err = session.List(sessDir, *limit)
+	} else {
+		rootDir, werr := resolveWorkdir(*workdir)
+		if werr != nil {
+			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, werr)
+		}
+		sessions, err = session.ListForCWD(sessDir, rootDir, *limit)
+	}
+	if err != nil {
+		return fmt.Errorf("list sessions: %w", err)
+	}
+	sessions = filterArchivedSessions(sessions, *includeArchived)
+	if *jsonOutput {
+		return printJSON(map[string]any{"sessions": sessions})
+	}
+	for _, sess := range sessions {
+		title := firstNonEmptyString(sess.Title, sess.Summary, sess.ID)
+		fmt.Printf("%s\t%s\t%s\n", sess.ID, sess.UpdatedAt.Format(time.RFC3339), title)
+	}
+	return nil
+}
+
+func runSessionShowSubcommand(args []string) error {
+	fs := flag.NewFlagSet("session show", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output as JSON")
+	limit := fs.Int("limit", 200, "max history records to print in human mode")
+	threadFlag := fs.String("thread", "", "thread id; defaults to most recent for this workspace")
+	workdir := fs.String("workdir", "", "workspace directory")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	id := strings.TrimSpace(*threadFlag)
+	if id == "" && len(fs.Args()) > 0 {
+		id = strings.TrimSpace(fs.Args()[0])
+	}
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	rootDir, err := resolveWorkdir(*workdir)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	return printSession(sessDir, id, rootDir, *jsonOutput, *limit)
+}
+
+func runSessionTrace(args []string) error {
+	fs := flag.NewFlagSet("session trace", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output as JSON")
+	threadFlag := fs.String("thread", "", "thread id; defaults to most recent for this workspace")
+	workdir := fs.String("workdir", "", "workspace directory")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	id := strings.TrimSpace(*threadFlag)
+	if id == "" && len(fs.Args()) > 0 {
+		id = strings.TrimSpace(fs.Args()[0])
+	}
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	rootDir, err := resolveWorkdir(*workdir)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if id == "" {
+		id, err = session.MostRecentForCWD(sessDir, rootDir)
+		if err != nil {
+			return fmt.Errorf("find most recent session: %w", err)
+		}
+		if id == "" {
+			return errors.New("no sessions found")
+		}
+	}
+	meta, ok, err := session.Find(sessDir, id)
+	if err != nil {
+		return fmt.Errorf("lookup %q: %w", id, err)
+	}
+	if !ok {
+		return fmt.Errorf("%w: %q", session.ErrSessionNotFound, id)
+	}
+	tracePath, err := tracePathForSession(meta, rootDir)
+	if err != nil {
+		return err
+	}
+	summary, err := sessiontrace.ReplayTrace(tracePath)
+	if err != nil {
+		return fmt.Errorf("replay trace %q: %w", tracePath, err)
+	}
+	if *jsonOutput {
+		return printJSON(map[string]any{
+			"thread_id":  id,
+			"trace_path": tracePath,
+			"summary":    summary,
+		})
+	}
+	fmt.Printf("thread_id: %s\ntrace_path: %s\n", id, tracePath)
+	if summary.LatestTurn != nil {
+		fmt.Printf("latest_status: %s\n", summary.LatestTurn.Status)
+	}
+	if summary.Final != nil {
+		fmt.Printf("final_status: %s\n", summary.Final.Status)
+	}
+	fmt.Printf("events: %d\n", summary.EventCount)
+	return nil
+}
+
+func printSession(sessDir, id, rootDir string, jsonOutput bool, limit int) error {
+	var err error
+	id = strings.TrimSpace(id)
+	if id == "" {
+		id, err = session.MostRecentForCWD(sessDir, rootDir)
+		if err != nil {
+			return fmt.Errorf("find most recent session: %w", err)
+		}
+		if id == "" {
+			return errors.New("no sessions found")
+		}
+	}
+
+	meta, ok, err := session.Find(sessDir, id)
+	if err != nil {
+		return fmt.Errorf("lookup %q: %w", id, err)
+	}
+	if !ok {
+		return fmt.Errorf("%w: %q", session.ErrSessionNotFound, id)
+	}
+	records, err := session.LoadHistoryRecords(sessDir, id, true)
+	if err != nil {
+		return fmt.Errorf("load history %q: %w", id, err)
+	}
+	if jsonOutput {
+		return printJSON(map[string]any{
+			"thread_id": id,
+			"session":   meta,
+			"history":   records,
+		})
+	}
+
+	fmt.Printf("thread_id: %s\n", id)
+	fmt.Printf("title: %s\n", meta.Title)
+	if meta.Summary != "" {
+		fmt.Printf("summary: %s\n", meta.Summary)
+	}
+	if meta.CWD != "" {
+		fmt.Printf("cwd: %s\n", meta.CWD)
+	}
+	fmt.Printf("created: %s\n", meta.CreatedAt.Format(time.RFC3339))
+	if meta.UpdatedAt.After(meta.CreatedAt) {
+		fmt.Printf("updated: %s\n", meta.UpdatedAt.Format(time.RFC3339))
+	}
+	fmt.Printf("entries: %d\nhistory_records: %d\n\n", meta.Entries, len(records))
+	shown := limit
+	if shown > 0 && shown < len(records) {
+		fmt.Printf("(showing first %d of %d records; use --limit 0 for all or --json for full output)\n\n", shown, len(records))
+	}
+	for i, rec := range records {
+		if shown > 0 && i >= shown {
+			break
+		}
+		role := firstNonEmptyString(rec.Role, "?")
+		content := rec.Content
+		if len(content) > 240 {
+			content = content[:240] + "..."
+		}
+		fmt.Printf("  [%d] %s: %s\n", i+1, role, content)
+	}
+	return nil
+}
+
+func resolveSessionsDir() (string, error) {
+	home, err := statepath.Home("")
+	if err != nil {
+		return "", fmt.Errorf("resolve wuu home: %w", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	if sessDir == "" {
+		return "", errors.New("sessions dir is empty")
+	}
+	return sessDir, nil
+}
+
+func filterArchivedSessions(sessions []session.Session, includeArchived bool) []session.Session {
+	if includeArchived {
+		return sessions
+	}
+	filtered := sessions[:0]
+	for _, sess := range sessions {
+		if sess.ArchivedAt == nil {
+			filtered = append(filtered, sess)
+		}
+	}
+	return filtered
+}
+
+func tracePathForSession(sess session.Session, fallbackRoot string) (string, error) {
+	rootDir := strings.TrimSpace(sess.CWD)
+	if rootDir == "" {
+		rootDir = fallbackRoot
+	}
+	if rootDir == "" {
+		return "", errors.New("session has no workspace cwd; pass --workdir")
+	}
+	home, err := statepath.Home("")
+	if err != nil {
+		return "", fmt.Errorf("resolve wuu home: %w", err)
+	}
+	workspaceStateDir, err := statepath.WorkspaceDir(home, rootDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace state: %w", err)
+	}
+	return sessiontrace.Path(statepath.SessionArtifactDir(workspaceStateDir, sess.ID)), nil
+}
+
+func printJSON(payload any) error {
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal JSON: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type execCLIConfig struct {
@@ -848,6 +1121,7 @@ Usage:
   wuu models [flags]
   wuu exec [flags] "your coding task"
   wuu exec resume (--last|THREAD_ID) [flags] "continue task"
+  wuu session list|show|trace [flags]
   wuu run [flags] "your coding task"
   wuu eval [flags]
   wuu goal demo [flags]
@@ -873,6 +1147,14 @@ Exec flags:
   --timeout         total timeout (e.g. 20m)
   --output-last-message
                    write final agent message to a file
+
+Session commands:
+  list --json [--workdir DIR] [--all-workdirs]
+                   list visible sessions for the workspace
+  show --json [THREAD_ID] [--workdir DIR]
+                   show session metadata and history
+  trace --json [THREAD_ID] [--workdir DIR]
+                   replay a session trace artifact
 
 Run flags:
   --provider        provider name from config
