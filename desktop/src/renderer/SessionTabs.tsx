@@ -20,6 +20,7 @@ import { Plus, X } from "lucide-react";
 import { type CSSProperties, useState } from "react";
 import {
   isThreadRunning,
+  isThreadUnread,
   sessionTabLabel,
   threadForTab,
   type AppState,
@@ -116,6 +117,14 @@ export function SessionTabStrip({
                       ),
                     )
                   : 0;
+              const unread =
+                !active &&
+                !running &&
+                !pendingSwitch &&
+                isThreadUnread(
+                  tabThread,
+                  tabThread ? state.lastViewedTurnByThreadID[tabThread.id] : undefined,
+                );
               const label = sessionTabLabel(tab, state);
               const closeLabel =
                 tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
@@ -127,6 +136,7 @@ export function SessionTabStrip({
                   running={running}
                   pendingSwitch={pendingSwitch}
                   pendingCount={pendingCount}
+                  unread={unread}
                   label={label}
                   closeLabel={closeLabel}
                   reorderable={state.sessionTabs.length > 1}
@@ -162,6 +172,15 @@ export function SessionTabStrip({
                   ? isThreadRunning(threadForTab(state, draggingTab.threadID))
                   : false
               }
+              unread={
+                draggingTab.id !== state.activeSessionTabID &&
+                draggingTab.kind === "thread" &&
+                !isThreadRunning(threadForTab(state, draggingTab.threadID)) &&
+                isThreadUnread(
+                  threadForTab(state, draggingTab.threadID),
+                  state.lastViewedTurnByThreadID[draggingTab.threadID],
+                )
+              }
               width={draggingTabWidth}
             />
           ) : null}
@@ -187,6 +206,7 @@ type SortableSessionTabProps = {
   running: boolean;
   pendingSwitch: boolean;
   pendingCount: number;
+  unread: boolean;
   label: string;
   closeLabel: string;
   reorderable: boolean;
@@ -200,6 +220,7 @@ function SortableSessionTab({
   running,
   pendingSwitch,
   pendingCount,
+  unread,
   label,
   closeLabel,
   reorderable,
@@ -230,7 +251,7 @@ function SortableSessionTab({
       ref={setNodeRef}
       className={`session-tab${active ? " active" : ""}${running ? " running" : ""}${
         pendingSwitch ? " pending-switch" : ""
-      }${pendingCount > 0 ? " has-pending" : ""}${reorderable ? " can-reorder" : ""}${isDragging ? " dragging" : ""}`}
+      }${unread ? " has-unread" : ""}${pendingCount > 0 ? " has-pending" : ""}${reorderable ? " can-reorder" : ""}${isDragging ? " dragging" : ""}`}
       style={style}
       aria-grabbed={isDragging || undefined}
     >
@@ -276,12 +297,14 @@ function SortableSessionTab({
 function SessionTabDragPreview({
   active,
   running,
+  unread,
   label,
   pendingCount,
   width,
 }: {
   active: boolean;
   running: boolean;
+  unread: boolean;
   label: string;
   pendingCount: number;
   width?: number;
@@ -289,7 +312,7 @@ function SessionTabDragPreview({
   const displayPendingCount = pendingCount > 9 ? "9+" : String(pendingCount);
   return (
     <div
-      className={`session-tab session-tab-drag-overlay${active ? " active" : ""}${running ? " running" : ""}${pendingCount > 0 ? " has-pending" : ""}`}
+      className={`session-tab session-tab-drag-overlay${active ? " active" : ""}${running ? " running" : ""}${unread ? " has-unread" : ""}${pendingCount > 0 ? " has-pending" : ""}`}
       style={width ? { width } : undefined}
     >
       <div className="session-tab-main">

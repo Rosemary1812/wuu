@@ -208,6 +208,7 @@ export function AppSidebar({
               activeID={activeThreadID}
               pendingThreadID={pendingThreadID}
               archiveConfirmThreadID={archiveConfirmThreadID}
+              lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
               onSelect={onSelectThread}
               onSelectChildAgent={onSelectChildAgent}
               onTogglePinned={onTogglePinned}
@@ -255,6 +256,7 @@ export function AppSidebar({
             activeThreadID={activeThreadID}
             pendingThreadID={pendingThreadID}
             archiveConfirmThreadID={archiveConfirmThreadID}
+            lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
             onSelectProject={onOpenProject}
             onToggleProjectCollapsed={onToggleProjectCollapsed}
             onStartNewThread={onStartNewThreadForProject}

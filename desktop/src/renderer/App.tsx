@@ -137,6 +137,7 @@ import {
   isThreadRunning,
   latestPlanUpdateForThread,
   mergeListedThreads,
+  markThreadTurnsViewed,
   notificationTargetsActiveThread,
   persistActiveSessionTabDraft,
   pinnedThreads,
@@ -1419,6 +1420,26 @@ export function App(): JSX.Element {
       setQueryHistoryOpen(false);
     }
   }, [queryHistoryDocked]);
+
+  // Mark the active thread's latest completed turn as viewed so the sidebar
+  // and session tab strip stop showing the "has-unread" dot. This effect is
+  // the single source of truth for advancing `lastViewedTurnByThreadID`; any
+  // state change that re-renders the conversation (tab switch, new turn for
+  // the active thread) reaches here. Running threads are skipped so a
+  // mid-stream turn does not get pinned as the viewed ID.
+  useEffect(() => {
+    const tab = state.sessionTabs.find(
+      (candidate) => candidate.id === state.activeSessionTabID,
+    );
+    if (tab?.kind !== "thread") return;
+    const thread = threadForTab(state, tab.threadID);
+    if (!thread) return;
+    if (isThreadRunning(thread)) return;
+    setState((current) => {
+      const next = markThreadTurnsViewed(current, thread.id);
+      return next === current ? current : next;
+    });
+  }, [state.activeSessionTabID, state.thread, state.threads]);
 
   function clearProjectCollapseTimer(projectID: string): void {
     const timer = projectCollapseTimersRef.current.get(projectID);

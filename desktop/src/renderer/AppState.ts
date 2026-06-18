@@ -122,6 +122,13 @@ type AppState = {
   // is a rolling window used to derive a smoothed tokens-per-second read
   // for the live token-speed gauge in the composer.
   turnTokenUsage: Record<string, TurnTokenUsage>;
+  // lastViewedTurnByThreadID remembers the most recent turn that the user
+  // has actually been on the thread for. It is the source of truth for the
+  // sidebar / session-tab "has-unread" indicator — a thread is unread when
+  // its latest completed turn ID is not in this map (or the entry is older).
+  // Active-tab tracking is what advances this map; running threads are never
+  // flagged unread because they have not finished yet.
+  lastViewedTurnByThreadID: Record<string, string>;
 };
 
 type TurnTokenSample = {
@@ -162,6 +169,7 @@ const initialState: AppState = {
   running: false,
   status: "connecting",
   turnTokenUsage: {},
+  lastViewedTurnByThreadID: {},
 };
 
 function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
@@ -1162,6 +1170,50 @@ function isThreadRunning(thread: Thread | undefined): boolean {
   );
 }
 
+function latestCompletedTurnID(thread: Thread): string | undefined {
+  // Walk newest → oldest. Most threads end with a non-in_progress turn so the
+  // first hit is the answer; we still guard against an in_progress tail so a
+  // thread that was reset to running does not get pinned to a stale ID.
+  for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+    const turn = thread.turns[index];
+    if (turn.status === "in_progress") {
+      return undefined;
+    }
+    return turn.id;
+  }
+  return undefined;
+}
+
+function isThreadUnread(
+  thread: Thread | undefined,
+  lastViewedTurnID: string | undefined,
+): boolean {
+  if (!thread) return false;
+  if (isThreadRunning(thread)) return false;
+  const lastTurnID = latestCompletedTurnID(thread);
+  if (!lastTurnID) return false;
+  if (!lastViewedTurnID) return true;
+  return lastTurnID !== lastViewedTurnID;
+}
+
+function markThreadTurnsViewed(
+  state: AppState,
+  threadID: string,
+): AppState {
+  const thread = threadForTab(state, threadID);
+  if (!thread) return state;
+  const lastTurnID = latestCompletedTurnID(thread);
+  if (!lastTurnID) return state;
+  if (state.lastViewedTurnByThreadID[threadID] === lastTurnID) return state;
+  return {
+    ...state,
+    lastViewedTurnByThreadID: {
+      ...state.lastViewedTurnByThreadID,
+      [threadID]: lastTurnID,
+    },
+  };
+}
+
 function activeTurnIDForThread(thread: Thread | undefined): string | undefined {
   if (!thread) {
     return undefined;
@@ -1597,7 +1649,10 @@ export {
   isStateActiveThreadRunning,
   isThread,
   isThreadRunning,
+  isThreadUnread,
+  latestCompletedTurnID,
   latestPlanUpdateForThread,
+  markThreadTurnsViewed,
   mergeAgentSummary,
   mergeListedThreads,
   notificationTargetsActiveThread,

@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Thread } from "../shared/protocol";
 import {
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   appendTurnTokenSample,
   initialState,
+  isThreadUnread,
+  latestCompletedTurnID,
+  markThreadTurnsViewed,
   reduceServerEvent,
 } from "./AppState";
 
@@ -245,5 +249,118 @@ describe("turn token speed", () => {
     );
     expect(state.turnTokenUsage["turn-1"].samples).toHaveLength(1);
     expect(activeTurnTokenSpeed(state, "turn-1")).toBe(0);
+  });
+});
+
+describe("AppState unread tracking", () => {
+  function makeThreadWithTurns(
+    threadID: string,
+    turns: Array<{
+      id: string;
+      status: "completed" | "in_progress" | "failed" | "interrupted";
+    }>,
+  ): Thread {
+    return {
+      id: threadID,
+      preview: "",
+      model_provider: "fake",
+      model: "fake-model",
+      cwd: "/tmp",
+      status: "idle",
+      created_at: "2026-06-18T00:00:00Z",
+      updated_at: "2026-06-18T00:00:00Z",
+      turns: turns.map((t) => ({
+        id: t.id,
+        items: [],
+        items_view: "full" as const,
+        status: t.status,
+      })),
+    };
+  }
+
+  it("latestCompletedTurnID returns the most recent non-in_progress turn", () => {
+    const thread = makeThreadWithTurns("thread-1", [
+      { id: "turn-1", status: "completed" },
+      { id: "turn-2", status: "completed" },
+      { id: "turn-3", status: "completed" },
+    ]);
+    expect(latestCompletedTurnID(thread)).toBe("turn-3");
+  });
+
+  it("latestCompletedTurnID returns undefined when the latest turn is in_progress", () => {
+    const thread = makeThreadWithTurns("thread-1", [
+      { id: "turn-1", status: "completed" },
+      { id: "turn-2", status: "in_progress" },
+    ]);
+    expect(latestCompletedTurnID(thread)).toBeUndefined();
+  });
+
+  it("latestCompletedTurnID returns undefined for an empty thread", () => {
+    const thread = makeThreadWithTurns("thread-1", []);
+    expect(latestCompletedTurnID(thread)).toBeUndefined();
+  });
+
+  it("isThreadUnread returns true for a thread with a new completed turn", () => {
+    const thread = makeThreadWithTurns("thread-1", [
+      { id: "turn-1", status: "completed" },
+    ]);
+    expect(isThreadUnread(thread, undefined)).toBe(true);
+  });
+
+  it("isThreadUnread returns false when lastViewed matches the latest turn", () => {
+    const thread = makeThreadWithTurns("thread-1", [
+      { id: "turn-1", status: "completed" },
+    ]);
+    expect(isThreadUnread(thread, "turn-1")).toBe(false);
+  });
+
+  it("isThreadUnread returns false for a running thread", () => {
+    const thread = makeThreadWithTurns("thread-1", [
+      { id: "turn-1", status: "in_progress" },
+    ]);
+    expect(isThreadUnread(thread, undefined)).toBe(false);
+  });
+
+  it("isThreadUnread returns false for an empty thread", () => {
+    const thread = makeThreadWithTurns("thread-1", []);
+    expect(isThreadUnread(thread, undefined)).toBe(false);
+  });
+
+  it("markThreadTurnsViewed records the latest completed turn ID", () => {
+    const thread = makeThreadWithTurns("thread-1", [
+      { id: "turn-1", status: "completed" },
+    ]);
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+    };
+    const next = markThreadTurnsViewed(state, "thread-1");
+    expect(next.lastViewedTurnByThreadID["thread-1"]).toBe("turn-1");
+  });
+
+  it("markThreadTurnsViewed is a no-op when already current", () => {
+    const thread = makeThreadWithTurns("thread-1", [
+      { id: "turn-1", status: "completed" },
+    ]);
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      lastViewedTurnByThreadID: { "thread-1": "turn-1" },
+    };
+    expect(markThreadTurnsViewed(state, "thread-1")).toBe(state);
+  });
+
+  it("markThreadTurnsViewed is a no-op for a running thread", () => {
+    const thread = makeThreadWithTurns("thread-1", [
+      { id: "turn-1", status: "in_progress" },
+    ]);
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+    };
+    expect(markThreadTurnsViewed(state, "thread-1")).toBe(state);
   });
 });
