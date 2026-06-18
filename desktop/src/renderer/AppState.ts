@@ -1426,16 +1426,22 @@ function appendTurnTokenSample(
   const turnTokenUsage = state.turnTokenUsage ?? {};
   const previous = turnTokenUsage[turnID];
   const cutoff = at - TOKEN_SPEED_WINDOW_MS;
-  const speedTokens = outputTokens;
+  const hasRealHistory = previous?.speedSource === "real";
+  const previousSpeedTokens = hasRealHistory ? previous.speedTokens : 0;
+  const speedTokens = hasRealHistory
+    ? Math.max(previousSpeedTokens, outputTokens)
+    : outputTokens;
+  const outputIncreased = outputTokens > previousSpeedTokens;
+  const shouldAppendSample = outputTokens > 0 && outputIncreased;
   const samples: TurnTokenSample[] = [];
-  if (previous?.speedSource === "real") {
+  if (hasRealHistory) {
     for (const sample of previous.samples) {
-      if (sample.at >= cutoff) {
+      if (!shouldAppendSample || sample.at >= cutoff) {
         samples.push(sample);
       }
     }
   }
-  if (outputTokens > 0) {
+  if (shouldAppendSample) {
     samples.push({ tokens: speedTokens, at });
   }
   return {

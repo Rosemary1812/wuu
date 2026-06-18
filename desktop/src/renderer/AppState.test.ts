@@ -177,6 +177,48 @@ describe("turn token speed", () => {
     expect(activeTurnTokenSpeed(state, "turn-1")).toBeCloseTo(80, 0);
   });
 
+  it("ignores unchanged usage snapshots while tools are running", () => {
+    let state = appendTurnTokenSample(
+      initialState,
+      "turn-1",
+      "thread-1",
+      0,
+      100,
+      0,
+      0,
+      Date.now(),
+    );
+    vi.advanceTimersByTime(500);
+    state = appendTurnTokenSample(
+      state,
+      "turn-1",
+      "thread-1",
+      0,
+      140,
+      0,
+      0,
+      Date.now(),
+    );
+
+    vi.advanceTimersByTime(2500);
+    state = appendTurnTokenSample(
+      state,
+      "turn-1",
+      "thread-1",
+      20,
+      140,
+      0,
+      0,
+      Date.now(),
+    );
+
+    expect(activeTurnTokenSpeed(state, "turn-1")).toBeCloseTo(80, 0);
+    expect(state.turnTokenUsage["turn-1"].samples).toEqual([
+      { tokens: 100, at: new Date(2026, 0, 1, 0, 0, 0).getTime() },
+      { tokens: 140, at: new Date(2026, 0, 1, 0, 0, 0, 500).getTime() },
+    ]);
+  });
+
   it("drops samples older than the 2s window", () => {
     let state = appendTurnTokenSample(
       initialState,
