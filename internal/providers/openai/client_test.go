@@ -1352,6 +1352,9 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 		if tool["strict"] != false {
 			t.Fatalf("expected strict=false like Codex Responses tools, got %#v", tool["strict"])
 		}
+		if _, exists := tool["defer_loading"]; exists {
+			t.Fatalf("ordinary responses tool must not include defer_loading: %#v", tool)
+		}
 		parameters, ok := tool["parameters"].(map[string]any)
 		if !ok {
 			t.Fatalf("unexpected parameters payload: %#v", tool["parameters"])
@@ -1429,6 +1432,55 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 	wantUsage := &providers.TokenUsage{InputTokens: 7, OutputTokens: 4, CacheReadTokens: 3}
 	if !reflect.DeepEqual(resp.Usage, wantUsage) {
 		t.Fatalf("got usage %+v, want %+v", resp.Usage, wantUsage)
+	}
+}
+
+func TestResponsesChat_SerializesDeferredToolDefinition(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		tools, ok := body["tools"].([]any)
+		if !ok || len(tools) != 1 {
+			t.Fatalf("unexpected tools payload: %#v", body["tools"])
+		}
+		tool, ok := tools[0].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected responses tool: %#v", tools[0])
+		}
+		if tool["defer_loading"] != true {
+			t.Fatalf("expected defer_loading=true, got %#v", tool)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Tools: []providers.ToolDefinition{
+			{
+				Name:         "calendar_create",
+				Description:  "create event",
+				InputSchema:  map[string]any{"type": "object"},
+				DeferLoading: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
 	}
 }
 

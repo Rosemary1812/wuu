@@ -25,7 +25,7 @@ func (t *ToolSearchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "tool_search",
 		Description: "Search deferred tools and expose matching tools for the next model turn.\n\n" +
-			"Use this when you need a tool that is not currently visible, especially MCP tools, low-frequency scheduling tools, or lower-level workflow driver overrides.",
+			"Use this when you need a tool that is not currently visible, especially MCP tools, low-frequency scheduling tools, or lower-level workflow driver overrides. The result includes loadable tool definitions for provider-native progressive loading, while the current fallback still exposes matching tools on the next turn.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -68,8 +68,10 @@ func (t *ToolSearchTool) Execute(_ context.Context, argsJSON string) (string, er
 
 	matches := t.toolkit.searchDeferredTools(query, limit)
 	names := make([]string, 0, len(matches))
+	loadableTools := make([]providers.LoadableToolDefinition, 0, len(matches))
 	for _, match := range matches {
 		names = append(names, match.Name)
+		loadableTools = append(loadableTools, match.LoadableTool)
 	}
 	t.toolkit.activateDeferredTools(names...)
 
@@ -78,18 +80,20 @@ func (t *ToolSearchTool) Execute(_ context.Context, argsJSON string) (string, er
 		"query":             query,
 		"matched":           len(matches),
 		"exposed_tools":     names,
+		"loadable_tools":    loadableTools,
 		"tools":             matches,
 		"visible_next_turn": len(matches) > 0,
 	})
 }
 
 type toolSearchMatch struct {
-	Name            string   `json:"name"`
-	Kind            ToolKind `json:"kind"`
-	Description     string   `json:"description"`
-	ReadOnly        bool     `json:"read_only"`
-	ConcurrencySafe bool     `json:"concurrency_safe"`
-	Score           int      `json:"score"`
+	Name            string                           `json:"name"`
+	Kind            ToolKind                         `json:"kind"`
+	Description     string                           `json:"description"`
+	ReadOnly        bool                             `json:"read_only"`
+	ConcurrencySafe bool                             `json:"concurrency_safe"`
+	Score           int                              `json:"score"`
+	LoadableTool    providers.LoadableToolDefinition `json:"-"`
 }
 
 func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch {
@@ -115,6 +119,7 @@ func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch
 			ReadOnly:        tool.IsReadOnly(),
 			ConcurrencySafe: tool.IsConcurrencySafe(),
 			Score:           score,
+			LoadableTool:    providers.LoadableToolFromDefinition(def),
 		})
 	}
 	sort.SliceStable(matches, func(i, j int) bool {

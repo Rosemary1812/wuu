@@ -113,11 +113,12 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		payload.Tools = make([]responsesToolDefinition, 0, len(req.Tools))
 		for _, tool := range req.Tools {
 			payload.Tools = append(payload.Tools, responsesToolDefinition{
-				Type:        "function",
-				Name:        tool.Name,
-				Description: tool.Description,
-				Strict:      false,
-				Parameters:  responsesToolParameters(providers.ToolInputSchemaForModel(req.Model, tool.InputSchema)),
+				Type:         "function",
+				Name:         tool.Name,
+				Description:  tool.Description,
+				Strict:       false,
+				DeferLoading: tool.DeferLoading,
+				Parameters:   responsesToolParameters(providers.ToolInputSchemaForModel(req.Model, tool.InputSchema)),
 			})
 		}
 	}
@@ -711,11 +712,12 @@ type responsesInputContentPart struct {
 }
 
 type responsesToolDefinition struct {
-	Type        string         `json:"type"`
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Strict      bool           `json:"strict"`
-	Parameters  map[string]any `json:"parameters"`
+	Type         string         `json:"type"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description,omitempty"`
+	Strict       bool           `json:"strict"`
+	DeferLoading bool           `json:"defer_loading,omitempty"`
+	Parameters   map[string]any `json:"parameters"`
 }
 
 type responsesResponse struct {

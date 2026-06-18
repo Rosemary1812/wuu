@@ -3307,7 +3307,16 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 		NewToolSearchTool(kit),
 		&stubTool{
 			name: "mcp_docs_search",
-			def:  providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search docs through MCP"},
+			def: providers.ToolDefinition{
+				Name:        "mcp_docs_search",
+				Description: "Search docs through MCP",
+				InputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"query": map[string]any{"type": "string"},
+					},
+				},
+			},
 		},
 	)
 
@@ -3330,8 +3339,9 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
-		Action       string   `json:"action"`
-		ExposedTools []string `json:"exposed_tools"`
+		Action        string                             `json:"action"`
+		ExposedTools  []string                           `json:"exposed_tools"`
+		LoadableTools []providers.LoadableToolDefinition `json:"loadable_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search response: %v", err)
@@ -3341,6 +3351,16 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 	}
 	if !reflect.DeepEqual(parsed.ExposedTools, []string{"mcp_docs_search"}) {
 		t.Fatalf("exposed tools = %+v, want mcp_docs_search", parsed.ExposedTools)
+	}
+	if len(parsed.LoadableTools) != 1 {
+		t.Fatalf("loadable tools = %+v, want one entry", parsed.LoadableTools)
+	}
+	loadable := parsed.LoadableTools[0]
+	if loadable.Type != "function" || loadable.Name != "mcp_docs_search" || !loadable.DeferLoading {
+		t.Fatalf("unexpected loadable tool: %+v", loadable)
+	}
+	if loadable.InputSchema["type"] != "object" {
+		t.Fatalf("loadable tool lost input schema: %+v", loadable.InputSchema)
 	}
 	records := kit.ToolTelemetry()
 	if len(records) == 0 || records[len(records)-1].ResultAction != "tool_search" {

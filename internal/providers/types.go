@@ -11,10 +11,36 @@ type ToolDefinition struct {
 	Name        string
 	Description string
 	InputSchema map[string]any
+	// DeferLoading marks a provider-native loadable tool declaration. It is a
+	// wire-format hint, not an execution policy; runtimes still decide whether a
+	// tool is hidden, deferred, or directly callable.
+	DeferLoading bool
 	// CacheStable marks tools that belong to the stable prompt-cache
 	// prefix. Providers that support tool-level cache markers can place
 	// a breakpoint at the end of the contiguous stable prefix.
 	CacheStable bool
+}
+
+// LoadableToolDefinition is the provider-neutral shape for a tool schema that
+// can be returned by a discovery flow before it is part of the ordinary tool
+// list. Providers can adapt it into native shapes such as Responses
+// tool_search_output.tools or Anthropic tool_reference expansion.
+type LoadableToolDefinition struct {
+	Type         string         `json:"type"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description,omitempty"`
+	InputSchema  map[string]any `json:"input_schema,omitempty"`
+	DeferLoading bool           `json:"defer_loading,omitempty"`
+}
+
+func LoadableToolFromDefinition(def ToolDefinition) LoadableToolDefinition {
+	return LoadableToolDefinition{
+		Type:         "function",
+		Name:         def.Name,
+		Description:  def.Description,
+		InputSchema:  def.InputSchema,
+		DeferLoading: true,
+	}
 }
 
 // ToolCallDisplay carries a user-facing summary for a tool invocation.
