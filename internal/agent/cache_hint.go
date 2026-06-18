@@ -32,11 +32,10 @@ const (
 // treat that summary-bearing system message as part of the cache root so
 // providers can keep reusing it across the remainder of the session.
 //
-// PromptCacheKey is a conversation-scoped hash derived from the stable
-// history root (system prompt, including a compact summary when present,
-// plus the first stable non-system message when available). That keeps
-// the key stable across ordinary turns, while still rotating when
-// compaction rewrites the durable prefix.
+// PromptCacheKey falls back to a hash derived from the stable history
+// root. Thread-aware runners override it with the durable thread ID so
+// OpenAI-compatible prompt-cache routing stays stable across compaction
+// and ordinary turns, matching Codex's thread-scoped key design.
 func buildCacheHint(messages []providers.ChatMessage) *providers.CacheHint {
 	if len(messages) == 0 {
 		return nil
@@ -58,6 +57,17 @@ func buildCacheHint(messages []providers.ChatMessage) *providers.CacheHint {
 		return nil
 	}
 	return hint
+}
+
+func applyPromptCacheKeyOverride(hint **providers.CacheHint, key string) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
+	if *hint == nil {
+		*hint = &providers.CacheHint{}
+	}
+	(*hint).PromptCacheKey = key
 }
 
 func systemMessageCount(messages []providers.ChatMessage) int {

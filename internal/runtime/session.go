@@ -647,6 +647,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 	}
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
+	runner.PromptCacheKey = strings.TrimSpace(id)
 	runner.BeforeRequest = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
@@ -695,6 +696,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		Effort:                  base.Effort,
 		Variant:                 base.Variant,
 		ProviderOptions:         provideroptions.Clone(base.ProviderOptions),
+		PromptCacheKey:          base.PromptCacheKey,
 		StreamReconnectBudget:   base.StreamReconnectBudget,
 		StreamRetryInitialDelay: base.StreamRetryInitialDelay,
 		StreamRetryMaxDelay:     base.StreamRetryMaxDelay,
@@ -748,6 +750,9 @@ func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType) {
 func (s *Session) SetSessionID(id string) {
 	if s == nil || strings.TrimSpace(id) == "" {
 		return
+	}
+	if s.StreamRunner != nil {
+		s.StreamRunner.PromptCacheKey = strings.TrimSpace(id)
 	}
 	if s.Toolkit != nil {
 		s.Toolkit.SetSessionID(id)

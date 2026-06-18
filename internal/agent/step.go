@@ -191,6 +191,9 @@ type LoopConfig struct {
 	// ProviderOptions are provider-specific model options selected by the
 	// active model variant. They are forwarded to ChatRequest.
 	ProviderOptions map[string]any
+	// PromptCacheKey, when set, overrides the content-derived fallback
+	// key in CacheHint for providers with explicit prompt-cache routing.
+	PromptCacheKey string
 }
 
 // LoopResult is what RunToolLoop returns on success.

@@ -101,6 +101,9 @@ type StreamRunner struct {
 	// ProviderOptions carries provider-specific model options selected by the
 	// active model variant.
 	ProviderOptions map[string]any
+	// PromptCacheKey is a stable conversation-scoped cache key forwarded
+	// to providers that support explicit prompt-cache routing.
+	PromptCacheKey string
 
 	// Stream reconnect policy. Zero values use CC-aligned defaults.
 	StreamReconnectBudget   time.Duration // total time for reconnection (default: 2m)
@@ -281,6 +284,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		UsageTracker:    runUsage,
 		Effort:          r.Effort,
 		ProviderOptions: provideroptions.Clone(r.ProviderOptions),
+		PromptCacheKey:  r.PromptCacheKey,
 	}
 
 	res, err := RunToolLoop(ctx, history, cfg, step)

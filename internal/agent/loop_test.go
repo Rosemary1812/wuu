@@ -207,7 +207,7 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 		{Role: "assistant", Content: "answer"},
 		{Role: "user", Content: "latest"},
 	}
-	_, err := RunToolLoop(context.Background(), history, LoopConfig{Model: "m"}, step)
+	_, err := RunToolLoop(context.Background(), history, LoopConfig{Model: "m", PromptCacheKey: "thread-cache-key"}, step)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,8 +224,8 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 	if hint.StablePrefixMessages != 2 {
 		t.Fatalf("expected stable prefix size 2, got %d", hint.StablePrefixMessages)
 	}
-	if hint.PromptCacheKey == "" {
-		t.Fatal("expected prompt cache key")
+	if hint.PromptCacheKey != "thread-cache-key" {
+		t.Fatalf("expected thread prompt cache key, got %q", hint.PromptCacheKey)
 	}
 }
 

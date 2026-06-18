@@ -206,12 +206,14 @@ func RunToolLoop(
 				}
 			}
 		}
+		cacheHint := buildCacheHint(requestMessages)
+		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
 		req := providers.ChatRequest{
 			Model:           cfg.Model,
 			Messages:        requestMessages,
 			Temperature:     cfg.Temperature,
 			MaxTokens:       currentMaxTokens,
-			CacheHint:       buildCacheHint(requestMessages),
+			CacheHint:       cacheHint,
 			Effort:          cfg.Effort,
 			ProviderOptions: provideroptions.Clone(cfg.ProviderOptions),
 		}

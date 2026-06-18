@@ -1450,6 +1450,9 @@ func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	if first.StreamRunner == rt.StreamRunner || second.StreamRunner == rt.StreamRunner || first.StreamRunner == second.StreamRunner {
 		t.Fatal("thread runtimes must not share stream runner instances")
 	}
+	if first.StreamRunner.PromptCacheKey != "thread-a" || second.StreamRunner.PromptCacheKey != "thread-b" {
+		t.Fatalf("unexpected thread prompt cache keys: first=%q second=%q", first.StreamRunner.PromptCacheKey, second.StreamRunner.PromptCacheKey)
+	}
 	if first.AgentControl == nil || second.AgentControl == nil || first.AgentControl == second.AgentControl {
 		t.Fatal("thread runtimes must have distinct agent control instances")
 	}
