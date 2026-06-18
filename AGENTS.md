@@ -24,6 +24,12 @@
 - **Future shells** (VS Code extension, JetBrains plugin, etc.) consume the core by spawning `wuu app-server`. They do not need to import or fork the Go core; they reuse it as a process.
 - A change is **shell-level** when it touches `desktop/` only (UI, native APIs, packaging). A change is **core-level** when it touches `internal/` or `cmd/wuu/`. Keep this boundary clean: do not let the shell leak into the core, and do not let the core depend on Electron APIs.
 
+## Agent-Friendly Text Entrypoint
+
+- Wuu has no TUI. Use Electron for human interaction and `wuu exec` for agents, scripts, CI, and automation.
+- When an agent modifies Wuu's agent-facing runtime, verify the product path with `wuu exec --json` or the `wuu debug app-server ...` protocol probes when practical. Do not rely on `wuu run` as a separate behavior; it is a legacy wrapper around `wuu exec`.
+- Preserve automation-safe output: default `wuu exec` stdout is only the final answer, JSON mode stdout is only JSONL, and diagnostics belong on stderr.
+
 ## Intent First
 
 - Must start from the user's real goal before optimizing local implementation details. The current codebase is context, not the primary definition of what should be built.
