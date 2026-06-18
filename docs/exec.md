@@ -63,6 +63,27 @@ use this log to fix the bug
 
 Empty input fails before a turn is started.
 
+`--input-json` reads a machine input object from stdin:
+
+```bash
+wuu exec --input-json <<'JSON'
+{
+  "prompt": "use this log to fix the bug",
+  "stdin": "panic: boom",
+  "files": ["report.pdf"],
+  "images": ["screenshot.png"],
+  "workdir": "/repo",
+  "json": true,
+  "ephemeral": true
+}
+JSON
+```
+
+`prompt` and `stdin` are combined the same way as positional prompt plus piped
+stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
+The object can also set `provider`, `model`, `effort`, `variant`,
+`permission_mode`, `no_tools`, `timeout`, and `output_last_message`.
+
 ## Resume
 
 ```bash
@@ -160,6 +181,7 @@ Current implemented flags:
 --no-tools
 --json
 --ephemeral
+--input-json
 --timeout <duration>
 --output-last-message <file>
 ```
@@ -169,7 +191,6 @@ Target flags that still need implementation:
 ```bash
 --max-turns <n>
 --output-schema <schema.json>
---input-json
 --approval-handler <command>
 --approval-socket <path>
 --config <path>

@@ -1187,6 +1187,7 @@ type execCLIConfig struct {
 	timeout           *time.Duration
 	ephemeral         *bool
 	outputLastMessage *string
+	inputJSON         *bool
 	maxTurns          *int
 	outputSchema      *string
 }
@@ -1242,11 +1243,15 @@ func runExec(args []string) error {
 	if err := validateExecFlags(cfg); err != nil {
 		return err
 	}
-	prompt, err := resolveExecPrompt(fs.Args(), hasExecAttachments(cfg))
+	prompt, input, err := resolveExecPromptAndInput(cfg, fs.Args(), hasExecAttachments(cfg))
 	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
-	return runExecWithPrompt(prompt, execOptionsFromCLI(cfg, prompt, "", false))
+	opts, err := execOptionsFromCLI(cfg, prompt, "", false, input)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	return runExecWithPrompt(prompt, opts)
 }
 
 func runExecResume(args []string) error {
@@ -1274,11 +1279,15 @@ func runExecResume(args []string) error {
 		threadID = strings.TrimSpace(remaining[0])
 		remaining = remaining[1:]
 	}
-	prompt, err := resolveExecPrompt(remaining, hasExecAttachments(cfg))
+	prompt, input, err := resolveExecPromptAndInput(cfg, remaining, hasExecAttachments(cfg))
 	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
-	return runExecWithPrompt(prompt, execOptionsFromCLI(cfg, prompt, threadID, *last))
+	opts, err := execOptionsFromCLI(cfg, prompt, threadID, *last, input)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	return runExecWithPrompt(prompt, opts)
 }
 
 func runExecFork(args []string) error {
@@ -1299,11 +1308,14 @@ func runExecFork(args []string) error {
 	if forkID == "" {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("fork requires a thread id"))
 	}
-	prompt, err := resolveExecPrompt(remaining[1:], hasExecAttachments(cfg))
+	prompt, input, err := resolveExecPromptAndInput(cfg, remaining[1:], hasExecAttachments(cfg))
 	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
-	opts := execOptionsFromCLI(cfg, prompt, "", false)
+	opts, err := execOptionsFromCLI(cfg, prompt, "", false, input)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
 	opts.ForkID = forkID
 	return runExecWithPrompt(prompt, opts)
 }
@@ -1321,11 +1333,18 @@ func runExecReview(args []string) error {
 	if err := validateExecFlags(cfg); err != nil {
 		return err
 	}
+	if valueOfBoolFlag(cfg.inputJSON) {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec review does not support --input-json"))
+	}
 	prompt, err := reviewPromptFromFlags(*uncommitted, *base, *commit, fs.Args())
 	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
-	return runExecWithPrompt(prompt, execOptionsFromCLI(cfg, prompt, "", false))
+	opts, err := execOptionsFromCLI(cfg, prompt, "", false, nil)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	return runExecWithPrompt(prompt, opts)
 }
 
 func reviewPromptFromFlags(uncommitted bool, base, commit string, extraArgs []string) (string, error) {
@@ -1384,6 +1403,7 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		timeout:           fs.Duration("timeout", 0, "total timeout (e.g. 20m)"),
 		ephemeral:         fs.Bool("ephemeral", false, "run without creating a persistent session"),
 		outputLastMessage: fs.String("output-last-message", "", "write final agent message to a file"),
+		inputJSON:         fs.Bool("input-json", false, "read machine input JSON from stdin"),
 		maxTurns:          fs.Int("max-turns", 0, "max agent turns"),
 		outputSchema:      fs.String("output-schema", "", "JSON schema for structured final output"),
 	}
@@ -1404,8 +1424,28 @@ func validateExecFlags(cfg execCLIConfig) error {
 	return nil
 }
 
-func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast bool) wuuexec.Options {
-	return wuuexec.Options{
+type execInputPayload struct {
+	Prompt            string                     `json:"prompt"`
+	Stdin             string                     `json:"stdin"`
+	Files             []string                   `json:"files"`
+	Images            []string                   `json:"images"`
+	FileAttachments   []appserver.TurnStartFile  `json:"file_attachments"`
+	ImageAttachments  []appserver.TurnStartImage `json:"image_attachments"`
+	Workdir           string                     `json:"workdir"`
+	Provider          string                     `json:"provider"`
+	Model             string                     `json:"model"`
+	Effort            string                     `json:"effort"`
+	Variant           string                     `json:"variant"`
+	PermissionMode    string                     `json:"permission_mode"`
+	NoTools           *bool                      `json:"no_tools"`
+	JSON              *bool                      `json:"json"`
+	Ephemeral         *bool                      `json:"ephemeral"`
+	Timeout           string                     `json:"timeout"`
+	OutputLastMessage string                     `json:"output_last_message"`
+}
+
+func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast bool, input *execInputPayload) (wuuexec.Options, error) {
+	opts := wuuexec.Options{
 		Prompt:            prompt,
 		ImagePaths:        stringListValues(cfg.images),
 		FilePaths:         stringListValues(cfg.files),
@@ -1426,12 +1466,83 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		Stderr:            os.Stderr,
 		Controller:        execControllerOverride,
 	}
+	if err := applyExecInputPayload(&opts, input); err != nil {
+		return wuuexec.Options{}, err
+	}
+	return opts, nil
+}
+
+func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error {
+	if opts == nil || input == nil {
+		return nil
+	}
+	opts.FilePaths = append(opts.FilePaths, input.Files...)
+	opts.ImagePaths = append(opts.ImagePaths, input.Images...)
+	opts.Attachments.Files = append(opts.Attachments.Files, input.FileAttachments...)
+	opts.Attachments.Images = append(opts.Attachments.Images, input.ImageAttachments...)
+	if opts.Workdir == "" {
+		opts.Workdir = strings.TrimSpace(input.Workdir)
+	}
+	if opts.Provider == "" {
+		opts.Provider = strings.TrimSpace(input.Provider)
+	}
+	if opts.Model == "" {
+		opts.Model = strings.TrimSpace(input.Model)
+	}
+	if opts.Effort == "" {
+		opts.Effort = strings.TrimSpace(input.Effort)
+	}
+	if opts.Variant == "" {
+		opts.Variant = strings.TrimSpace(input.Variant)
+	}
+	if opts.PermissionMode == "" {
+		opts.PermissionMode = strings.TrimSpace(input.PermissionMode)
+	}
+	if input.NoTools != nil && !opts.NoTools {
+		opts.NoTools = *input.NoTools
+	}
+	if input.JSON != nil && !opts.JSON {
+		opts.JSON = *input.JSON
+	}
+	if input.Ephemeral != nil && !opts.Ephemeral {
+		opts.Ephemeral = *input.Ephemeral
+	}
+	if opts.OutputLastMessage == "" {
+		opts.OutputLastMessage = strings.TrimSpace(input.OutputLastMessage)
+	}
+	if opts.Timeout == 0 && strings.TrimSpace(input.Timeout) != "" {
+		timeout, err := time.ParseDuration(strings.TrimSpace(input.Timeout))
+		if err != nil {
+			return fmt.Errorf("parse input_json.timeout: %w", err)
+		}
+		opts.Timeout = timeout
+	}
+	return nil
 }
 
 func runExecWithPrompt(prompt string, opts wuuexec.Options) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	return wuuexec.Run(ctx, opts)
+}
+
+func resolveExecPromptAndInput(cfg execCLIConfig, args []string, allowEmpty bool) (string, *execInputPayload, error) {
+	if !valueOfBoolFlag(cfg.inputJSON) {
+		prompt, err := resolveExecPrompt(args, allowEmpty)
+		return prompt, nil, err
+	}
+	if len(args) > 0 {
+		return "", nil, errors.New("positional prompt is not allowed with --input-json")
+	}
+	input, err := readExecInputPayload(os.Stdin, stdinHasInput())
+	if err != nil {
+		return "", nil, err
+	}
+	prompt := input.promptText()
+	if prompt == "" && !allowEmpty && !input.hasAttachments() {
+		return "", nil, errors.New("prompt is required in --input-json input")
+	}
+	return prompt, input, nil
 }
 
 func resolveExecPrompt(args []string, allowEmpty bool) (string, error) {
@@ -1441,6 +1552,43 @@ func resolveExecPrompt(args []string, allowEmpty bool) (string, error) {
 		StdinIsPipe: stdinHasInput(),
 		AllowEmpty:  allowEmpty,
 	})
+}
+
+func readExecInputPayload(r io.Reader, stdinIsPipe bool) (*execInputPayload, error) {
+	if !stdinIsPipe {
+		return nil, errors.New("--input-json requires JSON on stdin")
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("read input JSON: %w", err)
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return nil, errors.New("--input-json input is empty")
+	}
+	var input execInputPayload
+	if err := json.Unmarshal(data, &input); err != nil {
+		return nil, fmt.Errorf("decode input JSON: %w", err)
+	}
+	return &input, nil
+}
+
+func (p *execInputPayload) promptText() string {
+	if p == nil {
+		return ""
+	}
+	prompt := strings.TrimSpace(p.Prompt)
+	stdinText := strings.TrimSpace(p.Stdin)
+	if prompt != "" && stdinText != "" {
+		return prompt + "\n\n<stdin>\n" + stdinText + "\n</stdin>"
+	}
+	if prompt != "" {
+		return prompt
+	}
+	return stdinText
+}
+
+func (p *execInputPayload) hasAttachments() bool {
+	return p != nil && (len(p.Files) > 0 || len(p.Images) > 0 || len(p.FileAttachments) > 0 || len(p.ImageAttachments) > 0)
 }
 
 func stringListValues(f *stringListFlag) []string {

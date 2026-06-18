@@ -205,6 +205,69 @@ func TestRunExecPassesFileAndImageAttachments(t *testing.T) {
 	}
 }
 
+func TestRunExecInputJSONUsesMachineInput(t *testing.T) {
+	workdir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workdir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workdir, "report.pdf"), []byte("%PDF-1.7\n"), 0o644); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "ok"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+	input := `{
+		"prompt": "use this log",
+		"stdin": "panic: boom",
+		"workdir": "` + filepath.ToSlash(workdir) + `",
+		"provider": "p",
+		"model": "m",
+		"json": true,
+		"ephemeral": true,
+		"files": ["report.pdf"],
+		"images": ["shot.png"]
+	}`
+
+	output := withStdin(t, input, func() string {
+		return captureStdout(t, func() {
+			if err := run([]string{"exec", "--input-json"}); err != nil {
+				t.Fatalf("run exec input JSON: %v", err)
+			}
+		})
+	})
+
+	if controller.startedPrompt != "use this log\n\n<stdin>\npanic: boom\n</stdin>" {
+		t.Fatalf("prompt = %q", controller.startedPrompt)
+	}
+	if !controller.startEphemeral {
+		t.Fatalf("expected ephemeral start: %+v", controller)
+	}
+	if len(controller.startedFiles) != 1 || controller.startedFiles[0].Filename != "report.pdf" {
+		t.Fatalf("unexpected file attachments: %+v", controller.startedFiles)
+	}
+	if len(controller.startedImages) != 1 || controller.startedImages[0].MediaType != "image/png" {
+		t.Fatalf("unexpected image attachments: %+v", controller.startedImages)
+	}
+	events := parseCLIJSONLines(t, output)
+	if got := events[0]["type"]; got != "session_configured" {
+		t.Fatalf("expected JSONL output from input JSON, got %v\n%s", got, output)
+	}
+}
+
+func TestRunExecInputJSONRejectsPositionalPrompt(t *testing.T) {
+	err := withStdin(t, `{"prompt":"hello"}`, func() error {
+		return run([]string{"exec", "--input-json", "extra"})
+	})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "positional prompt") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunExecAllowsAttachmentOnlyPrompt(t *testing.T) {
 	workdir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workdir, "report.pdf"), []byte("%PDF-1.7\n"), 0o644); err != nil {
@@ -1416,6 +1479,28 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 
 	return strings.TrimSpace(buf.String())
+}
+
+func withStdin[T any](t *testing.T, text string, fn func() T) T {
+	t.Helper()
+
+	oldStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdin pipe: %v", err)
+	}
+	if _, err := io.WriteString(w, text); err != nil {
+		t.Fatalf("write stdin pipe: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdin writer: %v", err)
+	}
+	os.Stdin = r
+	defer func() {
+		os.Stdin = oldStdin
+		_ = r.Close()
+	}()
+	return fn()
 }
 
 type cliExecFakeController struct {
