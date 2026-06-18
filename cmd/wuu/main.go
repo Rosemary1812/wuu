@@ -14,11 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
-	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -46,7 +44,7 @@ func run(args []string) error {
 	case "models":
 		return runModels(args[1:])
 	case "run":
-		return runTask(args[1:])
+		return runLegacyRun(args[1:])
 	case "exec":
 		return runExec(args[1:])
 	case "probe-title":
@@ -1195,6 +1193,34 @@ type execCLIConfig struct {
 
 var execControllerOverride wuuexec.Controller
 
+func runLegacyRun(args []string) error {
+	if flagName, ok := firstLegacyRunOnlyFlag(args); ok {
+		return wuuexec.WithExitCode(
+			wuuexec.ExitInvalidInput,
+			fmt.Errorf("wuu run is now a compatibility wrapper around wuu exec; %s is not supported by the app-server path", flagName),
+		)
+	}
+	return runExec(args)
+}
+
+func firstLegacyRunOnlyFlag(args []string) (string, bool) {
+	for _, arg := range args {
+		if arg == "--" || arg == "-" || !strings.HasPrefix(arg, "-") {
+			return "", false
+		}
+		name := strings.TrimLeft(arg, "-")
+		if name == "" {
+			return "", false
+		}
+		name, _, _ = strings.Cut(name, "=")
+		switch name {
+		case "max-steps", "temperature", "system-prompt":
+			return "--" + name, true
+		}
+	}
+	return "", false
+}
+
 func runExec(args []string) error {
 	if len(args) > 0 {
 		switch args[0] {
@@ -1389,183 +1415,6 @@ func valueOfDurationFlag(v *time.Duration) time.Duration {
 	return *v
 }
 
-func runTask(args []string) error {
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
-	providerName := fs.String("provider", "", "provider name in config")
-	modelOverride := fs.String("model", "", "model override")
-	maxSteps := fs.Int("max-steps", 0, "max tool loop steps")
-	temperature := fs.Float64("temperature", -1, "sampling temperature override")
-	systemPrompt := fs.String("system-prompt", "", "system prompt override")
-	workdir := fs.String("workdir", "", "workspace directory")
-	noTools := fs.Bool("no-tools", false, "disable local tools")
-	timeout := fs.Duration("timeout", 10*time.Minute, "request timeout (e.g. 5m)")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	rootDir, err := resolveWorkdir(*workdir)
-	if err != nil {
-		return err
-	}
-
-	cfg, configPath, err := config.LoadFrom(rootDir, os.Getenv("HOME"))
-	if err != nil {
-		return err
-	}
-
-	rt, err := runtime.NewSession(runtime.Options{
-		RootDir:       rootDir,
-		HomeDir:       os.Getenv("HOME"),
-		ConfigPath:    configPath,
-		Config:        cfg,
-		ProviderName:  *providerName,
-		ModelOverride: *modelOverride,
-		NoTools:       *noTools,
-	})
-	if err != nil {
-		return err
-	}
-	defer rt.Cleanup()
-	cliSessionID := "cli-" + session.NewID()
-	rt.SetSessionID(cliSessionID)
-
-	runner := rt.StreamRunner
-	if runner == nil {
-		return errors.New("stream runner is not configured")
-	}
-	if *maxSteps > 0 {
-		runner.MaxSteps = *maxSteps
-	}
-	if *temperature >= 0 {
-		runner.Temperature = *temperature
-	}
-	if strings.TrimSpace(*systemPrompt) != "" {
-		runner.SystemPrompt = *systemPrompt
-	}
-
-	prompt, err := resolvePrompt(fs.Args())
-	if err != nil {
-		return err
-	}
-
-	ctx := context.Background()
-	if *timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, *timeout)
-		defer cancel()
-	}
-
-	toolRecordStart := 0
-	if rt.Toolkit != nil {
-		toolRecordStart = len(rt.Toolkit.ToolTelemetry())
-	}
-	var contextRequests []sessiontrace.RequestContextRecord
-	baseOnRequestContext := runner.OnRequestContext
-	runner.OnRequestContext = func(info agent.RequestContextInfo) {
-		if baseOnRequestContext != nil {
-			baseOnRequestContext(info)
-		}
-		contextRequests = append(contextRequests, sessionTraceRequestContext(info))
-	}
-	defer func() {
-		runner.OnRequestContext = baseOnRequestContext
-	}()
-	startedAt := time.Now().UTC()
-	history := cliRunInitialHistory(runner, prompt)
-	res, err := runner.RunWithCallback(ctx, history, runner.OnEvent)
-	completedAt := time.Now().UTC()
-	tracePath, traceErr := persistCLIRunTrace(rt, runner, cliSessionID, startedAt, completedAt, res, err, toolRecordStart, contextRequests)
-	if traceErr != nil {
-		fmt.Fprintf(os.Stderr, "warning: write session trace: %v\n", traceErr)
-	}
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("provider: %s\nmodel: %s\nconfig: %s\n", rt.ProviderName, rt.Model, configPath)
-	if tracePath != "" {
-		fmt.Printf("trace_path: %s\n", tracePath)
-	}
-	fmt.Println()
-	fmt.Println(res.Content)
-	return nil
-}
-
-func cliRunInitialHistory(runner *agent.StreamRunner, prompt string) []providers.ChatMessage {
-	var history []providers.ChatMessage
-	if runner != nil && strings.TrimSpace(runner.SystemPrompt) != "" {
-		history = append(history, providers.ChatMessage{Role: "system", Content: runner.SystemPrompt})
-	}
-	return append(history, providers.ChatMessage{Role: "user", Content: prompt})
-}
-
-func persistCLIRunTrace(rt *runtime.Session, runner *agent.StreamRunner, sessionID string, startedAt, completedAt time.Time, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord) (string, error) {
-	if rt == nil || rt.Toolkit == nil {
-		return "", nil
-	}
-	tracePath := sessiontrace.Path(rt.Toolkit.SessionDir())
-	if strings.TrimSpace(tracePath) == "" {
-		return "", nil
-	}
-	status := "completed"
-	errorText := ""
-	if runErr != nil {
-		status = "failed"
-		errorText = runErr.Error()
-	}
-	durationMS := completedAt.Sub(startedAt).Milliseconds()
-	model := ""
-	apiModel := ""
-	if runner != nil {
-		model = runner.Model
-		apiModel = runner.APIModel
-	}
-	turn := sessiontrace.TurnRecord{
-		ThreadID:         sessionID,
-		TurnID:           sessionID + "-turn-1",
-		Status:           status,
-		ProviderName:     rt.ProviderName,
-		Model:            model,
-		APIModel:         apiModel,
-		ModelProfile:     sessiontrace.NewModelProfileRecord(rt.ProviderName, model, apiModel),
-		StartedAt:        &startedAt,
-		CompletedAt:      &completedAt,
-		DurationMS:       &durationMS,
-		InputTokens:      res.InputTokens,
-		OutputTokens:     res.OutputTokens,
-		HistoryRewritten: res.HistoryRewritten,
-		Error:            errorText,
-	}
-	final := sessiontrace.FinalRecord{
-		Status:             status,
-		InputTokens:        res.InputTokens,
-		OutputTokens:       res.OutputTokens,
-		FinalAnswerPreview: res.Content,
-		Error:              errorText,
-	}
-	records := rt.Toolkit.ToolTelemetry()
-	if toolRecordStart > 0 && toolRecordStart < len(records) {
-		records = records[toolRecordStart:]
-	} else if toolRecordStart >= len(records) {
-		records = nil
-	}
-	if err := sessiontrace.AppendTurn(tracePath, turn, final, rt.Toolkit.ToolInfos(), records, contextRequests); err != nil {
-		return "", err
-	}
-	return tracePath, nil
-}
-
-func sessionTraceRequestContext(info agent.RequestContextInfo) sessiontrace.RequestContextRecord {
-	return sessiontrace.RequestContextRecord{
-		StepIndex:         info.StepIndex,
-		TransientMessages: info.TransientMessages,
-		ContentBytes:      info.ContentBytes,
-		BlockKinds:        append([]string(nil), info.BlockKinds...),
-	}
-}
-
 func runAppServer(args []string) error {
 	fs := flag.NewFlagSet("app-server", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -1692,29 +1541,6 @@ func resolveRuntimePath(rootDir, input string) (string, error) {
 	return filepath.Join(rootDir, value), nil
 }
 
-func resolvePrompt(args []string) (string, error) {
-	if len(args) > 0 {
-		prompt := strings.TrimSpace(strings.Join(args, " "))
-		if prompt != "" {
-			return prompt, nil
-		}
-	}
-
-	if !stdinHasInput() {
-		return "", errors.New("prompt is required (pass text or pipe stdin)")
-	}
-
-	data, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		return "", fmt.Errorf("read stdin: %w", err)
-	}
-	prompt := strings.TrimSpace(string(data))
-	if prompt == "" {
-		return "", errors.New("prompt is empty")
-	}
-	return prompt, nil
-}
-
 func stdinHasInput() bool {
 	info, err := os.Stdin.Stat()
 	if err != nil {
@@ -1786,15 +1612,10 @@ Debug commands:
   protocol events [--json] [--workdir DIR] THREAD_ID
                    print trace JSONL events recorded for a session
 
-Run flags:
-  --provider        provider name from config
-  --model           model override
-  --max-steps       max tool loop steps
-  --temperature     temperature override
-  --system-prompt   system prompt override
-  --workdir         workspace directory
-  --no-tools        disable local tools
-  --timeout         total timeout (default 10m)
+Legacy run:
+  wuu run forwards to wuu exec. Use Exec flags for new automation.
+  Legacy-only flags --max-steps, --temperature, and --system-prompt are not
+  supported by the app-server path.
 
 Eval flags:
   --provider        provider name from config

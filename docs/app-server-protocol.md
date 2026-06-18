@@ -51,7 +51,8 @@ shutdown
 ```
 
 It must not call `StreamRunner.RunWithCallback` directly for the target path.
-The direct runner path is legacy compatibility only.
+Legacy `wuu run` forwards to `wuu exec` so CLI text automation uses the
+app-server path.
 
 ## Core Methods
 

@@ -10,9 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
@@ -221,6 +219,44 @@ func TestRunExecRejectsUnimplementedMaxTurnsWithExitCodeTwo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--max-turns is not implemented") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCommandForwardsToExecControllerPath(t *testing.T) {
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "run result"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"run", "--json", "hello from legacy run"}); err != nil {
+			t.Fatalf("run legacy run: %v", err)
+		}
+	})
+
+	if !controller.startedThread || controller.startedPrompt != "hello from legacy run" {
+		t.Fatalf("run did not use expected exec controller path: %+v", controller)
+	}
+	events := parseCLIJSONLines(t, output)
+	if got := events[len(events)-1]["type"]; got != "result" {
+		t.Fatalf("last event = %v, want result\n%s", got, output)
+	}
+}
+
+func TestRunCommandRejectsLegacyOnlyFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"run", "--max-steps", "3", "hello"},
+		{"run", "--temperature=0.2", "hello"},
+		{"run", "--system-prompt", "be terse", "hello"},
+	} {
+		err := run(args)
+		if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+			t.Fatalf("ExitCode(%v) = %d, err=%v", args, wuuexec.ExitCode(err), err)
+		}
+		if err == nil || !strings.Contains(err.Error(), "compatibility wrapper around wuu exec") {
+			t.Fatalf("unexpected error for %v: %v", args, err)
+		}
 	}
 }
 
@@ -886,99 +922,6 @@ func TestPersistEvalTraceWritesSessionArtifact(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"type":"model_profile"`) || !strings.Contains(string(data), `"type":"final"`) {
 		t.Fatalf("trace missing expected events:\n%s", string(data))
-	}
-}
-
-func TestPersistCLIRunTraceWritesSessionArtifact(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "target.txt"), []byte("hello\n"), 0o644); err != nil {
-		t.Fatalf("write target: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "old.txt"), []byte("old\n"), 0o644); err != nil {
-		t.Fatalf("write old fixture: %v", err)
-	}
-	kit, err := tools.New(root)
-	if err != nil {
-		t.Fatalf("tools.New: %v", err)
-	}
-	sessionDir := filepath.Join(t.TempDir(), "session-artifacts")
-	kit.SetSessionDir(sessionDir)
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		ID:        "old-call",
-		Name:      "read_file",
-		Arguments: `{"path":"old.txt"}`,
-	}); err != nil {
-		t.Fatalf("old read: %v", err)
-	}
-	toolRecordStart := len(kit.ToolTelemetry())
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		ID:        "new-call",
-		Name:      "read_file",
-		Arguments: `{"path":"target.txt"}`,
-	}); err != nil {
-		t.Fatalf("new read: %v", err)
-	}
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		ID:        "new-call-repeat",
-		Name:      "read_file",
-		Arguments: `{"path":"target.txt"}`,
-	}); err != nil {
-		t.Fatalf("repeat read: %v", err)
-	}
-
-	startedAt := time.Now().UTC().Add(-time.Second)
-	completedAt := time.Now().UTC()
-	tracePath, err := persistCLIRunTrace(
-		&runtime.Session{ProviderName: "openai", Toolkit: kit},
-		&agent.StreamRunner{Model: "gpt-test", APIModel: "gpt-test-api"},
-		"cli-session-1",
-		startedAt,
-		completedAt,
-		agent.LoopResult{Content: "done", InputTokens: 11, OutputTokens: 7},
-		nil,
-		toolRecordStart,
-		[]sessiontrace.RequestContextRecord{{
-			StepIndex:         0,
-			TransientMessages: 1,
-			ContentBytes:      120,
-			BlockKinds:        []string{"ENVIRONMENT", "TOOL_POLICY"},
-		}},
-	)
-	if err != nil {
-		t.Fatalf("persistCLIRunTrace: %v", err)
-	}
-	if tracePath != sessiontrace.Path(sessionDir) {
-		t.Fatalf("trace path = %q, want %q", tracePath, sessiontrace.Path(sessionDir))
-	}
-	summary, err := sessiontrace.ReplayTrace(tracePath)
-	if err != nil {
-		t.Fatalf("replay session trace: %v", err)
-	}
-	if summary.Mode != "session_trace_replay" || summary.LatestTurn == nil || summary.LatestTurn.ThreadID != "cli-session-1" {
-		t.Fatalf("unexpected replay summary: %+v", summary)
-	}
-	if summary.LatestTurn.InputTokens != 11 || summary.LatestTurn.OutputTokens != 7 || summary.Final == nil || summary.Final.FinalAnswerPreview != "done" {
-		t.Fatalf("trace did not preserve final metadata: %+v", summary)
-	}
-	if summary.LatestTurn.ModelProfile == nil ||
-		summary.LatestTurn.ModelProfile.Family != "gpt" ||
-		summary.LatestTurn.ModelProfile.DefaultWriteMode != "patch" {
-		t.Fatalf("trace should include model profile strategy: %+v", summary.LatestTurn.ModelProfile)
-	}
-	if len(summary.ToolNames) != 2 || summary.ToolNames[0] != "read_file" || summary.ToolNames[1] != "read_file" {
-		t.Fatalf("trace should include only this run's tool record: %+v", summary.ToolNames)
-	}
-	if summary.ToolSummary == nil ||
-		len(summary.ToolSummary.RepeatedArguments) != 1 ||
-		summary.ToolSummary.RepeatedArguments[0].ToolName != "read_file" ||
-		summary.ToolSummary.RepeatedArguments[0].Count != 2 ||
-		summary.ToolSummary.RepeatedArguments[0].ArgumentsSHA256 == "" {
-		t.Fatalf("trace should summarize repeated tool arguments: %+v", summary.ToolSummary)
-	}
-	if len(summary.ContextRequests) != 1 ||
-		summary.ContextRequests[0].TransientMessages != 1 ||
-		!containsString(summary.ContextBlockKinds, "TOOL_POLICY") {
-		t.Fatalf("trace should preserve request context metadata: %+v", summary)
 	}
 }
 

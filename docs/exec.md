@@ -205,6 +205,8 @@ They must not silently approve destructive work.
 
 ## Legacy `wuu run`
 
-`wuu run` is the old one-shot CLI runner. The target migration is to make it a
-legacy wrapper around `wuu exec`, so future non-interactive product behavior is
-defined by `wuu exec`.
+`wuu run` is a legacy compatibility wrapper around `wuu exec`, so
+non-interactive product behavior is defined by the app-server-backed exec path.
+
+Legacy run-only flags such as `--max-steps`, `--temperature`, and
+`--system-prompt` are not supported by the app-server path and fail clearly.
