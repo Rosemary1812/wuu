@@ -55,6 +55,73 @@ func TestChat_TextResponse(t *testing.T) {
 	}
 }
 
+func TestChat_ToolSearchNativeAddsBetaHeaderWhenExplicitlyEnabled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("anthropic-beta"); !strings.Contains(got, toolSearchBetaHeader1P) {
+			t.Fatalf("expected tool search beta header, got %q", got)
+		}
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "claude-sonnet-4-5",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+		},
+		ProviderOptions: map[string]any{"anthropicToolSearch": true},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+func TestChat_ToolSearchNativeMergesConfiguredBetaHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		got := r.Header.Get("anthropic-beta")
+		if !strings.Contains(got, toolSearchBetaHeader1P) || !strings.Contains(got, "fast-mode-2026-02-01") {
+			t.Fatalf("expected merged beta header, got %q", got)
+		}
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Headers: map[string]string{"anthropic-beta": "fast-mode-2026-02-01"},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "claude-sonnet-4-5",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+		},
+		ProviderOptions: map[string]any{"anthropicToolSearch": true},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_AnthropicReplaysReasoningBlocksForAssistantToolUse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -311,11 +378,15 @@ func TestBuildAnthropicRequest_SmooshesSystemReminderIntoToolResult(t *testing.T
 	if last.Content[0].Type != "tool_result" {
 		t.Fatalf("expected tool_result block, got %+v", last.Content[0])
 	}
-	if !strings.Contains(last.Content[0].Content, `{"exit_code":0}`) {
-		t.Fatalf("expected tool output to be preserved, got %q", last.Content[0].Content)
+	content, ok := last.Content[0].Content.(string)
+	if !ok {
+		t.Fatalf("expected string tool_result content, got %#v", last.Content[0].Content)
 	}
-	if !strings.Contains(last.Content[0].Content, "<system-reminder>") {
-		t.Fatalf("expected system reminder to be folded into tool_result, got %q", last.Content[0].Content)
+	if !strings.Contains(content, `{"exit_code":0}`) {
+		t.Fatalf("expected tool output to be preserved, got %q", content)
+	}
+	if !strings.Contains(content, "<system-reminder>") {
+		t.Fatalf("expected system reminder to be folded into tool_result, got %q", content)
 	}
 }
 
@@ -399,6 +470,129 @@ func TestBuildAnthropicRequest_CachesStableToolPrefix(t *testing.T) {
 	}
 	if payload.Tools[2].CacheControl != nil {
 		t.Fatalf("did not expect cache_control on dynamic tool: %+v", payload.Tools[2].CacheControl)
+	}
+}
+
+func TestBuildAnthropicRequest_ToolSearchNativeEnabledUsesToolReferences(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "find docs"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID:        "search_1",
+				Name:      "tool_search",
+				Kind:      providers.ToolCallKindToolSearch,
+				Arguments: `{"query":"docs"}`,
+			}}},
+			{
+				Role:           "tool",
+				Name:           "tool_search",
+				ToolCallID:     "search_1",
+				ToolResultKind: providers.ToolCallKindToolSearch,
+				Content: `{
+  "loadable_tools": [
+    {
+      "type": "function",
+      "name": "mcp_docs_search",
+      "description": "Search docs through MCP",
+      "input_schema": {"type":"object","properties":{"query":{"type":"string"}}},
+      "defer_loading": true
+    }
+  ]
+}`,
+			},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}, CacheStable: true},
+			{Name: "mcp_docs_search", InputSchema: map[string]any{"type": "object"}},
+		},
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://api.anthropic.com"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Betas) != 1 || payload.Betas[0] != toolSearchBetaHeader1P {
+		t.Fatalf("expected tool search beta, got %+v", payload.Betas)
+	}
+	if len(payload.Tools) != 2 {
+		t.Fatalf("expected 2 tools, got %+v", payload.Tools)
+	}
+	if payload.Tools[0].DeferLoading {
+		t.Fatalf("tool_search itself should not be defer_loading: %+v", payload.Tools[0])
+	}
+	if !payload.Tools[1].DeferLoading {
+		t.Fatalf("discovered tool should be defer_loading: %+v", payload.Tools[1])
+	}
+	last := payload.Messages[len(payload.Messages)-1]
+	if len(last.Content) != 1 || last.Content[0].Type != "tool_result" {
+		t.Fatalf("unexpected final message: %+v", last)
+	}
+	refs, ok := last.Content[0].Content.([]anthropicBlock)
+	if !ok || len(refs) != 1 {
+		t.Fatalf("expected tool_reference content, got %#v", last.Content[0].Content)
+	}
+	if refs[0].Type != "tool_reference" || refs[0].ToolName != "mcp_docs_search" {
+		t.Fatalf("unexpected tool_reference: %+v", refs[0])
+	}
+}
+
+func TestBuildAnthropicRequest_ToolSearchDisabledForProxyByDefault(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "find docs"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID:        "search_1",
+				Name:      "tool_search",
+				Kind:      providers.ToolCallKindToolSearch,
+				Arguments: `{"query":"docs"}`,
+			}}},
+			{
+				Role:           "tool",
+				Name:           "tool_search",
+				ToolCallID:     "search_1",
+				ToolResultKind: providers.ToolCallKindToolSearch,
+				Content:        `{"loadable_tools":[{"type":"function","name":"mcp_docs_search","input_schema":{"type":"object"}}]}`,
+			},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+			{Name: "mcp_docs_search", InputSchema: map[string]any{"type": "object"}},
+		},
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://anthropic-proxy.example.com"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Betas) != 0 {
+		t.Fatalf("proxy default should not enable tool search beta, got %+v", payload.Betas)
+	}
+	if payload.Tools[1].DeferLoading {
+		t.Fatalf("proxy default should not send defer_loading: %+v", payload.Tools[1])
+	}
+	last := payload.Messages[len(payload.Messages)-1]
+	if _, ok := last.Content[0].Content.(string); !ok {
+		t.Fatalf("proxy default should keep string tool_result content, got %#v", last.Content[0].Content)
+	}
+}
+
+func TestBuildAnthropicRequest_ToolSearchDisabledForHaiku(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "claude-3-5-haiku-latest",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "find docs"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+			{Name: "mcp_docs_search", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+		},
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://api.anthropic.com"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Betas) != 0 {
+		t.Fatalf("haiku should not enable tool search beta, got %+v", payload.Betas)
+	}
+	if payload.Tools[1].DeferLoading {
+		t.Fatalf("haiku should not send defer_loading: %+v", payload.Tools[1])
 	}
 }
 

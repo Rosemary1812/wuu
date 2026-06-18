@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -35,6 +36,7 @@ const (
 	defaultTimeout          = 120 * time.Second
 	defaultAnthropicVersion = "2023-06-01"
 	defaultMaxTokens        = 16384
+	toolSearchBetaHeader1P  = "advanced-tool-use-2025-11-20"
 )
 
 // resolveMaxTokens picks the per-request override if positive,
@@ -116,7 +118,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	}
 
 	maxTok := resolveMaxTokens(req.MaxTokens, c.maxTokens, req.Model)
-	payload, err := buildAnthropicRequest(req, maxTok, false)
+	payload, err := c.buildAnthropicRequest(req, maxTok, false)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -126,7 +128,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, err := c.doMessagesRequest(ctx, c.httpClient, body)
+	httpResp, err := c.doMessagesRequest(ctx, c.httpClient, body, payload.Betas)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -177,6 +179,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 			toolCalls = append(toolCalls, providers.ToolCall{
 				ID:        block.ID,
 				Name:      block.Name,
+				Kind:      anthropicToolCallKind(block.Name),
 				Arguments: string(args),
 			})
 		}
@@ -215,7 +218,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 
 	maxTok := resolveMaxTokens(req.MaxTokens, c.maxTokens, req.Model)
-	payload, err := buildAnthropicRequest(req, maxTok, true)
+	payload, err := c.buildAnthropicRequest(req, maxTok, true)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +238,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 		_ = os.WriteFile(dumpPath, body, 0o644)
 		providers.DebugLogf("StreamChat: dumped request body to %s", dumpPath)
 	}
-	resp, err := c.doSingleMessagesRequest(ctx, sseClient, body)
+	resp, err := c.doSingleMessagesRequest(ctx, sseClient, body, payload.Betas)
 	if err != nil {
 		providers.DebugLogf("StreamChat: error: %v", err)
 		return nil, err
@@ -246,17 +249,33 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	return ch, nil
 }
 
+type anthropicToolSearchSupport struct {
+	BaseURL string
+}
+
+func (c *Client) buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool) (anthropicRequest, error) {
+	return buildAnthropicRequestWithSupport(req, maxTokens, stream, anthropicToolSearchSupport{BaseURL: c.baseURL})
+}
+
 func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool) (anthropicRequest, error) {
+	return buildAnthropicRequestWithSupport(req, maxTokens, stream, anthropicToolSearchSupport{})
+}
+
+func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, stream bool, support anthropicToolSearchSupport) (anthropicRequest, error) {
 	normalized, err := providers.NormalizeAndValidateMessagesForModel(req.Model, req.Messages)
 	if err != nil {
 		return anthropicRequest{}, err
 	}
 	req.Messages = normalized
+	toolSearchEnabled := shouldEnableAnthropicToolSearch(req, support)
 	payload := anthropicRequest{
 		Model:     req.Model,
 		MaxTokens: maxTokens,
 		Messages:  make([]anthropicMessage, 0, len(req.Messages)),
 		Stream:    stream,
+	}
+	if toolSearchEnabled {
+		payload.Betas = append(payload.Betas, toolSearchBetaHeader1P)
 	}
 	if req.Temperature > 0 {
 		t := req.Temperature
@@ -270,7 +289,7 @@ func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool
 			continue
 		}
 
-		mapped, err := mapMessage(msg)
+		mapped, err := mapMessage(msg, toolSearchEnabled)
 		if err != nil {
 			return anthropicRequest{}, err
 		}
@@ -306,7 +325,7 @@ func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool
 	applyAnthropicCacheHint(&payload, req.CacheHint)
 
 	if len(req.Tools) > 0 {
-		payload.Tools = buildAnthropicTools(req.Model, req.Tools)
+		payload.Tools = buildAnthropicTools(req.Model, req.Tools, anthropicDiscoveredToolNames(req.Messages), toolSearchEnabled)
 	}
 
 	// Effort level: maps to output_config.effort. Aligned with Claude
@@ -416,6 +435,78 @@ func providerOptionFloat(value any) (float64, bool) {
 	}
 }
 
+func providerOptionBool(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typed)) {
+		case "1", "true", "yes", "on", "enabled":
+			return true, true
+		case "0", "false", "no", "off", "disabled":
+			return false, true
+		}
+	}
+	return false, false
+}
+
+func shouldEnableAnthropicToolSearch(req providers.ChatRequest, support anthropicToolSearchSupport) bool {
+	if !hasToolSearchTool(req.Tools) {
+		return false
+	}
+	if !modelSupportsAnthropicToolReference(req.Model) {
+		return false
+	}
+	if enabled, ok := anthropicToolSearchOption(req.ProviderOptions); ok {
+		return enabled
+	}
+	return isFirstPartyAnthropicBaseURL(support.BaseURL)
+}
+
+func anthropicToolSearchOption(options map[string]any) (bool, bool) {
+	if len(options) == 0 {
+		return false, false
+	}
+	for _, key := range []string{"anthropicToolSearch", "toolSearch", "tool_search"} {
+		value, exists := options[key]
+		if !exists {
+			continue
+		}
+		enabled, ok := providerOptionBool(value)
+		if !ok {
+			continue
+		}
+		return enabled, true
+	}
+	return false, false
+}
+
+func hasToolSearchTool(defs []providers.ToolDefinition) bool {
+	for _, def := range defs {
+		if strings.EqualFold(def.Name, "tool_search") {
+			return true
+		}
+	}
+	return false
+}
+
+func modelSupportsAnthropicToolReference(model string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	if normalized == "" {
+		return false
+	}
+	return !strings.Contains(normalized, "haiku")
+}
+
+func isFirstPartyAnthropicBaseURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "api.anthropic.com"
+}
+
 func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint) any {
 	if len(systemTexts) == 0 {
 		return nil
@@ -435,7 +526,7 @@ func shouldCacheAnthropicSystem(hint *providers.CacheHint) bool {
 	return hint != nil && hint.StableSystem
 }
 
-func buildAnthropicTools(model string, defs []providers.ToolDefinition) []anthropicTool {
+func buildAnthropicTools(model string, defs []providers.ToolDefinition, discovered map[string]struct{}, toolSearchEnabled bool) []anthropicTool {
 	if len(defs) == 0 {
 		return nil
 	}
@@ -447,12 +538,41 @@ func buildAnthropicTools(model string, defs []providers.ToolDefinition) []anthro
 			Description: tool.Description,
 			InputSchema: providers.ToolInputSchemaForModel(model, tool.InputSchema),
 		}
+		if toolSearchEnabled && shouldDeferAnthropicTool(tool, discovered) {
+			mapped.DeferLoading = true
+		}
 		if stablePrefix > 0 && i == stablePrefix-1 {
 			mapped.CacheControl = ephemeralCacheControl()
 		}
 		out = append(out, mapped)
 	}
 	return out
+}
+
+func shouldDeferAnthropicTool(tool providers.ToolDefinition, discovered map[string]struct{}) bool {
+	if strings.EqualFold(tool.Name, "tool_search") {
+		return false
+	}
+	if tool.DeferLoading {
+		return true
+	}
+	_, ok := discovered[tool.Name]
+	return ok
+}
+
+func anthropicDiscoveredToolNames(messages []providers.ChatMessage) map[string]struct{} {
+	names := map[string]struct{}{}
+	for _, msg := range messages {
+		if !isAnthropicToolSearchResult(msg) {
+			continue
+		}
+		for _, tool := range anthropicLoadableToolsFromResult(msg.Content) {
+			if name := strings.TrimSpace(tool.Name); name != "" {
+				names[name] = struct{}{}
+			}
+		}
+	}
+	return names
 }
 
 func stableToolPrefixLength(defs []providers.ToolDefinition) int {
@@ -526,6 +646,7 @@ func (c *Client) doSingleMessagesRequest(
 	ctx context.Context,
 	httpClient *http.Client,
 	body []byte,
+	extraBetas []string,
 ) (*http.Response, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/messages", bytes.NewReader(body))
 	if err != nil {
@@ -551,13 +672,18 @@ func (c *Client) doSingleMessagesRequest(
 	if c.authToken != "" {
 		betas = append(betas, "oauth-2025-04-20")
 	}
-	httpReq.Header.Set("anthropic-beta", strings.Join(betas, ","))
+	betas = appendUniqueStrings(betas, extraBetas...)
 	httpReq.Header.Set("User-Agent", "wuu/"+version.Version)
 	httpReq.Header.Set("x-app", "wuu")
 	httpReq.Header.Set("Accept", "text/event-stream")
 	for k, v := range c.headers {
+		if strings.EqualFold(k, "anthropic-beta") {
+			betas = appendUniqueStrings(betas, splitAnthropicBetas(v)...)
+			continue
+		}
 		httpReq.Header.Set(k, v)
 	}
+	httpReq.Header.Set("anthropic-beta", strings.Join(betas, ","))
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
@@ -583,10 +709,11 @@ func (c *Client) doMessagesRequest(
 	ctx context.Context,
 	httpClient *http.Client,
 	body []byte,
+	extraBetas []string,
 ) (*http.Response, error) {
 	var httpResp *http.Response
 	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, err := c.doSingleMessagesRequest(ctx, httpClient, body)
+		resp, err := c.doSingleMessagesRequest(ctx, httpClient, body, extraBetas)
 		if err != nil {
 			return err
 		}
@@ -709,7 +836,7 @@ func (c *Client) handleSSEEvent(
 			if p.ContentBlock.Type == "tool_use" {
 				bs.toolID = p.ContentBlock.ID
 				bs.toolName = p.ContentBlock.Name
-				ch <- providers.StreamEvent{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: p.ContentBlock.ID, Name: p.ContentBlock.Name}}
+				ch <- providers.StreamEvent{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: p.ContentBlock.ID, Name: p.ContentBlock.Name, Kind: anthropicToolCallKind(p.ContentBlock.Name)}}
 			}
 			blocks[p.Index] = bs
 		}
@@ -743,7 +870,7 @@ func (c *Client) handleSSEEvent(
 		if json.Unmarshal([]byte(raw.Data), &idx) == nil {
 			if bs, ok := blocks[idx.Index]; ok {
 				if bs.blockType == "tool_use" {
-					ch <- providers.StreamEvent{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: bs.toolID, Name: bs.toolName, Arguments: bs.argsJSON.String()}}
+					ch <- providers.StreamEvent{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: bs.toolID, Name: bs.toolName, Kind: anthropicToolCallKind(bs.toolName), Arguments: bs.argsJSON.String()}}
 				}
 				if bs.blockType == "thinking" || bs.blockType == "redacted_thinking" {
 					reasoningBlock := bs.reasoning
@@ -797,7 +924,7 @@ func (c *Client) handleSSEEvent(
 	}
 }
 
-func mapMessage(msg providers.ChatMessage) (anthropicMessage, error) {
+func mapMessage(msg providers.ChatMessage, toolSearchEnabled bool) (anthropicMessage, error) {
 	switch msg.Role {
 	case "user":
 		blocks := make([]anthropicBlock, 0, len(msg.Images)+len(msg.Files)+1)
@@ -864,10 +991,58 @@ func mapMessage(msg providers.ChatMessage) (anthropicMessage, error) {
 		}
 		return anthropicMessage{Role: msg.Role, Content: blocks}, nil
 	case "tool":
-		return anthropicMessage{Role: "user", Content: []anthropicBlock{{Type: "tool_result", ToolUseID: msg.ToolCallID, Content: msg.Content}}}, nil
+		return anthropicMessage{Role: "user", Content: []anthropicBlock{anthropicToolResultBlock(msg, toolSearchEnabled)}}, nil
 	default:
 		return anthropicMessage{}, fmt.Errorf("unsupported message role %q", msg.Role)
 	}
+}
+
+func anthropicToolResultBlock(msg providers.ChatMessage, toolSearchEnabled bool) anthropicBlock {
+	if toolSearchEnabled && isAnthropicToolSearchResult(msg) {
+		refs := anthropicToolReferencesFromResult(msg.Content)
+		if len(refs) > 0 {
+			return anthropicBlock{Type: "tool_result", ToolUseID: msg.ToolCallID, Content: refs}
+		}
+		return anthropicBlock{Type: "tool_result", ToolUseID: msg.ToolCallID, Content: "No matching deferred tools found"}
+	}
+	return anthropicBlock{Type: "tool_result", ToolUseID: msg.ToolCallID, Content: msg.Content}
+}
+
+func isAnthropicToolSearchResult(msg providers.ChatMessage) bool {
+	return msg.ToolResultKind == providers.ToolCallKindToolSearch || strings.EqualFold(msg.Name, "tool_search")
+}
+
+func anthropicToolReferencesFromResult(content string) []anthropicBlock {
+	tools := anthropicLoadableToolsFromResult(content)
+	if len(tools) == 0 {
+		return nil
+	}
+	refs := make([]anthropicBlock, 0, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Name)
+		if name == "" {
+			continue
+		}
+		refs = append(refs, anthropicBlock{Type: "tool_reference", ToolName: name})
+	}
+	return refs
+}
+
+func anthropicLoadableToolsFromResult(content string) []providers.LoadableToolDefinition {
+	var parsed struct {
+		LoadableTools []providers.LoadableToolDefinition `json:"loadable_tools"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &parsed); err != nil {
+		return nil
+	}
+	return parsed.LoadableTools
+}
+
+func anthropicToolCallKind(name string) providers.ToolCallKind {
+	if strings.EqualFold(name, "tool_search") {
+		return providers.ToolCallKindToolSearch
+	}
+	return ""
 }
 
 func mapReasoningBlocks(blocks []providers.ReasoningBlock) []anthropicBlock {
@@ -935,7 +1110,11 @@ func smooshSystemReminderBlocks(msg anthropicMessage) anthropicMessage {
 
 	toolResult := kept[lastToolResultIdx]
 	parts := make([]string, 0, 1+len(reminders))
-	if existing := strings.TrimSpace(toolResult.Content); existing != "" {
+	existingContent, ok := toolResult.Content.(string)
+	if !ok {
+		return msg
+	}
+	if existing := strings.TrimSpace(existingContent); existing != "" {
 		parts = append(parts, existing)
 	}
 	parts = append(parts, reminders...)
@@ -956,6 +1135,36 @@ func cloneHeaders(input map[string]string) map[string]string {
 	return out
 }
 
+func appendUniqueStrings(base []string, values ...string) []string {
+	seen := make(map[string]struct{}, len(base)+len(values))
+	for _, value := range base {
+		seen[value] = struct{}{}
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		base = append(base, value)
+		seen[value] = struct{}{}
+	}
+	return base
+}
+
+func splitAnthropicBetas(header string) []string {
+	parts := strings.Split(header, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
 type anthropicRequest struct {
 	Model        string                 `json:"model"`
 	System       any                    `json:"system,omitempty"`
@@ -969,6 +1178,7 @@ type anthropicRequest struct {
 	Speed        string                 `json:"speed,omitempty"`
 	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
 	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+	Betas        []string               `json:"-"`
 }
 
 // anthropicThinking configures extended thinking. Aligned with Claude
@@ -1001,7 +1211,8 @@ type anthropicBlock struct {
 	Name         string                 `json:"name,omitempty"`
 	Input        any                    `json:"input,omitempty"`
 	ToolUseID    string                 `json:"tool_use_id,omitempty"`
-	Content      string                 `json:"content,omitempty"`
+	Content      any                    `json:"content,omitempty"`
+	ToolName     string                 `json:"tool_name,omitempty"`
 	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
@@ -1025,6 +1236,7 @@ type anthropicTool struct {
 	Name         string                 `json:"name"`
 	Description  string                 `json:"description,omitempty"`
 	InputSchema  map[string]any         `json:"input_schema"`
+	DeferLoading bool                   `json:"defer_loading,omitempty"`
 	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 

@@ -64,12 +64,35 @@ Chat Completions, Anthropic without native support, and the existing
 `Toolkit.activatedDeferredTools` fallback remain available. The fallback still
 matters for non-Responses providers and for later Anthropic gating.
 
+## Stage 2 / Anthropic native route
+
+The Anthropic adapter now supports the Claude Code style native route behind a
+strict gate:
+
+- Native tool search is enabled only when the request includes `tool_search`,
+  the model name is not a Haiku model, and either the base URL is first-party
+  Anthropic (`api.anthropic.com`) or the caller explicitly sets
+  `anthropicToolSearch` / `toolSearch` / `tool_search` to true.
+- When enabled, the request adds Anthropic's first-party tool-search beta
+  header: `advanced-tool-use-2025-11-20`.
+- `tool_search` tool results are mapped to Anthropic `tool_result` blocks whose
+  content is an array of `tool_reference` blocks:
+  `{"type":"tool_reference","tool_name":"..."}`.
+- Discovered tools are included in Anthropic `tools` with
+  `defer_loading:true`, so Anthropic can expand the references while keeping
+  deferred schemas out of the stable prompt cache surface.
+- Haiku models and third-party/proxy Anthropic-compatible endpoints stay on the
+  existing string `tool_result` fallback unless explicitly enabled.
+- Streaming and non-streaming Anthropic tool-use parsing marks `tool_search`
+  calls with `ToolCallKindToolSearch`, so the tool result can be reconstructed
+  after history persistence and replay.
+
 ## Next stages
 
-Anthropic should add gated support for `defer_loading` plus `tool_reference`
-only when the selected provider and model support the required beta behavior.
-It also needs message-history and compact-boundary recovery for discovered tool
-names before the native route is enabled.
+Compact-boundary recovery still needs to preserve discovered tool names after
+summaries replace the original `tool_search` result messages. Resume and fork
+are covered for normal history because the tool-call kind and tool result kind
+are now persisted.
 
 MCP exposure should later adopt a size-aware policy: small direct sets can stay
 inline, while large or volatile sets should enter the deferred search pool.
