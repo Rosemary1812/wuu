@@ -45,3 +45,20 @@ AGENTS.md
 # Zig build artifacts
 zig-out/
 .zig-cache/
+
+# Test coverage output
+coverage/
+coverage.out
+*.coverprofile
+
+# Logs
+*.log
+
+# IDE / editor
+.idea/
+.vscode/
+
+# Environment files
+.env
+.env.local
+.env.*.local
