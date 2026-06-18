@@ -132,6 +132,10 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-pin", threadId, pinned),
   archiveThread: (threadId: string, archived: boolean) =>
     ipcRenderer.invoke("wuu:thread-archive", threadId, archived),
+  renameThread: (threadId: string, title: string) =>
+    ipcRenderer.invoke("wuu:thread-rename", threadId, title),
+  revealSession: (threadId: string) =>
+    ipcRenderer.invoke("wuu:reveal-session", threadId),
   startTurn: (threadId: string, prompt: string, images, files) =>
     ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files),
   queueTurn: (threadId: string, prompt: string, images, clientId, files) =>

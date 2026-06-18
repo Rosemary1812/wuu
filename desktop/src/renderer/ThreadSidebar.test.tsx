@@ -134,4 +134,52 @@ describe("ThreadContextMenu", () => {
     });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("renders multiple items in the order they were provided", () => {
+    const onA = vi.fn();
+    const onB = vi.fn();
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ThreadContextMenu
+          x={10}
+          y={20}
+          items={[
+            { label: "A", onSelect: onA },
+            { label: "B", onSelect: onB },
+          ]}
+          onClose={() => {}}
+        />
+      );
+    });
+    const items = container.querySelectorAll('[role="menuitem"]');
+    expect(items.length).toBe(2);
+    expect(items[0]?.textContent).toBe("A");
+    expect(items[1]?.textContent).toBe("B");
+  });
+
+  it("invokes only the clicked item's onSelect", () => {
+    const onA = vi.fn();
+    const onB = vi.fn();
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ThreadContextMenu
+          x={10}
+          y={20}
+          items={[
+            { label: "A", onSelect: onA },
+            { label: "B", onSelect: onB },
+          ]}
+          onClose={() => {}}
+        />
+      );
+    });
+    const firstButton = container.querySelectorAll('[role="menuitem"]')[0] as HTMLButtonElement;
+    act(() => {
+      firstButton.click();
+    });
+    expect(onA).toHaveBeenCalledTimes(1);
+    expect(onB).toHaveBeenCalledTimes(0);
+  });
 });

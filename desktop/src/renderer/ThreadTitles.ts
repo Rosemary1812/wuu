@@ -21,11 +21,16 @@ export function threadDisplayTitle(
 function baseThreadTitle(thread: Thread, threads: Thread[], fallback: string): string {
   if (thread.forked_from_id) {
     const source = threads.find((candidate) => candidate.id === thread.forked_from_id);
-    const sourceTitle = source?.preview?.trim();
+    // Prefer source.title (set by the right-click Rename menu) over
+    // source.preview (auto-generated) so a renamed source shows the
+    // user's title in the fork header.
+    const sourceTitle = source ? source.title?.trim() || source.preview?.trim() : undefined;
     if (sourceTitle) {
       return sourceTitle;
     }
   }
-  const ownTitle = thread.preview?.trim();
+  // Prefer thread.title (set by Rename) over thread.preview
+  // (auto-generated) so a renamed thread shows the user's title.
+  const ownTitle = thread.title?.trim() || thread.preview?.trim();
   return ownTitle || fallback;
 }

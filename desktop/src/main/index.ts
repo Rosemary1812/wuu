@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   type OpenDialogOptions,
+  shell,
 } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -451,6 +452,20 @@ app.whenReady().then(() => {
         archived,
       }),
   );
+  ipcMain.handle(
+    "wuu:thread-rename",
+    (_event, threadId: string, title: string) =>
+      appServerClientPool.request<{ thread: Thread }>("thread/rename", {
+        thread_id: threadId,
+        title,
+      }),
+  );
+  ipcMain.handle("wuu:reveal-session", (_event, _threadId: string) => {
+    // The session's data lives in the user-level sessions dir (a single
+    // shared SQLite file). Reveal that dir in the OS file browser so
+    // the user can inspect the database.
+    return shell.openPath(join(app.getPath("home"), ".wuu", "sessions"));
+  });
   ipcMain.handle(
     "wuu:turn-start",
     (_event, threadId: string, prompt: string, images?: InputImage[], files?: InputFile[]) =>

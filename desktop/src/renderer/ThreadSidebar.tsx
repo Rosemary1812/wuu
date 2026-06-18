@@ -349,11 +349,44 @@ function ThreadRows({
           y={contextMenu.y}
           items={[
             {
-              label: "复制 thread ID",
+              label: contextMenu.thread.pinned ? "取消置顶" : "置顶",
+              onSelect: () => onTogglePinned(contextMenu.thread),
+            },
+            {
+              label: "重命名对话",
+              onSelect: () => {
+                const current =
+                  contextMenu.thread.title?.trim() ||
+                  contextMenu.thread.preview?.trim() ||
+                  "";
+                const next = window.prompt("新标题", current);
+                if (next === null) return; // user cancelled
+                const trimmed = next.trim();
+                if (!trimmed || trimmed === current) return;
+                // Fire-and-forget; the server will eventually send a
+                // thread/updated notification that the renderer can use to
+                // refresh the title. No need to manually refetch here.
+                void window.wuu.renameThread(contextMenu.thread.id, trimmed);
+              },
+            },
+            {
+              label: "复制工作目录",
+              onSelect: () => {
+                void copyToClipboard(contextMenu.thread.cwd);
+              },
+            },
+            {
+              label: "在 Finder 中显示",
+              onSelect: () => {
+                void window.wuu.revealSession(contextMenu.thread.id);
+              },
+            },
+            {
+              label: "复制会话 ID",
               onSelect: () => {
                 void copyToClipboard(contextMenu.thread.id);
-              }
-            }
+              },
+            },
           ]}
           onClose={() => setContextMenu(null)}
         />

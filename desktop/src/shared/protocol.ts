@@ -742,6 +742,7 @@ export type Thread = {
   parent_id?: string;
   agent_path?: string;
   preview: string;
+  title?: string;
   model_provider: string;
   model: string;
   cwd: string;
@@ -974,6 +975,8 @@ export type WuuDesktopApi = {
   onServerEvent: (handler: (event: ServerEvent) => void) => () => void;
   onTerminalEvent: (handler: (event: TerminalSessionEvent) => void) => () => void;
   onWindowResizeState: (handler: (state: WindowResizeState) => void) => () => void;
+  renameThread: (threadId: string, title: string) => Promise<{ thread: Thread }>;
+  revealSession: (threadId: string) => Promise<void>;
 };
 
 declare global {
