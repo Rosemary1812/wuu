@@ -59,6 +59,8 @@ const api: WuuDesktopApi = {
       permissionMode,
     ),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
+  getSettingsUsage: (range?: SettingsUsageRange) =>
+    ipcRenderer.invoke("wuu:settings-usage", range),
   getGoalSnapshot: (threadId?: string) =>
     ipcRenderer.invoke("wuu:goal-snapshot", threadId),
   getGoalWorktreeReview: (worktreePath: string) =>

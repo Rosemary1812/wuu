@@ -326,6 +326,14 @@ app.whenReady().then(() => {
       }),
   );
   ipcMain.handle("wuu:skill-list", () => appServerClientPool.request("skill/list"));
+  ipcMain.handle(
+    "wuu:settings-usage",
+    (_event, range?: SettingsUsageRange) =>
+      appServerClientPool.request<SettingsUsageResponse>(
+        "settings/usage",
+        { range } satisfies SettingsUsageQuery,
+      ),
+  );
   ipcMain.handle("wuu:goal-snapshot", (_event, threadId?: string) =>
     appServerClientPool.request<GoalSnapshotResult>("goal/snapshot", {
       thread_id: threadId ?? "",

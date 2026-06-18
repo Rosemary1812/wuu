@@ -896,6 +896,44 @@ export type WindowResizeState = {
   resizing: boolean;
 };
 
+// ModelUsage aggregates token consumption and session count for one
+// provider/model pair. Empty Provider+Model represents legacy token_usage
+// rows persisted before provider/model were tracked; UI code renders
+// these as "(unknown)".
+export type ModelUsage = {
+  provider: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  sessions: number;
+};
+
+// SettingsUsageRange selects which time window the settings/usage RPC
+// covers. Empty string is treated as "all" by the appserver.
+export type SettingsUsageRange = "all" | "7d" | "30d" | "90d";
+
+// SettingsUsageQuery is the input for the settings/usage RPC. Range
+// selects the time window; empty defaults to "all".
+export type SettingsUsageQuery = {
+  range?: SettingsUsageRange;
+};
+
+// SettingsUsageResponse carries the aggregated usage snapshot returned
+// to the desktop. ModelBreakdowns is sorted by total context tokens
+// descending; empty Provider+Model entries are bucketed as "(unknown)"
+// in the UI. CacheHitRate is the prompt-cache hit rate weighted by
+// token count.
+export type SettingsUsageResponse = {
+  range: SettingsUsageRange;
+  total_sessions: number;
+  date_range: [string, string];
+  model_breakdowns: ModelUsage[];
+  cache_hit_rate: number;
+  generated_at: string;
+};
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -990,6 +1028,7 @@ export type WuuDesktopApi = {
   onWindowResizeState: (handler: (state: WindowResizeState) => void) => () => void;
   renameThread: (threadId: string, title: string) => Promise<{ thread: Thread }>;
   revealSession: (threadId: string) => Promise<void>;
+  getSettingsUsage: (range?: SettingsUsageRange) => Promise<SettingsUsageResponse>;
 };
 
 declare global {
