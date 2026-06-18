@@ -306,14 +306,7 @@ func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool
 	applyAnthropicCacheHint(&payload, req.CacheHint)
 
 	if len(req.Tools) > 0 {
-		payload.Tools = make([]anthropicTool, 0, len(req.Tools))
-		for _, tool := range req.Tools {
-			payload.Tools = append(payload.Tools, anthropicTool{
-				Name:        tool.Name,
-				Description: tool.Description,
-				InputSchema: providers.ToolInputSchemaForModel(req.Model, tool.InputSchema),
-			})
-		}
+		payload.Tools = buildAnthropicTools(req.Model, req.Tools)
 	}
 
 	// Effort level: maps to output_config.effort. Aligned with Claude
@@ -427,19 +420,50 @@ func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint) any {
 	if len(systemTexts) == 0 {
 		return nil
 	}
-	joined := strings.Join(systemTexts, "\n")
 	if !shouldCacheAnthropicSystem(hint) {
-		return joined
+		return strings.Join(systemTexts, "\n")
 	}
-	return []anthropicSystemBlock{{
-		Type:         "text",
-		Text:         joined,
-		CacheControl: ephemeralCacheControl(),
-	}}
+	blocks := make([]anthropicSystemBlock, 0, len(systemTexts))
+	for _, text := range systemTexts {
+		blocks = append(blocks, anthropicSystemBlock{Type: "text", Text: text})
+	}
+	blocks[len(blocks)-1].CacheControl = ephemeralCacheControl()
+	return blocks
 }
 
 func shouldCacheAnthropicSystem(hint *providers.CacheHint) bool {
 	return hint != nil && hint.StableSystem
+}
+
+func buildAnthropicTools(model string, defs []providers.ToolDefinition) []anthropicTool {
+	if len(defs) == 0 {
+		return nil
+	}
+	stablePrefix := stableToolPrefixLength(defs)
+	out := make([]anthropicTool, 0, len(defs))
+	for i, tool := range defs {
+		mapped := anthropicTool{
+			Name:        tool.Name,
+			Description: tool.Description,
+			InputSchema: providers.ToolInputSchemaForModel(model, tool.InputSchema),
+		}
+		if stablePrefix > 0 && i == stablePrefix-1 {
+			mapped.CacheControl = ephemeralCacheControl()
+		}
+		out = append(out, mapped)
+	}
+	return out
+}
+
+func stableToolPrefixLength(defs []providers.ToolDefinition) int {
+	n := 0
+	for _, def := range defs {
+		if !def.CacheStable {
+			break
+		}
+		n++
+	}
+	return n
 }
 
 func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint) {
@@ -998,9 +1022,10 @@ type anthropicImageSource struct {
 }
 
 type anthropicTool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"input_schema"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description,omitempty"`
+	InputSchema  map[string]any         `json:"input_schema"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 type anthropicResponse struct {

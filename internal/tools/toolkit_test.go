@@ -3266,6 +3266,37 @@ func TestToolkit_DefersLowFrequencyAndMCPToolsFromDefinitions(t *testing.T) {
 	}
 }
 
+func TestToolkit_DefinitionsKeepStableCachePrefixBeforeActivatedDeferredTools(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewReadFileTool(kit.env),
+		NewScheduleCronTool(kit.env),
+		NewToolSearchTool(kit),
+	)
+	kit.activateDeferredTools("schedule_cron")
+
+	defs := kit.Definitions()
+	if len(defs) != 3 {
+		t.Fatalf("expected 3 definitions, got %+v", defs)
+	}
+	wantNames := []string{"read_file", "tool_search", "schedule_cron"}
+	for i, want := range wantNames {
+		if defs[i].Name != want {
+			t.Fatalf("definition %d = %q, want %q; all=%+v", i, defs[i].Name, want, defs)
+		}
+	}
+	if !defs[0].CacheStable || !defs[1].CacheStable {
+		t.Fatalf("stable built-in tools should be cache-stable: %+v", defs)
+	}
+	if defs[2].CacheStable {
+		t.Fatalf("activated deferred tool should stay out of cache-stable prefix: %+v", defs[2])
+	}
+}
+
 func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

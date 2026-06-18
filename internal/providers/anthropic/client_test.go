@@ -373,6 +373,63 @@ func TestBuildAnthropicRequest_LeavesRegularUserTextOutsideToolResult(t *testing
 	}
 }
 
+func TestBuildAnthropicRequest_CachesStableToolPrefix(t *testing.T) {
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "hello"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "read_file", InputSchema: map[string]any{"type": "object"}, CacheStable: true},
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}, CacheStable: true},
+			{Name: "mcp_docs_search", InputSchema: map[string]any{"type": "object"}},
+		},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if len(payload.Tools) != 3 {
+		t.Fatalf("expected 3 tools, got %+v", payload.Tools)
+	}
+	if payload.Tools[0].CacheControl != nil {
+		t.Fatalf("did not expect cache_control on first stable tool: %+v", payload.Tools[0].CacheControl)
+	}
+	if payload.Tools[1].CacheControl == nil || payload.Tools[1].CacheControl.Type != "ephemeral" {
+		t.Fatalf("expected cache_control on stable tool prefix boundary, got %+v", payload.Tools[1].CacheControl)
+	}
+	if payload.Tools[2].CacheControl != nil {
+		t.Fatalf("did not expect cache_control on dynamic tool: %+v", payload.Tools[2].CacheControl)
+	}
+}
+
+func TestBuildAnthropicRequest_SplitsStableSystemBlocks(t *testing.T) {
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "base prompt"},
+			{Role: "system", Content: "conversation summary"},
+			{Role: "user", Content: "hello"},
+		},
+		CacheHint: &providers.CacheHint{StableSystem: true},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	blocks, ok := payload.System.([]anthropicSystemBlock)
+	if !ok {
+		t.Fatalf("expected system blocks, got %#v", payload.System)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected two system blocks, got %+v", blocks)
+	}
+	if blocks[0].Text != "base prompt" || blocks[0].CacheControl != nil {
+		t.Fatalf("unexpected first system block: %+v", blocks[0])
+	}
+	if blocks[1].Text != "conversation summary" || blocks[1].CacheControl == nil || blocks[1].CacheControl.Type != "ephemeral" {
+		t.Fatalf("unexpected cached system boundary: %+v", blocks[1])
+	}
+}
+
 func TestBuildAnthropicRequest_SendsProviderOptions(t *testing.T) {
 	payload, err := buildAnthropicRequest(providers.ChatRequest{
 		Model: "claude-test",

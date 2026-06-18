@@ -11,6 +11,10 @@ type ToolDefinition struct {
 	Name        string
 	Description string
 	InputSchema map[string]any
+	// CacheStable marks tools that belong to the stable prompt-cache
+	// prefix. Providers that support tool-level cache markers can place
+	// a breakpoint at the end of the contiguous stable prefix.
+	CacheStable bool
 }
 
 // ToolCallDisplay carries a user-facing summary for a tool invocation.

@@ -444,20 +444,32 @@ func (t *Toolkit) isToolDisabled(name string) bool {
 // tool the agent can call.
 func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	all := t.registry.Definitions()
-	out := make([]providers.ToolDefinition, 0, len(all))
+	stable := make([]providers.ToolDefinition, 0, len(all))
+	dynamic := make([]providers.ToolDefinition, 0)
 	for _, d := range all {
 		if isMemoryToolName(d.Name) && memoryProvider(t.env) == nil {
 			continue
 		}
 		if t.toolExposure(d.Name) == ToolExposureDirect {
-			out = append(out, d)
+			if isDeferredByDefault(d.Name) {
+				d.CacheStable = false
+				dynamic = append(dynamic, d)
+				continue
+			}
+			d.CacheStable = true
+			stable = append(stable, d)
 		}
 	}
+	out := make([]providers.ToolDefinition, 0, len(stable)+len(dynamic))
+	out = append(out, stable...)
+	out = append(out, dynamic...)
 	// Append direct MCP tools after built-ins to preserve prompt cache stability.
 	if t.mcpManager != nil {
 		for _, tool := range t.mcpManager.AllTools() {
 			if t.toolExposure(tool.Name()) == ToolExposureDirect {
-				out = append(out, tool.Definition())
+				d := tool.Definition()
+				d.CacheStable = false
+				out = append(out, d)
 			}
 		}
 	}
