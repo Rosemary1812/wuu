@@ -1,4 +1,4 @@
-import { ChevronRight, Info, Play, Sparkles } from "lucide-react";
+import { ChevronRight, Info, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import type {
@@ -331,11 +331,6 @@ function ReasoningFold({
   return (
     <details className="turn-reasoning-fold">
       <summary className="turn-reasoning-summary">
-        <Sparkles
-          className="turn-reasoning-glyph"
-          size={12}
-          aria-hidden
-        />
         <span className="turn-reasoning-summary-text">{label}</span>
         <ChevronRight
           className="turn-reasoning-chevron"

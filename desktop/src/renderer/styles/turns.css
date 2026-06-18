@@ -3260,9 +3260,11 @@
    Reasoning is grouped with commentary/tool activity in the process
    region but folded by default (per the message-display policy:
    rule 3 — "reasoning 内容默认折叠"). The summary row reads as a
-   single quiet gray line (same family as the process meta), and the
-   body is indented + uses a softer gray than commentary so the user
-   can tell at a glance that this is secondary content the agent
+   single quiet gray line in the same family as a tool-call row
+   ("查看代码差异", "检查 Git 状态") — no leading icon, just text and
+   a chevron to signal that the row is expandable. The body is
+   indented + uses a softer gray than commentary so the user can
+   tell at a glance that this is secondary content the agent
    thought but did not surface directly. Chevron rotates on open;
    the body uses grid-template-rows to animate the height change
    smoothly (the native <details> toggle is otherwise instantaneous).
@@ -3276,8 +3278,8 @@
 .turn-reasoning-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 0;
+  gap: 6px;
+  padding: 2px 0;
   cursor: pointer;
   list-style: none;
   color: var(--wuu-ink-soft);
@@ -3304,12 +3306,6 @@
   text-decoration-color: rgba(31, 35, 40, 0.18);
   text-underline-offset: 3px;
   outline: 0;
-}
-
-.turn-reasoning-glyph {
-  flex: 0 0 auto;
-  color: var(--wuu-ink-soft);
-  opacity: 0.78;
 }
 
 .turn-reasoning-summary-text {
