@@ -189,6 +189,10 @@ import {
   type SettingsUsageData,
   type SettingsUsageEntry,
 } from "./SettingsView";
+import type {
+  SettingsUsageRange,
+  SettingsUsageResponse,
+} from "../shared/protocol";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
 import { SkillsCatalog } from "./SkillsCatalog";
@@ -320,6 +324,43 @@ function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
     default:
       return false;
   }
+}
+
+function adaptSettingsUsageResponse(
+  response: SettingsUsageResponse,
+): SettingsUsageData {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheReadTokens = 0;
+  const buckets: SettingsUsageBucket[] = response.model_breakdowns.map((b) => {
+    inputTokens += b.input_tokens;
+    outputTokens += b.output_tokens;
+    cacheCreationTokens += b.cache_creation_tokens;
+    cacheReadTokens += b.cache_read_tokens;
+    return {
+      id: `${b.provider}\n${b.model}`,
+      provider: b.provider,
+      model: b.model,
+      inputTokens: b.input_tokens,
+      outputTokens: b.output_tokens,
+      cacheCreationTokens: b.cache_creation_tokens,
+      cacheReadTokens: b.cache_read_tokens,
+      turns: 1,
+      agents: 0,
+    };
+  });
+  return {
+    inputTokens,
+    outputTokens,
+    cacheCreationTokens,
+    cacheReadTokens,
+    turns: response.total_sessions,
+    agents: 0,
+    buckets,
+    days: [],
+    entries: [],
+  };
 }
 
 function buildSettingsUsageData(state: AppState): SettingsUsageData {
@@ -759,10 +800,34 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
-  const settingsUsage = useMemo(
-    () => (settingsOpen ? buildSettingsUsageData(state) : undefined),
-    [settingsOpen, state],
+  const [usageRange, setUsageRange] = useState<SettingsUsageRange>("all");
+  const [settingsUsage, setSettingsUsage] = useState<SettingsUsageData | undefined>(
+    undefined,
   );
+  useEffect(() => {
+    if (!settingsOpen) {
+      setSettingsUsage(undefined);
+      return;
+    }
+    let cancelled = false;
+    void window.wuu
+      .getSettingsUsage(usageRange)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setSettingsUsage(adaptSettingsUsageResponse(response));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setSettingsUsage(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsOpen, usageRange]);
   const {
     conversationSearch,
     conversationSearchResults,
