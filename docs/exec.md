@@ -188,12 +188,14 @@ wuu session show --json <thread-id>
 wuu session trace --json <thread-id>
 wuu session search --json <query>
 wuu session archive --json <thread-id>
+wuu session delete --json <thread-id>
 ```
 
 `list`, `show`, `trace`, and `search` are read-only and expose session
 metadata, persisted history, trace replay data, and search results for
 automation. `archive` hides a session from default lists without deleting its
-persisted data.
+persisted data. `delete` removes the session, its durable history, and any
+workspace-scoped artifacts Wuu can locate for that thread.
 
 ## Safety
 

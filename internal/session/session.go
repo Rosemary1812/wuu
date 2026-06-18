@@ -333,6 +333,46 @@ func UpdateArchived(sessDir, id string, archived bool) (Session, error) {
 	})
 }
 
+// Delete removes a session and its durable history records.
+func Delete(sessDir, id string) (Session, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Session{}, fmt.Errorf("%w: %q", ErrSessionNotFound, id)
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return Session{}, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return Session{}, fmt.Errorf("begin session delete: %w", err)
+	}
+	defer tx.Rollback()
+
+	deleted, ok, err := findSessionTx(tx, id)
+	if err != nil {
+		return Session{}, err
+	}
+	if !ok {
+		return Session{}, fmt.Errorf("%w: %q", ErrSessionNotFound, id)
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+		return Session{}, fmt.Errorf("delete session: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Session{}, fmt.Errorf("commit session delete: %w", err)
+	}
+	if err := os.Remove(FilePath(sessDir, id)); err != nil && !os.IsNotExist(err) {
+		return deleted, fmt.Errorf("delete legacy history: %w", err)
+	}
+	return deleted, nil
+}
+
 func updateMetadata(sessDir, id string, missingOK bool, update func(*Session)) (Session, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {

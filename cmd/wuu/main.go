@@ -367,7 +367,7 @@ func runSession(args []string) error {
 	case "archive":
 		return runSessionArchive(args[1:])
 	case "delete":
-		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("wuu session %s is not implemented yet", args[0]))
+		return runSessionDelete(args[1:])
 	default:
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("unknown session subcommand %q", args[0]))
 	}
@@ -590,6 +590,71 @@ func runSessionArchive(args []string) error {
 	}
 	fmt.Printf("unarchived: %s\n", threadID)
 	return nil
+}
+
+func runSessionDelete(args []string) error {
+	fs := flag.NewFlagSet("session delete", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output as JSON")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if len(fs.Args()) == 0 || strings.TrimSpace(fs.Args()[0]) == "" {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("thread id is required"))
+	}
+	threadID := strings.TrimSpace(fs.Args()[0])
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	deleted, err := session.Delete(sessDir, threadID)
+	if err != nil {
+		return fmt.Errorf("delete %q: %w", threadID, err)
+	}
+	artifactPath, artifactsDeleted, err := deleteSessionArtifacts(deleted)
+	if err != nil {
+		return fmt.Errorf("delete artifacts for %q: %w", threadID, err)
+	}
+	if *jsonOutput {
+		return printJSON(map[string]any{
+			"thread_id":         threadID,
+			"session":           deleted,
+			"deleted":           true,
+			"artifact_path":     artifactPath,
+			"artifacts_deleted": artifactsDeleted,
+		})
+	}
+	if artifactPath != "" && artifactsDeleted {
+		fmt.Printf("deleted: %s\nartifacts: %s\n", threadID, artifactPath)
+		return nil
+	}
+	fmt.Printf("deleted: %s\n", threadID)
+	return nil
+}
+
+func deleteSessionArtifacts(sess session.Session) (string, bool, error) {
+	if strings.TrimSpace(sess.CWD) == "" {
+		return "", false, nil
+	}
+	home, err := statepath.Home("")
+	if err != nil {
+		return "", false, fmt.Errorf("resolve wuu home: %w", err)
+	}
+	workspaceStateDir, err := statepath.WorkspaceDir(home, sess.CWD)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve workspace state: %w", err)
+	}
+	artifactPath := statepath.SessionArtifactDir(workspaceStateDir, sess.ID)
+	if _, err := os.Stat(artifactPath); err != nil {
+		if os.IsNotExist(err) {
+			return artifactPath, false, nil
+		}
+		return artifactPath, false, err
+	}
+	if err := os.RemoveAll(artifactPath); err != nil {
+		return artifactPath, false, err
+	}
+	return artifactPath, true, nil
 }
 
 func searchSessions(sessDir string, sessions []session.Session, query string, limit int) ([]sessionSearchResult, error) {
@@ -1667,7 +1732,7 @@ Usage:
   wuu exec [flags] "your coding task"
   wuu exec resume (--last|THREAD_ID) [flags] "continue task"
   wuu exec fork THREAD_ID [flags] "continue from a fork"
-  wuu session list|show|trace|search|archive [flags]
+  wuu session list|show|trace|search|archive|delete [flags]
   wuu debug app-server initialize [flags]
   wuu debug app-server send [flags] METHOD [JSON]
   wuu debug protocol events [flags] THREAD_ID
@@ -1710,6 +1775,8 @@ Session commands:
                    search session metadata and history
   archive [--json] THREAD_ID
                    hide a session from default lists
+  delete [--json] THREAD_ID
+                   delete a session and its workspace artifacts
 
 Debug commands:
   app-server initialize [--workdir DIR] [--provider NAME] [--model MODEL] [--no-tools]

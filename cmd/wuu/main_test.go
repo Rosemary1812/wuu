@@ -1828,6 +1828,63 @@ func TestRunSessionArchiveHidesSessionFromList(t *testing.T) {
 	}
 }
 
+func TestRunSessionDeleteRemovesSessionAndArtifacts(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	workdir := t.TempDir()
+	t.Chdir(workdir)
+
+	home, err := statepath.Home("")
+	if err != nil {
+		t.Fatalf("statepath.Home: %v", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	sess, err := session.CreateWithMetadata(sessDir, "delete-thread", workdir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := session.AppendHistoryRecord(sessDir, sess.ID, session.HistoryRecord{Role: "user", Content: "temporary task"}); err != nil {
+		t.Fatalf("append history: %v", err)
+	}
+	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, workdir)
+	if err != nil {
+		t.Fatalf("WorkspaceDir: %v", err)
+	}
+	artifactDir := statepath.SessionArtifactDir(workspaceStateDir, sess.ID)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("create artifact dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "trace.jsonl"), []byte(`{"type":"turn"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write trace: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"session", "delete", "--json", sess.ID}); err != nil {
+			t.Fatalf("run session delete: %v", err)
+		}
+	})
+
+	var payload struct {
+		ThreadID         string          `json:"thread_id"`
+		Session          session.Session `json:"session"`
+		Deleted          bool            `json:"deleted"`
+		ArtifactPath     string          `json:"artifact_path"`
+		ArtifactsDeleted bool            `json:"artifacts_deleted"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse delete JSON: %v\noutput: %s", err, output)
+	}
+	if payload.ThreadID != sess.ID || payload.Session.ID != sess.ID || !payload.Deleted || payload.ArtifactPath != artifactDir || !payload.ArtifactsDeleted {
+		t.Fatalf("unexpected delete payload: %+v", payload)
+	}
+	if _, ok, err := session.Find(sessDir, sess.ID); err != nil || ok {
+		t.Fatalf("deleted session should not be found, ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Stat(artifactDir); !os.IsNotExist(err) {
+		t.Fatalf("artifact dir should be removed, err=%v", err)
+	}
+}
+
 func TestRunDebugAppServerInitializeUsesClient(t *testing.T) {
 	client := &fakeDebugAppServerClient{
 		results: map[string]json.RawMessage{

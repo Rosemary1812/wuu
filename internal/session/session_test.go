@@ -297,6 +297,40 @@ func TestPinAndArchiveMetadata(t *testing.T) {
 	}
 }
 
+func TestDeleteRemovesSessionAndHistory(t *testing.T) {
+	dir := t.TempDir()
+	sess, err := CreateWithMetadata(dir, "thread-1", "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendHistoryRecord(dir, sess.ID, HistoryRecord{Role: "user", Content: "delete me"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(FilePath(dir, sess.ID), []byte(`{"role":"user","content":"legacy"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := Delete(dir, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.ID != sess.ID || deleted.CWD != "/tmp/project" {
+		t.Fatalf("unexpected deleted metadata: %+v", deleted)
+	}
+	if _, ok, err := Find(dir, sess.ID); err != nil || ok {
+		t.Fatalf("deleted session should not be found, ok=%v err=%v", ok, err)
+	}
+	if _, err := LoadHistoryRecords(dir, sess.ID, true); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("LoadHistoryRecords() error = %v, want ErrSessionNotFound", err)
+	}
+	if _, err := os.Stat(FilePath(dir, sess.ID)); !os.IsNotExist(err) {
+		t.Fatalf("legacy history should be removed, err=%v", err)
+	}
+	if _, err := Delete(dir, sess.ID); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("Delete() error = %v, want ErrSessionNotFound", err)
+	}
+}
+
 func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
