@@ -71,6 +71,7 @@ type HistoryRecord struct {
 	Images              json.RawMessage `json:"images,omitempty"`
 	Files               json.RawMessage `json:"files,omitempty"`
 	ToolCalls           json.RawMessage `json:"tool_calls,omitempty"`
+	DiscoveredTools     json.RawMessage `json:"discovered_tools,omitempty"`
 	ToolCallID          string          `json:"tool_call_id,omitempty"`
 	ToolResultKind      string          `json:"tool_result_kind,omitempty"`
 	Name                string          `json:"name,omitempty"`
@@ -604,6 +605,7 @@ func migrateSchema(db *sql.DB) error {
 			images_json TEXT NOT NULL DEFAULT '',
 			files_json TEXT NOT NULL DEFAULT '',
 			tool_calls_json TEXT NOT NULL DEFAULT '',
+			discovered_tools_json TEXT NOT NULL DEFAULT '',
 			tool_call_id TEXT NOT NULL DEFAULT '',
 			tool_result_kind TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL DEFAULT '',
@@ -636,6 +638,9 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "session_messages", "tool_result_kind", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "discovered_tools_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return nil
@@ -957,11 +962,11 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 	_, err := tx.Exec(`
 	INSERT INTO session_messages (
 		session_id, seq, role, content, phase, client_id, steered, reasoning_content,
-		reasoning_blocks_json, images_json, files_json, tool_calls_json,
+		reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 		tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, strings.TrimSpace(rec.Phase), rec.ClientID, boolInt(rec.Steered), rec.ReasoningContent,
-		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls),
+		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls), rawJSONText(rec.DiscoveredTools),
 		rec.ToolCallID, rec.ToolResultKind, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
 	)
 	if err != nil {
@@ -973,7 +978,7 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
 	query := `
 	SELECT role, content, phase, client_id, steered, reasoning_content,
-	       reasoning_blocks_json, images_json, files_json, tool_calls_json,
+	       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
 	FROM session_messages
 WHERE session_id = ?`
@@ -993,11 +998,11 @@ WHERE session_id = ?`
 	for rows.Next() {
 		var rec HistoryRecord
 		var steered int
-		var reasoningBlocks, images, files, toolCalls string
+		var reasoningBlocks, images, files, toolCalls, discoveredTools string
 		var at sql.NullString
 		if err := rows.Scan(
 			&rec.Role, &rec.Content, &rec.Phase, &rec.ClientID, &steered, &rec.ReasoningContent,
-			&reasoningBlocks, &images, &files, &toolCalls,
+			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
 			&rec.ToolCallID, &rec.ToolResultKind, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
 		); err != nil {
 			return nil, fmt.Errorf("scan session history: %w", err)
@@ -1007,6 +1012,7 @@ WHERE session_id = ?`
 		rec.Images = rawMessage(images)
 		rec.Files = rawMessage(files)
 		rec.ToolCalls = rawMessage(toolCalls)
+		rec.DiscoveredTools = rawMessage(discoveredTools)
 		if at.Valid {
 			rec.At = parseTime(at.String)
 		}

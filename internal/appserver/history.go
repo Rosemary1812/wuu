@@ -36,24 +36,25 @@ type persistedFile struct {
 }
 
 type persistedMessage struct {
-	Role                string                     `json:"role"`
-	Content             string                     `json:"content"`
-	Phase               string                     `json:"phase,omitempty"`
-	ClientID            string                     `json:"client_id,omitempty"`
-	Steered             bool                       `json:"steered,omitempty"`
-	ReasoningContent    string                     `json:"reasoning_content,omitempty"`
-	ReasoningBlocks     []providers.ReasoningBlock `json:"reasoning_blocks,omitempty"`
-	Images              []persistedImage           `json:"images,omitempty"`
-	Files               []persistedFile            `json:"files,omitempty"`
-	ToolCalls           []persistedToolCall        `json:"tool_calls,omitempty"`
-	ToolCallID          string                     `json:"tool_call_id,omitempty"`
-	ToolResultKind      string                     `json:"tool_result_kind,omitempty"`
-	Name                string                     `json:"name,omitempty"`
-	At                  time.Time                  `json:"at,omitempty"`
-	InputTokens         int                        `json:"input_tokens,omitempty"`
-	OutputTokens        int                        `json:"output_tokens,omitempty"`
-	CacheCreationTokens int                        `json:"cache_creation_tokens,omitempty"`
-	CacheReadTokens     int                        `json:"cache_read_tokens,omitempty"`
+	Role                string                             `json:"role"`
+	Content             string                             `json:"content"`
+	Phase               string                             `json:"phase,omitempty"`
+	ClientID            string                             `json:"client_id,omitempty"`
+	Steered             bool                               `json:"steered,omitempty"`
+	ReasoningContent    string                             `json:"reasoning_content,omitempty"`
+	ReasoningBlocks     []providers.ReasoningBlock         `json:"reasoning_blocks,omitempty"`
+	Images              []persistedImage                   `json:"images,omitempty"`
+	Files               []persistedFile                    `json:"files,omitempty"`
+	ToolCalls           []persistedToolCall                `json:"tool_calls,omitempty"`
+	DiscoveredTools     []providers.LoadableToolDefinition `json:"discovered_tools,omitempty"`
+	ToolCallID          string                             `json:"tool_call_id,omitempty"`
+	ToolResultKind      string                             `json:"tool_result_kind,omitempty"`
+	Name                string                             `json:"name,omitempty"`
+	At                  time.Time                          `json:"at,omitempty"`
+	InputTokens         int                                `json:"input_tokens,omitempty"`
+	OutputTokens        int                                `json:"output_tokens,omitempty"`
+	CacheCreationTokens int                                `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int                                `json:"cache_read_tokens,omitempty"`
 }
 
 type persistedAgentHistory struct {
@@ -100,6 +101,7 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 			ReasoningBlocks:  append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
 			ToolCallID:       rec.ToolCallID,
 			ToolResultKind:   providers.NormalizeToolCallKind(rec.ToolResultKind),
+			DiscoveredTools:  providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
 		}
 		for _, image := range rec.Images {
 			if strings.TrimSpace(image.Data) == "" {
@@ -262,6 +264,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		Steered:          msg.Steered,
 		ReasoningContent: msg.ReasoningContent,
 		ReasoningBlocks:  append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...),
+		DiscoveredTools:  providers.CloneLoadableToolDefinitions(msg.DiscoveredTools),
 		ToolCallID:       msg.ToolCallID,
 		ToolResultKind:   string(msg.ToolResultKind),
 		Name:             msg.Name,
@@ -421,6 +424,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		Images:              mustJSON(rec.Images),
 		Files:               mustJSON(rec.Files),
 		ToolCalls:           mustJSON(rec.ToolCalls),
+		DiscoveredTools:     mustJSON(rec.DiscoveredTools),
 		ToolCallID:          rec.ToolCallID,
 		ToolResultKind:      rec.ToolResultKind,
 		Name:                rec.Name,
@@ -461,6 +465,10 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 	if err := unmarshalRaw(rec.ToolCalls, &out.ToolCalls); err != nil {
 		return persistedMessage{}, err
 	}
+	if err := unmarshalRaw(rec.DiscoveredTools, &out.DiscoveredTools); err != nil {
+		return persistedMessage{}, err
+	}
+	out.DiscoveredTools = providers.CloneLoadableToolDefinitions(out.DiscoveredTools)
 	return out, nil
 }
 

@@ -630,7 +630,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			BaseRepo:      req.BaseRepo,
 			IsFork:        true,
 			ForkMode:      req.ForkMode,
-			ParentHistory: append([]providers.ChatMessage(nil), parentHistory...),
+			ParentHistory: providers.CloneChatMessages(parentHistory),
 		}
 		c.recordHarnessTaskQueued(threadMeta, wt.Name, req.Prompt, isolation, req.BaseRepo, "", "")
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
@@ -700,7 +700,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		historyPath = filepath.Join(c.historyDir, workerID+".json")
 	}
 
-	initialHistory := append([]providers.ChatMessage(nil), parentHistory...)
+	initialHistory := providers.CloneChatMessages(parentHistory)
 	if threadMeta.AgentProfile != "" {
 		sys, sysErr := c.workerSystemPrompt(workerRoot, wt, threadMeta, isolation)
 		if sysErr != nil {
@@ -1161,7 +1161,7 @@ func (c *AgentControl) workerSystemPrompt(rootDir string, wt WorkerType, meta ag
 func withInitialSystemPrompt(history []providers.ChatMessage, systemPrompt string) []providers.ChatMessage {
 	sys := strings.TrimSpace(systemPrompt)
 	if sys == "" {
-		return append([]providers.ChatMessage(nil), history...)
+		return providers.CloneChatMessages(history)
 	}
 	out := make([]providers.ChatMessage, 0, len(history)+1)
 	out = append(out, providers.ChatMessage{Role: "system", Content: sys})
@@ -1169,7 +1169,7 @@ func withInitialSystemPrompt(history []providers.ChatMessage, systemPrompt strin
 	for start < len(history) && strings.TrimSpace(history[start].Role) == "system" {
 		start++
 	}
-	out = append(out, history[start:]...)
+	out = append(out, providers.CloneChatMessages(history[start:])...)
 	return out
 }
 
@@ -1428,7 +1428,7 @@ func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 		BaseRepo:      prepared.BaseRepo,
 		IsFork:        prepared.IsFork,
 		ForkMode:      prepared.ForkMode,
-		ParentHistory: append([]providers.ChatMessage(nil), prepared.ParentHistory...),
+		ParentHistory: providers.CloneChatMessages(prepared.ParentHistory),
 	}
 }
 
@@ -1463,7 +1463,7 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		BaseRepo:      payload.BaseRepo,
 		IsFork:        payload.IsFork,
 		ForkMode:      payload.ForkMode,
-		ParentHistory: append([]providers.ChatMessage(nil), payload.ParentHistory...),
+		ParentHistory: providers.CloneChatMessages(payload.ParentHistory),
 	}, nil
 }
 
@@ -1534,7 +1534,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	}
 	var initialHistory []providers.ChatMessage
 	if prepared.IsFork {
-		initialHistory = append([]providers.ChatMessage(nil), prepared.ParentHistory...)
+		initialHistory = providers.CloneChatMessages(prepared.ParentHistory)
 		if prepared.ThreadMeta.AgentProfile != "" {
 			initialHistory = withInitialSystemPrompt(initialHistory, systemPrompt)
 		} else {

@@ -535,6 +535,41 @@ func TestBuildAnthropicRequest_ToolSearchNativeEnabledUsesToolReferences(t *test
 	}
 }
 
+func TestBuildAnthropicRequest_CompactedDiscoveredToolsRestoreAsVisibleTools(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []providers.ChatMessage{
+			{
+				Role:    "system",
+				Content: "[Conversation summary]\nSummary:\nOlder turns discovered the docs search tool.",
+				DiscoveredTools: []providers.LoadableToolDefinition{{
+					Type:        "function",
+					Name:        "mcp_docs_search",
+					Description: "Search docs through MCP",
+					InputSchema: map[string]any{"type": "object"},
+				}},
+			},
+			{Role: "user", Content: "continue"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}, CacheStable: true},
+			{Name: "mcp_docs_search", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+		},
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://api.anthropic.com"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Betas) != 1 || payload.Betas[0] != toolSearchBetaHeader1P {
+		t.Fatalf("expected tool search beta, got %+v", payload.Betas)
+	}
+	if len(payload.Tools) != 2 {
+		t.Fatalf("expected 2 tools, got %+v", payload.Tools)
+	}
+	if payload.Tools[1].Name != "mcp_docs_search" || payload.Tools[1].DeferLoading {
+		t.Fatalf("compacted discovered tool should be restored as visible schema, got %+v", payload.Tools[1])
+	}
+}
+
 func TestBuildAnthropicRequest_ToolSearchDisabledForProxyByDefault(t *testing.T) {
 	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
 		Model: "claude-sonnet-4-5",

@@ -512,7 +512,7 @@ func (s *Server) agentSessionThread(agentID string) (Thread, bool, error) {
 				}
 			} else {
 				rec = loaded
-				history = append([]providers.ChatMessage(nil), rec.Messages...)
+				history = cloneHistory(rec.Messages)
 			}
 		}
 	}

@@ -70,7 +70,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		cancel()
 		return s.writeResponse(req.ID, nil, err)
 	}
-	history := append([]providers.ChatMessage(nil), th.History...)
+	history := cloneHistory(th.History)
 	history = append(history, userMsg)
 	th.History = history
 	th.cancel = cancel
@@ -541,7 +541,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	th.mu.Lock()
 	rewriteHistory := res.HistoryRewritten
 	if res.HistoryRewritten {
-		th.History = append([]providers.ChatMessage(nil), res.NewMessages...)
+		th.History = cloneHistory(res.NewMessages)
 	} else {
 		th.History = append(th.History, res.NewMessages...)
 	}
@@ -841,7 +841,7 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 		cancel()
 		return false, err
 	}
-	history := append([]providers.ChatMessage(nil), th.History...)
+	history := cloneHistory(th.History)
 	history = append(history, entry.msg)
 	th.History = history
 	th.cancel = cancel
@@ -1002,7 +1002,7 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 		cancel()
 		return false, err
 	}
-	history := append([]providers.ChatMessage(nil), th.History...)
+	history := cloneHistory(th.History)
 	history = append(history, userMsg)
 	th.History = history
 	th.cancel = cancel
@@ -1038,7 +1038,7 @@ func threadIsRunning(th *threadState) bool {
 func (s *Server) takePendingAgentCompletionTurns(threadID string) []providers.ChatMessage {
 	s.agentCompletionMu.Lock()
 	defer s.agentCompletionMu.Unlock()
-	pending := append([]providers.ChatMessage(nil), s.pendingAgentCompletionTurns[threadID]...)
+	pending := cloneHistory(s.pendingAgentCompletionTurns[threadID])
 	delete(s.pendingAgentCompletionTurns, threadID)
 	return pending
 }
@@ -1052,8 +1052,8 @@ func (s *Server) prependPendingAgentCompletionTurns(threadID string, msgs []prov
 	if s.pendingAgentCompletionTurns == nil {
 		s.pendingAgentCompletionTurns = make(map[string][]providers.ChatMessage)
 	}
-	existing := append([]providers.ChatMessage(nil), s.pendingAgentCompletionTurns[threadID]...)
-	s.pendingAgentCompletionTurns[threadID] = append(append([]providers.ChatMessage(nil), msgs...), existing...)
+	existing := cloneHistory(s.pendingAgentCompletionTurns[threadID])
+	s.pendingAgentCompletionTurns[threadID] = append(cloneHistory(msgs), existing...)
 }
 
 func (s *Server) discardPendingAgentCompletionTurns(threadID string) {

@@ -325,7 +325,13 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 	applyAnthropicCacheHint(&payload, req.CacheHint)
 
 	if len(req.Tools) > 0 {
-		payload.Tools = buildAnthropicTools(req.Model, req.Tools, anthropicDiscoveredToolNames(req.Messages), toolSearchEnabled)
+		payload.Tools = buildAnthropicTools(
+			req.Model,
+			req.Tools,
+			providers.DiscoveredToolNamesFromMessages(req.Messages),
+			anthropicCompactedDiscoveredToolNames(req.Messages),
+			toolSearchEnabled,
+		)
 	}
 
 	// Effort level: maps to output_config.effort. Aligned with Claude
@@ -526,7 +532,7 @@ func shouldCacheAnthropicSystem(hint *providers.CacheHint) bool {
 	return hint != nil && hint.StableSystem
 }
 
-func buildAnthropicTools(model string, defs []providers.ToolDefinition, discovered map[string]struct{}, toolSearchEnabled bool) []anthropicTool {
+func buildAnthropicTools(model string, defs []providers.ToolDefinition, discovered, compacted map[string]struct{}, toolSearchEnabled bool) []anthropicTool {
 	if len(defs) == 0 {
 		return nil
 	}
@@ -538,7 +544,7 @@ func buildAnthropicTools(model string, defs []providers.ToolDefinition, discover
 			Description: tool.Description,
 			InputSchema: providers.ToolInputSchemaForModel(model, tool.InputSchema),
 		}
-		if toolSearchEnabled && shouldDeferAnthropicTool(tool, discovered) {
+		if toolSearchEnabled && shouldDeferAnthropicTool(tool, discovered, compacted) {
 			mapped.DeferLoading = true
 		}
 		if stablePrefix > 0 && i == stablePrefix-1 {
@@ -549,8 +555,11 @@ func buildAnthropicTools(model string, defs []providers.ToolDefinition, discover
 	return out
 }
 
-func shouldDeferAnthropicTool(tool providers.ToolDefinition, discovered map[string]struct{}) bool {
+func shouldDeferAnthropicTool(tool providers.ToolDefinition, discovered, compacted map[string]struct{}) bool {
 	if strings.EqualFold(tool.Name, "tool_search") {
+		return false
+	}
+	if _, ok := compacted[tool.Name]; ok {
 		return false
 	}
 	if tool.DeferLoading {
@@ -560,19 +569,16 @@ func shouldDeferAnthropicTool(tool providers.ToolDefinition, discovered map[stri
 	return ok
 }
 
-func anthropicDiscoveredToolNames(messages []providers.ChatMessage) map[string]struct{} {
-	names := map[string]struct{}{}
-	for _, msg := range messages {
-		if !isAnthropicToolSearchResult(msg) {
-			continue
-		}
-		for _, tool := range anthropicLoadableToolsFromResult(msg.Content) {
-			if name := strings.TrimSpace(tool.Name); name != "" {
-				names[name] = struct{}{}
-			}
-		}
+func anthropicCompactedDiscoveredToolNames(messages []providers.ChatMessage) map[string]struct{} {
+	compacted := providers.AttachedDiscoveredToolNamesFromMessages(messages)
+	if len(compacted) == 0 {
+		return compacted
 	}
-	return names
+	raw := providers.ToolSearchResultToolNamesFromMessages(messages)
+	for name := range raw {
+		delete(compacted, name)
+	}
+	return compacted
 }
 
 func stableToolPrefixLength(defs []providers.ToolDefinition) int {
@@ -1009,7 +1015,7 @@ func anthropicToolResultBlock(msg providers.ChatMessage, toolSearchEnabled bool)
 }
 
 func isAnthropicToolSearchResult(msg providers.ChatMessage) bool {
-	return msg.ToolResultKind == providers.ToolCallKindToolSearch || strings.EqualFold(msg.Name, "tool_search")
+	return providers.IsToolSearchResultMessage(msg)
 }
 
 func anthropicToolReferencesFromResult(content string) []anthropicBlock {
@@ -1029,13 +1035,7 @@ func anthropicToolReferencesFromResult(content string) []anthropicBlock {
 }
 
 func anthropicLoadableToolsFromResult(content string) []providers.LoadableToolDefinition {
-	var parsed struct {
-		LoadableTools []providers.LoadableToolDefinition `json:"loadable_tools"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &parsed); err != nil {
-		return nil
-	}
-	return parsed.LoadableTools
+	return providers.LoadableToolsFromToolSearchResult(content)
 }
 
 func anthropicToolCallKind(name string) providers.ToolCallKind {

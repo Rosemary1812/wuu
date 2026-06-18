@@ -140,7 +140,7 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		toolkit:        opts.Toolkit,
 		historyPath:    opts.HistoryPath,
 		initialHistory: opts.InitialHistory,
-		history:        append([]providers.ChatMessage(nil), history...),
+		history:        providers.CloneChatMessages(history),
 		maxSteps:       opts.MaxSteps,
 		maxLifetime:    lifetime,
 		client:         m.client,
@@ -244,11 +244,11 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	runner.BeforeStep = beforeStep
 	res, err := runner.RunWithCallback(ctx, history, onEvent)
 	content := res.Content
-	nextHistory := append([]providers.ChatMessage(nil), history...)
+	nextHistory := providers.CloneChatMessages(history)
 	if res.HistoryRewritten {
-		nextHistory = append([]providers.ChatMessage(nil), res.NewMessages...)
+		nextHistory = providers.CloneChatMessages(res.NewMessages)
 	} else if len(res.NewMessages) > 0 {
-		nextHistory = append(nextHistory, res.NewMessages...)
+		nextHistory = append(nextHistory, providers.CloneChatMessages(res.NewMessages)...)
 	}
 
 	sa.mu.Lock()
@@ -413,7 +413,7 @@ func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSna
 		return snap, fmt.Errorf("subagent %q is cancelled and cannot receive follow-up messages", id)
 	}
 
-	history := append([]providers.ChatMessage(nil), sa.history...)
+	history := providers.CloneChatMessages(sa.history)
 	if len(history) == 0 {
 		sa.mu.Unlock()
 		return SubAgentSnapshot{}, fmt.Errorf("subagent %q has no history to resume", id)
@@ -605,6 +605,7 @@ func cloneChatMessage(msg providers.ChatMessage) providers.ChatMessage {
 	msg.Images = append([]providers.InputImage(nil), msg.Images...)
 	msg.Files = append([]providers.InputFile(nil), msg.Files...)
 	msg.ReasoningBlocks = append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...)
+	msg.DiscoveredTools = providers.CloneLoadableToolDefinitions(msg.DiscoveredTools)
 	if len(msg.ToolCalls) > 0 {
 		msg.ToolCalls = make([]providers.ToolCall, len(msg.ToolCalls))
 		for i, call := range msg.ToolCalls {

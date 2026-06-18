@@ -179,7 +179,7 @@ func (s *SubAgent) Snapshot() SubAgentSnapshot {
 func (s *SubAgent) HistorySnapshot() []providers.ChatMessage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]providers.ChatMessage(nil), s.history...)
+	return providers.CloneChatMessages(s.history)
 }
 
 // SubAgentSnapshot is an immutable view of a SubAgent's state at a

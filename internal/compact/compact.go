@@ -243,7 +243,7 @@ func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, cl
 	ctx, cancel := withCompactTimeout(ctx)
 	defer cancel()
 
-	systemPrefix, previousSummary, conversation := splitLeadingSystemMessages(messages)
+	systemPrefix, previousSummary, previousSummaryDiscoveredTools, conversation := splitLeadingSystemMessages(messages)
 	if len(conversation) <= 2 {
 		return messages, nil
 	}
@@ -297,9 +297,17 @@ func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, cl
 			return messages, nil
 		}
 
-		compacted := append([]providers.ChatMessage(nil), systemPrefix...)
-		compacted = append(compacted, providers.ChatMessage{Role: "system", Content: BuildSummaryContent(summary)})
-		compacted = append(compacted, toKeep...)
+		summaryDiscoveredTools := providers.MergeLoadableToolDefinitions(
+			previousSummaryDiscoveredTools,
+			providers.DiscoveredToolsFromMessages(conversationForCompact[:keepStart]),
+		)
+		compacted := providers.CloneChatMessages(systemPrefix)
+		compacted = append(compacted, providers.ChatMessage{
+			Role:            "system",
+			Content:         BuildSummaryContent(summary),
+			DiscoveredTools: summaryDiscoveredTools,
+		})
+		compacted = append(compacted, providers.CloneChatMessages(toKeep)...)
 		return compacted, nil
 	}
 }
@@ -391,21 +399,23 @@ func isIncompleteCompactStream(err error) bool {
 		strings.Contains(msg, "before response.completed")
 }
 
-func splitLeadingSystemMessages(messages []providers.ChatMessage) ([]providers.ChatMessage, string, []providers.ChatMessage) {
+func splitLeadingSystemMessages(messages []providers.ChatMessage) ([]providers.ChatMessage, string, []providers.LoadableToolDefinition, []providers.ChatMessage) {
 	i := 0
 	systemPrefix := make([]providers.ChatMessage, 0)
 	previousSummary := ""
+	var previousSummaryDiscoveredTools []providers.LoadableToolDefinition
 	for i < len(messages) && strings.EqualFold(messages[i].Role, "system") {
 		msg := messages[i]
 		if IsConversationSummaryContent(msg.Content) {
 			previousSummary = summaryBodyFromContent(msg.Content)
+			previousSummaryDiscoveredTools = providers.MergeLoadableToolDefinitions(previousSummaryDiscoveredTools, msg.DiscoveredTools)
 			i++
 			continue
 		}
 		systemPrefix = append(systemPrefix, msg)
 		i++
 	}
-	return systemPrefix, previousSummary, messages[i:]
+	return systemPrefix, previousSummary, previousSummaryDiscoveredTools, messages[i:]
 }
 
 // FormatSummary turns the model's compact response into the content that will

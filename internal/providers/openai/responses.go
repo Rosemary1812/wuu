@@ -86,6 +86,15 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 
 	instructions, messages := splitResponsesInstructions(normalized)
 	input := make([]responsesInputItem, 0, len(messages))
+	if tools := responsesCompactedDiscoveredTools(req.Model, normalized); len(tools) > 0 {
+		input = append(input, responsesInputItem{
+			Type:      "tool_search_output",
+			CallID:    "wuu-compact-discovered-tools",
+			Status:    "completed",
+			Execution: "server",
+			Tools:     tools,
+		})
+	}
 	for _, msg := range messages {
 		input = appendResponsesInputItem(input, msg, req.Model)
 	}
@@ -109,7 +118,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		payload.Reasoning = &responsesReasoning{Effort: req.Effort}
 	}
 	if len(req.Tools) > 0 {
-		discoveredToolNames := responsesDiscoveredToolNames(normalized)
+		discoveredToolNames := providers.DiscoveredToolNamesFromMessages(normalized)
 		tools := make([]responsesToolDefinition, 0, len(req.Tools))
 		for _, tool := range req.Tools {
 			if shouldOmitResponsesTopLevelTool(tool, discoveredToolNames) {
@@ -380,41 +389,38 @@ func responsesToolDefinitionFromLoadable(model string, tool providers.LoadableTo
 }
 
 func responsesToolSearchOutputTools(model string, content string) []responsesToolDefinition {
-	var parsed struct {
-		LoadableTools []providers.LoadableToolDefinition `json:"loadable_tools"`
+	return responsesToolDefinitionsFromLoadable(model, providers.LoadableToolsFromToolSearchResult(content))
+}
+
+func responsesCompactedDiscoveredTools(model string, messages []providers.ChatMessage) []responsesToolDefinition {
+	attached := providers.AttachedDiscoveredToolsFromMessages(messages)
+	if len(attached) == 0 {
+		return nil
 	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &parsed); err != nil {
-		return []responsesToolDefinition{}
+	rawNames := providers.ToolSearchResultToolNamesFromMessages(messages)
+	filtered := make([]providers.LoadableToolDefinition, 0, len(attached))
+	for _, tool := range attached {
+		name := strings.TrimSpace(tool.Name)
+		if name == "" {
+			continue
+		}
+		if _, exists := rawNames[name]; exists {
+			continue
+		}
+		filtered = append(filtered, tool)
 	}
-	tools := make([]responsesToolDefinition, 0, len(parsed.LoadableTools))
-	for _, tool := range parsed.LoadableTools {
+	return responsesToolDefinitionsFromLoadable(model, filtered)
+}
+
+func responsesToolDefinitionsFromLoadable(model string, loadable []providers.LoadableToolDefinition) []responsesToolDefinition {
+	tools := make([]responsesToolDefinition, 0, len(loadable))
+	for _, tool := range loadable {
 		if strings.TrimSpace(tool.Name) == "" {
 			continue
 		}
 		tools = append(tools, responsesToolDefinitionFromLoadable(model, tool))
 	}
 	return tools
-}
-
-func responsesDiscoveredToolNames(messages []providers.ChatMessage) map[string]struct{} {
-	names := map[string]struct{}{}
-	for _, msg := range messages {
-		if !isResponsesToolSearchResult(msg) {
-			continue
-		}
-		var parsed struct {
-			LoadableTools []providers.LoadableToolDefinition `json:"loadable_tools"`
-		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(msg.Content)), &parsed); err != nil {
-			continue
-		}
-		for _, tool := range parsed.LoadableTools {
-			if name := strings.TrimSpace(tool.Name); name != "" {
-				names[name] = struct{}{}
-			}
-		}
-	}
-	return names
 }
 
 func shouldOmitResponsesTopLevelTool(tool providers.ToolDefinition, discovered map[string]struct{}) bool {

@@ -136,7 +136,5 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 }
 
 func cloneHistory(history []providers.ChatMessage) []providers.ChatMessage {
-	out := make([]providers.ChatMessage, len(history))
-	copy(out, history)
-	return out
+	return providers.CloneChatMessages(history)
 }

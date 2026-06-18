@@ -558,12 +558,7 @@ func compactChanged(before, after []providers.ChatMessage) bool {
 // copyMessages returns an independent copy of msgs so callers can
 // safely retain it after the loop's working slice is reused.
 func copyMessages(msgs []providers.ChatMessage) []providers.ChatMessage {
-	if len(msgs) == 0 {
-		return nil
-	}
-	out := make([]providers.ChatMessage, len(msgs))
-	copy(out, msgs)
-	return out
+	return providers.CloneChatMessages(msgs)
 }
 
 func normalizeLiveMessages(messages []providers.ChatMessage) ([]providers.ChatMessage, bool, error) {

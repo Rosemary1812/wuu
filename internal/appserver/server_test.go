@@ -3084,6 +3084,12 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 			Arguments: `{"path":"README.md"}`,
 			Display:   &providers.ToolCallDisplay{Kind: "read", Text: "README.md"},
 		}},
+		DiscoveredTools: []providers.LoadableToolDefinition{{
+			Type:        "function",
+			Name:        "mcp_docs_search",
+			Description: "Search docs",
+			InputSchema: map[string]any{"type": "object"},
+		}},
 	}
 	if err := appendChatMessage(sessionPath, msg); err != nil {
 		t.Fatalf("append message: %v", err)
@@ -3111,6 +3117,9 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 	}
 	if len(got.ToolCalls) != 1 || got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].Display == nil || got.ToolCalls[0].Display.Text != "README.md" {
 		t.Fatalf("tool calls did not round-trip: %+v", got.ToolCalls)
+	}
+	if len(got.DiscoveredTools) != 1 || got.DiscoveredTools[0].Name != "mcp_docs_search" || got.DiscoveredTools[0].InputSchema["type"] != "object" {
+		t.Fatalf("discovered tools did not round-trip: %+v", got.DiscoveredTools)
 	}
 }
 

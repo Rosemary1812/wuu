@@ -291,7 +291,7 @@ func (s *Session) Run(ctx context.Context, req Request) (result Result) {
 }
 
 func buildMessages(req Request) []providers.ChatMessage {
-	messages := append([]providers.ChatMessage(nil), req.Messages...)
+	messages := providers.CloneChatMessages(req.Messages)
 	if strings.TrimSpace(req.SystemPrompt) != "" {
 		messages = append([]providers.ChatMessage{{Role: "system", Content: strings.TrimSpace(req.SystemPrompt)}}, messages...)
 	}

@@ -38,7 +38,7 @@ func LoadableToolFromDefinition(def ToolDefinition) LoadableToolDefinition {
 		Type:         "function",
 		Name:         def.Name,
 		Description:  def.Description,
-		InputSchema:  def.InputSchema,
+		InputSchema:  cloneLoadableToolSchema(def.InputSchema),
 		DeferLoading: true,
 	}
 }
@@ -144,6 +144,9 @@ type ChatMessage struct {
 	ToolCallID       string
 	ToolResultKind   ToolCallKind
 	ToolCalls        []ToolCall
+	// DiscoveredTools carries provider-native deferred tool state across
+	// compact/resume/fork boundaries without adding full schemas to prompt text.
+	DiscoveredTools []LoadableToolDefinition
 }
 
 // CacheHint carries provider-agnostic prompt-cache guidance.

@@ -209,6 +209,81 @@ func TestBuildSummaryContent_UsesStableConversationSummaryPrefix(t *testing.T) {
 	}
 }
 
+func TestCompact_PreservesDiscoveredToolsOnSummaryMessage(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "find docs"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{
+			ID:        "search_1",
+			Name:      "tool_search",
+			Kind:      providers.ToolCallKindToolSearch,
+			Arguments: `{"query":"docs"}`,
+		}}},
+		{
+			Role:           "tool",
+			Name:           "tool_search",
+			ToolCallID:     "search_1",
+			ToolResultKind: providers.ToolCallKindToolSearch,
+			Content:        `{"loadable_tools":[{"type":"function","name":"mcp_docs_search","description":"Search docs","input_schema":{"type":"object","properties":{"query":{"type":"string"}}}}]}`,
+		},
+		{Role: "assistant", Content: "Use mcp_docs_search for docs."},
+		{Role: "user", Content: "now inspect the config"},
+		{Role: "assistant", Content: "config inspected"},
+		{Role: "user", Content: "what remains?"},
+		{Role: "assistant", Content: "one follow-up remains"},
+	}
+
+	client := &mockCompactClient{response: "docs search tool was discovered"}
+	result, err := Compact(context.Background(), messages, client, "test")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if len(result) < 3 || result[0].Role != "system" {
+		t.Fatalf("expected compacted summary plus recent tail, got %+v", result)
+	}
+	tools := result[0].DiscoveredTools
+	if len(tools) != 1 || tools[0].Name != "mcp_docs_search" || tools[0].InputSchema["type"] != "object" {
+		t.Fatalf("expected discovered tool metadata on compact summary, got %+v", tools)
+	}
+	if strings.Contains(result[0].Content, "input_schema") || strings.Contains(result[0].Content, "mcp_docs_search") {
+		t.Fatalf("summary text should not embed tool schema metadata, got %q", result[0].Content)
+	}
+	for _, msg := range result[1:] {
+		if msg.Role == "tool" && msg.ToolCallID == "search_1" {
+			t.Fatalf("old tool_search result should have been summarized, got tail %+v", result)
+		}
+	}
+}
+
+func TestCompact_CarriesPreviousSummaryDiscoveredTools(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{
+			Role:    "system",
+			Content: BuildSummaryContent("older summary"),
+			DiscoveredTools: []providers.LoadableToolDefinition{{
+				Type:        "function",
+				Name:        "mcp_docs_search",
+				InputSchema: map[string]any{"type": "object"},
+			}},
+		},
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+	}
+
+	client := &mockCompactClient{response: "new summary"}
+	result, err := Compact(context.Background(), messages, client, "test")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if len(result) != 1 || result[0].Role != "system" {
+		t.Fatalf("expected compacted summary, got %+v", result)
+	}
+	if tools := result[0].DiscoveredTools; len(tools) != 1 || tools[0].Name != "mcp_docs_search" {
+		t.Fatalf("expected previous summary discovered tools to carry forward, got %+v", tools)
+	}
+}
+
 func TestCompact_SetsSummaryOutputControls(t *testing.T) {
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "first"},

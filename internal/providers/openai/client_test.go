@@ -1646,6 +1646,76 @@ func TestResponsesChat_RendersToolSearchHistoryAsNativeOutputAndOmitsDiscoveredT
 	}
 }
 
+func TestResponsesChat_RestoresCompactedDiscoveredToolsAsServerOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		tools, ok := body["tools"].([]any)
+		if !ok || len(tools) != 1 {
+			t.Fatalf("expected only tool_search top-level tool, got %#v", body["tools"])
+		}
+		if tools[0].(map[string]any)["type"] != "tool_search" {
+			t.Fatalf("unexpected top-level tools: %#v", tools)
+		}
+
+		input, ok := body["input"].([]any)
+		if !ok || len(input) != 2 {
+			t.Fatalf("unexpected input payload: %#v", body["input"])
+		}
+		outputItem := input[0].(map[string]any)
+		if outputItem["type"] != "tool_search_output" || outputItem["status"] != "completed" || outputItem["execution"] != "server" {
+			t.Fatalf("unexpected compact restore item: %#v", outputItem)
+		}
+		outputTools, ok := outputItem["tools"].([]any)
+		if !ok || len(outputTools) != 1 {
+			t.Fatalf("unexpected compact restored tools: %#v", outputItem["tools"])
+		}
+		discovered := outputTools[0].(map[string]any)
+		if discovered["name"] != "mcp_docs_search" || discovered["defer_loading"] != true {
+			t.Fatalf("unexpected compact restored tool shape: %#v", discovered)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{
+				Role:    "system",
+				Content: "[Conversation summary]\nSummary:\nOlder turns discovered the docs search tool.",
+				DiscoveredTools: []providers.LoadableToolDefinition{{
+					Type:        "function",
+					Name:        "mcp_docs_search",
+					Description: "Search docs through MCP",
+					InputSchema: map[string]any{"type": "object"},
+				}},
+			},
+			{Role: "user", Content: "continue"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", Description: "Search deferred tools", InputSchema: map[string]any{"type": "object"}},
+			{Name: "mcp_docs_search", Description: "Search docs through MCP", InputSchema: map[string]any{"type": "object"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestResponsesChat_RendersFailedToolSearchAsEmptyNativeOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {

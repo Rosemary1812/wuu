@@ -55,7 +55,7 @@ func persistHistory(sa *SubAgent) error {
 		Model:        sa.model,
 		Prompt:       sa.prompt,
 		Result:       sa.Result,
-		Messages:     append([]providers.ChatMessage(nil), sa.history...),
+		Messages:     providers.CloneChatMessages(sa.history),
 	}
 	if sa.Error != nil {
 		rec.Error = sa.Error.Error()

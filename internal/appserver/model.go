@@ -19,7 +19,7 @@ type outboundNotification struct {
 func newThreadState(id string, history []providers.ChatMessage, rtProvider, model, cwd, memoryPath string, now time.Time) *threadState {
 	return &threadState{
 		ID:            id,
-		History:       append([]providers.ChatMessage(nil), history...),
+		History:       cloneHistory(history),
 		CreatedAt:     now,
 		UpdatedAt:     now,
 		ModelProvider: rtProvider,
@@ -156,7 +156,7 @@ func (th *threadState) takePendingSteersLocked(turnID string, now time.Time) ([]
 	if len(th.pendingSteers) == 0 || turnID == "" || turnID != th.currentTurn {
 		return nil, nil
 	}
-	steers := append([]providers.ChatMessage(nil), th.pendingSteers...)
+	steers := cloneHistory(th.pendingSteers)
 	th.pendingSteers = nil
 	var out []outboundNotification
 	for i := range steers {
@@ -178,7 +178,7 @@ func (th *threadState) drainPendingSteersLocked() []providers.ChatMessage {
 	if len(th.pendingSteers) == 0 {
 		return nil
 	}
-	steers := append([]providers.ChatMessage(nil), th.pendingSteers...)
+	steers := cloneHistory(th.pendingSteers)
 	th.pendingSteers = nil
 	return steers
 }
