@@ -564,6 +564,16 @@
   --stream-cursor-color: #2f4a5f;
 }
 
+/* Off-screen stable blocks skip layout and paint. The intrinsic-size
+   hint keeps the scrollbar from jumping while a block is in the
+   "skipped" state. The tail is intentionally NOT wrapped in this
+   class, so the actively-revealed text always renders at full
+   quality regardless of viewport position. */
+.streaming-markdown-block {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+
 /* The 1px cursor. Sits inline at the end of the text. No breathing,
    no glow, no blinking — just a quiet marker that says "more to come". */
 .stream-cursor {

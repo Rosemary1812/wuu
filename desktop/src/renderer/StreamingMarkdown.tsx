@@ -352,13 +352,19 @@ export function StreamingMarkdown({
       data-stream-state={phase}
     >
       {split.blocks.map((block, index) => (
-        <MemoMarkdownContent
-          // Stable blocks are append-only; once at index N, never moves.
-          key={index}
-          text={block}
-          cwd={cwd}
-          renderMermaid={renderMermaid}
-        />
+        // Wrap each stable block in a `.streaming-markdown-block` so the
+        // off-screen content-visibility optimization (see turns.css) can
+        // skip layout/paint for blocks the user has scrolled past. The
+        // wrapper carries the React list key; the inner memoized
+        // MarkdownContent keeps the existing block-level memoization
+        // contract intact.
+        <div className="streaming-markdown-block" key={index}>
+          <MemoMarkdownContent
+            text={block}
+            cwd={cwd}
+            renderMermaid={renderMermaid}
+          />
+        </div>
       ))}
       <MarkdownContent
         text={tailText}
