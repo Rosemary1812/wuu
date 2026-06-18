@@ -359,7 +359,11 @@ func runSession(args []string) error {
 		return runSessionShowSubcommand(args[1:])
 	case "trace":
 		return runSessionTrace(args[1:])
-	case "search", "archive", "delete":
+	case "search":
+		return runSessionSearch(args[1:])
+	case "archive":
+		return runSessionArchive(args[1:])
+	case "delete":
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("wuu session %s is not implemented yet", args[0]))
 	default:
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("unknown session subcommand %q", args[0]))
@@ -492,6 +496,165 @@ func runSessionTrace(args []string) error {
 	}
 	fmt.Printf("events: %d\n", summary.EventCount)
 	return nil
+}
+
+type sessionSearchResult struct {
+	ThreadID string          `json:"thread_id"`
+	Session  session.Session `json:"session"`
+	Snippet  string          `json:"snippet,omitempty"`
+}
+
+func runSessionSearch(args []string) error {
+	fs := flag.NewFlagSet("session search", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output as JSON")
+	limit := fs.Int("limit", 40, "max results to print")
+	workdir := fs.String("workdir", "", "workspace directory")
+	allWorkdirs := fs.Bool("all-workdirs", false, "search sessions from every workspace")
+	includeArchived := fs.Bool("include-archived", false, "include archived sessions")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	query := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	if query == "" {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("search query is required"))
+	}
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	var sessions []session.Session
+	if *allWorkdirs {
+		sessions, err = session.List(sessDir, 0)
+	} else {
+		rootDir, werr := resolveWorkdir(*workdir)
+		if werr != nil {
+			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, werr)
+		}
+		sessions, err = session.ListForCWD(sessDir, rootDir, 0)
+	}
+	if err != nil {
+		return fmt.Errorf("list sessions: %w", err)
+	}
+	results, err := searchSessions(sessDir, filterArchivedSessions(sessions, *includeArchived), query, *limit)
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		return printJSON(map[string]any{"query": query, "results": results})
+	}
+	for _, result := range results {
+		title := firstNonEmptyString(result.Session.Title, result.Session.Summary, result.ThreadID)
+		if result.Snippet != "" {
+			fmt.Printf("%s\t%s\t%s\t%s\n", result.ThreadID, result.Session.UpdatedAt.Format(time.RFC3339), title, result.Snippet)
+			continue
+		}
+		fmt.Printf("%s\t%s\t%s\n", result.ThreadID, result.Session.UpdatedAt.Format(time.RFC3339), title)
+	}
+	return nil
+}
+
+func runSessionArchive(args []string) error {
+	fs := flag.NewFlagSet("session archive", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output as JSON")
+	unarchive := fs.Bool("unarchive", false, "mark session as active instead of archived")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if len(fs.Args()) == 0 || strings.TrimSpace(fs.Args()[0]) == "" {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("thread id is required"))
+	}
+	threadID := strings.TrimSpace(fs.Args()[0])
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	meta, err := session.UpdateArchived(sessDir, threadID, !*unarchive)
+	if err != nil {
+		return fmt.Errorf("archive %q: %w", threadID, err)
+	}
+	if *jsonOutput {
+		return printJSON(map[string]any{
+			"thread_id": threadID,
+			"session":   meta,
+			"archived":  meta.ArchivedAt != nil,
+		})
+	}
+	if meta.ArchivedAt != nil {
+		fmt.Printf("archived: %s\n", threadID)
+		return nil
+	}
+	fmt.Printf("unarchived: %s\n", threadID)
+	return nil
+}
+
+func searchSessions(sessDir string, sessions []session.Session, query string, limit int) ([]sessionSearchResult, error) {
+	normalizedQuery := normalizeSessionSearchText(query)
+	if normalizedQuery == "" {
+		return nil, nil
+	}
+	results := make([]sessionSearchResult, 0, minPositive(limit, len(sessions)))
+	for _, sess := range sessions {
+		snippet, err := sessionSearchSnippet(sessDir, sess, normalizedQuery)
+		if err != nil {
+			return nil, err
+		}
+		if snippet == "" {
+			continue
+		}
+		results = append(results, sessionSearchResult{
+			ThreadID: sess.ID,
+			Session:  sess,
+			Snippet:  snippet,
+		})
+		if limit > 0 && len(results) >= limit {
+			break
+		}
+	}
+	return results, nil
+}
+
+func sessionSearchSnippet(sessDir string, sess session.Session, normalizedQuery string) (string, error) {
+	for _, candidate := range []string{sess.Title, sess.Summary, sess.ID, sess.CWD} {
+		if sessionSearchMatches(candidate, normalizedQuery) {
+			return compactSessionSearchSnippet(candidate), nil
+		}
+	}
+	records, err := session.LoadHistoryRecords(sessDir, sess.ID, true)
+	if err != nil {
+		return "", fmt.Errorf("load history %q: %w", sess.ID, err)
+	}
+	for _, rec := range records {
+		for _, candidate := range []string{rec.Content, rec.Name, rec.ToolCallID} {
+			if sessionSearchMatches(candidate, normalizedQuery) {
+				return compactSessionSearchSnippet(candidate), nil
+			}
+		}
+	}
+	return "", nil
+}
+
+func sessionSearchMatches(value, normalizedQuery string) bool {
+	return strings.Contains(normalizeSessionSearchText(value), normalizedQuery)
+}
+
+func normalizeSessionSearchText(value string) string {
+	return strings.ToLower(compactSessionSearchSnippet(value))
+}
+
+func compactSessionSearchSnippet(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func minPositive(a, b int) int {
+	if a <= 0 {
+		return b
+	}
+	if b <= 0 || a < b {
+		return a
+	}
+	return b
 }
 
 func printSession(sessDir, id, rootDir string, jsonOutput bool, limit int) error {
@@ -1176,7 +1339,7 @@ Usage:
   wuu exec [flags] "your coding task"
   wuu exec resume (--last|THREAD_ID) [flags] "continue task"
   wuu exec fork THREAD_ID [flags] "continue from a fork"
-  wuu session list|show|trace [flags]
+  wuu session list|show|trace|search|archive [flags]
   wuu run [flags] "your coding task"
   wuu eval [flags]
   wuu goal demo [flags]
@@ -1212,6 +1375,10 @@ Session commands:
                    show session metadata and history
   trace --json [THREAD_ID] [--workdir DIR]
                    replay a session trace artifact
+  search --json QUERY [--workdir DIR]
+                   search session metadata and history
+  archive [--json] THREAD_ID
+                   hide a session from default lists
 
 Run flags:
   --provider        provider name from config

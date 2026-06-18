@@ -186,10 +186,14 @@ Agent-facing session inspection lives under `wuu session`:
 wuu session list --json
 wuu session show --json <thread-id>
 wuu session trace --json <thread-id>
+wuu session search --json <query>
+wuu session archive --json <thread-id>
 ```
 
-These commands are read-only and expose session metadata, persisted history,
-and trace replay data for automation.
+`list`, `show`, `trace`, and `search` are read-only and expose session
+metadata, persisted history, trace replay data, and search results for
+automation. `archive` hides a session from default lists without deleting its
+persisted data.
 
 ## Safety
 

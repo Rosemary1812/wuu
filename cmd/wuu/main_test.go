@@ -1652,6 +1652,128 @@ func TestRunSessionShowSubcommandReturnsHistoryJSON(t *testing.T) {
 	}
 }
 
+func TestRunSessionSearchJSONMatchesHistoryAndFiltersWorkspace(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	workdir := t.TempDir()
+	otherWorkdir := t.TempDir()
+	t.Chdir(workdir)
+
+	home, err := statepath.Home("")
+	if err != nil {
+		t.Fatalf("statepath.Home: %v", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	current, err := session.CreateWithMetadata(sessDir, "search-current", workdir)
+	if err != nil {
+		t.Fatalf("create current session: %v", err)
+	}
+	if err := session.AppendHistoryRecord(sessDir, current.ID, session.HistoryRecord{
+		Role:    "user",
+		Content: "please fix the orion cache regression",
+	}); err != nil {
+		t.Fatalf("append current history: %v", err)
+	}
+	other, err := session.CreateWithMetadata(sessDir, "search-other", otherWorkdir)
+	if err != nil {
+		t.Fatalf("create other session: %v", err)
+	}
+	if err := session.AppendHistoryRecord(sessDir, other.ID, session.HistoryRecord{
+		Role:    "user",
+		Content: "orion cache but another workspace",
+	}); err != nil {
+		t.Fatalf("append other history: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"session", "search", "--json", "orion cache"}); err != nil {
+			t.Fatalf("run session search: %v", err)
+		}
+	})
+
+	var payload struct {
+		Query   string `json:"query"`
+		Results []struct {
+			ThreadID string          `json:"thread_id"`
+			Session  session.Session `json:"session"`
+			Snippet  string          `json:"snippet"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, output)
+	}
+	if payload.Query != "orion cache" {
+		t.Fatalf("query = %q", payload.Query)
+	}
+	if len(payload.Results) != 1 || payload.Results[0].ThreadID != current.ID {
+		t.Fatalf("unexpected search results: %+v", payload.Results)
+	}
+	if !strings.Contains(payload.Results[0].Snippet, "orion cache") {
+		t.Fatalf("snippet should contain match context: %+v", payload.Results[0])
+	}
+}
+
+func TestRunSessionArchiveHidesSessionFromList(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	workdir := t.TempDir()
+	t.Chdir(workdir)
+
+	home, err := statepath.Home("")
+	if err != nil {
+		t.Fatalf("statepath.Home: %v", err)
+	}
+	sessDir := statepath.SessionsDir(home)
+	sess, err := session.CreateWithMetadata(sessDir, "archive-thread", workdir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	archiveOutput := captureStdout(t, func() {
+		if err := run([]string{"session", "archive", "--json", sess.ID}); err != nil {
+			t.Fatalf("run session archive: %v", err)
+		}
+	})
+	var archivePayload struct {
+		ThreadID string          `json:"thread_id"`
+		Session  session.Session `json:"session"`
+		Archived bool            `json:"archived"`
+	}
+	if err := json.Unmarshal([]byte(archiveOutput), &archivePayload); err != nil {
+		t.Fatalf("parse archive JSON: %v\noutput: %s", err, archiveOutput)
+	}
+	if archivePayload.ThreadID != sess.ID || !archivePayload.Archived || archivePayload.Session.ArchivedAt == nil {
+		t.Fatalf("unexpected archive payload: %+v", archivePayload)
+	}
+
+	listOutput := captureStdout(t, func() {
+		if err := run([]string{"session", "list", "--json"}); err != nil {
+			t.Fatalf("run session list: %v", err)
+		}
+	})
+	var listPayload struct {
+		Sessions []session.Session `json:"sessions"`
+	}
+	if err := json.Unmarshal([]byte(listOutput), &listPayload); err != nil {
+		t.Fatalf("parse list JSON: %v\noutput: %s", err, listOutput)
+	}
+	if len(listPayload.Sessions) != 0 {
+		t.Fatalf("archived session should be hidden from default list: %+v", listPayload.Sessions)
+	}
+
+	includeArchivedOutput := captureStdout(t, func() {
+		if err := run([]string{"session", "list", "--json", "--include-archived"}); err != nil {
+			t.Fatalf("run session list include archived: %v", err)
+		}
+	})
+	if err := json.Unmarshal([]byte(includeArchivedOutput), &listPayload); err != nil {
+		t.Fatalf("parse include archived JSON: %v\noutput: %s", err, includeArchivedOutput)
+	}
+	if len(listPayload.Sessions) != 1 || listPayload.Sessions[0].ID != sess.ID {
+		t.Fatalf("include archived should return archived session: %+v", listPayload.Sessions)
+	}
+}
+
 func TestRunSessionTraceJSONReplaysTrace(t *testing.T) {
 	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
 	t.Setenv("WUU_HOME", wuuHome)
