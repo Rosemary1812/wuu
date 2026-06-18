@@ -70,6 +70,9 @@ type Runner struct {
 	// MaxInputTokens pins the prompt/input budget when lower than the
 	// model's total context window.
 	MaxInputTokens int
+	// OutputReserveTokens pins the output budget used for compact threshold
+	// math without forcing a request max_tokens value.
+	OutputReserveTokens int
 }
 
 // RunResult is the structured outcome of a Runner.RunWithUsage call.
@@ -117,15 +120,20 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		}
 	}
 	cfg := LoopConfig{
-		Tools:            r.Tools,
-		Model:            r.Model,
-		Temperature:      r.Temperature,
-		MaxSteps:         r.MaxSteps,
-		MaxContextTokens: maxCtx,
-		MaxInputTokens:   r.MaxInputTokens,
-		OnUsage:          onUsage,
+		Tools:               r.Tools,
+		Model:               r.Model,
+		Temperature:         r.Temperature,
+		MaxSteps:            r.MaxSteps,
+		MaxContextTokens:    maxCtx,
+		MaxInputTokens:      r.MaxInputTokens,
+		OutputReserveTokens: r.OutputReserveTokens,
+		OnUsage:             onUsage,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
-			return compact.CompactWithContextWindow(ctx, messages, r.Client, r.Model, maxCtx)
+			return compact.CompactWithBudget(ctx, messages, r.Client, r.Model, compact.Budget{
+				ContextTokens:       maxCtx,
+				InputTokens:         r.MaxInputTokens,
+				OutputReserveTokens: r.OutputReserveTokens,
+			})
 		},
 	}
 

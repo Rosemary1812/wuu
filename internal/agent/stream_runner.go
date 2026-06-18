@@ -58,6 +58,9 @@ type StreamRunner struct {
 	// MaxInputTokens lets callers pass a provider/model prompt limit
 	// when it is smaller than the total context window.
 	MaxInputTokens int
+	// OutputReserveTokens lets callers pass a provider/model output limit
+	// for compact threshold math without forcing a request max_tokens value.
+	OutputReserveTokens int
 
 	// DisableAutoCompact turns off the proactive fill-rate trigger.
 	// The reactive context-overflow recovery still runs. Off by default.
@@ -196,14 +199,15 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		}
 	}
 	cfg := LoopConfig{
-		Tools:            r.Tools,
-		Model:            requestModel,
-		Temperature:      r.Temperature,
-		MaxSteps:         r.MaxSteps,
-		MaxContextTokens: maxCtx,
-		MaxInputTokens:   r.MaxInputTokens,
-		BeforeStep:       beforeStep,
-		BeforeRequest:    r.BeforeRequest,
+		Tools:               r.Tools,
+		Model:               requestModel,
+		Temperature:         r.Temperature,
+		MaxSteps:            r.MaxSteps,
+		MaxContextTokens:    maxCtx,
+		MaxInputTokens:      r.MaxInputTokens,
+		OutputReserveTokens: r.OutputReserveTokens,
+		BeforeStep:          beforeStep,
+		BeforeRequest:       r.BeforeRequest,
 		OnRequestContext: func(info RequestContextInfo) {
 			if r.OnRequestContext != nil {
 				r.OnRequestContext(info)
@@ -228,7 +232,11 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			})
 		},
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
-			return compact.CompactWithContextWindow(ctx, messages, r.Client, requestModel, maxCtx)
+			return compact.CompactWithBudget(ctx, messages, r.Client, requestModel, compact.Budget{
+				ContextTokens:       maxCtx,
+				InputTokens:         r.MaxInputTokens,
+				OutputReserveTokens: r.OutputReserveTokens,
+			})
 		},
 		// Forward each tool result through the streaming callback so
 		// clients can render tool output live (the loop itself only

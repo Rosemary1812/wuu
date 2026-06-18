@@ -127,6 +127,10 @@ type LoopConfig struct {
 	// total context window but reserve a large output budget server-side;
 	// proactive compact must respect the smaller input side.
 	MaxInputTokens int
+	// OutputReserveTokens is the model output limit used for context
+	// budgeting. It does not force the request's max_tokens; DefaultMaxTokens
+	// remains the request cap.
+	OutputReserveTokens int
 	// CompactThresholdPct overrides the default OpenCode-style usable-window
 	// trigger with a fraction of the configured input/context window. Zero
 	// means use the default usable-window calculation.

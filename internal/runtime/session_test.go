@@ -1013,6 +1013,9 @@ func TestNewSessionUsesConfiguredModelLimitForContextWindow(t *testing.T) {
 	if rt.StreamRunner.MaxInputTokens != 0 {
 		t.Fatalf("MaxInputTokens = %d, want 0 without an explicit input limit", rt.StreamRunner.MaxInputTokens)
 	}
+	if rt.StreamRunner.OutputReserveTokens != 128_000 {
+		t.Fatalf("OutputReserveTokens = %d", rt.StreamRunner.OutputReserveTokens)
+	}
 }
 
 func TestNewSessionUnknownModelDisablesProactiveContextWindow(t *testing.T) {
@@ -1096,6 +1099,9 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	}
 	if rt.StreamRunner.MaxInputTokens != 922000 {
 		t.Fatalf("MaxInputTokens = %d", rt.StreamRunner.MaxInputTokens)
+	}
+	if rt.StreamRunner.OutputReserveTokens != 128000 {
+		t.Fatalf("OutputReserveTokens = %d", rt.StreamRunner.OutputReserveTokens)
 	}
 }
 

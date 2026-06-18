@@ -15,7 +15,14 @@ import (
 )
 
 const defaultCompactTimeout = 60 * time.Second
-const toolResultPruneThresholdChars = 400
+const (
+	toolResultPruneProtectTokens = 40_000
+	toolResultPruneMinimumTokens = 20_000
+)
+
+var protectedToolResults = map[string]bool{
+	"skill": true,
+}
 
 // maxCompactOutputChars caps the summarization output to approximately
 // 20K tokens (~4 chars per token). Aligned with Claude Code's
@@ -220,6 +227,16 @@ func Compact(ctx context.Context, messages []providers.ChatMessage, client provi
 }
 
 func CompactWithContextWindow(ctx context.Context, messages []providers.ChatMessage, client providers.Client, model string, maxContextTokens int) ([]providers.ChatMessage, error) {
+	return CompactWithBudget(ctx, messages, client, model, Budget{ContextTokens: maxContextTokens})
+}
+
+type Budget struct {
+	ContextTokens       int
+	InputTokens         int
+	OutputReserveTokens int
+}
+
+func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, client providers.Client, model string, budget Budget) ([]providers.ChatMessage, error) {
 	if len(messages) <= 2 {
 		return messages, nil // nothing to compact
 	}
@@ -232,7 +249,7 @@ func CompactWithContextWindow(ctx context.Context, messages []providers.ChatMess
 	}
 
 	conversationForCompact := stripHistoricalImages(conversation)
-	keepStart := compactKeepStart(conversationForCompact, compactTailBudget(model, maxContextTokens))
+	keepStart := compactKeepStart(conversationForCompact, compactTailBudgetForBudget(model, budget))
 	if keepStart < 0 || keepStart > len(conversationForCompact) {
 		return messages, nil
 	}
@@ -485,33 +502,51 @@ func collapseBlankLines(text string) string {
 }
 
 func compactTailBudget(model string, maxContextTokens int) int {
-	window := maxContextTokens
-	if window <= 0 {
-		window = providers.ContextWindowFor(model)
-	}
-	usable := compactUsableWindow(model, window)
-	budget := int(float64(usable) * compactTailContextFraction)
-	if budget <= 0 || budget > compactTailMaxTokens {
+	return compactTailBudgetForBudget(model, Budget{ContextTokens: maxContextTokens})
+}
+
+func compactTailBudgetForBudget(model string, budget Budget) int {
+	usable := compactUsableInputWindow(model, budget)
+	tailBudget := int(float64(usable) * compactTailContextFraction)
+	if tailBudget > compactTailMaxTokens {
 		return compactTailMaxTokens
 	}
-	if budget < compactTailMinTokens {
+	if tailBudget < compactTailMinTokens {
 		return compactTailMinTokens
 	}
-	return budget
+	return tailBudget
 }
 
 func compactUsableWindow(model string, window int) int {
+	return compactUsableInputWindow(model, Budget{ContextTokens: window})
+}
+
+func compactUsableInputWindow(model string, budget Budget) int {
+	window := budget.ContextTokens
+	if window <= 0 {
+		window = providers.ContextWindowFor(model)
+	}
 	if window <= 0 {
 		return 0
 	}
-	reserved := providers.MaxOutputTokensFor(model)
-	if reserved > compactReservedMaxTokens {
-		reserved = compactReservedMaxTokens
+	outputReserve := budget.OutputReserveTokens
+	if outputReserve <= 0 {
+		outputReserve = providers.MaxOutputTokensFor(model)
 	}
-	if reserved <= 0 || reserved >= window {
+	if budget.InputTokens > 0 {
+		reserved := outputReserve
+		if reserved > compactReservedMaxTokens {
+			reserved = compactReservedMaxTokens
+		}
+		if reserved <= 0 {
+			return budget.InputTokens
+		}
+		return max(0, budget.InputTokens-reserved)
+	}
+	if outputReserve <= 0 {
 		return window
 	}
-	return window - reserved
+	return max(0, window-outputReserve)
 }
 
 type compactTurn struct {
@@ -710,16 +745,34 @@ func pruneOldToolResults(messages []providers.ChatMessage) []providers.ChatMessa
 		return nil
 	}
 
+	total := 0
+	prunedTokens := 0
+	var indexes []int
+	for i := len(messages) - 1; i >= 0; i-- {
+		if !strings.EqualFold(messages[i].Role, "tool") {
+			continue
+		}
+		if protectedToolResults[strings.TrimSpace(messages[i].Name)] {
+			continue
+		}
+		size := EstimateTokens(messages[i].Content)
+		if size <= 0 {
+			continue
+		}
+		total += size
+		if total <= toolResultPruneProtectTokens {
+			continue
+		}
+		prunedTokens += size
+		indexes = append(indexes, i)
+	}
+	if prunedTokens <= toolResultPruneMinimumTokens {
+		return messages
+	}
+
 	pruned := make([]providers.ChatMessage, len(messages))
 	copy(pruned, messages)
-
-	for i := range pruned {
-		if pruned[i].Role != "tool" {
-			continue
-		}
-		if len(pruned[i].Content) < toolResultPruneThresholdChars {
-			continue
-		}
+	for _, i := range indexes {
 		pruned[i].Content = summarizePrunedToolResult(pruned[i])
 	}
 

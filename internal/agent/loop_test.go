@@ -734,12 +734,22 @@ func TestProactiveCompactThresholdReservesOutputHeadroom(t *testing.T) {
 	if got, want := proactiveCompactThreshold(cfg), 32_000; got != want {
 		t.Fatalf("expected custom lower threshold %d, got %d", want, got)
 	}
+
+	cfg = LoopConfig{Model: "brand-new-model", MaxContextTokens: 1_000_000, OutputReserveTokens: 128_000}
+	if got, want := proactiveCompactThreshold(cfg), 872_000; got != want {
+		t.Fatalf("expected explicit output-reserved threshold %d, got %d", want, got)
+	}
 }
 
 func TestProactiveCompactThresholdRespectsInputLimit(t *testing.T) {
 	cfg := LoopConfig{Model: "gpt-5.5", MaxContextTokens: 1_048_576, MaxInputTokens: 272_000}
 	if got, want := proactiveCompactThreshold(cfg), 252_000; got != want {
 		t.Fatalf("expected input-limited threshold %d, got %d", want, got)
+	}
+
+	cfg = LoopConfig{Model: "brand-new-model", MaxContextTokens: 1_000_000, MaxInputTokens: 272_000, OutputReserveTokens: 128_000}
+	if got, want := proactiveCompactThreshold(cfg), 252_000; got != want {
+		t.Fatalf("expected explicit input-limited threshold %d, got %d", want, got)
 	}
 }
 

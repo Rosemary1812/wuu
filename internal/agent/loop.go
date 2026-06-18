@@ -513,7 +513,10 @@ func proactiveCompactPercentThreshold(cfg LoopConfig, pct float64) int {
 }
 
 func compactMaxOutputTokens(cfg LoopConfig) int {
-	reserve := cfg.DefaultMaxTokens
+	reserve := cfg.OutputReserveTokens
+	if reserve <= 0 {
+		reserve = cfg.DefaultMaxTokens
+	}
 	if reserve <= 0 {
 		reserve = providers.MaxOutputTokensFor(cfg.Model)
 	}

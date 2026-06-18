@@ -494,6 +494,12 @@ func TestCompactTailBudget_UsesOpenCodeStyleCap(t *testing.T) {
 	if got := compactTailBudget("test-model", 1_000); got != compactTailMinTokens {
 		t.Fatalf("expected small test window to use %d minimum tail budget, got %d", compactTailMinTokens, got)
 	}
+	if got, want := compactUsableInputWindow("gpt-5.5", Budget{ContextTokens: 1_000_000, InputTokens: 272_000, OutputReserveTokens: 128_000}), 252_000; got != want {
+		t.Fatalf("input-limited usable window = %d, want %d", got, want)
+	}
+	if got, want := compactUsableInputWindow("gpt-5.5", Budget{ContextTokens: 1_000_000, OutputReserveTokens: 128_000}), 872_000; got != want {
+		t.Fatalf("context usable window = %d, want %d", got, want)
+	}
 }
 
 func TestCompact_SummarizesAllWhenRecentTailWouldBeWholeHistory(t *testing.T) {
@@ -687,7 +693,7 @@ func TestCompact_UsesInternalTimeout(t *testing.T) {
 }
 
 func TestCompact_PrunesOldLargeToolResultsBeforeSummary(t *testing.T) {
-	large := strings.Repeat("x", toolResultPruneThresholdChars+50)
+	large := largePrunableToolOutput("x")
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "inspect logs"},
 		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "read_file", Arguments: `{"path":"build.log"}`}}},
@@ -718,7 +724,7 @@ func TestCompact_PrunesOldLargeToolResultsBeforeSummary(t *testing.T) {
 }
 
 func TestCompact_DoesNotPruneRecentTailToolResults(t *testing.T) {
-	large := strings.Repeat("y", toolResultPruneThresholdChars+50)
+	large := strings.Repeat("y", 2_000)
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "older question"},
 		{Role: "assistant", Content: "older answer"},
@@ -858,7 +864,7 @@ func TestBuildSummaryPromptMentionsImagesWithoutData(t *testing.T) {
 }
 
 func TestPruneOldToolResults_PreservesToolCallPairing(t *testing.T) {
-	large := strings.Repeat("z", toolResultPruneThresholdChars+50)
+	large := largePrunableToolOutput("z")
 	messages := []providers.ChatMessage{
 		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "grep", Arguments: `{"pattern":"TODO"}`}}},
 		{Role: "tool", Name: "grep", ToolCallID: "c1", Content: large},
@@ -878,4 +884,20 @@ func TestPruneOldToolResults_PreservesToolCallPairing(t *testing.T) {
 	if pruned[1].Content == "" || strings.Contains(pruned[1].Content, large) {
 		t.Fatalf("expected tool result content replaced with placeholder, got %q", pruned[1].Content)
 	}
+}
+
+func TestPruneOldToolResults_ProtectsSkillTool(t *testing.T) {
+	large := largePrunableToolOutput("s")
+	messages := []providers.ChatMessage{
+		{Role: "tool", Name: "skill", ToolCallID: "skill-call", Content: large},
+	}
+
+	pruned := pruneOldToolResults(messages)
+	if pruned[0].Content != large {
+		t.Fatal("skill tool output should be protected from pruning")
+	}
+}
+
+func largePrunableToolOutput(char string) string {
+	return strings.Repeat(char, (toolResultPruneProtectTokens+toolResultPruneMinimumTokens+1_000)*4)
 }
