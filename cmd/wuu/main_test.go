@@ -278,6 +278,49 @@ func TestRunCommandRejectsLegacyOnlyFlags(t *testing.T) {
 	}
 }
 
+func TestRunExecReviewUsesExecControllerPath(t *testing.T) {
+	controller := newCLIExecFakeController(
+		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "reviewed"}),
+	)
+	restore := installExecControllerOverride(t, controller)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"exec", "review", "--uncommitted", "--json", "prioritize tests"}); err != nil {
+			t.Fatalf("run exec review: %v", err)
+		}
+	})
+
+	if !controller.startedThread {
+		t.Fatalf("review should start an exec thread: %+v", controller)
+	}
+	if !strings.Contains(controller.startedPrompt, "Review the current uncommitted changes") ||
+		!strings.Contains(controller.startedPrompt, "git diff") ||
+		!strings.Contains(controller.startedPrompt, "prioritize tests") {
+		t.Fatalf("unexpected review prompt: %q", controller.startedPrompt)
+	}
+	events := parseCLIJSONLines(t, output)
+	if got := events[len(events)-1]["type"]; got != "result" {
+		t.Fatalf("last event = %v, want result\n%s", got, output)
+	}
+}
+
+func TestRunExecReviewRequiresOneScope(t *testing.T) {
+	for _, args := range [][]string{
+		{"exec", "review"},
+		{"exec", "review", "--uncommitted", "--base", "main"},
+		{"exec", "review", "--base", "main", "--commit", "abc123"},
+	} {
+		err := run(args)
+		if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+			t.Fatalf("ExitCode(%v) = %d, err=%v", args, wuuexec.ExitCode(err), err)
+		}
+		if err == nil || !strings.Contains(err.Error(), "exactly one") {
+			t.Fatalf("unexpected review error for %v: %v", args, err)
+		}
+	}
+}
+
 func TestRunInitWritesDefaultConfig(t *testing.T) {
 	workdir := t.TempDir()
 	t.Chdir(workdir)

@@ -69,6 +69,9 @@ Empty input fails before a turn is started.
 wuu exec resume --last "continue from the failure"
 wuu exec resume <thread-id> "continue this session"
 wuu exec fork <thread-id> "try a different direction"
+wuu exec review --uncommitted
+wuu exec review --base main
+wuu exec review --commit <sha>
 ```
 
 `resume --last` asks app-server to resume the latest visible session for the
@@ -77,8 +80,9 @@ current workspace. `resume <thread-id>` resumes a specific session.
 `fork <thread-id>` creates a new session through app-server `thread/fork`, then
 starts the requested turn in that fork.
 
-`resume --all` and review-specific entrypoints are part of the target surface
-but are not fully implemented yet.
+`review` builds a scoped review task and runs it through the same exec path.
+The agent inspects the requested diff or commit with normal repository tools.
+`resume --all` is part of the target surface but is not fully implemented yet.
 
 ## Attachments
 

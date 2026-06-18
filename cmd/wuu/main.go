@@ -1229,7 +1229,7 @@ func runExec(args []string) error {
 		case "fork":
 			return runExecFork(args[1:])
 		case "review":
-			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec review is not implemented yet"))
+			return runExecReview(args[1:])
 		}
 	}
 
@@ -1306,6 +1306,63 @@ func runExecFork(args []string) error {
 	opts := execOptionsFromCLI(cfg, prompt, "", false)
 	opts.ForkID = forkID
 	return runExecWithPrompt(prompt, opts)
+}
+
+func runExecReview(args []string) error {
+	fs := flag.NewFlagSet("exec review", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	uncommitted := fs.Bool("uncommitted", false, "review current uncommitted changes")
+	base := fs.String("base", "", "review changes against base ref")
+	commit := fs.String("commit", "", "review one commit")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if err := validateExecFlags(cfg); err != nil {
+		return err
+	}
+	prompt, err := reviewPromptFromFlags(*uncommitted, *base, *commit, fs.Args())
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	return runExecWithPrompt(prompt, execOptionsFromCLI(cfg, prompt, "", false))
+}
+
+func reviewPromptFromFlags(uncommitted bool, base, commit string, extraArgs []string) (string, error) {
+	base = strings.TrimSpace(base)
+	commit = strings.TrimSpace(commit)
+	selected := 0
+	if uncommitted {
+		selected++
+	}
+	if base != "" {
+		selected++
+	}
+	if commit != "" {
+		selected++
+	}
+	if selected != 1 {
+		return "", errors.New("review requires exactly one of --uncommitted, --base, or --commit")
+	}
+
+	var prompt string
+	switch {
+	case uncommitted:
+		prompt = strings.Join([]string{
+			"Review the current uncommitted changes in this repository.",
+			"Inspect `git status --short`, `git diff --stat`, and `git diff` before reporting findings.",
+		}, "\n")
+	case base != "":
+		prompt = fmt.Sprintf("Review the changes in this repository against base ref `%s`.\nInspect the merge-base diff before reporting findings.", base)
+	case commit != "":
+		prompt = fmt.Sprintf("Review commit `%s` in this repository.\nInspect `git show --stat --patch %s` before reporting findings.", commit, commit)
+	}
+	prompt += "\n\nFocus only on real bugs, security issues, behavior regressions, and missing tests that matter. Do not nitpick style."
+
+	if extra := strings.TrimSpace(strings.Join(extraArgs, " ")); extra != "" {
+		prompt += "\n\nAdditional instructions:\n" + extra
+	}
+	return prompt, nil
 }
 
 func addExecFlags(fs *flag.FlagSet) execCLIConfig {
@@ -1558,6 +1615,7 @@ Usage:
   wuu exec [flags] "your coding task"
   wuu exec resume (--last|THREAD_ID) [flags] "continue task"
   wuu exec fork THREAD_ID [flags] "continue from a fork"
+  wuu exec review (--uncommitted|--base REF|--commit SHA) [flags]
   wuu session list|show|trace|search|archive|delete [flags]
   wuu debug app-server initialize [flags]
   wuu debug app-server send [flags] METHOD [JSON]
@@ -1589,6 +1647,11 @@ Exec flags:
   --timeout         total timeout (e.g. 20m)
   --output-last-message
                    write final agent message to a file
+
+Exec review:
+  --uncommitted     review current uncommitted changes
+  --base REF        review changes against base ref
+  --commit SHA      review one commit
 
 Session commands:
   list --json [--workdir DIR] [--all-workdirs]
