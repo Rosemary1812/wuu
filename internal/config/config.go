@@ -178,20 +178,35 @@ type ProviderModelLimitConfig struct {
 // metadata fields are intentionally accepted so wuu can derive the same
 // model-specific variants when a config was copied from OpenCode/models.dev.
 type ProviderModelConfig struct {
-	ID               string                       `json:"id,omitempty"`
-	Name             string                       `json:"name,omitempty"`
-	ReleaseDate      string                       `json:"release_date,omitempty"`
-	Reasoning        *bool                        `json:"reasoning,omitempty"`
-	Provider         *ProviderModelProviderConfig `json:"provider,omitempty"`
-	Limit            *ProviderModelLimitConfig    `json:"limit,omitempty"`
-	Options          map[string]any               `json:"options,omitempty"`
-	Headers          map[string]string            `json:"headers,omitempty"`
-	SupportedEfforts []string                     `json:"supported_efforts,omitempty"`
-	DefaultEffort    string                       `json:"default_effort,omitempty"`
-	DefaultVariant   string                       `json:"default_variant,omitempty"`
-	Variants         map[string]map[string]any    `json:"variants,omitempty"`
-	Disabled         bool                         `json:"disabled,omitempty"`
-	ContextWindow    int                          `json:"context_window,omitempty"`
+	ID               string                         `json:"id,omitempty"`
+	Name             string                         `json:"name,omitempty"`
+	Family           string                         `json:"family,omitempty"`
+	Status           string                         `json:"status,omitempty"`
+	ReleaseDate      string                         `json:"release_date,omitempty"`
+	Reasoning        *bool                          `json:"reasoning,omitempty"`
+	ReasoningOptions []map[string]any               `json:"reasoning_options,omitempty"`
+	Attachment       *bool                          `json:"attachment,omitempty"`
+	ToolCall         *bool                          `json:"tool_call,omitempty"`
+	StructuredOutput *bool                          `json:"structured_output,omitempty"`
+	Temperature      *bool                          `json:"temperature,omitempty"`
+	Interleaved      any                            `json:"interleaved,omitempty"`
+	Modalities       *ProviderModelModalitiesConfig `json:"modalities,omitempty"`
+	Cost             map[string]any                 `json:"cost,omitempty"`
+	Provider         *ProviderModelProviderConfig   `json:"provider,omitempty"`
+	Limit            *ProviderModelLimitConfig      `json:"limit,omitempty"`
+	Options          map[string]any                 `json:"options,omitempty"`
+	Headers          map[string]string              `json:"headers,omitempty"`
+	SupportedEfforts []string                       `json:"supported_efforts,omitempty"`
+	DefaultEffort    string                         `json:"default_effort,omitempty"`
+	DefaultVariant   string                         `json:"default_variant,omitempty"`
+	Variants         map[string]map[string]any      `json:"variants,omitempty"`
+	Disabled         bool                           `json:"disabled,omitempty"`
+	ContextWindow    int                            `json:"context_window,omitempty"`
+}
+
+type ProviderModelModalitiesConfig struct {
+	Input  []string `json:"input,omitempty"`
+	Output []string `json:"output,omitempty"`
 }
 
 // AgentConfig controls behavior of the local tool loop.

@@ -10,32 +10,50 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 )
 
+//go:generate go run ../../cmd/wuu-modelcatalog-gen -input https://models.dev/api.json -output models_dev_catalog.json
+
 //go:embed models_dev_catalog.json
 var catalogJSON []byte
 
 type Provider struct {
-	ID     string  `json:"id"`
-	Name   string  `json:"name,omitempty"`
-	API    string  `json:"api,omitempty"`
-	NPM    string  `json:"npm,omitempty"`
-	Models []Model `json:"models"`
+	ID     string   `json:"id"`
+	Name   string   `json:"name,omitempty"`
+	API    string   `json:"api,omitempty"`
+	NPM    string   `json:"npm,omitempty"`
+	Env    []string `json:"env,omitempty"`
+	Models []Model  `json:"models"`
 }
 
 type Model struct {
-	ID          string            `json:"id"`
-	APIID       string            `json:"api_id,omitempty"`
-	Name        string            `json:"name,omitempty"`
-	ReleaseDate string            `json:"release_date,omitempty"`
-	Reasoning   bool              `json:"reasoning"`
-	Provider    *ModelProvider    `json:"provider,omitempty"`
-	Limit       *Limit            `json:"limit,omitempty"`
-	Options     map[string]any    `json:"options,omitempty"`
-	Headers     map[string]string `json:"headers,omitempty"`
+	ID               string            `json:"id"`
+	APIID            string            `json:"api_id,omitempty"`
+	Name             string            `json:"name,omitempty"`
+	Family           string            `json:"family,omitempty"`
+	Status           string            `json:"status,omitempty"`
+	ReleaseDate      string            `json:"release_date,omitempty"`
+	Reasoning        bool              `json:"reasoning"`
+	ReasoningOptions []map[string]any  `json:"reasoning_options,omitempty"`
+	Attachment       *bool             `json:"attachment,omitempty"`
+	ToolCall         *bool             `json:"tool_call,omitempty"`
+	StructuredOutput *bool             `json:"structured_output,omitempty"`
+	Temperature      *bool             `json:"temperature,omitempty"`
+	Interleaved      any               `json:"interleaved,omitempty"`
+	Modalities       *Modalities       `json:"modalities,omitempty"`
+	Cost             map[string]any    `json:"cost,omitempty"`
+	Provider         *ModelProvider    `json:"provider,omitempty"`
+	Limit            *Limit            `json:"limit,omitempty"`
+	Options          map[string]any    `json:"options,omitempty"`
+	Headers          map[string]string `json:"headers,omitempty"`
 }
 
 type ModelProvider struct {
 	API string `json:"api,omitempty"`
 	NPM string `json:"npm,omitempty"`
+}
+
+type Modalities struct {
+	Input  []string `json:"input,omitempty"`
+	Output []string `json:"output,omitempty"`
 }
 
 type Limit struct {
@@ -176,10 +194,25 @@ func ModelConfig(model Model) config.ProviderModelConfig {
 	}
 	reasoning := model.Reasoning
 	out := config.ProviderModelConfig{
-		ID:          apiID,
-		Name:        strings.TrimSpace(model.Name),
-		ReleaseDate: strings.TrimSpace(model.ReleaseDate),
-		Reasoning:   &reasoning,
+		ID:               apiID,
+		Name:             strings.TrimSpace(model.Name),
+		Family:           strings.TrimSpace(model.Family),
+		Status:           strings.TrimSpace(model.Status),
+		ReleaseDate:      strings.TrimSpace(model.ReleaseDate),
+		Reasoning:        &reasoning,
+		ReasoningOptions: cloneOptionList(model.ReasoningOptions),
+		Attachment:       cloneBool(model.Attachment),
+		ToolCall:         cloneBool(model.ToolCall),
+		StructuredOutput: cloneBool(model.StructuredOutput),
+		Temperature:      cloneBool(model.Temperature),
+		Interleaved:      cloneAny(model.Interleaved),
+		Cost:             cloneOptions(model.Cost),
+	}
+	if model.Modalities != nil {
+		out.Modalities = &config.ProviderModelModalitiesConfig{
+			Input:  append([]string(nil), model.Modalities.Input...),
+			Output: append([]string(nil), model.Modalities.Output...),
+		}
 	}
 	if model.Provider != nil && (strings.TrimSpace(model.Provider.API) != "" || strings.TrimSpace(model.Provider.NPM) != "") {
 		out.Provider = &config.ProviderModelProviderConfig{
@@ -223,11 +256,44 @@ func MergeModelConfig(primary, fallback config.ProviderModelConfig) config.Provi
 	if strings.TrimSpace(out.Name) == "" {
 		out.Name = fallback.Name
 	}
+	if strings.TrimSpace(out.Family) == "" {
+		out.Family = fallback.Family
+	}
+	if strings.TrimSpace(out.Status) == "" {
+		out.Status = fallback.Status
+	}
 	if strings.TrimSpace(out.ReleaseDate) == "" {
 		out.ReleaseDate = fallback.ReleaseDate
 	}
 	if out.Reasoning == nil {
 		out.Reasoning = fallback.Reasoning
+	}
+	if len(out.ReasoningOptions) == 0 {
+		out.ReasoningOptions = cloneOptionList(fallback.ReasoningOptions)
+	}
+	if out.Attachment == nil {
+		out.Attachment = cloneBool(fallback.Attachment)
+	}
+	if out.ToolCall == nil {
+		out.ToolCall = cloneBool(fallback.ToolCall)
+	}
+	if out.StructuredOutput == nil {
+		out.StructuredOutput = cloneBool(fallback.StructuredOutput)
+	}
+	if out.Temperature == nil {
+		out.Temperature = cloneBool(fallback.Temperature)
+	}
+	if out.Interleaved == nil {
+		out.Interleaved = cloneAny(fallback.Interleaved)
+	}
+	if out.Modalities == nil && fallback.Modalities != nil {
+		out.Modalities = &config.ProviderModelModalitiesConfig{
+			Input:  append([]string(nil), fallback.Modalities.Input...),
+			Output: append([]string(nil), fallback.Modalities.Output...),
+		}
+	}
+	if len(out.Cost) == 0 {
+		out.Cost = cloneOptions(fallback.Cost)
 	}
 	if out.Provider == nil {
 		out.Provider = fallback.Provider
@@ -264,6 +330,40 @@ func MergeModelConfig(primary, fallback config.ProviderModelConfig) config.Provi
 	}
 	if len(out.Headers) == 0 {
 		out.Headers = cloneHeaders(fallback.Headers)
+	}
+	return out
+}
+
+func cloneBool(input *bool) *bool {
+	if input == nil {
+		return nil
+	}
+	value := *input
+	return &value
+}
+
+func cloneAny(input any) any {
+	if input == nil {
+		return nil
+	}
+	data, err := json.Marshal(input)
+	if err != nil {
+		return input
+	}
+	var out any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return input
+	}
+	return out
+}
+
+func cloneOptionList(input []map[string]any) []map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(input))
+	for _, item := range input {
+		out = append(out, cloneOptions(item))
 	}
 	return out
 }

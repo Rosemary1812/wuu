@@ -318,6 +318,22 @@ func capabilitiesFromProfile(providerName string, provider config.ProviderConfig
 	if modelCfg.Reasoning != nil {
 		reasoning = *modelCfg.Reasoning
 	}
+	if modelCfg.ToolCall != nil {
+		tools = *modelCfg.ToolCall
+		if !tools {
+			toolCalling = string(modelprofile.ToolCallingNone)
+		}
+	}
+	structuredOutput := tools
+	if modelCfg.StructuredOutput != nil {
+		structuredOutput = *modelCfg.StructuredOutput
+	}
+	imageInput := false
+	fileInput := false
+	if modelCfg.Modalities != nil {
+		imageInput = containsString(modelCfg.Modalities.Input, "image")
+		fileInput = containsString(modelCfg.Modalities.Input, "pdf")
+	}
 	inputLimit := 0
 	outputLimit := profile.Context.MaxOutputTokens
 	if modelCfg.Limit != nil {
@@ -335,7 +351,7 @@ func capabilitiesFromProfile(providerName string, provider config.ProviderConfig
 		Responses:                profile.APIShape.Responses,
 		Tools:                    tools,
 		ToolCalling:              toolCalling,
-		StructuredOutput:         tools,
+		StructuredOutput:         structuredOutput,
 		Streaming:                true,
 		StreamingToolArgs:        profile.APIShape.StreamingToolArgs,
 		FreeformTool:             profile.APIShape.FreeformTool,
@@ -346,11 +362,22 @@ func capabilitiesFromProfile(providerName string, provider config.ProviderConfig
 		ContextWindow:            profile.Context.WindowTokens,
 		InputLimit:               inputLimit,
 		OutputLimit:              outputLimit,
+		ImageInput:               imageInput,
+		FileInput:                fileInput,
 		PromptCache:              profile.Context.SupportsPromptCache,
 		CacheGranularity:         cacheGranularity,
 		ProtocolFamily:           protocolFamily(providerName, provider),
 		RetrySafeErrorCategories: []string{"rate_limit", "server_error", "connection_error", "timeout"},
 	}
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func behaviorFromProfile(profile modelprofile.Profile) Behavior {

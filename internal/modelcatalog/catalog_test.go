@@ -62,6 +62,66 @@ func TestCatalogMatchesOpenCodeDefaultVisibility(t *testing.T) {
 	}
 }
 
+func TestCatalogSnapshotMatchesOpenCodeDefaultVisibleCounts(t *testing.T) {
+	providers, err := Providers()
+	if err != nil {
+		t.Fatalf("Providers: %v", err)
+	}
+	if len(providers) != 145 {
+		t.Fatalf("provider count = %d, want 145", len(providers))
+	}
+
+	modelCount := 0
+	for _, provider := range providers {
+		for _, model := range provider.Models {
+			modelCount++
+			switch model.Status {
+			case "deprecated", "alpha":
+				t.Fatalf("catalog should hide %s model %s/%s", model.Status, provider.ID, model.ID)
+			}
+			if model.ID == "gpt-5-chat-latest" && (provider.ID == "openai" || provider.ID == "github-copilot" || provider.ID == "openrouter") {
+				t.Fatalf("catalog should hide invalid chat alias %s/%s", provider.ID, model.ID)
+			}
+			if provider.ID == "openrouter" && model.ID == "openai/gpt-5-chat" {
+				t.Fatalf("catalog should hide invalid OpenRouter chat alias")
+			}
+		}
+	}
+	if modelCount != 5199 {
+		t.Fatalf("model count = %d, want 5199", modelCount)
+	}
+}
+
+func TestModelConfigCarriesCapabilityMetadata(t *testing.T) {
+	provider, ok := MatchProvider("openai", config.ProviderConfig{Type: "openai"})
+	if !ok {
+		t.Fatal("expected OpenAI provider match")
+	}
+	enriched := MergeProvider(config.ProviderConfig{Type: "openai"}, provider, "text-embedding-3-large", "o3")
+
+	embedding := enriched.Models["text-embedding-3-large"]
+	if embedding.ToolCall == nil || *embedding.ToolCall {
+		t.Fatalf("expected embedding model to carry tool_call=false: %+v", embedding)
+	}
+	if embedding.Modalities == nil || !stringSliceContains(embedding.Modalities.Input, "text") {
+		t.Fatalf("expected embedding modalities: %+v", embedding.Modalities)
+	}
+
+	o3 := enriched.Models["o3"]
+	if o3.ToolCall == nil || !*o3.ToolCall || o3.Modalities == nil || !stringSliceContains(o3.Modalities.Input, "image") || !stringSliceContains(o3.Modalities.Input, "pdf") {
+		t.Fatalf("expected o3 tool and media capability metadata: %+v", o3)
+	}
+}
+
+func stringSliceContains(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
+}
+
 func TestMatchProviderDoesNotUseWireTypeForCustomEndpoint(t *testing.T) {
 	if provider, ok := MatchProvider("zhipu2", config.ProviderConfig{
 		Type:    "anthropic",

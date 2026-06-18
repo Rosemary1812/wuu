@@ -128,3 +128,37 @@ func TestResolveRoleUsesAPIModelVariantAndLimits(t *testing.T) {
 		t.Fatalf("worker capabilities did not use configured limits: %+v", roles.Worker.Capabilities)
 	}
 }
+
+func TestResolveUsesCatalogToolAndMediaCapabilities(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "openai",
+		Providers: map[string]config.ProviderConfig{
+			"openai": {
+				Type:    "openai",
+				BaseURL: "https://api.openai.com/v1",
+				Model:   "text-embedding-3-large",
+			},
+		},
+	}
+
+	roles, err := Resolve(cfg, ResolveOptions{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if roles.Main.Capabilities.Tools || roles.Main.Capabilities.ToolCalling != "none" {
+		t.Fatalf("embedding model should not expose tools: %+v", roles.Main.Capabilities)
+	}
+
+	cfg.Providers["openai"] = config.ProviderConfig{
+		Type:    "openai",
+		BaseURL: "https://api.openai.com/v1",
+		Model:   "o3",
+	}
+	roles, err = Resolve(cfg, ResolveOptions{})
+	if err != nil {
+		t.Fatalf("Resolve o3: %v", err)
+	}
+	if !roles.Main.Capabilities.Tools || !roles.Main.Capabilities.ImageInput || !roles.Main.Capabilities.FileInput {
+		t.Fatalf("o3 should expose tool and media capabilities: %+v", roles.Main.Capabilities)
+	}
+}
