@@ -2742,8 +2742,8 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	if !ok {
 		t.Fatal("run_shell metadata not found")
 	}
-	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "git command must use restricted git tool" {
-		t.Fatalf("git shell metadata = %+v, want high-risk restricted-git guidance", meta)
+	if !meta.ReadOnly || !meta.ConcurrencySafe || meta.Risk != string(ToolRiskLow) || meta.Reason != "git shell read-only command" {
+		t.Fatalf("git status shell metadata = %+v, want read-only low-risk git shell", meta)
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
@@ -2753,8 +2753,63 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	if !ok {
 		t.Fatal("run_shell metadata not found")
 	}
-	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason != "git command must use restricted git tool" {
-		t.Fatalf("nested git shell metadata = %+v, want high-risk restricted-git guidance", meta)
+	if !meta.ReadOnly || !meta.ConcurrencySafe || meta.Risk != string(ToolRiskLow) || meta.Reason != "git shell read-only command" {
+		t.Fatalf("nested git status shell metadata = %+v, want read-only low-risk git shell", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git add hello.txt"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskMedium) || meta.Reason != "git shell add writes the repository index" {
+		t.Fatalf("git add shell metadata = %+v, want medium-risk index write", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git commit -m \"update files\""}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskMedium) || meta.Reason != "git shell commit writes local repository history" {
+		t.Fatalf("git commit shell metadata = %+v, want medium-risk local history write", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git push"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) || meta.Reason != "git shell push writes remote branch state" {
+		t.Fatalf("git push shell metadata = %+v, want high-risk remote write", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git reset --hard"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || !meta.Destructive || meta.Risk != string(ToolRiskHigh) || meta.Reason != "destructive git shell command" {
+		t.Fatalf("destructive git shell metadata = %+v, want destructive high-risk git shell", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git config user.name tester"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.Destructive || meta.Risk != string(ToolRiskHigh) || meta.Reason != "unsupported git shell command" {
+		t.Fatalf("unsupported git shell metadata = %+v, want high-risk unsupported git shell", meta)
 	}
 }
 
@@ -2805,8 +2860,8 @@ func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
 	if !ok {
 		t.Fatal("start_process metadata not found")
 	}
-	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "restricted git tool") {
-		t.Fatalf("git start_process metadata = %+v, want high-risk restricted-git guidance", meta)
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "git shell read-only command") {
+		t.Fatalf("git start_process metadata = %+v, want high-risk managed git process", meta)
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
@@ -4986,8 +5041,8 @@ func TestToolkit_StartProcessRejectsGitCommandBypass(t *testing.T) {
 			Name:      "start_process",
 			Arguments: fmt.Sprintf(`{"command":%q,"owner_kind":"main_agent"}`, command),
 		})
-		if err == nil || !strings.Contains(err.Error(), "restricted git tool") {
-			t.Fatalf("expected restricted git guidance for %q, got %v", command, err)
+		if err == nil || !strings.Contains(err.Error(), "Use run_shell for normal git") {
+			t.Fatalf("expected short-lived git guidance for %q, got %v", command, err)
 		}
 	}
 }
@@ -5700,7 +5755,55 @@ func TestToolkit_RunShellSetsNonInteractiveEnv(t *testing.T) {
 	}
 }
 
-func TestToolkit_RunShellRejectsGitCommandBypass(t *testing.T) {
+func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
+	kit, root := setupGitRepo(t)
+
+	for _, command := range []string{
+		"git status --short",
+		"command git status --short",
+		"env FOO=bar git status --short",
+		"cd . && git status --short",
+	} {
+		resp, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "run_shell",
+			Arguments: fmt.Sprintf(`{"command":%q,"timeout_seconds":10}`, command),
+		})
+		if err != nil {
+			t.Fatalf("expected safe git shell command %q to run: %v", command, err)
+		}
+		var parsed struct {
+			ExitCode       int                `json:"exit_code"`
+			Classification ToolClassification `json:"classification"`
+		}
+		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+			t.Fatalf("parse run_shell response for %q: %v\n%s", command, err, resp)
+		}
+		if parsed.ExitCode != 0 || !parsed.Classification.ReadOnly || parsed.Classification.Risk != ToolRiskLow {
+			t.Fatalf("safe git shell response for %q = %+v, want successful low-risk read-only", command, parsed)
+		}
+	}
+
+	mustWriteFile(t, filepath.Join(root, "hello.txt"), "updated\n")
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git add hello.txt && git commit -m \"update hello\"","timeout_seconds":10}`,
+	})
+	if err != nil {
+		t.Fatalf("expected explicit git add + commit shell command to run: %v", err)
+	}
+	var parsed struct {
+		ExitCode       int                `json:"exit_code"`
+		Classification ToolClassification `json:"classification"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse add+commit response: %v\n%s", err, resp)
+	}
+	if parsed.ExitCode != 0 || parsed.Classification.ReadOnly || parsed.Classification.Risk != ToolRiskMedium {
+		t.Fatalf("git add+commit shell response = %+v, want successful medium-risk write", parsed)
+	}
+}
+
+func TestToolkit_RunShellRejectsUnsafeGitCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -5708,18 +5811,19 @@ func TestToolkit_RunShellRejectsGitCommandBypass(t *testing.T) {
 	}
 
 	for _, command := range []string{
-		"git status",
-		"cd pkg && git status",
-		"env FOO=bar git status",
-		"command git status",
+		"git add .",
+		"git reset --hard",
+		"git config user.name tester",
+		"git commit --no-verify -m test",
+		"cd .. && git status",
 		"printf hi && `git status`",
 	} {
 		_, err := kit.Execute(context.Background(), providers.ToolCall{
 			Name:      "run_shell",
 			Arguments: fmt.Sprintf(`{"command":%q,"timeout_seconds":10}`, command),
 		})
-		if err == nil || !strings.Contains(err.Error(), "restricted git tool") {
-			t.Fatalf("expected restricted git guidance for %q, got %v", command, err)
+		if err == nil || !strings.Contains(err.Error(), "unsupported_git_shell") {
+			t.Fatalf("expected unsafe git shell rejection for %q, got %v", command, err)
 		}
 	}
 }

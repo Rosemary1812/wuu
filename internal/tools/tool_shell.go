@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
@@ -55,7 +56,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- For git operations, use the git tool instead of run_shell; it supports status, diff, explicit-path staging, unstaging, commit, and push",
+			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with git commit -m, and push only when the user explicitly requested a remote write. Unsafe git forms such as broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, and interactive git are rejected; use the structured git tool when you need structured status output or restricted git helpers.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -89,8 +90,8 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("run_shell requires command")
 	}
-	if shellCommandInvokesGit(args.Command) {
-		return "", errors.New("run_shell refuses to execute git commands; use the restricted git tool instead. For commit flows, call git status/diff, git add with explicit paths, git commit, then git push when approved: error_kind=unsupported_tool_path model_next_action=\"retry with the git tool instead of asking the user to run git manually\"")
+	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
+		return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit -m; use the structured git tool for advanced restricted git operations: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command or use the structured git tool")
 	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
@@ -311,8 +312,8 @@ func classifyShellCommand(command string) ToolClassification {
 	if shellFieldsTouchSensitivePath(fields) {
 		return highRiskShellClassification("shell command may read secrets", false)
 	}
-	if shellCommandInvokesGit(command) {
-		return highRiskShellClassification("git command must use restricted git tool", true)
+	if classification, ok := classifyShellGitCommand(command); ok {
+		return classification
 	}
 	if shellCommandInvokesDestructiveCommand(command) {
 		return highRiskShellClassification("destructive shell command", true)
@@ -360,6 +361,255 @@ func shellCommandInvokesGit(command string) bool {
 		}
 	}
 	return false
+}
+
+func blockedShellGitCommandReason(command string) (string, bool) {
+	if !shellCommandInvokesGit(command) {
+		return "", false
+	}
+	classification, ok := classifyShellGitCommand(command)
+	if !ok {
+		return "unsupported git shell shape", true
+	}
+	if classification.Destructive {
+		return classification.Reason, true
+	}
+	if classification.Risk == ToolRiskHigh && classification.Reason == "unsupported git shell command" {
+		return classification.Reason, true
+	}
+	return "", false
+}
+
+func classifyShellGitCommand(command string) (ToolClassification, bool) {
+	if !shellCommandInvokesGit(command) {
+		return ToolClassification{}, false
+	}
+	segments, ok := splitShellCommandSegmentsQuoted(command)
+	if !ok {
+		return highRiskShellClassification("unsupported git shell command", false), true
+	}
+	sawGit := false
+	readOnly := true
+	concurrencySafe := true
+	risk := ToolRiskLow
+	reason := "git shell read-only command"
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		fields, ok := splitShellFields(segment)
+		if !ok {
+			return highRiskShellClassification("unsupported git shell command", false), true
+		}
+		fields = normalizeShellCommandFields(fields)
+		if len(fields) == 0 {
+			continue
+		}
+		if fields[0] == "cd" {
+			if len(fields) == 2 && safeRelativeShellDir(fields[1]) {
+				continue
+			}
+			return highRiskShellClassification("unsupported git shell command", false), true
+		}
+		if fields[0] != "git" {
+			return highRiskShellClassification("unsupported git shell command", false), true
+		}
+		sawGit = true
+		segmentClass := classifyShellGitFields(fields)
+		if segmentClass.Destructive {
+			return segmentClass, true
+		}
+		if !segmentClass.ReadOnly {
+			readOnly = false
+			concurrencySafe = false
+		}
+		if riskRank(segmentClass.Risk) > riskRank(risk) {
+			risk = segmentClass.Risk
+			reason = segmentClass.Reason
+		}
+	}
+	if !sawGit {
+		return highRiskShellClassification("unsupported git shell command", false), true
+	}
+	return ToolClassification{
+		ReadOnly:        readOnly,
+		ConcurrencySafe: concurrencySafe,
+		Destructive:     false,
+		Risk:            risk,
+		Reason:          reason,
+	}, true
+}
+
+func classifyShellGitFields(fields []string) ToolClassification {
+	if len(fields) > 1 && oneOf(fields[1], "reset", "clean", "checkout", "switch", "merge", "rebase") {
+		return highRiskShellClassification("destructive git shell command", true)
+	}
+	subcmd, args, err := parseShellGitSubcommand(fields)
+	if err != nil {
+		return highRiskShellClassification("unsupported git shell command", false)
+	}
+	switch subcmd {
+	case "add":
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Risk:            ToolRiskMedium,
+			Reason:          "git shell add writes the repository index",
+		}
+	case "restore --staged":
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Risk:            ToolRiskMedium,
+			Reason:          "git shell restore --staged writes the repository index",
+		}
+	case "commit":
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Risk:            ToolRiskMedium,
+			Reason:          "git shell commit writes local repository history",
+		}
+	case "push":
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Risk:            ToolRiskHigh,
+			Reason:          "git shell push writes remote branch state",
+		}
+	case "ls-remote":
+		return ToolClassification{
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+			Risk:            ToolRiskMedium,
+			Reason:          "git shell ls-remote may contact a remote",
+		}
+	default:
+		_ = args
+		return ToolClassification{
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+			Risk:            ToolRiskLow,
+			Reason:          "git shell read-only command",
+		}
+	}
+}
+
+func parseShellGitSubcommand(fields []string) (string, []string, error) {
+	if len(fields) < 2 || fields[0] != "git" {
+		return "", nil, errors.New("not a git command")
+	}
+	subcmd := strings.TrimSpace(fields[1])
+	remainingArgs := append([]string(nil), fields[2:]...)
+	if subcmd == "" || strings.HasPrefix(subcmd, "-") {
+		return "", nil, fmt.Errorf("git shell global options are not supported")
+	}
+	if !allowedGitSubcommands[subcmd] && policiedSubcommands[subcmd] == nil && len(remainingArgs) > 0 {
+		combined := subcmd + " " + remainingArgs[0]
+		if allowedGitSubcommands[combined] || policiedSubcommands[combined] != nil {
+			subcmd = combined
+			remainingArgs = remainingArgs[1:]
+		}
+	}
+	if err := validateGlobalGitArgs(subcmd, remainingArgs); err != nil {
+		return "", nil, err
+	}
+	if policy := policiedSubcommands[subcmd]; policy != nil {
+		if err := validateSubcommandFlags(subcmd, policy, remainingArgs); err != nil {
+			return "", nil, err
+		}
+	} else if allowedGitSubcommands[subcmd] {
+		if err := validateGitArgs(subcmd, remainingArgs); err != nil {
+			return "", nil, err
+		}
+	} else {
+		return "", nil, fmt.Errorf("git shell subcommand %q is not allowed", subcmd)
+	}
+	if err := validateSensitiveGitContentArgs(subcmd, remainingArgs); err != nil {
+		return "", nil, err
+	}
+	return subcmd, remainingArgs, nil
+}
+
+func riskRank(risk ToolRisk) int {
+	switch risk {
+	case ToolRiskHigh:
+		return 3
+	case ToolRiskMedium:
+		return 2
+	case ToolRiskLow:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func splitShellCommandSegmentsQuoted(command string) ([]string, bool) {
+	var segments []string
+	var b strings.Builder
+	inSingle := false
+	inDouble := false
+	for _, r := range command {
+		switch {
+		case r == '\\':
+			return nil, false
+		case r == '\'' && !inDouble:
+			inSingle = !inSingle
+			b.WriteRune(r)
+		case r == '"' && !inSingle:
+			inDouble = !inDouble
+			b.WriteRune(r)
+		case !inSingle && !inDouble && strings.ContainsRune("\n;&|()`", r):
+			segments = append(segments, b.String())
+			b.Reset()
+		default:
+			b.WriteRune(r)
+		}
+	}
+	if inSingle || inDouble {
+		return nil, false
+	}
+	segments = append(segments, b.String())
+	return segments, true
+}
+
+func splitShellFields(segment string) ([]string, bool) {
+	var fields []string
+	var b strings.Builder
+	inSingle := false
+	inDouble := false
+	haveField := false
+	flush := func() {
+		if !haveField {
+			return
+		}
+		fields = append(fields, b.String())
+		b.Reset()
+		haveField = false
+	}
+	for _, r := range segment {
+		switch {
+		case r == '\\':
+			return nil, false
+		case r == '\'' && !inDouble:
+			inSingle = !inSingle
+			haveField = true
+		case r == '"' && !inSingle:
+			inDouble = !inDouble
+			haveField = true
+		case unicode.IsSpace(r) && !inSingle && !inDouble:
+			flush()
+		default:
+			b.WriteRune(r)
+			haveField = true
+		}
+	}
+	if inSingle || inDouble {
+		return nil, false
+	}
+	flush()
+	return fields, true
 }
 
 func shellCommandInvokesDestructiveCommand(command string) bool {
@@ -547,7 +797,7 @@ func shellFieldsLookDestructive(fields []string) bool {
 	case "git":
 		if len(fields) > 1 {
 			switch fields[1] {
-			case "reset", "clean", "push", "tag", "checkout", "switch", "merge", "rebase", "commit":
+			case "reset", "clean", "checkout", "switch", "merge", "rebase":
 				return true
 			}
 		}

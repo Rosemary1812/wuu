@@ -97,7 +97,7 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 		return "", errors.New("start_process requires command")
 	}
 	if shellCommandInvokesGit(args.Command) {
-		return "", errors.New("start_process refuses to execute git commands; use the restricted git tool instead. For commit flows, call git status/diff, git add with explicit paths, git commit, then git push when approved: error_kind=unsupported_tool_path model_next_action=\"retry with the git tool instead of asking the user to run git manually\"")
+		return "", errors.New("start_process refuses to execute git commands because git operations should be short-lived and non-interactive. Use run_shell for normal git status/diff/log/add/commit workflows, or the structured git tool when structured status output or restricted helpers are useful: error_kind=unsupported_tool_path model_next_action=\"retry with run_shell for short-lived git or use the structured git tool when structured output is needed\"")
 	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("start_process refuses to print process environment variables because they may contain secrets")
