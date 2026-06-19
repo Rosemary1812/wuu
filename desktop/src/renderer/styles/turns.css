@@ -161,7 +161,7 @@
 .turn-process-preview .turn-process-live-dot {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: currentColor;
   animation: process-pulse 1.4s ease-in-out infinite;
   flex: 0 0 auto;
@@ -245,7 +245,7 @@
 
 .message {
   max-width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 8px 16px;
   font-size: var(--conversation-message-font-size);
   line-height: var(--conversation-prose-line-height);
@@ -270,7 +270,7 @@
   justify-items: end;
   gap: 8px;
   margin-bottom: 16px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
                                                                        
                                                     
   scroll-margin-top: 12px;
@@ -335,7 +335,7 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   box-shadow: 0 1px 3px var(--ink-overlay-8);
   background: rgba(255, 255, 255, 0.72);
   color: var(--ink-tertiary);
@@ -403,7 +403,7 @@
   width: 112px;
   height: 84px;
   border: 1px solid var(--ink-overlay-12);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
   background: var(--paper);
 }
@@ -423,7 +423,7 @@
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--ink-overlay-12);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.82);
   color: #24292f;
   font-size: 0.84rem;
@@ -489,7 +489,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   box-shadow: none;
   color: var(--ink-muted);
@@ -805,7 +805,7 @@
   width: 7px;
   height: 7px;
   border: 1.5px solid currentColor;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .stickman-body,
@@ -814,7 +814,7 @@
 .stickman-weapon {
   position: absolute;
   height: 1.5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: currentColor;
   transform-origin: 0 50%;
 }
@@ -869,7 +869,7 @@
   left: 50%;
   width: 4px;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d9a23a;
   box-shadow:
     -5px 2px 0 rgba(217, 162, 58, 0.7),
@@ -964,7 +964,7 @@
   top: 27px;
   width: 18px;
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(151, 133, 105, 0.32);
   opacity: 0;
 }
@@ -981,7 +981,7 @@
   top: 28px;
   width: 54px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   opacity: 0;
 }
 
@@ -999,7 +999,7 @@
   top: 17px;
   width: 5px;
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d9a23a;
   box-shadow:
     -7px 3px 0 -1px rgba(217, 162, 58, 0.62),
@@ -1019,7 +1019,7 @@
   top: 18px;
   width: 24px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, transparent, #d9a23a, transparent);
   opacity: 0;
 }
@@ -1052,7 +1052,7 @@
   left: 7px;
   width: 1.5px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: currentColor;
   box-shadow: 5px 3px 0 -2px #d9a23a;
   content: "";
@@ -1083,7 +1083,7 @@
   top: 21px;
   width: 28px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background:
     radial-gradient(circle at 24% 52%, rgba(142, 118, 93, 0.42) 0 4px, transparent 4.5px),
     radial-gradient(circle at 58% 38%, rgba(151, 133, 105, 0.36) 0 5px, transparent 5.5px),
@@ -1104,7 +1104,7 @@
   top: 16px;
   width: 18px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, transparent, #d9a23a, transparent);
   opacity: 0;
 }
@@ -1114,7 +1114,7 @@
   position: absolute;
   width: 3px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d9a23a;
   content: "";
 }
@@ -1141,7 +1141,7 @@
   top: 19px;
   width: 9px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--ink-muted);
   opacity: 0;
 }
@@ -1161,7 +1161,7 @@
   bottom: -4px;
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--ink-muted);
   content: "";
 }
@@ -1201,7 +1201,7 @@
   width: 26px;
   height: 26px;
   border: 1.5px solid currentColor;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   opacity: 0.72;
 }
 
@@ -1214,7 +1214,7 @@
   border: 1px solid currentColor;
   border-right-color: transparent;
   border-left-color: transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   content: "";
   transform: rotate(-14deg);
 }
@@ -1761,7 +1761,7 @@
   left: calc(50% + 16px);
   width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   border: 2px solid currentColor;
   animation: gear-spin 2200ms linear infinite;
@@ -1900,7 +1900,7 @@
 .era-armor .battle-squad {
   top: 22px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background:
     linear-gradient(currentColor, currentColor) 0 3px / 100% 3px no-repeat,
     repeating-linear-gradient(90deg, currentColor 0 12px, transparent 12px 17px);
@@ -1960,7 +1960,7 @@
   left: calc(50% - 38px);
   width: 50px;
   height: 7px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: currentColor;
 }
 
@@ -2132,7 +2132,7 @@
   display: block;
   width: 3px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d9a23a;
   animation: star-twinkle 1800ms ease-in-out infinite;
 }
@@ -2267,7 +2267,7 @@
   width: min(760px, calc(100vw - 56px));
   gap: 18px;
   border: 1px solid rgba(64, 70, 68, 0.13);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: rgba(253, 254, 251, 0.96);
   box-shadow:
     0 24px 60px rgba(31, 35, 38, 0.16),
@@ -2335,7 +2335,7 @@
 .turn-progress-preview-track {
   height: 3px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #e8e9e4;
 }
 
@@ -3076,7 +3076,7 @@
                                                                 
                                                               
   border: 0;
-  border-radius: 4.5px;
+  border-radius: var(--radius-xs);
   background: var(--ink-overlay-6);
   color: var(--ink);
   font-family: "SFMono-Regular", Consolas, monospace;
@@ -3105,7 +3105,7 @@
                                                            
                                                                     
   border: 1px solid var(--ink-overlay-6);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-1);
   object-fit: contain;
 }
@@ -3119,7 +3119,7 @@
                                   
   border: 0;
   background: #f3f3f0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .rich-code code {
@@ -3200,7 +3200,7 @@
 .rich-mermaid {
   overflow: auto;
   border: 1px solid var(--surface-4);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--paper);
   padding: 14px;
 }
@@ -3420,7 +3420,7 @@
 
 .tool-card {
   border: 1px solid var(--surface-4);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-1);
   overflow: hidden;
 }
@@ -3438,7 +3438,7 @@
 .status-dot {
   width: 8px;
   height: 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   margin-left: auto;
   background: var(--ink-faint);
 }
@@ -3690,7 +3690,7 @@ pre {
   align-content: start;
   gap: 16px;
   border: 1px solid #e5e5e2;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink);
   padding: 18px;
@@ -3766,7 +3766,7 @@ pre {
   width: 8px;
   height: 32px;
   margin-left: 6px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   background: var(--success);
   content: "";
   transform: translateY(4px);
@@ -3793,7 +3793,7 @@ pre {
   width: 148px;
   height: 3px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 
@@ -3811,7 +3811,7 @@ pre {
 .wuu-launch-exit {
   height: 34px;
   border: 1px solid #dedfdb;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink);
   font-size: var(--font-ui);
@@ -5134,7 +5134,7 @@ pre {
   align-items: center;
   gap: 12px;
   border: 1px solid #e0e0dc;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink);
   font-weight: var(--weight-semibold);

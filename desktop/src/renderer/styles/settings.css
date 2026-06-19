@@ -24,7 +24,7 @@
   height: 38px;
   align-items: center;
   gap: 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-tertiary);
   font-weight: var(--weight-semibold);
@@ -106,7 +106,7 @@
 .settings-card {
   overflow: hidden;
   border: 1px solid var(--surface-4);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--paper);
 }
 
@@ -145,7 +145,7 @@
   width: 100%;
   height: 38px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   outline: 0;
   background: var(--surface-2);
   color: var(--ink);
@@ -168,7 +168,7 @@
   display: flex;
   height: 38px;
   align-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink-tertiary);
   padding: 0 12px;
@@ -182,7 +182,7 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-3);
   color: var(--ink);
   padding: 0 10px;
@@ -208,7 +208,7 @@
   width: 48px;
   height: 28px;
   justify-self: end;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d7d9d5;
   transition:
     background 140ms ease,
@@ -233,7 +233,7 @@
   left: 4px;
   width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--paper);
   box-shadow: 0 1px 3px var(--ink-overlay-18);
   transition: transform 140ms ease;
@@ -254,7 +254,7 @@
 
 .settings-card-footer button {
   height: 34px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--ink);
   color: var(--paper);
   font-weight: var(--weight-semibold);
@@ -286,7 +286,7 @@
   min-width: 0;
   gap: 8px;
   border: 1px solid var(--surface-4);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--paper);
   padding: 16px;
 }
@@ -452,7 +452,7 @@
   width: 13px;
   height: 13px;
   border: 1px solid var(--ink-overlay-6);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: #ebedf0;
 }
 

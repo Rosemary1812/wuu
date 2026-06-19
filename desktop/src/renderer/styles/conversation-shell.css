@@ -121,7 +121,7 @@
   flex: 0 1 auto;
   align-items: center;
   border: 1px solid var(--ink-overlay-8);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--ink-tertiary);
   overflow: hidden;
@@ -209,7 +209,7 @@
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(17, 19, 21, 0.22);
 }
 
@@ -259,7 +259,7 @@
   height: 17px;
   flex: 0 0 auto;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(17, 19, 21, 0.1);
   color: var(--ink);
   font-size: 10px;
@@ -278,7 +278,7 @@
   height: 24px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
@@ -306,7 +306,7 @@
   width: 34px;
   height: 34px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-tertiary);
   -webkit-app-region: no-drag;
@@ -368,7 +368,7 @@
   height: 32px;
   align-items: center;
   gap: 7px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-3);
   color: var(--ink-tertiary);
   font-size: var(--font-ui);
@@ -400,7 +400,7 @@
   height: 30px;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--success-soft);
   color: var(--success);
   font-size: var(--font-ui);
@@ -460,7 +460,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--ink-overlay-12);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--menu-bg);
   box-shadow:
     0 24px 60px rgba(20, 24, 28, 0.16),
@@ -506,12 +506,12 @@
 .run-debug-actions .icon-button {
   width: 28px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 
 .run-debug-phase {
   width: fit-content;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--ink-tertiary);
   font-size: var(--font-xs);
@@ -549,7 +549,7 @@
 }
 
 .run-debug-copied {
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--success-soft);
   color: var(--success);
   font-size: var(--font-ui);
@@ -576,7 +576,7 @@
 .run-debug-event {
   min-width: 0;
   border: 1px solid var(--surface-3);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-1);
 }
 
@@ -652,7 +652,7 @@
 }
 
 .run-debug-item-meta span {
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
   padding: 3px 7px;
 }
@@ -703,7 +703,7 @@
 
 .run-debug-empty {
   border: 1px dashed #e0e1dc;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
@@ -726,7 +726,7 @@
   gap: 6px;
 
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid rgba(17, 19, 21, 0.10);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 4px 14px rgba(20, 24, 28, 0.08);
