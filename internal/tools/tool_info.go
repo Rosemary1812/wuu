@@ -104,6 +104,14 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if t.isToolDisabled(name) {
 		return ToolExposureHidden
 	}
+	// The legacy run_shell name is preserved as an internal
+	// implementation for replay, progressive disclosure, and any
+	// caller that still calls it by name; the model-facing command
+	// entry point is now the new bash tool emitted by the model
+	// profile compiler. Hide run_shell from every surface.
+	if name == "run_shell" {
+		return ToolExposureHidden
+	}
 	if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
 		return ToolExposureHidden
 	}

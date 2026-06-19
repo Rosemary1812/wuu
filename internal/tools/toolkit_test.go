@@ -2413,7 +2413,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "ast_search", kind: ToolKindSearch, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "semantic_search", kind: ToolKindSearch, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
-		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
+		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "run_test", kind: ToolKindTest, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "wait_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: true, concurrencySafe: true},
@@ -4790,27 +4790,27 @@ func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T)
 	}
 	defs := kit.Definitions()
 	for _, d := range defs {
-		if d.Name != "run_shell" {
+		if d.Name != "bash" {
 			continue
 		}
 		if !strings.Contains(strings.ToLower(d.Description), "non-interactive") {
-			t.Fatalf("run_shell description must mention non-interactive use: %q", d.Description)
+			t.Fatalf("bash description must mention non-interactive use: %q", d.Description)
 		}
 		props, ok := d.InputSchema["properties"].(map[string]any)
 		if !ok {
-			t.Fatalf("run_shell schema properties missing or wrong type: %#v", d.InputSchema["properties"])
+			t.Fatalf("bash schema properties missing or wrong type: %#v", d.InputSchema["properties"])
 		}
 		commandProp, ok := props["command"].(map[string]any)
 		if !ok {
-			t.Fatalf("run_shell command schema missing or wrong type: %#v", props["command"])
+			t.Fatalf("bash command schema missing or wrong type: %#v", props["command"])
 		}
 		desc, _ := commandProp["description"].(string)
 		if !strings.Contains(strings.ToLower(desc), "non-interactive") {
-			t.Fatalf("run_shell command description must mention non-interactive use: %q", desc)
+			t.Fatalf("bash command description must mention non-interactive use: %q", desc)
 		}
 		return
 	}
-	t.Fatal("run_shell must be present in tool definitions")
+	t.Fatal("bash must be present in tool definitions")
 }
 
 func TestShellNextSuggestions_TimedOutLongRunningCommandUsesStartProcess(t *testing.T) {

@@ -134,7 +134,9 @@ func TestSetActiveProfileZeroValueRestoresLegacySurface(t *testing.T) {
 		t.Fatal("expected Codex surface to hide edit_file")
 	}
 	// Clear the profile and verify the legacy direct-tool surface
-	// returns: bash and run_shell both visible, edit_file visible.
+	// returns: bash is the only visible shell entry point. The
+	// legacy run_shell name is now an internal implementation
+	// and is hidden from every surface.
 	kit.SetActiveProfile(modelprofile.Profile{})
 	if kit.ActiveSurface().ProfileName != "" {
 		t.Fatal("expected zero-value profile to clear the active surface")
@@ -143,8 +145,8 @@ func TestSetActiveProfileZeroValueRestoresLegacySurface(t *testing.T) {
 	if !containsProfileDef(defs, "bash") {
 		t.Fatalf("legacy surface must include bash, got %v", sortedProfileDefNames(defs))
 	}
-	if !containsProfileDef(defs, "run_shell") {
-		t.Fatalf("legacy surface must include run_shell, got %v", sortedProfileDefNames(defs))
+	if containsProfileDef(defs, "run_shell") {
+		t.Fatalf("legacy surface must hide run_shell, got %v", sortedProfileDefNames(defs))
 	}
 	if !containsProfileDef(defs, "edit_file") {
 		t.Fatalf("legacy surface must include edit_file, got %v", sortedProfileDefNames(defs))
