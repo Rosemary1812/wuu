@@ -3,7 +3,7 @@
   min-width: 0;
   overflow: visible;
   padding: 16px 0 24px;
-  background: #fff;
+  background: var(--paper);
 }
 
 .dock-composer-wrap {
@@ -26,7 +26,7 @@
   position: absolute;
   inset: 0 var(--conversation-scrollbar-gutter) 0 0;
   z-index: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 24px, #fff 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--paper) 24px, var(--paper) 100%);
   content: "";
   pointer-events: none;
 }
@@ -68,7 +68,7 @@
   width: 100%;
   margin: 0;
   border-radius: 10px;
-  background: #fff;
+  background: var(--paper);
   box-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
   overflow: visible;
 }
@@ -78,7 +78,7 @@
   position: absolute;
   inset: 0;
   z-index: 2;
-  border: 1px solid #dededb;
+  border: 1px solid var(--surface-4);
   border-radius: inherit;
   pointer-events: none;
 }
@@ -86,7 +86,7 @@
 .hero-composer-wrap .composer-shell {
   width: 100%;
   border-radius: 10px;
-  background: #fff;
+  background: var(--paper);
   box-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
 }
 
@@ -94,7 +94,7 @@
   width: 100%;
   min-height: 128px;
   border-radius: 10px 10px 0 0;
-  background: #fff;
+  background: var(--paper);
   overflow: visible;
 }
 
