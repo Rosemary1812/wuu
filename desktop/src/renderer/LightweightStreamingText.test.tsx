@@ -1,11 +1,12 @@
 /**
  * Tests for LightweightStreamingText.
  *
- * Contract: short committed snapshots (≤ 4 chars) snap to full
+ * Contract: short committed snapshots (≤ 2 chars) snap to full
  * instantly; longer snapshots reveal progressively at a steady pace
- * that respects the floor and ceiling; reveal never resets when the
- * target text grows (we always continue forward from the visible
- * position); non-live, shrink, and unmount paths skip animation.
+ * (~12 cps with a 100 ms base) that respects the floor and ceiling;
+ * reveal never resets when the target text grows (we always continue
+ * forward from the visible position); non-live, shrink, and unmount
+ * paths skip animation.
  */
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { act } from "react";
@@ -110,9 +111,11 @@ describe("LightweightStreamingText", () => {
     // The visible prefix must match the source text.
     expect("Looking at the file".startsWith(mid)).toBe(true);
 
-    // After enough wall time, the full text is revealed.
+    // After enough wall time, the full text is revealed. 19 chars at
+    // ~12 cps with a 100 ms base lands well under 2000 ms, so 2000 ms
+    // is a safe settle wait that is robust to CI jitter.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     });
     expect(surfaceText()).toBe("Looking at the file");
   });
@@ -124,9 +127,12 @@ describe("LightweightStreamingText", () => {
       className: "lightweight-stream",
     });
 
-    // Let the reveal advance partway.
+    // Let the reveal advance partway. 12 chars at ~12 cps with a 100 ms
+    // base needs a settle wait comfortably past the base window;
+    // 300 ms lands the reveal around 6 chars, which is clearly
+    // partial and well above zero.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 40));
+      await new Promise((resolve) => setTimeout(resolve, 300));
     });
     const before = surfaceText();
     expect(before.length).toBeGreaterThan(0);
@@ -143,9 +149,11 @@ describe("LightweightStreamingText", () => {
     const justAfter = surfaceText();
     expect(justAfter.length).toBeGreaterThanOrEqual(before.length);
 
-    // Eventually the full new text is revealed.
+    // Eventually the full new text is revealed. 32 chars at ~12 cps
+    // with a 100 ms base lands under 3000 ms, so 3000 ms is a safe
+    // settle wait that is robust to CI jitter.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     });
     expect(surfaceText()).toBe("Reading file content for analysis");
   });
@@ -157,8 +165,11 @@ describe("LightweightStreamingText", () => {
       className: "lightweight-stream",
     });
 
+    // 35 chars at ~12 cps with a 100 ms base lands under 3000 ms,
+    // so 3000 ms is enough for the reveal to settle before the
+    // back-end pushes the shorter snapshot.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     });
     expect(surfaceText()).toBe("Reading file content for analysis");
 
@@ -204,10 +215,10 @@ describe("LightweightStreamingText", () => {
       className: "lightweight-stream",
     });
 
-    // 500 chars would naively take 120 + 500*20 = 10120ms. The cap is
-    // 500ms, so 700ms is enough for the reveal to settle.
+    // 500 chars would naively take 100 + 500*80 = 40100 ms. The cap is
+    // 1800 ms, so 2000 ms is enough for the reveal to settle.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     });
     expect(surfaceText()).toBe(longText);
   });

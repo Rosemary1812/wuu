@@ -45,10 +45,15 @@ export function AssistantTurnShell({
     (entry) => entry.position === "answer",
   );
 
-  // Collapse process records as soon as an answer body exists. This mirrors
-  // Codex's shape: prior commentary/tools stay available, but the active
-  // reading surface becomes the final-answer stream.
-  const defaultCollapsed = answerEntries.length > 0;
+  // Collapse the process fold once the turn is fully settled: the final
+  // text is on screen and streaming has stopped. Keeping the fold open
+  // while the answer region streams prevents the fold from snapping
+  // shut the instant final_answer begins streaming, which would create
+  // a visible layout shift next to the still-revealing preview text.
+  // The collapse transition itself is handled separately (rule 8 keeps
+  // the fold reachable so the user can re-expand it).
+  const defaultCollapsed =
+    turn.status === "completed" && answerEntries.length > 0;
 
   const hasProcess =
     processEntries.length > 0 || Boolean(display.latestProcessPreview);

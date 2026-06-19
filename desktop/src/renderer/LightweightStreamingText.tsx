@@ -19,24 +19,35 @@ type LightweightStreamingTextProps = {
 
 const PREVIEW_CONFIG = {
   /** Text at or below this length snaps to full instantly. */
-  shortTextMax: 4,
+  shortTextMax: 2,
   /** Hard ceiling on the reveal duration so users are never kept waiting. */
-  maxDurationMs: 500,
+  maxDurationMs: 1800,
   /** Floor for the reveal duration so very short deltas still feel intentional. */
-  minDurationMs: 150
+  minDurationMs: 400,
+  /** Time added to every reveal as a base, regardless of length. */
+  baseMs: 100,
+  /**
+   * Per-character reveal time. ~12 cps is intentionally slower than the
+   * body's StreamingMarkdown cadence so the preview reads as a deliberate
+   * summary rather than another live body stream. The slower cadence is
+   * the difference the user feels: each character lands with enough dwell
+   * time for the eye to register it as a discrete keystroke.
+   */
+  perCharMs: 80
 } as const;
 
 /**
  * Compute the reveal duration for a given delta (number of characters
  * the visible text needs to advance). Short deltas get the floor so the
  * animation reads as a deliberate keystroke; long deltas get the
- * ceiling so the user is never kept waiting. The result stays well below
- * the body streaming rate so the fold header remains secondary.
+ * ceiling so the user is never kept waiting. The cadence (~12 cps with
+ * a small base) stays well below the body streaming rate so the fold
+ * header reads as a deliberate summary rather than live prose.
  */
 function computeRevealDuration(delta: number): number {
   if (delta <= 0) return 0;
-  // Linear scaling: ~20 ms per character plus a 120 ms base.
-  const linear = 120 + delta * 20;
+  // Linear scaling: perCharMs per character plus a baseMs head start.
+  const linear = PREVIEW_CONFIG.baseMs + delta * PREVIEW_CONFIG.perCharMs;
   return Math.max(
     PREVIEW_CONFIG.minDurationMs,
     Math.min(PREVIEW_CONFIG.maxDurationMs, linear)
