@@ -73,8 +73,8 @@ type AgentControl struct {
 	statusDone    chan struct{}
 	closeOnce     sync.Once
 
-	awaitedResultsMu sync.Mutex
-	awaitedResults   map[string]struct{}
+	resultDeliveriesMu sync.Mutex
+	resultDeliveries   map[string]agentResultDelivery
 }
 
 // Config holds the dependencies needed to build an AgentControl.
@@ -157,6 +157,7 @@ func New(cfg Config) (*AgentControl, error) {
 		defaultSys:   cfg.WorkerSysPrompt,
 		maxParallel:  maxP,
 	}
+	c.restoreAgentResultDeliveries()
 	c.registerRootThread()
 	statusCh := make(chan subagent.Notification, 64)
 	mgr.Subscribe(statusCh)
@@ -217,6 +218,7 @@ func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ..
 		c.threadDir = filepath.Join(filepath.Dir(historyDir), "threads")
 		c.threadStore = agentthread.NewStore(c.threadDir)
 	}
+	c.restoreAgentResultDeliveries()
 	if c.threadDir != "" {
 		c.setHarnessDir(filepath.Join(filepath.Dir(c.threadDir), "harness"))
 	}
@@ -259,6 +261,7 @@ type SpawnRequest struct {
 // SpawnResult is what the spawn_agent tool returns to the model.
 type SpawnResult struct {
 	Action          string   `json:"action"`
+	ResultID        string   `json:"result_id,omitempty"`
 	AgentID         string   `json:"agent_id"`
 	TaskName        string   `json:"task_name,omitempty"`
 	AgentProfile    string   `json:"agent_profile,omitempty"`
@@ -272,6 +275,8 @@ type SpawnResult struct {
 	ResultTruncated bool     `json:"result_truncated,omitempty"`
 	Error           string   `json:"error,omitempty"`
 	DurationMS      int64    `json:"duration_ms,omitempty"`
+	ResultConsumed  bool     `json:"result_consumed,omitempty"`
+	ConsumedBy      string   `json:"consumed_by,omitempty"`
 	NextSteps       []string `json:"next_steps,omitempty"`
 }
 
@@ -498,11 +503,18 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		return nil, fmt.Errorf("wait: %w", err)
 	}
 	result.Status = string(snap.Status)
+	resultID, claimed, consumedBy := c.claimAgentResultDelivery(snap, agentResultConsumerSpawnAgent)
+	result.ResultID = resultID
 	ref := c.AgentResultReference(snap)
 	result.Result = ref.Preview
 	result.ResultPath = ref.Path
 	result.ResultBytes = ref.Bytes
 	result.ResultTruncated = ref.Truncated
+	if resultID != "" && !claimed {
+		result.ResultConsumed = true
+		result.ConsumedBy = consumedBy
+		result.Result = ""
+	}
 	if snap.Error != nil {
 		result.Error = snap.Error.Error()
 	}
@@ -538,7 +550,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 		if synchronous {
 			return []string{
 				"Inspect the worker result and any agent_report artifacts before relying on the handoff.",
-				"Use await_agents or workflow_control only if this result must be joined into a larger agent team or workflow record." + worktreeHint,
+				"Use workflow_control when this result must be bound into a larger workflow record." + worktreeHint,
 			}
 		}
 		return []string{
@@ -1913,6 +1925,7 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
 	}
 	_ = c.threadStore.RecordStatus(meta)
 	if isFinalSubAgentStatus(n.Status) {
+		c.ensureAgentResultDelivery(n.Snapshot)
 		if !c.deliverNestedResultToParent(context.Background(), n.Snapshot) && c.isRootChildSnapshot(n.Snapshot) {
 			_ = c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath))
 		}
@@ -1931,12 +1944,19 @@ func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap sub
 	if c.manager.Get(parentID) == nil {
 		return false
 	}
+	resultID, claimed, _ := c.claimAgentResultDelivery(snap, agentResultConsumerNestedFollowup)
+	if !claimed {
+		return true
+	}
 	parentPath := parentPathForSnapshot(snap)
 	if meta, ok := c.threads.Resolve(parentID); ok && strings.TrimSpace(meta.Path) != "" {
 		parentPath = meta.Path
 	}
 	communication := c.newAgentCompletionCommunication(snap, parentPath)
 	_, err := c.manager.Followup(ctx, parentID, communication.String())
+	if err != nil {
+		c.ReleaseAgentResultDeliveryClaim(resultID, agentResultConsumerNestedFollowup)
+	}
 	if err == nil {
 		_ = c.threadStore.RecordCommunication(parentID, communication)
 	}
@@ -1964,6 +1984,7 @@ func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSna
 // AgentCompletionChatMessage returns the user-role handoff that should resume
 // the recipient agent after a child agent finishes.
 func (c *AgentControl) AgentCompletionChatMessage(snap subagent.SubAgentSnapshot, recipientPath string) providers.ChatMessage {
+	c.ensureAgentResultDelivery(snap)
 	reportPath, artifacts := c.harnessReportForTask(snap.ID)
 	communication := newAgentCompletionCommunicationWithMessageAndTrigger(
 		snap,

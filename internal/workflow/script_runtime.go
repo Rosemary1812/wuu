@@ -565,6 +565,10 @@ func (r *ScriptRuntime) recordAwaitResult(result agentcontrol.AwaitAgentsResult)
 			continue
 		}
 		existing, _ := r.opts.Store.LoadAgentRun(r.opts.RunID, id)
+		resultText := item.Result
+		if resultText == "" && item.ResultConsumed {
+			resultText = existing.Result
+		}
 		agent := AgentRun{
 			ID:            id,
 			WorkflowRunID: r.opts.RunID,
@@ -575,7 +579,7 @@ func (r *ScriptRuntime) recordAwaitResult(result agentcontrol.AwaitAgentsResult)
 			AgentProfile:  strings.TrimSpace(item.AgentProfile),
 			Status:        agentRunStateFromExternal(item.Status, item.ReportMissing),
 			Prompt:        existing.Prompt,
-			Result:        item.Result,
+			Result:        resultText,
 			ReportPath:    item.ReportPath,
 			ReportMissing: item.ReportMissing,
 			ChangedFiles:  item.ChangedFiles,

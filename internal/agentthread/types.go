@@ -72,15 +72,22 @@ type SpawnSpec struct {
 type EventType string
 
 const (
-	EventThreadUpsert EventType = "thread_upsert"
-	EventStatusChange EventType = "status_change"
-	EventEdgeChange   EventType = "edge_change"
-	EventMessage      EventType = "message"
+	EventThreadUpsert  EventType = "thread_upsert"
+	EventStatusChange  EventType = "status_change"
+	EventEdgeChange    EventType = "edge_change"
+	EventMessage       EventType = "message"
+	EventResultReady   EventType = "agent_result_ready"
+	EventResultClaim   EventType = "agent_result_claim"
+	EventResultRelease EventType = "agent_result_release"
 )
 
 type Event struct {
 	Type          EventType  `json:"type"`
 	ThreadID      string     `json:"thread_id"`
+	AgentID       string     `json:"agent_id,omitempty"`
+	ParentID      string     `json:"parent_id,omitempty"`
+	ResultID      string     `json:"result_id,omitempty"`
+	Consumer      string     `json:"consumer,omitempty"`
 	Path          string     `json:"path,omitempty"`
 	Status        Status     `json:"status,omitempty"`
 	EdgeStatus    EdgeStatus `json:"edge_status,omitempty"`
@@ -89,5 +96,6 @@ type Event struct {
 	Message       string     `json:"message,omitempty"`
 	TriggerTurn   bool       `json:"trigger_turn,omitempty"`
 	Metadata      *Metadata  `json:"metadata,omitempty"`
+	CompletedAt   time.Time  `json:"completed_at,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 }

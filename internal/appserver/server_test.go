@@ -3895,7 +3895,7 @@ func TestServerAutoResumesRootAgentOnAgentCompletion(t *testing.T) {
 		TaskName:    "check_bridge",
 		Description: "check bridge",
 		Prompt:      "do it",
-		Synchronous: true,
+		Synchronous: false,
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
@@ -3930,6 +3930,16 @@ func TestServerAutoResumesRootAgentOnAgentCompletion(t *testing.T) {
 	}
 	if !communication.TriggerTurn || communication.Recipient != agentthread.RootAgentPath() {
 		t.Fatalf("unexpected handoff envelope: %+v", communication)
+	}
+
+	awaitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	awaited, err := coord.AwaitFrom(agentthread.RootPath, awaitCtx, []string{res.AgentID})
+	if err != nil {
+		t.Fatalf("AwaitFrom after auto resume: %v", err)
+	}
+	if len(awaited.Results) != 1 || awaited.Results[0].ResultID == "" || !awaited.Results[0].ResultConsumed || awaited.Results[0].ConsumedBy != "auto_completion" || awaited.Results[0].Result != "" {
+		t.Fatalf("await after auto resume should not return duplicate result content: %+v", awaited)
 	}
 }
 
@@ -3979,7 +3989,7 @@ func TestServerQueuesAgentCompletionWhileRootTurnIsRunning(t *testing.T) {
 		TaskName:    "check_bridge",
 		Description: "check bridge",
 		Prompt:      "do it",
-		Synchronous: true,
+		Synchronous: false,
 	}); err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
@@ -4001,6 +4011,64 @@ func TestServerQueuesAgentCompletionWhileRootTurnIsRunning(t *testing.T) {
 	}
 	if !foundHandoff {
 		t.Fatalf("root history missing queued worker completion handoff: %+v", history)
+	}
+}
+
+func TestServerSkipsDuplicateAgentCompletionNotificationsAfterAutoResume(t *testing.T) {
+	mainClient := &fakeClient{response: providers.ChatResponse{Content: "integrated result"}}
+	rt := newTestRuntime(t, mainClient)
+	workerClient := &fakeClient{response: providers.ChatResponse{Content: "agent done"}}
+	coord, err := agentcontrol.New(agentcontrol.Config{
+		Client:       providers.AdaptStreamClient(workerClient),
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    "sess-agents",
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return noopToolExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("coordinator: %v", err)
+	}
+	t.Cleanup(coord.Close)
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	threadID := "sess-agents"
+	threadRuntime := &runtime.ThreadRuntime{
+		StreamRunner: rt.StreamRunner,
+		AgentControl: coord,
+	}
+	rootThread := newThreadState(threadID, []providers.ChatMessage{
+		{Role: "user", Content: "please inspect"},
+	}, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	rootThread.execRuntime = threadRuntime
+	srv.mu.Lock()
+	srv.threads[threadID] = rootThread
+	srv.mu.Unlock()
+	srv.subscribeThreadRuntime(threadID, threadRuntime)
+
+	res, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "check_bridge",
+		Description: "check bridge",
+		Prompt:      "do it",
+		Synchronous: false,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	waitForTurnCompletedForThread(t, out, threadID)
+	sa := coord.Manager().Get(res.AgentID)
+	if sa == nil {
+		t.Fatalf("agent %q not found", res.AgentID)
+	}
+	coord.Manager().BroadcastSnapshot(sa)
+	time.Sleep(150 * time.Millisecond)
+	if got := turnCompletedCountForThread(t, out, threadID); got != 1 {
+		t.Fatalf("expected duplicate completion notification not to trigger another root turn, got %d; output:\n%s", got, out.String())
 	}
 }
 
@@ -4051,7 +4119,7 @@ func TestServerSkipsAutoResumeWhenAwaitAgentsAlreadyReturnedResult(t *testing.T)
 		TaskName:    "check_bridge",
 		Description: "check bridge",
 		Prompt:      "do it",
-		Synchronous: true,
+		Synchronous: false,
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)

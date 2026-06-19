@@ -11,6 +11,7 @@ import (
 
 type AgentMailboxMessage struct {
 	Type            string    `json:"type"`
+	ResultID        string    `json:"result_id,omitempty"`
 	TaskID          string    `json:"task_id,omitempty"`
 	AgentID         string    `json:"agent_id"`
 	AgentPath       string    `json:"agent_path,omitempty"`
@@ -55,6 +56,7 @@ func NewAgentMailboxMessageWithReport(snap subagent.SubAgentSnapshot, reportPath
 func NewAgentMailboxMessageWithReportAndResult(snap subagent.SubAgentSnapshot, reportPath string, artifacts []string, ref AgentResultReference) AgentMailboxMessage {
 	msg := AgentMailboxMessage{
 		Type:            "agent_result",
+		ResultID:        agentResultDeliveryID(snap),
 		TaskID:          snap.ID,
 		AgentID:         snap.ID,
 		AgentPath:       snap.AgentPath,

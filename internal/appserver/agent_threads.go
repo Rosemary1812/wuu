@@ -41,7 +41,8 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 					Message:  mailboxMessage,
 				})
 				if control != nil {
-					s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath))
+					resultID := control.AgentResultDeliveryID(n.Snapshot)
+					s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath))
 				}
 			}
 		}

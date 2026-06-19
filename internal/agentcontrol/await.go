@@ -22,6 +22,7 @@ type AwaitAgentsResult struct {
 }
 
 type AwaitAgentResult struct {
+	ResultID        string   `json:"result_id,omitempty"`
 	AgentID         string   `json:"agent_id,omitempty"`
 	TaskName        string   `json:"task_name,omitempty"`
 	AgentProfile    string   `json:"agent_profile,omitempty"`
@@ -40,6 +41,8 @@ type AwaitAgentResult struct {
 	InputTokens     int      `json:"input_tokens,omitempty"`
 	OutputTokens    int      `json:"output_tokens,omitempty"`
 	DurationMS      int64    `json:"duration_ms,omitempty"`
+	ResultConsumed  bool     `json:"result_consumed,omitempty"`
+	ConsumedBy      string   `json:"consumed_by,omitempty"`
 }
 
 type awaitTarget struct {
@@ -66,7 +69,7 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 	for {
 		result := c.awaitSnapshot(resolved)
 		if awaitComplete(result.Results) {
-			c.markAwaitedAgentResults(result.Results)
+			c.claimAwaitedAgentResults(result.Results)
 			result.NextSteps = awaitAgentsNextSteps(result)
 			return result, nil
 		}
@@ -75,7 +78,7 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 		case <-time.After(50 * time.Millisecond):
 		case <-ctx.Done():
 			result.TimedOut = true
-			c.markAwaitedAgentResults(result.Results)
+			c.claimAwaitedAgentResults(result.Results)
 			result.NextSteps = awaitAgentsNextSteps(result)
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return result, nil
@@ -85,29 +88,26 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 	}
 }
 
-func (c *AgentControl) markAwaitedAgentResults(results []AwaitAgentResult) {
+func (c *AgentControl) claimAwaitedAgentResults(results []AwaitAgentResult) {
 	if c == nil || len(results) == 0 {
 		return
 	}
-	ids := make([]string, 0, len(results))
-	for _, result := range results {
-		if !awaitResultSuppressesCompletion(result) {
+	for i := range results {
+		result := &results[i]
+		if !awaitResultSuppressesCompletion(*result) {
 			continue
 		}
-		if id := strings.TrimSpace(result.AgentID); id != "" {
-			ids = append(ids, id)
+		resultID := strings.TrimSpace(result.ResultID)
+		if resultID == "" {
+			continue
 		}
-	}
-	if len(ids) == 0 {
-		return
-	}
-	c.awaitedResultsMu.Lock()
-	defer c.awaitedResultsMu.Unlock()
-	if c.awaitedResults == nil {
-		c.awaitedResults = make(map[string]struct{}, len(ids))
-	}
-	for _, id := range ids {
-		c.awaitedResults[id] = struct{}{}
+		claimed, consumedBy := c.ClaimAgentResultDeliveryID(resultID, agentResultConsumerAwaitAgents)
+		if claimed {
+			continue
+		}
+		result.ResultConsumed = true
+		result.ConsumedBy = consumedBy
+		result.Result = ""
 	}
 }
 
@@ -118,22 +118,6 @@ func awaitResultSuppressesCompletion(result AwaitAgentResult) bool {
 	default:
 		return false
 	}
-}
-
-// AgentResultWasAwaited reports whether await_agents has already returned a
-// terminal result for agentID to the parent agent.
-func (c *AgentControl) AgentResultWasAwaited(agentID string) bool {
-	if c == nil {
-		return false
-	}
-	agentID = strings.TrimSpace(agentID)
-	if agentID == "" {
-		return false
-	}
-	c.awaitedResultsMu.Lock()
-	defer c.awaitedResultsMu.Unlock()
-	_, ok := c.awaitedResults[agentID]
-	return ok
 }
 
 func (c *AgentControl) ActiveTaskReminder(currentPath string) string {
@@ -312,6 +296,9 @@ func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult
 
 	if snap := c.snapshotByID(meta.ID); snap != nil {
 		out = awaitResultFromSnapshot(*snap)
+		if delivery := c.ensureAgentResultDelivery(*snap); delivery.ResultID != "" {
+			out.ResultID = delivery.ResultID
+		}
 		ref := c.AgentResultReference(*snap)
 		out.Result = ref.Preview
 		out.ResultPath = ref.Path
