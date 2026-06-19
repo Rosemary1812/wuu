@@ -818,29 +818,33 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
-  // Per-thread keep-alive for the main conversation pane. We keep the
-  // most recent threadIds mounted in the DOM (with display:none for
-  // inactive ones) so switching tabs no longer unmounts and remounts
-  // the entire <TurnView> tree — that unmount was the visible flash
-  // and also reset scroll, interrupted streaming, and re-ran the
-  // ConversationScrollState useLayoutEffect on every switch. LRU
-  // eviction caps memory cost for users who flip through many tabs.
+  // Per-thread keep-alive for the main conversation pane. We render a
+  // pane per open session tab (with display:none for inactive ones) so
+  // switching tabs no longer unmounts and remounts the entire <TurnView>
+  // tree — that unmount was the visible flash, and it also reset
+  // scroll, interrupted streaming, and re-ran the ConversationScrollState
+  // useLayoutEffect on every switch.
+  //
+  // Crucially we derive the cache synchronously from state.sessionTabs
+  // and state.thread via useMemo, not via useState + useEffect. The
+  // async effect path rendered once with the new activeThreadID but
+  // the stale cache (no pane for the new thread) and then a second
+  // time with the cache updated — the "two flickers" the user saw.
+  // Computing the cache from state in the same render closes that
+  // empty frame.
   const CACHED_THREAD_PANE_LIMIT = 10;
-  const [cachedThreadPaneIDs, setCachedThreadPaneIDs] = useState<string[]>(
-    () => (activeThreadID ? [activeThreadID] : []),
-  );
-  useEffect(() => {
-    if (!activeThreadID) return;
-    setCachedThreadPaneIDs((current) => {
-      if (current[current.length - 1] === activeThreadID) return current;
-      const without = current.filter((id) => id !== activeThreadID);
-      const next = [...without, activeThreadID];
-      if (next.length > CACHED_THREAD_PANE_LIMIT) {
-        return next.slice(next.length - CACHED_THREAD_PANE_LIMIT);
-      }
-      return next;
-    });
-  }, [activeThreadID]);
+  const cachedThreadPaneIDs = useMemo(() => {
+    const activeID = state.thread?.id;
+    const sessionThreadIDs = state.sessionTabs
+      .filter(
+        (tab): tab is Extract<SessionTab, { kind: "thread" }> =>
+          tab.kind === "thread",
+      )
+      .map((tab) => tab.threadID);
+    const others = sessionThreadIDs.filter((id) => id !== activeID);
+    const ordered = activeID ? [activeID, ...others] : others;
+    return ordered.slice(0, CACHED_THREAD_PANE_LIMIT);
+  }, [state.thread?.id, state.sessionTabs]);
   const activePendingComposerMessages = pendingComposerMessagesForThread(
     pendingComposerMessagesByThread,
     activeThreadID,
