@@ -45,6 +45,7 @@ type MCPServerConfig struct {
 	Args          []string                   `json:"args,omitempty"`
 	URL           string                     `json:"url,omitempty"`
 	Env           map[string]string          `json:"env,omitempty"`
+	Enabled       *bool                      `json:"enabled,omitempty"`
 	ToolOverrides map[string]MCPToolOverride `json:"tool_overrides,omitempty"`
 }
 

@@ -123,6 +123,11 @@ const api: WuuDesktopApi = {
   listManagedProcesses: () => ipcRenderer.invoke("wuu:process-list"),
   stopManagedProcess: (processId: string) =>
     ipcRenderer.invoke("wuu:process-stop", processId),
+  listMCPServers: () => ipcRenderer.invoke("wuu:mcp-list"),
+  connectMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-connect", name),
+  disconnectMCPServer: (name: string) =>
+    ipcRenderer.invoke("wuu:mcp-disconnect", name),
+  refreshMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-refresh", name),
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) =>
     ipcRenderer.invoke("wuu:thread-resume", sessionId),

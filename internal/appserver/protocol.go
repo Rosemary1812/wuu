@@ -43,6 +43,10 @@ const (
 	MethodTurnInterrupt         = "turn/interrupt"
 	MethodProcessList           = "process/list"
 	MethodProcessStop           = "process/stop"
+	MethodMCPList               = "mcp/list"
+	MethodMCPConnect            = "mcp/connect"
+	MethodMCPDisconnect         = "mcp/disconnect"
+	MethodMCPRefresh            = "mcp/refresh"
 	MethodShutdown              = "shutdown"
 	// MethodSettingsUsage returns the aggregated per-provider/model token
 	// usage snapshot for the desktop settings page. Range filter selects
@@ -74,6 +78,7 @@ const (
 	NotificationToolCallOutput      = "item/toolCall/outputDelta"
 	NotificationAgentUpdated        = "agent/updated"
 	NotificationAgentMailbox        = "agent/mailbox"
+	NotificationMCPStatusUpdated    = "mcp/status/updated"
 )
 
 type Request struct {
@@ -164,6 +169,26 @@ type PermissionSummary struct {
 	PermissionProfile string `json:"permission_profile,omitempty"`
 	ApprovalPolicy    string `json:"approval_policy,omitempty"`
 	ApprovalsReviewer string `json:"approvals_reviewer,omitempty"`
+}
+
+type MCPServerStatus struct {
+	Name      string `json:"name"`
+	State     string `json:"state"`
+	Connected bool   `json:"connected"`
+	ToolCount int    `json:"tool_count"`
+	Error     string `json:"error,omitempty"`
+}
+
+type MCPListResult struct {
+	Servers []MCPServerStatus `json:"servers"`
+}
+
+type MCPServerActionParams struct {
+	Name string `json:"name,omitempty"`
+}
+
+type MCPServerActionResult struct {
+	Status MCPServerStatus `json:"status"`
 }
 
 type ExtensionTrustSummary struct {

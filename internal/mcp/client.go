@@ -14,7 +14,12 @@ type ServerConfig struct {
 	Args          []string                `json:"args,omitempty"`
 	URL           string                  `json:"url,omitempty"`
 	Env           map[string]string       `json:"env,omitempty"`
+	Enabled       *bool                   `json:"enabled,omitempty"`
 	ToolOverrides map[string]ToolOverride `json:"tool_overrides,omitempty"`
+}
+
+func (c ServerConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 // ToolOverride lets local config correct or supplement MCP tool metadata.

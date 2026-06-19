@@ -25,6 +25,8 @@ import type {
   GoalWorktreeMergeResult,
   GoalWorktreeRollbackResult,
   GoalWorktreeReviewResult,
+  MCPListResult,
+  MCPServerActionResult,
   ManagedProcessListResult,
   ManagedProcessStopResult,
   ServerEvent,
@@ -421,6 +423,18 @@ app.whenReady().then(() => {
     appServerClientPool.request<ManagedProcessStopResult>("process/stop", {
       process_id: processID,
     }),
+  );
+  ipcMain.handle("wuu:mcp-list", () =>
+    appServerClientPool.request<MCPListResult>("mcp/list"),
+  );
+  ipcMain.handle("wuu:mcp-connect", (_event, name: string) =>
+    appServerClientPool.request<MCPServerActionResult>("mcp/connect", { name }),
+  );
+  ipcMain.handle("wuu:mcp-disconnect", (_event, name: string) =>
+    appServerClientPool.request<MCPServerActionResult>("mcp/disconnect", { name }),
+  );
+  ipcMain.handle("wuu:mcp-refresh", (_event, name: string) =>
+    appServerClientPool.request<MCPServerActionResult>("mcp/refresh", { name }),
   );
   ipcMain.handle("wuu:thread-start", () =>
     appServerClientPool.request<{ thread: Thread }>("thread/start"),

@@ -11,6 +11,7 @@ import (
 // Manager holds all active MCP client connections and exposes their tools.
 type Manager struct {
 	mu       sync.RWMutex
+	configs  map[string]ServerConfig
 	clients  map[string]*Client
 	statuses map[string]ServerStatus
 }
@@ -18,14 +19,57 @@ type Manager struct {
 // NewManager creates an empty MCP manager.
 func NewManager() *Manager {
 	return &Manager{
+		configs:  make(map[string]ServerConfig),
 		clients:  make(map[string]*Client),
 		statuses: make(map[string]ServerStatus),
+	}
+}
+
+func (m *Manager) Configure(configs map[string]ServerConfig) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.configs == nil {
+		m.configs = make(map[string]ServerConfig)
+	}
+	if m.statuses == nil {
+		m.statuses = make(map[string]ServerStatus)
+	}
+	for name, cfg := range configs {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		cfg.Name = name
+		m.configs[name] = cloneServerConfig(cfg)
+		if _, connected := m.clients[name]; connected {
+			continue
+		}
+		state := MCPServerStateConfigured
+		if !cfg.IsEnabled() {
+			state = MCPServerStateDisabled
+		}
+		if current, ok := m.statuses[name]; !ok || current.State == "" {
+			m.statuses[name] = ServerStatus{Name: name, State: state}
+		}
 	}
 }
 
 // Add connects and registers an MCP server. If the connection fails, the
 // error is returned and no client is kept.
 func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
+	cfg.Name = strings.TrimSpace(cfg.Name)
+	if cfg.Name == "" {
+		return fmt.Errorf("mcp server name is required")
+	}
+	m.rememberConfig(cfg)
+	if !cfg.IsEnabled() {
+		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateDisabled})
+		return nil
+	}
+	m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateConnecting})
 	var client *Client
 	var err error
 	if cfg.URL != "" {
@@ -34,14 +78,14 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		client, err = ConnectStdio(cfg)
 	}
 	if err != nil {
-		m.recordStatus(ServerStatus{Name: cfg.Name, Connected: false, Error: err.Error()})
+		m.recordStatus(ServerStatus{Name: cfg.Name, State: classifyConnectError(err), Connected: false, Error: err.Error()})
 		return err
 	}
 	// Eagerly discover tools so the toolkit can include them.
 	if _, derr := client.DiscoverTools(ctx); derr != nil {
 		_ = client.Close()
 		err := fmt.Errorf("discover tools for %q: %w", cfg.Name, derr)
-		m.recordStatus(ServerStatus{Name: cfg.Name, Connected: false, Error: err.Error()})
+		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateFailed, Connected: false, Error: err.Error()})
 		return err
 	}
 	m.mu.Lock()
@@ -52,22 +96,57 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	m.clients[cfg.Name] = client
 	m.statuses[cfg.Name] = ServerStatus{
 		Name:      cfg.Name,
+		State:     MCPServerStateConnected,
 		Connected: true,
 		ToolCount: len(client.Tools()),
 	}
 	return nil
 }
 
+func (m *Manager) Connect(ctx context.Context, name string) error {
+	cfg, ok := m.Config(name)
+	if !ok {
+		return fmt.Errorf("mcp server %q not configured", name)
+	}
+	return m.Add(ctx, cfg)
+}
+
+func (m *Manager) Refresh(ctx context.Context, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		for _, cfg := range m.Configs() {
+			if err := m.Add(ctx, cfg); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	cfg, ok := m.Config(name)
+	if !ok {
+		return fmt.Errorf("mcp server %q not configured", name)
+	}
+	m.closeClient(name)
+	return m.Add(ctx, cfg)
+}
+
 // Remove disconnects an MCP server by name.
 func (m *Manager) Remove(name string) error {
+	return m.Disconnect(name)
+}
+
+func (m *Manager) Disconnect(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	c, ok := m.clients[name]
 	if !ok {
+		if _, configured := m.configs[name]; configured {
+			m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled}
+			return nil
+		}
 		return fmt.Errorf("mcp server %q not found", name)
 	}
 	delete(m.clients, name)
-	delete(m.statuses, name)
+	m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled}
 	return c.Close()
 }
 
@@ -88,13 +167,41 @@ func (m *Manager) AllTools() []*MCPTool {
 	return out
 }
 
-// Status returns a human-readable status summary for each connected server.
+func (m *Manager) Config(name string) (ServerConfig, bool) {
+	if m == nil {
+		return ServerConfig{}, false
+	}
+	name = strings.TrimSpace(name)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cfg, ok := m.configs[name]
+	return cloneServerConfig(cfg), ok
+}
+
+func (m *Manager) Configs() []ServerConfig {
+	if m == nil {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]ServerConfig, 0, len(m.configs))
+	for _, cfg := range m.configs {
+		out = append(out, cloneServerConfig(cfg))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// Status returns a human-readable status summary for each configured server.
 func (m *Manager) Status() map[string]ServerStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make(map[string]ServerStatus, len(m.statuses))
 	for name, status := range m.statuses {
 		if c, ok := m.clients[name]; ok {
+			status.State = MCPServerStateConnected
 			status.Connected = true
 			status.ToolCount = len(c.Tools())
 			status.Error = ""
@@ -115,7 +222,9 @@ func (m *Manager) Close() error {
 		}
 	}
 	m.clients = make(map[string]*Client)
-	m.statuses = make(map[string]ServerStatus)
+	for name := range m.statuses {
+		m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled}
+	}
 	return firstErr
 }
 
@@ -131,12 +240,78 @@ func (m *Manager) recordStatus(status ServerStatus) {
 	m.statuses[status.Name] = status
 }
 
+func (m *Manager) rememberConfig(cfg ServerConfig) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.configs == nil {
+		m.configs = make(map[string]ServerConfig)
+	}
+	m.configs[cfg.Name] = cloneServerConfig(cfg)
+}
+
+func (m *Manager) closeClient(name string) {
+	m.mu.Lock()
+	c := m.clients[name]
+	if c != nil {
+		delete(m.clients, name)
+	}
+	m.mu.Unlock()
+	if c != nil {
+		_ = c.Close()
+	}
+}
+
+func cloneServerConfig(cfg ServerConfig) ServerConfig {
+	out := cfg
+	if cfg.Args != nil {
+		out.Args = append([]string(nil), cfg.Args...)
+	}
+	if cfg.Env != nil {
+		out.Env = make(map[string]string, len(cfg.Env))
+		for k, v := range cfg.Env {
+			out.Env[k] = v
+		}
+	}
+	if cfg.ToolOverrides != nil {
+		out.ToolOverrides = cloneToolOverrides(cfg.ToolOverrides)
+	}
+	return out
+}
+
+type MCPServerState string
+
+const (
+	MCPServerStateConfigured              MCPServerState = "configured"
+	MCPServerStateConnecting              MCPServerState = "connecting"
+	MCPServerStateConnected               MCPServerState = "connected"
+	MCPServerStateFailed                  MCPServerState = "failed"
+	MCPServerStateDisabled                MCPServerState = "disabled"
+	MCPServerStateNeedsAuth               MCPServerState = "needs_auth"
+	MCPServerStateNeedsClientRegistration MCPServerState = "needs_client_registration"
+)
+
+func classifyConnectError(err error) MCPServerState {
+	if err == nil {
+		return MCPServerStateConnected
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "401") || strings.Contains(msg, "unauthorized"):
+		return MCPServerStateNeedsAuth
+	case strings.Contains(msg, "client registration"):
+		return MCPServerStateNeedsClientRegistration
+	default:
+		return MCPServerStateFailed
+	}
+}
+
 // ServerStatus describes one MCP server's runtime state.
 type ServerStatus struct {
-	Name      string `json:"name"`
-	Connected bool   `json:"connected"`
-	ToolCount int    `json:"tool_count"`
-	Error     string `json:"error,omitempty"`
+	Name      string         `json:"name"`
+	State     MCPServerState `json:"state"`
+	Connected bool           `json:"connected"`
+	ToolCount int            `json:"tool_count"`
+	Error     string         `json:"error,omitempty"`
 }
 
 // PromptCacheStablePrefix returns the number of built-in tools that should

@@ -367,6 +367,13 @@ func (t *Toolkit) SetMCPManager(m *mcp.Manager) {
 	t.mcpManager = m
 }
 
+func (t *Toolkit) MCPManager() *mcp.Manager {
+	if t == nil {
+		return nil
+	}
+	return t.mcpManager
+}
+
 // SetToolPolicy installs the runtime policy used before executing known tools.
 func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
 	t.toolPolicy = policy

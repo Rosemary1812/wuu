@@ -507,6 +507,22 @@ export type ManagedProcessStopResult = {
   process: ManagedProcess;
 };
 
+export type MCPServerStatus = {
+  name: string;
+  state: string;
+  connected: boolean;
+  tool_count: number;
+  error?: string;
+};
+
+export type MCPListResult = {
+  servers: MCPServerStatus[];
+};
+
+export type MCPServerActionResult = {
+  status: MCPServerStatus;
+};
+
 export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
@@ -982,6 +998,10 @@ export type WuuDesktopApi = {
   ) => Promise<ConfigModelUpdateResult>;
   listManagedProcesses: () => Promise<ManagedProcessListResult>;
   stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;
+  listMCPServers: () => Promise<MCPListResult>;
+  connectMCPServer: (name: string) => Promise<MCPServerActionResult>;
+  disconnectMCPServer: (name: string) => Promise<MCPServerActionResult>;
+  refreshMCPServer: (name: string) => Promise<MCPServerActionResult>;
   listSkills: () => Promise<SkillListResult>;
   getGoalSnapshot: (threadId?: string) => Promise<GoalSnapshotResult>;
   getGoalWorktreeReview: (worktreePath: string) => Promise<GoalWorktreeReviewResult>;

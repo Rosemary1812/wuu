@@ -1061,16 +1061,25 @@ func connectMCPServers(cfg config.Config, plugins []pluginpkg.Plugin, toolkit *t
 	}
 	mcpMgr := mcp.NewManager()
 	toolkit.SetMCPManager(mcpMgr)
+	serverConfigs := make(map[string]mcp.ServerConfig, len(servers))
+	for name, mcpCfg := range servers {
+		serverConfigs[name] = mcp.ServerConfig{
+			Name:          name,
+			Command:       mcpCfg.Command,
+			Args:          mcpCfg.Args,
+			URL:           mcpCfg.URL,
+			Env:           mcpCfg.Env,
+			Enabled:       mcpCfg.Enabled,
+			ToolOverrides: mcpToolOverrides(mcpCfg.ToolOverrides),
+		}
+	}
+	mcpMgr.Configure(serverConfigs)
 	go func() {
 		ctx := context.Background()
-		for name, mcpCfg := range servers {
-			serverCfg := mcp.ServerConfig{
-				Name:          name,
-				Command:       mcpCfg.Command,
-				Args:          mcpCfg.Args,
-				URL:           mcpCfg.URL,
-				Env:           mcpCfg.Env,
-				ToolOverrides: mcpToolOverrides(mcpCfg.ToolOverrides),
+		for name, serverCfg := range serverConfigs {
+			if !serverCfg.IsEnabled() {
+				providers.DebugLogf("mcp server %q disabled", name)
+				continue
 			}
 			if err := mcpMgr.Add(ctx, serverCfg); err != nil {
 				providers.DebugLogf("mcp server %q failed to connect: %v", name, err)

@@ -212,6 +212,14 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleProcessList(req)
 	case MethodProcessStop:
 		return s.handleProcessStop(req)
+	case MethodMCPList:
+		return s.handleMCPList(req)
+	case MethodMCPConnect:
+		return s.handleMCPConnect(ctx, req)
+	case MethodMCPDisconnect:
+		return s.handleMCPDisconnect(req)
+	case MethodMCPRefresh:
+		return s.handleMCPRefresh(ctx, req)
 	case MethodShutdown:
 		if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 			return err
