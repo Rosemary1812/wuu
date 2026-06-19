@@ -896,6 +896,10 @@ export type ToolApprovalRequest = {
   arguments_sha256?: string;
   arguments_preview?: string;
   approval_ref?: string;
+  permission?: string;
+  permission_patterns?: string[];
+  permission_always?: string[];
+  permission_rule?: string;
   model_next_action?: string;
 };
 

@@ -182,6 +182,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetSkills(discoveredSkills)
 		kit.SetWorkflows(discoveredWorkflows)
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 		kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 		kit.ConfigureEditToolsForProviderModel(ruleProviderName, toolModeModel)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
@@ -259,6 +260,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
 				wkit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+				wkit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 				wkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 				wkit.ConfigureEditToolsForProviderModel(ruleProviderName, toolModeModel)
 				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
@@ -1109,6 +1111,33 @@ func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolO
 		out[name] = mcp.ToolOverride{
 			ReadOnly:        override.ReadOnly,
 			ConcurrencySafe: override.ConcurrencySafe,
+		}
+	}
+	return out
+}
+
+func PermissionRulesFromConfig(in config.PermissionRulesConfig) tools.ToolPermissionRuleSet {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(tools.ToolPermissionRuleSet, 0)
+	for permission, patterns := range in {
+		permission = strings.TrimSpace(permission)
+		if permission == "" {
+			continue
+		}
+		for pattern, action := range patterns {
+			pattern = strings.TrimSpace(pattern)
+			action = strings.TrimSpace(action)
+			if pattern == "" || action == "" {
+				continue
+			}
+			out = append(out, tools.ToolPermissionRule{
+				Permission: permission,
+				Pattern:    pattern,
+				Action:     tools.ToolPermissionAction(action),
+				Source:     "config",
+			})
 		}
 	}
 	return out

@@ -42,6 +42,16 @@ func (t *ShellTool) Classify(argsJSON string) ToolClassification {
 	return classifyShellCommand(args.Command)
 }
 
+func (t *ShellTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return nil
+	}
+	return []ToolPermissionRequest{shellPermissionRequest("run_shell", args.Command)}
+}
+
 func (t *ShellTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "run_shell",

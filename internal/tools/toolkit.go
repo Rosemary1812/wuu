@@ -55,6 +55,9 @@ type Toolkit struct {
 	autoModeClassifier     AutoModeClassifier
 	approvalReviewer       ToolApprovalReviewer
 	approvalStore          *ToolApprovalStore
+	permissionRulesMu      sync.RWMutex
+	permissionRules        ToolPermissionRuleSet
+	permissionSessionRules ToolPermissionRuleSet
 	// mcpManager, when set, exposes MCP server tools alongside built-in
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
@@ -145,6 +148,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		autoModeClassifier:     t.autoModeClassifier,
 		approvalReviewer:       t.approvalReviewer,
 		approvalStore:          t.approvalStore,
+		permissionRules:        t.PermissionRules(),
 		mcpManager:             t.mcpManager,
 	}
 	if len(t.disabledTools) > 0 {

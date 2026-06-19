@@ -225,6 +225,10 @@ type AgentConfig struct {
 	// instructions that should customize, not replace, wuu's base behavior.
 	AppendSystemPrompt string           `json:"append_system_prompt,omitempty"`
 	ToolPolicy         ToolPolicyConfig `json:"tool_policy,omitempty"`
+	// PermissionRules are granular OpenCode-style permission rules:
+	// permission -> pattern -> allow/deny/ask. They refine the broad permission
+	// mode without changing the hard permission boundary.
+	PermissionRules PermissionRulesConfig `json:"permission_rules,omitempty"`
 	// PermissionMode is the user-facing Codex-style permission preset.
 	// Empty resolves to the Default preset.
 	PermissionMode string `json:"permission_mode,omitempty"`
@@ -521,6 +525,9 @@ func validatePermissionConfig(agent AgentConfig) error {
 		return err
 	}
 	if err := validateApprovalsReviewer(agent.ApprovalsReviewer); err != nil {
+		return err
+	}
+	if err := validatePermissionRulesConfig(agent.PermissionRules); err != nil {
 		return err
 	}
 	return nil

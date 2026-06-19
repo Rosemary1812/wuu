@@ -60,6 +60,16 @@ func (t *StartProcessTool) Classify(argsJSON string) ToolClassification {
 	}
 }
 
+func (t *StartProcessTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return nil
+	}
+	return []ToolPermissionRequest{shellPermissionRequest("start_process", args.Command)}
+}
+
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "start_process", Description: "Start a managed background OS process in the workspace. Use this instead of run_shell or shell '&' for dev servers, watch modes, and other long-lived commands. Commands that dump environment variables or touch sensitive credential paths are rejected.",

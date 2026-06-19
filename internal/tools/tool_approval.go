@@ -57,6 +57,10 @@ type ToolApprovalReviewRequest struct {
 	ArgumentsPreview     string           `json:"arguments_preview,omitempty"`
 	ApprovalRef          string           `json:"approval_ref,omitempty"`
 	ApprovalKey          string           `json:"approval_key,omitempty"`
+	Permission           string           `json:"permission,omitempty"`
+	PermissionPatterns   []string         `json:"permission_patterns,omitempty"`
+	PermissionAlways     []string         `json:"permission_always,omitempty"`
+	PermissionRule       string           `json:"permission_rule,omitempty"`
 	ModelNextAction      string           `json:"model_next_action"`
 }
 
@@ -154,6 +158,8 @@ func (t *Toolkit) requestToolApproval(
 	createdAt time.Time,
 	revision string,
 	approvalRef string,
+	permissionReq *ToolPermissionRequest,
+	permissionDecision *ToolPermissionDecision,
 ) (ToolApprovalReview, error) {
 	key := toolApprovalKey(call)
 	if review, ok := t.approvalStore.IsApproved(key); ok {
@@ -183,6 +189,18 @@ func (t *Toolkit) requestToolApproval(
 		ApprovalRef:          approvalRef,
 		ApprovalKey:          key,
 		ModelNextAction:      "ask the user for approval or choose a lower-risk alternative",
+	}
+	if permissionReq != nil {
+		normalizedReq := normalizeToolPermissionRequest(*permissionReq)
+		request.Permission = normalizedReq.Permission
+		request.PermissionPatterns = normalizedReq.Patterns
+		request.PermissionAlways = normalizedReq.Always
+	}
+	if permissionDecision != nil {
+		rule := normalizeToolPermissionRule(permissionDecision.Rule)
+		if rule.Permission != "" && rule.Pattern != "" {
+			request.PermissionRule = rule.Permission + " " + rule.Pattern
+		}
 	}
 	review, err := t.approvalReviewer.ReviewToolApproval(ctx, request)
 	if err != nil {

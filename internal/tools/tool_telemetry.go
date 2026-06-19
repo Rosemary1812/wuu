@@ -132,6 +132,13 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	approvalRef := ""
 	approvalReview := ToolApprovalReview{}
 
+	if validator, ok := tool.(InputValidatingTool); ok {
+		if err := validator.ValidateInput(call.Arguments); err != nil {
+			t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+			return "", err
+		}
+	}
+
 	if err := t.extensionSurfacePolicy.Check(info); err != nil {
 		decision.Action = ToolPolicyDeny
 		decision.Reason = "extension surface policy"
@@ -146,23 +153,33 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 		return "", err
 	}
 
-	if autoDecision, err := t.applyAutoModeDecision(ctx, call, info, decision); err != nil {
-		decision = autoDecision
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+	if permissionDecision, matched, permApprovalRef, permApprovalReview, err := t.applyPermissionRuleDecision(ctx, call, tool, info, decision, startedAt, revisionBefore); err != nil {
+		decision = permissionDecision
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, permApprovalRef, permApprovalReview, err)
 		return "", err
+	} else if matched {
+		decision = permissionDecision
+		approvalRef = permApprovalRef
+		approvalReview = permApprovalReview
 	} else {
-		decision = autoDecision
-	}
-	if err := decision.blockingError(call.Name); err != nil {
-		approvalRef = t.persistApprovalRequest(call, info, decision, startedAt, revisionBefore)
-		var approvalErr error
-		approvalReview, approvalErr = t.requestToolApproval(ctx, call, info, decision, startedAt, revisionBefore, approvalRef)
-		if approvalErr != nil {
-			if errors.Is(approvalErr, errToolApprovalReviewerUnavailable) {
-				approvalErr = err
+		if autoDecision, err := t.applyAutoModeDecision(ctx, call, info, decision); err != nil {
+			decision = autoDecision
+			t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+			return "", err
+		} else {
+			decision = autoDecision
+		}
+		if err := decision.blockingError(call.Name); err != nil {
+			approvalRef = t.persistApprovalRequest(call, info, decision, startedAt, revisionBefore)
+			var approvalErr error
+			approvalReview, approvalErr = t.requestToolApproval(ctx, call, info, decision, startedAt, revisionBefore, approvalRef, nil, nil)
+			if approvalErr != nil {
+				if errors.Is(approvalErr, errToolApprovalReviewerUnavailable) {
+					approvalErr = err
+				}
+				t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, approvalReview, approvalErr)
+				return "", approvalErr
 			}
-			t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, approvalReview, approvalErr)
-			return "", approvalErr
 		}
 	}
 	if priorRepeats := t.repeatedToolInputCount(call, revisionBefore); priorRepeats >= repeatedToolInputPriorLimit {

@@ -17,21 +17,25 @@ import (
 const MethodToolApprovalRequest = "tool/approval/request"
 
 type ToolApprovalRequest struct {
-	ID                   string `json:"id"`
-	ToolName             string `json:"tool_name"`
-	CallID               string `json:"call_id,omitempty"`
-	Kind                 string `json:"kind"`
-	Risk                 string `json:"risk"`
-	PolicyAction         string `json:"policy_action"`
-	PolicyReason         string `json:"policy_reason,omitempty"`
-	ClassificationReason string `json:"classification_reason,omitempty"`
-	ReadOnly             bool   `json:"read_only"`
-	Destructive          bool   `json:"destructive"`
-	Revision             string `json:"revision,omitempty"`
-	ArgumentsSHA256      string `json:"arguments_sha256,omitempty"`
-	ArgumentsPreview     string `json:"arguments_preview,omitempty"`
-	ApprovalRef          string `json:"approval_ref,omitempty"`
-	ModelNextAction      string `json:"model_next_action,omitempty"`
+	ID                   string   `json:"id"`
+	ToolName             string   `json:"tool_name"`
+	CallID               string   `json:"call_id,omitempty"`
+	Kind                 string   `json:"kind"`
+	Risk                 string   `json:"risk"`
+	PolicyAction         string   `json:"policy_action"`
+	PolicyReason         string   `json:"policy_reason,omitempty"`
+	ClassificationReason string   `json:"classification_reason,omitempty"`
+	ReadOnly             bool     `json:"read_only"`
+	Destructive          bool     `json:"destructive"`
+	Revision             string   `json:"revision,omitempty"`
+	ArgumentsSHA256      string   `json:"arguments_sha256,omitempty"`
+	ArgumentsPreview     string   `json:"arguments_preview,omitempty"`
+	ApprovalRef          string   `json:"approval_ref,omitempty"`
+	Permission           string   `json:"permission,omitempty"`
+	PermissionPatterns   []string `json:"permission_patterns,omitempty"`
+	PermissionAlways     []string `json:"permission_always,omitempty"`
+	PermissionRule       string   `json:"permission_rule,omitempty"`
+	ModelNextAction      string   `json:"model_next_action,omitempty"`
 }
 
 type ToolApprovalResponse struct {
@@ -78,6 +82,10 @@ func (s *Server) installToolApprovalReviewer(kit *tools.Toolkit) {
 			ArgumentsSHA256:      request.ArgumentsSHA256,
 			ArgumentsPreview:     request.ArgumentsPreview,
 			ApprovalRef:          request.ApprovalRef,
+			Permission:           request.Permission,
+			PermissionPatterns:   request.PermissionPatterns,
+			PermissionAlways:     request.PermissionAlways,
+			PermissionRule:       request.PermissionRule,
 			ModelNextAction:      request.ModelNextAction,
 		})
 		if err != nil {
