@@ -3666,9 +3666,11 @@
                                                                   
                                                                      
                                                   
-.turn-reasoning-body-inner > .reasoning-block {
+.turn-reasoning-scroll {
   max-height: 50vh;
+  min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .tool-card {

@@ -26,8 +26,10 @@ import { createElement, type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { AssistantTurnShell } from "./AssistantTurnShell";
+import { streamTextKey, streamTextStore } from "./StreamText";
 
 let idCounter = 0;
+let mountedRoots: Root[] = [];
 function nextID(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${idCounter}`;
@@ -151,6 +153,7 @@ function renderShell(
       }),
     );
   });
+  mountedRoots.push(root);
   return { container, root };
 }
 
@@ -174,11 +177,116 @@ function reasoningSummaryText(fold: HTMLDetailsElement): string {
   return fold.querySelector(".turn-reasoning-summary-text")?.textContent ?? "";
 }
 
+type StubbedScrollLayout = {
+  scrollHeight: number;
+  clientHeight: number;
+  scrollTop: number;
+};
+
+function stubScrollLayout(
+  node: HTMLElement,
+  opts: Partial<StubbedScrollLayout>,
+): StubbedScrollLayout {
+  const layout = {
+    scrollHeight: opts.scrollHeight ?? 1000,
+    clientHeight: opts.clientHeight ?? 200,
+    scrollTop: opts.scrollTop ?? 0,
+  };
+  Object.defineProperty(node, "scrollHeight", {
+    configurable: true,
+    get: () => layout.scrollHeight,
+  });
+  Object.defineProperty(node, "clientHeight", {
+    configurable: true,
+    get: () => layout.clientHeight,
+  });
+  Object.defineProperty(node, "scrollTop", {
+    configurable: true,
+    get: () => layout.scrollTop,
+    set: (v: number) => {
+      layout.scrollTop = v;
+    },
+  });
+  return layout;
+}
+
+function reasoningScroll(fold: HTMLDetailsElement): HTMLElement {
+  const scroll = fold.querySelector(".turn-reasoning-scroll") as HTMLElement | null;
+  if (!scroll) {
+    throw new Error("expected reasoning scroll container");
+  }
+  return scroll;
+}
+
+async function openReasoningFold(fold: HTMLDetailsElement): Promise<void> {
+  fold.open = true;
+  act(() => {
+    fold.dispatchEvent(new Event("toggle", { bubbles: true }));
+  });
+  const body = fold.querySelector(".turn-reasoning-body");
+  act(() => {
+    body?.dispatchEvent(new Event("transitionend", { bubbles: true }));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  act(() => {
+    body?.dispatchEvent(new Event("transitionend", { bubbles: true }));
+  });
+}
+
+async function withManualAnimationFrames(
+  run: (flush: (limit?: number) => Promise<void>) => Promise<void>,
+): Promise<void> {
+  const realRequestAnimationFrame = window.requestAnimationFrame;
+  const realCancelAnimationFrame = window.cancelAnimationFrame;
+  const pending = new Map<number, FrameRequestCallback>();
+  let nextHandle = 1;
+  window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+    const handle = nextHandle;
+    nextHandle += 1;
+    pending.set(handle, callback);
+    return handle;
+  }) as typeof window.requestAnimationFrame;
+  window.cancelAnimationFrame = ((handle: number) => {
+    pending.delete(handle);
+  }) as typeof window.cancelAnimationFrame;
+
+  const flush = async (limit = 10): Promise<void> => {
+    for (let frame = 0; frame < limit && pending.size > 0; frame += 1) {
+      const callbacks = Array.from(pending.values());
+      pending.clear();
+      await act(async () => {
+        for (const callback of callbacks) {
+          callback((frame + 1) * 16);
+        }
+      });
+    }
+  };
+
+  try {
+    await run(flush);
+  } finally {
+    window.requestAnimationFrame = realRequestAnimationFrame;
+    window.cancelAnimationFrame = realCancelAnimationFrame;
+  }
+}
+
 beforeEach(() => {
   idCounter = 0;
 });
 
 afterEach(() => {
+  act(() => {
+    for (const root of mountedRoots) {
+      root.unmount();
+    }
+  });
+  mountedRoots = [];
+  for (let index = 1; index <= idCounter; index += 1) {
+    streamTextStore.clearItem("turn-1", `reasoning-${index}`);
+    streamTextStore.clearItem("turn-1", `reasoning-live-${index}`);
+  }
   document.body.innerHTML = "";
 });
 
@@ -372,42 +480,114 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
 
     const fold = reasoningFolds(container)[0];
     expect(fold.hasAttribute("open")).toBe(false);
-    const block = fold.querySelector(".reasoning-block") as HTMLElement;
-    expect(block).not.toBeNull();
+    const scroll = reasoningScroll(fold);
 
     // jsdom does not lay out real heights. Mock scrollHeight and
     // clientHeight so the snap-to-bottom handler has measurable
     // values, and capture scrollTop writes so we can assert on them.
-    let capturedScrollTop = 0;
-    Object.defineProperty(block, "scrollHeight", {
-      configurable: true,
-      get: () => 1000,
-    });
-    Object.defineProperty(block, "clientHeight", {
-      configurable: true,
-      get: () => 200,
-    });
-    Object.defineProperty(block, "scrollTop", {
-      configurable: true,
-      get: () => capturedScrollTop,
-      set: (v: number) => {
-        capturedScrollTop = v;
-      },
+    const layout = stubScrollLayout(scroll, {
+      scrollHeight: 1000,
+      clientHeight: 200,
     });
 
     // Simulate a user click on the summary: open the fold and let
     // React's onToggle handler run.
-    fold.open = true;
-    act(() => {
-      fold.dispatchEvent(new Event("toggle", { bubbles: true }));
+    await openReasoningFold(fold);
+
+    expect(layout.scrollTop).toBe(1000);
+  });
+
+  it("keeps live reasoning pinned to the latest while the user stays at the bottom", async () => {
+    const item = makeStreamingReasoning("working");
+    const key = streamTextKey("turn-1", item.id, "text");
+    streamTextStore.seed(key, item.text ?? "");
+    const turn = makeTurn("in_progress", [item]);
+    const { container } = renderShell(turn);
+
+    const fold = reasoningFolds(container)[0];
+    const scroll = reasoningScroll(fold);
+    const layout = stubScrollLayout(scroll, {
+      scrollHeight: 1000,
+      clientHeight: 200,
     });
 
-    // jsdom does not dispatch transitionend from CSS transitions, so
-    // the handler's 280ms setTimeout fallback is what actually runs
-    // the snap. Wait long enough for that fallback to fire.
-    await new Promise((resolve) => setTimeout(resolve, 320));
+    await openReasoningFold(fold);
+    expect(layout.scrollTop).toBe(1000);
 
-    expect(capturedScrollTop).toBe(1000);
+    layout.scrollHeight = 1300;
+    await withManualAnimationFrames(async (flush) => {
+      await act(async () => {
+        streamTextStore.append(key, " next");
+      });
+      await flush();
+    });
+
+    expect(layout.scrollTop).toBe(1300);
+  });
+
+  it("keeps up when many reasoning tokens arrive before the next frame", async () => {
+    const item = makeStreamingReasoning("working");
+    const key = streamTextKey("turn-1", item.id, "text");
+    streamTextStore.seed(key, item.text ?? "");
+    const turn = makeTurn("in_progress", [item]);
+    const { container } = renderShell(turn);
+
+    const fold = reasoningFolds(container)[0];
+    const scroll = reasoningScroll(fold);
+    const layout = stubScrollLayout(scroll, {
+      scrollHeight: 1000,
+      clientHeight: 200,
+    });
+
+    await openReasoningFold(fold);
+    expect(layout.scrollTop).toBe(1000);
+
+    await withManualAnimationFrames(async (flush) => {
+      await act(async () => {
+        for (let tick = 0; tick < 120; tick += 1) {
+          layout.scrollHeight += 4;
+          streamTextStore.append(key, " x");
+        }
+      });
+      await flush(3);
+    });
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight);
+  });
+
+  it("does not pull live reasoning back to the bottom after the user scrolls up", async () => {
+    const item = makeStreamingReasoning("working");
+    const key = streamTextKey("turn-1", item.id, "text");
+    streamTextStore.seed(key, item.text ?? "");
+    const turn = makeTurn("in_progress", [item]);
+    const { container } = renderShell(turn);
+
+    const fold = reasoningFolds(container)[0];
+    const scroll = reasoningScroll(fold);
+    const layout = stubScrollLayout(scroll, {
+      scrollHeight: 1000,
+      clientHeight: 200,
+    });
+
+    await openReasoningFold(fold);
+    expect(layout.scrollTop).toBe(1000);
+
+    act(() => {
+      layout.scrollTop = 240;
+      scroll.dispatchEvent(new UIEvent("scroll", { bubbles: true }));
+    });
+
+    await withManualAnimationFrames(async (flush) => {
+      await act(async () => {
+        for (let tick = 0; tick < 60; tick += 1) {
+          layout.scrollHeight += 5;
+          streamTextStore.append(key, " x");
+        }
+      });
+      await flush(3);
+    });
+
+    expect(layout.scrollTop).toBe(240);
   });
 });
 
