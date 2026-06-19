@@ -1032,3 +1032,30 @@ func TestRunToolLoop_RejectsDuplicateProviderToolCallIDs(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestRunToolLoop_RejectsProviderToolCallInvalidArguments(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{
+		{ID: "call_1", Name: "update_plan", Arguments: `{"plan": `},
+	}}}}
+	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "update_plan"}}}
+	var persisted []providers.ChatMessage
+	_, err := RunToolLoop(context.Background(), nil, LoopConfig{
+		Model: "m",
+		Tools: tools,
+		OnMessage: func(msg providers.ChatMessage) {
+			persisted = append(persisted, msg)
+		},
+	}, step)
+	if err == nil {
+		t.Fatal("expected invalid tool arguments error")
+	}
+	if !strings.Contains(err.Error(), "provider returned invalid tool_calls") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(persisted) != 0 {
+		t.Fatalf("invalid tool call should not be persisted, got %+v", persisted)
+	}
+	if calls := tools.recordedCalls(); len(calls) != 0 {
+		t.Fatalf("invalid tool call should not execute, got %+v", calls)
+	}
+}

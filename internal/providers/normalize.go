@@ -1,7 +1,9 @@
 package providers
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ValidateToolCalls rejects malformed provider tool-call metadata
@@ -16,6 +18,9 @@ func ValidateToolCalls(calls []ToolCall) error {
 			return fmt.Errorf("tool_call %d: duplicate id %q", i, call.ID)
 		}
 		seen[call.ID] = struct{}{}
+		if err := validateToolCallArguments(call); err != nil {
+			return fmt.Errorf("tool_call %d: %w", i, err)
+		}
 	}
 	return nil
 }
@@ -67,6 +72,18 @@ func NormalizeMessages(msgs []ChatMessage) []ChatMessage {
 		if msg.Role == "tool" {
 			continue
 		}
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			validCalls := make([]ToolCall, 0, len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				result, hasResult := toolResults[tc.ID]
+				if hasResult && recoverableInvalidToolArguments(tc, result) {
+					delete(toolResults, tc.ID)
+					continue
+				}
+				validCalls = append(validCalls, tc)
+			}
+			msg.ToolCalls = validCalls
+		}
 		out = append(out, msg)
 
 		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
@@ -102,6 +119,34 @@ func NormalizeMessages(msgs []ChatMessage) []ChatMessage {
 	}
 
 	return out
+}
+
+func validateToolCallArguments(call ToolCall) error {
+	raw := strings.TrimSpace(call.Arguments)
+	if raw == "" {
+		return nil
+	}
+	if !json.Valid([]byte(raw)) {
+		return fmt.Errorf("invalid arguments JSON for %s", call.Name)
+	}
+	return nil
+}
+
+func recoverableInvalidToolArguments(call ToolCall, result ChatMessage) bool {
+	if validateToolCallArguments(call) == nil {
+		return false
+	}
+	return isInvalidToolArgumentsResult(result.Content)
+}
+
+func isInvalidToolArgumentsResult(content string) bool {
+	var payload struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		return false
+	}
+	return strings.HasPrefix(payload.Error, "invalid tool arguments")
 }
 
 // NormalizeAndValidateMessages repairs any sequence issues that can be

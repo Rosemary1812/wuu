@@ -40,6 +40,16 @@ func TestValidateToolCalls_rejectsDuplicateID(t *testing.T) {
 	}
 }
 
+func TestValidateToolCalls_rejectsInvalidArgumentsJSON(t *testing.T) {
+	err := ValidateToolCalls([]ToolCall{{ID: "call_1", Name: "update_plan", Arguments: `{"plan": `}})
+	if err == nil {
+		t.Fatal("expected invalid arguments error")
+	}
+	if !strings.Contains(err.Error(), "invalid arguments JSON") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestNormalizeMessages_noToolCalls(t *testing.T) {
 	msgs := []ChatMessage{
 		{Role: "system", Content: "sys"},
@@ -92,6 +102,63 @@ func TestNormalizeMessages_missingOutputInserted(t *testing.T) {
 	}
 	if got[3].ToolResultKind != ToolCallKindToolSearch {
 		t.Fatalf("expected synthetic output to keep tool_search kind, got %+v", got[3])
+	}
+}
+
+func TestNormalizeMessages_dropsRecoverableInvalidToolArguments(t *testing.T) {
+	msgs := []ChatMessage{
+		{Role: "user", Content: "continue"},
+		{
+			Role:    "assistant",
+			Content: "I will update the plan.",
+			ToolCalls: []ToolCall{{
+				ID:        "call_plan",
+				Name:      "update_plan",
+				Arguments: `{"plan": `,
+			}},
+		},
+		{
+			Role:       "tool",
+			Name:       "update_plan",
+			ToolCallID: "call_plan",
+			Content:    `{"error":"invalid tool arguments: unexpected EOF","ok":false}`,
+		},
+		{Role: "user", Content: "continue again"},
+	}
+	got, err := NormalizeAndValidateMessages(msgs)
+	if err != nil {
+		t.Fatalf("NormalizeAndValidateMessages: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 messages, got %d: %+v", len(got), roles(got))
+	}
+	if len(got[1].ToolCalls) != 0 {
+		t.Fatalf("expected invalid tool call to be removed, got %+v", got[1].ToolCalls)
+	}
+	if got[1].Content != "I will update the plan." || got[2].Content != "continue again" {
+		t.Fatalf("unexpected normalized messages: %+v", got)
+	}
+}
+
+func TestNormalizeMessages_keepsInvalidToolArgumentsWithoutMatchingToolError(t *testing.T) {
+	msgs := []ChatMessage{
+		{Role: "user", Content: "continue"},
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{{
+				ID:        "call_plan",
+				Name:      "update_plan",
+				Arguments: `{"plan": `,
+			}},
+		},
+		{Role: "tool", Name: "update_plan", ToolCallID: "call_plan", Content: `{"error":"different failure"}`},
+	}
+	_, err := NormalizeAndValidateMessages(msgs)
+	if err == nil {
+		t.Fatal("expected invalid tool call to remain invalid")
+	}
+	if !strings.Contains(err.Error(), "invalid arguments JSON") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
