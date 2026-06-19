@@ -14,8 +14,10 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
@@ -62,6 +64,19 @@ type Toolkit struct {
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
 	mcpManager *mcp.Manager
+
+	// activeProfileMu guards activeProfile and activeSurface. Reads
+	// from Definitions() and Execute() take the RLock; SetActiveProfile
+	// takes the Lock.
+	activeProfileMu sync.RWMutex
+	// activeProfile is the most recently installed ModelProfile. The
+	// zero value means "no profile compiled yet" — Definitions() falls
+	// back to the legacy direct-tool surface in that case.
+	activeProfile modelprofile.Profile
+	// activeSurface is the compiled surface for activeProfile. It is
+	// the authoritative source for which tool names are visible to
+	// the model under the current profile.
+	activeSurface capability.Surface
 }
 
 // New creates a tool executor rooted in a workspace.
@@ -182,6 +197,11 @@ func (t *Toolkit) rebuildRegistry() {
 		NewSemanticSearchTool(e),
 		// Shell
 		NewShellTool(e),
+		// Bash is the new unified command entry point emitted by the
+		// model profile compiler. The legacy run_shell tool stays
+		// registered as an internal / advanced implementation that
+		// the surface compiler can keep hidden.
+		NewBashTool(e),
 		NewRunTestTool(e),
 		// Git
 		NewGitTool(e),
@@ -471,12 +491,46 @@ func (t *Toolkit) isToolDisabled(name string) bool {
 
 // Definitions returns JSON-schema tool definitions for every enabled
 // tool the agent can call.
+//
+// When an active profile has been installed via SetActiveProfile,
+// the visible set is the per-profile compiled surface. Without an
+// active profile the toolkit falls back to the legacy direct-tool
+// surface: every direct tool the registry knows about, in the same
+// order the legacy code returned them. The legacy fallback exists so
+// callers that have not migrated yet (replay, debugging, internal
+// admin tools) keep working.
 func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	all := t.registry.Definitions()
+	surface := t.activeCompiledSurface()
+	hasSurface := surface.ProfileName != ""
+	visibleNames := map[string]struct{}{}
+	if hasSurface {
+		for name := range surface.Tools {
+			visibleNames[name] = struct{}{}
+		}
+	}
 	stable := make([]providers.ToolDefinition, 0, len(all))
 	dynamic := make([]providers.ToolDefinition, 0)
 	for _, d := range all {
 		if isMemoryToolName(d.Name) && memoryProvider(t.env) == nil {
+			continue
+		}
+		if hasSurface {
+			// Surface is the authoritative whitelist: tools the
+			// surface includes are visible regardless of the legacy
+			// toolExposure state. The compiler can promote a
+			// Hidden-by-default tool (e.g. apply_patch on Codex) into
+			// a model-visible entry by listing it in surface.Tools.
+			if _, ok := visibleNames[d.Name]; !ok {
+				continue
+			}
+			if isDeferredByDefault(d.Name) {
+				d.CacheStable = false
+				dynamic = append(dynamic, d)
+				continue
+			}
+			d.CacheStable = true
+			stable = append(stable, d)
 			continue
 		}
 		if t.toolExposure(d.Name) == ToolExposureDirect {
@@ -495,6 +549,15 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	// Append direct MCP tools after built-ins to preserve prompt cache stability.
 	if t.mcpManager != nil {
 		for _, tool := range t.mcpManager.AllTools() {
+			if hasSurface {
+				if _, ok := visibleNames[tool.Name()]; !ok {
+					continue
+				}
+				d := tool.Definition()
+				d.CacheStable = false
+				out = append(out, d)
+				continue
+			}
 			if t.toolExposure(tool.Name()) == ToolExposureDirect {
 				d := tool.Definition()
 				d.CacheStable = false
@@ -503,6 +566,64 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 		}
 	}
 	return out
+}
+
+// SetActiveProfile installs the model profile that drives
+// Definitions(). The toolkit compiles the profile into a Surface and
+// uses it as the whitelist for visible tool names.
+//
+// Passing the zero value clears the active profile and restores the
+// legacy direct-tool surface. This is the right behavior for the
+// CLI's `wuu debug tools` path and for any admin caller that wants
+// to inspect every tool the registry knows about, regardless of
+// model context.
+func (t *Toolkit) SetActiveProfile(p modelprofile.Profile) {
+	if t == nil {
+		return
+	}
+	t.activeProfileMu.Lock()
+	defer t.activeProfileMu.Unlock()
+	t.activeProfile = p
+	if (p == modelprofile.Profile{}) {
+		t.activeSurface = capability.Surface{}
+		return
+	}
+	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p)
+}
+
+// ActiveProfile returns the currently installed model profile, or the
+// zero value if none is installed.
+func (t *Toolkit) ActiveProfile() modelprofile.Profile {
+	if t == nil {
+		return modelprofile.Profile{}
+	}
+	t.activeProfileMu.RLock()
+	defer t.activeProfileMu.RUnlock()
+	return t.activeProfile
+}
+
+// ActiveSurface returns the compiled surface for the active profile.
+// The returned value is a copy; callers can inspect it freely.
+func (t *Toolkit) ActiveSurface() capability.Surface {
+	if t == nil {
+		return capability.Surface{}
+	}
+	t.activeProfileMu.RLock()
+	defer t.activeProfileMu.RUnlock()
+	return t.activeSurface
+}
+
+// activeCompiledSurface is the internal helper Definitions() uses
+// to read the active surface under the read lock. Kept package-private
+// so the public ActiveSurface() getter can hand callers a copy
+// without contention on the hot Definitions() path.
+func (t *Toolkit) activeCompiledSurface() capability.Surface {
+	if t == nil {
+		return capability.Surface{}
+	}
+	t.activeProfileMu.RLock()
+	defer t.activeProfileMu.RUnlock()
+	return t.activeSurface
 }
 
 // Execute runs one tool call and returns JSON result. This is the

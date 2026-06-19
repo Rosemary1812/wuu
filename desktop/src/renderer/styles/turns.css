@@ -887,7 +887,7 @@
   max-width: 100%;
   margin: 6px 0 -2px;
   color: var(--ink-muted);
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-meta-line-height);
 }
@@ -906,7 +906,7 @@
   align-items: flex-start;
   gap: 9px;
   color: #777b80;
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-meta-line-height);
 }
@@ -2673,7 +2673,7 @@
                                                               
                                                                 
                                           
-  font-size: var(--font-sm);
+  font-size: var(--font-ui);
   line-height: var(--conversation-meta-line-height);
 }
 
@@ -2773,7 +2773,7 @@
 
 .turn-process-meta {
   color: var(--ink-muted);
-  font-size: var(--font-sm);
+  font-size: var(--font-ui);
   line-height: var(--conversation-meta-line-height);
 }
 
@@ -2787,7 +2787,7 @@
   min-width: 0;
   align-items: center;
   color: var(--ink-muted);
-  font-size: var(--font-sm);
+  font-size: var(--font-ui);
   line-height: var(--conversation-meta-line-height);
 }
 
@@ -3031,7 +3031,7 @@
   align-items: center;
   gap: 6px;
   color: var(--ink-muted);
-  font-size: var(--font-sm);
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-control-line-height);
   padding: 0;
@@ -3154,7 +3154,7 @@
 .activity-command {
   display: inline;
   color: var(--ink-muted);
-  font-size: var(--font-sm);
+  font-size: var(--font-ui);
   line-height: var(--conversation-control-line-height);
   font-weight: var(--weight-medium);
   font-family: "SFMono-Regular", Consolas, monospace;
@@ -3196,7 +3196,7 @@
   flex: 0 0 auto;
   margin-top: 0;
   color: var(--ink-muted);
-  font-size: var(--font-sm);
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
 }
 
@@ -3216,7 +3216,7 @@
   background: transparent;
   border-left: 2px solid #e89088;
   color: var(--danger);
-  font-size: var(--font-sm);
+  font-size: var(--font-ui);
   line-height: 1.55;
   margin: 4px 0 4px 0;
   padding: 0 0 0 10px;
