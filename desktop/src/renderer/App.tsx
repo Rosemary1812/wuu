@@ -5261,7 +5261,10 @@ export function App(): JSX.Element {
                       cwd={activeThread?.cwd ?? state.activeContext?.cwd}
                       latestAgentMessageID={latestAgentMessageID}
                       onStreamFrame={scheduleStreamScroll}
-                      onCollapseComplete={scheduleStreamScroll}
+                      onCollapseComplete={() => {
+                        enableConversationAutoFollow();
+                        scheduleStreamScroll();
+                      }}
                       onForkMessage={
                         activeThread
                           ? (turnID, itemID) =>
