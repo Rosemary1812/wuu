@@ -20,11 +20,11 @@
   --conversation-dialog-width: var(--conversation-content-width);
   --conversation-message-font-size: 15.5px;
   --conversation-prose-line-height: 1.85;
-  --conversation-prose-block-gap: 15px;
-  --conversation-meta-line-height: 1.8;
+  --conversation-prose-block-gap: 12px;
+  --conversation-meta-line-height: 1.55;
   --conversation-control-line-height: 1.55;
   --conversation-shell-gap: 32px;
-  --conversation-process-gap: 11px;
+  --conversation-process-gap: 12px;
   --conversation-process-answer-gap: 16px;
   --conversation-answer-action-gap: 8px;
   --conversation-activity-gap: 8px;
