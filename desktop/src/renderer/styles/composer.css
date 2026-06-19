@@ -119,9 +119,9 @@
   width: 58px;
   height: 58px;
   flex: 0 0 auto;
-  border: 1px solid #d9d9d5;
+  border: 1px solid var(--surface-4);
   border-radius: 12px;
-  background: #f7f7f5;
+  background: var(--surface-1);
   box-shadow: 0 1px 2px rgba(20, 24, 28, 0.06);
 }
 
@@ -141,16 +141,16 @@
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1px solid #d7d7d2;
+  border: 1px solid var(--surface-4);
   border-radius: 999px;
-  background: #fff;
-  color: #4d5358;
+  background: var(--paper);
+  color: var(--ink);
   box-shadow: 0 2px 8px rgba(20, 24, 28, 0.12);
 }
 
 .composer-image-attachment button:hover {
-  background: #f2f3f0;
-  color: #1f2328;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .composer-file-attachment {
@@ -161,10 +161,10 @@
   min-height: 38px;
   gap: 8px;
   padding: 8px 34px 8px 10px;
-  border: 1px solid #d9d9d5;
+  border: 1px solid var(--surface-4);
   border-radius: 10px;
-  background: #f7f7f5;
-  color: #262a2f;
+  background: var(--surface-1);
+  color: var(--ink);
   box-shadow: 0 1px 2px rgba(20, 24, 28, 0.06);
 }
 
@@ -188,24 +188,24 @@
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: #5c6268;
+  color: var(--ink-tertiary);
 }
 
 .composer-file-attachment button:hover {
   background: #eceee9;
-  color: #1f2328;
+  color: var(--ink);
 }
 
-/* Queue messages live INSIDE the composer shell, above the attachment strip.
-   Each row spans the shell width; rows are separated by hairlines instead of
-   a card. The list is the queue count — no separate "已排队 N 条" badge. */
+                                                                             
+                                                                             
+                                                                        
 .composer-queue-list {
   display: flex;
   flex-direction: column;
   margin: 0;
   padding: 6px 8px 0;
   list-style: none;
-  border-bottom: 1px solid rgba(31, 35, 40, 0.06);
+  border-bottom: 1px solid var(--ink-overlay-6);
 }
 
 .composer-queue-row {
@@ -215,28 +215,28 @@
   gap: 8px;
   min-height: 36px;
   padding: 4px 6px;
-  color: #1f2328;
+  color: var(--ink);
   font-size: 13.5px;
   line-height: 1.5;
   transition: background-color 120ms ease;
 }
 
 .composer-queue-row + .composer-queue-row {
-  border-top: 1px solid rgba(31, 35, 40, 0.05);
+  border-top: 1px solid var(--ink-overlay-6);
 }
 
 .composer-queue-row:hover,
 .composer-queue-row:focus-within {
-  background: rgba(31, 35, 40, 0.035);
+  background: var(--ink-overlay-4);
 }
 
-/* Guide state: warmer text tone to distinguish from regular queued items. */
+                                                                             
 .composer-queue-row.guide .composer-queue-preview {
-  color: var(--turn-warning-text, #8a5b10);
+  color: var(--turn-warning-text, var(--warning));
 }
 
 .composer-queue-index {
-  color: #9aa0a6;
+  color: var(--ink-faint);
   font-size: 11px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -259,11 +259,11 @@
 }
 
 .composer-queue-preview:hover {
-  color: #1f2328;
+  color: var(--ink);
 }
 
 .composer-queue-preview:focus-visible {
-  outline: 2px solid rgba(31, 35, 40, 0.18);
+  outline: 2px solid var(--ink-overlay-18);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -283,21 +283,21 @@
   background: transparent;
   border: 0;
   border-radius: 6px;
-  color: #8a8e91;
+  color: var(--ink-muted);
   cursor: pointer;
 }
 
 .composer-queue-action:hover {
-  background: rgba(31, 35, 40, 0.08);
-  color: #1f2328;
+  background: var(--ink-overlay-8);
+  color: var(--ink);
 }
 
 .composer-queue-action.danger:hover {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .composer-queue-action:focus-visible {
-  outline: 2px solid rgba(31, 35, 40, 0.2);
+  outline: 2px solid var(--ink-overlay-18);
   outline-offset: 1px;
 }
 
@@ -334,7 +334,7 @@
   gap: 8px;
   border-radius: 7px;
   background: transparent;
-  color: #202427;
+  color: var(--ink);
   font-size: 12.5px;
   font-weight: 500;
   padding: 0 10px;
@@ -344,7 +344,7 @@
 
 .composer-queue-menu button:hover:not(:disabled) {
   background: var(--menu-hover);
-  color: #1f2328;
+  color: var(--ink);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -364,7 +364,7 @@
   outline: 0;
   background: transparent;
   padding: 16px 16px 8px;
-  color: #1f2328;
+  color: var(--ink);
   font-size: var(--font-body);
   line-height: 24px;
 }
@@ -401,11 +401,11 @@
   place-items: center;
   border-radius: 8px;
   background: transparent;
-  color: #8a8e91;
+  color: var(--ink-muted);
 }
 
-/* All lucide icons inside the composer toolbars snap to a single cell.
-   This is the grid: one size token, every SVG inherits it. */
+                                                                       
+                                                              
 .composer-bar > svg,
 .composer-bar svg,
 .composer-context-bar > svg,
@@ -419,30 +419,30 @@
 }
 
 .composer-tool-button:hover:not(:disabled) {
-  background: #f1f2ef;
-  color: #22262a;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .composer-tool-button:active:not(:disabled) {
   transform: scale(0.96);
 }
 
-/* Disabled composer tool buttons should match the permission chip's
-   "blocked" affordance: not-allowed cursor + no hover tint, so the
-   user can tell the action is locked instead of just dim. The chip
-   also has a text label and tone color; the icon-only tool buttons
-   can only rely on cursor + hover suppression to communicate state. */
+                                                                    
+                                                                   
+                                                                   
+                                                                   
+                                                                       
 .composer-tool-button:disabled {
   cursor: not-allowed;
 }
 
 .composer-tool-button:disabled:hover {
   background: transparent;
-  color: #8a8e91;
+  color: var(--ink-muted);
 }
 
-/* Chevron inside a chip is a secondary affordance — slightly smaller
-   so it doesn't compete with the primary icon next to the label. */
+                                                                     
+                                                                    
 .composer-context-bar svg + svg,
 .permission-chip svg + svg,
 .context-project-button svg + svg,
@@ -469,7 +469,7 @@
   gap: 7px;
   border-radius: 8px;
   background: transparent;
-  color: #ef5b18;
+  color: var(--accent-warm);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   padding: 0 8px;
@@ -483,28 +483,28 @@
   white-space: nowrap;
 }
 
-/* Mode-driven chip tone. The trigger button always carries one of these
-   tone-* classes so the color and icon react to the active permission mode
-   (read_only / default / approve_for_me / full_access). */
+                                                                        
+                                                                           
+                                                           
 .permission-chip.tone-safe {
-  color: #1f883d;
+  color: var(--success);
 }
 
 .permission-chip.tone-accent {
-  color: #ef5b18;
+  color: var(--accent-warm);
 }
 
 .permission-chip.tone-review {
-  color: #0969da;
+  color: var(--info);
 }
 
 .permission-chip.tone-danger {
-  color: #cf222e;
+  color: var(--danger);
 }
 
 .permission-chip.tone-safe:hover,
 .permission-chip.tone-safe[aria-expanded="true"] {
-  background: #dafbe1;
+  background: var(--success-soft);
 }
 
 .permission-chip.tone-accent:hover,
@@ -519,7 +519,7 @@
 
 .permission-chip.tone-danger:hover,
 .permission-chip.tone-danger[aria-expanded="true"] {
-  background: #ffebe9;
+  background: var(--danger-soft);
 }
 
 .permission-chip:disabled {
@@ -535,7 +535,7 @@
 .status-label {
   min-width: 0;
   overflow: hidden;
-  color: #858a8e;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -556,8 +556,8 @@
 }
 
 .composer-send-button {
-  background: #1f2328;
-  color: #fff;
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .composer-send-button svg {
@@ -581,15 +581,15 @@
 }
 
 .composer-stop-button {
-  /* Inherits border-radius: 999px from .composer-action-button so the
-     send → stop transition is a pure icon swap, not a shape change. */
-  background: #b42318;
-  color: #fff;
+                                                                      
+                                                                       
+  background: var(--danger);
+  color: var(--paper);
 }
 
 .composer-stop-button:hover {
-  background: #8f1d15;
-  color: #fff;
+  background: var(--danger);
+  color: var(--paper);
 }
 
 .composer-context-bar {
@@ -599,15 +599,15 @@
   align-items: center;
   gap: 12px;
   overflow: hidden;
-  border-top: 1px solid #eeeeeb;
+  border-top: 1px solid var(--surface-3);
   border-radius: 0 0 18px 18px;
-  background: #f4f4f2;
+  background: var(--surface-2);
   padding: 0 12px;
 }
 
 .hero-composer-wrap .composer-context-bar {
   border-radius: 0 0 22px 22px;
-  background: #f1f2ef;
+  background: var(--surface-2);
   padding: 0 24px;
 }
 
@@ -620,8 +620,8 @@
   align-items: center;
   gap: 8px;
   border-radius: 999px;
-  background: #e8e8e6;
-  color: #73777a;
+  background: var(--surface-3);
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   padding: 0 12px;
   text-align: left;
@@ -636,31 +636,31 @@
   align-items: center;
   gap: 8px;
   border-radius: 999px;
-  color: #81868a;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   padding: 0 12px;
 }
 
 .context-mode-chip {
   flex: 0 0 auto;
-  background: #e8e8e6;
+  background: var(--surface-3);
 }
 
 .context-mode-chip:hover,
 .context-mode-chip[aria-expanded="true"] {
-  background: #e8e8e6;
-  color: #25282b;
+  background: var(--surface-3);
+  color: var(--ink);
 }
 
 .context-branch-chip {
   flex: 0 1 auto;
-  background: #e9e9e6;
+  background: var(--surface-3);
 }
 
 .context-branch-chip:hover,
 .context-branch-chip[aria-expanded="true"] {
-  background: #dededc;
-  color: #25282b;
+  background: var(--surface-4);
+  color: var(--ink);
 }
 
 .context-mode-chip span,
@@ -673,15 +673,15 @@
 
 .context-branch-chip small {
   flex: 0 0 auto;
-  color: #8d9296;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
 }
 
 .context-project-button:hover,
 .context-project-button[aria-expanded="true"] {
-  background: #dededc;
-  color: #25282b;
+  background: var(--surface-4);
+  color: var(--ink);
 }
 
 .context-project-button span {
@@ -775,7 +775,7 @@
   width: min(560px, 100%);
   max-height: min(360px, calc(100vh - 190px));
   overflow: hidden;
-  border: 1px solid rgba(31, 35, 40, 0.1);
+  border: 1px solid var(--ink-overlay-12);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow:
@@ -824,7 +824,7 @@
   gap: 8px;
   border-radius: 10px;
   background: transparent;
-  color: #25292d;
+  color: var(--ink);
   padding: 0 10px;
   text-align: left;
 }
@@ -847,7 +847,7 @@
   width: 16px;
   height: 16px;
   place-items: center;
-  color: #6f7478;
+  color: var(--ink-tertiary);
 }
 
 .slash-command-copy {
@@ -871,7 +871,7 @@
 .slash-command-copy small {
   min-width: 0;
   overflow: hidden;
-  color: #8d9296;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: 400;
   line-height: 17px;
@@ -884,7 +884,7 @@
 }
 
 .slash-command-empty {
-  color: #777d82;
+  color: var(--ink-muted);
   font-size: var(--font-content);
   line-height: 18px;
   padding: 16px 12px 18px;
@@ -901,7 +901,7 @@
 
 .access-menu {
   gap: 2px;
-  background: #fff;
+  background: var(--paper);
   backdrop-filter: none;
   padding: 5px;
   width: 176px;
@@ -925,7 +925,7 @@
   gap: 8px;
   border-radius: 7px;
   background: transparent;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 0 9px;
@@ -960,7 +960,7 @@
 }
 
 .permission-mode-option strong {
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   line-height: 16px;
@@ -971,7 +971,7 @@
 }
 
 .permission-mode-option.danger strong {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .composer-context-menu .permission-mode-option[aria-checked="true"] {
@@ -1000,13 +1000,13 @@
   display: grid;
   gap: 4px;
   padding: 8px 9px;
-  color: #777d82;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   line-height: 1.38;
 }
 
 .composer-menu-note strong {
-  color: #22262a;
+  color: var(--ink);
   font-size: var(--font-ui);
 }
 
@@ -1027,10 +1027,10 @@
   height: 34px;
   align-items: center;
   gap: 8px;
-  border: 1px solid #ececea;
+  border: 1px solid var(--surface-3);
   border-radius: 8px;
   background: #f8f8f6;
-  color: #81868a;
+  color: var(--ink-muted);
   margin: 0 0 6px;
   padding: 0 9px;
 }
@@ -1047,7 +1047,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: #1f2328;
+  color: var(--ink);
 }
 
 .project-search input::placeholder {
@@ -1071,7 +1071,7 @@
   gap: 8px;
   border-radius: 7px;
   background: transparent;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 0 9px;
@@ -1098,13 +1098,13 @@
 }
 
 .project-picker-empty {
-  color: #8a8e91;
+  color: var(--ink-muted);
   padding: 8px 9px;
   font-size: var(--font-sm);
 }
 
 .project-picker-divider {
   height: 1px;
-  background: #e8e8e5;
+  background: var(--surface-3);
   margin: 6px 0;
 }

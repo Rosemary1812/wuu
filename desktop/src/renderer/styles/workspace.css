@@ -322,7 +322,7 @@
 }
 
 .workspace-tool-menu-copy span {
-  color: #71777c;
+  color: var(--ink-tertiary);
   font-size: var(--font-title);
   font-weight: var(--weight-medium);
 }
@@ -477,7 +477,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #34393d;
+  color: var(--ink);
   font: inherit;
   font-size: var(--font-ui);
   outline: none;
@@ -517,7 +517,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #34393d;
+  color: var(--ink);
   cursor: default;
   font: inherit;
   font-size: var(--font-ui);
@@ -578,7 +578,7 @@
 }
 
 .workspace-file-tree-status.action:hover {
-  color: #34393d;
+  color: var(--ink);
 }
 
 .workspace-panel-empty {
@@ -610,7 +610,7 @@
 
 .workspace-panel-empty span {
   max-width: 230px;
-  color: #7d8388;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   line-height: 1.45;
 }
@@ -670,7 +670,7 @@
   gap: 8px;
   border-radius: 8px;
   background: var(--danger-soft);
-  color: #8b3f22;
+  color: var(--danger);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 9px 10px;
@@ -757,7 +757,7 @@
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: #34393d;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
@@ -902,7 +902,7 @@
 .workspace-goal-row.warning {
   grid-template-columns: 18px minmax(0, 1fr);
   background: var(--danger-soft);
-  color: #8b3f22;
+  color: var(--danger);
 }
 
 .workspace-goal-row > div {
@@ -946,7 +946,7 @@
 .workspace-goal-empty {
   border-radius: 8px;
   background: var(--paper);
-  color: #81878c;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 14px;
@@ -1075,7 +1075,7 @@
   border-radius: 999px;
   background: var(--paper);
   border: 1px solid #e1e3e0;
-  color: #5d6166;
+  color: var(--ink-soft);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
@@ -1163,7 +1163,7 @@
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.86);
-  color: #5d6166;
+  color: var(--ink-soft);
   font-size: var(--font-sm, 12.5px);
   pointer-events: none;
 }
@@ -1217,7 +1217,7 @@
   padding: 4px 12px;
   border-top: 1px solid var(--surface-3);
   background: var(--surface-1);
-  color: #7a8086;
+  color: var(--ink-muted);
   font-size: 11.5px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   min-width: 0;
@@ -1229,7 +1229,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #5d6166;
+  color: var(--ink-soft);
 }
 
 .workspace-browser-title-hint {
@@ -1238,7 +1238,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #7a8086;
+  color: var(--ink-muted);
 }
 
 .workspace-browser-loading-dot {
@@ -1393,7 +1393,7 @@
 }
 
 .skills-search input::placeholder {
-  color: #9ba0a3;
+  color: var(--ink-muted);
 }
 
 .skills-refresh {
@@ -1551,7 +1551,7 @@
 }
 
 .skills-empty svg {
-  color: #71777c;
+  color: var(--ink-tertiary);
 }
 
 .skills-empty strong {
@@ -1560,7 +1560,7 @@
 }
 
 .skills-empty span {
-  color: #7b8186;
+  color: var(--ink-muted);
   font-size: var(--font-body);
 }
 
@@ -1613,7 +1613,7 @@
 }
 
 .workspace-file-preview-header span {
-  color: #83888d;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
 }
 
@@ -1683,7 +1683,7 @@
 
 .workspace-diff-header span,
 .workspace-diff-detail-header span {
-  color: #83888d;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
 }
 
@@ -2005,7 +2005,7 @@
   gap: 7px;
   border-radius: 8px;
   background: transparent;
-  color: #34393d;
+  color: var(--ink);
   font-size: var(--font-ui);
   padding-top: 4px;
   padding-right: 8px;
@@ -2074,7 +2074,7 @@
   display: grid;
   min-height: 140px;
   place-content: center;
-  color: #81878c;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 18px;
@@ -2614,7 +2614,7 @@
 }
 
 .split-composer textarea::placeholder {
-  color: #9ba0a3;
+  color: var(--ink-muted);
 }
 
 .split-composer textarea:disabled {

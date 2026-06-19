@@ -884,7 +884,7 @@
 }
 
 .thread-child-agent-row.failed .thread-child-agent-status {
-  color: #b84f35;
+  color: var(--danger);
 }
 
 .thread-child-agent-row.cancelled .thread-child-agent-status {
@@ -1022,7 +1022,7 @@
 
 .thread-row-action.archive.confirm {
   background: rgba(184, 79, 53, 0.1);
-  color: #b84f35;
+  color: var(--danger);
 }
 
 .sidebar-settings {

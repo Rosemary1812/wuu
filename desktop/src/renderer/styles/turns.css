@@ -859,7 +859,7 @@
   top: 10px;
   left: 18px;
   width: 15px;
-  background: #8a918d;
+  background: var(--ink-muted);
   transform: rotate(-18deg);
 }
 
@@ -1142,7 +1142,7 @@
   width: 9px;
   height: 2px;
   border-radius: 999px;
-  background: #8a918d;
+  background: var(--ink-muted);
   opacity: 0;
 }
 
@@ -1162,7 +1162,7 @@
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: #8a918d;
+  background: var(--ink-muted);
   content: "";
 }
 
@@ -2519,7 +2519,7 @@
 
 .turn-process-checkpoint[data-live="false"] {
                                                                           
-  color: #7d8388;
+  color: var(--ink-muted);
 }
 
 .turn-process-meta {
@@ -2718,7 +2718,7 @@
 }
 
 .turn-process-entry .activity-row svg {
-  color: #a0a4a8;
+  color: var(--ink-muted);
 }
 
 .turn-process-entry .activity-toggle:hover,
@@ -2883,7 +2883,7 @@
 }
 
 .activity-detail-marker svg {
-  color: #a0a4a8;
+  color: var(--ink-muted);
 }
 
 .activity-detail-body {
@@ -3542,7 +3542,7 @@ pre {
 }
 
 .turn-notice-action.secondary:hover {
-  color: #4f5559;
+  color: var(--ink);
   border-bottom-color: #c8c9c5;
 }
 
@@ -3584,7 +3584,7 @@ pre {
 }
 
 .turn-notice-copy span {
-  color: #4f5559;
+  color: var(--ink);
   font-size: var(--font-ui);
   line-height: 1.5;
 }
@@ -3602,7 +3602,7 @@ pre {
 }
 
 .turn-notice.context-compaction-notice {
-  color: #7b8186;
+  color: var(--ink-muted);
   border-left-color: #c8cbc6;
 }
 
@@ -3635,7 +3635,7 @@ pre {
 }
 
 .system-line strong {
-  color: #4f5559;
+  color: var(--ink);
   font-weight: var(--weight-semibold);
 }
 
@@ -3717,7 +3717,7 @@ pre {
 }
 
 .empty-home-actions small {
-  color: #858a8e;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: 1.35;

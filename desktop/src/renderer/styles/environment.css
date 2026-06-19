@@ -803,7 +803,7 @@
 }
 
 .conversation-search-section-title {
-  color: #8b928e;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   padding: 7px 12px 4px;
@@ -880,7 +880,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
-  color: #8a918d;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
 }
@@ -917,7 +917,7 @@
   min-height: 72px;
   display: grid;
   place-items: center;
-  color: #8b928e;
+  color: var(--ink-muted);
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
   animation: menu-enter 180ms var(--search-motion-easing) both;
