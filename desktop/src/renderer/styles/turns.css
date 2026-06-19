@@ -265,15 +265,21 @@
 
 .user-message-block {
   display: grid;
+  grid-template-columns: auto;
   max-width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
   align-self: flex-end;
   justify-items: end;
   gap: 8px;
   margin-bottom: 16px;
   border-radius: var(--radius-lg);
-                                                                       
-                                                    
+                                                                        
+                                                     
   scroll-margin-top: 12px;
+}
+
+.user-message-block:has(.user-message-edit) {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: stretch;
 }
 
                                                                          
