@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildComposerSlashCommands, filterComposerSlashCommands, runtimeFastModelTarget } from "./ComposerSlashCommands";
-import type { InitializeResult } from "../shared/protocol";
+import {
+  buildComposerSlashCommands,
+  composerSlashPrompt,
+  filterComposerSlashCommands,
+  runtimeFastModelTarget
+} from "./ComposerSlashCommands";
+import type { InitializeResult, SkillSummary } from "../shared/protocol";
 
 function initialized(model: string, models: string[]): InitializeResult {
   return {
@@ -18,6 +23,24 @@ function initialized(model: string, models: string[]): InitializeResult {
         models: models.map((id) => ({ id }))
       }
     ]
+  };
+}
+
+function skill(overrides: Partial<SkillSummary> & Pick<SkillSummary, "name">): SkillSummary {
+  return {
+    name: overrides.name,
+    source: overrides.source ?? "bundled",
+    user_invocable: overrides.user_invocable ?? true,
+    disable_model_invoke: overrides.disable_model_invoke ?? false,
+    description: overrides.description,
+    when_to_use: overrides.when_to_use,
+    trigger_condition: overrides.trigger_condition,
+    argument_hint: overrides.argument_hint,
+    model: overrides.model,
+    context: overrides.context,
+    agent: overrides.agent,
+    paths: overrides.paths,
+    examples: overrides.examples
   };
 }
 
@@ -62,5 +85,32 @@ describe("composer slash commands", () => {
       model: "gpt-5.5-fast",
       current: true
     });
+  });
+
+  it("adds user-invocable skills to slash results", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false,
+      skills: [
+        skill({
+          name: "slides",
+          description: "Create slide decks",
+          argument_hint: "topic"
+        }),
+        skill({
+          name: "internal-only",
+          user_invocable: false
+        })
+      ]
+    });
+
+    const visible = filterComposerSlashCommands(commands, "slides");
+
+    expect(visible.map((command) => command.name)).toEqual(["slides"]);
+    expect(visible[0]?.kind).toBe("skill");
+    expect(composerSlashPrompt(visible[0]!, "")).toBe("/slides ");
+    expect(composerSlashPrompt(visible[0]!, "quarterly roadmap")).toBe("/slides quarterly roadmap");
+    expect(filterComposerSlashCommands(commands, "internal-only")).toEqual([]);
   });
 });

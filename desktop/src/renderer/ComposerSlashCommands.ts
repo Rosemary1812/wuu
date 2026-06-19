@@ -1,9 +1,10 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { InitializeResult, RuntimeContext } from "../shared/protocol";
+import type { InitializeResult, RuntimeContext, SkillSummary } from "../shared/protocol";
 
 export type ComposerSlashCommandAction =
   | "new-thread"
   | "open-review"
+  | "open-skills"
   | "open-files"
   | "open-terminal"
   | "open-project"
@@ -12,7 +13,7 @@ export type ComposerSlashCommandAction =
   | "fast"
   | "effort"
   | "settings";
-export type ComposerSlashCommandKind = "prompt" | "action";
+export type ComposerSlashCommandKind = "prompt" | "action" | "skill";
 
 export type ComposerSlashCommand = {
   id: string;
@@ -24,6 +25,7 @@ export type ComposerSlashCommand = {
   action?: ComposerSlashCommandAction;
   aliases?: string[];
   keywords?: string[];
+  argumentHint?: string;
   disabledReason?: string;
 };
 
@@ -68,11 +70,13 @@ export function isComposerTextComposing<T extends Element>(event: ReactKeyboardE
 export function buildComposerSlashCommands({
   activeContext,
   initialized,
-  running
+  running,
+  skills = []
 }: {
   activeContext?: RuntimeContext;
   initialized?: InitializeResult;
   running: boolean;
+  skills?: SkillSummary[];
 }): ComposerSlashCommand[] {
   const needsRuntime = activeContext && initialized ? undefined : "先选择工作区";
   const needsWorkspace = activeContext ? undefined : "先选择工作区";
@@ -88,6 +92,18 @@ export function buildComposerSlashCommands({
       kind: "prompt",
       aliases: ["audit"],
       keywords: ["diff", "changes", "code review", "审查", "检查"],
+      disabledReason: needsRuntime
+    },
+    {
+      id: "skills",
+      name: "skills",
+      title: "浏览 Skills",
+      description: "查看可用 Skills，并生成可补充参数的草稿",
+      tag: "Skill",
+      kind: "action",
+      action: "open-skills",
+      aliases: ["skill"],
+      keywords: ["skills", "skill", "技能", "能力"],
       disabledReason: needsRuntime
     },
     {
@@ -213,7 +229,7 @@ export function buildComposerSlashCommands({
       keywords: ["provider", "模型", "配置"]
     }
   ];
-  return commands;
+  return [...commands, ...buildSkillSlashCommands(skills, needsRuntime)];
 }
 
 export function runtimeFastModelTarget(initialized?: InitializeResult): ComposerFastModelTarget | undefined {
@@ -277,6 +293,10 @@ function composerSlashCommandSearchText(command: ComposerSlashCommand): string {
 }
 
 export function composerSlashPrompt(command: ComposerSlashCommand, args: string): string {
+  if (command.kind === "skill") {
+    const instructions = args.trim();
+    return `/${command.name}${instructions ? ` ${instructions}` : " "}`;
+  }
   if (command.id !== "review") {
     return `/${command.name}${args ? ` ${args}` : ""}`;
   }
@@ -285,4 +305,66 @@ export function composerSlashPrompt(command: ComposerSlashCommand, args: string)
     return DEFAULT_REVIEW_SLASH_PROMPT;
   }
   return `${DEFAULT_REVIEW_SLASH_PROMPT}\n\nAdditional review instructions:\n${instructions}`;
+}
+
+function buildSkillSlashCommands(skills: SkillSummary[], disabledReason?: string): ComposerSlashCommand[] {
+  const seen = new Set<string>();
+  const out: ComposerSlashCommand[] = [];
+  for (const skill of [...skills].sort(compareSkillSummaries)) {
+    const name = skill.name.trim();
+    if (!skill.user_invocable || !name || /\s/.test(name)) {
+      continue;
+    }
+    const key = name.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push({
+      id: `skill:${key}`,
+      name,
+      title: `/${name}`,
+      description: skill.description || skill.when_to_use || skill.trigger_condition || "使用这个 Skill",
+      tag: "Skill",
+      kind: "skill",
+      aliases: skill.examples?.slice(0, 3),
+      keywords: [
+        "skill",
+        "skills",
+        "技能",
+        skill.source,
+        skill.when_to_use,
+        skill.trigger_condition,
+        skill.argument_hint,
+        skill.model,
+        skill.context,
+        skill.agent,
+        ...(skill.paths ?? [])
+      ].filter((value): value is string => Boolean(value)),
+      argumentHint: skill.argument_hint,
+      disabledReason
+    });
+  }
+  return out;
+}
+
+function compareSkillSummaries(left: SkillSummary, right: SkillSummary): number {
+  const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
+  if (sourceDelta !== 0) {
+    return sourceDelta;
+  }
+  return left.name.localeCompare(right.name);
+}
+
+function sourceRank(source: string): number {
+  switch (source) {
+    case "project":
+      return 0;
+    case "user":
+      return 1;
+    case "bundled":
+      return 2;
+    default:
+      return 3;
+  }
 }

@@ -11,7 +11,14 @@ import {
   type PermissionMode,
 } from "./ComposerView";
 import type { QueuedComposerMessage } from "./ComposerMessages";
-import type { InitializeResult, PermissionSummary, ToolPolicySummary } from "../shared/protocol";
+import type {
+  InitializeResult,
+  PermissionSummary,
+  RuntimeContext,
+  SkillSummary,
+  ToolPolicySummary,
+  WuuDesktopApi,
+} from "../shared/protocol";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -26,6 +33,7 @@ afterEach(() => {
     root?.unmount();
   });
   root = null;
+  delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
   container.remove();
   document.body
     .querySelectorAll("[data-floating-menu-owner=\"composer-access\"]")
@@ -66,6 +74,8 @@ function renderComposer(props: {
   onEditQueuedMessage?: (id: string) => void;
   onEditGuideMessage?: (id: string) => void;
   permissions?: PermissionSummary;
+  activeContext?: RuntimeContext;
+  setPrompt?: (value: string) => void;
   onSelectPermissionMode?: (mode: PermissionMode) => void;
   tokensPerSecond?: number;
   tokenSpeedSampledAt?: number;
@@ -83,7 +93,7 @@ function renderComposer(props: {
       <Composer
         variant={props.variant}
         prompt={props.prompt ?? ""}
-        setPrompt={() => {}}
+        setPrompt={props.setPrompt ?? (() => {})}
         files={[]}
         images={[]}
         queuedMessages={props.queuedMessages ?? []}
@@ -93,6 +103,7 @@ function renderComposer(props: {
         readOnly={false}
         initialized={initialized(props.toolPolicy, props.permissions)}
         projects={[]}
+        activeContext={props.activeContext}
         codexModels={codexModels}
         codexRuntimeMenu={null}
         codexRuntimeRef={createRef<HTMLDivElement>()}
@@ -113,6 +124,7 @@ function renderComposer(props: {
         onToggleModeMenu={() => {}}
         onToggleBranchMenu={() => {}}
         onOpenSettings={() => {}}
+        onOpenSkillsCatalog={() => {}}
         onSelectProject={() => {}}
         onSelectNoProject={() => {}}
         onSelectGitBranch={() => {}}
@@ -137,6 +149,12 @@ function renderComposer(props: {
     );
   });
   return { onSelectPermissionMode };
+}
+
+function installSkillList(skills: SkillSummary[]): void {
+  (globalThis as { wuu?: Partial<WuuDesktopApi> }).wuu = {
+    listSkills: vi.fn().mockResolvedValue({ skills }),
+  };
 }
 
 function renderSplitPaneComposer(props: {
@@ -298,6 +316,39 @@ describe("Composer send control", () => {
     expect(container.querySelector(".composer-context-bar")).not.toBeNull();
     expect(container.querySelector(".context-project-button")).not.toBeNull();
     expect(container.querySelector(".context-mode-chip")).not.toBeNull();
+  });
+
+  it("inserts a selected skill slash command into the composer", async () => {
+    const setPrompt = vi.fn();
+    installSkillList([
+      {
+        name: "slides",
+        description: "Create slide decks",
+        source: "bundled",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+    ]);
+    renderComposer({
+      prompt: "/sli",
+      setPrompt,
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const skillButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".slash-command-item"),
+    ).find((button) => button.textContent?.includes("/slides"));
+    expect(skillButton).not.toBeUndefined();
+
+    act(() => {
+      skillButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(setPrompt).toHaveBeenCalledWith("/slides ");
   });
 });
 

@@ -31,7 +31,8 @@ import type {
   DesktopProject,
   GitStatusResult,
   InitializeResult,
-  RuntimeContext
+  RuntimeContext,
+  SkillSummary
 } from "../shared/protocol";
 import {
   buildComposerSlashCommands,
@@ -125,6 +126,7 @@ export function Composer({
   onToggleModeMenu,
   onToggleBranchMenu,
   onOpenSettings,
+  onOpenSkillsCatalog,
   onSelectProject,
   onSelectNoProject,
   onSelectGitBranch,
@@ -184,6 +186,7 @@ export function Composer({
   onToggleModeMenu: () => void;
   onToggleBranchMenu: () => void;
   onOpenSettings: () => void;
+  onOpenSkillsCatalog: () => void;
   onSelectProject: (id: string) => void;
   onSelectNoProject: () => void;
   onSelectGitBranch: (branch: string) => void;
@@ -218,11 +221,15 @@ export function Composer({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
+  const [slashSkills, setSlashSkills] = useState<SkillSummary[]>([]);
   const slashDraft = parseComposerSlashDraft(prompt);
   const slashQuery = slashDraft?.query ?? "";
+  const slashSkillContextKey = activeContext ? composerRuntimeContextKey(activeContext) : "";
+  const slashSkillCountKey = initialized?.extension_trust?.main_session?.skills?.count ?? 0;
+  const slashRuntimeReady = Boolean(activeContext && initialized);
   const slashCommands = useMemo(
-    () => buildComposerSlashCommands({ activeContext, initialized, running }),
-    [activeContext, initialized, running]
+    () => buildComposerSlashCommands({ activeContext, initialized, running, skills: slashSkills }),
+    [activeContext, initialized, running, slashSkills]
   );
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
   const permissionModeHasOverrides = permissionModeHasAdvancedOverrides(initialized?.tool_policy);
@@ -248,6 +255,31 @@ export function Composer({
   useEffect(() => {
     setSelectedSlashIndex(firstEnabledSlashCommandIndex(visibleSlashCommands));
   }, [visibleSlashCommands]);
+
+  useEffect(() => {
+    if (!slashRuntimeReady || readOnly) {
+      setSlashSkills([]);
+      return;
+    }
+    let cancelled = false;
+    void loadSlashSkills();
+    return () => {
+      cancelled = true;
+    };
+
+    async function loadSlashSkills(): Promise<void> {
+      try {
+        const result = await window.wuu.listSkills();
+        if (!cancelled) {
+          setSlashSkills(result.skills);
+        }
+      } catch {
+        if (!cancelled) {
+          setSlashSkills([]);
+        }
+      }
+    }
+  }, [readOnly, slashRuntimeReady, slashSkillContextKey, slashSkillCountKey]);
 
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
@@ -275,7 +307,7 @@ export function Composer({
       return;
     }
     setSlashDismissedValue("");
-    if (command.kind === "prompt") {
+    if (command.kind === "prompt" || command.kind === "skill") {
       setPrompt(composerSlashPrompt(command, draft?.args ?? ""));
       focusComposerSoon();
       return;
@@ -287,6 +319,9 @@ export function Composer({
         break;
       case "open-review":
         onOpenWorkspaceTool("review");
+        break;
+      case "open-skills":
+        onOpenSkillsCatalog();
         break;
       case "open-files":
         onOpenWorkspaceTool("files");
@@ -657,6 +692,8 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
     case "open-review":
     case "review":
       return <Search size={16} />;
+    case "open-skills":
+      return <Wrench size={16} />;
     case "new-thread":
       return <MessageSquarePlus size={16} />;
     case "open-terminal":
@@ -677,4 +714,8 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
     default:
       return <Wrench size={16} />;
   }
+}
+
+function composerRuntimeContextKey(context: RuntimeContext): string {
+  return context.kind === "project" ? `project:${context.project_id}` : `no_project:${context.cwd}`;
 }

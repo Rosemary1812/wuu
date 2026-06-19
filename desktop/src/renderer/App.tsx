@@ -2065,6 +2065,7 @@ export function App(): JSX.Element {
           closeProjectMenus();
           setSettingsOpen(true);
         }}
+        onOpenSkillsCatalog={openSkillsTab}
         onSelectProject={(id) => void selectProjectForNewThread(id)}
         onSelectNoProject={() => void useNoProject(false)}
         onSelectGitBranch={(branch) => void checkoutBranch(branch)}
