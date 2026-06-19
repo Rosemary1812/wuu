@@ -278,6 +278,8 @@
 }
 
 .user-message-block:has(.user-message-edit) {
+  align-self: stretch;
+  width: 100%;
   grid-template-columns: minmax(0, 1fr);
   justify-items: stretch;
 }
