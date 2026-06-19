@@ -2833,8 +2833,12 @@
   will-change: grid-template-rows, opacity, transform;
 }
 
+/* Reset transform: 0 to override the default enter offset, and rely
+ * on grid-template-rows: 0fr + min-height: 0 to size the container
+ * so the collapse animates smoothly instead of snapping the
+ * container to 0 height on the same frame the className changes. */
 .collapsible-details.collapsed {
-  height: 0;
+  transform: translateY(0);
 }
 
 .collapsible-details.expanded {
