@@ -17,6 +17,7 @@ import (
 type SSETransport struct {
 	endpoint string
 	client   *http.Client
+	headers  map[string]string
 	mu       sync.Mutex
 	reader   *bufio.Reader
 	resp     *http.Response
@@ -24,6 +25,10 @@ type SSETransport struct {
 
 // NewSSETransport connects to an MCP SSE endpoint.
 func NewSSETransport(endpoint string) (*SSETransport, error) {
+	return NewSSETransportWithHeaders(endpoint, nil)
+}
+
+func NewSSETransportWithHeaders(endpoint string, headers map[string]string) (*SSETransport, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -31,6 +36,13 @@ func NewSSETransport(endpoint string) (*SSETransport, error) {
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
+	for key, value := range headers {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		req.Header.Set(key, value)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("sse connect: %w", err)
@@ -42,6 +54,7 @@ func NewSSETransport(endpoint string) (*SSETransport, error) {
 	return &SSETransport{
 		endpoint: endpoint,
 		client:   client,
+		headers:  cloneStringMap(headers),
 		reader:   bufio.NewReader(resp.Body),
 		resp:     resp,
 	}, nil
@@ -60,6 +73,13 @@ func (t *SSETransport) Send(ctx context.Context, req Request) error {
 		return err
 	}
 	hreq.Header.Set("Content-Type", "application/json")
+	for key, value := range t.headers {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		hreq.Header.Set(key, value)
+	}
 	resp, err := t.client.Do(hreq)
 	if err != nil {
 		return err
@@ -70,6 +90,17 @@ func (t *SSETransport) Send(ctx context.Context, req Request) error {
 		return fmt.Errorf("sse post %d: %s", resp.StatusCode, string(b))
 	}
 	return nil
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func (t *SSETransport) Receive(ctx context.Context) (Response, error) {

@@ -18,9 +18,11 @@ const protocolVersion = "2024-11-05"
 // Request is a JSON-RPC request.
 type Request struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      int64           `json:"id"`
-	Method  string          `json:"method"`
+	ID      int64           `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *RPCError       `json:"error,omitempty"`
 }
 
 // Response is a JSON-RPC response.

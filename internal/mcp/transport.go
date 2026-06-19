@@ -22,15 +22,17 @@ type readLoop struct {
 	transport Transport
 	inFlight  *inFlight
 	onNotify  func(method string, params json.RawMessage)
+	onRequest func(method string, params json.RawMessage) (json.RawMessage, *RPCError)
 	stop      chan struct{}
 	stopped   chan struct{}
 }
 
-func newReadLoop(t Transport, f *inFlight, onNotify func(method string, params json.RawMessage)) *readLoop {
+func newReadLoop(t Transport, f *inFlight, onNotify func(method string, params json.RawMessage), onRequest func(method string, params json.RawMessage) (json.RawMessage, *RPCError)) *readLoop {
 	return &readLoop{
 		transport: t,
 		inFlight:  f,
 		onNotify:  onNotify,
+		onRequest: onRequest,
 		stop:      make(chan struct{}),
 		stopped:   make(chan struct{}),
 	}
@@ -67,10 +69,33 @@ func (r *readLoop) run() {
 			}
 			continue
 		}
+		if resp.ID != 0 && resp.Method != "" {
+			r.handleServerRequest(resp)
+			continue
+		}
 		if !r.inFlight.resolve(resp.ID, resp) {
 			// Orphan response — ignore.
 		}
 	}
+}
+
+func (r *readLoop) handleServerRequest(req Response) {
+	var result json.RawMessage
+	var rpcErr *RPCError
+	if r.onRequest != nil {
+		result, rpcErr = r.onRequest(req.Method, req.Params)
+	} else {
+		rpcErr = &RPCError{Code: -32601, Message: "MCP client request is not supported"}
+	}
+	if rpcErr == nil && result == nil {
+		result = json.RawMessage(`{}`)
+	}
+	_ = r.transport.Send(context.Background(), Request{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Result:  result,
+		Error:   rpcErr,
+	})
 }
 
 func (r *readLoop) Stop() {

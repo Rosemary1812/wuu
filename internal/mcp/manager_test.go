@@ -22,6 +22,26 @@ func TestManagerConfigureRecordsConfiguredAndDisabledStatuses(t *testing.T) {
 	}
 }
 
+func TestManagerConfigureRecordsAuthStatus(t *testing.T) {
+	manager := NewManager()
+	manager.Configure(map[string]ServerConfig{
+		"headers": {Name: "headers", URL: "https://example.test/sse", Headers: map[string]string{"Authorization": "Bearer token"}},
+		"oauth":   {Name: "oauth", URL: "https://example.test/sse", OAuth: &OAuthConfig{ClientID: "client"}},
+		"stdio":   {Name: "stdio", Command: "mcp-docs"},
+	})
+
+	status := manager.Status()
+	if status["headers"].AuthStatus != MCPAuthStatusBearerToken {
+		t.Fatalf("headers auth status = %s, want bearer_token", status["headers"].AuthStatus)
+	}
+	if status["oauth"].AuthStatus != MCPAuthStatusNotLoggedIn {
+		t.Fatalf("oauth auth status = %s, want not_logged_in", status["oauth"].AuthStatus)
+	}
+	if status["stdio"].AuthStatus != MCPAuthStatusUnsupported {
+		t.Fatalf("stdio auth status = %s, want unsupported", status["stdio"].AuthStatus)
+	}
+}
+
 func TestManagerFailedConnectRecordsFailedState(t *testing.T) {
 	manager := NewManager()
 	err := manager.Add(context.Background(), ServerConfig{Name: "broken", Command: ""})
@@ -35,6 +55,13 @@ func TestManagerFailedConnectRecordsFailedState(t *testing.T) {
 	}
 	if status.Error == "" {
 		t.Fatalf("failed status should include error: %+v", status)
+	}
+}
+
+func TestClassifyConnectErrorDetectsNeedsAuth(t *testing.T) {
+	err := &RPCError{Code: 401, Message: "unauthorized"}
+	if got := classifyConnectError(err); got != MCPServerStateNeedsAuth {
+		t.Fatalf("classifyConnectError = %s, want needs_auth", got)
 	}
 }
 

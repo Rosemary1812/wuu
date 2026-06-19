@@ -510,6 +510,7 @@ export type ManagedProcessStopResult = {
 export type MCPServerStatus = {
   name: string;
   state: string;
+  auth_status?: string;
   connected: boolean;
   tool_count: number;
   error?: string;

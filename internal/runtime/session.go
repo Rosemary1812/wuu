@@ -1069,6 +1069,8 @@ func connectMCPServers(cfg config.Config, plugins []pluginpkg.Plugin, toolkit *t
 			Args:          mcpCfg.Args,
 			URL:           mcpCfg.URL,
 			Env:           mcpCfg.Env,
+			Headers:       mcpCfg.Headers,
+			OAuth:         mcpOAuthConfig(mcpCfg.OAuth),
 			Enabled:       mcpCfg.Enabled,
 			ToolOverrides: mcpToolOverrides(mcpCfg.ToolOverrides),
 		}
@@ -1123,6 +1125,18 @@ func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolO
 		}
 	}
 	return out
+}
+
+func mcpOAuthConfig(in *config.MCPOAuthConfig) *mcp.OAuthConfig {
+	if in == nil {
+		return nil
+	}
+	return &mcp.OAuthConfig{
+		ClientID:     in.ClientID,
+		ClientSecret: in.ClientSecret,
+		Scopes:       append([]string(nil), in.Scopes...),
+		RedirectURI:  in.RedirectURI,
+	}
 }
 
 func PermissionRulesFromConfig(in config.PermissionRulesConfig) tools.ToolPermissionRuleSet {

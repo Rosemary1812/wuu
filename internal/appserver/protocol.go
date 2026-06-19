@@ -172,11 +172,12 @@ type PermissionSummary struct {
 }
 
 type MCPServerStatus struct {
-	Name      string `json:"name"`
-	State     string `json:"state"`
-	Connected bool   `json:"connected"`
-	ToolCount int    `json:"tool_count"`
-	Error     string `json:"error,omitempty"`
+	Name       string `json:"name"`
+	State      string `json:"state"`
+	AuthStatus string `json:"auth_status,omitempty"`
+	Connected  bool   `json:"connected"`
+	ToolCount  int    `json:"tool_count"`
+	Error      string `json:"error,omitempty"`
 }
 
 type MCPListResult struct {

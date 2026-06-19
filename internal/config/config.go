@@ -45,8 +45,17 @@ type MCPServerConfig struct {
 	Args          []string                   `json:"args,omitempty"`
 	URL           string                     `json:"url,omitempty"`
 	Env           map[string]string          `json:"env,omitempty"`
+	Headers       map[string]string          `json:"headers,omitempty"`
+	OAuth         *MCPOAuthConfig            `json:"oauth,omitempty"`
 	Enabled       *bool                      `json:"enabled,omitempty"`
 	ToolOverrides map[string]MCPToolOverride `json:"tool_overrides,omitempty"`
+}
+
+type MCPOAuthConfig struct {
+	ClientID     string   `json:"client_id,omitempty"`
+	ClientSecret string   `json:"client_secret,omitempty"`
+	Scopes       []string `json:"scopes,omitempty"`
+	RedirectURI  string   `json:"redirect_uri,omitempty"`
 }
 
 // MCPToolOverride corrects or supplements server-provided MCP tool metadata.

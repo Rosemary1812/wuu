@@ -14,8 +14,17 @@ type ServerConfig struct {
 	Args          []string                `json:"args,omitempty"`
 	URL           string                  `json:"url,omitempty"`
 	Env           map[string]string       `json:"env,omitempty"`
+	Headers       map[string]string       `json:"headers,omitempty"`
+	OAuth         *OAuthConfig            `json:"oauth,omitempty"`
 	Enabled       *bool                   `json:"enabled,omitempty"`
 	ToolOverrides map[string]ToolOverride `json:"tool_overrides,omitempty"`
+}
+
+type OAuthConfig struct {
+	ClientID     string   `json:"client_id,omitempty"`
+	ClientSecret string   `json:"client_secret,omitempty"`
+	Scopes       []string `json:"scopes,omitempty"`
+	RedirectURI  string   `json:"redirect_uri,omitempty"`
 }
 
 func (c ServerConfig) IsEnabled() bool {
@@ -47,7 +56,7 @@ func Connect(name string, t Transport) (*Client, error) {
 		transport: t,
 		inFlight:  newInFlight(),
 	}
-	c.readLoop = newReadLoop(t, c.inFlight, c.handleNotification)
+	c.readLoop = newReadLoop(t, c.inFlight, c.handleNotification, c.handleRequest)
 	c.readLoop.Start()
 
 	// Initialize handshake.
@@ -96,7 +105,7 @@ func ConnectSSE(cfg ServerConfig) (*Client, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("mcp server %q: url is required for sse transport", cfg.Name)
 	}
-	t, err := NewSSETransport(cfg.URL)
+	t, err := NewSSETransportWithHeaders(cfg.URL, cfg.Headers)
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: %w", cfg.Name, err)
 	}
@@ -134,6 +143,15 @@ func (c *Client) handleNotification(method string, _ json.RawMessage) {
 		go func() {
 			_, _ = c.DiscoverTools(context.Background())
 		}()
+	}
+}
+
+func (c *Client) handleRequest(method string, _ json.RawMessage) (json.RawMessage, *RPCError) {
+	switch method {
+	case "elicitation/create", "elicitation/request":
+		return nil, &RPCError{Code: -32000, Message: "MCP elicitation is not supported yet"}
+	default:
+		return nil, &RPCError{Code: -32601, Message: "MCP client request is not supported"}
 	}
 }
 

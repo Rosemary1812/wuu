@@ -122,11 +122,12 @@ func mcpStatusFromRuntime(status mcp.ServerStatus) MCPServerStatus {
 		}
 	}
 	return MCPServerStatus{
-		Name:      status.Name,
-		State:     state,
-		Connected: status.Connected,
-		ToolCount: status.ToolCount,
-		Error:     status.Error,
+		Name:       status.Name,
+		State:      state,
+		AuthStatus: string(status.AuthStatus),
+		Connected:  status.Connected,
+		ToolCount:  status.ToolCount,
+		Error:      status.Error,
 	}
 }
 

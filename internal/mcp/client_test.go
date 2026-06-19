@@ -16,7 +16,7 @@ func TestClientRefreshesToolsOnListChangedNotification(t *testing.T) {
 		transport: transport,
 		inFlight:  newInFlight(),
 	}
-	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification)
+	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification, client.handleRequest)
 	client.readLoop.Start()
 	t.Cleanup(func() { _ = client.Close() })
 
@@ -38,6 +38,31 @@ func TestClientRefreshesToolsOnListChangedNotification(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("tools did not refresh after notification: %+v", client.Tools())
+}
+
+func TestReadLoopRejectsUnsupportedServerRequest(t *testing.T) {
+	transport := newScriptedTransport()
+	client := &Client{
+		name:      "server",
+		transport: transport,
+		inFlight:  newInFlight(),
+	}
+	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification, client.handleRequest)
+	client.readLoop.Start()
+	t.Cleanup(func() { _ = client.Close() })
+
+	transport.notify(Response{JSONRPC: "2.0", ID: 99, Method: "elicitation/create"})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if sent, ok := transport.sentResponse(99); ok {
+			if sent.Error == nil || !strings.Contains(sent.Error.Message, "elicitation") {
+				t.Fatalf("unexpected elicitation response: %+v", sent)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("read loop did not reject server request")
 }
 
 func TestStdioEnvOverlay(t *testing.T) {
@@ -78,6 +103,7 @@ type scriptedTransport struct {
 	listCalls int
 	inbox     chan Response
 	closed    chan struct{}
+	sent      []Request
 }
 
 func newScriptedTransport() *scriptedTransport {
@@ -88,6 +114,9 @@ func newScriptedTransport() *scriptedTransport {
 }
 
 func (t *scriptedTransport) Send(_ context.Context, req Request) error {
+	t.mu.Lock()
+	t.sent = append(t.sent, req)
+	t.mu.Unlock()
 	if req.Method != "tools/list" {
 		return nil
 	}
@@ -127,4 +156,15 @@ func (t *scriptedTransport) Close() error {
 
 func (t *scriptedTransport) notify(resp Response) {
 	t.inbox <- resp
+}
+
+func (t *scriptedTransport) sentResponse(id int64) (Request, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, req := range t.sent {
+		if req.ID == id {
+			return req, true
+		}
+	}
+	return Request{}, false
 }

@@ -52,7 +52,7 @@ func (m *Manager) Configure(configs map[string]ServerConfig) {
 			state = MCPServerStateDisabled
 		}
 		if current, ok := m.statuses[name]; !ok || current.State == "" {
-			m.statuses[name] = ServerStatus{Name: name, State: state}
+			m.statuses[name] = ServerStatus{Name: name, State: state, AuthStatus: authStatusForConfig(cfg)}
 		}
 	}
 }
@@ -66,10 +66,10 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	}
 	m.rememberConfig(cfg)
 	if !cfg.IsEnabled() {
-		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateDisabled})
+		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateDisabled, AuthStatus: authStatusForConfig(cfg)})
 		return nil
 	}
-	m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateConnecting})
+	m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateConnecting, AuthStatus: authStatusForConfig(cfg)})
 	var client *Client
 	var err error
 	if cfg.URL != "" {
@@ -78,14 +78,14 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		client, err = ConnectStdio(cfg)
 	}
 	if err != nil {
-		m.recordStatus(ServerStatus{Name: cfg.Name, State: classifyConnectError(err), Connected: false, Error: err.Error()})
+		m.recordStatus(ServerStatus{Name: cfg.Name, State: classifyConnectError(err), AuthStatus: authStatusAfterConnectError(cfg, err), Connected: false, Error: err.Error()})
 		return err
 	}
 	// Eagerly discover tools so the toolkit can include them.
 	if _, derr := client.DiscoverTools(ctx); derr != nil {
 		_ = client.Close()
 		err := fmt.Errorf("discover tools for %q: %w", cfg.Name, derr)
-		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateFailed, Connected: false, Error: err.Error()})
+		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateFailed, AuthStatus: authStatusForConfig(cfg), Connected: false, Error: err.Error()})
 		return err
 	}
 	m.mu.Lock()
@@ -95,10 +95,11 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	}
 	m.clients[cfg.Name] = client
 	m.statuses[cfg.Name] = ServerStatus{
-		Name:      cfg.Name,
-		State:     MCPServerStateConnected,
-		Connected: true,
-		ToolCount: len(client.Tools()),
+		Name:       cfg.Name,
+		State:      MCPServerStateConnected,
+		AuthStatus: authStatusForConfig(cfg),
+		Connected:  true,
+		ToolCount:  len(client.Tools()),
 	}
 	return nil
 }
@@ -140,13 +141,13 @@ func (m *Manager) Disconnect(name string) error {
 	c, ok := m.clients[name]
 	if !ok {
 		if _, configured := m.configs[name]; configured {
-			m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled}
+			m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled, AuthStatus: authStatusForConfig(m.configs[name])}
 			return nil
 		}
 		return fmt.Errorf("mcp server %q not found", name)
 	}
 	delete(m.clients, name)
-	m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled}
+	m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled, AuthStatus: authStatusForConfig(m.configs[name])}
 	return c.Close()
 }
 
@@ -202,6 +203,9 @@ func (m *Manager) Status() map[string]ServerStatus {
 	for name, status := range m.statuses {
 		if c, ok := m.clients[name]; ok {
 			status.State = MCPServerStateConnected
+			if status.AuthStatus == "" {
+				status.AuthStatus = authStatusForConfig(m.configs[name])
+			}
 			status.Connected = true
 			status.ToolCount = len(c.Tools())
 			status.Error = ""
@@ -223,7 +227,7 @@ func (m *Manager) Close() error {
 	}
 	m.clients = make(map[string]*Client)
 	for name := range m.statuses {
-		m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled}
+		m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled, AuthStatus: authStatusForConfig(m.configs[name])}
 	}
 	return firstErr
 }
@@ -272,6 +276,20 @@ func cloneServerConfig(cfg ServerConfig) ServerConfig {
 			out.Env[k] = v
 		}
 	}
+	if cfg.Headers != nil {
+		out.Headers = make(map[string]string, len(cfg.Headers))
+		for k, v := range cfg.Headers {
+			out.Headers[k] = v
+		}
+	}
+	if cfg.OAuth != nil {
+		out.OAuth = &OAuthConfig{
+			ClientID:     cfg.OAuth.ClientID,
+			ClientSecret: cfg.OAuth.ClientSecret,
+			Scopes:       append([]string(nil), cfg.OAuth.Scopes...),
+			RedirectURI:  cfg.OAuth.RedirectURI,
+		}
+	}
 	if cfg.ToolOverrides != nil {
 		out.ToolOverrides = cloneToolOverrides(cfg.ToolOverrides)
 	}
@@ -290,6 +308,15 @@ const (
 	MCPServerStateNeedsClientRegistration MCPServerState = "needs_client_registration"
 )
 
+type MCPAuthStatus string
+
+const (
+	MCPAuthStatusUnsupported MCPAuthStatus = "unsupported"
+	MCPAuthStatusNotLoggedIn MCPAuthStatus = "not_logged_in"
+	MCPAuthStatusBearerToken MCPAuthStatus = "bearer_token"
+	MCPAuthStatusOAuth       MCPAuthStatus = "oauth"
+)
+
 func classifyConnectError(err error) MCPServerState {
 	if err == nil {
 		return MCPServerStateConnected
@@ -305,13 +332,47 @@ func classifyConnectError(err error) MCPServerState {
 	}
 }
 
+func authStatusForConfig(cfg ServerConfig) MCPAuthStatus {
+	if strings.TrimSpace(cfg.URL) == "" {
+		return MCPAuthStatusUnsupported
+	}
+	if cfg.OAuth != nil {
+		return MCPAuthStatusNotLoggedIn
+	}
+	if hasAuthHeaders(cfg.Headers) {
+		return MCPAuthStatusBearerToken
+	}
+	return MCPAuthStatusUnsupported
+}
+
+func authStatusAfterConnectError(cfg ServerConfig, err error) MCPAuthStatus {
+	if classifyConnectError(err) == MCPServerStateNeedsAuth {
+		return MCPAuthStatusNotLoggedIn
+	}
+	return authStatusForConfig(cfg)
+}
+
+func hasAuthHeaders(headers map[string]string) bool {
+	for key, value := range headers {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if key == "authorization" || strings.Contains(key, "api-key") || strings.Contains(key, "apikey") {
+			return true
+		}
+	}
+	return false
+}
+
 // ServerStatus describes one MCP server's runtime state.
 type ServerStatus struct {
-	Name      string         `json:"name"`
-	State     MCPServerState `json:"state"`
-	Connected bool           `json:"connected"`
-	ToolCount int            `json:"tool_count"`
-	Error     string         `json:"error,omitempty"`
+	Name       string         `json:"name"`
+	State      MCPServerState `json:"state"`
+	AuthStatus MCPAuthStatus  `json:"auth_status,omitempty"`
+	Connected  bool           `json:"connected"`
+	ToolCount  int            `json:"tool_count"`
+	Error      string         `json:"error,omitempty"`
 }
 
 // PromptCacheStablePrefix returns the number of built-in tools that should
