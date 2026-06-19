@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/hooks"
@@ -2442,6 +2443,184 @@ func TestServerThreadForkAtAssistantItem(t *testing.T) {
 	forkStarted := remarshal[ThreadStartedNotification](t, started[len(started)-1]["params"])
 	if forkStarted.Thread.ID != fork.ID {
 		t.Fatalf("unexpected fork started notification: %+v", forkStarted)
+	}
+}
+
+func TestServerThreadEditMessageRewindsToUserMessage(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir session dir: %v", err)
+	}
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260619-000000-edit", rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
+	history := []providers.ChatMessage{
+		{
+			Role:    "user",
+			Content: "first prompt",
+			Images:  []providers.InputImage{{MediaType: "image/png", Data: "image-data"}},
+			Files:   []providers.InputFile{{MediaType: "application/pdf", Data: "file-data", Filename: "brief.pdf"}},
+		},
+		{Role: "assistant", Content: "first answer"},
+		{Role: "user", Content: "second prompt"},
+		{Role: "assistant", Content: "second answer"},
+	}
+	if err := rewriteChatHistory(sessionPath, history); err != nil {
+		t.Fatalf("write history: %v", err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, sess.ID, persistableMessageCount(history), threadPreview(history)); err != nil {
+		t.Fatalf("update index: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	resumeReq := fmt.Sprintf(`{"id":"resume","method":"%s","params":{"session_id":%q}}`, MethodThreadResume, sess.ID)
+	if err := srv.handleLine(context.Background(), []byte(resumeReq)); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+	resumed := remarshal[ThreadResumeResult](t, responseByID(t, parseOutput(t, out.String()), "resume")["result"])
+	if len(resumed.Thread.Turns) != 2 {
+		t.Fatalf("expected two turns, got %+v", resumed.Thread.Turns)
+	}
+	target := resumed.Thread.Turns[0].Items[0]
+	editPayload, err := json.Marshal(map[string]any{
+		"id":     "edit",
+		"method": MethodThreadEditMessage,
+		"params": ThreadEditMessageParams{
+			ThreadID: resumed.Thread.ID,
+			TurnID:   resumed.Thread.Turns[0].ID,
+			ItemID:   target.ID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal edit request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), editPayload); err != nil {
+		t.Fatalf("thread/edit-message: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	editResponse := responseByID(t, msgs, "edit")
+	if editResponse["error"] != nil {
+		t.Fatalf("thread/edit-message returned error: %+v", editResponse["error"])
+	}
+	result := remarshal[ThreadEditMessageResult](t, editResponse["result"])
+	if result.Draft.Prompt != "first prompt" {
+		t.Fatalf("unexpected restored draft: %+v", result.Draft)
+	}
+	if len(result.Draft.Images) != 1 || result.Draft.Images[0].Data != "image-data" {
+		t.Fatalf("expected image to be restored in draft: %+v", result.Draft)
+	}
+	if len(result.Draft.Files) != 1 || result.Draft.Files[0].Filename != "brief.pdf" || result.Draft.Files[0].Data != "file-data" {
+		t.Fatalf("expected file to be restored in draft: %+v", result.Draft)
+	}
+	if len(result.Thread.Turns) != 0 {
+		t.Fatalf("expected thread to rewind before first user message, got %+v", result.Thread.Turns)
+	}
+	persisted, err := loadChatMessages(sessionPath)
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	if len(persisted) != 0 {
+		t.Fatalf("expected persisted history to remove target and later messages, got %+v", persisted)
+	}
+	updated := notificationsByMethod(msgs, NotificationThreadUpdated)
+	if len(updated) == 0 {
+		t.Fatalf("expected thread/updated notification")
+	}
+}
+
+func TestServerThreadEditMessageRespectsCompactionBoundary(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir session dir: %v", err)
+	}
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260619-000001-edit-compact", rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
+	history := []providers.ChatMessage{
+		{Role: "system", Content: compact.BuildSummaryContent("older prompts are summarized")},
+		{Role: "user", Content: "after compact"},
+		{Role: "assistant", Content: "after compact answer"},
+		{Role: "user", Content: "latest prompt"},
+		{Role: "assistant", Content: "latest answer"},
+	}
+	if err := rewriteChatHistory(sessionPath, history); err != nil {
+		t.Fatalf("write history: %v", err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, sess.ID, persistableMessageCount(history), threadPreview(history)); err != nil {
+		t.Fatalf("update index: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	resumeReq := fmt.Sprintf(`{"id":"resume","method":"%s","params":{"session_id":%q}}`, MethodThreadResume, sess.ID)
+	if err := srv.handleLine(context.Background(), []byte(resumeReq)); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+	resumed := remarshal[ThreadResumeResult](t, responseByID(t, parseOutput(t, out.String()), "resume")["result"])
+	if len(resumed.Thread.Turns) != 2 {
+		t.Fatalf("expected two visible turns after compact summary, got %+v", resumed.Thread.Turns)
+	}
+	if len(resumed.Thread.Turns[0].Items) < 2 || resumed.Thread.Turns[0].Items[1].Type != ThreadItemContextCompaction {
+		t.Fatalf("expected compaction notice attached to first visible turn, got %+v", resumed.Thread.Turns[0].Items)
+	}
+
+	contextItem := resumed.Thread.Turns[0].Items[1]
+	rejectedPayload, err := json.Marshal(map[string]any{
+		"id":     "reject-summary",
+		"method": MethodThreadEditMessage,
+		"params": ThreadEditMessageParams{
+			ThreadID: resumed.Thread.ID,
+			TurnID:   resumed.Thread.Turns[0].ID,
+			ItemID:   contextItem.ID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal rejected edit request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rejectedPayload); err != nil {
+		t.Fatalf("thread/edit-message summary item: %v", err)
+	}
+	rejected := responseByID(t, parseOutput(t, out.String()), "reject-summary")
+	if rejected["error"] == nil {
+		t.Fatalf("expected compaction notice edit to be rejected")
+	}
+
+	target := resumed.Thread.Turns[0].Items[0]
+	editPayload, err := json.Marshal(map[string]any{
+		"id":     "edit-visible",
+		"method": MethodThreadEditMessage,
+		"params": ThreadEditMessageParams{
+			ThreadID: resumed.Thread.ID,
+			TurnID:   resumed.Thread.Turns[0].ID,
+			ItemID:   target.ID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal edit request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), editPayload); err != nil {
+		t.Fatalf("thread/edit-message visible user: %v", err)
+	}
+	editResponse := responseByID(t, parseOutput(t, out.String()), "edit-visible")
+	if editResponse["error"] != nil {
+		t.Fatalf("thread/edit-message returned error: %+v", editResponse["error"])
+	}
+	result := remarshal[ThreadEditMessageResult](t, editResponse["result"])
+	if result.Draft.Prompt != "after compact" {
+		t.Fatalf("unexpected restored draft: %+v", result.Draft)
+	}
+	persisted, err := loadChatMessages(sessionPath)
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	if len(persisted) != 1 || persisted[0].Role != "system" || !compact.IsConversationSummaryContent(persisted[0].Content) {
+		t.Fatalf("expected compact summary to remain as edit boundary, got %+v", persisted)
 	}
 }
 

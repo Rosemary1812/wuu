@@ -68,6 +68,7 @@ export function SplitPaneComposer({
   status,
   queryHistorySessionID,
   queryHistory = [],
+  focusRequest = 0,
   onPasteAttachmentFiles,
   onRemoveFile,
   onRemoveImage,
@@ -83,6 +84,7 @@ export function SplitPaneComposer({
   status: string;
   queryHistorySessionID?: string;
   queryHistory?: string[];
+  focusRequest?: number;
   onPasteAttachmentFiles: (files: File[]) => void;
   onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
@@ -106,6 +108,12 @@ export function SplitPaneComposer({
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }
+
+  useEffect(() => {
+    if (focusRequest > 0 && !readOnly) {
+      focusComposerSoon();
+    }
+  }, [focusRequest, readOnly]);
 
   function submitComposer(): void {
     resetQueryHistoryNavigation();

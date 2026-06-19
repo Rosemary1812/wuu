@@ -28,6 +28,7 @@ const (
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
+	MethodThreadEditMessage     = "thread/edit-message"
 	MethodThreadList            = "thread/list"
 	MethodThreadSearch          = "thread/search"
 	MethodThreadPin             = "thread/pin"
@@ -418,6 +419,23 @@ type ThreadForkParams struct {
 
 type ThreadForkResult struct {
 	Thread Thread `json:"thread"`
+}
+
+type ThreadEditMessageParams struct {
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id"`
+	ItemID   string `json:"item_id"`
+}
+
+type ThreadEditDraft struct {
+	Prompt string           `json:"prompt"`
+	Images []TurnStartImage `json:"images,omitempty"`
+	Files  []TurnStartFile  `json:"files,omitempty"`
+}
+
+type ThreadEditMessageResult struct {
+	Thread Thread          `json:"thread"`
+	Draft  ThreadEditDraft `json:"draft"`
 }
 
 type ThreadListResult struct {

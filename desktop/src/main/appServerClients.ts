@@ -397,7 +397,8 @@ class AppServerClient {
     if (
       (method === "thread/start" ||
         method === "thread/resume" ||
-        method === "thread/fork") &&
+        method === "thread/fork" ||
+        method === "thread/edit-message") &&
       isRecord(result)
     ) {
       this.updateRunningFromThread(result.thread);

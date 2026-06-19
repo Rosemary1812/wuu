@@ -782,6 +782,17 @@ export type ThreadSearchResult = {
   results: ThreadSearchResultItem[];
 };
 
+export type ThreadEditDraft = {
+  prompt: string;
+  images?: InputImage[];
+  files?: InputFile[];
+};
+
+export type ThreadEditMessageResult = {
+  thread: Thread;
+  draft: ThreadEditDraft;
+};
+
 export type Turn = {
   id: string;
   items: ThreadItem[];
@@ -998,6 +1009,7 @@ export type WuuDesktopApi = {
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;
+  editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
   listThreads: () => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;

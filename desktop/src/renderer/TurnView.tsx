@@ -22,6 +22,7 @@ export function TurnView({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onEditMessage,
   onNoticeAction,
 }: {
   turn: Turn;
@@ -29,6 +30,7 @@ export function TurnView({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onEditMessage?: (turnID: string, item: ThreadItem) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const actionableAgentMessageID =
@@ -54,6 +56,7 @@ export function TurnView({
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
+        onEditMessage={onEditMessage}
         onNoticeAction={onNoticeAction}
       />
     );

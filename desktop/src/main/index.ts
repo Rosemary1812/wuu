@@ -28,8 +28,12 @@ import type {
   ManagedProcessListResult,
   ManagedProcessStopResult,
   ServerEvent,
+  SettingsUsageQuery,
+  SettingsUsageRange,
+  SettingsUsageResponse,
   TerminalSessionStartParams,
   Thread,
+  ThreadEditMessageResult,
   Turn,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
@@ -433,6 +437,15 @@ app.whenReady().then(() => {
         thread_id: threadId,
         turn_id: turnId ?? "",
         item_id: itemId ?? "",
+      }),
+  );
+  ipcMain.handle(
+    "wuu:thread-edit-message",
+    (_event, threadId: string, turnId: string, itemId: string) =>
+      appServerClientPool.request<ThreadEditMessageResult>("thread/edit-message", {
+        thread_id: threadId,
+        turn_id: turnId,
+        item_id: itemId,
       }),
   );
   ipcMain.handle("wuu:thread-list", () =>

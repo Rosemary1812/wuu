@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   ServerEvent,
+  SettingsUsageRange,
   WindowResizeState,
   WuuDesktopApi,
 } from "../shared/protocol";
@@ -127,6 +128,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-resume", sessionId),
   forkThread: (threadId: string, turnId?: string, itemId?: string) =>
     ipcRenderer.invoke("wuu:thread-fork", threadId, turnId, itemId),
+  editThreadMessage: (threadId: string, turnId: string, itemId: string) =>
+    ipcRenderer.invoke("wuu:thread-edit-message", threadId, turnId, itemId),
   listThreads: () => ipcRenderer.invoke("wuu:thread-list"),
   searchThreads: (query: string, limit?: number) =>
     ipcRenderer.invoke("wuu:thread-search", query, limit),

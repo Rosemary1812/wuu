@@ -207,6 +207,66 @@ func (s *Server) handleThreadFork(req Request) error {
 	})
 }
 
+func (s *Server) handleThreadEditMessage(req Request) error {
+	var params ThreadEditMessageParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	threadID := strings.TrimSpace(params.ThreadID)
+	if threadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	th := s.thread(threadID)
+	if th == nil {
+		return s.writeResponse(req.ID, nil, errors.New("thread not found"))
+	}
+	if s.hasQueuedUserTurns(threadID) {
+		return s.writeResponse(req.ID, nil, errors.New("queued messages must be sent or removed before editing history"))
+	}
+
+	th.mu.Lock()
+	if th.ReadOnly {
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+	}
+	if th.running {
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, errors.New("thread is running"))
+	}
+	current := th.snapshotLocked()
+	nextHistory, draft, err := editHistoryBeforeUserMessage(th.History, th.ID, current.Turns, params.TurnID, params.ItemID)
+	if err != nil {
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if strings.TrimSpace(th.MemoryPath) != "" {
+		if err := rewriteChatHistory(th.MemoryPath, nextHistory); err != nil {
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, err)
+		}
+		if err := session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(nextHistory), threadPreview(nextHistory)); err != nil {
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	now := time.Now().UTC()
+	th.History = nextHistory
+	th.Turns = turnsFromHistory(th.ID, nextHistory, now)
+	th.UpdatedAt = now
+	th.currentTurn = ""
+	th.nextItemIndex = 0
+	th.activeAgentItemID = ""
+	th.activeReasoningItemID = ""
+	th.toolItems = make(map[string]string)
+	thread := th.snapshotLocked()
+	th.mu.Unlock()
+
+	if err := s.writeResponse(req.ID, ThreadEditMessageResult{Thread: thread, Draft: draft}, nil); err != nil {
+		return err
+	}
+	return s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+}
+
 func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThread, error) {
 	if th := s.thread(id); th != nil {
 		th.mu.Lock()

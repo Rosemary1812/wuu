@@ -5,6 +5,7 @@ import { RichContent } from "./RichContent";
 import {
   AgentMessageActions,
   MessageCopyButton,
+  MessageEditButton,
   MessageFileList,
   MessageImageGrid,
 } from "./MessageActions";
@@ -30,6 +31,7 @@ export function ThreadItemView({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onEditMessage,
   onNoticeAction,
 }: {
   turnID: string;
@@ -42,6 +44,7 @@ export function ThreadItemView({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onEditMessage?: (turnID: string, item: ThreadItem) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   switch (item.type) {
@@ -56,9 +59,13 @@ export function ThreadItemView({
         );
       }
       const copyable = text.trim() !== "";
+      const editable = Boolean(
+        onEditMessage &&
+          (copyable || (item.images?.length ?? 0) > 0 || (item.files?.length ?? 0) > 0),
+      );
       return (
         <div
-          className={`user-message-block${copyable ? " user-message-block-with-actions" : ""}`}
+          className={`user-message-block${copyable || editable ? " user-message-block-with-actions" : ""}`}
           id={userMessageAnchorID(turnID, item.id)}
           data-user-message-id={item.id}
           data-turn-id={turnID}
@@ -70,16 +77,25 @@ export function ThreadItemView({
             {item.files?.length ? <MessageFileList files={item.files} /> : null}
             {text ? <RichContent text={text} cwd={cwd} /> : null}
           </div>
-          {copyable ? (
+          {copyable || editable ? (
             <div
               className="message-actions user-message-actions"
               aria-label="用户消息操作"
             >
-              <MessageCopyButton
-                getText={() => text}
-                className="message-action-button"
-                iconSize={15}
-              />
+              {copyable ? (
+                <MessageCopyButton
+                  getText={() => text}
+                  className="message-action-button"
+                  iconSize={15}
+                />
+              ) : null}
+              {editable && onEditMessage ? (
+                <MessageEditButton
+                  onEdit={() => onEditMessage(turnID, item)}
+                  className="message-action-button"
+                  iconSize={15}
+                />
+              ) : null}
             </div>
           ) : null}
         </div>

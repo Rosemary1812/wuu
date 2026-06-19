@@ -154,7 +154,8 @@ export function Composer({
   tokenSpeedSampledAt,
   tokenSpeedSource,
   queryHistorySessionID,
-  queryHistory = []
+  queryHistory = [],
+  focusRequest = 0
 }: {
   variant?: ComposerVariant;
   containerRef?: Ref<HTMLElement>;
@@ -215,6 +216,7 @@ export function Composer({
   tokenSpeedSource?: "real" | "estimated" | "none";
   queryHistorySessionID?: string;
   queryHistory?: string[];
+  focusRequest?: number;
 }): JSX.Element {
   const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = composerStatusText(status);
@@ -290,6 +292,12 @@ export function Composer({
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }
+
+  useEffect(() => {
+    if (focusRequest > 0 && !readOnly) {
+      focusComposerSoon();
+    }
+  }, [focusRequest, readOnly]);
 
   function submitComposer(): void {
     resetQueryHistoryNavigation();

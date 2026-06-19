@@ -1,4 +1,4 @@
-import { AlertCircle, Check, Copy, FileText, GitFork, ThumbsDown, ThumbsUp } from "lucide-react";
+import { AlertCircle, Check, Copy, FileText, GitFork, PencilLine, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { InputFile, InputImage } from "../shared/protocol";
 import { imageSource } from "./ComposerMessages";
@@ -101,6 +101,28 @@ export function MessageCopyButton({
       ) : (
         <Copy size={iconSize} />
       )}
+    </button>
+  );
+}
+
+export function MessageEditButton({
+  onEdit,
+  className = "",
+  iconSize = 14
+}: {
+  onEdit: () => void;
+  className?: string;
+  iconSize?: number;
+}): JSX.Element {
+  return (
+    <button
+      className={`message-edit-button ${className}`}
+      type="button"
+      aria-label="编辑并重试"
+      title="编辑并重试"
+      onClick={onEdit}
+    >
+      <PencilLine size={iconSize} />
     </button>
   );
 }

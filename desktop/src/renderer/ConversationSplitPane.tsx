@@ -18,6 +18,7 @@ export function ConversationSplitPane({
   activeContextCwd,
   appStatus,
   draft,
+  focusRequest,
   viewSwitchPending,
   queryHistory,
   onActivate,
@@ -31,6 +32,7 @@ export function ConversationSplitPane({
   onSend,
   onInterrupt,
   onForkMessage,
+  onEditMessage,
   onStreamFrame,
   onNoticeAction,
 }: {
@@ -41,6 +43,7 @@ export function ConversationSplitPane({
   activeContextCwd?: string;
   appStatus: string;
   draft: ComposerDraftState;
+  focusRequest?: number;
   viewSwitchPending: boolean;
   queryHistory: string[];
   onActivate: () => void;
@@ -54,6 +57,7 @@ export function ConversationSplitPane({
   onSend: () => void;
   onInterrupt: () => void;
   onForkMessage: (turnID: string, itemID: string) => void;
+  onEditMessage?: (turnID: string, itemID: string) => void;
   onStreamFrame: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
@@ -107,6 +111,11 @@ export function ConversationSplitPane({
               latestAgentMessageID={paneLatestAgentMessageID}
               onStreamFrame={onStreamFrame}
               onForkMessage={onForkMessage}
+              onEditMessage={
+                onEditMessage
+                  ? (turnID, item) => onEditMessage(turnID, item.id)
+                  : undefined
+              }
               onNoticeAction={onNoticeAction}
             />
           ))}
@@ -127,6 +136,7 @@ export function ConversationSplitPane({
         onInterrupt={onInterrupt}
         queryHistorySessionID={thread.id}
         queryHistory={queryHistory}
+        focusRequest={focusRequest}
       />
     </section>
   );
