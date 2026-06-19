@@ -358,6 +358,57 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     // Commentary text surfaces inline (not folded):
     expect(container.textContent).toContain("found the file");
   });
+
+  it("snaps the reasoning scroll container to the bottom when the fold opens", async () => {
+    // Reasoning text tends to be long. When the user clicks "查看思考
+    // 过程" they usually want to see where the model is *now*, not the
+    // first lines of deliberation — so opening the fold should land
+    // the scroll container at scrollHeight.
+    const turn = makeTurn("completed", [
+      makeReasoning("long internal deliberation ".repeat(50)),
+      makeFinalAnswer("short answer"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const fold = reasoningFolds(container)[0];
+    expect(fold.hasAttribute("open")).toBe(false);
+    const block = fold.querySelector(".reasoning-block") as HTMLElement;
+    expect(block).not.toBeNull();
+
+    // jsdom does not lay out real heights. Mock scrollHeight and
+    // clientHeight so the snap-to-bottom handler has measurable
+    // values, and capture scrollTop writes so we can assert on them.
+    let capturedScrollTop = 0;
+    Object.defineProperty(block, "scrollHeight", {
+      configurable: true,
+      get: () => 1000,
+    });
+    Object.defineProperty(block, "clientHeight", {
+      configurable: true,
+      get: () => 200,
+    });
+    Object.defineProperty(block, "scrollTop", {
+      configurable: true,
+      get: () => capturedScrollTop,
+      set: (v: number) => {
+        capturedScrollTop = v;
+      },
+    });
+
+    // Simulate a user click on the summary: open the fold and let
+    // React's onToggle handler run.
+    fold.open = true;
+    act(() => {
+      fold.dispatchEvent(new Event("toggle", { bubbles: true }));
+    });
+
+    // jsdom does not dispatch transitionend from CSS transitions, so
+    // the handler's 280ms setTimeout fallback is what actually runs
+    // the snap. Wait long enough for that fallback to fire.
+    await new Promise((resolve) => setTimeout(resolve, 320));
+
+    expect(capturedScrollTop).toBe(1000);
+  });
 });
 
 describe("AssistantTurnShell — answer region (rule 1 + rule 8)", () => {

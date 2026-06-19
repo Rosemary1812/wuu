@@ -405,8 +405,41 @@ function ReasoningFold({
   const textClass = `turn-reasoning-summary-text${
     streaming ? " is-streaming" : ""
   }`;
+  // When the user opens this fold, snap the reasoning scroll container
+  // to the bottom so the latest deliberation is what lands in view —
+  // reasoning tends to be long, and the user most often opens it to
+  // see where the model is now. The .turn-reasoning-body uses a
+  // grid-template-rows transition, so clientHeight is still 0 the
+  // moment `open` flips; wait for transitionend before measuring.
+  const handleToggle = (
+    event: React.SyntheticEvent<HTMLDetailsElement>,
+  ) => {
+    const details = event.currentTarget;
+    if (!details.open) return;
+    const body = details.querySelector(
+      ".turn-reasoning-body",
+    ) as HTMLElement | null;
+    const block = details.querySelector(
+      ".reasoning-block",
+    ) as HTMLElement | null;
+    if (!body || !block) return;
+    let settled = false;
+    const snapToBottom = () => {
+      if (settled) return;
+      settled = true;
+      body.removeEventListener("transitionend", snapToBottom);
+      block.scrollTop = block.scrollHeight;
+    };
+    body.addEventListener("transitionend", snapToBottom);
+    // Fallback when transitionend never fires (reduced motion, or the
+    // grid already settled before the listener attached).
+    window.setTimeout(snapToBottom, 280);
+  };
   return (
-    <details className="turn-reasoning-fold">
+    <details
+      className="turn-reasoning-fold"
+      onToggle={handleToggle}
+    >
       <summary className="turn-reasoning-summary">
         <span className={textClass}>{label}</span>
         <ChevronRight
