@@ -264,7 +264,7 @@ export function EnvironmentPanel({
         <h2>{planUpdate ? "进度" : "环境信息"}</h2>
         <div className="environment-panel-actions">
           <button className="icon-button" type="button" aria-label="关闭环境信息" onClick={onClose}>
-            <X size={16} />
+            <X className="icon" />
           </button>
         </div>
       </div>
@@ -280,7 +280,7 @@ export function EnvironmentPanel({
           disabled={!gitStatus?.is_repo}
           onClick={onOpenReview}
         >
-          <FolderPlus size={18} />
+          <FolderPlus className="icon-lg" />
           <strong>变更</strong>
           <span className="environment-row-meta">
             {gitStatus?.is_repo ? `${diff.files} 个文件` : "非 Git"}
@@ -291,7 +291,7 @@ export function EnvironmentPanel({
               </span>
             ) : null}
           </span>
-          {gitStatus?.is_repo ? <ChevronRight size={17} /> : null}
+          {gitStatus?.is_repo ? <ChevronRight className="icon" /> : null}
         </button>
 
         <button
@@ -299,10 +299,10 @@ export function EnvironmentPanel({
           type="button"
           onClick={() => toggleMenu("mode")}
         >
-          <Laptop size={18} />
+          <Laptop className="icon-lg" />
           <strong>本地</strong>
           <span>{contextLabel}</span>
-          <ChevronRight size={17} />
+          <ChevronRight className="icon" />
         </button>
 
         <button
@@ -311,10 +311,10 @@ export function EnvironmentPanel({
           disabled={!gitStatus?.is_repo || running}
           onClick={() => toggleMenu("branch")}
         >
-          <GitBranch size={18} />
+          <GitBranch className="icon-lg" />
           <strong>{branchLabel}</strong>
           <span>{gitStatus?.dirty_count ? `未提交：${gitStatus.dirty_count} 个文件` : ""}</span>
-          {gitStatus?.is_repo ? <ChevronRight size={17} /> : null}
+          {gitStatus?.is_repo ? <ChevronRight className="icon" /> : null}
         </button>
 
         <button
@@ -323,7 +323,7 @@ export function EnvironmentPanel({
           disabled={!hasChanges || running}
           onClick={onOpenCommit}
         >
-          <CornerDownRight size={18} />
+          <CornerDownRight className="icon-lg" />
           <strong>提交</strong>
           <span>{hasChanges ? "提交当前更改" : "工作区干净"}</span>
         </button>
@@ -335,7 +335,7 @@ export function EnvironmentPanel({
           title={prDisabled ? pullRequestDisabledReason : undefined}
           onClick={onOpenPullRequest}
         >
-          <Github size={18} />
+          <Github className="icon-lg" />
           <strong>{gitStatus?.pr_url ? "查看拉取请求" : "创建拉取请求"}</strong>
           <span>{gitStatus?.pr_url ? "已有 PR" : prDisabled ? pullRequestDisabledReason : "推送并创建 PR"}</span>
         </button>
@@ -356,7 +356,7 @@ export function EnvironmentPanel({
         onClick={() => toggleMenu("sources")}
       >
         <span>来源 {sourceItems.length}</span>
-        <ChevronRight size={17} />
+        <ChevronRight className="icon" />
       </button>
 
       <div className="environment-runtime-summary">
@@ -400,7 +400,7 @@ function EnvironmentBackgroundProcesses({
     <section className="environment-process-section" aria-label="后台任务">
       <div className="environment-process-heading">
         <span>
-          <Activity size={15} />
+          <Activity className="icon" />
           后台任务
         </span>
         <span>{activeCount > 0 ? `${activeCount} 个活跃` : `${processes.length} 个最近任务`}</span>
@@ -408,7 +408,7 @@ function EnvironmentBackgroundProcesses({
       <div className="environment-process-list">
         {processes.map((process) => (
           <div className="environment-process-row" key={process.id}>
-            <Terminal size={16} />
+            <Terminal className="icon" />
             <div>
               <strong title={process.command}>{process.command}</strong>
               <span>{processDetail(process)}</span>
@@ -424,7 +424,7 @@ function EnvironmentBackgroundProcesses({
                 title={process.primaryPreviewURL}
                 onClick={() => onOpenPreview(process)}
               >
-                <Globe size={13} />
+                <Globe className="icon-xs" />
               </button>
             ) : null}
             {processCanStop(process) ? (
@@ -436,7 +436,7 @@ function EnvironmentBackgroundProcesses({
                 title="停止后台任务"
                 onClick={() => onStopProcess(process)}
               >
-                <Square size={11} />
+                <Square className="icon-xs" />
               </button>
             ) : null}
           </div>
@@ -656,19 +656,19 @@ function EnvironmentModeMenu({
       <div className="environment-side-label">继续使用</div>
       {activeProject ? (
         <button role="menuitem" type="button" disabled>
-          <Folder size={17} />
+          <Folder className="icon" />
           <span>{activeProject.name}</span>
-          <Check size={17} />
+          <Check className="icon" />
         </button>
       ) : null}
       <button role="menuitem" type="button" onClick={onOpenProject}>
-        <FolderOpen size={17} />
+        <FolderOpen className="icon" />
         <span>打开本地项目</span>
       </button>
       <button role="menuitem" type="button" disabled={activeContext?.kind === "no_project"} onClick={onSelectNoProject}>
-        <FolderX size={17} />
+        <FolderX className="icon" />
         <span>临时对话</span>
-        {activeContext?.kind === "no_project" ? <Check size={17} /> : null}
+        {activeContext?.kind === "no_project" ? <Check className="icon" /> : null}
       </button>
     </div>
   );
@@ -713,7 +713,7 @@ function EnvironmentBranchMenu({
   return (
     <div className="environment-side-menu branch" role="menu">
       <label className="environment-search">
-        <Search size={16} />
+        <Search className="icon" />
         <input value={query} placeholder="搜索分支" onChange={(event) => setQuery(event.target.value)} />
       </label>
       {gitStatus.dirty_count > 0 ? (
@@ -725,9 +725,9 @@ function EnvironmentBranchMenu({
           const selected = branch === gitStatus.branch;
           return (
             <button key={branch} role="menuitem" type="button" disabled={selected} onClick={() => onSelectBranch(branch)}>
-              <GitBranch size={17} />
+              <GitBranch className="icon" />
               <span>{branch}</span>
-              {selected ? <Check size={17} /> : null}
+              {selected ? <Check className="icon" /> : null}
             </button>
           );
         })}
@@ -735,7 +735,7 @@ function EnvironmentBranchMenu({
       <form className="environment-create-branch" onSubmit={(event) => void submitNewBranch(event)}>
         <input value={newBranch} placeholder="新分支名称" onChange={(event) => setNewBranch(event.target.value)} />
         <button type="submit" disabled={!newBranch.trim() || submitting}>
-          <Plus size={16} />
+          <Plus className="icon" />
         </button>
       </form>
       {error ? <div className="environment-side-error">{error}</div> : null}
@@ -763,19 +763,19 @@ function EnvironmentSourcesMenu({ items }: { items: EnvironmentSourceItem[] }): 
 
 function EnvironmentSourceIcon({ item }: { item: EnvironmentSourceItem }): JSX.Element {
   if (item.icon === "project") {
-    return <Folder size={17} />;
+    return <Folder className="icon" />;
   }
   if (item.icon === "temporary") {
-    return <FolderX size={17} />;
+    return <FolderX className="icon" />;
   }
   if (item.icon === "file") {
-    return <FileText size={17} />;
+    return <FileText className="icon" />;
   }
   if (item.icon === "image") {
-    return <ImageIcon size={17} />;
+    return <ImageIcon className="icon" />;
   }
   if (item.icon === "guide") {
-    return <CornerDownRight size={17} />;
+    return <CornerDownRight className="icon" />;
   }
-  return <MessageSquarePlus size={17} />;
+  return <MessageSquarePlus className="icon" />;
 }

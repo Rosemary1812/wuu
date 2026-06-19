@@ -90,7 +90,7 @@ export function ConversationSplitPane({
           title={closeLabel}
           onClick={onClose}
         >
-          <X size={16} />
+          <X className="icon" />
         </button>
       </div>
       <div

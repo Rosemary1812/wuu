@@ -95,7 +95,7 @@ export function AssistantTurnShell({
           role="status"
         >
           <span className="turn-notice-icon" aria-hidden="true">
-            <Info size={14} />
+            <Info className="icon-sm" />
           </span>
           <span className="turn-notice-copy">
             <strong>没有生成回复</strong>

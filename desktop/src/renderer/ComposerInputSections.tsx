@@ -41,7 +41,7 @@ export function ComposerAttachmentStrip({
         <div className="composer-image-attachment" key={image.id}>
           <img src={imageSource(image)} alt={`Image ${index + 1}`} />
           <button type="button" aria-label={`移除图片 ${index + 1}`} onClick={() => onRemoveImage(image.id)}>
-            <X size={13} />
+            <X className="icon-xs" />
           </button>
         </div>
       ))}
@@ -50,7 +50,7 @@ export function ComposerAttachmentStrip({
           <FileText size={16} aria-hidden="true" />
           <span>{file.filename?.trim() || `PDF ${index + 1}`}</span>
           <button type="button" aria-label={`移除文件 ${index + 1}`} onClick={() => onRemoveFile(file.id)}>
-            <X size={13} />
+            <X className="icon-xs" />
           </button>
         </div>
       ))}

@@ -507,7 +507,7 @@ export function Composer({
           />
           <div className="composer-bar">
             <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
-              <Plus size={20} />
+              <Plus className="icon-xl" />
             </button>
             <button
               className="composer-tool-button"
@@ -702,40 +702,40 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
   switch (command.action ?? command.id) {
     case "open-review":
     case "review":
-      return <Search size={16} />;
+      return <Search className="icon" />;
     case "debug":
-      return <Bug size={16} />;
+      return <Bug className="icon" />;
     case "fix":
-      return <Hammer size={16} />;
+      return <Hammer className="icon" />;
     case "test":
-      return <FlaskConical size={16} />;
+      return <FlaskConical className="icon" />;
     case "explain":
-      return <CircleHelp size={16} />;
+      return <CircleHelp className="icon" />;
     case "commit":
-      return <GitCommitHorizontal size={16} />;
+      return <GitCommitHorizontal className="icon" />;
     case "pr":
-      return <GitPullRequest size={16} />;
+      return <GitPullRequest className="icon" />;
     case "open-skills":
-      return <Wrench size={16} />;
+      return <Wrench className="icon" />;
     case "new-thread":
-      return <MessageSquarePlus size={16} />;
+      return <MessageSquarePlus className="icon" />;
     case "open-terminal":
-      return <Terminal size={16} />;
+      return <Terminal className="icon" />;
     case "open-files":
-      return <FileText size={16} />;
+      return <FileText className="icon" />;
     case "open-project":
-      return <FolderOpen size={16} />;
+      return <FolderOpen className="icon" />;
     case "no-project":
-      return <FolderX size={16} />;
+      return <FolderX className="icon" />;
     case "fast":
-      return <Zap size={16} />;
+      return <Zap className="icon" />;
     case "model":
     case "effort":
-      return <Laptop size={16} />;
+      return <Laptop className="icon" />;
     case "settings":
-      return <Settings size={16} />;
+      return <Settings className="icon" />;
     default:
-      return <Wrench size={16} />;
+      return <Wrench className="icon" />;
   }
 }
 

@@ -179,7 +179,7 @@ export function RuntimePicker({
       >
         <span>{runtimeTriggerLabel(initialized, currentProviderModel, currentCodexModel)}</span>
         <span className="codex-runtime-effort">{variantLabel(currentVariant)}</span>
-        <ChevronDown size={15} />
+        <ChevronDown className="icon" />
       </button>
       {openMenu === "main" ? (
         <FloatingMenuPortal
@@ -242,7 +242,7 @@ function RuntimeMainMenu({
           return (
             <button key={variant || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(variant)}>
               <span>{variantLabel(variant)}</span>
-              {selected ? <Check size={18} /> : null}
+              {selected ? <Check className="icon-lg" /> : null}
             </button>
           );
         })
@@ -354,7 +354,7 @@ function RuntimeModelMenuItem({
         <strong>{providerModelDisplayName(model)}</strong>
         <small>{provider.name}</small>
       </span>
-      {selected ? <Check size={18} /> : null}
+      {selected ? <Check className="icon-lg" /> : null}
     </button>
   );
 }
@@ -496,14 +496,14 @@ export function ModeMenu({
   return (
     <div className="composer-context-menu mode-menu" role="menu">
       <button role="menuitem" type="button" onClick={onOpenProject}>
-        <FolderOpen size={18} />
+        <FolderOpen className="icon-lg" />
         <span>打开本地项目</span>
-        {activeContext?.kind === "project" ? <Check size={17} /> : null}
+        {activeContext?.kind === "project" ? <Check className="icon" /> : null}
       </button>
       <button role="menuitem" type="button" onClick={onSelectNoProject}>
-        <FolderX size={18} />
+        <FolderX className="icon-lg" />
         <span>不使用项目</span>
-        {activeContext?.kind === "no_project" ? <Check size={17} /> : null}
+        {activeContext?.kind === "no_project" ? <Check className="icon" /> : null}
       </button>
     </div>
   );
@@ -536,9 +536,9 @@ export function BranchMenu({
             disabled={selected}
             onClick={() => onSelectBranch(branch)}
           >
-            <GitBranch size={18} />
+            <GitBranch className="icon-lg" />
             <span>{branch}</span>
-            {selected ? <Check size={17} /> : null}
+            {selected ? <Check className="icon" /> : null}
           </button>
         );
       })}
@@ -573,7 +573,7 @@ export function ProjectPickerMenu({
   return (
     <div className="composer-project-menu" role="menu">
       <label className="project-search">
-        <Search size={18} />
+        <Search className="icon-lg" />
         <input value={query} placeholder="搜索项目" onChange={(event) => setQuery(event.target.value)} />
       </label>
       <OverlayScrollbarsComponent
@@ -587,26 +587,26 @@ export function ProjectPickerMenu({
           const selected = activeContext?.kind === "project" && activeContext.project_id === project.id;
           return (
             <button key={project.id} role="menuitem" onClick={() => onSelectProject(project.id)}>
-              <Folder size={19} />
+              <Folder className="icon-lg" />
               <span>{project.name}</span>
-              {selected ? <Check size={18} /> : null}
+              {selected ? <Check className="icon-lg" /> : null}
             </button>
           );
         })}
       </OverlayScrollbarsComponent>
       <div className="project-picker-divider" />
       <button role="menuitem" onClick={onOpenProject}>
-        <FolderOpen size={19} />
+        <FolderOpen className="icon-lg" />
         <span>使用现有文件夹</span>
       </button>
       <button role="menuitem" onClick={onCreateProject}>
-        <FolderPlus size={19} />
+        <FolderPlus className="icon-lg" />
         <span>新建空白项目</span>
       </button>
       <button role="menuitem" onClick={onSelectNoProject}>
-        <FolderX size={19} />
+        <FolderX className="icon-lg" />
         <span>不使用项目</span>
-        {activeContext?.kind === "no_project" ? <Check size={18} /> : null}
+        {activeContext?.kind === "no_project" ? <Check className="icon-lg" /> : null}
       </button>
     </div>
   );

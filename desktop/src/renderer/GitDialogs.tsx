@@ -44,10 +44,10 @@ export function CommitChangesDialog({
       <form className="environment-dialog" onSubmit={(event) => void submit(event)}>
         <div className="environment-dialog-header">
           <span className="environment-dialog-icon">
-            <CornerDownRight size={18} />
+            <CornerDownRight className="icon-lg" />
           </span>
           <button className="icon-button" type="button" aria-label="关闭" onClick={onCancel}>
-            <X size={17} />
+            <X className="icon" />
           </button>
         </div>
         <h2>提交更改</h2>
@@ -132,10 +132,10 @@ export function PullRequestDialog({
       <form className="environment-dialog" onSubmit={(event) => void submit(event)}>
         <div className="environment-dialog-header">
           <span className="environment-dialog-icon">
-            <Github size={18} />
+            <Github className="icon-lg" />
           </span>
           <button className="icon-button" type="button" aria-label="关闭" onClick={onCancel}>
-            <X size={17} />
+            <X className="icon" />
           </button>
         </div>
         <h2>{existingURL ? "拉取请求" : "创建拉取请求"}</h2>

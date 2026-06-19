@@ -111,7 +111,7 @@ export function RunDebugPanel({
             aria-label="复制调试信息"
             onClick={onCopy}
           >
-            <Copy size={15} />
+            <Copy className="icon" />
           </button>
           <button
             className="icon-button"
@@ -119,7 +119,7 @@ export function RunDebugPanel({
             aria-label="关闭调试信息"
             onClick={onClose}
           >
-            <X size={15} />
+            <X className="icon" />
           </button>
         </div>
       </div>

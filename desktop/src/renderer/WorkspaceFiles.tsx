@@ -306,7 +306,7 @@ function WorkspaceFileTreeNode({
         onClick={() => onOpenFile(entry.path)}
       >
         <span className="workspace-file-tree-toggle-spacer" />
-        <FileText size={15} />
+        <FileText className="icon" />
         <span className="workspace-file-tree-name">{entry.name}</span>
       </button>
     );
@@ -324,9 +324,9 @@ function WorkspaceFileTreeNode({
         onClick={() => onToggleDirectory(directoryPath)}
       >
         <span className="workspace-file-tree-toggle">
-          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          {isExpanded ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />}
         </span>
-        {isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+        {isExpanded ? <FolderOpen className="icon" /> : <Folder className="icon" />}
         <span className="workspace-file-tree-name">{entry.name}</span>
       </button>
       {isExpanded && directoryState?.loading ? (

@@ -73,7 +73,7 @@ export function WorkspaceGoalPanel({
     return (
       <div className="workspace-panel-empty">
         <span className="workspace-panel-empty-icon" aria-hidden="true">
-          <Activity size={21} />
+          <Activity className="icon-xl" />
         </span>
         <strong>Goal</strong>
         <span>选择工作区后显示目标状态</span>
@@ -98,12 +98,12 @@ export function WorkspaceGoalPanel({
           disabled={loading}
           onClick={() => setRefreshKey((value) => value + 1)}
         >
-          <RefreshCw size={16} />
+          <RefreshCw className="icon" />
         </button>
       </div>
       {state.status === "error" ? (
         <div className="workspace-goal-error" role="status">
-          <AlertTriangle size={15} />
+          <AlertTriangle className="icon" />
           <span>{state.error}</span>
         </div>
       ) : null}
@@ -112,7 +112,7 @@ export function WorkspaceGoalPanel({
       ) : (
         <div className="workspace-panel-empty">
           <span className="workspace-panel-empty-icon" aria-hidden="true">
-            <CircleDot size={21} />
+            <CircleDot className="icon-xl" />
           </span>
           <strong>{loading ? "读取中" : "暂无 Goal"}</strong>
           <span>{loading ? "正在同步工作区状态" : "当前工作区还没有持久化目标"}</span>
@@ -138,10 +138,10 @@ function GoalSnapshotView({
       options={OVERLAY_SCROLLBAR_OPTIONS}
     >
       <div className="workspace-goal-summary" aria-label="Goal 汇总">
-        <GoalMetric icon={<GitBranch size={16} />} label="运行" value={summary.workflowCount} />
-        <GoalMetric icon={<Activity size={16} />} label="活跃" value={summary.activeWorkflowCount} />
-        <GoalMetric icon={<AlertTriangle size={16} />} label="关注" value={summary.attentionCount} />
-        <GoalMetric icon={<Users size={16} />} label="任务" value={summary.taskCount} />
+        <GoalMetric icon={<GitBranch className="icon" />} label="运行" value={summary.workflowCount} />
+        <GoalMetric icon={<Activity className="icon" />} label="活跃" value={summary.activeWorkflowCount} />
+        <GoalMetric icon={<AlertTriangle className="icon" />} label="关注" value={summary.attentionCount} />
+        <GoalMetric icon={<Users className="icon" />} label="任务" value={summary.taskCount} />
       </div>
       <GoalSection title="关注项" count={snapshot.attention?.length ?? 0}>
         {snapshot.attention?.length ? (
@@ -203,7 +203,7 @@ function GoalSnapshotView({
           <div className="workspace-goal-list">
             {snapshot.warnings.map((warning, index) => (
               <div className="workspace-goal-row warning" key={`${warning}-${index}`}>
-                <AlertTriangle size={15} />
+                <AlertTriangle className="icon" />
                 <span>{warning}</span>
               </div>
             ))}
@@ -255,7 +255,7 @@ function GoalSection({
 function AttentionRow({ item }: { item: GoalAttentionItem }): JSX.Element {
   return (
     <div className="workspace-goal-row attention">
-      <AlertTriangle size={15} />
+      <AlertTriangle className="icon" />
       <div>
         <strong>{firstText(item.message, item.id, item.source)}</strong>
         <span>
@@ -270,7 +270,7 @@ function AttentionRow({ item }: { item: GoalAttentionItem }): JSX.Element {
 function ApprovalRow({ approval }: { approval: GoalApprovalSnapshot }): JSX.Element {
   return (
     <div className="workspace-goal-row attention">
-      <AlertTriangle size={15} />
+      <AlertTriangle className="icon" />
       <div>
         <strong>{firstText(approval.title, approval.id)}</strong>
         <span>
@@ -297,10 +297,10 @@ function WorkflowCard({ workflow }: { workflow: GoalWorkflowSnapshot }): JSX.Ele
         <StatusPill status={workflow.status} />
       </div>
       <div className="workspace-goal-card-grid">
-        <GoalFact icon={<ListChecks size={14} />} label="phases" value={phaseCount} />
-        <GoalFact icon={<Users size={14} />} label="agents" value={agentCount} />
-        <GoalFact icon={<FileText size={14} />} label="events" value={workflow.event_count ?? 0} />
-        <GoalFact icon={<Activity size={14} />} label="team" value={memberCount} />
+        <GoalFact icon={<ListChecks className="icon-sm" />} label="phases" value={phaseCount} />
+        <GoalFact icon={<Users className="icon-sm" />} label="agents" value={agentCount} />
+        <GoalFact icon={<FileText className="icon-sm" />} label="events" value={workflow.event_count ?? 0} />
+        <GoalFact icon={<Activity className="icon-sm" />} label="team" value={memberCount} />
       </div>
       {workflow.arbitration?.next_actions?.length ? (
         <div className="workspace-goal-next">
@@ -316,7 +316,7 @@ function WorkflowCard({ workflow }: { workflow: GoalWorkflowSnapshot }): JSX.Ele
 function HarnessTaskRow({ task }: { task: GoalHarnessTaskSnapshot }): JSX.Element {
   return (
     <div className="workspace-goal-row">
-      <Users size={15} />
+      <Users className="icon" />
       <div>
         <strong>{firstText(task.name, task.id)}</strong>
         <span>
@@ -332,7 +332,7 @@ function HarnessTaskRow({ task }: { task: GoalHarnessTaskSnapshot }): JSX.Elemen
 function HarnessReportRow({ report }: { report: GoalHarnessReportSnapshot }): JSX.Element {
   return (
     <div className="workspace-goal-row">
-      <CheckCircle2 size={15} />
+      <CheckCircle2 className="icon" />
       <div>
         <strong>{firstText(report.summary, report.task_id)}</strong>
         <span>

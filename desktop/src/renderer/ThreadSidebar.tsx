@@ -96,7 +96,7 @@ export function ProjectList({
               onClick={() => (activeProject ? onToggleProjectCollapsed(project.id) : onSelectProject(project.id))}
             >
               <ChevronRight className="project-row-chevron" size={15} aria-hidden="true" />
-              {expanded ? <FolderOpen size={18} /> : <Folder size={18} />}
+              {expanded ? <FolderOpen className="icon-lg" /> : <Folder className="icon-lg" />}
               <span>{project.name}</span>
               {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
             </button>
@@ -107,7 +107,7 @@ export function ProjectList({
               title="新建会话"
               onClick={() => onStartNewThread(project.id)}
             >
-              <MessageSquarePlus size={15} />
+              <MessageSquarePlus className="icon" />
             </button>
             {threadListMounted ? (
               <div className={`thread-list-collapse${collapsing ? " closing" : ""}`} aria-hidden={collapsing || undefined}>
@@ -338,7 +338,7 @@ function ThreadRows({
                   title={thread.pinned ? "取消置顶" : "置顶"}
                   onClick={() => onTogglePinned(thread)}
                 >
-                  <Pin size={14} />
+                  <Pin className="icon-sm" />
                 </button>
                 <button
                   className={`thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
@@ -347,7 +347,7 @@ function ThreadRows({
                   title={archiveConfirming ? "再次点击归档" : "归档"}
                   onClick={() => onArchive(thread)}
                 >
-                  <Archive size={14} />
+                  <Archive className="icon-sm" />
                 </button>
               </div>
             </div>

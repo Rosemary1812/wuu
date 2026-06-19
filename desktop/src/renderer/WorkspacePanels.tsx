@@ -198,7 +198,7 @@ export function WorkspaceRightPanel({
           disabled={!open}
           onClick={onShowTools}
         >
-          <Plus size={19} />
+          <Plus className="icon-lg" />
         </button>
         <button
           className="icon-button workspace-panel-close"
@@ -207,7 +207,7 @@ export function WorkspaceRightPanel({
           disabled={!open}
           onClick={onClose}
         >
-          <X size={17} />
+          <X className="icon" />
         </button>
       </div>
       {present ? (
@@ -304,7 +304,7 @@ function SortableWorkspaceToolTab({
           onClose();
         }}
       >
-        <X size={13} />
+        <X className="icon-xs" />
       </button>
     </div>
   );
@@ -328,7 +328,7 @@ function WorkspaceToolTabPreview({
         <span>{title}</span>
       </div>
       <div className="workspace-tool-tab-close" aria-hidden="true">
-        <X size={13} />
+        <X className="icon-xs" />
       </div>
     </div>
   );
@@ -385,7 +385,7 @@ export function WorkspaceBottomPanel({
           disabled={!open}
           onClick={onClose}
         >
-          <X size={17} />
+          <X className="icon" />
         </button>
       </div>
       {open ? (

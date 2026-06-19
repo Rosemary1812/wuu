@@ -96,7 +96,7 @@ export function ConversationSearchOverlay({
               aria-label="清空搜索"
               onClick={onClearQuery}
             >
-              <X size={15} />
+              <X className="icon" />
             </button>
           ) : null}
         </div>

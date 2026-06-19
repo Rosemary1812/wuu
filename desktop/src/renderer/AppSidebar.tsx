@@ -131,7 +131,7 @@ export function AppSidebar({
             onClick={onStartNewThread}
             disabled={!hasRuntimeContext}
           >
-            <MessageSquarePlus size={18} />
+            <MessageSquarePlus className="icon-lg" />
             <span>新对话</span>
           </button>
           <button
@@ -139,7 +139,7 @@ export function AppSidebar({
             onClick={onOpenSkillsTab}
             disabled={!hasRuntimeContext}
           >
-            <Wrench size={18} />
+            <Wrench className="icon-lg" />
             <span>Skills</span>
           </button>
           <button
@@ -150,7 +150,7 @@ export function AppSidebar({
             onClick={onToggleConversationSearch}
             disabled={!hasRuntimeContext}
           >
-            <Search size={18} />
+            <Search className="icon-lg" />
             <span>搜索会话</span>
           </button>
           {debugFixturesVisible ? (
@@ -161,7 +161,7 @@ export function AppSidebar({
                 onClick={() => onSeedConversationFixture("long")}
                 disabled={!fixturesEnabled}
               >
-                <FileText size={17} />
+                <FileText className="icon" />
                 <span>长对话</span>
               </button>
               <button
@@ -169,7 +169,7 @@ export function AppSidebar({
                 onClick={() => onSeedConversationFixture("rich")}
                 disabled={!fixturesEnabled}
               >
-                <ListIcon size={17} />
+                <ListIcon className="icon" />
                 <span>富内容</span>
               </button>
               <button
@@ -177,7 +177,7 @@ export function AppSidebar({
                 onClick={() => onSeedConversationFixture("running")}
                 disabled={!fixturesEnabled}
               >
-                <Clock size={17} />
+                <Clock className="icon" />
                 <span>运行中</span>
               </button>
               <button
@@ -185,7 +185,7 @@ export function AppSidebar({
                 onClick={() => onSeedConversationFixture("compact")}
                 disabled={!fixturesEnabled}
               >
-                <Archive size={17} />
+                <Archive className="icon" />
                 <span>上下文压缩</span>
               </button>
               <button
@@ -193,7 +193,7 @@ export function AppSidebar({
                 onClick={onSeedAgentTreeDemo}
                 disabled={!fixturesEnabled}
               >
-                <CornerDownRight size={17} />
+                <CornerDownRight className="icon" />
                 <span>子任务</span>
               </button>
             </div>
@@ -228,16 +228,16 @@ export function AppSidebar({
               aria-expanded={projectMenuOpen}
               onClick={onToggleProjectMenu}
             >
-              <FolderPlus size={20} />
+              <FolderPlus className="icon-xl" />
             </button>
             {projectMenuOpen ? (
               <div className="project-add-menu" role="menu">
                 <button role="menuitem" onClick={onCreateProject}>
-                  <FolderPlus size={22} />
+                  <FolderPlus className="icon-xl" />
                   <span>新建空白项目</span>
                 </button>
                 <button role="menuitem" onClick={onOpenProjectFolder}>
-                  <FolderOpen size={22} />
+                  <FolderOpen className="icon-xl" />
                   <span>使用现有文件夹</span>
                 </button>
               </div>
@@ -274,7 +274,7 @@ export function AppSidebar({
             disabled={!state.initialized}
             onClick={onOpenSettings}
           >
-            <Settings size={18} />
+            <Settings className="icon-lg" />
             <span>设置</span>
           </button>
         </div>

@@ -624,7 +624,7 @@ export function WorkspaceDiffReview({
             disabled={loadingChanges || loadingDiff}
             onClick={() => setRefreshVersion((version) => version + 1)}
           >
-            <RefreshCw size={16} />
+            <RefreshCw className="icon" />
           </button>
         </div>
       </header>
@@ -720,7 +720,7 @@ function GitChangeTreePanel({
         </div>
       </div>
       <label className="workspace-diff-search">
-        <Search size={16} />
+        <Search className="icon" />
         <input
           value={query}
           placeholder="筛选文件..."
@@ -786,7 +786,7 @@ function GitChangeTreeNodeView({
           onClick={() => onTogglePath(node.path)}
         >
           <ChevronRight className="workspace-diff-tree-chevron" size={15} />
-          {expanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+          {expanded ? <FolderOpen className="icon" /> : <Folder className="icon" />}
           <span className="workspace-diff-tree-name">{node.name}</span>
           <span className="workspace-diff-tree-count">{node.fileCount}</span>
         </button>
@@ -825,7 +825,7 @@ function GitChangeTreeNodeView({
       }}
     >
       <span className="workspace-diff-tree-spacer" />
-      <FileText size={16} />
+      <FileText className="icon" />
       <span className="workspace-diff-tree-name">{node.name}</span>
       {file ? <GitChangeFileStats file={file} /> : null}
     </button>
