@@ -364,7 +364,7 @@
 }
 
 .message-copy-button.copied {
-  background: #e8f5ed;
+  background: var(--success-soft);
   color: var(--success);
 }
 
@@ -528,7 +528,7 @@
 }
 
 .message-actions .message-action-button.copied {
-  background: #e8f5ed;
+  background: var(--success-soft);
   color: var(--success);
 }
 

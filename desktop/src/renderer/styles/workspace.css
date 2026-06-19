@@ -1177,7 +1177,7 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 8px;
-  background: #fff4f2;
+  background: var(--warning-soft);
   border: 1px solid var(--danger-border);
   color: #5d1f17;
   font-size: var(--font-sm, 12.5px);

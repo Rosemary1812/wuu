@@ -509,7 +509,7 @@
 
 .permission-chip.tone-accent:hover,
 .permission-chip.tone-accent[aria-expanded="true"] {
-  background: #fff3ec;
+  background: var(--warning-soft);
 }
 
 .permission-chip.tone-review:hover,
@@ -981,7 +981,7 @@
 }
 
 .composer-context-menu .permission-mode-option.danger:hover:not(:disabled) {
-  background: #fff4ef;
+  background: var(--warning-soft);
 }
 
 .composer-context-menu .permission-mode-option.danger[aria-checked="true"] {

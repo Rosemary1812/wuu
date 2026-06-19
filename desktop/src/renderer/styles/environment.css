@@ -379,7 +379,7 @@
 }
 
 .environment-process-status.stopping {
-  background: #fff4df;
+  background: var(--warning-soft);
   color: #9a6400;
 }
 
