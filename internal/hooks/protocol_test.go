@@ -101,3 +101,25 @@ func TestOutputContinueFalse(t *testing.T) {
 		t.Fatal("continue=false should block")
 	}
 }
+
+func TestOutputParseHookSpecificAdditionalContext(t *testing.T) {
+	raw := `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"extra prompt context"}}`
+	out, err := ParseOutput([]byte(raw), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Context != "extra prompt context" {
+		t.Fatalf("expected hook-specific context, got %q", out.Context)
+	}
+}
+
+func TestOutputParseHookSpecificDeny(t *testing.T) {
+	raw := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"unsafe"}}`
+	out, err := ParseOutput([]byte(raw), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.IsBlocked() || out.Reason != "unsafe" {
+		t.Fatalf("expected denied hook output, got %+v", out)
+	}
+}

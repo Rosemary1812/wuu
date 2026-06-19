@@ -149,23 +149,6 @@ func TestBuilder_AddSkills(t *testing.T) {
 	}
 }
 
-func TestBuilder_AddSlashCommands(t *testing.T) {
-	var b Builder
-	b.AddSlashCommands()
-	result := b.Build()
-
-	for _, want := range []string{
-		"# Slash Commands",
-		"`/debug`: Investigate",
-		"`/commit`: Review local changes",
-		"Do not treat the slash command token itself as natural-language prose",
-	} {
-		if !strings.Contains(result, want) {
-			t.Fatalf("slash command prompt missing %q:\n%s", want, result)
-		}
-	}
-}
-
 func TestBuilder_AddWorkflows(t *testing.T) {
 	workflows := []workflow.Definition{
 		{

@@ -134,27 +134,6 @@ func (b *Builder) AddProfileMemoryWithLimits(entries []store.Entry, memoryChars,
 	b.AddSection("profile_memory", strings.TrimRight(sb.String(), "\n"), false)
 }
 
-// AddSlashCommands teaches the model how to interpret user-facing slash
-// commands sent from the composer.
-func (b *Builder) AddSlashCommands() {
-	content := strings.Join([]string{
-		"# Slash Commands",
-		"",
-		"When a user message starts with one of these slash commands, treat it as an explicit command. The text after the command is user-provided scope or arguments.",
-		"",
-		"- `/review`: Review the current code changes and provide prioritized findings.",
-		"- `/debug`: Investigate the current bug or failure. Reproduce or locate evidence first, then identify the root cause before fixing.",
-		"- `/fix`: Fix the current issue in the workspace after reading the relevant code.",
-		"- `/test`: Add or update focused tests for the current change, then run the relevant verification.",
-		"- `/explain`: Explain the relevant code, behavior, or error with concrete file or runtime references.",
-		"- `/commit`: Review local changes, verify them, and create one atomic commit with an English commit message if the changes are ready.",
-		"- `/pr`: Prepare a pull request for the current branch. Include the user-facing change and verification, and create the PR only after checking the branch and local changes are ready.",
-		"",
-		"Do not treat the slash command token itself as natural-language prose. Follow the command intent directly while respecting the user's arguments.",
-	}, "\n")
-	b.AddSection("slash_commands", content, false)
-}
-
 // AddSkills adds a "Skills" section from discovered skills.
 func (b *Builder) AddSkills(sks []skills.Skill) {
 	visible := make([]skills.Skill, 0, len(sks))
@@ -173,7 +152,7 @@ func (b *Builder) AddSkills(sks []skills.Skill) {
 	sb.WriteString("## Skills\n\n")
 	sb.WriteString("Skills provide specialized instructions and workflows for specific tasks.\n")
 	sb.WriteString("Use the `load_skill` tool to load a skill when a task matches its description.\n")
-	sb.WriteString("Users can also invoke skills directly by typing `/<skill-name>` (e.g. `/commit`). When that happens, the skill body is injected as a user message — no need to call `load_skill` separately.\n\n")
+	sb.WriteString("Users can also invoke skills directly by typing `/<skill-name>` (e.g. `/docs`). When that happens, treat the text after the command as the skill arguments and load the matching skill before acting.\n\n")
 	sb.WriteString(skills.FormatAvailable(visible, true))
 	b.AddSection("skills", strings.TrimRight(sb.String(), "\n"), false)
 }
