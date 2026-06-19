@@ -572,12 +572,12 @@
 
 .composer-send-button:disabled {
   cursor: default;
-  background: #d2d4cf;
+  background: var(--surface-4);
   color: rgba(255, 255, 255, 0.86);
 }
 
 .composer-send-button:disabled:hover {
-  background: #d2d4cf;
+  background: var(--surface-4);
 }
 
 .composer-stop-button {

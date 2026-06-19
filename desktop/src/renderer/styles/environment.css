@@ -402,7 +402,7 @@
 }
 
 .environment-process-action:hover:not(:disabled) {
-  background: #e6e6e2;
+  background: var(--surface-3);
   color: var(--ink);
 }
 

@@ -213,10 +213,10 @@
   background: rgba(17, 19, 21, 0.22);
 }
 
-/* Running session tab: render a small spinner so the active conversation
-   reads as "in progress" at a glance. Grow to 10×10 with a 2px ring so the
-   rotation stays legible inside the 30px-tall tab; the extra width is
-   local to the running tab and does not shift neighboring tabs. */
+                                                                         
+                                                                           
+                                                                      
+                                                                   
 .session-tab.running .session-tab-status {
   width: 10px;
   height: 10px;
@@ -710,10 +710,10 @@
   padding: 10px;
 }
 
-/* Floating "Jump to latest" pill, anchored to the bottom of the
- * conversation pane just above the dock composer. Visibility is driven by
- * userScrolledAway in App.tsx; the fade-in animation only runs on mount
- * and the element is unmounted when the user returns to the bottom. */
+                                                                
+                                                                          
+                                                                        
+                                                                       
 .jump-to-latest-pill {
   position: absolute;
   bottom: calc(var(--dock-composer-height, 0px) + 12px);

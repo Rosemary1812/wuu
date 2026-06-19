@@ -297,7 +297,7 @@
   width: 42px;
   height: 42px;
   place-items: center;
-  color: #6b7075;
+  color: var(--ink-tertiary);
 }
 
 .workspace-tool-menu-copy {
@@ -847,7 +847,7 @@
   gap: 5px;
   border-radius: 7px;
   background: var(--surface-2);
-  color: #6f767b;
+  color: var(--ink-tertiary);
   padding: 0 8px;
 }
 
@@ -890,12 +890,12 @@
   grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  color: #6f767b;
+  color: var(--ink-tertiary);
   padding: 9px 10px;
 }
 
 .workspace-goal-row.attention {
-  background: #fff8e9;
+  background: var(--warning-soft);
   color: #8a6520;
 }
 
@@ -940,7 +940,7 @@
 
 .workspace-goal-status.pending {
   background: var(--surface-3);
-  color: #6b7075;
+  color: var(--ink-tertiary);
 }
 
 .workspace-goal-empty {
@@ -1085,7 +1085,7 @@
 }
 
 .workspace-browser-url-form:has(.workspace-browser-url-input.has-error) {
-  border-color: #f3a7a0;
+  border-color: var(--danger-border);
   box-shadow: 0 0 0 3px rgba(243, 167, 160, 0.32);
 }
 
@@ -1178,7 +1178,7 @@
   padding: 12px 14px;
   border-radius: 8px;
   background: #fff4f2;
-  border: 1px solid #f3a7a0;
+  border: 1px solid var(--danger-border);
   color: #5d1f17;
   font-size: var(--font-sm, 12.5px);
   box-shadow: 0 4px 14px rgba(180, 35, 24, 0.08);
@@ -1424,7 +1424,7 @@
   min-height: 178px;
   grid-template-rows: minmax(0, 1fr) auto auto;
   gap: 12px;
-  border: 1px solid #e6e6e2;
+  border: 1px solid var(--surface-3);
   border-radius: 8px;
   background: var(--surface-1);
   padding: 14px;
@@ -1787,7 +1787,7 @@
 .workspace-diff-file-status.renamed,
 .workspace-diff-file-status.copied {
   background: #eef2f7;
-  color: #405b82;
+  color: var(--info);
 }
 
 .workspace-diff-file-path {
@@ -1840,7 +1840,7 @@
 .workspace-diff-truncated {
   border-top: 1px solid #eee6d6;
   border-bottom: 0;
-  background: #fffaf0;
+  background: var(--warning-soft);
   color: #8a5a00;
 }
 
@@ -1883,7 +1883,7 @@
 
 .workspace-diff-line.hunk {
   background: #f1f4f7;
-  color: #405b82;
+  color: var(--info);
   font-weight: var(--weight-semibold);
 }
 
@@ -1960,7 +1960,7 @@
   grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
-  border: 1px solid #e7e8e4;
+  border: 1px solid var(--surface-3);
   border-radius: 9px;
   background: var(--paper);
   color: var(--ink-muted);
